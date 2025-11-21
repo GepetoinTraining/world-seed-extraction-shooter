@@ -2,83 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>World Seed: Genesis</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              'seed-black': '#050505',
-              'seed-dark': '#0a0a0a',
-              'seed-panel': '#111111',
-              'seed-border': '#222222',
-              'seed-gold': '#ffd700',
-              'seed-silver': '#c0c0c0',
-              'seed-bronze': '#cd7f32',
-              'rank-f': '#52525b',
-              'rank-e': '#71717a',
-              'rank-d': '#a1a1aa',
-              'rank-c': '#22c55e',
-              'rank-b': '#0ea5e9',
-              'rank-a': '#a855f7',
-              'rank-s': '#f59e0b',
-              'rank-ss': '#ef4444',
-              'rank-sss': '#ffffff', 
-            },
-            fontFamily: {
-              mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', "Liberation Mono", "Courier New", 'monospace'],
-            },
-            keyframes: {
-              scan: {
-                '0%, 100%': { top: '0%' },
-                '50%': { top: '100%' },
-              }
-            },
-            animation: {
-              scan: 'scan 3s ease-in-out infinite',
-            }
-          },
-        },
-      }
-    </script>
-    <style>
-      body {
-        background-color: #050505;
-        color: #e5e5e5;
-      }
-      /* Custom scrollbar for the terminal feel */
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #0a0a0a;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #333;
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #444;
-      }
-    </style>
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react/": "https://esm.sh/react@18.2.0/",
-        "react-dom": "https://esm.sh/react-dom@18.2.0",
-        "react-dom/": "https://esm.sh/react-dom@18.2.0/",
-        "three": "https://esm.sh/three@0.160.0",
-        "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.16.8?external=react,react-dom,three",
-        "@react-three/drei": "https://esm.sh/@react-three/drei@9.108.0?external=react,react-dom,three,@react-three/fiber",
-        "uuid": "https://esm.sh/uuid@9.0.1"
-      }
-    }
-    </script>
   </head>
   <body>
     <div id="root"></div>
+    <!-- FIX: Changed src="/index.tsx" to src="./index.tsx" -->
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

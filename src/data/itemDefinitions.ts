@@ -1,4 +1,4 @@
-import { UniversalRank, SlotType } from '../types';
+import { UniversalRank, SlotType } from '../../types';
 
 export interface BaseStatDefinition {
   stat: string;

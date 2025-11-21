@@ -1,6 +1,14 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { MantineProvider } from '@mantine/core';
 import App from './App';
+import { theme } from './src/theme';
+
+// 1. Core Mantine Styles
+import '@mantine/core/styles.css';
+
+// 2. Custom CSS (Must be after Mantine to override)
+import './index.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -10,6 +18,8 @@ if (!rootElement) {
 const root = createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme="dark">
+      <App />
+    </MantineProvider>
   </React.StrictMode>
 );

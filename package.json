@@ -1,7 +1,7 @@
 {
-  "name": "world-seed:-genesis",
+  "name": "world-seed-genesis",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,17 +9,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mantine/core": "^7.16.0",
+    "@mantine/hooks": "^7.16.0",
+    "@react-three/drei": "9.108.0",
+    "@react-three/fiber": "8.16.8",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "three": "0.160.0",
-    "@react-three/fiber": "8.16.8",
-    "@react-three/drei": "9.108.0",
-    "uuid": "9.0.1"
+    "uuid": "9.0.1",
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0"
   }
 }

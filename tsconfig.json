@@ -10,9 +10,11 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
-    "types": [
-      "node"
-    ],
+    
+    /* --- FIX START --- */
+    /* Removed "types": ["node"] so TS can find Three.js and R3F types automatically */
+    /* --- FIX END --- */
+    
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
@@ -25,5 +27,6 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [".", "**/*.ts", "**/*.tsx", "**/*.d.ts"]
 }

@@ -1,7 +1,7 @@
-import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../types';
+import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../types';
 import { ITEM_DEFINITIONS, ItemDefinition } from '../data/itemDefinitions';
 import { AFFIX_DEFINITIONS, AffixDefinition } from '../data/affixDefinitions';
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../src/constants';
+import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../constants';
 
 export class ItemFactory {
   

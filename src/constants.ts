@@ -1,4 +1,4 @@
-import { UniversalRank, Rarity } from './types';
+import { UniversalRank, Rarity } from '../types';
 
 // --- SCALING FACTORS ---
 

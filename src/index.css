@@ -1,0 +1,28 @@
+/* index.css - Standard CSS only */
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #050505; /* Void Black */
+  color: #e5e5e5; 
+  font-family: monospace; /* Temporary font fix */
+}
+
+/* Keep the terminal scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 0px;
+}
