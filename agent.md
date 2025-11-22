@@ -100,3 +100,74 @@ Check types.ts: Do we have the data fields?
 Update usePlayerStore.ts: Add the Action (logic).
 
 Update Components: Connect the UI to the Store.
+
+### Session 2... yes only 2
+
+WORLD SEED: GENESIS PROTOCOL - HANDOVER PLAN
+
+1. Core Architecture: Domain-Driven Design
+
+We have transitioned from a flat structure to an Entity-Based architecture.
+Target Structure:
+
+src/
+├── entities/
+│   ├── player/          (State, Stats, Inventory, Lore)
+│   ├── item/            (Factory, Definitions, Affixes)
+│   ├── world/           (Generator, Director, LootTable)
+│   ├── mob/             (Definitions, AI, SpriteGenerator)
+│   ├── combat/          (ProjectileSystem)
+│   └── magic/           (SpellEngine, Definitions)
+├── shared/              (Components, Constants, Theme)
+└── App.tsx
+
+
+2. Systems Overview (Status: Defined, Implementation Needed)
+
+A. The World (Procedural Reality)
+
+Generator: Uses SeededRNG to create a 32x32 grid of Chunks.
+
+Genres: Chunks have a "Reality Layer" (Fantasy, Sci-Fi, Eldritch) that dictates Mob spawns.
+
+Fog of War: Players must use "Recon Energy" to scan chunks before dropping.
+
+B. The Ecology (Evolutionary AI)
+
+The Director: Monitors player kill tactics (Melee vs Ranged).
+
+Mutation: Mobs spawn with counters (e.g., EXPLOSIVE_DEATH if players melee too much).
+
+Culling: Mobs that die too fast are removed from the gene pool.
+
+C. Combat (Deterministic Bullet Hell)
+
+Client-Side: Projectiles are math patterns (ProjectileSystem.getProjectilesAtTime), not networked entities.
+
+Melee: Active "Deflection Arcs" that destroy projectiles.
+
+Magic: 3 Scales (Local, Tactical, Strategic) with Entropy/Risk costs.
+
+D. Economy (Destructive)
+
+Loot: High drop rates from Bosses (Tomes, S-Rank gear).
+
+Sink: High item mortality. Trash items to manage inventory.
+
+Specialization: "Identifier" players scan loot faster in the field.
+
+3. Immediate Execution Tasks
+
+File Migration: Create the src/entities/ folder tree and populate it with the code blocks provided in the chat history.
+
+Fix Imports: Ensure ../../../types references resolve correctly in the new depth.
+
+Wire App.tsx: Connect the WorldStore (Recon View) and PlayerStore (Inventory/Tactical View) into a cohesive UI loop.
+
+Debug: Verify that SpriteGenerator produces valid Base64 strings for the MobAvatar component.
+
+4. Known "Gotchas"
+
+Circular Imports: Watch out for ItemFactory importing LootTable importing ItemFactory. Use Dependency Injection or pass references if needed.
+
+Zustand State: Ensure we don't mutate state directly in WorldCanvas; always use Store Actions.

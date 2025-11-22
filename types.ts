@@ -342,3 +342,36 @@ export interface IPlayer {
   guildId?: string;
   ownedCityId?: string;
 }
+
+export interface IItem {
+  id: string;
+  universalDefinitionId: string;
+  name: string;
+  description: string;
+  type: ItemType;
+  slot: SlotType;
+  rank: UniversalRank;
+  rarity: Rarity;
+  quality: number;
+  itemPower: number;
+  affixes: IAffix[];
+  stats: {
+    // ... existing stat fields ...
+    [key: string]: any; 
+  };
+  visuals: {
+    modelId: string;
+    colorHex: string;
+    particleEffect?: string;
+    iconUrl?: string;
+  };
+  history: {
+    craftedByPlayerId?: string;
+    foundInLayerId?: string;
+    dropDate: number;
+    killCount: number;
+  };
+
+  // --- NEW: IDENTIFICATION STATE ---
+  isIdentified: boolean; 
+}

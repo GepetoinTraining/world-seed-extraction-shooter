@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Layout } from './src/components/Layout';
 import { WorldCanvas } from './src/components/WorldCanvas';
 import { IItem, UniversalRank } from './types';
-import { usePlayerStore } from './src/store/usePlayerStore';
+import { usePlayerStore } from './src/entities/player/store'; // NEW PATH
 import { 
   Stack, Group, Text, Button, Paper, SimpleGrid, Card, Badge, 
-  Avatar, ScrollArea, Tooltip, ActionIcon 
+  Avatar, ScrollArea, Tooltip 
 } from '@mantine/core';
 
 // --- RANK COLORS MAP (Mantine Colors) ---
@@ -23,18 +23,38 @@ const RANK_COLOR_MAP: Record<UniversalRank, string> = {
 
 export default function App() {
   // Global State
-  const { player, view, setView, diveIntoLayer, emergencyJackOut, simulateLootDrop } = usePlayerStore();
+  const { 
+      player, view, setView, diveIntoLayer, emergencyJackOut, simulateLootDrop, movePlayer,
+      lootContainer, lootContainerId, closeLootContainer, transferItem, trashItem, identifyItem, studyItem 
+  } = usePlayerStore();
 
-  // Derived Data
+  // --- KEYBOARD LISTENER (WASD MOVEMENT) ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (view !== 'SESSION') return;
+      
+      switch(e.key.toUpperCase()) {
+        case 'W': movePlayer('W'); break;
+        case 'A': movePlayer('A'); break;
+        case 'S': movePlayer('S'); break;
+        case 'D': movePlayer('D'); break;
+        case 'L': simulateLootDrop(); break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [view, movePlayer, simulateLootDrop]);
+
+  // --- DERIVED DATA ---
   const mainStashItems = player.bank.stashTabs[0].items;
   
-  // Calculate Display Rank
   const playerDisplayRank = mainStashItems.reduce((highest, item) => {
     const ranks = Object.values(UniversalRank);
     return ranks.indexOf(item.rank) > ranks.indexOf(highest) ? item.rank : highest;
   }, UniversalRank.F);
 
-  // --- COMPONENT: SIDEBAR (Player ID) ---
+  // --- COMPONENT: SIDEBAR ---
   const NavbarContent = (
     <Stack justify="space-between" h="100%">
       <Stack gap="md">
@@ -117,7 +137,6 @@ export default function App() {
     </Stack>
   );
 
-  // --- COMPONENT: ASIDE (Logs) ---
   const AsideContent = (
     <Stack h="100%">
       <Text size="xs" fw={700} c="dimmed">SYSTEM LOG</Text>
@@ -162,7 +181,6 @@ export default function App() {
                 {mainStashItems.map(item => (
                   <ItemCard key={item.id} item={item} />
                 ))}
-                {/* Placeholders */}
                 {Array.from({ length: Math.max(0, 15 - mainStashItems.length) }).map((_, i) => (
                    <Paper key={i} h={120} withBorder style={{ borderStyle: 'dashed', opacity: 0.2 }} />
                 ))}
@@ -178,10 +196,8 @@ export default function App() {
   );
 }
 
-// --- COMPONENT: ITEM CARD ---
 const ItemCard = ({ item }: { item: IItem }) => {
   const color = RANK_COLOR_MAP[item.rank];
-  
   return (
     <Tooltip 
       label={
@@ -208,11 +224,9 @@ const ItemCard = ({ item }: { item: IItem }) => {
             {item.quality > 0 ? '+' : ''}{(item.quality * 100).toFixed(0)}%
           </Text>
         </Group>
-        
         <Stack align="center" py="sm" gap={0} style={{ opacity: 0.8 }}>
            <Text size="xl">{item.slot.includes('HAND') ? '⚔️' : '🛡️'}</Text>
         </Stack>
-
         <Stack gap={0} mt="xs">
            <Text size="xs" fw={700} truncate>{item.name}</Text>
            <Group justify="space-between">
@@ -222,5 +236,67 @@ const ItemCard = ({ item }: { item: IItem }) => {
         </Stack>
       </Card>
     </Tooltip>
+  );
+}
+return (
+    <Layout /* ... props ... */>
+      {view === 'BANK' ? (
+        /* ... Bank View ... */
+        <InventoryGrid items={player.bank.stashTabs[0].items} capacity={50} title="Main Stash" />
+      ) : (
+        <Paper h="100%" withBorder={false} radius={0} style={{ overflow: 'hidden', position: 'relative' }}>
+           
+           {/* THE WORLD */}
+           {player.currentSession && <WorldCanvas session={player.currentSession} />}
+
+           {/* LOOTING OVERLAY */}
+           {lootContainer && (
+               <div style={{
+                   position: 'absolute', inset: 0, 
+                   background: 'rgba(0,0,0,0.5)', 
+                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                   zIndex: 100
+               }}>
+                   <Group align="start" gap="xl">
+                       {/* LEFT: THE LOOT */}
+                       <InventoryGrid 
+                           title="LOOT SOURCE" 
+                           items={lootContainer} 
+                           capacity={10} 
+                           onItemClick={(item) => transferItem(item.id, 'CONTAINER', 'INVENTORY')}
+                           onItemAction={(act, item) => {
+                               if (act === 'TRASH') trashItem(item.id, 'CONTAINER');
+                           }}
+                       />
+
+                       {/* RIGHT: PLAYER BAG */}
+                       {player.currentSession && (
+                           <InventoryGrid 
+                               title="BACKPACK" 
+                               items={player.currentSession.inventory} 
+                               capacity={20} 
+                               onItemClick={(item) => transferItem(item.id, 'INVENTORY', 'CONTAINER')}
+                               onItemAction={(act, item) => {
+                                   if (act === 'TRASH') trashItem(item.id, 'INVENTORY');
+                                   if (act === 'IDENTIFY') identifyItem(item.id);
+                                   if (act === 'STUDY') studyItem(item.id);
+                               }}
+                           />
+                       )}
+                   </Group>
+                   
+                   {/* Close Button Overlay or Keybind usually handles exit */}
+                   <Button 
+                       pos="absolute" bottom={50} 
+                       onClick={closeLootContainer} 
+                       color="gray"
+                   >
+                       CLOSE (ESC)
+                   </Button>
+               </div>
+           )}
+        </Paper>
+      )}
+    </Layout>
   );
 }

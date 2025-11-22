@@ -1,13 +1,10 @@
-import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../types';
-import { ITEM_DEFINITIONS, ItemDefinition } from '../data/itemDefinitions';
-import { AFFIX_DEFINITIONS, AffixDefinition } from '../data/affixDefinitions';
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../constants';
+import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../../types'; // Up 3 levels
+import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';       // Local data folder
+import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';    // Local data folder
+import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';          // Up 2 levels to shared
 
 export class ItemFactory {
   
-  /**
-   * Mints a new Item based on a random definition or specific ID.
-   */
   static createItem(targetRank?: UniversalRank): IItem {
     // 1. Select Base Template
     const allBases = [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases];
@@ -22,22 +19,19 @@ export class ItemFactory {
       template = allBases[Math.floor(Math.random() * allBases.length)];
     }
 
-    // 2. Roll Rarity (Weighted)
+    // 2. Roll Rarity
     const rarity = this.rollRarity();
 
-    // 3. Roll Quality (-0.20 to +0.20)
-    // Quality impacts stats and IP
-    const quality = (Math.random() * 0.4) - 0.2; // range: -0.2 to 0.2
+    // 3. Roll Quality
+    const quality = (Math.random() * 0.4) - 0.2;
 
-    // 4. Base Stats Calculation
-    // Base stats from template + Quality modifier
+    // 4. Base Stats
     const baseStats = this.generateBaseStats(template, quality);
     
     // 5. Affix Generation
-    // Determine slots based on rarity
     const affixes = this.generateAffixes(template, rarity, template.rank);
     
-    // 6. Merge Affix Stats into Base Stats
+    // 6. Merge Stats
     const finalStats = { ...baseStats };
     affixes.forEach(affix => {
       Object.entries(affix.stats).forEach(([statKey, val]) => {
@@ -45,8 +39,7 @@ export class ItemFactory {
       });
     });
 
-    // 7. Calculate Final Item Power
-    // Formula: Base * RankMult * RarityMult * (1 + Quality)
+    // 7. Calculate IP
     const rankMult = RANK_MULTIPLIERS[template.rank];
     const rarityMult = RARITY_MULTIPLIERS[rarity];
     const finalIP = Math.floor(template.base_ip * rankMult * rarityMult * (1 + quality));
@@ -70,7 +63,7 @@ export class ItemFactory {
         ...finalStats,
         durability: 100,
         maxDurability: 100,
-        weight: 5 // Simplified
+        weight: 5
       },
       visuals: {
         modelId: template.tags.includes('weapon') ? 'weapon_mesh' : 'armor_mesh',
@@ -94,80 +87,42 @@ export class ItemFactory {
 
   private static generateBaseStats(template: ItemDefinition, quality: number): Record<string, number> {
     const stats: Record<string, number> = {};
-    
     template.implicits.forEach(imp => {
       let val = 0;
-      if (imp.value !== undefined) {
-        val = imp.value;
-      } else if (imp.min !== undefined && imp.max !== undefined) {
-        val = imp.min + Math.random() * (imp.max - imp.min);
-      }
+      if (imp.value !== undefined) val = imp.value;
+      else if (imp.min !== undefined && imp.max !== undefined) val = imp.min + Math.random() * (imp.max - imp.min);
       
-      // Apply quality to numerical stats (excluding boolean-like logic or small decimals like attack speed if desired, 
-      // but for now applying to everything for simulation depth)
-      // We floor/ceil based on positive/negative to keep integers clean where possible, 
-      // but keep decimals for things like attack speed.
-      if (val > 1) {
-        stats[imp.stat] = Math.round(val * (1 + quality));
-      } else {
-        stats[imp.stat] = parseFloat((val * (1 + quality)).toFixed(2));
-      }
+      if (val > 1) stats[imp.stat] = Math.round(val * (1 + quality));
+      else stats[imp.stat] = parseFloat((val * (1 + quality)).toFixed(2));
     });
-    
     return stats;
   }
 
   private static generateAffixes(template: ItemDefinition, rarity: Rarity, itemRank: UniversalRank): IAffix[] {
     const affixes: IAffix[] = [];
-    
-    // Define slot counts
     let prefixCount = 0;
     let suffixCount = 0;
 
     switch (rarity) {
-      case Rarity.COMMON: break;
-      case Rarity.UNCOMMON: 
-        // 1 Prefix OR 1 Suffix (50/50), rare chance for both
-        Math.random() > 0.5 ? prefixCount++ : suffixCount++;
-        if (Math.random() > 0.8) { prefixCount = 1; suffixCount = 1; }
-        break;
-      case Rarity.RARE:
-        // Min 2, Max 4
-        prefixCount = 1 + (Math.random() > 0.5 ? 1 : 0);
-        suffixCount = 1 + (Math.random() > 0.5 ? 1 : 0);
-        break;
-      case Rarity.EPIC:
-        prefixCount = 2;
-        suffixCount = 2;
-        break;
-      case Rarity.LEGENDARY:
-        prefixCount = 3;
-        suffixCount = 3;
-        break;
-      default: break;
+      case Rarity.UNCOMMON: Math.random() > 0.5 ? prefixCount++ : suffixCount++; break;
+      case Rarity.RARE: prefixCount = 1; suffixCount = 1; break;
+      case Rarity.EPIC: prefixCount = 2; suffixCount = 2; break;
+      case Rarity.LEGENDARY:HfprefixCount = 3; suffixCount = 3; break;
     }
 
-    // Helper to pick random valid affix
     const pickAffix = (pool: AffixDefinition[], currentAffixes: IAffix[]): IAffix | null => {
-      // Filter by Tags
-      const valid = pool.filter(def => 
-        def.allowedTags.some(tag => template.tags.includes(tag))
-      );
-      // Filter duplicates (cannot have same affix definition twice)
+      const valid = pool.filter(def => def.allowedTags.some(tag => template.tags.includes(tag)));
       const available = valid.filter(def => !currentAffixes.some(a => a.id === def.id));
       
       if (available.length === 0) return null;
       const choice = available[Math.floor(Math.random() * available.length)];
 
-      // Calculate Stats based on Rank
-      // We use the Rank Multiplier to scale the raw values in the affix definition
       const rankMult = RANK_MULTIPLIERS[itemRank];
       const rolledStats: Record<string, number> = {};
       
       Object.entries(choice.statModifiers).forEach(([key, range]) => {
         const [min, max] = range;
         const baseVal = min + Math.random() * (max - min);
-        // Scale by rank
         rolledStats[key] = Math.round(baseVal * rankMult);
       });
 
@@ -176,7 +131,7 @@ export class ItemFactory {
         name: choice.nameTemplate,
         type: choice.type,
         stats: rolledStats,
-        tier: 1 // Placeholder, would calculate tier based on roll closeness to max
+        tier: 1
       };
     };
 
@@ -195,32 +150,21 @@ export class ItemFactory {
   private static constructName(baseName: string, affixes: IAffix[], quality: number): string {
     const prefixes = affixes.filter(a => a.type === 'PREFIX').map(a => a.name);
     const suffixes = affixes.filter(a => a.type === 'SUFFIX').map(a => a.name);
-
     let name = baseName;
 
-    // Add Quality Prefix if extreme
     if (quality < -0.15) name = `Broken ${name}`;
     else if (quality > 0.15) name = `Superior ${name}`;
 
-    // Add Magic Prefixes (Take the first one found for the name)
-    if (prefixes.length > 0) {
-      name = `${prefixes[0]} ${name}`;
-    }
-
-    // Add Magic Suffixes
-    if (suffixes.length > 0) {
-      name = `${name} ${suffixes[0]}`;
-    }
-
+    if (prefixes.length > 0) name = `${prefixes[0]} ${name}`;
+    if (suffixes.length > 0) name = `${name} ${suffixes[0]}`;
     return name;
   }
 
   private static generateDescription(rarity: Rarity, quality: number): string {
     let desc = "";
-    if (quality < -0.10) desc += "This item has seen better days. Rust pits the surface. ";
-    else if (quality > 0.10) desc += "The craftsmanship is exceptional. It hums with faint energy. ";
-    
-    desc += `A ${rarity.toLowerCase()} artifact recovered from the simulation layer.`;
+    if (quality < -0.10) desc += "This item has seen better days. ";
+    else if (quality > 0.10) desc += "The craftsmanship is exceptional. ";
+    desc += `A ${rarity.toLowerCase()} artifact.`;
     return desc;
   }
 
