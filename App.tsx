@@ -1,302 +1,344 @@
-import React, { useEffect } from 'react';
-import { Layout } from './src/components/Layout';
-import { WorldCanvas } from './src/components/WorldCanvas';
-import { IItem, UniversalRank } from './types';
-import { usePlayerStore } from './src/entities/player/store'; // NEW PATH
-import { 
-  Stack, Group, Text, Button, Paper, SimpleGrid, Card, Badge, 
-  Avatar, ScrollArea, Tooltip 
-} from '@mantine/core';
+import React, { useEffect, useRef, useState } from 'react';
+import { IActiveSession } from './types'; 
+import { useWorldStore } from './src/entities/world/store';
+import { BiomeType, ScanLevel, IChunk } from './src/entities/world/types';
+import { BIOME_DEFINITIONS } from './src/entities/world/definitions'; 
+import { ProjectileSystem, PatternType, IProjectile } from './src/entities/combat/projectileSystem'; 
+import { Box, Text, Center, Loader, Button, Stack, Group, Tooltip, Badge, SimpleGrid, Paper, RingProgress } from '@mantine/core';
 
-// --- RANK COLORS MAP (Mantine Colors) ---
-const RANK_COLOR_MAP: Record<UniversalRank, string> = {
-  [UniversalRank.F]: 'gray',
-  [UniversalRank.E]: 'gray.5',
-  [UniversalRank.D]: 'blue.3',
-  [UniversalRank.C]: 'emerald.4',
-  [UniversalRank.B]: 'blue.6',
-  [UniversalRank.A]: 'grape.5',
-  [UniversalRank.S]: 'orange.5',
-  [UniversalRank.SS]: 'red.6',
-  [UniversalRank.SSS]: 'white',
+// --- CONSTANTS ---
+const CHUNK_PIXEL_SIZE = 20; // Size of grid cells in Recon Mode
+const TACTICAL_SCALE = 40;   // Size of grid cells in Dive Mode
+
+// --- HELPER: MELEE ARC VISUAL ---
+const MeleeArc = ({ x, y, angle, range, color }: any) => {
+    // Visualizing a swing arc using CSS conic gradients
+    return (
+        <div style={{
+            position: 'absolute',
+            left: x * TACTICAL_SCALE,
+            top: y * TACTICAL_SCALE,
+            width: range * TACTICAL_SCALE * 2,
+            height: range * TACTICAL_SCALE * 2,
+            borderRadius: '50%',
+            background: `conic-gradient(from ${angle - 0.75 + 1.57}rad, transparent 0deg, ${color} 0deg, ${color} 90deg, transparent 90deg)`, 
+            transform: 'translate(-50%, -50%)',
+            opacity: 0.5,
+            pointerEvents: 'none',
+            zIndex: 5
+        }} />
+    );
 };
 
-export default function App() {
-  // Global State
-  const { 
-      player, view, setView, diveIntoLayer, emergencyJackOut, simulateLootDrop, movePlayer,
-      lootContainer, lootContainerId, closeLootContainer, transferItem, trashItem, identifyItem, studyItem 
-  } = usePlayerStore();
-
-  // --- KEYBOARD LISTENER (WASD MOVEMENT) ---
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (view !== 'SESSION') return;
-      
-      switch(e.key.toUpperCase()) {
-        case 'W': movePlayer('W'); break;
-        case 'A': movePlayer('A'); break;
-        case 'S': movePlayer('S'); break;
-        case 'D': movePlayer('D'); break;
-        case 'L': simulateLootDrop(); break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [view, movePlayer, simulateLootDrop]);
-
-  // --- DERIVED DATA ---
-  const mainStashItems = player.bank.stashTabs[0].items;
+export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) => {
+  const { currentMap, generateWorld, reconMode, scanChunk, selectChunk, confirmDrop, selectedDropZone } = useWorldStore();
   
-  const playerDisplayRank = mainStashItems.reduce((highest, item) => {
-    const ranks = Object.values(UniversalRank);
-    return ranks.indexOf(item.rank) > ranks.indexOf(highest) ? item.rank : highest;
-  }, UniversalRank.F);
+  // --- COMBAT STATE (TACTICAL) ---
+  const [activePatterns, setActivePatterns] = useState<any[]>([]);
+  const [activeSwings, setActiveSwings] = useState<any[]>([]);
+  const [renderBullets, setRenderBullets] = useState<IProjectile[]>([]);
+  const requestRef = useRef<number>();
 
-  // --- COMPONENT: SIDEBAR ---
-  const NavbarContent = (
-    <Stack justify="space-between" h="100%">
-      <Stack gap="md">
-        {/* Player Card */}
-        <Paper p="md" withBorder style={{ position: 'relative', overflow: 'hidden' }}>
-          <Badge 
-            variant="filled" 
-            color={RANK_COLOR_MAP[playerDisplayRank]} 
-            style={{ position: 'absolute', top: 0, right: 0, borderRadius: 0 }}
-          >
-            RANK {playerDisplayRank}
-          </Badge>
-          
-          <Avatar size="xl" radius="0" color="dark" variant="outline" mb="md">
-            👾
-          </Avatar>
-          
-          <Text fw={700} size="lg">{player.username}</Text>
-          <Text size="xs" c="dimmed" ff="monospace">ID: {player.id.substring(0,8)}</Text>
+  // --- RECON STATE ---
+  // In a real app, these would come from usePlayerStore -> stats -> recon_efficiency
+  const PLAYER_RECON_EFFICIENCY = 2.5; 
+  const PLAYER_SCAN_ENERGY = 100; // Mock energy
 
-          <Stack gap="xs" mt="md">
-             <Group justify="space-between">
-                <Text size="xs" c="dimmed">GOLD</Text>
-                <Text size="xs" c="gold.4">{player.bank.gold.toLocaleString()}</Text>
-             </Group>
-             <Group justify="space-between">
-                <Text size="xs" c="dimmed">STASH</Text>
-                <Text size="xs" c="blue.4">{mainStashItems.length} / 50</Text>
-             </Group>
-          </Stack>
-        </Paper>
+  // --- INITIALIZATION ---
+  useEffect(() => {
+    if (!currentMap) generateWorld(session.sessionId);
+  }, [session.sessionId, currentMap, generateWorld]);
 
-        {/* Navigation */}
-        <Stack gap="xs">
-          <Button 
-            fullWidth 
-            justify="flex-start"
-            variant={view === 'BANK' ? 'filled' : 'subtle'} 
-            color="gold"
-            onClick={() => setView('BANK')}
-            disabled={view === 'SESSION'}
-          >
-            [F1] BANK (COLD)
-          </Button>
-          <Button fullWidth justify="flex-start" variant="subtle" color="gray" disabled>
-            [F2] MARKET (LOCKED)
-          </Button>
-        </Stack>
-      </Stack>
+  // --- GAME LOOP (60 FPS) ---
+  const animate = (time: number) => {
+    if (!reconMode) {
+        const now = Date.now();
+        const allBullets: IProjectile[] = [];
+        
+        // 1. Update Projectiles
+        const livePatterns = activePatterns.filter(p => (now - p.startTime) < 2000);
+        if (livePatterns.length !== activePatterns.length) setActivePatterns(livePatterns);
 
-      {/* Session Actions */}
-      <Stack>
-        {view === 'SESSION' && player.currentSession && (
-           <Paper p="sm" withBorder bg="emerald.9" style={{ borderColor: 'var(--mantine-color-emerald-8)' }}>
-              <Text size="xs" c="emerald.4" fw={700} mb="xs">SESSION METRICS</Text>
-              <Group justify="space-between" mb={4}>
-                <Text size="xs">INTEGRITY</Text>
-                <Text size="xs" c="white">{player.currentSession.health}%</Text>
-              </Group>
-              <Group justify="space-between" mb="xs">
-                <Text size="xs">MASS</Text>
-                <Text size="xs" c="white">{player.currentSession.inventory.length} ITEMS</Text>
-              </Group>
-              <Button fullWidth variant="light" color="emerald" onClick={simulateLootDrop}>
-                DEBUG: LOOT
-              </Button>
-           </Paper>
-        )}
+        livePatterns.forEach(p => {
+            let bullets = ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle);
+            
+            // 2. Deflection Logic (Melee vs Projectile)
+            const liveSwings = activeSwings.filter(s => (now - s.startTime) < 200);
+            bullets = bullets.filter(b => {
+                const isDeflected = liveSwings.some(s => 
+                    ProjectileSystem.checkDeflection ? ProjectileSystem.checkDeflection(b, s.origin, s.angle) : false
+                );
+                return !isDeflected; 
+            });
 
-        <Button 
-          fullWidth 
-          h={50}
-          color={view === 'SESSION' ? 'red' : 'emerald'}
-          variant={view === 'SESSION' ? 'filled' : 'outline'}
-          onClick={() => view === 'SESSION' ? emergencyJackOut() : diveIntoLayer()}
-        >
-          {view === 'SESSION' ? 'EMERGENCY JACK-OUT' : 'LINK START // DIVE'}
-        </Button>
-      </Stack>
-    </Stack>
-  );
+            allBullets.push(...bullets);
+        });
+        
+        // Cleanup Swings
+        const liveSwings = activeSwings.filter(s => (now - s.startTime) < 200);
+        if (liveSwings.length !== activeSwings.length) setActiveSwings(liveSwings);
 
-  const AsideContent = (
-    <Stack h="100%">
-      <Text size="xs" fw={700} c="dimmed">SYSTEM LOG</Text>
-      <ScrollArea flex={1} type="never">
-        <Stack gap="xs">
-          <Text size="xs" c="dimmed">
-            <Text span c="blue.4">[SYSTEM]</Text> Gateway Connected.
-          </Text>
-          {view === 'SESSION' && (
-            <Text size="xs" c="emerald.4" className="animate-pulse">
-               [NET] Streaming Data...
-            </Text>
-          )}
-          {player.currentSession?.inventory.map((item) => (
-            <Text key={item.id} size="xs" c="dimmed">
-              <Text span c="gold.4">[LOOT]</Text> Acquired {item.name}
-            </Text>
-          ))}
-        </Stack>
-      </ScrollArea>
-    </Stack>
-  );
+        setRenderBullets(allBullets);
+    }
+    requestRef.current = requestAnimationFrame(animate);
+  };
 
-  return (
-    <Layout 
-      title="DASHBOARD" 
-      status={view === 'SESSION' ? 'DIVE_ACTIVE' : 'ONLINE'}
-      navbar={NavbarContent}
-      aside={AsideContent}
-    >
-      {view === 'BANK' ? (
-        <Stack h="100%">
-           <Group justify="space-between">
-              <div>
-                <Text size="xl" fw={300}>SECURE STORAGE</Text>
-                <Text size="xs" c="dimmed" ff="monospace">Items persist across session collapse.</Text>
-              </div>
-           </Group>
-           
-           <ScrollArea h="100%">
-             <SimpleGrid cols={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing="xs">
-                {mainStashItems.map(item => (
-                  <ItemCard key={item.id} item={item} />
-                ))}
-                {Array.from({ length: Math.max(0, 15 - mainStashItems.length) }).map((_, i) => (
-                   <Paper key={i} h={120} withBorder style={{ borderStyle: 'dashed', opacity: 0.2 }} />
-                ))}
-             </SimpleGrid>
-           </ScrollArea>
-        </Stack>
-      ) : (
-        <Paper h="100%" withBorder={false} radius={0} style={{ overflow: 'hidden' }}>
-           {player.currentSession && <WorldCanvas session={player.currentSession} />}
-        </Paper>
-      )}
-    </Layout>
-  );
-}
+  useEffect(() => {
+    requestRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(requestRef.current!);
+  }, [activePatterns, activeSwings, reconMode]);
 
-const ItemCard = ({ item }: { item: IItem }) => {
-  const color = RANK_COLOR_MAP[item.rank];
-  return (
-    <Tooltip 
-      label={
-        <Stack gap={0} p={4}>
-          <Text size="xs" fw={700} c={color}>{item.name}</Text>
-          <Text size="xs" c="dimmed" fs="italic">{item.description}</Text>
-          <Text size="xs" mt={4} td="underline">PROPERTIES</Text>
-          {Object.entries(item.stats).map(([k,v]) => (
-            <Group key={k} justify="space-between" gap="xl">
-               <Text size="xs" tt="capitalize">{k.replace('_', ' ')}</Text>
-               <Text size="xs" ff="monospace">{v}</Text>
-            </Group>
-          ))}
-        </Stack>
+  // --- INPUT HANDLERS ---
+  const handleCombatInput = (e: React.MouseEvent) => {
+      if (reconMode) return;
+      e.preventDefault();
+      
+      // Mock aiming angle (North)
+      const angle = -Math.PI / 2; 
+      
+      if (e.button === 0) { // Left Click: Melee
+          const newSwing = {
+              origin: { ...session.position },
+              angle: angle,
+              startTime: Date.now(),
+              range: 2.0
+          };
+          setActiveSwings(prev => [...prev, newSwing]);
+      } else if (e.button === 2) { // Right Click: Shoot
+          const newPattern = {
+              type: PatternType.SHOTGUN,
+              origin: { ...session.position },
+              startTime: Date.now(),
+              angle: angle
+          };
+          setActivePatterns(prev => [...prev, newPattern]);
       }
-      color="dark.7"
-      withArrow
-      transitionProps={{ duration: 0 }}
+  };
+
+  const handleReconClick = (chunk: IChunk) => {
+      if (chunk.scanLevel < ScanLevel.COMPLETE) {
+          // ACTION: SCAN
+          // Here we would deduct 'Recon Energy' from the Squad/Guild bank
+          scanChunk(chunk.x, chunk.y, PLAYER_RECON_EFFICIENCY);
+      } else {
+          // ACTION: SELECT DROP
+          selectChunk(chunk.x, chunk.y);
+      }
+  };
+
+  if (!currentMap) return <Center h="100%"><Loader color="emerald" /></Center>;
+
+  // ========================================================================
+  // 1. RECON VIEW (THE STRATEGY LAYER)
+  // "This Recon phase is supposed to be a social thing, squads, guilds..."
+  // ========================================================================
+  if (reconMode) {
+      const gridSize = currentMap.width;
+      
+      return (
+          <Center h="100%" bg="dark.9" style={{ position: 'relative' }}>
+              
+              {/* --- SOCIAL / SQUAD OVERLAY --- */}
+              <Paper 
+                pos="absolute" top={20} left={20} p="md" w={300} 
+                style={{ zIndex: 10, borderLeft: '4px solid var(--mantine-color-emerald-6)' }}
+              >
+                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb="xs">Squad Uplink // [ALPHA-1]</Text>
+                  <Stack gap="xs">
+                      <Group justify="space-between">
+                          <Group gap="xs">
+                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
+                              <Text size="sm">Kirito_Zero</Text>
+                          </Group>
+                          <Badge size="xs" color="emerald">READY</Badge>
+                      </Group>
+                      {/* Mock Squad Members */}
+                      <Group justify="space-between" style={{ opacity: 0.5 }}>
+                          <Group gap="xs">
+                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#eab308' }} />
+                              <Text size="sm">Asuna_Yuuki</Text>
+                          </Group>
+                          <Text size="xs" c="dimmed">SCANNING...</Text>
+                      </Group>
+                      <Group justify="space-between" style={{ opacity: 0.3 }}>
+                          <Group gap="xs">
+                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
+                              <Text size="sm">Klein_R</Text>
+                          </Group>
+                          <Text size="xs" c="dimmed">OFFLINE</Text>
+                      </Group>
+                  </Stack>
+                  
+                  <Paper mt="md" p="xs" bg="dark.7">
+                      <Group justify="space-between">
+                          <Text size="xs">RECON ENERGY</Text>
+                          <Text size="xs" c="emerald.4" fw={700}>{PLAYER_SCAN_ENERGY} / 100</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" mt={4}>
+                          Efficiency: <Text span c="white">{PLAYER_RECON_EFFICIENCY.toFixed(1)}x</Text>
+                      </Text>
+                  </Paper>
+              </Paper>
+
+              {/* --- THE MAP GRID --- */}
+              <Box p="xl">
+                  <SimpleGrid cols={gridSize} spacing={1}>
+                      {Object.values(currentMap.chunks).map((chunk) => {
+                          // Visual Logic based on Scan Level
+                          const isScanned = chunk.scanLevel > ScanLevel.UNKNOWN;
+                          const isSelected = selectedDropZone?.x === chunk.x && selectedDropZone?.y === chunk.y;
+                          const biomeColor = isScanned ? BIOME_DEFINITIONS[chunk.biome]?.color || '#444' : '#111';
+                          
+                          return (
+                              <Tooltip 
+                                  key={chunk.id}
+                                  label={
+                                      !isScanned ? "Uncharted Sector" : 
+                                      <Stack gap={0}>
+                                          <Text size="xs" fw={700} c="emerald.3">{chunk.biome}</Text>
+                                          <Text size="xs">Danger: {chunk.difficulty}</Text>
+                                          {chunk.scanLevel >= ScanLevel.DETAILED && (
+                                              <Text size="xs" c="dimmed">{chunk.entities.length} Signals Detected</Text>
+                                          )}
+                                          {chunk.scanLevel >= ScanLevel.COMPLETE && (
+                                              <Text size="xs" c="orange.4" mt={4}>
+                                                  !!! ELITE PRESENCE !!!
+                                              </Text>
+                                          )}
+                                      </Stack>
+                                  }
+                                  color="dark"
+                                  transitionProps={{ duration: 0 }}
+                              >
+                                  <div
+                                      onClick={() => handleReconClick(chunk)}
+                                      style={{
+                                          width: CHUNK_PIXEL_SIZE,
+                                          height: CHUNK_PIXEL_SIZE,
+                                          backgroundColor: isSelected ? 'var(--mantine-color-gold-5)' : biomeColor,
+                                          opacity: isScanned ? 1 : 0.2,
+                                          border: isSelected ? '2px solid white' : '1px solid rgba(255,255,255,0.05)',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.1s',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          position: 'relative'
+                                      }}
+                                  >
+                                      {/* Fog / Scan Indicators */}
+                                      {chunk.scanLevel === ScanLevel.UNKNOWN && (
+                                          <Text size="xs" c="dimmed" style={{ fontSize: 8 }}>?</Text>
+                                      )}
+                                      {/* Extraction Point Marker */}
+                                      {chunk.hasExtraction && isScanned && (
+                                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'cyan' }} />
+                                      )}
+                                  </div>
+                              </Tooltip>
+                          );
+                      })}
+                  </SimpleGrid>
+              </Box>
+
+              {/* --- DROP CONTROLS --- */}
+              {selectedDropZone && (
+                  <Paper pos="absolute" bottom={20} left="50%" style={{ transform: 'translateX(-50%)' }} p="md">
+                      <Group>
+                          <Stack gap={0}>
+                              <Text size="xs" c="dimmed">DROP COORDINATES</Text>
+                              <Text fw={700} ff="monospace">
+                                  {selectedDropZone.x.toString().padStart(2, '0')} : {selectedDropZone.y.toString().padStart(2, '0')}
+                              </Text>
+                          </Stack>
+                          <Button 
+                            color="red" 
+                            variant="filled" 
+                            size="md"
+                            onClick={confirmDrop}
+                            className="animate-pulse"
+                          >
+                              INITIATE DIVE
+                          </Button>
+                      </Group>
+                  </Paper>
+              )}
+          </Center>
+      );
+  }
+
+  // ========================================================================
+  // 2. TACTICAL VIEW (THE DIVE)
+  // ========================================================================
+  
+  // Grid for rendering local terrain in dive mode
+  const tacticalGrid = [];
+  // This is a very simplified render loop for the 3D/2D tactical view
+  // In a real implementation, we would optimize this to only render visible chunks
+  
+  return (
+    <Center 
+        h="100%" 
+        bg="black" 
+        onMouseDown={handleCombatInput}
+        onContextMenu={(e) => e.preventDefault()}
+        style={{ cursor: 'crosshair', overflow: 'hidden', position: 'relative' }}
     >
-      <Card padding="xs" radius="0" style={{ borderColor: `var(--mantine-color-${color}-filled)` }}>
-        <Group justify="space-between" mb="xs">
-          <Badge size="xs" variant="outline" color={color} radius="xs">{item.rank}</Badge>
-          <Text size="xs" c={item.quality > 0 ? 'green' : 'red'} ff="monospace">
-            {item.quality > 0 ? '+' : ''}{(item.quality * 100).toFixed(0)}%
-          </Text>
-        </Group>
-        <Stack align="center" py="sm" gap={0} style={{ opacity: 0.8 }}>
-           <Text size="xl">{item.slot.includes('HAND') ? '⚔️' : '🛡️'}</Text>
-        </Stack>
-        <Stack gap={0} mt="xs">
-           <Text size="xs" fw={700} truncate>{item.name}</Text>
-           <Group justify="space-between">
-             <Text size="xs" c="dimmed" tt="uppercase" style={{ fontSize: 9 }}>{item.slot.replace('_', ' ')}</Text>
-             <Text size="xs" c="dimmed" ff="monospace">{item.itemPower} IP</Text>
-           </Group>
-        </Stack>
-      </Card>
-    </Tooltip>
-  );
-}
-return (
-    <Layout /* ... props ... */>
-      {view === 'BANK' ? (
-        /* ... Bank View ... */
-        <InventoryGrid items={player.bank.stashTabs[0].items} capacity={50} title="Main Stash" />
-      ) : (
-        <Paper h="100%" withBorder={false} radius={0} style={{ overflow: 'hidden', position: 'relative' }}>
+       {/* HUD */}
+       <Stack pos="absolute" top={20} left={20} style={{ pointerEvents: 'none', zIndex: 20 }}>
+          <Text c="orange" ff="monospace" fw={700}>TACTICAL LINK_ESTABLISHED</Text>
+          <Group>
+              <Badge color="gray">POS: {Math.round(session.position.x)}, {Math.round(session.position.z)}</Badge>
+              <Badge color="red">HOSTILES: ??</Badge>
+          </Group>
+       </Stack>
+       
+       {/* WORLD CONTAINER (SCALED) */}
+       <div style={{ position: 'relative', transform: 'scale(1.0)' }}>
            
-           {/* THE WORLD */}
-           {player.currentSession && <WorldCanvas session={player.currentSession} />}
+           {/* BULLETS */}
+           {renderBullets.map((b, i) => (
+               <div 
+                 key={`b_${i}`}
+                 style={{
+                     position: 'absolute',
+                     left: b.x * TACTICAL_SCALE, 
+                     top: b.y * TACTICAL_SCALE,
+                     width: 6, height: 6,
+                     backgroundColor: b.color,
+                     borderRadius: '50%',
+                     transform: 'translate(-50%, -50%)',
+                     boxShadow: `0 0 8px ${b.color}`,
+                     pointerEvents: 'none'
+                 }}
+               />
+           ))}
 
-           {/* LOOTING OVERLAY */}
-           {lootContainer && (
-               <div style={{
-                   position: 'absolute', inset: 0, 
-                   background: 'rgba(0,0,0,0.5)', 
-                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                   zIndex: 100
-               }}>
-                   <Group align="start" gap="xl">
-                       {/* LEFT: THE LOOT */}
-                       <InventoryGrid 
-                           title="LOOT SOURCE" 
-                           items={lootContainer} 
-                           capacity={10} 
-                           onItemClick={(item) => transferItem(item.id, 'CONTAINER', 'INVENTORY')}
-                           onItemAction={(act, item) => {
-                               if (act === 'TRASH') trashItem(item.id, 'CONTAINER');
-                           }}
-                       />
-
-                       {/* RIGHT: PLAYER BAG */}
-                       {player.currentSession && (
-                           <InventoryGrid 
-                               title="BACKPACK" 
-                               items={player.currentSession.inventory} 
-                               capacity={20} 
-                               onItemClick={(item) => transferItem(item.id, 'INVENTORY', 'CONTAINER')}
-                               onItemAction={(act, item) => {
-                                   if (act === 'TRASH') trashItem(item.id, 'INVENTORY');
-                                   if (act === 'IDENTIFY') identifyItem(item.id);
-                                   if (act === 'STUDY') studyItem(item.id);
-                               }}
-                           />
-                       )}
-                   </Group>
-                   
-                   {/* Close Button Overlay or Keybind usually handles exit */}
-                   <Button 
-                       pos="absolute" bottom={50} 
-                       onClick={closeLootContainer} 
-                       color="gray"
-                   >
-                       CLOSE (ESC)
-                   </Button>
-               </div>
-           )}
-        </Paper>
-      )}
-    </Layout>
+           {/* MELEE SWINGS */}
+           {activeSwings.map((s, i) => (
+               <MeleeArc 
+                 key={`s_${i}`}
+                 x={s.origin.x}
+                 y={s.origin.y} // Using Y as Z for 2D rep
+                 angle={s.angle}
+                 range={s.range}
+                 color="rgba(255, 255, 255, 0.8)"
+               />
+           ))}
+           
+           {/* PLAYER */}
+           <div style={{
+               position: 'absolute',
+               left: session.position.x * TACTICAL_SCALE, 
+               top: session.position.z * TACTICAL_SCALE, // Map Z to Screen Y
+               width: 12, height: 12,
+               background: 'white', 
+               borderRadius: '50%',
+               transform: 'translate(-50%, -50%)',
+               zIndex: 10,
+               boxShadow: '0 0 10px white'
+           }} />
+       </div>
+    </Center>
   );
-}
+};

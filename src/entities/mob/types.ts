@@ -17,6 +17,15 @@ export enum MobBehavior {
   TURRET = 'TURRET'          
 }
 
+// --- ADDED: MUTATION GENOME FOR DIRECTOR ---
+export enum MobMutation {
+  ARMORED_SHELL = 'ARMORED_SHELL',
+  ABLATIVE_COATING = 'ABLATIVE_COATING',
+  ADRENAL_GLANDS = 'ADRENAL_GLANDS',
+  HIVE_MIND = 'HIVE_MIND',
+  EXPLOSIVE_DEATH = 'EXPLOSIVE_DEATH'
+}
+
 export interface IMobDefinition {
   id: string;
   name: string;
@@ -35,6 +44,5 @@ export interface IMobDefinition {
   colorHex: string;
   symbol?: string; 
   
-  // --- NEW ---
-  generatedSprite?: string; // Base64 string cached here
+  generatedSprite?: string; 
 }

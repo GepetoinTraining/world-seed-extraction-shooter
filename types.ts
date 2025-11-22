@@ -356,7 +356,12 @@ export interface IItem {
   itemPower: number;
   affixes: IAffix[];
   stats: {
-    // ... existing stat fields ...
+    damage?: number;
+    defense?: number;
+    attackSpeed?: number;
+    durability: number;
+    maxDurability: number;
+    weight: number; // Affects carry capacity
     [key: string]: any; 
   };
   visuals: {
@@ -374,4 +379,25 @@ export interface IItem {
 
   // --- NEW: IDENTIFICATION STATE ---
   isIdentified: boolean; 
+}
+
+export interface ILoreEntry {
+  topic: string; 
+  xp: number;
+  level: number;
+}
+
+export interface IBank {
+  accountId: string;
+  gold: number; 
+  
+  stashTabs: {
+    name: string;
+    items: IItem[];
+  }[];
+
+  universalSkills: Record<string, number>;
+
+  // --- ADDED: PERSISTENT KNOWLEDGE ---
+  lore: Record<string, ILoreEntry>;
 }

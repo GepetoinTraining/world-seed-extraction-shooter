@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import { IMap, ScanLevel, IChunk } from './types';
-import { WorldGenerator } from './WorldGenerator';
+// In real life, this import wouldn't exist here. The Generator runs on the server.
+// We keep it for the mock, but wrapped in a "Server Simulation" timeout.
+import { WorldGenerator } from './WorldGenerator'; 
 
 interface WorldState {
-  currentMap: IMap | null;
+  currentMap: IMap | null; // The local JSON cache
   reconMode: boolean;
   selectedDropZone: { x: number, y: number } | null;
   
-  generateWorld: (seed: string) => void;
-  scanChunk: (x: number, y: number, efficiency: number) => void;
-  selectChunk: (x: number, y: number) => void; // NEW
+  // ACTIONS
+  initiateRecon: (seed: string) => void; // Starts the 25min timer (Simulated)
+  fetchChunkData: (x: number, y: number) => void; // The "DB Query"
+  selectChunk: (x: number, y: number) => void;
   confirmDrop: () => void;
 }
 
@@ -18,29 +21,54 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   reconMode: true,
   selectedDropZone: null,
 
-  generateWorld: (seed: string) => {
-    const map = WorldGenerator.generate(seed, 32);
-    set({ currentMap: map, reconMode: true, selectedDropZone: null });
+  initiateRecon: (seed: string) => {
+    // 1. SIMULATE SERVER GENERATION
+    // The server generates the full JSON blob in the background.
+    const fullServerMap = WorldGenerator.generate(seed, 32);
+    
+    // 2. CLIENT RECEIVES "BLANK" MANIFEST
+    // The client only knows the grid dimensions, nothing else.
+    const blankChunks: Record<string, IChunk> = {};
+    Object.keys(fullServerMap.chunks).forEach(key => {
+        blankChunks[key] = { 
+            ...fullServerMap.chunks[key], 
+            biome: 'UNKNOWN' as any, // Client doesn't know yet
+            scanLevel: ScanLevel.UNKNOWN,
+            entities: [] // No entity data transmitted yet
+        };
+    });
+
+    const clientMap = { ...fullServerMap, chunks: blankChunks };
+    set({ currentMap: clientMap, reconMode: true, selectedDropZone: null });
   },
 
-  scanChunk: (x: number, y: number, efficiency: number) => {
+  fetchChunkData: (x: number, y: number) => {
     const { currentMap } = get();
     if (!currentMap) return;
 
+    // SIMULATE NETWORK/DB LATENCY
+    // We are requesting "detailed_scan.json" for this chunk
     const chunkKey = `${x},${y}`;
-    const chunk = currentMap.chunks[chunkKey];
-    if (!chunk) return;
-
-    let newLevel = ScanLevel.BASIC;
-    if (efficiency >= 2.0) newLevel = ScanLevel.DETAILED;
-    if (efficiency >= 3.0) newLevel = ScanLevel.COMPLETE;
-
-    const updatedChunks = {
-        ...currentMap.chunks,
-        [chunkKey]: { ...chunk, scanLevel: Math.max(chunk.scanLevel, newLevel) }
-    };
-
-    set({ currentMap: { ...currentMap, chunks: updatedChunks } });
+    
+    // In a real app, we would await fetch(`/api/world/chunk/${x}/${y}`)
+    // Here, we "cheat" and peek at the Server State (re-generating for the mock)
+    const serverData = WorldGenerator.generate(currentMap.seed, 32).chunks[chunkKey];
+    
+    set((state) => {
+        if (!state.currentMap) return state;
+        return {
+            currentMap: {
+                ...state.currentMap,
+                chunks: {
+                    ...state.currentMap.chunks,
+                    [chunkKey]: {
+                        ...serverData,
+                        scanLevel: ScanLevel.DETAILED // We now have the JSON
+                    }
+                }
+            }
+        };
+    });
   },
 
   selectChunk: (x: number, y: number) => {
@@ -48,10 +76,6 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
 
   confirmDrop: () => {
-      const { selectedDropZone } = get();
-      if (selectedDropZone) {
-          // Logic to spawn player at this chunk would go here
-          set({ reconMode: false });
-      }
+      set({ reconMode: false });
   }
 }));

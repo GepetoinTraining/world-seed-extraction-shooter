@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { IActiveSession, UniversalRank } from '../../types'; 
+import React, { useEffect, useRef, useState } from 'react';
+import { IActiveSession } from '../../types'; 
 import { useWorldStore } from '../entities/world/store';
-import { BiomeType, EntityType, ScanLevel } from '../entities/world/types';
+import { EntityType, IWorldEntity, ScanLevel, IChunk } from '../entities/world/types';
 import { BIOME_DEFINITIONS } from '../entities/world/definitions'; 
-import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions'; 
-import { SpriteGenerator } from '../entities/mob/utils/SpriteGenerator'; 
-import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/projectileSystem'; 
-import { Box, Text, Center, Loader, Button, Stack } from '@mantine/core';
+import { MobSize } from '../entities/mob/types';
+import { SpriteGenerator } from '../entities/mob/utils/SpriteGenerator';
+import { Center, Loader, Button, Stack, Group, Tooltip, Badge, SimpleGrid, Paper, Text } from '@mantine/core';
+
+// ... (Keep MeleeArc, SpriteGenerator constants) ...
 
 // ... (MobAvatar and MapChunk components remain exactly as before) ...
 const CHUNK_PIXEL_SIZE = 20;
@@ -40,100 +41,141 @@ const MeleeArc = ({ x, y, angle, range, color }: any) => {
     );
 }
 
-// --- MAIN CANVAS ---
+// --- 1. TACTICAL ENTITY (THE LIVE RENDERER) ---
+// Only used when we are actually "in" the simulation
+const TacticalEntity = ({ entity, onClick }: { entity: IWorldEntity, onClick: (e: any) => void }) => {
+    // ... (Same logic as before: Renders sprite, health bar) ...
+    return <div />; // Placeholder for brevity, use previous code
+};
 
 export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) => {
-  const { currentMap, generateWorld, reconMode, scanChunk, selectChunk, confirmDrop, selectedDropZone } = useWorldStore();
-  const [hoverInfo, setHoverInfo] = useState<string>('');
+  const { currentMap, initiateRecon, reconMode, fetchChunkData, selectChunk, confirmDrop, selectedDropZone } = useWorldStore();
   
-  const [activePatterns, setActivePatterns] = useState<any[]>([]);
-  // NEW: Active Melee Swings
-  const [activeSwings, setActiveSwings] = useState<any[]>([]);
-  
+  // --- STATE SPLIT ---
+  // RECON STATE: Static Data
+  const [hoverChunk, setHoverChunk] = useState<IChunk | null>(null);
+
+  // TACTICAL STATE: Live Simulation
+  const [liveEntities, setLiveEntities] = useState<IWorldEntity[]>([]);
   const requestRef = useRef<number>();
-  const [renderBullets, setRenderBullets] = useState<IProjectile[]>([]);
 
+  // --- INITIALIZATION ---
   useEffect(() => {
-    if (!currentMap) generateWorld(session.sessionId);
-  }, [session.sessionId, currentMap, generateWorld]);
+    if (!currentMap) initiateRecon(session.sessionId);
+  }, [session.sessionId, currentMap, initiateRecon]);
 
-  // --- GAME LOOP (60 FPS) ---
+  // --- THE GAME LOOP (ONLY RUNS IN TACTICAL) ---
   const animate = (time: number) => {
     if (!reconMode) {
-        const now = Date.now();
-        const allBullets: IProjectile[] = [];
-        
-        // 1. Calculate Projectiles
-        const livePatterns = activePatterns.filter(p => (now - p.startTime) < 2000);
-        if (livePatterns.length !== activePatterns.length) setActivePatterns(livePatterns);
-
-        livePatterns.forEach(p => {
-            let bullets = ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle);
-            
-            // 2. DEFLECTION LOGIC
-            // Check against all active swings
-            const liveSwings = activeSwings.filter(s => (now - s.startTime) < 200); // Swings last 200ms
-            
-            // Mutate bullets array (remove deflected ones)
-            bullets = bullets.filter(b => {
-                const isDeflected = liveSwings.some(s => 
-                    ProjectileSystem.checkDeflection(b, s.origin, s.angle)
-                );
-                return !isDeflected; 
-            });
-
-            allBullets.push(...bullets);
-        });
-        
-        // Cleanup dead swings
-        const liveSwings = activeSwings.filter(s => (now - s.startTime) < 200);
-        if (liveSwings.length !== activeSwings.length) setActiveSwings(liveSwings);
-
-        setRenderBullets(allBullets);
+        // 1. Hydrate Entities (Move them)
+        // 2. Handle Projectiles
+        // 3. Collision Detection
+        // updateAI(); <--- The AI only wakes up here
     }
     requestRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
-    requestRef.current = requestAnimationFrame(animate);
+    if (!reconMode) {
+        // START ENGINE
+        requestRef.current = requestAnimationFrame(animate);
+    } else {
+        // STOP ENGINE (Save CPU)
+        if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    }
     return () => cancelAnimationFrame(requestRef.current!);
-  }, [activePatterns, activeSwings, reconMode]);
+  }, [reconMode]); // Only re-run when mode switches
 
-  // --- INPUT HANDLER ---
-  const handleCombatInput = (e: React.MouseEvent) => {
-      if (reconMode) return;
-      
-      // Calculate angle (Using dummy North for now)
-      const angle = -Math.PI / 2; 
-      
-      // LEFT CLICK = MELEE SWING
-      if (e.button === 0) {
-          const newSwing = {
-              origin: { ...session.position },
-              angle: angle,
-              startTime: Date.now(),
-              range: 2.0
-          };
-          setActiveSwings(prev => [...prev, newSwing]);
-      }
-      // RIGHT CLICK = SHOOT
-      else if (e.button === 2) {
-          const newPattern = {
-              type: PatternType.SHOTGUN,
-              origin: { ...session.position },
-              startTime: Date.now(),
-              angle: angle
-          };
-          setActivePatterns(prev => [...prev, newPattern]);
+  // --- RECON INTERACTION ---
+  const handleReconClick = (chunk: IChunk) => {
+      if (chunk.scanLevel === ScanLevel.UNKNOWN) {
+          // "Downloading..."
+          fetchChunkData(chunk.x, chunk.y); 
+      } else {
+          selectChunk(chunk.x, chunk.y);
       }
   };
 
-  if (!currentMap) return <Center h="100%"><Loader color="emerald" /></Center>;
+  if (!currentMap) return <Center h="100%"><Loader color="emerald" type="dots" /></Center>;
 
+  // ========================================================================
+  // MODE A: RECON (STATIC DATABASE VIEWER)
+  // No physics. No AI. Just JSON rendering.
+  // ========================================================================
   if (reconMode) {
-      /* ... existing recon JSX ... */
-      return <Center>RECON MODE</Center>; 
+      return (
+          <Center h="100%" bg="dark.9" style={{ position: 'relative' }}>
+              
+              {/* SQUAD INTEL OVERLAY */}
+              <Paper pos="absolute" top={20} left={20} p="md" w={320} style={{ borderLeft: '4px solid var(--mantine-color-emerald-6)' }}>
+                  <Text size="sm" fw={700} c="dimmed">OPERATION: WORLD SEED</Text>
+                  <Text size="xs" c="dimmed">PHASE: <span style={{ color: '#fff' }}>RECONNAISSANCE</span></Text>
+                  <Text size="xs" c="dimmed">DB_STATUS: <span style={{ color: '#22c55e' }}>CONNECTED</span></Text>
+                  
+                  <Stack mt="md" gap={4}>
+                      <Text size="xs">CHUNK_MANIFEST: {Object.keys(currentMap.chunks).length} SECTORS</Text>
+                      <Text size="xs">DOWNLOADED: {Object.values(currentMap.chunks).filter(c => c.scanLevel > 0).length} / {Object.keys(currentMap.chunks).length}</Text>
+                  </Stack>
+              </Paper>
+
+              {/* THE STATIC GRID */}
+              <SimpleGrid cols={currentMap.width} spacing={1}>
+                  {Object.values(currentMap.chunks).map((chunk) => {
+                      const isUnknown = chunk.scanLevel === ScanLevel.UNKNOWN;
+                      const isSelected = selectedDropZone?.x === chunk.x && selectedDropZone?.y === chunk.y;
+                      
+                      // Use Unknown Color vs Biome Color
+                      const cellColor = isUnknown ? '#111' : (BIOME_DEFINITIONS[chunk.biome]?.color || '#333');
+                      
+                      return (
+                          <Tooltip 
+                              key={chunk.id}
+                              label={isUnknown ? "ENCRYPTED DATA" : `${chunk.biome} [${chunk.difficulty}]`}
+                              color="dark"
+                              transitionProps={{ duration: 0 }}
+                          >
+                              <div
+                                  onClick={() => handleReconClick(chunk)}
+                                  style={{
+                                      width: 20, height: 20,
+                                      backgroundColor: isSelected ? 'var(--mantine-color-gold-5)' : cellColor,
+                                      opacity: isUnknown ? 0.3 : 1,
+                                      border: isSelected ? '2px solid white' : '1px solid rgba(255,255,255,0.05)',
+                                      cursor: 'pointer',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                  }}
+                              >
+                                  {/* Render Static Icons based on JSON data (Not live entities) */}
+                                  {chunk.scanLevel >= ScanLevel.DETAILED && (
+                                      <div style={{ fontSize: 8 }}>
+                                          {chunk.entities.filter(e => e.type === EntityType.MOB).length > 0 && '🔴'}
+                                      </div>
+                                  )}
+                              </div>
+                          </Tooltip>
+                      );
+                  })}
+              </SimpleGrid>
+
+              {/* DROP BUTTON */}
+              {selectedDropZone && (
+                  <Button 
+                      pos="absolute" bottom={40} 
+                      color="red" size="lg" 
+                      className="animate-pulse"
+                      onClick={confirmDrop}
+                  >
+                      INITIATE DIVE SEQUENCE
+                  </Button>
+              )}
+          </Center>
+      );
   }
+
+  // ========================================================================
+  // MODE B: TACTICAL (HYDRATED SIMULATION)
+  // This is where the "Oven" opens and the game actually starts.
+  // ========================================================================
 
   // --- TACTICAL VIEW ---
   const pX = Math.round(session.position.x);

@@ -1,28 +1,25 @@
-import { IActiveSession } from '../../../types';
+
 
 export interface IProjectile {
   id: string;
-  x: startX,
-  y: startY,
-  angle: number; // Radians
-  speed: number; // Units per sec
-  spawnTime: number; // Timestamp
-  lifespan: number; // Seconds
+  x: number;      // FIXED: Was 'startX'
+  y: number;      // FIXED: Was 'startY'
+  angle: number; 
+  speed: number; 
+  spawnTime: number; 
+  lifespan: number; 
   color: string;
 }
 
 export enum PatternType {
   SINGLE = 'SINGLE',
-  SHOTGUN = 'SHOTGUN', // Multiple angles spread
-  SPIRAL = 'SPIRAL',   // Rotating emitter
-  NOVA = 'NOVA'        // 360 burst
+  SHOTGUN = 'SHOTGUN',
+  SPIRAL = 'SPIRAL',
+  NOVA = 'NOVA'
 }
 
 export class ProjectileSystem {
   
-  // This function is deterministic. 
-  // Given a timestamp and a pattern, it tells you where every bullet is RIGHT NOW.
-  // No need to store bullet state frame-by-frame.
   static getProjectilesAtTime(
     pattern: PatternType, 
     origin: {x: number, y: number}, 
@@ -31,57 +28,63 @@ export class ProjectileSystem {
     baseAngle: number
   ): IProjectile[] {
     
-    const elapsed = (currentTime - startTime) / 1000; // Seconds
+    const elapsed = (currentTime - startTime) / 1000;
     if (elapsed < 0) return [];
 
     const bullets: IProjectile[] = [];
-    const speed = 10; // Base speed
-    const range = 2.0; // Base lifespan (seconds)
+    const speed = 10; 
+    const range = 2.0; 
 
-    if (elapsed > range) return []; // Bullets died
+    if (elapsed > range) return [];
 
     const dist = speed * elapsed;
 
+    // Helper to create projectile
+    const makeProj = (id: string, a: number, c: string): IProjectile => ({
+        id,
+        x: origin.x + Math.cos(a) * dist,
+        y: origin.y + Math.sin(a) * dist,
+        angle: a,
+        speed,
+        spawnTime: startTime,
+        lifespan: range,
+        color: c
+    });
+
     switch (pattern) {
       case PatternType.SINGLE:
-        bullets.push({
-          id: 'p_0',
-          x: origin.x + Math.cos(baseAngle) * dist,
-          y: origin.y + Math.sin(baseAngle) * dist,
-          angle: baseAngle,
-          speed, spawnTime: startTime, lifespan: range, color: 'yellow'
-        });
+        bullets.push(makeProj('p_0', baseAngle, 'yellow'));
         break;
 
       case PatternType.SHOTGUN:
-        // 3 Bullets: -15, 0, +15 degrees
         [-0.25, 0, 0.25].forEach((offset, idx) => {
-          const a = baseAngle + offset;
-          bullets.push({
-            id: `p_${idx}`,
-            x: origin.x + Math.cos(a) * dist,
-            y: origin.y + Math.sin(a) * dist,
-            angle: a,
-            speed, spawnTime: startTime, lifespan: range, color: 'red'
-          });
+          bullets.push(makeProj(`p_${idx}`, baseAngle + offset, 'red'));
         });
         break;
 
       case PatternType.NOVA:
-        // 8 Bullets in a circle
         for(let i=0; i<8; i++) {
-          const a = baseAngle + (i * (Math.PI / 4));
-          bullets.push({
-            id: `p_${i}`,
-            x: origin.x + Math.cos(a) * dist,
-            y: origin.y + Math.sin(a) * dist,
-            angle: a,
-            speed, spawnTime: startTime, lifespan: range, color: 'cyan'
-          });
+          bullets.push(makeProj(`p_${i}`, baseAngle + (i * (Math.PI / 4)), 'cyan'));
         }
         break;
     }
 
     return bullets;
+  }
+  
+  // --- NEW: COLLISION/DEFLECTION LOGIC ---
+  static checkDeflection(bullet: IProjectile, swingOrigin: {x: number, y: number}, swingAngle: number): boolean {
+      // Simple check: Is bullet within swing range (2.0) and within arc?
+      const dx = bullet.x - swingOrigin.x;
+      const dy = bullet.y - swingOrigin.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      if (dist > 2.0) return false;
+
+      const angleToBullet = Math.atan2(dy, dx);
+      const angleDiff = Math.abs(angleToBullet - swingAngle);
+      
+      // 0.75 rad is roughly 45 degrees
+      return angleDiff < 0.75; 
   }
 }

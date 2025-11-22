@@ -1,9 +1,9 @@
 import { BiomeType } from '../world/types';
 
 export enum SpellScale {
-  LOCAL = 'LOCAL',       // Instant, Projectile-based (The "Bullet")
-  TACTICAL = 'TACTICAL', // Structure-based, alters terrain (The "Wall")
-  STRATEGIC = 'STRATEGIC' // World-based, alters biome/rules (The "Nuke")
+  LOCAL = 'LOCAL',       
+  TACTICAL = 'TACTICAL', 
+  STRATEGIC = 'STRATEGIC' 
 }
 
 export enum ElementType {
@@ -11,15 +11,19 @@ export enum ElementType {
   EARTH = 'EARTH',
   WATER = 'WATER',
   AIR = 'AIR',
-  VOID = 'VOID', // Sci-fi/Eldritch
-  DATA = 'DATA'  // Cyberpunk
+  VOID = 'VOID',
+  DATA = 'DATA' 
 }
 
 export interface ISpellCost {
   energy: number;
-  materials?: string[]; // Item IDs required (e.g., "res_iron_ore")
-  biomeRequirement?: BiomeType; // Must be standing on "INDUSTRIAL" to cast "Ferro-Kinesis"
-  health?: number; // Blood Magic
+  materials?: string[]; 
+  biomeRequirement?: BiomeType; 
+  health?: number; 
+  
+  // --- ADDED: ADVANCED COSTS ---
+  entropyGain?: number; // Risk of paradox
+  loreRequirements?: { topic: string; level: number }[]; // Knowledge gate
 }
 
 export interface ISpellDefinition {
@@ -32,15 +36,15 @@ export interface ISpellDefinition {
   
   cost: ISpellCost;
   cooldown: number;
-  castTime: number; // 0 = Instant, 5s = Ritual
+  castTime: number; 
   
-  // Payload (Interpreted by Engine based on Scale)
   payload: {
     damage?: number;
     range?: number;
-    structureId?: string; // For TACTICAL (Spawns this structure)
-    biomeShift?: BiomeType; // For STRATEGIC (Changes biome)
-    projectilePattern?: string; // For LOCAL
+    structureId?: string; 
+    biomeShift?: BiomeType; 
+    projectilePattern?: string;
+    summonMobId?: string; // Added this as SpellEngine checks it
   };
   
   visuals: {

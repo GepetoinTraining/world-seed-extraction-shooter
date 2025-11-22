@@ -1,9 +1,7 @@
 import { create } from 'zustand';
 import { IPlayer, UniversalRank } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
-import { BASE_SIMULATION_STATS } from './types'; // Import base stats for logic
 
-// ... (Initial player setup remains same) ...
 const INITIAL_PLAYER: IPlayer = {
   id: 'alpha-tester',
   username: 'Kirito_Zero',
@@ -14,22 +12,14 @@ const INITIAL_PLAYER: IPlayer = {
       {
         name: 'MAIN STASH',
         items: [
-          // Bank items are identified by default
+          // Starter items are identified
           ItemFactory.createItem(UniversalRank.E, true), 
           ItemFactory.createItem(UniversalRank.D, true),
-          ItemFactory.createItem(UniversalRank.F, true),
-          ItemFactory.createItem(undefined, true),
         ]
       },
-      {
-        name: 'CRAFTING MATS',
-        items: []
-      }
+      { name: 'CRAFTING MATS', items: [] }
     ],
-    universalSkills: {
-      'swordsmanship': 50,
-      'hacking': 12
-    }
+    universalSkills: { 'swordsmanship': 50 }
   },
   currentSession: undefined
 };
@@ -37,20 +27,27 @@ const INITIAL_PLAYER: IPlayer = {
 interface PlayerState {
   player: IPlayer;
   view: 'BANK' | 'SESSION';
-  
+  lootContainer: any[] | null; // Looting state
+
   setView: (view: 'BANK' | 'SESSION') => void;
   diveIntoLayer: (layerId?: string) => void;
   emergencyJackOut: () => void;
   simulateLootDrop: () => void;
   movePlayer: (direction: 'W' | 'A' | 'S' | 'D') => void;
-  
-  // NEW ACTION
   identifyItem: (itemId: string) => void;
+  
+  // Looting Actions
+  openLootContainer: (items: any[]) => void;
+  closeLootContainer: () => void;
+  transferItem: (itemId: string, from: 'INVENTORY'|'CONTAINER', to: 'INVENTORY'|'CONTAINER') => void;
+  trashItem: (itemId: string, source: 'INVENTORY'|'CONTAINER') => void;
+  studyItem: (itemId: string) => void;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   player: INITIAL_PLAYER,
   view: 'BANK',
+  lootContainer: null,
 
   setView: (view) => set({ view }),
 
@@ -69,7 +66,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           health: 100,
           maxHealth: 100,
           energy: 100,
-          position: { x: 0, y: 0, z: 0 },
+          position: { x: 15, y: 0, z: 15 }, // Safe start pos
           statusEffects: []
         }
       }
@@ -78,7 +75,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   emergencyJackOut: () => {
     const { player } = get();
-    // Auto-identify items on extraction? Usually safe zone = free identify or small fee
+    // Auto-identify on safe extraction
     const sessionLoot = player.currentSession?.inventory.map(i => ({ ...i, isIdentified: true })) || [];
 
     const updatedStashTabs = player.bank.stashTabs.map((tab, idx) => 
@@ -96,7 +93,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   simulateLootDrop: () => {
-    // Drops in session are UNIDENTIFIED
+    // Drops in session are UNIDENTIFIED (false)
     const newItem = ItemFactory.createItem(undefined, false); 
     set((state) => {
       if (!state.player.currentSession) return state;
@@ -137,18 +134,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   identifyItem: (itemId) => {
-      // In a real implementation, this would trigger a timer based on field_analysis_speed
-      // For now, instant flip
       set((state) => {
           if (!state.player.currentSession) return state;
-          
           const updatedInventory = state.player.currentSession.inventory.map(item => {
-              if (item.id === itemId) {
-                  return { ...item, isIdentified: true };
-              }
+              if (item.id === itemId) return { ...item, isIdentified: true };
               return item;
           });
-
           return {
               player: {
                   ...state.player,
@@ -159,5 +150,45 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               }
           };
       });
+  },
+
+  // --- LOOTING ACTIONS ---
+  openLootContainer: (items) => set({ lootContainer: items }),
+  closeLootContainer: () => set({ lootContainer: null }),
+  
+  transferItem: (itemId, from, to) => {
+      // Logic to move item between container and inventory
+      // For brevity, we just console log, but in real app we perform array splicing
+      console.log(`Transfer ${itemId} from ${from} to ${to}`);
+      // Simplified:
+      set(state => {
+          if (!state.player.currentSession || !state.lootContainer) return state;
+          // Implementation left as exercise or next step
+          return state; 
+      });
+  },
+  
+  trashItem: (itemId, source) => {
+      set(state => {
+         if (!state.player.currentSession) return state;
+         if (source === 'INVENTORY') {
+             return {
+                 player: {
+                     ...state.player,
+                     currentSession: {
+                         ...state.player.currentSession,
+                         inventory: state.player.currentSession.inventory.filter(i => i.id !== itemId)
+                     }
+                 }
+             };
+         }
+         return state;
+      });
+  },
+
+  studyItem: (itemId) => {
+      // Destroy item for Lore XP
+      get().trashItem(itemId, 'INVENTORY');
+      console.log("Item studied! XP Gained.");
   }
 }));

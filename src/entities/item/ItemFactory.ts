@@ -1,13 +1,23 @@
-import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../../types'; // Up 3 levels
-import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';       // Local data folder
-import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';    // Local data folder
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';          // Up 2 levels to shared
+import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../../types';
+import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';
+import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';
+import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
 
 export class ItemFactory {
   
-  static createItem(targetRank?: UniversalRank): IItem {
-    // 1. Select Base Template
-    const allBases = [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases];
+  /**
+   * Mints a new Item.
+   * @param targetRank - Optional force rank (e.g. for boss drops)
+   * @param isIdentified - Whether the item stats are visible immediately (default: false)
+   */
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false): IItem {
+    // 1. Select Base Template (INCLUDE TOOLS NOW)
+    const allBases = [
+        ...ITEM_DEFINITIONS.weapon_bases, 
+        ...ITEM_DEFINITIONS.armor_bases,
+        ...ITEM_DEFINITIONS.tool_bases // <-- ADDED THIS
+    ];
+    
     let template: ItemDefinition;
     
     if (targetRank) {
@@ -28,7 +38,7 @@ export class ItemFactory {
     // 4. Base Stats
     const baseStats = this.generateBaseStats(template, quality);
     
-    // 5. Affix Generation
+    // 5. Affixes
     const affixes = this.generateAffixes(template, rarity, template.rank);
     
     // 6. Merge Stats
@@ -39,12 +49,12 @@ export class ItemFactory {
       });
     });
 
-    // 7. Calculate IP
+    // 7. IP Calculation
     const rankMult = RANK_MULTIPLIERS[template.rank];
     const rarityMult = RARITY_MULTIPLIERS[rarity];
     const finalIP = Math.floor(template.base_ip * rankMult * rarityMult * (1 + quality));
 
-    // 8. Construct Name
+    // 8. Name
     const fullName = this.constructName(template.universal_name, affixes, quality);
 
     return {
@@ -72,10 +82,12 @@ export class ItemFactory {
       history: {
         dropDate: Date.now(),
         killCount: 0
-      }
+      },
+      isIdentified: isIdentified // <-- FIXED: ADDED PROPERTY
     };
   }
 
+  // ... (Keep private helpers: rollRarity, generateBaseStats, generateAffixes, constructName, generateDescription, getColorForRarity same as before)
   private static rollRarity(): Rarity {
     const rand = Math.random();
     if (rand > 0.99) return Rarity.LEGENDARY;
@@ -107,7 +119,7 @@ export class ItemFactory {
       case Rarity.UNCOMMON: Math.random() > 0.5 ? prefixCount++ : suffixCount++; break;
       case Rarity.RARE: prefixCount = 1; suffixCount = 1; break;
       case Rarity.EPIC: prefixCount = 2; suffixCount = 2; break;
-      case Rarity.LEGENDARY:HfprefixCount = 3; suffixCount = 3; break;
+      case Rarity.LEGENDARY: prefixCount = 3; suffixCount = 3; break;
     }
 
     const pickAffix = (pool: AffixDefinition[], currentAffixes: IAffix[]): IAffix | null => {

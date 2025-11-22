@@ -95,6 +95,7 @@ export class WorldGenerator {
       hasExtraction: false
     };
 
+    
     // Populate Mobs based on Genre
     const mobCount = Math.floor(rng.range(1, 4));
     for(let i=0; i<mobCount; i++) {
@@ -115,20 +116,29 @@ export class WorldGenerator {
              validMobs = genreMobs.filter(m => m.tags.includes('boss'));
         }
 
+        // ... Mob generation loop ...
         if (validMobs.length > 0) {
             const template = rng.pick(validMobs);
+            
+            // FIXED: Coordinates are now Global (Chunk X * 100 + Offset)
+            // Assuming 1 Chunk = 100 World Units (matched with TACTICAL_SCALE in Canvas)
+            const globalX = (x * 100) + rng.range(10, 90);
+            const globalY = (y * 100) + rng.range(10, 90);
+
             chunk.entities.push({
                 id: crypto.randomUUID(),
                 type: EntityType.MOB,
                 definitionId: template.id,
-                position: { x: rng.range(10, 90), y: rng.range(10, 90) },
+                position: { x: globalX, y: globalY }, // <-- GLOBAL COORDS
                 rank: template.rank,
-                rarity: Rarity.COMMON, // Entity rarity vs Chunk rarity
+                rarity: Rarity.COMMON, 
                 isHostile: true,
-                health: template.baseHealth // Init dynamic stats
+                health: template.baseHealth 
             });
         }
-    }
+
+        }
+    
 
     return chunk;
   }
