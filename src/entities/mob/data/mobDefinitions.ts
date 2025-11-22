@@ -2,10 +2,6 @@ import { IMobDefinition, MobSize, MobBehavior } from '../types';
 import { UniversalRank, GenreType } from '../../../../types';
 
 export const MOB_DEFINITIONS: Record<string, IMobDefinition> = {
-  
-  // ========================================================================
-  // FANTASY GENRE
-  // ========================================================================
   'mob_fantasy_rat': {
     id: 'mob_fantasy_rat',
     name: 'Plague Rat',

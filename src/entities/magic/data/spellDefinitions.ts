@@ -119,42 +119,6 @@ export const SPELL_DEFINITIONS: Record<string, ISpellDefinition> = {
     visuals: { color: '#fbbf24', icon: '☀️' }
   },
 
-  
-  // --- LOCAL (Low Entropy) ---
-  'spell_flame_snap': {
-    id: 'spell_flame_snap',
-    name: 'Ignition Snap',
-    description: 'Compresses atmospheric oxygen.',
-    scale: SpellScale.LOCAL,
-    element: ElementType.FIRE,
-    cost: { 
-        energy: 10, 
-        entropyGain: 1 // Negligible risk
-    },
-    cooldown: 0.5,
-    castTime: 0,
-    payload: { damage: 25, projectilePattern: 'SHOTGUN' },
-    visuals: { color: '#ef4444', icon: '🔥' }
-  },
-  
-  // --- STRATEGIC (High Entropy) ---
-  'spell_terra_forest': {
-    id: 'spell_terra_forest',
-    name: 'Genesis Bloom',
-    description: 'Forces rapid biological overgrowth.',
-    scale: SpellScale.STRATEGIC,
-    element: ElementType.EARTH,
-    cost: { 
-      energy: 500, 
-      materials: ['res_bio_sample_rare'],
-      entropyGain: 50 // High risk of "Reality Backlash"
-    },
-    cooldown: 300,
-    castTime: 10.0, 
-    payload: { biomeShift: BiomeType.OVERGROWTH },
-    visuals: { color: '#10b981', icon: '🌳' }
-  },
-
   // --- THE FORBIDDEN ART (Summoning) ---
   'spell_summon_scifi_mech': {
     id: 'spell_summon_scifi_mech',

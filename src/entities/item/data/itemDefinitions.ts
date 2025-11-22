@@ -1,12 +1,32 @@
 import { UniversalRank, SlotType } from '../../../../types';
 
-// ... existing interfaces ...
+// --- MISSING INTERFACES RESTORED ---
+export interface BaseStatDefinition {
+  stat: string;
+  min?: number;
+  max?: number;
+  value?: number;
+}
+
+export interface ItemDefinition {
+  id: string;
+  universal_name: string;
+  rank: UniversalRank;
+  base_ip: number;
+  slot: SlotType;
+  tags: string[];
+  implicits: BaseStatDefinition[];
+}
+// -----------------------------------
 
 export interface ItemDatabase {
-  meta: any;
+  meta: {
+    version: string;
+    description: string;
+    quality_impact_on_ip: [number, number];
+  };
   weapon_bases: ItemDefinition[];
   armor_bases: ItemDefinition[];
-  // NEW CATEGORY
   tool_bases: ItemDefinition[]; 
 }
 
@@ -17,7 +37,6 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
     "quality_impact_on_ip": [-0.20, 0.20]
   },
   "weapon_bases": [
-    // ... existing weapons ...
     {
       "id": "wpn_sword_1h_t1",
       "universal_name": "Apprentice Blade",
@@ -92,7 +111,6 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
     }
   ],
   "armor_bases": [
-      // ... existing armor ...
     {
       "id": "arm_chest_heavy_t1",
       "universal_name": "Plate Mail",
@@ -167,10 +185,9 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
       "universal_name": "Handheld Scanner",
       "rank": UniversalRank.F,
       "base_ip": 10,
-      "slot": SlotType.ACCESSORY, // Occupies a Trinket slot, or we add a Tool slot
+      "slot": SlotType.ACCESSORY, 
       "tags": ["tool", "tech", "utility"],
       "implicits": [
-        // Increases speed of identify action
         { "stat": "field_analysis_speed", "min": 0.10, "max": 0.20 } 
       ]
     },
@@ -183,7 +200,6 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
       "tags": ["tool", "magic", "utility"],
       "implicits": [
         { "stat": "field_analysis_speed", "min": 0.30, "max": 0.50 },
-        // Magic items are easier to read
         { "stat": "luck_find_rarity", "value": 0.05 } 
       ]
     }

@@ -46,6 +46,16 @@ export enum Rarity {
   ARTIFACT = 'ARTIFACT'    // Red (Unique History)
 }
 
+// --- MOVED FROM WORLD DEFINITIONS ---
+export enum GenreType {
+  FANTASY = 'FANTASY',       // Swords, Magic
+  SCIFI = 'SCIFI',           // Lasers, Mechs
+  POST_APOC = 'POST_APOC',   // Scrap, Ballistics
+  ELDRITCH = 'ELDRITCH',     // Tentacles, Void
+  RETRO = 'RETRO'            // Pixel art, Chiptune vibes
+}
+// ------------------------------------
+
 // ==========================================================================
 // 2. THE ECONOMY (DUAL-CURRENCY MODEL)
 // ==========================================================================

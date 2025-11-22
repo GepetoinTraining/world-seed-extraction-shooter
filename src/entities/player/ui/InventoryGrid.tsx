@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { IItem, UniversalRank } from '../../../../types';
 import { SimpleGrid, Paper, Tooltip, Text, Stack, Badge, Menu, rem } from '@mantine/core';
 
@@ -41,6 +41,8 @@ export const InventoryGrid: React.FC<InventoryGridProps> = ({ items, capacity, o
 };
 
 const InventorySlot = ({ item, onClick, onAction }: { item: IItem | null, onClick: () => void, onAction?: any }) => {
+    const [menuOpened, setMenuOpened] = useState(false);
+
     if (!item) {
         return <div style={{ width: 40, height: 40, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }} />;
     }
@@ -49,11 +51,26 @@ const InventorySlot = ({ item, onClick, onAction }: { item: IItem | null, onClic
     const isUnknown = !item.isIdentified;
 
     return (
-        <Menu shadow="md" width={200} trigger="contextmenu">
+        <Menu 
+            shadow="md" 
+            width={200} 
+            opened={menuOpened} 
+            onChange={setMenuOpened}
+            // Remove 'trigger' prop to use controlled mode or default
+        >
             <Menu.Target>
+                {/* Tooltip wrapper div to safely attach events */}
                 <Tooltip label={isUnknown ? "Unidentified Object" : item.name} color="dark">
                     <div 
-                        onClick={onClick}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClick();
+                        }}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setMenuOpened(true);
+                        }}
                         style={{ 
                             width: 40, height: 40, 
                             background: 'rgba(0,0,0,0.5)', 
@@ -62,12 +79,10 @@ const InventorySlot = ({ item, onClick, onAction }: { item: IItem | null, onClic
                             cursor: 'pointer', position: 'relative'
                         }}
                     >
-                        {/* Icon Placeholder */}
                         <div style={{ fontSize: 20 }}>
                             {item.visuals?.iconUrl || (item.type === 'GEAR' ? '⚔️' : '📦')}
                         </div>
                         
-                        {/* Unidentified Overlay */}
                         {isUnknown && (
                             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Text size="xs" c="red">?</Text>
