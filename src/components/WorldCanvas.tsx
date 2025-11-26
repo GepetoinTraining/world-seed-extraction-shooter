@@ -6,8 +6,8 @@ import { BIOME_DEFINITIONS } from '../entities/world/definitions';
 import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { SpriteGenerator } from '../entities/mob/utils/SpriteGenerator';
 import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/projectileSystem';
-import { CombatSystem, ICombatEvent } from '../entities/combat/CombatSystem';
-import { MobAI } from '../entities/mob/MobAI';
+import { CombatSystem, ICombatEvent } from '../entities/combat/CombatSystems';
+import { MobAI } from '../entities/mob/ai/MobAI';
 import { Box, Text, Center, Loader, Button, Stack, Group, Badge, SimpleGrid, Paper, Progress } from '@mantine/core';
 import { IWorldEntity, ScanLevel, IChunk, EntityType } from '../entities/world/types';
 

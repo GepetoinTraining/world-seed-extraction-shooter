@@ -6,10 +6,10 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Box, Text, Paper, Stack, Group, Button, Badge, Modal, Divider } from '@mantine/core';
-import { HubGenerator, IHubLayout, IPOI, POIType, HUB_NPCS, INPCDefinition, IHubZone } from '../entities/hub/HubGenerator';
-import { usePlayerStore } from '../entities/player/store';
-import { useHubStore } from '../entities/hub/store';
-import { useWorldStore } from '../entities/world/store';
+import { HubGenerator, IHubLayout, IPOI, POIType, HUB_NPCS, INPCDefinition, IHubZone } from './HubGenerator';
+import { usePlayerStore } from '../player/store';
+import { useHubStore } from './store';
+import { useWorldStore } from '../world/store';
 
 // =============================================================================
 // CONSTANTS

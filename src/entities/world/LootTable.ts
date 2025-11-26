@@ -11,7 +11,7 @@
 import { ItemFactory } from '../item/ItemFactory';
 import { IItem, UniversalRank, Rarity } from '../../../types';
 import { IMobDefinition } from '../mob/types';
-import { DeedSystem, IDeed } from '../territory/DeedSystem';
+import { DeedSystem, IDeed } from '../../logic/systems/DeedSystem';
 import { BiomeType } from './types';
 
 export interface ILootContext {

@@ -12,7 +12,7 @@ import React, { useState } from 'react';
 import { usePlayerStore } from './src/entities/player/store';
 import { useWorldStore } from './src/entities/world/store';
 import { WorldCanvas } from './src/components/WorldCanvas';
-import { HubCanvas } from './src/components/HubCanvas';
+import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
 import { PlayerHub } from './src/components/PlayerHub';
 import { GenreCreator } from './src/components/admin/GenreCreator';
