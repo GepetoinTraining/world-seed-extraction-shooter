@@ -3,18 +3,17 @@ import { useIdentityStore, IdentityState } from '../entities/identity/store';
 import { usePlayerStore, ARCHETYPES } from '../entities/player/store';
 import { 
   Center, Paper, Stack, TextInput, Button, Text, Loader, Alert, 
-  SimpleGrid, Card, Badge, Group, Divider
+  SimpleGrid, Card, Badge, Group, Divider, ActionIcon
 } from '@mantine/core';
 
 export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
-  const { state, createIdentity, certificate, error, checkExistingIdentity, clearIdentity } = useIdentityStore();
+  const { state, createIdentity, certificate, error, checkExistingIdentity, clearIdentity, exportIdentity } = useIdentityStore();
   const { initializeSession } = usePlayerStore();
   
   const [name, setName] = useState('');
   const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Check storage on mount
   useEffect(() => {
     checkExistingIdentity();
   }, []);
@@ -22,15 +21,10 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   const handleMint = async () => {
     if (!name || !selectedArchetype) return;
     setCreating(true);
-    
-    // 1. Generate Keys & Cert
     const success = await createIdentity(name);
-    
     if (success) {
-      // 2. We need the cert from the store now (it was just set)
       const cert = useIdentityStore.getState().certificate;
       if (cert) {
-        // 3. Initialize Player Store
         initializeSession(cert, selectedArchetype);
         onComplete();
       }
@@ -40,9 +34,23 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
 
   const handleLogin = () => {
     if (certificate) {
-      // For returning users, we default to OPERATOR or load from DB in future
       initializeSession(certificate, 'OPERATOR'); 
       onComplete();
+    }
+  };
+
+  const handleExport = async () => {
+    const password = prompt("Set encryption password for export:");
+    if (!password) return;
+    
+    const blob = await exportIdentity(password);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `worldseed_identity_${certificate?.metadata.uid}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -71,7 +79,9 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
             border: '2px solid var(--mantine-color-emerald-5)',
             boxShadow: '0 0 40px var(--mantine-color-emerald-9)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', 
-            fontSize: 60, background: '#050505', color: '#fff'
+            fontSize: 60, 
+            backgroundColor: '#050505', // FIX: backgroundColor
+            color: '#fff'
           }}>
             👤
           </div>
@@ -80,6 +90,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
             <Text c="emerald" fw={700} size="lg">{certificate.metadata.displayName.toUpperCase()}</Text>
             <Text c="dimmed" size="xs" ff="monospace">{certificate.metadata.uid}</Text>
           </Stack>
+          
           <Button 
             size="xl" 
             color="emerald" 
@@ -91,21 +102,24 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
             JACK IN
           </Button>
 
-          {/* --- NEW RESET BUTTON --- */}
-          <Button 
-            variant="subtle" 
-            color="red" 
-            size="xs"
-            onClick={() => {
-              if (confirm('WIPE IDENTITY? This cannot be undone.')) {
-                clearIdentity();
-                window.location.reload();
-              }
-            }}
-          >
-            [DEBUG] NUKE IDENTITY
-          </Button>
-
+          <Group>
+            <Button variant="subtle" color="blue" size="xs" onClick={handleExport}>
+              EXPORT CERTIFICATE
+            </Button>
+            <Button 
+              variant="subtle" 
+              color="red" 
+              size="xs"
+              onClick={() => {
+                if (confirm('WIPE IDENTITY? This cannot be undone.')) {
+                  clearIdentity();
+                  window.location.reload();
+                }
+              }}
+            >
+              NUKE IDENTITY
+            </Button>
+          </Group>
         </Stack>
       </Center>
     );
@@ -114,7 +128,15 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   // --- NEW CHARACTER CREATOR ---
   return (
     <Center h="100vh" bg="dark.9">
-      <Paper p="xl" withBorder style={{ width: 800, background: '#0a0a0a', borderColor: '#333' }}>
+      <Paper 
+        p="xl" 
+        withBorder 
+        style={{ 
+            width: 800, 
+            backgroundColor: '#0a0a0a', // FIX: backgroundColor
+            borderColor: '#333' 
+        }}
+      >
         <Stack gap="xl">
           <div>
             <Text size="xl" fw={900} c="emerald" style={{ letterSpacing: 2 }}>GENESIS PROTOCOL</Text>

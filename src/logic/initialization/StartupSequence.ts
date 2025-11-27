@@ -61,11 +61,8 @@ export class StartupSequence {
     }
 
     // 4. HYDRATE STORES
-    if (hubCert) {
-        console.log('[BOOT] Hydrating Reality...');
-        await useHubStore.getState().loadHub(hubCert.data.worldUid);
-        await useWorldStore.getState().refreshWorlds();
-    }
+console.log('[BOOT] Refreshing World List...');
+    await useWorldStore.getState().refreshWorlds();
 
     // 5. HYDRATE PLAYER (If exists)
     if (certificate) {

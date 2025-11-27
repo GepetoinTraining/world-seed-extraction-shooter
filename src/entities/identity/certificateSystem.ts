@@ -1,14 +1,6 @@
 /**
  * CERTIFICATE SYSTEM
  * Self-Sovereign Identity via X.509 Certificates
- * 
- * The Birth Certificate model:
- * - Player generates keypair in browser
- * - Certificate embeds geo+time+entropy for unique birth
- * - Certificate is self-signed (player owns their identity)
- * - World Seeds validate the certificate, not a central server
- * 
- * Uses Web Crypto API (native to all modern browsers)
  */
 
 // ============================================================================
@@ -55,6 +47,9 @@ export interface ISignedPayload<T> {
 export class CertificateSystem {
   
   private static readonly CERT_VERSION = '1.0.0';
+  // FIX: Bump DB version to 2 to force 'keys' store creation if missing
+  private static readonly DB_VERSION = 2; 
+  
   private static readonly KEY_ALGORITHM = {
     name: 'RSASSA-PKCS1-v1_5',
     modulusLength: 2048,
@@ -98,7 +93,6 @@ export class CertificateSystem {
     };
 
     // 6. Generate self-signed certificate (simplified PEM)
-    // In production, you'd use a proper X.509 library like PKI.js
     const certificatePEM = await this.generateSelfSignedCert(metadata, keyPair);
 
     // 7. Store private key in IndexedDB (secure, non-extractable after this)
@@ -143,7 +137,6 @@ export class CertificateSystem {
     } catch (e) {
       // Geo denied - use IP-based approximation or zeros
       console.warn('[CERT] Geolocation denied, using fallback');
-      // In production, you'd call a geo-IP service here
     }
 
     // Generate entropy
@@ -187,15 +180,11 @@ export class CertificateSystem {
 
   /**
    * Generate a simplified self-signed certificate
-   * In production, use PKI.js for proper X.509
    */
   private static async generateSelfSignedCert(
     metadata: ICertificateMetadata,
     keyPair: CryptoKeyPair
   ): Promise<string> {
-    // This is a simplified representation
-    // Real implementation would use ASN.1 encoding
-    
     const certData = {
       version: 3,
       serialNumber: metadata.uid,
@@ -246,7 +235,8 @@ export class CertificateSystem {
    */
   private static async storePrivateKey(uid: string, privateKey: CryptoKey): Promise<void> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open('WorldSeedIdentity', 1);
+      // FIX: Use DB_VERSION constant (2)
+      const request = indexedDB.open('WorldSeedIdentity', this.DB_VERSION);
       
       request.onerror = () => reject(request.error);
       
@@ -262,7 +252,6 @@ export class CertificateSystem {
         const tx = db.transaction('keys', 'readwrite');
         const store = tx.objectStore('keys');
         
-        // Store the key (CryptoKey objects can be stored directly in IndexedDB)
         store.put({ uid, privateKey });
         
         tx.oncomplete = () => resolve();
@@ -276,12 +265,20 @@ export class CertificateSystem {
    */
   static async getPrivateKey(uid: string): Promise<CryptoKey | null> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open('WorldSeedIdentity', 1);
+      // FIX: Use DB_VERSION constant (2)
+      const request = indexedDB.open('WorldSeedIdentity', this.DB_VERSION);
       
       request.onerror = () => reject(request.error);
       
       request.onsuccess = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        
+        // Safety check if store exists (in case user has weird partial state)
+        if (!db.objectStoreNames.contains('keys')) {
+            resolve(null);
+            return;
+        }
+
         const tx = db.transaction('keys', 'readonly');
         const store = tx.objectStore('keys');
         const getRequest = store.get(uid);
@@ -298,9 +295,6 @@ export class CertificateSystem {
   // SIGNING & VERIFICATION
   // ============================================================================
 
-  /**
-   * Sign any payload with the player's private key
-   */
   static async signPayload<T>(
     uid: string,
     payload: T
@@ -328,15 +322,11 @@ export class CertificateSystem {
     };
   }
 
-  /**
-   * Verify a signed payload against a certificate
-   */
   static async verifyPayload<T>(
     signedPayload: ISignedPayload<T>,
     certificate: IPlayerCertificate
   ): Promise<boolean> {
     try {
-      // Import the public key from the certificate
       const publicKey = await crypto.subtle.importKey(
         'jwk',
         certificate.publicKeyJWK,
@@ -345,20 +335,17 @@ export class CertificateSystem {
         ['verify']
       );
 
-      // Reconstruct the signed data
       const dataToVerify = JSON.stringify({ 
         payload: signedPayload.payload, 
         timestamp: signedPayload.timestamp 
       });
       const encoder = new TextEncoder();
 
-      // Decode signature
       const signatureBytes = Uint8Array.from(
         atob(signedPayload.signature),
         c => c.charCodeAt(0)
       );
 
-      // Verify
       return await crypto.subtle.verify(
         this.KEY_ALGORITHM.name,
         publicKey,
@@ -375,16 +362,11 @@ export class CertificateSystem {
   // EXPORT / IMPORT
   // ============================================================================
 
-  /**
-   * Export certificate + private key as downloadable file
-   * User saves this as their backup
-   */
   static async exportIdentity(
     certificate: IPlayerCertificate,
     privateKeyJWK: JsonWebKey,
     password: string
   ): Promise<Blob> {
-    // Encrypt the private key with the password
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -431,9 +413,6 @@ export class CertificateSystem {
     );
   }
 
-  /**
-   * Import identity from backup file
-   */
   static async importIdentity(
     fileContent: string,
     password: string
@@ -442,7 +421,6 @@ export class CertificateSystem {
       const exportData = JSON.parse(fileContent);
       const { certificate, encryptedPrivateKey } = exportData;
 
-      // Decrypt private key
       const encoder = new TextEncoder();
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
@@ -475,16 +453,14 @@ export class CertificateSystem {
         new TextDecoder().decode(decryptedData)
       );
 
-      // Import private key to CryptoKey
       const privateKey = await crypto.subtle.importKey(
         'jwk',
         privateKeyJWK,
         this.KEY_ALGORITHM,
-        false, // Not extractable after import
+        false,
         ['sign']
       );
 
-      // Store in IndexedDB
       await this.storePrivateKey(certificate.metadata.uid, privateKey);
 
       return { certificate, success: true };
@@ -494,13 +470,6 @@ export class CertificateSystem {
     }
   }
 
-  // ============================================================================
-  // CERTIFICATE PARSING
-  // ============================================================================
-
-  /**
-   * Parse a PEM certificate back to object form
-   */
   static parseCertificate(pem: string): IPlayerCertificate | null {
     try {
       const b64 = pem
@@ -508,7 +477,7 @@ export class CertificateSystem {
         .replace('-----END WORLDSEED CERTIFICATE-----', '')
         .trim();
       
-      const { certificate, signature } = JSON.parse(atob(b64));
+      const { certificate } = JSON.parse(atob(b64));
       
       return {
         metadata: {

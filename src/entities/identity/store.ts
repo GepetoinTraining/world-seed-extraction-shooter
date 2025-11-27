@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-// FIXED: Lowercase 'certificateSystem'
 import { 
   CertificateSystem, 
   IPlayerCertificate, 
@@ -177,11 +176,14 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
     const { certificate } = get();
     
     if (certificate) {
-      const request = indexedDB.open('WorldSeedIdentity', 1);
+      // FIX: Use Version 2 to match CertificateSystem
+      const request = indexedDB.open('WorldSeedIdentity', 2);
       request.onsuccess = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        const tx = db.transaction('keys', 'readwrite');
-        tx.objectStore('keys').delete(certificate.metadata.uid);
+        if (db.objectStoreNames.contains('keys')) {
+            const tx = db.transaction('keys', 'readwrite');
+            tx.objectStore('keys').delete(certificate.metadata.uid);
+        }
       };
     }
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// ... existing imports ...
 import { usePlayerStore } from './src/entities/player/store';
 import { useWorldStore } from './src/entities/world/store';
 import { useIdentityStore, IdentityState } from './src/entities/identity/store';
@@ -9,17 +8,17 @@ import { MissionControl } from './src/components/MissionControl';
 import { PlayerHub } from './src/components/PlayerHub';
 import { GenreCreator } from './src/components/admin/GenreCreator';
 import { IdentityGate } from './src/components/IdentityGate'; 
+import { HubSelector } from './src/components/HubSelector'; // NEW IMPORT
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
 import { 
   Box, Text, Button, Stack, Group, Badge,
   AppShell, NavLink, Divider, Loader, Center, ActionIcon
 } from '@mantine/core';
 
-// --- NEW IMPORTS ---
+// Debug Console
 import { SystemConsole } from './src/components/debug/SystemConsole';
 import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
 
-// INSTALL INTERCEPTOR IMMEDIATELY (Outside component to run ASAP)
 installConsoleInterceptor();
 
 type AppView = 'HUB' | 'MISSIONS' | 'SESSION' | 'BANK' | 'ADMIN';
@@ -28,46 +27,54 @@ const App: React.FC = () => {
   const { player, emergencyJackOut } = usePlayerStore();
   const { currentMap, exitWorld } = useWorldStore();
   const { state: identityState } = useIdentityStore();
-  
-  // Console Toggle Access
   const toggleConsole = useLogStore(s => s.toggle);
   
+  // UI State
   const [view, setView] = useState<AppView>('HUB');
   const [devMode, setDevMode] = useState(false);
+  
+  // Lifecycle State
   const [bootStatus, setBootStatus] = useState<'INIT' | 'BOOTING' | 'READY'>('INIT');
+  const [hubSelected, setHubSelected] = useState(false); // Controls the Hub Selector
 
   const session = player.currentSession;
 
-  // 1. TRIGGER STARTUP SEQUENCE ON IDENTITY READY
+  // 1. BOOT SEQUENCE
   useEffect(() => {
     const boot = async () => {
       if (identityState === IdentityState.READY && bootStatus === 'INIT') {
         setBootStatus('BOOTING');
-        await StartupSequence.execute();
-        setBootStatus('READY');
+        // Execute Genesis / Hydration
+        const result = await StartupSequence.execute();
+        if (result.status === 'READY') {
+          setBootStatus('READY');
+        } else {
+          console.error("Boot failed or waiting for identity.");
+        }
       }
     };
     boot();
   }, [identityState, bootStatus]);
 
-  // 2. IDENTITY GATE (Blocking)
+  // --- VIEW ROUTER ---
+
+  // A. IDENTITY GATE
   if (identityState !== IdentityState.READY) {
     return (
       <>
-        <IdentityGate onComplete={() => {}} />
-        <SystemConsole /> {/* Allow console during login to debug issues */}
+        <IdentityGate onComplete={() => {/* Identity Store updates state automatically */}} />
+        <SystemConsole />
       </>
     );
   }
 
-  // 3. BOOT SCREEN
+  // B. BOOT LOADER
   if (bootStatus === 'BOOTING') {
     return (
       <Center h="100vh" bg="dark.9">
         <Stack align="center">
           <Loader color="gold" type="dots" />
           <Text c="gold" ff="monospace">INITIALIZING GENESIS PROTOCOL...</Text>
-          <Text c="dimmed" size="xs">Minting Hub Certificates & Seeding Vector Database</Text>
           <Button variant="subtle" size="xs" onClick={toggleConsole} mt="xl">Open Console (~)</Button>
         </Stack>
         <SystemConsole />
@@ -75,7 +82,22 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. DIVE STATE (In-Game)
+  // C. HUB SELECTOR (New Step)
+  if (bootStatus === 'READY' && !hubSelected) {
+    return (
+      <>
+        <HubSelector onSelect={(hubId) => {
+          console.log(`[APP] Joining Hub: ${hubId}`);
+          setHubSelected(true);
+        }} />
+        <SystemConsole />
+      </>
+    );
+  }
+
+  // D. ACTIVE GAME SESSION (Combat)
+  // Only show WorldCanvas if we are actually in a "Session" (Mission)
+  // AND the view isn't forcing something else (though usually session takes over)
   if (session && currentMap) {
     return (
       <Box h="100vh" bg="dark.9">
@@ -87,13 +109,12 @@ const App: React.FC = () => {
         >
           EXTRACT
         </Button>
-        {/* In-Game Console */}
         <SystemConsole />
       </Box>
     );
   }
 
-  // 5. MAIN SHELL
+  // E. MAIN HUB SHELL
   return (
     <AppShell
       header={{ height: 60 }}
@@ -179,7 +200,6 @@ const App: React.FC = () => {
         </Box>
       </AppShell.Main>
       
-      {/* Console Overlay for Main Shell */}
       <SystemConsole />
     </AppShell>
   );
