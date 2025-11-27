@@ -1,9 +1,13 @@
 import { IMap, IChunk, BiomeType, EntityType, ScanLevel } from './types';
 import { GenreType } from './definitions';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { Director } from './Director'; 
 import { UniversalRank, Rarity } from '../../../types';
+
+// New Interface for injected data
+export interface IGenerationContext {
+  mobDefinitions: any[];
+  resourceDefinitions: any[];
+}
 
 class SeededRNG {
   private seed: number;
@@ -29,7 +33,8 @@ class SeededRNG {
 
 export class WorldGenerator {
   
-  static generate(seed: string, size: number = 32): IMap {
+  // NOW ACCEPTS CONTEXT
+  static generate(seed: string, size: number, context: IGenerationContext): IMap {
     const rng = new SeededRNG(seed);
     const chunks: Record<string, IChunk> = {};
     const extractionPoints: string[] = [];
@@ -44,9 +49,8 @@ export class WorldGenerator {
         const dist = Math.sqrt(dx*dx + dy*dy) / (size / 2);
         const noise = rng.next();
         
-        // 80% chance to spawn a chunk, creating organic islands
         if (dist < 0.8 + (noise * 0.3)) {
-          const chunk = this.createChunk(x, y, dist, noise, rng, currentMutations);
+          const chunk = this.createChunk(x, y, dist, noise, rng, currentMutations, context);
           chunks[`${x},${y}`] = chunk;
         }
       }
@@ -54,10 +58,12 @@ export class WorldGenerator {
 
     const chunkKeys = Object.keys(chunks);
     if (chunkKeys.length > 0) {
-        // Place at least one extraction point
-        const exitKey = rng.pick(chunkKeys);
-        chunks[exitKey].hasExtraction = true;
-        extractionPoints.push(exitKey);
+        const exitCount = Math.max(1, Math.floor(size / 10));
+        for(let i=0; i<exitCount; i++) {
+            const exitKey = rng.pick(chunkKeys);
+            chunks[exitKey].hasExtraction = true;
+            extractionPoints.push(exitKey);
+        }
     }
 
     return {
@@ -70,7 +76,6 @@ export class WorldGenerator {
     };
   }
 
-  // --- HELPER: WEIGHTED RARITY ROLL ---
   private static rollRarity(rng: SeededRNG): { rank: UniversalRank, rarity: Rarity } {
       const roll = rng.next() * 100;
       if (roll < 45) return { rank: UniversalRank.F, rarity: Rarity.COMMON };
@@ -82,13 +87,14 @@ export class WorldGenerator {
       return { rank: UniversalRank.S, rarity: Rarity.ARTIFACT };
   }
 
-  private static createChunk(x: number, y: number, distFromCenter: number, noise: number, rng: SeededRNG, mutations: string[]): IChunk {
-    // Biome Logic
+  private static createChunk(
+    x: number, y: number, distFromCenter: number, noise: number, rng: SeededRNG, mutations: string[],
+    context: IGenerationContext
+  ): IChunk {
     let biome = BiomeType.WASTELAND;
     if (distFromCenter < 0.3) biome = BiomeType.INDUSTRIAL;
     else if (distFromCenter < 0.6) biome = noise > 0.5 ? BiomeType.RUINS : BiomeType.OVERGROWTH;
 
-    // Genre Logic (Flavor)
     let genre = GenreType.POST_APOC;
     if (noise > 0.8) genre = GenreType.ELDRITCH;
     else if (noise > 0.6) genre = GenreType.SCIFI;
@@ -108,19 +114,18 @@ export class WorldGenerator {
       hasExtraction: false
     };
 
-    // 1. GENERATE MOBS
+    // 1. GENERATE MOBS (Dynamic)
     const mobCount = Math.floor(rng.range(1, 4));
     for(let i=0; i<mobCount; i++) {
-        const genreMobs = Object.values(MOB_DEFINITIONS).filter(m => m.genre === genre);
+        const genreMobs = context.mobDefinitions.filter((m: any) => m.genre === genre);
         const rankIndex = Object.values(UniversalRank).indexOf(rank);
         
-        // Filter mobs that fit the chunk rank
-        let validMobs = genreMobs.filter(m => {
+        let validMobs = genreMobs.filter((m: any) => {
             const mobRankIndex = Object.values(UniversalRank).indexOf(m.rank);
             return mobRankIndex <= rankIndex; 
         });
         
-        if (validMobs.length === 0) validMobs = genreMobs.filter(m => m.tags.includes('grunt'));
+        if (validMobs.length === 0 && genreMobs.length > 0) validMobs = [genreMobs[0]]; 
 
         if (validMobs.length > 0) {
             const template = rng.pick(validMobs);
@@ -137,62 +142,23 @@ export class WorldGenerator {
         }
     }
 
-    // 2. GENERATE RESOURCES (Extractables)
-    const resourceDensity = biome === BiomeType.OVERGROWTH ? 0.8 : (biome === BiomeType.WASTELAND ? 0.2 : 0.4);
-    
-    if (rng.next() < resourceDensity) {
+    // 2. GENERATE RESOURCES (Dynamic)
+    if (rng.next() < 0.5 && context.resourceDefinitions.length > 0) {
         const count = Math.floor(rng.range(1, 6));
         for(let i=0; i<count; i++) {
-            const typeRoll = rng.next();
-            let defId = 'res_rock_small'; 
-
-            if (biome === BiomeType.OVERGROWTH) {
-                if (typeRoll < 0.4) defId = 'res_tree_log';
-                else if (typeRoll < 0.7) defId = 'res_plant_fiber';
-                else defId = 'res_berry_bush';
-            } else if (biome === BiomeType.INDUSTRIAL) {
-                if (typeRoll < 0.5) defId = 'res_scrap_metal';
-                else defId = 'res_glass_shards';
+            const template = rng.pick(context.resourceDefinitions);
+            if (template) {
+                chunk.entities.push({
+                    id: crypto.randomUUID(),
+                    type: EntityType.RESOURCE,
+                    definitionId: template.id,
+                    position: { x: (x * 100) + rng.range(5, 95), y: (y * 100) + rng.range(5, 95) },
+                    rank: UniversalRank.F,
+                    rarity: Rarity.COMMON,
+                    isHostile: false
+                });
             }
-
-            chunk.entities.push({
-                id: crypto.randomUUID(),
-                type: EntityType.RESOURCE,
-                definitionId: defId,
-                position: { x: (x * 100) + rng.range(5, 95), y: (y * 100) + rng.range(5, 95) },
-                rank: UniversalRank.F,
-                rarity: Rarity.COMMON,
-                isHostile: false
-            });
         }
-    }
-
-    // 3. GENERATE RUINS (POI)
-    if (rng.next() > 0.85) { 
-        const ruinType = noise > 0.6 ? 'ruin_bunker' : 'ruin_shrine';
-        const ruinX = (x * 100) + 50;
-        const ruinY = (y * 100) + 50;
-        
-        // Structure
-        chunk.entities.push({
-            id: crypto.randomUUID(),
-            type: EntityType.STRUCTURE,
-            definitionId: ruinType,
-            position: { x: ruinX, y: ruinY },
-            rank: UniversalRank.D,
-            rarity: Rarity.UNCOMMON
-        });
-
-        // Loot Container
-        chunk.entities.push({
-            id: crypto.randomUUID(),
-            type: EntityType.CONTAINER,
-            definitionId: 'cont_supply_crate',
-            position: { x: ruinX + 2, y: ruinY + 2 },
-            rank: UniversalRank.D,
-            rarity: Rarity.UNCOMMON,
-            lootTableId: 'loot_ruins_generic'
-        });
     }
 
     return chunk;

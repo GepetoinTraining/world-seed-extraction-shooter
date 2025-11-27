@@ -17,6 +17,13 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
+          // --- FIX START ---
+          // Force Vite to look in the local node_modules for these packages
+          // This bridges the gap between your source code location and your install location
+          'zustand': path.resolve(__dirname, 'node_modules/zustand'),
+          'react': path.resolve(__dirname, 'node_modules/react'),
+          'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+          // --- FIX END ---
         }
       }
     };

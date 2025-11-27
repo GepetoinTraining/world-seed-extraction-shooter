@@ -1,31 +1,81 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+// ... existing imports ...
 import { usePlayerStore } from './src/entities/player/store';
 import { useWorldStore } from './src/entities/world/store';
+import { useIdentityStore, IdentityState } from './src/entities/identity/store';
 import { WorldCanvas } from './src/components/WorldCanvas';
 import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
 import { PlayerHub } from './src/components/PlayerHub';
 import { GenreCreator } from './src/components/admin/GenreCreator';
-import { IdentityGate } from './src/components/IdentityGate'; // Ensure you created this file!
+import { IdentityGate } from './src/components/IdentityGate'; 
+import { StartupSequence } from './src/logic/initialization/StartupSequence';
 import { 
   Box, Text, Button, Stack, Group, Badge,
-  AppShell, NavLink, Divider
+  AppShell, NavLink, Divider, Loader, Center, ActionIcon
 } from '@mantine/core';
+
+// --- NEW IMPORTS ---
+import { SystemConsole } from './src/components/debug/SystemConsole';
+import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
+
+// INSTALL INTERCEPTOR IMMEDIATELY (Outside component to run ASAP)
+installConsoleInterceptor();
 
 type AppView = 'HUB' | 'MISSIONS' | 'SESSION' | 'BANK' | 'ADMIN';
 
 const App: React.FC = () => {
   const { player, emergencyJackOut } = usePlayerStore();
   const { currentMap, exitWorld } = useWorldStore();
-  const session = player.currentSession;
+  const { state: identityState } = useIdentityStore();
+  
+  // Console Toggle Access
+  const toggleConsole = useLogStore(s => s.toggle);
   
   const [view, setView] = useState<AppView>('HUB');
   const [devMode, setDevMode] = useState(false);
-  
-  // Local state to track if gate is passed
-  const [isGateOpen, setIsGateOpen] = useState(false);
+  const [bootStatus, setBootStatus] = useState<'INIT' | 'BOOTING' | 'READY'>('INIT');
 
-  // 1. DIVE STATE: If in-game, bypass everything (Render the Simulation)
+  const session = player.currentSession;
+
+  // 1. TRIGGER STARTUP SEQUENCE ON IDENTITY READY
+  useEffect(() => {
+    const boot = async () => {
+      if (identityState === IdentityState.READY && bootStatus === 'INIT') {
+        setBootStatus('BOOTING');
+        await StartupSequence.execute();
+        setBootStatus('READY');
+      }
+    };
+    boot();
+  }, [identityState, bootStatus]);
+
+  // 2. IDENTITY GATE (Blocking)
+  if (identityState !== IdentityState.READY) {
+    return (
+      <>
+        <IdentityGate onComplete={() => {}} />
+        <SystemConsole /> {/* Allow console during login to debug issues */}
+      </>
+    );
+  }
+
+  // 3. BOOT SCREEN
+  if (bootStatus === 'BOOTING') {
+    return (
+      <Center h="100vh" bg="dark.9">
+        <Stack align="center">
+          <Loader color="gold" type="dots" />
+          <Text c="gold" ff="monospace">INITIALIZING GENESIS PROTOCOL...</Text>
+          <Text c="dimmed" size="xs">Minting Hub Certificates & Seeding Vector Database</Text>
+          <Button variant="subtle" size="xs" onClick={toggleConsole} mt="xl">Open Console (~)</Button>
+        </Stack>
+        <SystemConsole />
+      </Center>
+    );
+  }
+
+  // 4. DIVE STATE (In-Game)
   if (session && currentMap) {
     return (
       <Box h="100vh" bg="dark.9">
@@ -37,17 +87,13 @@ const App: React.FC = () => {
         >
           EXTRACT
         </Button>
+        {/* In-Game Console */}
+        <SystemConsole />
       </Box>
     );
   }
 
-  // 2. GATE STATE: If not logged in, show Identity Gate
-  // This effectively blocks the rest of the app until onComplete is called
-  if (!isGateOpen) {
-    return <IdentityGate onComplete={() => setIsGateOpen(true)} />;
-  }
-
-  // 3. SHELL STATE: Main App (Hub, Missions, etc.)
+  // 5. MAIN SHELL
   return (
     <AppShell
       header={{ height: 60 }}
@@ -60,10 +106,13 @@ const App: React.FC = () => {
           <Group gap="md">
             <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--mantine-color-gold-5)' }} />
             <Text fw={700} size="lg" style={{ letterSpacing: '0.1em' }}>WORLD SEED</Text>
-            <Badge variant="outline" color="emerald" size="sm">GENESIS</Badge>
+            <Badge variant="outline" color="emerald" size="sm">ONLINE</Badge>
           </Group>
           
           <Group gap="md">
+            <ActionIcon variant="transparent" color="gray" onClick={toggleConsole} title="Toggle Console (~)">
+              📟
+            </ActionIcon>
             <Badge color="gold">{player.bank.gold.toLocaleString()} G</Badge>
             <Text size="sm" c="dimmed">{player.username}</Text>
             <Button variant="subtle" size="xs" color="gray" onClick={() => setDevMode(!devMode)}>
@@ -129,6 +178,9 @@ const App: React.FC = () => {
           {view === 'ADMIN' && <GenreCreator />}
         </Box>
       </AppShell.Main>
+      
+      {/* Console Overlay for Main Shell */}
+      <SystemConsole />
     </AppShell>
   );
 };

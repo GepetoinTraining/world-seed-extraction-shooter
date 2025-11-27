@@ -7,7 +7,7 @@ import {
 } from '@mantine/core';
 
 export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
-  const { state, createIdentity, certificate, error, checkExistingIdentity } = useIdentityStore();
+  const { state, createIdentity, certificate, error, checkExistingIdentity, clearIdentity } = useIdentityStore();
   const { initializeSession } = usePlayerStore();
   
   const [name, setName] = useState('');
@@ -90,6 +90,22 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           >
             JACK IN
           </Button>
+
+          {/* --- NEW RESET BUTTON --- */}
+          <Button 
+            variant="subtle" 
+            color="red" 
+            size="xs"
+            onClick={() => {
+              if (confirm('WIPE IDENTITY? This cannot be undone.')) {
+                clearIdentity();
+                window.location.reload();
+              }
+            }}
+          >
+            [DEBUG] NUKE IDENTITY
+          </Button>
+
         </Stack>
       </Center>
     );
