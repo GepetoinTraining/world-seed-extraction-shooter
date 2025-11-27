@@ -1,26 +1,25 @@
 // ... existing imports ...
 
 export interface IBaseAttributes {
-  // PHYSICAL ( The Body )
-  strength: number;      // Carry Weight, Melee Dmg
-  constitution: number;  // Health, Poison Resist
-  agility: number;       // Speed, Dodge
-  dexterity: number;     // Reload Speed, Crafting Precision
-  endurance: number;     // Stamina, Hunger Rate
+  strength: number; constitution: number; agility: number; dexterity: number; endurance: number;
+  intelligence: number; focus: number; engineering: number; hacking: number; perception: number;
+  charisma: number; intimidation: number; subterfuge: number; bartering: number; leadership: number;
+}
 
-  // MENTAL ( The Mind )
-  intelligence: number;  // Energy, Spell Dmg
-  focus: number;         // Crit Chance, Recoil Control
-  engineering: number;   // Build Speed, Repair Efficiency
-  hacking: number;       // Security Bypass, Drone Control
-  perception: number;    // Render Distance, Loot Highlight Range
+export interface ISkillOrigin {
+  timestamp: number;
+  triggerAction: string; 
+  location: string;      
+  resonance: number;     
+}
 
-  // SOCIAL ( The Soul )
-  charisma: number;      // Vendor Prices, NPC Quest Rewards
-  intimidation: number;  // Mob Aggro Radius (Push away)
-  subterfuge: number;    // Mob Aggro Radius (Prevent detection)
-  bartering: number;     // Market Tax Reduction
-  leadership: number;    // Guild/Party Buff Radius
+export interface ISkillState {
+  id: string;
+  level: number;
+  currentXp: number;
+  tags: string[];
+  scalingAttribute: keyof IBaseAttributes; 
+  origin?: ISkillOrigin; 
 }
 
 export interface ISimulationStats {
@@ -32,7 +31,7 @@ export interface ISimulationStats {
   metabolic_rate: number;        
   carry_capacity_kg: number;     
   inventory_slots: number;       
-  
+
   // --- MOVEMENT PHYSICS ---
   movement_speed: number;        
   sprint_multiplier: number;     
@@ -88,7 +87,13 @@ export interface IPlayerEntity {
   experience: number;
   attributePoints: number; 
   attributes: IBaseAttributes;
-  bank: any; 
+  bank: {
+    accountId: string;
+    gold: number;
+    stashTabs: any[];
+    universalSkills: Record<string, ISkillState>; // UPDATED
+    lore: any;
+  }; 
   currentSession?: any; 
 }
 

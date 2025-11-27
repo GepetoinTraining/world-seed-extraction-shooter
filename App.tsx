@@ -41,7 +41,20 @@ const App: React.FC = () => {
   
   // Dev mode toggle
   const [devMode, setDevMode] = useState(false);
+
   
+// Inside App.tsx, add this component and state to switch to it
+const AwakeningSequence = ({ onComplete }: { onComplete: () => void }) => {
+  return (
+    <Center h="100vh">
+      <Stack align="center">
+        <Text size="xl" fw={900}>INITIATING...</Text>
+        <Button onClick={onComplete} color="emerald">WAKE UP</Button>
+      </Stack>
+    </Center>
+  );
+};
+
   // =========================================================================
   // VIEW ROUTING
   // =========================================================================

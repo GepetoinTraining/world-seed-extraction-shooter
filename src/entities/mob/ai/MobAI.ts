@@ -1,339 +1,249 @@
-import { GenreType, Rarity, UniversalRank } from '../../../../types'; 
+import { GenreType, Rarity } from '../../../../types'; 
+import { IChunk, EntityType } from '../../world/types'; 
 
 // ==========================================
-// 1. THE VOCABULARY (AI-Specific Enums)
+// 1. ENUMS (Standard)
 // ==========================================
 
 export enum MobObjective {
-  KILL_PLAYER = 'KILL_PLAYER',       // Default: Seek and destroy
-  PROTECT_ASSET = 'PROTECT_ASSET',   // Guard a chest/door/zone
-  HOARD = 'HOARD',                   // Collect items, ignore player unless provoked
-  SURVIVE = 'SURVIVE',               // Self-preservation prioritized
-  FEED = 'FEED',                     // Eat corpses/resources to buff/evolve
-  WITNESS = 'WITNESS',               // Eldritch: Observe to escalate danger
-  REPRODUCE = 'REPRODUCE',           // Industrial/Swarm: Create more units
+  KILL_PLAYER = 'KILL_PLAYER',
+  PROTECT_ASSET = 'PROTECT_ASSET',
+  HOARD = 'HOARD',
+  SURVIVE = 'SURVIVE',
+  FEED = 'FEED',
+  WITNESS = 'WITNESS',
+  REPRODUCE = 'REPRODUCE',
 }
 
 export enum Temperament {
-  AGGRESSIVE = 'AGGRESSIVE',     // Closes distance, prioritizes damage
-  COWARD = 'COWARD',             // Flees at HP threshold
-  TERRITORIAL = 'TERRITORIAL',   // Only attacks inside a zone
-  PASSIVE = 'PASSIVE',           // Never initiates
-  BERSERKER = 'BERSERKER',       // Ignores own safety entirely
-  OPPORTUNIST = 'OPPORTUNIST',   // Attacks only if player is distracted/low HP
-  HIVEMIND = 'HIVEMIND',         // Uses group tactics
+  AGGRESSIVE = 'AGGRESSIVE',
+  COWARD = 'COWARD',
+  TERRITORIAL = 'TERRITORIAL',
+  PASSIVE = 'PASSIVE',
+  BERSERKER = 'BERSERKER',
+  OPPORTUNIST = 'OPPORTUNIST',
+  HIVEMIND = 'HIVEMIND',
 }
 
 export enum ActivationTrigger {
   SIGHT = 'SIGHT',
   SOUND = 'SOUND',
-  PROXIMITY = 'PROXIMITY', // Blind sense
+  PROXIMITY = 'PROXIMITY',
   DAMAGE = 'DAMAGE',
-  ALERT = 'ALERT',         // Propagated from another mob
-  TIMER = 'TIMER',         // Industrial
+  ALERT = 'ALERT',
+  TIMER = 'TIMER',
 }
 
 export enum MobState {
-  DORMANT = 'DORMANT',     // No CPU cost (mostly)
-  STALKING = 'STALKING',   // Moving but trying to stay hidden
-  ACTIVE = 'ACTIVE',       // Combat engaged
-  FLEEING = 'FLEEING',     // Disengaging
-  VICTORIOUS = 'VICTORIOUS' // Player dead/gone, celebrating/eating
+  DORMANT = 'DORMANT',
+  STALKING = 'STALKING',
+  ACTIVE = 'ACTIVE',
+  FLEEING = 'FLEEING',
 }
 
-// The atomic actions a mob can take per tick
 export enum BehaviorPrimitive {
   IDLE = 'IDLE',
-  APPROACH = 'APPROACH',      // Move towards target
-  FLEE = 'FLEE',              // Move away from target
-  STRAFE = 'STRAFE',          // Move perpendicular to target
-  FLANK = 'FLANK',            // Move to target's side/rear
-  TELEGRAPH = 'TELEGRAPH',    // Warn player of incoming attack
+  APPROACH = 'APPROACH',
+  FLEE = 'FLEE',
+  STRAFE = 'STRAFE',
+  FLANK = 'FLANK',
   ATTACK_MELEE = 'ATTACK_MELEE',
   ATTACK_RANGED = 'ATTACK_RANGED',
   BLOCK = 'BLOCK',
-  PHASE = 'PHASE',            // Teleport/Invuln
-  CALL_ALLIES = 'CALL_ALLIES',
-  SACRIFICE = 'SACRIFICE',    // Suicide for effect
-  SPAWN = 'SPAWN',            // Industrial/Swarm creation
+  PHASE = 'PHASE',
+  SACRIFICE = 'SACRIFICE',
+  SPAWN = 'SPAWN',
 }
 
-// ==========================================
-// 2. THE DATA STRUCTURES
-// ==========================================
-
-export interface IAwarenessProfile {
-  sightRange: number;
-  hearingRange: number;
-  lightDependence: number; // 0.0 (Thermal/Blind) to 1.0 (Needs full light)
-  proximitySense: number;  // Radius of "blind" sense
-  canAlertOthers: boolean;
-  isIndustrial: boolean;   // Ticks even when dormant
-}
-
-// The Input State (Read-Only Context from the Game Engine)
+// Input Context
 export interface ICombatContext {
-  mobId: string;
-  mobPos: { x: number; y: number };
-  mobHpPercent: number; // 0.0 to 1.0
-  
-  playerPos: { x: number; y: number };
-  playerHpPercent: number; // 0.0 to 1.0
-  playerNoiseLevel: number; // 0-100 (Sneak vs Sprint)
-  playerIsLookingAtMob: boolean;
-  
-  lightLevelAtMob: number; // 0.0 (Dark) - 1.0 (Bright)
-  nearbyAlliesCount: number;
   distanceToPlayer: number;
-  
-  // World Context
+  mobHpPercent: number;
+  playerPos: { x: number; y: number };
+  playerNoiseLevel: number;
+  lightLevelAtMob: number;
   isInTerritory: boolean;
+  playerIsLookingAtMob: boolean;
   nearestCorpseDist?: number;
 }
 
-// The Output State (What the mob decides to do)
+// Output Decision
 export interface IMobDecision {
   action: BehaviorPrimitive;
-  targetPos?: { x: number; y: number }; // Where to move/aim
-  metadata?: any; // For speech bubbles, debug, or special FX (e.g. "Calling Swarm!")
+  targetPos?: { x: number; y: number };
+  metadata?: any;
 }
 
 // ==========================================
-// 3. THE BRAIN (Logic Implementation)
+// 2. THE SYSTEM
 // ==========================================
 
 export class MobAI {
   
-  // ---------------------------------------------------------
-  // A. ACTIVATION LOGIC (The Cheap Filter)
-  // ---------------------------------------------------------
-  
+  // Internal memory (Ephemeral state)
+  private static mobMemory: Record<string, {
+    lastAttackTime: number;
+    state: MobState;
+    objective: MobObjective;
+  }> = {};
+
+  static reset() {
+    this.mobMemory = {};
+  }
+
+  static clearMob(entityId: string) {
+    delete this.mobMemory[entityId];
+  }
+
   /**
-   * Runs every few frames to see if the mob should wake up.
-   * Optimized to fail fast.
+   * THE MAIN LOOP
+   * @param visibleChunks - Map of loaded chunks
+   * @param playerPos - 2D Position { x: player.x, y: player.z } <-- Y represents Depth here
+   * @param deltaTime - Time since last frame in seconds
    */
-  static checkActivation(
-    currentState: MobState,
-    awareness: IAwarenessProfile,
-    ctx: ICombatContext
-  ): { newState: MobState; trigger: ActivationTrigger | null } {
+  static tick(
+    visibleChunks: Record<string, IChunk>, 
+    playerPos: { x: number; y: number }, 
+    deltaTime: number
+  ): { 
+    updatedChunks: Record<string, IChunk>; 
+    spawnedPatterns: any[] 
+  } {
     
-    // 1. Industrial mobs never sleep, they just change modes
-    if (awareness.isIndustrial) {
-      // If player is close, they become ACTIVE combatants
-      if (ctx.distanceToPlayer < awareness.sightRange) {
-        return { newState: MobState.ACTIVE, trigger: ActivationTrigger.SIGHT };
-      }
-      // Otherwise they exist in "Industrial Time" (Producing/Building)
-      return { newState: MobState.DORMANT, trigger: ActivationTrigger.TIMER }; 
-    }
+    const updatedChunks: Record<string, IChunk> = {};
+    const spawnedPatterns: any[] = [];
+    const now = Date.now();
 
-    // 2. Already active? Stay active until de-aggro conditions met
-    if (currentState === MobState.ACTIVE) {
-      // Simple de-aggro: Player too far away
-      if (ctx.distanceToPlayer > awareness.sightRange * 2.0) {
-        return { newState: MobState.DORMANT, trigger: null }; 
-      }
-      return { newState: MobState.ACTIVE, trigger: null };
-    }
-
-    // 3. Sound Check (Cheaper than raycasting)
-    // Formula: Noise - (Distance / Sensitivity)
-    // A loud player (Sprint=80) is heard further than a quiet one (Crouch=10)
-    const effectiveNoise = ctx.playerNoiseLevel - (ctx.distanceToPlayer / 2); 
-    if (effectiveNoise > (100 - awareness.hearingRange)) {
-      // Sound wakes you up, potentially into STALKING state first
-      return { newState: MobState.STALKING, trigger: ActivationTrigger.SOUND };
-    }
-
-    // 4. Proximity Check (Blind/Ambush/Trap)
-    if (ctx.distanceToPlayer < awareness.proximitySense) {
-       return { newState: MobState.ACTIVE, trigger: ActivationTrigger.PROXIMITY };
-    }
-
-    // 5. Sight Check (Needs Light)
-    if (ctx.distanceToPlayer < awareness.sightRange) {
-      // Vision Quality = 1.0 (Perfect) to 0.0 (Blind)
-      // Affected by darkness IF the mob relies on light
-      const visionQuality = 1 - (awareness.lightDependence * (1 - ctx.lightLevelAtMob));
-      const effectiveVisionRange = awareness.sightRange * visionQuality;
+    Object.values(visibleChunks).forEach(chunk => {
+      let chunkWasModified = false;
       
-      if (ctx.distanceToPlayer < effectiveVisionRange) {
-        // (Raycast logic would go here in full engine to check walls)
-        return { newState: MobState.ACTIVE, trigger: ActivationTrigger.SIGHT };
+      const newEntities = chunk.entities.map(entity => {
+        // Validation
+        if (entity.type !== EntityType.MOB || (entity.health || 0) <= 0) return entity;
+
+        // Memory Init
+        if (!this.mobMemory[entity.id]) {
+          this.mobMemory[entity.id] = {
+            lastAttackTime: 0,
+            state: MobState.DORMANT,
+            objective: MobObjective.KILL_PLAYER
+          };
+        }
+
+        const mem = this.mobMemory[entity.id];
+
+        // 1. Build Context (2D Math)
+        // Note: entity.position.y matches playerPos.y (which is World Z)
+        const dx = playerPos.x - entity.position.x;
+        const dy = playerPos.y - entity.position.y;
+        const dist = Math.hypot(dx, dy);
+        
+        const ctx: ICombatContext = {
+          distanceToPlayer: dist,
+          mobHpPercent: (entity.health || 100) / 100,
+          playerPos: { x: playerPos.x, y: playerPos.y },
+          playerNoiseLevel: 50,
+          lightLevelAtMob: 1.0, 
+          isInTerritory: true,
+          playerIsLookingAtMob: false
+        };
+
+        // 2. Check Activation
+        if (mem.state === MobState.DORMANT) {
+          if (dist < 15) mem.state = MobState.ACTIVE;
+        } else if (mem.state === MobState.ACTIVE && dist > 30) {
+          mem.state = MobState.DORMANT;
+        }
+
+        // 3. Process Active Mobs
+        if (mem.state === MobState.ACTIVE) {
+          chunkWasModified = true;
+
+          // Decide
+          const decision = this.decideAction(mem.objective, Temperament.AGGRESSIVE, GenreType.SCIFI, Rarity.COMMON, ctx);
+
+          // Move
+          let moveSpeed = 2.0 * deltaTime;
+          let moveX = 0;
+          let moveY = 0;
+
+          const angle = Math.atan2(dy, dx);
+
+          if (decision.action === BehaviorPrimitive.APPROACH) {
+            moveX = Math.cos(angle) * moveSpeed;
+            moveY = Math.sin(angle) * moveSpeed;
+          } else if (decision.action === BehaviorPrimitive.FLEE) {
+            moveX = -Math.cos(angle) * moveSpeed;
+            moveY = -Math.sin(angle) * moveSpeed;
+          }
+
+          // Attack
+          if (decision.action === BehaviorPrimitive.ATTACK_RANGED || decision.action === BehaviorPrimitive.ATTACK_MELEE) {
+            if (now - mem.lastAttackTime > 2000) { 
+              mem.lastAttackTime = now;
+              
+              spawnedPatterns.push({
+                type: decision.action === BehaviorPrimitive.ATTACK_RANGED ? 'LINEAR' : 'MELEE',
+                // Origin is 2D { x, y }
+                origin: { x: entity.position.x, y: entity.position.y },
+                angle: angle,
+                startTime: now,
+                color: 'red'
+              });
+            }
+          }
+
+          // Return Updated Entity (Strictly 2D update)
+          return {
+            ...entity,
+            position: {
+              x: entity.position.x + moveX,
+              y: entity.position.y + moveY
+              // No Z property here
+            }
+          };
+        }
+
+        return entity;
+      });
+
+      if (chunkWasModified) {
+        updatedChunks[chunk.id] = {
+          ...chunk,
+          entities: newEntities
+        };
       }
-    }
+    });
 
-    return { newState: MobState.DORMANT, trigger: null };
+    return { updatedChunks, spawnedPatterns };
   }
 
   // ---------------------------------------------------------
-  // B. INDUSTRIAL TICK (The "Clock is Ticking" Logic)
-  // ---------------------------------------------------------
-  
-  static getIndustrialAction(objective: MobObjective): IMobDecision {
-    // These tick in the background. Player enters room -> Room is full of enemies.
-    switch (objective) {
-      case MobObjective.REPRODUCE:
-        // Logic: Internal timer check would happen here
-        return { action: BehaviorPrimitive.SPAWN }; 
-      case MobObjective.HOARD:
-        // Logic: Slowly accumulate resources/gold in inventory
-        return { action: BehaviorPrimitive.IDLE, metadata: { status: 'Mining...' } };
-      default:
-        return { action: BehaviorPrimitive.IDLE };
-    }
-  }
-
-  // ---------------------------------------------------------
-  // C. COMBAT LOOP (Objective -> Temperament -> Genre -> Action)
+  // LOGIC PRIMITIVES
   // ---------------------------------------------------------
 
-  static decideAction(
-    mob: { 
-      objective: MobObjective; 
-      temperament: Temperament; 
-      genre: GenreType; 
-      rarity: Rarity;
-      sequenceIndex: number; // For keeping track of combo chains
-    },
-    ctx: ICombatContext
-  ): IMobDecision {
-
-    // 1. High Priority Overrides (Survival)
-    // Cowards run when hurt
-    if (mob.temperament === Temperament.COWARD && ctx.mobHpPercent < 0.3) {
-      return { action: BehaviorPrimitive.FLEE, targetPos: ctx.playerPos }; 
-    }
-
-    // 2. Determine High-Level Goal based on Objective
-    // What does this mob WANT right now?
-    let goal: 'AGGRESS' | 'DEFEND' | 'POSITION' | 'FLEE' = 'AGGRESS';
-    
-    switch (mob.objective) {
-      case MobObjective.PROTECT_ASSET:
-        // If lured too far from "home", go back
-        goal = ctx.isInTerritory ? 'AGGRESS' : 'POSITION'; 
-        break;
-      case MobObjective.WITNESS:
-        goal = 'POSITION'; // Just watch...
-        if (ctx.playerIsLookingAtMob) {
-           // Eldritch logic: if you look, they might freeze or enrage
-        }
-        break;
-      case MobObjective.HOARD:
-        // If there's loot nearby, go for it instead of the player
-        if (ctx.nearestCorpseDist && ctx.nearestCorpseDist < 5) {
-          goal = 'POSITION'; 
-        } else {
-          goal = 'AGGRESS';
-        }
-        break;
-      case MobObjective.SURVIVE:
-        goal = ctx.mobHpPercent < 0.5 ? 'FLEE' : 'DEFEND';
-        break;
-    }
-
-    // 3. Select Genre Primitive based on Goal & Rarity
-    // This executes the "How" based on the "What"
-    return this.getGenrePrimitive(mob.genre, mob.rarity, goal, ctx, mob.sequenceIndex);
-  }
-
-  // ---------------------------------------------------------
-  // D. GENRE DEFINITIONS (The "Culture" of Combat)
-  // ---------------------------------------------------------
-
-  private static getGenrePrimitive(
+  private static decideAction(
+    obj: MobObjective, 
+    temp: Temperament, 
     genre: GenreType, 
     rarity: Rarity, 
-    goal: string, 
-    ctx: ICombatContext,
-    seq: number
+    ctx: ICombatContext
   ): IMobDecision {
 
-    // Helper: Is this mob smart?
-    const isSmart = [Rarity.RARE, Rarity.EPIC, Rarity.LEGENDARY, Rarity.ARTIFACT].includes(rarity);
-    const isBoss = [Rarity.LEGENDARY, Rarity.ARTIFACT].includes(rarity);
-
-    // --- FANTASY GENRE (Telegraphed, Melee, Heroic) ---
-    if (genre === GenreType.FANTASY) {
-      if (goal === 'AGGRESS') {
-        // Pattern: Approach -> Telegraph -> Attack
-        if (ctx.distanceToPlayer > 2) return { action: BehaviorPrimitive.APPROACH };
-        
-        if (ctx.distanceToPlayer <= 2) {
-           // Smart mobs occasionally block
-           if (isSmart && Math.random() > 0.8) return { action: BehaviorPrimitive.BLOCK };
-           return { action: BehaviorPrimitive.ATTACK_MELEE };
-        }
-      }
-      if (goal === 'DEFEND') return { action: BehaviorPrimitive.BLOCK };
+    if (ctx.distanceToPlayer < 2) {
+      return { action: BehaviorPrimitive.ATTACK_MELEE };
     }
-
-    // --- SCI-FI GENRE (Ranged, Cover, Tactical) ---
+    
+    // Sci-Fi Kiting Logic
     if (genre === GenreType.SCIFI) {
-      if (goal === 'AGGRESS') {
-        // Pattern: Maintain Range -> Shoot -> Strafe
-        const optimalRange = 8;
-        
-        if (ctx.distanceToPlayer < 4) return { action: BehaviorPrimitive.FLEE }; // Too close
-        if (ctx.distanceToPlayer > 12) return { action: BehaviorPrimitive.APPROACH }; // Too far
-        
-        // Smart mobs strafe while shooting
-        if (isSmart) return { action: BehaviorPrimitive.ATTACK_RANGED, metadata: { strafing: true } };
-        return { action: BehaviorPrimitive.ATTACK_RANGED };
-      }
+       if (ctx.distanceToPlayer < 8 && ctx.distanceToPlayer > 4) {
+         return { action: BehaviorPrimitive.ATTACK_RANGED };
+       }
+       if (ctx.distanceToPlayer <= 4) {
+         return { action: BehaviorPrimitive.FLEE };
+       }
     }
 
-    // --- POST-APOC GENRE (Scrappy, Ambush) ---
-    if (genre === GenreType.POST_APOC) {
-      if (goal === 'AGGRESS') {
-        // Pattern: Rush -> Hit -> Run
-        if (ctx.distanceToPlayer > 1.5) return { action: BehaviorPrimitive.APPROACH };
-        return { action: BehaviorPrimitive.ATTACK_MELEE };
-      }
-    }
-
-    // --- ELDRITCH GENRE (Weird, Non-Euclidean) ---
-    if (genre === GenreType.ELDRITCH) {
-      // Moves in bursts or teleports
-      if (Math.random() > 0.85) return { action: BehaviorPrimitive.PHASE }; // Blink
-      if (ctx.playerIsLookingAtMob) return { action: BehaviorPrimitive.IDLE }; // Weeping Angel
-      return { action: BehaviorPrimitive.APPROACH };
-    }
-    
-    // --- RETRO GENRE (Pattern-based) ---
-    if (genre === GenreType.RETRO) {
-      // Very simple, predictable movement (like Pacman ghosts)
-      return { action: BehaviorPrimitive.APPROACH };
-    }
-
-    // Default Fallback
     return { action: BehaviorPrimitive.APPROACH };
-  }
-
-  // ---------------------------------------------------------
-  // E. DIRECTOR HOOK (Evolution System)
-  // ---------------------------------------------------------
-  
-  /**
-   * Generates a "Behavior Vector" for the vector DB.
-   * This allows the Director to search for "Aggressive Swarmers" or "Defensive Snipers".
-   */
-  static generateBehaviorVector(mob: { temperament: Temperament, genre: GenreType }): number[] {
-    // Vector Format: [ Aggression, Social, Range, Sneakiness, Chaos ]
-    const vector = [0, 0, 0, 0, 0];
-    
-    // 1. Temperament Modifiers
-    if (mob.temperament === Temperament.AGGRESSIVE) vector[0] += 0.8;
-    if (mob.temperament === Temperament.BERSERKER) vector[0] += 1.0;
-    if (mob.temperament === Temperament.COWARD) vector[0] -= 0.5;
-    if (mob.temperament === Temperament.HIVEMIND) vector[1] += 1.0;
-    
-    // 2. Genre Modifiers
-    if (mob.genre === GenreType.SCIFI) vector[2] += 0.8; // High Range
-    if (mob.genre === GenreType.ELDRITCH) vector[4] += 1.0; // High Chaos
-    
-    return vector;
   }
 }
