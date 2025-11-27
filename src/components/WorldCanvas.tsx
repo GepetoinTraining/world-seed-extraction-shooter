@@ -1,56 +1,121 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { IActiveSession, IItem } from '../../types';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
-import { BIOME_DEFINITIONS } from '../entities/world/definitions';
-import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
-import { SpriteGenerator } from '../entities/mob/utils/SpriteGenerator';
 import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/projectileSystem';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { MobAI } from '../entities/mob/ai/MobAI';
-import { Box, Text, Center, Loader, Button, Stack, Group, Badge, SimpleGrid, Paper, Progress } from '@mantine/core';
-import { IWorldEntity, ScanLevel, IChunk, EntityType } from '../entities/world/types';
+import { InteractionEngine } from '../entities/interaction/InteractionEngine';
+import { EntityType, IChunk, ScanLevel, IWorldEntity } from '../entities/world/types';
+import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper } from '@mantine/core';
 
-// ... (Keep Sub-components: MeleeArc, MobAvatar, LootDrop, DamageNumber same as before) ...
-const MeleeArc = ({ x, y, angle, range, color }: any) => <div />; // Placeholder for brevity, use previous code
-const MobAvatar = ({ entity, isHit }: any) => <div />;
-const LootDrop = ({ items, onClick }: any) => <div />;
-const DamageNumber = ({ damage, x, y }: any) => <div />;
+// --- CONSTANTS ---
+const TILE_SIZE = 20; // 1 Unit = 20 Pixels
+const PLAYER_SPEED = 10.0; // Units per second (Fixed Physics)
 
-const CHUNK_PIXEL_SIZE = 20;
-const TACTICAL_SCALE = 40;
-const PLAYER_SPEED = 5.0;
+// --- SUB-COMPONENTS (Visuals) ---
+
+const EntityAvatar = ({ entity, onClick }: { entity: IWorldEntity; onClick: (e: React.MouseEvent) => void }) => {
+  let color = '#fff';
+  let icon = '❓';
+  let shape = '50%'; // Circle by default
+
+  switch (entity.type) {
+    case EntityType.MOB:
+      color = entity.isHostile ? '#ef4444' : '#eab308';
+      icon = '👾';
+      break;
+    case EntityType.RESOURCE:
+      color = '#10b981';
+      icon = '💎';
+      shape = '4px'; // Box
+      break;
+    case EntityType.STRUCTURE:
+      color = '#64748b';
+      icon = '🏛️';
+      shape = '0px'; // Square
+      break;
+    case EntityType.CONTAINER:
+      color = '#f59e0b';
+      icon = '📦';
+      shape = '4px';
+      break;
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position: 'absolute',
+        left: entity.position.x, 
+        top: entity.position.y,
+        width: 24, height: 24,
+        backgroundColor: color,
+        borderRadius: shape,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 14,
+        transform: 'translate(-50%, -50%)', // Center anchor
+        cursor: 'pointer',
+        boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+        zIndex: entity.type === EntityType.MOB ? 20 : 10
+      }}
+    >
+      {icon}
+    </div>
+  );
+};
+
+const PlayerAvatar = ({ x, y }: { x: number, y: number }) => (
+  <div
+    style={{
+      position: 'absolute',
+      left: x, top: y,
+      width: 20, height: 20,
+      backgroundColor: '#fff',
+      borderRadius: '50%',
+      transform: 'translate(-50%, -50%)',
+      zIndex: 50,
+      boxShadow: '0 0 15px white'
+    }}
+  />
+);
+
+// =============================================================================
+// WORLD CANVAS
+// =============================================================================
 
 export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) => {
-  const { currentMap, reconMode, scanChunk, selectChunk, confirmDrop, selectedDropZone, initiateRecon, fetchChunkData, exitWorld } = useWorldStore();
-  const { movePlayer, openLootContainer, processAction } = usePlayerStore(); // ADD processAction
+  // Store Hooks
+  const { currentMap, reconMode, scanChunk, selectChunk, initiateRecon, fetchChunkData } = useWorldStore();
+  const { movePlayer, performInteraction, processAction, player } = usePlayerStore();
 
-  // ... (Keep state: playerPatterns, enemyPatterns, etc.) ...
+  // Local State
   const [playerPatterns, setPlayerPatterns] = useState<any[]>([]);
   const [enemyPatterns, setEnemyPatterns] = useState<any[]>([]);
   const [activeSwings, setActiveSwings] = useState<any[]>([]);
   const [renderBullets, setRenderBullets] = useState<IProjectile[]>([]);
   const [lootDrops, setLootDrops] = useState<any[]>([]);
-  const [hitMobs, setHitMobs] = useState<Set<string>>(new Set());
-  const [damageNumbers, setDamageNumbers] = useState<any[]>([]);
-  const [playerDamageFlash, setPlayerDamageFlash] = useState(false);
-  const [hoverChunk, setHoverChunk] = useState<IChunk | null>(null);
+  
+  // Interaction Menu State
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [interactionOptions, setInteractionOptions] = useState<any[]>([]);
 
+  // Refs for Game Loop
   const requestRef = useRef<number>();
   const lastTickRef = useRef<number>(Date.now());
   const keysPressed = useRef<Set<string>>(new Set());
+  const canvasRef = useRef<HTMLDivElement>(null);
 
-  const isDev = currentMap?.seed.startsWith('dev') || false;
-  const PLAYER_RECON_EFFICIENCY = isDev ? 99.0 : 3.5;
-
+  // 1. Initialize Recon if needed
   useEffect(() => {
     if (session.sessionId && (!currentMap || currentMap.seed !== session.sessionId)) {
       initiateRecon(session.sessionId);
     }
   }, [session.sessionId, currentMap, initiateRecon]);
 
+  // 2. Input Handling
   useEffect(() => {
-    if (reconMode) return;
     const handleKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.key.toLowerCase());
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key.toLowerCase());
     window.addEventListener('keydown', handleKeyDown);
@@ -59,128 +124,249 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [reconMode]);
+  }, []);
 
+  // 3. THE GAME LOOP
   useEffect(() => {
     if (reconMode || !currentMap) return;
 
     const gameLoop = (time: number) => {
       const now = Date.now();
-      const deltaTime = (now - lastTickRef.current) / 1000;
+      // --- PHYSICS FIX: DELTA TIME (Seconds) ---
+      const dt = (now - lastTickRef.current) / 1000; 
       lastTickRef.current = now;
 
-      // 1. MOVEMENT
+      // A. Movement Logic (Time-Based)
       const keys = keysPressed.current;
       let dx = 0, dz = 0;
-      if (keys.has('w')) dz -= PLAYER_SPEED * deltaTime * 60;
-      if (keys.has('s')) dz += PLAYER_SPEED * deltaTime * 60;
-      if (keys.has('a')) dx -= PLAYER_SPEED * deltaTime * 60;
-      if (keys.has('d')) dx += PLAYER_SPEED * deltaTime * 60;
+      
+      // Speed * Time * Scale Factor (to match visual pixels)
+      const moveStep = PLAYER_SPEED * dt * 20; 
+
+      if (keys.has('w')) dz -= moveStep;
+      if (keys.has('s')) dz += moveStep;
+      if (keys.has('a')) dx -= moveStep;
+      if (keys.has('d')) dx += moveStep;
 
       if (dx !== 0 || dz !== 0) {
         usePlayerStore.setState(state => {
           if (!state.player.currentSession) return state;
-          return { player: { ...state.player, currentSession: { ...state.player.currentSession, position: { x: state.player.currentSession.position.x + dx, y: 0, z: state.player.currentSession.position.z + dz } } } };
+          return { 
+            player: { 
+              ...state.player, 
+              currentSession: { 
+                ...state.player.currentSession, 
+                position: { 
+                  x: state.player.currentSession.position.x + dx, 
+                  y: 0, 
+                  z: state.player.currentSession.position.z + dz 
+                } 
+              } 
+            } 
+          };
         });
       }
 
+      // B. Entity & Combat Logic
       const playerPos = usePlayerStore.getState().player.currentSession?.position;
       if (!playerPos) return;
 
-      // ... (AI & Bullet Logic same as before) ...
-      const visibleChunks: any = {}; // fill visible chunks
+      // Filter visible chunks
+      const visibleChunks: Record<string, IChunk> = {};
       const pChunkX = Math.floor(playerPos.x / 100);
       const pChunkY = Math.floor(playerPos.z / 100);
-      for (let y = pChunkY - 2; y <= pChunkY + 2; y++) {
-        for (let x = pChunkX - 2; x <= pChunkX + 2; x++) {
+      
+      for (let y = pChunkY - 1; y <= pChunkY + 1; y++) {
+        for (let x = pChunkX - 1; x <= pChunkX + 1; x++) {
           const key = `${x},${y}`;
           if (currentMap.chunks[key]) visibleChunks[key] = currentMap.chunks[key];
         }
       }
 
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, deltaTime);
-      if (aiResult.spawnedPatterns.length > 0) setEnemyPatterns(prev => [...prev, ...aiResult.spawnedPatterns]);
+      // AI Tick
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt);
+      if (aiResult.spawnedPatterns.length > 0) {
+        setEnemyPatterns(prev => [...prev, ...aiResult.spawnedPatterns]);
+      }
 
-      const allPatterns = [...playerPatterns, ...enemyPatterns];
+      // Combat Tick
       const allBullets: IProjectile[] = [];
-      allPatterns.forEach(p => {
-          // ... projectile logic ...
-          if ((now - p.startTime) < 2000) allBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle));
+      [...playerPatterns, ...enemyPatterns].forEach(p => {
+        if ((now - p.startTime) < 2000) {
+          allBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle));
+        }
       });
 
       const combatResult = CombatSystem.tick(allBullets, aiResult.updatedChunks, playerPos, session.health, activeSwings);
 
-      // EVENTS PROCESSING
-      const newHitMobs = new Set<string>();
-      const newDamageNumbers: any[] = [];
-
+      // Process Events
       combatResult.events.forEach(event => {
-        if (event.type === 'HIT' && event.entityId) {
-          newHitMobs.add(event.entityId);
-          if (event.position && event.damage) newDamageNumbers.push({ id: crypto.randomUUID(), damage: event.damage, x: event.position.x, y: event.position.y });
-        }
-        if (event.type === 'KILL' && event.entityId) {
-          MobAI.clearMob(event.entityId);
-        }
-        if (event.type === 'PLAYER_DAMAGE') {
-          setPlayerDamageFlash(true);
-          setTimeout(() => setPlayerDamageFlash(false), 100);
-          usePlayerStore.setState(state => {
-             if (!state.player.currentSession) return state;
-             return { player: { ...state.player, currentSession: { ...state.player.currentSession, health: Math.max(0, state.player.currentSession.health - (event.damage || 0)) } } };
-          });
-        }
-        // --- NEW: ACTION LOG ---
         if (event.type === 'ACTION_LOG' && event.actionContext) {
             processAction(event.actionContext);
         }
       });
 
-      setHitMobs(newHitMobs);
-      if (newDamageNumbers.length > 0) setDamageNumbers(prev => [...prev.slice(-20), ...newDamageNumbers]);
+      // Update State
       if (combatResult.spawnedLoot.length > 0) {
           setLootDrops(prev => [...prev, ...combatResult.spawnedLoot.map(l => ({ id: crypto.randomUUID(), position: l.position, items: l.items }))]);
       }
-
-      // ... (Cleanup & State Update) ...
       setRenderBullets(combatResult.survivingBullets);
+
       requestRef.current = requestAnimationFrame(gameLoop);
     };
 
     requestRef.current = requestAnimationFrame(gameLoop);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops, session.health]);
+  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings]);
 
-  // ... (Keep handleCombatInput, handleReconClick) ...
-  const handleCombatInput = useCallback((e: React.MouseEvent) => {
-      if (reconMode) return;
-      e.preventDefault();
-      const rect = e.currentTarget.getBoundingClientRect();
-      const angle = Math.atan2(e.clientY - rect.top - rect.height / 2, e.clientX - rect.left - rect.width / 2);
-      const playerPos = usePlayerStore.getState().player.currentSession?.position;
-      if (!playerPos) return;
+  // 4. Interaction Handler
+  const handleEntityClick = (e: React.MouseEvent, entity: IWorldEntity) => {
+    e.stopPropagation();
+    e.preventDefault();
 
-      if (e.button === 0) setActiveSwings(prev => [...prev, { origin: { x: playerPos.x, y: playerPos.z }, angle, startTime: Date.now(), range: 2.0 }]);
-      else if (e.button === 2) setPlayerPatterns(prev => [...prev, { type: PatternType.SHOTGUN, origin: { x: playerPos.x, y: playerPos.z }, startTime: Date.now(), angle }]);
-  }, [reconMode]);
+    const playerPos = usePlayerStore.getState().player.currentSession?.position;
+    if (!playerPos) return;
 
-  const handleReconClick = useCallback((chunk: IChunk) => {
-      if (chunk.scanLevel === ScanLevel.UNKNOWN) fetchChunkData(chunk.x, chunk.y);
-      else if (chunk.scanLevel < ScanLevel.COMPLETE) scanChunk(chunk.x, chunk.y, PLAYER_RECON_EFFICIENCY);
-      else selectChunk(chunk.x, chunk.y);
-  }, [fetchChunkData, scanChunk, selectChunk, PLAYER_RECON_EFFICIENCY]);
+    // Calculate Distance
+    const dx = entity.position.x - playerPos.x;
+    const dy = entity.position.y - playerPos.z;
+    const dist = Math.sqrt(dx*dx + dy*dy) / 20; // Convert to meters approx
 
+    // Ask Interaction Engine
+    const options = InteractionEngine.getAvailableInteractions(player, entity, dist);
+
+    if (options.length > 0) {
+      setInteractionOptions(options);
+      setSelectedEntityId(entity.id);
+      setMenuPosition({ x: e.clientX, y: e.clientY });
+    } else {
+      console.log("No interactions available (too far or missing tools)");
+    }
+  };
+
+  const handleActionSelect = (option: any) => {
+    if (selectedEntityId) {
+      performInteraction(option.id, selectedEntityId);
+    }
+    setMenuPosition(null);
+  };
+
+  // 5. Render
   if (!currentMap) return <Center h="100%"><Loader color="emerald" /></Center>;
 
-  // ... (Render returns for Recon/Tactical modes - use previous implementation but ensure correct imports) ...
-  // For brevity, returning simplified structure. Copy full render logic from previous files if needed.
+  const playerPos = session.position;
+  
+  // Calculate viewport
+  const viewportStyle = {
+    transform: `translate(${window.innerWidth/2 - playerPos.x}px, ${window.innerHeight/2 - playerPos.z}px)`,
+    transition: 'transform 0.1s linear' // Smooth out the frame jumps
+  };
+
   return (
-      <Center h="100%" bg="black" onMouseDown={handleCombatInput} onContextMenu={e => e.preventDefault()} style={{ cursor: 'crosshair', overflow: 'hidden', position: 'relative' }}>
-          {/* ... Tactical Render Logic ... */}
-          {/* Just ensure hooks are active */}
-          <div style={{ position: 'absolute', top: 20, left: 20, color: 'white', zIndex: 10 }}>
-             {reconMode ? "RECON MODE" : "TACTICAL MODE"}
+    <div 
+      ref={canvasRef}
+      className="full-size"
+      style={{ overflow: 'hidden', background: '#050505', position: 'relative', cursor: 'crosshair' }}
+      onContextMenu={(e) => { e.preventDefault(); setMenuPosition(null); }}
+      onClick={() => setMenuPosition(null)}
+    >
+      {/* UI Overlay */}
+      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, pointerEvents: 'none' }}>
+        <Badge color={reconMode ? 'blue' : 'emerald'} size="lg">
+          {reconMode ? 'DRONE RECON' : 'ACTIVE AGENT'}
+        </Badge>
+        <Text c="dimmed" size="xs" mt={4}>
+          POS: {Math.floor(playerPos.x)}, {Math.floor(playerPos.z)}
+        </Text>
+      </div>
+
+      {/* World Container */}
+      <div style={{ width: '100%', height: '100%', ...viewportStyle }}>
+        
+        {/* Render Chunks & Entities */}
+        {Object.values(currentMap.chunks).map(chunk => (
+          <div key={chunk.id}>
+            {/* Ground (Debug) */}
+            <div 
+              style={{
+                position: 'absolute',
+                left: chunk.x * 100, top: chunk.y * 100,
+                width: 100, height: 100,
+                border: '1px solid #222',
+                opacity: 0.2
+              }}
+            />
+            
+            {/* Entities */}
+            {chunk.entities.map(entity => (
+              <EntityAvatar 
+                key={entity.id} 
+                entity={entity} 
+                onClick={(e) => handleEntityClick(e, entity)}
+              />
+            ))}
           </div>
-      </Center>
+        ))}
+
+        {/* Render Loot */}
+        {lootDrops.map(drop => (
+          <div 
+            key={drop.id}
+            style={{ position: 'absolute', left: drop.position.x, top: drop.position.y, fontSize: 20 }}
+          >
+            💰
+          </div>
+        ))}
+
+        {/* Render Bullets */}
+        {renderBullets.map(b => (
+          <div 
+            key={b.id}
+            style={{
+              position: 'absolute',
+              left: b.x, top: b.y,
+              width: 6, height: 6,
+              background: b.color,
+              borderRadius: '50%'
+            }}
+          />
+        ))}
+
+        {/* Player */}
+        <PlayerAvatar x={playerPos.x} y={playerPos.z} />
+
+      </div>
+
+      {/* Interaction Menu */}
+      {menuPosition && (
+        <Paper
+          shadow="md"
+          p="xs"
+          style={{
+            position: 'absolute',
+            left: menuPosition.x,
+            top: menuPosition.y,
+            zIndex: 200,
+            background: 'var(--mantine-color-dark-8)',
+            border: '1px solid var(--mantine-color-dark-4)'
+          }}
+        >
+          <Group gap="xs">
+            {interactionOptions.map((opt) => (
+              <ActionIcon 
+                key={opt.id} 
+                size="lg" 
+                variant="filled" 
+                color="emerald"
+                onClick={(e) => { e.stopPropagation(); handleActionSelect(opt); }}
+                title={`${opt.label} (${opt.timeCostSeconds}s)`}
+              >
+                {opt.icon}
+              </ActionIcon>
+            ))}
+          </Group>
+        </Paper>
+      )}
+    </div>
   );
 };

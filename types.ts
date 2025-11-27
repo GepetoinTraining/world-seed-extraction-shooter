@@ -2,12 +2,8 @@
  * --------------------------------------------------------------------------
  * PROJECT: WORLD SEED (THE UNIVERSAL CONTRACT)
  * ARCHITECT: [System]
- * VERSION: 1.1.0 (Integration Phase)
+ * VERSION: 1.2.1 (Hotfix: Types)
  * --------------------------------------------------------------------------
- * PHILOSOPHY:
- * 1. VALUE is a function of TIME + RISK.
- * 2. POWER is Universal (F-SSS).
- * 3. LOGIC is Strict (Types define reality).
  */
 
 // ==========================================================================
@@ -27,21 +23,21 @@ export enum UniversalRank {
 }
 
 export enum Rarity {
-  SCRAP = 'SCRAP',         // Grey
-  COMMON = 'COMMON',       // White
-  UNCOMMON = 'UNCOMMON',   // Green
-  RARE = 'RARE',           // Blue
-  EPIC = 'EPIC',           // Purple
-  LEGENDARY = 'LEGENDARY', // Orange
-  ARTIFACT = 'ARTIFACT'    // Red (Unique History)
+  SCRAP = 'SCRAP',
+  COMMON = 'COMMON',
+  UNCOMMON = 'UNCOMMON',
+  RARE = 'RARE',
+  EPIC = 'EPIC',
+  LEGENDARY = 'LEGENDARY',
+  ARTIFACT = 'ARTIFACT'
 }
 
 export enum GenreType {
-  FANTASY = 'FANTASY',       // Swords, Magic
-  SCIFI = 'SCIFI',           // Lasers, Mechs
-  POST_APOC = 'POST_APOC',   // Scrap, Ballistics
-  ELDRITCH = 'ELDRITCH',     // Tentacles, Void
-  RETRO = 'RETRO'            // Pixel art, Chiptune vibes
+  FANTASY = 'FANTASY',
+  SCIFI = 'SCIFI',
+  POST_APOC = 'POST_APOC',
+  ELDRITCH = 'ELDRITCH',
+  RETRO = 'RETRO'
 }
 
 // ==========================================================================
@@ -49,12 +45,16 @@ export enum GenreType {
 // ==========================================================================
 
 export enum ItemType {
-  GEAR = 'GEAR',             // Swords, Guns, Helmets
-  CRAFTING_ORB = 'CRAFTING', // "Chaos Orb", "Nanite Canister"
-  CONSUMABLE = 'CONSUMABLE', // Potions, Food
-  RESOURCE = 'RESOURCE',     // Raw Iron, Plasteel
-  COSMETIC = 'COSMETIC',     // Skins (No Stats)
-  DEED = 'DEED'              // <-- ADDED: Land Ownership Documents
+  GEAR = 'GEAR',
+  CRAFTING_ORB = 'CRAFTING',
+  CONSUMABLE = 'CONSUMABLE',
+  RESOURCE = 'RESOURCE',
+  COSMETIC = 'COSMETIC',
+  DEED = 'DEED',
+  CONTAINER = 'CONTAINER',
+  STRUCTURE = 'STRUCTURE',
+  COMMODITY = 'COMMODITY',
+  TOOL = 'TOOL'
 }
 
 export enum SlotType {
@@ -66,7 +66,7 @@ export enum SlotType {
   FEET = 'FEET',
   ACCESSORY = 'ACCESSORY',
   BAG = 'BAG',
-  NONE = 'NONE'              // <-- ADDED: For resources/consumables
+  NONE = 'NONE'
 }
 
 // ==========================================================================
@@ -75,68 +75,61 @@ export enum SlotType {
 
 export interface IAffix {
   id: string;
-  name: string; // e.g. "Sharp", "of the Bear"
+  name: string;
   type: 'PREFIX' | 'SUFFIX';
   stats: Record<string, number>;
   tier: number;
 }
 
+export interface IHarvestConfig {
+  interactionType: string;
+  requiredToolTags: string[];
+  minToolPower: number;
+  energyCost: number;
+  baseTimeSeconds: number;
+}
+
 export interface IItem {
-  /** Unique UUID. The "Soul" of the item. */
   id: string;
-  
-  /** The Universal ID (e.g., "weapon_sword_starter") for rendering logic. */
   universalDefinitionId: string;
-
-  /** Display Name */
   name: string;
-  
-  /** Generated flavor text */
   description: string;
-
   type: ItemType;
   slot: SlotType;
   rank: UniversalRank;
   rarity: Rarity;
-
-  /** Quality roll (-0.20 to +0.20). Affects stats. */
   quality: number;
-  
-  /** Required Level to use */
-  level: number; 
-
-  /** Gold Value (for Shops/Economy) */
+  level: number;
   value: number;
-
-  /** Calculated "Weight" for PvP matchmaking */
   itemPower: number;
-
-  /** Rolled modifiers */
+  
+  // FIXED: Added missing 'tags' property
+  tags: string[]; 
+  
   affixes: IAffix[];
+  
+  // Physics
+  dimensions: { width: number; height: number };
+  weight: number; 
 
-  /** Gameplay stats (Damage, Defense, Weight, etc) */
   stats: {
     damage?: number;
     defense?: number;
     attackSpeed?: number;
     durability?: number;
     maxDurability?: number;
-    weight?: number; 
-    [key: string]: any; 
+    [key: string]: any;
   };
 
-  /** Visual rendering instructions */
   visuals: {
-    modelId: string; // e.g., 'sword_low_poly_01'
+    modelId: string;
     colorHex: string;
     particleEffect?: string;
-    iconUrl?: string; // Kept for legacy compatibility
+    iconUrl?: string;
   };
   
-  /** Helper for UI to grab icon quickly without digging into visuals */
-  icon: string; 
+  icon: string;
 
-  /** Provenance/History */
   history: {
     craftedByPlayerId?: string;
     foundInLayerId?: string;
@@ -144,18 +137,20 @@ export interface IItem {
     killCount: number;
   };
 
-  // --- STATE FLAGS ---
-  isIdentified: boolean; 
+  isIdentified: boolean;
 
-  // --- SPECIFIC DATA BLOCKS (Optional) ---
-  
-  /** Populated ONLY if type === 'DEED' */
   deedData?: {
     originBiome: string;
     originLayer: string;
     coordinateHash: string;
     rank: UniversalRank;
     allowedStructures: ('HOUSE' | 'WORKSHOP' | 'VENDOR')[];
+  };
+
+  toolData?: {
+    toolTags: string[];
+    toolPower: number;
+    efficiency: number;
   };
 }
 
@@ -164,17 +159,17 @@ export interface IItem {
 // ==========================================================================
 
 export enum LayerTheme {
-  PRIME_MATERIAL = 'PRIME_MATERIAL', 
-  HIGH_FANTASY = 'HIGH_FANTASY',    
-  HARD_SCIFI = 'HARD_SCIFI',        
-  CYBERPUNK = 'CYBERPUNK',          
-  THE_VOID = 'THE_VOID'             
+  PRIME_MATERIAL = 'PRIME_MATERIAL',
+  HIGH_FANTASY = 'HIGH_FANTASY',
+  HARD_SCIFI = 'HARD_SCIFI',
+  CYBERPUNK = 'CYBERPUNK',
+  THE_VOID = 'THE_VOID'
 }
 
 export interface IWorldSeed {
   seedId: string;
   generationTimestamp: number;
-  topologyHash: string; 
+  topologyHash: string;
   poiMap: Map<string, { 
     id: string; 
     x: number; 
@@ -188,9 +183,9 @@ export interface ILayer {
   id: string;
   name: string;
   theme: LayerTheme;
-  isPersistent: boolean; 
+  isPersistent: boolean;
   pvpMode: 'DISABLED' | 'OPEN' | 'SCALED';
-  itemRankCap?: UniversalRank; 
+  itemRankCap?: UniversalRank;
 }
 
 // ==========================================================================
@@ -198,11 +193,11 @@ export interface ILayer {
 // ==========================================================================
 
 export enum StructureType {
-  RESIDENCE = 'RESIDENCE',    
-  HARVESTER = 'HARVESTER',    
-  VENDOR = 'VENDOR',          
-  MUNICIPAL = 'MUNICIPAL',    
-  GUILD_HALL = 'GUILD_HALL'   
+  RESIDENCE = 'RESIDENCE',
+  HARVESTER = 'HARVESTER',
+  VENDOR = 'VENDOR',
+  MUNICIPAL = 'MUNICIPAL',
+  GUILD_HALL = 'GUILD_HALL'
 }
 
 export interface IWorldStructure {
@@ -214,7 +209,7 @@ export interface IWorldStructure {
   position: { x: number; y: number; z: number };
   rotation: number;
   persistentState: Record<string, any>;
-  inventory: IItem[]; 
+  inventory: IItem[];
   taxPaidUntil: number;
   upkeepCostPerDay: number;
 }
@@ -224,11 +219,11 @@ export interface IPlayerCity {
   layerId: string;
   name: string;
   mayorPlayerId: string;
-  radius: number; 
+  radius: number;
   center: { x: number; y: number; z: number };
   citizenIds: string[];
-  taxRate: number; 
-  treasury: number; 
+  taxRate: number;
+  treasury: number;
   upkeepCostPerWeek: number;
 }
 
@@ -236,25 +231,53 @@ export interface IPlayerCity {
 // 6. PLAYER, PERSISTENCE & LORE
 // ==========================================================================
 
+export interface IAttributes {
+    strength: number; 
+    constitution: number; 
+    agility: number; 
+    dexterity: number; 
+    endurance: number;
+    intelligence: number; 
+    focus: number; 
+    engineering: number; 
+    hacking: number; 
+    perception: number;
+    charisma: number; 
+    intimidation: number; 
+    subterfuge: number; 
+    bartering: number; 
+    leadership: number;
+}
+
 export interface ILoreEntry {
-  topic: string; 
+  topic: string;
   xp: number;
   level: number;
   dateDiscovered: number;
 }
 
+export interface ISkillState {
+  id: string;
+  level: number;
+  currentXp: number;
+  tags: string[];
+  scalingAttribute: string;
+  origin?: {
+    timestamp: number;
+    triggerAction: string;
+    location: string;
+    resonance: number;
+  };
+}
+
 export interface IBank {
   accountId: string;
-  gold: number; 
-  
+  gold: number;
   stashTabs: {
     name: string;
     items: IItem[];
   }[];
-
-  universalSkills: Record<string, number>;
-  
-  // Persistent Knowledge Base
+  universalSkills: Record<string, ISkillState>;
   lore: Record<string, ILoreEntry>;
 }
 
@@ -269,11 +292,96 @@ export interface IActiveSession {
   statusEffects: string[];
 }
 
+// NEW: Interaction Types for UI
+export enum InteractionType {
+  HARVEST = 'HARVEST',
+  PICKUP = 'PICKUP',
+  OPEN = 'OPEN',
+  STUDY = 'STUDY',
+  ANALYZE = 'ANALYZE',
+  COMMUNE = 'COMMUNE',
+  HACK = 'HACK'
+}
+
+export interface IInteractionOption {
+  id: string;
+  label: string;
+  type: InteractionType;
+  icon: string;
+  energyCost: number;
+  timeCostSeconds: number;
+  requirements: {
+    toolType?: string;
+    skillId?: string;
+    minSkillLevel?: number;
+    consumableId?: string;
+  };
+  consequence: {
+    lootTableId?: string;
+    knowledgeId?: string;
+    xpTags?: string[];
+  };
+}
+
+export interface IMaterialKnowledge {
+  resourceId: string;
+  knowledgeLevel: number;
+  discoveredAffixes: string[];
+}
+
+// NEW: The "Float Memory" System
+export interface ICognitiveFrame {
+  id: string;
+  name: string;
+  description: string;
+  type: 'LOGIC' | 'INSTINCT' | 'SOCIAL';
+  modifiers: Partial<Record<keyof IAttributes, number>>; // +Buffs and -Debuffs
+  colorHex: string;
+}
+
 export interface IPlayer {
   id: string;
   username: string;
-  bank: IBank;           // The "Soul"
-  currentSession?: IActiveSession; // The "Body"
+  bank: IBank;
+  currentSession?: IActiveSession;
   guildId?: string;
   ownedCityId?: string;
+  materialMastery: Record<string, IMaterialKnowledge>;
+  
+  // FIXED: Separated Base vs Effective Attributes
+  baseAttributes: IAttributes; // Raw stats (XP/Levels)
+  attributes: IAttributes;     // Effective stats (Base + Frames + Gear)
+  
+  // NEW: 3 Slots for Thinking Frames
+  floatMemory: [ICognitiveFrame | null, ICognitiveFrame | null, ICognitiveFrame | null];
+}
+
+export interface IInteractionOption {
+  id: string;
+  label: string;             // "Mine Iron Vein"
+  type: InteractionType;
+  icon: string;              // "⛏️"
+  energyCost: number;
+  timeCostSeconds: number;
+  
+  // The Condition
+  requirements: {
+    toolType?: string;       // "pickaxe"
+    skillId?: string;        // "skill_mining"
+    minSkillLevel?: number;
+    consumableId?: string;   // "scanner_battery"
+  };
+  
+  // The Consequence
+  consequence: {
+    lootTableId?: string;
+    knowledgeId?: string;
+    xpTags?: string[];
+  };
+}
+
+export interface IMaterialKnowledge {
+  resourceId: string;        // "res_iron"
+  knowledgeLevel: number;    // 0 = Unknown, 1 = Name, 2 = Basic Props, 3 = Affixes
+  discoveredAffixes: string[]; // IDs of affixes this player knows exist on this material
 }

@@ -13,7 +13,8 @@ export enum EntityType {
   NPC = 'NPC',
   RESOURCE = 'RESOURCE',
   STRUCTURE = 'STRUCTURE',
-  EXTRACTION = 'EXTRACTION'
+  EXTRACTION = 'EXTRACTION',
+  CONTAINER = 'CONTAINER' // <-- FIXED: Added this missing type
 }
 
 // NEW: The Intel Levels

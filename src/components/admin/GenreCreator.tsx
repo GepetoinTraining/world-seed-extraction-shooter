@@ -1,11 +1,11 @@
 /**
  * GenreCreator - Admin Tool for Content Generation
- * 
- * Provides UI to:
+ * * Provides UI to:
  * 1. Input genre concept
  * 2. Run content pipeline
  * 3. View generated content
  * 4. Export to game definitions
+ * 5. SEED THE VECTOR DB (Genesis)
  */
 
 import React, { useState, useCallback } from 'react';
@@ -24,6 +24,8 @@ import {
   IGeneratedMob,
   IGeneratedAffix
 } from '../../entities/generation/ContentPipeline';
+// NEW: Import the Genesis Initializer
+import { GenesisInitializer } from '../../entities/data/GenesisInitializer';
 
 // =============================================================================
 // COMPONENT
@@ -38,6 +40,9 @@ export const GenreCreator: React.FC = () => {
   const [pipelineState, setPipelineState] = useState<IPipelineState | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // NEW: Genesis State
+  const [seeding, setSeeding] = useState(false);
   
   // API Key (in real app, would come from env/settings)
   const apiKey = (window as any).process?.env?.GEMINI_API_KEY || 
@@ -107,6 +112,24 @@ export const GenreCreator: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
   }, []);
+
+  // NEW: Genesis Handler
+  const handleSeedDB = async () => {
+    if (!apiKey) {
+        alert('API Key Missing! Cannot generate embeddings.');
+        return;
+    }
+    setSeeding(true);
+    try {
+      const count = await GenesisInitializer.initialize();
+      alert(`Genesis Complete: ${count} entities seeded into the Vector Ledger.`);
+    } catch (e) {
+      console.error(e);
+      alert('Genesis Failed. Check console for details.');
+    } finally {
+      setSeeding(false);
+    }
+  };
   
   // =========================================================================
   // RENDER HELPERS
@@ -152,9 +175,19 @@ export const GenreCreator: React.FC = () => {
             <Text size="xl" fw={900} c="emerald">GENRE CREATOR</Text>
             <Text size="sm" c="dimmed">Content Generation Pipeline</Text>
           </div>
-          <Badge color={apiKey ? 'emerald' : 'red'} size="lg">
-            API: {apiKey ? 'CONNECTED' : 'NOT CONFIGURED'}
-          </Badge>
+          <Group>
+             <Button 
+                color="orange" 
+                variant="outline" 
+                loading={seeding}
+                onClick={handleSeedDB}
+             >
+                Initialize Genesis DB
+             </Button>
+             <Badge color={apiKey ? 'emerald' : 'red'} size="lg">
+                API: {apiKey ? 'CONNECTED' : 'NOT CONFIGURED'}
+             </Badge>
+          </Group>
         </Group>
         
         {/* Input Form */}

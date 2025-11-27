@@ -1,13 +1,3 @@
-/**
- * App.tsx - Main Application Entry
- * 
- * Routes between:
- * 1. HUB - Safe zone, NPC interactions, player lots
- * 2. MISSIONS - World selection (extraction zones)
- * 3. SESSION - Active gameplay (WorldCanvas)
- * 4. ADMIN - Content generation tools (dev only)
- */
-
 import React, { useState } from 'react';
 import { usePlayerStore } from './src/entities/player/store';
 import { useWorldStore } from './src/entities/world/store';
@@ -16,66 +6,33 @@ import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
 import { PlayerHub } from './src/components/PlayerHub';
 import { GenreCreator } from './src/components/admin/GenreCreator';
+import { IdentityGate } from './src/components/IdentityGate'; // Ensure you created this file!
 import { 
-  Box, Text, Center, Button, Stack, Group, Tabs, Paper, Badge,
+  Box, Text, Button, Stack, Group, Badge,
   AppShell, NavLink, Divider
 } from '@mantine/core';
 
-// =============================================================================
-// VIEW TYPES
-// =============================================================================
-
 type AppView = 'HUB' | 'MISSIONS' | 'SESSION' | 'BANK' | 'ADMIN';
 
-// =============================================================================
-// MAIN APP
-// =============================================================================
-
 const App: React.FC = () => {
-  const { player, diveIntoLayer, emergencyJackOut } = usePlayerStore();
-  const { currentMap, reconMode, exitWorld } = useWorldStore();
+  const { player, emergencyJackOut } = usePlayerStore();
+  const { currentMap, exitWorld } = useWorldStore();
   const session = player.currentSession;
   
-  // Current view state
   const [view, setView] = useState<AppView>('HUB');
-  
-  // Dev mode toggle
   const [devMode, setDevMode] = useState(false);
-
   
-// Inside App.tsx, add this component and state to switch to it
-const AwakeningSequence = ({ onComplete }: { onComplete: () => void }) => {
-  return (
-    <Center h="100vh">
-      <Stack align="center">
-        <Text size="xl" fw={900}>INITIATING...</Text>
-        <Button onClick={onComplete} color="emerald">WAKE UP</Button>
-      </Stack>
-    </Center>
-  );
-};
+  // Local state to track if gate is passed
+  const [isGateOpen, setIsGateOpen] = useState(false);
 
-  // =========================================================================
-  // VIEW ROUTING
-  // =========================================================================
-  
-  // If player is in an active session, show the game world
+  // 1. DIVE STATE: If in-game, bypass everything (Render the Simulation)
   if (session && currentMap) {
     return (
       <Box h="100vh" bg="dark.9">
         <WorldCanvas session={session} />
-        
-        {/* Extract Button Overlay */}
         <Button 
-          pos="absolute" 
-          top={20} 
-          right={20} 
-          color="gold"
-          onClick={() => {
-            emergencyJackOut();
-            exitWorld();
-            setView('HUB');
-          }}
+          pos="absolute" top={20} right={20} color="gold"
+          onClick={() => { emergencyJackOut(); exitWorld(); setView('HUB'); }}
           style={{ zIndex: 1000 }}
         >
           EXTRACT
@@ -83,11 +40,14 @@ const AwakeningSequence = ({ onComplete }: { onComplete: () => void }) => {
       </Box>
     );
   }
-  
-  // =========================================================================
-  // MAIN NAVIGATION SHELL
-  // =========================================================================
-  
+
+  // 2. GATE STATE: If not logged in, show Identity Gate
+  // This effectively blocks the rest of the app until onComplete is called
+  if (!isGateOpen) {
+    return <IdentityGate onComplete={() => setIsGateOpen(true)} />;
+  }
+
+  // 3. SHELL STATE: Main App (Hub, Missions, etc.)
   return (
     <AppShell
       header={{ height: 60 }}
@@ -95,7 +55,6 @@ const AwakeningSequence = ({ onComplete }: { onComplete: () => void }) => {
       padding="md"
       bg="dark.9"
     >
-      {/* HEADER */}
       <AppShell.Header p="md" bg="dark.7" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
         <Group justify="space-between" h="100%">
           <Group gap="md">
@@ -107,82 +66,61 @@ const AwakeningSequence = ({ onComplete }: { onComplete: () => void }) => {
           <Group gap="md">
             <Badge color="gold">{player.bank.gold.toLocaleString()} G</Badge>
             <Text size="sm" c="dimmed">{player.username}</Text>
-            <Button 
-              variant="subtle" 
-              size="xs" 
-              color="gray"
-              onClick={() => setDevMode(!devMode)}
-            >
-              {devMode ? '🔧 DEV' : '👤 USER'}
+            <Button variant="subtle" size="xs" color="gray" onClick={() => setDevMode(!devMode)}>
+              {devMode ? '🛑 DEV' : '🛠️ USER'}
             </Button>
           </Group>
         </Group>
       </AppShell.Header>
       
-      {/* NAVBAR */}
       <AppShell.Navbar p="md" bg="dark.7" style={{ borderRight: '1px solid var(--mantine-color-dark-4)' }}>
         <Stack gap="xs">
           <Text size="xs" c="dimmed" fw={700} tt="uppercase">Navigation</Text>
           
-          <NavLink
-            label="City Hub"
-            description="Walk around, meet NPCs"
-            leftSection={<Text>🏠</Text>}
-            active={view === 'HUB'}
-            onClick={() => setView('HUB')}
+          <NavLink 
+            label="City Hub" 
+            leftSection={<Text>🏙️</Text>} 
+            active={view === 'HUB'} 
+            onClick={() => setView('HUB')} 
+            color="emerald"
+            variant="light"
           />
           
-          <NavLink
-            label="Mission Control"
-            description="Select extraction zone"
-            leftSection={<Text>🎯</Text>}
-            active={view === 'MISSIONS'}
-            onClick={() => setView('MISSIONS')}
+          <NavLink 
+            label="Mission Control" 
+            leftSection={<Text>🚀</Text>} 
+            active={view === 'MISSIONS'} 
+            onClick={() => setView('MISSIONS')} 
+            color="emerald"
+            variant="light"
           />
           
-          <NavLink
-            label="Bank / Stash"
-            description="Manage your items"
-            leftSection={<Text>🏦</Text>}
-            active={view === 'BANK'}
-            onClick={() => setView('BANK')}
+          <NavLink 
+            label="Bank / Stash" 
+            leftSection={<Text>📦</Text>} 
+            active={view === 'BANK'} 
+            onClick={() => setView('BANK')} 
+            color="emerald"
+            variant="light"
           />
           
           {devMode && (
             <>
               <Divider my="sm" />
               <Text size="xs" c="dimmed" fw={700} tt="uppercase">Admin Tools</Text>
-              
-              <NavLink
-                label="Genre Creator"
-                description="Generate content"
-                leftSection={<Text>🎭</Text>}
-                active={view === 'ADMIN'}
-                onClick={() => setView('ADMIN')}
+              <NavLink 
+                label="Genre Creator" 
+                leftSection={<Text>🧬</Text>} 
+                active={view === 'ADMIN'} 
+                onClick={() => setView('ADMIN')} 
                 color="cyan"
+                variant="light"
               />
             </>
           )}
         </Stack>
-        
-        {/* Quick Stats */}
-        <Paper mt="auto" p="sm" bg="dark.8" withBorder>
-          <Stack gap={4}>
-            <Group justify="space-between">
-              <Text size="xs" c="dimmed">Session</Text>
-              <Badge size="xs" color={session ? 'emerald' : 'gray'}>
-                {session ? 'ACTIVE' : 'IDLE'}
-              </Badge>
-            </Group>
-            <Group justify="space-between">
-              <Text size="xs" c="dimmed">Stash Items</Text>
-              <Text size="xs">{player.bank.stashTabs[0]?.items.length || 0}</Text>
-            </Group>
-          </Stack>
-        </Paper>
       </AppShell.Navbar>
       
-      {/* MAIN CONTENT */}
       <AppShell.Main>
         <Box h="calc(100vh - 60px - 32px)">
           {view === 'HUB' && <HubCanvas />}

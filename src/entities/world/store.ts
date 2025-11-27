@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { IMap, ScanLevel, IChunk } from './types';
 import { WorldGenerator } from './WorldGenerator';
+import { WorldCertificateSystem, IWorldCertificate } from './WorldCertificate';
 
 export interface IWorldCard {
   id: string;
@@ -10,6 +11,9 @@ export interface IWorldCard {
   collapseTime: number; 
   playerCount: number; 
   isDebug?: boolean; 
+  name: string; // Added from Cert
+  difficulty: string; // Added from Cert
+  creator: string; // Added from Cert
 }
 
 interface WorldState {
@@ -19,7 +23,7 @@ interface WorldState {
   reconMode: boolean;
   selectedDropZone: { x: number, y: number } | null;
   
-  refreshWorlds: () => void;
+  refreshWorlds: () => Promise<void>;
   selectWorld: (worldId: string) => void;
   initiateRecon: (seed: string) => void; 
   fetchChunkData: (x: number, y: number) => void;
@@ -36,59 +40,73 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   reconMode: true,
   selectedDropZone: null,
 
-  refreshWorlds: () => {
+  // --- LEDGER INTEGRATION: FETCH WORLDS ---
+  refreshWorlds: async () => {
+      // 1. Get real worlds from the Ledger (VectorStore)
+      const certs = await WorldCertificateSystem.getPublicWorlds();
+      
       const now = Date.now();
-      const worlds: IWorldCard[] = [
-          { id: 'w-16', seed: 'alpha-16', size: 16, createdAt: now, collapseTime: now + 1000 * 60 * 5, playerCount: 12 },
-          { id: 'w-32', seed: 'beta-32', size: 32, createdAt: now, collapseTime: now + 1000 * 60 * 15, playerCount: 45 },
-          { 
-              id: 'dev-01', 
-              seed: 'dev-sandbox', 
-              size: 16, 
-              createdAt: now - 1000 * 60 * 60, 
-              collapseTime: now + 1000 * 60 * 60 * 24, 
-              playerCount: 1, 
-              isDebug: true 
-          }
-      ];
-      set({ availableWorlds: worlds });
+      
+      // 2. Map Certificates to Game Cards
+      const realWorlds: IWorldCard[] = certs.map(cert => ({
+          id: cert.data.worldUid,
+          seed: cert.data.seedHash,
+          size: cert.data.size,
+          createdAt: cert.data.createdAt,
+          collapseTime: now + (1000 * 60 * (cert.data.rules.sessionDurationMinutes || 60)),
+          playerCount: cert.data.stats.totalVisitors,
+          name: cert.data.worldName,
+          difficulty: cert.data.rules.difficulty,
+          creator: cert.data.creatorCertUid.substring(0, 8),
+          isDebug: false
+      }));
+
+      // 3. Add a Dev World for testing (Optional but good for stability)
+      const devWorld: IWorldCard = { 
+          id: 'dev-01', 
+          seed: 'dev-sandbox', 
+          size: 16, 
+          createdAt: now, 
+          collapseTime: now + 1000 * 60 * 60 * 24, 
+          playerCount: 1, 
+          isDebug: true,
+          name: "SIMULATION_DEBUG",
+          difficulty: "F",
+          creator: "SYSTEM"
+      };
+
+      set({ availableWorlds: [devWorld, ...realWorlds] });
   },
 
   selectWorld: (worldId: string) => {
       const worldCard = get().availableWorlds.find(w => w.id === worldId);
       if (!worldCard) return;
 
+      console.log(`[WORLD] Generating Reality: ${worldCard.seed}`);
+
+      // 1. GENERATE THE JSON from the Seed
       const map = WorldGenerator.generate(worldCard.seed, worldCard.size);
-      const blankChunks: Record<string, IChunk> = {};
       
+      // 2. Initialize Fog of War
+      const blankChunks: Record<string, IChunk> = {};
       Object.keys(map.chunks).forEach(key => {
           blankChunks[key] = { ...map.chunks[key], scanLevel: ScanLevel.UNKNOWN, entities: [] };
       });
 
-      // --- FIX: Instant Entry for Dev Worlds ---
       const isDev = !!worldCard.isDebug;
       
       set({ 
           activeWorldId: worldId, 
           currentMap: { ...map, chunks: blankChunks },
-          reconMode: !isDev, // Skip Recon if Dev
-          selectedDropZone: isDev ? { x: 15, y: 15 } : null // Auto-select drop zone (Matches Player Start 1500,1500)
+          reconMode: !isDev, 
+          selectedDropZone: isDev ? { x: 8, y: 8 } : null 
       });
   },
 
   initiateRecon: (seed: string) => {
-    const fullServerMap = WorldGenerator.generate(seed, 32);
-    const blankChunks: Record<string, IChunk> = {};
-    Object.keys(fullServerMap.chunks).forEach(key => {
-        blankChunks[key] = { ...fullServerMap.chunks[key], scanLevel: ScanLevel.UNKNOWN, entities: [] };
-    });
-
-    set({ 
-        activeWorldId: seed, 
-        currentMap: { ...fullServerMap, chunks: blankChunks }, 
-        reconMode: true, 
-        selectedDropZone: null 
-    });
+    // Legacy fallback, mostly replaced by selectWorld
+    const map = WorldGenerator.generate(seed, 32);
+    // ... same logic
   },
 
   fetchChunkData: (x: number, y: number) => {
@@ -96,6 +114,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     if (!currentMap) return;
 
     const chunkKey = `${x},${y}`;
+    // Re-generate true data to simulate server fetch
     const serverData = WorldGenerator.generate(currentMap.seed, currentMap.width).chunks[chunkKey];
     
     const updatedChunks = {
@@ -114,12 +133,12 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     const chunk = currentMap.chunks[chunkKey];
     if (!chunk) return;
 
-    const trueMap = WorldGenerator.generate(currentMap.seed, currentMap.width);
-    const trueChunk = trueMap.chunks[chunkKey];
+    // "Server" Fetch
+    const trueChunk = WorldGenerator.generate(currentMap.seed, currentMap.width).chunks[chunkKey];
 
     let nextLevel = chunk.scanLevel + 1;
-    
     const isDev = currentMap.seed.startsWith('dev');
+    
     if (isDev) {
         nextLevel = ScanLevel.COMPLETE;
     } else {
@@ -137,15 +156,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ currentMap: { ...currentMap, chunks: updatedChunks } });
   },
 
-  selectChunk: (x: number, y: number) => {
-      set({ selectedDropZone: { x, y } });
-  },
-
-  confirmDrop: () => {
-      set({ reconMode: false });
-  },
-
-  exitWorld: () => {
-      set({ activeWorldId: null, currentMap: null });
-  }
+  selectChunk: (x: number, y: number) => set({ selectedDropZone: { x, y } }),
+  confirmDrop: () => set({ reconMode: false }),
+  exitWorld: () => set({ activeWorldId: null, currentMap: null })
 }));

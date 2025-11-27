@@ -1,36 +1,25 @@
-/**
- * IDENTITY STORE
- * Manages the player's sovereign identity state
- * 
- * This is separate from PlayerStore because:
- * - Identity is PERMANENT (survives across worlds)
- * - Player state is EPHEMERAL (changes per session)
- */
-
 import { create } from 'zustand';
+// FIXED: Lowercase 'certificateSystem'
 import { 
   CertificateSystem, 
   IPlayerCertificate, 
   ISignedPayload 
-} from './CertificateSystem';
+} from './certificateSystem';
 
 export enum IdentityState {
-  UNKNOWN = 'UNKNOWN',       // Haven't checked yet
-  NO_IDENTITY = 'NO_IDENTITY', // No certificate found
-  LOADING = 'LOADING',       // Loading/generating
-  READY = 'READY',           // Identity loaded and ready
-  ERROR = 'ERROR'            // Something went wrong
+  UNKNOWN = 'UNKNOWN',
+  NO_IDENTITY = 'NO_IDENTITY',
+  LOADING = 'LOADING',
+  READY = 'READY',
+  ERROR = 'ERROR'
 }
 
 interface IdentityStore {
   state: IdentityState;
   certificate: IPlayerCertificate | null;
   error: string | null;
-  
-  // For export flow
   pendingExportKey: JsonWebKey | null;
 
-  // Actions
   checkExistingIdentity: () => Promise<void>;
   createIdentity: (displayName: string) => Promise<boolean>;
   exportIdentity: (password: string) => Promise<Blob | null>;
@@ -49,7 +38,6 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
     set({ state: IdentityState.LOADING });
 
     try {
-      // Check localStorage for certificate metadata
       const storedCert = localStorage.getItem('worldseed_certificate');
       
       if (!storedCert) {
@@ -59,11 +47,9 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
 
       const certificate = JSON.parse(storedCert) as IPlayerCertificate;
       
-      // Verify we still have the private key
       const privateKey = await CertificateSystem.getPrivateKey(certificate.metadata.uid);
       
       if (!privateKey) {
-        // Certificate exists but key is gone - corrupted state
         console.warn('[IDENTITY] Certificate found but private key missing');
         localStorage.removeItem('worldseed_certificate');
         set({ state: IdentityState.NO_IDENTITY });
@@ -94,13 +80,11 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         () => console.log('[IDENTITY] Requesting geolocation permission...')
       );
 
-      // Store certificate in localStorage (public data only)
       localStorage.setItem(
         'worldseed_certificate',
         JSON.stringify(result.certificate)
       );
 
-      // Keep the export key temporarily for backup flow
       set({ 
         state: IdentityState.READY, 
         certificate: result.certificate,
@@ -122,17 +106,8 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
   exportIdentity: async (password: string) => {
     const { certificate, pendingExportKey } = get();
     
-    if (!certificate) {
-      console.error('[IDENTITY] No certificate to export');
-      return null;
-    }
-
-    // If we don't have the pending key, we need to get it from IndexedDB
-    // This is only possible right after creation
-    if (!pendingExportKey) {
-      console.error('[IDENTITY] Export key not available. Can only export immediately after creation.');
-      return null;
-    }
+    if (!certificate) return null;
+    if (!pendingExportKey) return null;
 
     try {
       const blob = await CertificateSystem.exportIdentity(
@@ -140,10 +115,7 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         pendingExportKey,
         password
       );
-
-      // Clear the pending key after successful export
       set({ pendingExportKey: null });
-
       return blob;
     } catch (e) {
       console.error('[IDENTITY] Export failed:', e);
@@ -165,7 +137,6 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         return false;
       }
 
-      // Store certificate
       localStorage.setItem(
         'worldseed_certificate',
         JSON.stringify(result.certificate)
@@ -176,7 +147,6 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         certificate: result.certificate 
       });
 
-      console.log(`[IDENTITY] Imported: ${result.certificate.metadata.uid}`);
       return true;
     } catch (e) {
       console.error('[IDENTITY] Import failed:', e);
@@ -190,11 +160,7 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
 
   signData: async <T>(data: T) => {
     const { certificate } = get();
-    
-    if (!certificate) {
-      console.error('[IDENTITY] Cannot sign: no identity');
-      return null;
-    }
+    if (!certificate) return null;
 
     try {
       return await CertificateSystem.signPayload(
@@ -211,7 +177,6 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
     const { certificate } = get();
     
     if (certificate) {
-      // Clear from IndexedDB
       const request = indexedDB.open('WorldSeedIdentity', 1);
       request.onsuccess = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -220,7 +185,6 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
       };
     }
 
-    // Clear localStorage
     localStorage.removeItem('worldseed_certificate');
 
     set({ 
@@ -228,7 +192,5 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
       certificate: null,
       pendingExportKey: null 
     });
-
-    console.log('[IDENTITY] Cleared');
   }
 }));
