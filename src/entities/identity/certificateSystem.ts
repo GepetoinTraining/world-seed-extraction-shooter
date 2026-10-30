@@ -232,8 +232,9 @@ export class CertificateSystem {
 
   /**
    * Store private key securely in IndexedDB
+   * (public since Wave 6: avatar import writes a verified key back)
    */
-  private static async storePrivateKey(uid: string, privateKey: CryptoKey): Promise<void> {
+  static async storePrivateKey(uid: string, privateKey: CryptoKey): Promise<void> {
     return new Promise((resolve, reject) => {
       // FIX: Use DB_VERSION constant (2)
       const request = indexedDB.open('WorldSeedIdentity', this.DB_VERSION);

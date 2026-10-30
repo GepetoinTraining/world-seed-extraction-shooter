@@ -1,0 +1,93 @@
+/**
+ * ITEM PROVENANCE (Wave 6.2)
+ *
+ * An item's story is its value. Every item that REACHES THE BANK (survives a
+ * session, comes off the mill, is bought) gets a signed provenance event;
+ * trades append TRANSFER events. The chain lives beside the item in the
+ * ITEMS namespace and verifies end to end against the actors' certificates.
+ *
+ * Recording happens at banking/trade time, not at mint time — the world
+ * mints thousands of items per session; the bank only remembers the ones
+ * that made it home.
+ */
+
+import { IItem } from '../../../types';
+import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
+import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { useIdentityStore } from '../../entities/identity/store';
+
+export interface IProvenanceEvent {
+  type: 'MINT' | 'TRANSFER';
+  itemId: string;
+  defId: string;
+  actorCertUid: string;
+  context: Record<string, any>; // sessionId, rollKey, recipeId, lotId…
+  at: number;
+}
+
+export interface IProvenanceChain {
+  itemId: string;
+  events: ISignedPayload<IProvenanceEvent>[];
+}
+
+export class Provenance {
+
+  private static docId(itemId: string) { return `prov_${itemId}`; }
+
+  /** Append one signed event to an item's chain. Fire-and-forget safe. */
+  static async record(item: IItem, type: IProvenanceEvent['type'], context: Record<string, any>): Promise<boolean> {
+    const cert = useIdentityStore.getState().certificate;
+    if (!cert) return false;
+
+    try {
+      const event: IProvenanceEvent = {
+        type,
+        itemId: item.id,
+        defId: item.universalDefinitionId,
+        actorCertUid: cert.metadata.uid,
+        context,
+        at: Date.now()
+      };
+      const signed = await CertificateSystem.signPayload(cert.metadata.uid, event);
+
+      const existing = await VectorStore.get<IProvenanceChain>(VectorNamespace.ITEMS, this.docId(item.id));
+      const chain: IProvenanceChain = existing?.data ?? { itemId: item.id, events: [] };
+      chain.events.push(signed);
+
+      await VectorStore.put({
+        id: this.docId(item.id),
+        namespace: VectorNamespace.ITEMS,
+        data: chain,
+        metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: cert.metadata.uid, signature: signed.signature, version: chain.events.length }
+      });
+      return true;
+    } catch (e) {
+      console.error('[PROV] Record failed:', e);
+      return false;
+    }
+  }
+
+  static async recordMany(items: IItem[], type: IProvenanceEvent['type'], context: Record<string, any>) {
+    for (const item of items) await this.record(item, type, context);
+  }
+
+  /** Verify every signature in an item's chain (local certs only, for now). */
+  static async verify(itemId: string): Promise<{ ok: boolean; events: number; firstEvent?: string }> {
+    const doc = await VectorStore.get<IProvenanceChain>(VectorNamespace.ITEMS, this.docId(itemId));
+    if (!doc?.data) return { ok: false, events: 0 };
+
+    const cert = useIdentityStore.getState().certificate;
+    for (const signed of doc.data.events) {
+      // A multi-identity world would resolve each actor's cert from a registry;
+      // locally every event is ours.
+      if (!cert || signed.certUid !== cert.metadata.uid) return { ok: false, events: doc.data.events.length };
+      const valid = await CertificateSystem.verifyPayload(signed, cert);
+      if (!valid) return { ok: false, events: doc.data.events.length };
+    }
+    return {
+      ok: true,
+      events: doc.data.events.length,
+      firstEvent: doc.data.events[0] ? `${doc.data.events[0].payload.type} @ ${new Date(doc.data.events[0].payload.at).toISOString()}` : undefined
+    };
+  }
+}

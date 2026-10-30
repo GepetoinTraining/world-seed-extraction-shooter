@@ -36,7 +36,7 @@ When all lines pass in one unbroken sitting — including the browser reload —
 17. [x] List planks in a shop → another identity could buy them
 18. [x] Die on a second run → death penalty from the WORLD CERT rules applies
         (inventory lost, not banked)
-19. [ ] Export avatar (cert + encrypted key + signed player doc) → import in a
+19. [x] Export avatar (cert + encrypted key + signed player doc) → import in a
         fresh browser profile → same character, provably the same
 20. [x] Same world seed on two clients → identical map, chunk for chunk
 ```
@@ -206,7 +206,7 @@ claim/receipt; ledger chain audits clean.)*
   This is the Interdependence pillar: extraction taxes fund the hub, the hub charges rent.
 - **Gate:** test lines **4, 15, 16, 17** + the conservation invariant.
 
-### WAVE 6 — Sovereignty (own your avatar, the full 9 yards)
+### WAVE 6 — Sovereignty (own your avatar, the full 9 yards) ✅ DONE
 - **W6.1 Avatar export/import.** Content-addressed export file (donor: `.seed` format —
   magic, version, digest): cert + passphrase-encrypted private key + signed player doc +
   ledger tail. Import into a clean profile reconstructs the identity; signatures prove it.

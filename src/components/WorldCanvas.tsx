@@ -438,7 +438,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const rate = card?.extractionTaxRate ?? 0.05;
     const tax = Math.floor(haulValue * rate);
 
-    SessionJournal.record('EXTRACT', { loot: session.inventory.map(i => i.id), haulValue, rate, tax });
+    const haul = [...session.inventory];
+    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax });
     st.emergencyJackOut();
     world.exitWorld();
 
@@ -452,6 +453,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         await Treasury.credit(worldCertUid || 'unknown', tax);
         console.log(`[TAX] Hub levied ${tax}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
       }
+      // Wave 6.2: everything that made it home gets its story signed
+      const { Provenance } = await import('../logic/sovereignty/Provenance');
+      await Provenance.recordMany(haul, 'MINT', { origin: 'EXTRACTION', sessionId: session.sessionId, worldCertUid });
+
       const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
       await SessionJournal.finish('EXTRACTED', after);
       await PlayerPersistence.flush('extract');

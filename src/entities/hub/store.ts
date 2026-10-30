@@ -335,6 +335,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       }));
       minted += outputs.length;
       await Ledger.append('CRAFT', { kind: 'COLLECTED', jobId: job.id, outputIds: outputs.map(o => o.id) });
+      // Wave 6.2: crafted goods carry their maker's signature from birth
+      const { Provenance } = await import('../../logic/sovereignty/Provenance');
+      await Provenance.recordMany(outputs, 'MINT', { origin: 'CRAFT', jobId: job.id, recipeId: job.recipeId, lotId: job.lotId });
       console.log(`[CRAFT] Collected ${outputs.length}x from ${recipe.name}.`);
     }
 
@@ -404,6 +407,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       console.log(`[SHOP] ${net}G owed to ${lot.ownerName} (remote settlement pending).`);
     }
     await Ledger.append('TRADE', { kind: 'SHOP_SALE', lotId, itemId, price: listing.price, fee, playerDelta, treasuryDelta: fee });
+    // Wave 6.2: ownership change goes on the item's record
+    const { Provenance } = await import('../../logic/sovereignty/Provenance');
+    await Provenance.record(listing.item, 'TRANSFER', { via: 'PLAYER_SHOP', lotId, price: listing.price, fee });
 
     set({ lots: get().lots.map(l => l.id === lotId
       ? { ...l, shopListings: (l.shopListings || []).filter(li => li.item.id !== itemId) }

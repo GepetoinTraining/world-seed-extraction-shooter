@@ -128,6 +128,22 @@ const App: React.FC = () => {
             <ActionIcon variant="transparent" color="gray" onClick={toggleConsole} title="Toggle Console (~)">
               📟
             </ActionIcon>
+            <ActionIcon
+              variant="transparent" color="gray" title="Export Avatar (sovereign backup)"
+              onClick={async () => {
+                const password = prompt('Passphrase to encrypt your private key:');
+                if (!password) return;
+                const { AvatarExport } = await import('./src/logic/sovereignty/AvatarExport');
+                const result = await AvatarExport.exportAvatar(password);
+                if (!result) { alert('Export failed — see console.'); return; }
+                const url = URL.createObjectURL(result.blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = result.filename; a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              💾
+            </ActionIcon>
             <Badge color="gold">{player.bank.gold.toLocaleString()} G</Badge>
             <Text size="sm" c="dimmed">{player.username}</Text>
             <Button variant="subtle" size="xs" color="gray" onClick={() => setDevMode(!devMode)}>

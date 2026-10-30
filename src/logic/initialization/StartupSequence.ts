@@ -25,7 +25,10 @@ export class StartupSequence {
       const { GoldAudit } = await import('../economy/GoldAudit');
       const { Treasury } = await import('../economy/Treasury');
       const { DeedSystem } = await import('../systems/DeedSystem');
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem };
+      const { AvatarExport } = await import('../sovereignty/AvatarExport');
+      const { Provenance } = await import('../sovereignty/Provenance');
+      const { WorldExport } = await import('../sovereignty/WorldExport');
+      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 
