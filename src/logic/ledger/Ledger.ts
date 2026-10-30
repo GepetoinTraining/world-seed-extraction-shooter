@@ -15,9 +15,11 @@ import { useIdentityStore } from '../../entities/identity/store';
 export type LedgerRowType =
   | 'CHARACTER_GENESIS' // identity minted a character
   | 'SESSION_RESULT'    // sealed session receipt summary
-  | 'GOLD_DELTA'        // any gold movement (Wave 5 fills in)
-  | 'TAX'               // extraction/hub tax (Wave 2/5)
+  | 'GOLD_DELTA'        // any gold movement (data: { amount: player delta, treasuryId?, treasuryDelta? })
+  | 'TAX'               // session-exit levy (Wave 2.5)
   | 'TRADE'             // item changed owners (Wave 5/6)
+  | 'CRAFT'             // a transformation job queued or collected (Wave 5.2)
+  | 'UPKEEP'            // lot upkeep charged (Wave 5.4)
   | 'TOMBSTONE';        // marks an earlier row as superseded — never delete
 
 export interface ILedgerRow {

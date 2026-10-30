@@ -15,7 +15,7 @@ import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/Inve
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { Ledger } from '../logic/ledger/Ledger';
-import { VectorStore, VectorNamespace } from '../entities/data/VectorStore';
+import { Treasury } from '../logic/economy/Treasury';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -449,15 +449,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           player: { ...state.player, bank: { ...state.player.bank, gold: Math.max(0, state.player.bank.gold - tax) } }
         }));
         await Ledger.append('TAX', { worldCertUid, haulValue, rate, tax });
-
-        const treasuryId = `treasury_${worldCertUid || 'unknown'}`;
-        const existing = await VectorStore.get<{ gold: number }>(VectorNamespace.TERRITORIES, treasuryId);
-        await VectorStore.put({
-          id: treasuryId,
-          namespace: VectorNamespace.TERRITORIES,
-          data: { gold: (existing?.data?.gold || 0) + tax },
-          metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: 'SYSTEM', version: 1 }
-        });
+        await Treasury.credit(worldCertUid || 'unknown', tax);
         console.log(`[TAX] Hub levied ${tax}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
       }
       const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);

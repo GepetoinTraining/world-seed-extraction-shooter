@@ -22,7 +22,10 @@ export class StartupSequence {
     if (import.meta.env.DEV) {
       const { useHubStore } = await import('../../entities/hub/store');
       const { InteractionEngine } = await import('../../entities/interaction/InteractionEngine');
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine };
+      const { GoldAudit } = await import('../economy/GoldAudit');
+      const { Treasury } = await import('../economy/Treasury');
+      const { DeedSystem } = await import('../systems/DeedSystem');
+      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 
@@ -116,7 +119,8 @@ console.log('[BOOT] Refreshing World List...');
            if (saved) {
              await Ledger.append('CHARACTER_GENESIS', {
                certUid: certificate.metadata.uid,
-               username: usePlayerStore.getState().player.username
+               username: usePlayerStore.getState().player.username,
+               gold: usePlayerStore.getState().player.bank.gold // the birthright grant (audited)
              });
            }
        }

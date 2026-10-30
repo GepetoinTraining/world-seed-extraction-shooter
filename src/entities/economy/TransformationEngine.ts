@@ -1,5 +1,6 @@
 import { ITransformationRecipe, IIndustrialFacility } from './types';
 import { IItem } from '../../../types';
+import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 
 export class TransformationEngine {
   
@@ -23,10 +24,15 @@ export class TransformationEngine {
    * Executes a transformation cycle.
    * Consumes inputs, generates outputs.
    */
-  static processCycle(recipe: ITransformationRecipe, inputs: IItem[]): { 
-    consumedIds: string[], 
-    generatedItems: { defId: string, count: number }[] 
+  static processCycle(recipe: ITransformationRecipe, inputs: IItem[], rng?: SeededRNG): {
+    consumedIds: string[],
+    generatedItems: { defId: string, count: number }[]
   } {
+    // Wave 5.2: probabilistic outputs roll from a journaled key, never ambient
+    if (!rng) {
+      console.warn('[CRAFT] Unkeyed craft roll - not replayable.');
+      rng = Rng.fromKey(`unkeyed:craft:${Date.now()}:${Math.random()}`);
+    }
     const consumedIds: string[] = [];
     const generatedItems: { defId: string, count: number }[] = [];
 
@@ -46,7 +52,7 @@ export class TransformationEngine {
 
     // 2. Generate Outputs (Probabilistic)
     recipe.outputs.forEach(out => {
-      if (Math.random() <= out.probability) {
+      if (rng!.next() <= out.probability) {
         generatedItems.push({ defId: out.itemId, count: out.quantity });
       }
     });

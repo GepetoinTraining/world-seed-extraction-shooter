@@ -31,9 +31,9 @@ When all lines pass in one unbroken sitting — including the browser reload —
 12. [x] Reach an extraction beacon → channel timer → extraction tax applied
 13. [x] Loot banked, XP applied, deed (if dropped) in stash — all SIGNED
 14. [x] Reload browser → everything from 13 is still there, signatures verify
-15. [ ] Redeem deed → own a lot → build a workshop
-16. [ ] Refine raw logs → planks at the workshop (recipe consumes, produces)
-17. [ ] List planks in a shop → another identity could buy them
+15. [x] Redeem deed → own a lot → build a workshop
+16. [x] Refine raw logs → planks at the workshop (recipe consumes, produces)
+17. [x] List planks in a shop → another identity could buy them
 18. [x] Die on a second run → death penalty from the WORLD CERT rules applies
         (inventory lost, not banked)
 19. [ ] Export avatar (cert + encrypted key + signed player doc) → import in a
@@ -192,7 +192,7 @@ claim/receipt; ledger chain audits clean.)*
 - **Gate:** test line **18**, plus: swapping F-rank → E-rank weapon measurably changes
   time-to-kill (assert via deterministic sim test, not feel).
 
-### WAVE 5 — Society (the hub economy loop)
+### WAVE 5 — Society (the hub economy loop) ✅ DONE
 - **W5.1 Gold conservation.** Every gold movement is a ledger row; purchases deduct, vendors
   buy at a spread, the sum across all accounts + treasury is invariant (test asserts it).
 - **W5.2 Crafting at lots.** TransformationEngine gets real recipes (log→plank, ore→ingot,
