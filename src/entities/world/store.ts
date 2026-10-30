@@ -37,6 +37,8 @@ interface WorldState {
   // Wave 2: world mutation (harvest depletion, chest looting, NPC state)
   updateEntity: (entityId: string, patch: Partial<import('./types').IWorldEntity>) => void;
   removeEntity: (entityId: string) => void;
+  // Wave 3.3: ground caches (dropped/overflow items become world entities)
+  addEntity: (entity: import('./types').IWorldEntity) => void;
 }
 
 // The "server-side" truth: full chunk data (entities included) for the active world.
@@ -215,6 +217,20 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       });
       return;
     }
+  },
+
+  addEntity: (entity) => {
+    const { currentMap } = get();
+    if (!currentMap) return;
+    const key = `${Math.floor(entity.position.x / 100)},${Math.floor(entity.position.y / 100)}`;
+    const chunk = currentMap.chunks[key];
+    if (!chunk) return;
+    set({
+      currentMap: {
+        ...currentMap,
+        chunks: { ...currentMap.chunks, [key]: { ...chunk, entities: [...chunk.entities, entity] } }
+      }
+    });
   },
 
   removeEntity: (entityId) => {

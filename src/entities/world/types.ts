@@ -51,7 +51,17 @@ export interface IWorldEntity {
   regrowAt?: number;        // flora only: when the node comes back (epoch ms)
 
   // Wave 2.3: containers (chests in ruins)
-  container?: { lootRank: UniversalRank; looted: boolean; hasLore: boolean };
+  // Wave 3.3: `items` = explicit contents (ground caches, overflow); when set,
+  // opening gives exactly these instead of generated loot. `cacheOwner` keeps
+  // ownership separate from containment (primordial owner-forest rule):
+  // a cache on the ground is still YOURS.
+  container?: {
+    lootRank: UniversalRank;
+    looted: boolean;
+    hasLore: boolean;
+    items?: import('../../../types').IItem[];
+    cacheOwner?: string;
+  };
 
   // Wave 2.4: social extraction
   npc?: INpcSheet;

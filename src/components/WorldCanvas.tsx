@@ -11,6 +11,7 @@ import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper, Button, St
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { TerrainSystem, TILE_PX } from '../entities/world/TerrainSystem';
+import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { Ledger } from '../logic/ledger/Ledger';
 import { VectorStore, VectorNamespace } from '../entities/data/VectorStore';
@@ -45,9 +46,15 @@ const EntityAvatar = ({ entity, onClick }: { entity: IWorldEntity; onClick: (e: 
       shape = '0px'; // Square
       break;
     case EntityType.CONTAINER:
-      color = entity.container?.looted ? '#44403c' : '#f59e0b';
-      icon = entity.container?.looted ? '🫙' : '📦';
-      shape = '4px';
+      if (entity.definitionId === 'ground_cache') {
+        color = '#8b5cf6';
+        icon = '🎒'; // a cache someone left behind — still theirs
+        shape = '6px';
+      } else {
+        color = entity.container?.looted ? '#44403c' : '#f59e0b';
+        icon = entity.container?.looted ? '🫙' : '📦';
+        shape = '4px';
+      }
       break;
     case EntityType.NPC:
       color = '#38bdf8';
@@ -125,6 +132,87 @@ const TerrainCanvas = ({ seed, playerX, playerZ }: { seed: string; playerX: numb
       ref={ref}
       style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
     />
+  );
+};
+
+/**
+ * PACK GRID (Wave 3.1): the 8x6 spatial inventory. Pure render over the
+ * store's layout; selection offers Rotate and Leave Behind.
+ */
+const CELL = 36;
+const PackGrid = ({ session }: { session: IActiveSession }) => {
+  const { dropItem, rotateItem, currentWeight, maxWeight } = usePlayerStore();
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const layout = session.inventoryLayout || {};
+  const items = session.inventory;
+  const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
+  const selectedItem = items.find(i => i.id === selected);
+
+  return (
+    <Paper
+      p="sm" bg="dark.8"
+      style={{ border: '1px solid var(--mantine-color-dark-4)', pointerEvents: 'auto' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Group justify="space-between" mb={6}>
+        <Text size="xs" fw={700} c="emerald">PACK ({InventorySystem.usedCells(items, layout)}/{GRID_W * GRID_H} cells)</Text>
+        <Text size="xs" c={ratio > 0.8 ? 'red' : 'dimmed'} ff="monospace">
+          {currentWeight.toFixed(1)}/{maxWeight}kg{ratio > 0.8 ? ' · SLOWED' : ''}
+        </Text>
+      </Group>
+
+      <div style={{ position: 'relative', width: GRID_W * CELL, height: GRID_H * CELL, background: '#0a0a0a' }}>
+        {/* cell lines */}
+        {Array.from({ length: GRID_W * GRID_H }, (_, i) => (
+          <div key={i} style={{
+            position: 'absolute',
+            left: (i % GRID_W) * CELL, top: Math.floor(i / GRID_W) * CELL,
+            width: CELL, height: CELL,
+            border: '1px solid #1f1f1f'
+          }} />
+        ))}
+        {/* items */}
+        {items.map(item => {
+          const place = layout[item.id];
+          if (!place) return null;
+          const { w, h } = InventorySystem.footprint(item, place.rotated);
+          const isSel = item.id === selected;
+          return (
+            <div
+              key={item.id}
+              onClick={() => setSelected(isSel ? null : item.id)}
+              title={`${item.name} · ${item.weight}kg`}
+              style={{
+                position: 'absolute',
+                left: place.x * CELL + 2, top: place.y * CELL + 2,
+                width: w * CELL - 4, height: h * CELL - 4,
+                background: item.visuals?.colorHex ? `${item.visuals.colorHex}33` : '#33415577',
+                border: `1px solid ${isSel ? '#fff' : (item.visuals?.colorHex || '#64748b')}`,
+                borderRadius: 3,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: Math.min(w, h) > 1 ? 20 : 14,
+                cursor: 'pointer',
+                overflow: 'hidden'
+              }}
+            >
+              {RESOURCE_DEFINITIONS[item.universalDefinitionId]?.icon || (item.tags?.includes('tool') ? '🛠️' : item.type === 'LORE' ? '📜' : '⚔️')}
+            </div>
+          );
+        })}
+      </div>
+
+      {selectedItem && (
+        <Group gap="xs" mt={8}>
+          <Text size="xs" style={{ flex: 1 }} truncate>{selectedItem.name}</Text>
+          <Button size="compact-xs" variant="light" onClick={() => rotateItem(selectedItem.id)}>Rotate</Button>
+          <Button size="compact-xs" variant="light" color="red" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>
+            Leave Behind
+          </Button>
+        </Group>
+      )}
+      <Text size="xs" c="dimmed" mt={4}>[TAB] close</Text>
+    </Paper>
   );
 };
 
@@ -306,6 +394,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const keysPressed = useRef<Set<string>>(new Set());
   const canvasRef = useRef<HTMLDivElement>(null);
 
+  // Wave 3.1: pack grid visibility
+  const [showPack, setShowPack] = useState(false);
+
   // Wave 2.5: extraction channel + regrow sweep timing
   const [channeling, setChanneling] = useState(false);
   const channelRef = useRef<number | null>(null);
@@ -381,7 +472,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   // 2. Input Handling
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.key.toLowerCase());
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        setShowPack(prev => !prev);
+        return;
+      }
+      keysPressed.current.add(e.key.toLowerCase());
+    };
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key.toLowerCase());
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -416,6 +514,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const moveStep = PLAYER_SPEED * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
+
+        // Wave 3.2: encumbrance — a heavy pack slows you before the mud does
+        const { currentWeight, maxWeight } = usePlayerStore.getState();
+        const loadMod = InventorySystem.speedModifier(currentWeight, maxWeight);
+        dx *= loadMod;
+        dz *= loadMod;
 
         // Wave 2.1: the ground has a say — water/rock block, mud slows
         const seed = useWorldStore.getState().currentMap?.seed;
@@ -534,15 +638,29 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           drops = [...drops, ...combatResult.spawnedLoot.map(l => ({ id: crypto.randomUUID(), position: l.position, items: l.items }))];
       }
       if (drops.length > 0) {
-        const { pickedUp, remainingDrops } = CombatSystem.checkLootPickup(playerPos, drops, 30);
+        // Wave 3.2: pickup passes through the caps; what doesn't fit stays on
+        // the ground (cooldown so it isn't retried every frame)
+        const eligible = drops.filter((d: any) => !d.blockedUntil || d.blockedUntil <= now);
+        const blocked = drops.filter((d: any) => d.blockedUntil && d.blockedUntil > now);
+        const { pickedUp, remainingDrops } = CombatSystem.checkLootPickup(playerPos, eligible, 30);
+        let finalDrops = [...blocked, ...remainingDrops];
+
         if (pickedUp.length > 0) {
-          console.log(`[LOOT] Picked up ${pickedUp.length} item(s).`);
-          SessionJournal.record('LOOT', { itemIds: pickedUp.map(i => i.id) });
-          usePlayerStore.setState(state => state.player.currentSession
-            ? { player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: [...state.player.currentSession.inventory, ...pickedUp] } } }
-            : state);
+          const { added, rejected } = usePlayerStore.getState().tryAddItems(pickedUp);
+          if (added.length > 0) {
+            console.log(`[LOOT] Picked up ${added.length} item(s).`);
+            SessionJournal.record('LOOT', { itemIds: added.map((i: any) => i.id) });
+          }
+          if (rejected.length > 0) {
+            finalDrops = [...finalDrops, {
+              id: crypto.randomUUID(),
+              position: { x: playerPos.x, y: playerPos.z },
+              items: rejected,
+              blockedUntil: now + 4000
+            }];
+          }
         }
-        if (pickedUp.length > 0 || drops !== lootDrops) setLootDrops(remainingDrops);
+        if (pickedUp.length > 0 || drops !== lootDrops) setLootDrops(finalDrops);
       }
       setRenderBullets([...combatResult.survivingBullets, ...survivingEnemyBullets]);
 
@@ -733,9 +851,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           }} />
         </div>
         <Text c="dimmed" size="xs" mt={2}>
-          HP: {Math.ceil(session.health)}/{session.maxHealth} · LOOT: {session.inventory.length} · Click to fire
+          HP: {Math.ceil(session.health)}/{session.maxHealth} · PACK: {session.inventory.length} · [TAB] pack · Click to fire
         </Text>
       </div>
+
+      {/* Pack Grid (Wave 3.1) */}
+      {showPack && (
+        <div style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 150 }}>
+          <PackGrid session={session} />
+        </div>
+      )}
 
       {/* World Container */}
       <div style={{ width: '100%', height: '100%', ...viewportStyle }}>

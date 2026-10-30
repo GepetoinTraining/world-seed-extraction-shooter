@@ -26,6 +26,14 @@ export class StartupSequence {
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 
+    // Wave 3.1: inventory geometry self-test (dev; a real runner lands Wave 7)
+    if (import.meta.env.DEV) {
+      const { InventorySystem } = await import('../../entities/player/systems/InventorySystem');
+      const fails = InventorySystem.selfTest();
+      if (fails.length === 0) console.log('[BOOT] Inventory geometry self-test ✓');
+      else console.error('[BOOT] ⛔ Inventory self-test failures:', fails);
+    }
+
     // Wave 2.6: GOLDEN VECTOR CHECK — the generator must never drift silently
     const goldens = runGoldenCheck();
     if (goldens.ok) {

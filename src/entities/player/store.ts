@@ -12,6 +12,8 @@ import { LootTable } from '../world/LootTable';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { ItemType, Rarity } from '../../../types';
+import { InventorySystem } from './systems/InventorySystem';
+import { EntityType } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
 
@@ -50,6 +52,11 @@ interface PlayerState {
   // Float Memory
   equipFrame: (slotIndex: number, frameId: string) => void;
   unequipFrame: (slotIndex: number) => void;
+
+  // Wave 3: the body is real
+  tryAddItems: (items: IItem[]) => { added: IItem[]; rejected: IItem[] };
+  dropItem: (itemId: string) => void;
+  rotateItem: (itemId: string) => void;
 
   // Mechanics
   recalcWeight: () => void;
@@ -198,6 +205,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           sessionId: crypto.randomUUID(),
           layerId: layerId,
           inventory: fieldKit,
+          inventoryLayout: InventorySystem.placeAll(fieldKit),
           health: 100,
           maxHealth: 100 + (state.player.attributes.constitution * 10),
           energy: 50 + (state.player.attributes.endurance * 5),
@@ -206,6 +214,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         }
       }
     }));
+    get().recalcWeight(); // caps reflect the field kit immediately
   },
 
   emergencyJackOut: () => {
@@ -303,8 +312,113 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   recalcWeight: () => {
       const { player } = get();
       const sessionInv = player.currentSession?.inventory || [];
-      const weight = sessionInv.reduce((sum, item) => sum + (item.weight || 0), 0);
-      set({ currentWeight: weight });
+      set({
+        currentWeight: InventorySystem.totalWeight(sessionInv),
+        maxWeight: InventorySystem.maxCarryWeight(player.attributes.strength)
+      });
+  },
+
+  // --------------------------------------------------------------------
+  // WAVE 3: SPACE + WEIGHT GATED PICKUP, DROPS, ROTATION
+  // --------------------------------------------------------------------
+
+  /**
+   * The only door into the session inventory. Checks BOTH caps per item:
+   * weight (strength-derived) and grid space (8x6, footprints, rotation).
+   * Rejected items are returned to the caller — they stay in the world.
+   */
+  tryAddItems: (items) => {
+    const added: IItem[] = [];
+    const rejected: IItem[] = [];
+    const state = get();
+    const session = state.player.currentSession;
+    if (!session) return { added: [], rejected: items };
+
+    const maxW = InventorySystem.maxCarryWeight(state.player.attributes.strength);
+    let inv = [...session.inventory];
+    let layout = { ...(session.inventoryLayout || InventorySystem.placeAll(session.inventory)) };
+    let weight = InventorySystem.totalWeight(inv);
+
+    for (const item of items) {
+      const wouldWeigh = weight + (item.weight || 0);
+      if (wouldWeigh > maxW) {
+        rejected.push(item);
+        continue;
+      }
+      const place = InventorySystem.autoPlace(inv, layout, item);
+      if (!place) {
+        rejected.push(item);
+        continue;
+      }
+      layout[item.id] = place;
+      inv = [...inv, item];
+      weight = wouldWeigh;
+      added.push(item);
+    }
+
+    if (added.length > 0 || !session.inventoryLayout) {
+      set(s => s.player.currentSession ? ({
+        player: { ...s.player, currentSession: { ...s.player.currentSession, inventory: inv, inventoryLayout: layout } }
+      }) : s);
+      get().recalcWeight();
+    }
+    if (rejected.length > 0) {
+      console.log(`[CARRY] ${rejected.length} item(s) refused: ${rejected.map(i => i.name).join(', ')} (space or weight)`);
+    }
+    return { added, rejected };
+  },
+
+  /** Leave something behind: it becomes a ground cache, still owned by you. */
+  dropItem: (itemId) => {
+    const state = get();
+    const session = state.player.currentSession;
+    if (!session) return;
+    const item = session.inventory.find(i => i.id === itemId);
+    if (!item) return;
+
+    const layout = { ...(session.inventoryLayout || {}) };
+    delete layout[itemId];
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: {
+        ...s.player.currentSession,
+        inventory: s.player.currentSession.inventory.filter(i => i.id !== itemId),
+        inventoryLayout: layout
+      } }
+    }) : s);
+    get().recalcWeight();
+
+    const pos = session.position;
+    const cacheId = `cache_${session.sessionId.slice(0, 8)}_${Date.now().toString(36)}`;
+    useWorldStore.getState().addEntity({
+      id: cacheId,
+      type: EntityType.CONTAINER,
+      definitionId: 'ground_cache',
+      position: { x: pos.x + 15, y: pos.z },
+      rank: item.rank,
+      rarity: item.rarity,
+      isHostile: false,
+      container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: state.player.id }
+    });
+    SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
+    console.log(`[CARRY] Left behind: ${item.name} (cache ${cacheId})`);
+  },
+
+  /** Rotate an item in the grid, if the turned footprint fits. */
+  rotateItem: (itemId) => {
+    const session = get().player.currentSession;
+    if (!session) return;
+    const layout = session.inventoryLayout || {};
+    const turned = InventorySystem.tryRotate(session.inventory, layout, itemId);
+    if (!turned) {
+      console.log('[CARRY] No room to rotate that here.');
+      return;
+    }
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: {
+        ...s.player.currentSession,
+        inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), [itemId]: turned }
+      } }
+    }) : s);
   },
 
   performInteraction: (interactionId, targetId) => {
@@ -331,11 +445,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return true;
     };
 
-    const addToInventory = (items: IItem[]) => {
-      set(state => state.player.currentSession ? ({
-        player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: [...state.player.currentSession.inventory, ...items] } }
-      }) : state);
-      get().recalcWeight();
+    // Wave 3: everything enters through the caps; overflow lands at your feet
+    const addToInventory = (items: IItem[]): IItem[] => {
+      const { added, rejected } = get().tryAddItems(items);
+      if (rejected.length > 0) {
+        const pos = get().player.currentSession?.position;
+        if (pos) {
+          const cacheId = `cache_ovf_${Date.now().toString(36)}`;
+          useWorldStore.getState().addEntity({
+            id: cacheId,
+            type: EntityType.CONTAINER,
+            definitionId: 'ground_cache',
+            position: { x: pos.x + 15, y: pos.z + 15 },
+            rank: rejected[0].rank,
+            rarity: rejected[0].rarity,
+            isHostile: false,
+            container: { lootRank: rejected[0].rank, looted: false, hasLore: false, items: rejected, cacheOwner: get().player.id }
+          });
+          SessionJournal.record('INTERACT', { kind: 'OVERFLOW_CACHE', cacheId, itemIds: rejected.map(i => i.id) });
+        }
+      }
+      return added;
     };
 
     // ------------------------------------------------------------------
@@ -396,6 +526,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (interactionId.startsWith('int_open_')) {
       if (!entity.container || entity.container.looted) return;
       if (!spendEnergy(2)) return;
+
+      // Wave 3.3: GROUND CACHE — explicit contents, no generation
+      if (entity.container.items && entity.container.items.length > 0) {
+        const taken = addToInventory(entity.container.items);
+        const left = entity.container.items.filter(i => !taken.some(t => t.id === i.id));
+        if (left.length === 0) {
+          world.removeEntity(entity.id);
+        } else {
+          world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
+        }
+        SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
+        console.log(`[CACHE] Recovered ${taken.length} item(s)${left.length ? `, ${left.length} still inside` : ''}.`);
+        return;
+      }
 
       const rollKey = SessionJournal.rollKey('chest', entity.id);
       const rng = Rng.fromKey(rollKey);

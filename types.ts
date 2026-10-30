@@ -282,10 +282,20 @@ export interface IBank {
   lore: Record<string, ILoreEntry>;
 }
 
+// Wave 3.1: where an item sits in the session grid (contract upgrade: additive)
+export interface IGridPlacement {
+  x: number;
+  y: number;
+  rotated: boolean; // swaps the item's width/height
+}
+
 export interface IActiveSession {
   sessionId: string;
   layerId: string;
   inventory: IItem[];
+  // Wave 3.1: spatial layout of the inventory (itemId -> cell). Optional so
+  // pre-Wave-3 session snapshots stay valid; the system repairs missing layouts.
+  inventoryLayout?: Record<string, IGridPlacement>;
   health: number;
   maxHealth: number;
   energy: number;

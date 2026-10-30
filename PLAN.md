@@ -26,7 +26,7 @@ When all lines pass in one unbroken sitting — including the browser reload —
  8. [x] Mine a mineral node (vein depletes)
  9. [x] Find a ruin → fight the garrison → open the chest → read the lore note
 10. [x] Meet an NPC → social interaction → convince them → they become extractable
-11. [ ] Inventory fills: tetris placement forced, weight slows you down,
+11. [x] Inventory fills: tetris placement forced, weight slows you down,
         something must be left behind (the decision IS the game)
 12. [x] Reach an extraction beacon → channel timer → extraction tax applied
 13. [x] Loot banked, XP applied, deed (if dropped) in stash — all SIGNED
@@ -163,7 +163,7 @@ claim/receipt; ledger chain audits clean.)*
   layer version string, never silently change old worlds.
 - **Gate:** test lines **6, 7, 8, 9, 10, 12, 20**.
 
-### WAVE 3 — The Body Is Real (weight + inventory tetris)
+### WAVE 3 — The Body Is Real (weight + inventory tetris) ✅ DONE
 *Two vectors, per the README: size of objects, and weight of objects.*
 
 - **W3.1 The grid.** Session inventory becomes a spatial grid (e.g. 8×6 base). Items occupy
