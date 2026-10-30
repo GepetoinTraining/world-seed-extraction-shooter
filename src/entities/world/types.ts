@@ -25,16 +25,36 @@ export enum ScanLevel {
   COMPLETE = 3    // Full JSON Access ("Cyber-Demon dropping S-Rank Sword")
 }
 
+// Wave 2.4: a rolled NPC sheet. Dialogue is menu-driven; the sheet is data.
+export interface INpcSheet {
+  name: string;
+  temperament: 'AGGRESSIVE' | 'COWARD' | 'TERRITORIAL' | 'PASSIVE' | 'OPPORTUNIST';
+  objective: 'SURVIVE' | 'HOARD' | 'WITNESS' | 'PROTECT_ASSET';
+  want: 'GOLD' | 'GIFT' | 'RESPECT';      // what moves their disposition
+  disposition: number;                     // 0-100; >= 70 unlocks RECRUIT
+  attempts: number;                        // social rolls made (keys the RNG)
+}
+
 export interface IWorldEntity {
   id: string;
   type: EntityType;
-  definitionId: string; 
-  position: { x: number; y: number }; 
+  definitionId: string;
+  position: { x: number; y: number };
   rank: UniversalRank;
   rarity: Rarity;
   health?: number;
   isHostile?: boolean;
   lootTableId?: string;
+
+  // Wave 2.2: extractable nodes
+  usesRemaining?: number;   // veins deplete; flora has 1 use
+  regrowAt?: number;        // flora only: when the node comes back (epoch ms)
+
+  // Wave 2.3: containers (chests in ruins)
+  container?: { lootRank: UniversalRank; looted: boolean; hasLore: boolean };
+
+  // Wave 2.4: social extraction
+  npc?: INpcSheet;
 }
 
 export interface IChunk {

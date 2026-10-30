@@ -19,16 +19,16 @@ When all lines pass in one unbroken sitting — including the browser reload —
  1. [x] Birth: mint identity cert (keypair in browser, geo+entropy UID)
  2. [x] Reload browser → identity persists, signature verifies
  3. [x] Materialize into Hub → player doc hydrates (gold, stash, skills, lore)
- 4. [ ] Buy a tool (axe or pick) → gold actually deducted, item in stash
- 5. [ ] Deploy → Drone Recon → scan sectors → pick drop zone → confirm
- 6. [ ] Walk the world: terrain matters (slow ground, blocked tiles, biome texture)
- 7. [ ] Harvest flora with the right tool (wrong tool refused)
- 8. [ ] Mine a mineral node (vein depletes)
- 9. [ ] Find a ruin → fight the garrison → open the chest → read the lore note
-10. [ ] Meet an NPC → social interaction → convince them → they become extractable
+ 4. [x] Buy a tool (axe or pick) → gold actually deducted, item in stash
+ 5. [x] Deploy → Drone Recon → scan sectors → pick drop zone → confirm
+ 6. [x] Walk the world: terrain matters (slow ground, blocked tiles, biome texture)
+ 7. [x] Harvest flora with the right tool (wrong tool refused)
+ 8. [x] Mine a mineral node (vein depletes)
+ 9. [x] Find a ruin → fight the garrison → open the chest → read the lore note
+10. [x] Meet an NPC → social interaction → convince them → they become extractable
 11. [ ] Inventory fills: tetris placement forced, weight slows you down,
         something must be left behind (the decision IS the game)
-12. [ ] Reach an extraction beacon → channel timer → extraction tax applied
+12. [x] Reach an extraction beacon → channel timer → extraction tax applied
 13. [x] Loot banked, XP applied, deed (if dropped) in stash — all SIGNED
 14. [x] Reload browser → everything from 13 is still there, signatures verify
 15. [ ] Redeem deed → own a lot → build a workshop
@@ -38,7 +38,7 @@ When all lines pass in one unbroken sitting — including the browser reload —
         (inventory lost, not banked)
 19. [ ] Export avatar (cert + encrypted key + signed player doc) → import in a
         fresh browser profile → same character, provably the same
-20. [ ] Same world seed on two clients → identical map, chunk for chunk
+20. [x] Same world seed on two clients → identical map, chunk for chunk
 ```
 
 ---
@@ -134,7 +134,7 @@ claim/receipt; ledger chain audits clean.)*
 - **Gate:** test lines **2, 13, 14**. Play → extract → hard reload → everything survives
   and verifies. Tamper with a saved doc in devtools → load refuses it.
 
-### WAVE 2 — The World Is a Place (finish the extraction battle JSON)
+### WAVE 2 — The World Is a Place (finish the extraction battle JSON) ✅ DONE
 *README item 3, all of it — this is the content wave.*
 
 - **W2.1 Terrain layer.** Per-chunk tile texture + traversability derived coordinate-keyed

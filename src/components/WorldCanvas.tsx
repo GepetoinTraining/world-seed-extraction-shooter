@@ -10,6 +10,10 @@ import { EntityType, IChunk, ScanLevel, IWorldEntity, BiomeType } from '../entit
 import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper, Button, Stack } from '@mantine/core';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
+import { TerrainSystem, TILE_PX } from '../entities/world/TerrainSystem';
+import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
+import { Ledger } from '../logic/ledger/Ledger';
+import { VectorStore, VectorNamespace } from '../entities/data/VectorStore';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -23,14 +27,16 @@ const EntityAvatar = ({ entity, onClick }: { entity: IWorldEntity; onClick: (e: 
   let icon = '❓';
   let shape = '50%'; // Circle by default
 
+  const depleted = entity.type === EntityType.RESOURCE && (entity.usesRemaining ?? 1) <= 0;
+
   switch (entity.type) {
     case EntityType.MOB:
       color = entity.isHostile ? '#ef4444' : '#eab308';
       icon = '👾';
       break;
     case EntityType.RESOURCE:
-      color = '#10b981';
-      icon = '💎';
+      color = depleted ? '#374151' : '#10b981';
+      icon = RESOURCE_DEFINITIONS[entity.definitionId]?.icon || '💎';
       shape = '4px'; // Box
       break;
     case EntityType.STRUCTURE:
@@ -39,9 +45,17 @@ const EntityAvatar = ({ entity, onClick }: { entity: IWorldEntity; onClick: (e: 
       shape = '0px'; // Square
       break;
     case EntityType.CONTAINER:
-      color = '#f59e0b';
-      icon = '📦';
+      color = entity.container?.looted ? '#44403c' : '#f59e0b';
+      icon = entity.container?.looted ? '🫙' : '📦';
       shape = '4px';
+      break;
+    case EntityType.NPC:
+      color = '#38bdf8';
+      icon = '🧑';
+      break;
+    case EntityType.EXTRACTION:
+      color = '#10b981';
+      icon = '🌀';
       break;
   }
 
@@ -60,11 +74,57 @@ const EntityAvatar = ({ entity, onClick }: { entity: IWorldEntity; onClick: (e: 
         transform: 'translate(-50%, -50%)', // Center anchor
         cursor: 'pointer',
         boxShadow: '0 0 10px rgba(0,0,0,0.5)',
-        zIndex: entity.type === EntityType.MOB ? 20 : 10
+        zIndex: entity.type === EntityType.MOB ? 20 : 10,
+        opacity: depleted ? 0.35 : 1
       }}
     >
       {icon}
     </div>
+  );
+};
+
+/**
+ * TERRAIN LAYER (Wave 2.1): one <canvas> painted from the pure terrain
+ * function each frame. It sits behind the DOM entities, outside the
+ * transformed container, and derives everything from (seed, playerPos).
+ */
+const TerrainCanvas = ({ seed, playerX, playerZ }: { seed: string; playerX: number; playerZ: number }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width = window.innerWidth;
+    const h = canvas.height = window.innerHeight;
+
+    // Top-left of the viewport in world px (player is centered)
+    const originX = playerX - w / 2;
+    const originZ = playerZ - h / 2;
+
+    const startTx = Math.floor(originX / TILE_PX);
+    const startTz = Math.floor(originZ / TILE_PX);
+    const tilesW = Math.ceil(w / TILE_PX) + 1;
+    const tilesH = Math.ceil(h / TILE_PX) + 1;
+
+    for (let ty = 0; ty <= tilesH; ty++) {
+      for (let tx = 0; tx <= tilesW; tx++) {
+        const worldX = (startTx + tx) * TILE_PX;
+        const worldZ = (startTz + ty) * TILE_PX;
+        const tile = TerrainSystem.tileAt(seed, worldX + TILE_PX / 2, worldZ + TILE_PX / 2);
+        ctx.fillStyle = tile.color;
+        ctx.fillRect(worldX - originX, worldZ - originZ, TILE_PX, TILE_PX);
+      }
+    }
+  }, [seed, playerX, playerZ]);
+
+  return (
+    <canvas
+      ref={ref}
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+    />
   );
 };
 
@@ -246,8 +306,62 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const keysPressed = useRef<Set<string>>(new Set());
   const canvasRef = useRef<HTMLDivElement>(null);
 
+  // Wave 2.5: extraction channel + regrow sweep timing
+  const [channeling, setChanneling] = useState(false);
+  const channelRef = useRef<number | null>(null);
+  const lastRegrowSweep = useRef<number>(0);
+
+  const CHANNEL_MS = 5000;
+  const BEACON_RANGE = 60; // px
+
+  // Completes the extraction: tax, journal seal, banking, save
+  const completeExtraction = useCallback(() => {
+    const st = usePlayerStore.getState();
+    const session = st.player.currentSession;
+    if (!session) return;
+
+    const world = useWorldStore.getState();
+    const card = world.availableWorlds.find(w => w.id === world.activeWorldId);
+    const worldCertUid = world.activeWorldId;
+    const haulValue = session.inventory.reduce((s, i) => s + (i.value || 0), 0);
+    const rate = card?.extractionTaxRate ?? 0.05;
+    const tax = Math.floor(haulValue * rate);
+
+    SessionJournal.record('EXTRACT', { loot: session.inventory.map(i => i.id), haulValue, rate, tax });
+    st.emergencyJackOut();
+    world.exitWorld();
+
+    void (async () => {
+      if (tax > 0) {
+        // The hub takes its cut from the bank — interdependence is not optional
+        usePlayerStore.setState(state => ({
+          player: { ...state.player, bank: { ...state.player.bank, gold: Math.max(0, state.player.bank.gold - tax) } }
+        }));
+        await Ledger.append('TAX', { worldCertUid, haulValue, rate, tax });
+
+        const treasuryId = `treasury_${worldCertUid || 'unknown'}`;
+        const existing = await VectorStore.get<{ gold: number }>(VectorNamespace.TERRITORIES, treasuryId);
+        await VectorStore.put({
+          id: treasuryId,
+          namespace: VectorNamespace.TERRITORIES,
+          data: { gold: (existing?.data?.gold || 0) + tax },
+          metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: 'SYSTEM', version: 1 }
+        });
+        console.log(`[TAX] Hub levied ${tax}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
+      }
+      const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
+      await SessionJournal.finish('EXTRACTED', after);
+      await PlayerPersistence.flush('extract');
+    })();
+  }, []);
+
   // 1. Drop Confirmation: place the agent at the chosen sector, then go live
   const handleConfirmDrop = useCallback((chunkX: number, chunkY: number) => {
+    // Wave 2.1: never drop the agent into water/rock
+    const seed = useWorldStore.getState().currentMap?.seed;
+    const target = seed
+      ? TerrainSystem.nearestWalkable(seed, chunkX * 100 + 50, chunkY * 100 + 50)
+      : { x: chunkX * 100 + 50, z: chunkY * 100 + 50 };
     usePlayerStore.setState(state => {
       if (!state.player.currentSession) return state;
       return {
@@ -255,7 +369,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           ...state.player,
           currentSession: {
             ...state.player.currentSession,
-            position: { x: chunkX * 100 + 50, y: 0, z: chunkY * 100 + 50 }
+            position: { x: target.x, y: 0, z: target.z }
           }
         }
       };
@@ -302,20 +416,23 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const moveStep = PLAYER_SPEED * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
+
+        // Wave 2.1: the ground has a say — water/rock block, mud slows
+        const seed = useWorldStore.getState().currentMap?.seed;
         usePlayerStore.setState(state => {
           if (!state.player.currentSession) return state;
-          return { 
-            player: { 
-              ...state.player, 
-              currentSession: { 
-                ...state.player.currentSession, 
-                position: { 
-                  x: state.player.currentSession.position.x + dx, 
-                  y: 0, 
-                  z: state.player.currentSession.position.z + dz 
-                } 
-              } 
-            } 
+          const pos = state.player.currentSession.position;
+          const next = seed
+            ? TerrainSystem.resolveMove(seed, pos.x, pos.z, dx, dz)
+            : { x: pos.x + dx, z: pos.z + dz };
+          return {
+            player: {
+              ...state.player,
+              currentSession: {
+                ...state.player.currentSession,
+                position: { x: next.x, y: 0, z: next.z }
+              }
+            }
           };
         });
       }
@@ -343,6 +460,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       let incomingDamage = 0;
       const isAlive = (p: any) => (now - p.startTime) < 2000;
+
+      // Wave 2.2: REGROW SWEEP (every 2s) — depleted flora comes back
+      if (now - lastRegrowSweep.current > 2000) {
+        lastRegrowSweep.current = now;
+        Object.values(liveMap.chunks).forEach(chunk => {
+          chunk.entities.forEach(e => {
+            if (e.regrowAt && e.regrowAt <= now && (e.usesRemaining ?? 0) <= 0) {
+              const def = RESOURCE_DEFINITIONS[e.definitionId];
+              useWorldStore.getState().updateEntity(e.id, { usesRemaining: def?.uses ?? 1, regrowAt: undefined });
+              console.log(`[WORLD] ${def?.name || e.definitionId} regrew.`);
+            }
+          });
+        });
+      }
 
       // AI Tick
       const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt);
@@ -425,6 +556,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
         SessionJournal.record('DAMAGE', { amount: totalDamage, health: newHealth });
 
+        // Wave 2.5: taking damage interrupts the extraction channel
+        if (channelRef.current) {
+          channelRef.current = null;
+          setChanneling(false);
+          console.warn('[EXTRACT] Channel interrupted by damage!');
+        }
+
         if (newHealth <= 0) {
           // FLATLINED: forced jack-out (loot is banked by emergencyJackOut for now;
           // Wave 4 applies the world cert's death penalty instead)
@@ -439,12 +577,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
       }
 
+      // Wave 2.5: channel completion
+      if (channelRef.current && now - channelRef.current >= CHANNEL_MS) {
+        channelRef.current = null;
+        setChanneling(false);
+        completeExtraction();
+        return; // Extraction unmounts the canvas
+      }
+
       requestRef.current = requestAnimationFrame(gameLoop);
     };
 
     requestRef.current = requestAnimationFrame(gameLoop);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops]);
+  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops, completeExtraction]);
 
   // 4. Interaction Handler
   const handleEntityClick = (e: React.MouseEvent, entity: IWorldEntity) => {
@@ -512,7 +658,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   }
 
   const playerPos = session.position;
-  
+
+  // Wave 2.5: distance to the nearest extraction beacon
+  let beaconDist = Infinity;
+  currentMap.extractionPoints.forEach(key => {
+    const [bx, by] = key.split(',').map(Number);
+    const d = Math.hypot(playerPos.x - (bx * 100 + 50), playerPos.z - (by * 100 + 50));
+    if (d < beaconDist) beaconDist = d;
+  });
+  const nearBeacon = beaconDist < BEACON_RANGE;
+
   // Calculate viewport
   const viewportStyle = {
     transform: `translate(${window.innerWidth/2 - playerPos.x}px, ${window.innerHeight/2 - playerPos.z}px)`,
@@ -527,6 +682,39 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       onContextMenu={(e) => { e.preventDefault(); setMenuPosition(null); }}
       onClick={handleCanvasClick}
     >
+      {/* The ground itself (Wave 2.1) */}
+      <TerrainCanvas seed={currentMap.seed} playerX={playerPos.x} playerZ={playerPos.z} />
+
+      {/* Extraction Control (Wave 2.5): the beacon is a place, not a button */}
+      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 100 }}>
+        {channeling ? (
+          <Paper p="sm" bg="dark.8" style={{ border: '1px solid var(--mantine-color-emerald-6)' }}>
+            <Group gap="sm">
+              <Loader color="emerald" size="sm" />
+              <Text size="sm" c="emerald" ff="monospace">CHANNELING… hold position</Text>
+              <Button size="xs" variant="subtle" color="red" onClick={(e) => {
+                e.stopPropagation();
+                channelRef.current = null;
+                setChanneling(false);
+              }}>ABORT</Button>
+            </Group>
+          </Paper>
+        ) : nearBeacon ? (
+          <Button color="gold" onClick={(e) => {
+            e.stopPropagation();
+            channelRef.current = Date.now();
+            setChanneling(true);
+            console.log('[EXTRACT] Channel opened. 5 seconds. Don\'t get hit.');
+          }}>
+            EXTRACT (5s)
+          </Button>
+        ) : (
+          <Badge color="gray" variant="outline" size="lg">
+            BEACON: {Math.round(beaconDist / TILE_PX)}m {beaconDist === Infinity ? '— NONE' : '→ 🌀'}
+          </Badge>
+        )}
+      </div>
+
       {/* UI Overlay */}
       <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, pointerEvents: 'none' }}>
         <Badge color={reconMode ? 'blue' : 'emerald'} size="lg">

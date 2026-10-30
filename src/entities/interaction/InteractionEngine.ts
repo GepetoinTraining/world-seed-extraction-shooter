@@ -22,52 +22,105 @@ export class InteractionEngine {
     // We assume target.definitionId maps to the Resource/Item definition
     const resourceDef = RESOURCE_DEFINITIONS[target.definitionId];
 
-    // 2. RESOURCE INTERACTIONS (Dynamic)
+    // 2. RESOURCE INTERACTIONS (Wave 2.2: bare hands allowed when no tool required)
     if (target.type === EntityType.RESOURCE && resourceDef?.harvestConfig && dist < 3.0) {
       const config = resourceDef.harvestConfig;
-      
-      // Find valid tools in inventory
+
+      // Depleted nodes offer nothing
+      if ((target.usesRemaining ?? 1) <= 0) return options;
+
+      const bareHands = config.requiredToolTags.length === 0;
+
+      // Find valid tools in inventory (tag match + enough power)
       const validTools = playerInventory.filter(item => {
-        // Check Tags (Is it a Pickaxe?)
-        const itemTags = item.visuals.modelId === 'pickaxe' ? ['pickaxe'] : item.tags || []; // Fallback for legacy items
-        // Note: Real implementation should check item.toolData.toolTags
-        const hasTag = config.requiredToolTags.some(tag => 
-            // Check both explicit toolData and general tags
+        const itemTags = item.tags || [];
+        const hasTag = config.requiredToolTags.some(tag =>
             (item.toolData?.toolTags.includes(tag)) || itemTags.includes(tag) || item.name.toLowerCase().includes(tag)
         );
-
-        // Check Power (Is it strong enough?)
-        // In ItemFactory, we mapped 'mining_power' implicit to item stats. 
-        // We assume item.stats['mining_power'] exists.
         const itemPower = item.stats['mining_power'] || item.stats['chopping_power'] || 0;
-        
         return hasTag && itemPower >= config.minToolPower;
       });
 
-      // If we have a valid tool, offer the interaction
-      if (validTools.length > 0) {
-        // Pick the best tool for the UI preview (highest power)
+      if (bareHands || validTools.length > 0) {
         const bestTool = validTools.sort((a,b) => (b.stats['mining_power']||0) - (a.stats['mining_power']||0))[0];
-        
+
         options.push({
           id: `int_harvest_${target.id}`,
           label: `Extract ${resourceDef.name}`,
           type: InteractionType.HARVEST,
-          icon: bestTool.icon || '🛠️',
+          icon: bareHands ? '✋' : (bestTool.icon || '🛠️'),
           energyCost: config.energyCost,
-          timeCostSeconds: config.baseTimeSeconds, // Could reduce based on tool efficiency
-          requirements: { 
-            toolType: config.requiredToolTags[0], // Display primary tag
+          timeCostSeconds: config.baseTimeSeconds,
+          requirements: {
+            toolType: config.requiredToolTags[0],
             minSkillLevel: config.minToolPower
           },
-          consequence: { 
-            lootTableId: target.definitionId, 
-            xpTags: ['gathering', 'strength'] 
+          consequence: {
+            lootTableId: target.definitionId,
+            xpTags: ['gathering', 'strength']
           }
         });
-      } else {
-        // Option exists but is DISABLED (Feedback: "You need a Pickaxe (Power 10)")
-        // We can handle this in UI by returning it with a 'disabled' flag or handling null requirements
+      }
+      // else: wrong/no tool -> no option. The refusal IS the message (test line 7).
+    }
+
+    // 2b. CONTAINERS (Wave 2.3: ruin chests)
+    if (target.type === EntityType.CONTAINER && target.container && dist < 3.0) {
+      if (!target.container.looted) {
+        options.push({
+          id: `int_open_${target.id}`,
+          label: 'Open Container',
+          type: InteractionType.OPEN,
+          icon: '📦',
+          energyCost: 2,
+          timeCostSeconds: 1.0,
+          requirements: {},
+          consequence: { lootTableId: 'chest', xpTags: ['scavenging'] }
+        });
+      }
+    }
+
+    // 2c. NPCs (Wave 2.4: the social extraction loop)
+    if (target.type === EntityType.NPC && target.npc && dist < 4.0) {
+      const npc = target.npc;
+
+      options.push({
+        id: `int_talk_${target.id}`,
+        label: `Talk (${npc.name} · ${npc.disposition}/100)`,
+        type: InteractionType.COMMUNE,
+        icon: '💬',
+        energyCost: 5,
+        timeCostSeconds: 2.0,
+        requirements: { skillId: 'charisma' },
+        consequence: { xpTags: ['social', 'charisma'] }
+      });
+
+      // Offer a gift if the player carries anything at all
+      if (playerInventory.length > 0) {
+        options.push({
+          id: `int_gift_${target.id}`,
+          label: `Give Gift (they want: ${npc.want})`,
+          type: InteractionType.COMMUNE,
+          icon: '🎁',
+          energyCost: 2,
+          timeCostSeconds: 1.0,
+          requirements: {},
+          consequence: { xpTags: ['social', 'trade'] }
+        });
+      }
+
+      // The payoff: disposition >= 70 makes them extractable
+      if (npc.disposition >= 70) {
+        options.push({
+          id: `int_recruit_${target.id}`,
+          label: 'Secure for Extraction',
+          type: InteractionType.COMMUNE,
+          icon: '🤝',
+          energyCost: 5,
+          timeCostSeconds: 2.0,
+          requirements: {},
+          consequence: { xpTags: ['social', 'rescue'] }
+        });
       }
     }
 

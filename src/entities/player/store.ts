@@ -6,6 +6,12 @@ import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
 import { Rng } from '../../logic/rng/DeterministicRNG';
+import { useWorldStore } from '../world/store';
+import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { LootTable } from '../world/LootTable';
+import { LORE_FRAGMENTS } from '../lore/LoreBible';
+import { SessionJournal } from '../../logic/journal/SessionJournal';
+import { ItemType, Rarity } from '../../../types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
 
@@ -169,14 +175,29 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   diveIntoLayer: (layerId = 'layer-01-fantasy') => {
     const { player } = get();
     if (player.currentSession) return;
+
+    // Wave 2: FIELD KIT — tools in the main stash are carried into the raid.
+    // They leave the bank (they're on your back now) and return on extraction
+    // via normal banking. Wave 4's death rules will make losing them real.
+    const mainStash = player.bank.stashTabs[0]?.items || [];
+    const fieldKit = mainStash.filter(i => i.tags?.includes('tool'));
+    const remainingStash = mainStash.filter(i => !i.tags?.includes('tool'));
+    if (fieldKit.length > 0) console.log(`[DIVE] Field kit equipped: ${fieldKit.map(i => i.name).join(', ')}`);
+
     set((state) => ({
       view: 'SESSION',
       player: {
         ...state.player,
+        bank: {
+          ...state.player.bank,
+          stashTabs: state.player.bank.stashTabs.map((tab, idx) =>
+            idx === 0 ? { ...tab, items: remainingStash } : tab
+          )
+        },
         currentSession: {
           sessionId: crypto.randomUUID(),
           layerId: layerId,
-          inventory: [],
+          inventory: fieldKit,
           health: 100,
           maxHealth: 100 + (state.player.attributes.constitution * 10),
           energy: 50 + (state.player.attributes.endurance * 5),
@@ -288,13 +309,187 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   performInteraction: (interactionId, targetId) => {
     console.log(`[ACTION] Performing ${interactionId} on ${targetId}`);
+    const { player } = get();
+    const session = player.currentSession;
+    if (!session) return;
+
+    // Resolve the live entity from the world
+    const world = useWorldStore.getState();
+    const entity = Object.values(world.currentMap?.chunks || {})
+      .flatMap(c => c.entities)
+      .find(e => e.id === targetId);
+
+    const spendEnergy = (cost: number): boolean => {
+      const s = get().player.currentSession;
+      if (!s || s.energy < cost) {
+        console.log('[ACTION] Not enough energy.');
+        return false;
+      }
+      set(state => state.player.currentSession ? ({
+        player: { ...state.player, currentSession: { ...state.player.currentSession, energy: state.player.currentSession.energy - cost } }
+      }) : state);
+      return true;
+    };
+
+    const addToInventory = (items: IItem[]) => {
+      set(state => state.player.currentSession ? ({
+        player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: [...state.player.currentSession.inventory, ...items] } }
+      }) : state);
+      get().recalcWeight();
+    };
+
+    // ------------------------------------------------------------------
+    // STUDY (legacy path, kept)
+    // ------------------------------------------------------------------
     if (interactionId === 'int_study') {
        set(state => {
-         const targetDefId = 'res_rock_small'; 
+         const targetDefId = entity?.definitionId || 'res_rock_small';
          const updatedPlayer = MaterialScience.studyMaterial(targetDefId, state.player);
-         get().gainSkillXp('skill_analysis', 100, ['intel', 'science'], { tags: ['study'], magnitude: 10 });
          return { player: updatedPlayer };
        });
+       get().gainSkillXp('skill_analysis', 100, ['intel', 'science'], { tags: ['study'], magnitude: 10 });
+       return;
+    }
+
+    if (!entity) return;
+
+    // ------------------------------------------------------------------
+    // HARVEST (Wave 2.2): keyed yield, node depletion, flora regrow
+    // ------------------------------------------------------------------
+    if (interactionId.startsWith('int_harvest_')) {
+      const def = RESOURCE_DEFINITIONS[entity.definitionId];
+      if (!def?.harvestConfig) return;
+      if ((entity.usesRemaining ?? 1) <= 0) return;
+      if (!spendEnergy(def.harvestConfig.energyCost)) return;
+
+      const usesLeft = (entity.usesRemaining ?? 1) - 1;
+      const rollKey = SessionJournal.rollKey('harvest', `${entity.id}:${usesLeft}`);
+      const rng = Rng.fromKey(rollKey);
+      const [minY, maxY] = def.yieldPerUse ?? [1, 1];
+      const quantity = rng.int(minY, maxY + 1);
+      const items = Array.from({ length: quantity }, () => ItemFactory.createResourceItem(def, rng));
+
+      addToInventory(items);
+      SessionJournal.record('HARVEST', { nodeId: entity.id, defId: def.id, rollKey, itemIds: items.map(i => i.id) });
+
+      if (usesLeft <= 0) {
+        if (def.regrowMs) {
+          // Flora: depleted, regrows on the world clock
+          world.updateEntity(entity.id, { usesRemaining: 0, regrowAt: Date.now() + def.regrowMs });
+        } else {
+          // Mineral: the vein is dry forever
+          world.removeEntity(entity.id);
+          console.log(`[HARVEST] ${def.name} depleted. The vein runs dry.`);
+        }
+      } else {
+        world.updateEntity(entity.id, { usesRemaining: usesLeft });
+      }
+
+      get().processAction({ tags: ['gathering', 'strength', ...(def.tags || [])], magnitude: 10 * quantity });
+      console.log(`[HARVEST] +${quantity}x ${def.name}`);
+      return;
+    }
+
+    // ------------------------------------------------------------------
+    // OPEN (Wave 2.3): ruin chests — keyed loot + a lore fragment
+    // ------------------------------------------------------------------
+    if (interactionId.startsWith('int_open_')) {
+      if (!entity.container || entity.container.looted) return;
+      if (!spendEnergy(2)) return;
+
+      const rollKey = SessionJournal.rollKey('chest', entity.id);
+      const rng = Rng.fromKey(rollKey);
+      const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey);
+
+      if (entity.container.hasLore) {
+        const fragment = rng.pick(LORE_FRAGMENTS);
+        loot.push({
+          ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
+          type: ItemType.LORE,
+          description: fragment,
+          value: 50,
+          tags: ['lore', 'document']
+        });
+      }
+
+      addToInventory(loot);
+      world.updateEntity(entity.id, { container: { ...entity.container, looted: true } });
+      SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id) });
+      get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });
+      console.log(`[CHEST] Opened: ${loot.length} items (lore included).`);
+      return;
+    }
+
+    // ------------------------------------------------------------------
+    // NPC SOCIAL LOOP (Wave 2.4): TALK, GIFT, RECRUIT
+    // ------------------------------------------------------------------
+    if (interactionId.startsWith('int_talk_')) {
+      if (!entity.npc) return;
+      if (!spendEnergy(5)) return;
+
+      const attempt = entity.npc.attempts + 1;
+      const rollKey = SessionJournal.rollKey('social', `${entity.id}:${attempt}`);
+      const roll = Rng.fromKey(rollKey).next();
+      const charisma = get().player.attributes.charisma || 1;
+      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up
+      const threshold = entity.npc.want === 'RESPECT' ? 0.35 : 0.5;
+      const success = roll < threshold + charisma * 0.05;
+      const delta = success ? 15 : 5;
+      const disposition = Math.min(100, entity.npc.disposition + delta);
+
+      useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition, attempts: attempt } });
+      SessionJournal.record('INTERACT', { kind: 'TALK', targetId: entity.id, rollKey, success, disposition });
+      get().processAction({ tags: ['social', 'charisma'], magnitude: success ? 15 : 5 });
+      console.log(`[SOCIAL] ${entity.npc.name}: ${success ? 'warms to you' : 'is unconvinced'} (${disposition}/100)`);
+      return;
+    }
+
+    if (interactionId.startsWith('int_gift_')) {
+      if (!entity.npc) return;
+      const inv = get().player.currentSession?.inventory || [];
+      if (inv.length === 0) return;
+      if (!spendEnergy(2)) return;
+
+      // Give the least valuable carried item; GIFT-wanters respond strongest
+      const gift = [...inv].sort((a, b) => a.value - b.value)[0];
+      const delta = entity.npc.want === 'GIFT' ? 25 : 10;
+      const disposition = Math.min(100, entity.npc.disposition + delta);
+
+      set(state => state.player.currentSession ? ({
+        player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: state.player.currentSession.inventory.filter(i => i.id !== gift.id) } }
+      }) : state);
+      get().recalcWeight();
+
+      useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition } });
+      SessionJournal.record('INTERACT', { kind: 'GIFT', targetId: entity.id, itemId: gift.id, disposition });
+      get().processAction({ tags: ['social', 'trade'], magnitude: 10 });
+      console.log(`[SOCIAL] Gave ${gift.name} to ${entity.npc.name} (${disposition}/100)`);
+      return;
+    }
+
+    if (interactionId.startsWith('int_recruit_')) {
+      if (!entity.npc || entity.npc.disposition < 70) return;
+      if (!spendEnergy(5)) return;
+
+      // The NPC becomes an extractable asset: a signed-for escort contract item.
+      // Extracting it banks the social work exactly like any other haul.
+      const rng = Rng.fromKey(SessionJournal.rollKey('recruit', entity.id));
+      const contract: IItem = {
+        ...ItemFactory.createResourceItem({ id: 'npc_contract', name: `Escort Bond: ${entity.npc.name}`, icon: '🤝', weight: 0, dimensions: { width: 1, height: 1 } } as any, rng),
+        type: ItemType.LORE,
+        description: `${entity.npc.name} (${entity.npc.temperament.toLowerCase()}) walks beside you to the beacon. Worth more than gold, redeemable for some anyway.`,
+        rank: entity.rank,
+        value: 200,
+        rarity: Rarity.RARE,
+        tags: ['npc_contract', 'social']
+      };
+
+      addToInventory([contract]);
+      useWorldStore.getState().removeEntity(entity.id);
+      SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name, contractId: contract.id });
+      get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
+      console.log(`[SOCIAL] ${entity.npc.name} secured for extraction!`);
+      return;
     }
   },
 

@@ -10,10 +10,11 @@ export interface IWorldCard {
   createdAt: number;
   collapseTime: number; 
   playerCount: number; 
-  isDebug?: boolean; 
-  name: string; 
-  difficulty: string; 
-  creator: string; 
+  isDebug?: boolean;
+  name: string;
+  difficulty: string;
+  creator: string;
+  extractionTaxRate: number; // Wave 2.5: the hub's cut, from the world cert
 }
 
 interface WorldState {
@@ -32,6 +33,10 @@ interface WorldState {
   selectChunk: (x: number, y: number) => void;
   confirmDrop: () => void;
   exitWorld: () => void;
+
+  // Wave 2: world mutation (harvest depletion, chest looting, NPC state)
+  updateEntity: (entityId: string, patch: Partial<import('./types').IWorldEntity>) => void;
+  removeEntity: (entityId: string) => void;
 }
 
 // The "server-side" truth: full chunk data (entities included) for the active world.
@@ -60,13 +65,14 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           name: cert.data.worldName,
           difficulty: cert.data.rules.difficulty,
           creator: cert.data.creatorCertUid.substring(0, 8),
-          isDebug: false
+          isDebug: false,
+          extractionTaxRate: cert.data.rules.extractionTaxRate ?? 0.05
       }));
 
       // Dev World - Using the Service!
       const devWorld: IWorldCard = { 
           id: 'dev-01', 
-          seed: 'dev-sandbox-v3',
+          seed: 'dev-sandbox-v4',
           size: 32, 
           createdAt: now, 
           collapseTime: now + 1000 * 60 * 60 * 4, // 4 Hours
@@ -74,7 +80,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           isDebug: true,
           name: "SIMULATION_DEBUG",
           difficulty: "D",
-          creator: "SYSTEM"
+          creator: "SYSTEM",
+          extractionTaxRate: 0.05
       };
 
       set({ availableWorlds: [devWorld, ...realWorlds] });
@@ -190,5 +197,41 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   exitWorld: () => {
     truthMap = null;
     set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null });
+  },
+
+  updateEntity: (entityId, patch) => {
+    const { currentMap } = get();
+    if (!currentMap) return;
+    for (const [key, chunk] of Object.entries(currentMap.chunks)) {
+      const idx = chunk.entities.findIndex(e => e.id === entityId);
+      if (idx === -1) continue;
+      const entities = [...chunk.entities];
+      entities[idx] = { ...entities[idx], ...patch };
+      set({
+        currentMap: {
+          ...currentMap,
+          chunks: { ...currentMap.chunks, [key]: { ...chunk, entities } }
+        }
+      });
+      return;
+    }
+  },
+
+  removeEntity: (entityId) => {
+    const { currentMap } = get();
+    if (!currentMap) return;
+    for (const [key, chunk] of Object.entries(currentMap.chunks)) {
+      if (!chunk.entities.some(e => e.id === entityId)) continue;
+      set({
+        currentMap: {
+          ...currentMap,
+          chunks: {
+            ...currentMap.chunks,
+            [key]: { ...chunk, entities: chunk.entities.filter(e => e.id !== entityId) }
+          }
+        }
+      });
+      return;
+    }
   }
 }));

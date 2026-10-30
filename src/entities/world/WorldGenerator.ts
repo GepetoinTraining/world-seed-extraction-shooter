@@ -4,6 +4,7 @@ import { Director } from './Director';
 import { UniversalRank, Rarity } from '../../../types';
 // Wave 1.3: shared deterministic RNG (same algorithm as before — goldens safe)
 import { SeededRNG } from '../../logic/rng/DeterministicRNG';
+import { BIOME_RESOURCES } from '../item/data/resourceDefinitions';
 
 // New Interface for injected data
 export interface IGenerationContext {
@@ -41,8 +42,21 @@ export class WorldGenerator {
         const exitCount = Math.max(1, Math.floor(size / 10));
         for(let i=0; i<exitCount; i++) {
             const exitKey = rng.pick(chunkKeys);
+            if (chunks[exitKey].hasExtraction) continue; // don't double-mark
             chunks[exitKey].hasExtraction = true;
             extractionPoints.push(exitKey);
+
+            // Wave 2.5: the beacon is a visible, physical thing in the world
+            const [bx, by] = exitKey.split(',').map(Number);
+            chunks[exitKey].entities.push({
+                id: `ent_${bx}_${by}_beacon`,
+                type: EntityType.EXTRACTION,
+                definitionId: 'extraction_beacon',
+                position: { x: bx * 100 + 50, y: by * 100 + 50 },
+                rank: UniversalRank.F,
+                rarity: Rarity.COMMON,
+                isHostile: false
+            });
         }
     }
 
@@ -124,23 +138,98 @@ export class WorldGenerator {
         }
     }
 
-    // 2. GENERATE RESOURCES (Dynamic)
+    // 2. GENERATE RESOURCES (Wave 2.2: biome spawn tables, depleting uses)
     if (rng.next() < 0.5 && context.resourceDefinitions.length > 0) {
-        const count = Math.floor(rng.range(1, 6));
+        const biomePool = context.resourceDefinitions.filter((r: any) =>
+            !BIOME_RESOURCES[biome] || BIOME_RESOURCES[biome].includes(r.id)
+        );
+        const pool = biomePool.length > 0 ? biomePool : context.resourceDefinitions;
+        const count = Math.floor(rng.range(1, 5));
         for(let i=0; i<count; i++) {
-            const template = rng.pick(context.resourceDefinitions);
+            const template: any = rng.pick(pool);
             if (template) {
                 chunk.entities.push({
                     id: `ent_${x}_${y}_r${i}`,
                     type: EntityType.RESOURCE,
                     definitionId: template.id,
                     position: { x: (x * 100) + rng.range(5, 95), y: (y * 100) + rng.range(5, 95) },
-                    rank: UniversalRank.F,
+                    rank: template.rank || UniversalRank.F,
                     rarity: Rarity.COMMON,
-                    isHostile: false
+                    isHostile: false,
+                    usesRemaining: template.uses ?? 1
                 });
             }
         }
+    }
+
+    // 3. RUINS & STRUCTURES (Wave 2.3): a container chest + a garrison
+    if (rng.next() < 0.08) {
+        const sx = (x * 100) + rng.range(25, 75);
+        const sy = (y * 100) + rng.range(25, 75);
+
+        chunk.entities.push({
+            id: `ent_${x}_${y}_struct`,
+            type: EntityType.STRUCTURE,
+            definitionId: 'struct_ruin',
+            position: { x: sx, y: sy },
+            rank, rarity,
+            isHostile: false
+        });
+
+        // The chest inside — loot rank = chunk difficulty, always carries lore
+        chunk.entities.push({
+            id: `ent_${x}_${y}_chest`,
+            type: EntityType.CONTAINER,
+            definitionId: 'chest_ruin',
+            position: { x: sx + rng.range(-15, 15), y: sy + rng.range(-15, 15) },
+            rank, rarity,
+            isHostile: false,
+            container: { lootRank: rank, looted: false, hasLore: true }
+        });
+
+        // The garrison: two extra mobs guarding it
+        const genreMobs = context.mobDefinitions.filter((m: any) => m.genre === genre);
+        for (let g = 0; g < 2 && genreMobs.length > 0; g++) {
+            const guard: any = rng.pick(genreMobs);
+            chunk.entities.push({
+                id: `ent_${x}_${y}_guard${g}`,
+                type: EntityType.MOB,
+                definitionId: guard.id,
+                position: { x: sx + rng.range(-30, 30), y: sy + rng.range(-30, 30) },
+                rank: guard.rank,
+                rarity: Rarity.COMMON,
+                isHostile: true,
+                health: guard.baseHealth
+            });
+        }
+    }
+
+    // 4. NPC ENTITIES (Wave 2.4): a rolled sheet, extractable socially
+    if (rng.next() < 0.05) {
+        const firstNames = ['Kael', 'Vector', 'Sera', 'Io', 'Null', 'Cassin', 'Orrin', 'Vesta'];
+        const surnames = ['Steelweave', 'Basalt', 'Error', 'Null', 'Gantry', 'Mireforge', 'Siltvane'];
+        const temperaments = ['AGGRESSIVE', 'COWARD', 'TERRITORIAL', 'PASSIVE', 'OPPORTUNIST'] as const;
+        const objectives = ['SURVIVE', 'HOARD', 'WITNESS', 'PROTECT_ASSET'] as const;
+        const wants = ['GOLD', 'GIFT', 'RESPECT'] as const;
+
+        const temperament = rng.pick([...temperaments]);
+        chunk.entities.push({
+            id: `ent_${x}_${y}_npc`,
+            type: EntityType.NPC,
+            definitionId: 'npc_survivor',
+            position: { x: (x * 100) + rng.range(20, 80), y: (y * 100) + rng.range(20, 80) },
+            rank, rarity,
+            isHostile: false,
+            npc: {
+                name: `${rng.pick([...firstNames])} ${rng.pick([...surnames])}`,
+                temperament,
+                objective: rng.pick([...objectives]),
+                want: rng.pick([...wants]),
+                // Passive folk start warmer; aggressive ones colder
+                disposition: temperament === 'PASSIVE' ? 50 : temperament === 'AGGRESSIVE' ? 10 : 30,
+                attempts: 0
+            }
+        });
     }
 
     return chunk;

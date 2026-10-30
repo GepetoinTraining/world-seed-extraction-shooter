@@ -9,6 +9,8 @@ import { ItemFactory } from '../item/ItemFactory';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { HubGenerator } from './HubGenerator';
 import { Rng } from '../../logic/rng/DeterministicRNG';
+import { usePlayerStore } from '../player/store';
+import { Ledger } from '../../logic/ledger/Ledger';
 
 // =============================================================================
 // TYPES
@@ -183,10 +185,10 @@ export const useHubStore = create<HubState>((set, get) => ({
     const hubId = get().activeHubId || 'hub_unknown';
     const dayIndex = Math.floor(Date.now() / 86_400_000);
 
-    const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor') => {
+    const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool') => {
       return Array.from({ length: count }, (_, i) => {
         const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${i}`);
-        const item = ItemFactory.createItem(rank, true, rng); // Identified
+        const item = ItemFactory.createItem(rank, true, rng, type); // Identified, category-pinned
         return {
           id: `listing_${type}_${rank}_${i}`,
           item,
@@ -200,7 +202,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     set({
       weaponShop: [
         ...generateStock(UniversalRank.F, 5, 'weapon'),
-        ...generateStock(UniversalRank.E, 2, 'weapon')
+        ...generateStock(UniversalRank.E, 2, 'weapon'),
+        // Field tools ride in the weapon shop until lots get their own vendors (Wave 5)
+        ...generateStock(UniversalRank.F, 3, 'tool')
       ],
       armorShop: [
         ...generateStock(UniversalRank.F, 5, 'armor'),
@@ -213,16 +217,35 @@ export const useHubStore = create<HubState>((set, get) => ({
     const state = get();
     const shopKey = `${shop}Shop` as 'weaponShop' | 'armorShop' | 'consumableShop';
     const listings = state[shopKey];
-    
+
     const listing = listings.find(l => l.id === listingId);
     if (!listing || listing.stock <= 0) return null;
-    
+
+    // Wave 2 (Wave 5 plumbing, early): gold actually moves, item actually lands
+    const playerStore = usePlayerStore.getState();
+    const price = Math.ceil(listing.price);
+    if (playerStore.player.bank.gold < price) return null;
+
     const purchasedItem = { ...listing.item, id: crypto.randomUUID() };
-    
-    const updatedListings = listings.map(l => 
+
+    usePlayerStore.setState(s => ({
+      player: {
+        ...s.player,
+        bank: {
+          ...s.player.bank,
+          gold: s.player.bank.gold - price,
+          stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+            idx === 0 ? { ...tab, items: [...tab.items, purchasedItem] } : tab
+          )
+        }
+      }
+    }));
+    void Ledger.append('GOLD_DELTA', { reason: 'SHOP_PURCHASE', itemId: purchasedItem.id, defId: purchasedItem.universalDefinitionId, amount: -price });
+
+    const updatedListings = listings.map(l =>
       l.id === listingId ? { ...l, stock: l.stock - 1 } : l
     );
-    
+
     set({ [shopKey]: updatedListings });
     return purchasedItem;
   }

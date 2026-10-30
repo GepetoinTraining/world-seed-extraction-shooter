@@ -11,11 +11,28 @@ import { UniversalRank, IPlayer } from '../../../types';
 // --- FIX END ---
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Ledger } from '../ledger/Ledger';
+import { runGoldenCheck } from '../../entities/world/goldens';
 
 export class StartupSequence {
-  
+
   static async execute() {
+    // DEV HOOK: the live store graph for the system console / debugging.
+    // (Dynamic imports in devtools resolve a parallel module graph; this is
+    // the real one.)
+    if (import.meta.env.DEV) {
+      const { useHubStore } = await import('../../entities/hub/store');
+      const { InteractionEngine } = await import('../../entities/interaction/InteractionEngine');
+      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine };
+    }
     console.log('[BOOT] Initiating Genesis Protocol...');
+
+    // Wave 2.6: GOLDEN VECTOR CHECK — the generator must never drift silently
+    const goldens = runGoldenCheck();
+    if (goldens.ok) {
+      console.log('[BOOT] Golden vectors verified ✓ (world generation is pinned)');
+    } else {
+      console.error('[BOOT] ⛔ GOLDEN VECTOR MISMATCH — world generation drifted:', goldens.mismatches);
+    }
 
     // 1. IDENTITY CHECK
     const { certificate } = useIdentityStore.getState();

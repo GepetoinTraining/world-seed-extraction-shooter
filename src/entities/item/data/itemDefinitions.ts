@@ -181,6 +181,28 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
   ],
   "tool_bases": [
     {
+      "id": "tool_axe_field_t1",
+      "universal_name": "Field Axe",
+      "rank": UniversalRank.F,
+      "base_ip": 15,
+      "slot": SlotType.ACCESSORY,
+      "tags": ["tool", "axe", "chopping"],
+      "implicits": [
+        { "stat": "chopping_power", "min": 12, "max": 18 }
+      ]
+    },
+    {
+      "id": "tool_pick_rusty_t1",
+      "universal_name": "Rusty Pick",
+      "rank": UniversalRank.F,
+      "base_ip": 15,
+      "slot": SlotType.ACCESSORY,
+      "tags": ["tool", "pickaxe", "mining"],
+      "implicits": [
+        { "stat": "mining_power", "min": 12, "max": 18 }
+      ]
+    },
+    {
       "id": "tool_scanner_t1",
       "universal_name": "Handheld Scanner",
       "rank": UniversalRank.F,

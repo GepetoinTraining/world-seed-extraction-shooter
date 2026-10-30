@@ -3,6 +3,8 @@ import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';
 import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';
 import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
 import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
+import { ResourceDef } from './data/resourceDefinitions';
+import { MaterialPropertyType } from '../economy/types';
 
 export class ItemFactory {
 
@@ -14,18 +16,21 @@ export class ItemFactory {
    *              it from a journaled key; the unkeyed fallback exists only so
    *              nothing crashes while legacy call sites migrate, and it logs.
    */
-  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG): IItem {
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool'): IItem {
     if (!rng) {
       console.warn('[FACTORY] Unkeyed item mint — roll is not replayable. Pass an Rng.fromKey stream.');
       rng = Rng.fromKey(`unkeyed:${Date.now()}:${Math.random()}`);
     }
 
-    // 1. Select Base Template (INCLUDE TOOLS NOW)
-    const allBases = [
+    // 1. Select Base Template (optionally pinned to a category)
+    const allBases = category === 'weapon' ? [...ITEM_DEFINITIONS.weapon_bases]
+      : category === 'armor' ? [...ITEM_DEFINITIONS.armor_bases]
+      : category === 'tool' ? [...ITEM_DEFINITIONS.tool_bases]
+      : [
         ...ITEM_DEFINITIONS.weapon_bases,
         ...ITEM_DEFINITIONS.armor_bases,
-        ...ITEM_DEFINITIONS.tool_bases // <-- ADDED THIS
-    ];
+        ...ITEM_DEFINITIONS.tool_bases
+      ];
 
     let template: ItemDefinition;
 
@@ -106,6 +111,40 @@ export class ItemFactory {
         killCount: 0
       },
       isIdentified: isIdentified // <-- FIXED: ADDED PROPERTY
+    };
+  }
+
+  /**
+   * Wave 2.2: mint a RESOURCE item from its definition (not random gear).
+   * Weight derives from material DENSITY (primordial: properties drive physics);
+   * the def's hand-set weight is the fallback.
+   */
+  static createResourceItem(def: ResourceDef, rng: SeededRNG): IItem {
+    const density = def.materialProps?.[MaterialPropertyType.DENSITY];
+    const weight = density !== undefined ? parseFloat((density * 0.5).toFixed(1)) : (def.weight ?? 1.0);
+
+    return {
+      id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
+      universalDefinitionId: def.id,
+      name: def.name,
+      description: def.description || 'Harvested material. Can be refined.',
+      type: def.type ?? ItemType.RESOURCE,
+      slot: def.slot ?? ('NONE' as any),
+      rank: def.rank ?? UniversalRank.F,
+      rarity: def.rarity ?? Rarity.COMMON,
+      quality: 100,
+      level: 1,
+      value: Math.max(1, Math.round(weight * 4 + (def.materialProps?.[MaterialPropertyType.HARDNESS] ?? 0))),
+      itemPower: 0,
+      tags: [...(def.tags ?? [])],
+      affixes: [],
+      dimensions: def.dimensions ?? { width: 1, height: 1 },
+      weight,
+      stats: { ...(def.stats ?? {}) },
+      visuals: def.visuals ?? { modelId: 'resource', colorHex: '#9ca3af' },
+      icon: def.icon ?? 'resource_icon',
+      history: { dropDate: Date.now(), killCount: 0 },
+      isIdentified: true
     };
   }
 
