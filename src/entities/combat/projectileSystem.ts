@@ -4,11 +4,12 @@ export interface IProjectile {
   id: string;
   x: number;      // FIXED: Was 'startX'
   y: number;      // FIXED: Was 'startY'
-  angle: number; 
-  speed: number; 
-  spawnTime: number; 
-  lifespan: number; 
+  angle: number;
+  speed: number;
+  spawnTime: number;
+  lifespan: number;
   color: string;
+  damage?: number; // Wave 4: carried from the weapon/mob that fired it
 }
 
 export enum PatternType {

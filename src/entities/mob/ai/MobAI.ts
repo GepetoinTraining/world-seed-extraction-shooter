@@ -1,6 +1,8 @@
 import { GenreType, Rarity } from '../../../../types';
 import { IChunk, EntityType } from '../../world/types';
 import { PatternType } from '../../combat/projectileSystem';
+import { MOB_DEFINITIONS } from '../data/mobDefinitions';
+import { CombatMath } from '../../combat/CombatMath';
 
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;
@@ -189,6 +191,8 @@ export class MobAI {
               spawnedPatterns.push({
                 // MELEE strikes are resolved instantly by the canvas; ranged uses the projectile system
                 type: decision.action === BehaviorPrimitive.ATTACK_RANGED ? PatternType.SINGLE : 'MELEE',
+                // Wave 4.3: the definition decides what this attack costs you
+                damage: CombatMath.mobDamage(MOB_DEFINITIONS[entity.definitionId]),
                 // Origin is 2D { x, y }
                 origin: { x: entity.position.x, y: entity.position.y },
                 angle: angle,

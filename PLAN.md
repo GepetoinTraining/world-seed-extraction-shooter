@@ -34,7 +34,7 @@ When all lines pass in one unbroken sitting — including the browser reload —
 15. [ ] Redeem deed → own a lot → build a workshop
 16. [ ] Refine raw logs → planks at the workshop (recipe consumes, produces)
 17. [ ] List planks in a shop → another identity could buy them
-18. [ ] Die on a second run → death penalty from the WORLD CERT rules applies
+18. [x] Die on a second run → death penalty from the WORLD CERT rules applies
         (inventory lost, not banked)
 19. [ ] Export avatar (cert + encrypted key + signed player doc) → import in a
         fresh browser profile → same character, provably the same
@@ -179,7 +179,7 @@ claim/receipt; ledger chain audits clean.)*
   ownership vs. containment kept separate (donor: owner forest) so dropped ≠ unowned.
 - **Gate:** test line **11** — and the qualitative check: did you have to make a choice?
 
-### WAVE 4 — Stats Mean Something (combat integration)
+### WAVE 4 — Stats Mean Something (combat integration) ✅ DONE
 - **W4.1 Equipment applies.** Damage from equipped weapon stats, mitigation from defense,
   fire cooldown from attackSpeed, durability loss on use, broken = unusable.
 - **W4.2 Player melee + spells.** Melee swing fills the already-plumbed `activeSwings`;

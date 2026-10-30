@@ -72,6 +72,22 @@ export const MissionControl = () => {
     }, []);
 
     const handleDeploy = async (worldId: string, seed: string) => {
+        // Wave 4.4: the world cert's power gates are enforced at the door
+        const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
+        if (card?.ipCap || card?.ipFloor) {
+            const { RANK_MULTIPLIERS } = await import('../constants');
+            const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+            const playerIP = stash.reduce((m, i) => Math.max(m, i.itemPower || 0), 0);
+            const rankIP = (r: string) => (RANK_MULTIPLIERS as any)[r] * 100;
+            if (card.ipCap && playerIP > rankIP(card.ipCap)) {
+                console.warn(`[DEPLOY] REFUSED: your gear (${playerIP} IP) exceeds this world's cap (${card.ipCap}).`);
+                return;
+            }
+            if (card.ipFloor && playerIP < rankIP(card.ipFloor)) {
+                console.warn(`[DEPLOY] REFUSED: this world requires at least ${card.ipFloor}-grade gear.`);
+                return;
+            }
+        }
         await selectWorld(worldId);
         diveIntoLayer(seed);
 

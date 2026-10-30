@@ -30,7 +30,7 @@ export class CombatSystem {
     chunks: Record<string, IChunk>,
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
-    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number }[]
+    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number }[]
   ): { 
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
@@ -65,7 +65,7 @@ export class CombatSystem {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (dist < 20) { // px: mob radius (12) + bullet radius + grace
-          const damage = 25;
+          const damage = bullet.damage ?? 25; // Wave 4: the weapon decides
           mob.health -= damage;
           bulletsToRemove.add(bulletIdx);
           
@@ -133,7 +133,7 @@ export class CombatSystem {
         const angleDiff = Math.abs(angleToMob - arc.angle);
         
         if (angleDiff < 0.75 || angleDiff > Math.PI * 2 - 0.75) {
-          const damage = 50;
+          const damage = arc.damage ?? 50; // Wave 4: the weapon decides
           mob.health -= damage;
           
           // ACTION: Melee Hit

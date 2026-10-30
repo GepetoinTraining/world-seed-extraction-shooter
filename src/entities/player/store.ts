@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame } from '../../../types';
+import { IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame, IEquippedSlots, SlotType } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
 import { ProgressionSystem } from './systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
@@ -39,7 +39,7 @@ interface PlayerState {
   initializeSession: (certificate: IPlayerCertificate, archetypeId: string) => void;
   setView: (view: 'BANK' | 'SESSION') => void;
   diveIntoLayer: (layerId?: string) => void;
-  emergencyJackOut: () => void;
+  emergencyJackOut: (penalty?: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH') => void;
   movePlayer: (direction: 'W' | 'A' | 'S' | 'D') => void;
   
   // Item Management
@@ -57,6 +57,11 @@ interface PlayerState {
   tryAddItems: (items: IItem[]) => { added: IItem[]; rejected: IItem[] };
   dropItem: (itemId: string) => void;
   rotateItem: (itemId: string) => void;
+
+  // Wave 4: stats mean something
+  equipItem: (itemId: string) => void;
+  unequipSlot: (slot: keyof IEquippedSlots) => void;
+  wearEquipment: (slot: keyof IEquippedSlots, amount: number) => void;
 
   // Mechanics
   recalcWeight: () => void;
@@ -217,10 +222,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().recalcWeight(); // caps reflect the field kit immediately
   },
 
-  emergencyJackOut: () => {
+  emergencyJackOut: (penalty = 'NONE') => {
     const { player } = get();
-    const sessionLoot = player.currentSession?.inventory.map(i => ({ ...i, isIdentified: true })) || [];
-    const updatedStashTabs = player.bank.stashTabs.map((tab, idx) => 
+
+    // Wave 4.4: the WORLD CERT decides what death costs. INVENTORY_LOSS means
+    // the haul — field kit included — stays in the world. That is the stakes.
+    const banksLoot = penalty === 'NONE';
+    const sessionLoot = banksLoot
+      ? (player.currentSession?.inventory.map(i => ({ ...i, isIdentified: true })) || [])
+      : [];
+    if (!banksLoot) {
+      const lost = player.currentSession?.inventory.length || 0;
+      console.warn(`[SESSION] Death penalty ${penalty}: ${lost} item(s) lost to the world.`);
+    }
+
+    const updatedStashTabs = player.bank.stashTabs.map((tab, idx) =>
         idx === 0 ? { ...tab, items: [...tab.items, ...sessionLoot] } : tab
     );
     set((state) => ({
@@ -378,11 +394,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const layout = { ...(session.inventoryLayout || {}) };
     delete layout[itemId];
+    // Dropping something you're wielding unequips it first
+    const equipped = { ...(session.equipped || {}) };
+    (Object.keys(equipped) as (keyof IEquippedSlots)[]).forEach(k => {
+      if (equipped[k] === itemId) delete equipped[k];
+    });
     set(s => s.player.currentSession ? ({
       player: { ...s.player, currentSession: {
         ...s.player.currentSession,
         inventory: s.player.currentSession.inventory.filter(i => i.id !== itemId),
-        inventoryLayout: layout
+        inventoryLayout: layout,
+        equipped
       } }
     }) : s);
     get().recalcWeight();
@@ -401,6 +423,61 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
     SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
     console.log(`[CARRY] Left behind: ${item.name} (cache ${cacheId})`);
+  },
+
+  // --------------------------------------------------------------------
+  // WAVE 4: EQUIPMENT
+  // --------------------------------------------------------------------
+
+  /** Wield/wear an item from the pack. The slot bucket follows SlotType. */
+  equipItem: (itemId) => {
+    const session = get().player.currentSession;
+    if (!session) return;
+    const item = session.inventory.find(i => i.id === itemId);
+    if (!item || item.slot === SlotType.NONE) {
+      console.log('[GEAR] That cannot be equipped.');
+      return;
+    }
+    const bucket: keyof IEquippedSlots =
+      item.slot === SlotType.MAIN_HAND || item.slot === SlotType.OFF_HAND ? 'mainHand'
+      : item.slot === SlotType.ACCESSORY ? 'accessory'
+      : 'armor'; // HEAD / CHEST / LEGS / FEET / BAG
+
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: {
+        ...s.player.currentSession,
+        equipped: { ...(s.player.currentSession.equipped || {}), [bucket]: itemId }
+      } }
+    }) : s);
+    console.log(`[GEAR] Equipped ${item.name} (${bucket}).`);
+  },
+
+  unequipSlot: (slot) => {
+    set(s => {
+      if (!s.player.currentSession?.equipped) return s;
+      const equipped = { ...s.player.currentSession.equipped };
+      delete equipped[slot];
+      return { player: { ...s.player, currentSession: { ...s.player.currentSession, equipped } } };
+    });
+  },
+
+  /** Durability loss on use/hit. Broken gear stays in the pack but stops working. */
+  wearEquipment: (slot, amount) => {
+    const session = get().player.currentSession;
+    const itemId = session?.equipped?.[slot];
+    if (!session || !itemId) return;
+    set(s => {
+      if (!s.player.currentSession) return s;
+      const inventory = s.player.currentSession.inventory.map(i => {
+        if (i.id !== itemId) return i;
+        const dur = i.stats?.durability;
+        if (dur === undefined) return i;
+        const next = Math.max(0, dur - amount);
+        if (next === 0 && dur > 0) console.warn(`[GEAR] ${i.name} BROKE.`);
+        return { ...i, stats: { ...i.stats, durability: next } };
+      });
+      return { player: { ...s.player, currentSession: { ...s.player.currentSession, inventory } } };
+    });
   },
 
   /** Rotate an item in the grid, if the turned footprint fits. */

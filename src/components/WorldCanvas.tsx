@@ -12,6 +12,7 @@ import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { TerrainSystem, TILE_PX } from '../entities/world/TerrainSystem';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
+import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { Ledger } from '../logic/ledger/Ledger';
 import { VectorStore, VectorNamespace } from '../entities/data/VectorStore';
@@ -141,13 +142,14 @@ const TerrainCanvas = ({ seed, playerX, playerZ }: { seed: string; playerX: numb
  */
 const CELL = 36;
 const PackGrid = ({ session }: { session: IActiveSession }) => {
-  const { dropItem, rotateItem, currentWeight, maxWeight } = usePlayerStore();
+  const { dropItem, rotateItem, equipItem, currentWeight, maxWeight } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
 
   const layout = session.inventoryLayout || {};
   const items = session.inventory;
   const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
   const selectedItem = items.find(i => i.id === selected);
+  const equippedIds = Object.values(session.equipped || {});
 
   return (
     <Paper
@@ -178,17 +180,19 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
           if (!place) return null;
           const { w, h } = InventorySystem.footprint(item, place.rotated);
           const isSel = item.id === selected;
+          const isEquipped = equippedIds.includes(item.id);
+          const broken = item.stats?.durability === 0;
           return (
             <div
               key={item.id}
               onClick={() => setSelected(isSel ? null : item.id)}
-              title={`${item.name} · ${item.weight}kg`}
+              title={`${item.name} · ${item.weight}kg${isEquipped ? ' · EQUIPPED' : ''}${broken ? ' · BROKEN' : ''}`}
               style={{
                 position: 'absolute',
                 left: place.x * CELL + 2, top: place.y * CELL + 2,
                 width: w * CELL - 4, height: h * CELL - 4,
-                background: item.visuals?.colorHex ? `${item.visuals.colorHex}33` : '#33415577',
-                border: `1px solid ${isSel ? '#fff' : (item.visuals?.colorHex || '#64748b')}`,
+                background: broken ? '#45151533' : item.visuals?.colorHex ? `${item.visuals.colorHex}33` : '#33415577',
+                border: isEquipped ? '2px solid var(--mantine-color-gold-5)' : `1px solid ${isSel ? '#fff' : (item.visuals?.colorHex || '#64748b')}`,
                 borderRadius: 3,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: Math.min(w, h) > 1 ? 20 : 14,
@@ -204,7 +208,13 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
 
       {selectedItem && (
         <Group gap="xs" mt={8}>
-          <Text size="xs" style={{ flex: 1 }} truncate>{selectedItem.name}</Text>
+          <Text size="xs" style={{ flex: 1 }} truncate>
+            {selectedItem.name}
+            {selectedItem.stats?.durability !== undefined ? ` (${selectedItem.stats.durability}/${selectedItem.stats.maxDurability ?? 100})` : ''}
+          </Text>
+          {selectedItem.slot !== 'NONE' && (
+            <Button size="compact-xs" variant="light" color="gold" onClick={() => equipItem(selectedItem.id)}>Equip</Button>
+          )}
           <Button size="compact-xs" variant="light" onClick={() => rotateItem(selectedItem.id)}>Rotate</Button>
           <Button size="compact-xs" variant="light" color="red" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>
             Leave Behind
@@ -397,6 +407,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Wave 3.1: pack grid visibility
   const [showPack, setShowPack] = useState(false);
 
+  // Wave 4.1: fire-rate limiter
+  const lastShotRef = useRef<number>(0);
+
+  // Equipped gear resolvers (ids -> live items)
+  const getEquipped = (slot: 'mainHand' | 'armor' | 'accessory') => {
+    const s = usePlayerStore.getState().player.currentSession;
+    const id = s?.equipped?.[slot];
+    return id ? s?.inventory.find(i => i.id === id) : undefined;
+  };
+
   // Wave 2.5: extraction channel + regrow sweep timing
   const [channeling, setChanneling] = useState(false);
   const channelRef = useRef<number | null>(null);
@@ -586,7 +606,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         aiResult.spawnedPatterns.forEach(p => {
           if (p.type === 'MELEE') {
             const d = Math.hypot(p.origin.x - playerPos.x, p.origin.y - playerPos.z);
-            if (d < 50) incomingDamage += 10;
+            if (d < 50) incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
           }
         });
         const ranged = aiResult.spawnedPatterns.filter(p => p.type !== 'MELEE');
@@ -597,18 +617,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const playerBullets: IProjectile[] = [];
       playerPatterns.filter(isAlive).forEach((p, pi) => {
         playerBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle)
-          .map(b => ({ ...b, id: `pl_${pi}_${p.startTime}_${b.id}` })));
+          .map(b => ({ ...b, id: `pl_${pi}_${p.startTime}_${b.id}`, damage: p.damage })));
       });
 
       const enemyBullets: IProjectile[] = [];
       enemyPatterns.filter(isAlive).forEach((p, pi) => {
         enemyBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle)
-          .map(b => ({ ...b, id: `e_${pi}_${p.startTime}_${b.id}`, color: '#ef4444' })));
+          .map(b => ({ ...b, id: `e_${pi}_${p.startTime}_${b.id}`, color: '#ef4444', damage: p.damage })));
       });
 
       const survivingEnemyBullets = enemyBullets.filter(b => {
         if (Math.hypot(b.x - playerPos.x, b.y - playerPos.z) < 15) {
-          incomingDamage += 8;
+          incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
           return false;
         }
         return true;
@@ -664,9 +684,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
       setRenderBullets([...combatResult.survivingBullets, ...survivingEnemyBullets]);
 
-      // Apply damage to the agent
-      const totalDamage = incomingDamage + combatResult.playerDamage;
+      // Apply damage to the agent (Wave 4.1: armor mitigates, and wears)
+      const rawDamage = incomingDamage + combatResult.playerDamage;
+      const armor = getEquipped('armor');
+      const totalDamage = rawDamage > 0 ? CombatMath.applyMitigation(rawDamage, armor) : 0;
       if (totalDamage > 0) {
+        if (armor) usePlayerStore.getState().wearEquipment('armor', 1);
         const newHealth = Math.max(0, liveSession.health - totalDamage);
         usePlayerStore.setState(state => state.player.currentSession
           ? { player: { ...state.player, currentSession: { ...state.player.currentSession, health: newHealth } } }
@@ -682,11 +705,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
 
         if (newHealth <= 0) {
-          // FLATLINED: forced jack-out (loot is banked by emergencyJackOut for now;
-          // Wave 4 applies the world cert's death penalty instead)
-          console.warn('[SESSION] Agent flatlined. Emergency extraction triggered.');
-          SessionJournal.record('DEATH', {});
-          usePlayerStore.getState().emergencyJackOut();
+          // FLATLINED: the world cert's death penalty applies (Wave 4.4)
+          const w = useWorldStore.getState();
+          const card = w.availableWorlds.find(c => c.id === w.activeWorldId);
+          const penalty = card?.deathPenalty ?? 'INVENTORY_LOSS';
+          console.warn(`[SESSION] Agent flatlined. Penalty: ${penalty}.`);
+          SessionJournal.record('DEATH', { penalty });
+          usePlayerStore.getState().emergencyJackOut(penalty);
           useWorldStore.getState().exitWorld();
           // Seal the journal and the bank (async; loop is already stopped)
           const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
@@ -742,29 +767,58 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     setMenuPosition(null);
   };
 
-  // Click empty ground = FIRE toward the cursor
+  // Click empty ground = ATTACK toward the cursor (Wave 4: the weapon decides how)
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (menuPosition) {
       setMenuPosition(null); // First click just closes the menu
       return;
     }
-    const playerPos = usePlayerStore.getState().player.currentSession?.position;
+    const st = usePlayerStore.getState();
+    const playerPos = st.player.currentSession?.position;
     if (!playerPos) return;
+
+    const weapon = getEquipped('mainHand');
+    const now = Date.now();
+
+    // Fire-rate from attack_speed
+    if (now - lastShotRef.current < CombatMath.fireCooldownMs(weapon)) return;
 
     // Screen -> World: the viewport keeps the player centered
     const worldX = playerPos.x + (e.clientX - window.innerWidth / 2);
     const worldZ = playerPos.z + (e.clientY - window.innerHeight / 2);
     const angle = Math.atan2(worldZ - playerPos.z, worldX - playerPos.x);
+    const damage = CombatMath.weaponDamage(weapon);
 
-    setPlayerPatterns(prev => [
-      ...prev.filter(p => Date.now() - p.startTime < 2000),
-      {
-        type: PatternType.SINGLE,
-        origin: { x: playerPos.x, y: playerPos.z },
-        startTime: Date.now(),
-        angle
+    if (CombatMath.isMelee(weapon)) {
+      // Swing: a short arc resolved by CombatSystem
+      setActiveSwings(prev => [
+        ...prev.filter(s => now - s.startTime < 300),
+        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage }
+      ]);
+    } else if (CombatMath.isFocus(weapon)) {
+      // Focus: a NOVA burst, paid in energy
+      const energyCost = 10;
+      if ((st.player.currentSession?.energy || 0) < energyCost) {
+        console.log('[CAST] Not enough energy.');
+        return;
       }
-    ]);
+      usePlayerStore.setState(s => s.player.currentSession ? ({
+        player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - energyCost } }
+      }) : s);
+      setPlayerPatterns(prev => [
+        ...prev.filter(p => now - p.startTime < 2000),
+        { type: PatternType.NOVA, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
+      ]);
+    } else {
+      // Ranged (or unarmed): a single shot
+      setPlayerPatterns(prev => [
+        ...prev.filter(p => now - p.startTime < 2000),
+        { type: PatternType.SINGLE, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
+      ]);
+    }
+
+    lastShotRef.current = now;
+    if (weapon) st.wearEquipment('mainHand', 1); // durability: every use costs
   };
 
   // 5. Render

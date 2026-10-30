@@ -289,6 +289,14 @@ export interface IGridPlacement {
   rotated: boolean; // swaps the item's width/height
 }
 
+// Wave 4.1: what the agent is actually wielding/wearing (item ids into the
+// session inventory — the items stay in the pack grid; equipped = referenced)
+export interface IEquippedSlots {
+  mainHand?: string;
+  armor?: string;
+  accessory?: string;
+}
+
 export interface IActiveSession {
   sessionId: string;
   layerId: string;
@@ -296,6 +304,8 @@ export interface IActiveSession {
   // Wave 3.1: spatial layout of the inventory (itemId -> cell). Optional so
   // pre-Wave-3 session snapshots stay valid; the system repairs missing layouts.
   inventoryLayout?: Record<string, IGridPlacement>;
+  // Wave 4.1: equipped gear (additive contract change)
+  equipped?: IEquippedSlots;
   health: number;
   maxHealth: number;
   energy: number;

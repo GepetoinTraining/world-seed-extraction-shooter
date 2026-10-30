@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { IMap, ScanLevel, IChunk } from './types';
+import { UniversalRank } from '../../../types';
 import { WorldCertificateSystem } from './WorldCertificate';
 import { WorldGenerationService } from './services/WorldGenerationService';
 
@@ -15,6 +16,10 @@ export interface IWorldCard {
   difficulty: string;
   creator: string;
   extractionTaxRate: number; // Wave 2.5: the hub's cut, from the world cert
+  // Wave 4.4: enforced world rules
+  deathPenalty: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH';
+  ipCap?: UniversalRank;
+  ipFloor?: UniversalRank;
 }
 
 interface WorldState {
@@ -68,7 +73,10 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           difficulty: cert.data.rules.difficulty,
           creator: cert.data.creatorCertUid.substring(0, 8),
           isDebug: false,
-          extractionTaxRate: cert.data.rules.extractionTaxRate ?? 0.05
+          extractionTaxRate: cert.data.rules.extractionTaxRate ?? 0.05,
+          deathPenalty: cert.data.rules.deathPenalty ?? 'INVENTORY_LOSS',
+          ipCap: cert.data.rules.ipCap,
+          ipFloor: cert.data.rules.ipFloor
       }));
 
       // Dev World - Using the Service!
@@ -83,7 +91,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           name: "SIMULATION_DEBUG",
           difficulty: "D",
           creator: "SYSTEM",
-          extractionTaxRate: 0.05
+          extractionTaxRate: 0.05,
+          deathPenalty: 'INVENTORY_LOSS' // even the simulation charges for dying
       };
 
       set({ availableWorlds: [devWorld, ...realWorlds] });
