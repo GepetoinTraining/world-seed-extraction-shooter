@@ -57,6 +57,10 @@ export class ItemFactory {
     // 8. Name
     const fullName = this.constructName(template.universal_name, affixes, quality);
 
+    // 9. Physicality (Inventory Tetris + Weight)
+    const dimensions = this.getDimensions(template);
+    const weight = this.getWeight(template, dimensions);
+
     return {
       id: crypto.randomUUID(),
       universalDefinitionId: template.id,
@@ -67,7 +71,12 @@ export class ItemFactory {
       rank: template.rank,
       rarity: rarity,
       quality: quality,
+      level: this.getLevelForRank(template.rank),
+      value: Math.max(1, Math.floor(finalIP * 2)),
       itemPower: finalIP,
+      tags: [...template.tags],
+      dimensions: dimensions,
+      weight: weight,
       affixes: affixes,
       stats: {
         ...finalStats,
@@ -79,12 +88,45 @@ export class ItemFactory {
         modelId: template.tags.includes('weapon') ? 'weapon_mesh' : 'armor_mesh',
         colorHex: this.getColorForRarity(rarity)
       },
+      icon: template.tags.includes('weapon') || template.tags.includes('melee') ? 'weapon_icon'
+          : template.tags.includes('tool') ? 'tool_icon'
+          : 'armor_icon',
       history: {
         dropDate: Date.now(),
         killCount: 0
       },
       isIdentified: isIdentified // <-- FIXED: ADDED PROPERTY
     };
+  }
+
+  /** Maps rank to a nominal player level requirement */
+  private static getLevelForRank(rank: UniversalRank): number {
+    const levels: Record<string, number> = {
+      'F': 1, 'E': 10, 'D': 20, 'C': 30,
+      'B': 40, 'A': 50, 'S': 60, 'SS': 70, 'SSS': 80
+    };
+    return levels[rank] || 1;
+  }
+
+  /** Inventory Tetris footprint derived from the item archetype */
+  private static getDimensions(template: ItemDefinition): { width: number; height: number } {
+    const tags = template.tags;
+    if (tags.includes('two_hand')) return { width: 2, height: 4 };
+    if (tags.includes('one_hand') || tags.includes('tool')) return { width: 1, height: 3 };
+    if (tags.includes('chest') || tags.includes('body')) return { width: 2, height: 3 };
+    if (tags.includes('helmet') || tags.includes('head')) return { width: 2, height: 2 };
+    if (tags.includes('ring') || tags.includes('amulet')) return { width: 1, height: 1 };
+    return { width: 2, height: 2 };
+  }
+
+  /** Weight in kg: density of the material class x footprint */
+  private static getWeight(template: ItemDefinition, dims: { width: number; height: number }): number {
+    const area = dims.width * dims.height;
+    let density = 1.0; // kg per grid cell
+    if (template.tags.includes('heavy') || template.tags.includes('plate')) density = 2.5;
+    if (template.tags.includes('light') || template.tags.includes('cloth')) density = 0.5;
+    if (template.tags.includes('tool')) density = 1.5;
+    return parseFloat((area * density).toFixed(1));
   }
 
   // ... (Keep private helpers: rollRarity, generateBaseStats, generateAffixes, constructName, generateDescription, getColorForRarity same as before)

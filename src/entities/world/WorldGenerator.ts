@@ -115,7 +115,8 @@ export class WorldGenerator {
     };
 
     // 1. GENERATE MOBS (Dynamic)
-    const mobCount = Math.floor(rng.range(1, 4));
+    // ~40% of chunks host 1-2 mobs; keeps aggro manageable at 100px chunk scale
+    const mobCount = rng.next() < 0.4 ? Math.floor(rng.range(1, 3)) : 0;
     for(let i=0; i<mobCount; i++) {
         const genreMobs = context.mobDefinitions.filter((m: any) => m.genre === genre);
         const rankIndex = Object.values(UniversalRank).indexOf(rank);

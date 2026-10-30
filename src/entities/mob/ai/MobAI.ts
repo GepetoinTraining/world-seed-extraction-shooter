@@ -1,5 +1,9 @@
-import { GenreType, Rarity } from '../../../../types'; 
-import { IChunk, EntityType } from '../../world/types'; 
+import { GenreType, Rarity } from '../../../../types';
+import { IChunk, EntityType } from '../../world/types';
+import { PatternType } from '../../combat/projectileSystem';
+
+// World scale: 1 tile = 20px. All distances below are in PIXELS.
+const PX = 20;
 
 // ==========================================
 // 1. ENUMS (Standard)
@@ -114,7 +118,7 @@ export class MobAI {
     const spawnedPatterns: any[] = [];
     const now = Date.now();
 
-    Object.values(visibleChunks).forEach(chunk => {
+    Object.entries(visibleChunks).forEach(([chunkKey, chunk]) => {
       let chunkWasModified = false;
       
       const newEntities = chunk.entities.map(entity => {
@@ -148,10 +152,10 @@ export class MobAI {
           playerIsLookingAtMob: false
         };
 
-        // 2. Check Activation
+        // 2. Check Activation (8 tiles aggro, 16 tiles leash)
         if (mem.state === MobState.DORMANT) {
-          if (dist < 15) mem.state = MobState.ACTIVE;
-        } else if (mem.state === MobState.ACTIVE && dist > 30) {
+          if (dist < 8 * PX) mem.state = MobState.ACTIVE;
+        } else if (mem.state === MobState.ACTIVE && dist > 16 * PX) {
           mem.state = MobState.DORMANT;
         }
 
@@ -162,8 +166,8 @@ export class MobAI {
           // Decide
           const decision = this.decideAction(mem.objective, Temperament.AGGRESSIVE, GenreType.SCIFI, Rarity.COMMON, ctx);
 
-          // Move
-          let moveSpeed = 2.0 * deltaTime;
+          // Move (2 tiles/s)
+          let moveSpeed = 2.0 * PX * deltaTime;
           let moveX = 0;
           let moveY = 0;
 
@@ -183,7 +187,8 @@ export class MobAI {
               mem.lastAttackTime = now;
               
               spawnedPatterns.push({
-                type: decision.action === BehaviorPrimitive.ATTACK_RANGED ? 'LINEAR' : 'MELEE',
+                // MELEE strikes are resolved instantly by the canvas; ranged uses the projectile system
+                type: decision.action === BehaviorPrimitive.ATTACK_RANGED ? PatternType.SINGLE : 'MELEE',
                 // Origin is 2D { x, y }
                 origin: { x: entity.position.x, y: entity.position.y },
                 angle: angle,
@@ -208,7 +213,8 @@ export class MobAI {
       });
 
       if (chunkWasModified) {
-        updatedChunks[chunk.id] = {
+        // Key by the MAP key ("x,y"), not chunk.id, so merges replace instead of duplicate
+        updatedChunks[chunkKey] = {
           ...chunk,
           entities: newEntities
         };
@@ -230,16 +236,16 @@ export class MobAI {
     ctx: ICombatContext
   ): IMobDecision {
 
-    if (ctx.distanceToPlayer < 2) {
+    if (ctx.distanceToPlayer < 2 * PX) {
       return { action: BehaviorPrimitive.ATTACK_MELEE };
     }
-    
+
     // Sci-Fi Kiting Logic
     if (genre === GenreType.SCIFI) {
-       if (ctx.distanceToPlayer < 8 && ctx.distanceToPlayer > 4) {
+       if (ctx.distanceToPlayer < 8 * PX && ctx.distanceToPlayer > 4 * PX) {
          return { action: BehaviorPrimitive.ATTACK_RANGED };
        }
-       if (ctx.distanceToPlayer <= 4) {
+       if (ctx.distanceToPlayer <= 4 * PX) {
          return { action: BehaviorPrimitive.FLEE };
        }
     }

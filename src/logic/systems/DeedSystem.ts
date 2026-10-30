@@ -52,7 +52,11 @@ export class DeedSystem {
       
       level: 1,
       quality: 100, // Deeds are always "Perfect" quality
-      value: this.calculateDeedValue(rank), 
+      value: this.calculateDeedValue(rank),
+
+      tags: ['deed', 'document', 'untradeable_on_death'],
+      dimensions: { width: 1, height: 2 },
+      weight: 0.1,
       
       // FIXED: Item Power added based on Rank
       itemPower: this.calculateItemPower(rank),

@@ -6,12 +6,13 @@ import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/p
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
-import { EntityType, IChunk, ScanLevel, IWorldEntity } from '../entities/world/types';
-import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper } from '@mantine/core';
+import { EntityType, IChunk, ScanLevel, IWorldEntity, BiomeType } from '../entities/world/types';
+import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper, Button, Stack } from '@mantine/core';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
-const PLAYER_SPEED = 10.0; // Units per second (Fixed Physics)
+const PLAYER_SPEED = 3.0; // Tiles per second (walking pace; a 100px chunk takes ~1.7s to cross)
+const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't teleport the player
 
 // --- SUB-COMPONENTS (Visuals) ---
 
@@ -81,12 +82,148 @@ const PlayerAvatar = ({ x, y }: { x: number, y: number }) => (
 );
 
 // =============================================================================
+// DRONE RECON (Pre-drop satellite view)
+// =============================================================================
+
+const BIOME_COLORS: Record<BiomeType, string> = {
+  [BiomeType.WASTELAND]: '#8a7a4e',
+  [BiomeType.OVERGROWTH]: '#1b7a52',
+  [BiomeType.RUINS]: '#5d6b7a',
+  [BiomeType.INDUSTRIAL]: '#8a5a2a',
+  [BiomeType.CYBER_CITY]: '#4a4a8a'
+};
+
+const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ onDrop }) => {
+  const { currentMap, scanChunk, selectChunk, selectedDropZone } = useWorldStore();
+  if (!currentMap) return null;
+
+  const cellSize = Math.max(8, Math.min(20, Math.floor(560 / currentMap.width)));
+  const selectedKey = selectedDropZone ? `${selectedDropZone.x},${selectedDropZone.y}` : null;
+  const selectedChunk = selectedKey ? currentMap.chunks[selectedKey] : null;
+
+  const handleChunkClick = (chunk: IChunk) => {
+    selectChunk(chunk.x, chunk.y);
+    scanChunk(chunk.x, chunk.y, 1); // Each click deepens the scan one level
+  };
+
+  const entityCounts = (chunk: IChunk) => {
+    const counts: Record<string, number> = {};
+    chunk.entities.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+    return counts;
+  };
+
+  return (
+    <Center h="100%" bg="#050505">
+      <Group align="flex-start" gap="xl">
+        {/* The Satellite Map */}
+        <Stack gap="xs">
+          <Badge color="blue" size="lg">DRONE RECON // SELECT DROP ZONE</Badge>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${currentMap.width}, ${cellSize}px)`,
+              gap: 1,
+              background: '#111',
+              padding: 4,
+              border: '1px solid #333'
+            }}
+          >
+            {Array.from({ length: currentMap.height }, (_, y) =>
+              Array.from({ length: currentMap.width }, (_, x) => {
+                const key = `${x},${y}`;
+                const chunk = currentMap.chunks[key];
+                if (!chunk) return <div key={key} style={{ width: cellSize, height: cellSize }} />;
+                const isSelected = key === selectedKey;
+                const known = chunk.scanLevel > ScanLevel.UNKNOWN;
+                return (
+                  <div
+                    key={key}
+                    onClick={() => handleChunkClick(chunk)}
+                    title={known ? `${chunk.biome} [${chunk.difficulty}]` : 'UNKNOWN'}
+                    style={{
+                      width: cellSize,
+                      height: cellSize,
+                      cursor: 'pointer',
+                      background: known ? BIOME_COLORS[chunk.biome] : '#1a1a1a',
+                      outline: isSelected ? '2px solid #fff' : 'none',
+                      boxShadow: chunk.hasExtraction && known ? 'inset 0 0 0 2px #10b981' : 'none',
+                      opacity: known ? 0.5 + chunk.scanLevel * 0.17 : 1
+                    }}
+                  />
+                );
+              })
+            )}
+          </div>
+          <Text size="xs" c="dimmed">Click a sector to scan it. Click again for deeper intel.</Text>
+        </Stack>
+
+        {/* Intel Panel */}
+        <Paper p="md" w={280} bg="dark.8" style={{ border: '1px solid var(--mantine-color-dark-4)' }}>
+          <Stack gap="sm">
+            <Text fw={700} size="sm" c="blue">SECTOR INTEL</Text>
+            {!selectedChunk && <Text size="xs" c="dimmed">No sector selected.</Text>}
+            {selectedChunk && (
+              <>
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">COORDS</Text>
+                  <Text size="xs" ff="monospace">{selectedChunk.x}, {selectedChunk.y}</Text>
+                </Group>
+                {selectedChunk.scanLevel >= ScanLevel.BASIC && (
+                  <>
+                    <Group justify="space-between">
+                      <Text size="xs" c="dimmed">BIOME</Text>
+                      <Badge size="xs" style={{ background: BIOME_COLORS[selectedChunk.biome] }}>{selectedChunk.biome}</Badge>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text size="xs" c="dimmed">THREAT</Text>
+                      <Badge size="xs" color="red">{selectedChunk.difficulty}</Badge>
+                    </Group>
+                    {selectedChunk.hasExtraction && <Badge size="xs" color="emerald">EXTRACTION POINT</Badge>}
+                  </>
+                )}
+                {selectedChunk.scanLevel >= ScanLevel.DETAILED && (
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">CONTACTS</Text>
+                    {Object.entries(entityCounts(selectedChunk)).map(([type, count]) => (
+                      <Text key={type} size="xs" ff="monospace">{count}x {type}</Text>
+                    ))}
+                    {selectedChunk.entities.length === 0 && <Text size="xs" ff="monospace" c="dimmed">Sector clear.</Text>}
+                  </Stack>
+                )}
+                {selectedChunk.scanLevel >= ScanLevel.COMPLETE && selectedChunk.entities.length > 0 && (
+                  <Stack gap={2}>
+                    <Text size="xs" c="dimmed">MANIFEST</Text>
+                    {selectedChunk.entities.slice(0, 8).map(e => (
+                      <Text key={e.id} size="xs" ff="monospace" c={e.isHostile ? 'red' : 'gray'}>
+                        [{e.rank}] {e.definitionId}
+                      </Text>
+                    ))}
+                  </Stack>
+                )}
+                <Button
+                  color="emerald"
+                  fullWidth
+                  mt="sm"
+                  onClick={() => onDrop(selectedChunk.x, selectedChunk.y)}
+                >
+                  CONFIRM DROP
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Paper>
+      </Group>
+    </Center>
+  );
+};
+
+// =============================================================================
 // WORLD CANVAS
 // =============================================================================
 
 export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) => {
   // Store Hooks
-  const { currentMap, reconMode, scanChunk, selectChunk, initiateRecon, fetchChunkData } = useWorldStore();
+  const { currentMap, reconMode, confirmDrop } = useWorldStore();
   const { movePlayer, performInteraction, processAction, player } = usePlayerStore();
 
   // Local State
@@ -107,12 +244,23 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const keysPressed = useRef<Set<string>>(new Set());
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // 1. Initialize Recon if needed
-  useEffect(() => {
-    if (session.sessionId && (!currentMap || currentMap.seed !== session.sessionId)) {
-      initiateRecon(session.sessionId);
-    }
-  }, [session.sessionId, currentMap, initiateRecon]);
+  // 1. Drop Confirmation: place the agent at the chosen sector, then go live
+  const handleConfirmDrop = useCallback((chunkX: number, chunkY: number) => {
+    usePlayerStore.setState(state => {
+      if (!state.player.currentSession) return state;
+      return {
+        player: {
+          ...state.player,
+          currentSession: {
+            ...state.player.currentSession,
+            position: { x: chunkX * 100 + 50, y: 0, z: chunkY * 100 + 50 }
+          }
+        }
+      };
+    });
+    lastTickRef.current = Date.now(); // Fresh delta so the first frame doesn't jump
+    confirmDrop();
+  }, [confirmDrop]);
 
   // 2. Input Handling
   useEffect(() => {
@@ -132,23 +280,25 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     const gameLoop = (time: number) => {
       const now = Date.now();
-      // --- PHYSICS FIX: DELTA TIME (Seconds) ---
-      const dt = (now - lastTickRef.current) / 1000; 
+      // --- PHYSICS FIX: DELTA TIME (Seconds, clamped) ---
+      const dt = Math.min((now - lastTickRef.current) / 1000, MAX_DELTA);
       lastTickRef.current = now;
 
       // A. Movement Logic (Time-Based)
       const keys = keysPressed.current;
       let dx = 0, dz = 0;
-      
-      // Speed * Time * Scale Factor (to match visual pixels)
-      const moveStep = PLAYER_SPEED * dt * 20; 
 
-      if (keys.has('w')) dz -= moveStep;
-      if (keys.has('s')) dz += moveStep;
-      if (keys.has('a')) dx -= moveStep;
-      if (keys.has('d')) dx += moveStep;
+      if (keys.has('w')) dz -= 1;
+      if (keys.has('s')) dz += 1;
+      if (keys.has('a')) dx -= 1;
+      if (keys.has('d')) dx += 1;
 
       if (dx !== 0 || dz !== 0) {
+        // Normalize so diagonals aren't faster, then scale to pixels
+        const len = Math.sqrt(dx * dx + dz * dz);
+        const moveStep = PLAYER_SPEED * dt * TILE_SIZE;
+        dx = (dx / len) * moveStep;
+        dz = (dz / len) * moveStep;
         usePlayerStore.setState(state => {
           if (!state.player.currentSession) return state;
           return { 
@@ -168,36 +318,66 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
 
       // B. Entity & Combat Logic
-      const playerPos = usePlayerStore.getState().player.currentSession?.position;
-      if (!playerPos) return;
+      const liveSession = usePlayerStore.getState().player.currentSession;
+      const liveMap = useWorldStore.getState().currentMap;
+      const playerPos = liveSession?.position;
+      if (!playerPos || !liveMap) {
+        requestRef.current = requestAnimationFrame(gameLoop);
+        return;
+      }
 
       // Filter visible chunks
       const visibleChunks: Record<string, IChunk> = {};
       const pChunkX = Math.floor(playerPos.x / 100);
       const pChunkY = Math.floor(playerPos.z / 100);
-      
+
       for (let y = pChunkY - 1; y <= pChunkY + 1; y++) {
         for (let x = pChunkX - 1; x <= pChunkX + 1; x++) {
           const key = `${x},${y}`;
-          if (currentMap.chunks[key]) visibleChunks[key] = currentMap.chunks[key];
+          if (liveMap.chunks[key]) visibleChunks[key] = liveMap.chunks[key];
         }
       }
+
+      let incomingDamage = 0;
+      const isAlive = (p: any) => (now - p.startTime) < 2000;
 
       // AI Tick
       const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt);
       if (aiResult.spawnedPatterns.length > 0) {
-        setEnemyPatterns(prev => [...prev, ...aiResult.spawnedPatterns]);
+        // MELEE strikes resolve instantly; ranged patterns become projectiles
+        aiResult.spawnedPatterns.forEach(p => {
+          if (p.type === 'MELEE') {
+            const d = Math.hypot(p.origin.x - playerPos.x, p.origin.y - playerPos.z);
+            if (d < 50) incomingDamage += 10;
+          }
+        });
+        const ranged = aiResult.spawnedPatterns.filter(p => p.type !== 'MELEE');
+        if (ranged.length > 0) setEnemyPatterns(prev => [...prev.filter(isAlive), ...ranged]);
       }
 
-      // Combat Tick
-      const allBullets: IProjectile[] = [];
-      [...playerPatterns, ...enemyPatterns].forEach(p => {
-        if ((now - p.startTime) < 2000) {
-          allBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle));
-        }
+      // Projectiles: player bullets hit mobs, enemy bullets hit the player
+      const playerBullets: IProjectile[] = [];
+      playerPatterns.filter(isAlive).forEach((p, pi) => {
+        playerBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle)
+          .map(b => ({ ...b, id: `pl_${pi}_${p.startTime}_${b.id}` })));
       });
 
-      const combatResult = CombatSystem.tick(allBullets, aiResult.updatedChunks, playerPos, session.health, activeSwings);
+      const enemyBullets: IProjectile[] = [];
+      enemyPatterns.filter(isAlive).forEach((p, pi) => {
+        enemyBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle)
+          .map(b => ({ ...b, id: `e_${pi}_${p.startTime}_${b.id}`, color: '#ef4444' })));
+      });
+
+      const survivingEnemyBullets = enemyBullets.filter(b => {
+        if (Math.hypot(b.x - playerPos.x, b.y - playerPos.z) < 15) {
+          incomingDamage += 8;
+          return false;
+        }
+        return true;
+      });
+
+      // Collision-check ALL visible chunks (AI only returns the modified ones)
+      const combatResult = CombatSystem.tick(playerBullets, { ...visibleChunks, ...aiResult.updatedChunks }, playerPos, liveSession.health, activeSwings);
 
       // Process Events
       combatResult.events.forEach(event => {
@@ -206,18 +386,54 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
       });
 
-      // Update State
-      if (combatResult.spawnedLoot.length > 0) {
-          setLootDrops(prev => [...prev, ...combatResult.spawnedLoot.map(l => ({ id: crypto.randomUUID(), position: l.position, items: l.items }))]);
+      // Persist mob movement/deaths back into the world
+      const chunkUpdates = { ...aiResult.updatedChunks, ...combatResult.updatedChunks };
+      if (Object.keys(chunkUpdates).length > 0) {
+        useWorldStore.setState(state => state.currentMap
+          ? { currentMap: { ...state.currentMap, chunks: { ...state.currentMap.chunks, ...chunkUpdates } } }
+          : state);
       }
-      setRenderBullets(combatResult.survivingBullets);
+
+      // Loot: spawn new drops, then auto-pickup anything within reach
+      let drops = lootDrops;
+      if (combatResult.spawnedLoot.length > 0) {
+          drops = [...drops, ...combatResult.spawnedLoot.map(l => ({ id: crypto.randomUUID(), position: l.position, items: l.items }))];
+      }
+      if (drops.length > 0) {
+        const { pickedUp, remainingDrops } = CombatSystem.checkLootPickup(playerPos, drops, 30);
+        if (pickedUp.length > 0) {
+          console.log(`[LOOT] Picked up ${pickedUp.length} item(s).`);
+          usePlayerStore.setState(state => state.player.currentSession
+            ? { player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: [...state.player.currentSession.inventory, ...pickedUp] } } }
+            : state);
+        }
+        if (pickedUp.length > 0 || drops !== lootDrops) setLootDrops(remainingDrops);
+      }
+      setRenderBullets([...combatResult.survivingBullets, ...survivingEnemyBullets]);
+
+      // Apply damage to the agent
+      const totalDamage = incomingDamage + combatResult.playerDamage;
+      if (totalDamage > 0) {
+        const newHealth = Math.max(0, liveSession.health - totalDamage);
+        usePlayerStore.setState(state => state.player.currentSession
+          ? { player: { ...state.player, currentSession: { ...state.player.currentSession, health: newHealth } } }
+          : state);
+
+        if (newHealth <= 0) {
+          // FLATLINED: forced jack-out (loot is banked by emergencyJackOut for now)
+          console.warn('[SESSION] Agent flatlined. Emergency extraction triggered.');
+          usePlayerStore.getState().emergencyJackOut();
+          useWorldStore.getState().exitWorld();
+          return; // Stop the loop; component unmounts
+        }
+      }
 
       requestRef.current = requestAnimationFrame(gameLoop);
     };
 
     requestRef.current = requestAnimationFrame(gameLoop);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings]);
+  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops]);
 
   // 4. Interaction Handler
   const handleEntityClick = (e: React.MouseEvent, entity: IWorldEntity) => {
@@ -251,8 +467,38 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     setMenuPosition(null);
   };
 
+  // Click empty ground = FIRE toward the cursor
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    if (menuPosition) {
+      setMenuPosition(null); // First click just closes the menu
+      return;
+    }
+    const playerPos = usePlayerStore.getState().player.currentSession?.position;
+    if (!playerPos) return;
+
+    // Screen -> World: the viewport keeps the player centered
+    const worldX = playerPos.x + (e.clientX - window.innerWidth / 2);
+    const worldZ = playerPos.z + (e.clientY - window.innerHeight / 2);
+    const angle = Math.atan2(worldZ - playerPos.z, worldX - playerPos.x);
+
+    setPlayerPatterns(prev => [
+      ...prev.filter(p => Date.now() - p.startTime < 2000),
+      {
+        type: PatternType.SINGLE,
+        origin: { x: playerPos.x, y: playerPos.z },
+        startTime: Date.now(),
+        angle
+      }
+    ]);
+  };
+
   // 5. Render
   if (!currentMap) return <Center h="100%"><Loader color="emerald" /></Center>;
+
+  // RECON MODE: satellite view for drop zone selection
+  if (reconMode) {
+    return <ReconOverlay onDrop={handleConfirmDrop} />;
+  }
 
   const playerPos = session.position;
   
@@ -268,7 +514,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       className="full-size"
       style={{ overflow: 'hidden', background: '#050505', position: 'relative', cursor: 'crosshair' }}
       onContextMenu={(e) => { e.preventDefault(); setMenuPosition(null); }}
-      onClick={() => setMenuPosition(null)}
+      onClick={handleCanvasClick}
     >
       {/* UI Overlay */}
       <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, pointerEvents: 'none' }}>
@@ -277,6 +523,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         </Badge>
         <Text c="dimmed" size="xs" mt={4}>
           POS: {Math.floor(playerPos.x)}, {Math.floor(playerPos.z)}
+        </Text>
+        {/* Vitals HUD */}
+        <div style={{ width: 160, height: 8, background: '#2a0a0a', border: '1px solid #444', marginTop: 6 }}>
+          <div style={{
+            width: `${Math.max(0, (session.health / session.maxHealth) * 100)}%`,
+            height: '100%',
+            background: session.health / session.maxHealth > 0.3 ? '#10b981' : '#ef4444',
+            transition: 'width 0.2s'
+          }} />
+        </div>
+        <Text c="dimmed" size="xs" mt={2}>
+          HP: {Math.ceil(session.health)}/{session.maxHealth} · LOOT: {session.inventory.length} · Click to fire
         </Text>
       </div>
 

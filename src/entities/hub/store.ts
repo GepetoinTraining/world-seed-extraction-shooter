@@ -62,6 +62,7 @@ interface HubState {
   saveHubState: () => Promise<void>;
   
   purchaseLot: (lotId: string, playerId: string, playerName: string) => Promise<boolean>;
+  setLotStructure: (lotId: string, structureType: IPlayerLot['structureType']) => Promise<void>;
   purchaseFromShop: (listingId: string, shop: 'weapon' | 'armor' | 'consumable') => IItem | null;
   
   // Admin / Generator
@@ -164,7 +165,17 @@ export const useHubStore = create<HubState>((set, get) => ({
     await saveHubState(); // Persist changes
     return true;
   },
-  
+
+  setLotStructure: async (lotId, structureType) => {
+    const { lots, saveHubState } = get();
+    const updatedLots = lots.map(l =>
+      l.id === lotId ? { ...l, structureType } : l
+    );
+    set({ lots: updatedLots });
+    await saveHubState();
+  },
+
+
   generateDailyStock: () => {
     // Procedural Shop Generation
     const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor') => {

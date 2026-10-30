@@ -62,9 +62,9 @@ export class CombatSystem {
         const dx = bullet.x - mob.position.x;
         const dy = bullet.y - mob.position.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        if (dist < 1.5) {
-          const damage = 25; 
+
+        if (dist < 20) { // px: mob radius (12) + bullet radius + grace
+          const damage = 25;
           mob.health -= damage;
           bulletsToRemove.add(bulletIdx);
           

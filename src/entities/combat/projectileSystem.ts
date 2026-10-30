@@ -32,8 +32,8 @@ export class ProjectileSystem {
     if (elapsed < 0) return [];
 
     const bullets: IProjectile[] = [];
-    const speed = 10; 
-    const range = 2.0; 
+    const speed = 200; // px per second (10 tiles/s at 20px tiles)
+    const range = 2.0; // seconds of flight (400px reach)
 
     if (elapsed > range) return [];
 
@@ -78,8 +78,8 @@ export class ProjectileSystem {
       const dx = bullet.x - swingOrigin.x;
       const dy = bullet.y - swingOrigin.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      
-      if (dist > 2.0) return false;
+
+      if (dist > 40) return false; // 2 tiles in px
 
       const angleToBullet = Math.atan2(dy, dx);
       const angleDiff = Math.abs(angleToBullet - swingAngle);
