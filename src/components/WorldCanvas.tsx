@@ -8,6 +8,8 @@ import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
 import { EntityType, IChunk, ScanLevel, IWorldEntity, BiomeType } from '../entities/world/types';
 import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper, Button, Stack } from '@mantine/core';
+import { SessionJournal } from '../logic/journal/SessionJournal';
+import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -259,6 +261,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       };
     });
     lastTickRef.current = Date.now(); // Fresh delta so the first frame doesn't jump
+    SessionJournal.record('DROP', { chunkX, chunkY });
     confirmDrop();
   }, [confirmDrop]);
 
@@ -403,6 +406,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const { pickedUp, remainingDrops } = CombatSystem.checkLootPickup(playerPos, drops, 30);
         if (pickedUp.length > 0) {
           console.log(`[LOOT] Picked up ${pickedUp.length} item(s).`);
+          SessionJournal.record('LOOT', { itemIds: pickedUp.map(i => i.id) });
           usePlayerStore.setState(state => state.player.currentSession
             ? { player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: [...state.player.currentSession.inventory, ...pickedUp] } } }
             : state);
@@ -419,11 +423,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           ? { player: { ...state.player, currentSession: { ...state.player.currentSession, health: newHealth } } }
           : state);
 
+        SessionJournal.record('DAMAGE', { amount: totalDamage, health: newHealth });
+
         if (newHealth <= 0) {
-          // FLATLINED: forced jack-out (loot is banked by emergencyJackOut for now)
+          // FLATLINED: forced jack-out (loot is banked by emergencyJackOut for now;
+          // Wave 4 applies the world cert's death penalty instead)
           console.warn('[SESSION] Agent flatlined. Emergency extraction triggered.');
+          SessionJournal.record('DEATH', {});
           usePlayerStore.getState().emergencyJackOut();
           useWorldStore.getState().exitWorld();
+          // Seal the journal and the bank (async; loop is already stopped)
+          const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
+          void SessionJournal.finish('DIED', after).then(() => PlayerPersistence.flush('death'));
           return; // Stop the loop; component unmounts
         }
       }

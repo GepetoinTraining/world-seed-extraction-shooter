@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useWorldStore, IWorldCard } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { WorldCreator } from './WorldCreator';
+import { SessionJournal } from '../logic/journal/SessionJournal';
+import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { SimpleGrid, Card, Text, Badge, Button, Group, Container, Stack } from '@mantine/core';
 
 const WorldCard = ({ world, onDeploy }: { world: IWorldCard, onDeploy: () => void }) => {
@@ -69,9 +71,19 @@ export const MissionControl = () => {
         refreshWorlds();
     }, []);
 
-    const handleDeploy = (worldId: string, seed: string) => {
-        selectWorld(worldId);
+    const handleDeploy = async (worldId: string, seed: string) => {
+        await selectWorld(worldId);
         diveIntoLayer(seed);
+
+        // Wave 1.2: open the session journal with the claim's baseHash
+        const { player } = usePlayerStore.getState();
+        const session = player.currentSession;
+        if (session) {
+            await SessionJournal.start(
+                session.sessionId, worldId, seed,
+                PlayerPersistence.persistableJson(player)
+            );
+        }
     };
 
     return (

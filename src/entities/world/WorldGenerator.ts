@@ -1,34 +1,14 @@
 import { IMap, IChunk, BiomeType, EntityType, ScanLevel } from './types';
 import { GenreType } from './definitions';
-import { Director } from './Director'; 
+import { Director } from './Director';
 import { UniversalRank, Rarity } from '../../../types';
+// Wave 1.3: shared deterministic RNG (same algorithm as before — goldens safe)
+import { SeededRNG } from '../../logic/rng/DeterministicRNG';
 
 // New Interface for injected data
 export interface IGenerationContext {
   mobDefinitions: any[];
   resourceDefinitions: any[];
-}
-
-class SeededRNG {
-  private seed: number;
-  constructor(seed: string) {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < seed.length; i++) {
-      h ^= seed.charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-    this.seed = h >>> 0;
-  }
-  next(): number {
-    this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
-    return this.seed / 4294967296;
-  }
-  range(min: number, max: number): number {
-    return min + (this.next() * (max - min));
-  }
-  pick<T>(array: T[]): T {
-    return array[Math.floor(this.next() * array.length)];
-  }
 }
 
 export class WorldGenerator {
@@ -131,7 +111,8 @@ export class WorldGenerator {
         if (validMobs.length > 0) {
             const template = rng.pick(validMobs);
             chunk.entities.push({
-                id: crypto.randomUUID(),
+                // Deterministic id: same seed -> same entities (test line 20)
+                id: `ent_${x}_${y}_m${i}`,
                 type: EntityType.MOB,
                 definitionId: template.id,
                 position: { x: (x * 100) + rng.range(10, 90), y: (y * 100) + rng.range(10, 90) }, 
@@ -150,7 +131,7 @@ export class WorldGenerator {
             const template = rng.pick(context.resourceDefinitions);
             if (template) {
                 chunk.entities.push({
-                    id: crypto.randomUUID(),
+                    id: `ent_${x}_${y}_r${i}`,
                     type: EntityType.RESOURCE,
                     definitionId: template.id,
                     position: { x: (x * 100) + rng.range(5, 95), y: (y * 100) + rng.range(5, 95) },

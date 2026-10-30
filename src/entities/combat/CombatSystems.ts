@@ -4,6 +4,7 @@ import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 import { LootTable } from '../world/LootTable';
 import { IItem, UniversalRank, Rarity } from '../../../types';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
+import { SessionJournal } from '../../logic/journal/SessionJournal';
 
 export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG';
@@ -91,13 +92,16 @@ export class CombatSystem {
 
             const def = MOB_DEFINITIONS[mob.definitionId];
             if (def) {
-              const loot = LootTable.generateLoot(def, 1.0);
+              // Wave 1.3: journaled roll key — replaying this kill re-mints this loot
+              const rollKey = SessionJournal.rollKey('loot', mob.id);
+              const loot = LootTable.generateLoot(def, 1.0, undefined, rollKey);
+              SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
               if (loot.length > 0) {
                 spawnedLoot.push({ position: mob.position, items: loot });
                 events.push({ type: 'LOOT_SPAWN', position: mob.position, loot });
               }
             }
-            
+
             // Remove mob
             const chunk = updatedChunks[chunkKey];
             if (chunk) {

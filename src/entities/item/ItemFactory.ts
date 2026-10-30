@@ -2,44 +2,53 @@ import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../../types';
 import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';
 import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';
 import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
+import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 
 export class ItemFactory {
-  
+
   /**
    * Mints a new Item.
    * @param targetRank - Optional force rank (e.g. for boss drops)
    * @param isIdentified - Whether the item stats are visible immediately (default: false)
+   * @param rng - Deterministic stream for every roll (Wave 1.3). Callers derive
+   *              it from a journaled key; the unkeyed fallback exists only so
+   *              nothing crashes while legacy call sites migrate, and it logs.
    */
-  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false): IItem {
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG): IItem {
+    if (!rng) {
+      console.warn('[FACTORY] Unkeyed item mint — roll is not replayable. Pass an Rng.fromKey stream.');
+      rng = Rng.fromKey(`unkeyed:${Date.now()}:${Math.random()}`);
+    }
+
     // 1. Select Base Template (INCLUDE TOOLS NOW)
     const allBases = [
-        ...ITEM_DEFINITIONS.weapon_bases, 
+        ...ITEM_DEFINITIONS.weapon_bases,
         ...ITEM_DEFINITIONS.armor_bases,
         ...ITEM_DEFINITIONS.tool_bases // <-- ADDED THIS
     ];
-    
+
     let template: ItemDefinition;
-    
+
     if (targetRank) {
       const candidates = allBases.filter(b => b.rank === targetRank);
-      template = candidates.length > 0 
-        ? candidates[Math.floor(Math.random() * candidates.length)] 
-        : allBases[Math.floor(Math.random() * allBases.length)];
+      template = candidates.length > 0
+        ? rng.pick(candidates)
+        : rng.pick(allBases);
     } else {
-      template = allBases[Math.floor(Math.random() * allBases.length)];
+      template = rng.pick(allBases);
     }
 
     // 2. Roll Rarity
-    const rarity = this.rollRarity();
+    const rarity = this.rollRarity(rng);
 
     // 3. Roll Quality
-    const quality = (Math.random() * 0.4) - 0.2;
+    const quality = (rng.next() * 0.4) - 0.2;
 
     // 4. Base Stats
-    const baseStats = this.generateBaseStats(template, quality);
-    
+    const baseStats = this.generateBaseStats(template, quality, rng);
+
     // 5. Affixes
-    const affixes = this.generateAffixes(template, rarity, template.rank);
+    const affixes = this.generateAffixes(template, rarity, template.rank, rng);
     
     // 6. Merge Stats
     const finalStats = { ...baseStats };
@@ -62,7 +71,8 @@ export class ItemFactory {
     const weight = this.getWeight(template, dimensions);
 
     return {
-      id: crypto.randomUUID(),
+      // Stream-derived id: replaying the same roll key re-mints the same item
+      id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: template.id,
       name: fullName,
       description: this.generateDescription(rarity, quality),
@@ -130,8 +140,8 @@ export class ItemFactory {
   }
 
   // ... (Keep private helpers: rollRarity, generateBaseStats, generateAffixes, constructName, generateDescription, getColorForRarity same as before)
-  private static rollRarity(): Rarity {
-    const rand = Math.random();
+  private static rollRarity(rng: SeededRNG): Rarity {
+    const rand = rng.next();
     if (rand > 0.99) return Rarity.LEGENDARY;
     if (rand > 0.95) return Rarity.EPIC;
     if (rand > 0.85) return Rarity.RARE;
@@ -139,26 +149,26 @@ export class ItemFactory {
     return Rarity.COMMON;
   }
 
-  private static generateBaseStats(template: ItemDefinition, quality: number): Record<string, number> {
+  private static generateBaseStats(template: ItemDefinition, quality: number, rng: SeededRNG): Record<string, number> {
     const stats: Record<string, number> = {};
     template.implicits.forEach(imp => {
       let val = 0;
       if (imp.value !== undefined) val = imp.value;
-      else if (imp.min !== undefined && imp.max !== undefined) val = imp.min + Math.random() * (imp.max - imp.min);
-      
+      else if (imp.min !== undefined && imp.max !== undefined) val = imp.min + rng.next() * (imp.max - imp.min);
+
       if (val > 1) stats[imp.stat] = Math.round(val * (1 + quality));
       else stats[imp.stat] = parseFloat((val * (1 + quality)).toFixed(2));
     });
     return stats;
   }
 
-  private static generateAffixes(template: ItemDefinition, rarity: Rarity, itemRank: UniversalRank): IAffix[] {
+  private static generateAffixes(template: ItemDefinition, rarity: Rarity, itemRank: UniversalRank, rng: SeededRNG): IAffix[] {
     const affixes: IAffix[] = [];
     let prefixCount = 0;
     let suffixCount = 0;
 
     switch (rarity) {
-      case Rarity.UNCOMMON: Math.random() > 0.5 ? prefixCount++ : suffixCount++; break;
+      case Rarity.UNCOMMON: rng.next() > 0.5 ? prefixCount++ : suffixCount++; break;
       case Rarity.RARE: prefixCount = 1; suffixCount = 1; break;
       case Rarity.EPIC: prefixCount = 2; suffixCount = 2; break;
       case Rarity.LEGENDARY: prefixCount = 3; suffixCount = 3; break;
@@ -167,16 +177,16 @@ export class ItemFactory {
     const pickAffix = (pool: AffixDefinition[], currentAffixes: IAffix[]): IAffix | null => {
       const valid = pool.filter(def => def.allowedTags.some(tag => template.tags.includes(tag)));
       const available = valid.filter(def => !currentAffixes.some(a => a.id === def.id));
-      
+
       if (available.length === 0) return null;
-      const choice = available[Math.floor(Math.random() * available.length)];
+      const choice = rng.pick(available);
 
       const rankMult = RANK_MULTIPLIERS[itemRank];
       const rolledStats: Record<string, number> = {};
-      
+
       Object.entries(choice.statModifiers).forEach(([key, range]) => {
         const [min, max] = range;
-        const baseVal = min + Math.random() * (max - min);
+        const baseVal = min + rng.next() * (max - min);
         rolledStats[key] = Math.round(baseVal * rankMult);
       });
 

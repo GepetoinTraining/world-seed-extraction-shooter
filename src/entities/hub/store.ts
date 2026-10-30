@@ -8,6 +8,7 @@ import { IItem, UniversalRank } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { HubGenerator } from './HubGenerator';
+import { Rng } from '../../logic/rng/DeterministicRNG';
 
 // =============================================================================
 // TYPES
@@ -177,17 +178,21 @@ export const useHubStore = create<HubState>((set, get) => ({
 
 
   generateDailyStock: () => {
-    // Procedural Shop Generation
+    // Procedural Shop Generation — keyed by hub + UTC day, so stock is the
+    // same for every client of this hub today, and rolls over at midnight.
+    const hubId = get().activeHubId || 'hub_unknown';
+    const dayIndex = Math.floor(Date.now() / 86_400_000);
+
     const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor') => {
       return Array.from({ length: count }, (_, i) => {
-        const item = ItemFactory.createItem(rank, true); // Identified
-        // Force type matching roughly
+        const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${i}`);
+        const item = ItemFactory.createItem(rank, true, rng); // Identified
         return {
-          id: crypto.randomUUID(),
+          id: `listing_${type}_${rank}_${i}`,
           item,
           price: item.value * 1.5, // 50% Markup
           vendorId: 'vendor_sys',
-          stock: Math.floor(Math.random() * 5) + 1
+          stock: rng.int(1, 6)
         };
       });
     };

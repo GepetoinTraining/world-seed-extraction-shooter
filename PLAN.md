@@ -16,9 +16,9 @@ This script is the definition of done. Every wave below exists to make one more 
 When all lines pass in one unbroken sitting — including the browser reload — the game works.
 
 ```
- 1. [ ] Birth: mint identity cert (keypair in browser, geo+entropy UID)
- 2. [ ] Reload browser → identity persists, signature verifies
- 3. [ ] Materialize into Hub → player doc hydrates (gold, stash, skills, lore)
+ 1. [x] Birth: mint identity cert (keypair in browser, geo+entropy UID)
+ 2. [x] Reload browser → identity persists, signature verifies
+ 3. [x] Materialize into Hub → player doc hydrates (gold, stash, skills, lore)
  4. [ ] Buy a tool (axe or pick) → gold actually deducted, item in stash
  5. [ ] Deploy → Drone Recon → scan sectors → pick drop zone → confirm
  6. [ ] Walk the world: terrain matters (slow ground, blocked tiles, biome texture)
@@ -29,8 +29,8 @@ When all lines pass in one unbroken sitting — including the browser reload —
 11. [ ] Inventory fills: tetris placement forced, weight slows you down,
         something must be left behind (the decision IS the game)
 12. [ ] Reach an extraction beacon → channel timer → extraction tax applied
-13. [ ] Loot banked, XP applied, deed (if dropped) in stash — all SIGNED
-14. [ ] Reload browser → everything from 13 is still there, signatures verify
+13. [x] Loot banked, XP applied, deed (if dropped) in stash — all SIGNED
+14. [x] Reload browser → everything from 13 is still there, signatures verify
 15. [ ] Redeem deed → own a lot → build a workshop
 16. [ ] Refine raw logs → planks at the workshop (recipe consumes, produces)
 17. [ ] List planks in a shop → another identity could buy them
@@ -115,8 +115,11 @@ Each wave has a **goal**, the **systems** it builds, the **donor patterns** it u
 **gate** — the test-list lines that must pass before the next wave starts. No wave starts
 until the previous gate is green. No feature enters a wave from outside the test list.
 
-### WAVE 1 — Truth & Persistence (make the ledger real)
+### WAVE 1 — Truth & Persistence (make the ledger real) ✅ DONE
 *The bank must not forget. The bank must not lie.*
+*(Gate passed: signed write-through + verify-on-load live; tampered doc refused;
+keyed deterministic rolls in ItemFactory/LootTable/shops; session journal seals
+claim/receipt; ledger chain audits clean.)*
 
 - **W1.1 Player write-through.** Save the signed player doc to `CHARACTERS` on: extract,
   jack-out, death, hub transactions, and a 30s debounce. Verify signature on hydrate.

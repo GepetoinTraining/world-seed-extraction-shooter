@@ -10,6 +10,8 @@ import { GenreCreator } from './src/components/admin/GenreCreator';
 import { IdentityGate } from './src/components/IdentityGate'; 
 import { HubSelector } from './src/components/HubSelector'; // NEW IMPORT
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
+import { SessionJournal } from './src/logic/journal/SessionJournal';
+import { PlayerPersistence } from './src/logic/persistence/PlayerPersistence';
 import { 
   Box, Text, Button, Stack, Group, Badge,
   AppShell, NavLink, Divider, Loader, Center, ActionIcon
@@ -102,9 +104,19 @@ const App: React.FC = () => {
     return (
       <Box h="100vh" bg="dark.9">
         <WorldCanvas session={session} />
-        <Button 
+        <Button
           pos="absolute" top={20} right={20} color="gold"
-          onClick={() => { emergencyJackOut(); exitWorld(); setView('HUB'); }}
+          onClick={() => {
+            // Wave 1: journal the extraction, bank, seal the receipt, flush the save
+            SessionJournal.record('EXTRACT', {
+              loot: player.currentSession?.inventory.map(i => i.id) || []
+            });
+            emergencyJackOut();
+            exitWorld();
+            setView('HUB');
+            const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
+            void SessionJournal.finish('EXTRACTED', after).then(() => PlayerPersistence.flush('extract'));
+          }}
           style={{ zIndex: 1000 }}
         >
           EXTRACT

@@ -9,6 +9,7 @@
  */
 
 import { ItemFactory } from '../item/ItemFactory';
+import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { IItem, UniversalRank, Rarity } from '../../../types';
 import { IMobDefinition } from '../mob/types';
 import { DeedSystem } from '../../logic/systems/DeedSystem';
@@ -37,8 +38,12 @@ export class LootTable {
   static generateLoot(
     mobDef: IMobDefinition, 
     magicFind: number = 1.0,
-    context?: ILootContext
+    context?: ILootContext,
+    rollKey?: string
   ): IItem[] {
+    // Wave 1.3: every drop derives from a journaled key. Same key -> same loot.
+    const rng = Rng.fromKey(rollKey || `unkeyed:loot:${Date.now()}:${Math.random()}`);
+    if (!rollKey) console.warn('[LOOT] Unkeyed loot roll - not replayable.');
     const loot: IItem[] = [];
     const effectiveMF = magicFind * (context?.quantityBonus || 1.0);
 
@@ -48,15 +53,15 @@ export class LootTable {
     
     // Biological mobs drop scrap/materials
     if (mobDef.tags.includes('biological')) {
-      if (Math.random() < 0.6 * effectiveMF) {
-        loot.push(ItemFactory.createItem(UniversalRank.F, false));
+      if (rng.next() < 0.6 * effectiveMF) {
+        loot.push(ItemFactory.createItem(UniversalRank.F, false, rng));
       }
     }
 
     // Mechanical mobs drop tech components
     if (mobDef.tags.includes('mechanical')) {
-      if (Math.random() < 0.5 * effectiveMF) {
-        const item = ItemFactory.createItem(UniversalRank.E, false);
+      if (rng.next() < 0.5 * effectiveMF) {
+        const item = ItemFactory.createItem(UniversalRank.E, false, rng);
         item.name = 'Salvaged Component';
         loot.push(item);
       }
@@ -69,15 +74,15 @@ export class LootTable {
     let gearChance = this.getGearChance(mobDef);
     gearChance *= effectiveMF;
 
-    if (Math.random() < gearChance) {
+    if (rng.next() < gearChance) {
       // Gear drops at mob's rank, unidentified
-      const item = ItemFactory.createItem(mobDef.rank, false);
+      const item = ItemFactory.createItem(mobDef.rank, false, rng);
       loot.push(item);
     }
 
     // Elites get a second roll
-    if (mobDef.tags.includes('elite') && Math.random() < gearChance * 0.5) {
-      const bonusItem = ItemFactory.createItem(mobDef.rank, false);
+    if (mobDef.tags.includes('elite') && rng.next() < gearChance * 0.5) {
+      const bonusItem = ItemFactory.createItem(mobDef.rank, false, rng);
       loot.push(bonusItem);
     }
 
@@ -87,21 +92,21 @@ export class LootTable {
     
     if (mobDef.tags.includes('boss')) {
       // Guaranteed rank-appropriate gear
-      const bossLoot = ItemFactory.createItem(mobDef.rank, false);
+      const bossLoot = ItemFactory.createItem(mobDef.rank, false, rng);
       bossLoot.rarity = Rarity.EPIC; // Bosses always drop at least Epic
       loot.push(bossLoot);
 
       // Chance for Legendary
-      if (Math.random() < 0.25 * effectiveMF) {
-        const legendary = ItemFactory.createItem(mobDef.rank, false);
+      if (rng.next() < 0.25 * effectiveMF) {
+        const legendary = ItemFactory.createItem(mobDef.rank, false, rng);
         legendary.rarity = Rarity.LEGENDARY;
         legendary.name = `${mobDef.name}'s ${legendary.name}`;
         loot.push(legendary);
       }
 
       // Small chance for Knowledge Tome
-      if (Math.random() < 0.10 * effectiveMF) {
-        const tome = ItemFactory.createItem(mobDef.rank, false);
+      if (rng.next() < 0.10 * effectiveMF) {
+        const tome = ItemFactory.createItem(mobDef.rank, false, rng);
         tome.name = `Tome of ${mobDef.name}`;
         tome.description = `Contains forbidden knowledge about ${mobDef.name}. Studying this grants Lore XP.`;
         tome.rarity = Rarity.LEGENDARY;
@@ -116,13 +121,13 @@ export class LootTable {
     if (mobDef.tags.includes('god') || mobDef.tags.includes('titan')) {
       // Multiple high-rank items
       for (let i = 0; i < 3; i++) {
-        const godLoot = ItemFactory.createItem(UniversalRank.S, false);
+        const godLoot = ItemFactory.createItem(UniversalRank.S, false, rng);
         godLoot.rarity = Rarity.LEGENDARY;
         loot.push(godLoot);
       }
 
       // Artifact-tier item
-      const artifact = ItemFactory.createItem(UniversalRank.SSS, false);
+      const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng);
       artifact.rarity = Rarity.ARTIFACT;
       artifact.name = `Relic of ${mobDef.name}`;
       artifact.description = 'An item of impossible origin. Reality bends around it.';
@@ -136,7 +141,7 @@ export class LootTable {
     if (context) {
       const deedChance = this.getDeedChance(mobDef);
       
-      if (Math.random() < deedChance * effectiveMF) {
+      if (rng.next() < deedChance * effectiveMF) {
         // Deed rank scales with mob rank
         let deedRank = UniversalRank.B;
         if (mobDef.rank === UniversalRank.S || mobDef.rank === UniversalRank.SS) {
@@ -232,18 +237,19 @@ export class LootTable {
   /**
    * Generate loot for a resource node (not a mob)
    */
-  static generateResourceLoot(nodeType: string, playerMiningYield: number = 1.0): IItem[] {
+  static generateResourceLoot(nodeType: string, playerMiningYield: number = 1.0, rollKey?: string): IItem[] {
+    const rng = Rng.fromKey(rollKey || `unkeyed:resource:${Date.now()}:${Math.random()}`);
     const loot: IItem[] = [];
 
     // Resource nodes always drop something
-    const item = ItemFactory.createItem(UniversalRank.F, true); // Resources are pre-identified
+    const item = ItemFactory.createItem(UniversalRank.F, true, rng); // Resources are pre-identified
     item.name = `Raw ${nodeType}`;
     item.description = `Harvested material. Can be refined.`;
     
     // Quantity based on mining yield
-    const quantity = Math.floor(1 + Math.random() * 3 * playerMiningYield);
+    const quantity = Math.floor(1 + rng.next() * 3 * playerMiningYield);
     for (let i = 0; i < quantity; i++) {
-      loot.push({ ...item, id: crypto.randomUUID() });
+      loot.push({ ...item, id: `${item.id}_${i}` });
     }
 
     return loot;
@@ -252,21 +258,22 @@ export class LootTable {
   /**
    * Generate loot for a chest/container
    */
-  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0): IItem[] {
+  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string): IItem[] {
+    const rng = Rng.fromKey(rollKey || `unkeyed:chest:${Date.now()}:${Math.random()}`);
     const loot: IItem[] = [];
 
     // Chests always have 2-5 items
-    const count = 2 + Math.floor(Math.random() * 4);
+    const count = 2 + Math.floor(rng.next() * 4);
 
     for (let i = 0; i < count; i++) {
       // Each item can be chest rank or one below
-      const itemRank = Math.random() < 0.7 ? chestRank : this.rankBelow(chestRank);
-      loot.push(ItemFactory.createItem(itemRank, false));
+      const itemRank = rng.next() < 0.7 ? chestRank : this.rankBelow(chestRank);
+      loot.push(ItemFactory.createItem(itemRank, false, rng));
     }
 
     // Chance for bonus rare item
-    if (Math.random() < 0.2 * magicFind) {
-      const bonus = ItemFactory.createItem(chestRank, false);
+    if (rng.next() < 0.2 * magicFind) {
+      const bonus = ItemFactory.createItem(chestRank, false, rng);
       bonus.rarity = Rarity.RARE;
       loot.push(bonus);
     }

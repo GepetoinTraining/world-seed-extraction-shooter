@@ -5,6 +5,7 @@ import { ProgressionSystem } from './systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
+import { Rng } from '../../logic/rng/DeterministicRNG';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
 
@@ -94,8 +95,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         attributes: baseAttrs, // Initially same as base
         bank: {
           accountId: `acc_${certificate.metadata.uid.substring(0, 8)}`,
-          gold: 500, 
-          stashTabs: [{ name: 'CACHE_01', items: [ItemFactory.createItem(UniversalRank.F, true)] }],
+          gold: 500,
+          // Keyed genesis roll: the same identity always starts with the same item
+          stashTabs: [{ name: 'CACHE_01', items: [ItemFactory.createItem(UniversalRank.F, true, Rng.fromKey(`${certificate.metadata.uid}:genesis:starter`))] }],
           universalSkills: {},
           lore: {}
         },

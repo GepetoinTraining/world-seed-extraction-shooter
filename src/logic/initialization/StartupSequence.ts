@@ -9,6 +9,8 @@ import { usePlayerStore } from '../../entities/player/store';
 // Import both from the ROOT types file
 import { UniversalRank, IPlayer } from '../../../types';
 // --- FIX END ---
+import { PlayerPersistence } from '../persistence/PlayerPersistence';
+import { Ledger } from '../ledger/Ledger';
 
 export class StartupSequence {
   
@@ -23,7 +25,8 @@ export class StartupSequence {
     }
 
     // 2. VECTOR DB GENESIS (The Big Bang)
-    const itemDefs = await VectorStore.query({ namespace: VectorNamespace.ITEMS, limit: 1 });
+    // Definitions live in CONTENT (saveContent); ITEMS holds minted instances
+    const itemDefs = await VectorStore.query({ namespace: VectorNamespace.CONTENT, limit: 1 });
     if (itemDefs.length === 0) {
       console.log('[BOOT] Vector Ledger empty. Executing Big Bang...');
       await GenesisInitializer.initialize();
@@ -64,21 +67,37 @@ export class StartupSequence {
 console.log('[BOOT] Refreshing World List...');
     await useWorldStore.getState().refreshWorlds();
 
-    // 5. HYDRATE PLAYER (If exists)
+    // 5. HYDRATE PLAYER (Wave 1.1: signed write-through, verify-on-load)
     if (certificate) {
        console.log('[BOOT] Searching for neural imprint...');
-       
-       const playerDoc = await VectorStore.get<IPlayer>(
-         VectorNamespace.CHARACTERS, 
-         certificate.metadata.uid
-       );
-       
-       if (playerDoc && playerDoc.data) {
-           console.log('[BOOT] Neural Imprint Found. Restoring state...');
-           usePlayerStore.setState({ player: playerDoc.data });
+
+       const result = await PlayerPersistence.hydrate(certificate);
+
+       if (result.status === 'OK') {
+           console.log('[BOOT] Neural Imprint verified. Restoring state...');
+           usePlayerStore.setState({ player: result.player });
+       } else if (result.status === 'TAMPERED') {
+           console.error('[BOOT] ⛔ Neural Imprint REJECTED (signature mismatch). Booting clean slate.');
+           // The tampered doc stays in the DB as evidence; we refuse to load it.
        } else {
-           console.log('[BOOT] No previous state found. Standing by for Character Creation.');
+           // EMPTY: this is a genesis — seal the first player doc and open the ledger
+           console.log('[BOOT] No previous state found. Sealing genesis imprint...');
+           // If the gate auto-passed (existing identity), the store still holds the
+           // blank template — initialize the character from the cert first.
+           if (usePlayerStore.getState().player.id !== certificate.metadata.uid) {
+             usePlayerStore.getState().initializeSession(certificate, 'OPERATOR');
+           }
+           const saved = await PlayerPersistence.flush('genesis');
+           if (saved) {
+             await Ledger.append('CHARACTER_GENESIS', {
+               certUid: certificate.metadata.uid,
+               username: usePlayerStore.getState().player.username
+             });
+           }
        }
+
+       // Arm the autosave subscription (10s debounce + critical-moment flushes)
+       PlayerPersistence.start();
     }
 
     return { status: 'READY' };
