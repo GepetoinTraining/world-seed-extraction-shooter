@@ -2,7 +2,7 @@
 
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
 The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
-awaits Pedro's approval; the suite stands at 585, one timing bar red on this machine (see that leg's record).
+approved; the suite stands at 585, with one timing bar that reads load (see that leg's record).
 Next, in order: the playtest fixes, Wave 11, Wave 12.
 Open test lines
 and their status are in section 5.
@@ -266,7 +266,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built and awaits approval. Next: the playtest fixes → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. Next: the playtest fixes → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -276,7 +276,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D27 through D30 are decided and built, awaiting approval.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D27 through D30 are decided, built and approved.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -450,8 +450,8 @@ Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now
 - **Mint-world draft loss:** a stray backdrop click or Escape discards the four-step draft.
 - **Pack placement:** the player cannot move an item to a chosen cell. Add grab, a footprint ghost and a keyboard path.
 
-### THE TECHNOLOGY WEB AND AUTO SKILL (D27) ✅ BUILT, awaiting Pedro's approval
-Built 2026-10-31. Bars in `tests/technologyweb.test.ts` (129 tests; suite 585), registered before the build, against the affix pack hashes taken from the untouched code at 840eebb. D27–D30 were decided before the leg started; nothing was asked. Lines 63–68, stated plainly: 63 a tool on a material mints a skill from that pair, the same pair always the same skill; 64 working without it accrues, and it can emerge only at a rest, on a keyed roll that replays the same; 65 a further station opens through a skill's tool + material connection, never a fixed list; 66 an NPC carries stats and skills derived from its seed, read through the same web as the player's; 67 the tag law holds; 68 nothing caps the web.
+### THE TECHNOLOGY WEB AND AUTO SKILL (D27) ✅ DONE
+Done 2026-10-31; **approved by Pedro (2026-10-31), with its readings standing as built**. Bars in `tests/technologyweb.test.ts` (129 tests; suite 585), registered before the build, against the affix pack hashes taken from the untouched code at 840eebb. D27–D30 were decided before the leg started; nothing was asked. Lines 63–68, stated plainly: 63 a tool on a material mints a skill from that pair, the same pair always the same skill; 64 working without it accrues, and it can emerge only at a rest, on a keyed roll that replays the same; 65 a further station opens through a skill's tool + material connection, never a fixed list; 66 an NPC carries stats and skills derived from its seed, read through the same web as the player's; 67 the tag law holds; 68 nothing caps the web.
 
 **The tag audit, run first, as Pedro asked.** 142 spellings in the source, every definition and every batch. 138 are tags; `tag1`, `tag2`, `other_tags` and `grunt|elite|boss` are placeholder text in the admin Genre Creator's prompt, not tags. Against the law it found:
 - **Synonyms, three spellings of one root, retired on the record, call sites moved:** `craft`/`crafting`, `improvisation`/`improvised`, `science`/`intel`/`analysis`. Their spellings stay on the books and can never be reused. Near-synonyms kept, because each is a non-identity kind and cannot split a skill: `axe`/`chopping`, `pickaxe`/`mining`, `lore`/`document`, `caster`/`magic`, `energy`/`energy_shield`.
@@ -475,7 +475,7 @@ Built 2026-10-31. Bars in `tests/technologyweb.test.ts` (129 tests; suite 585), 
 - **Test practices on record:** raised in-memory health (50,000) and energy (400) on every run after the honest death, never written to the save; teleports to beacons and to two NPCs; 30,000 G through the ledger (`TEST_GRANT_WEB`); 10 planks and 3 ingots minted by console with a ledger row (`TEST_GRANT_WEB_MATERIALS`), for the fitted bench's bill; the tool rebuy, the second fellings, the blade purchase, the talks and the recruit called the same store doors the buttons call, after the buttons were proven once each.
 - **Bars corrected before first green, none lowered:** the "import runs migration" bar named `AvatarExport`, but a signed doc cannot be rewritten there; it now holds the import to reloading through the boot's door, which is what carries it. A gold bar named an API that does not exist; it now runs `GoldAudit.run()`. A chunk scan was missing its context argument. A mock's query returned docs with no id. **No older test file was edited.**
 - **Carried, honestly:**
-  - **`tests/grid.test.ts` "generates a chunk within a frame" fails on this machine: 17.6–19.5 ms median against 16.** Run three times on the untouched 840eebb it fails the same way, 17.6–18.7 ms, with ten node processes up, so this leg did not move it. The log called this a fraction of a millisecond; it is now two. Not lowered. Check it on a quiet machine.
+  - **`tests/grid.test.ts` "generates a chunk within a frame" fails under full-suite load: 17.6–19.5 ms worst case against 16 (the median is near 0.3 ms against 4).** Run three times on the untouched 840eebb it fails the same way, 17.6–18.7 ms, with ten node processes up, so this leg did not move it. Run alone with the same ten processes up, the file passes on both commits: worst case 12.5–15.7 ms here, 13.5–13.9 ms on 840eebb. The log called this a fraction of a millisecond; it is now two. Not lowered. Check it on a quiet machine.
   - **Proven by bar, not by play:** a reverse-engineered skill actually emerging and opening its station (the sitting was played, and {hammer, metal} stayed forming); graded and attuned; a real old save's migration (TENON is new); the hub's web opening for a second avatar; a sickle on grain; `WebSystem.admit`; a known hand's clock discount (the button read it).
   - **Winging it has a price at the harvest and the bench only.** Combat and talk accrue and pay nothing, and a held combat skill changes no number yet. Wave 12's balance, and D6 still owes it.
   - **Some connections have no door.** An awl on paper or shears on cloth can be named and can open things, but nothing yet lets a hand tool work a crafted good outside a station's own recipe. They are reachable by NPCs and by design. Nothing is capped; the door is simply not built.
@@ -613,7 +613,7 @@ For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the l
 61. Each transformation step adds something the raw material lacks, drawn deterministically from pools that grow with rarity and rank, with ranges, on buildings and furniture as on gear
 62. What a step added stays unknown until study, lore or the skill itself reveals it
 
-For the technology web and auto skill, registered as bars in `tests/technologyweb.test.ts`, awaiting Pedro's approval:
+For the technology web and auto skill, registered as bars in `tests/technologyweb.test.ts`, approved with the leg:
 
 63. Working with a tool on a material mints a skill from that pair, and the same pair always mints the same skill
 64. Working without the skill accrues toward it, and it can emerge only at a rest, on a keyed roll that replays the same
@@ -672,7 +672,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10C The Load-Out | 47–49, contract half of 56 | Passed |
 | 10D Anatomy of Items | 46, 50, 51, 54 | Passed; 46's set-bonus numbers are by test, not seen in play |
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
-| Technology web and auto skill (D27) | 63–68 | Passed, by test and by play within its carried items; awaiting approval |
+| Technology web and auto skill (D27) | 63–68 | Passed, by test and by play within its carried items; approved |
 | Playtest fixes | 57–59 (proposed) | Not started; next |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |

@@ -215,7 +215,7 @@ Settled by the raw materials pass (D23–D26), kept here as the record:
 - **Every material earns its place, and a bar says so.** Each raw thing takes a process or is eaten; each good has a way out; a fresh origin can reach all of it. Grain presses into straw paper, pebbles flux glass, scrap melts down, shards melt whole, titanium draws into a bar. The sapling alone waits, for the farms.
 - **A later bench is not this pass's business.** After the first, stations come from tool and material connected, which is the technology web.
 
-Settled by the web pass (D27–D30), kept here as the record, awaiting Pedro's word:
+Settled by the web pass (D27–D30), kept here as the record:
 
 - **A skill is the tool and the thing it worked.** An axe on a log is Felling, on every machine, in any order of arrival, and nothing but that pair can make it. The bare hand adds nothing, so a hand skill is the material itself, and it sits under every tool skill that works that material.
 - **Nobody learns on the spot.** You wing it, and the card says so: 12 energy, not 8, "winging it". A bench button shows the longer clock. It counts, and it settles only when you stop: the seal, a death, a withdrawal. The receipt reads IT SETTLED, or says nothing. It might not settle, and reloading will not change that; only more work buys another chance.
