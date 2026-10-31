@@ -174,6 +174,22 @@ export const GEAR_RECIPES: Record<string, IGearRecipe> = {
     outputBase: 'wpn_iron_maul_t1',
     laborTimeSeconds: 30,
     requiredFacility: 'WORKSHOP'
+  },
+  // Wave 10E (D6's crafting half): a rank S making — the maker names the thing.
+  // The chain is long on purpose: three ingots drawn to a blade, planks for the
+  // grip, cloth to wrap it — the depth IS the budget, and the name is earned.
+  'recipe_masterwork_blade': {
+    id: 'recipe_masterwork_blade',
+    name: 'Draw a Masterwork Blade',
+    description: 'Three ingots drawn long, a plank grip, a cloth wrap. Rank S work: the maker writes the name, and the bank signs it.',
+    inputs: [
+      { itemId: 'crf_iron_ingot', quantity: 3 },
+      { itemId: 'crf_plank', quantity: 1 },
+      { itemId: 'crf_cloth', quantity: 1 }
+    ],
+    outputBase: 'wpn_masterwork_blade',
+    laborTimeSeconds: 120,
+    requiredFacility: 'WORKSHOP'
   }
 };
 

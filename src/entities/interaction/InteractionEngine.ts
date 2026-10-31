@@ -145,7 +145,8 @@ export class InteractionEngine {
       } else {
         options.push({
           id: `int_carttow_${target.id}`,
-          label: mine ? 'Tow your cart' : `Tow it away (${cart.ownerName}'s seal — the theft will be signed)`,
+          label: mine ? 'Tow your cart'
+            : `Tow it away (${cart.ownerName}'s seal${cart.security?.lockLevel ? ` — ${cart.security.lockLevel} lock${cart.security.lockLevel === 1 ? '' : 's'} to break` : ''} — the theft will be signed)`,
           type: InteractionType.PICKUP,
           icon: '', energyCost: 0, timeCostSeconds: 0,
           requirements: {}, consequence: {}

@@ -14,6 +14,14 @@ import { IItem, UniversalRank, Rarity } from '../../../types';
 import { IMobDefinition } from '../mob/types';
 import { DeedSystem } from '../../logic/systems/DeedSystem';
 import { BiomeType } from './types';
+import { DreamingSystem, IAffixPool } from './Dreaming';
+
+/** Wave 10E: the pool this drop rolls from — the pinned bank's biome pool in a
+ * dreamed world, the purged legacy pool everywhere else (old worlds unchanged). */
+function dreamPool(biome?: BiomeType): IAffixPool | undefined {
+  const dream = DreamingSystem.active();
+  return dream && biome ? DreamingSystem.rollPoolFor(dream.pack, biome) : undefined;
+}
 
 export interface ILootContext {
   // Where the mob died (for deed generation)
@@ -46,6 +54,7 @@ export class LootTable {
     if (!rollKey) console.warn('[LOOT] Unkeyed loot roll - not replayable.');
     const loot: IItem[] = [];
     const effectiveMF = magicFind * (context?.quantityBonus || 1.0);
+    const pool = dreamPool(context?.biome);
 
     // ========================================================================
     // 1. GUARANTEED DROPS (By Tag)
@@ -54,14 +63,14 @@ export class LootTable {
     // Biological mobs drop scrap/materials
     if (mobDef.tags.includes('biological')) {
       if (rng.next() < 0.6 * effectiveMF) {
-        loot.push(ItemFactory.createItem(UniversalRank.F, false, rng));
+        loot.push(ItemFactory.createItem(UniversalRank.F, false, rng, undefined, undefined, pool));
       }
     }
 
     // Mechanical mobs drop tech components
     if (mobDef.tags.includes('mechanical')) {
       if (rng.next() < 0.5 * effectiveMF) {
-        const item = ItemFactory.createItem(UniversalRank.E, false, rng);
+        const item = ItemFactory.createItem(UniversalRank.E, false, rng, undefined, undefined, pool);
         item.name = 'Salvaged Component';
         loot.push(item);
       }
@@ -76,13 +85,13 @@ export class LootTable {
 
     if (rng.next() < gearChance) {
       // Gear drops at mob's rank, unidentified
-      const item = ItemFactory.createItem(mobDef.rank, false, rng);
+      const item = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
       loot.push(item);
     }
 
     // Elites get a second roll
     if (mobDef.tags.includes('elite') && rng.next() < gearChance * 0.5) {
-      const bonusItem = ItemFactory.createItem(mobDef.rank, false, rng);
+      const bonusItem = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
       loot.push(bonusItem);
     }
 
@@ -92,13 +101,13 @@ export class LootTable {
     
     if (mobDef.tags.includes('boss')) {
       // Guaranteed rank-appropriate gear
-      const bossLoot = ItemFactory.createItem(mobDef.rank, false, rng);
+      const bossLoot = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
       bossLoot.rarity = Rarity.EPIC; // Bosses always drop at least Epic
       loot.push(bossLoot);
 
       // Chance for Legendary
       if (rng.next() < 0.25 * effectiveMF) {
-        const legendary = ItemFactory.createItem(mobDef.rank, false, rng);
+        const legendary = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
         legendary.rarity = Rarity.LEGENDARY;
         legendary.name = `${mobDef.name}'s ${legendary.name}`;
         loot.push(legendary);
@@ -106,7 +115,7 @@ export class LootTable {
 
       // Small chance for Knowledge Tome
       if (rng.next() < 0.10 * effectiveMF) {
-        const tome = ItemFactory.createItem(mobDef.rank, false, rng);
+        const tome = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
         tome.name = `Tome of ${mobDef.name}`;
         tome.description = `Contains forbidden knowledge about ${mobDef.name}. Studying this grants Lore XP.`;
         tome.rarity = Rarity.LEGENDARY;
@@ -121,13 +130,13 @@ export class LootTable {
     if (mobDef.tags.includes('god') || mobDef.tags.includes('titan')) {
       // Multiple high-rank items
       for (let i = 0; i < 3; i++) {
-        const godLoot = ItemFactory.createItem(UniversalRank.S, false, rng);
+        const godLoot = ItemFactory.createItem(UniversalRank.S, false, rng, undefined, undefined, pool);
         godLoot.rarity = Rarity.LEGENDARY;
         loot.push(godLoot);
       }
 
       // Artifact-tier item
-      const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng);
+      const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool);
       artifact.rarity = Rarity.ARTIFACT;
       artifact.name = `Relic of ${mobDef.name}`;
       artifact.description = 'An item of impossible origin. Reality bends around it.';
@@ -258,9 +267,10 @@ export class LootTable {
   /**
    * Generate loot for a chest/container
    */
-  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string): IItem[] {
+  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string, biome?: BiomeType): IItem[] {
     const rng = Rng.fromKey(rollKey || `unkeyed:chest:${Date.now()}:${Math.random()}`);
     const loot: IItem[] = [];
+    const pool = dreamPool(biome);
 
     // Chests always have 2-5 items
     const count = 2 + Math.floor(rng.next() * 4);
@@ -268,12 +278,12 @@ export class LootTable {
     for (let i = 0; i < count; i++) {
       // Each item can be chest rank or one below
       const itemRank = rng.next() < 0.7 ? chestRank : this.rankBelow(chestRank);
-      loot.push(ItemFactory.createItem(itemRank, false, rng));
+      loot.push(ItemFactory.createItem(itemRank, false, rng, undefined, undefined, pool));
     }
 
     // Chance for bonus rare item
     if (rng.next() < 0.2 * magicFind) {
-      const bonus = ItemFactory.createItem(chestRank, false, rng);
+      const bonus = ItemFactory.createItem(chestRank, false, rng, undefined, undefined, pool);
       bonus.rarity = Rarity.RARE;
       loot.push(bonus);
     }

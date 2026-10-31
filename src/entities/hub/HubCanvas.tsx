@@ -27,6 +27,7 @@ import { deployToWorld } from '../../logic/systems/Deploy';
 import { Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
 import { useAppView, useFeed } from '../../components/ui/stores';
 import { inspectItem } from '../../render/atoms/inspect';
+import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { ItemType } from '../../../types';
 
@@ -771,6 +772,10 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
   const stash = player.bank.stashTabs[0]?.items || [];
   const countOf = (defId: string) => stash.filter(i => i.universalDefinitionId === defId).length;
   const jobs = hub.craftingJobs.filter(j => j.lotId === lotId && !j.collected);
+  // Wave 10E (D6): a rank S+ making takes the maker's own name
+  const [makerName, setMakerName] = useState('');
+  // Wave 10E (D19): the identify eye trains here, sitting by sitting
+  const studyable = stash.filter(i => StudySystem.identifyScopeOf(i) !== null).slice(0, 6);
 
   return (
     <Modal title="THE BENCH" onClose={onClose} width={520}>
@@ -781,20 +786,55 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
         {/* Wave 10D: gear recipes (the chain is the power budget) join the bench */}
         {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP')].map(recipe => {
           const ready = recipe.inputs.every(i => countOf(i.itemId) >= i.quantity);
+          const mayName = hub.canNameCraft(recipe.id).ok;
           return (
-            <Button
-              key={recipe.id}
-              disabled={!ready}
-              title={recipe.description}
-              onClick={async () => {
-                const ok = await hub.queueCraft(lotId, recipe.id);
-                pushFeed(ok ? `${recipe.name} on the bench (${recipe.laborTimeSeconds}s).` : `${recipe.name}: the inputs are short.`, ok ? 'signal' : 'loss');
-              }}
-            >
-              {recipe.name.toUpperCase()} ({recipe.laborTimeSeconds}s)
-            </Button>
+            <div key={recipe.id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {mayName && (
+                <Input
+                  value={makerName}
+                  onChange={e => setMakerName(e.currentTarget.value)}
+                  placeholder="Rank S work: write its name, and the bank signs it"
+                />
+              )}
+              <Button
+                disabled={!ready}
+                title={recipe.description}
+                onClick={async () => {
+                  const ok = await hub.queueCraft(lotId, recipe.id, mayName ? makerName : undefined);
+                  pushFeed(ok ? `${recipe.name} on the bench (${recipe.laborTimeSeconds}s).` : `${recipe.name}: the inputs are short.`, ok ? 'signal' : 'loss');
+                }}
+              >
+                {recipe.name.toUpperCase()} ({recipe.laborTimeSeconds}s)
+              </Button>
+            </div>
           );
         })}
+        {/* Wave 10E (D19): STUDY — the scoped identify eye is earned here, time and again */}
+        {studyable.length > 0 && (
+          <>
+            <div className="ws-row" style={{ marginTop: 6 }}>
+              <span className="ws-dim ws-small">STUDY — the identify eye trains by the piece</span>
+              <span className="ws-dim ws-small">
+                {(['weapon', 'armor', 'tool'] as const)
+                  .map(s => `${s} ${player.bank.universalSkills[StudySystem.scopeSkillId(s)]?.level ?? 0}`)
+                  .join(' · ')}
+              </span>
+            </div>
+            {studyable.map(item => (
+              <div key={item.id} className="ws-row">
+                <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+                  {item.isIdentified === false ? 'Unidentified signal' : item.name}
+                </span>
+                <Button tone="quiet" onClick={() => {
+                  const v = usePlayerStore.getState().studyItemAtStation(item.id);
+                  if (!v.ok && v.reason) pushFeed(v.reason, 'loss');
+                }}>
+                  STUDY ({StudySystem.identifyScopeOf(item)})
+                </Button>
+              </div>
+            ))}
+          </>
+        )}
         {jobs.map(job => {
           const left = Math.ceil((job.finishesAt - now) / 1000);
           return (
@@ -926,7 +966,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
           ))}
         </div>
         {selected
-          ? <CardView card={inspectItem(selected.item)} />
+          ? <CardView card={inspectItem(selected.item, player)} />
           : <Panel title="INSPECT"><span className="ws-dim ws-small">Select a listing to read it.</span></Panel>}
       </div>
     </Modal>

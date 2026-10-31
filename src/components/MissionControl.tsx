@@ -35,6 +35,10 @@ const WorldCard = ({ world, onDeploy }: { world: IWorldCard; onDeploy: () => voi
         <span>SECTOR {world.seed.substring(0, 6).toUpperCase()}</span>
         <span>ARCHITECT {world.creator.toUpperCase()}</span>
       </div>
+      {/* Wave 10E (D20): the pin is on the card — this world dreams this bank, forever */}
+      <div className="ws-dim ws-small">
+        {world.packVersion ? `DREAM PACK v${world.packVersion} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
+      </div>
 
       <div
         className={isDev ? 'ws-dim' : isClosing ? 'ws-loss' : 'ws-bright'}

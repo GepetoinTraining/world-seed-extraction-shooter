@@ -123,10 +123,12 @@ export const MENTAL_ATTRIBUTES = [
   'charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership'
 ] as const;
 
-/** D21 — a slot marked protected for this session, by a named magic (items land in 10E). */
+/** D21 — a slot marked protected for this session, by a named magic (10E mints the items). */
 export interface ISlotProtection {
   slot: EquipSlotId;
-  by: string; // the charm or scroll that holds the line; the dev hook names itself
+  by: string; // the charm or scroll that holds the line
+  /** 10E (scrolls): the magic holds until this clock, then lapses. Absent = until spent. */
+  until?: number;
 }
 
 /**
@@ -180,6 +182,56 @@ export interface IComposition {
   laborSeconds: number;
   /** How many items the final step minted from these atoms (the record). */
   batchYield: number;
+}
+
+// ==========================================================================
+// 2D. THE AFFIX BANK (Wave 10E — D19, D20, D22)
+// ==========================================================================
+
+/**
+ * One banked affix. An entry starts as a NAME — it does nothing until a later
+ * batch defines its effect (statModifiers absent = name-only). Ranges may be
+ * NEGATIVE (D19: downside pays for upside). D22 binds the bank: a mental-stat
+ * entry's allowedTags must be exactly ['frame'] or the whole batch is refused.
+ */
+export interface IBankedAffix {
+  id: string;
+  name: string;
+  type: 'PREFIX' | 'SUFFIX';
+  /** The theme the batch was run for: a biome, 'GLOBAL', or 'CART' (D16's security family). */
+  theme: string;
+  allowedTags: string[];
+  tier: number;
+  statModifiers?: Record<string, [number, number]>;
+}
+
+/** D20: one batched LLM agent run — a run banks NAMES; a later run defines EFFECTS. */
+export interface IAffixBatch {
+  runId: string;
+  kind: 'NAMES' | 'EFFECTS';
+  model: string;   // who ran the batch, on the record
+  ranAt: number;
+  names?: Omit<IBankedAffix, 'statModifiers'>[];
+  effects?: { id: string; statModifiers: Record<string, [number, number]> }[];
+}
+
+/**
+ * D20: a versioned content pack — the bank as of its version (one version per
+ * batch folded in). A world pins the version at mint; added content never
+ * changes an existing world (the determinism one-way door).
+ */
+export interface IContentPack {
+  packId: string;
+  version: number;
+  name: string;
+  batches: { runId: string; kind: 'NAMES' | 'EFFECTS'; model: string; ranAt: number }[];
+  entries: IBankedAffix[];
+}
+
+export interface ISignedContentPack {
+  pack: IContentPack;
+  signerUid: string;
+  signature: string;
 }
 
 // ==========================================================================
@@ -288,6 +340,20 @@ export interface IItem {
   // Wave 10D (contract upgrade: additive)
   /** 10D.2: what this item is made of — its atoms and its chain. */
   composition?: IComposition;
+
+  // Wave 10E (contract upgrade: additive)
+  /** D21: a charm naming its protection — how many slots, chosen or random, and its uses. */
+  charmData?: {
+    slots: number;
+    chosen: boolean;
+    uses: number;
+  };
+  /** D21: a scroll's protection runs on a clock — slots held until the time is spent. */
+  scrollData?: {
+    slots: number;
+    chosen: boolean;
+    durationSeconds: number;
+  };
 }
 
 // ==========================================================================

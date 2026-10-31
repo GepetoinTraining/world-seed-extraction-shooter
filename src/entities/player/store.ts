@@ -25,8 +25,18 @@ import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
 import { useFeed } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
+import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
+import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
+import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
+import { chunkOf } from '../world/grid';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
+
+/** The biome under a world position, when its chunk is built (10E: the Dreaming reads it). */
+const biomeAt = (pos: { x: number; y: number }) => {
+  const map = useWorldStore.getState().currentMap;
+  return map?.chunks[`${chunkOf(pos.x)},${chunkOf(pos.y)}`]?.biome;
+};
 
 // Archetype Definitions for Character Creation
 export const ARCHETYPES: Record<string, Partial<IBaseAttributes>> = {
@@ -72,9 +82,17 @@ interface PlayerState {
   unequipFromSlot: (slotId: EquipSlotId) => Verdict;
   /** D22: set or clear a cognitive frame on a head-budget position. */
   setFrame: (position: HeadPositionId, frameId: string | null) => Verdict;
-  /** D21: mark a slot protected for this session, naming the magic (dev hook now; items in 10E). */
-  markSlotProtected: (slot: EquipSlotId, by: string) => void;
+  /** D21: mark a slot protected for this session, naming the magic (10E's items spend this). */
+  markSlotProtected: (slot: EquipSlotId, by: string, until?: number) => void;
   clearSlotProtection: (slot: EquipSlotId) => void;
+  /** 10E (D21): spend a charm or scroll — the magic names exactly what it keeps. */
+  useProtection: (itemId: string, chosenSlot?: EquipSlotId) => Verdict;
+  /** 10E (D19): one sitting at a workstation — trains the scoped eye, opens this item's record. */
+  studyItemAtStation: (itemId: string) => Verdict;
+  /** 10E (D19): ask the field identify — scoped and ALWAYS timed; the caller runs the clock. */
+  fieldIdentify: (itemId: string) => { ok: boolean; reason?: string; seconds?: number };
+  /** 10E (D19): the clock ran honestly — reveal the record through the one door. */
+  completeFieldIdentify: (itemId: string) => Verdict;
   /** D17: pouches — stow through the pouch's own rule; quick-use without pack-opening. */
   stowInPouch: (pouchSlot: EquipSlotId, itemId: string) => Verdict;
   takeFromPouch: (pouchSlot: EquipSlotId) => Verdict;
@@ -456,13 +474,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   // --- D21: THE SLOT-PROTECTION CONTRACT ---
 
-  markSlotProtected: (slot, by) => {
+  markSlotProtected: (slot, by, until) => {
     set(s => {
       const eq = s.player.equipment ?? LoadoutSystem.emptyEquipment();
       const kept = (eq.protected ?? []).filter(p => p.slot !== slot);
-      return { player: { ...s.player, equipment: { ...eq, protected: [...kept, { slot, by }] } } };
+      return { player: { ...s.player, equipment: { ...eq, protected: [...kept, until ? { slot, by, until } : { slot, by }] } } };
     });
-    feed(`${slot} stands under ${by}. A death will not take what it holds.`, 'proof');
+    feed(until
+      ? `${slot} stands under ${by} until the clock says otherwise.`
+      : `${slot} stands under ${by}. A death will not take what it holds.`, 'proof');
   },
 
   clearSlotProtection: (slot) => {
@@ -471,6 +491,114 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!eq) return s;
       return { player: { ...s.player, equipment: { ...eq, protected: (eq.protected ?? []).filter(p => p.slot !== slot) } } };
     });
+  },
+
+  // --- 10E (D21): INSURANCE IS AN ITEM — charms with uses, scrolls on a clock ---
+
+  useProtection: (itemId, chosenSlot) => {
+    const player = get().player;
+    const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
+    const inSession = !!player.currentSession;
+    const source = inSession ? player.currentSession!.inventory : (player.bank.stashTabs[0]?.items ?? []);
+    const item = source.find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'No such item within reach.' };
+    if (!item.charmData && !item.scrollData) return { ok: false, reason: `${item.name} holds no keeping magic.` };
+
+    const occupied = Object.entries(equipment.slots)
+      .filter(([, id]) => !!id)
+      .map(([slot]) => slot as EquipSlotId);
+    const plan = InsuranceSystem.plan(item, occupied, { chosenSlot });
+    if (!plan.ok) {
+      feed(plan.reason!, 'loss');
+      return { ok: false, reason: plan.reason };
+    }
+
+    for (const slot of plan.slots!) get().markSlotProtected(slot, item.name, plan.until);
+
+    // A use is a use: charms count down and leave at zero; scrolls burn whole.
+    const spent = item.scrollData ? true : (item.charmData!.uses - 1) <= 0;
+    set(s => {
+      const update = (items: IItem[]) => spent
+        ? items.filter(i => i.id !== itemId)
+        : items.map(i => i.id === itemId && i.charmData
+          ? { ...i, charmData: { ...i.charmData, uses: i.charmData.uses - 1 } }
+          : i);
+      if (s.player.currentSession && inSession) {
+        const layout = { ...(s.player.currentSession.inventoryLayout || {}) };
+        if (spent) delete layout[itemId];
+        return { player: { ...s.player, currentSession: { ...s.player.currentSession, inventory: update(s.player.currentSession.inventory), inventoryLayout: layout } } };
+      }
+      return { player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+        idx === 0 ? { ...tab, items: update(tab.items) } : tab) } } };
+    });
+    if (spent) feed(`${item.name} is spent. The magic holds; the vessel is done.`, 'plain');
+    return { ok: true };
+  },
+
+  // --- 10E (D19): THE STUDY LAW — scoped identify, trained at a workstation ---
+
+  studyItemAtStation: (itemId) => {
+    const player = get().player;
+    const stashItems = player.bank.stashTabs[0]?.items ?? [];
+    const item = stashItems.find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'That piece is not in the stash. Study happens at the bench, not in the field.' };
+    const scope = StudySystem.identifyScopeOf(item);
+    if (!scope) return { ok: false, reason: `${item.name} holds no maker's riddle. There is nothing to study.` };
+
+    // The sitting: the scoped skill grows by use (D6), the record opens.
+    get().gainSkillXp(StudySystem.scopeSkillId(scope), 60, ['study', 'intel'], { tags: ['study'], magnitude: 10 } as any);
+    set(s => ({
+      player: {
+        ...StudySystem.reveal(s.player, item),
+        bank: {
+          ...s.player.bank,
+          stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+            idx === 0 ? { ...tab, items: tab.items.map(i => i.id === itemId ? { ...i, isIdentified: true } : i) } : tab)
+        }
+      }
+    }));
+    const level = StudySystem.identifyLevel(get().player, item);
+    feed(`Studied ${item.name}. The ${scope} eye stands at ${level}; what was banked on it is open.`, 'proof');
+    return { ok: true };
+  },
+
+  fieldIdentify: (itemId) => {
+    const player = get().player;
+    const item = player.currentSession?.inventory.find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'No such item in the pack.' };
+    const verdict = StudySystem.canFieldIdentify(player, item);
+    if (!verdict.ok) {
+      feed(verdict.reason!, 'loss');
+      return verdict;
+    }
+    return { ok: true, seconds: StudySystem.identifySeconds(StudySystem.identifyLevel(player, item)) };
+  },
+
+  completeFieldIdentify: (itemId) => {
+    const player = get().player;
+    const item = player.currentSession?.inventory.find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'No such item in the pack.' };
+    const verdict = StudySystem.canFieldIdentify(player, item);
+    if (!verdict.ok) return verdict;
+
+    set(s => {
+      if (!s.player.currentSession) return s;
+      const revealed = StudySystem.reveal(s.player, item);
+      return {
+        player: {
+          ...revealed,
+          currentSession: {
+            ...s.player.currentSession,
+            inventory: s.player.currentSession.inventory.map(i => i.id === itemId ? { ...i, isIdentified: true } : i)
+          }
+        }
+      };
+    });
+    // the field use trains the eye too — skills grow by use, smaller away from the bench
+    const scope = StudySystem.identifyScopeOf(item)!;
+    get().gainSkillXp(StudySystem.scopeSkillId(scope), 15, ['study', 'intel']);
+    feed(`${item.name} identified. The record reads exactly what was banked — downsides included.`, 'proof');
+    return { ok: true };
   },
 
   // --- D17: POUCHES — the rule names what stacks; quick-use opens no pack ---
@@ -661,8 +789,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
 
-    let cart: ICartState = { ...entity.cart, towedBy: state.player.id };
     const isTheft = entity.cart.ownerId !== state.player.id;
+
+    // 10E (D16's addendum): a warded cart costs the thief TIME before the bar
+    // gives. The owner pays none; the broken lock lands in the signed record.
+    const security = entity.cart.security;
+    if (isTheft && security && security.lockLevel > 0) {
+      const seconds = CartSystem.towBreakSeconds(security.lockLevel);
+      feed(`${entity.cart.ownerName}'s cart stands ${security.by}: ${security.lockLevel} lock${security.lockLevel === 1 ? '' : 's'}. Breaking them takes ${seconds}s.`, 'loss');
+      await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+      const still = Object.values(useWorldStore.getState().currentMap?.chunks || {})
+        .flatMap(c => c.entities).find(e => e.id === entityId);
+      if (!still?.cart || still.cart.towedBy) return { ok: false, reason: 'The cart is gone, or another hand beat you to the bar.' };
+    }
+    // The alarm needs no lock to shriek (found in play: the first Shrieking
+    // cart was stolen in silence because the shriek hid behind the lock branch)
+    if (isTheft && security?.alarm) {
+      feed('A shriek crosses the field. The ward says your name to anyone listening.', 'loss');
+    }
+
+    let cart: ICartState = { ...entity.cart, towedBy: state.player.id };
     if (isTheft) {
       cart = await CartSystem.recordTheft(cart, state.player.id, state.player.username);
       void import('../../logic/ledger/Ledger').then(({ Ledger }) =>
@@ -836,7 +982,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     if (!banksLoot) {
       lost = [...(player.currentSession?.inventory || [])];
-      const marks = equipment.protected ?? [];
+      // 10E (D21): a scroll's magic runs on a clock — a lapsed mark holds nothing
+      const now = Date.now();
+      const marks = (equipment.protected ?? []).filter(m => !m.until || m.until > now);
       const keptSlots = new Set(marks.map(m => m.slot));
       const slots: typeof equipment.slots = {};
       const items: IItem[] = [];
@@ -1317,7 +1465,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const rng = Rng.fromKey(rollKey);
       const [minY, maxY] = def.yieldPerUse ?? [1, 1];
       const quantity = rng.int(minY, maxY + 1);
-      const items = Array.from({ length: quantity }, () => ItemFactory.createResourceItem(def, rng));
+      // Wave 10E (the Dreaming): in a pinned world a harvest may carry a banked
+      // affix — the material remembers what the Seed dreamed into it.
+      const dream = DreamingSystem.active();
+      const biome = biomeAt(entity.position);
+      const items = Array.from({ length: quantity }, () => {
+        const dreamAffix = dream && biome ? DreamingSystem.materialAffixFor(dream.pack, biome, def.id, rng) : null;
+        return ItemFactory.createResourceItem(def, rng, dreamAffix ? { dreamAffix } : undefined);
+      });
+      const dreamt = items.filter(i => i.affixes.length > 0);
+      if (dreamt.length > 0) feed(`${dreamt[0].name}: the Seed dreamed something into this one.`, 'signal');
 
       addToInventory(items);
       SessionJournal.record('HARVEST', { nodeId: entity.id, defId: def.id, rollKey, itemIds: items.map(i => i.id) });
@@ -1364,7 +1521,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       const rollKey = SessionJournal.rollKey('chest', entity.id);
       const rng = Rng.fromKey(rollKey);
-      const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey);
+      // Wave 10E: a chest in a dreamed world fills from its biome's bank
+      const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
 
       if (entity.container.hasLore) {
         const fragment = rng.pick(LORE_FRAGMENTS);

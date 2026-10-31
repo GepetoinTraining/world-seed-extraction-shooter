@@ -17,6 +17,7 @@ import {
 import { ITemplateItem, TemplateSystem, isTemplateItem } from '../logic/systems/TemplateSystem';
 import { usePlayerStore } from '../entities/player/store';
 import { useFeed } from './ui/stores';
+import { InsuranceSystem, SCROLL_DEFINITIONS } from '../logic/systems/InsuranceSystem'; // Wave 10E (D21)
 import { composeRoom } from '../render/atoms/room';
 import { buildPalette, grayscale } from '../render/atoms/atoms';
 import { HUB_GENRE } from '../render/atoms/hub';
@@ -31,7 +32,7 @@ const STRUCTURES = ['HOUSE', 'WORKSHOP', 'VENDOR'] as const;
 interface DraftZone { name: string; tiles: { x: number; y: number }[] }
 
 export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [tab, setTab] = useState<'DRAW' | 'COPY'>('DRAW');
+  const [tab, setTab] = useState<'DRAW' | 'COPY' | 'SCROLLS'>('DRAW');
   const [footIdx, setFootIdx] = useState(1); // 4x4 by default: the lots the city has
   const [structureType, setStructureType] = useState<typeof STRUCTURES[number]>('HOUSE');
   const [pieces, setPieces] = useState<{ kind: RoomPieceKind; x: number; y: number }[]>([]);
@@ -226,9 +227,13 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
   return (
     <Modal title="THE SCRIBE'S TABLE" onClose={onClose} width={840}>
       <Tabs
-        tabs={[{ id: 'DRAW' as const, label: 'DRAW A PLAN' }, { id: 'COPY' as const, label: `COPY A PLAN (${templatesHeld.length})` }]}
+        tabs={[
+          { id: 'DRAW' as const, label: 'DRAW A PLAN' },
+          { id: 'COPY' as const, label: `COPY A PLAN (${templatesHeld.length})` },
+          { id: 'SCROLLS' as const, label: 'WRITE A SCROLL' }
+        ]}
         active={tab}
-        onChange={id => setTab(id as 'DRAW' | 'COPY')}
+        onChange={id => setTab(id as 'DRAW' | 'COPY' | 'SCROLLS')}
       />
       {tab === 'DRAW' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 10, alignItems: 'start', marginTop: 8 }}>
@@ -331,6 +336,35 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
           {copySelected
             ? <CardView card={inspectItem(copySelected)} />
             : <span className="ws-dim ws-small">Select a plan to read it. Every copy keeps the original hand.</span>}
+        </div>
+      )}
+
+      {/* Wave 10E (D21 + D14's hook, kept): scrolls for magic are WRITTEN here,
+          paper and ink, like every plan — the table was always meant for this */}
+      {tab === 'SCROLLS' && (
+        <div className="ws-list" style={{ marginTop: 8 }}>
+          {Object.values(SCROLL_DEFINITIONS).map(def => (
+            <div key={def.id} className="ws-row">
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block' }}>{def.name}</span>
+                <span className="ws-dim ws-small">{def.description}</span>
+              </span>
+              <Button
+                tone="proof"
+                disabled={paperHeld < 1 || inkHeld < 1}
+                title={paperHeld < 1 || inkHeld < 1 ? 'needs 1 paper, 1 ink' : undefined}
+                onClick={async () => {
+                  const result = await InsuranceSystem.mintScrollAtScribe(def.id);
+                  pushFeed(result.ok ? `${def.name} written and signed. It is in your stash.` : result.reason!, result.ok ? 'proof' : 'loss');
+                }}
+              >
+                WRITE (1 PAPER, 1 INK)
+              </Button>
+            </div>
+          ))}
+          <span className="ws-dim ws-small">
+            A death keeps exactly what the magic names, for exactly as long as the ink holds. The bank honors it.
+          </span>
         </div>
       )}
     </Modal>

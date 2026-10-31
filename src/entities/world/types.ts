@@ -25,6 +25,8 @@ export interface ICartTheft {
   byName: string;
   at: number;        // epoch ms
   signature?: string; // the thief's own signature over the act (the bank honors even this)
+  /** 10E (D16's addendum): the lock level the thief had to break, on the record. */
+  brokeLock?: number;
 }
 
 /**
@@ -42,6 +44,8 @@ export interface ICartState {
   layout: Record<string, import('../../../types').IGridPlacement>;
   towedBy?: string;                    // certificate uid of whoever holds the tow bar
   theftLog: ICartTheft[];
+  /** 10E (D16's addendum): security affixes from the kit, captured at unfold. */
+  security?: { lockLevel: number; alarm: boolean; by: string };
 }
 
 // NEW: The Intel Levels

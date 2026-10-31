@@ -293,16 +293,21 @@ export class LoadoutSystem {
   }
 
   // ---------------------------------------------------------------------
-  // D19 STUB: the sheet is blind to the unstudied; the item acts regardless
+  // D19: the sheet is blind to the unstudied; the item acts regardless
   // ---------------------------------------------------------------------
 
   /**
-   * Has this player studied this affix? THE STUB: nobody has studied anything.
-   * 10E replaces this with the real study law (scoped identify, trained at a
-   * workstation, timed in the field). The screen must never learn the bad
-   * habit of showing what was not studied — so it asks here from day one.
+   * Has this player studied this affix? Wave 10E made the 10C stub real: a
+   * studied affix is one filed in materialMastery's discoveredAffixes by the
+   * study law (StudySystem.reveal — a workstation sitting or a timed field
+   * identify). No player at hand means nothing is studied: the screen never
+   * learned the bad habit of showing what was not.
    */
-  static isAffixStudied(_player: IPlayer, _affixId: string): boolean {
+  static isAffixStudied(player: IPlayer | undefined, affixId: string): boolean {
+    if (!player?.materialMastery) return false;
+    for (const knowledge of Object.values(player.materialMastery)) {
+      if (knowledge.discoveredAffixes?.includes(affixId)) return true;
+    }
     return false;
   }
 
@@ -311,7 +316,7 @@ export class LoadoutSystem {
    * contribution. The acting stats stay merged in item.stats — only the sheet
    * is blind. A wholly unidentified item shows nothing at all.
    */
-  static visibleItemStats(item: IItem, player: IPlayer): Record<string, number> {
+  static visibleItemStats(item: IItem, player?: IPlayer): Record<string, number> {
     if (item.isIdentified === false) return {};
     const visible: Record<string, number> = {};
     for (const [k, v] of Object.entries(item.stats || {})) {

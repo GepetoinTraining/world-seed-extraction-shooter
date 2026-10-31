@@ -1,7 +1,9 @@
-import { IItem, IAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin } from '../../../types';
+import { IItem, IAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin, MENTAL_ATTRIBUTES } from '../../../types';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from './data/itemDefinitions';
-import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';
+import { AffixDefinition } from './data/affixDefinitions';
+import { AffixBank } from '../../logic/content/AffixBank';
+import { IAffixPool } from '../world/Dreaming';
 import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
 import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { ResourceDef } from './data/resourceDefinitions';
@@ -18,8 +20,11 @@ export class ItemFactory {
    * @param rng - Deterministic stream for every roll (Wave 1.3). Callers derive
    *              it from a journaled key; the unkeyed fallback exists only so
    *              nothing crashes while legacy call sites migrate, and it logs.
+   * @param pool - Wave 10E: the affix pool this roll draws from. A dreamed
+   *               world passes its pinned bank's biome pool; absent, the
+   *               purged legacy pool rolls (old worlds keep their dream).
    */
-  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string): IItem {
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string, pool?: IAffixPool): IItem {
     if (!rng) {
       console.warn('[FACTORY] Unkeyed item mint — roll is not replayable. Pass an Rng.fromKey stream.');
       rng = Rng.fromKey(`unkeyed:${Date.now()}:${Math.random()}`);
@@ -58,8 +63,8 @@ export class ItemFactory {
     // 4. Base Stats
     const baseStats = this.generateBaseStats(template, quality, rng);
 
-    // 5. Affixes
-    const affixes = this.generateAffixes(template, rarity, template.rank, rng);
+    // 5. Affixes — from the dreamed pool when the world pinned one (10E)
+    const affixes = this.generateAffixes(template, rarity, template.rank, rng, pool);
     
     // 6. Merge Stats
     const finalStats = { ...baseStats };
@@ -132,12 +137,25 @@ export class ItemFactory {
     return MintRegistry.claim(item);
   }
 
+  /** D6 (10E): only a rank S+ making may carry its maker's own name. */
+  static canCarryMakersName(rank: UniversalRank): boolean {
+    return [UniversalRank.S, UniversalRank.SS, UniversalRank.SSS].includes(rank);
+  }
+
   /**
    * Wave 10D.2: mint GEAR from a recipe and the composition of what it
    * consumed. The chain is the power budget; the price derives from the chain;
    * the registry claims the tuple like any rolled mint.
+   * Wave 10E (D6's crafting half): components carry their affixes onto the
+   * item they make — mental-stat affixes excepted, because the partition holds
+   * every door (D22) — and a rank S+ making takes the maker's own name.
    */
-  static createComposedItem(baseId: string, composition: IComposition, rng: SeededRNG): IItem | null {
+  static createComposedItem(
+    baseId: string,
+    composition: IComposition,
+    rng: SeededRNG,
+    opts?: { inheritedAffixes?: IAffix[]; customName?: string }
+  ): IItem | null {
     const template = CRAFTED_GEAR_BASES.find(b => b.id === baseId)
       ?? [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases, ...ITEM_DEFINITIONS.tool_bases].find(b => b.id === baseId);
     if (!template) return null;
@@ -147,10 +165,29 @@ export class ItemFactory {
     const itemPower = CompositionSystem.powerBudget(composition);
     const dimensions = this.getDimensions(template);
 
+    // The components' affixes ride in, deduplicated, the mind kept out of gear
+    const mental = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
+    const affixes: IAffix[] = [];
+    for (const affix of opts?.inheritedAffixes ?? []) {
+      if (affixes.some(a => a.id === affix.id)) continue;
+      if (Object.keys(affix.stats ?? {}).some(k => mental.has(k))) continue; // D22: gear doesn't think
+      affixes.push({ ...affix, stats: { ...affix.stats } });
+    }
+    const finalStats: Record<string, number> = { ...baseStats };
+    affixes.forEach(affix => {
+      Object.entries(affix.stats).forEach(([key, val]) => {
+        finalStats[key] = parseFloat(((finalStats[key] || 0) + val).toFixed(2));
+      });
+    });
+
+    const constructed = this.constructName(template.universal_name, affixes, quality);
+    const makersName = opts?.customName?.trim();
+    const name = makersName && this.canCarryMakersName(template.rank) ? makersName : constructed;
+
     const item: IItem = {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: template.id,
-      name: this.constructName(template.universal_name, [], quality),
+      name,
       description: composition.steps[0]?.facility === null
         ? 'Lashed together where it was needed. The bank signed it anyway.'
         : `Made, not found. ${composition.steps.length} step(s) on its record.`,
@@ -165,8 +202,8 @@ export class ItemFactory {
       tags: [...template.tags],
       dimensions,
       weight: this.getWeight(template, dimensions),
-      affixes: [],
-      stats: { ...baseStats, durability: 100, maxDurability: 100 },
+      affixes,
+      stats: { ...finalStats, durability: 100, maxDurability: 100 },
       visuals: { modelId: 'weapon_mesh', colorHex: '#9ca3af' },
       icon: 'weapon_icon',
       history: { dropDate: Date.now(), killCount: 0 },
@@ -189,16 +226,21 @@ export class ItemFactory {
   static createResourceItem(
     def: ResourceDef,
     rng: SeededRNG,
-    opts?: { origin?: MaterialOrigin; quality?: number }
+    opts?: { origin?: MaterialOrigin; quality?: number; dreamAffix?: IAffix }
   ): IItem {
     const density = def.materialProps?.[MaterialPropertyType.DENSITY];
     const weight = density !== undefined ? parseFloat((density * 0.5).toFixed(1)) : (def.weight ?? 1.0);
     const quality = opts?.quality ?? 0;
+    // Wave 10E (the Dreaming): a harvest in a pinned world may carry a banked
+    // affix — the material remembers what the Seed dreamed into it, and D6's
+    // crafting half carries it onto whatever the material makes.
+    const dreamAffix = opts?.dreamAffix;
 
-    return {
+    const item: IItem = {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: def.id,
-      name: def.name,
+      name: dreamAffix && dreamAffix.type === 'PREFIX' ? `${dreamAffix.name} ${def.name}`
+        : dreamAffix ? `${def.name} ${dreamAffix.name}` : def.name,
       description: def.description || 'Harvested material. Can be refined.',
       type: def.type ?? ItemType.RESOURCE,
       slot: def.slot ?? ('NONE' as any),
@@ -209,7 +251,7 @@ export class ItemFactory {
       value: CompositionSystem.baseMaterialValue(def, quality),
       itemPower: 0,
       tags: [...(def.tags ?? [])],
-      affixes: [],
+      affixes: dreamAffix ? [dreamAffix] : [],
       dimensions: def.dimensions ?? { width: 1, height: 1 },
       weight,
       stats: { ...(def.stats ?? {}) },
@@ -219,6 +261,7 @@ export class ItemFactory {
       isIdentified: true,
       composition: CompositionSystem.root({ id: def.id, name: def.name }, opts?.origin ?? 'HARVEST')
     };
+    return item;
   }
 
   /** Maps rank to a nominal player level requirement */
@@ -285,7 +328,10 @@ export class ItemFactory {
     return stats;
   }
 
-  private static generateAffixes(template: ItemDefinition, rarity: Rarity, itemRank: UniversalRank, rng: SeededRNG): IAffix[] {
+  private static generateAffixes(template: ItemDefinition, rarity: Rarity, itemRank: UniversalRank, rng: SeededRNG, pool?: IAffixPool): IAffix[] {
+    // Wave 10E: no pool named means the purged legacy pool — never the raw
+    // table, whose Owl-family mental affixes the bank refuses to roll again.
+    const source = pool ?? AffixBank.legacyPool();
     const affixes: IAffix[] = [];
     let prefixCount = 0;
     let suffixCount = 0;
@@ -297,7 +343,8 @@ export class ItemFactory {
       case Rarity.LEGENDARY: prefixCount = 3; suffixCount = 3; break;
     }
 
-    const pickAffix = (pool: AffixDefinition[], currentAffixes: IAffix[]): IAffix | null => {
+    type Rollable = AffixDefinition | import('../../../types').IBankedAffix;
+    const pickAffix = (pool: Rollable[], currentAffixes: IAffix[]): IAffix | null => {
       const valid = pool.filter(def => def.allowedTags.some(tag => template.tags.includes(tag)));
       const available = valid.filter(def => !currentAffixes.some(a => a.id === def.id));
 
@@ -307,15 +354,21 @@ export class ItemFactory {
       const rankMult = RANK_MULTIPLIERS[itemRank];
       const rolledStats: Record<string, number> = {};
 
-      Object.entries(choice.statModifiers).forEach(([key, range]) => {
+      // A banked NAME-ONLY entry rolls with no stats: it does nothing until a
+      // later batch defines its effect (10E.1) — and it never will, in a world
+      // pinned before that batch.
+      Object.entries(choice.statModifiers ?? {}).forEach(([key, range]) => {
         const [min, max] = range;
         const baseVal = min + rng.next() * (max - min);
-        rolledStats[key] = Math.round(baseVal * rankMult);
+        const scaled = baseVal * rankMult;
+        // Wave 10E: fractional stats (attack_speed) keep two decimals instead
+        // of rounding to zero; negative offsets (D19) survive the same way.
+        rolledStats[key] = Math.abs(scaled) < 1 ? parseFloat(scaled.toFixed(2)) : Math.round(scaled);
       });
 
       return {
         id: choice.id,
-        name: choice.nameTemplate,
+        name: (choice as AffixDefinition).nameTemplate ?? (choice as import('../../../types').IBankedAffix).name,
         type: choice.type,
         stats: rolledStats,
         tier: 1
@@ -323,11 +376,11 @@ export class ItemFactory {
     };
 
     for (let i = 0; i < prefixCount; i++) {
-      const aff = pickAffix(AFFIX_DEFINITIONS.prefixes, affixes);
+      const aff = pickAffix(source.prefixes, affixes);
       if (aff) affixes.push(aff);
     }
     for (let i = 0; i < suffixCount; i++) {
-      const aff = pickAffix(AFFIX_DEFINITIONS.suffixes, affixes);
+      const aff = pickAffix(source.suffixes, affixes);
       if (aff) affixes.push(aff);
     }
 

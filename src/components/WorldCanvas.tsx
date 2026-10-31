@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { IActiveSession, ItemType } from '../../types';
+import { EquipSlotId, IActiveSession, ItemType } from '../../types';
+import { StudySystem } from '../logic/systems/StudySystem';
+import { DreamingSystem } from '../entities/world/Dreaming';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { ProjectileSystem, PatternType, IProjectile, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../entities/combat/projectileSystem';
@@ -49,6 +51,10 @@ const CELL = 36;
 const PackGrid = ({ session }: { session: IActiveSession }) => {
   const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
+  // Wave 10E (D19): the field identify runs on a real clock
+  const [identifying, setIdentifying] = useState<{ id: string; until: number } | null>(null);
+  // Wave 10E (D21): a chosen charm asks which slot it holds
+  const [invoking, setInvoking] = useState<string | null>(null);
 
   const layout = session.inventoryLayout || {};
   const items = session.inventory;
@@ -118,11 +124,54 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
       {selectedItem && (
         <div onClick={e => e.stopPropagation()} style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
-            <CardView card={inspectItem(selectedItem)} right={<RankMark rank={String(selectedItem.rank)} scale={2} />} />
+            <CardView card={inspectItem(selectedItem, player)} right={<RankMark rank={String(selectedItem.rank)} scale={2} />} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {selectedItem.type === ItemType.CONSUMABLE && (
+            {selectedItem.type === ItemType.CONSUMABLE && !selectedItem.charmData && !selectedItem.scrollData && (
               <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>USE</Button>
+            )}
+            {/* Wave 10E (D21): insurance is spent, not eaten — the magic names what it keeps */}
+            {(selectedItem.charmData || selectedItem.scrollData) && (
+              (selectedItem.charmData ?? selectedItem.scrollData)!.chosen ? (
+                invoking === selectedItem.id ? (
+                  Object.keys(player.equipment?.slots ?? {}).filter(s => player.equipment!.slots[s as EquipSlotId]).map(slot => (
+                    <Button key={slot} tone="proof" onClick={() => {
+                      const v = usePlayerStore.getState().useProtection(selectedItem.id, slot as EquipSlotId);
+                      setInvoking(null);
+                      if (v.ok) setSelected(null);
+                    }}>
+                      KEEP · {slot.replace('_', ' ')}
+                    </Button>
+                  ))
+                ) : (
+                  <Button tone="signal" onClick={() => setInvoking(selectedItem.id)}>INVOKE · CHOOSE A SLOT</Button>
+                )
+              ) : (
+                <Button tone="signal" onClick={() => {
+                  const v = usePlayerStore.getState().useProtection(selectedItem.id);
+                  if (v.ok) setSelected(null);
+                }}>INVOKE</Button>
+              )
+            )}
+            {/* Wave 10E (D19): identify in the field — scoped, ALWAYS timed, faster with skill */}
+            {StudySystem.identifyScopeOf(selectedItem) &&
+              (selectedItem.isIdentified === false || selectedItem.affixes.some(a => !LoadoutSystem.isAffixStudied(player, a.id))) && (
+              identifying?.id === selectedItem.id ? (
+                <Button tone="quiet" disabled>IDENTIFYING…</Button>
+              ) : (
+                <Button tone="signal" onClick={() => {
+                  const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
+                  if (!ask.ok) return;
+                  feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.seconds}s. The eye does the work.`, 'signal');
+                  setIdentifying({ id: selectedItem.id, until: Date.now() + ask.seconds! * 1000 });
+                  window.setTimeout(() => {
+                    usePlayerStore.getState().completeFieldIdentify(selectedItem.id);
+                    setIdentifying(cur => (cur?.id === selectedItem.id ? null : cur));
+                  }, ask.seconds! * 1000);
+                }}>
+                  IDENTIFY · {StudySystem.identifySeconds(StudySystem.identifyLevel(player, selectedItem))}s
+                </Button>
+              )
             )}
             {selectedItem.type === ItemType.LORE && selectedItem.description && (
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
@@ -470,6 +519,23 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
                 ))}
               </>
             )}
+            {/* Wave 10E (the Dreaming): the deep scan reads what the Seed dreamed
+                into this sector — themed signatures, fixed at the world's mint */}
+            {selected.scanLevel >= ScanLevel.COMPLETE && (() => {
+              const dream = DreamingSystem.active();
+              if (!dream) return null;
+              const names = DreamingSystem.sectorDream(dream.seed, dream.pack, selected.biome, selected.x, selected.y);
+              if (names.length === 0) return null;
+              return (
+                <>
+                  <div className="ws-row"><span className="ws-dim">THE DREAM</span><span className="ws-dim">pack v{dream.pack.version}</span></div>
+                  {names.map(name => (
+                    <div key={name} className="ws-row"><span className="ws-signal">{name}</span><span /></div>
+                  ))}
+                  <div className="ws-dim ws-small">The Seed is still dreaming. These names run in this ground.</div>
+                </>
+              );
+            })()}
             <div style={{ marginTop: 10 }}>
               <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => onDrop(selected.x, selected.y)}>
                 CONFIRM DROP

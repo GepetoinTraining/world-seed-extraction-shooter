@@ -269,7 +269,7 @@ const SlotPicker: React.FC<{
       </div>
       {hovered && (
         <div style={{ marginTop: 8 }}>
-          <CardView card={inspectItem(hovered)} />
+          <CardView card={inspectItem(hovered, usePlayerStore.getState().player)} />
         </div>
       )}
     </Modal>

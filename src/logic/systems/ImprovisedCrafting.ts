@@ -56,7 +56,10 @@ export function improvise(recipeId: string, inReach: IItem[], rngKey: string): I
     1
   );
 
-  const item = ItemFactory.createComposedItem(recipe.outputBase, composition, Rng.fromKey(rngKey));
+  // Wave 10E (D6's crafting half): the components' affixes ride onto what they make
+  const item = ItemFactory.createComposedItem(recipe.outputBase, composition, Rng.fromKey(rngKey), {
+    inheritedAffixes: picked.flatMap(i => i.affixes ?? [])
+  });
   if (!item) return { ok: false, reason: 'The pattern is known but the shape is not.', consumedIds: [] };
 
   return { ok: true, item, consumedIds: picked.map(i => i.id) };

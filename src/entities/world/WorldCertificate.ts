@@ -3,6 +3,7 @@ import { GRID_VERSION } from './grid';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { UniversalRank } from '../../../types';
+import { AffixBank } from '../../logic/content/AffixBank';
 
 export enum WorldType {
   EXTRACTION = 'EXTRACTION',
@@ -40,6 +41,12 @@ export interface IWorldRules {
   difficulty: UniversalRank;
   mobDensityMultiplier: number;
   lootMultiplier: number;
+  /**
+   * Wave 10E (D20): the content-pack version this world dreams from, PINNED at
+   * mint — added content never changes an existing world. Absent on worlds
+   * minted before the banks: they keep the purged legacy pool, forever.
+   */
+  contentPackVersion?: number;
 }
 
 export interface IWorldCertificateData {
@@ -107,6 +114,9 @@ export class WorldCertificateSystem {
       difficulty: UniversalRank.D,
       mobDensityMultiplier: 1.0,
       lootMultiplier: 1.0,
+      // Wave 10E (D20): pin the bank's CURRENT version into the certificate.
+      // The pin is the one-way door: this world dreams this bank forever.
+      contentPackVersion: AffixBank.version(),
       ...rules
     };
 

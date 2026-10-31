@@ -5,6 +5,8 @@ import { WorldCertificateSystem } from './WorldCertificate';
 import { WorldGenerationService } from './services/WorldGenerationService';
 import { IGenerationContext, WorldGenerator } from './WorldGenerator';
 import { GRID_VERSION, chunkOf } from './grid';
+import { DreamingSystem } from './Dreaming';
+import { AffixBank } from '../../logic/content/AffixBank';
 
 export interface IWorldCard {
   id: string;
@@ -24,6 +26,9 @@ export interface IWorldCard {
   ipFloor?: UniversalRank;
   // Built on an older grid: its record stands, but it cannot be walked any more
   retired?: boolean;
+  // Wave 10E (D20): the content-pack version pinned at mint. Absent = minted
+  // before the banks; the world keeps the purged legacy pool, forever.
+  packVersion?: number;
 }
 
 interface WorldState {
@@ -83,7 +88,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           deathPenalty: cert.data.rules.deathPenalty ?? 'INVENTORY_LOSS',
           ipCap: cert.data.rules.ipCap,
           ipFloor: cert.data.rules.ipFloor,
-          retired: (cert.data.gridVersion ?? 1) < GRID_VERSION
+          retired: (cert.data.gridVersion ?? 1) < GRID_VERSION,
+          packVersion: cert.data.rules.contentPackVersion
       }));
 
       // Dev World - Using the Service!
@@ -115,9 +121,14 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       try {
         // --- HOOKED UP: CALL SERVICE ---
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size);
-        
+
         generationContext = instance.context;
         const map = instance.mapData;
+
+        // Wave 10E (the Dreaming): the world dreams from the bank it was pinned
+        // to at mint — or from nothing new, if it predates the banks.
+        DreamingSystem.activate(worldCard.seed,
+          worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
 
         const isDev = !!worldCard.isDebug;
 
@@ -182,6 +193,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
 
   exitWorld: () => {
     generationContext = null;
+    DreamingSystem.deactivate();
     set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null });
   },
 

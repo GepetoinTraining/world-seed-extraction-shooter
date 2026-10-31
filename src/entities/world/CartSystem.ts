@@ -24,6 +24,7 @@ export class CartSystem {
   /** Unfold a packed cart kit into a world cart under its owner's name. */
   static newCart(kitItem: IItem, ownerId: string, ownerName: string): ICartState {
     const grid = kitItem.cartData ?? { gridW: 10, gridH: 8 };
+    const security = this.securityOf(kitItem);
     return {
       cartItemId: kitItem.id,
       ownerId,
@@ -32,8 +33,32 @@ export class CartSystem {
       gridH: grid.gridH,
       items: [],
       layout: {},
-      theftLog: []
+      theftLog: [],
+      // 10E (D16's addendum): the kit's security affixes stand on the unfolded cart
+      ...(security.lockLevel > 0 || security.alarm
+        ? { security: { ...security, by: kitItem.affixes.map(a => a.name).join(', ') } }
+        : {})
     };
+  }
+
+  // ---------------------------------------------------------------------
+  // 10E (D16's addendum): SECURITY AFFIXES — the banks grew the lock family
+  // ---------------------------------------------------------------------
+
+  /** What the kit's affixes ward: a lock level and an alarm, from the banked stats. */
+  static securityOf(kitItem: IItem | undefined): { lockLevel: number; alarm: boolean } {
+    let lockLevel = 0;
+    let alarm = false;
+    for (const affix of kitItem?.affixes ?? []) {
+      lockLevel += affix.stats['cart_lock'] ?? 0;
+      if ((affix.stats['cart_alarm'] ?? 0) > 0) alarm = true;
+    }
+    return { lockLevel: Math.max(0, Math.round(lockLevel)), alarm };
+  }
+
+  /** Breaking a lock is TIME, like every honest crime here. The owner pays none. */
+  static towBreakSeconds(lockLevel: number): number {
+    return Math.max(0, lockLevel) * 10;
   }
 
   /** Everything aboard, in kg. Towing pays for this; the carry limit never does. */
@@ -84,6 +109,8 @@ export class CartSystem {
   static async recordTheft(cart: ICartState, towedBy: string, towedByName: string): Promise<ICartState> {
     if (towedBy === cart.ownerId) return cart;
     const theft: ICartTheft = { by: towedBy, byName: towedByName, at: Date.now() };
+    // 10E (D16's addendum): a broken lock is part of the signed fact
+    if ((cart.security?.lockLevel ?? 0) > 0) theft.brokeLock = cart.security!.lockLevel;
     try {
       const { CertificateSystem } = await import('../identity/certificateSystem');
       const signed = await CertificateSystem.signPayload(towedBy, {

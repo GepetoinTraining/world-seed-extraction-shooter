@@ -11,7 +11,7 @@ import { POINTS_PER_RANK_UP, ProgressionSystem } from '../entities/player/system
 import { InventorySystem } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
-import { IAttributes, IItem, ItemType, HEAD_BUDGET_POSITIONS } from '../../types';
+import { EquipSlotId, IAttributes, IItem, ItemType, HEAD_BUDGET_POSITIONS } from '../../types';
 import { Archetype } from '../render/atoms/people';
 import { inspectItem } from '../render/atoms/inspect';
 import { Bar, Button, CardView, Chip, Input, ItemSprite, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
@@ -274,11 +274,33 @@ export const StashTab: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
               <ItemSprite item={selected} cellPx={36} />
             </div>
-            <CardView card={inspectItem(selected)} right={<RankMark rank={String(selected.rank)} scale={2} />} />
+            <CardView card={inspectItem(selected, player)} right={<RankMark rank={String(selected.rank)} scale={2} />} />
             {selected.type === ItemType.LORE && selected.description && (
               <Panel title="FRAGMENT" tone="proof" style={{ marginTop: 8 }}>
                 <div className="ws-small" style={{ fontStyle: 'italic' }}>{selected.description}</div>
               </Panel>
+            )}
+            {/* Wave 10E (D21): insurance invokes from the vault — mark before the drop */}
+            {(selected.charmData || selected.scrollData) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                {(selected.charmData ?? selected.scrollData)!.chosen ? (
+                  Object.entries(player.equipment?.slots ?? {}).filter(([, id]) => !!id).length === 0
+                    ? <span className="ws-dim ws-small">Nothing is worn. The magic has nothing to hold.</span>
+                    : Object.entries(player.equipment?.slots ?? {}).filter(([, id]) => !!id).map(([slot]) => (
+                      <Button key={slot} tone="signal" onClick={() => {
+                        const v = usePlayerStore.getState().useProtection(selected.id, slot as EquipSlotId);
+                        if (v.ok) setSelectedId(null);
+                      }}>
+                        INVOKE · KEEP {slot.replace('_', ' ')}
+                      </Button>
+                    ))
+                ) : (
+                  <Button tone="signal" onClick={() => {
+                    const v = usePlayerStore.getState().useProtection(selected.id);
+                    if (v.ok) setSelectedId(null);
+                  }}>INVOKE</Button>
+                )}
+              </div>
             )}
             <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
               <Button

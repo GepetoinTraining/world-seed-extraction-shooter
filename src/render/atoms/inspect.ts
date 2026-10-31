@@ -195,7 +195,7 @@ export function inspectTemplateRoom(room: {
 }
 
 /** `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word. */
-export function inspectItem(item: IItem): Card {
+export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
   if (item.isIdentified === false) {
     return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
@@ -212,10 +212,10 @@ export function inspectItem(item: IItem): Card {
   const { durability, maxDurability } = item.stats as Record<string, number>;
   if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${durability} of ${maxDurability}`]);
   rows.push(['Weight', `${item.weight} kg`]);
-  // Wave 10C (D19, reaching back): the sheet is BLIND to unstudied affixes —
-  // their numbers never show, while the item acts with them regardless. The
-  // stub in LoadoutSystem decides what counts as studied (10E makes it real).
-  const visible = LoadoutSystem.visibleItemStats(item, undefined as any);
+  // D19: the sheet is BLIND to unstudied affixes — their numbers never show,
+  // while the item acts with them regardless. 10E made study real: a studied
+  // affix shows exactly its banked record, negative offsets included.
+  const visible = LoadoutSystem.visibleItemStats(item, player);
   const mental = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
   Object.entries(visible).forEach(([k, v]) => {
     if (['durability', 'maxDurability', 'weight'].includes(k)) return;
@@ -223,7 +223,22 @@ export function inspectItem(item: IItem): Card {
     if (mental.has(k)) rows.push([k.replace(/_/g, ' '), `${v} — asleep. Gear doesn't think.`]);
     else rows.push([k.replace(/_/g, ' '), String(v)]);
   });
-  (item.affixes || []).forEach(a => rows.push(['Affix', `${a.name} — unstudied. It does its work; the sheet can't see it.`]));
+  (item.affixes || []).forEach(a => {
+    if (player && LoadoutSystem.isAffixStudied(player, a.id)) {
+      const said = Object.entries(a.stats)
+        .map(([k, v]) => `${v >= 0 ? '+' : ''}${v} ${k.replace(/_/g, ' ')}`).join(', ');
+      rows.push(['Affix', `${a.name} — ${said || 'named by the bank; its effect is not yet written'}`]);
+    } else {
+      rows.push(['Affix', `${a.name} — unstudied. It does its work; the sheet can't see it.`]);
+    }
+  });
+  // Wave 10E (D21): the magic says what it keeps, plainly
+  if (item.charmData) {
+    rows.push(['Keeps', `${item.charmData.slots} slot${item.charmData.slots === 1 ? '' : 's'}, ${item.charmData.chosen ? 'your choosing' : 'not your choosing'} — ${item.charmData.uses} use${item.charmData.uses === 1 ? '' : 's'} left`]);
+  }
+  if (item.scrollData) {
+    rows.push(['Keeps', `${item.scrollData.slots} chosen slot${item.scrollData.slots === 1 ? '' : 's'} for ${Math.round(item.scrollData.durationSeconds / 60)} minutes of the clock`]);
+  }
   // Wave 10C (10C.2): the ask is part of the record
   const reqs = LoadoutSystem.requirementsFor(item);
   Object.entries(reqs).forEach(([attr, need]) => {

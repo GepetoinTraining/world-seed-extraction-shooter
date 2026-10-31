@@ -5,8 +5,9 @@
 
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { create } from 'zustand';
-import { IComposition, IItem, ItemType, UniversalRank } from '../../../types';
+import { IAffix, IComposition, IItem, ItemType, UniversalRank } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
+import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { HubGenerator } from './HubGenerator';
 import { Rng } from '../../logic/rng/DeterministicRNG';
@@ -27,6 +28,9 @@ import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { genreForWorld } from '../../render/atoms/world';
+import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E (D21)
+import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on the latest law
+import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
@@ -62,8 +66,12 @@ export interface ICraftJob {
   finishesAt: number;
   collected: boolean;
   /** Wave 10D (additive): what the job consumed, composition and all, so the
-   * outputs can carry the whole chain when they mint (resolveCrafts). */
-  consumed?: { defId: string; name: string; composition?: IComposition }[];
+   * outputs can carry the whole chain when they mint (resolveCrafts).
+   * Wave 10E (additive): and the components' AFFIXES — they ride onto the
+   * item they make (D6's crafting half). */
+  consumed?: { defId: string; name: string; composition?: IComposition; affixes?: IAffix[] }[];
+  /** Wave 10E (D6): the maker's own name — honored only at rank S and above. */
+  customName?: string;
 }
 
 /** Logical world-day (observed time, never stored clocks). */
@@ -197,7 +205,9 @@ interface HubState {
   demolishPiece: (lotId: string, pieceId: string) => Promise<boolean>;
   placeItem: (lotId: string, itemId: string, x: number, y: number, rotated: boolean) => Promise<RoomVerdict>;
   reclaimItem: (lotId: string, placementId: string) => Promise<boolean>;
-  queueCraft: (lotId: string, recipeId: string) => Promise<boolean>;
+  queueCraft: (lotId: string, recipeId: string, customName?: string) => Promise<boolean>;
+  /** Wave 10E (D6): may this making carry the maker's own name? Rank S+ only. */
+  canNameCraft: (recipeId: string) => { ok: boolean; reason?: string };
   resolveCrafts: () => Promise<number>;
   sellToVendor: (itemId: string) => Promise<number | null>;
   listItemForSale: (lotId: string, itemId: string, price: number) => Promise<boolean>;
@@ -268,6 +278,11 @@ export const useHubStore = create<HubState>((set, get) => ({
       const regDoc = await VectorStore.get<{ rows: [string, string][] }>(VectorNamespace.ITEMS, 'mint_registry_v1');
       if (regDoc?.data?.rows) MintRegistry.hydrate(regDoc.data.rows);
       MintRegistry.onClaim = () => scheduleRegistrySave();
+
+      // Wave 10E (D20): the current content pack is validated, signed and
+      // banked into the CONTENT namespace. A broken batch would refuse whole here.
+      const signer = useIdentityStore.getState().certificate?.metadata.uid ?? 'SYSTEM';
+      void AffixBank.bankAndSign(signer);
 
       // 2. Generate/Load Shop Stock (Simulated Daily Refresh)
       // In a real app, this would be server-side. Here we simulate it.
@@ -763,13 +778,33 @@ export const useHubStore = create<HubState>((set, get) => ({
    * Wave 10D: gear recipes (GEAR_RECIPES) queue the same way; the job keeps the
    * consumed items' compositions so the outputs carry the whole chain; and a
    * mono-material workshop runs faster by its set bonus (D13's numbers). */
-  queueCraft: async (lotId, recipeId) => {
+  // Wave 10E (D6): the bank lends its pen only to a rank S+ making.
+  canNameCraft: (recipeId) => {
+    const gearRecipe = GEAR_RECIPES[recipeId];
+    if (!gearRecipe) return { ok: false, reason: 'Only gear carries a name. This making mints goods.' };
+    const base = CRAFTED_GEAR_BASES.find(b => b.id === gearRecipe.outputBase);
+    if (!base) return { ok: false, reason: 'The pattern names no base.' };
+    if (!ItemFactory.canCarryMakersName(base.rank)) {
+      return { ok: false, reason: `The bank lends its pen at rank S. ${base.universal_name} is a ${base.rank}-rank making.` };
+    }
+    return { ok: true };
+  },
+
+  queueCraft: async (lotId, recipeId, customName) => {
     const { lots, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const recipe = RECIPE_DEFINITIONS[recipeId];
     const gearRecipe = GEAR_RECIPES[recipeId];
     const p = usePlayerStore.getState().player;
     if (!lot || (!recipe && !gearRecipe)) return false;
+    // Wave 10E (D6): a name below rank S refuses the whole queue, in voice
+    if (customName?.trim()) {
+      const mayName = get().canNameCraft(recipeId);
+      if (!mayName.ok) {
+        console.log(`[CRAFT] ${mayName.reason}`);
+        return false;
+      }
+    }
     const facility = recipe?.requiredFacility ?? gearRecipe!.requiredFacility;
     const name = recipe?.name ?? gearRecipe!.name;
     const laborSeconds = recipe?.laborTimeSeconds ?? gearRecipe!.laborTimeSeconds;
@@ -808,9 +843,10 @@ export const useHubStore = create<HubState>((set, get) => ({
       consumedIds = picked.map(i => i.id);
     }
 
-    // Wave 10D: the chain rides the job — what was consumed, composition and all
+    // Wave 10D: the chain rides the job — what was consumed, composition and all.
+    // Wave 10E: and the components' affixes, which ride onto what they make (D6).
     const consumed = stash.filter(i => consumedIds.includes(i.id))
-      .map(i => ({ defId: i.universalDefinitionId, name: i.name, composition: i.composition }));
+      .map(i => ({ defId: i.universalDefinitionId, name: i.name, composition: i.composition, affixes: i.affixes?.length ? i.affixes.map(a => ({ ...a, stats: { ...a.stats } })) : undefined }));
 
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
@@ -833,7 +869,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       queuedAt: Date.now(),
       finishesAt: Date.now() + effectiveSeconds * 1000,
       collected: false,
-      consumed
+      consumed,
+      ...(customName?.trim() ? { customName: customName.trim() } : {})
     };
     set({ craftingJobs: [...get().craftingJobs, job] });
     await Ledger.append('CRAFT', { kind: 'QUEUED', jobId, recipeId, lotId, consumedIds });
@@ -891,7 +928,12 @@ export const useHubStore = create<HubState>((set, get) => ({
         const composition = CompositionSystem.compose(
           { recipeId: gearRecipe!.id, name: gearRecipe!.name, laborSeconds: gearRecipe!.laborTimeSeconds, facility: gearRecipe!.requiredFacility },
           inputComps, 1);
-        const item = ItemFactory.createComposedItem(gearRecipe!.outputBase, composition, Rng.fromKey(`${job.id}:gear`));
+        // Wave 10E (D6): the components' affixes ride onto the item they make,
+        // and a rank S+ making takes the maker's own name.
+        const item = ItemFactory.createComposedItem(gearRecipe!.outputBase, composition, Rng.fromKey(`${job.id}:gear`), {
+          inheritedAffixes: (job.consumed ?? []).flatMap(c => c.affixes ?? []),
+          customName: job.customName
+        });
         if (item) outputs.push(item);
       }
 
@@ -1106,10 +1148,14 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     // Wave 10C fix: `batch` keeps listing ids unique when the same type+rank
     // appears twice on one shelf (two rows sharing an id bought the wrong one)
+    // Wave 10E: the hub's shelf stands on the bank's LATEST law — the purged
+    // legacy pool plus the current pack's GLOBAL and CART entries. Worlds stay
+    // pinned; the shelf grows with the bank, day by day.
+    const shelfPool = DreamingSystem.hubShelfPool();
     const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool', pinned: string[] = [], batch = '') => {
       return Array.from({ length: count }, (_, i) => {
         const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${batch}:${i}`);
-        const item = ItemFactory.createItem(rank, true, rng, type, pinned[i]);
+        const item = ItemFactory.createItem(rank, true, rng, type, pinned[i], shelfPool);
         return {
           id: `listing_${type}_${rank}${batch ? `_${batch}` : ''}_${i}`,
           item,
@@ -1144,17 +1190,43 @@ export const useHubStore = create<HubState>((set, get) => ({
           : l)
       ],
       // Wave 10B: the gallpod joins the shelf — the alchemist sells the ink's bitter half.
-      consumableShop: ['res_berry_bush', 'res_fruit_amber', 'res_fruit_gallpod'].map((defId, i) => {
-        const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
-        const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);
-        return {
-          id: `listing_consumable_${defId}`,
-          item,
-          price: Math.max(5, item.value * 3),
-          vendorId: 'vendor_sys',
-          stock: rng.int(3, 10)
-        };
-      })
+      consumableShop: [
+        ...['res_berry_bush', 'res_fruit_amber', 'res_fruit_gallpod'].map((defId, i) => {
+          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
+          const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);
+          return {
+            id: `listing_consumable_${defId}`,
+            item,
+            price: Math.max(5, item.value * 3),
+            vendorId: 'vendor_sys',
+            stock: rng.int(3, 10)
+          };
+        }),
+        // Wave 10E (D21): insurance on the shelf — the charms; scrolls are also
+        // WRITTEN at any scribe's table for paper and ink (D14's hook, kept).
+        ...['chm_clasp', 'chm_knot'].map((defId, i) => {
+          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:charm:${i}`);
+          const item = InsuranceSystem.mintCharm(defId, rng);
+          return {
+            id: `listing_charm_${defId}`,
+            item,
+            price: item.value,
+            vendorId: 'vendor_sys',
+            stock: rng.int(1, 4)
+          };
+        }),
+        (() => {
+          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:scroll:0`);
+          const item = InsuranceSystem.mintScrollItem('scr_keeping', rng);
+          return {
+            id: 'listing_scroll_scr_keeping',
+            item,
+            price: item.value,
+            vendorId: 'vendor_sys',
+            stock: rng.int(1, 3)
+          };
+        })()
+      ]
     });
   },
 

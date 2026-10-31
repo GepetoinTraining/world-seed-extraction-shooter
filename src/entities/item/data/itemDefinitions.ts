@@ -63,6 +63,20 @@ export const CRAFTED_GEAR_BASES: ItemDefinition[] = [
       { stat: 'stun_duration_multiplier', min: 0.10, max: 0.15 },
       { stat: 'attack_speed', value: 0.85 }
     ]
+  },
+  // Wave 10E (D6's crafting half): the first making the bank lends its pen to.
+  // Rank S: the maker writes the name, and the name rides provenance forever.
+  {
+    id: 'wpn_masterwork_blade',
+    universal_name: 'Masterwork Blade',
+    rank: UniversalRank.S,
+    base_ip: 1100,
+    slot: SlotType.MAIN_HAND,
+    tags: ['melee', 'one_hand', 'physical', 'blade', 'masterwork'],
+    implicits: [
+      { stat: 'accuracy_rating', min: 60, max: 90 },
+      { stat: 'attack_speed', value: 1.3 }
+    ]
   }
 ];
 
