@@ -254,7 +254,7 @@ The grid is **tile (20px) → quadrant (16 tiles, 320px) → chunk (64 tiles, 12
 
 Planned 2026-10-31, after checking each leg against the code. Each leg gets its own full-context session and is approved by Pedro before it starts. Commit at the end of each, so the next starts from a clean tree.
 
-**Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 11 Bringing the Nexi Home → 11B The Materials Pass → 12 The Second True Test.
+**Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -282,7 +282,12 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D12 | 10B | Where templates are designed | ✅ DECIDED (Pedro, 2026-10-31): at a SCRIBE'S TABLE — a generalist writing station, not a drafting-only one. [E] at it opens the builder view. The station stays generic now and specializes later through the economy loop (the same table is where scrolls and documents will be written); dev mode opens the view free for testing |
 | D13 | 10B | Materials per piece, or per element | ✅ DECIDED (Pedro, expanded, 2026-10-31): material per element class stands, and the bill asks by TAG, never by type or subtype — any material carrying the tag answers it. AND: a house built FULLY of one material earns a same-material set bonus (Pedro: a STAB-like bonus, as in Pokémon's same-type attack bonus). 10B detects and records the mono-material state on the standing house and its card; the bonus's NUMBERS land with the materials pass (11B, D15), where properties reach bonuses |
 | D14 | 10B | Is a template consumed by use? | ✅ DECIDED (Pedro, expanded, 2026-10-31): not consumed — and the mint and copy bill is PAPER AND INK, real inputs with their own recipes (paper milled from planks; ink from gallpods and iron, the iron gall ink). The original is keepable and tradable; copies are minted at the scribe's table for the same paper-and-ink bill, and the author's signature rides every copy in provenance forever. Pedro: paper and ink also open SCROLLS FOR MAGIC later — the scribe's table is that hook |
-| D15 | 11B | What the materials pass must close | Every gameplay material sourceable (field or farm), refinable and consumable; stone joins the building tags with masonry recipes; demolish salvage decided; properties reach bonuses and prices (D9's deferred half); commodity `purity` stops being dead data; the gold audit balances over the whole loop |
+| D15 | 11B | What the materials pass must close | ABSORBED (2026-10-31): Pedro's itemization program (Waves 10C–10E) swallowed 11B. Its scope moved: properties→bonuses/prices, purity unification, stone masonry and demolish salvage into 10D; sourceability auditing into 10E's population work; farm renewability stays with Wave 11 |
+| D16 | 10C | What a cart is | A towed WORLD ENTITY with its own grid, bigger than any pack: loading, towing at a real speed cost, leaving it, recovering it. It stays in the world when you die or extract without it — and anyone may tow it away; your seal on it makes the theft a signed fact. The extractor fantasy (Pedro, from Solo Leveling): the crew that clears and hauls the map before anyone fights the boss — carriers as a first-class way to play |
+| D17 | 10C | The belt-and-pouch law | The belt carries pouch slots and quick-use slots (potions, scrolls, no pack-opening). A POUCH is a bag TYPE whose rule names what it stacks (ore, herbs, scrolls…). Also to settle at the start: Pedro's slot list has no HEAD slot — ask whether that is deliberate |
+| D18 | 10D | How far uniqueness reaches | First come, first served, GLOBALLY: the bank keeps a registry of every minted item's tuple (definition, affixes, numbers); a collision deterministically nudges the later roll until it is unique, and the first keeps its claim. No two items are ever exactly the same |
+| D19 | 10E | Do unstudied affixes act? | They ACT; only the sheet is blind. Equipping shows no visible stat change for anything unstudied — knowledge is the mechanic — but the world is real whether or not you can read it. Study reveals the affix the way material study reveals properties |
+| D20 | 10E | The content pipeline's shape | Batched LLM agent runs, dev-time for now: a run banks NAMES themed to a biome; a later run defines their EFFECTS; every batch is a signed, versioned content pack in the CONTENT namespace. A world pins its pack version at mint, so added content never changes an existing world (the determinism one-way door) |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
@@ -345,6 +350,37 @@ Done 2026-10-31. Bars in `tests/templates.test.ts` (25 tests; suite 252), regist
 - **Carried, honestly:** line 43's size refusal passes by test and shows in the sheet, but every city lot is one 4×4 class today, so the refusal cannot be PLAYED until lots grow with the hub (the 3×3 and 6×5 classes exist in the studio now); the mono-material set bonus is detected and recorded, its numbers land in 11B; template thumbnails ghost their materials (geometry is all a plan fixes); per-piece material exceptions remain the Wave 10 tile-ahead builder, as D13 says; switching app tabs while in the city still returns you to the plaza spawn (pre-existing; noted for a later pass).
 - **Gate:** test lines 41–44 — 41, 42, 44 by test and by play; 43 by test, and by play as far as one lot class allows (the sheet shows the verdict line; the numbers were exercised in the bar).
 
+### WAVE 10C — The Load-Out
+Planned 2026-10-31, at Pedro's ask (the itemization program, leg one of three). **Builds on:** Wave 4's three equipment buckets, the pack grid and its pure logic, the cognitive frames, the Agent tab.
+
+- **10C.1 The slot tree:** the three buckets become the full body (`types.ts`, additive contract upgrade): RIGHT HAND, LEFT HAND, CHEST, LEGS, BOOTS, SHOULDER (cape, spaulders — the piece is themed per genre), BAG, NECKLACE, EARRING, RING ×2, QUIVER, BELT. The three cognitive frames stay exactly as they are. (Pedro's list names no HEAD slot — D17 asks whether that is deliberate before anything is built.) A paper-doll on the Agent tab, drawn from the same atoms, readable in grayscale by position and shape.
+- **10C.2 Requirements:** equipment carries STAT REQUIREMENTS against the fifteen attributes; an unmet requirement refuses in voice with the numbers. Equipping never shows a stat change for anything unstudied — 10E's knowledge law reaches back into this screen from the start.
+- **10C.3 The weight law:** equipped gear does not count against carry weight — the limit is for the HAUL, not the harness. Bags extend capacity; the BELT holds pouches and quick-use slots; a POUCH is a bag type that stacks only what its rule names (D17).
+- **10C.4 The cart (D16):** the extractor's tool, and the leg's heart. A towed world entity with its own grid, bigger than any pack: load it, tow it at a real speed cost, leave it, come back for it; it stays in the world when you die or extract without it, seal on record. This is the commitment to carriers as a first-class way to play.
+- **Bars (register before building):** every slot holds what it should and refuses what it should not, with the reason; no equip/unequip/bag/pouch/belt/cart sequence ever loses or duplicates an item; equipped weight provably exempt from the load while hauled weight provably counts; cart contents deterministic and intact across reload and across a death; the paper-doll reads in grayscale; the whole screen works by keyboard.
+- **Gate:** test lines 47–49.
+
+### WAVE 10D — The Anatomy of Items
+Leg two. **Builds on:** 10C's slots (what an item is FOR), the transformation recipes, provenance, the ledger.
+
+- **10D.1 The economy check, first:** before anything new is built, audit the item economy as it stands — where value comes from, vendor prices, shop markup, treasury flows, what the Wave 10 construction bills did to demand — and write the findings into the leg's record. (Pedro: check the economy, then make the pipeline.)
+- **10D.2 Composition — every item is made of its atoms:** an item records the MATERIALS it came from and the TRANSFORMATION CHAIN that made it, step by step with each step's labor time. The chain is the power budget: more chain, better item. The floor exists on purpose: a stone and a stick combine with NO bench and NO processing into the crudest item the game can make — improvised crafting, anywhere, including the field. The balance law, in Pedro's words: you invest time in the chain.
+- **10D.3 Uniqueness (D18):** first come, first served — no two items ever exactly the same. The bank's registry remembers every minted tuple; collisions nudge the later roll deterministically; the first keeps its claim. The spirit on record: Dungeons of Dredmor crossed with Path of Exile.
+- **10D.4 Prices from the chain:** value derives from composition — labor invested, properties carried, rarity of the route — absorbing 11B's price work. Property→bonus numbers begin here for items, and the mono-material house set bonus (D13's deferral) gets its numbers in the same stroke.
+- **10D.5 Materials matters absorbed from 11B:** stone joins the building economy (masonry tags and recipes); commodity `purity` and resource `quality` become one law; the demolish-salvage decision is taken and enacted.
+- **Bars:** an item's composition is complete and signed — every atom traceable to a harvest, a purchase or an improvisation; same chain, same budget, byte-deterministic; the stone-and-stick item is measurably the worst thing the game can make; no two items identical across a simulated economy of thousands of mints; price monotonic in chain depth for fixed materials; the gold-AND-item audit balances over the whole loop.
+- **Gate:** test lines 50, 51 and 54.
+
+### WAVE 10E — The Affix Bank and the Dreaming
+Leg three. **Builds on:** 10D's composition, the CONTENT namespace, MaterialScience's knowledge levels, the recon survey.
+
+- **10E.1 The banks:** per-biome, per-theme AFFIX and SUFFIX banks, generated by batched LLM agent runs (dev-time scripts for now, D20) and banked as signed, versioned content packs. A bank entry starts as a NAME ONLY — it does nothing until a later batch defines its effect. The game starts nearly empty and grows because content is added; that is the design, not a gap.
+- **10E.2 The knowledge law (D19):** equipping shows no visible stat change for what you have not studied — knowledge gain IS the mechanic. Study reveals an affix the way material study reveals properties, on the same knowledge-level machinery, and ties into `isIdentified` instead of running beside it. Whether the unstudied affix still acts is D19 (recommended: it acts; only the sheet is blind).
+- **10E.3 The Dreaming — recon populates the world:** a 15-minute world's 5-minute recon phase is when the world is POPULATED from the banks — mobs, materials, chests and their loot tables, NPCs — themed to each biome, deterministically from (seed, content-pack version), the pack version pinned at the world's mint so no later batch ever changes an existing world. The lore already wrote this law: *"the Seed is still dreaming."*
+- **10E.4 The pipeline (D20):** the agent-run harness itself — batch in, validation, signing, versioning, loading. A names run, then an effects run, each a pack.
+- **Bars:** a bank batch loads, validates and signs or is refused whole; an unstudied affix moves nothing visible on equip and study reveals exactly its banked record; population is byte-deterministic for (seed, pack version) and two pack versions give measurably different worlds; no pack ever alters a world minted before it; themed banks stay in theme measurably.
+- **Gate:** test lines 52–53.
+
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
 
@@ -355,15 +391,8 @@ What comes back through the Nexus populates the hub. The hooks exist as dead end
 - **Bars:** the gold audit still balances after a full cycle of rescue, planting, selling and upkeep; farming mints items and never gold; growth depends only on time and is the same on every machine; a resident can never be duplicated from one Bond.
 - **Gate:** test lines 35–38.
 
-### WAVE 11B — The Materials Pass
-Planned 2026-10-31 (Pedro: the full economic and transformation loops, once the house is there). **Builds on:** 10B's templates (demand for materials), 11's farms (renewable supply). Scope is D15; this is the leg where the economy closes into a circle: source → refine → build and craft → sell → upkeep → back.
-
-- **11B.1 Every material has a source:** audit the field — every gameplay material spawns somewhere reachable, per biome, and the ones that should renew in the hub grow on farms (bring the seeds, D8). Stone finally joins the building economy: masonry tags and recipes, so a stone wall is real and reads as stone.
-- **11B.2 Every transformation exists:** no refined good unreachable from raw inputs; recipe chains reviewed as one graph. The demolish-salvage decision is taken and enacted (today demolition returns nothing, on record).
-- **11B.3 Properties pay:** D9's deferred half — the material a thing is made from gives it its bonuses (the table built from dense stone is not the table built from cloth), and PRICES derive from properties and provenance instead of flat values. D6's crafting half (items raising skills, components carrying affixes, S+ naming) lands here or in the crafting waves proper — decide at the leg's start.
-- **11B.4 One quality system:** commodity `purity` and resource `quality` stop being parallel dead scales; one law, drawn the way the atoms already draw quality.
-- **11B.5 The audit:** the gold audit balances over the FULL cycle — harvest, farm, refine, build from a template, craft, sell at a counter, pay upkeep — and materials are conserved: nothing minted from nowhere, nothing vanishing unrecorded.
-- **Gate:** test lines 45–46.
+### WAVE 11B — The Materials Pass (ABSORBED)
+Absorbed 2026-10-31 into Pedro's itemization program: 11B.1's sourcing audit and the recipe-graph review moved to 10E's population work and 10D.5; 11B.2's demolish salvage, 11B.3's property bonuses and prices (with the mono-material house numbers), and 11B.4's one-quality law moved to 10D; 11B.5's full-loop audit became 10D's gold-AND-item audit (line 54). Farm renewability stays with Wave 11. D6's crafting half (items raising skills, components carrying affixes, S+ naming) now naturally belongs to 10D/10E — decide its landing at those legs' starts. Former gate lines 45–46 are delivered by 10D/10E alongside 50–54.
 
 ### WAVE 12 — The Second True Test
 Wave 7 ran with limits, and Wave 8 was checked with raised health and teleports. This one is the honest version: a new identity, normal health, one sitting, no script help. It is also where balance finally gets played: enemy density, run length, gold, and how long the Tempered Pick really takes to earn. Update `HANDOVER.md`.
@@ -400,6 +429,14 @@ Guardrail 1 still holds: nothing gets built without a line here.
 44. The architect's name survives: author provenance reads on the template and on the standing house, after copying and resale
 45. Every gameplay material can be sourced, refined and consumed, and the gold audit balances over the full loop
 46. Material choice changes the thing built: properties reach bonuses and prices
+47. Every slot on the body holds what it should and refuses what it should not, in voice, requirements included
+48. Equipped gear weighs nothing against the carry limit; bags, pouches and the belt hold and stack exactly what their rules say
+49. A cart is loaded, towed at a cost, left, and recovered; nothing in it is ever lost or duplicated, even across a death
+50. An item knows what it is made of: its atoms and its chain, from stone-and-stick to the long route, and the chain sets its worth
+51. No two items are ever exactly the same, and the first keeps its claim
+52. Affix banks grow by themed batches; an unstudied affix shows nothing on equip, and study reveals exactly what was banked
+53. A world populates from the banks during recon, deterministically for its seed and pinned pack version, and no later batch changes it
+54. The gold and item audit balances across the whole itemization economy
 
 ---
 

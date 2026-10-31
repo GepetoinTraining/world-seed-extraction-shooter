@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors) and Wave 10B (the Architect), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 11, Bringing the Nexi Home** — residents, farms, materials — and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors) and Wave 10B (the Architect), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 10C, The Load-Out** — the first leg of Pedro's itemization program (10C slots and carts, 10D item anatomy, 10E affix banks and world population; Wave 11's residents follow it) — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -101,11 +101,15 @@ In short: the template contract as data (`ITemplate` — geometry, zones with pr
 - Switching app tabs (BANK/HOLDINGS) while walking the city returns you to the plaza spawn — pre-existing, now on record.
 - The glass chain still needs a field trip for sand; BASALT's first apply was refused on the glass bill (honestly, in voice) and the built house is the windowless all-plank plan.
 
-## Your pass: bringing the Nexi home (Wave 11)
+## Your pass: the Load-Out (Wave 10C)
+
+**Scope, decisions (D16, D17) and bars are in `PLAN.md`** (gate lines 47–49): the full slot tree replacing Wave 4's three buckets (right/left hand, chest, legs, boots, themed shoulder, bag, necklace, earring, two rings, quiver, belt — cognitive frames untouched; Pedro's list names no HEAD slot, ask whether that is deliberate), stat requirements refusing in voice, the weight law (equipped gear exempt from carry weight — the limit is the haul, not the harness), the belt-and-pouch law (D17), and THE CART (D16): a towed world entity with its own grid, a real speed cost, and the nerve to stay in the world when you die — the extractor fantasy made first-class. Equip must already show NO stat change for unstudied affixes (10E's law reaches back; stub the knowledge check now so the screen never learns the bad habit). The slot tree is a `types.ts` contract change — additive, migrate the three old buckets in. Register the bars before anything exists; ask D16/D17 at the start if unanswered. Pedro approves the leg at its end.
+
+## Queued after this program: bringing the Nexi home (Wave 11)
 
 **Scope, decisions (D10, D11) and bars are in `PLAN.md`** (gate lines 35–38): redeeming an `Escort Bond` places a RESIDENT whose sheet was already rolled in the world (recognisably that person), with a job that has a real effect; FARMS as a lot structure (D11) — plant what you harvested, growth on the accumulate-and-resolve clock, nothing running while away; materials stored and displayed by their real grain with history; residents visible in the city using 8B's walk. D8's deferred half lands here: NPC pooling pools player materials against a TEMPLATE's bill — `SYSTEM_TEMPLATES` and `templateBill` in `src/entities/hub/template.ts` are exactly that bill, and `applyTemplate`/the `IBuildJob` batch in the hub store is the construction path to reuse (a resident's house should rise through the same UNDER_CONSTRUCTION state, pooled instead of paid by one hand). Upkeep for residents goes through the existing treasury path (D10). Register the bars before anything exists; ask D10/D11 at the start if unanswered.
 
-**After 11:** Wave 11B (the materials pass: the full economic and transformation loops, D15 — mono-material bonus numbers, property-derived prices, demolish salvage, the full-loop gold audit), then Wave 12 (the second true test).
+**After the program and Wave 11:** Wave 12 (the second true test). Wave 11B was absorbed into 10D/10E (its mono-material bonus numbers, property prices, demolish salvage and full-loop audit all land there). The "Found in Play" fixes card (cache duplication, mint-world draft loss, pack grab-and-hover — diagnoses in the shared notes folder) runs between legs, after this program by Pedro's word.
 
 ## Known weak spots
 
