@@ -108,7 +108,7 @@ const AgentTab: React.FC = () => {
           </div>
         ))}
         <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
-          THE HEAD BUDGET (D22) — HEAD, EYES, EARRING, NECKLACE each hold gear OR a frame; three frames at most.
+          THE HEAD BUDGET — HEAD, EYES, EARRING, NECKLACE each hold gear OR a frame; three frames at most.
           Mental stats come only from frames, and they drive the recon survey too.
         </div>
         {HEAD_BUDGET_POSITIONS.map(position => {

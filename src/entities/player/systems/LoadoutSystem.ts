@@ -69,37 +69,37 @@ export class LoadoutSystem {
 
     if (slotId.startsWith('TOOL_')) {
       return isTool(item) ? OK
-        : no(`The tool slot takes tools. ${item.name} is not one.`);
+        : no(`The tool loop holds tools. ${item.name} isn't one.`);
     }
     if (slotId.startsWith('POUCH_')) {
       return item.pouchData ? OK
-        : no(`A pouch slot takes a pouch. ${item.name} has no stacking rule.`);
+        : no(`A pouch knows what it stacks. ${item.name} doesn't.`);
     }
 
     const body = slotId as BodySlotId;
     switch (body) {
-      case 'HEAD': return item.slot === SlotType.HEAD ? OK : no(`HEAD takes a helmet. ${item.name} does not sit there.`);
-      case 'EYES': return item.slot === SlotType.EYES ? OK : no(`EYES take glasses. ${item.name} does not sit there.`);
+      case 'HEAD': return item.slot === SlotType.HEAD ? OK : no(`The HEAD takes a helm. ${item.name} won't stay on.`);
+      case 'EYES': return item.slot === SlotType.EYES ? OK : no(`The EYES take lenses. ${item.name} would only blind you.`);
       case 'RIGHT_HAND':
-        return item.slot === SlotType.MAIN_HAND ? OK : no(`The right hand takes a weapon or focus. ${item.name} is not one.`);
+        return item.slot === SlotType.MAIN_HAND ? OK : no(`The right hand wants a weapon or focus. ${item.name} is neither.`);
       case 'LEFT_HAND':
         if (item.slot === SlotType.OFF_HAND) return OK;
         if (item.slot === SlotType.MAIN_HAND && (item.tags || []).includes('one_hand')) return OK;
-        if (item.slot === SlotType.MAIN_HAND) return no(`${item.name} needs both hands. The left hand cannot hold it alone.`);
-        return no(`The left hand takes an off-hand piece. ${item.name} is not one.`);
-      case 'CHEST': return item.slot === SlotType.CHEST ? OK : no(`CHEST takes body armor. ${item.name} does not sit there.`);
-      case 'LEGS': return item.slot === SlotType.LEGS ? OK : no(`LEGS take leg armor. ${item.name} does not sit there.`);
-      case 'BOOTS': return item.slot === SlotType.FEET ? OK : no(`BOOTS take footwear. ${item.name} does not sit there.`);
-      case 'SHOULDER': return item.slot === SlotType.SHOULDER ? OK : no(`SHOULDER takes a shoulder piece. ${item.name} does not sit there.`);
+        if (item.slot === SlotType.MAIN_HAND) return no(`${item.name} wants both hands. The left can't hold it alone.`);
+        return no(`The left hand guards or balances. ${item.name} does neither.`);
+      case 'CHEST': return item.slot === SlotType.CHEST ? OK : no(`The CHEST wears armor. ${item.name} wouldn't cover much.`);
+      case 'LEGS': return item.slot === SlotType.LEGS ? OK : no(`The LEGS wear armor. ${item.name} isn't cut for them.`);
+      case 'BOOTS': return item.slot === SlotType.FEET ? OK : no(`BOOTS are for feet. ${item.name} doesn't walk.`);
+      case 'SHOULDER': return item.slot === SlotType.SHOULDER ? OK : no(`The SHOULDER carries a mantle. ${item.name} would slide off.`);
       case 'BAG': return item.slot === SlotType.BAG && !item.pouchData ? OK
         : item.pouchData ? no(`A pouch rides the belt, not the back.`)
-        : no(`BAG takes a pack or satchel. ${item.name} is not one.`);
-      case 'NECKLACE': return item.slot === SlotType.NECKLACE ? OK : no(`NECKLACE takes a pendant or chain. ${item.name} does not sit there.`);
-      case 'EARRING': return item.slot === SlotType.EARRING ? OK : no(`EARRING takes an earring. ${item.name} does not sit there.`);
+        : no(`The back takes a pack. ${item.name} has no straps.`);
+      case 'NECKLACE': return item.slot === SlotType.NECKLACE ? OK : no(`The NECKLACE hangs from the neck. ${item.name} has no chain.`);
+      case 'EARRING': return item.slot === SlotType.EARRING ? OK : no(`An EARRING hangs from the ear. ${item.name} would tear it off.`);
       case 'RING_1':
-      case 'RING_2': return item.slot === SlotType.RING ? OK : no(`A ring position takes a ring. ${item.name} is not one.`);
-      case 'QUIVER': return item.slot === SlotType.QUIVER ? OK : no(`QUIVER takes a quiver. ${item.name} does not sit there.`);
-      case 'BELT': return item.slot === SlotType.BELT ? OK : no(`BELT takes a belt. ${item.name} does not sit there.`);
+      case 'RING_2': return item.slot === SlotType.RING ? OK : no(`A finger takes a ring. ${item.name} doesn't fit around one.`);
+      case 'QUIVER': return item.slot === SlotType.QUIVER ? OK : no(`The QUIVER rides the back and holds arrows. ${item.name} holds none.`);
+      case 'BELT': return item.slot === SlotType.BELT ? OK : no(`The BELT goes around the waist. ${item.name} won't buckle.`);
     }
     return no(`No such slot: ${slotId}.`);
   }
@@ -194,10 +194,10 @@ export class LoadoutSystem {
       Object.keys(stats).find(k => mental.has(k));
 
     const inBase = carries(item.stats as any ?? {});
-    if (inBase) return no(`${item.name} carries ${inBase.toUpperCase()} — a mental stat. Only a cognitive frame may. The partition is law.`);
+    if (inBase) return no(`${item.name} promises ${inBase.toUpperCase()}, and gear doesn't think. Thinking is frame-work.`);
     for (const affix of item.affixes || []) {
       const hit = carries(affix.stats || {});
-      if (hit) return no(`${item.name}'s "${affix.name}" carries ${hit.toUpperCase()} — a mental stat. Only a cognitive frame may. The partition is law.`);
+      if (hit) return no(`"${affix.name}" promises ${hit.toUpperCase()}, and gear doesn't think. Thinking is frame-work.`);
     }
     return OK;
   }
@@ -223,7 +223,7 @@ export class LoadoutSystem {
     const worn = this.frameCount(equipment);
     const replacing = !!equipment.frames[position];
     if (!replacing && worn >= MAX_FRAMES) {
-      return no(`Three frames at most. The fourth position keeps its gear — that is the budget.`);
+      return no(`Three frames is all one mind can hold. The fourth position keeps its gear.`);
     }
     return OK;
   }

@@ -214,7 +214,7 @@ export function inspectItem(item: IItem): Card {
   Object.entries(visible).forEach(([k, v]) => {
     if (!['durability', 'maxDurability', 'weight'].includes(k)) rows.push([k.replace(/_/g, ' '), String(v)]);
   });
-  (item.affixes || []).forEach(a => rows.push(['Affix', `${a.name} — unstudied. It acts; the sheet is blind.`]));
+  (item.affixes || []).forEach(a => rows.push(['Affix', `${a.name} — unstudied. It does its work; the sheet can't see it.`]));
   // Wave 10C (10C.2): the ask is part of the record
   const reqs = LoadoutSystem.requirementsFor(item);
   Object.entries(reqs).forEach(([attr, need]) => {
