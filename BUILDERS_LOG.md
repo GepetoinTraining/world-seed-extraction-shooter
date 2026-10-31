@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface) and Wave 10 (the interiors), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 11, bringing the Nexi home**, and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface) and Wave 10 (the interiors), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 10B, the Architect** — Pedro reordered the legs the day Wave 10 landed — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -84,9 +84,11 @@ Full detail in `PLAN.md` 3B. Pedro's D8/D9 reshaped it at the start: rooms are B
 - Balance is still unplayed at scale (Wave 12). A fresh F-rank still dies to the first pack of anything.
 - An invented genre still gets its look from a hash; the look family still needs widening.
 
-## Your pass: bringing the Nexi home (Wave 11)
+## Your pass: the Architect (Wave 10B)
 
-**Scope, decisions (D10, D11) and bars are in `PLAN.md`**: redeeming an `Escort Bond` places a resident who is recognisably the person you rescued (their rolled sheet survives), with a job that has a real effect; farms (`res_tree_sapling`, `IFarmPlot`) plant what you harvested on the Workshop's accumulate-and-resolve clock; materials stored and shown in rooms by their real grain with their history; residents visible in the city, walking the 8B walk. Wave 10 left you the pieces: `ROOM_PRESETS` + `presetToRoom` are the houses NPCs use (D8's pooling flow — players bring materials, a timer runs, a resident moves in — is yours to build on `IBuildJob`), placement and provenance are live, and the dialogue registry is where a resident's voice goes. Ask D10 and D11 at the start if unanswered.
+**Scope, decisions (D12–D14) and bars are in `PLAN.md`**: templates separate geometry from materials. The template contract as data first (`ITemplate`: structure layer, floor zones, size needs — `ROOM_PRESETS` fold into it, one contract, no second path), then the builder view opened at a craftable DRAFTING TABLE, minting signed tradable template items with the author's provenance riding every copy; then raising a house from a template — the material sheet (one material per element class), the bill consumed exactly once, an UNDER CONSTRUCTION lot state, pieces filling in on the clock, and the finished room matching the template piece for piece. Wave 10 left you everything: the validators in `room.ts` ARE the template validators (a template that composes an invalid room cannot be minted), `composeRoom` draws thumbnails and ghost previews, `IBuildJob` is the construction queue, the counter already sells any item, and `DeedSystem`'s `IDeedItem extends IItem` is the pattern for an item that carries data. Register the bars before the view exists. Ask D12–D14 at the start if unanswered.
+
+**After 10B:** Wave 11 (residents from `Escort Bond`, farms, materials home — its brief is in PLAN.md; NPC pooling then pools against a TEMPLATE's bill), then Wave 11B (the materials pass: the full economic and transformation loops, D15), then Wave 12.
 
 ## Known weak spots
 
@@ -108,4 +110,4 @@ Full detail in `PLAN.md` 3B. Pedro's D8/D9 reshaped it at the start: rooms are B
 
 ## After this pass
 
-`PLAN.md`, under "The next legs": Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks), Wave 12 (the second true test, played honestly, with balance). Pedro's D6 crafting half (items raising skills, components carrying affixes, S+ naming) and D9's furniture-from-materials bonuses land with the crafting waves; D8's NPC pooling flow lands with Wave 11's residents.
+`PLAN.md`, under "The next legs": Wave 10B (the Architect — templates), Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a template's bill), Wave 11B (the materials pass — the full economic and transformation loops, D15; D9's furniture-from-materials bonuses land there, and D6's crafting half lands there or in the crafting waves proper), Wave 12 (the second true test, played honestly, with balance).

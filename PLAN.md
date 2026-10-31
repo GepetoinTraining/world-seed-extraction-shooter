@@ -254,12 +254,14 @@ The grid is **tile (20px) → quadrant (16 tiles, 320px) → chunk (64 tiles, 12
 
 Planned 2026-10-31, after checking each leg against the code. Each leg gets its own full-context session and is approved by Pedro before it starts. Commit at the end of each, so the next starts from a clean tree.
 
-**Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 11 Bringing the Nexi Home → 12 The Second True Test.
+**Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 11 Bringing the Nexi Home → 11B The Materials Pass → 12 The Second True Test.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
 - The interface comes before the interiors because placing things in a room needs menus, cards and the pack.
-- People and farms need rooms to live in.
+- Templates (10B) come straight after the rooms, while the builder is hot, and BEFORE residents: Wave 11's NPC pooling then pools materials against a template's bill instead of a second one-off system — presets and templates become one contract.
+- People and farms need rooms to live in; farms begin making materials renewable in the hub.
+- The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there).
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
 **Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named.
@@ -277,6 +279,10 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D9 | 10 | Lots only, or every building | ✅ DECIDED (Pedro, 2026-10-31): D8 dissolves the question. Everything inside a building is an item, a tool or a workstation — only walls, stairs, windows and doors are structure. A table is a workstation AND decoration; the material it is made from gives different bonuses; furniture is itemizable like the character is (portable, tradable, signed), so someone can live the slow life of being the hub's best table-maker — planting trees and building tables to sell. STILL TO BUILD (crafting waves): crafting furniture from materials with material-derived bonuses; Wave 10 ships placement, the structural pieces, and workstation items that call the existing store logic |
 | D10 | 11 | Do residents cost gold? | Yes, through higher upkeep, which already goes to the hub's treasury. No new money path |
 | D11 | 11 | Is a farm a new lot type? | Yes, a `FARM` structure alongside `WORKSHOP`, `VENDOR` and `HOUSE` |
+| D12 | 10B | Where templates are designed | At a DRAFTING TABLE: a craftable station whose [E] opens the builder view. Designing is work done somewhere, like everything else in the hub; dev mode opens the view free for testing |
+| D13 | 10B | Materials per piece, or per element | Per ELEMENT CLASS at apply time: all walls one material, all windows another, each floor zone its own. Per-piece exceptions afterwards by hand, with the Wave 10 tile-ahead builder, which stays. One choice per class keeps the apply sheet readable |
+| D14 | 10B | Is a template consumed by use? | No. The original is a keepable, tradable item; COPIES are minted at the drafting table for a small bill, and every copy carries the author's signature in provenance forever — the architect's name travels with the house. Scarcity comes from labor and materials, never from burning drawings |
+| D15 | 11B | What the materials pass must close | Every gameplay material sourceable (field or farm), refinable and consumable; stone joins the building tags with masonry recipes; demolish salvage decided; properties reach bonuses and prices (D9's deferred half); commodity `purity` stops being dead data; the gold audit balances over the whole loop |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
@@ -323,6 +329,19 @@ Done 2026-10-31. Bars in `tests/rooms.test.ts` (27 tests; suite 227). Reshaped a
 - **Carried, honestly:** STAIR is typed and refused (single floor until the hub grows); stations are told apart by their card and name, not yet by a silhouette family of their own; build/place targets the tile ahead (keyboard-first — no pointer tile-picking yet); demolish returns no materials; any walker may enter a built lot (commerce wants it) while build/place/reclaim stay the owner's; a HOUSE has no function hook yet; interior size is a fixed function of the lot footprint — lots growing as the hub grows waits for hub expansion itself.
 - **Gate:** test lines 32–34 pass, by test and by play.
 
+### WAVE 10B — The Architect
+Planned 2026-10-31, at Pedro's ask, the day Wave 10 landed. **Builds on:** Wave 10's rooms — the validators, the composer, the construction queue and the counter are all reused, none duplicated.
+
+**The idea:** D8 said the economy lives in this layer. The template is what makes that true for building itself: it separates GEOMETRY (designed once, signed by its author, tradable as an item) from MATERIALS (chosen at build time, per element). A player designs a floor plan, mints it, and sells it; the buyer raises it on their own lot, picks what it is built from, and watches it go up. Architecture becomes a trade, like table-making.
+
+- **10B.1 The template contract, as data first:** `ITemplate` — a structure layer (wall / door / window / stair per tile), FLOOR ZONES (tiles painted into named zones, each zone taking its own floor material at build time), and the SIZE NEEDS: the lot footprint class it requires plus named open regions with minimum areas (where the buyer's stations will want to stand). Versioned, like every rule set. `ROOM_PRESETS` fold into it — NPC blueprints are system templates, one contract and no second path. The law: a template that would compose an invalid room CANNOT BE MINTED — minting runs the same validators the builder runs (walkable from the door, nothing sealed, regions meeting their declared minimums), and refuses in voice.
+- **10B.2 The builder view:** opened at a DRAFTING TABLE (D12), a new craftable station. A design surface at the room's own scale: pick a size class, paint structure and floor zones, see the live validation refuse in voice as you draw, preview in color and grayscale through `composeRoom` itself (ghost materials). Keyboard reaches everything; the cursor is a tile, not a pixel. MINT TEMPLATE names it (the lore naming rule applies) and signs it into an item carrying `templateData`, provenance MINT origin DESIGN.
+- **10B.3 The trade:** a template is an item, so the existing counter, shops and stash already sell, buy and store it — nothing new to build but the CARD: a template's inspect card shows its real thumbnail (the composer at small scale), its size needs, its region minimums and its AUTHOR, read from provenance. Copies are minted at the drafting table for a small bill (D14); author's signature rides every copy and every resale.
+- **10B.4 Raising a house from a template:** APPLY on a lot you own. Size needs unmet → refusal with the numbers (line 43). Then the MATERIAL SHEET: one material per element class (D13) — walls, windows, doors, each floor zone — each billed by tag, all consumed exactly once at apply. The lot enters UNDER CONSTRUCTION: a new city lot state (scaffold frame, progress readable by shape), blocking like a built lot; the owner can step inside and watch pieces fill in on the clock, shell first, then the interior, through the same `IBuildJob` queue — the outlines Wave 10 already draws, becoming solid in order. Finished means the room equals the template piece for piece.
+- **10B.5 The house remembers its architect:** the inspect card on a templated building, inside or from the street, names the template and its author from the provenance chain. The ownership fantasy, extended one step: your face from your certificate, your house from someone's signed hand.
+- **Bars (register before building):** same template + same material sheet → same built bytes; an invalid template cannot be minted and says why; size needs refuse with the numbers; the author's provenance survives copying and resale; the apply bill is consumed exactly once (double resolve mints and consumes nothing twice); an under-construction lot blocks exactly what it draws and its progress only moves forward; the finished room matches the template record piece for piece; the builder view passes the kit's keyboard and grayscale bars; template thumbnails are real composed atoms, not icons.
+- **Gate:** test lines 41–44.
+
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
 
@@ -332,6 +351,16 @@ What comes back through the Nexus populates the hub. The hooks exist as dead end
 - **11.4 The city fills up:** residents are visible in the hub, using the walk from 8B.
 - **Bars:** the gold audit still balances after a full cycle of rescue, planting, selling and upkeep; farming mints items and never gold; growth depends only on time and is the same on every machine; a resident can never be duplicated from one Bond.
 - **Gate:** test lines 35–38.
+
+### WAVE 11B — The Materials Pass
+Planned 2026-10-31 (Pedro: the full economic and transformation loops, once the house is there). **Builds on:** 10B's templates (demand for materials), 11's farms (renewable supply). Scope is D15; this is the leg where the economy closes into a circle: source → refine → build and craft → sell → upkeep → back.
+
+- **11B.1 Every material has a source:** audit the field — every gameplay material spawns somewhere reachable, per biome, and the ones that should renew in the hub grow on farms (bring the seeds, D8). Stone finally joins the building economy: masonry tags and recipes, so a stone wall is real and reads as stone.
+- **11B.2 Every transformation exists:** no refined good unreachable from raw inputs; recipe chains reviewed as one graph. The demolish-salvage decision is taken and enacted (today demolition returns nothing, on record).
+- **11B.3 Properties pay:** D9's deferred half — the material a thing is made from gives it its bonuses (the table built from dense stone is not the table built from cloth), and PRICES derive from properties and provenance instead of flat values. D6's crafting half (items raising skills, components carrying affixes, S+ naming) lands here or in the crafting waves proper — decide at the leg's start.
+- **11B.4 One quality system:** commodity `purity` and resource `quality` stop being parallel dead scales; one law, drawn the way the atoms already draw quality.
+- **11B.5 The audit:** the gold audit balances over the FULL cycle — harvest, farm, refine, build from a template, craft, sell at a counter, pay upkeep — and materials are conserved: nothing minted from nowhere, nothing vanishing unrecorded.
+- **Gate:** test lines 45–46.
 
 ### WAVE 12 — The Second True Test
 Wave 7 ran with limits, and Wave 8 was checked with raised health and teleports. This one is the honest version: a new identity, normal health, one sitting, no script help. It is also where balance finally gets played: enemy density, run length, gold, and how long the Tempered Pick really takes to earn. Update `HANDOVER.md`.
@@ -362,6 +391,12 @@ Guardrail 1 still holds: nothing gets built without a line here.
 38. The gold audit balances after a full cycle of all of the above
 39. A new identity plays the whole loop in one sitting, at normal health, with no script help
 40. Everything from 39 survives a reload and a backup restored on a fresh profile
+41. A template is designed at a drafting table, minted as a signed item, and sold and bought like any other
+42. A bought template raises a house under construction; materials are chosen per element, consumed once, and the finished room matches the template exactly
+43. A template refuses a lot that does not meet its size needs, in voice, with the numbers
+44. The architect's name survives: author provenance reads on the template and on the standing house, after copying and resale
+45. Every gameplay material can be sourced, refined and consumed, and the gold audit balances over the full loop
+46. Material choice changes the thing built: properties reach bonuses and prices
 
 ---
 
