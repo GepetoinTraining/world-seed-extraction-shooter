@@ -122,7 +122,9 @@ Added since Wave 7, and not all drawn on the diagram above:
 | Carts | `entities/world/CartSystem.ts`, `entities/world/CartOverlay.ts` | Towed world entities; the one thing in a world not derived from its seed |
 | Item anatomy | `logic/economy/CompositionSystem.ts`, `logic/economy/MintRegistry.ts`, `logic/systems/ImprovisedCrafting.ts` | What an item is made of, its price and power, global uniqueness |
 | Content banks | `logic/content/AffixBank.ts`, `entities/world/Dreaming.ts`, `entities/generation/packs/affixBatches.ts` | Versioned affix packs; a world pins its version at mint |
-| Knowledge | `logic/systems/StudySystem.ts` | Identify as a trained skill scoped by item type |
+| Knowledge | `logic/systems/StudySystem.ts` | Identify as a trained skill scoped by item type; goods and furniture joined the scopes in the raw materials leg |
+| Processes | `logic/systems/ProcessSystem.ts` | What a transformation step adds; pools by rank and rarity; the reveal by skill and lore |
+| Sourcing audit | `logic/economy/SourcingAudit.ts` | Line 45 over the live definitions |
 | Protection | `logic/systems/InsuranceSystem.ts` | Charms and scrolls that name what a death keeps |
 | Entry | `logic/systems/Deploy.ts`, `entities/identity/roster.ts` | One door into a world; several avatars per device |
 
@@ -146,6 +148,7 @@ Treat `types.ts` as the shared agreement, and only add to it. These additions we
 | `ISlotProtection` | A slot a named magic keeps through a death (D21) |
 | `IComposition` | What an item is made of, its chain and its depth (Wave 10D) |
 | `IBankedAffix`, `IAffixBatch`, `IContentPack` | The content banks (Wave 10E) |
+| `ROOM_ACTING_STATS`, `IItem.loreData` | The stats an addition acts through in a room; a trade note's reading (raw materials leg) |
 
 Two contracts live outside `types.ts`: `IWorldRules` (with `contentPackVersion`) in `entities/world/WorldCertificate.ts`, and the room and template types in `entities/hub/room.ts` and `template.ts`.
 
@@ -240,13 +243,18 @@ These are the current values, set by reasoning and very little play. Expect to c
 | Exit fee | World rule, default 5% of what was gained | `ExitLevy.ts` |
 | Spawns per quadrant | Enemy pack 45%, ruin 10%, NPC 6%; resources by biome | `WorldGenerator.ts` |
 | Material dream on a harvest | 8% | `Dreaming.ts` |
+| Process pools | Tier 1 + rank step + rarity step, 4 at most | `ProcessSystem.ts` |
+| Trade XP per finished job / to reveal a tier | 20 / level = tier + 1 | `ProcessSystem.ts` |
+| Trade note in a chest fragment | 25%, worlds pinned at v4 or later | `ProcessSystem.ts` |
+| Room bonus caps | Upkeep 40%, bench speed 30%, no floor | `hub/room.ts` |
 | Field identify | 12s, falling with skill, never under 2s | `StudySystem.ts` |
 | Attribute points per rank-up | 3 | `ProgressionSystem.ts` |
 | NPC secure threshold | 70 disposition | `InteractionEngine.ts` |
 | Starting gold | 500 | `player/store.ts` |
 | Shop markup / vendor buyback | 1.5×, consumables 3× / 0.6× of value | `hub/store.ts` |
 | Player shop fee | 5% | `recipeDefinitions.ts` |
-| Lot price | 5,000G | `hub/store.ts` |
+| Lot price | 5,000G (a fresh origin holds 500) | `hub/store.ts` |
+| Shell bills | House 4 building; Workshop 6 building + 2 metal, the first one 6 building alone; Vendor 6 building + 1 glass | `hub/room.ts` |
 | Build cost | House 100, Workshop 150, Vendor 250 | `recipeDefinitions.ts` |
 | Upkeep per day | Empty 5, House 5, Workshop 10, Vendor 15 | `recipeDefinitions.ts`, `hub/store.ts` |
 | Hub starting fund | 100,000G | `hub/store.ts` |

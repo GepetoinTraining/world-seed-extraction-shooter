@@ -155,7 +155,7 @@ export const RESOURCE_DEFINITIONS: Record<string, ResourceDef> = {
     },
     uses: 3,              // a tree gives three fellings of logs...
     yieldPerUse: [1, 2],
-    tags: ['flora', 'wood']
+    tags: ['flora', 'wood', 'building'] // D24: a raw log raises a wall
   },
 
   'res_tree_sapling': {
@@ -237,7 +237,7 @@ export const RESOURCE_DEFINITIONS: Record<string, ResourceDef> = {
     },
     uses: 2,
     yieldPerUse: [1, 2],
-    tags: ['mineral', 'stone']
+    tags: ['mineral', 'stone', 'building'] // D24: raw stone raises a wall; pebbles stay out
   },
 
   'res_iron_vein': {

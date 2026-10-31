@@ -15,7 +15,7 @@
 import { IItem } from '../../../types';
 import {
   IRoomState, RoomPieceKind, RoomVerdict, PIECE_BILLS, SHELL_BILLS, TAG_DEFAULT_MATERIAL,
-  canBuildPiece, emptyRoom, fullyWalkable, interiorSize, roomDoor, roomSolid
+  canBuildPiece, emptyRoom, fullyWalkable, interiorSize, roomDoor, roomSolid, shellBillFor
 } from './room';
 import { CRAFTED_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
@@ -275,10 +275,14 @@ export interface ITemplateBill {
   tagLines: { tag: string; count: number }[];
 }
 
-/** D13: the whole bill, one material per element class, counted from the plan. */
-export function templateBill(tpl: ITemplate, sheet: ITemplateSheet): ITemplateBill {
+/**
+ * D13: the whole bill, one material per element class, counted from the plan.
+ * D25: a plan raising its owner's first WORKSHOP drops the same line a plain
+ * shell does (`firstBench`, read by the caller from the state of the world).
+ */
+export function templateBill(tpl: ITemplate, sheet: ITemplateSheet, firstBench = false): ITemplateBill {
   const count = (kind: RoomPieceKind) => tpl.pieces.filter(p => p.kind === kind).length;
-  const shell = SHELL_BILLS[tpl.structureType];
+  const shell = firstBench ? shellBillFor(tpl.structureType, false) : SHELL_BILLS[tpl.structureType];
   const wallCount = shell.filter(l => l.tag === 'building').reduce((n, l) => n + l.count, 0) + count('WALL');
 
   const choices: ITemplateBill['choices'] = [];

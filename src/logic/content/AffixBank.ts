@@ -32,6 +32,9 @@ const no = (reason: string): BankVerdict => ({ ok: false, reason });
 
 const MENTAL = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
 
+/** One name per version. A pinned world's pack keeps its name with its bytes. */
+const PACK_NAMES = ['The First Naming', 'The Naming, Given Teeth', 'The Working, Named', 'The Working, Given Hands'];
+
 const mentalIn = (mods: Record<string, [number, number]> | Record<string, number> | undefined): string | undefined =>
   Object.keys(mods ?? {}).find(k => MENTAL.has(k));
 
@@ -111,7 +114,7 @@ export class AffixBank {
       pack: {
         packId: 'pack_affix_bank',
         version: folded.length,
-        name: folded.length <= 1 ? 'The First Naming' : 'The Naming, Given Teeth',
+        name: PACK_NAMES[Math.min(folded.length, PACK_NAMES.length) - 1],
         batches: folded,
         entries
       }

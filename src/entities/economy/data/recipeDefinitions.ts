@@ -132,6 +132,71 @@ export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {
     requiredFacility: 'WORKSHOP',
     requiredSkill: 'skill_masonry',
     minSkillLevel: 0
+  },
+  // The raw materials leg (line 45): the sourcing audit found these raw materials
+  // with no process of their own. Each now has one, and D26 gives each its pool.
+  'recipe_straw_paper': {
+    id: 'recipe_straw_paper',
+    name: 'Press Straw Paper',
+    description: 'Three heads of grain threshed and the stalks pressed. It takes ink, and it does not ask for a tree.',
+    inputs: [{ itemId: 'res_grain_wild', quantity: 3, consume: true }],
+    outputs: [{ itemId: 'crf_paper', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 8,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_carpentry',
+    minSkillLevel: 0
+  },
+  'recipe_flint_glass': {
+    id: 'recipe_flint_glass',
+    name: 'Flux with Crushed Pebble',
+    description: 'One sand and two crushed pebbles. Less sand, more patience, and the pane still holds.',
+    inputs: [
+      { itemId: 'res_sand', quantity: 1, consume: true },
+      { itemId: 'res_pebbles', quantity: 2, consume: true }
+    ],
+    outputs: [{ itemId: 'crf_glass', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 14,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_glassblowing',
+    minSkillLevel: 0
+  },
+  'recipe_shard_glass': {
+    id: 'recipe_shard_glass',
+    name: 'Melt Shards Whole',
+    description: "Three shards of somebody's window, melted back into one of yours.",
+    inputs: [{ itemId: 'res_glass_shards', quantity: 3, consume: true }],
+    outputs: [{ itemId: 'crf_glass', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 10,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_glassblowing',
+    minSkillLevel: 0
+  },
+  'recipe_scrap_ingot': {
+    id: 'recipe_scrap_ingot',
+    name: 'Melt Down Scrap',
+    description: 'Two rusted plates burn off what they were, and leave one ingot.',
+    inputs: [{ itemId: 'res_scrap_metal', quantity: 2, consume: true }],
+    outputs: [{ itemId: 'crf_iron_ingot', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 15,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_smelting',
+    minSkillLevel: 0
+  },
+  'recipe_titanium_bar': {
+    id: 'recipe_titanium_bar',
+    name: 'Draw a Titanium Bar',
+    description: 'Two deposits, a long fire, one bar. The vein goes down; nobody asks what it is a vein of.',
+    inputs: [{ itemId: 'res_titanium_vein', quantity: 2, consume: true }],
+    outputs: [{ itemId: 'crf_titanium_bar', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 40,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_smelting',
+    minSkillLevel: 0
   }
 };
 
@@ -291,6 +356,17 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {
     visuals: { modelId: 'stone_block', colorHex: '#78716c' },
     materialProps: { [MaterialPropertyType.DENSITY]: 9, [MaterialPropertyType.HARDNESS]: 40 },
     tags: ['crafted', 'stone', 'building', 'masonry']
+  },
+
+  // The raw materials leg (line 45): titanium gets a process, and the rank and
+  // rarity it carries open the deep pools (D26).
+  'crf_titanium_bar': {
+    id: 'crf_titanium_bar', name: 'Titanium Bar', type: ItemType.RESOURCE,
+    rank: UniversalRank.C, rarity: Rarity.RARE,
+    weight: 9.0, dimensions: { width: 1, height: 2 }, icon: 'titanium_icon',
+    visuals: { modelId: 'ingot', colorHex: '#e5e7eb' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 18, [MaterialPropertyType.HARDNESS]: 90 },
+    tags: ['crafted', 'metal', 'building']
   }
 };
 

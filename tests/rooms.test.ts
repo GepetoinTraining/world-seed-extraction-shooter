@@ -37,7 +37,7 @@ import { IItem, UniversalRank } from '../types';
 import {
   IRoomState, IRoomPlacement, emptyRoom, interiorSize, roomDoor, roomEntry, roomSolid,
   fullyWalkable, reachableFrom, placementReachable, canBuildPiece, canPlaceItem,
-  builtLotBlocksAt, PIECE_BILLS, SHELL_BILLS, SHELL_STATION, STATION_MIN_AREA,
+  builtLotBlocksAt, PIECE_BILLS, SHELL_BILLS, SHELL_STATION, STATION_MIN_AREA, shellBillFor,
   STATION_FUNCTION
 } from '../src/entities/hub/room';
 // Wave 10B: the presets fold into the template contract — one path, no second.
@@ -370,7 +370,8 @@ describe('construction: materials are consumed exactly once per step', () => {
     const before = stash().length;
     const ok = await useHubStore.getState().buildStructure(lotId, 'WORKSHOP');
     expect(ok).toBe(true);
-    const bill = SHELL_BILLS.WORKSHOP.reduce((n, line) => n + line.count, 0);
+    // D25: this owner's first bench. The bar is unchanged: exactly the bill, exactly once.
+    const bill = shellBillFor('WORKSHOP', false).reduce((n, line) => n + line.count, 0);
     expect(stash().length).toBe(before - bill);
 
     // Not built until the clock says so

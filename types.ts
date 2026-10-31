@@ -238,6 +238,13 @@ export interface ISignedContentPack {
 // 3. THE ITEM CONTRACT
 // ==========================================================================
 
+/**
+ * The raw materials leg (D26): the stats a banked addition acts through when it
+ * stands in a building or a piece of furniture. On gear these lines stay on the
+ * affix's record and off the acting stats; everything else works the other way.
+ */
+export const ROOM_ACTING_STATS = ['upkeep_discount_pct', 'craft_speed_pct'] as const;
+
 export interface IAffix {
   id: string;
   name: string;
@@ -303,6 +310,9 @@ export interface IItem {
   };
 
   isIdentified: boolean;
+
+  /** The raw materials leg (D26): a trade note, whose reading opens what a process adds. */
+  loreData?: { processFamily: string; tier: number };
 
   deedData?: {
     originBiome: string;

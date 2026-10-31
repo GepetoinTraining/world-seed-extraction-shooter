@@ -28,6 +28,8 @@ import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
+import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { IRoomState, roomAdditions } from '../hub/room';
 import { chunkOf } from '../world/grid';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
@@ -89,6 +91,12 @@ interface PlayerState {
   useProtection: (itemId: string, chosenSlot?: EquipSlotId) => Verdict;
   /** 10E (D19): one sitting at a workstation — trains the scoped eye, opens this item's record. */
   studyItemAtStation: (itemId: string) => Verdict;
+  /** D26: a sitting at this room's own bench opens what is worked into its walls. */
+  studyRoomAtStation: (room: IRoomState) => Verdict;
+  /** D26: lore reveals. A trade note read opens the first pool of its trade. */
+  readLore: (itemId: string) => Verdict;
+  /** D6, D26: a finished job is practice. The trade's skill grows, and hands learn. */
+  practiceTrade: (family: ProcessFamily) => void;
   /** 10E (D19): ask the field identify — scoped and ALWAYS timed; the caller runs the clock. */
   fieldIdentify: (itemId: string) => { ok: boolean; reason?: string; seconds?: number };
   /** 10E (D19): the clock ran honestly — reveal the record through the one door. */
@@ -560,6 +568,49 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const level = StudySystem.identifyLevel(get().player, item);
     feed(`Studied ${item.name}. The ${scope} eye stands at ${level}; what was banked on it is open.`, 'proof');
     return { ok: true };
+  },
+
+  studyRoomAtStation: (room) => {
+    const additions = roomAdditions(room);
+    if (additions.length === 0) return { ok: false, reason: 'Nothing was worked into this room. Raw walls hold no maker\'s riddle.' };
+    const unread = additions.filter(a => !LoadoutSystem.isAffixStudied(get().player, a.id));
+    if (unread.length === 0) return { ok: false, reason: 'You have read everything this room holds.' };
+    get().gainSkillXp(StudySystem.scopeSkillId('furniture'), 60, ['study', 'intel'], { tags: ['study'], magnitude: 10 } as any);
+    set(s => ({ player: StudySystem.revealAffixes(s.player, 'furniture', additions) }));
+    feed(`Studied the room. ${unread.length} thing${unread.length === 1 ? '' : 's'} worked into it now read on the card.`, 'proof');
+    return { ok: true };
+  },
+
+  readLore: (itemId) => {
+    const player = get().player;
+    const item = player.bank.stashTabs[0]?.items.find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'That document is not in the stash.' };
+    const data = item.loreData;
+    if (!data) return { ok: false, reason: `${item.name} says what it says. It names no trade.` };
+    const topic = ProcessSystem.noteTopic(data.processFamily);
+    if (player.bank.lore[topic]) return { ok: false, reason: `You have read this already. The ${data.processFamily} it opens is yours.` };
+    set(s => {
+      const revealed = ProcessSystem.revealByLore(s.player, item);
+      return {
+        player: {
+          ...revealed,
+          bank: { ...revealed.bank, lore: { ...revealed.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } } }
+        }
+      };
+    });
+    feed(`Read ${item.name}. What common ${data.processFamily} leaves behind now reads on the card.`, 'proof');
+    return { ok: true };
+  },
+
+  practiceTrade: (family) => {
+    const skill = ProcessSystem.familySkill(family);
+    get().gainSkillXp(skill, PROCESS_SKILL_XP_PER_JOB, ['craft', family], { tags: ['craft', family], magnitude: 5 } as any);
+    const before = get().player;
+    const after = ProcessSystem.revealBySkill(before, family);
+    if (after !== before) {
+      set({ player: after });
+      feed(`Your hands know ${family} better now. What it leaves behind reads on the card.`, 'proof');
+    }
   },
 
   fieldIdentify: (itemId) => {
@@ -1526,13 +1577,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       if (entity.container.hasLore) {
         const fragment = rng.pick(LORE_FRAGMENTS);
-        loot.push({
+        const piece = {
           ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
           type: ItemType.LORE,
           description: fragment,
           value: 50,
           tags: ['lore', 'document']
-        });
+        };
+        // D26: in a world pinned to the additions, some fragments are a trade's own
+        // notes. The choice is its own stream, so nothing above it moves.
+        const trade = ProcessSystem.chestNote(DreamingSystem.active()?.pack.version, rollKey);
+        loot.push(trade
+          ? { ...piece, name: ProcessSystem.noteOf(trade).name, description: ProcessSystem.noteOf(trade).text, loreData: { processFamily: trade, tier: 1 } }
+          : piece);
       }
 
       addToInventory(loot);

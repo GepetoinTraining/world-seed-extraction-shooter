@@ -12,7 +12,9 @@
  * and the same bytes must come out of the same record on every machine.
  */
 
-import { IItem } from '../../../types';
+import { IAffix, IItem, ROOM_ACTING_STATS } from '../../../types';
+import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS } from '../economy/data/recipeDefinitions';
 
 // ---------------------------------------------------------------------------
 // THE CONTRACT
@@ -31,6 +33,9 @@ export interface IRoomPiece {
   /** Wave 10D (additive): the quality of the material that paid the bill, on
    * the one scale. Salvage reads it to know how far the bite has gone. */
   materialQuality?: number;
+  /** The raw materials leg (D26, additive): what the material that paid the bill
+   * carried. It acts from the wall, unseen until studied, and salvage hands it back. */
+  inherited?: IAffix[];
   builtBy: string; // cert uid
   at: number;
   signature?: string;
@@ -53,6 +58,8 @@ export interface IRoomFloorZone {
   name: string;
   tiles: { x: number; y: number }[];
   materialDefId: string;
+  /** D26 (additive): what the floor's material carried. */
+  inherited?: IAffix[];
 }
 
 export interface IRoomState {
@@ -61,6 +68,8 @@ export interface IRoomState {
   size: { w: number; h: number }; // interior, in 20px tiles, perimeter included
   /** Dominant material consumed by the shell build; the perimeter is drawn from it. */
   shellMaterialDefId: string;
+  /** D26 (additive): what the shell's bill carried. A raw-built shell has none. */
+  shellInherited?: IAffix[];
   pieces: IRoomPiece[];
   placements: IRoomPlacement[];
   /** Wave 10B (additive): floor zones from a template's material sheet. */
@@ -271,6 +280,36 @@ export const SHELL_BUILD_SECONDS: Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', number
   HOUSE: 30, WORKSHOP: 45, VENDOR: 60
 };
 
+/**
+ * D25: the first bench is raised from raw materials, so with no bench to its
+ * name an owner's WORKSHOP bill drops every line but the walls. This is the ONE
+ * place that knows about "first". Later stations come through the technology
+ * web (D27), which plugs in beside this: it decides what a further bench asks,
+ * and nothing else here needs to change.
+ */
+export function shellBillFor(type: 'HOUSE' | 'WORKSHOP' | 'VENDOR', ownerHasABench: boolean): { tag: string; count: number }[] {
+  if (type === 'WORKSHOP' && !ownerHasABench) return SHELL_BILLS.WORKSHOP.filter(line => line.tag === 'building');
+  return SHELL_BILLS[type];
+}
+
+/** Does this owner have a bench anywhere: held, placed, on a shelf, standing, or rising? */
+export function ownerHasBench(ownerId: string, world: {
+  lots: { id: string; ownerId: string | null; structureType: string; inventory?: IItem[]; shopListings?: { item: IItem }[] }[];
+  rooms: Record<string, IRoomState>;
+  jobs: { lotId: string; kind: string; structureType?: string; applied: boolean }[];
+  stash: IItem[];
+}): boolean {
+  const isBench = (item: IItem) => item.universalDefinitionId === 'stn_bench';
+  if (world.stash.some(isBench)) return true;
+  return world.lots.filter(lot => lot.ownerId === ownerId).some(lot =>
+    lot.structureType === 'WORKSHOP' ||
+    (lot.inventory ?? []).some(isBench) ||
+    (lot.shopListings ?? []).some(listing => isBench(listing.item)) ||
+    (world.rooms[lot.id]?.placements ?? []).some(place => isBench(place.item)) ||
+    world.jobs.some(job => job.lotId === lot.id && !job.applied && job.kind === 'SHELL' && job.structureType === 'WORKSHOP')
+  );
+}
+
 /** The station each shell mints when its construction completes. */
 export const SHELL_STATION: Partial<Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', string>> = {
   WORKSHOP: 'stn_bench',
@@ -404,16 +443,40 @@ export function builtLotBlocksAt(
 // Wave 10B: presets are SYSTEM TEMPLATES now — one contract, no second path.
 // ---------------------------------------------------------------------------
 
-/** Pick items answering a bill of tags, never the same item twice (IBlueprint's law). */
-export function pickBill(bill: { tag: string; count: number }[], stash: IItem[]): { ok: boolean; items: IItem[]; missing?: string } {
+/**
+ * Does this item answer this tag? Its own tags, or its definition's as they
+ * stand today: D24 gave logs and stone a tag that logs already in a stash were
+ * minted without, and a stored item keeps its bytes.
+ */
+export function answersTag(item: IItem, tag: string): boolean {
+  if ((item.tags || []).includes(tag)) return true;
+  const def = RESOURCE_DEFINITIONS[item.universalDefinitionId] ?? CRAFTED_DEFINITIONS[item.universalDefinitionId];
+  return !!def?.tags?.includes(tag);
+}
+
+/** A material as a picker names it: the definition, never one item's own affixes. Raw says so. */
+export function materialLabel(defId: string): string {
+  const def = RESOURCE_DEFINITIONS[defId] ?? CRAFTED_DEFINITIONS[defId];
+  if (!def) return defId;
+  return (def.tags ?? []).includes('crafted') ? def.name : `${def.name} (raw)`;
+}
+
+/**
+ * Pick items answering a bill of tags, never the same item twice (IBlueprint's
+ * law). `prefer` is the builder's choice (D13): that material pays first.
+ */
+export function pickBill(bill: { tag: string; count: number }[], stash: IItem[], prefer?: string): { ok: boolean; items: IItem[]; missing?: string } {
+  const ordered = prefer
+    ? [...stash.filter(i => i.universalDefinitionId === prefer), ...stash.filter(i => i.universalDefinitionId !== prefer)]
+    : stash;
   const picked: IItem[] = [];
   const taken = new Set<string>();
   for (const line of bill) {
     let need = line.count;
-    for (const item of stash) {
+    for (const item of ordered) {
       if (need === 0) break;
       if (taken.has(item.id)) continue;
-      if ((item.tags || []).includes(line.tag)) { picked.push(item); taken.add(item.id); need--; }
+      if (answersTag(item, line.tag)) { picked.push(item); taken.add(item.id); need--; }
     }
     if (need > 0) return { ok: false, items: [], missing: `${need} more ${line.tag}` };
   }
@@ -431,6 +494,37 @@ export const TAG_DEFAULT_MATERIAL: Record<string, string> = {
   glass: 'crf_glass',
   metal: 'crf_iron_ingot'
 };
+
+// ---------------------------------------------------------------------------
+// WHAT A ROOM INHERITS (the raw materials leg, D26): processes reach buildings
+// and furniture. The record is on the shell, the pieces, the floors and whatever
+// stands in the room; it acts whether or not anyone has studied it (D19).
+// ---------------------------------------------------------------------------
+
+/** Each addition in a room, wherever it sits. A room with none has none: nothing changes. */
+export function roomAdditions(room: IRoomState): IAffix[] {
+  return [
+    ...(room.shellInherited ?? []),
+    ...room.pieces.flatMap(p => p.inherited ?? []),
+    ...(room.floorZones ?? []).flatMap(z => z.inherited ?? []),
+    ...room.placements.flatMap(p => p.item.affixes ?? [])
+  ];
+}
+
+export const ROOM_UPKEEP_CAP_PCT = 40;
+export const ROOM_SPEED_CAP_PCT = 30;
+
+/** The sum of what a room's additions do. Downside counts too (D19), and both have a ceiling. */
+export function roomProcessBonus(room: IRoomState): { upkeepDiscountPct: number; craftSpeedPct: number; additions: number } {
+  const additions = roomAdditions(room);
+  const sum = (stat: typeof ROOM_ACTING_STATS[number]) =>
+    additions.reduce((n, a) => n + (a.stats?.[stat] ?? 0), 0);
+  return {
+    upkeepDiscountPct: Math.round(Math.min(ROOM_UPKEEP_CAP_PCT, sum('upkeep_discount_pct')) * 100) / 100,
+    craftSpeedPct: Math.round(Math.min(ROOM_SPEED_CAP_PCT, sum('craft_speed_pct')) * 100) / 100,
+    additions: additions.length
+  };
+}
 
 // The NPC presets and their room composition live in template.ts (Wave 10B):
 // IRoomPreset, ROOM_PRESETS, presetToRoom — each preset rides a SYSTEM TEMPLATE.

@@ -20,7 +20,8 @@
 import { IItem, IPlayer, ItemType, SlotType } from '../../../types';
 import { Verdict } from '../../entities/player/systems/LoadoutSystem';
 
-export type IdentifyScope = 'weapon' | 'armor' | 'tool';
+/** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
+export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';
 
 /** Workstation study: the time one sitting takes, on the record. */
 export const STUDY_SECONDS = 20;
@@ -39,7 +40,9 @@ export class StudySystem {
     if (item.toolData || item.slot === SlotType.TOOL || tags.includes('tool')) return 'tool';
     // a cart kit is a working rig, not a coat: the tool eye reads it (found in play)
     if (item.cartData) return 'tool';
-    if (item.type !== ItemType.GEAR) return null;
+    if (item.type === ItemType.STRUCTURE) return 'furniture';
+    // A material with something worked or dreamed into it holds a riddle. Plain cargo does not.
+    if (item.type !== ItemType.GEAR) return (item.affixes?.length ?? 0) > 0 ? 'material' : null;
     if (item.slot === SlotType.MAIN_HAND || item.slot === SlotType.OFF_HAND || tags.includes('weapon')) return 'weapon';
     return 'armor';
   }
@@ -83,11 +86,15 @@ export class StudySystem {
    * ledger. Study shows exactly what was banked; it never invents a number.
    */
   static reveal(player: IPlayer, item: IItem): IPlayer {
-    const scope = this.identifyScopeOf(item) ?? 'armor';
+    return this.revealAffixes(player, this.identifyScopeOf(item) ?? 'armor', item.affixes || []);
+  }
+
+  /** The same reveal for whatever holds affixes: an item, or the walls of a room (D26). */
+  static revealAffixes(player: IPlayer, scope: IdentifyScope, affixes: { id: string }[]): IPlayer {
     const key = this.masteryKeyOf(scope);
     const prior = player.materialMastery[key] ?? { resourceId: key, knowledgeLevel: 0, discoveredAffixes: [] };
     const discovered = new Set(prior.discoveredAffixes);
-    for (const affix of item.affixes || []) discovered.add(affix.id);
+    for (const affix of affixes) discovered.add(affix.id);
     return {
       ...player,
       materialMastery: {

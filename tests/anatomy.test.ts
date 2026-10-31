@@ -278,13 +278,12 @@ describe('the chain sets the worth', () => {
     const lotId = useHubStore.getState().lots[0].id;
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 20000 } } }));
     await useHubStore.getState().buyLot(lotId);
-    // the shell bill eats everything granted (6 building + 2 metal); the maul's
-    // own inputs are then MADE through the real chain: fell -> mill, mine -> smelt
+    // the shell bill eats everything granted (a first bench: 6 building, D25); the
+    // maul's own inputs are then MADE through the real chain: fell -> mill, mine -> smelt
     grantStash([
       mintRes('crf_plank', 'bars:m1'), mintRes('crf_plank', 'bars:m2'),
       mintRes('crf_plank', 'bars:m4'), mintRes('crf_plank', 'bars:m5'),
       mintRes('crf_plank', 'bars:m6'), mintRes('crf_plank', 'bars:m7'),
-      mintRes('crf_iron_ingot', 'bars:m10'), mintRes('crf_iron_ingot', 'bars:m11'),
       mintRes('res_tree_log', 'bars:mlog'),
       mintRes('res_iron_vein', 'bars:mo1'), mintRes('res_iron_vein', 'bars:mo2')
     ]);
@@ -546,7 +545,8 @@ describe('the gold and item audit balances across the itemization economy', () =
     const minted: IItem[] = [
       mintRes('res_tree_log', 'audit:l1'), mintRes('res_tree_log', 'audit:l2'),
       mintRes('res_rock_small', 'audit:s1'), mintRes('res_rock_small', 'audit:s2'),
-      // the WORKSHOP shell eats 6 building + 2 metal
+      // the WORKSHOP shell eats 6 building, named below: logs and stones answer
+      // that bill too since D24, and these two logs and stones have work to do
       mintRes('crf_plank', 'audit:p1'), mintRes('crf_plank', 'audit:p2'),
       mintRes('crf_plank', 'audit:p3'), mintRes('crf_plank', 'audit:p4'),
       mintRes('crf_plank', 'audit:p5'), mintRes('crf_plank', 'audit:p6'),
@@ -555,7 +555,7 @@ describe('the gold and item audit balances across the itemization economy', () =
     grantStash(minted);
 
     await hub().buyLot(lotId);                                 // 5000 to the treasury
-    await hub().buildStructure(lotId, 'WORKSHOP');             // permit + shell bill
+    await hub().buildStructure(lotId, 'WORKSHOP', 'crf_plank'); // permit + shell bill
     useHubStore.setState(s => ({ buildJobs: (s as any).buildJobs.map((j: any) => ({ ...j, finishesAt: 0 })) } as any));
     await hub().resolveBuilds();
 

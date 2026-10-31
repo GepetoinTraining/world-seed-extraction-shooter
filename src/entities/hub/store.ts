@@ -20,8 +20,9 @@ import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
 import { CertificateSystem } from '../identity/certificateSystem';
 import { useIdentityStore } from '../identity/store';
 import {
-  IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill, salvageFor,
-  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BILLS, SHELL_BUILD_SECONDS, SHELL_STATION, TAG_DEFAULT_MATERIAL
+  IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill, salvageFor, answersTag,
+  ownerHasBench, roomProcessBonus, shellBillFor,
+  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, TAG_DEFAULT_MATERIAL
 } from './room';
 import { ITemplate, ITemplateSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from './template';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
@@ -31,6 +32,7 @@ import { genreForWorld } from '../../render/atoms/world';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on the latest law
 import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
+import { PROCESS_FAMILIES, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
@@ -72,6 +74,10 @@ export interface ICraftJob {
   consumed?: { defId: string; name: string; composition?: IComposition; affixes?: IAffix[] }[];
   /** Wave 10E (D6): the maker's own name — honored only at rank S and above. */
   customName?: string;
+  /** The raw materials leg (D26): the bank this job was queued under. It draws
+   * what the step adds from THAT pack, so a later batch cannot change what it
+   * mints. A job queued before this law has none, and mints as it always would. */
+  processPack?: number;
 }
 
 /** Logical world-day (observed time, never stored clocks). */
@@ -84,13 +90,16 @@ export interface IBuildJob {
   lotId: string;
   kind: 'SHELL' | 'PIECE';
   structureType?: 'HOUSE' | 'WORKSHOP' | 'VENDOR';
-  piece?: { kind: RoomPieceKind; x: number; y: number; materialDefId: string; materialQuality?: number };
+  piece?: { kind: RoomPieceKind; x: number; y: number; materialDefId: string; materialQuality?: number; inherited?: IAffix[] };
   ownerCertUid: string;
   queuedAt: number;
   finishesAt: number;
   applied: boolean;
   consumedIds: string[];
   consumedDefIds: string[];
+  /** The raw materials leg (D26): what the shell's bill carried. The shell records
+   * it and the station it mints inherits it. */
+  inherited?: IAffix[];
   /** The owner's signature over the queued record: every completed step is signed. */
   signature?: string;
   /** Wave 10B: jobs raised together from one template share its item id. */
@@ -100,6 +109,8 @@ export interface IBuildJob {
     itemId: string;
     data: ITemplate;
     sheet: ITemplateSheet;
+    /** D26: what each floor zone's material carried, by zone name. */
+    zonesInherited?: Record<string, IAffix[]>;
   };
 }
 
@@ -107,6 +118,12 @@ const dominantDefId = (defIds: string[]): string => {
   const counts = new Map<string, number>();
   for (const id of defIds) counts.set(id, (counts.get(id) || 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'crf_plank';
+};
+
+/** What these consumed goods carried, each addition once. Nothing at all stays absent from the record. */
+const inheritedOf = (items: IItem[]): IAffix[] | undefined => {
+  const carried = ProcessSystem.inherit(items.flatMap(i => i.affixes ?? []));
+  return carried.length > 0 ? carried : undefined;
 };
 
 /** The owner signs the record. No certificate, no signature — the record still stands, unsigned. */
@@ -196,7 +213,10 @@ interface HubState {
 
   // Wave 5: society
   buyLot: (lotId: string) => Promise<boolean>;
-  buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR') => Promise<boolean>;
+  /** `material` is the builder's choice (D13): that material pays first. */
+  buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR', material?: string) => Promise<boolean>;
+  /** D25: what this shell asks of this owner, right now. A first WORKSHOP asks no metal. */
+  shellBillNow: (type: 'HOUSE' | 'WORKSHOP' | 'VENDOR') => { tag: string; count: number }[];
   // Wave 10: construction and placement
   resolveBuilds: () => Promise<number>;
   // Wave 10B: raise a house from a template, materials chosen per element class
@@ -383,7 +403,13 @@ export const useHubStore = create<HubState>((set, get) => ({
    * treasury); the walls are materials, consumed from the stash exactly once,
    * at queue time; the building finishes on the clock (resolveBuilds).
    */
-  buildStructure: async (lotId, type) => {
+  shellBillNow: (type) => {
+    const { lots, rooms, buildJobs } = get();
+    const p = usePlayerStore.getState().player;
+    return shellBillFor(type, ownerHasBench(p.id, { lots, rooms, jobs: buildJobs, stash: p.bank.stashTabs[0]?.items || [] }));
+  },
+
+  buildStructure: async (lotId, type, material) => {
     const { lots, activeHubId, buildJobs, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const p = usePlayerStore.getState().player;
@@ -407,7 +433,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       return false;
     }
     const stash = p.bank.stashTabs[0]?.items || [];
-    const bill = pickBill(SHELL_BILLS[type], stash);
+    const bill = pickBill(get().shellBillNow(type), stash, material);
     if (!bill.ok) {
       console.log(`[BUILD] The bill is short: ${bill.missing}. Bring the materials.`);
       return false;
@@ -427,7 +453,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       finishesAt: Date.now() + SHELL_BUILD_SECONDS[type] * 1000,
       applied: false,
       consumedIds: bill.items.map(i => i.id),
-      consumedDefIds: bill.items.map(i => i.universalDefinitionId)
+      consumedDefIds: bill.items.map(i => i.universalDefinitionId),
+      inherited: inheritedOf(bill.items)
     };
     job.signature = await signRecord({ kind: 'SHELL', lotId, structureType: type, consumedIds: job.consumedIds, at: job.queuedAt });
 
@@ -470,18 +497,23 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!sized.ok) return sized;
 
     // D13: one material per element class, each carrying the class's tag.
-    const bill = templateBill(tpl, sheet);
+    const firstBench = tpl.structureType === 'WORKSHOP' &&
+      !ownerHasBench(p.id, { lots, rooms: get().rooms, jobs: buildJobs, stash });
+    const bill = templateBill(tpl, sheet, firstBench);
     const defName = (defId: string) => (CRAFTED_DEFINITIONS[defId] ?? RESOURCE_DEFINITIONS[defId])?.name ?? defId;
     const picked: IItem[] = [];
     const taken = new Set<string>();
+    // D26: each class remembers its own items, so each thing built inherits what paid for it
+    const byClass: Record<string, IItem[]> = {};
     for (const line of bill.choices) {
       const candidates = stash.filter(i => i.universalDefinitionId === line.defId && !taken.has(i.id) && i.id !== templateItemId);
-      if (candidates[0] && !(candidates[0].tags || []).includes(line.tag)) {
+      if (candidates[0] && !answersTag(candidates[0], line.tag)) {
         return { ok: false, reason: `${line.cls} ask for something ${line.tag}; ${defName(line.defId)} is not.` };
       }
       if (candidates.length < line.count) {
         return { ok: false, reason: `The bill is short: ${line.count - candidates.length} more ${defName(line.defId)} for ${line.cls}.` };
       }
+      byClass[line.cls] = candidates.slice(0, line.count);
       for (let i = 0; i < line.count; i++) { picked.push(candidates[i]); taken.add(candidates[i].id); }
     }
     for (const line of bill.tagLines) {
@@ -503,7 +535,18 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     const now = Date.now();
     const jobs: IBuildJob[] = [];
-    const shellIds = picked.filter(i => i.universalDefinitionId === sheet.WALL || bill.tagLines.some(l => (i.tags || []).includes(l.tag))).map(i => i.id);
+    const shellIds = picked.filter(i => i.universalDefinitionId === sheet.WALL || bill.tagLines.some(l => answersTag(i, l.tag))).map(i => i.id);
+    // The walls' bill pays the shell first, then each inner wall in the plan's order.
+    const shellWalls = bill.choices.find(c => c.cls === 'WALLS')!.count - tpl.pieces.filter(pc => pc.kind === 'WALL').length;
+    const wallItems = [...(byClass['WALLS'] ?? [])];
+    const shellItems = wallItems.splice(0, shellWalls);
+    const doorItems = [...(byClass['DOORS'] ?? [])];
+    const windowItems = [...(byClass['WINDOWS'] ?? [])];
+    const zonesInherited: Record<string, IAffix[]> = {};
+    for (const zone of tpl.zones) {
+      const carried = inheritedOf(byClass[`FLOOR: ${zone.name}`] ?? []);
+      if (carried) zonesInherited[zone.name] = carried;
+    }
     const shellFinish = now + SHELL_BUILD_SECONDS[tpl.structureType] * 1000;
     const shellJob: IBuildJob = {
       id: `bld_${now.toString(36)}_tpl_${lot.lotIndex}`,
@@ -517,7 +560,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       consumedIds: shellIds,
       consumedDefIds: [sheet.WALL],
       batch: templateItemId,
-      template: { itemId: templateItemId, data: tpl, sheet }
+      inherited: inheritedOf(shellItems),
+      template: { itemId: templateItemId, data: tpl, sheet, ...(Object.keys(zonesInherited).length > 0 ? { zonesInherited } : {}) }
     };
     shellJob.signature = await signRecord({ kind: 'TEMPLATE_SHELL', lotId, template: tpl.name, authorUid: tpl.authorUid, sheet, consumedIds: shellIds, at: now });
     jobs.push(shellJob);
@@ -527,11 +571,13 @@ export const useHubStore = create<HubState>((set, get) => ({
     tpl.pieces.forEach((piece, i) => {
       finish += PIECE_BUILD_SECONDS[piece.kind] * 1000;
       const materialDefId = piece.kind === 'WINDOW' ? sheet.WINDOW : piece.kind === 'DOOR' ? sheet.DOOR : sheet.WALL;
+      const paid = (piece.kind === 'WINDOW' ? windowItems : piece.kind === 'DOOR' ? doorItems : wallItems).shift();
+      const inherited = paid ? inheritedOf([paid]) : undefined;
       jobs.push({
         id: `bld_${now.toString(36)}_tpl_${lot.lotIndex}_${i}`,
         lotId,
         kind: 'PIECE',
-        piece: { kind: piece.kind, x: piece.x, y: piece.y, materialDefId },
+        piece: { kind: piece.kind, x: piece.x, y: piece.y, materialDefId, ...(inherited ? { inherited } : {}) },
         ownerCertUid: p.id,
         queuedAt: now,
         finishesAt: finish,
@@ -576,7 +622,8 @@ export const useHubStore = create<HubState>((set, get) => ({
             room.floorZones = tpl.zones.map(z => ({
               name: z.name,
               tiles: z.tiles.map(t => ({ ...t })),
-              materialDefId: job.template!.sheet.zones[z.name] ?? TAG_DEFAULT_MATERIAL.building
+              materialDefId: job.template!.sheet.zones[z.name] ?? TAG_DEFAULT_MATERIAL.building,
+              ...(job.template!.zonesInherited?.[z.name] ? { inherited: job.template!.zonesInherited[z.name] } : {})
             }));
           }
           room.template = { itemId: job.template.itemId, name: tpl.name, authorUid: tpl.authorUid, authorName: tpl.authorName };
@@ -585,6 +632,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           const footprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
           room = emptyRoom(job.lotId, footprint, dominantDefId(job.consumedDefIds));
         }
+        if (job.inherited?.length) room.shellInherited = job.inherited;
         set({
           lots: get().lots.map(l => l.id === job.lotId ? { ...l, structureType: job.structureType!, upkeepPaidThroughDay: worldDay() } : l),
           rooms: { ...get().rooms, [job.lotId]: room }
@@ -592,7 +640,8 @@ export const useHubStore = create<HubState>((set, get) => ({
         // The structure brings its station: an item like any other, into the stash.
         const stationDefId = SHELL_STATION[job.structureType];
         if (stationDefId) {
-          const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION' });
+          // D26: a station inherits its shell. Raw walls hand on nothing: nothing was worked.
+          const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION', affixes: ProcessSystem.inherit(job.inherited ?? []) });
           addToStash([station]);
           const { Provenance } = await import('../../logic/sovereignty/Provenance');
           await Provenance.record(station, 'MINT', { origin: 'CONSTRUCTION', jobId: job.id, lotId: job.lotId, structure: job.structureType });
@@ -613,6 +662,7 @@ export const useHubStore = create<HubState>((set, get) => ({
                   y: job.piece.y,
                   materialDefId: job.piece.materialDefId,
                   materialQuality: job.piece.materialQuality,
+                  ...(job.piece.inherited?.length ? { inherited: job.piece.inherited } : {}),
                   builtBy: job.ownerCertUid,
                   at: job.finishesAt,
                   signature: job.signature
@@ -652,13 +702,14 @@ export const useHubStore = create<HubState>((set, get) => ({
     const material = stash.find(i => i.id === materialItemId);
     const bill = PIECE_BILLS[kind];
     if (!material) return { ok: false, reason: 'That material is not in your stash.' };
-    if (!(material.tags || []).includes(bill.tag)) {
+    if (!answersTag(material, bill.tag)) {
       return { ok: false, reason: `A ${kind.toLowerCase()} asks for something ${bill.tag}; ${material.name} is not.` };
     }
     const picked = pickBill([bill], [material, ...stash.filter(i => i.id !== material.id && i.universalDefinitionId === material.universalDefinitionId)]);
     if (!picked.ok) return { ok: false, reason: `A ${kind.toLowerCase()} takes ${bill.count}x ${bill.tag}; you hold less.` };
 
     removeFromStash(picked.items.map(i => i.id));
+    const inherited = inheritedOf(picked.items);
     const job: IBuildJob = {
       id: `bld_${Date.now().toString(36)}_${x}_${y}`,
       lotId,
@@ -667,7 +718,9 @@ export const useHubStore = create<HubState>((set, get) => ({
         kind, x, y, materialDefId: material.universalDefinitionId,
         // Wave 10D: the material's quality rides the piece, so salvage knows
         // how far the bite has already gone.
-        materialQuality: Math.abs(material.quality) <= 1 ? material.quality : 0
+        materialQuality: Math.abs(material.quality) <= 1 ? material.quality : 0,
+        // The raw materials leg (D26): what the material carried stays in the wall.
+        ...(inherited ? { inherited } : {})
       },
       ownerCertUid: p.id,
       queuedAt: Date.now(),
@@ -701,7 +754,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const def = (CRAFTED_DEFINITIONS[salvage.defId] ?? RESOURCE_DEFINITIONS[salvage.defId]) as any;
     const salvaged: IItem[] = def
       ? Array.from({ length: salvage.count }, (_, i) =>
-          ItemFactory.createResourceItem(def, Rng.fromKey(`${lotId}:${pieceId}:salvage:${i}`), { origin: 'SALVAGE', quality: salvage.quality }))
+          ItemFactory.createResourceItem(def, Rng.fromKey(`${lotId}:${pieceId}:salvage:${i}`), { origin: 'SALVAGE', quality: salvage.quality, affixes: ProcessSystem.inherit(piece.inherited ?? []) }))
       : [];
     if (salvaged.length > 0) {
       addToStash(salvaged);
@@ -858,7 +911,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     // records the recipe's own labor — the bench is a convenience, not a chain fact.
     const room = get().rooms[lotId];
     const mono = room ? monoMaterialOf(room) : null;
-    const speedPct = (mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0;
+    // D26: and what is worked into the room and its furniture acts here, studied or not.
+    const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
     const effectiveSeconds = Math.max(1, Math.round(laborSeconds * (1 - speedPct / 100)));
 
     const job: ICraftJob = {
@@ -870,6 +924,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       finishesAt: Date.now() + effectiveSeconds * 1000,
       collected: false,
       consumed,
+      processPack: AffixBank.version(),
       ...(customName?.trim() ? { customName: customName.trim() } : {})
     };
     set({ craftingJobs: [...get().craftingJobs, job] });
@@ -905,6 +960,17 @@ export const useHubStore = create<HubState>((set, get) => ({
         : nominalInputs.map(defId => CompositionSystem.root(
             { id: defId, name: (CRAFTED_DEFINITIONS[defId] ?? RESOURCE_DEFINITIONS[defId])?.name ?? defId }, 'HARVEST'));
 
+      // The raw materials leg (D26): what this step adds. A job from before the law
+      // draws nothing, and an improvised making never reaches this door.
+      const family = ProcessSystem.familyOfRecipe(job.recipeId);
+      const pack = job.processPack ? AffixBank.packAt(job.processPack) : null;
+      const consumedAffixes = (job.consumed ?? []).flatMap(c => c.affixes ?? []);
+      const consumedGoods = (job.consumed ?? []).map(c => CRAFTED_DEFINITIONS[c.defId] ?? RESOURCE_DEFINITIONS[c.defId] ?? {});
+      const stepAffixes = (outDef: { rank?: UniversalRank; rarity?: any }, key: string): IAffix[] =>
+        family && pack
+          ? ProcessSystem.stepAffixes(pack, family, ProcessSystem.openTierOf([outDef, ...consumedGoods]), consumedAffixes, Rng.fromKey(`${job.id}:process:${key}`))
+          : [];
+
       const outputs: IItem[] = [];
       if (recipe) {
         const nominalYield = recipe.outputs.reduce((n, o) => n + o.quantity, 0);
@@ -917,7 +983,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           const rng = Rng.fromKey(`${job.id}:out:${oi}`);
           if (rng.next() <= out.probability) {
             for (let q = 0; q < out.quantity; q++) {
-              const item = ItemFactory.createResourceItem(def, rng);
+              const item = ItemFactory.createResourceItem(def, rng, { affixes: stepAffixes(def, `${oi}:${q}`) });
               item.composition = composition;
               item.value = CompositionSystem.priceOf(composition);
               outputs.push(item);
@@ -930,8 +996,10 @@ export const useHubStore = create<HubState>((set, get) => ({
           inputComps, 1);
         // Wave 10E (D6): the components' affixes ride onto the item they make,
         // and a rank S+ making takes the maker's own name.
+        const base = CRAFTED_GEAR_BASES.find(b => b.id === gearRecipe!.outputBase);
+        const drawn = stepAffixes({ rank: base?.rank }, 'gear');
         const item = ItemFactory.createComposedItem(gearRecipe!.outputBase, composition, Rng.fromKey(`${job.id}:gear`), {
-          inheritedAffixes: (job.consumed ?? []).flatMap(c => c.affixes ?? []),
+          inheritedAffixes: drawn.length > 0 ? drawn : consumedAffixes,
           customName: job.customName
         });
         if (item) outputs.push(item);
@@ -943,6 +1011,9 @@ export const useHubStore = create<HubState>((set, get) => ({
         ) } }
       }));
       minted += outputs.length;
+      // D6, D26: the doing teaches. Practice grows the trade's own skill, and hands
+      // that have done the work come to know what it leaves.
+      if (family && outputs.length > 0) usePlayerStore.getState().practiceTrade(family);
       await Ledger.append('CRAFT', { kind: 'COLLECTED', jobId: job.id, outputIds: outputs.map(o => o.id) });
       // Wave 6.2: crafted goods carry their maker's signature from birth —
       // Wave 10D: and the signed record carries the composition's own hash.
@@ -1100,8 +1171,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       // Wave 10D (D13's numbers): a mono-material house stands cheaper.
       const lotRoom = get().rooms[lot.id];
       const mono = lotRoom ? monoMaterialOf(lotRoom) : null;
-      const discount = (mono ? setBonusFor(mono)?.upkeepDiscountPct : 0) || 0;
-      if (discount > 0) rate = Math.max(1, Math.round(rate * (1 - discount / 100)));
+      // D26: and what is worked into the walls and the furniture acts here, studied or not.
+      const discount = ((mono ? setBonusFor(mono)?.upkeepDiscountPct : 0) || 0) + (lotRoom ? roomProcessBonus(lotRoom).upkeepDiscountPct : 0);
+      if (discount !== 0) rate = Math.max(1, Math.round(rate * (1 - discount / 100)));
       const cost = rate * owed;
       const isLocal = lot.ownerId === p.id;
       const canPay = isLocal && usePlayerStore.getState().player.bank.gold >= cost;
@@ -1202,6 +1274,22 @@ export const useHubStore = create<HubState>((set, get) => ({
             stock: rng.int(3, 10)
           };
         }),
+        // The raw materials leg (D26): lore reveals. Two trades' notes on the shelf,
+        // which two keyed by the day, so a note is worth coming back for.
+        ...[...PROCESS_FAMILIES]
+          .sort((a, b) => Rng.fromKey(`${hubId}:shop:${dayIndex}:note_order:${a}`).next() - Rng.fromKey(`${hubId}:shop:${dayIndex}:note_order:${b}`).next())
+          .slice(0, 2)
+          .map(family => {
+            const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:trade_note:${family}`);
+            const item = ProcessSystem.tradeNote(family, rng);
+            return {
+              id: `listing_note_${family}`,
+              item,
+              price: item.value,
+              vendorId: 'vendor_sys',
+              stock: rng.int(1, 3)
+            };
+          }),
         // Wave 10E (D21): insurance on the shelf — the charms; scrolls are also
         // WRITTEN at any scribe's table for paper and ink (D14's hook, kept).
         ...['chm_clasp', 'chm_knot'].map((defId, i) => {

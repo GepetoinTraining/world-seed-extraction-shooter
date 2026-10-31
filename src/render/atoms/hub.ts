@@ -11,6 +11,7 @@ import { IHubLayout, IPOI, POIType, ZoneType, HubGenerator } from '../../entitie
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
 import { Genre, Ink, Role, Sprite, hash2, isqrt, material, px, seal, stamp } from './atoms';
 import { castFigure } from './people';
+import { RawWallKind, rawAtom } from './room';
 import { HUB_TILE_PX } from '../../entities/hub/HubCanvas.constants';
 
 export const HUB_TILE = HUB_TILE_PX / 2;
@@ -193,6 +194,7 @@ export function emblem(type: POIType, s = 12): Sprite {
 
 export const LOT_STATES = ['FOR_SALE', 'OWNED_EMPTY', 'UNDER_CONSTRUCTION', 'HOUSE', 'WORKSHOP', 'VENDOR', 'FORECLOSED'] as const;
 export type LotState = typeof LOT_STATES[number];
+export type RawFacade = RawWallKind;
 
 function lotInk(state: LotState): Ink {
   const k = new Ink();
@@ -224,7 +226,7 @@ function lotInk(state: LotState): Ink {
  * blocks exactly this footprint), a hard void seam all round, and a doorway
  * at the bottom centre — the way in that 10.2 opens.
  */
-function builtLotArt(state: 'HOUSE' | 'WORKSHOP' | 'VENDOR', w: number, h: number, seed: number): Sprite {
+function builtLotArt(state: 'HOUSE' | 'WORKSHOP' | 'VENDOR', w: number, h: number, seed: number, raw?: RawFacade): Sprite {
   const data = new Uint8Array(w * h);
   const facade = Math.max(12, (h * 3) >> 3);
   const roofH = h - facade;
@@ -255,10 +257,11 @@ function builtLotArt(state: 'HOUSE' | 'WORKSHOP' | 'VENDOR', w: number, h: numbe
     if (edge) v = px(Role.VOID, 0);
     else if (y < roofH) v = y === roofH - 1 ? px(Role.VOID, 0) : y === 1 ? px(Role.MATTER, 3) : roofAtom(x, y);
     else {
-      v = (y - roofH) % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1);
+      v = raw ? rawAtom(raw, Role.MATTER, x, y, seed) : (y - roofH) % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1);
       const wy = y - roofH - 3;
       const inDoor = x >= doorX0 - 1 && x < doorX0 + doorW + 1;
-      if (!inDoor && wy >= 0 && wy < 5 && x > 2 && x < w - 3 && (x - 3) % 8 < 5) {
+      // A raw building has walls and a door. Its first window waits for glass.
+      if (!raw && !inDoor && wy >= 0 && wy < 5 && x > 2 && x < w - 3 && (x - 3) % 8 < 5) {
         v = (x - 3) % 8 === 2 ? px(Role.MATTER, 2) : px(Role.LIFE, 4);
       }
       if (inDoor) {
@@ -300,9 +303,9 @@ function constructionLotArt(w: number, h: number, seed: number, progress: number
   return { w, h, data };
 }
 
-export function lotArt(state: LotState, w: number, h: number, seed: number, progress = 0): Sprite {
+export function lotArt(state: LotState, w: number, h: number, seed: number, progress = 0, facade?: RawFacade): Sprite {
   if (state === 'UNDER_CONSTRUCTION') return constructionLotArt(w, h, seed, progress);
-  if (state === 'HOUSE' || state === 'WORKSHOP' || state === 'VENDOR') return builtLotArt(state, w, h, seed);
+  if (state === 'HOUSE' || state === 'WORKSHOP' || state === 'VENDOR') return builtLotArt(state, w, h, seed, facade);
   const s = Math.min(w, h) - 2;
   const sprite = stamp(lotInk(state), s, material({ density: 40, hardness: 50 }), fnv1a(`lot:v1:${state}`), {
     role: state === 'FORECLOSED' ? Role.LOSS : Role.MATTER, edgeStep: 3, minFill: 1, maxFill: 2
@@ -410,7 +413,7 @@ function blit(data: Uint8Array, W: number, s: Sprite, x0: number, y0: number) {
 }
 
 /** Floors, light and everything solid. What this draws as solid is what the navmesh blocks. */
-export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}): Sprite {
+export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}, facades: Partial<Record<number, RawFacade>> = {}): Sprite {
   const W = layout.width * HUB_TILE, H = layout.height * HUB_TILE;
   const data = new Uint8Array(W * H);
   const zoneOf: (ZoneType | null)[] = [];
@@ -443,7 +446,8 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
       lots[p.metadata.lotIndex] ?? 'FOR_SALE',
       p.size.width * HUB_TILE, p.size.height * HUB_TILE,
       p.metadata.lotIndex,
-      construction[p.metadata.lotIndex] ?? 0
+      construction[p.metadata.lotIndex] ?? 0,
+      facades[p.metadata.lotIndex]
     );
     blit(data, W, art, p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });
@@ -461,11 +465,13 @@ export interface HubOptions {
   lots?: Partial<Record<number, LotState>>;
   /** Wave 10B: per-lot construction progress (0..1), read by shape on the scaffold. */
   construction?: Partial<Record<number, number>>;
+  /** The raw materials leg: a lot whose walls are raw draws them from the street. */
+  facades?: Partial<Record<number, RawFacade>>;
 }
 
 /** The whole city: ground, signs, and the cast standing at their doors. */
 export function composeHub(layout: IHubLayout, o: HubOptions = {}): Sprite {
-  const ground = hubGround(layout, o.frame ?? 0, o.lots, o.construction);
+  const ground = hubGround(layout, o.frame ?? 0, o.lots, o.construction, o.facades);
   const { data, w: W } = ground;
   allPois(layout).filter(p => isBuilding(p) || p.type === POIType.PORTAL).forEach(p => {
     if (!p.npcId) return;

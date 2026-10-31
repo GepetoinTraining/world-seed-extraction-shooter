@@ -10,15 +10,15 @@ import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
 import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
-import { HUB_GENRE, composeHub, LotState, doorOf } from '../../render/atoms/hub';
-import { composeRoom } from '../../render/atoms/room';
+import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
+import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
   IRoomState, RoomPieceKind, STATION_FUNCTION, PIECE_BILLS, PIECE_BUILD_SECONDS,
-  builtLotBlocksAt, roomDoor, roomEntry, roomSolid
+  answersTag, builtLotBlocksAt, materialLabel, roomAdditions, roomDoor, roomEntry, roomSolid
 } from './room';
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
-import { inspectTemplateRoom } from '../../render/atoms/inspect';
+import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
@@ -28,8 +28,10 @@ import { Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteVie
 import { useAppView, useFeed } from '../../components/ui/stores';
 import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
+import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
-import { ItemType } from '../../../types';
+import { IItem, ItemType } from '../../../types';
 
 const TILE_SIZE = HUB_TILE_PX;
 const VIEWPORT_TILES = HUB_VIEW_TILES;
@@ -76,6 +78,7 @@ export const HubCanvas: React.FC = () => {
   const [insideLotId, setInsideLotId] = useState<string | null>(null);
   const [roomTile, setRoomTile] = useState({ x: 0, y: 0 });
   const [buildKind, setBuildKind] = useState<RoomPieceKind | null>(null);
+  const [buildMatDef, setBuildMatDef] = useState('');
   const [placeSelId, setPlaceSelId] = useState<string>('');
   const [stationPanel, setStationPanel] = useState<'WORKSHOP' | 'VENDOR' | 'SCRIBE' | null>(null);
   const roomPosRef = useRef({ x: 0, y: 0 });
@@ -286,11 +289,17 @@ export const HubCanvas: React.FC = () => {
 
   const stashItems = player.bank.stashTabs[0]?.items || [];
 
+  // D13: the builder's choice of material, falling back to the first thing that answers.
+  const buildMaterialFor = (kind: RoomPieceKind) => {
+    const answers = stashItems.filter(i => answersTag(i, PIECE_BILLS[kind].tag));
+    return answers.find(i => i.universalDefinitionId === buildMatDef) ?? answers[0];
+  };
+
   const buildAhead = async (kind: RoomPieceKind) => {
     const lotId = insideLotIdRef.current;
     if (!lotId) return;
     const bill = PIECE_BILLS[kind];
-    const material = stashItems.find(i => (i.tags || []).includes(bill.tag));
+    const material = buildMaterialFor(kind);
     if (!material) { pushFeed(`The bill asks for something ${bill.tag}; the stash has none.`, 'loss'); return; }
     const t = aheadTile();
     const res = await useHubStore.getState().queuePiece(lotId, kind, t.x, t.y, material.id);
@@ -324,7 +333,7 @@ export const HubCanvas: React.FC = () => {
     const piece = room?.pieces.find(pc => pc.x === t.x && pc.y === t.y);
     if (!piece) { pushFeed('Nothing built on the tile ahead.', 'loss'); return; }
     const ok = await useHubStore.getState().demolishPiece(lotId, piece.id);
-    pushFeed(ok ? `${piece.kind} taken down. The materials are spent; the ledger remembers.` : 'It would not come down.', ok ? 'plain' : 'loss');
+    pushFeed(ok ? `${piece.kind} taken down. The bill comes back in your stash, worn by the work.` : 'It would not come down.', ok ? 'plain' : 'loss');
   };
 
   const workStation = () => {
@@ -389,7 +398,12 @@ export const HubCanvas: React.FC = () => {
   const lotStates = useMemo(() => {
     const states: Partial<Record<number, LotState>> = {};
     const construction: Partial<Record<number, number>> = {};
+    // The raw materials leg: a raw-walled building reads as one from the street.
+    const facades: Partial<Record<number, RawFacade>> = {};
     lots.forEach(l => {
+      const shell = rooms[l.id]?.shellMaterialDefId;
+      const facade = shell ? rawWallKind(shell) : null;
+      if (facade) facades[l.lotIndex] = facade;
       const con = lotConstruction(buildJobs, l.id);
       if (con) {
         states[l.lotIndex] = 'UNDER_CONSTRUCTION';
@@ -398,12 +412,12 @@ export const HubCanvas: React.FC = () => {
         states[l.lotIndex] = !l.ownerId ? 'FOR_SALE' : l.structureType === 'EMPTY' ? 'OWNED_EMPTY' : l.structureType;
       }
     });
-    return { states, construction };
-  }, [lots, buildJobs]);
+    return { states, construction, facades };
+  }, [lots, buildJobs, rooms]);
 
   const cityBitmaps = useMemo(() => {
     const palette = buildPalette(HUB_GENRE);
-    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction }), palette));
+    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades }), palette));
   }, [layout, lotStates]);
 
   const cameraOffset = useCallback(() => {
@@ -592,11 +606,10 @@ export const HubCanvas: React.FC = () => {
   // Wave 10B.5: the inspect card on a templated building, from the street and inside.
   const nearbyConstruction = nearbyPOI?.type === POIType.PLAYER_LOT ? lotConstruction(buildJobs, nearbyPOI.id) : null;
   const nearbyRoom = nearbyPOI?.type === POIType.PLAYER_LOT ? rooms[nearbyPOI.id] : undefined;
-  const streetCard = nearbyRoom ? inspectTemplateRoom(nearbyRoom) : null;
-  const insideCard = roomData ? inspectTemplateRoom(roomData) : null;
+  const streetCard = nearbyRoom ? inspectBuiltRoom(nearbyRoom, player) : null;
+  const insideCard = roomData ? inspectBuiltRoom(roomData, player) : null;
   const myPendingJobs = insideLotId ? buildJobs.filter(j => !j.applied && j.lotId === insideLotId) : [];
   const nearStationFn = nearPlacement ? STATION_FUNCTION[nearPlacement.item.universalDefinitionId] : undefined;
-  const buildMaterialFor = (kind: RoomPieceKind) => stashItems.find(i => (i.tags || []).includes(PIECE_BILLS[kind].tag));
 
   return (
     <div className="ws-ui" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--ws-void-1)', overflow: 'hidden' }}>
@@ -676,6 +689,13 @@ export const HubCanvas: React.FC = () => {
                 })}
                 <Button tone="quiet" disabled title="The hub grants a single floor at this tier.">STAIR</Button>
               </div>
+              {buildKind && (
+                <select className="ws-input" value={buildMaterialFor(buildKind)?.universalDefinitionId ?? ''} onChange={e => setBuildMatDef(e.target.value)} aria-label="Material for this piece">
+                  {[...new Set(stashItems.filter(i => answersTag(i, PIECE_BILLS[buildKind].tag)).map(i => i.universalDefinitionId))].map(defId => (
+                    <option key={defId} value={defId}>{materialLabel(defId)}</option>
+                  ))}
+                </select>
+              )}
               <Button disabled={!buildKind} onClick={() => buildKind && void buildAhead(buildKind)}>
                 BUILD ON THE TILE AHEAD
               </Button>
@@ -775,7 +795,13 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
   // Wave 10E (D6): a rank S+ making takes the maker's own name
   const [makerName, setMakerName] = useState('');
   // Wave 10E (D19): the identify eye trains here, sitting by sitting
-  const studyable = stash.filter(i => StudySystem.identifyScopeOf(i) !== null).slice(0, 6);
+  // The raw materials leg: a stash full of planks must not bury the piece still unread.
+  const unread = (i: IItem) => i.isIdentified === false || (i.affixes || []).some(a => !LoadoutSystem.isAffixStudied(player, a.id));
+  const withScope = stash.filter(i => StudySystem.identifyScopeOf(i) !== null);
+  const studyable = [...withScope.filter(unread), ...withScope.filter(i => !unread(i))].slice(0, 6);
+  // D26: what is worked into this room's walls, floors and furniture is read from here too.
+  const thisRoom = hub.rooms[lotId];
+  const roomUnread = thisRoom ? new Set(roomAdditions(thisRoom).filter(a => !LoadoutSystem.isAffixStudied(player, a.id)).map(a => a.id)).size : 0;
 
   return (
     <Modal title="THE BENCH" onClose={onClose} width={520}>
@@ -809,13 +835,24 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
             </div>
           );
         })}
+        {roomUnread > 0 && thisRoom && (
+          <div className="ws-row" style={{ marginTop: 6 }}>
+            <span className="ws-small">This room: {roomUnread} worked in, unread</span>
+            <Button tone="quiet" onClick={() => {
+              const v = usePlayerStore.getState().studyRoomAtStation(thisRoom);
+              if (!v.ok && v.reason) pushFeed(v.reason, 'loss');
+            }}>
+              STUDY THE ROOM (furniture)
+            </Button>
+          </div>
+        )}
         {/* Wave 10E (D19): STUDY — the scoped identify eye is earned here, time and again */}
         {studyable.length > 0 && (
           <>
             <div className="ws-row" style={{ marginTop: 6 }}>
               <span className="ws-dim ws-small">STUDY — the identify eye trains by the piece</span>
               <span className="ws-dim ws-small">
-                {(['weapon', 'armor', 'tool'] as const)
+                {(['weapon', 'armor', 'tool', 'material', 'furniture'] as const)
                   .map(s => `${s} ${player.bank.universalSkills[StudySystem.scopeSkillId(s)]?.level ?? 0}`)
                   .join(' · ')}
               </span>
@@ -1059,6 +1096,7 @@ const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
 const LoreModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { player } = usePlayerStore();
+  const pushFeed = useFeed(s => s.push);
   const stash = player.bank.stashTabs[0]?.items || [];
   const fragments = stash.filter(i => i.type === ItemType.LORE && i.description);
   const topics = Object.values(player.bank.lore || {});
@@ -1074,6 +1112,15 @@ const LoreModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       {fragments.map(f => (
         <Panel key={f.id} title={f.name.toUpperCase()} tone="proof" style={{ marginBottom: 8 }}>
           <div className="ws-small" style={{ fontStyle: 'italic' }}>{f.description}</div>
+          {/* D26: a trade's notes open what that trade leaves behind */}
+          {f.loreData && !player.bank.lore[ProcessSystem.noteTopic(f.loreData.processFamily)] && (
+            <Button style={{ marginTop: 6 }} onClick={() => {
+              const v = usePlayerStore.getState().readLore(f.id);
+              if (!v.ok && v.reason) pushFeed(v.reason, 'loss');
+            }}>
+              READ IT — {f.loreData.processFamily.toUpperCase()}
+            </Button>
+          )}
         </Panel>
       ))}
       {topics.length > 0 && (

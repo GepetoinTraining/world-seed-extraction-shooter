@@ -9,7 +9,7 @@ import { useHubStore, IPlayerLot } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
-import { SHELL_BILLS, SHELL_BUILD_SECONDS, billText, pickBill } from '../entities/hub/room';
+import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../entities/hub/room';
 import { Button, Chip, Input, ItemSprite, Panel } from './ui/kit';
 import { lotConstruction } from '../entities/hub/template';
 import { isTemplateItem } from '../logic/systems/TemplateSystem';
@@ -28,6 +28,9 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
   const [listId, setListId] = useState<string>('');
   const [listPrice, setListPrice] = useState('50');
   const [applyOpen, setApplyOpen] = useState(false);
+  // D13: the walls are the builder's choice. Nobody chose: the stash pays in order.
+  const [wallMaterial, setWallMaterial] = useState('');
+  const wallOptions = [...new Set(stash.filter(i => answersTag(i, 'building')).map(i => i.universalDefinitionId))];
   const jobs = hub.craftingJobs.filter(j => j.lotId === lot.id && !j.collected);
   const shellJob = hub.buildJobs.find(j => j.lotId === lot.id && !j.applied && j.kind === 'SHELL');
   // Wave 10B: a rising template batch, counted step by step
@@ -78,20 +81,34 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
             </Button>
           )}
           {applyOpen && <TemplateApplyModal lot={lot} onClose={() => setApplyOpen(false)} />}
+          {wallOptions.length > 0 && (
+            <select className="ws-input" value={wallMaterial} onChange={e => setWallMaterial(e.target.value)} aria-label="Material for the walls">
+              <option value="">Walls of whatever the stash holds first</option>
+              {wallOptions.map(defId => (
+                <option key={defId} value={defId}>
+                  Walls of {materialLabel(defId)} — {countOf(stash, defId)} held
+                </option>
+              ))}
+            </select>
+          )}
           {STRUCTURES.map(s => {
-            const bill = pickBill(SHELL_BILLS[s], stash);
+            const askNow = hub.shellBillNow(s);
+            const bill = pickBill(askNow, stash, wallMaterial || undefined);
             const short = !bill.ok ? bill.missing : player.bank.gold < STRUCTURE_COSTS[s].build ? `${STRUCTURE_COSTS[s].build}G permit` : null;
             return (
               <Button
                 key={s}
                 disabled={!!short}
                 title={short ? `Short: ${short}` : `${SHELL_BUILD_SECONDS[s]}s to raise`}
-                onClick={() => hub.buildStructure(lot.id, s)}
+                onClick={() => hub.buildStructure(lot.id, s, wallMaterial || undefined)}
               >
-                BUILD {s} ({STRUCTURE_COSTS[s].build}G + {billText(SHELL_BILLS[s])})
+                BUILD {s} ({STRUCTURE_COSTS[s].build}G + {billText(askNow)})
               </Button>
             );
           })}
+          {hub.shellBillNow('WORKSHOP').length < SHELL_BILLS.WORKSHOP.length && (
+            <span className="ws-dim ws-small">Your first bench. Logs and stone will raise it; the metal line waits for the second.</span>
+          )}
         </div>
       )}
 

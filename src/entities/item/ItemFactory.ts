@@ -1,4 +1,4 @@
-import { IItem, IAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin, MENTAL_ATTRIBUTES } from '../../../types';
+import { IItem, IAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin, MENTAL_ATTRIBUTES, ROOM_ACTING_STATS } from '../../../types';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from './data/itemDefinitions';
 import { AffixDefinition } from './data/affixDefinitions';
@@ -174,8 +174,11 @@ export class ItemFactory {
       affixes.push({ ...affix, stats: { ...affix.stats } });
     }
     const finalStats: Record<string, number> = { ...baseStats };
+    // D26: an addition's room half stays on its record; a weapon acts on the gear half.
+    const roomOnly = new Set<string>(ROOM_ACTING_STATS);
     affixes.forEach(affix => {
       Object.entries(affix.stats).forEach(([key, val]) => {
+        if (roomOnly.has(key)) return;
         finalStats[key] = parseFloat(((finalStats[key] || 0) + val).toFixed(2));
       });
     });
@@ -226,7 +229,7 @@ export class ItemFactory {
   static createResourceItem(
     def: ResourceDef,
     rng: SeededRNG,
-    opts?: { origin?: MaterialOrigin; quality?: number; dreamAffix?: IAffix }
+    opts?: { origin?: MaterialOrigin; quality?: number; dreamAffix?: IAffix; affixes?: IAffix[] }
   ): IItem {
     const density = def.materialProps?.[MaterialPropertyType.DENSITY];
     const weight = density !== undefined ? parseFloat((density * 0.5).toFixed(1)) : (def.weight ?? 1.0);
@@ -235,11 +238,15 @@ export class ItemFactory {
     // affix — the material remembers what the Seed dreamed into it, and D6's
     // crafting half carries it onto whatever the material makes.
     const dreamAffix = opts?.dreamAffix;
+    // The raw materials leg (D26): what a step added, and what its components
+    // carried, ride the good and name it. A worked good says it was worked.
+    const worked = opts?.affixes ?? [];
 
     const item: IItem = {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: def.id,
-      name: dreamAffix && dreamAffix.type === 'PREFIX' ? `${dreamAffix.name} ${def.name}`
+      name: worked.length > 0 ? this.constructName(def.name, worked, 0)
+        : dreamAffix && dreamAffix.type === 'PREFIX' ? `${dreamAffix.name} ${def.name}`
         : dreamAffix ? `${def.name} ${dreamAffix.name}` : def.name,
       description: def.description || 'Harvested material. Can be refined.',
       type: def.type ?? ItemType.RESOURCE,
@@ -251,7 +258,7 @@ export class ItemFactory {
       value: CompositionSystem.baseMaterialValue(def, quality),
       itemPower: 0,
       tags: [...(def.tags ?? [])],
-      affixes: dreamAffix ? [dreamAffix] : [],
+      affixes: worked.length > 0 ? worked : dreamAffix ? [dreamAffix] : [],
       dimensions: def.dimensions ?? { width: 1, height: 1 },
       weight,
       stats: { ...(def.stats ?? {}) },

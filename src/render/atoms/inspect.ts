@@ -14,6 +14,7 @@ import { QUALITY_NAMES, qualityBand } from './atoms';
 import { LAYER } from './world';
 import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
 import { setBonusText } from '../../entities/hub/template';
+import { IRoomState, roomAdditions } from '../../entities/hub/room';
 
 export interface Card {
   title: string;
@@ -192,6 +193,41 @@ export function inspectTemplateRoom(room: {
     canAct: false,
     compact: compact(room.template.name, room.template.authorName)
   };
+}
+
+/**
+ * The raw materials leg (D26): the card on ANY standing building. What it is
+ * made of, raw or worked, and what is worked into it: blind until studied, like
+ * every other sheet (D19). A templated house keeps its architect's lines first.
+ */
+export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | null {
+  const planned = inspectTemplateRoom(room);
+  const def = (CRAFTED_DEFINITIONS[room.shellMaterialDefId] ?? RESOURCE_DEFINITIONS[room.shellMaterialDefId]) as any;
+  const name = def?.name ?? room.shellMaterialDefId;
+  const raw = !(def?.tags ?? []).includes('crafted');
+  const rows: [string, string][] = [...(planned?.rows ?? [])];
+  rows.push(['Walls', raw ? `${name}, raw, as it came out of the ground` : name]);
+  if (!planned) {
+    const materials = new Set<string>([room.shellMaterialDefId]);
+    for (const p of room.pieces) materials.add(p.materialDefId);
+    for (const z of room.floorZones ?? []) materials.add(z.materialDefId);
+    if (materials.size === 1) rows.push(['One material', setBonusText(room.shellMaterialDefId)]);
+  }
+  const seen = new Set<string>();
+  let blind = 0;
+  for (const affix of roomAdditions(room)) {
+    if (seen.has(affix.id)) continue;
+    seen.add(affix.id);
+    if (player && LoadoutSystem.isAffixStudied(player, affix.id)) {
+      const said = Object.entries(affix.stats).map(([k, v]) => `${v >= 0 ? '+' : ''}${v} ${k.replace(/_/g, ' ')}`).join(', ');
+      rows.push(['Worked in', `${affix.name} — ${said || 'named by the bank; its effect is not yet written'}`]);
+    } else {
+      blind++;
+    }
+  }
+  if (blind > 0) rows.push(['Worked in', `${blind} unstudied. ${blind === 1 ? 'It does its work' : 'They do their work'}; the sheet can't see ${blind === 1 ? 'it' : 'them'}.`]);
+  const title = planned?.title ?? `${name} walls`;
+  return { title, rows, needs: [], canAct: false, compact: planned?.compact ?? compact(title, raw ? 'raw' : 'worked') };
 }
 
 /** `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word. */

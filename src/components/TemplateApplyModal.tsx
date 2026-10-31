@@ -13,6 +13,7 @@ import { HubGenerator } from '../entities/hub/HubGenerator';
 import { ITemplateSheet, defaultSheet, sizeNeedsVerdict, templateBill, zoneFloorCount } from '../entities/hub/template';
 import { ITemplateItem, isTemplateItem } from '../logic/systems/TemplateSystem';
 import { STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
+import { answersTag, materialLabel } from '../entities/hub/room';
 import { useFeed } from './ui/stores';
 import { inspectItem } from '../render/atoms/inspect';
 import { Button, CardView, Chip, ItemSprite, Modal } from './ui/kit';
@@ -33,26 +34,42 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
   const lotFootprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
 
   const [sheet, setSheet] = useState<ITemplateSheet | null>(null);
-  const liveSheet: ITemplateSheet = useMemo(() => {
-    if (sheet) return sheet;
-    return tpl ? defaultSheet(tpl) : { WALL: 'crf_plank', DOOR: 'crf_plank', WINDOW: 'crf_glass', zones: {} };
-  }, [sheet, tpl]);
 
   /** The stash's answers to a tag: distinct materials carrying it, with counts. */
   const optionsFor = (tag: string) => {
     const byDef = new Map<string, { name: string; count: number }>();
     for (const item of stash) {
       if (item.id === selId) continue;
-      if (!(item.tags || []).includes(tag)) continue;
-      const got = byDef.get(item.universalDefinitionId) ?? { name: item.name, count: 0 };
+      if (!answersTag(item, tag)) continue;
+      const got = byDef.get(item.universalDefinitionId) ?? { name: materialLabel(item.universalDefinitionId), count: 0 };
       got.count++;
       byDef.set(item.universalDefinitionId, got);
     }
     return [...byDef.entries()].map(([defId, v]) => ({ defId, ...v }));
   };
 
+  // A class nobody has chosen for shows what the stash can really pay with: a
+  // holder of logs alone must not be billed for planks they never held (D23).
+  const held = (tag: string, wanted: string) => {
+    const options = optionsFor(tag);
+    return options.some(o => o.defId === wanted) || options.length === 0 ? wanted : options[0].defId;
+  };
+  const liveSheet: ITemplateSheet = useMemo(() => {
+    if (sheet) return sheet;
+    if (!tpl) return { WALL: 'crf_plank', DOOR: 'crf_plank', WINDOW: 'crf_glass', zones: {} };
+    const base = defaultSheet(tpl);
+    return {
+      WALL: held('building', base.WALL),
+      DOOR: held('wood', base.DOOR),
+      WINDOW: held('glass', base.WINDOW),
+      zones: Object.fromEntries(Object.entries(base.zones).map(([name, def]) => [name, held('building', def)]))
+    };
+  }, [sheet, tpl, stash]);
+
   const sized = tpl ? sizeNeedsVerdict(tpl, lotFootprint) : { ok: false as const, reason: 'Pick a plan.' };
-  const bill = tpl ? templateBill(tpl, liveSheet) : null;
+  // D25: a plan raising a first WORKSHOP asks what a plain first shell asks.
+  const firstBench = !!tpl && tpl.structureType === 'WORKSHOP' && !hub.shellBillNow('WORKSHOP').some(l => l.tag === 'metal') ;
+  const bill = tpl ? templateBill(tpl, liveSheet, firstBench) : null;
   const permit = tpl ? STRUCTURE_COSTS[tpl.structureType].build : 0;
 
   const pickClass = (cls: 'WALL' | 'DOOR' | 'WINDOW', defId: string) =>

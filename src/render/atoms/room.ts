@@ -13,7 +13,7 @@ import { ITemplate, defaultSheet, templateToRoom } from '../../entities/hub/temp
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
 import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
-import { Role, Sprite, grain, materialFromProps, px } from './atoms';
+import { Role, Sprite, grain, hash2, materialFromProps, px } from './atoms';
 import { itemArtFor } from './items';
 
 export const ROOM_TILE = 10; // atoms per 20px tile, same grid as the city
@@ -30,6 +30,39 @@ function rotateSprite(s: Sprite): Sprite {
     out[x * s.h + (s.h - 1 - y)] = s.data[y * s.w + x];
   }
   return { w: s.h, h: s.w, data: out };
+}
+
+/**
+ * THE RAW LOOK (the raw materials leg): a raw material reads by SHAPE, in
+ * grayscale, from a wall away. Logs are stacked in long unbroken courses; raw
+ * stone is rubble, each lump its own tone between dark seams. Worked goods keep
+ * their fine grain, so a stored room composes to the same bytes it always did.
+ */
+export type RawWallKind = 'LOG' | 'STONE';
+
+export function rawWallKind(defId: string): RawWallKind | null {
+  const tags: string[] = defOf(defId)?.tags ?? [];
+  if (!tags.includes('building') || tags.includes('crafted')) return null;
+  return tags.includes('wood') ? 'LOG' : tags.includes('stone') ? 'STONE' : null;
+}
+
+const LOG_COURSE = 5;
+const STONE_COURSE = 4;
+const STONE_WIDTH = 7;
+
+/** One atom of a raw wall or floor, in the given ramp, by the kind's own shape. */
+export function rawAtom(kind: RawWallKind, role: Role, ax: number, ay: number, seed: number): number {
+  if (kind === 'LOG') {
+    const row = ay % LOG_COURSE;
+    if (row === 0) return px(role, 0);                       // the long dark seam between logs
+    if (row === 1) return px(role, 3);                       // the round of the log catching light
+    const log = Math.floor(ay / LOG_COURSE);
+    return px(role, hash2(seed, Math.floor((ax + log * 11) / 9), log) % 5 === 0 ? 1 : 2); // bark
+  }
+  const course = Math.floor(ay / STONE_COURSE);
+  const shifted = ax + hash2(seed, course, 7) % STONE_WIDTH;
+  if (ay % STONE_COURSE === 0 || shifted % STONE_WIDTH === 0) return px(role, 0); // the dark joint
+  return px(role, 1 + hash2(seed, Math.floor(shifted / STONE_WIDTH), course) % 3);  // each lump its own tone
 }
 
 /** The plank floor: ruled rows in the warm ground ramp, brightened by windows. */
@@ -53,6 +86,7 @@ export function composeRoom(room: IRoomState, _opts: { frame?: number } = {}): S
   const door = roomDoor(room.size);
   const seed = fnv1a(`room:v1:${room.lotId}`);
   const shellMat = matOf(room.shellMaterialDefId);
+  const shellRaw = rawWallKind(room.shellMaterialDefId);
 
   const pieceAt = new Map<number, IRoomPiece>();
   for (const p of room.pieces) pieceAt.set(p.y * w + p.x, p);
@@ -105,11 +139,15 @@ export function composeRoom(room: IRoomState, _opts: { frame?: number } = {}): S
           v = (x === 5 || y === 5) ? px(Role.MATTER, 0) : px(Role.LIFE, (x + y) % 3 === 0 ? 3 : 4);
         } else {
           const m = piece?.kind === 'WINDOW' ? matOf(piece.materialDefId) : shellMat;
-          v = wallAtom(m, ax, ay, seed, outer, inner);
+          if (shellRaw && !outer && !inner) v = rawAtom(shellRaw, Role.MATTER, ax, ay, seed);
+          else v = wallAtom(m, ax, ay, seed, outer, inner);
         }
       } else if (piece?.kind === 'WALL') {
         const edge = x === 0 || y === 0 || x === ROOM_TILE - 1 || y === ROOM_TILE - 1;
-        v = edge ? px(Role.MATTER, 0) : px(Role.MATTER, clampStep(1 + grain(matOf(piece.materialDefId), ax, ay, seed), 1, 3));
+        const raw = rawWallKind(piece.materialDefId);
+        v = edge ? px(Role.MATTER, 0)
+          : raw ? rawAtom(raw, Role.MATTER, ax, ay, seed)
+          : px(Role.MATTER, clampStep(1 + grain(matOf(piece.materialDefId), ax, ay, seed), 1, 3));
       } else if (piece?.kind === 'DOOR') {
         // A walkable frame: posts both sides, floor between.
         if (x < 2 || x >= ROOM_TILE - 2) v = px(Role.MATTER, 3);
@@ -123,7 +161,10 @@ export function composeRoom(room: IRoomState, _opts: { frame?: number } = {}): S
             (x === ROOM_TILE - 1 && zoneAt.get(ty * w + tx + 1) !== zi) ||
             (y === 0 && zoneAt.get((ty - 1) * w + tx) !== zi) ||
             (y === ROOM_TILE - 1 && zoneAt.get((ty + 1) * w + tx) !== zi);
-          v = seam ? px(Role.GROUND, 0) : px(Role.GROUND, clampStep(1 + grain(zoneMats[zi], ax, ay, seed), 1, 3));
+          const raw = rawWallKind(zones[zi].materialDefId);
+          v = seam ? px(Role.GROUND, 0)
+            : raw ? rawAtom(raw, Role.GROUND, ax, ay, seed)
+            : px(Role.GROUND, clampStep(1 + grain(zoneMats[zi], ax, ay, seed), 1, 3));
         } else {
           v = floorAtom(ax, ay);
         }
