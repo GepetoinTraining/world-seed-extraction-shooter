@@ -2,7 +2,8 @@
 
 **Status:** the build plan and the record of each wave. Reconciled with the code on 2026-10-31
 at commit d75f541: Waves 1 through 10E are built and the suite stands at 365 passing. Wave 10E
-awaits Pedro's approval. Next, in order: the playtest fixes, Wave 11, Wave 12. Open test lines
+is approved. Next, in order: the raw materials leg (D23), the playtest fixes, the technology web
+(D27), Wave 11, Wave 12. Open test lines
 and their status are in section 5.
 
 **Prime directive (unchanged):** SAO. A world you live in. Hubs as society. Players own their
@@ -191,6 +192,7 @@ claim/receipt; ledger chain audits clean.)*
   fire cooldown from attackSpeed, durability loss on use, broken = unusable.
 - **W4.2 Player melee + spells.** Melee swing fills the already-plumbed `activeSwings`;
   SpellEngine drives SHOTGUN/NOVA patterns off equipped foci. Energy is the resource.
+  *(Spells are not finished, and `SpellEngine` is not wired in yet. This is expected: Pedro, 2026-10-31.)*
 - **W4.3 Mob stats from definitions.** baseDamage/baseHealth × rank scaling; elite/boss
   tags modify (LootTable already respects tags).
 - **W4.4 World rules enforced.** `deathPenalty` from the world cert: INVENTORY_LOSS means
@@ -263,7 +265,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built and committed. Next: Pedro's approval of 10E → the playtest fixes → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built and committed. 10E is approved. Next: the raw materials leg (D23, placed first by Pedro, 2026-10-31) → the playtest fixes → the technology web (D27, required before 11 by Pedro, 2026-10-31) → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -273,7 +275,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10, D11 and D24–D26. D23 and D27 are decided and not yet built.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -299,6 +301,11 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D20 | 10E | The content pipeline's shape | ✅ DECIDED and ENACTED (10E, `AffixBank`): batched LLM agent runs, dev-time for now: a run banks NAMES themed to a biome; a later run defines their EFFECTS; every batch is a signed, versioned content pack in the CONTENT namespace. A world pins its pack version at mint, so added content never changes an existing world (the determinism one-way door) |
 | D21 | 10C+10E | Dying without losing everything | ✅ DECIDED (Pedro, 2026-10-31): protection from loss is never a rule — it is a MAGIC ITEM. Usage-limited or single-use charms, and scrolls that buff for a time (the scribe's table's paper-and-ink hook, D14), each naming HOW MANY slots it protects and whether they are chosen or random. A death keeps exactly what the magic named; everything else stays behind as ever. Variability huge, value player-determinable by what is protected. The slot-protection contract (which slots survive a death) lands in 10C with the slot tree; the items, scrolls and their affixes land in 10E's banks |
 | D22 | 10C | The head budget | ✅ DECIDED (Pedro, refined, 2026-10-31): head-and-neck gear and cognitive frames CANCEL EACH OTHER OUT. The region is FOUR positions — HEAD (helmet), EYES (glasses), EARRING and NECKLACE — and each holds EITHER its gear OR a cognitive frame, three frames at most: max frames still leaves one piece of gear up there. THE REASON IS A STAT LAW, not geography: ONLY frames can carry mental stats — physical gear never does, in any slot — so the trade is always mind against matter and can never be dodged by mental-stat jewelry. The law binds 10E's banks too: a mental affix can only ever roll on a frame. And mental stats are not combat-dead: they drive the RECON PHASE as well (scan depth and speed draw on them — the analyst build earns its keep before the drop) |
+| D23 | Raw materials leg | Raw materials and what processing adds | ✅ DECIDED (Pedro, restated 2026-10-31): base materials, non processed, can be used, and transformation processes add bonuses, affixes and suffixes — to buildings and furniture too, to everything. NOT BUILT: see "D23 against the code" under Wave 11B. This rule replaces the "cold-start gap" as a separate problem |
+| D24 | Raw materials leg | Which raw materials raise walls and shells | Give logs and stone the `building` tag, so bills stay by tag and nothing else changes. Pebbles stay out: too small to build with |
+| D25 | Raw materials leg | How furniture starts from raw | Extend the no-bench route gear already has: rough furniture with `requiredFacility: null`, and a first bench among it, so a fresh origin can begin |
+| D26 | Raw materials leg | What processing adds | Each transformation names what it adds, as a process affix on its output (milled, smelted, cut), banked by the same batch law. Room pieces start recording affixes, so buildings and furniture inherit them |
+| D27 | Technology web | A technology web before Wave 11 | ✅ DECIDED (Pedro, 2026-10-31): "we'll need to tackle technology web as pre 11, without it the npcs add little to nothing". The shape is open: ask at the leg's start |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
@@ -386,11 +393,11 @@ Done 2026-10-31; **approved by Pedro ("Yes, Wave 10D", 2026-10-31)**. Bars in `t
 - **Bars (all green, registered first):** composition complete with lawful origins on every mint path; same chain → byte-identical composition, price and budget; the improvised club measurably the worst weapon the game can make and the deep maul above it; price strictly monotonic in depth for fixed materials; no real recipe destroys value; a 3,000-mint storm holds no two identical tuples; the nudge ladder deterministic, idempotent and replayable; two units of one listing distinct and deterministic; masonry answers the wall bill and reads apart in grayscale; one quality scale with value following; salvage returns the bill bitten exactly once, floors at −0.20, never dupes, never refunds a shell; set-bonus numbers distinct per material and actually charged; the full-loop gold-and-item audit balances (ledger replay plus item multiset: nothing exists twice, everything knows its atoms).
 - **Played through the real interface, as GABBRO on the 3102 origin:** two Field Axes bought from ONE listing (the bank nudged the second roll — D18 seen on the shelf) → an honest death to the Overgrowth's flyers mid-fell (304 G of kit lost, receipt signed) → re-kitted with the day's last pick (the Rusty Pick had sold out; the 1,119 G Tempered) → four logs felled with the slotted axe and SEALED (140 G haul, 7 G levy) → the framed analyst's single click read a sector to the full manifest → dropped on RUINS found by recon, mined Dense Stone, and **lashed the Stonebound Club together in the field through the pack's own IMPROVISE button** — its card reading "1 Dense Stone, 1 Hardwood Log · Lash Stone to Haft (no bench) · 5s on the record, depth 1" — equipped it, swung it, and lost it with everything else to a second honest death (1,229 G to the world) → the hub leg on ledgered test grants (below): lot, WORKSHOP raised, and the bench's real buttons ran mill → smelt → masonry → HANG AN IRON HEAD: the maul minted at depth 2, IP 63 over the club's 31, 226 G over 86, remembering "2 Iron Ore, 1 Hardwood Log" → a stone wall built from the cut block and torn down again: the block came home Rough −10%, "Torn back out of a wall" on its card → the gold audit ran green over 51 ledger rows → a cold reload kept every byte: the maul's chain, the salvage bite, the workshop, and the registry's 38 claims.
 - **Test practices on record:** raised in-memory health and beacon/terrain teleports for the material runs (the logged Wave 8 practice); +9,000 G and 16 materials granted THROUGH the ledger (TEST_GRANT_10D rows) for the hub leg after the second death; 10C's historical unledgered +3,000 G grant booked as a reconciliation row so the audit could speak.
-- **Carried, honestly:** a fresh origin cannot raise its first WORKSHOP honestly — the shell bill asks for crafted goods only a workshop makes (the cold-start gap; Wave 11's NPC pooling or a shelf line should close it); balance is loud now and belongs to Wave 12 — flyer swarms broke five extraction channels and killed a 2,000-health test rig twice, and a mob biting from beside the player could not be found in any loaded chunk's entity list to fight back (the known moved-mob shape, now with teeth); stone and plank wall FACES are near-twins in grayscale at game scale — the seams differ (stipple vs hatch, bar-measured), but the wall family wants a bolder large-scale structure difference, the same lesson the survey cells taught in Wave 9; the mono-material set bonus numbers are charged and said by bar, not yet seen in play (no templated house stands on the 3102 origin); crafted gear's value derives from its chain only — its quality roll moves stats, not price (the law's current edge, recorded); the in-game AUDIT button replays gold — the item half of line 54 lives in the bar's store-driven multiset audit; `history.dropDate` still stamps wall-clock time on mints. D6's crafting half is placed: components carrying affixes and S+ naming land with 10E's banks.
+- **Carried, honestly:** a fresh origin cannot raise its first WORKSHOP honestly — the shell bill asks for crafted goods only a workshop makes (the cold-start gap; Wave 11's NPC pooling or a shelf line should close it — superseded: D23 closes it); balance is loud now and belongs to Wave 12 — flyer swarms broke five extraction channels and killed a 2,000-health test rig twice, and a mob biting from beside the player could not be found in any loaded chunk's entity list to fight back (the known moved-mob shape, now with teeth); stone and plank wall FACES are near-twins in grayscale at game scale — the seams differ (stipple vs hatch, bar-measured), but the wall family wants a bolder large-scale structure difference, the same lesson the survey cells taught in Wave 9; the mono-material set bonus numbers are charged and said by bar, not yet seen in play (no templated house stands on the 3102 origin); crafted gear's value derives from its chain only — its quality roll moves stats, not price (the law's current edge, recorded); the in-game AUDIT button replays gold — the item half of line 54 lives in the bar's store-driven multiset audit; `history.dropDate` still stamps wall-clock time on mints. D6's crafting half is placed: components carrying affixes and S+ naming land with 10E's banks.
 - **Gate:** test lines 50, 51 and 54 pass, by test and by play.
 
 ### WAVE 10E — The Affix Bank and the Dreaming ✅ DONE
-Done 2026-10-31; **awaiting Pedro's approval, which opens the next leg**. Bars in `tests/affixes.test.ts` (43 tests; suite 365), registered before the build. All of D19, D20, D21 and D22 were decided before the leg started; nothing was asked. The program's last leg: 10C slots ✅, 10D anatomy ✅, 10E banks ✅.
+Done 2026-10-31; **approved by Pedro (2026-10-31)**. Bars in `tests/affixes.test.ts` (43 tests; suite 365), registered before the build. All of D19, D20, D21 and D22 were decided before the leg started; nothing was asked. The program's last leg: 10C slots ✅, 10D anatomy ✅, 10E banks ✅.
 
 - **10E.1 The banks:** ✅ `IBankedAffix` / `IAffixBatch` / `IContentPack` joined the contract (additive); `AffixBank` is the law — a NAMES run banks names only, an EFFECTS run defines banked names once each, and any broken entry refuses the WHOLE batch, clean siblings falling with it. D22 is a bank law enacted: a mental stat rides only an entry scoped exactly `['frame']` ("…and gear doesn't think. A mental affix only ever rolls on a frame."); the shipped bank's one mental entry (`of the Long Vigil`) is frame-scoped and rolls nowhere until frames become items. THE PURGE is real: the live legacy pool is `AffixBank.legacyPool()`, the Owl (`suf_int`) dropped from every future roll — 500 keyed mints carry no mental affix by bar — while standing contraband wears on with its mental line dead, as 10C left it. Two batches ship (`src/entities/generation/packs/affixBatches.ts`, both authored as real LLM dev runs, the model on each record): run 001 "The First Naming" — 32 entries themed to the five biomes plus GLOBAL and CART; run 002 "given teeth" — 27 effects, several deliberately NEGATIVE (Unpaid: +damage, −max health; Sun-Flayed: +defense, −health; downside pays for upside, D19). Five entries stay name-only after v2 — the bank remembering more than it says, on purpose.
 - **10E.2 The knowledge law (D19):** ✅ the 10C stub died: `LoadoutSystem.isAffixStudied` reads `materialMastery`'s `discoveredAffixes` — the one knowledge ledger, never a parallel one — and `StudySystem` is the law: identify is a SKILL scoped by item type (weapon/armor/tool), earned as `skill_identify_<scope>` in `universalSkills` by STUDY sittings at a workstation (the bench window gained the STUDY section; skills grow by use, D6), usable in the field ALWAYS TIMED (12s at level 1, falling with skill, floored at 2s, never free), and refused in voice for an unschooled scope ("Your eye is not schooled for armor. Study armor pieces at a workstation, time and again, and the field will obey."). Study reveals EXACTLY the banked record, negative offsets included; the inspect card shows a studied affix's numbers and keeps the blind line for the rest. The pack grid grew the IDENTIFY button with its honest clock.
@@ -403,12 +410,35 @@ Done 2026-10-31; **awaiting Pedro's approval, which opens the next leg**. Bars i
 - **Carried, honestly:** the alarm's shriek hid behind the lock branch on the played theft (fixed the same day, after the play; the signed theft itself was right) and a cart kit's identify scope read as armor (now the tool eye) — both found only by playing; the Warded lock's tow-delay is proven by bar, not play (no Warded kit on that day's shelf — the shelf will roll one); a scroll's expiry death and the scribe-written scroll are proven by bar, with the written-scroll path played only as far as the SCROLLS tab (no scribe's table stands on 3102 — paper and ink were spent on the bar's mint instead); the Mire-Cured improvised club never happened (Overgrowth grows no stones; inheritance is proven by bar through the same improvise door the field button calls); The Long Account's chain reads depth 1 because its granted inputs were purchase roots — an honestly-smelted blade would carry depth 3 and a deeper budget; station study is a click with the sitting in the feed, not yet on the bench's clock; frames are definitions still, so the bank's one mental affix can roll on nothing yet (the door D22 holds open for a later wave); the extraction channel was broken repeatedly by biters no entity scan could find (the known moved-mob shape — the seal came at the sector's far exit); balance stays loud and stays Wave 12's.
 - **Gate:** test lines 52, 53, 55 and 56 pass — 52/55/56 by test and by play; 53 by test, and by play as far as one minted world shows (pin seen on the card, the dream read on the survey, the same keys rolling the same records).
 
-### THE PLAYTEST FIXES — next, after 10E's approval
-Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now", and the order above runs them between legs, after the itemization program, which is now complete. None is fixed. Register the bars first. Diagnoses are in `BUILDERS_LOG.md`, "Your pass". Lines 57–59 are proposed so that guardrail 1 is met.
+### THE RAW MATERIALS LEG (D23) — next
+Pedro placed this first on 2026-10-31, ahead of the playtest fixes and Wave 11, because Wave 11's pooling pays against these same bills. Scope and the current gaps are under "D23 against the code" in Wave 11B. Ask D24–D26 at the start, register bars first, and play it on a fresh origin.
+
+- **Gate:** proposed lines 60–61 once agreed, with line 45's sourcing audit run in the same leg, since the bills it audits change here.
+- **Mind the one-way door:** a raw-built house must read apart from a plank-built one in grayscale, and finished houses, stored rooms and pinned worlds must not change. Check the golden vectors after any change to definitions.
+
+### THE PLAYTEST FIXES — after the raw materials leg
+Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now", and they run after the itemization program, which is now complete, and after D23. None is fixed. Register the bars first. Diagnoses are in `BUILDERS_LOG.md`, "Your pass". Lines 57–59 are proposed so that guardrail 1 is met.
 
 - **Cache duplication:** opening a ground cache with a full pack copies its contents, one copy per press.
 - **Mint-world draft loss:** a stray backdrop click or Escape discards the four-step draft.
 - **Pack placement:** the player cannot move an item to a chosen cell. Add grab, a footprint ghost and a keyboard path.
+
+### THE TECHNOLOGY WEB (D27) — after the playtest fixes, before Wave 11
+Pedro's word on 2026-10-31: without it, the NPCs add little to nothing. It follows D23 because D26's processes are natural things for a web to connect. Guardrail 1 applies: write its test lines with Pedro at the leg's start, before anything is built.
+
+**What exists today:** no technology system. There are only hooks:
+- D8 promises that higher-technology workstations need bigger rooms as the hub's technology accrues, and that lots grow as the hub grows. `STATION_MIN_AREA` in `src/entities/hub/room.ts` holds fixed numbers with no technology behind them.
+- `IHubState` in `src/entities/hub/types.ts` sketches hub tier, cycles, expansion and districts. Nothing imports it.
+- `techLevel` in `src/entities/generation/ContentPipeline.ts` describes a genre for the admin tool, not a hub.
+- Every city lot is one size class, which is why line 43 cannot be played. Lots growing with the hub could settle that here.
+
+**Pattern to borrow (never the code):** `D:\primordial\crates/tech/src/lib.rs`, a hub's tech tree rooted in its land. It keeps one level per extraction vertical, derives starting tech from geography, and advances a domain by working it. Its comments name downstream branches: smithing from mining, masonry from quarrying, woodworking from lumber.
+
+**To ask at the start:**
+- Is it a hub's technology, a player's, or both?
+- What advances a node: work done, materials delivered, residents' jobs?
+- What does a node unlock: recipes, stations, lot sizes, process affixes?
+- What exactly does an NPC add through it?
 
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
@@ -417,15 +447,19 @@ What comes back through the Nexus populates the hub. The hooks exist as dead end
 - **11.2 Farms:** D11. `res_tree_sapling` and `IFarmPlot` exist, but nothing can be planted. Plant what you harvested. Growth uses the Workshop's accumulate-and-resolve timer, so nothing runs while you are away. A farm is drawn by the same generator.
 - **11.3 Materials:** stored and displayed in rooms by their real grain, with their history kept. This is where the material-knowledge levels start to pay off.
 - **11.4 The city fills up:** residents are visible in the hub, using the walk from 8B.
-- **Also owed here:** D8's NPC pooling against a template's bill, and the cold-start gap recorded under Wave 11B below.
+- **Also owed here:** D8's NPC pooling against a template's bill.
 - **Bars:** the gold audit still balances after a full cycle of rescue, planting, selling and upkeep; farming mints items and never gold; growth depends only on time and is the same on every machine; a resident can never be duplicated from one Bond.
 - **Gate:** test lines 35–38.
 
 ### WAVE 11B — The Materials Pass (ABSORBED)
 Absorbed 2026-10-31 into Pedro's itemization program: 11B.1's sourcing audit and the recipe-graph review moved to 10E's population work and 10D.5; 11B.2's demolish salvage, 11B.3's property bonuses and prices (with the mono-material house numbers), and 11B.4's one-quality law moved to 10D; 11B.5's full-loop audit became 10D's gold-AND-item audit (line 54). Farm renewability stays with Wave 11. D6's crafting half landed in 10E (components carrying affixes, S+ naming); items raising skills remain unbuilt. Line 46 was delivered by 10D.
 
-**Line 45 is not closed (checked against the definitions, 2026-10-31).** The sourceability audit moved to 10E was never run and no bar holds the line. What the data shows:
-- **The cold-start gap:** every shell bill asks for the `building` tag, and only crafted goods carry it (plank, ingot, glass, stone block). Every recipe for those goods needs a WORKSHOP, and a WORKSHOP's shell needs six of them. So a fresh origin can raise no shell at all, a HOUSE included.
+**D23 against the code (checked against the definitions, 2026-10-31).** Three things stand between the code and the rule:
+- **Raw materials cannot raise a building.** Every shell bill and the WALL and STAIR bills ask for the `building` tag, and only crafted goods carry it (plank, ingot, glass, stone block). Every recipe for those goods needs a WORKSHOP, and a WORKSHOP's shell needs six of them, so a fresh origin can raise no shell at all. The other bill lines already take raw materials: a log answers `wood`, ore answers `metal`, sand and shards answer `glass`. Bills go by tag, so `building` is the one line in the way.
+- **Furniture has no raw path.** Stations come from WORKSHOP recipes that take crafted goods, or from a finished shell. Only gear has a no-bench route (`GEAR_RECIPES` with `requiredFacility: null`).
+- **Processing adds nothing of its own.** A transformation carries its inputs' affixes forward, and depth raises price and gear power, but no step adds a bonus, affix or suffix. Room pieces record only material and quality, so affixes do not reach buildings at all. A placed station's affixes have not been shown to change what it does.
+
+**Line 45 is not closed.** The sourceability audit moved to 10E was never run and no bar holds the line. Beyond D23's points above, the data shows:
 - **Raw materials no recipe consumes:** grain, berry, amberfruit, sapling, pebbles, titanium, scrap and glass shards. Some have another use: titanium and scrap answer `metal` bills, shards answer `glass` bills, the sapling waits for Wave 11's farms, and some are eaten. Each still needs checking against the line.
 - **Crafted goods no recipe consumes:** glass, paper and stone block. All three are used elsewhere, by bills or the scribe's table, so this is not a fault by itself.
 
@@ -474,6 +508,11 @@ Guardrail 1 still holds: nothing gets built without a line here.
 54. The gold and item audit balances across the whole itemization economy
 55. Identify is a skill: scoped by item type, trained at a workstation, usable in the field, always timed, faster with skill
 56. Protection is an item: a death keeps exactly the slots the magic named, nothing more, and the receipt shows it
+
+Proposed for D23, not yet agreed:
+
+60. A house and its furniture can be raised from raw materials alone, with no workshop, on a fresh origin
+61. Each transformation step adds something the raw material lacks (a bonus, an affix or a suffix), on buildings and furniture as on gear
 
 Proposed for the playtest fixes, not yet agreed:
 
@@ -524,8 +563,10 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10B The Architect | 41–44 | Passed; 43's refusal is by test, since every city lot is one size class |
 | 10C The Load-Out | 47–49, contract half of 56 | Passed |
 | 10D Anatomy of Items | 46, 50, 51, 54 | Passed; 46's set-bonus numbers are by test, not seen in play |
-| 10E Affix Bank | 52, 53, 55, 56 | Passed, pending approval; 53 was shown on one minted world |
+| 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
 | 10D/10E (from 11B) | 45 | **Not closed**: see Wave 11B |
 | Playtest fixes | 57–59 (proposed) | Not started |
+| Technology web (D27) | To be written at its start | Not started; required before 11 |
+| Raw materials leg (D23) | 60–61 (proposed), 45 | Not started; next |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |
