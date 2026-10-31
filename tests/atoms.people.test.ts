@@ -390,8 +390,20 @@ describe('the hub', () => {
   });
 
   it('shows every lot state as its own shape', () => {
-    const lots = LOT_STATES.map(state => ({ state, mask: maskOf(lotArt(state, 40, 40, 7)) }));
-    const scored = pairs(lots).map(([a, b]) => ({ pair: `${a.state}/${b.state}`, d: maskDifference(a.mask, b.mask) })).sort((a, b) => a.d - b.d);
+    // Wave 10: built lots are solid buildings (they block exactly what they
+    // draw), so silhouette masks no longer tell them apart — the atoms do.
+    // The measure moved from mask to atom difference; the bar stays 25%.
+    const lots = LOT_STATES.map(state => ({ state, art: lotArt(state, 40, 40, 7) }));
+    const atomDiff = (a: { data: Uint8Array }, b: { data: Uint8Array }) => {
+      let n = 0, d = 0;
+      for (let i = 0; i < a.data.length; i++) {
+        if (!a.data[i] && !b.data[i]) continue;
+        n++;
+        if (a.data[i] !== b.data[i]) d++;
+      }
+      return n === 0 ? 0 : d / n;
+    };
+    const scored = pairs(lots).map(([a, b]) => ({ pair: `${a.state}/${b.state}`, d: atomDiff(a.art, b.art) })).sort((a, b) => a.d - b.d);
     console.log(`LOTS closest: ${scored.slice(0, 2).map(s => `${s.pair} ${(s.d * 100).toFixed(0)}%`).join(', ')}`);
     expect(scored[0].d, scored[0].pair).toBeGreaterThanOrEqual(LOT_MIN_DIFFERENCE);
   });

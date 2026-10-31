@@ -153,6 +153,14 @@ Settled by the interface pass (Wave 9), kept here as the record:
 - **Vocabulary, as now used by the screens:** MINT signs things into existence (identities, worlds); MATERIALIZE enters a hub; DEPLOY enters a zone and the DROP is the landing; EXTRACT leaves with the haul; JACK IN resumes an avatar at the gate; the BANK is the place and the STASH is its storage; AVATAR at the gate, AGENT in the field. "NerveGear" is gone — the console is the SEED CONSOLE.
 - **Every dialogue option does something or says why it cannot.** The Hall and the auction block refuse in voice instead of pretending; REST left with nothing to heal.
 
+Settled by the interiors pass (Wave 10), kept here as the record:
+
+- **A room is a build record, not a picture.** Pedro's D8 made rooms neither generated nor free-form: walls, stairs, windows and doors are the only structure, and everything else standing in a room is an item. The composer (`src/render/atoms/room.ts`) is a pure function of that record — the same record gives the same bytes — and the bill for every structural piece asks for a material TAG, never a specific item, so the material that answers the bill is what the wall looks like. Properties became pixels one more time: a plank wall, an ingot wall and a glass wall read apart in color and in grayscale.
+- **A table is a workstation and a thing to sell.** D9 dissolved "which buildings get interiors": furniture is itemizable like the character is. `recipe_table` mills three planks into a 2×2 table with its own provenance; the bench and the counter are items a shell mints on completion, and placing them IS placing the Workshop and the shop. The in-room windows call the same store functions the Holdings panels call.
+- **The builder refuses out loud.** Nothing may seal the way out, wall a placement in, or build on the door; a stair refuses with the honest reason (one floor at this tier); a station refuses a region smaller than its working minimum, naming the tiles it needs and the tiles it has. Refusal copy lives in the verdicts, in the bank's voice.
+- **A built lot blocks exactly what it draws.** The three built-lot faces (gable, corrugation and chimney, striped awning) fill every tile they block, hard-seamed, with the doorway at the bottom centre and the door tile you stand on one row below the footprint. Entering keeps your place in the street; leaving is walking the doorway, not a button.
+- **Light without color, again.** Windows brighten the floor around them by ramp steps at a fixed radius, the same law as the lamps, so a lit room survives grayscale.
+
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
 
 **Four things the atoms must answer.** The prototype has tried each, so start from what it found and beat it.

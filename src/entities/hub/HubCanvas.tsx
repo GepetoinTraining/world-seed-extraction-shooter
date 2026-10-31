@@ -10,12 +10,18 @@ import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
 import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
-import { HUB_GENRE, composeHub, LotState } from '../../render/atoms/hub';
+import { HUB_GENRE, composeHub, LotState, doorOf } from '../../render/atoms/hub';
+import { composeRoom } from '../../render/atoms/room';
+import {
+  IRoomState, RoomPieceKind, STATION_FUNCTION, PIECE_BILLS, PIECE_BUILD_SECONDS,
+  builtLotBlocksAt, roomDoor, roomEntry, roomSolid
+} from './room';
+import { RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
-import { Button, CardView, Chip, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
+import { Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
 import { useAppView, useFeed } from '../../components/ui/stores';
 import { inspectItem } from '../../render/atoms/inspect';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
@@ -61,8 +67,21 @@ export const HubCanvas: React.FC = () => {
   const [npcReply, setNpcReply] = useState<string | null>(null);
   const [panel, setPanel] = useState<HubPanel | null>(null);
 
+  // Wave 10: through the door. While insideLotId is set, the canvas draws the
+  // room instead of the street; your place in the city is kept in posRef.
+  const [insideLotId, setInsideLotId] = useState<string | null>(null);
+  const [roomTile, setRoomTile] = useState({ x: 0, y: 0 });
+  const [buildKind, setBuildKind] = useState<RoomPieceKind | null>(null);
+  const [placeSelId, setPlaceSelId] = useState<string>('');
+  const [stationPanel, setStationPanel] = useState<'WORKSHOP' | 'VENDOR' | null>(null);
+  const roomPosRef = useRef({ x: 0, y: 0 });
+  const insideLotIdRef = useRef<string | null>(null);
+  insideLotIdRef.current = insideLotId;
+  const buildKindRef = useRef<RoomPieceKind | null>(null);
+  buildKindRef.current = buildKind;
+
   const { player } = usePlayerStore();
-  const { lots } = useHubStore();
+  const { lots, rooms, buildJobs } = useHubStore();
   const { refreshWorlds } = useWorldStore();
   const { setView } = useAppView();
   const pushFeed = useFeed(s => s.push);
@@ -80,21 +99,85 @@ export const HubCanvas: React.FC = () => {
     []
   );
   nearbyRef.current = nearbyPOI;
-  busyRef.current = !!(activeNPC || panel);
+  busyRef.current = !!(activeNPC || panel || stationPanel);
 
   // =========================================================================
   // MOVEMENT: held keys, per-axis sliding against the navmesh
   // =========================================================================
 
+  // Wave 10.2: a built lot blocks its whole footprint — the door tile you stand
+  // on to enter lies one row below it. What blocks is exactly what is drawn.
+  const blockedLotTiles = useMemo(() => {
+    const blocked = new Set<number>();
+    for (const zone of layout.zones) for (const poi of zone.pois) {
+      if (poi.type !== POIType.PLAYER_LOT) continue;
+      const lot = lots.find(l => l.id === poi.id);
+      const built = !!lot && !!lot.ownerId && lot.structureType !== 'EMPTY';
+      for (let ty = poi.position.y; ty < poi.position.y + poi.size.height; ty++) {
+        for (let tx = poi.position.x; tx < poi.position.x + poi.size.width; tx++) {
+          if (builtLotBlocksAt(poi, built, tx, ty)) blocked.add(ty * layout.width + tx);
+        }
+      }
+    }
+    return blocked;
+  }, [layout, lots]);
+
   const blockedAt = useCallback((x: number, y: number) => {
     const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
-    return tx < 0 || ty < 0 || tx >= layout.width || ty >= layout.height || !layout.navMesh[ty][tx];
-  }, [layout]);
+    if (tx < 0 || ty < 0 || tx >= layout.width || ty >= layout.height) return true;
+    return !layout.navMesh[ty][tx] || blockedLotTiles.has(ty * layout.width + tx);
+  }, [layout, blockedLotTiles]);
+
+  // The room under your feet, pre-composed. The loop reads the ref every frame.
+  const roomData: IRoomState | null = insideLotId ? rooms[insideLotId] ?? null : null;
+  const roomRef = useRef<{ room: IRoomState; solid: Uint8Array; canvas: HTMLCanvasElement } | null>(null);
+  useEffect(() => {
+    if (!roomData) { roomRef.current = null; return; }
+    roomRef.current = {
+      room: roomData,
+      solid: roomSolid(roomData),
+      canvas: spriteToCanvas(composeRoom(roomData), buildPalette(HUB_GENRE))
+    };
+  }, [roomData]);
+
+  const enterRoom = useCallback((poi: IPOI) => {
+    const hub = useHubStore.getState();
+    const lot = hub.lots.find(l => l.id === poi.id);
+    const room = hub.rooms[poi.id];
+    if (!lot || !room) return;
+    const entry = roomEntry(room.size);
+    roomPosRef.current = { x: (entry.x + 0.5) * TILE_SIZE, y: (entry.y + 0.5) * TILE_SIZE };
+    setRoomTile(entry);
+    keysRef.current.clear();
+    facingRef.current = 'up';
+    setInsideLotId(poi.id);
+    pushFeed(`Through the door. LOT ${lot.lotIndex} ${lot.structureType}, on record.`, 'signal');
+  }, [pushFeed]);
+
+  const exitRoom = useCallback(() => {
+    const id = insideLotIdRef.current;
+    if (id) {
+      const poi = HubGenerator.findPOI(layout, id);
+      if (poi) {
+        const d = doorOf(poi);
+        posRef.current = { x: (d.x + 0.5) * TILE_SIZE, y: (d.y + 0.5) * TILE_SIZE };
+        setPlayerTile({ x: d.x, y: d.y });
+      }
+    }
+    setInsideLotId(null);
+    setBuildKind(null);
+    setStationPanel(null);
+    facingRef.current = 'down';
+    pushFeed('Back on the street.', 'plain');
+  }, [layout, pushFeed]);
+  const exitRoomRef = useRef(exitRoom);
+  exitRoomRef.current = exitRoom;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (busyRef.current) return; // dialogue and panels take the keyboard
       const key = e.key.toLowerCase();
+      if (insideLotIdRef.current && interiorKeyRef.current(key)) return;
       if (key === 'e' || key === 'enter') {
         if (nearbyRef.current?.interactable) handleInteract(nearbyRef.current);
         return;
@@ -116,6 +199,7 @@ export const HubCanvas: React.FC = () => {
   // =========================================================================
 
   useEffect(() => {
+    if (insideLotId) { setNearbyPOI(null); return; }
     let closest: IPOI | null = null;
     let closestDist = Infinity;
     for (const zone of layout.zones) {
@@ -134,7 +218,35 @@ export const HubCanvas: React.FC = () => {
       }
     }
     setNearbyPOI(closest);
-  }, [playerTile, layout]);
+  }, [playerTile, layout, insideLotId]);
+
+  // Inside: the nearest placed thing you could work, within reach.
+  const nearPlacement = useMemo(() => {
+    if (!roomData) return null;
+    let best: { placement: IRoomState['placements'][number]; d: number } | null = null;
+    for (const pl of roomData.placements) {
+      const d = pl.item.dimensions || { width: 1, height: 1 };
+      const fw = pl.rotated ? d.height : d.width, fh = pl.rotated ? d.width : d.height;
+      const cx = pl.x + fw / 2, cy = pl.y + fh / 2;
+      const dist = Math.hypot(roomTile.x + 0.5 - cx, roomTile.y + 0.5 - cy);
+      if (dist < 2.2 && (!best || dist < best.d)) best = { placement: pl, d: dist };
+    }
+    return best?.placement ?? null;
+  }, [roomData, roomTile]);
+  const nearPlacementRef = useRef(nearPlacement);
+  nearPlacementRef.current = nearPlacement;
+
+  // Accumulate-and-resolve: while you stand in the room, the clock is looked at.
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!insideLotId) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      const due = useHubStore.getState().buildJobs.some(j => !j.applied && j.finishesAt <= Date.now());
+      if (due) void useHubStore.getState().resolveBuilds();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [insideLotId]);
 
   // =========================================================================
   // INTERACTION
@@ -146,9 +258,83 @@ export const HubCanvas: React.FC = () => {
       setNpcReply(null);
       setActiveNPC(HUB_NPCS[poi.npcId]);
     } else if (poi.type === POIType.PLAYER_LOT) {
-      // Until Wave 10 opens the door, the lot points at its working screen.
-      setView('HOLDINGS');
+      // Wave 10.2: a built lot has a real door. An unbuilt one still points at
+      // its working screen, where it is bought and raised.
+      const hub = useHubStore.getState();
+      const lot = hub.lots.find(l => l.id === poi.id);
+      if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
+      else setView('HOLDINGS');
     }
+  };
+
+  // -------------------------------------------------------------------------
+  // WAVE 10.3/10.4: WORK IN THE ROOM — every action calls the one store
+  // -------------------------------------------------------------------------
+
+  const aheadTile = () => {
+    const t = { x: Math.floor(roomPosRef.current.x / TILE_SIZE), y: Math.floor(roomPosRef.current.y / TILE_SIZE) };
+    const f = facingRef.current;
+    return f === 'up' ? { x: t.x, y: t.y - 1 } : f === 'down' ? { x: t.x, y: t.y + 1 } : f === 'left' ? { x: t.x - 1, y: t.y } : { x: t.x + 1, y: t.y };
+  };
+
+  const stashItems = player.bank.stashTabs[0]?.items || [];
+
+  const buildAhead = async (kind: RoomPieceKind) => {
+    const lotId = insideLotIdRef.current;
+    if (!lotId) return;
+    const bill = PIECE_BILLS[kind];
+    const material = stashItems.find(i => (i.tags || []).includes(bill.tag));
+    if (!material) { pushFeed(`The bill asks for something ${bill.tag}; the stash has none.`, 'loss'); return; }
+    const t = aheadTile();
+    const res = await useHubStore.getState().queuePiece(lotId, kind, t.x, t.y, material.id);
+    if (res.ok) pushFeed(`${kind} queued from ${material.name} (${PIECE_BUILD_SECONDS[kind]}s).`, 'signal');
+    else pushFeed(res.reason, 'loss');
+  };
+
+  const placeAhead = async () => {
+    const lotId = insideLotIdRef.current;
+    const item = stashItems.find(i => i.id === placeSelId);
+    if (!lotId || !item) { pushFeed('Choose something from the stash to place.', 'loss'); return; }
+    const t = aheadTile();
+    const res = await useHubStore.getState().placeItem(lotId, item.id, t.x, t.y, false);
+    if (res.ok) { pushFeed(`${item.name} placed, signed, on record.`, 'proof'); setPlaceSelId(''); }
+    else pushFeed(res.reason, 'loss');
+  };
+
+  const reclaimNear = async () => {
+    const lotId = insideLotIdRef.current;
+    const near = nearPlacementRef.current;
+    if (!lotId || !near) { pushFeed('Nothing in reach to reclaim.', 'loss'); return; }
+    const ok = await useHubStore.getState().reclaimItem(lotId, near.id);
+    pushFeed(ok ? `${near.item.name} reclaimed to the stash.` : 'The room would not give it up.', ok ? 'signal' : 'loss');
+  };
+
+  const demolishAhead = async () => {
+    const lotId = insideLotIdRef.current;
+    if (!lotId) return;
+    const t = aheadTile();
+    const room = useHubStore.getState().rooms[lotId];
+    const piece = room?.pieces.find(pc => pc.x === t.x && pc.y === t.y);
+    if (!piece) { pushFeed('Nothing built on the tile ahead.', 'loss'); return; }
+    const ok = await useHubStore.getState().demolishPiece(lotId, piece.id);
+    pushFeed(ok ? `${piece.kind} taken down. The materials are spent; the ledger remembers.` : 'It would not come down.', ok ? 'plain' : 'loss');
+  };
+
+  const workStation = () => {
+    const near = nearPlacementRef.current;
+    if (!near) return false;
+    const fn = STATION_FUNCTION[near.item.universalDefinitionId];
+    if (!fn) return false;
+    keysRef.current.clear();
+    setStationPanel(fn);
+    return true;
+  };
+
+  // Interior keys: E works the station in reach; the door is left by walking it.
+  const interiorKeyRef = useRef<(key: string) => boolean>(() => false);
+  interiorKeyRef.current = (key: string) => {
+    if (key === 'e' || key === 'enter') return workStation();
+    return false;
   };
 
   const applyEffect = async (effect: DialogueEffect) => {
@@ -236,6 +422,89 @@ export const HubCanvas: React.FC = () => {
       const dt = Math.min((time - lastTickRef.current) / 1000, 0.1);
       lastTickRef.current = time;
 
+      // ---------------- WAVE 10.2: INSIDE A ROOM ----------------
+      const insideId = insideLotIdRef.current;
+      const rm = roomRef.current;
+      if (insideId && rm) {
+        const { room, solid, canvas: roomCanvas } = rm;
+        const keys = keysRef.current;
+        let dx = 0, dy = 0;
+        if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+        if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+        if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+        if (keys.has('d') || keys.has('arrowright')) dx += 1;
+
+        const roomBlocked = (x: number, y: number) => {
+          const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
+          if (tx < 0 || ty < 0 || tx >= room.size.w || ty >= room.size.h) return true;
+          return solid[ty * room.size.w + tx] === 1;
+        };
+
+        const p = roomPosRef.current;
+        if (dx !== 0 || dy !== 0) {
+          const len = Math.hypot(dx, dy);
+          const step = HUB_WALK_TILES_PER_S * TILE_SIZE * dt;
+          const mx = (dx / len) * step, my = (dy / len) * step;
+          let nx = p.x + mx;
+          if (roomBlocked(nx, p.y) && !roomBlocked(p.x, p.y)) nx = p.x;
+          let ny = p.y + my;
+          if (roomBlocked(nx, ny) && !roomBlocked(nx, p.y)) ny = p.y;
+          p.x = nx; p.y = ny;
+          facingRef.current = Math.abs(mx) > Math.abs(my) ? (mx > 0 ? 'right' : 'left') : (my > 0 ? 'down' : 'up');
+          movingRef.current = true;
+          if (time - stepRef.current.at > 560 / WALK_PHASES) {
+            stepRef.current = { step: (stepRef.current.step + 1) % WALK_PHASES, at: time };
+          }
+          const tile = { x: Math.floor(p.x / TILE_SIZE), y: Math.floor(p.y / TILE_SIZE) };
+          setRoomTile(prev => (prev.x === tile.x && prev.y === tile.y ? prev : tile));
+          const d = roomDoor(room.size);
+          if (tile.x === d.x && tile.y === d.y) {
+            exitRoomRef.current();
+            raf = requestAnimationFrame(loop);
+            return;
+          }
+        } else if (movingRef.current) {
+          movingRef.current = false;
+          stepRef.current = { step: 0, at: 0 };
+        }
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const offX = Math.round((canvas.width - roomCanvas.width * ATOM_PX) / 2 / 2) * 2;
+        const offY = Math.round((canvas.height - roomCanvas.height * ATOM_PX) / 2 / 2) * 2;
+        ctx.drawImage(roomCanvas, offX, offY, roomCanvas.width * ATOM_PX, roomCanvas.height * ATOM_PX);
+
+        // Construction underway: the queued pieces stand as outlines until the clock fills them.
+        const pending = useHubStore.getState().buildJobs.filter(j => !j.applied && j.lotId === insideId && j.piece);
+        ctx.strokeStyle = '#a1a1aa';
+        ctx.lineWidth = 2;
+        pending.forEach(j => {
+          ctx.strokeRect(offX + j.piece!.x * TILE_SIZE + 3, offY + j.piece!.y * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+        });
+
+        // The thing in reach, marked; the tile ahead when the builder is out.
+        const near = nearPlacementRef.current;
+        if (near) {
+          const d = near.item.dimensions || { width: 1, height: 1 };
+          const fw = near.rotated ? d.height : d.width, fh = near.rotated ? d.width : d.height;
+          ctx.strokeStyle = '#fafafa';
+          ctx.strokeRect(offX + near.x * TILE_SIZE - 1, offY + near.y * TILE_SIZE - 1, fw * TILE_SIZE + 2, fh * TILE_SIZE + 2);
+        }
+        if (buildKindRef.current) {
+          const t = aheadTile();
+          ctx.strokeStyle = '#20de81';
+          ctx.strokeRect(offX + t.x * TILE_SIZE + 1, offY + t.y * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+        }
+
+        const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
+        const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
+        ctx.drawImage(body, Math.round((offX + p.x - w / 2) / 2) * 2, Math.round((offY + p.y - h / 2) / 2) * 2, w, h);
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      // ---------------- THE STREET ----------------
+
       const keys = keysRef.current;
       let dx = 0, dy = 0;
       if (keys.has('w') || keys.has('arrowup')) dy -= 1;
@@ -301,6 +570,12 @@ export const HubCanvas: React.FC = () => {
   // RENDER
   // =========================================================================
 
+  const insideLot = insideLotId ? lots.find(l => l.id === insideLotId) ?? null : null;
+  const mineInside = !!insideLot && insideLot.ownerId === player.id;
+  const myPendingJobs = insideLotId ? buildJobs.filter(j => !j.applied && j.lotId === insideLotId) : [];
+  const nearStationFn = nearPlacement ? STATION_FUNCTION[nearPlacement.item.universalDefinitionId] : undefined;
+  const buildMaterialFor = (kind: RoomPieceKind) => stashItems.find(i => (i.tags || []).includes(PIECE_BILLS[kind].tag));
+
   return (
     <div className="ws-ui" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--ws-void-1)', overflow: 'hidden' }}>
 
@@ -310,21 +585,88 @@ export const HubCanvas: React.FC = () => {
           <Chip tone="proof">{player.bank.gold.toLocaleString()} G</Chip>
           <Chip tone="signal">{player.username}</Chip>
         </div>
-        {currentZone && <span className="ws-dim ws-small">{currentZone.name}</span>}
-        <span className="ws-dim ws-small" style={{ fontFamily: 'var(--ws-mono)' }}>{playerTile.x}, {playerTile.y}</span>
+        {insideLot
+          ? <span className="ws-dim ws-small">LOT {insideLot.lotIndex} — {insideLot.structureType}{mineInside ? '' : ` · ${insideLot.ownerName}'s`}</span>
+          : currentZone && <span className="ws-dim ws-small">{currentZone.name}</span>}
+        <span className="ws-dim ws-small" style={{ fontFamily: 'var(--ws-mono)' }}>
+          {insideLot ? `${roomTile.x}, ${roomTile.y}` : `${playerTile.x}, ${playerTile.y}`}
+        </span>
       </div>
 
       {/* Interaction Prompt */}
-      {nearbyPOI && !activeNPC && !panel && (
+      {nearbyPOI && !activeNPC && !panel && !insideLot && (
         <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
-          <Chip tone="signal"><b>{nearbyPOI.name}</b> <Kbd>E</Kbd> INTERACT</Chip>
+          <Chip tone="signal"><b>{nearbyPOI.name}</b> <Kbd>E</Kbd> {
+            nearbyPOI.type === POIType.PLAYER_LOT &&
+            lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType !== 'EMPTY') ? 'ENTER' : 'INTERACT'
+          }</Chip>
+        </div>
+      )}
+      {insideLot && nearPlacement && !stationPanel && (
+        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
+          <Chip tone="signal">
+            <b>{nearPlacement.item.name}</b>{nearStationFn ? <> <Kbd>E</Kbd> WORK</> : null}
+          </Chip>
         </div>
       )}
 
       {/* Controls Hint */}
       <div style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100 }} className="ws-dim ws-small">
-        <Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact · <Kbd>~</Kbd> console
+        {insideLot
+          ? <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> work · walk the doorway to leave</>
+          : <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact · <Kbd>~</Kbd> console</>}
       </div>
+
+      {/* WAVE 10.3: THE WORKS — building and placing, in the room, by the owner */}
+      {insideLot && mineInside && !stationPanel && (
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 100, width: 240 }}>
+          <Panel title="THE WORKS">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span className="ws-dim ws-small">Structure, by the tile. The material pays the bill and sets the look.</span>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {(['WALL', 'DOOR', 'WINDOW'] as const).map(k => {
+                  const mat = buildMaterialFor(k);
+                  return (
+                    <Button
+                      key={k}
+                      tone={buildKind === k ? 'signal' : 'quiet'}
+                      title={mat ? `${PIECE_BILLS[k].count}x ${PIECE_BILLS[k].tag} — ${mat.name}` : `needs ${PIECE_BILLS[k].tag}`}
+                      onClick={() => setBuildKind(buildKind === k ? null : k)}
+                    >
+                      {k}
+                    </Button>
+                  );
+                })}
+                <Button tone="quiet" disabled title="The hub grants a single floor at this tier.">STAIR</Button>
+              </div>
+              <Button disabled={!buildKind} onClick={() => buildKind && void buildAhead(buildKind)}>
+                BUILD ON THE TILE AHEAD
+              </Button>
+              <Button tone="quiet" onClick={() => void demolishAhead()}>TAKE DOWN THE TILE AHEAD</Button>
+
+              <span className="ws-dim ws-small" style={{ marginTop: 4 }}>Placement. The item moves in; the record is signed.</span>
+              <select className="ws-input" value={placeSelId} onChange={e => setPlaceSelId(e.target.value)} aria-label="Item to place">
+                <option value="">Thing to place…</option>
+                {stashItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+              <Button disabled={!placeSelId} onClick={() => void placeAhead()}>PLACE ON THE TILE AHEAD</Button>
+              <Button tone="quiet" disabled={!nearPlacement} onClick={() => void reclaimNear()}>
+                RECLAIM {nearPlacement ? nearPlacement.item.name.toUpperCase() : 'IN REACH'}
+              </Button>
+
+              {myPendingJobs.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {myPendingJobs.map(j => (
+                    <span key={j.id} className="ws-dim ws-small">
+                      {j.kind === 'SHELL' ? j.structureType : j.piece?.kind} — {Math.max(0, Math.ceil((j.finishesAt - now) / 1000))}s on the clock
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Panel>
+        </div>
+      )}
 
       {/* THE CITY */}
       <canvas
@@ -362,12 +704,140 @@ export const HubCanvas: React.FC = () => {
         </Modal>
       )}
 
+      {stationPanel === 'WORKSHOP' && insideLot && (
+        <WorkshopStationModal lotId={insideLot.id} now={now} onClose={() => setStationPanel(null)} />
+      )}
+      {stationPanel === 'VENDOR' && insideLot && (
+        <CounterStationModal lotId={insideLot.id} onClose={() => setStationPanel(null)} />
+      )}
+
       {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}
       {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'missions' && <MissionsModal onClose={() => setPanel(null)} />}
     </div>
+  );
+};
+
+// =============================================================================
+// WAVE 10.3: STATION WINDOWS — the bench and the counter, in the room, calling
+// the SAME store functions the Holdings panels call. No duplicate logic.
+// =============================================================================
+
+const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () => void }> = ({ lotId, now, onClose }) => {
+  const hub = useHubStore();
+  const { player } = usePlayerStore();
+  const pushFeed = useFeed(s => s.push);
+  const stash = player.bank.stashTabs[0]?.items || [];
+  const countOf = (defId: string) => stash.filter(i => i.universalDefinitionId === defId).length;
+  const jobs = hub.craftingJobs.filter(j => j.lotId === lotId && !j.collected);
+
+  return (
+    <Modal title="THE BENCH" onClose={onClose} width={520}>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
+        Inputs leave the stash now; outputs mint when you look. The same bench the Holdings screen works.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {Object.values(RECIPE_DEFINITIONS).map(recipe => {
+          const ready = recipe.inputs.every(i => countOf(i.itemId) >= i.quantity);
+          return (
+            <Button
+              key={recipe.id}
+              disabled={!ready}
+              title={recipe.description}
+              onClick={async () => {
+                const ok = await hub.queueCraft(lotId, recipe.id);
+                pushFeed(ok ? `${recipe.name} on the bench (${recipe.laborTimeSeconds}s).` : `${recipe.name}: the inputs are short.`, ok ? 'signal' : 'loss');
+              }}
+            >
+              {recipe.name.toUpperCase()} ({recipe.laborTimeSeconds}s)
+            </Button>
+          );
+        })}
+        {jobs.map(job => {
+          const left = Math.ceil((job.finishesAt - now) / 1000);
+          return (
+            <div key={job.id} className="ws-row">
+              <span className="ws-small">{RECIPE_DEFINITIONS[job.recipeId]?.name}</span>
+              {left > 0
+                ? <span className="ws-dim ws-small">{left}s on the bench</span>
+                : <Button tone="signal" onClick={() => void hub.resolveCrafts()}>COLLECT</Button>}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+};
+
+const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({ lotId, onClose }) => {
+  const hub = useHubStore();
+  const { player } = usePlayerStore();
+  const pushFeed = useFeed(s => s.push);
+  const stash = player.bank.stashTabs[0]?.items || [];
+  const lot = hub.lots.find(l => l.id === lotId);
+  const mine = lot?.ownerId === player.id;
+  const [listId, setListId] = useState('');
+  const [listPrice, setListPrice] = useState('50');
+  if (!lot) return null;
+
+  return (
+    <Modal title="THE COUNTER" onClose={onClose} width={560}>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
+        {mine
+          ? 'Your shelf, served from the room. The hub keeps its cut of every sale.'
+          : `${lot.ownerName}'s counter. What is listed is for sale.`}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {mine && (lot.proceeds || 0) > 0 && (
+          <Button tone="proof" onClick={async () => {
+            const got = await hub.collectProceeds(lotId);
+            if (got > 0) pushFeed(`${got} G collected from the counter.`, 'proof');
+          }}>
+            COLLECT {lot.proceeds}G
+          </Button>
+        )}
+        {mine && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <select className="ws-input" style={{ flex: 1 }} value={listId} onChange={e => setListId(e.target.value)} aria-label="Item to list">
+              <option value="">Item to list…</option>
+              {stash.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+            </select>
+            <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} aria-label="Price" />
+            <Button
+              disabled={!listId || !Number(listPrice)}
+              onClick={async () => {
+                if (!listId) return;
+                const ok = await hub.listItemForSale(lotId, listId, Number(listPrice));
+                if (ok) { pushFeed('Listed. The shelf shows it.', 'signal'); setListId(''); }
+              }}
+            >
+              LIST
+            </Button>
+          </div>
+        )}
+        {(lot.shopListings || []).length === 0 && <span className="ws-dim ws-small">The shelf is bare.</span>}
+        {(lot.shopListings || []).map(listing => (
+          <div key={listing.item.id} className="ws-row">
+            <span style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+              <ItemSprite item={listing.item} cellPx={14} />
+              <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
+            </span>
+            <Button
+              tone="proof"
+              disabled={player.bank.gold < listing.price}
+              onClick={async () => {
+                const ok = await hub.buyFromLot(lotId, listing.item.id);
+                pushFeed(ok ? `Bought ${listing.item.name} for ${listing.price} G.` : 'The counter refused the coin.', ok ? 'proof' : 'loss');
+              }}
+            >
+              BUY {listing.price}G
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 };
 

@@ -59,6 +59,20 @@ export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {
     requiredFacility: 'WORKSHOP',
     requiredSkill: 'skill_glassblowing',
     minSkillLevel: 0
+  },
+  // Wave 10 (D9): furniture is an item like any other. The first of the line:
+  // plant the trees, mill the planks, build the tables, sell them.
+  'recipe_table': {
+    id: 'recipe_table',
+    name: 'Join a Table',
+    description: 'Three planks, one table. A workstation, a shelf, a thing to sell.',
+    inputs: [{ itemId: 'crf_plank', quantity: 3, consume: true }],
+    outputs: [{ itemId: 'stn_table', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 20,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_carpentry',
+    minSkillLevel: 0
   }
 };
 
@@ -95,6 +109,34 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {
     visuals: { modelId: 'glass', colorHex: '#a5f3fc' },
     materialProps: { [MaterialPropertyType.DENSITY]: 2, [MaterialPropertyType.LUMINOSITY]: 10 },
     tags: ['crafted', 'glass', 'building']
+  },
+
+  // Wave 10 (D8/D9): stations are items. A WORKSHOP shell mints its bench and a
+  // VENDOR shell mints its counter when construction completes; tables are
+  // crafted, carried, placed and sold like anything else.
+  'stn_bench': {
+    id: 'stn_bench', name: 'Work Bench', type: ItemType.STRUCTURE,
+    rank: UniversalRank.F, rarity: Rarity.COMMON,
+    weight: 12.0, dimensions: { width: 2, height: 1 }, icon: '🔨',
+    visuals: { modelId: 'bench', colorHex: '#a16207' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 8, [MaterialPropertyType.HARDNESS]: 30 },
+    tags: ['crafted', 'station', 'wood', 'heavy']
+  },
+  'stn_counter': {
+    id: 'stn_counter', name: 'Shop Counter', type: ItemType.STRUCTURE,
+    rank: UniversalRank.F, rarity: Rarity.COMMON,
+    weight: 14.0, dimensions: { width: 3, height: 1 }, icon: '🪙',
+    visuals: { modelId: 'counter', colorHex: '#ffd700' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 8, [MaterialPropertyType.HARDNESS]: 25 },
+    tags: ['crafted', 'station', 'wood', 'heavy']
+  },
+  'stn_table': {
+    id: 'stn_table', name: 'Joined Table', type: ItemType.STRUCTURE,
+    rank: UniversalRank.F, rarity: Rarity.COMMON,
+    weight: 8.0, dimensions: { width: 2, height: 2 }, icon: '🪑',
+    visuals: { modelId: 'table', colorHex: '#a16207' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 5, [MaterialPropertyType.HARDNESS]: 20 },
+    tags: ['crafted', 'station', 'wood']
   }
 };
 

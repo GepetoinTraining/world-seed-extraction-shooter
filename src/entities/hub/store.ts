@@ -16,6 +16,12 @@ import { Treasury } from '../../logic/economy/Treasury';
 import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../economy/data/recipeDefinitions';
 import { TransformationEngine } from '../economy/TransformationEngine';
 import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
+import { CertificateSystem } from '../identity/certificateSystem';
+import { useIdentityStore } from '../identity/store';
+import {
+  IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill,
+  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BILLS, SHELL_BUILD_SECONDS, SHELL_STATION
+} from './room';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
@@ -55,6 +61,54 @@ export interface ICraftJob {
 /** Logical world-day (observed time, never stored clocks). */
 export const worldDay = () => Math.floor(Date.now() / 86_400_000);
 
+// Wave 10 (D8): a queued construction step. Materials leave the stash when the
+// job is queued — exactly once — and the piece applies when the clock says so.
+export interface IBuildJob {
+  id: string;
+  lotId: string;
+  kind: 'SHELL' | 'PIECE';
+  structureType?: 'HOUSE' | 'WORKSHOP' | 'VENDOR';
+  piece?: { kind: RoomPieceKind; x: number; y: number; materialDefId: string };
+  ownerCertUid: string;
+  queuedAt: number;
+  finishesAt: number;
+  applied: boolean;
+  consumedIds: string[];
+  consumedDefIds: string[];
+  /** The owner's signature over the queued record: every completed step is signed. */
+  signature?: string;
+}
+
+const dominantDefId = (defIds: string[]): string => {
+  const counts = new Map<string, number>();
+  for (const id of defIds) counts.set(id, (counts.get(id) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'crf_plank';
+};
+
+/** The owner signs the record. No certificate, no signature — the record still stands, unsigned. */
+async function signRecord(payload: Record<string, any>): Promise<string | undefined> {
+  const cert = useIdentityStore.getState().certificate;
+  if (!cert) return undefined;
+  try {
+    const signed = await CertificateSystem.signPayload(cert.metadata.uid, payload);
+    return signed.signature;
+  } catch {
+    return undefined;
+  }
+}
+
+const removeFromStash = (ids: string[]) => usePlayerStore.setState(s => ({
+  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+    idx === 0 ? { ...tab, items: tab.items.filter(i => !ids.includes(i.id)) } : tab
+  ) } }
+}));
+
+const addToStash = (items: IItem[]) => usePlayerStore.setState(s => ({
+  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+    idx === 0 ? { ...tab, items: [...tab.items, ...items] } : tab
+  ) } }
+}));
+
 export interface IShopListing {
   id: string;
   item: IItem;
@@ -83,6 +137,9 @@ interface HubState {
   activeHubId: string | null;
   lots: IPlayerLot[];
   craftingJobs: ICraftJob[];
+  // Wave 10: the rooms behind the doors, and the construction queue
+  rooms: Record<string, IRoomState>;
+  buildJobs: IBuildJob[];
   weaponShop: IShopListing[];
   armorShop: IShopListing[];
   consumableShop: IShopListing[];
@@ -100,6 +157,12 @@ interface HubState {
   // Wave 5: society
   buyLot: (lotId: string) => Promise<boolean>;
   buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR') => Promise<boolean>;
+  // Wave 10: construction and placement
+  resolveBuilds: () => Promise<number>;
+  queuePiece: (lotId: string, kind: RoomPieceKind, x: number, y: number, materialItemId: string) => Promise<RoomVerdict>;
+  demolishPiece: (lotId: string, pieceId: string) => Promise<boolean>;
+  placeItem: (lotId: string, itemId: string, x: number, y: number, rotated: boolean) => Promise<RoomVerdict>;
+  reclaimItem: (lotId: string, placementId: string) => Promise<boolean>;
   queueCraft: (lotId: string, recipeId: string) => Promise<boolean>;
   resolveCrafts: () => Promise<number>;
   sellToVendor: (itemId: string) => Promise<number | null>;
@@ -116,6 +179,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   activeHubId: null,
   lots: [],
   craftingJobs: [],
+  rooms: {},
+  buildJobs: [],
   weaponShop: [],
   armorShop: [],
   consumableShop: [],
@@ -127,7 +192,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ lots: IPlayerLot[]; craftingJobs?: ICraftJob[] }>(
+      const hubStateDoc = await VectorStore.get<{ lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[] }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -135,7 +200,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       if (hubStateDoc) {
         // LOAD EXISTING
         console.log('[HUB] State loaded from persistence.');
-        set({ lots: hubStateDoc.data.lots, craftingJobs: hubStateDoc.data.craftingJobs || [] });
+        set({
+          lots: hubStateDoc.data.lots,
+          craftingJobs: hubStateDoc.data.craftingJobs || [],
+          rooms: hubStateDoc.data.rooms || {},
+          buildJobs: hubStateDoc.data.buildJobs || []
+        });
       } else {
         // GENERATE FRESH (First time this Hub is visited)
         console.log('[HUB] No state found. Generating fresh layout...');
@@ -166,8 +236,9 @@ export const useHubStore = create<HubState>((set, get) => ({
 
       await Treasury.endow(hubWorldUid, HUB_ENDOWMENT_GOLD);
 
-      // 3. Wave 5: resolve what time finished while nobody watched
+      // 3. Wave 5 / Wave 10: resolve what time finished while nobody watched
       await get().resolveCrafts();
+      await get().resolveBuilds();
       await get().resolveUpkeep();
 
     } catch (e) {
@@ -178,7 +249,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   saveHubState: async () => {
-    const { activeHubId, lots, craftingJobs } = get();
+    const { activeHubId, lots, craftingJobs, rooms, buildJobs } = get();
     if (!activeHubId) return;
 
     // Hub changes usually move gold or items, so the bank is saved with them
@@ -187,7 +258,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     await VectorStore.put({
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: { lots, craftingJobs },
+      data: { lots, craftingJobs, rooms, buildJobs },
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -253,9 +324,13 @@ export const useHubStore = create<HubState>((set, get) => ({
     return ok;
   },
 
-  /** Raise a structure on a lot you own. Cost goes to the treasury. */
+  /**
+   * Wave 10 (D8): raise a shell on a lot you own. The permit is gold (to the
+   * treasury); the walls are materials, consumed from the stash exactly once,
+   * at queue time; the building finishes on the clock (resolveBuilds).
+   */
   buildStructure: async (lotId, type) => {
-    const { lots, activeHubId, saveHubState } = get();
+    const { lots, activeHubId, buildJobs, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const p = usePlayerStore.getState().player;
     if (!lot || !activeHubId) return false;
@@ -263,19 +338,227 @@ export const useHubStore = create<HubState>((set, get) => ({
       console.log('[BUILD] You do not own this lot.');
       return false;
     }
+    if (buildJobs.some(j => j.lotId === lotId && j.kind === 'SHELL' && !j.applied)) {
+      console.log('[BUILD] Construction is already underway on this lot.');
+      return false;
+    }
+    const room = get().rooms[lotId];
+    if (lot.structureType !== 'EMPTY' && room && (room.pieces.length > 0 || room.placements.length > 0)) {
+      console.log('[BUILD] The building is not empty. Reclaim what stands inside first.');
+      return false;
+    }
     const cost = STRUCTURE_COSTS[type].build;
     if (p.bank.gold < cost) {
-      console.log(`[BUILD] ${type} costs ${cost}G; you have ${p.bank.gold}G.`);
+      console.log(`[BUILD] ${type} permit costs ${cost}G; you have ${p.bank.gold}G.`);
+      return false;
+    }
+    const stash = p.bank.stashTabs[0]?.items || [];
+    const bill = pickBill(SHELL_BILLS[type], stash);
+    if (!bill.ok) {
+      console.log(`[BUILD] The bill is short: ${bill.missing}. Bring the materials.`);
       return false;
     }
 
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+    removeFromStash(bill.items.map(i => i.id));
     await Treasury.credit(activeHubId, cost);
-    await Ledger.append('GOLD_DELTA', { reason: 'BUILD', lotId, structure: type, amount: -cost, treasuryId: activeHubId, treasuryDelta: cost });
 
-    set({ lots: get().lots.map(l => l.id === lotId ? { ...l, structureType: type, upkeepPaidThroughDay: worldDay() } : l) });
+    const job: IBuildJob = {
+      id: `bld_${Date.now().toString(36)}_${lot.lotIndex}`,
+      lotId,
+      kind: 'SHELL',
+      structureType: type,
+      ownerCertUid: p.id,
+      queuedAt: Date.now(),
+      finishesAt: Date.now() + SHELL_BUILD_SECONDS[type] * 1000,
+      applied: false,
+      consumedIds: bill.items.map(i => i.id),
+      consumedDefIds: bill.items.map(i => i.universalDefinitionId)
+    };
+    job.signature = await signRecord({ kind: 'SHELL', lotId, structureType: type, consumedIds: job.consumedIds, at: job.queuedAt });
+
+    set({ buildJobs: [...get().buildJobs, job] });
+    await Ledger.append('GOLD_DELTA', { reason: 'BUILD_PERMIT', lotId, structure: type, amount: -cost, treasuryId: activeHubId, treasuryDelta: cost });
+    await Ledger.append('BUILD', { kind: 'SHELL_QUEUED', jobId: job.id, lotId, structure: type, consumedIds: job.consumedIds });
     await saveHubState();
-    console.log(`[BUILD] ${type} raised on lot ${lot.lotIndex} for ${cost}G.`);
+    console.log(`[BUILD] ${type} under construction on lot ${lot.lotIndex} (${SHELL_BUILD_SECONDS[type]}s).`);
+    return true;
+  },
+
+  /** Apply every finished construction job: shells stand up, pieces join the room. */
+  resolveBuilds: async () => {
+    const now = Date.now();
+    const due = get().buildJobs.filter(j => !j.applied && j.finishesAt <= now);
+    if (due.length === 0) return 0;
+
+    const layout = HubGenerator.generate();
+    let applied = 0;
+    for (const job of due) {
+      if (job.kind === 'SHELL' && job.structureType) {
+        const poi = HubGenerator.findPOI(layout, job.lotId);
+        const footprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
+        const shellMaterial = dominantDefId(job.consumedDefIds);
+        set({
+          lots: get().lots.map(l => l.id === job.lotId ? { ...l, structureType: job.structureType!, upkeepPaidThroughDay: worldDay() } : l),
+          rooms: { ...get().rooms, [job.lotId]: emptyRoom(job.lotId, footprint, shellMaterial) }
+        });
+        // The structure brings its station: an item like any other, into the stash.
+        const stationDefId = SHELL_STATION[job.structureType];
+        if (stationDefId) {
+          const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`));
+          addToStash([station]);
+          const { Provenance } = await import('../../logic/sovereignty/Provenance');
+          await Provenance.record(station, 'MINT', { origin: 'CONSTRUCTION', jobId: job.id, lotId: job.lotId, structure: job.structureType });
+        }
+        await Ledger.append('BUILD', { kind: 'SHELL_DONE', jobId: job.id, lotId: job.lotId, structure: job.structureType });
+      } else if (job.kind === 'PIECE' && job.piece) {
+        const room = get().rooms[job.lotId];
+        if (room) {
+          set({
+            rooms: {
+              ...get().rooms,
+              [job.lotId]: {
+                ...room,
+                pieces: [...room.pieces, {
+                  id: `pc_${job.id}`,
+                  kind: job.piece.kind,
+                  x: job.piece.x,
+                  y: job.piece.y,
+                  materialDefId: job.piece.materialDefId,
+                  builtBy: job.ownerCertUid,
+                  at: job.finishesAt,
+                  signature: job.signature
+                }]
+              }
+            }
+          });
+          await Ledger.append('BUILD', { kind: 'PIECE_DONE', jobId: job.id, lotId: job.lotId, piece: job.piece });
+        }
+      }
+      applied++;
+    }
+    set({ buildJobs: get().buildJobs.map(j => due.some(d => d.id === j.id) ? { ...j, applied: true } : j) });
+    await get().saveHubState();
+    return applied;
+  },
+
+  /** Queue one structural piece in your own room. The material is the look. */
+  queuePiece: async (lotId, kind, x, y, materialItemId) => {
+    const { lots, rooms, buildJobs, saveHubState } = get();
+    const lot = lots.find(l => l.id === lotId);
+    const room = rooms[lotId];
+    const p = usePlayerStore.getState().player;
+    if (!lot || !room) return { ok: false, reason: 'There is no room here yet.' };
+    if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this room.' };
+
+    // Validate against the room as it WILL be, pending pieces included.
+    const pending = buildJobs.filter(j => !j.applied && j.lotId === lotId && j.kind === 'PIECE' && j.piece);
+    const preview: IRoomState = {
+      ...room,
+      pieces: [...room.pieces, ...pending.map(j => ({ id: j.id, ...j.piece!, builtBy: j.ownerCertUid, at: j.queuedAt }))]
+    };
+    const verdict = canBuildPiece(preview, kind, x, y);
+    if (!verdict.ok) return verdict;
+
+    const stash = p.bank.stashTabs[0]?.items || [];
+    const material = stash.find(i => i.id === materialItemId);
+    const bill = PIECE_BILLS[kind];
+    if (!material) return { ok: false, reason: 'That material is not in your stash.' };
+    if (!(material.tags || []).includes(bill.tag)) {
+      return { ok: false, reason: `A ${kind.toLowerCase()} asks for something ${bill.tag}; ${material.name} is not.` };
+    }
+    const picked = pickBill([bill], [material, ...stash.filter(i => i.id !== material.id && i.universalDefinitionId === material.universalDefinitionId)]);
+    if (!picked.ok) return { ok: false, reason: `A ${kind.toLowerCase()} takes ${bill.count}x ${bill.tag}; you hold less.` };
+
+    removeFromStash(picked.items.map(i => i.id));
+    const job: IBuildJob = {
+      id: `bld_${Date.now().toString(36)}_${x}_${y}`,
+      lotId,
+      kind: 'PIECE',
+      piece: { kind, x, y, materialDefId: material.universalDefinitionId },
+      ownerCertUid: p.id,
+      queuedAt: Date.now(),
+      finishesAt: Date.now() + PIECE_BUILD_SECONDS[kind] * 1000,
+      applied: false,
+      consumedIds: picked.items.map(i => i.id),
+      consumedDefIds: picked.items.map(i => i.universalDefinitionId)
+    };
+    job.signature = await signRecord({ kind: 'PIECE', lotId, piece: job.piece, consumedIds: job.consumedIds, at: job.queuedAt });
+    set({ buildJobs: [...get().buildJobs, job] });
+    await Ledger.append('BUILD', { kind: 'PIECE_QUEUED', jobId: job.id, lotId, piece: job.piece, consumedIds: job.consumedIds });
+    await saveHubState();
+    return { ok: true };
+  },
+
+  /** Take a piece down. The materials do not come back; the ledger remembers. */
+  demolishPiece: async (lotId, pieceId) => {
+    const { lots, rooms, saveHubState } = get();
+    const lot = lots.find(l => l.id === lotId);
+    const room = rooms[lotId];
+    const p = usePlayerStore.getState().player;
+    if (!lot || !room || lot.ownerId !== p.id) return false;
+    const piece = room.pieces.find(pc => pc.id === pieceId);
+    if (!piece) return false;
+    set({ rooms: { ...get().rooms, [lotId]: { ...room, pieces: room.pieces.filter(pc => pc.id !== pieceId) } } });
+    await Ledger.append('BUILD', { kind: 'DEMOLISHED', lotId, pieceId, piece: { kind: piece.kind, x: piece.x, y: piece.y } });
+    await saveHubState();
+    return true;
+  },
+
+  /** Stand a stash item in your room. The item moves; the record is signed. */
+  placeItem: async (lotId, itemId, x, y, rotated) => {
+    const { lots, rooms, buildJobs, saveHubState } = get();
+    const lot = lots.find(l => l.id === lotId);
+    const room = rooms[lotId];
+    const p = usePlayerStore.getState().player;
+    if (!lot || !room) return { ok: false, reason: 'There is no room here yet.' };
+    if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this room.' };
+    const stash = p.bank.stashTabs[0]?.items || [];
+    const item = stash.find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'That is not in your stash.' };
+
+    const pending = buildJobs.filter(j => !j.applied && j.lotId === lotId && j.kind === 'PIECE' && j.piece);
+    const preview: IRoomState = {
+      ...room,
+      pieces: [...room.pieces, ...pending.map(j => ({ id: j.id, ...j.piece!, builtBy: j.ownerCertUid, at: j.queuedAt }))]
+    };
+    const verdict = canPlaceItem(preview, item, x, y, rotated);
+    if (!verdict.ok) return verdict;
+
+    const at = Date.now();
+    const placementId = `plc_${at.toString(36)}_${x}_${y}`;
+    const signature = await signRecord({ kind: 'PLACE', lotId, itemId: item.id, defId: item.universalDefinitionId, x, y, rotated, at });
+
+    removeFromStash([item.id]);
+    set({
+      rooms: {
+        ...get().rooms,
+        [lotId]: { ...room, placements: [...room.placements, { id: placementId, item, x, y, rotated, placedBy: p.id, at, signature }] }
+      }
+    });
+    await Ledger.append('BUILD', { kind: 'PLACED', lotId, placementId, itemId: item.id, defId: item.universalDefinitionId, x, y });
+    const { Provenance } = await import('../../logic/sovereignty/Provenance');
+    await Provenance.record(item, 'TRANSFER', { via: 'PLACED', lotId, x, y });
+    await saveHubState();
+    return { ok: true };
+  },
+
+  /** Take a placed item back into the stash. Once: it exists in one place only. */
+  reclaimItem: async (lotId, placementId) => {
+    const { lots, rooms, saveHubState } = get();
+    const lot = lots.find(l => l.id === lotId);
+    const room = rooms[lotId];
+    const p = usePlayerStore.getState().player;
+    if (!lot || !room || lot.ownerId !== p.id) return false;
+    const placement = room.placements.find(pl => pl.id === placementId);
+    if (!placement) return false;
+
+    set({ rooms: { ...get().rooms, [lotId]: { ...room, placements: room.placements.filter(pl => pl.id !== placementId) } } });
+    addToStash([placement.item]);
+    await Ledger.append('BUILD', { kind: 'RECLAIMED', lotId, placementId, itemId: placement.item.id });
+    const { Provenance } = await import('../../logic/sovereignty/Provenance');
+    await Provenance.record(placement.item, 'TRANSFER', { via: 'RECLAIMED', lotId });
+    await saveHubState();
     return true;
   },
 
@@ -509,21 +792,26 @@ export const useHubStore = create<HubState>((set, get) => ({
         set({ lots: get().lots.map(l => l.id === lot.id ? { ...l, upkeepPaidThroughDay: day } : l) });
         console.log(`[UPKEEP] Lot ${lot.lotIndex}: paid ${cost}G for ${owed} day(s).`);
       } else {
-        // Reverted: listings and lot inventory return to the (local) owner
+        // Reverted: listings, lot inventory and everything placed in the room
+        // return to the (local) owner. A placed item is never lost (Wave 10).
+        const room = get().rooms[lot.id];
         if (isLocal) {
-          const refund = [...(lot.shopListings || []).map(li => li.item), ...lot.inventory];
-          if (refund.length > 0) {
-            usePlayerStore.setState(s => ({
-              player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-                idx === 0 ? { ...tab, items: [...tab.items, ...refund] } : tab
-              ) } }
-            }));
-          }
+          const refund = [
+            ...(lot.shopListings || []).map(li => li.item),
+            ...lot.inventory,
+            ...(room?.placements.map(pl => pl.item) ?? [])
+          ];
+          if (refund.length > 0) addToStash(refund);
         }
         await Ledger.append('TRADE', { kind: 'LOT_REVERTED', lotId: lot.id, daysUnpaid: owed, playerDelta: 0, treasuryDelta: 0 });
-        set({ lots: get().lots.map(l => l.id === lot.id
-          ? { ...l, ownerId: null, ownerName: null, purchaseDate: null, structureType: 'EMPTY', shopListings: [], inventory: [], upkeepPaidThroughDay: undefined }
-          : l) });
+        const { [lot.id]: _gone, ...keptRooms } = get().rooms;
+        set({
+          lots: get().lots.map(l => l.id === lot.id
+            ? { ...l, ownerId: null, ownerName: null, purchaseDate: null, structureType: 'EMPTY', shopListings: [], inventory: [], upkeepPaidThroughDay: undefined }
+            : l),
+          rooms: keptRooms,
+          buildJobs: get().buildJobs.filter(j => j.lotId !== lot.id)
+        });
         console.warn(`[UPKEEP] Lot ${lot.lotIndex} REVERTED to market (${owed} day(s) unpaid).`);
       }
     }

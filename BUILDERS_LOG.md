@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion) and again at the end of Wave 9 (the interface), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 10, inside the houses**, and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface) and Wave 10 (the interiors), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 11, bringing the Nexi home**, and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -10,9 +10,9 @@ World Seed is a browser extraction game: a signed identity, generated worlds, a 
 
 Pedro's verdict on the look, seeing it in the real game: *"literally absurdly good"*. **The look is approved, and the interface is now made of it.** Mantine survives only under the admin Genre Creator; every player-facing screen is built from the kit in `src/components/ui/`.
 
-- **Tests:** 200 passing (`npm test`), including one recorded known failure (bar 3, in the art). Wave 9's bars live in `tests/interface.test.ts`.
-- **Commits:** Waves 8, 8B and 9 are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
-- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html` and `/prototype/atoms/hub.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the survey, the field, the receipts.
+- **Tests:** 227 passing (`npm test`), including one recorded known failure (bar 3, in the art). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`.
+- **Commits:** Waves 8, 8B, 9 and 10 are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
+- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts.
 
 ## Working with Pedro
 
@@ -59,7 +59,11 @@ Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → q
 | `src/entities/combat/killRewards.ts` | The Wave 9.5 fix: KILL xpReward → the rank track |
 | `src/entities/player/systems/ProgressionSystem.ts` | `RANK_XP_THRESHOLDS`, `rankFromXp`, `checkSkill` (D6 auto-success) |
 | `src/logic/systems/Deploy.ts` | The one door into a world (Mission Control AND quick deploy) |
+| `src/entities/hub/room.ts` | NEW: the room contract and pure logic — build records, walkability, refusals, bills by tag, minimum sizes, NPC presets |
+| `src/render/atoms/room.ts` | NEW: `composeRoom` — a build record into atoms; walls from the material that paid their bill |
+| `src/entities/hub/store.ts` | Now also: `rooms`, `buildJobs`, `resolveBuilds`, `queuePiece`, `placeItem`, `reclaimItem` — construction and placement, signed |
 | `tests/interface.test.ts` | Wave 9's bars: lines 26–31, emoji, text floor, keyboard, recon grayscale, dialogue |
+| `tests/rooms.test.ts` | Wave 10's bars: lines 32–34, determinism, walkability, refusals, materials-once, persistence, grayscale, lot blocking |
 
 A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer work over byte buffers, testable in Node.
 
@@ -67,29 +71,35 @@ A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer
 
 Full detail in `PLAN.md` 3B. In short: the kit and one theme (9.1); the thin bar and the Agent/loadout screen, HUD-style per Pedro's D7 (9.2); character select with a roster of real owners, birth that ends face-to-face with your real portrait, and the login-reset bug dead (9.3); real item art at real footprints everywhere, no emoji anywhere, the inspect card answering mouse and keyboard (9.4); kill XP finally applied to a rank track with a visible rank-up moment and spendable points (9.5); the SEAL and DIED receipts, the feed, the exit bearing, the ledger viewer (9.6); every dialogue option built or removed in voice (9.7); and the survey redrawn from atoms so it reads in grayscale.
 
+## What the interiors pass (Wave 10) built
+
+Full detail in `PLAN.md` 3B. Pedro's D8/D9 reshaped it at the start: rooms are BUILT from a tile↔function builder, never generated — walls, stairs, windows and doors are the only structure, and everything else in a room is an item. In short: the room contract and composer with its proof page (10.1); real doors — built lots block their footprint, `[E] ENTER` walks you in, the doorway walks you out, your street position kept (10.2); construction as jobs — gold permit + material bill consumed exactly once + clock, every step signed, the shell minting its bench or counter (10.3); placement of any stash item at its real art, validated (nothing seals the way out; stations demand their minimum area), signed with provenance, surviving reloads and coming home on foreclosure (10.4); and the NPC presets as data for Wave 11's pooling (10.5). The whole loop was played: mint → buy → build on the clock → enter → place → craft at the bench → wall up → reload → same room → counter serving with the hub's cut.
+
 **Left open, honestly:**
 - A session left through recon's WITHDRAW is ABORTED and gets no receipt moment.
-- The stash list in the Bank shows footprint-scaled thumbnails in rows, not a spatial grid; the spatial grid lives in the field pack. Decide in Wave 10 whether the Bank wants the grid too (placement will want it).
+- The stash list in the Bank shows footprint-scaled thumbnails in rows, not a spatial grid; the spatial grid lives in the field pack. Placement went keyboard-first instead (the tile ahead), so the Bank grid question still stands for a later pass.
+- Stations are told apart by card and name; they still want a silhouette family of their own.
+- STAIR is typed and refused in voice — one floor until the hub grows. Demolish returns no materials. A HOUSE has no function hook yet.
 - The near-twin figures, worn-gear subtlety at 36px, and the city's motionless keepers stand as before.
 - Balance is still unplayed at scale (Wave 12). A fresh F-rank still dies to the first pack of anything.
 - An invented genre still gets its look from a hash; the look family still needs widening.
 
-## Your pass: inside the houses (Wave 10)
+## Your pass: bringing the Nexi home (Wave 11)
 
-**Scope, decisions (D8, D9) and bars are in `PLAN.md`**: the room generator as a prototype first (pure function of lot and structure, 20px tile, warm ramp, proof page with every structure type — it touches no shared files), then real doors and transitions, stations that call the same store functions the Holdings panels use, signed placement. The interface you need exists now: panels, cards, the pack, `ItemSprite` for placing things by their real grain, and the dialogue registry if keepers move indoors. Ask D8 and D9 at the start if unanswered.
+**Scope, decisions (D10, D11) and bars are in `PLAN.md`**: redeeming an `Escort Bond` places a resident who is recognisably the person you rescued (their rolled sheet survives), with a job that has a real effect; farms (`res_tree_sapling`, `IFarmPlot`) plant what you harvested on the Workshop's accumulate-and-resolve clock; materials stored and shown in rooms by their real grain with their history; residents visible in the city, walking the 8B walk. Wave 10 left you the pieces: `ROOM_PRESETS` + `presetToRoom` are the houses NPCs use (D8's pooling flow — players bring materials, a timer runs, a resident moves in — is yours to build on `IBuildJob`), placement and provenance are live, and the dialogue registry is where a resident's voice goes. Ask D10 and D11 at the start if unanswered.
 
 ## Known weak spots
 
 **In the art:** near-twin certificates at 16 atoms; first wear bite easy to miss at 36px; recorded failure: Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms (bar 3).
 
-**In the game:** balance unplayed at the new scale; you can walk through a house on your own lot (trees and city buildings block; lot structures do not — Wave 10.2 fixes this); a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape).
+**In the game:** balance unplayed at the new scale; a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape). (The walk-through lots are fixed: a built lot blocks exactly what it draws, and its door is real — Wave 10.2.)
 
 ## Traps that cost me time
 
-- **The browser pane throttles when hidden — twice over.** 8B lost line 25 to a backgrounded pane. Wave 9 found the deeper layer: `document.hidden` can be FALSE and rAF still runs at ~3fps with an idle main thread, because the desktop pane itself isn't displayed. Front the tab AND show the pane (and keep the window visible) before believing any frame number. The honest measure: 314 things, 4.17ms/frame, vsync-locked at 240Hz.
+- **The browser pane throttles when hidden — twice over.** 8B lost line 25 to a backgrounded pane. Wave 9 found the deeper layer: `document.hidden` can be FALSE and rAF still runs at ~3fps with an idle main thread, because the desktop pane itself isn't displayed. Front the tab AND show the pane (and keep the window visible) before believing any frame number. Wave 10 hit it again walking the city (2 tiles in 5 seconds): `tabs_context` SAYS "the Browser pane is currently hidden" — check it before walking anywhere. The honest measure: 314 things, 4.17ms/frame, vsync-locked at 240Hz.
 - **HMR resets zustand stores.** Editing a store-adjacent module mid-session rebuilds the module graph: the bar suddenly says "Unknown · 100 G". That's the template, not data loss — reload fully and the signed doc rehydrates.
 - **Test characters die fast.** In-memory health/XP changes are fine for testing and never reach the save. Teleporting skips collision: you can land in a lake.
-- **Driving the game from a script.** `window.__ws` exposes the stores; `await import('/src/...')` returns the LIVE module graph (you can monkey-patch `MobAI.tick` etc. for profiling). To walk, dispatch `keydown`/`keyup` on `window` and hold for over a second.
+- **Driving the game from a script.** `window.__ws` exposes the stores — USE THOSE for store state: Wave 10 found that `await import('/src/entities/player/store.ts')` in the console can hand you a SECOND module instance whose setState the app never sees (gold stays stale on screen). `await import('/src/...')` is still right for pure modules (ItemFactory, definitions, Rng) and for monkey-patching. To walk, dispatch `keydown`/`keyup` on `window` and hold for over a second.
 - **The console buffer keeps old errors** across reloads. Check timestamps before believing one.
 - **Windows files are CRLF**; long edits are safest as a Python script that normalizes endings and asserts each target string exists.
 - **RxDB freezes documents in dev.** Copy before mutating anything from the database (CombatSystem already copies mobs).
@@ -98,4 +108,4 @@ Full detail in `PLAN.md` 3B. In short: the kit and one theme (9.1); the thin bar
 
 ## After this pass
 
-`PLAN.md`, under "The next legs": Wave 10 (interiors), Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks), Wave 12 (the second true test, played honestly, with balance). Pedro's D6 crafting half (items raising skills, components carrying affixes, S+ naming) lands with the crafting waves.
+`PLAN.md`, under "The next legs": Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks), Wave 12 (the second true test, played honestly, with balance). Pedro's D6 crafting half (items raising skills, components carrying affixes, S+ naming) and D9's furniture-from-materials bonuses land with the crafting waves; D8's NPC pooling flow lands with Wave 11's residents.

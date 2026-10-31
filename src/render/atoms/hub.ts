@@ -210,20 +210,7 @@ function lotInk(state: LotState): Ink {
     case 'OWNED_EMPTY':
       fence();
       break;
-    case 'HOUSE':
-      fence();
-      for (let y = 6; y < 22; y++) { const half = y - 4; k.rect(24 - half, y, 24 + half, y); }
-      k.rect(10, 22, 38, 41).rect(20, 28, 27, 41, 0);
-      break;
-    case 'WORKSHOP':
-      fence();
-      k.rect(6, 22, 42, 41).rect(32, 5, 38, 22).rect(12, 28, 22, 34, 0).rect(26, 28, 36, 34, 0);
-      break;
-    case 'VENDOR':
-      fence();
-      k.rect(6, 7, 42, 17).rect(12, 17, 15, 40).rect(33, 17, 36, 40).rect(8, 28, 40, 34);
-      for (let x = 12; x < 42; x += 12) k.rect(x, 7, x + 5, 17, 0);
-      break;
+    // HOUSE / WORKSHOP / VENDOR draw as real buildings now (builtLotArt, Wave 10).
     case 'FORECLOSED':
       k.rect(0, 0, 8, 2).rect(30, 45, 47, 47).rect(0, 32, 2, 47).rect(45, 0, 47, 12);
       k.line(10, 10, 37, 37, 3).line(37, 10, 10, 37, 3);
@@ -232,7 +219,60 @@ function lotInk(state: LotState): Ink {
   return k;
 }
 
+/**
+ * Wave 10: a built lot is a real building. Solid over every tile (the city
+ * blocks exactly this footprint), a hard void seam all round, and a doorway
+ * at the bottom centre — the way in that 10.2 opens.
+ */
+function builtLotArt(state: 'HOUSE' | 'WORKSHOP' | 'VENDOR', w: number, h: number, seed: number): Sprite {
+  const data = new Uint8Array(w * h);
+  const facade = Math.max(12, (h * 3) >> 3);
+  const roofH = h - facade;
+  const doorW = 8;
+  const doorX0 = (w >> 1) - (doorW >> 1);
+
+  const roofAtom = (x: number, y: number): number => {
+    switch (state) {
+      case 'HOUSE': {
+        // Gabled shingles: chevrons falling away from the ridge.
+        const dist = Math.abs(x - (w >> 1));
+        return (y + (dist >> 1)) % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1 + ((x + y + seed) % 2));
+      }
+      case 'WORKSHOP': {
+        // Corrugated sheet, and a chimney block on the right.
+        if (x >= w - 12 && x < w - 7 && y >= 3 && y < roofH - 4) return (x + y) % 4 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 3);
+        return x % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 2);
+      }
+      case 'VENDOR':
+        // A striped awning, bright bands the market can see from the street.
+        return y % 6 < 2 ? px(Role.LIFE, 3) : px(Role.MATTER, 1);
+    }
+  };
+
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v: number;
+    const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+    if (edge) v = px(Role.VOID, 0);
+    else if (y < roofH) v = y === roofH - 1 ? px(Role.VOID, 0) : y === 1 ? px(Role.MATTER, 3) : roofAtom(x, y);
+    else {
+      v = (y - roofH) % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1);
+      const wy = y - roofH - 3;
+      const inDoor = x >= doorX0 - 1 && x < doorX0 + doorW + 1;
+      if (!inDoor && wy >= 0 && wy < 5 && x > 2 && x < w - 3 && (x - 3) % 8 < 5) {
+        v = (x - 3) % 8 === 2 ? px(Role.MATTER, 2) : px(Role.LIFE, 4);
+      }
+      if (inDoor) {
+        const top = y - roofH;
+        v = x === doorX0 - 1 || x === doorX0 + doorW || top === 1 ? px(Role.MATTER, 3) : top > 1 ? px(Role.VOID, 0) : px(Role.MATTER, 1);
+      }
+    }
+    data[y * w + x] = v;
+  }
+  return { w, h, data };
+}
+
 export function lotArt(state: LotState, w: number, h: number, seed: number): Sprite {
+  if (state === 'HOUSE' || state === 'WORKSHOP' || state === 'VENDOR') return builtLotArt(state, w, h, seed);
   const s = Math.min(w, h) - 2;
   const sprite = stamp(lotInk(state), s, material({ density: 40, hardness: 50 }), fnv1a(`lot:v1:${state}`), {
     role: state === 'FORECLOSED' ? Role.LOSS : Role.MATTER, edgeStep: 3, minFill: 1, maxFill: 2
