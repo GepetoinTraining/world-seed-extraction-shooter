@@ -142,9 +142,9 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
             value={size.toString()}
             onChange={(v) => setSize(parseInt(v || '32'))}
             data={[
-              { value: '16', label: '16x16 (Skirmish)' },
-              { value: '32', label: '32x32 (Standard)' },
-              { value: '64', label: '64x64 (Expedition)' }
+              { value: '16', label: '16x16 sectors (Skirmish)' },
+              { value: '32', label: '32x32 sectors (Standard)' },
+              { value: '64', label: '64x64 sectors (Expedition)' }
             ]}
           />
           <Group justify="flex-end" mt="md">

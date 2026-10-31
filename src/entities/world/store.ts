@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import { IMap, ScanLevel, IChunk } from './types';
+import { IMap, ScanLevel, ISector } from './types';
 import { UniversalRank } from '../../../types';
 import { WorldCertificateSystem } from './WorldCertificate';
 import { WorldGenerationService } from './services/WorldGenerationService';
+import { IGenerationContext, WorldGenerator } from './WorldGenerator';
+import { GRID_VERSION, chunkOf } from './grid';
 
 export interface IWorldCard {
   id: string;
@@ -20,6 +22,8 @@ export interface IWorldCard {
   deathPenalty: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH';
   ipCap?: UniversalRank;
   ipFloor?: UniversalRank;
+  // Built on an older grid: its record stands, but it cannot be walked any more
+  retired?: boolean;
 }
 
 interface WorldState {
@@ -33,9 +37,9 @@ interface WorldState {
   refreshWorlds: () => Promise<void>;
   selectWorld: (worldId: string) => Promise<void>;
   initiateRecon: (seed: string) => void; 
-  fetchChunkData: (x: number, y: number) => void;
-  scanChunk: (x: number, y: number, efficiency: number) => void;
-  selectChunk: (x: number, y: number) => void;
+  scanSector: (x: number, y: number, efficiency: number) => void;
+  selectSector: (x: number, y: number) => void;
+  loadAround: (px: number, py: number, radius: number) => void;
   confirmDrop: () => void;
   exitWorld: () => void;
 
@@ -46,9 +50,8 @@ interface WorldState {
   addEntity: (entity: import('./types').IWorldEntity) => void;
 }
 
-// The "server-side" truth: full chunk data (entities included) for the active world.
-// The store's currentMap only holds what the client has scanned (Fog of War).
-let truthMap: IMap | null = null;
+// What chunks are built from, kept for as long as the world is open.
+let generationContext: IGenerationContext | null = null;
 
 export const useWorldStore = create<WorldState>((set, get) => ({
   availableWorlds: [],
@@ -76,7 +79,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           extractionTaxRate: cert.data.rules.extractionTaxRate ?? 0.05,
           deathPenalty: cert.data.rules.deathPenalty ?? 'INVENTORY_LOSS',
           ipCap: cert.data.rules.ipCap,
-          ipFloor: cert.data.rules.ipFloor
+          ipFloor: cert.data.rules.ipFloor,
+          retired: (cert.data.gridVersion ?? 1) < GRID_VERSION
       }));
 
       // Dev World - Using the Service!
@@ -109,27 +113,17 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         // --- HOOKED UP: CALL SERVICE ---
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size);
         
-        // Hide details for Fog of War
+        generationContext = instance.context;
         const map = instance.mapData;
-        truthMap = map; // Keep the full truth for scan reveals
-        const blankChunks: Record<string, IChunk> = {};
-        
-        Object.keys(map.chunks).forEach(key => {
-            blankChunks[key] = { 
-                ...map.chunks[key], 
-                scanLevel: ScanLevel.UNKNOWN, 
-                entities: [] 
-            };
-        });
 
         const isDev = !!worldCard.isDebug;
 
         set({
             activeWorldId: worldId,
-            // Dev worlds skip recon, so they get the full truth immediately
-            currentMap: { ...map, chunks: isDev ? map.chunks : blankChunks },
+            currentMap: map,
             reconMode: !isDev,
-            selectedDropZone: isDev ? { x: Math.floor(worldCard.size/2), y: Math.floor(worldCard.size/2) } : null
+            // Dev worlds skip recon and start at the center
+            selectedDropZone: isDev ? { x: Math.floor(worldCard.size / 2), y: Math.floor(worldCard.size / 2) } : null
         });
 
       } catch (e) {
@@ -143,70 +137,48 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     // Recon is already initiated by selectWorld(); kept for API compatibility.
   },
 
-  fetchChunkData: (x, y) => {
-    // Full intel fetch = scan straight to COMPLETE
-    get().scanChunk(x, y, 3);
-  },
-
   /**
-   * Drone Scan: reveals intel about a chunk from the truth map.
-   * Each scan deepens knowledge one level (BASIC -> DETAILED -> COMPLETE).
-   * Efficiency >= 2 reveals two levels at once, >= 3 reveals everything.
+   * Drone Scan: each scan deepens what is known of a sector one level.
+   * A deep scan works out everything in it, which is also what makes it worth waiting for.
    */
-  scanChunk: (x, y, efficiency = 1) => {
+  scanSector: (x, y, efficiency = 1) => {
     const { currentMap } = get();
-    if (!currentMap || !truthMap) return;
+    if (!currentMap || !generationContext) return;
 
     const key = `${x},${y}`;
-    const clientChunk = currentMap.chunks[key];
-    const truthChunk = truthMap.chunks[key];
-    if (!clientChunk || !truthChunk) return;
+    const sector = currentMap.sectors[key];
+    if (!sector) return;
 
     const levelGain = Math.max(1, Math.floor(efficiency));
-    const newLevel = Math.min(ScanLevel.COMPLETE, clientChunk.scanLevel + levelGain) as ScanLevel;
-
-    const revealed: IChunk = {
-      ...truthChunk,
+    const newLevel = Math.min(ScanLevel.COMPLETE, sector.scanLevel + levelGain) as ScanLevel;
+    const revealed: ISector = {
+      ...sector,
       scanLevel: newLevel,
-      // Entities only become visible intel at DETAILED+
-      entities: newLevel >= ScanLevel.DETAILED ? truthChunk.entities : []
+      entities: newLevel >= ScanLevel.DETAILED && sector.entities.length === 0
+        ? WorldGenerator.sectorContents(currentMap, x, y, generationContext)
+        : sector.entities
     };
 
-    set({
-      currentMap: {
-        ...currentMap,
-        chunks: { ...currentMap.chunks, [key]: revealed }
-      }
-    });
+    set({ currentMap: { ...currentMap, sectors: { ...currentMap.sectors, [key]: revealed } } });
   },
 
-  selectChunk: (x, y) => set({ selectedDropZone: { x, y } }),
+  selectSector: (x, y) => set({ selectedDropZone: { x, y } }),
 
-  /**
-   * Confirms the drop: materializes the full world (the truth) and exits recon.
-   * Unscanned chunks keep their fog status visually, but entities become real.
-   */
+  loadAround: (px, py, radius) => {
+    const { currentMap } = get();
+    if (!currentMap || !generationContext) return;
+    WorldGenerator.loadAround(currentMap, px, py, radius, generationContext);
+  },
+
+  /** Confirms the drop and leaves recon. Chunks are built as they come into reach. */
   confirmDrop: () => {
     const { currentMap, selectedDropZone } = get();
-    if (!currentMap || !truthMap || !selectedDropZone) return;
-
-    const liveChunks: Record<string, IChunk> = {};
-    Object.keys(truthMap.chunks).forEach(key => {
-      const prevLevel = currentMap.chunks[key]?.scanLevel ?? ScanLevel.UNKNOWN;
-      liveChunks[key] = {
-        ...truthMap.chunks[key],
-        scanLevel: Math.max(prevLevel, ScanLevel.BASIC) as ScanLevel
-      };
-    });
-
-    set({
-      currentMap: { ...currentMap, chunks: liveChunks },
-      reconMode: false
-    });
+    if (!currentMap || !selectedDropZone) return;
+    set({ reconMode: false });
   },
 
   exitWorld: () => {
-    truthMap = null;
+    generationContext = null;
     set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null });
   },
 
@@ -231,7 +203,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   addEntity: (entity) => {
     const { currentMap } = get();
     if (!currentMap) return;
-    const key = `${Math.floor(entity.position.x / 100)},${Math.floor(entity.position.y / 100)}`;
+    const key = `${chunkOf(entity.position.x)},${chunkOf(entity.position.y)}`;
     const chunk = currentMap.chunks[key];
     if (!chunk) return;
     set({

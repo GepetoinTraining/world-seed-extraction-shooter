@@ -112,6 +112,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       player: {
         id: certificate.metadata.uid,
         username: certificate.metadata.displayName,
+        archetype: archetypeId,
         baseAttributes: baseAttrs,
         attributes: baseAttrs, // Initially same as base
         bank: {

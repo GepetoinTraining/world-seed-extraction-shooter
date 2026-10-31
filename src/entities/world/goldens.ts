@@ -15,6 +15,7 @@ import { WorldGenerator } from './WorldGenerator';
 import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { IMap } from './types';
+import { SECTOR_CHUNKS } from './grid';
 
 export interface IGoldenVector {
   seed: string;
@@ -22,11 +23,11 @@ export interface IGoldenVector {
   hash: number; // fnv1a of the canonical map JSON
 }
 
-// Captured 2026-10-30 (Wave 2 generation: terrain-era entities, ruins, NPCs, beacons)
+// Captured for grid version 2: tile, quadrant, chunk and sector, built on demand.
 export const GOLDEN_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 2658983577 },
-  { seed: 'golden-beta', size: 32, hash: 407355742 },
-  { seed: 'dev-sandbox-v3', size: 32, hash: 3891877500 }
+  { seed: 'golden-alpha', size: 16, hash: 767337942 },
+  { seed: 'golden-beta', size: 32, hash: 866170117 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 1226538477 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */
@@ -43,8 +44,13 @@ export function fingerprintMap(map: IMap): number {
   return fnv1a(JSON.stringify(canonical));
 }
 
+/** A world is on demand, so its fingerprint builds a fixed handful of chunks at its center. */
 export function computeGolden(seed: string, size: number): number {
-  return fingerprintMap(WorldGenerator.generate(seed, size, staticContext()));
+  const context = staticContext();
+  const map = WorldGenerator.generate(seed, size, context);
+  const mid = (size >> 1) * SECTOR_CHUNKS;
+  for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) WorldGenerator.chunkAt(map, mid + x, mid + y, context);
+  return fingerprintMap(map);
 }
 
 /** Boot check: zero mismatches allowed. */

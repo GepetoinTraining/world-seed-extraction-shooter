@@ -3,6 +3,7 @@
  * REFACTORED: Removes mock data, loads from Vector/DB State
  */
 
+import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { create } from 'zustand';
 import { IItem, UniversalRank } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
@@ -536,12 +537,10 @@ export const useHubStore = create<HubState>((set, get) => ({
     const hubId = get().activeHubId || 'hub_unknown';
     const dayIndex = Math.floor(Date.now() / 86_400_000);
 
-    const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool') => {
+    const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool', pinned: string[] = []) => {
       return Array.from({ length: count }, (_, i) => {
         const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${i}`);
-        // The first two tool slots are always the two harvesting tools
-        const toolBase = type === 'tool' ? ['tool_axe_field_t1', 'tool_pick_rusty_t1'][i] : undefined;
-        const item = ItemFactory.createItem(rank, true, rng, type, toolBase);
+        const item = ItemFactory.createItem(rank, true, rng, type, pinned[i]);
         return {
           id: `listing_${type}_${rank}_${i}`,
           item,
@@ -557,12 +556,25 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.F, 5, 'weapon'),
         ...generateStock(UniversalRank.E, 2, 'weapon'),
         // Field tools ride in the weapon shop until lots get their own vendors (Wave 5)
-        ...generateStock(UniversalRank.F, 3, 'tool')
+        // The harvesting tools are always on the shelf, or a resource could be out of reach for a day
+        ...generateStock(UniversalRank.F, 3, 'tool', ['tool_axe_field_t1', 'tool_pick_rusty_t1']),
+        ...generateStock(UniversalRank.D, 1, 'tool', ['tool_pick_tempered_t3'])
       ],
       armorShop: [
         ...generateStock(UniversalRank.F, 5, 'armor'),
         ...generateStock(UniversalRank.E, 2, 'armor')
-      ]
+      ],
+      consumableShop: ['res_berry_bush', 'res_fruit_amber'].map((defId, i) => {
+        const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
+        const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);
+        return {
+          id: `listing_consumable_${defId}`,
+          item,
+          price: Math.max(5, item.value * 3),
+          vendorId: 'vendor_sys',
+          stock: rng.int(3, 10)
+        };
+      })
     });
   },
 

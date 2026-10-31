@@ -47,14 +47,14 @@ World Seed has no single world to draw. It has a seed that makes worlds, up to 6
 | Material | Density, Hardness, Conductivity, Resonance, Luminosity, Toxicity, Elasticity. Code comment: *"Properties determine reality."* |
 | Creature | Size (Tiny to Colossal), behavior (Swarm, Siege, Turret...), tags (biological, mechanical, flying, armored, elite, boss), mutations (Armored Shell, Hive Mind...) |
 | Item | Tags (blade, heavy, tech, caster...), slot, grid footprint such as 1×3, durability, affixes, identified or not |
-| Status | Rank F to SSS, rarity Scrap to Artifact |
-| Identity | Certificate id, and a hash on every signed record |
+| Status | Rank F to SSS, rarity Scrap to Artifact, quality −20% to +20%, durability, identified or not. Separate facts that must not read as one |
+| Identity | Certificate id, a hash on every signed record, and one of four archetypes |
 
 **The atoms.** These are my starting proposal. Keep them or beat them, but the families must be small and closed:
 
 | Atom | What it is | Starting point |
 |---|---|---|
-| **Pixel** | The one unit. Integer scales only, hard edges, no anti-aliasing or gradients | 1 atom = 2 screen px, so a 20px tile is 10×10 and a 100px chunk is 50×50. These sizes are fixed by the game |
+| **Pixel** | The one unit. Integer scales only, hard edges, no anti-aliasing or gradients | 1 atom = 2 screen px, so a 20px tile is 10×10 atoms. The game's grid is fixed: a quadrant is 16 tiles, a chunk 64 and a sector 512. Terrain art is cached a quadrant at a time |
 | **Ramp** | A short color run. Roles and their brightness stay constant while hues change per world | 5 steps each for ground, matter, life and threat, with hue from the genre. Signal, proof, loss and void belong to the machine and never change |
 | **Grain** | A repeatable fill pattern | About 8: solid, dither, hatch, speckle, trace, ring... |
 | **Edge** | How a shape ends | Hard, rounded, notched, broken, doubled |
@@ -74,7 +74,7 @@ World Seed has no single world to draw. It has a seed that makes worlds, up to 6
 | Elasticity | Curves |
 
 **How atoms compose, with no exceptions:**
-- Pixel → grain → tile → chunk → world. A world's thumbnail on its card is its real map.
+- Pixel → grain → tile → quadrant → chunk → sector → world. A world's thumbnail on its card is its real map.
 - Part → silhouette → creature, from size, tags and behavior. A swarm grunt and a siege machine must differ at a glance in any genre.
 - Material + footprint → item. A 1×3 blade fills its real shape in the pack.
 - Certificate id + archetype → avatar. Your face is derived from the identity you own, which is the ownership fantasy made visible.
@@ -93,7 +93,7 @@ World Seed has no single world to draw. It has a seed that makes worlds, up to 6
 3. A Hardness 80 material reads as hard in every genre, and a Rank S mark reads as Rank S everywhere.
 4. It stays fast with about 300 things on screen.
 
-**What a prototype has already tested.** `prototype/atoms/` computes these atoms from the game's real seeds, creature definitions and material numbers, with no image files. Run `npm run dev`, then open `http://localhost:3000/prototype/atoms/index.html`. Its Grayscale button is the first thing to press. `tests/atoms.test.ts` holds the bars. They were set before each check first ran and were not lowered. It is one map, nine creatures and fourteen resources, with no animation, and it is a working sketch to beat, not art to polish.
+**What a prototype has already tested.** `prototype/atoms/` computes these atoms from the game's real seeds, creature definitions and material numbers, with no image files. Run `npm run dev`, then open `http://localhost:3000/prototype/atoms/index.html` for the atoms and `http://localhost:3000/prototype/atoms/hub.html` for the people and the city, which you can walk. Grayscale is the first button to press on both. `tests/atoms.test.ts`, `tests/atoms.depth.test.ts` and `tests/atoms.people.test.ts` hold the bars. They were set before each check first ran and were not lowered; four were added afterward, when the eye caught something the numbers had missed. It is one map, nine creatures and fourteen resources, with no animation, and it is a working sketch to beat, not art to polish.
 
 | Question | Measured | Verdict |
 |---|---|---|
@@ -103,23 +103,57 @@ World Seed has no single world to draw. It has a seed that makes worlds, up to 6
 | Could the tile be 5×5? | Dragon and mech differ by 18%, under the bar | No |
 | Threats against ground in grayscale | Contrast 7.3 for threats, 5.4 for matter, 5.8 for life (bar 3:1) | Holds |
 | Is the exit unlike any creature? | Passes against all nine | Holds |
-| Do worlds differ in grayscale? | **Hue alone failed: 0% of 10×10 blocks differed between Fantasy and Eldritch (bar 30%).** With structure and a value key: 85%, 82%, and a narrow 33% for Fantasy vs Biopunk Wasteland | Holds, narrowly |
+| Do worlds differ in grayscale? | **Hue alone failed: 0% of 10×10 blocks differed between Fantasy and Eldritch (bar 30%).** With structure and a value key: 86%, 84%, and a narrow 33% for Fantasy vs Biopunk Wasteland | Holds, narrowly |
+| Dense Stone, Iron and Titanium apart at real size? | 42%, 44% and 53% of atoms differ visibly (bar 25%) | Holds |
+| Hardness 80 vs 20 in the outline | 32% (bar 15%) | Holds |
+| Does every real property reach pixels? | **All but two: Silica Sand's Conductivity 2 and Rusted Plate's Hardness 35 reach only 2 atoms (bar 3)** | Fails, kept as a recorded failure |
+| Rarity, rank, quality and wear on one item | Each changes only its own region, and all 1,575 combinations give different pixels | Holds |
+| Quality readable on all gear | Worst step 14% (bar 12%), full range 46% (bar 30%) | Holds |
+| Inspect card vs the game's own rules | Agrees on all 336 harvest cases, and gives a reason on every refusal | Holds |
+| Hit-test 300 moving things | p95 0.10ms in the browser (bar 1ms) | Holds |
+| Is an archetype readable from silhouette alone? | 100% of 800 figures, on certificates it had not seen (bar 90%) | Holds |
+| Does a certificate look like itself? | 196–200 of 200 unique per archetype (bar 195), median difference 15–26% (bar 15%), but the closest pairs differ by only 1–4% | Holds, with near-twins |
+| Player vs any creature | Closest 45% (bar 25%) | Holds |
+| Hub drawn against its navmesh | 0 tiles wrong in either direction, and a hard seam around every building | Holds |
+| Hub districts apart in grayscale | Closest pair 58% of blocks (bar 30%) | Holds |
+| Is the hub warmer than the field? | 24.9 vs 22.5 for the warmest genre, by red minus blue, and lamplight 9.4 levels brighter without color (bar 8) | Holds, narrowly against warm genres |
+| Compose the whole hub | 19ms, once (bar 100ms), and a new animation frame changes 0.08% of atoms | Holds |
 
 Three findings that change the brief:
 
 - **A genre must bring structure, not just four colors.** A per-pixel test said the worlds differed, while the eye saw one world recolored. A genre now also sets a large ground structure (strata, blotches, lattice or dunes) and a value key (how bright its ground sits).
-- **That family is too small, and a hash is the wrong way to choose from it.** Four structures and three keys make 12 looks. Picking by hash puts two of the game's five genres, `POST_APOC` and `RETRO`, on the same look, identical on open ground in grayscale. Among six random genre names, at least two collide in 74% of trials. Widen the family, and have a genre choose its look when it is created, so the choice is stored and two genres cannot collide by accident. This is the largest open problem in the atoms.
+- **That family is too small, and a look has to be chosen, not hashed.** Four structures and three keys make 12 looks. Picking by hash put two of the game's five genres on the same look, and six random genre names collided in 74% of trials. The game's five genres now have assigned looks. An invented genre still falls back to a hash until the creator lets it choose, and the family still needs widening.
 - **Terrain that changes how you move cannot lean on a genre's brightness.** Once genres had value keys, mud vanished into dark ground (17% of its atoms differed from open ground, bar 25%). It is now a fixed ripple using only the darkest and brightest steps (46% or better). Hold every gameplay terrain to this law: water and rock already carry hard seams.
 
 Still weak, by eye, and yours to solve:
 
 - **Rank on the map is a speck.** All nine marks are distinct when enlarged, but at real size pass criterion 2 is not met.
-- **Dense metals look alike.** Dense Stone, Iron and Titanium read as similar lumps, so pass criterion 3 is not yet shown.
+- **The camera disagrees with itself.** Buildings show their front, and creatures, people and most resources stand upright, but the tree is drawn from straight above. Decide whether the tree joins the others or the rule is something else.
+- **Portraits are the weakest thing here.** They pass their bar, but within an archetype the faces look close to one another, and a hooded Nomad is mostly a shape with eyes. This is your face in a game about owning it. It deserves the most attention of anything on this list.
+- **Near-twins exist.** At 16 atoms a few certificates are almost the same figure. Portraits tell them apart, but decide whether that is enough.
+- **Walking differs by place.** The city moves tile by tile and the field moves smoothly. The city's keepers also stand still and cannot be bumped into.
+- **Wear is subtle at real size.** The first bite, at 70% durability, is easy to miss on a 36px item, and the rank mark covers much of a 1×1 slot.
+- **The sapling** reads as a plus sign.
+- **The inspect card covers neighbors** where the map is crowded. The compact form helps, but placement needs design.
 - **Density and Hardness grains** look similar at thumbnail size.
-- **Common and Uncommon** rarity edges barely differ.
 - **Water** reads as hollow dark squares, not as water.
 
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
+
+**Four things the atoms must answer.** The prototype has tried each, so start from what it found and beat it.
+
+- **Trees.** The game has one definition, `Hardwood Log`, for both the standing tree and the 1×3 log in the pack. The prototype gives it two forms: a canopy from above, six times a berry's area, and a log at its real footprint. Each of its three fellings bites the crown, ending in a stump, since a tree never regrows. Every other depleted resource also has its own state in place of today's fade to 35% opacity: a broken outline if it is gone for good, and a live center if it will return. Two things need a decision, not art. Forests now grow in Overgrowth, at about 112 trees a chunk. One thing needs a decision: **you walk straight through a tree**, because only terrain blocks movement. Say whether a forest should block, because that changes what it is.
+- **Materials.** Properties are the core of the atoms, yet no player can see one: no tooltip shows them, and `MaterialScience.inspectMaterial` has knowledge levels that nothing calls. The prototype draws those levels. At level 0, things of one form share every pixel, so Iron and Titanium are identical and Amberfruit cannot be told from the poisonous Gallpod. Naming reveals density, and study reveals the rest. Consider the consequence: a new player knows nothing, so at first every ore looks the same. Decide what a new player starts knowing, and how this relates to `isIdentified`, a separate flag that resources skip. The grain scale is fixed and versioned, because deriving it from data would change old worlds whenever a material arrived. Density and Conductivity sit on a square root because their ranges are so wide. Those multipliers are the prototype's own choice, so review them. No real material has Resonance, so its grain has only been drawn from invented values. The affixes `Compressed`, `Volatile` and `Ley-Touched` are never rolled and their numbers are ambiguous (additive or multiplied), so the prototype only marks them. Gear has no material data at all, and `gearMaterial` proposes a profile from tags.
+- **Quality.** Gear rolls −20% to +20% at creation, which scales its stats and item power, and nothing reads it afterward. It only surfaces as `Broken` or `Superior` in the name, past ±15%, and one line of description, past ±10%. Resources and deeds store `quality: 100`, on a different scale, which the prototype treats as no roll. Commodity `purity` is defined and unused. `Broken` as a low-quality name also means something other than the `BROKEN` shown at zero durability, so the card says `Crude` for the first and keeps `Broken` for the second. The prototype puts each fact in its own place on a real pack footprint (36px, 18 atoms a cell): rarity in the frame, wear as bites from the middle of the frame, quality in the fill and plate, rank in its mark. An unidentified item shows only noise, and hides its rank, which today's Bank does not.
+- **Hover.** Today there are four unrelated behaviours, and things in the field have nothing at all. The prototype has one card format for world things and items. The proof page's map is live: hover anything, or press Tab to step through what is near, nearest first, and C for the compact form. Item cards are only shown open, so hover in the pack is untested. Whether you can act is asked of the game's own `InteractionEngine`, and the card only explains the answer (`Needs pickaxe, drill or impact hammer`, `Move closer`). It reveals only what your knowledge level allows. A target stays selected while it is under the cursor, so the card does not flicker as things move. Design its real form, including copy for raw values such as `SWARM`, and carry it to shops, map sectors and lots, which the prototype does not reach. It answers the "why isn't this offered" moment below.
+
+**The people and the city.** Both pages use real data. Start from them, and beat them.
+
+- **A character is three things.** Archetype sets the silhouette family: Operator has a pack and antenna, Street Samurai angular shoulders and a topknot, Nomad a hood and cloak, Arcanist a robe and halo. The certificate id decides who you are inside it, so nobody can choose your face and you cannot lose it. What you carry changes the outline: five held shapes cover every real weapon and tool, and armor class changes the body. There are four facings and two stepped walking frames.
+- **Only you are drawn in signal.** You also carry four corner brackets, the machine marking its subject, so you can be picked out by shape in any world and any palette. The named cast uses the hub's life ramp, each with their own silhouette and portrait.
+- **The hub is the real layout.** Zones, footprints, lamps and the rules for walking and talking all come from `HubGenerator`, so what looks solid is exactly what blocks you. Each district has its own floor, each kind of building an emblem readable without words, each door is real, and the lots show their real states, plus a foreclosed mark for the moment a lot reverts. Its warmth is its own ramp, lit windows and lamplight at each lamp's real radius, which also shows as brightness, so it survives without color.
+- **Signs are made of atoms.** A 3×5 typeface sets every name in full, so `The` can never again stand in for three buildings. Signs hang above the roofline and may overhang the street.
+- **It needs a tile of 20px, not 16.** The game's hub uses 16px and its field 20px. At 16px a two-word name does not fit on a building. The game now uses 20px, matching the field.
 
 ## The emotional arc to design
 
@@ -137,7 +171,7 @@ Every string in `code style` exists today. Rewrite anything that doesn't carry t
 
 **4. Application frame.** Currently a header (wordmark, `ONLINE`, console toggle, backup button, gold, name, user/dev switch) and a sidebar: City Hub, Mission Control, Bank / Stash, Holdings. Decide how much frame should exist at all, given a walkable city is also the navigation.
 
-**5. The city.** Top-down, walked with WASD; it's 50 tiles wide with zones like `Central Plaza`. Today it's flat colored rectangles. Contains the Consortium bank, Truthsight's analyst, the portal, Ironfist's arms, Steelweave's armor, an alchemist, the guild hall, the auction house, the Rusty Anchor tavern, a fountain, a statue, lamp posts and six purchasable lots. Includes the `[E] Interact` prompt and a dialogue window with portrait, greeting and options. The cast has names and lines: Marcus Goldweave, *"Your assets are secure with the Consortium."* Old Mags, *"We got drinks and rumors, both equally watered down."* The Conduit, *"The threads of reality await."* Also shop lists: item, stock, price, buy.
+**5. The city.** Top-down, walked with WASD; it's 50 tiles wide with zones like `Central Plaza`, though about half of it is empty ground outside any zone, walkable and unnamed. Decide what that is. Today it's flat colored rectangles. Contains the Consortium bank, Truthsight's analyst, the portal, Ironfist's arms, Steelweave's armor, an alchemist, the guild hall, the auction house, the Rusty Anchor tavern, a fountain, lamp posts and six purchasable lots. The game defines `STATUE` and `ARENA` types but builds nothing from them; add them if the city wants them. Includes the `[E] Interact` prompt and a dialogue window with portrait, greeting and options. The cast has names and lines: Marcus Goldweave, *"Your assets are secure with the Consortium."* Old Mags, *"We got drinks and rumors, both equally watered down."* The Conduit, *"The threads of reality await."* Also shop lists: item, stock, price, buy.
 
 **6. Mission Control.** A card per world: name, rank, sector, creator, agents, a large countdown (`TIME UNTIL REALITY COLLAPSE`), `DEPLOY`. Plus the four-step world creation flow: Concept, Laws, Economy, and Sign, ending in `SIGN & MINT WORLD`.
 
@@ -145,7 +179,7 @@ Every string in `code style` exists today. Rewrite anything that doesn't carry t
 
 **8. Holdings.** Stash with Carry and Sell on each item. Lots with their states: for sale, redeem a deed, build, Workshop with recipes and timers, Vendor with listings and money to collect. Bank and Holdings overlap badly today. Unify them if that serves the player better.
 
-**9. Recon survey.** The world from above as a fogged grid of up to 64×64 sectors. Each click deepens a scan: biome and threat, then contact counts, then a full manifest. Beside it, the sector intel panel and `CONFIRM DROP`.
+**9. Recon survey.** The world from above as a fogged grid of up to 64×64 sectors, each 512×512 tiles, about three minutes' walk across. Each click deepens a scan: biome and threat, then contact counts, then a full manifest. Beside it, the sector intel panel and `CONFIRM DROP`.
 
 **10. The field.** The heart of the game. Your character in a live world, seen from directly above, with:
 - Terrain: ground, mud (slow), water and rock (blocked), across five biomes
@@ -186,8 +220,8 @@ This is the most valuable part of the job. These all happen in the game today, b
 - **Machine color tokens:** the existing roles are emerald (`#20de81`), gold (`#ffd700`) and void black (`#050505`–`#27272a`). Keep or evolve them, and define semantic roles. Replace the ~70 hard-coded colors scattered through the screens. World ramps stay separate from these.
 - **Type:** monospace is the foundation, using system fonts today. Choose a real typeface pairing and scale, or a pixel face built from the atoms if it stays readable. It must set dense numbers and long item names well: `Reinforced Superior Woodsman's Axe of the Whale`.
 - **Proof of coverage:** show the rules producing all of this, replacing every emoji: nine enemy types from tiny to colossal, every resource (grain, berry, fruit, poison fruit, fiber, tree, sapling, pebbles, sand, rock, iron, titanium, scrap, glass), structures, chests, caches, NPCs, beacons, item classes and tools. Everything must stay legible at its real size.
-- **Rank and rarity:** nine ranks (F to SSS) and seven rarities (Scrap to Artifact), as marks and edges rather than color. Rank is the game's core status symbol, so give it a real mark.
-- **Components:** panels, buttons, inputs, cards, item slot and tooltip, dialogue, tables, progress bars, stamps and seals, map overlays, all built from the atoms.
+- **Rank, rarity, quality and durability:** nine ranks (F to SSS), seven rarities (Scrap to Artifact), the quality range and durability wear, as marks, edges and grain rather than color. Rank is the game's core status symbol, so give it a real mark. Show one item carrying all four at its real size.
+- **Components:** panels, buttons, inputs, cards, item slot and the one inspect card, dialogue, tables, progress bars, stamps and seals, map overlays, all built from the atoms.
 - **Motion and sound notes:** scan, channel, seal, damage, loss. Provide a reduced-motion version.
 - **Copy:** a voice guide and rewritten strings for all of the above.
 
@@ -197,12 +231,14 @@ Settle the vocabulary too. The game currently says all of these for the same thi
 - Bank / Stash / Cache / Secure Storage / Cold Storage
 - Mint / Create / Materialize
 - Agent / Player / Avatar
+- Broken (low quality) / Broken (zero durability)
 
 Use a naming rule from the lore: surnames from function, failure or geology (*Steelweave, Null, Basalt*), first names archaic or astronomical (*Kael, Sera, Io*). Replace **"NerveGear"**, which belongs to Sword Art Online, with an original name. Likewise, draw on the idea of SAO without borrowing its interface.
 
 ## What to fix along the way
 
 - Item icons currently show raw text such as `weapon_icon` spilling across the Bank grid.
+- **Lots stay walkable with a building on them.** You can walk through your own house. Decide whether a structure should block.
 - Many low-contrast labels are close to unreadable on the void background.
 - Town buildings show only the first word of their names, so three are just labeled `The`.
 - Worlds, biomes and ranks use unrelated colors with no shared logic.
@@ -227,4 +263,5 @@ Work in this order, and stop to show each step:
 
 1. **The atoms alone:** one sheet, every family, starting from the prototype's sheet and its weak spots.
 2. **Three worlds from them:** the same small map rendered in three genres, one of them invented, with the same creature, material and exit in each. Show them in grayscale too, and include two genres the prototype could not separate. This is the moment that proves or kills the system.
-3. **The sequence:** the recon survey, the drop, a fight, the channel at the exit, and the seal. If those five moments feel like one machine with one memory, the remaining screens will follow.
+3. **The people and the city:** the four archetypes, a dozen certificates, the cast, and New Carleon walked from the portal to the bank. Faces first.
+4. **The sequence:** the recon survey, the drop, a fight, the channel at the exit, and the seal. If those five moments feel like one machine with one memory, the remaining screens will follow.

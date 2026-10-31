@@ -2,9 +2,17 @@ import { MOB_DEFINITIONS } from '../../src/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
 import {
   ATOM_PX, Genre, Material, RANKS, RARITIES, Role, STEPS, Sprite, avatar, buildPalette, chest, creature, exitBeacon,
-  grain, grayscale, hashBytes, itemSprite, material, npcFigure, playerFigure, px, rankMark, resource, ruin, seal
-} from './atoms';
-import { GENRES, composeView, entitySprite, proofView } from './world';
+  ITEM_CELL, gearMaterial, grain, grayscale, hashBytes, itemArt, material, materialFromProps, npcFigure, px, rankMark, resource, ruin, seal, worldForm
+} from '../../src/render/atoms/atoms';
+import { GENRES, STATIC_CONTEXT, composeView, entitySprite, proofView } from '../../src/render/atoms/world';
+import { WorldGenerator } from '../../src/entities/world/WorldGenerator';
+import { BiomeType } from '../../src/entities/world/types';
+import { CHUNK_PX, QUADRANT_PX, quadrantOf } from '../../src/entities/world/grid';
+import { Card, Target, cycleTarget, hitTest, inspectEntity, inspectItem, targetsFrom } from '../../src/render/atoms/inspect';
+import { figure } from '../../src/render/atoms/people';
+import { ItemFactory } from '../../src/entities/item/ItemFactory';
+import { Rng } from '../../src/logic/rng/DeterministicRNG';
+import { EntityType } from '../../src/entities/world/types';
 
 const { map, center } = proofView();
 
@@ -62,6 +70,156 @@ function swatch(m: Material, role: Role, palette: Uint8Array, size = 40): HTMLCa
 
 let hashes: string[] = [];
 
+const itemFor = (item: any): Sprite => itemArt({
+  wCells: item.dimensions.width, hCells: item.dimensions.height, tags: item.tags,
+  material: gearMaterial(item.tags), rarity: item.rarity, rank: item.rank, quality: item.quality,
+  durability: item.stats?.durability, maxDurability: item.stats?.maxDurability,
+  identified: item.isIdentified, seed: hashBytes(new TextEncoder().encode(item.id))
+});
+
+function cardNode(card: Card, title = card.title): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'card';
+  const head = document.createElement('div');
+  head.className = 'card-title';
+  head.textContent = title;
+  box.append(head);
+  card.rows.forEach(([k, v]) => {
+    const row = document.createElement('div');
+    row.className = 'card-row';
+    const a = document.createElement('span'); a.textContent = k;
+    const b = document.createElement('span'); b.textContent = v;
+    row.append(a, b);
+    box.append(row);
+  });
+  card.needs.forEach(n => {
+    const row = document.createElement('div');
+    row.className = 'card-need';
+    row.textContent = `× ${n}`;
+    box.append(row);
+  });
+  if (card.canAct && card.needs.length === 0 && card.rows.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'card-ready';
+    row.textContent = '■ Ready';
+    box.append(row);
+  }
+  return box;
+}
+
+let hoverLevel = 2;
+let hoverRun = 0;
+
+/** A live view: the cursor and Tab answer from one target list, and the game decides what is possible. */
+function renderInspect(base: Uint8Array) {
+  const run = ++hoverRun;
+  const row = section('INSPECT: ONE CARD EVERYWHERE', 'Hover anything on this map, or click the map and press Tab to step through what is near. C switches to the compact form. The numbers below the map are this page, live.');
+  const W = 240, H = 150;
+  const view = composeView(map, GENRES[0], center, W, H);
+  const ox = Math.floor(center.x / ATOM_PX) - Math.floor(W / 2);
+  const oy = Math.floor(center.y / ATOM_PX) - Math.floor(H / 2);
+  const entities = Object.values(map.chunks).flatMap((c: any) => c.entities)
+    .filter((e: any) => {
+      const ex = e.position.x / ATOM_PX - ox, ey = e.position.y / ATOM_PX - oy;
+      return ex >= 0 && ey >= 0 && ex < W && ey < H;
+    }) as any[];
+  const byId = new Map(entities.map(e => [e.id, e]));
+  const things = entities.map(e => {
+    const s = entitySprite(e);
+    return { id: e.id, type: e.type as EntityType, x: e.position.x / ATOM_PX - ox, y: e.position.y / ATOM_PX - oy, w: s?.w ?? 12, h: s?.h ?? 12 };
+  });
+  const targets: Target[] = targetsFrom(things);
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;display:inline-block';
+  const canvas = toCanvas(view.data, W, H, base, ATOM_PX);
+  canvas.tabIndex = 0;
+  canvas.id = 'hover-map';
+  canvas.setAttribute('aria-label', 'Map. Hover or press Tab to inspect things.');
+  const ring = document.createElement('div');
+  ring.style.cssText = 'position:absolute;border:2px solid #fff;outline:2px solid #000;pointer-events:none;display:none';
+  const tip = document.createElement('div');
+  tip.id = 'hover-card';
+  tip.style.cssText = 'position:absolute;pointer-events:none;display:none;z-index:5';
+  wrap.append(canvas, ring, tip);
+
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex;flex-direction:column;gap:6px;max-width:260px';
+  const levelLabel = document.createElement('div');
+  const kit = { bare: [] as any[], pick: [ItemFactory.createItem(undefined, true, Rng.fromKey('atoms:tool:pick'), 'tool', 'tool_pick_rusty_t1')], axe: [ItemFactory.createItem(undefined, true, Rng.fromKey('atoms:tool:axe'), 'tool', 'tool_axe_field_t1')] };
+  let kitName: keyof typeof kit = 'bare';
+  let compactMode = false;
+  let current: string | null = null;
+
+  const show = (id: string | null) => {
+    current = id;
+    const t = id ? things.find(x => x.id === id) : null;
+    if (!t) { ring.style.display = 'none'; tip.style.display = 'none'; return; }
+    ring.style.cssText += `;display:block;left:${(t.x - t.w / 2) * ATOM_PX - 2}px;top:${(t.y - t.h / 2) * ATOM_PX - 2}px;width:${t.w * ATOM_PX}px;height:${t.h * ATOM_PX}px`;
+    const dist = Math.hypot(t.x - W / 2, t.y - H / 2) * ATOM_PX / 20;
+    const player = { currentSession: { inventory: kit[kitName] }, attributes: { intelligence: 0 } } as any;
+    const card = inspectEntity(byId.get(id!), { player, dist, level: () => hoverLevel });
+    tip.innerHTML = '';
+    if (compactMode) {
+      const line = document.createElement('div');
+      line.className = 'card-compact';
+      line.textContent = card.compact;
+      tip.append(line);
+    } else tip.append(cardNode(card));
+    const left = (t.x + t.w / 2) * ATOM_PX + 6;
+    tip.style.left = `${left > W * ATOM_PX - 200 ? (t.x - t.w / 2) * ATOM_PX - 206 : left}px`;
+    tip.style.top = `${Math.max(0, (t.y - t.h / 2) * ATOM_PX)}px`;
+    tip.style.display = 'block';
+  };
+
+  canvas.addEventListener('mousemove', ev => {
+    const box = canvas.getBoundingClientRect();
+    show(hitTest(targets, (ev.clientX - box.left) / ATOM_PX, (ev.clientY - box.top) / ATOM_PX, current));
+  });
+  canvas.addEventListener('mouseleave', () => show(null));
+  canvas.addEventListener('keydown', ev => {
+    if (ev.key === 'Tab') {
+      ev.preventDefault();
+      show(cycleTarget(targets, { x: W / 2, y: H / 2 }, current, 110));
+    } else if (ev.key === 'c' || ev.key === 'C') {
+      compactMode = !compactMode;
+      show(current);
+    }
+  });
+
+  const button = (label: string, act: () => void) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.addEventListener('click', () => { act(); show(current); });
+    return b;
+  };
+  const refresh = () => { levelLabel.textContent = `Knowledge ${hoverLevel}. Carrying: ${kitName}.`; };
+  refresh();
+  controls.append(levelLabel,
+    button('Knowledge -', () => { hoverLevel = Math.max(0, hoverLevel - 1); refresh(); }),
+    button('Knowledge +', () => { hoverLevel = Math.min(3, hoverLevel + 1); refresh(); }),
+    button('Carry: nothing', () => { kitName = 'bare'; refresh(); }),
+    button('Carry: Rusty Pick', () => { kitName = 'pick'; refresh(); }),
+    button('Carry: Field Axe', () => { kitName = 'axe'; refresh(); })
+  );
+  row.append(cell(wrap, `${entities.length} things in view`), controls);
+
+  const items = section('INSPECT: THE SAME CARD ON ITEMS', 'Real factory items and a real harvested resource, with the card shown open. Hover is not wired up here; only the map above is live.');
+  [['wpn_axe_2h_t1', 'weapon', 'atoms:card:1'], ['tool_pick_rusty_t1', 'tool', 'atoms:card:2'], ['arm_chest_heavy_t1', 'armor', 'atoms:card:3']].forEach(([id, cat, key]) => {
+    const item = ItemFactory.createItem(undefined, true, Rng.fromKey(key), cat as any, id);
+    const box = document.createElement('div');
+    box.style.cssText = 'display:flex;gap:8px;align-items:flex-start';
+    box.append(spriteCanvas(itemFor(item), base), cardNode(inspectItem(item)));
+    items.append(box);
+  });
+  const ore = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS['res_iron_vein'] as any, Rng.fromKey('atoms:card:ore'));
+  const oreBox = document.createElement('div');
+  oreBox.style.cssText = 'display:flex;gap:8px;align-items:flex-start';
+  oreBox.append(spriteCanvas(itemArt({ wCells: 1, hCells: 1, tags: ore.tags ?? [], material: materialFromProps((RESOURCE_DEFINITIONS['res_iron_vein'] as any).materialProps), rarity: ore.rarity, rank: ore.rank, quality: (ore as any).quality, seed: 5 }), base), cardNode(inspectItem(ore)));
+  items.append(oreBox);
+  void run;
+}
+
 function render() {
   root.innerHTML = '';
   hashes = [];
@@ -96,7 +254,7 @@ function render() {
   (Object.values(RESOURCE_DEFINITIONS) as any[]).forEach(r => res.append(cell(spriteCanvas(resource(r), base, 4), r.name)));
 
   const things = section('WORLD THINGS');
-  ([['Exit beacon', exitBeacon()], ['Chest', chest()], ['Ruin', ruin()], ['NPC', npcFigure('npc')], ['Player', playerFigure()]] as [string, Sprite][])
+  ([['Exit beacon', exitBeacon()], ['Chest', chest()], ['Ruin', ruin()], ['NPC', npcFigure('npc')], ['Player', figure({ uid: 'ws_proof', archetype: 'NOMAD' })]] as [string, Sprite][])
     .forEach(([label, s]) => things.append(cell(spriteCanvas(s, base, 4), label)));
 
   // 4. ATOM SHEET
@@ -118,8 +276,88 @@ function render() {
   const marks = section('MARK: RANK F TO SSS');
   RANKS.forEach(r => marks.append(cell(spriteCanvas(rankMark(r), base, 6), r)));
 
-  const edges = section('EDGE: RARITY, ON A 1x2 ITEM FOOTPRINT');
-  RARITIES.forEach(r => edges.append(cell(spriteCanvas(itemSprite(material({ density: 60, hardness: 60 }), 1, 2, r, 7), base, 4), r)));
+  // 4b. TREES
+  const logDef = RESOURCE_DEFINITIONS['res_tree_log'] as any;
+  const berry = RESOURCE_DEFINITIONS['res_berry_bush'] as any;
+  const sapling = RESOURCE_DEFINITIONS['res_tree_sapling'] as any;
+  const trees = section('TREES', 'From above, at real 2px. Each felling takes a bite; the last leaves a stump. The same definition in the pack is a 1x3 log.');
+  trees.append(cell(spriteCanvas(worldForm(berry), base), 'Berry, for scale'));
+  trees.append(cell(spriteCanvas(worldForm(sapling), base), 'Sapling'));
+  [3, 2, 1, 0].forEach(uses => trees.append(cell(spriteCanvas(worldForm(logDef, { uses }), base), `${uses} of 3 left`)));
+  trees.append(cell(spriteCanvas(itemArt({ wCells: 1, hCells: 3, tags: logDef.tags, material: materialFromProps(logDef.materialProps), rarity: 'COMMON', rank: 'F', seed: 3 }), base), 'Carried log, 1x3'));
+
+  const forests = section('A REAL FOREST', 'Grown by the generator in Overgrowth, in each genre, at real scale.');
+  const forestSpot = (() => {
+    for (let cy = 120; cy < 136; cy++) for (let cx = 120; cx < 136; cx++) {
+      if (WorldGenerator.biomeAt(map.seed, cx, cy) !== BiomeType.OVERGROWTH) continue;
+      const trees = WorldGenerator.chunkAt(map, cx, cy, STATIC_CONTEXT)?.entities.filter(e => e.definitionId === 'res_tree_log') ?? [];
+      const counts = new Map<string, number>();
+      trees.forEach(e => { const q = `${quadrantOf(e.position.x)},${quadrantOf(e.position.y)}`; counts.set(q, (counts.get(q) ?? 0) + 1); });
+      const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (best && best[1] >= 10) {
+        const [qx, qy] = best[0].split(',').map(Number);
+        return { x: (qx + 0.5) * QUADRANT_PX, y: (qy + 0.5) * QUADRANT_PX };
+      }
+    }
+    return { x: 128 * CHUNK_PX, y: 128 * CHUNK_PX };
+  })();
+  GENRES.forEach(g => {
+    const view = composeView(map, g, forestSpot, 240, 150);
+    forests.append(cell(toCanvas(view.data, view.w, view.h, paletteFor(g), ATOM_PX), g.name));
+  });
+
+  const gone = section('SPENT: EVERY RESOURCE', 'Live, then spent. A broken outline means gone for good; a live center means it will return.');
+  (Object.values(RESOURCE_DEFINITIONS) as any[]).forEach(r => {
+    const pair = document.createElement('div');
+    pair.style.cssText = 'display:flex;gap:6px;align-items:flex-end';
+    pair.append(spriteCanvas(worldForm(r), base, 3), spriteCanvas(worldForm(r, { uses: 0 }), base, 3));
+    gone.append(cell(pair, r.name));
+  });
+
+  // 4c. MATERIALS AND KNOWLEDGE
+  const known = section('KNOWLEDGE: THE SAME THINGS AT EACH LEVEL', 'Unknown things of one form share every pixel. Naming reveals density. Study reveals the rest. Shown at real 2px and enlarged.');
+  ['res_rock_small', 'res_iron_vein', 'res_titanium_vein', 'res_fruit_amber', 'res_fruit_gallpod'].forEach(id => {
+    const def = RESOURCE_DEFINITIONS[id] as any;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:flex-end';
+    [0, 1, 2].forEach(level => row.append(spriteCanvas(worldForm(def, { level }), base, 5)));
+    known.append(cell(row, def.name));
+  });
+
+  const affixes = section('AFFIXES: A MARK YOU MUST LEARN TO SEE', 'The game defines these three but never rolls them. Iron Ore, at the level each one is discovered.');
+  [['aff_dense', 'Compressed', 2], ['aff_volatile', 'Volatile', 3], ['aff_arcane', 'Ley-Touched', 3]].forEach(([id, name, level]) => {
+    affixes.append(cell(spriteCanvas(worldForm(RESOURCE_DEFINITIONS['res_iron_vein'], { level: level as number, affixes: [id as string] }), base, 5), name as string));
+  });
+
+  // 4d. ITEM CHANNELS
+  const blade = ['melee', 'one_hand', 'physical', 'blade'];
+  const art = (over: Partial<Parameters<typeof itemArt>[0]> = {}) => itemArt({
+    wCells: 1, hCells: 1, tags: blade, material: gearMaterial(blade), rarity: 'RARE', rank: 'C', quality: 0, durability: 100, maxDurability: 100, seed: 77, ...over
+  });
+  const channel = (title: string, note: string, list: [string, Sprite][]) => {
+    const real = section(title, note);
+    list.forEach(([label, s]) => real.append(cell(spriteCanvas(s, base), label)));
+    const big = section('', undefined);
+    list.forEach(([label, s]) => big.append(cell(spriteCanvas(s, base, 5), label)));
+  };
+  channel('RARITY: THE FRAME', 'One item, seven rarities, at the real 1x1 pack size (36px), then enlarged.', RARITIES.map(r => [r, art({ rarity: r })]));
+  channel('QUALITY: THE FILL', 'The same item at -20%, -8%, 0, +8%, +20%. Nothing else changes.', [-0.2, -0.08, 0, 0.08, 0.2].map(q => [`${q > 0 ? '+' : ''}${Math.round(q * 100)}%`, art({ quality: q })]));
+  channel('DURABILITY: BITES FROM THE FRAME', 'Rarity corners stay readable. At zero the item is struck through.', [100, 70, 40, 10, 0].map(d => [`${d}%`, art({ durability: d })]));
+  channel('ALL FOUR AT ONCE', 'Constructed examples at the real 1x1 size. The first two differ only in quality and wear. Real factory items follow below.', [
+    ['Worn Crude F', art({ rarity: 'COMMON', rank: 'F', quality: -0.18, durability: 30 })],
+    ['Good Superior F', art({ rarity: 'COMMON', rank: 'F', quality: 0.18, durability: 100 })],
+    ['Legendary S', art({ rarity: 'LEGENDARY', rank: 'S', quality: 0.1, durability: 70 })],
+    ['Artifact SSS', art({ rarity: 'ARTIFACT', rank: 'SSS', quality: 0.2, durability: 100 })],
+    ['Unidentified', art({ identified: false })]
+  ]);
+
+  const kinds = section('REAL FOOTPRINTS', 'Pack cells are 36px. Gear has no material data in the game, so its profile here is proposed from tags.');
+  [['wpn_sword_1h_t1', 'weapon'], ['wpn_axe_2h_t1', 'weapon'], ['wpn_staff_t1', 'weapon'], ['wpn_bow_t1', 'weapon'], ['arm_chest_heavy_t1', 'armor'], ['tool_pick_rusty_t1', 'tool'], ['tool_scanner_t1', 'tool']].forEach(([id, cat], i) => {
+    const item = ItemFactory.createItem(undefined, true, Rng.fromKey(`atoms:item:${i}`), cat as any, id);
+    kinds.append(cell(spriteCanvas(itemFor(item), base), item.name));
+  });
+
+  renderInspect(base);
 
   // 5. IDENTITY
   const ids = section('IDENTITY: AVATARS FROM CERTIFICATES, SEALS FROM SIGNATURES', 'Different ids give different faces and seals. The same id always gives the same one.');
@@ -186,6 +424,20 @@ async function measure(table: HTMLTableElement) {
   const avgFrame = frames.slice(1).reduce((a, b) => a + b, 0) / (frames.length - 1);
   add(`Draw ${bitmaps.length} moving sprites`, `median ${sorted[60].toFixed(2)}ms, p95 ${p95.toFixed(2)}ms`, p95 <= 16);
   add('Frame interval while drawing', `${avgFrame.toFixed(1)}ms`, null);
+
+  const hits: number[] = [];
+  for (let frame = 0; frame < 200; frame++) {
+    const moving = Array.from({ length: 300 }, (_, i) => ({
+      id: `t${i}`, type: i % 3 ? EntityType.MOB : EntityType.RESOURCE,
+      x: (i * 37 + frame * ((i % 5) + 1)) % 512, y: (i * 53 + frame * ((i % 3) + 1)) % 384, w: 14, h: 14
+    }));
+    const start = performance.now();
+    hitTest(targetsFrom(moving), (frame * 7) % 512, (frame * 3) % 384);
+    hits.push(performance.now() - start);
+  }
+  hits.sort((a, b) => a - b);
+  const hitP95 = hits[Math.floor(hits.length * 0.95)];
+  add('Hit-test 300 moving things', `p95 ${hitP95.toFixed(3)}ms`, hitP95 <= 1);
 }
 
 grayButton.addEventListener('click', () => {

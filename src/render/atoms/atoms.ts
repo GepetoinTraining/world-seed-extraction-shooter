@@ -8,7 +8,10 @@
  * A pixel byte is 0 for transparent, otherwise 1 + role * STEPS + step.
  */
 
-import { fnv1a } from '../../src/logic/rng/DeterministicRNG';
+import { fnv1a } from '../../logic/rng/DeterministicRNG';
+import { hash2 } from '../../logic/rng/noise';
+
+export { hash2 };
 
 export const ATOM_PX = 2;
 export const TILE_ATOMS = 10;
@@ -18,7 +21,8 @@ export enum Role { GROUND, MATTER, LIFE, THREAT, SIGNAL, PROOF, LOSS, VOID }
 const ROLE_COUNT = 8;
 
 export interface Sprite { w: number; h: number; data: Uint8Array }
-export interface Genre { name: string; palette: [string, string, string, string] }
+export interface GenreLook { structure: 'strata' | 'blotches' | 'lattice' | 'dunes'; key: number }
+export interface Genre { name: string; palette: [string, string, string, string]; look?: GenreLook }
 export interface Material {
   density: number; hardness: number; conductivity: number; resonance: number;
   luminosity: number; toxicity: number; elasticity: number;
@@ -39,13 +43,6 @@ export function isqrt(n: number): number {
   let x = n, y = (x + 1) >> 1;
   while (y < x) { x = y; y = (x + Math.floor(n / x)) >> 1; }
   return x;
-}
-
-export function hash2(seed: number, x: number, y: number): number {
-  let h = (seed ^ Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 0x5bd1e995);
-  h = Math.imul(h ^ (h >>> 15), 0x2d2816a5);
-  return (h ^ (h >>> 16)) >>> 0;
 }
 
 export const hashBytes = (data: Uint8Array): number => {
@@ -123,11 +120,13 @@ const CELL = TILE_ATOMS;
 export function grain(m: Material, x: number, y: number, seed: number): number {
   const ax = x + 1024, ay = y + 1024;
   let step = 0;
-  if (BAYER[ay & 3][ax & 3] < Math.floor((m.density * 16) / 100)) step += 1;
+  if (BAYER[ay & 3][ax & 3] < Math.ceil((m.density * 16) / 100)) step += 1;
   if (m.conductivity > 0) {
+    // Spacing carries the amount; a line that may not appear at all carries nothing.
     const s = Math.max(3, 12 - Math.floor(m.conductivity / 10));
-    const onV = ax % s === 0 && hash2(seed, Math.floor(ax / s), Math.floor(ay / 6)) % 100 < m.conductivity;
-    const onH = ay % s === 0 && hash2(seed + 1, Math.floor(ax / 6), Math.floor(ay / s)) % 100 < m.conductivity;
+    const live = 50 + (m.conductivity >> 1);
+    const onV = ax % s === 0 && hash2(seed, Math.floor(ax / s), Math.floor(ay / 6)) % 100 < live;
+    const onH = ay % s === 0 && hash2(seed + 1, Math.floor(ax / 6), Math.floor(ay / s)) % 100 < live;
     if (onV || onH) step += 2;
   }
   if (m.resonance > 0) {
@@ -136,7 +135,7 @@ export function grain(m: Material, x: number, y: number, seed: number): number {
   }
   if (m.toxicity > 0 && hash2(seed + 2, ax, ay) % 100 < m.toxicity) step += 2;
   if (m.elasticity > 0 && (ay + TRI[ax % 12]) % Math.max(4, 14 - Math.floor(m.elasticity / 10)) === 0) step += 1;
-  if (m.hardness >= 30 && (ax + ay) % Math.max(3, 14 - Math.floor(m.hardness / 8)) === 0) step += 1;
+  if (m.hardness >= 10 && (ax + ay) % Math.max(3, 14 - Math.floor(m.hardness / 8)) === 0) step += 1;
   return step + Math.floor(m.luminosity / 34);
 }
 
@@ -144,9 +143,9 @@ export function grain(m: Material, x: number, y: number, seed: number): number {
 // PART: shapes are drawn on a 48-unit design grid, then sampled to any size.
 // ---------------------------------------------------------------------------
 
-const D = 48;
+export const D = 48;
 
-class Ink {
+export class Ink {
   body = new Uint8Array(D * D);
   eye = new Uint8Array(D * D);
 
@@ -188,22 +187,24 @@ class Ink {
 }
 
 /** Sample the design grid to size S. A cell is on when at least a third of it is covered. */
-function sample(layer: Uint8Array, s: number, anyCoverage = false): Uint8Array {
-  const out = new Uint8Array(s * s);
-  for (let ty = 0; ty < s; ty++) for (let tx = 0; tx < s; tx++) {
-    const x0 = Math.floor((tx * D) / s), x1 = Math.max(x0 + 1, Math.floor(((tx + 1) * D) / s));
-    const y0 = Math.floor((ty * D) / s), y1 = Math.max(y0 + 1, Math.floor(((ty + 1) * D) / s));
+export function sampleRect(layer: Uint8Array, w: number, h: number, anyCoverage = false): Uint8Array {
+  const out = new Uint8Array(w * h);
+  for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) {
+    const x0 = Math.floor((tx * D) / w), x1 = Math.max(x0 + 1, Math.floor(((tx + 1) * D) / w));
+    const y0 = Math.floor((ty * D) / h), y1 = Math.max(y0 + 1, Math.floor(((ty + 1) * D) / h));
     let on = 0, total = 0;
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { total++; on += layer[y * D + x] ? 1 : 0; }
-    out[ty * s + tx] = (anyCoverage ? on > 0 : on * 3 >= total) ? 1 : 0;
+    out[ty * w + tx] = (anyCoverage ? on > 0 : on * 3 >= total) ? 1 : 0;
   }
   return out;
 }
 
-export interface StampStyle { role: Role; edgeStep: number; minFill: number; maxFill: number; eyeStep?: number }
+const sample = (layer: Uint8Array, s: number, anyCoverage = false) => sampleRect(layer, s, s, anyCoverage);
+
+export interface StampStyle { role: Role; edgeStep: number; minFill: number; maxFill: number; eyeStep?: number; edgeGrain?: boolean }
 
 /** EDGE + GRAIN: turn sampled ink into a sprite with a hard void seam around it. */
-function stamp(ink: Ink, s: number, m: Material, seed: number, style: StampStyle): Sprite {
+export function stamp(ink: Ink, s: number, m: Material, seed: number, style: StampStyle): Sprite {
   const body = sample(ink.body, s);
   const eye = sample(ink.eye, s, true);
   const w = s + 2, data = new Uint8Array(w * w);
@@ -214,7 +215,7 @@ function stamp(ink: Ink, s: number, m: Material, seed: number, style: StampStyle
     const edge = !on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1);
     let value: number;
     if (eye[y * s + x] && style.eyeStep !== undefined) value = px(style.role, style.eyeStep);
-    else if (edge) value = px(style.role, style.edgeStep);
+    else if (edge) value = px(style.role, style.edgeGrain && grain(m, x, y, seed) === 0 ? style.edgeStep - 1 : style.edgeStep);
     else value = px(style.role, Math.min(style.maxFill, style.minFill + grain(m, x, y, seed)));
     data[(y + 1) * w + x + 1] = value;
   }
@@ -352,13 +353,18 @@ export function creature(def: { id: string; tags: string[]; size?: string }, s?:
 // RESOURCES: form from tags, fill from real material numbers.
 // ---------------------------------------------------------------------------
 
+/**
+ * Game values to a 0-100 grain scale. Fixed and versioned: deriving it from the
+ * data would change old worlds whenever a new material arrived. Density and
+ * Conductivity span wide ranges in the game, so they are read on a square root.
+ */
 export function materialFromProps(props?: Partial<Record<string, number>>): Material {
   const p = props || {};
-  const cap = (n: number) => Math.min(100, n);
+  const cap = (n: number) => Math.min(100, Math.floor(n));
   return material({
-    density: cap((p.DENSITY || 0) * 5), hardness: cap(p.HARDNESS || 0), conductivity: cap((p.CONDUCTIVITY || 0) * 2),
-    resonance: cap(p.RESONANCE || 0), luminosity: cap((p.LUMINOSITY || 0) * 5), toxicity: cap((p.TOXICITY || 0) * 5),
-    elasticity: cap((p.ELASTICITY || 0) * 3)
+    density: cap(isqrt(Math.floor((p.DENSITY || 0) * 500))), hardness: cap(p.HARDNESS || 0), conductivity: cap(isqrt(Math.floor((p.CONDUCTIVITY || 0) * 333))),
+    resonance: cap(p.RESONANCE || 0), luminosity: cap((p.LUMINOSITY || 0) * 8), toxicity: cap((p.TOXICITY || 0) * 8),
+    elasticity: cap((p.ELASTICITY || 0) * 4)
   });
 }
 
@@ -367,13 +373,35 @@ function lump(k: Ink, cx: number, cy: number, r: number, hardness: number, seed:
   for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
     const cheb = Math.max(Math.abs(x), Math.abs(y));
     const eucl = isqrt(x * x + y * y);
-    const metric = Math.floor((hardness * cheb + (100 - hardness) * eucl) / 100);
+    const metric = Math.floor((hardness * cheb + (100 - hardness) * (eucl + (eucl >> 2))) / 100);
     const dent = hash2(seed, Math.floor((x + 64) / 8), Math.floor((y + 64) / 8)) % 4;
     if (metric <= r - dent) k.rect(cx + x, cy + y, cx + x, cy + y);
   }
 }
 
-function resourceInk(def: any, m: Material, seed: number): Ink {
+const CROWN_LOBES = [[-2, -14], [11, -10], [15, 2], [9, 13], [-5, 15], [-15, 6], [-13, -7]];
+const CANOPY_GAPS = [[-9, -5], [8, -6], [-6, 8], [10, 7]];
+
+/** A tree seen from above. Each felling takes a bite out of the crown; the last leaves a stump. */
+function treeInk(seed: number, uses: number, full: number): Ink {
+  const k = new Ink();
+  if (uses <= 0) return k.disc(24, 24, 10).disc(24, 24, 6, 0).disc(24, 24, 3);
+  k.disc(24, 24, 14);
+  CROWN_LOBES.forEach(([dx, dy], i) => k.disc(24 + dx, 24 + dy, 8 + hash2(seed, i, 9) % 3));
+  CANOPY_GAPS.forEach(([dx, dy], i) => k.disc(24 + dx, 24 + dy, 2 + hash2(seed, i, 5) % 2, 0));
+  if (uses * 3 < full * 3) {
+    const heavy = uses * 2 <= full;
+    for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+      if (heavy ? x >= 24 || y <= 24 : x >= 24 && y <= 24) k.rect(x, y, x, y, 0);
+    }
+  }
+  k.disc(24, 24, 5).eyeAt(24, 24, 2);
+  return k;
+}
+
+const isTree = (tags: string[]) => tags.includes('wood') && !tags.includes('seed');
+
+function resourceInk(def: any, m: Material, seed: number, level = KNOWN): Ink {
   const k = new Ink();
   const tags: string[] = def.tags || [];
   const has = (t: string) => tags.includes(t);
@@ -383,13 +411,14 @@ function resourceInk(def: any, m: Material, seed: number): Ink {
     k.disc(16, 18, 9).disc(33, 16, 9).disc(24, 33, 10);
   } else if (has('fruit')) {
     k.disc(24, 29, 17).line(24, 13, 30, 2, 1).line(30, 6, 40, 4, 2);
-    if (has('poison')) k.disc(24, 29, 6, 0);
+    if (has('poison') && level >= KNOWN) k.disc(24, 29, 6, 0);
   } else if (has('fiber')) {
     [8, 22, 36].forEach(x => k.line(x, 46, x + 8, 3, 2));
   } else if (has('seed')) {
-    k.line(24, 47, 24, 18, 2).both(f => k.line(f(22), 22, f(8), 12, 3));
+    k.line(24, 3, 24, 44, 2).line(3, 24, 44, 24, 2).disc(24, 24, 7);
+    [[24, 8], [40, 24], [24, 40], [8, 24]].forEach(([x, y]) => k.disc(x, y, 7));
   } else if (has('wood')) {
-    k.rect(19, 28, 29, 47).disc(24, 17, 17);
+    return treeInk(seed, def.uses ?? 3, def.uses ?? 3);
   } else if (has('sand')) {
     for (let y = 26; y < 48; y++) { const half = Math.floor((y - 22) * 1.1); k.rect(24 - half, y, 24 + half, y); }
   } else if (has('glass')) {
@@ -399,18 +428,90 @@ function resourceInk(def: any, m: Material, seed: number): Ink {
   } else if (has('stone') && m.density <= 25) {
     k.disc(13, 15, 8).disc(35, 12, 6).disc(19, 35, 9).disc(38, 35, 6);
   } else {
-    lump(k, 24, 24, 21, Math.max(m.hardness, 40), seed);
+    lump(k, 24, 24, 21, m.hardness, seed);
   }
   return k;
 }
 
-export function resource(def: any, s = 12): Sprite {
-  const seed = fnv1a(`sprite:v1:${def.id}`);
-  const m = materialFromProps(def.materialProps);
-  const flora = (def.tags || []).includes('flora');
-  return stamp(resourceInk(def, m, seed), s, m, seed, {
-    role: flora ? Role.LIFE : Role.MATTER, edgeStep: 3, minFill: 1, maxFill: 3
+/**
+ * KNOWLEDGE: 0 unknown, 1 named, 2 base properties, 3 affixes. These are the levels
+ * of the game's MaterialScience. Form survives at 0 because it is plain to see; what
+ * it is made of does not, so unknown things of one form share every pixel.
+ */
+export const KNOWN = 2;
+const UNKNOWN_SEED = fnv1a('sprite:v1:unknown');
+const UNKNOWN_HARDNESS = 50;
+
+function knownMaterial(props: Partial<Record<string, number>> | undefined, level: number): Material {
+  const m = materialFromProps(props);
+  if (level <= 0) return material({ density: 50, hardness: UNKNOWN_HARDNESS });
+  if (level === 1) return material({ density: m.density, hardness: UNKNOWN_HARDNESS });
+  return m;
+}
+
+/** Spent: only a broken outline is left. What will return keeps a live sprout at its center. */
+export function spent(s: Sprite, regrows: boolean): Sprite {
+  const mask = maskOf(s);
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < s.w && y < s.h && mask[y * s.w + x] === 1;
+  const data = new Uint8Array(s.w * s.h);
+  for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) {
+    if (!on(x, y) || (x + y) % 2 !== 0) continue;
+    if (on(x - 1, y) && on(x + 1, y) && on(x, y - 1) && on(x, y + 1)) continue;
+    data[y * s.w + x] = regrows ? px(Role.LIFE, 1) : px(Role.MATTER, 1);
+  }
+  if (regrows) {
+    const cx = s.w >> 1, cy = s.h >> 1;
+    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => { data[(cy + dy) * s.w + cx + dx] = px(Role.LIFE, 4); });
+  }
+  return { w: s.w, h: s.h, data };
+}
+
+const AFFIX_MARKS: Record<string, number[][]> = {
+  aff_dense: [[0, 0], [1, 0], [0, 1], [1, 1]],
+  aff_volatile: [[0, 0], [1, 1], [2, 0], [1, 2]],
+  aff_arcane: [[1, 0], [0, 1], [2, 1], [1, 2]]
+};
+const AFFIX_THRESHOLD: Record<string, number> = { aff_dense: 2, aff_volatile: 3, aff_arcane: 3 };
+
+export const worldSize = (def: any) => {
+  const tags: string[] = def.tags || [];
+  return isTree(tags) ? 22 : tags.includes('seed') ? 10 : 12;
+};
+
+export interface WorldFormOptions { uses?: number; level?: number; affixes?: string[]; s?: number; variant?: number }
+
+/** A resource as it stands in the world, at what the player knows of it. */
+export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
+  const level = o.level ?? KNOWN;
+  const tags: string[] = def.tags || [];
+  const seed = level <= 0 ? UNKNOWN_SEED : fnv1a(`sprite:v1:${def.id}`);
+  const m = knownMaterial(def.materialProps, level);
+  const size = o.s ?? worldSize(def);
+  const full = def.uses ?? 1;
+  const uses = o.uses ?? full;
+  const role = tags.includes('flora') ? Role.LIFE : Role.MATTER;
+
+  let sprite: Sprite;
+  if (isTree(tags)) {
+    const ink = treeInk(seed + (o.variant ?? 0), uses, full);
+    sprite = uses <= 0
+      ? stamp(ink, size, m, seed, { role, edgeStep: 2, minFill: 1, maxFill: 1 })
+      : stamp(ink, size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, eyeStep: 0, edgeGrain: true });
+  } else {
+    const live = stamp(resourceInk(def, m, seed, level), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
+    sprite = uses <= 0 ? spent(live, !!def.regrowMs) : live;
+  }
+
+  (o.affixes || []).forEach(id => {
+    const mark = AFFIX_MARKS[id];
+    if (!mark || level < (AFFIX_THRESHOLD[id] ?? 3)) return;
+    mark.forEach(([x, y]) => { sprite.data[y * sprite.w + x] = px(Role.PROOF, 4); });
   });
+  return sprite;
+}
+
+export function resource(def: any, s = 12): Sprite {
+  return worldForm(def, { s });
 }
 
 // ---------------------------------------------------------------------------
@@ -440,11 +541,6 @@ export const npcFigure = (id: string) => fixed(k => {
   k.disc(24, 13, 11).disc(24, 42, 20).rect(0, 0, 47, 0, 0);
 }, 10, material({ density: 30 }), { role: Role.LIFE, edgeStep: 4, minFill: 1, maxFill: 2 }, id);
 
-export const playerFigure = () => fixed(k => {
-  for (let y = 0; y < 48; y++) { const half = 24 - Math.abs(y - 24); k.rect(24 - half, y, 23 + half, y); }
-  k.rect(21, 0, 26, 7, 0);
-  k.disc(24, 24, 5, 0);
-}, 12, material({ luminosity: 34 }), { role: Role.SIGNAL, edgeStep: 4, minFill: 2, maxFill: 3 }, 'player');
 
 // ---------------------------------------------------------------------------
 // MARK: rank is a 3×3 count, so it needs no color and no language.
@@ -463,24 +559,156 @@ export function rankMark(rank: string): Sprite {
 
 export const RARITIES = ['SCRAP', 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'ARTIFACT'];
 
-/** EDGE family on an item: footprint in cells, rarity in the frame, material in the fill. */
-export function itemSprite(m: Material, wCells: number, hCells: number, rarity: string, seed: number): Sprite {
-  const cell = 8, w = wCells * cell + 2, h = hCells * cell + 2;
+/** Gear has no material data in the game yet. This is the profile it would need, from tags. */
+export function gearMaterial(tags: string[]): Material {
+  const has = (t: string) => tags.includes(t);
+  if (has('magic') || has('caster')) return material({ density: 20, resonance: 60 });
+  if (has('tech')) return material({ density: 40, conductivity: 70 });
+  if (has('heavy')) return material({ density: 80, hardness: 60 });
+  if (has('blade') || has('crit')) return material({ density: 50, hardness: 75 });
+  if (has('mining') || has('chopping')) return material({ density: 60, hardness: 55 });
+  if (has('light') || has('ranged')) return material({ density: 30, elasticity: 55 });
+  return material({ density: 50, hardness: 30 });
+}
+
+function gearInk(tags: string[]): Ink {
+  const k = new Ink();
+  const has = (t: string) => tags.includes(t);
+  if (has('caster')) return k.rect(20, 12, 28, 47).disc(24, 10, 10).disc(24, 10, 4, 0);
+  if (has('ranged')) return k.line(34, 3, 12, 24, 3).line(12, 24, 34, 44, 3).line(34, 3, 34, 44, 1);
+  if (has('chopping') || (has('melee') && has('heavy'))) return k.rect(21, 6, 27, 47).rect(6, 2, 26, 20);
+  if (has('mining')) return k.rect(21, 6, 27, 47).rect(4, 3, 44, 12);
+  if (has('tool')) return k.rect(10, 4, 38, 44).rect(15, 10, 33, 24, 0);
+  if (has('armor')) return k.rect(10, 4, 38, 44).rect(2, 4, 46, 14).rect(19, 0, 29, 6, 0);
+  return k.rect(19, 0, 29, 33).rect(9, 33, 39, 38).rect(20, 38, 28, 47);
+}
+
+/** What fills a pack slot: gear by its class, a tree as its log, anything else as itself. */
+function glyphInk(tags: string[], m: Material, seed: number): Ink {
+  const gear = ['armor', 'tool', 'melee', 'ranged', 'caster'].some(t => tags.includes(t));
+  if (gear) return gearInk(tags);
+  if (isTree(tags)) {
+    const k = new Ink().rect(14, 0, 34, 47);
+    return k.rect(20, 3, 28, 4, 0).rect(20, 8, 28, 9, 0);
+  }
+  return resourceInk({ tags }, m, seed);
+}
+
+export const ITEM_CELL = 18;
+export const QUALITY_NAMES = ['Crude', 'Rough', 'Standard', 'Fine', 'Superior'];
+
+/** Gear rolls -0.2 to +0.2. Resources and deeds store 100, which means no roll at all. */
+export function qualityBand(q?: number): number {
+  if (q === undefined || q === null || Math.abs(q) > 1) return 2;
+  if (q < -0.12) return 0;
+  if (q < -0.04) return 1;
+  if (q <= 0.04) return 2;
+  return q <= 0.12 ? 3 : 4;
+}
+
+/** The plate behind the glyph. Ramp steps of the ground are too close to read at 2px, so this climbs from void into matter. */
+function qualityPlate(band: number, x: number, y: number): number {
+  const third = (x + y) % 3 === 0;
+  if (band <= 1) return px(Role.VOID, band === 0 ? 2 : 4);
+  if (band === 2) return px(Role.VOID, 4);
+  if (band === 3) return third ? px(Role.MATTER, 0) : px(Role.VOID, 4);
+  return third ? px(Role.MATTER, 1) : px(Role.MATTER, 0);
+}
+
+const QUALITY = {
+  holes: [30, 12, 0, 0, 0],
+  minFill: [0, 1, 1, 2, 2],
+  maxFill: [1, 2, 3, 4, 4],
+  edge: [1, 2, 3, 4, 4]
+};
+
+export const wearLevel = (durability?: number, max?: number) => {
+  if (durability === undefined || !max) return 0;
+  if (durability >= max) return 0;
+  if (durability * 3 >= max * 2) return 1;
+  if (durability * 3 >= max) return 2;
+  return durability > 0 ? 3 : 4;
+};
+
+export interface ItemArtInput {
+  wCells: number; hCells: number; tags: string[]; material: Material; rarity: string; rank: string; seed: number;
+  quality?: number; durability?: number; maxDurability?: number; identified?: boolean;
+}
+
+/**
+ * An item at its real footprint, four facts in four places: rarity in the frame,
+ * wear as bites from the middle of the frame, quality in the fill, rank in its mark.
+ */
+export function itemArt(o: ItemArtInput): Sprite {
+  const w = o.wCells * ITEM_CELL - 2, h = o.hCells * ITEM_CELL - 2;
   const data = new Uint8Array(w * h);
-  const tier = RARITIES.indexOf(rarity);
-  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-    const border = x === 1 || y === 1 || x === w - 2 || y === h - 2;
-    const inner = x === 2 || y === 2 || x === w - 3 || y === h - 3;
-    const corner = (x <= 3 || x >= w - 4) && (y <= 3 || y >= h - 4);
-    let v = px(Role.MATTER, Math.min(3, 1 + grain(m, x, y, seed)));
-    if (border) {
-      if (tier === 0) v = (x + y) % 3 === 0 ? px(Role.VOID, 0) : px(Role.MATTER, 2);
-      else if (tier === 1) v = px(Role.MATTER, 2);
-      else v = corner ? px(Role.PROOF, Math.min(4, tier)) : px(Role.MATTER, 3);
+  const ring = (x: number, y: number) => Math.min(x, y, w - 1 - x, h - 1 - y);
+
+  if (o.identified === false) {
+    const noise = fnv1a('item:v1:unidentified');
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      data[y * w + x] = ring(x, y) === 0 ? ((x + y) % 2 ? px(Role.VOID, 4) : px(Role.VOID, 0)) : hash2(noise, x, y) % 3 === 0 ? px(Role.MATTER, hash2(noise, y, x) % 3) : px(Role.VOID, 1);
     }
-    if (inner && tier >= 4) v = corner || tier >= 5 ? px(Role.PROOF, 3) : v;
-    if (tier === 6 && !border && (x + y) % 4 === 0) v = px(Role.PROOF, 4);
+    return { w, h, data };
+  }
+
+  const tier = RARITIES.indexOf(o.rarity);
+  const role = o.tags.includes('flora') ? Role.LIFE : Role.MATTER;
+
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const r = ring(x, y);
+    if (r > 1) continue;
+    const corner = (x < 3 || x >= w - 3) && (y < 3 || y >= h - 3);
+    const leading = (x < 3 && y < 3) || (x >= w - 3 && y >= h - 3);
+    let v = px(Role.VOID, 2);
+    if (tier === 0) { if (r === 0) v = (x + y) % 3 === 0 ? px(Role.VOID, 0) : px(Role.MATTER, 1); }
+    else if (tier === 1) { if (r === 0) v = px(Role.MATTER, 1); }
+    else if (tier === 2) { if (r === 0) v = px(Role.MATTER, 1); if (leading) v = px(Role.PROOF, 3); }
+    else if (tier === 3) { if (r === 0) v = px(Role.MATTER, 1); if (corner) v = px(Role.PROOF, 3); }
+    else if (tier === 4) { v = r === 0 ? px(Role.MATTER, 1) : px(Role.MATTER, 3); if (corner) v = px(Role.PROOF, 3); }
+    else if (tier === 5) { if (r === 0) v = px(Role.PROOF, 3); if (corner) v = px(Role.PROOF, 4); }
+    else { v = r === 0 ? px(Role.PROOF, 4) : px(Role.PROOF, 2); }
     data[y * w + x] = v;
+  }
+
+  const band = qualityBand(o.quality);
+  const gw = w - 4, gh = h - 4;
+  const glyph = sampleRect(glyphInk(o.tags, o.material, o.seed).body, gw, gh);
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < gw && y < gh && glyph[y * gw + x] === 1;
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    let v: number;
+    if (on(x, y)) {
+      const edge = !on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1);
+      v = edge ? px(role, QUALITY.edge[band])
+        : px(role, Math.min(QUALITY.maxFill[band], QUALITY.minFill[band] + grain(o.material, x, y, o.seed)));
+    } else {
+      v = qualityPlate(band, x, y);
+    }
+    if (hash2(o.seed, x, y) % 100 < QUALITY.holes[band]) v = px(Role.VOID, 0);
+    data[(y + 2) * w + x + 2] = v;
+  }
+
+  const wear = wearLevel(o.durability, o.maxDurability);
+  const bite = (x0: number, y0: number, bw: number, bh: number) => {
+    for (let y = y0; y < y0 + bh; y++) for (let x = x0; x < x0 + bw; x++) data[y * w + x] = px(Role.VOID, 0);
+  };
+  const mx = (w >> 1) - 2, my = (h >> 1) - 2;
+  if (wear >= 1) bite(mx, 0, 4, 2);
+  if (wear >= 2) bite(w - 2, my, 2, 4);
+  if (wear >= 3) bite(mx, h - 2, 4, 2);
+  if (wear >= 4) {
+    bite(0, my, 2, 4);
+    const n = Math.max(gw, gh) - 3;
+    for (let i = 0; i < n; i++) {
+      const x = 3 + Math.floor((i * (w - 8)) / n), y = h - 4 - Math.floor((i * (h - 8)) / n);
+      data[y * w + x] = px(Role.LOSS, 3);
+      data[y * w + x + 1] = px(Role.VOID, 0);
+    }
+  }
+
+  const mark = rankMark(o.rank);
+  for (let y = 0; y < mark.h; y++) for (let x = 0; x < mark.w; x++) {
+    data[(h - 7 + y) * w + w - 7 + x] = mark.data[y * mark.w + x];
   }
   return { w, h, data };
 }

@@ -84,12 +84,26 @@ export interface IChunk {
   hasExtraction: boolean;
 }
 
+/** What you scan and drop into: 8 by 8 chunks. */
+export interface ISector {
+  id: string;
+  x: number;
+  y: number;
+  biome: BiomeType; // the most common in it
+  difficulty: UniversalRank; // the highest in it
+  rarity: Rarity;
+  entities: IWorldEntity[]; // revealed by a deep scan
+  scanLevel: ScanLevel;
+  hasExtraction: boolean;
+}
+
 export interface IMap {
   seed: string;
-  width: number; 
-  height: number; 
-  chunks: Record<string, IChunk>; 
-  
+  width: number; // in sectors
+  height: number; // in sectors
+  gridVersion: number;
+  sectors: Record<string, ISector>;
+  chunks: Record<string, IChunk>; // only the ones built so far
+
   generatedAt: number;
-  extractionPoints: string[]; 
 }

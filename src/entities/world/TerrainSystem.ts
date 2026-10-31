@@ -1,22 +1,26 @@
 /**
- * TERRAIN SYSTEM (Wave 2.1)
+ * TERRAIN SYSTEM
  *
- * The ground is a pure function of the seed — primordial's coordinate-keyed
- * derivation. Nothing is stored: elevation is derived from keyed corner values
- * (`{seed}:elev:v1:{cx},{cy}`) and bilinearly interpolated per 20px tile, so
- * every client of a seed walks the same mud and drowns in the same water.
+ * The ground is a pure function of the seed and the tile. Nothing is stored:
+ * elevation comes from two scales of keyed noise, one for lakes and ridges and one
+ * for their edges, so every client of a seed walks the same mud and drowns in the
+ * same water, and land does not follow chunk lines.
  *
- * Layer version: bump `v1` in ELEV_LAYER to re-roll terrain for NEW worlds
- * without silently changing old ones (goldens pin this).
+ * Layer version: bump ELEV_LAYER to re-roll terrain for new worlds (goldens pin this).
  */
 
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { layerSeed, valueNoise } from '../../logic/rng/noise';
+import { TILE_PX, tileOf } from './grid';
 import { BiomeType } from './types';
 
-export const TILE_PX = 20;        // 1 tile = 20px (the world-wide scale)
-export const CHUNK_PX = 100;      // 5x5 tiles per chunk
+export { TILE_PX };
 
-const ELEV_LAYER = 'elev:v1';
+const ELEV_LAYER = 'elev:v2';
+const BROAD_PERIOD = 40;
+const FINE_PERIOD = 9;
+const WATER_BELOW = 0.2528;
+const MUD_BELOW = 0.3499;
+const ROCK_ABOVE = 0.7846;
 
 export enum TerrainType {
   WATER = 'WATER',   // blocked
@@ -57,46 +61,29 @@ const COLORS: Record<TerrainType, string> = {
 
 export class TerrainSystem {
 
-  /** Keyed corner elevation in [0,1]. Pure; cheap enough to call raw. */
-  private static corner(seed: string, cx: number, cy: number): number {
-    return Rng.fromKey(`${seed}:${ELEV_LAYER}:${cx},${cy}`).next();
+  /** Elevation of a tile. */
+  static elevationOfTile(seed: string, tx: number, ty: number): number {
+    const broad = valueNoise(layerSeed(seed, `${ELEV_LAYER}:broad`), tx, ty, BROAD_PERIOD);
+    const fine = valueNoise(layerSeed(seed, `${ELEV_LAYER}:fine`), tx, ty, FINE_PERIOD);
+    return broad * 0.72 + fine * 0.28;
   }
 
-  /** Smoothstep for less gradient-y interpolation. */
-  private static smooth(t: number): number {
-    return t * t * (3 - 2 * t);
+  /** What a tile is. The one place terrain is decided. */
+  static typeAt(seed: string, tx: number, ty: number): TerrainType {
+    const e = this.elevationOfTile(seed, tx, ty);
+    if (e < WATER_BELOW) return TerrainType.WATER;
+    if (e < MUD_BELOW) return TerrainType.MUD;
+    if (e > ROCK_ABOVE) return TerrainType.ROCK;
+    return TerrainType.GROUND;
   }
 
-  /** Elevation at a world pixel position: bilinear over chunk corners. */
-  static elevationAt(seed: string, px: number, pz: number): number {
-    const cx = Math.floor(px / CHUNK_PX);
-    const cy = Math.floor(pz / CHUNK_PX);
-    const fx = this.smooth((px - cx * CHUNK_PX) / CHUNK_PX);
-    const fy = this.smooth((pz - cy * CHUNK_PX) / CHUNK_PX);
-
-    const e00 = this.corner(seed, cx, cy);
-    const e10 = this.corner(seed, cx + 1, cy);
-    const e01 = this.corner(seed, cx, cy + 1);
-    const e11 = this.corner(seed, cx + 1, cy + 1);
-
-    const top = e00 + (e10 - e00) * fx;
-    const bot = e01 + (e11 - e01) * fx;
-    return top + (bot - top) * fy;
+  static isBlockedTile(seed: string, tx: number, ty: number): boolean {
+    return TILE_RULES[this.typeAt(seed, tx, ty)].blocked;
   }
 
   /** The tile under a world pixel position. */
   static tileAt(seed: string, px: number, pz: number, biome?: BiomeType): ITerrainTile {
-    // Snap to tile center so the whole tile reads the same
-    const tx = Math.floor(px / TILE_PX) * TILE_PX + TILE_PX / 2;
-    const tz = Math.floor(pz / TILE_PX) * TILE_PX + TILE_PX / 2;
-    const e = this.elevationAt(seed, tx, tz);
-
-    let type: TerrainType;
-    if (e < 0.18) type = TerrainType.WATER;
-    else if (e < 0.30) type = TerrainType.MUD;
-    else if (e > 0.85) type = TerrainType.ROCK;
-    else type = TerrainType.GROUND;
-
+    const type = this.typeAt(seed, tileOf(px), tileOf(pz));
     const rules = TILE_RULES[type];
     const color = type === TerrainType.GROUND && biome
       ? BIOME_GROUND[biome]
@@ -116,7 +103,8 @@ export class TerrainSystem {
     seed: string,
     fromX: number, fromZ: number,
     dx: number, dz: number,
-    biome?: BiomeType
+    biome?: BiomeType,
+    inBounds: (x: number, z: number) => boolean = () => true
   ): { x: number; z: number; speedMod: number } {
     const here = this.tileAt(seed, fromX, fromZ, biome);
     const speedMod = here.blocked ? 1.0 : here.speedMod;
@@ -126,13 +114,13 @@ export class TerrainSystem {
 
     // Already stuck? Let them out.
     if (here.blocked) {
-      return { x: fromX + dx, z: fromZ + dz, speedMod: 1.0 };
+      return { x: inBounds(fromX + dx, fromZ) ? fromX + dx : fromX, z: inBounds(fromX, fromZ + dz) ? fromZ + dz : fromZ, speedMod: 1.0 };
     }
 
     let x = fromX;
     let z = fromZ;
-    if (!this.tileAt(seed, fromX + stepX, fromZ, biome).blocked) x = fromX + stepX;
-    if (!this.tileAt(seed, x, fromZ + stepZ, biome).blocked) z = fromZ + stepZ;
+    if (inBounds(fromX + stepX, fromZ) && !this.tileAt(seed, fromX + stepX, fromZ, biome).blocked) x = fromX + stepX;
+    if (inBounds(x, fromZ + stepZ) && !this.tileAt(seed, x, fromZ + stepZ, biome).blocked) z = fromZ + stepZ;
 
     return { x, z, speedMod };
   }

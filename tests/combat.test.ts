@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CombatSystem } from '../src/entities/combat/CombatSystems';
-import { IProjectile, PatternType, ProjectileSystem, PROJECTILE_RANGE_PX, SIM_RADIUS_CHUNKS } from '../src/entities/combat/projectileSystem';
+import { IProjectile, PatternType, ProjectileSystem, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../src/entities/combat/projectileSystem';
 import { EntityType, IChunk, IWorldEntity, BiomeType, ScanLevel } from '../src/entities/world/types';
 import { Rarity, UniversalRank } from '../types';
 
@@ -54,8 +54,8 @@ describe('projectiles', () => {
     expect(flyShot(chunkWith(a, b), 60, 5)).toHaveLength(1);
   });
 
-  it('never outrange the simulated chunk window', () => {
-    expect(PROJECTILE_RANGE_PX).toBeLessThanOrEqual((SIM_RADIUS_CHUNKS - 1) * 100);
+  it('never outrange the simulated window', () => {
+    expect(PROJECTILE_RANGE_PX + SIM_MARGIN_PX).toBeLessThan(1280);
   });
 });
 

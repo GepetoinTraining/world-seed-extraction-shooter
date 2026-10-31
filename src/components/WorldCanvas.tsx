@@ -2,15 +2,21 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { IActiveSession, IItem } from '../../types';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
-import { ProjectileSystem, PatternType, IProjectile, SIM_RADIUS_CHUNKS } from '../entities/combat/projectileSystem';
+import { ProjectileSystem, PatternType, IProjectile, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../entities/combat/projectileSystem';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
-import { EntityType, IChunk, ScanLevel, IWorldEntity, BiomeType } from '../entities/world/types';
+import { EntityType, IChunk, ISector, ScanLevel, IWorldEntity, BiomeType } from '../entities/world/types';
 import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper, Button, Stack } from '@mantine/core';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
-import { TerrainSystem, TILE_PX } from '../entities/world/TerrainSystem';
+import { WorldGenerator } from '../entities/world/WorldGenerator';
+import { TILE_PX, chunkOf, quadrantOf, sectorOf } from '../entities/world/grid';
+import { FieldRenderer, FieldScene } from '../render/FieldRenderer';
+import { genreForWorld, entitySprite } from '../render/atoms/world';
+import { ATOM_PX } from '../render/atoms/atoms';
+import { hitTest, targetsFrom } from '../render/atoms/inspect';
+import { Archetype, Facing, armorClass, weaponClass } from '../render/atoms/people';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
@@ -18,122 +24,9 @@ import { ExitLevy } from '../logic/economy/ExitLevy';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
-const PLAYER_SPEED = 3.0; // Tiles per second (walking pace; a 100px chunk takes ~1.7s to cross)
+const PLAYER_SPEED = 3.0; // Tiles per second (a quadrant takes about 5s to cross, a chunk about 21s)
+const LOAD_RADIUS_PX = 1000; // Chunks exist this far out, so nothing is built in view
 const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't teleport the player
-
-// --- SUB-COMPONENTS (Visuals) ---
-
-const EntityAvatar = ({ entity, onClick }: { entity: IWorldEntity; onClick: (e: React.MouseEvent) => void }) => {
-  let color = '#fff';
-  let icon = '❓';
-  let shape = '50%'; // Circle by default
-
-  const depleted = entity.type === EntityType.RESOURCE && (entity.usesRemaining ?? 1) <= 0;
-
-  switch (entity.type) {
-    case EntityType.MOB:
-      color = entity.isHostile ? '#ef4444' : '#eab308';
-      icon = '👾';
-      break;
-    case EntityType.RESOURCE:
-      color = depleted ? '#374151' : '#10b981';
-      icon = RESOURCE_DEFINITIONS[entity.definitionId]?.icon || '💎';
-      shape = '4px'; // Box
-      break;
-    case EntityType.STRUCTURE:
-      color = '#64748b';
-      icon = '🏛️';
-      shape = '0px'; // Square
-      break;
-    case EntityType.CONTAINER:
-      if (entity.definitionId === 'ground_cache') {
-        color = '#8b5cf6';
-        icon = '🎒'; // a cache someone left behind — still theirs
-        shape = '6px';
-      } else {
-        color = entity.container?.looted ? '#44403c' : '#f59e0b';
-        icon = entity.container?.looted ? '🫙' : '📦';
-        shape = '4px';
-      }
-      break;
-    case EntityType.NPC:
-      color = '#38bdf8';
-      icon = '🧑';
-      break;
-    case EntityType.EXTRACTION:
-      color = '#10b981';
-      icon = '🌀';
-      break;
-  }
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        position: 'absolute',
-        left: entity.position.x, 
-        top: entity.position.y,
-        width: 24, height: 24,
-        backgroundColor: color,
-        borderRadius: shape,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 14,
-        transform: 'translate(-50%, -50%)', // Center anchor
-        cursor: 'pointer',
-        boxShadow: '0 0 10px rgba(0,0,0,0.5)',
-        zIndex: entity.type === EntityType.MOB ? 20 : 10,
-        opacity: depleted ? 0.35 : 1
-      }}
-    >
-      {icon}
-    </div>
-  );
-};
-
-/**
- * TERRAIN LAYER (Wave 2.1): one <canvas> painted from the pure terrain
- * function each frame. It sits behind the DOM entities, outside the
- * transformed container, and derives everything from (seed, playerPos).
- */
-const TerrainCanvas = ({ seed, playerX, playerZ }: { seed: string; playerX: number; playerZ: number }) => {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const w = canvas.width = window.innerWidth;
-    const h = canvas.height = window.innerHeight;
-
-    // Top-left of the viewport in world px (player is centered)
-    const originX = playerX - w / 2;
-    const originZ = playerZ - h / 2;
-
-    const startTx = Math.floor(originX / TILE_PX);
-    const startTz = Math.floor(originZ / TILE_PX);
-    const tilesW = Math.ceil(w / TILE_PX) + 1;
-    const tilesH = Math.ceil(h / TILE_PX) + 1;
-
-    for (let ty = 0; ty <= tilesH; ty++) {
-      for (let tx = 0; tx <= tilesW; tx++) {
-        const worldX = (startTx + tx) * TILE_PX;
-        const worldZ = (startTz + ty) * TILE_PX;
-        const tile = TerrainSystem.tileAt(seed, worldX + TILE_PX / 2, worldZ + TILE_PX / 2);
-        ctx.fillStyle = tile.color;
-        ctx.fillRect(worldX - originX, worldZ - originZ, TILE_PX, TILE_PX);
-      }
-    }
-  }, [seed, playerX, playerZ]);
-
-  return (
-    <canvas
-      ref={ref}
-      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
-    />
-  );
-};
 
 /**
  * PACK GRID (Wave 3.1): the 8x6 spatial inventory. Pure render over the
@@ -228,21 +121,6 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
   );
 };
 
-const PlayerAvatar = ({ x, y }: { x: number, y: number }) => (
-  <div
-    style={{
-      position: 'absolute',
-      left: x, top: y,
-      width: 20, height: 20,
-      backgroundColor: '#fff',
-      borderRadius: '50%',
-      transform: 'translate(-50%, -50%)',
-      zIndex: 50,
-      boxShadow: '0 0 15px white'
-    }}
-  />
-);
-
 // =============================================================================
 // DRONE RECON (Pre-drop satellite view)
 // =============================================================================
@@ -256,21 +134,35 @@ const BIOME_COLORS: Record<BiomeType, string> = {
 };
 
 const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ onDrop }) => {
-  const { currentMap, scanChunk, selectChunk, selectedDropZone } = useWorldStore();
+  const { currentMap, scanSector, selectSector, selectedDropZone } = useWorldStore();
   if (!currentMap) return null;
 
   const cellSize = Math.max(8, Math.min(20, Math.floor(560 / currentMap.width)));
   const selectedKey = selectedDropZone ? `${selectedDropZone.x},${selectedDropZone.y}` : null;
-  const selectedChunk = selectedKey ? currentMap.chunks[selectedKey] : null;
+  const selected = selectedKey ? currentMap.sectors[selectedKey] : null;
 
-  const handleChunkClick = (chunk: IChunk) => {
-    selectChunk(chunk.x, chunk.y);
-    scanChunk(chunk.x, chunk.y, 1); // Each click deepens the scan one level
+  const handleSectorClick = (sector: ISector) => {
+    selectSector(sector.x, sector.y);
+    scanSector(sector.x, sector.y, 1); // Each click deepens the scan one level
   };
 
-  const entityCounts = (chunk: IChunk) => {
+  // At this scale a list of things is hundreds long, so it groups them and leads with the danger.
+  const manifest = (sector: ISector) => {
+    const order = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+    const lines = new Map<string, { id: string; rank: string; hostile: boolean; count: number }>();
+    sector.entities.forEach(e => {
+      const line = lines.get(e.definitionId);
+      if (line) line.count++;
+      else lines.set(e.definitionId, { id: e.definitionId, rank: e.rank, hostile: !!e.isHostile, count: 1 });
+    });
+    return [...lines.values()]
+      .sort((a, b) => Number(b.hostile) - Number(a.hostile) || order.indexOf(b.rank) - order.indexOf(a.rank) || b.count - a.count)
+      .slice(0, 10);
+  };
+
+  const entityCounts = (sector: ISector) => {
     const counts: Record<string, number> = {};
-    chunk.entities.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+    sector.entities.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
     return counts;
   };
 
@@ -293,23 +185,23 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
             {Array.from({ length: currentMap.height }, (_, y) =>
               Array.from({ length: currentMap.width }, (_, x) => {
                 const key = `${x},${y}`;
-                const chunk = currentMap.chunks[key];
-                if (!chunk) return <div key={key} style={{ width: cellSize, height: cellSize }} />;
+                const sector = currentMap.sectors[key];
+                if (!sector) return <div key={key} style={{ width: cellSize, height: cellSize }} />;
                 const isSelected = key === selectedKey;
-                const known = chunk.scanLevel > ScanLevel.UNKNOWN;
+                const known = sector.scanLevel > ScanLevel.UNKNOWN;
                 return (
                   <div
                     key={key}
-                    onClick={() => handleChunkClick(chunk)}
-                    title={known ? `${chunk.biome} [${chunk.difficulty}]` : 'UNKNOWN'}
+                    onClick={() => handleSectorClick(sector)}
+                    title={known ? `${sector.biome} [${sector.difficulty}]` : 'UNKNOWN'}
                     style={{
                       width: cellSize,
                       height: cellSize,
                       cursor: 'pointer',
-                      background: known ? BIOME_COLORS[chunk.biome] : '#1a1a1a',
+                      background: known ? BIOME_COLORS[sector.biome] : '#1a1a1a',
                       outline: isSelected ? '2px solid #fff' : 'none',
-                      boxShadow: chunk.hasExtraction && known ? 'inset 0 0 0 2px #10b981' : 'none',
-                      opacity: known ? 0.5 + chunk.scanLevel * 0.17 : 1
+                      boxShadow: sector.hasExtraction && known ? 'inset 0 0 0 2px #10b981' : 'none',
+                      opacity: known ? 0.5 + sector.scanLevel * 0.17 : 1
                     }}
                   />
                 );
@@ -323,41 +215,41 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
         <Paper p="md" w={280} bg="dark.8" style={{ border: '1px solid var(--mantine-color-dark-4)' }}>
           <Stack gap="sm">
             <Text fw={700} size="sm" c="blue">SECTOR INTEL</Text>
-            {!selectedChunk && <Text size="xs" c="dimmed">No sector selected.</Text>}
-            {selectedChunk && (
+            {!selected && <Text size="xs" c="dimmed">No sector selected.</Text>}
+            {selected && (
               <>
                 <Group justify="space-between">
                   <Text size="xs" c="dimmed">COORDS</Text>
-                  <Text size="xs" ff="monospace">{selectedChunk.x}, {selectedChunk.y}</Text>
+                  <Text size="xs" ff="monospace">{selected.x}, {selected.y}</Text>
                 </Group>
-                {selectedChunk.scanLevel >= ScanLevel.BASIC && (
+                {selected.scanLevel >= ScanLevel.BASIC && (
                   <>
                     <Group justify="space-between">
                       <Text size="xs" c="dimmed">BIOME</Text>
-                      <Badge size="xs" style={{ background: BIOME_COLORS[selectedChunk.biome] }}>{selectedChunk.biome}</Badge>
+                      <Badge size="xs" style={{ background: BIOME_COLORS[selected.biome] }}>{selected.biome}</Badge>
                     </Group>
                     <Group justify="space-between">
                       <Text size="xs" c="dimmed">THREAT</Text>
-                      <Badge size="xs" color="red">{selectedChunk.difficulty}</Badge>
+                      <Badge size="xs" color="red">{selected.difficulty}</Badge>
                     </Group>
-                    {selectedChunk.hasExtraction && <Badge size="xs" color="emerald">EXTRACTION POINT</Badge>}
+                    {selected.hasExtraction && <Badge size="xs" color="emerald">EXTRACTION POINT</Badge>}
                   </>
                 )}
-                {selectedChunk.scanLevel >= ScanLevel.DETAILED && (
+                {selected.scanLevel >= ScanLevel.DETAILED && (
                   <Stack gap={4}>
                     <Text size="xs" c="dimmed">CONTACTS</Text>
-                    {Object.entries(entityCounts(selectedChunk)).map(([type, count]) => (
+                    {Object.entries(entityCounts(selected)).map(([type, count]) => (
                       <Text key={type} size="xs" ff="monospace">{count}x {type}</Text>
                     ))}
-                    {selectedChunk.entities.length === 0 && <Text size="xs" ff="monospace" c="dimmed">Sector clear.</Text>}
+                    {selected.entities.length === 0 && <Text size="xs" ff="monospace" c="dimmed">Sector clear.</Text>}
                   </Stack>
                 )}
-                {selectedChunk.scanLevel >= ScanLevel.COMPLETE && selectedChunk.entities.length > 0 && (
+                {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
                   <Stack gap={2}>
                     <Text size="xs" c="dimmed">MANIFEST</Text>
-                    {selectedChunk.entities.slice(0, 8).map(e => (
-                      <Text key={e.id} size="xs" ff="monospace" c={e.isHostile ? 'red' : 'gray'}>
-                        [{e.rank}] {e.definitionId}
+                    {manifest(selected).map(line => (
+                      <Text key={line.id} size="xs" ff="monospace" c={line.hostile ? 'red' : 'gray'}>
+                        {line.count}x [{line.rank}] {line.id}
                       </Text>
                     ))}
                   </Stack>
@@ -366,7 +258,7 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
                   color="emerald"
                   fullWidth
                   mt="sm"
-                  onClick={() => onDrop(selectedChunk.x, selectedChunk.y)}
+                  onClick={() => onDrop(selected.x, selected.y)}
                 >
                   CONFIRM DROP
                 </Button>
@@ -392,7 +284,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const [playerPatterns, setPlayerPatterns] = useState<any[]>([]);
   const [enemyPatterns, setEnemyPatterns] = useState<any[]>([]);
   const [activeSwings, setActiveSwings] = useState<any[]>([]);
-  const [renderBullets, setRenderBullets] = useState<IProjectile[]>([]);
   const [lootDrops, setLootDrops] = useState<any[]>([]);
   
   // Interaction Menu State
@@ -405,6 +296,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const lastTickRef = useRef<number>(Date.now());
   const keysPressed = useRef<Set<string>>(new Set());
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef<{ seed: string; renderer: FieldRenderer } | null>(null);
+  const facingRef = useRef<Facing>('down');
+  const stepRef = useRef({ step: 0, at: 0 });
+  const loadedQuadrantRef = useRef('');
 
   // Wave 3.1: pack grid visibility
   const [showPack, setShowPack] = useState(false);
@@ -460,12 +356,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   }, []);
 
   // 1. Drop Confirmation: place the agent at the chosen sector, then go live
-  const handleConfirmDrop = useCallback((chunkX: number, chunkY: number) => {
-    // Wave 2.1: never drop the agent into water/rock
-    const seed = useWorldStore.getState().currentMap?.seed;
-    const target = seed
-      ? TerrainSystem.nearestWalkable(seed, chunkX * 100 + 50, chunkY * 100 + 50)
-      : { x: chunkX * 100 + 50, z: chunkY * 100 + 50 };
+  const handleConfirmDrop = useCallback((sectorX: number, sectorY: number) => {
+    const map = useWorldStore.getState().currentMap;
+    if (!map) return;
+    // Never into water, rock or on an island with no way out
+    const target = WorldGenerator.dropPoint(map, sectorX, sectorY);
     usePlayerStore.setState(state => {
       if (!state.player.currentSession) return state;
       return {
@@ -479,9 +374,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       };
     });
     lastTickRef.current = Date.now(); // Fresh delta so the first frame doesn't jump
-    SessionJournal.record('DROP', { chunkX, chunkY });
+    SessionJournal.record('DROP', { sectorX, sectorY });
+    useWorldStore.getState().loadAround(target.x, target.z, LOAD_RADIUS_PX);
     confirmDrop();
   }, [confirmDrop]);
+
+  // A world that skips recon still has to set you down somewhere
+  const placedRef = useRef(false);
+  useEffect(() => {
+    const { reconMode: recon, selectedDropZone } = useWorldStore.getState();
+    if (!recon && selectedDropZone && !placedRef.current) {
+      placedRef.current = true;
+      handleConfirmDrop(selectedDropZone.x, selectedDropZone.y);
+    }
+  }, [handleConfirmDrop]);
 
   // 2. Input Handling
   useEffect(() => {
@@ -535,13 +441,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         dx *= loadMod;
         dz *= loadMod;
 
-        // Wave 2.1: the ground has a say — water/rock block, mud slows
-        const seed = useWorldStore.getState().currentMap?.seed;
+        facingRef.current = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'down' : 'up');
+        if (now - stepRef.current.at > 220) stepRef.current = { step: stepRef.current.step ? 0 : 1, at: now };
+
+        // The ground has a say (water and rock block, mud slows), and the world has an edge
+        const map = useWorldStore.getState().currentMap;
         usePlayerStore.setState(state => {
           if (!state.player.currentSession) return state;
           const pos = state.player.currentSession.position;
-          const next = seed
-            ? TerrainSystem.resolveMove(seed, pos.x, pos.z, dx, dz)
+          const next = map
+            ? WorldGenerator.resolveMove(map, pos.x, pos.z, dx, dz)
             : { x: pos.x + dx, z: pos.z + dz };
           return {
             player: {
@@ -564,17 +473,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         return;
       }
 
+      // Chunks are built ahead of you, once per quadrant walked
+      const walked = `${quadrantOf(playerPos.x)},${quadrantOf(playerPos.z)}`;
+      if (walked !== loadedQuadrantRef.current) {
+        loadedQuadrantRef.current = walked;
+        useWorldStore.getState().loadAround(playerPos.x, playerPos.z, LOAD_RADIUS_PX);
+      }
+
       // Simulate every chunk a projectile fired from here can reach
       const visibleChunks: Record<string, IChunk> = {};
-      const pChunkX = Math.floor(playerPos.x / 100);
-      const pChunkY = Math.floor(playerPos.z / 100);
-
-      for (let y = pChunkY - SIM_RADIUS_CHUNKS; y <= pChunkY + SIM_RADIUS_CHUNKS; y++) {
-        for (let x = pChunkX - SIM_RADIUS_CHUNKS; x <= pChunkX + SIM_RADIUS_CHUNKS; x++) {
-          const key = `${x},${y}`;
-          if (liveMap.chunks[key]) visibleChunks[key] = liveMap.chunks[key];
-        }
-      }
+      WorldGenerator.chunkKeysInBox(playerPos.x, playerPos.z, PROJECTILE_RANGE_PX + SIM_MARGIN_PX).forEach(key => {
+        if (liveMap.chunks[key]) visibleChunks[key] = liveMap.chunks[key];
+      });
 
       let incomingDamage = 0;
       const isAlive = (p: any) => (now - p.startTime) < 2000;
@@ -681,7 +591,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
         if (pickedUp.length > 0 || drops !== lootDrops) setLootDrops(finalDrops);
       }
-      setRenderBullets([...combatResult.survivingBullets, ...survivingEnemyBullets]);
 
       // Apply damage to the agent (Wave 4.1: armor mitigates, and wears)
       const rawDamage = incomingDamage + combatResult.playerDamage;
@@ -725,6 +634,39 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         setChanneling(false);
         completeExtraction();
         return; // Extraction unmounts the canvas
+      }
+
+      const canvas = fieldRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (canvas && ctx) {
+        if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        }
+        if (rendererRef.current?.seed !== liveMap.seed) {
+          rendererRef.current = { seed: liveMap.seed, renderer: new FieldRenderer(liveMap, genreForWorld(liveMap.seed)) };
+        }
+        const me = usePlayerStore.getState().player;
+        const held = getEquipped('mainHand');
+        const worn = getEquipped('armor');
+        const scene: FieldScene = {
+          camera: { x: playerPos.x, z: playerPos.z },
+          player: {
+            uid: me.id, archetype: (me.archetype || 'OPERATOR') as Archetype, facing: facingRef.current, step: stepRef.current.step,
+            weapon: held ? weaponClass(held.tags || []) : undefined,
+            armor: worn ? armorClass(worn.tags || []) : undefined
+          },
+          chunks: WorldGenerator.chunkKeysInBox(playerPos.x, playerPos.z, Math.max(canvas.width, canvas.height) / 2 + 100)
+            .map(key => liveMap.chunks[key]).filter(Boolean),
+          bullets: [
+            ...combatResult.survivingBullets.map(b => ({ x: b.x, y: b.y, hostile: false })),
+            ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true }))
+          ],
+          drops: drops.map((d: any) => d.position),
+          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range }))
+        };
+        rendererRef.current.renderer.draw(ctx, canvas.width, canvas.height, scene);
+        rendererRef.current.renderer.prewarm(playerPos.x, playerPos.z, Math.max(canvas.width, canvas.height) / 2 + 320);
       }
 
       requestRef.current = requestAnimationFrame(gameLoop);
@@ -772,7 +714,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     setMenuPosition(null);
   };
 
-  // Click empty ground = ATTACK toward the cursor (Wave 4: the weapon decides how)
+  // Click a thing to act on it; click anywhere else to ATTACK toward the cursor (the weapon decides how)
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (menuPosition) {
       setMenuPosition(null); // First click just closes the menu
@@ -781,6 +723,23 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const st = usePlayerStore.getState();
     const playerPos = st.player.currentSession?.position;
     if (!playerPos) return;
+
+    const map = useWorldStore.getState().currentMap;
+    if (map && e.target === fieldRef.current) {
+      const clickX = playerPos.x + (e.clientX - window.innerWidth / 2);
+      const clickZ = playerPos.z + (e.clientY - window.innerHeight / 2);
+      const near = WorldGenerator.chunkKeysInBox(clickX, clickZ, 60).flatMap(key => map.chunks[key]?.entities ?? []);
+      const things = near.map(n => {
+        const s = entitySprite(n);
+        return { id: n.id, type: n.type, x: n.position.x, y: n.position.y, w: (s?.w ?? 12) * ATOM_PX, h: (s?.h ?? 12) * ATOM_PX };
+      });
+      const hit = hitTest(targetsFrom(things), clickX, clickZ);
+      const entity = hit ? near.find(n => n.id === hit) : undefined;
+      if (entity && entity.type !== EntityType.MOB) {
+        handleEntityClick(e, entity);
+        return;
+      }
+    }
 
     const weapon = getEquipped('mainHand');
     const now = Date.now();
@@ -837,19 +796,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const playerPos = session.position;
 
   // Wave 2.5: distance to the nearest extraction beacon
-  let beaconDist = Infinity;
-  currentMap.extractionPoints.forEach(key => {
-    const [bx, by] = key.split(',').map(Number);
-    const d = Math.hypot(playerPos.x - (bx * 100 + 50), playerPos.z - (by * 100 + 50));
-    if (d < beaconDist) beaconDist = d;
-  });
+  const beaconDist = WorldGenerator.nearestExit(currentMap, playerPos.x, playerPos.z)?.distance ?? Infinity;
   const nearBeacon = beaconDist < BEACON_RANGE;
-
-  // Calculate viewport
-  const viewportStyle = {
-    transform: `translate(${window.innerWidth/2 - playerPos.x}px, ${window.innerHeight/2 - playerPos.z}px)`,
-    transition: 'transform 0.1s linear' // Smooth out the frame jumps
-  };
 
   return (
     <div 
@@ -859,8 +807,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       onContextMenu={(e) => { e.preventDefault(); setMenuPosition(null); }}
       onClick={handleCanvasClick}
     >
-      {/* The ground itself (Wave 2.1) */}
-      <TerrainCanvas seed={currentMap.seed} playerX={playerPos.x} playerZ={playerPos.z} />
+      {/* The whole field, drawn each frame by the game loop */}
+      <canvas ref={fieldRef} style={{ position: 'absolute', top: 0, left: 0, imageRendering: 'pixelated' }} />
 
       {/* Extraction Control (Wave 2.5): the beacon is a place, not a button */}
       <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 100 }}>
@@ -920,63 +868,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           <PackGrid session={session} />
         </div>
       )}
-
-      {/* World Container */}
-      <div style={{ width: '100%', height: '100%', ...viewportStyle }}>
-        
-        {/* Render Chunks & Entities */}
-        {Object.values(currentMap.chunks).map(chunk => (
-          <div key={chunk.id}>
-            {/* Ground (Debug) */}
-            <div 
-              style={{
-                position: 'absolute',
-                left: chunk.x * 100, top: chunk.y * 100,
-                width: 100, height: 100,
-                border: '1px solid #222',
-                opacity: 0.2
-              }}
-            />
-            
-            {/* Entities */}
-            {chunk.entities.map(entity => (
-              <EntityAvatar 
-                key={entity.id} 
-                entity={entity} 
-                onClick={(e) => handleEntityClick(e, entity)}
-              />
-            ))}
-          </div>
-        ))}
-
-        {/* Render Loot */}
-        {lootDrops.map(drop => (
-          <div 
-            key={drop.id}
-            style={{ position: 'absolute', left: drop.position.x, top: drop.position.y, fontSize: 20 }}
-          >
-            💰
-          </div>
-        ))}
-
-        {/* Render Bullets */}
-        {renderBullets.map(b => (
-          <div 
-            key={b.id}
-            style={{
-              position: 'absolute',
-              left: b.x, top: b.y,
-              width: 6, height: 6,
-              background: b.color,
-              borderRadius: '50%'
-            }}
-          />
-        ))}
-
-        {/* Player */}
-        <PlayerAvatar x={playerPos.x} y={playerPos.z} />
-
-      </div>
 
       {/* Interaction Menu */}
       {menuPosition && (

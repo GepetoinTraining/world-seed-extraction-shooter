@@ -4,19 +4,23 @@
  * NO COMBAT. This is the safe zone.
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Box, Text, Paper, Stack, Group, Button, Badge, Modal, Divider } from '@mantine/core';
 import { HubGenerator, IHubLayout, IPOI, POIType, HUB_NPCS, INPCDefinition, IHubZone } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
+import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
+import { HUB_GENRE, LotState, composeHub } from '../../render/atoms/hub';
+import { Archetype, Facing, castPortrait, figure } from '../../render/atoms/people';
+import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
-const TILE_SIZE = 16; // Pixels per tile
-const VIEWPORT_TILES = 30; // Tiles visible on screen
+const TILE_SIZE = HUB_TILE_PX;
+const VIEWPORT_TILES = HUB_VIEW_TILES;
 
 // POI Colors for rendering
 const POI_COLORS: Record<POIType, string> = {
@@ -40,6 +44,34 @@ const POI_COLORS: Record<POIType, string> = {
 // COMPONENT
 // =============================================================================
 
+function spriteToCanvas(s: Sprite, table: Uint8Array): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = s.w; c.height = s.h;
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(s.w, s.h);
+  for (let i = 0; i < s.data.length; i++) {
+    const v = s.data[i], j = i * 4;
+    if (!v) continue;
+    img.data[j] = table[v * 3]; img.data[j + 1] = table[v * 3 + 1]; img.data[j + 2] = table[v * 3 + 2]; img.data[j + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const art = spriteToCanvas(castPortrait(npcId), buildPalette(HUB_GENRE));
+    ctx.drawImage(art, 0, 0, canvas.width, canvas.height);
+  }, [npcId]);
+  return <canvas ref={ref} width={68} height={68} style={{ imageRendering: 'pixelated', flexShrink: 0 }} />;
+};
+
 export const HubCanvas: React.FC = () => {
   // Generate hub layout once
   const layout = useMemo(() => HubGenerator.generate(), []);
@@ -51,13 +83,15 @@ export const HubCanvas: React.FC = () => {
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
   
   const { player } = usePlayerStore();
-  const { weaponShop, armorShop, purchaseFromShop } = useHubStore();
+  const { weaponShop, armorShop, consumableShop, purchaseFromShop, lots } = useHubStore();
   const { refreshWorlds, availableWorlds, selectWorld } = useWorldStore();
   
   // Additional UI states
   const [shopOpen, setShopOpen] = useState(false);
   const [shopType, setShopType] = useState<'weapon' | 'armor' | 'consumable'>('weapon');
   const [missionOpen, setMissionOpen] = useState(false);
+  const [facing, setFacing] = useState<Facing>('down');
+  const cityRef = useRef<HTMLCanvasElement>(null);
   
   // =========================================================================
   // MOVEMENT
@@ -86,10 +120,10 @@ export const HubCanvas: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key.toLowerCase()) {
-        case 'w': case 'arrowup': movePlayer(0, -1); break;
-        case 's': case 'arrowdown': movePlayer(0, 1); break;
-        case 'a': case 'arrowleft': movePlayer(-1, 0); break;
-        case 'd': case 'arrowright': movePlayer(1, 0); break;
+        case 'w': case 'arrowup': setFacing('up'); movePlayer(0, -1); break;
+        case 's': case 'arrowdown': setFacing('down'); movePlayer(0, 1); break;
+        case 'a': case 'arrowleft': setFacing('left'); movePlayer(-1, 0); break;
+        case 'd': case 'arrowright': setFacing('right'); movePlayer(1, 0); break;
         case 'e': case 'enter': 
           if (nearbyPOI?.interactable) handleInteract(nearbyPOI);
           break;
@@ -168,6 +202,8 @@ export const HubCanvas: React.FC = () => {
           setShopType('weapon');
         } else if (payload?.category === 'armor') {
           setShopType('armor');
+        } else if (payload?.category === 'consumables') {
+          setShopType('consumable');
         }
         setShopOpen(true);
         setDialogueOpen(false);
@@ -194,12 +230,63 @@ export const HubCanvas: React.FC = () => {
     [layout, playerPos]
   );
   
+  // The city as the game really has it: its lots from the store, redrawn only when they change
+  const lotStates = useMemo(() => {
+    const states: Partial<Record<number, LotState>> = {};
+    lots.forEach(l => {
+      states[l.lotIndex] = !l.ownerId ? 'FOR_SALE' : l.structureType === 'EMPTY' ? 'OWNED_EMPTY' : l.structureType;
+    });
+    return states;
+  }, [lots]);
+
+  const cityBitmaps = useMemo(() => {
+    const palette = buildPalette(HUB_GENRE);
+    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates }), palette));
+  }, [layout, lotStates]);
+
   // Calculate viewport offset (center on player)
   const viewportOffset = {
     x: Math.max(0, Math.min(layout.width - VIEWPORT_TILES, playerPos.x - VIEWPORT_TILES / 2)),
     y: Math.max(0, Math.min(layout.height - VIEWPORT_TILES, playerPos.y - VIEWPORT_TILES / 2))
   };
   
+  useEffect(() => {
+    const canvas = cityRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const palette = buildPalette(HUB_GENRE);
+    const body = spriteToCanvas(figure({
+      uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype, facing, step: (playerPos.x + playerPos.y) % 2
+    }), palette);
+    const draw = (frame: number) => {
+      ctx.imageSmoothingEnabled = false;
+      const ox = viewportOffset.x * TILE_SIZE, oy = viewportOffset.y * TILE_SIZE;
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const city = cityBitmaps[frame];
+      ctx.drawImage(city, -ox, -oy, city.width * ATOM_PX, city.height * ATOM_PX);
+      const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
+      ctx.drawImage(body, playerPos.x * TILE_SIZE + TILE_SIZE / 2 - w / 2 - ox, playerPos.y * TILE_SIZE + TILE_SIZE / 2 - h / 2 - oy, w, h);
+      if (nearbyPOI) {
+        ctx.strokeStyle = '#fafafa';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(nearbyPOI.position.x * TILE_SIZE - ox - 1, nearbyPOI.position.y * TILE_SIZE - oy - 1, nearbyPOI.size.width * TILE_SIZE + 2, nearbyPOI.size.height * TILE_SIZE + 2);
+      }
+    };
+    let frame = 0;
+    draw(frame);
+    const timer = window.setInterval(() => { frame = frame ? 0 : 1; draw(frame); }, 500);
+    return () => window.clearInterval(timer);
+  }, [cityBitmaps, playerPos, facing, nearbyPOI, viewportOffset.x, viewportOffset.y, player.id, player.archetype]);
+
+  const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const tx = Math.floor((e.clientX - box.left) / TILE_SIZE) + viewportOffset.x;
+    const ty = Math.floor((e.clientY - box.top) / TILE_SIZE) + viewportOffset.y;
+    const poi = HubGenerator.getPOIAtPosition(layout, tx, ty);
+    if (poi?.interactable) handleInteract(poi);
+  };
+
   // =========================================================================
   // RENDER
   // =========================================================================
@@ -246,112 +333,18 @@ export const HubCanvas: React.FC = () => {
         <Text size="xs" c="dimmed">WASD to move • E to interact</Text>
       </Paper>
       
-      {/* THE WORLD RENDER */}
-      <Box
+      {/* THE CITY */}
+      <canvas
+        ref={cityRef}
+        width={VIEWPORT_TILES * TILE_SIZE}
+        height={VIEWPORT_TILES * TILE_SIZE}
+        onClick={handleCityClick}
         style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: VIEWPORT_TILES * TILE_SIZE,
-          height: VIEWPORT_TILES * TILE_SIZE,
-          overflow: 'hidden',
-          border: '1px solid #333'
+          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+          border: '1px solid #333', imageRendering: 'pixelated', cursor: nearbyPOI ? 'pointer' : 'default'
         }}
-      >
-        {/* World Container (shifts based on player position) */}
-        <div
-          style={{
-            position: 'absolute',
-            left: -viewportOffset.x * TILE_SIZE,
-            top: -viewportOffset.y * TILE_SIZE,
-            width: layout.width * TILE_SIZE,
-            height: layout.height * TILE_SIZE
-          }}
-        >
-          {/* Zone Floors */}
-          {layout.zones.map(zone => (
-            <div
-              key={zone.id}
-              style={{
-                position: 'absolute',
-                left: zone.bounds.x * TILE_SIZE,
-                top: zone.bounds.y * TILE_SIZE,
-                width: zone.bounds.width * TILE_SIZE,
-                height: zone.bounds.height * TILE_SIZE,
-                backgroundColor: zone.ambientColor,
-                border: '1px solid rgba(255,255,255,0.05)'
-              }}
-            />
-          ))}
-          
-          {/* POIs */}
-          {layout.zones.flatMap(zone => zone.pois).map(poi => (
-            <div
-              key={poi.id}
-              onClick={() => poi.interactable && handleInteract(poi)}
-              style={{
-                position: 'absolute',
-                left: poi.position.x * TILE_SIZE,
-                top: poi.position.y * TILE_SIZE,
-                width: poi.size.width * TILE_SIZE,
-                height: poi.size.height * TILE_SIZE,
-                backgroundColor: POI_COLORS[poi.type] || '#666',
-                opacity: poi.interactable ? 0.9 : 0.5,
-                cursor: poi.interactable ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: nearbyPOI?.id === poi.id ? '2px solid white' : '1px solid rgba(0,0,0,0.5)',
-                boxShadow: poi.type === POIType.LAMP_POST 
-                  ? '0 0 20px rgba(251,191,36,0.5)' 
-                  : poi.type === POIType.FOUNTAIN 
-                    ? '0 0 15px rgba(14,165,233,0.5)'
-                    : 'none'
-              }}
-            >
-              {poi.size.width >= 3 && poi.size.height >= 2 && (
-                <Text size="xs" c="dark.9" fw={700} ta="center" style={{ fontSize: 8 }}>
-                  {poi.name.split(' ')[0]}
-                </Text>
-              )}
-            </div>
-          ))}
-          
-          {/* Player */}
-          <div
-            style={{
-              position: 'absolute',
-              left: playerPos.x * TILE_SIZE - 4,
-              top: playerPos.y * TILE_SIZE - 4,
-              width: TILE_SIZE + 8,
-              height: TILE_SIZE + 8,
-              backgroundColor: 'white',
-              borderRadius: '50%',
-              boxShadow: '0 0 20px white',
-              zIndex: 50
-            }}
-          />
-          
-          {/* NavMesh Debug (optional) */}
-          {false && layout.navMesh.map((row, y) => 
-            row.map((walkable, x) => !walkable && (
-              <div
-                key={`nav_${x}_${y}`}
-                style={{
-                  position: 'absolute',
-                  left: x * TILE_SIZE,
-                  top: y * TILE_SIZE,
-                  width: TILE_SIZE,
-                  height: TILE_SIZE,
-                  backgroundColor: 'rgba(255,0,0,0.2)'
-                }}
-              />
-            ))
-          )}
-        </div>
-      </Box>
-      
+      />
+
       {/* NPC Dialogue Modal */}
       <Modal
         opened={dialogueOpen}
@@ -368,19 +361,7 @@ export const HubCanvas: React.FC = () => {
           <Stack>
             {/* NPC Portrait */}
             <Group>
-              <div
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: '50%',
-                  backgroundColor: activeNPC.spriteColor,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <Text size="xl">👤</Text>
-              </div>
+              <CastPortrait npcId={activeNPC.id} />
               <Paper p="sm" bg="dark.6" flex={1}>
                 <Text size="sm" fs="italic">"{activeNPC.dialogue.greeting}"</Text>
               </Paper>
@@ -422,7 +403,7 @@ export const HubCanvas: React.FC = () => {
         <Stack>
           <Text size="sm" c="dimmed">Your Gold: {player.bank.gold.toLocaleString()} G</Text>
           <Divider />
-          {(shopType === 'weapon' ? weaponShop : shopType === 'armor' ? armorShop : []).map(listing => (
+          {(shopType === 'weapon' ? weaponShop : shopType === 'armor' ? armorShop : consumableShop).map(listing => (
             <Paper key={listing.id} p="sm" bg="dark.6" withBorder>
               <Group justify="space-between">
                 <div>

@@ -1,4 +1,5 @@
 // FIXED: Lowercase 'certificateSystem'
+import { GRID_VERSION } from './grid';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { UniversalRank } from '../../../types';
@@ -50,7 +51,8 @@ export interface IWorldCertificateData {
   currentOwnerCertUid: string;
   createdAt: number;
   seedHash: string;
-  size: number;
+  size: number; // in sectors
+  gridVersion?: number; // absent on worlds made before the sector grid
   rules: IWorldRules;
   stats: {
     totalVisitors: number;
@@ -127,6 +129,7 @@ export class WorldCertificateSystem {
       createdAt: timestamp,
       seedHash,
       size,
+      gridVersion: GRID_VERSION,
       rules: fullRules,
       stats: {
         totalVisitors: 0,

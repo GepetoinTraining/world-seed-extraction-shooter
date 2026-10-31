@@ -366,6 +366,7 @@ export interface ICognitiveFrame {
 export interface IPlayer {
   id: string;
   username: string;
+  archetype?: string; // chosen at birth; an avatar's look is derived from it
   bank: IBank;
   currentSession?: IActiveSession;
   guildId?: string;

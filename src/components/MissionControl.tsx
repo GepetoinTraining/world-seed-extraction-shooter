@@ -49,7 +49,7 @@ const WorldCard = ({ world, onDeploy }: { world: IWorldCard, onDeploy: () => voi
                     <Text size="xs" c="dimmed">AGENTS: <Text span c="white">{world.playerCount}</Text></Text>
                     <Button 
                         color={isDev ? 'cyan' : 'emerald'} 
-                        onClick={onDeploy} 
+                        onClick={onDeploy} disabled={world.retired} title={world.retired ? 'Surveyed on an older grid. Its record stands, but it can no longer be walked.' : undefined} 
                         className={!isDev && isClosing ? 'animate-pulse' : ''}
                         variant={isDev ? 'outline' : 'filled'}
                         fullWidth={false}

@@ -3,8 +3,8 @@ import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
 import {
   ATOM_PX, Role, STEPS, TILE_ATOMS, buildPalette, creature, exitBeacon, grayscale, hashBytes, maskDifference, maskOf, px, rankMark, RANKS, resource
-} from '../prototype/atoms/atoms';
-import { GENRES, composeView, openGround, proofView, terrainBuffer } from '../prototype/atoms/world';
+} from '../src/render/atoms/atoms';
+import { GENRES, composeView, openGround, proofView, terrainBuffer } from '../src/render/atoms/world';
 import { TerrainSystem, TerrainType } from '../src/entities/world/TerrainSystem';
 
 // Bars registered before the first run. Do not lower them to get a pass.

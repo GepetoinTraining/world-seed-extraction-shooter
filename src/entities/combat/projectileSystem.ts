@@ -18,7 +18,8 @@ export interface IProjectile {
 const PROJECTILE_SPEED_PX = 200; // 10 tiles/s at 20px tiles
 const PROJECTILE_FLIGHT_S = 2.0;
 export const PROJECTILE_RANGE_PX = PROJECTILE_SPEED_PX * PROJECTILE_FLIGHT_S;
-export const SIM_RADIUS_CHUNKS = Math.ceil(PROJECTILE_RANGE_PX / 100) + 1;
+/** How far past a shot's range things keep simulating, so they are live before they come into reach. */
+export const SIM_MARGIN_PX = 100;
 
 export enum PatternType {
   SINGLE = 'SINGLE',

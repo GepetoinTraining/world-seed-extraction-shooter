@@ -237,6 +237,127 @@ claim/receipt; ledger chain audits clean.)*
 
 ---
 
+## 3B. THE NEXT WAVES (from the atoms prototype onward)
+
+Same method as the prototype: real data, bars registered before the art exists, then look with eyes.
+
+### WAVE 8 — One Grid ✅ DONE
+The grid is **tile (20px) → quadrant (16 tiles, 320px) → chunk (64 tiles, 1280px) → sector (512 tiles, 10,240px)**, in `src/entities/world/grid.ts`. World size counts sectors, and a sector is what you scan and drop into.
+- **Before, on four 32-unit maps:** neighbouring Ruins/Overgrowth chunks matched only 48–53%, 8–10% of things sat on blocked tiles, and 99.8% were off the grid. One random stream fed the whole map. Cyber City was never generated, so Titanium never spawned.
+- **After:** neighbouring chunks match 83–84%; 0 things on blocked tiles, 0 off grid, 0 sharing a tile; a chunk is a pure function of seed and place; all five biomes and all 14 resources appear; a 64-sector world opens in about 45ms with nothing built, and chunks build on demand in about 0.3ms (worst about 14ms).
+- **Rendering:** the atoms moved to `src/render/atoms/`. The field draws on one canvas with terrain cached per quadrant (`FieldRenderer`), and the hub draws from its real layout at 20px.
+- **Faults fixed:** spawn in the fountain, lamps in buildings, the Alchemist with no keeper or stock, archetype not stored, drops landing beside enemies, and genres with no creatures leaving whole regions empty.
+- **Decision taken:** worlds made on the old grid are retired, not converted. Their certificates remain, but Deploy is disabled.
+- **Not done, and carried on:** enemies still walk over water and rock, because their movement ignores terrain. Trees still do not block. Balance has not been played at this scale.
+
+### THE NEXT LEGS
+
+Planned 2026-10-31, after checking each leg against the code. Each leg gets its own full-context session and is approved by Pedro before it starts. Commit at the end of each, so the next starts from a clean tree.
+
+**Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 11 Bringing the Nexi Home → 12 The Second True Test.
+
+**Why this order:**
+- Motion comes first because it changes the sprites the interface will show.
+- The interface comes before the interiors because placing things in a room needs menus, cards and the pack.
+- People and farms need rooms to live in.
+- The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
+
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named.
+
+| # | Leg | Decision | Recommendation |
+|---|---|---|---|
+| D1 | 8B | The camera rule | Anything with a height stands upright and shows its front; only flat ground is seen from above. The tree gets a trunk and a crown to match |
+| D2 | 8B | How many walk frames | Prototype 2 and 4 side by side and choose by eye. The brief says "a few stepped frames, never smooth" |
+| D3 | 8B | Do trees block? | The trunk blocks and you walk under the crown. That gives forests real depth for little code |
+| D4 | 9 | Screens as DOM or canvas | DOM dressed in atom-built frames: text, keyboard use and tests stay easy. Only the world is canvas |
+| D5 | 9 | One avatar per device, or character select | Select. Keys are already stored per identity and only the certificate has a single slot. Each avatar stays a complete, separate owner |
+| D6 | 9 | What a level gives | Skills keep growing by use. Kills feed your rank F to SSS, and each rank-up grants `attributePoints`. The rank is the status mark |
+| D7 | 9 | How much frame around the game | Very little. The city is the navigation, and a thin bar holds gold, identity and the console |
+| D8 | 10 | Generated rooms or player-built | A generated shell with player-filled slots: stable and signed, but still yours |
+| D9 | 10 | Lots only, or every building | Lots first. The generator then makes the tavern and the bank cheap to add |
+| D10 | 11 | Do residents cost gold? | Yes, through higher upkeep, which already goes to the hub's treasury. No new money path |
+| D11 | 11 | Is a farm a new lot type? | Yes, a `FARM` structure alongside `WORKSHOP`, `VENDOR` and `HOUSE` |
+
+### WAVE 8B — Motion and Sprites
+Start from `BUILDERS_LOG.md`.
+
+**Builds on:** a working minimum: a two-frame walk and four facings for the player, enemies that notice and chase, shots and swings, felling stages, and rippling water and flickering lamps in the city. The job is to deepen it and keep the approved look.
+
+- **8B.1 Atom grid:** decide whether motion snaps to the 2px grid. Sprites move in 1px steps today, and that may matter more to the look than any new frame.
+- **8B.2 The player:** a standing frame (it freezes mid-step today), the chosen walk cycle, and the same walk in the city.
+- **8B.3 Creatures:** facings and frames from each body plan, so a new creature still needs no new art.
+- **8B.4 Behavior:** enemies respect terrain and use their definition's `behavior`, which is never read today, so a Turret walks like a rat.
+- **8B.5 Feedback:** hit and death on the `HIT`, `KILL` and `PLAYER_DAMAGE` events that are already emitted. Enemy health. Readable in grayscale.
+- **8B.6 Sprite pass:** portraits first, then rank marks, water, the sapling, and the tree under D1 and D3.
+- **Bars:** every frame still passes the threat-vs-resource and exit bars; no enemy ends a tick on a blocked tile in a long chase; 300 animated things stay inside the frame budget; sprite memory stays under a stated bound; a reduced-motion mode exists.
+- **Gate:** test lines 21–25.
+
+### WAVE 9 — The Interface
+**Builds on:** `itemArt`, `figure`, `portrait`, the 3×5 type, the inspect card and `hitTest`, all unused by the screens. `DESIGN_ASK.md` lists every screen and moment.
+
+- **9.1 The kit:** panel, button, input, list, tabs, bars, tooltip and dialogue built from atoms and themed in one place. Replaces the Mantine look and about 70 scattered colors. Everything else in this wave uses it.
+- **9.2 The frame:** D7. The sidebar and header shrink or go.
+- **9.3 Birth and character select:** D5. Choosing an archetype shows your real avatar from your real certificate. The welcome-back screen becomes reachable. It must not reset the player to Operator, as `handleLogin` would today.
+- **9.4 Pack and bank:** real item art at real footprints, no emoji anywhere, the inspect card everywhere, and one pack shared by the field and the Bank.
+- **9.5 Skills and levels:** D6. **Fix a real bug first: kill XP is calculated and never applied.** Level-ups are silent today and need a moment.
+- **9.6 The moments:** the seal and `DIED` receipts first, because the game is built around them. Then damage, refusals, what you harvested, the direction to the exit, lore, and the ledger viewer.
+- **9.7 Dead options:** the city's dialogues offer 20 actions and only 6 are handled, some of those only logging. Each one gets built or removed. Nothing may look finished that is not.
+- **Bars:** no emoji left in the UI; minimum readable text size; everything reachable by keyboard; recon readable in grayscale (it is hue only today); no dialogue option without an effect.
+- **Gate:** test lines 26–31.
+
+### WAVE 10 — Inside the Houses
+**Builds on:** the grid, the hub's floors and doors, and working Workshop and Vendor logic that only exists as panels today. Clicking a lot in the city does nothing yet except log a line.
+
+- **10.1 The generator, as a prototype first:** rooms as a pure function of lot and structure, on the same 20px tile and in the hub's warm ramp. A proof page shows every structure type at several sizes.
+- **10.2 Entering:** a real door, a real transition and a way back, with your place in the city kept. Lots stop being walk-through.
+- **10.3 Stations:** the bench and the shop counter move into the room and call the same store functions the panels use today. No duplicate logic.
+- **10.4 Placement:** D8. Put things from your stash into slots, seen by their real grain. Every placement is a signed record with provenance.
+- **10.5 Public buildings:** D9. Only if the generator has proved itself.
+- **Bars:** same lot gives the same bytes; every room is fully walkable from its door; every station reachable; no placement can block the way out; a placed item is never lost or duplicated across reloads; composing stays cheap enough to cache.
+- **Gate:** test lines 32–34.
+
+### WAVE 11 — Bringing the Nexi Home
+What comes back through the Nexus populates the hub. The hooks exist as dead ends:
+
+- **11.1 People:** `Escort Bond` is an item worth 200G today, and its text already says it is worth more than gold. Redeeming one places a resident. Their type comes from the sheet already rolled in the world (temperament, objective, want), so the person you rescued is recognisably that person. A job gives a real effect, such as faster crafting or a tended shop. D10.
+- **11.2 Farms:** D11. `res_tree_sapling` and `IFarmPlot` exist, but nothing can be planted. Plant what you harvested. Growth uses the Workshop's accumulate-and-resolve timer, so nothing runs while you are away. A farm is drawn by the same generator.
+- **11.3 Materials:** stored and displayed in rooms by their real grain, with their history kept. This is where the material-knowledge levels start to pay off.
+- **11.4 The city fills up:** residents are visible in the hub, using the walk from 8B.
+- **Bars:** the gold audit still balances after a full cycle of rescue, planting, selling and upkeep; farming mints items and never gold; growth depends only on time and is the same on every machine; a resident can never be duplicated from one Bond.
+- **Gate:** test lines 35–38.
+
+### WAVE 12 — The Second True Test
+Wave 7 ran with limits, and Wave 8 was checked with raised health and teleports. This one is the honest version: a new identity, normal health, one sitting, no script help. It is also where balance finally gets played: enemy density, run length, gold, and how long the Tempered Pick really takes to earn. Update `HANDOVER.md`.
+
+- **Gate:** test lines 39–40.
+
+### New test lines
+
+Guardrail 1 still holds: nothing gets built without a line here.
+
+21. The player stands, walks and stops cleanly in the field and the city
+22. Each creature faces its way and moves by its own behavior: a Turret holds, a swarm surrounds
+23. No enemy crosses water or rock
+24. Hits, deaths and enemy health can be read in grayscale
+25. 300 animated things stay inside the frame budget in the real game
+26. A new identity picks an archetype, sees its real avatar, leaves, and returns through character select
+27. Every option on every screen does something, or is not there
+28. No emoji remain; items show their real art at real footprints
+29. The inspect card works everywhere, by mouse and by keyboard
+30. Kills count, a level-up is seen, and what it gives is real
+31. The seal and the `DIED` receipt exist, and the ledger can be read
+32. You walk through the door of your own house and back, and the room is the same after a reload
+33. You craft at a bench in your Workshop and serve from a counter in your shop
+34. You place something in a room, reload, and it is still there, signed
+35. A rescued person becomes a resident with a job, recognisably the same person
+36. You plant something you harvested, leave, come back, and harvest it
+37. Materials are stored and shown by their real grain, with their history
+38. The gold audit balances after a full cycle of all of the above
+39. A new identity plays the whole loop in one sitting, at normal health, with no script help
+40. Everything from 39 survives a reload and a backup restored on a fresh profile
+
+---
+
 ## 4. GUARDRAILS (anti-sidetrack clauses)
 
 1. **The test list is the scope.** A feature with no test line number attached does not get

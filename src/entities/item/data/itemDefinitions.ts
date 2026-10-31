@@ -203,6 +203,17 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
       ]
     },
     {
+      "id": "tool_pick_tempered_t3",
+      "universal_name": "Tempered Pick",
+      "rank": UniversalRank.D,
+      "base_ip": 200,
+      "slot": SlotType.ACCESSORY,
+      "tags": ["tool", "pickaxe", "mining"],
+      "implicits": [
+        { "stat": "mining_power", "min": 65, "max": 80 }
+      ]
+    },
+    {
       "id": "tool_scanner_t1",
       "universal_name": "Handheld Scanner",
       "rank": UniversalRank.F,

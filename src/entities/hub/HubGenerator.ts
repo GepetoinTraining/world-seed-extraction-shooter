@@ -164,6 +164,19 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     },
     spriteColor: '#3b82f6'
   },
+  'npc_alchemist': {
+    id: 'npc_alchemist',
+    name: 'Io Mireforge',
+    title: 'Keeper of the Corner',
+    dialogue: {
+      greeting: "Everything here cures something. Not always the thing you came in with.",
+      options: [
+        { label: 'Browse Remedies', action: 'OPEN_SHOP', payload: { category: 'consumables' } },
+        { label: 'Leave', action: 'CLOSE' }
+      ]
+    },
+    spriteColor: '#22c55e'
+  },
   'npc_guild_master': {
     id: 'npc_guild_master',
     name: 'Grand Marshal Vex',
@@ -342,6 +355,7 @@ export class HubGenerator {
           position: { x: 26, y: 38 },
           size: { width: 3, height: 3 },
           interactable: true,
+          npcId: 'npc_alchemist',
           metadata: {}
         },
         // Auction House
@@ -439,7 +453,7 @@ export class HubGenerator {
     // Add some decorative lamp posts
     const lampPositions = [
       { x: 20, y: 20 }, { x: 30, y: 20 }, { x: 20, y: 30 }, { x: 30, y: 30 },
-      { x: 15, y: 40 }, { x: 25, y: 40 }, { x: 35, y: 40 }
+      { x: 19, y: 40 }, { x: 25, y: 40 }, { x: 31, y: 40 }
     ];
     lampPositions.forEach((pos, i) => {
       plaza.pois.push({
@@ -461,7 +475,7 @@ export class HubGenerator {
       width,
       height,
       zones,
-      spawnPoint: { x: 25, y: 28 }, // South of fountain
+      spawnPoint: { x: 26, y: 29 }, // South of fountain
       navMesh
     };
   }
