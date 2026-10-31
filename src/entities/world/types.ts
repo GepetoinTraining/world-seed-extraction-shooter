@@ -14,7 +14,34 @@ export enum EntityType {
   RESOURCE = 'RESOURCE',
   STRUCTURE = 'STRUCTURE',
   EXTRACTION = 'EXTRACTION',
-  CONTAINER = 'CONTAINER' // <-- FIXED: Added this missing type
+  CONTAINER = 'CONTAINER', // <-- FIXED: Added this missing type
+  CART = 'CART' // Wave 10C (D16): a towed world entity that outlives your death
+}
+
+// Wave 10C (D16): the theft is a signed fact — who towed it away, when, under
+// whose signature. The owner's claim is never erased; that is the point.
+export interface ICartTheft {
+  by: string;        // the thief's certificate uid
+  byName: string;
+  at: number;        // epoch ms
+  signature?: string; // the thief's own signature over the act (the bank honors even this)
+}
+
+/**
+ * Wave 10C (D16): a cart — its own grid, bigger than any pack. It stays in the
+ * world across your death or an extraction without it; anyone may tow it away.
+ */
+export interface ICartState {
+  cartItemId: string;                  // the packed-kit item this cart unfolds from
+  ownerId: string;
+  ownerName: string;
+  sealSignature?: string;              // the owner's seal over the deploy record
+  gridW: number;
+  gridH: number;
+  items: import('../../../types').IItem[];
+  layout: Record<string, import('../../../types').IGridPlacement>;
+  towedBy?: string;                    // certificate uid of whoever holds the tow bar
+  theftLog: ICartTheft[];
 }
 
 // NEW: The Intel Levels
@@ -65,6 +92,9 @@ export interface IWorldEntity {
 
   // Wave 2.4: social extraction
   npc?: INpcSheet;
+
+  // Wave 10C (D16): the cart's whole state rides on its entity
+  cart?: ICartState;
 }
 
 export interface IChunk {

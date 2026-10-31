@@ -28,7 +28,14 @@ export class StartupSequence {
       const { AvatarExport } = await import('../sovereignty/AvatarExport');
       const { Provenance } = await import('../sovereignty/Provenance');
       const { WorldExport } = await import('../sovereignty/WorldExport');
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport };
+      const { LoadoutSystem } = await import('../../entities/player/systems/LoadoutSystem');
+      const { CartSystem } = await import('../../entities/world/CartSystem');
+      const { CartOverlay } = await import('../../entities/world/CartOverlay');
+      // Wave 10C (D21): the dev hook for the slot-protection contract — the
+      // items that grant protection are 10E's; until then the console is the charm:
+      //   __ws.protectSlot('CHEST', 'Dev Ward')
+      const protectSlot = (slot: any, by = 'Dev Ward (console)') => usePlayerStore.getState().markSlotProtected(slot, by);
+      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 
@@ -106,7 +113,11 @@ console.log('[BOOT] Refreshing World List...');
 
        if (result.status === 'OK') {
            console.log('[BOOT] Neural Imprint verified. Restoring state...');
-           usePlayerStore.setState({ player: result.player });
+           // Wave 10C: the three Wave-4 buckets migrate into the slot tree, once
+           const { LoadoutSystem } = await import('../../entities/player/systems/LoadoutSystem');
+           usePlayerStore.setState({ player: LoadoutSystem.migrate(result.player) });
+           usePlayerStore.getState().recalcAttributes();
+           usePlayerStore.getState().recalcWeight();
            // Wave 9.3: the select screen learns the real archetype from the save
            if (result.player.archetype) {
              const { AvatarRoster } = await import('../../entities/identity/roster');

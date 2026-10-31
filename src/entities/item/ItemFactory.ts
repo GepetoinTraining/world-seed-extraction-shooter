@@ -1,4 +1,5 @@
-import { IItem, IAffix, ItemType, UniversalRank, Rarity } from '../../../types';
+import { IItem, IAffix, ItemType, SlotType, UniversalRank, Rarity } from '../../../types';
+import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';
 import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';
 import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
@@ -78,7 +79,7 @@ export class ItemFactory {
     const dimensions = this.getDimensions(template);
     const weight = this.getWeight(template, dimensions);
 
-    return {
+    const item: IItem = {
       // Stream-derived id: replaying the same roll key re-mints the same item
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: template.id,
@@ -115,6 +116,15 @@ export class ItemFactory {
       },
       isIdentified: isIdentified // <-- FIXED: ADDED PROPERTY
     };
+
+    // Wave 10C: the definition's pouch/belt/cart laws ride onto the item
+    if (template.pouch) item.pouchData = { accepts: [...template.pouch.accepts], capacity: template.pouch.capacity, contents: [] };
+    if (template.belt) item.beltData = { pouchSlots: template.belt.pouchSlots };
+    if (template.cart) item.cartData = { ...template.cart };
+    // 10C.2: requirements are stamped at mint — deterministic from rank and tags
+    item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
+
+    return item;
   }
 
   /**
@@ -163,11 +173,22 @@ export class ItemFactory {
   /** Inventory Tetris footprint derived from the item archetype */
   private static getDimensions(template: ItemDefinition): { width: number; height: number } {
     const tags = template.tags;
+    if (template.cart) return { width: 2, height: 3 };       // a packed cart is a real burden
+    if (template.pouch) return { width: 1, height: 1 };
     if (tags.includes('two_hand')) return { width: 2, height: 4 };
     if (tags.includes('one_hand') || tags.includes('tool')) return { width: 1, height: 3 };
     if (tags.includes('chest') || tags.includes('body')) return { width: 2, height: 3 };
     if (tags.includes('helmet') || tags.includes('head')) return { width: 2, height: 2 };
-    if (tags.includes('ring') || tags.includes('amulet')) return { width: 1, height: 1 };
+    if (tags.includes('ring') || tags.includes('amulet') || tags.includes('jewelry')) return { width: 1, height: 1 };
+    // Wave 10C: the new branches of the tree
+    switch (template.slot) {
+      case SlotType.EYES: return { width: 2, height: 1 };
+      case SlotType.SHOULDER: return { width: 2, height: 1 };
+      case SlotType.BELT: return { width: 2, height: 1 };
+      case SlotType.QUIVER: return { width: 1, height: 3 };
+      case SlotType.BAG: return { width: 2, height: 2 };
+      case SlotType.LEGS: return { width: 2, height: 2 };
+    }
     return { width: 2, height: 2 };
   }
 

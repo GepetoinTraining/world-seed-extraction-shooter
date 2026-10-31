@@ -7,10 +7,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { COGNITIVE_FRAMES } from '../entities/player/data/cognitiveFrames';
 import { POINTS_PER_RANK_UP, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { InventorySystem } from '../entities/player/systems/InventorySystem';
-import { IAttributes, IItem, ItemType } from '../../types';
+import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
+import { PaperDoll } from './PaperDoll';
+import { IAttributes, IItem, ItemType, HEAD_BUDGET_POSITIONS } from '../../types';
 import { Archetype } from '../render/atoms/people';
 import { inspectItem } from '../render/atoms/inspect';
 import { Bar, Button, CardView, Chip, Input, ItemSprite, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
@@ -30,7 +31,7 @@ const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
 // ---------------------------------------------------------------------------
 
 const AgentTab: React.FC = () => {
-  const { player, spendAttributePoint, equipFrame, unequipFrame, toggleCarry, currentWeight, maxWeight, recalcWeight } = usePlayerStore();
+  const { player, spendAttributePoint, toggleCarry, currentWeight, maxWeight, recalcWeight } = usePlayerStore();
   useEffect(() => { recalcWeight(); }, [recalcWeight]);
 
   const rankXp = player.rankXp ?? 0;
@@ -38,16 +39,20 @@ const AgentTab: React.FC = () => {
   const next = ProgressionSystem.xpToNextRank(rankXp);
   const points = player.attributePoints ?? 0;
   const stash = player.bank.stashTabs[0]?.items || [];
+  const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
 
-  // The next drop's kit: tools always ride; the rest is chosen here (D7: test loadouts)
+  // The next drop's kit: the HARNESS rides as worn (weightless against the
+  // limit, 10C.3); the pack takes tools-in-stash and whatever is marked CARRY
   const kit = stash.filter(i => i.tags?.includes('tool') || player.bank.carryItemIds?.includes(i.id));
   const kitWeight = kit.reduce((s, i) => s + (i.weight || 0), 0);
-  const capacity = InventorySystem.maxCarryWeight(player.attributes.strength);
-  const held = kit.find(i => i.slot === 'MAIN_HAND' || i.tags?.includes('melee') || i.tags?.includes('ranged') || i.tags?.includes('caster'));
-  const worn = kit.find(i => i.slot === 'CHEST' || i.tags?.includes('armor'));
+  const capacity = InventorySystem.maxCarryWeight(player.attributes.strength) + LoadoutSystem.bagCapacityBonus(equipment);
+  // The figure draws what the harness holds (Wave 10C: the tree is the truth)
+  const held = LoadoutSystem.itemIn(equipment, 'RIGHT_HAND');
+  const worn = LoadoutSystem.itemIn(equipment, 'CHEST');
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr 1fr', gap: 10, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(440px, auto) 300px 1fr', gap: 10, alignItems: 'start' }}>
+      <PaperDoll />
       <Panel title="IDENTITY">
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
           <PortraitView uid={player.id} archetype={(player.archetype || 'OPERATOR') as Archetype} scale={3} />
@@ -78,6 +83,7 @@ const AgentTab: React.FC = () => {
         </div>
       </Panel>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {points}</span> : undefined}>
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
           <div key={group} style={{ marginBottom: 8 }}>
@@ -101,22 +107,23 @@ const AgentTab: React.FC = () => {
             })}
           </div>
         ))}
-        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>FLOAT MEMORY — cognitive frames shift the effective numbers</div>
-        {player.floatMemory.map((frame, idx) => (
-          <div key={idx} className="ws-row">
-            <span className={frame ? 'ws-bright' : 'ws-dim'}>{frame ? frame.name : 'EMPTY SLOT'}</span>
-            <span style={{ display: 'flex', gap: 4 }}>
-              <select
-                className="ws-input" style={{ width: 160 }}
-                value={frame?.id ?? ''}
-                onChange={e => e.target.value ? equipFrame(idx, e.target.value) : unequipFrame(idx)}
-              >
-                <option value="">—</option>
-                {Object.values(COGNITIVE_FRAMES).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </span>
-          </div>
-        ))}
+        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
+          THE HEAD BUDGET (D22) — HEAD, EYES, EARRING, NECKLACE each hold gear OR a frame; three frames at most.
+          Mental stats come only from frames, and they drive the recon survey too.
+        </div>
+        {HEAD_BUDGET_POSITIONS.map(position => {
+          const frame = LoadoutSystem.frameAt(equipment, position);
+          const gear = LoadoutSystem.itemIn(equipment, position);
+          return (
+            <div key={position} className="ws-row">
+              <span className="ws-dim ws-small" style={{ width: 80 }}>{position}</span>
+              <span className={frame ? 'ws-signal' : gear ? 'ws-bright' : 'ws-dim'}>
+                {frame ? `${frame.name} (frame)` : gear ? gear.name : 'open'}
+              </span>
+            </div>
+          );
+        })}
+        <div className="ws-dim ws-small" style={{ marginTop: 2 }}>Seat and clear frames on the body, left.</div>
       </Panel>
 
       <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg</span>}>
@@ -145,8 +152,10 @@ const AgentTab: React.FC = () => {
         </div>
         <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
           Session weight above 80% reads SLOWED in the field. Current bank weight: {currentWeight.toFixed(1)} / {maxWeight} kg.
+          {equipment.items.length > 0 && <> The harness carries {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg more, and none of it counts: the limit is the haul, not the harness.</>}
         </div>
       </Panel>
+      </div>
     </div>
   );
 };

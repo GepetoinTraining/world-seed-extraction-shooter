@@ -48,6 +48,8 @@ interface WorldState {
   removeEntity: (entityId: string) => void;
   // Wave 3.3: ground caches (dropped/overflow items become world entities)
   addEntity: (entity: import('./types').IWorldEntity) => void;
+  // Wave 10C (D16): towed carts move for real, across chunk lines
+  moveEntity: (entityId: string, x: number, y: number) => void;
 }
 
 // What chunks are built from, kept for as long as the world is open.
@@ -213,6 +215,41 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         chunks: { ...currentMap.chunks, [key]: { ...chunk, entities: [...chunk.entities, entity] } }
       }
     });
+  },
+
+  // Wave 10C (D16): a towed cart crosses chunk lines for real — remove and
+  // re-add so it always lives in the chunk under its wheels.
+  moveEntity: (entityId, x, y) => {
+    const { currentMap } = get();
+    if (!currentMap) return;
+    for (const [key, chunk] of Object.entries(currentMap.chunks)) {
+      const idx = chunk.entities.findIndex(e => e.id === entityId);
+      if (idx === -1) continue;
+      const entity = { ...chunk.entities[idx], position: { x, y } };
+      const targetKey = `${chunkOf(x)},${chunkOf(y)}`;
+      if (targetKey === key) {
+        const entities = [...chunk.entities];
+        entities[idx] = entity;
+        set({ currentMap: { ...currentMap, chunks: { ...currentMap.chunks, [key]: { ...chunk, entities } } } });
+        return;
+      }
+      const target = currentMap.chunks[targetKey];
+      if (!target) {
+        // the destination chunk is not built yet: stay put this tick
+        return;
+      }
+      set({
+        currentMap: {
+          ...currentMap,
+          chunks: {
+            ...currentMap.chunks,
+            [key]: { ...chunk, entities: chunk.entities.filter(e => e.id !== entityId) },
+            [targetKey]: { ...target, entities: [...target.entities, entity] }
+          }
+        }
+      });
+      return;
+    }
   },
 
   removeEntity: (entityId) => {

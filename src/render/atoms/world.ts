@@ -195,9 +195,37 @@ const groundCache = () => {
   return stamp(k, 12, material({ density: 40 }), fnv1a('sprite:v1:cache'), { role: Role.PROOF, edgeStep: 3, minFill: 1, maxFill: 2 });
 };
 
+// Wave 10C (D16): the cart — a bed on two wheels, read by shape. The bed shows
+// PROOF atoms when loaded (cargo is value), and the owner's seal plank marks
+// the front corner so a sealed cart is never mistaken for a free one.
+const cartBody = () => {
+  const k = new Ink()
+    .rect(6, 18, 57, 40)          // the bed
+    .rect(10, 22, 53, 36, 0)      // hollow interior
+    .rect(4, 14, 59, 18)          // the rail
+    .disc(18, 48, 7).disc(45, 48, 7)   // wheels
+    .disc(18, 48, 2, 0).disc(45, 48, 2, 0) // hubs
+    .line(57, 28, 63, 20, 1);     // tow bar
+  return stamp(k, 26, material({ density: 70, hardness: 55 }), fnv1a('sprite:v1:cart'), { role: Role.MATTER, edgeStep: 4, minFill: 1, maxFill: 2 }, 22);
+};
+
+const cartSprite = (loaded: boolean) => {
+  const base = cartBody();
+  const data = new Uint8Array(base.data);
+  // the seal plank: a proof mark riding the rail's left end — ownership reads without words
+  for (let y = 6; y <= 8; y++) for (let x = 3; x <= 7; x++) data[y * base.w + x] = px(Role.PROOF, 3);
+  if (loaded) {
+    // cargo in the bed: proof atoms where the hollow was
+    for (let y = 10; y <= 14; y++) for (let x = 7; x <= 21; x++) {
+      if ((x + y) % 2 === 0) data[y * base.w + x] = px(Role.PROOF, 1 + ((x * 7 + y * 13) % 2));
+    }
+  }
+  return { w: base.w, h: base.h, data };
+};
+
 export interface EntityPose { facing?: CreatureFacing; frame?: number }
 
-type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container'>;
+type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart'>;
 
 export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = {}): Sprite | null {
   switch (e.type) {
@@ -220,13 +248,17 @@ export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = 
       return e.container?.looted ? cached('chest:looted', () => spent(chest(), false)) : cached('chest', chest);
     case EntityType.NPC: return cached('npc', () => npcFigure('npc'));
     case EntityType.EXTRACTION: return cached('exit', exitBeacon);
+    case EntityType.CART: {
+      const loaded = (e.cart?.items.length ?? 0) > 0;
+      return cached(`cart:${loaded ? 'loaded' : 'empty'}`, () => cartSprite(loaded));
+    }
     default: return null;
   }
 }
 
 export const LAYER: Partial<Record<EntityType, number>> = {
   [EntityType.STRUCTURE]: 0, [EntityType.RESOURCE]: 1, [EntityType.CONTAINER]: 2,
-  [EntityType.NPC]: 3, [EntityType.EXTRACTION]: 4, [EntityType.MOB]: 5
+  [EntityType.CART]: 2, [EntityType.NPC]: 3, [EntityType.EXTRACTION]: 4, [EntityType.MOB]: 5
 };
 
 /** A tree that still stands. It is drawn upright and its trunk tile blocks (D3). */

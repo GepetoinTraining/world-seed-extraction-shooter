@@ -64,6 +64,23 @@ export const ReceiptScreen: React.FC = () => {
           </div>
         )}
 
+        {/* Wave 10C (D21): the death kept exactly what the magic named */}
+        {died && (receipt.kept?.length ?? 0) > 0 && (
+          <div style={{ borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginBottom: 10 }}>
+            <div className="ws-proof ws-small" style={{ letterSpacing: '0.12em', marginBottom: 4 }}>KEPT BY MAGIC</div>
+            {receipt.kept!.map(({ item, by }) => (
+              <div key={item.id} className="ws-row ws-small">
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <ItemSprite item={item} cellPx={18} title={item.name} />
+                  <span>{item.name}</span>
+                </span>
+                <span className="ws-proof">held by {by}</span>
+              </div>
+            ))}
+            <div className="ws-dim ws-small" style={{ marginTop: 2 }}>The death took everything else. The magic named these, and the bank honors it.</div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderTop: '1px solid var(--ws-void-3)', paddingTop: 10 }}>
           {receipt.signature
             ? <SealView hash={receipt.signature} scale={3} />

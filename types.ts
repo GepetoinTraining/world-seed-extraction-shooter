@@ -68,7 +68,77 @@ export enum SlotType {
   FEET = 'FEET',
   ACCESSORY = 'ACCESSORY',
   BAG = 'BAG',
-  NONE = 'NONE'
+  NONE = 'NONE',
+  // Wave 10C (contract upgrade: additive): the slot tree grows the full body.
+  EYES = 'EYES',           // D17: glasses — the natural home for identify/scan affixes (10E)
+  SHOULDER = 'SHOULDER',   // themed per genre: cape, pauldron, scrap spaulder…
+  NECKLACE = 'NECKLACE',
+  EARRING = 'EARRING',
+  RING = 'RING',           // two body positions (RING_1 / RING_2) accept it
+  QUIVER = 'QUIVER',
+  BELT = 'BELT',           // D17: opens pouch slots
+  TOOL = 'TOOL',           // tools ARE the extraction: used from their own slot, never swapped for a weapon
+  POUCH = 'POUCH'          // a bag type whose rule names what it stacks; rides IN a belt
+}
+
+// ==========================================================================
+// 2B. THE SLOT TREE (Wave 10C — the body replaces Wave 4's three buckets)
+// ==========================================================================
+
+/** The fifteen fixed body positions. TOOL and POUCH slots are counted families. */
+export const BODY_SLOT_IDS = [
+  'HEAD', 'EYES', 'RIGHT_HAND', 'LEFT_HAND', 'CHEST', 'LEGS', 'BOOTS',
+  'SHOULDER', 'BAG', 'NECKLACE', 'EARRING', 'RING_1', 'RING_2', 'QUIVER', 'BELT'
+] as const;
+export type BodySlotId = typeof BODY_SLOT_IDS[number];
+export type ToolSlotId = `TOOL_${number}`;
+export type PouchSlotId = `POUCH_${number}`;
+export type EquipSlotId = BodySlotId | ToolSlotId | PouchSlotId;
+
+/** Dedicated tool slots. Start with one; raising this constant is the whole cost of more. */
+export const TOOL_SLOT_COUNT = 1;
+export const toolSlotIds = (count: number = TOOL_SLOT_COUNT): ToolSlotId[] =>
+  Array.from({ length: count }, (_, i) => `TOOL_${i + 1}` as ToolSlotId);
+export const pouchSlotIds = (count: number): PouchSlotId[] =>
+  Array.from({ length: count }, (_, i) => `POUCH_${i + 1}` as PouchSlotId);
+
+/**
+ * D22 — THE HEAD BUDGET. Four positions, each holding EITHER its gear OR a
+ * cognitive frame; three frames at most, so max frames still leaves one piece
+ * of gear up there. The reason is a stat law, not geography: see the partition.
+ */
+export type HeadPositionId = 'HEAD' | 'EYES' | 'EARRING' | 'NECKLACE';
+export const HEAD_BUDGET_POSITIONS: HeadPositionId[] = ['HEAD', 'EYES', 'EARRING', 'NECKLACE'];
+export const MAX_FRAMES = 3;
+
+/**
+ * D22 — THE STAT PARTITION IS LAW. Mental stats come ONLY from cognitive
+ * frames; physical gear never carries them, in any slot, so the trade is
+ * always mind against matter and can never be dodged by mental-stat jewelry.
+ * 10E's affix banks enforce the same line: a mental affix only rolls on a frame.
+ */
+export const PHYSICAL_ATTRIBUTES = ['strength', 'constitution', 'agility', 'dexterity', 'endurance'] as const;
+export const MENTAL_ATTRIBUTES = [
+  'intelligence', 'focus', 'engineering', 'hacking', 'perception',
+  'charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership'
+] as const;
+
+/** D21 — a slot marked protected for this session, by a named magic (items land in 10E). */
+export interface ISlotProtection {
+  slot: EquipSlotId;
+  by: string; // the charm or scroll that holds the line; the dev hook names itself
+}
+
+/**
+ * Wave 10C — the harness. Equipped items leave the pack grid and live here:
+ * the weight law (equipped gear exempt from carry weight) falls out of that.
+ * Persists on the player — the harness comes home; the haul is what is risked.
+ */
+export interface IEquipmentState {
+  slots: Partial<Record<EquipSlotId, string>>;          // slot id -> item id in `items`
+  items: IItem[];                                        // what the body wears
+  frames: Partial<Record<HeadPositionId, string>>;       // D22: cognitive frame ids by position
+  protected: ISlotProtection[];                          // D21: session marks
 }
 
 // ==========================================================================
@@ -153,6 +223,25 @@ export interface IItem {
     toolTags: string[];
     toolPower: number;
     efficiency: number;
+  };
+
+  // Wave 10C (contract upgrade: additive)
+  /** 10C.2: stat requirements against the fifteen attributes; unmet refuses in voice. */
+  requirements?: Partial<IAttributes>;
+  /** D17: a POUCH is a bag type whose rule names what it stacks (tags), up to capacity. */
+  pouchData?: {
+    accepts: string[];   // tags that answer the rule; one must match
+    capacity: number;    // how many items it stacks
+    contents: IItem[];   // what rides inside, quick-usable without opening the pack
+  };
+  /** D17: a belt opens this many pouch slots while worn. */
+  beltData?: {
+    pouchSlots: number;
+  };
+  /** D16: a packed cart. Used in the field, it becomes a towed world entity with this grid. */
+  cartData?: {
+    gridW: number;
+    gridH: number;
   };
 }
 
@@ -309,7 +398,11 @@ export interface IActiveSession {
   // What came in with the player; everything else in the pack was found in the field
   kitItemIds?: string[];
   // Wave 4.1: equipped gear (additive contract change)
+  // Wave 10C: LEGACY — the three buckets migrate into IPlayer.equipment's slot
+  // tree on load (LoadoutSystem.migrate). Kept so old session snapshots parse.
   equipped?: IEquippedSlots;
+  // Wave 10C (D16): the cart entity this agent is towing, if any
+  towingCartId?: string;
   health: number;
   maxHealth: number;
   energy: number;
@@ -384,7 +477,15 @@ export interface IPlayer {
   attributes: IAttributes;     // Effective stats (Base + Frames + Gear)
   
   // NEW: 3 Slots for Thinking Frames
+  // Wave 10C (D22): LEGACY MIRROR — frames now live at equipment.frames, keyed
+  // by head position. This array is kept in sync (order: budget positions) so
+  // older readers keep working; the head budget is the truth.
   floatMemory: [ICognitiveFrame | null, ICognitiveFrame | null, ICognitiveFrame | null];
+
+  // Wave 10C (contract upgrade: additive): the harness — the full slot tree,
+  // the head budget's frames, and D21's protection marks. Persists in the bank
+  // doc: the harness comes home, the haul is what is risked.
+  equipment?: IEquipmentState;
 }
 
 export interface IInteractionOption {

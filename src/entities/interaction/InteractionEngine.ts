@@ -16,7 +16,11 @@ export class InteractionEngine {
   ): IInteractionOption[] {
     
     const options: IInteractionOption[] = [];
-    const playerInventory = player.currentSession?.inventory || [];
+    // Wave 10C: tools ride their own slots — the harness answers alongside the pack
+    const playerInventory = [
+      ...(player.currentSession?.inventory || []),
+      ...(player.equipment?.items || [])
+    ];
 
     // 1. RESOLVE DEFINITION (In real app, query DB)
     // We assume target.definitionId maps to the Resource/Item definition
@@ -122,6 +126,38 @@ export class InteractionEngine {
           consequence: { xpTags: ['social', 'rescue'] }
         });
       }
+    }
+
+    // 2d. THE CART (Wave 10C, D16): tow, release, open — anyone may, and a
+    // tow that is not yours becomes a signed fact. The labels say so plainly.
+    if (target.type === EntityType.CART && target.cart && dist < 3.0) {
+      const cart = target.cart;
+      const mine = cart.ownerId === player.id;
+      const towingThis = player.currentSession?.towingCartId === target.id;
+      if (towingThis) {
+        options.push({
+          id: `int_cartrelease_${target.id}`,
+          label: 'Release the tow bar',
+          type: InteractionType.PICKUP,
+          icon: '', energyCost: 0, timeCostSeconds: 0,
+          requirements: {}, consequence: {}
+        });
+      } else {
+        options.push({
+          id: `int_carttow_${target.id}`,
+          label: mine ? 'Tow your cart' : `Tow it away (${cart.ownerName}'s seal — the theft will be signed)`,
+          type: InteractionType.PICKUP,
+          icon: '', energyCost: 0, timeCostSeconds: 0,
+          requirements: {}, consequence: {}
+        });
+      }
+      options.push({
+        id: `int_cartopen_${target.id}`,
+        label: `Open the cart bed (${cart.items.length} aboard)`,
+        type: InteractionType.OPEN,
+        icon: '', energyCost: 0, timeCostSeconds: 0,
+        requirements: {}, consequence: {}
+      });
     }
 
     // 2. STUDY (Science)

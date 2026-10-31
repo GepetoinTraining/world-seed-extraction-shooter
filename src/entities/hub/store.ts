@@ -23,6 +23,8 @@ import {
   PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BILLS, SHELL_BUILD_SECONDS, SHELL_STATION, TAG_DEFAULT_MATERIAL
 } from './room';
 import { ITemplate, ITemplateSheet, sizeNeedsVerdict, templateBill } from './template';
+import { LoadoutSystem } from '../player/systems/LoadoutSystem';
+import { genreForWorld } from '../../render/atoms/world';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
@@ -969,12 +971,14 @@ export const useHubStore = create<HubState>((set, get) => ({
     const hubId = get().activeHubId || 'hub_unknown';
     const dayIndex = Math.floor(Date.now() / 86_400_000);
 
-    const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool', pinned: string[] = []) => {
+    // Wave 10C fix: `batch` keeps listing ids unique when the same type+rank
+    // appears twice on one shelf (two rows sharing an id bought the wrong one)
+    const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool', pinned: string[] = [], batch = '') => {
       return Array.from({ length: count }, (_, i) => {
-        const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${i}`);
+        const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${batch}:${i}`);
         const item = ItemFactory.createItem(rank, true, rng, type, pinned[i]);
         return {
-          id: `listing_${type}_${rank}_${i}`,
+          id: `listing_${type}_${rank}${batch ? `_${batch}` : ''}_${i}`,
           item,
           price: item.value * 1.5, // 50% Markup
           vendorId: 'vendor_sys',
@@ -990,11 +994,21 @@ export const useHubStore = create<HubState>((set, get) => ({
         // Field tools ride in the weapon shop until lots get their own vendors (Wave 5)
         // The harvesting tools are always on the shelf, or a resource could be out of reach for a day
         ...generateStock(UniversalRank.F, 3, 'tool', ['tool_axe_field_t1', 'tool_pick_rusty_t1']),
-        ...generateStock(UniversalRank.D, 1, 'tool', ['tool_pick_tempered_t3'])
+        ...generateStock(UniversalRank.D, 1, 'tool', ['tool_pick_tempered_t3']),
+        // Wave 10C (D16/D17): the carrier's shelf — the cart and the pouches
+        ...generateStock(UniversalRank.F, 3, 'tool', ['cart_field_t1', 'pouch_vial_t1', 'pouch_scroll_t1'], 'carrier')
       ],
       armorShop: [
         ...generateStock(UniversalRank.F, 5, 'armor'),
-        ...generateStock(UniversalRank.E, 2, 'armor')
+        ...generateStock(UniversalRank.E, 2, 'armor'),
+        // Wave 10C: the slot tree gets its wardrobe — one of each new branch,
+        // always on the shelf, and the SHOULDER piece themed to this hub's genre
+        ...generateStock(UniversalRank.F, 9, 'armor', [
+          'arm_legs_padded_t1', 'arm_shoulder_t1', 'eye_glasses_t1', 'acc_necklace_t1',
+          'acc_earring_t1', 'acc_ring_signet_t1', 'quiver_hide_t1', 'bag_satchel_t1', 'belt_canvas_t1'
+        ], 'tree').map(l => l.item.universalDefinitionId === 'arm_shoulder_t1'
+          ? { ...l, item: { ...l.item, name: l.item.name.replace('Mantle', LoadoutSystem.themedShoulderName(genreForWorld(hubId).name)) } }
+          : l)
       ],
       // Wave 10B: the gallpod joins the shelf — the alchemist sells the ink's bitter half.
       consumableShop: ['res_berry_bush', 'res_fruit_amber', 'res_fruit_gallpod'].map((defId, i) => {

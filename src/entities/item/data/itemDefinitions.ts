@@ -16,6 +16,10 @@ export interface ItemDefinition {
   slot: SlotType;
   tags: string[];
   implicits: BaseStatDefinition[];
+  // Wave 10C (additive): the belt-and-pouch law and the cart
+  pouch?: { accepts: string[]; capacity: number };   // D17: what it stacks, and how much
+  belt?: { pouchSlots: number };                     // D17: slots the belt opens
+  cart?: { gridW: number; gridH: number };           // D16: the bed a packed cart unfolds to
 }
 // -----------------------------------
 
@@ -177,6 +181,105 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
       "implicits": [
         { "stat": "attack_speed_global", "min": 0.05, "max": 0.08 }
       ]
+    },
+    // --- Wave 10C: the slot tree gets something to wear on every branch ---
+    {
+      "id": "arm_legs_padded_t1",
+      "universal_name": "Padded Greaves",
+      "rank": UniversalRank.F,
+      "base_ip": 35,
+      "slot": SlotType.LEGS,
+      "tags": ["armor", "light"],
+      "implicits": [
+        { "stat": "evasion_rating", "min": 5, "max": 12 }
+      ]
+    },
+    {
+      "id": "arm_shoulder_t1",
+      "universal_name": "Mantle", // themed per genre at the shelf (D17's tree; see themedShoulderName)
+      "rank": UniversalRank.F,
+      "base_ip": 30,
+      "slot": SlotType.SHOULDER,
+      "tags": ["armor", "shoulder"],
+      "implicits": [
+        { "stat": "physical_reduction", "min": 0.01, "max": 0.03 }
+      ]
+    },
+    {
+      "id": "eye_glasses_t1",
+      "universal_name": "Wire-Rim Glasses",
+      "rank": UniversalRank.F,
+      "base_ip": 25,
+      "slot": SlotType.EYES,
+      "tags": ["utility", "glass", "tech"], // D17: the natural home for identify/scan affixes (10E)
+      "implicits": [
+        { "stat": "field_analysis_speed", "min": 0.05, "max": 0.12 }
+      ]
+    },
+    {
+      "id": "acc_necklace_t1",
+      "universal_name": "Chain Pendant",
+      "rank": UniversalRank.F,
+      "base_ip": 20,
+      "slot": SlotType.NECKLACE,
+      "tags": ["jewelry"],
+      "implicits": [
+        { "stat": "luck_find_rarity", "min": 0.01, "max": 0.03 }
+      ]
+    },
+    {
+      "id": "acc_earring_t1",
+      "universal_name": "Iron Stud",
+      "rank": UniversalRank.F,
+      "base_ip": 20,
+      "slot": SlotType.EARRING,
+      "tags": ["jewelry"],
+      "implicits": [
+        { "stat": "evasion_rating", "min": 1, "max": 4 }
+      ]
+    },
+    {
+      "id": "acc_ring_signet_t1",
+      "universal_name": "Signet Ring",
+      "rank": UniversalRank.F,
+      "base_ip": 20,
+      "slot": SlotType.RING,
+      "tags": ["jewelry", "ring"],
+      "implicits": [
+        { "stat": "crit_chance", "min": 0.01, "max": 0.02 }
+      ]
+    },
+    {
+      "id": "quiver_hide_t1",
+      "universal_name": "Hide Quiver",
+      "rank": UniversalRank.F,
+      "base_ip": 25,
+      "slot": SlotType.QUIVER,
+      "tags": ["quiver", "ranged"],
+      "implicits": [
+        { "stat": "reload_speed", "min": 0.03, "max": 0.08 }
+      ]
+    },
+    {
+      "id": "bag_satchel_t1",
+      "universal_name": "Field Satchel",
+      "rank": UniversalRank.F,
+      "base_ip": 25,
+      "slot": SlotType.BAG,
+      "tags": ["bag"],
+      "implicits": [
+        { "stat": "carry_bonus_kg", "value": 10 } // bags extend capacity (10C.3)
+      ]
+    },
+    {
+      "id": "belt_canvas_t1",
+      "universal_name": "Canvas Belt",
+      "rank": UniversalRank.F,
+      "base_ip": 20,
+      "slot": SlotType.BELT,
+      "tags": ["belt"],
+      "implicits": [],
+      "belt": { "pouchSlots": 2 }
     }
   ],
   "tool_bases": [
@@ -233,8 +336,39 @@ export const ITEM_DEFINITIONS: ItemDatabase = {
       "tags": ["tool", "magic", "utility"],
       "implicits": [
         { "stat": "field_analysis_speed", "min": 0.30, "max": 0.50 },
-        { "stat": "luck_find_rarity", "value": 0.05 } 
+        { "stat": "luck_find_rarity", "value": 0.05 }
       ]
+    },
+    // --- Wave 10C: the belt-and-pouch law (D17) and the cart (D16) ---
+    {
+      "id": "pouch_vial_t1",
+      "universal_name": "Vial Pouch",
+      "rank": UniversalRank.F,
+      "base_ip": 10,
+      "slot": SlotType.POUCH,
+      "tags": ["pouch"],
+      "implicits": [],
+      "pouch": { "accepts": ["consumable"], "capacity": 3 }
+    },
+    {
+      "id": "pouch_scroll_t1",
+      "universal_name": "Scroll Tube",
+      "rank": UniversalRank.F,
+      "base_ip": 10,
+      "slot": SlotType.POUCH,
+      "tags": ["pouch"],
+      "implicits": [],
+      "pouch": { "accepts": ["lore", "document", "scroll"], "capacity": 3 }
+    },
+    {
+      "id": "cart_field_t1",
+      "universal_name": "Field Cart (Packed)",
+      "rank": UniversalRank.F,
+      "base_ip": 40,
+      "slot": SlotType.NONE,
+      "tags": ["cart", "heavy"],
+      "implicits": [],
+      "cart": { "gridW": 10, "gridH": 8 }
     }
   ]
 };

@@ -20,6 +20,11 @@ import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { Archetype, Facing, WALK_PHASES, armorClass, weaponClass } from '../render/atoms/people';
 import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
+import { CartSystem } from '../entities/world/CartSystem';
+import { CartOverlay } from '../entities/world/CartOverlay';
+import { ItemFactory } from '../entities/item/ItemFactory';
+import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
@@ -41,14 +46,18 @@ const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain
  */
 const CELL = 36;
 const PackGrid = ({ session }: { session: IActiveSession }) => {
-  const { dropItem, rotateItem, equipItem, consumeItem, currentWeight, maxWeight } = usePlayerStore();
+  const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
 
   const layout = session.inventoryLayout || {};
   const items = session.inventory;
   const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
   const selectedItem = items.find(i => i.id === selected);
-  const equippedIds = Object.values(session.equipped || {});
+  // Wave 10C: equipped items ride the harness, not the pack — nothing here is equipped
+  const equippedIds: string[] = [];
+  const pouchSlots = player.equipment
+    ? LoadoutSystem.availableSlots(player.equipment).filter(s => s.startsWith('POUCH_') && player.equipment!.slots[s])
+    : [];
 
   return (
     <Panel
@@ -117,9 +126,38 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
             {selectedItem.type === ItemType.LORE && selectedItem.description && (
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
             )}
-            {selectedItem.slot !== 'NONE' && selectedItem.type !== ItemType.CONSUMABLE && (
-              <Button tone="proof" onClick={() => equipItem(selectedItem.id)}>EQUIP</Button>
+            {(selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool')) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
+              <Button
+                tone="proof"
+                onClick={() => {
+                  const v = usePlayerStore.getState().equipToSlot(selectedItem.id);
+                  if (v.ok) setSelected(null);
+                }}
+              >
+                EQUIP
+              </Button>
             )}
+            {selectedItem.cartData && (
+              <Button tone="proof" onClick={() => { void usePlayerStore.getState().deployCart(selectedItem.id); setSelected(null); }}>
+                UNFOLD CART
+              </Button>
+            )}
+            {pouchSlots.map(slot => {
+              const pouch = LoadoutSystem.itemIn(player.equipment!, slot)!;
+              return (
+                <Button
+                  key={slot}
+                  tone="quiet"
+                  title={`${pouch.name}: stacks ${pouch.pouchData?.accepts.join(', ')}`}
+                  onClick={() => {
+                    const v = usePlayerStore.getState().stowInPouch(slot, selectedItem.id);
+                    if (v.ok) setSelected(null);
+                  }}
+                >
+                  STOW · {pouch.name.toUpperCase()}
+                </Button>
+              );
+            })}
             <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE</Button>
             <Button tone="loss" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>LEAVE BEHIND</Button>
           </div>
@@ -127,6 +165,109 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
       )}
       <div className="ws-dim ws-small" style={{ marginTop: 4 }}><Kbd>TAB</Kbd> close</div>
     </Panel>
+  );
+};
+
+// =============================================================================
+// THE CART WINDOW (Wave 10C, D16): the bed's grid, the seal, the theft log
+// =============================================================================
+
+const CART_CELL = 24;
+const CartWindow: React.FC = () => {
+  const { cartWindowId, closeCartWindow, player, loadCart, unloadCart } = usePlayerStore();
+  const { currentMap } = useWorldStore();
+  const [selected, setSelected] = useState<string | null>(null);
+  if (!cartWindowId) return null;
+  const entity = Object.values(currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === cartWindowId);
+  const cart = entity?.cart;
+  if (!cart) return null;
+  const session = player.currentSession;
+  const mine = cart.ownerId === player.id;
+  const lastTheft = cart.theftLog[cart.theftLog.length - 1];
+
+  return (
+    <div className="ws-ui ws-overlay" style={{ background: 'rgba(3,3,3,0.7)', zIndex: 500 }} onClick={closeCartWindow}>
+      <div onClick={e => e.stopPropagation()}>
+        <Panel
+          title={`CART BED — ${cart.gridW}×${cart.gridH}`}
+          right={<span className={mine ? 'ws-proof' : 'ws-loss'}>{mine ? 'YOUR SEAL' : `${cart.ownerName}'S SEAL`}</span>}
+          style={{ width: cart.gridW * CART_CELL + 300, maxWidth: '92vw' }}
+        >
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ position: 'relative', width: cart.gridW * CART_CELL, height: cart.gridH * CART_CELL, background: 'var(--ws-void-0)' }}>
+                {Array.from({ length: cart.gridW * cart.gridH }, (_, i) => (
+                  <div key={i} style={{
+                    position: 'absolute',
+                    left: (i % cart.gridW) * CART_CELL, top: Math.floor(i / cart.gridW) * CART_CELL,
+                    width: CART_CELL, height: CART_CELL,
+                    border: '1px solid var(--ws-void-3)'
+                  }} />
+                ))}
+                {cart.items.map(item => {
+                  const place = cart.layout[item.id];
+                  if (!place) return null;
+                  const { w, h } = InventorySystem.footprint(item, place.rotated);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="ws-ui"
+                      title={item.name}
+                      onClick={() => setSelected(item.id === selected ? null : item.id)}
+                      style={{
+                        position: 'absolute',
+                        left: place.x * CART_CELL + 1, top: place.y * CART_CELL + 1,
+                        width: w * CART_CELL - 2, height: h * CART_CELL - 2,
+                        background: 'transparent',
+                        border: item.id === selected ? '2px solid var(--ws-signal-3)' : '1px solid transparent',
+                        padding: 0, cursor: 'pointer', overflow: 'hidden',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}
+                    >
+                      <ItemSprite item={item} cellPx={CART_CELL - 4} />
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
+                {CartSystem.cartWeight(cart).toFixed(1)} kg aboard · tow pace ×{CartSystem.towSpeedModifier(CartSystem.cartWeight(cart)).toFixed(2)}
+              </div>
+            </div>
+
+            <div style={{ width: 260, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {selected && (
+                <Button tone="signal" onClick={() => { unloadCart(cartWindowId, selected); setSelected(null); }}>
+                  TAKE INTO THE PACK
+                </Button>
+              )}
+              <div className="ws-dim ws-small">PACK — click to load the bed</div>
+              <div className="ws-list" style={{ maxHeight: 220, overflow: 'auto' }}>
+                {(session?.inventory ?? []).map(item => (
+                  <div key={item.id} className="ws-row">
+                    <span style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+                      <ItemSprite item={item} cellPx={14} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                    </span>
+                    <Button tone="quiet" onClick={() => loadCart(cartWindowId, item.id)}>LOAD</Button>
+                  </div>
+                ))}
+                {(session?.inventory ?? []).length === 0 && <div className="ws-dim ws-small">The pack is empty.</div>}
+              </div>
+              {lastTheft && (
+                <div className="ws-loss ws-small">
+                  THEFT ON RECORD: towed away by {lastTheft.byName}, {new Date(lastTheft.at).toLocaleString()}{lastTheft.signature ? ' — signed' : ''}.
+                </div>
+              )}
+              <div className="ws-dim ws-small">
+                The cart stays in the world when you die or extract without it. Anyone may tow it; the act is signed.
+              </div>
+              <Button onClick={closeCartWindow}>CLOSE</Button>
+            </div>
+          </div>
+        </Panel>
+      </div>
+    </div>
   );
 };
 
@@ -197,7 +338,11 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
     const sector = currentMap.sectors[`${sx},${sy}`];
     if (!sector) return;
     selectSector(sx, sy);
-    scanSector(sx, sy, 1); // Each click deepens the scan one level
+    // Wave 10C (D22): mental stats drive the recon phase — intelligence,
+    // perception and focus (framed or raw) deepen each scan. The analyst
+    // build earns its keep before the drop.
+    const depth = LoadoutSystem.reconEfficiency(usePlayerStore.getState().player.attributes);
+    scanSector(sx, sy, depth);
   };
 
   // Wave 9: recon can be left without dropping — the survey was free, the drop is not.
@@ -407,17 +552,21 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const lastShotRef = useRef<number>(0);
   const spentShots = useRef<Map<string, number>>(new Map());
 
-  // Equipped gear resolvers (ids -> live items)
+  // Equipped gear resolvers (Wave 10C: the harness is the truth — the three
+  // buckets map onto the slot tree for every old caller)
   const getEquipped = (slot: 'mainHand' | 'armor' | 'accessory') => {
-    const s = usePlayerStore.getState().player.currentSession;
-    const id = s?.equipped?.[slot];
-    return id ? s?.inventory.find(i => i.id === id) : undefined;
+    const eq = usePlayerStore.getState().player.equipment;
+    if (!eq) return undefined;
+    const slotId = slot === 'mainHand' ? 'RIGHT_HAND' : slot === 'armor' ? 'CHEST' : 'TOOL_1';
+    return LoadoutSystem.itemIn(eq, slotId);
   };
 
   // Wave 2.5: extraction channel + regrow sweep timing
   const [channeling, setChanneling] = useState(false);
   const channelRef = useRef<number | null>(null);
   const lastRegrowSweep = useRef<number>(0);
+  // Wave 10C (D16): towed-cart follow cadence
+  const lastCartSync = useRef<number>(0);
 
   const CHANNEL_MS = 5000;
   const BEACON_RANGE = 60; // px
@@ -431,13 +580,65 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const world = useWorldStore.getState();
     const card = world.availableWorlds.find(w => w.id === world.activeWorldId);
     const worldCertUid = world.activeWorldId;
-    const haul = session.inventory.filter(i => !session.kitItemIds?.includes(i.id));
+    let haul = session.inventory.filter(i => !session.kitItemIds?.includes(i.id));
+
+    // Wave 10C (D16): towing the cart INTO the beacon banks its bed. The kit
+    // folds back to the stash; the cart leaves the world with you, exactly once.
+    const towedId = session.towingCartId;
+    const towed = towedId
+      ? Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === towedId)
+      : undefined;
+    let cartHaul: typeof haul = [];
+    if (towed?.cart) {
+      cartHaul = towed.cart.items;
+      const kitBack = {
+        ...ItemFactory.createResourceItem({
+          id: 'cart_field_t1', name: 'Field Cart (Packed)', weight: 15,
+          dimensions: { width: 2, height: 3 }, tags: ['cart', 'heavy']
+        } as any, Rng.fromKey(`cartfold:${towed.cart.cartItemId}`)),
+        id: towed.cart.cartItemId, // the same cart, folded — never a second one
+        type: ItemType.GEAR,
+        cartData: { gridW: towed.cart.gridW, gridH: towed.cart.gridH }
+      };
+      usePlayerStore.setState(s => ({
+        player: {
+          ...s.player,
+          bank: {
+            ...s.player.bank,
+            stashTabs: s.player.bank.stashTabs.map((tab, idx) => idx === 0 ? { ...tab, items: [...tab.items, kitBack] } : tab)
+          }
+        }
+      }));
+      world.removeEntity(towedId!);
+      feed(`The cart comes home: ${cartHaul.length} item${cartHaul.length === 1 ? '' : 's'} off its bed, banked with the haul.`, 'proof');
+    }
+
+    // Wave 10C: gear equipped FROM the field is haul too — the harness dodges no levy
+    const equipment = st.player.equipment;
+    const wornNewcomers = (equipment?.items ?? []).filter(i => !session.kitItemIds?.includes(i.id));
+    haul = [...haul, ...cartHaul, ...wornNewcomers];
+
     const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
     const rate = card?.extractionTaxRate ?? 0.05;
     const tax = Math.floor(haulValue * rate);
     const startedAt = Date.now();
 
-    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax });
+    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax, cartItemIds: cartHaul.map(i => i.id) });
+    // the cart's bed banks straight into the stash (it never fit a pack — that is its point)
+    if (cartHaul.length > 0) {
+      usePlayerStore.setState(s => ({
+        player: {
+          ...s.player,
+          bank: {
+            ...s.player.bank,
+            stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+              idx === 0 ? { ...tab, items: [...tab.items, ...cartHaul.map(i => ({ ...i, isIdentified: true }))] } : tab)
+          }
+        }
+      }));
+    }
+    // every OTHER cart stays in the world, on record
+    void usePlayerStore.getState().persistCarts();
     st.emergencyJackOut();
     world.exitWorld();
 
@@ -492,6 +693,34 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     SessionJournal.record('DROP', { sectorX, sectorY });
     useWorldStore.getState().loadAround(target.x, target.z, LOAD_RADIUS_PX);
     confirmDrop();
+
+    // Wave 10C (D16): what was left on wheels is still here. The overlay stands
+    // the carts back up, building their chunks first if the drop was far away.
+    const worldUid = useWorldStore.getState().activeWorldId;
+    if (worldUid) {
+      void CartOverlay.load(worldUid).then(placed => {
+        if (useWorldStore.getState().activeWorldId !== worldUid) return;
+        for (const p of placed) {
+          useWorldStore.getState().loadAround(p.position.x, p.position.y, 64);
+          const fresh = useWorldStore.getState().currentMap;
+          if (!fresh) return;
+          const exists = Object.values(fresh.chunks).flatMap(c => c.entities).some(e => e.id === p.id);
+          if (!exists) {
+            useWorldStore.getState().addEntity({
+              id: p.id,
+              type: EntityType.CART,
+              definitionId: 'cart_field',
+              position: { ...p.position },
+              rank: 'F' as any,
+              rarity: 'COMMON' as any,
+              isHostile: false,
+              cart: { ...p.cart, towedBy: undefined }
+            });
+          }
+        }
+        if (placed.length > 0) feed(`${placed.length} cart${placed.length === 1 ? '' : 's'} on record in this world. What was left on wheels is where it was left.`, 'plain');
+      });
+    }
   }, [confirmDrop]);
 
   // A world that skips recon still has to set you down somewhere
@@ -553,6 +782,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         return;
       }
       if (e.key === 'Escape') setInspected(null);
+      // Wave 10C (D17): quick-use — the digits reach the belt, no pack-opening
+      if (/^[1-4]$/.test(e.key)) {
+        usePlayerStore.getState().quickUse(`POUCH_${e.key}` as any);
+        return;
+      }
       keysPressed.current.add(e.key.toLowerCase());
     };
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key.toLowerCase());
@@ -597,6 +831,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         dx *= loadMod;
         dz *= loadMod;
 
+        // Wave 10C (D16): the tow bar costs — the cart's whole load, at your heels
+        const towId = usePlayerStore.getState().player.currentSession?.towingCartId;
+        if (towId) {
+          const towed = Object.values(useWorldStore.getState().currentMap?.chunks || {})
+            .flatMap(c => c.entities).find(e => e.id === towId);
+          if (towed?.cart) {
+            const towMod = CartSystem.towSpeedModifier(CartSystem.cartWeight(towed.cart));
+            dx *= towMod;
+            dz *= towMod;
+          }
+        }
+
         facingRef.current = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'down' : 'up');
         movingRef.current = true;
         // A full stride is ~560ms whatever the cycle: 4 phases step quicker than 2
@@ -626,6 +872,29 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Stopping returns to the standing frame, cleanly
         movingRef.current = false;
         stepRef.current = { step: 0, at: 0 };
+      }
+
+      // Wave 10C (D16): the towed cart follows at your heels — moved a few
+      // times a second, never per frame, and across chunk lines for real
+      {
+        const towedId = usePlayerStore.getState().player.currentSession?.towingCartId;
+        if (towedId && now - lastCartSync.current > 250) {
+          const pos = usePlayerStore.getState().player.currentSession?.position;
+          const map = useWorldStore.getState().currentMap;
+          const towed = pos && map
+            ? Object.values(map.chunks).flatMap(c => c.entities).find(e => e.id === towedId)
+            : undefined;
+          if (pos && towed) {
+            const trail = { x: pos.x - 28, y: pos.z + 16 };
+            if (Math.hypot(towed.position.x - trail.x, towed.position.y - trail.y) > 12) {
+              useWorldStore.getState().moveEntity(towedId, trail.x, trail.y);
+            }
+            lastCartSync.current = now;
+          } else if (pos && !towed) {
+            // the cart is gone from the world (should not happen): drop the bar
+            usePlayerStore.getState().releaseCart();
+          }
+        }
       }
 
       // B. Entity & Combat Logic
@@ -804,14 +1073,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           console.warn(`[SESSION] Agent flatlined. Penalty: ${penalty}.`);
           SessionJournal.record('DEATH', { penalty });
 
-          // The DIED receipt (Wave 9.6): what was carried is what is lost
-          const lost = penalty === 'NONE' ? [] : [...(usePlayerStore.getState().player.currentSession?.inventory ?? [])];
+          // Wave 10C (D16): the cart stays in the world, standing where it was
+          void usePlayerStore.getState().persistCarts();
+
+          // The DIED receipt (Wave 9.6 + D21): what fell is lost — and the
+          // death keeps EXACTLY the slots the magic named, said on the receipt
+          const outcome = usePlayerStore.getState().emergencyJackOut(penalty);
+          const lost = outcome.lost;
           const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
 
-          usePlayerStore.getState().emergencyJackOut(penalty);
           useWorldStore.getState().exitWorld();
           useReceipt.getState().show({
-            outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0,
+            outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
             worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
           });
           // Seal the journal and the bank (async; loop is already stopped)
@@ -819,7 +1092,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           void SessionJournal.finish('DIED', after).then(signed => {
             if (useReceipt.getState().receipt?.outcome === 'DIED') {
               useReceipt.getState().show({
-                outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0,
+                outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
                 worldName: card?.name ?? 'UNKNOWN',
                 durationMs: signed?.payload.durationMs ?? 0,
                 actionCount: signed?.payload.actionCount ?? 0,
@@ -1114,6 +1387,32 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <span className="ws-dim ws-small">
           POS {Math.floor(playerPos.x)}, {Math.floor(playerPos.z)} · PACK {session.inventory.length} · <Kbd>TAB</Kbd> pack · <Kbd>Q</Kbd> inspect · click to fire
         </span>
+        {session.towingCartId && (
+          <Chip tone="proof" title="The tow bar is in your hand; your pace pays for the load">TOWING</Chip>
+        )}
+        {/* Wave 10C (D17): the belt — what rides it, quick to use, keys 1–4 */}
+        {(() => {
+          const eq = usePlayerStore.getState().player.equipment;
+          if (!eq) return null;
+          const worn = LoadoutSystem.availableSlots(eq)
+            .filter(s => s.startsWith('POUCH_') && eq.slots[s])
+            .map(s => ({ slot: s, pouch: LoadoutSystem.itemIn(eq, s)! }));
+          if (worn.length === 0) return null;
+          return (
+            <div style={{ display: 'flex', gap: 4, pointerEvents: 'auto' }}>
+              {worn.map(({ slot, pouch }) => (
+                <Button
+                  key={slot}
+                  tone="quiet"
+                  title={`${pouch.name} — stacks ${pouch.pouchData?.accepts.join(', ')} · press ${slot.split('_')[1]}`}
+                  onClick={e => { e.stopPropagation(); usePlayerStore.getState().quickUse(slot as any); }}
+                >
+                  <Kbd>{slot.split('_')[1]}</Kbd> {pouch.name.toUpperCase()} ×{pouch.pouchData?.contents.length ?? 0}
+                </Button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Pack Grid (Wave 3.1 / 9.4) */}
@@ -1159,6 +1458,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         </div>
       )}
 
+      <CartWindow />
       <RankMomentView />
     </div>
   );

@@ -63,6 +63,9 @@ export interface IReceiptView {
   durationMs: number;
   actionCount: number;
   receipt?: ISessionReceipt; // the full signed record, for the curious
+  // Wave 10C (D21): a death keeps exactly the protected slots — and the
+  // receipt says what was kept, and by whose magic
+  kept?: { item: IItem; by: string }[];
 }
 
 interface ReceiptState {

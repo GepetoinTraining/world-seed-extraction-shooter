@@ -12,6 +12,7 @@ import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitio
 import { EntityType, IWorldEntity } from '../../entities/world/types';
 import { QUALITY_NAMES, qualityBand } from './atoms';
 import { LAYER } from './world';
+import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
 
 export interface Card {
   title: string;
@@ -113,6 +114,26 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     }
     case EntityType.STRUCTURE:
       return { title: 'Ruin', rows: [['Rank', String(e.rank)]], needs: [], canAct: false, compact: compact('Ruin', String(e.rank)) };
+    case EntityType.CART: {
+      // Wave 10C (D16): the cart says whose it is and what it holds; a theft
+      // reads on the card, because the record is the reward
+      const cart = e.cart;
+      if (!cart) return { title: 'Cart', rows: [], needs: [], canAct: false, compact: 'Cart' };
+      const rows: [string, string][] = [
+        ['Seal', `${cart.ownerName}${cart.sealSignature ? ', signed' : ''}`],
+        ['Bed', `${cart.gridW}×${cart.gridH} — ${cart.items.length} aboard`]
+      ];
+      if (cart.towedBy) rows.push(['Towed', 'the bar is in someone\'s hand']);
+      const lastTheft = cart.theftLog[cart.theftLog.length - 1];
+      if (lastTheft) rows.push(['Theft on record', `${lastTheft.byName}${lastTheft.signature ? ', signed' : ''}`]);
+      return {
+        title: `${cart.ownerName}'s Cart`,
+        rows,
+        needs: canAct ? [] : ['Move closer'],
+        canAct,
+        compact: compact(`${cart.ownerName}'s Cart`, `${cart.items.length} aboard`)
+      };
+    }
     default:
       return { title: 'Unknown', rows: [], needs: [], canAct: false, compact: 'Unknown' };
   }
@@ -186,10 +207,22 @@ export function inspectItem(item: IItem): Card {
   const { durability, maxDurability } = item.stats as Record<string, number>;
   if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${durability} of ${maxDurability}`]);
   rows.push(['Weight', `${item.weight} kg`]);
-  Object.entries(item.stats).forEach(([k, v]) => {
+  // Wave 10C (D19, reaching back): the sheet is BLIND to unstudied affixes —
+  // their numbers never show, while the item acts with them regardless. The
+  // stub in LoadoutSystem decides what counts as studied (10E makes it real).
+  const visible = LoadoutSystem.visibleItemStats(item, undefined as any);
+  Object.entries(visible).forEach(([k, v]) => {
     if (!['durability', 'maxDurability', 'weight'].includes(k)) rows.push([k.replace(/_/g, ' '), String(v)]);
   });
-  (item.affixes || []).forEach(a => rows.push(['Affix', a.name]));
+  (item.affixes || []).forEach(a => rows.push(['Affix', `${a.name} — unstudied. It acts; the sheet is blind.`]));
+  // Wave 10C (10C.2): the ask is part of the record
+  const reqs = LoadoutSystem.requirementsFor(item);
+  Object.entries(reqs).forEach(([attr, need]) => {
+    if ((need as number) > 1) rows.push(['Asks', `${attr.toUpperCase()} ${need}`]);
+  });
+  if (item.pouchData) rows.push(['Stacks', `${item.pouchData.accepts.join(', ')} — ${item.pouchData.contents.length} of ${item.pouchData.capacity}`]);
+  if (item.beltData) rows.push(['Belt', `${item.beltData.pouchSlots} pouch slots`]);
+  if (item.cartData) rows.push(['Unfolds', `a ${item.cartData.gridW}×${item.cartData.gridH} cart bed`]);
   return { title, rows, needs: [], canAct: false, compact: compact(title, String(item.rank)) };
 }
 

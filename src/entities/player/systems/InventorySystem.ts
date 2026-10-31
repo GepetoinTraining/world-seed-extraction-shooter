@@ -30,7 +30,9 @@ export class InventorySystem {
   }
 
   static totalWeight(items: IItem[]): number {
-    return parseFloat(items.reduce((s, i) => s + (i.weight || 0), 0).toFixed(1));
+    // Wave 10C: a pouch in the pack weighs what it holds, too
+    return parseFloat(items.reduce((s, i) =>
+      s + (i.weight || 0) + (i.pouchData?.contents.reduce((p, c) => p + (c.weight || 0), 0) ?? 0), 0).toFixed(1));
   }
 
   /** Movement multiplier from load. At/over cap you can barely walk. */
@@ -48,9 +50,13 @@ export class InventorySystem {
     return rotated ? { w: d.height, h: d.width } : { w: d.width, h: d.height };
   }
 
-  /** Occupancy matrix: cell -> itemId | null. Items without placement are skipped. */
-  static buildOccupancy(items: IItem[], layout: Layout): (string | null)[][] {
-    const grid: (string | null)[][] = Array.from({ length: GRID_H }, () => Array(GRID_W).fill(null));
+  /**
+   * Occupancy matrix: cell -> itemId | null. Items without placement are skipped.
+   * Wave 10C: the grid size is a parameter so the cart's larger grid (D16)
+   * runs through the same geometry; the pack's 8x6 stays the default.
+   */
+  static buildOccupancy(items: IItem[], layout: Layout, gridW = GRID_W, gridH = GRID_H): (string | null)[][] {
+    const grid: (string | null)[][] = Array.from({ length: gridH }, () => Array(gridW).fill(null));
     for (const item of items) {
       const place = layout[item.id];
       if (!place) continue;
@@ -58,7 +64,7 @@ export class InventorySystem {
       for (let dy = 0; dy < h; dy++) {
         for (let dx = 0; dx < w; dx++) {
           const gx = place.x + dx, gy = place.y + dy;
-          if (gy >= 0 && gy < GRID_H && gx >= 0 && gx < GRID_W) grid[gy][gx] = item.id;
+          if (gy >= 0 && gy < gridH && gx >= 0 && gx < gridW) grid[gy][gx] = item.id;
         }
       }
     }
@@ -67,7 +73,8 @@ export class InventorySystem {
 
   /** Can a w x h footprint sit at (x, y), ignoring cells owned by ignoreId? */
   static canPlaceAt(occ: (string | null)[][], w: number, h: number, x: number, y: number, ignoreId?: string): boolean {
-    if (x < 0 || y < 0 || x + w > GRID_W || y + h > GRID_H) return false;
+    const gridH = occ.length, gridW = occ[0]?.length ?? 0;
+    if (x < 0 || y < 0 || x + w > gridW || y + h > gridH) return false;
     for (let dy = 0; dy < h; dy++) {
       for (let dx = 0; dx < w; dx++) {
         const cell = occ[y + dy][x + dx];
@@ -78,13 +85,13 @@ export class InventorySystem {
   }
 
   /** First-fit placement: unrotated first, then rotated. Null = no room. */
-  static autoPlace(items: IItem[], layout: Layout, item: IItem): IGridPlacement | null {
-    const occ = this.buildOccupancy(items, layout);
+  static autoPlace(items: IItem[], layout: Layout, item: IItem, gridW = GRID_W, gridH = GRID_H): IGridPlacement | null {
+    const occ = this.buildOccupancy(items, layout, gridW, gridH);
     for (const rotated of [false, true]) {
       const { w, h } = this.footprint(item, rotated);
       if (rotated && w === h) continue; // square: rotation changes nothing
-      for (let y = 0; y <= GRID_H - h; y++) {
-        for (let x = 0; x <= GRID_W - w; x++) {
+      for (let y = 0; y <= gridH - h; y++) {
+        for (let x = 0; x <= gridW - w; x++) {
           if (this.canPlaceAt(occ, w, h, x, y)) return { x, y, rotated };
         }
       }
@@ -93,7 +100,7 @@ export class InventorySystem {
   }
 
   /** Greedy layout for a whole list (hydration / layout repair). Unplaceable items are omitted. */
-  static placeAll(items: IItem[]): Layout {
+  static placeAll(items: IItem[], gridW = GRID_W, gridH = GRID_H): Layout {
     const layout: Layout = {};
     const placed: IItem[] = [];
     // Big items first: greedy packs better
@@ -102,7 +109,7 @@ export class InventorySystem {
       return (fb.w * fb.h) - (fa.w * fa.h);
     });
     for (const item of sorted) {
-      const p = this.autoPlace(placed, layout, item);
+      const p = this.autoPlace(placed, layout, item, gridW, gridH);
       if (p) {
         layout[item.id] = p;
         placed.push(item);
