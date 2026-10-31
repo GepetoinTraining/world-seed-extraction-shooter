@@ -2,8 +2,8 @@
 
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
 The raw materials leg (D23) is built and approved; the suite stands at 456 passing.
-Next, in order: the playtest fixes, the technology web
-(D27), Wave 11, Wave 12. Open test lines
+Next, in order: the technology web and auto skill (D27), the playtest fixes, Wave 11, Wave 12.
+Open test lines
 and their status are in section 5.
 
 **Prime directive (unchanged):** SAO. A world you live in. Hubs as society. Players own their
@@ -265,7 +265,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. Next: the playtest fixes → the technology web (D27, required before 11 by Pedro, 2026-10-31) → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. Next: the technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) → the playtest fixes → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -275,7 +275,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D23 through D27 are decided and not yet built.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D27 through D30 are decided and not yet built.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -305,7 +305,10 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D24 | Raw materials leg | Which raw materials raise walls and shells | ✅ DECIDED (Pedro, 2026-10-31), as recommended: logs and stone take the `building` tag, so bills stay by tag and nothing else changes. Pebbles stay out |
 | D25 | Raw materials leg | How furniture starts from raw | ✅ DECIDED (Pedro, 2026-10-31): the first bench is raised from those raw materials, and "then the next ones are tool + material connected". That connection is the technology web (D27), which is why the web comes before the NPCs |
 | D26 | Raw materials leg | What processing adds | ✅ DECIDED (Pedro, 2026-10-31): the additions are deterministic with ranges, and higher rarity and rank add pools. Studying, lore and the skill itself reveal them: "the actual knowledge is through play". D19's knowledge law carries this. Room pieces must start recording what they inherit, so it reaches buildings and furniture |
-| D27 | Technology web | A technology web before Wave 11 | ✅ DECIDED (Pedro, 2026-10-31): "we'll need to tackle technology web as pre 11, without it the npcs add little to nothing". D25 gives its core: tool + material connected. The rest of the shape is open: ask at the leg's start |
+| D27 | Technology web | A technology web before Wave 11 | ✅ DECIDED (Pedro, 2026-10-31): "we'll need to tackle technology web as pre 11, without it the npcs add little to nothing". D25 gives its core: tool + material connected. Pedro, the same day: it and the auto skill were already built somewhere, and that version is to be built here before anything else, "so we can produce NPC with stats sheets and skills". Sources are in the technology web's section below |
+| D28 | Technology web | What identifies a skill: tags or prime numbers | ✅ DECIDED (Pedro, 2026-10-31): tags, on one condition: "make the tagging rule iron clad so we don't use a uuid throwaway and think that's good enough... the idea is to not have ambiguity". Primes cannot drift and tags can, so the tag law below carries what primes gave for free |
+| D29 | Technology web | How far the web can grow | ✅ DECIDED (Pedro, 2026-10-31): no cap, "not okay by some artificial cap when the content generation is made by LLMs and it's virtually infinite". Nothing in the code limits tools, materials, tags, skills, verbs or edges. Breadth comes from the pairs and from LLM batches through D20's batch law; a fixed adjacency table is a cap wearing another name |
+| D30 | Technology web | Where a skill emerges, since Wave 9 removed REST | ✅ DECIDED (Pedro, 2026-10-31): at the sealed session and the return to the hub |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
@@ -446,25 +449,57 @@ Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now
 - **Mint-world draft loss:** a stray backdrop click or Escape discards the four-step draft.
 - **Pack placement:** the player cannot move an item to a chosen cell. Add grab, a footprint ghost and a keyboard path.
 
-### THE TECHNOLOGY WEB (D27) — after the playtest fixes, before Wave 11
-Pedro's word on 2026-10-31: without it, the NPCs add little to nothing. It follows D23 because D26's processes are natural things for a web to connect. Guardrail 1 applies: write its test lines with Pedro at the leg's start, before anything is built.
+### THE TECHNOLOGY WEB AND AUTO SKILL (D27) — next
+Pedro's word on 2026-10-31: without it, the NPCs add little to nothing. The same day: this was already built in another project, so find it and build that version here before continuing, so NPCs can have stat sheets and skills. It now runs ahead of the playtest fixes. Lines 63–66 are proposed so that guardrail 1 is met.
 
-**What exists today:** no technology system. There are only hooks:
+**Where it was built.** The working version is in `D:\primordial`, in the TypeScript under `legacy/engine/cube/`, with tests in `legacy/engine/__tests__/`. Reimplement the pattern inside our contract (guardrail 2). "Auto skill" appears nowhere under that name, so the mapping below is a reading, for Pedro to confirm:
+
+| What it does | Source | Use here |
+|---|---|---|
+| **The mint law:** a skill is the tool plus the object it worked; bare hands add nothing | `EPITAXY.md` (E1.25), `crates/patch/src/lib.rs` (`species_table`) | This is D25's "tool + material connected" |
+| **Auto skill:** working without a skill accrues attempts per would-be skill, and at a rest it can emerge, on a keyed roll | `skill-emergence.ts`, `skill-discovery.ts` | Replaces the instant, fixed table in `SkillDiscovery.ts` |
+| **Mastery rungs:** named, handled, graded, attuned, each revealing more of the material | `skill-mastery.ts`, `crates/skill` | Fits D26's reveal law |
+| **The web:** a skill is a node with verbs, tool, bench, parent, children and siblings; edges come from structure, and loot teaches crafting by reverse engineering | `craft-web.ts`, `web.ts` | The connections that open further stations |
+| **Verbs open things:** a station or building gates on a verb a held skill grants, never on a fixed list | `hub-governor-loop.ts` (`hasVerb`, `requiresVerb`, `elicitWeb`, `FACTOR_DOMAIN`) | Plugs into `shellBillFor` |
+| **NPC sheets and skills:** stats dealt from a seed; a worker holds skills as exp; a delivered person joins with their own skills, which enter the hub's web | `character-stats.ts`, `hub-governor-loop.ts` (`Worker`, `admitSkilledFamily`), `npc-persona.ts`, `skill-match.ts` | `INpcSheet` gains stats and skills; Wave 11 places them |
+| **Who found it first:** a tech or mastery is credited to its inventor, per hub | `tech-lore.ts` | A signed ledger row, and lore |
+
+**The other version.** `D:\-ttrpg-engine\engine\technology-web.ts`, with `mf-study-tech.ts`, `mm-technology-web.ts`, `study.ts`, `craftsman.ts` and `docs/to-be implemented/technology-web-mm.md`, is the first concept: tech per purpose on a fixed tier ladder, with slots, dependencies, study checks and hints to NPC craftsmen. Its seed catalog holds only fishing and mining, and Primordial later ruled out hardcoded professions and tech. Worth borrowing from it: study queue timing, and hints reaching craftsmen.
+
+**THE TAG LAW (D28).** A tag set must be as unambiguous as a prime signature. This is law for skills, tools, materials, verbs and every batch that adds to them:
+
+1. **One registry.** Every tag used by anything lives in one versioned registry, with its kind (tool, material, action, trade and so on) and a one-line meaning. A tag not in the registry is refused, and the whole batch or definition set falls with it.
+2. **One meaning.** A tag has one meaning, forever, under one normalized spelling. A batch cannot register a duplicate or a variant of an existing tag (case, plural, separators). A tag is retired, never reused for something new.
+3. **Identity is the canonical set.** A skill's id is computed only from its normalized, sorted, deduplicated identity tags. Same set, same id, on every machine, in any order of arrival.
+4. **No throwaway identity.** No identity ever comes from a uuid, a random value, the clock, a counter, insertion order or a display name.
+5. **Only identity tags identify.** Each kind states whether it counts toward identity. Magnitude and description (rank, rarity, `heavy`, `crafted`, `rare`) never split a skill; rank rides beside the identity, as it does in Primordial.
+6. **The word is not the identity.** Names attach to the id, so naming or renaming a skill changes nothing about what it is.
+7. **Bars enforce it.** Every tag in every definition and batch is registered; order and duplicates never change an id; a variant spelling is refused; no skill id comes from a throwaway source; existing `universalSkills` saves migrate without loss.
+
+**NO CAPS (D29).** Nothing limits tools, materials, tags, skills, verbs or edges. Primordial's floor stopped near 10 skills because of a tiny hardcoded table (`FACTOR_DOMAIN`), and that shape does not come here: what connects to what is derived from tags and data, and new connections arrive as content. A bar adds a new tool, material and batch with no code change and sees the web grow. LLM batches are the breadth, under D20's batch law. D20 keeps them at dev time for now, so a run-time call stays out until Pedro changes that.
+
+**REST (D30).** Skills emerge at the sealed session and the return to the hub.
+
+**What the game has today:**
+- `SkillDiscovery.ts` is a short fixed table over action tags, ignoring the tool, and `processAction` grants the skill at once. Primordial's skill discovery names this file as its origin.
+- `universalSkills` and `practiceTrade` grow by use, and `checkSkill` holds D6's auto-success. Keep these.
+- `INpcSheet` holds name, temperament, objective, want, disposition and attempts: no stats and no skills.
+
+**Other hooks:**
 - D8 promises that higher-technology workstations need bigger rooms as the hub's technology accrues, and that lots grow as the hub grows. `STATION_MIN_AREA` in `src/entities/hub/room.ts` holds fixed numbers with no technology behind them.
 - `IHubState` in `src/entities/hub/types.ts` sketches hub tier, cycles, expansion and districts. Nothing imports it.
 - `techLevel` in `src/entities/generation/ContentPipeline.ts` describes a genre for the admin tool, not a hub.
 - Every city lot is one size class, which is why line 43 cannot be played. Lots growing with the hub could settle that here.
 
-**Pattern to borrow (never the code):** `D:\primordial\crates/tech/src/lib.rs`, a hub's tech tree rooted in its land. It keeps one level per extraction vertical, derives starting tech from geography, and advances a domain by working it. Its comments name downstream branches: smithing from mining, masonry from quarrying, woodworking from lumber.
+**Also in Primordial:** `crates/tech/src/lib.rs`, a hub's tech rooted in its land. It keeps one level per extraction vertical, derives starting tech from geography, and advances a domain by working it. Its `HubSimState` keeps the web on the hub and the exp on each person.
 
 **Its core, from Pedro's D25 (2026-10-31):** after the first bench, the next stations are tool + material connected. That connection is the web, and it is why the web comes before the NPCs.
 
 **The seam the raw materials leg left:** `shellBillFor` and `ownerHasBench` in `src/entities/hub/room.ts` are the one place that knows about "first", and what a further bench asks plugs in there. `ProcessSystem.familyOfRecipe` and `familySkill` name each recipe's trade, which is what an edge connects to. Trade skills now grow by use (`practiceTrade`), so a web can read them.
 
-**To ask at the start:**
-- Is it a hub's technology, a player's, or both?
-- Which tool and material pairs open what?
-- Does a resident's job extend the web, work inside it, or both?
+**To ask at the start, if the build needs them:**
+- Is the web the hub's, a player's, or both? Primordial's answer is the web on the hub and the exp on each person.
+- Does a resident's job extend the web, work inside it, or both? Primordial's workers do both.
 
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
@@ -541,6 +576,15 @@ For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the l
 61. Each transformation step adds something the raw material lacks, drawn deterministically from pools that grow with rarity and rank, with ranges, on buildings and furniture as on gear
 62. What a step added stays unknown until study, lore or the skill itself reveals it
 
+Proposed for the technology web and auto skill, not yet agreed:
+
+63. Working with a tool on a material mints a skill from that pair, and the same pair always mints the same skill
+64. Working without the skill accrues toward it, and it can emerge only at a rest, on a keyed roll that replays the same
+65. A further station opens through a skill's tool + material connection, not through a fixed list
+66. An NPC carries a stat sheet and skills derived from its seed, read through the same web as the player's
+67. The tag law holds: every tag is registered with one meaning, and a skill's identity is its canonical tag set and nothing else
+68. Nothing caps the web: new tools, materials and batches grow it with no code change
+
 Proposed for the playtest fixes, not yet agreed:
 
 57. Opening a cache with a full pack creates no new entity and no new item, however often it is tried; a partial pickup leaves the rest only in the original cache
@@ -591,8 +635,8 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10C The Load-Out | 47–49, contract half of 56 | Passed |
 | 10D Anatomy of Items | 46, 50, 51, 54 | Passed; 46's set-bonus numbers are by test, not seen in play |
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
-| Playtest fixes | 57–59 (proposed) | Not started |
-| Technology web (D27) | To be written at its start | Not started; required before 11 |
+| Technology web and auto skill (D27) | 63–68 (proposed) | Not started; next |
+| Playtest fixes | 57–59 (proposed) | Not started; after the web |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |

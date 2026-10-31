@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete) and the raw materials leg (D23), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E and the raw materials leg are approved. The next pass is **the playtest fixes**, then **the technology web (D27)**, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete) and the raw materials leg (D23), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E and the raw materials leg are approved. The next pass is **the technology web and auto skill (D27)**, then **the playtest fixes**, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -169,17 +169,17 @@ Full detail in `PLAN.md` 3B (the raw materials leg) and the settled record in `D
 - Plans and scrolls inherit nothing from their paper and ink. A room's bonus has a ceiling and no floor (D19). A station's own card does not say what it was raised from.
 - The first-bench rule reads the state of the world: sell your only bench and the next WORKSHOP is your first again. Deliberate, so the floor cannot be lost; recorded for Pedro to overrule.
 
-## Your pass: the playtest fixes
+## Your pass: the technology web and auto skill (D27)
+
+Pedro moved this ahead of everything else: it was already built in another project, and that version is to be built here, so NPCs can have stat sheets and skills. Most of it is in `D:\primordial\legacy\engine\cube\`. Start from "The technology web and auto skill" in `PLAN.md`, which maps each source file to what it does here, and read the source and its tests before designing anything. Read the tag law (D28) and no caps (D29) first: they are Pedro's conditions for using tags instead of primes. Reimplement the pattern rather than porting the code (guardrail 2), and register lines 63–68 as bars first.
+
+## Then: the playtest fixes
 
 Pedro found these in play on 2026-10-31 and deferred them, and the plan runs them after the itemization program, which is now done, and after D23, which is built. Each is self-contained. Register the bar first. The test lines are proposed in `PLAN.md` (57–59). None is fixed; all three were re-checked against the code at d75f541.
 
 1. **Cache duplication (line 57).** Opening a ground cache with a FULL pack duplicates its contents, one copy per E press, at 2 energy each. In `src/entities/player/store.ts`, the `int_open_` explicit-contents branch (:1504) hands the cache's items to `addToInventory`. The pack refuses them, so its overflow rule (:1405) mints a new `cache_ovf_*` entity holding them, correct for harvests and chests but wrong when the source is already a cache. The branch then keeps the same items in the original cache as `left`. The result is the same ids in two world entities, which can be banked as N copies with one provenance chain and sold for treasury gold. A partial pickup double-mints the refused items the same way. **Fix:** call `tryAddItems` directly in that branch, so refused items simply stay in the source cache; no overflow entity when the source is a container; feed line "The pack refuses N; they stay in the cache."
 2. **Mint-world draft loss (line 58).** `src/components/WorldCreator.tsx` holds the whole four-step draft as local state inside a kit `Modal`, which closes on a backdrop click or a window-level Escape (`src/components/ui/kit.tsx`). That unmounts the creator and the draft is gone. **Fix, either half is enough and both are better:** a heavy flow does not close on the backdrop, and a dirty draft asks in voice before discarding ("The draft is unsigned. Abandon it?"); or lift the draft into a small store so reopening restores it. The Escape listener also fires from nested inputs.
 3. **Pack placement (line 59).** The pack grid in `src/components/WorldCanvas.tsx` offers click-to-select with ROTATE, USE, EQUIP and LEAVE BEHIND; placement is `InventorySystem.autoPlace` only, so the player cannot choose a cell. The pure logic exists (`footprint`, `buildOccupancy`, `canPlaceAt`, `tryRotate`). **Shape:** click grabs, hover shows the footprint ghost, valid or invalid by shape and seam (solid vs broken outline), click sets down through `canPlaceAt`, R rotates while held, Escape puts it back; select, arrows and Enter as the keyboard path. Build one small reusable grid-placement hook, because the stash grid and the room cursor want the same thing later.
-
-## Then: the technology web (D27)
-
-Pedro requires this before Wave 11: without it, the NPCs add little to nothing. None of it exists yet. Its core is D25's: after the first bench, the next stations are tool + material connected. The rest of its shape is open. Start from "The technology web" in `PLAN.md`, which lists the hooks, the Primordial pattern and the questions to ask first.
 
 ## Then: bringing the Nexi home (Wave 11)
 
@@ -231,4 +231,4 @@ Pedro requires this before Wave 11: without it, the NPCs add little to nothing. 
 
 ## After this pass
 
-`PLAN.md`, under "The next legs": the playtest fixes, the technology web, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).
+`PLAN.md`, under "The next legs": the technology web and auto skill, the playtest fixes, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).
