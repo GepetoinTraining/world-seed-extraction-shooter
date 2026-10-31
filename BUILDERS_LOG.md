@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete), the raw materials leg (D23) and the technology web and auto skill (D27), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E, the raw materials leg and the technology web (D27) are approved. The next pass is **the playtest fixes**, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete), the raw materials leg (D23) and the technology web and auto skill (D27), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E, the raw materials leg and the technology web (D27) are approved. The next passes are **the stable database** and **the usability pass** (which absorbs the playtest fixes), then Pedro's full run, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -189,7 +189,11 @@ Full detail in `PLAN.md` 3B (the technology web and auto skill) and the settled 
 - Lots still do not grow with the hub. `STATION_MIN_AREA` holds the four old stations; a batch's station brings its own number.
 - Readings on the record for Pedro: a bare hand's skill IS the material; a death is a return to the hub; the web is the hub's, the exp is the person's; a resident both extends the web and works inside it.
 
-## Your pass: the playtest fixes
+## Your pass: the stable database and the usability pass
+
+Pedro wants both before the full run. Start from those sections in `PLAN.md`; the usability pass's list is `PLAYTEST_LEDGER.md`. During and after the run, add what is found to that ledger.
+
+## The playtest fixes, now part of the usability pass
 
 Pedro found these in play on 2026-10-31 and deferred them, and the plan runs them after the itemization program, which is now done, after D23 and after D27, both built. Each is self-contained. Register the bar first. The test lines are proposed in `PLAN.md` (57–59). None is fixed; all three were re-checked against the code at d75f541.
 
@@ -254,4 +258,4 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 
 ## After this pass
 
-`PLAN.md`, under "The next legs": the playtest fixes, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).
+`PLAN.md`, under "The next legs": the stable database and the usability pass, Pedro's full run, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).

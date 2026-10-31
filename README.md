@@ -21,6 +21,7 @@ The game runs on `http://localhost:3000`. The proof pages are under `/prototype/
 | `BUILDERS_LOG.md` | Start here: where the build stands, the next pass, the traps |
 | `PLAN.md` | The test list, the decisions table, and the record of each wave |
 | `DESIGN_ASK.md` | The one design document, with its settled record and measurements |
+| `PLAYTEST_LEDGER.md` | What to fix, found by playing |
 | `HANDOVER.md` | Systems, data model, signing, determinism, tuning and debt, with the Wave 7 test run |
 | `types.ts` | The contract |
 | `agent.md` | The founding vision, in its original words. Its prime directive stands; its stack, file layout and roadmap describe 2025 and were kept as written |

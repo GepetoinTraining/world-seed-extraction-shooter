@@ -3,7 +3,7 @@
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
 The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
 approved; the suite stands at 585, with one timing bar that reads load (see that leg's record).
-Next, in order: the playtest fixes, Wave 11, Wave 12.
+Next, in order: the stable database and the usability pass, then Pedro's full run, then Wave 11 and Wave 12.
 Open test lines
 and their status are in section 5.
 
@@ -266,7 +266,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. Next: the playtest fixes → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. Next: the stable database and the usability pass (Pedro, 2026-10-31: both before the full run) → Pedro's full run, with `PLAYTEST_LEDGER.md` kept as the list of what to fix → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -276,7 +276,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D27 through D30 are decided, built and approved.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10, D11 and D31. D27 through D30 are decided, built and approved.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -310,6 +310,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D28 | Technology web | What identifies a skill: tags or prime numbers | ✅ DECIDED (Pedro, 2026-10-31): tags, on one condition: "make the tagging rule iron clad so we don't use a uuid throwaway and think that's good enough... the idea is to not have ambiguity". Primes cannot drift and tags can, so the tag law below carries what primes gave for free. **ENACTED**, all seven clauses as bars |
 | D29 | Technology web | How far the web can grow | ✅ DECIDED (Pedro, 2026-10-31): no cap, "not okay by some artificial cap when the content generation is made by LLMs and it's virtually infinite". Nothing in the code limits tools, materials, tags, skills, verbs or edges. Breadth comes from the pairs and from LLM batches through D20's batch law; a fixed adjacency table is a cap wearing another name. **ENACTED**: a bar adds 5,000 entries with no code change |
 | D30 | Technology web | Where a skill emerges, since Wave 9 removed REST | ✅ DECIDED (Pedro, 2026-10-31): at the sealed session and the return to the hub. **ENACTED**: the seal, the death and the withdrawal. Reading on the record: a death is a return to the hub |
+| D31 | Stable database | How the SQL database is reached | Recommendation under "The stable database" below: a SQLite file on a small local server, Postgres for deploy, through the existing `VectorStore` interface |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
@@ -443,7 +444,36 @@ Done 2026-10-31; **approved by Pedro (2026-10-31)**. Bars in `tests/rawmaterials
   - **Balance stays loud:** the first death was at the beacon, and the channel was broken repeatedly by rats (the known shape). Wave 12's.
 - **Gate:** test lines 60, 61 and 62 pass by test and by play, within the carried items above; line 45 passes by bar, with the raw loop's audit also balanced in play.
 
-### THE PLAYTEST FIXES — next
+### THE STABLE DATABASE — before the full run
+Pedro, 2026-10-31: "before I do run once, we need to have a stable database (sql for now, we'll need postgres for deploy)". This is also what the 2025 brief asked for: a relational database for the hub and character loading.
+
+**What exists:** everything goes through `VectorStore` in `src/entities/data/VectorStore.ts` (`put`, `get`, `query`, `saveContent`, `searchContent`), over RxDB and Dexie in the browser. About 25 files use it and most tests mock it, so one interface carries the whole change. The certificate, roster and private key sit outside it in `localStorage` and IndexedDB.
+
+**Recommendation for D31:**
+- **SQLite file on a small local server now**, reached through the `VectorStore` interface. Your TTRPG engine and Primordial both use libSQL with Drizzle, so that is the first choice to check.
+- **Postgres for deploy:** keep the SQL portable, and run the same contract tests against Postgres (PGlite can run it in the test suite), so deploy brings no surprise.
+- **Signed documents stay byte-identical:** store them as text, because their signatures are over the exact content. Add indexed columns beside them, and real tables where a query needs them, starting with ledger rows.
+- **Private keys stay in the browser.** The server never holds them. A wiped browser is restored from the avatar backup, then finds its saves in the database.
+- **Transactions:** a gold change and its ledger row commit together, which closes the debt in `HANDOVER.md` section 8.
+- **Migration:** a one-time import of existing browser data, so BASALT, GABBRO, MAGPIE, LATHE and TENON survive.
+- **Out of scope:** multiplayer, authentication and a notary. Deploy needs authentication, and this leg records that rather than building it.
+
+- **Gate:** proposed lines 69–71.
+
+### THE USABILITY PASS — before the full run, absorbing the playtest fixes
+Pedro, 2026-10-31: "take a look at the views and see if they're game like... the usability of the game, the controls, the actual hovers... we can do much better than them and are currently worse", after playing RotmG. The list is `PLAYTEST_LEDGER.md`, P1–P3 and U1–U21. Keep this quick: controls first, then hovers, then the views. The art and the voice are approved, so this changes how things are used, not how they look.
+
+**Order of work:**
+1. **Controls:** hold to fire; one interact key everywhere; firing and interacting no longer share a click; a hotbar for hands and tools, shown on the HUD (U1–U3, U5–U7).
+2. **Hands on items:** one drag system for pack, stash, body slots, belt, cart and ground, with a keyboard path, and P1 and P3 fixed in it (U4, U6).
+3. **Hovers:** the one card on hover everywhere, at once, placed so it does not cover the thing or move the layout, and compared with what is worn or held (U8–U11). What the knowledge law hides stays hidden in the comparison too.
+4. **The views:** stash as a grid with sort and filter, and selling behind a deliberate step (U13, U14); the body as a filled figure (U15); the city filling the window (U16); a minimap (U17); recon (U18); skip the hub stop when there is one hub (U19); player's bar without developer controls (U20); HUD layout (U12, U21); P2.
+
+**Standing laws:** colourblind coding, grayscale bars, native focus and full keyboard reach, nothing below the 12px floor.
+
+- **Gate:** lines 57–59, proposed lines 72–75, and played through the real interface.
+
+### THE PLAYTEST FIXES — absorbed into the usability pass
 Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now", and they run after the itemization program, which is now complete, after D23 and after D27. None is fixed. Register the bars first. Diagnoses are in `BUILDERS_LOG.md`, "Your pass". Lines 57–59 are proposed so that guardrail 1 is met.
 
 - **Cache duplication:** opening a ground cache with a full pack copies its contents, one copy per press.
@@ -622,7 +652,20 @@ For the technology web and auto skill, registered as bars in `tests/technologywe
 67. The tag law holds: every tag is registered with one meaning, and a skill's identity is its canonical tag set and nothing else
 68. Nothing caps the web: new tools, materials and batches grow it with no code change
 
-Proposed for the playtest fixes, not yet agreed:
+Proposed for the stable database, not yet agreed:
+
+69. Saves live in the SQL database: clearing browser storage and restoring the avatar backup brings everything back
+70. The same store contract passes on the SQLite file and on Postgres
+71. A gold change and its ledger row commit together or not at all, across a killed process
+
+Proposed for the usability pass, not yet agreed:
+
+72. Holding the button keeps firing at the weapon's own rate; one key interacts everywhere; firing never opens a menu
+73. Every item anywhere shows its card on hover at once, compared with what is worn or held, without moving the layout
+74. Items drag between every grid and slot with the same hands, by mouse and by keyboard, and no sequence loses or duplicates one
+75. Hands and tools are on a hotbar the HUD shows, and the field and city have a minimap
+
+Proposed for the playtest fixes, now part of the usability pass, not yet agreed:
 
 57. Opening a cache with a full pack creates no new entity and no new item, however often it is tried; a partial pickup leaves the rest only in the original cache
 58. A stray click or Escape cannot silently discard a mint-world draft
@@ -673,7 +716,9 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10D Anatomy of Items | 46, 50, 51, 54 | Passed; 46's set-bonus numbers are by test, not seen in play |
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
 | Technology web and auto skill (D27) | 63–68 | Passed, by test and by play within its carried items; approved |
-| Playtest fixes | 57–59 (proposed) | Not started; next |
+| Stable database | 69–71 (proposed) | Not started; before the full run |
+| Usability pass, with the playtest fixes | 57–59, 72–75 (proposed) | Not started; before the full run |
+| Playtest fixes, absorbed | 57–59 (proposed) | Not started; next |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |
