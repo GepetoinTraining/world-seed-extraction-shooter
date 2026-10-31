@@ -1,7 +1,7 @@
 # WORLD SEED // THE SYSTEMS PLAN
 
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
-The raw materials leg (D23) is built and waits for Pedro's approval; the suite stands at 456 passing.
+The raw materials leg (D23) is built and approved; the suite stands at 456 passing.
 Next, in order: the playtest fixes, the technology web
 (D27), Wave 11, Wave 12. Open test lines
 and their status are in section 5.
@@ -265,7 +265,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built and committed, waiting for Pedro's word. Next: the playtest fixes → the technology web (D27, required before 11 by Pedro, 2026-10-31) → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. Next: the playtest fixes → the technology web (D27, required before 11 by Pedro, 2026-10-31) → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -301,7 +301,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D20 | 10E | The content pipeline's shape | ✅ DECIDED and ENACTED (10E, `AffixBank`): batched LLM agent runs, dev-time for now: a run banks NAMES themed to a biome; a later run defines their EFFECTS; every batch is a signed, versioned content pack in the CONTENT namespace. A world pins its pack version at mint, so added content never changes an existing world (the determinism one-way door) |
 | D21 | 10C+10E | Dying without losing everything | ✅ DECIDED (Pedro, 2026-10-31): protection from loss is never a rule — it is a MAGIC ITEM. Usage-limited or single-use charms, and scrolls that buff for a time (the scribe's table's paper-and-ink hook, D14), each naming HOW MANY slots it protects and whether they are chosen or random. A death keeps exactly what the magic named; everything else stays behind as ever. Variability huge, value player-determinable by what is protected. The slot-protection contract (which slots survive a death) lands in 10C with the slot tree; the items, scrolls and their affixes land in 10E's banks |
 | D22 | 10C | The head budget | ✅ DECIDED (Pedro, refined, 2026-10-31): head-and-neck gear and cognitive frames CANCEL EACH OTHER OUT. The region is FOUR positions — HEAD (helmet), EYES (glasses), EARRING and NECKLACE — and each holds EITHER its gear OR a cognitive frame, three frames at most: max frames still leaves one piece of gear up there. THE REASON IS A STAT LAW, not geography: ONLY frames can carry mental stats — physical gear never does, in any slot — so the trade is always mind against matter and can never be dodged by mental-stat jewelry. The law binds 10E's banks too: a mental affix can only ever roll on a frame. And mental stats are not combat-dead: they drive the RECON PHASE as well (scan depth and speed draw on them — the analyst build earns its keep before the drop) |
-| D23 | Raw materials leg | Raw materials and what processing adds | ✅ DECIDED (Pedro, restated 2026-10-31): base materials, non processed, can be used, and transformation processes add bonuses, affixes and suffixes — to buildings and furniture too, to everything. BUILT in the raw materials leg, awaiting Pedro's word. This rule replaces the "cold-start gap" as a separate problem |
+| D23 | Raw materials leg | Raw materials and what processing adds | ✅ DECIDED (Pedro, restated 2026-10-31): base materials, non processed, can be used, and transformation processes add bonuses, affixes and suffixes — to buildings and furniture too, to everything. BUILT and approved in the raw materials leg. This rule replaces the "cold-start gap" as a separate problem |
 | D24 | Raw materials leg | Which raw materials raise walls and shells | ✅ DECIDED (Pedro, 2026-10-31), as recommended: logs and stone take the `building` tag, so bills stay by tag and nothing else changes. Pebbles stay out |
 | D25 | Raw materials leg | How furniture starts from raw | ✅ DECIDED (Pedro, 2026-10-31): the first bench is raised from those raw materials, and "then the next ones are tool + material connected". That connection is the technology web (D27), which is why the web comes before the NPCs |
 | D26 | Raw materials leg | What processing adds | ✅ DECIDED (Pedro, 2026-10-31): the additions are deterministic with ranges, and higher rarity and rank add pools. Studying, lore and the skill itself reveal them: "the actual knowledge is through play". D19's knowledge law carries this. Room pieces must start recording what they inherit, so it reaches buildings and furniture |
@@ -410,8 +410,8 @@ Done 2026-10-31; **approved by Pedro (2026-10-31)**. Bars in `tests/affixes.test
 - **Carried, honestly:** the alarm's shriek hid behind the lock branch on the played theft (fixed the same day, after the play; the signed theft itself was right) and a cart kit's identify scope read as armor (now the tool eye) — both found only by playing; the Warded lock's tow-delay is proven by bar, not play (no Warded kit on that day's shelf — the shelf will roll one); a scroll's expiry death and the scribe-written scroll are proven by bar, with the written-scroll path played only as far as the SCROLLS tab (no scribe's table stands on 3102 — paper and ink were spent on the bar's mint instead); the Mire-Cured improvised club never happened (Overgrowth grows no stones; inheritance is proven by bar through the same improvise door the field button calls); The Long Account's chain reads depth 1 because its granted inputs were purchase roots — an honestly-smelted blade would carry depth 3 and a deeper budget; station study is a click with the sitting in the feed, not yet on the bench's clock; frames are definitions still, so the bank's one mental affix can roll on nothing yet (the door D22 holds open for a later wave); the extraction channel was broken repeatedly by biters no entity scan could find (the known moved-mob shape — the seal came at the sector's far exit); balance stays loud and stays Wave 12's.
 - **Gate:** test lines 52, 53, 55 and 56 pass — 52/55/56 by test and by play; 53 by test, and by play as far as one minted world shows (pin seen on the card, the dream read on the survey, the same keys rolling the same records).
 
-### THE RAW MATERIALS LEG (D23) — BUILT, awaiting Pedro's approval
-Built 2026-10-31; **not yet approved**. Bars in `tests/rawmaterials.test.ts` (91 tests; suite 456), registered before the build, against byte hashes of stored rooms, the city and the pinned packs captured from the untouched code at 1128831. D23–D26 were all answered before the leg started; nothing was asked. Pedro placed this first, ahead of the playtest fixes and Wave 11, because Wave 11's pooling pays against these same bills.
+### THE RAW MATERIALS LEG (D23) ✅ DONE
+Done 2026-10-31; **approved by Pedro (2026-10-31)**. Bars in `tests/rawmaterials.test.ts` (91 tests; suite 456), registered before the build, against byte hashes of stored rooms, the city and the pinned packs captured from the untouched code at 1128831. D23–D26 were all answered before the leg started; nothing was asked. Pedro placed this first, ahead of the playtest fixes and Wave 11, because Wave 11's pooling pays against these same bills.
 
 - **D24, enacted:** ✅ logs and dense stone carry `building`; pebbles stay out; bills stay by tag. A log already in a stash keeps its stored bytes and still answers: `answersTag` reads the item's tags or its definition's as they stand today, and every bill door reads through it.
 - **D25, enacted, with the reading Pedro was told:** ✅ `shellBillFor(type, ownerHasABench)` is the ONE place that knows about "first". With no bench held, placed, listed, standing or rising, a WORKSHOP asks 6 `building` and nothing else; a second asks its 2 `metal` again, and a plan raising a first WORKSHOP drops the same line (`templateBill(tpl, sheet, firstBench)`). The rule reads the state of the world, not a flag: an owner who sells their only bench is owed a first one again, so the floor can never be lost. Recorded for Pedro to overrule. The builder now names the material (D13's choice, which raw made matter): a picker on the lot card and in THE WORKS, and `buildStructure(lotId, type, material)`.
@@ -437,7 +437,7 @@ Built 2026-10-31; **not yet approved**. Bars in `tests/rawmaterials.test.ts` (91
   - **A station's own card** still says "Minted by a finished shell", not what it was raised from; the room's card says the walls.
   - **The sapling answers a door bill** by accident of its `wood` tag, until Wave 11 gives it its real use.
   - **Balance stays loud:** the first death was at the beacon, and the channel was broken repeatedly by rats (the known shape). Wave 12's.
-- **Gate:** test lines 60, 61 and 62 pass by test and by play, within the carried items above; line 45 passes by bar, with the raw loop's audit also balanced in play. Pedro's word closes the leg.
+- **Gate:** test lines 60, 61 and 62 pass by test and by play, within the carried items above; line 45 passes by bar, with the raw loop's audit also balanced in play.
 
 ### THE PLAYTEST FIXES — after the raw materials leg
 Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now", and they run after the itemization program, which is now complete, and after D23. None is fixed. Register the bars first. Diagnoses are in `BUILDERS_LOG.md`, "Your pass". Lines 57–59 are proposed so that guardrail 1 is met.
@@ -535,7 +535,7 @@ Guardrail 1 still holds: nothing gets built without a line here.
 55. Identify is a skill: scoped by item type, trained at a workstation, usable in the field, always timed, faster with skill
 56. Protection is an item: a death keeps exactly the slots the magic named, nothing more, and the receipt shows it
 
-Proposed for D23, registered as bars in `tests/rawmaterials.test.ts`, awaiting Pedro's word:
+For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the leg:
 
 60. A fresh origin raises a house and its first bench from raw logs and stone alone
 61. Each transformation step adds something the raw material lacks, drawn deterministically from pools that grow with rarity and rank, with ranges, on buildings and furniture as on gear
@@ -593,6 +593,6 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
 | Playtest fixes | 57–59 (proposed) | Not started |
 | Technology web (D27) | To be written at its start | Not started; required before 11 |
-| Raw materials leg (D23) | 60–62, 45 | Built, by test and by play within its carried items; awaiting Pedro's approval |
+| Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |
