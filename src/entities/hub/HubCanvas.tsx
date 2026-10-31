@@ -12,7 +12,7 @@ import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
 import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
 import { HUB_GENRE, LotState, composeHub } from '../../render/atoms/hub';
-import { Archetype, Facing, castPortrait, figure } from '../../render/atoms/people';
+import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
 
 // =============================================================================
@@ -72,98 +72,99 @@ const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
   return <canvas ref={ref} width={68} height={68} style={{ imageRendering: 'pixelated', flexShrink: 0 }} />;
 };
 
+const HUB_WALK_TILES_PER_S = 3.0; // one world, one pace: the same speed as the field
+
 export const HubCanvas: React.FC = () => {
   // Generate hub layout once
   const layout = useMemo(() => HubGenerator.generate(), []);
-  
-  // Player position (tiles, not pixels)
-  const [playerPos, setPlayerPos] = useState(layout.spawnPoint);
+
+  // Player position in PIXELS (Wave 8B: the city walks like the field, smoothly)
+  const posRef = useRef({ x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
+  const [playerTile, setPlayerTile] = useState(layout.spawnPoint);
   const [nearbyPOI, setNearbyPOI] = useState<IPOI | null>(null);
   const [dialogueOpen, setDialogueOpen] = useState(false);
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
-  
+
   const { player } = usePlayerStore();
   const { weaponShop, armorShop, consumableShop, purchaseFromShop, lots } = useHubStore();
   const { refreshWorlds, availableWorlds, selectWorld } = useWorldStore();
-  
+
   // Additional UI states
   const [shopOpen, setShopOpen] = useState(false);
   const [shopType, setShopType] = useState<'weapon' | 'armor' | 'consumable'>('weapon');
   const [missionOpen, setMissionOpen] = useState(false);
-  const [facing, setFacing] = useState<Facing>('down');
   const cityRef = useRef<HTMLCanvasElement>(null);
-  
+
+  const keysRef = useRef<Set<string>>(new Set());
+  const facingRef = useRef<Facing>('down');
+  const stepRef = useRef({ step: 0, at: 0 });
+  const movingRef = useRef(false);
+  const lastTickRef = useRef(0);
+  const nearbyRef = useRef<IPOI | null>(null);
+  const reducedMotion = useMemo(
+    () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    []
+  );
+  nearbyRef.current = nearbyPOI;
+
   // =========================================================================
-  // MOVEMENT
+  // MOVEMENT: held keys, per-axis sliding against the navmesh
   // =========================================================================
-  
-  const movePlayer = useCallback((dx: number, dy: number) => {
-    setPlayerPos(prev => {
-      const newX = prev.x + dx;
-      const newY = prev.y + dy;
-      
-      // Bounds check
-      if (newX < 0 || newX >= layout.width || newY < 0 || newY >= layout.height) {
-        return prev;
-      }
-      
-      // Collision check (navmesh)
-      if (!layout.navMesh[newY][newX]) {
-        return prev;
-      }
-      
-      return { x: newX, y: newY };
-    });
+
+  const blockedAt = useCallback((x: number, y: number) => {
+    const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
+    return tx < 0 || ty < 0 || tx >= layout.width || ty >= layout.height || !layout.navMesh[ty][tx];
   }, [layout]);
-  
+
   // Keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key.toLowerCase()) {
-        case 'w': case 'arrowup': setFacing('up'); movePlayer(0, -1); break;
-        case 's': case 'arrowdown': setFacing('down'); movePlayer(0, 1); break;
-        case 'a': case 'arrowleft': setFacing('left'); movePlayer(-1, 0); break;
-        case 'd': case 'arrowright': setFacing('right'); movePlayer(1, 0); break;
-        case 'e': case 'enter': 
-          if (nearbyPOI?.interactable) handleInteract(nearbyPOI);
-          break;
+      const key = e.key.toLowerCase();
+      if (key === 'e' || key === 'enter') {
+        if (nearbyRef.current?.interactable) handleInteract(nearbyRef.current);
+        return;
       }
+      keysRef.current.add(key);
     };
-    
+    const handleKeyUp = (e: KeyboardEvent) => keysRef.current.delete(e.key.toLowerCase());
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [movePlayer, nearbyPOI]);
-  
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // =========================================================================
-  // PROXIMITY DETECTION
+  // PROXIMITY DETECTION (within 3 tiles of an interactable's center)
   // =========================================================================
-  
+
   useEffect(() => {
-    // Check for nearby interactable POIs (within 2 tiles)
     let closest: IPOI | null = null;
     let closestDist = Infinity;
-    
+
     for (const zone of layout.zones) {
       for (const poi of zone.pois) {
         if (!poi.interactable) continue;
-        
+
         // Distance to POI center
         const poiCenterX = poi.position.x + poi.size.width / 2;
         const poiCenterY = poi.position.y + poi.size.height / 2;
         const dist = Math.sqrt(
-          Math.pow(playerPos.x - poiCenterX, 2) + 
-          Math.pow(playerPos.y - poiCenterY, 2)
+          Math.pow(playerTile.x + 0.5 - poiCenterX, 2) +
+          Math.pow(playerTile.y + 0.5 - poiCenterY, 2)
         );
-        
+
         if (dist < 3 && dist < closestDist) {
           closest = poi;
           closestDist = dist;
         }
       }
     }
-    
+
     setNearbyPOI(closest);
-  }, [playerPos, layout]);
+  }, [playerTile, layout]);
   
   // =========================================================================
   // INTERACTION
@@ -225,9 +226,9 @@ export const HubCanvas: React.FC = () => {
   // RENDER HELPERS
   // =========================================================================
   
-  const currentZone = useMemo(() => 
-    HubGenerator.getZoneAtPosition(layout, playerPos.x, playerPos.y),
-    [layout, playerPos]
+  const currentZone = useMemo(() =>
+    HubGenerator.getZoneAtPosition(layout, playerTile.x, playerTile.y),
+    [layout, playerTile]
   );
   
   // The city as the game really has it: its lots from the store, redrawn only when they change
@@ -244,45 +245,98 @@ export const HubCanvas: React.FC = () => {
     return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates }), palette));
   }, [layout, lotStates]);
 
-  // Calculate viewport offset (center on player)
-  const viewportOffset = {
-    x: Math.max(0, Math.min(layout.width - VIEWPORT_TILES, playerPos.x - VIEWPORT_TILES / 2)),
-    y: Math.max(0, Math.min(layout.height - VIEWPORT_TILES, playerPos.y - VIEWPORT_TILES / 2))
-  };
-  
+  // Where the camera sits, in px, clamped to the city's edge
+  const cameraOffset = useCallback(() => {
+    const viewPx = VIEWPORT_TILES * TILE_SIZE;
+    return {
+      x: Math.max(0, Math.min(layout.width * TILE_SIZE - viewPx, posRef.current.x - viewPx / 2)),
+      y: Math.max(0, Math.min(layout.height * TILE_SIZE - viewPx, posRef.current.y - viewPx / 2))
+    };
+  }, [layout]);
+
+  // THE WALK LOOP: held keys move the player every frame, the same as the field.
   useEffect(() => {
     const canvas = cityRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     const palette = buildPalette(HUB_GENRE);
-    const body = spriteToCanvas(figure({
-      uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype, facing, step: (playerPos.x + playerPos.y) % 2
-    }), palette);
-    const draw = (frame: number) => {
+    const bodies = new Map<string, HTMLCanvasElement>();
+    const bodyFor = (facing: Facing, step: number, moving: boolean) => {
+      const key = `${facing}:${moving ? step : 'stand'}`;
+      let c = bodies.get(key);
+      if (!c) {
+        c = spriteToCanvas(figure({
+          uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype, facing, step, moving
+        }), palette);
+        bodies.set(key, c);
+      }
+      return c;
+    };
+
+    let raf = 0;
+    lastTickRef.current = performance.now();
+    const loop = (time: number) => {
+      const dt = Math.min((time - lastTickRef.current) / 1000, 0.1);
+      lastTickRef.current = time;
+
+      const keys = keysRef.current;
+      let dx = 0, dy = 0;
+      if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+      if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+      if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+      if (keys.has('d') || keys.has('arrowright')) dx += 1;
+
+      const p = posRef.current;
+      if (dx !== 0 || dy !== 0) {
+        const len = Math.hypot(dx, dy);
+        const step = HUB_WALK_TILES_PER_S * TILE_SIZE * dt;
+        const mx = (dx / len) * step, my = (dy / len) * step;
+        // Per-axis sliding against the navmesh, same rule as the field's terrain
+        let nx = p.x + mx;
+        if (blockedAt(nx, p.y) && !blockedAt(p.x, p.y)) nx = p.x;
+        let ny = p.y + my;
+        if (blockedAt(nx, ny) && !blockedAt(nx, p.y)) ny = p.y;
+        p.x = nx; p.y = ny;
+        facingRef.current = Math.abs(mx) > Math.abs(my) ? (mx > 0 ? 'right' : 'left') : (my > 0 ? 'down' : 'up');
+        movingRef.current = true;
+        if (time - stepRef.current.at > 560 / WALK_PHASES) {
+          stepRef.current = { step: (stepRef.current.step + 1) % WALK_PHASES, at: time };
+        }
+        const tile = { x: Math.floor(p.x / TILE_SIZE), y: Math.floor(p.y / TILE_SIZE) };
+        setPlayerTile(prev => (prev.x === tile.x && prev.y === tile.y ? prev : tile));
+      } else if (movingRef.current) {
+        movingRef.current = false;
+        stepRef.current = { step: 0, at: 0 };
+      }
+
       ctx.imageSmoothingEnabled = false;
-      const ox = viewportOffset.x * TILE_SIZE, oy = viewportOffset.y * TILE_SIZE;
+      const cam = cameraOffset();
+      const ox = Math.round(cam.x / 2) * 2, oy = Math.round(cam.y / 2) * 2; // snap to the atom grid
       ctx.fillStyle = '#050505';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const frame = reducedMotion ? 0 : Math.floor(time / 500) % 2;
       const city = cityBitmaps[frame];
       ctx.drawImage(city, -ox, -oy, city.width * ATOM_PX, city.height * ATOM_PX);
+      const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
-      ctx.drawImage(body, playerPos.x * TILE_SIZE + TILE_SIZE / 2 - w / 2 - ox, playerPos.y * TILE_SIZE + TILE_SIZE / 2 - h / 2 - oy, w, h);
-      if (nearbyPOI) {
+      ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
+      const poi = nearbyRef.current;
+      if (poi) {
         ctx.strokeStyle = '#fafafa';
         ctx.lineWidth = 2;
-        ctx.strokeRect(nearbyPOI.position.x * TILE_SIZE - ox - 1, nearbyPOI.position.y * TILE_SIZE - oy - 1, nearbyPOI.size.width * TILE_SIZE + 2, nearbyPOI.size.height * TILE_SIZE + 2);
+        ctx.strokeRect(poi.position.x * TILE_SIZE - ox - 1, poi.position.y * TILE_SIZE - oy - 1, poi.size.width * TILE_SIZE + 2, poi.size.height * TILE_SIZE + 2);
       }
+      raf = requestAnimationFrame(loop);
     };
-    let frame = 0;
-    draw(frame);
-    const timer = window.setInterval(() => { frame = frame ? 0 : 1; draw(frame); }, 500);
-    return () => window.clearInterval(timer);
-  }, [cityBitmaps, playerPos, facing, nearbyPOI, viewportOffset.x, viewportOffset.y, player.id, player.archetype]);
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [cityBitmaps, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
-    const tx = Math.floor((e.clientX - box.left) / TILE_SIZE) + viewportOffset.x;
-    const ty = Math.floor((e.clientY - box.top) / TILE_SIZE) + viewportOffset.y;
+    const cam = cameraOffset();
+    const tx = Math.floor((e.clientX - box.left + cam.x) / TILE_SIZE);
+    const ty = Math.floor((e.clientY - box.top + cam.y) / TILE_SIZE);
     const poi = HubGenerator.getPOIAtPosition(layout, tx, ty);
     if (poi?.interactable) handleInteract(poi);
   };
@@ -305,7 +359,7 @@ export const HubCanvas: React.FC = () => {
             <Text size="xs" c="dimmed">{currentZone.name}</Text>
           )}
           <Text size="xs" c="dimmed" ff="monospace">
-            {playerPos.x}, {playerPos.y}
+            {playerTile.x}, {playerTile.y}
           </Text>
         </Stack>
       </Paper>

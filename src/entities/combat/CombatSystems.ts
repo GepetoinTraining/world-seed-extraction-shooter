@@ -9,6 +9,7 @@ import { SessionJournal } from '../../logic/journal/SessionJournal';
 export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG';
   entityId?: string;
+  definitionId?: string;
   damage?: number;
   position?: { x: number; y: number };
   loot?: IItem[];
@@ -65,6 +66,8 @@ export class CombatSystem {
       events.push({
         type: 'KILL',
         entityId: mob.id,
+        definitionId: mob.definitionId,
+        position: mob.position,
         xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity }
       });
 
@@ -118,7 +121,7 @@ export class CombatSystem {
           }
         });
 
-        events.push({ type: 'HIT', entityId: mob.id, damage, position: mob.position });
+        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
 
         if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         break; // a projectile is spent on its first target
@@ -158,7 +161,7 @@ export class CombatSystem {
             }
           });
 
-          events.push({ type: 'HIT', entityId: mob.id, damage, position: mob.position });
+          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
 
           if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         }

@@ -245,7 +245,24 @@ export class WorldGenerator {
   }
 
   static resolveMove(map: IMap, x: number, z: number, dx: number, dz: number) {
-    return TerrainSystem.resolveMove(map.seed, x, z, dx, dz, undefined, (nx, nz) => this.isInWorld(map, nx, nz));
+    return TerrainSystem.resolveMove(map.seed, x, z, dx, dz, undefined,
+      (nx, nz) => this.isInWorld(map, nx, nz) && !this.trunkAt(map, nx, nz));
+  }
+
+  /**
+   * D3: a standing trunk blocks its tile, and you walk under the crown. A stump
+   * blocks nothing. Checked at the destination only, so nothing is ever trapped.
+   */
+  static trunkAt(map: IMap, px: number, pz: number): boolean {
+    const chunk = map.chunks[`${chunkOf(px)},${chunkOf(pz)}`];
+    if (!chunk) return false;
+    const tx = tileOf(px), ty = tileOf(pz);
+    for (const e of chunk.entities) {
+      if (e.type !== EntityType.RESOURCE || e.definitionId !== 'res_tree_log') continue;
+      if ((e.usesRemaining ?? 3) <= 0) continue;
+      if (tileOf(e.position.x) === tx && tileOf(e.position.y) === ty) return true;
+    }
+    return false;
   }
 
   /** Where a drop into a sector lands: its middle, or the nearest open ground to it. */

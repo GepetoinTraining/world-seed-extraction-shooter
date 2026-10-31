@@ -12,7 +12,7 @@ import { BiomeType, EntityType, IMap, IWorldEntity } from '../../entities/world/
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
 import {
-  ATOM_PX, GenreLook, KNOWN, TILE_ATOMS, Genre, Ink, Material, Role, Sprite, TRI, chest, creature, exitBeacon, grain, hash2, material,
+  ATOM_PX, CreatureFacing, GenreLook, KNOWN, TILE_ATOMS, Genre, Ink, Material, Role, Sprite, TRI, chest, creature, exitBeacon, grain, hash2, material,
   npcFigure, px, rankMark, ruin, spent, stamp, worldForm
 } from './atoms';
 import { figure } from './people';
@@ -149,7 +149,11 @@ export function terrainBuffer(map: IMap, genre: Genre, ox: number, oy: number, w
       // Darkest and brightest steps only, so it reads against any genre's ground key.
       value = px(Role.GROUND, (ay + 4096 + TRI[((ax + 4096) >> 1) % 12]) % 3 === 0 ? 4 : 0);
     } else if (type === TerrainType.WATER) {
-      value = px(Role.GROUND, Math.min(2, grain(material(GROUND_TERRAIN[type]), ax, ay, seedHash)));
+      // A dark body crossed by long broken crest lines, so it reads as water and
+      // not as hollow squares. Crests stay at step 2: water is darker than mud's ripple.
+      const crest = (ay + 4096 + TRI[((ax + 4096) >> 2) % 12]) % 6 === 0;
+      const open = hash2(seedHash + 7, (ax + 4096) >> 3, ay + 4096) % 4 === 0;
+      value = px(Role.GROUND, crest && !open ? 2 : (ax + ay) % 2 === 0 ? 0 : grain(material(GROUND_TERRAIN[type]), ax, ay, seedHash) ? 1 : 0);
     } else {
       value = px(Role.MATTER, Math.min(1, grain(material(GROUND_TERRAIN[type]), ax, ay, seedHash)));
     }
@@ -191,11 +195,18 @@ const groundCache = () => {
   return stamp(k, 12, material({ density: 40 }), fnv1a('sprite:v1:cache'), { role: Role.PROOF, edgeStep: 3, minFill: 1, maxFill: 2 });
 };
 
-export function entitySprite(e: Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container'>, level = KNOWN): Sprite | null {
+export interface EntityPose { facing?: CreatureFacing; frame?: number }
+
+type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container'>;
+
+export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = {}): Sprite | null {
   switch (e.type) {
     case EntityType.MOB: {
       const def = MOB_DEFINITIONS[e.definitionId];
-      return def ? cached(e.definitionId, () => creature(def as any)) : null;
+      if (!def) return null;
+      const facing = pose.facing ?? 'down';
+      const frame = (pose.frame ?? 0) % 2;
+      return cached(`${e.definitionId}:${facing}:${frame}`, () => creature(def as any, undefined, { facing, frame }));
     }
     case EntityType.RESOURCE: {
       const def = RESOURCE_DEFINITIONS[e.definitionId];
@@ -218,6 +229,26 @@ export const LAYER: Partial<Record<EntityType, number>> = {
   [EntityType.NPC]: 3, [EntityType.EXTRACTION]: 4, [EntityType.MOB]: 5
 };
 
+/** A tree that still stands. It is drawn upright and its trunk tile blocks (D3). */
+export const isStandingTree = (e: SpriteEntity): boolean => {
+  if (e.type !== EntityType.RESOURCE) return false;
+  const def = RESOURCE_DEFINITIONS[e.definitionId];
+  const tags: string[] = (def as any)?.tags || [];
+  if (!tags.includes('wood') || tags.includes('seed')) return false;
+  return (e.usesRemaining ?? (def as any)?.uses ?? 1) > 0;
+};
+
+/** D1: anything with a height stands upright, sorts by its feet, and can be walked behind. */
+export const standsUpright = (e: SpriteEntity): boolean =>
+  e.type === EntityType.MOB || e.type === EntityType.NPC || isStandingTree(e);
+
+/**
+ * Where a sprite's feet land, in px below the entity's position. Centered things
+ * put their baseline at their own bottom; a standing tree is rooted on its tile.
+ */
+export const baselinePx = (e: SpriteEntity, sprite: Sprite): number =>
+  isStandingTree(e) ? TILE_ATOMS * ATOM_PX / 2 : (sprite.h * ATOM_PX) / 2;
+
 /** Paints a full view: terrain, then everything in the window, then the player. */
 export function composeView(map: IMap, genre: Genre, centerPx: { x: number; y: number }, w: number, h: number) {
   const ox = Math.floor(centerPx.x / ATOM_PX) - Math.floor(w / 2);
@@ -233,19 +264,34 @@ export function composeView(map: IMap, genre: Genre, centerPx: { x: number; y: n
     .filter(e => {
       const ex = e.position.x / ATOM_PX - ox, ey = e.position.y / ATOM_PX - oy;
       return ex > -40 && ey > -40 && ex < w + 40 && ey < h + 40;
-    })
+    });
+
+  // Flat things draw by layer; standing things draw by their feet, the player among them.
+  const flats = entities.filter(e => !standsUpright(e))
     .sort((a, b) => (LAYER[a.type] ?? 9) - (LAYER[b.type] ?? 9) || (a.id < b.id ? -1 : 1));
+  const standing: { e: IWorldEntity | null; sprite: Sprite; feet: number; x: number }[] = [];
+  for (const e of entities) {
+    if (!standsUpright(e)) continue;
+    const sprite = entitySprite(e);
+    if (sprite) standing.push({ e, sprite, feet: e.position.y + baselinePx(e, sprite), x: e.position.x });
+  }
+  const player = cached('player', () => figure({ uid: 'ws_proof', archetype: 'NOMAD' }));
+  standing.push({ e: null, sprite: player, feet: centerPx.y + (player.h * ATOM_PX) / 2, x: centerPx.x });
+  standing.sort((a, b) => a.feet - b.feet || (a.e && b.e ? (a.e.id < b.e.id ? -1 : 1) : a.e ? -1 : 1));
 
   let count = 0;
-  for (const e of entities) {
+  for (const e of flats) {
     const sprite = entitySprite(e);
     if (!sprite) continue;
-    const ex = e.position.x / ATOM_PX - ox, ey = e.position.y / ATOM_PX - oy;
-    blit(data, w, h, sprite, ex, ey);
-    if (e.type === EntityType.MOB) blit(data, w, h, rankMark(e.rank), ex + sprite.w / 2, ey + sprite.h / 2);
+    blit(data, w, h, sprite, e.position.x / ATOM_PX - ox, e.position.y / ATOM_PX - oy);
     count++;
   }
-  blit(data, w, h, cached('player', () => figure({ uid: 'ws_proof', archetype: 'NOMAD' })), w / 2, h / 2);
+  for (const s of standing) {
+    const ex = s.x / ATOM_PX - ox, ey = s.feet / ATOM_PX - s.sprite.h / 2 - oy;
+    blit(data, w, h, s.sprite, ex, ey);
+    if (s.e?.type === EntityType.MOB) blit(data, w, h, rankMark(s.e.rank), ex + s.sprite.w / 2, ey + s.sprite.h / 2);
+    if (s.e) count++;
+  }
   return { data, w, h, entities: count };
 }
 

@@ -2,7 +2,7 @@ import { HUB_NPCS, HubGenerator, IPOI, POIType } from '../../src/entities/hub/Hu
 import { ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
 import { ATOM_PX, Sprite, buildPalette, grayscale, hashBytes } from '../../src/render/atoms/atoms';
 import { HUB_GENRE, HUB_TILE, LOT_STATES, LotState, composeHub, doorOf, emblem, lotArt, textSprite } from '../../src/render/atoms/hub';
-import { ARCHETYPE_IDS, Archetype, ArmorClass, Facing, WeaponClass, castFigure, castPortrait, figure, portrait, weaponClass } from '../../src/render/atoms/people';
+import { ARCHETYPE_IDS, Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, castFigure, castPortrait, figure, portrait, weaponClass } from '../../src/render/atoms/people';
 
 const layout = HubGenerator.generate();
 const pois = layout.zones.flatMap(z => z.pois);
@@ -25,6 +25,22 @@ function toCanvas(s: Sprite, table: Uint8Array, scale = ATOM_PX): HTMLCanvasElem
   }
   ctx.putImageData(img, 0, 0);
   return c;
+}
+
+// Stepped animation for the proof page: frames swap, nothing interpolates.
+const animTimers: number[] = [];
+function animated(framesList: Sprite[], table: Uint8Array, scale: number, ms: number): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:flex-end';
+  const canvases = framesList.map(s => toCanvas(s, table, scale));
+  canvases.forEach((c, i) => { c.style.display = i === 0 ? '' : 'none'; wrap.append(c); });
+  let at = 0;
+  animTimers.push(window.setInterval(() => {
+    canvases[at].style.display = 'none';
+    at = (at + 1) % canvases.length;
+    canvases[at].style.display = '';
+  }, ms));
+  return wrap;
 }
 
 function cell(node: HTMLElement, label: string) {
@@ -56,8 +72,10 @@ const state = {
   weapon: undefined as WeaponClass | undefined,
   armor: undefined as ArmorClass | undefined,
   x: layout.spawnPoint.x, y: layout.spawnPoint.y,
+  px: (layout.spawnPoint.x + 0.5) * HUB_TILE, py: (layout.spawnPoint.y + 0.5) * HUB_TILE,
   facing: 'down' as Facing,
   step: 0,
+  stepAt: 0,
   frame: 0,
   mode: 'walk' as 'walk',
   nearby: null as IPOI | null,
@@ -119,14 +137,23 @@ function renderStage() {
     if (!bitmaps[i]) bitmaps[i] = toCanvas(frameFor(i), palette(), 1);
     return bitmaps[i];
   };
-  const figureBitmap = () => toCanvas(figure({ uid: state.uid, archetype: state.archetype, facing: state.facing, step: state.step, weapon: state.weapon, armor: state.armor }), palette(), 1);
+  const bodies = new Map<string, HTMLCanvasElement>();
+  const figureBitmap = (moving: boolean) => {
+    const key = `${state.uid}:${state.archetype}:${state.facing}:${moving ? state.step : 'stand'}:${state.weapon}:${state.armor}`;
+    let c = bodies.get(key);
+    if (!c) {
+      c = toCanvas(figure({ uid: state.uid, archetype: state.archetype, facing: state.facing, step: state.step, moving, weapon: state.weapon, armor: state.armor }), palette(), 1);
+      bodies.set(key, c);
+    }
+    return c;
+  };
 
-  const draw = () => {
-    const ox = Math.max(0, Math.min(layout.width - VIEW_TILES, state.x - (VIEW_TILES >> 1))) * HUB_TILE;
-    const oy = Math.max(0, Math.min(layout.height - VIEW_TILES, state.y - (VIEW_TILES >> 1))) * HUB_TILE;
-    ctx.drawImage(bitmap(state.frame), -ox, -oy);
-    const f = figureBitmap();
-    ctx.drawImage(f, state.x * HUB_TILE + 5 - (f.width >> 1) - ox, state.y * HUB_TILE + 5 - (f.height >> 1) - oy);
+  const draw = (moving: boolean) => {
+    const ox = Math.max(0, Math.min(layout.width * HUB_TILE - VIEW_TILES * HUB_TILE, state.px - (VIEW_TILES * HUB_TILE >> 1)));
+    const oy = Math.max(0, Math.min(layout.height * HUB_TILE - VIEW_TILES * HUB_TILE, state.py - (VIEW_TILES * HUB_TILE >> 1)));
+    ctx.drawImage(bitmap(state.frame), -Math.round(ox), -Math.round(oy));
+    const f = figureBitmap(moving);
+    ctx.drawImage(f, Math.round(state.px - (f.width >> 1) - ox), Math.round(state.py - (f.height >> 1) - oy));
   };
 
   const refresh = () => {
@@ -170,7 +197,7 @@ function renderStage() {
     const btn = (label: string, act: () => void) => {
       const el = document.createElement('button');
       el.textContent = label;
-      el.addEventListener('click', () => { act(); refresh(); draw(); view.focus(); });
+      el.addEventListener('click', () => { act(); refresh(); draw(false); view.focus(); });
       controls.append(el);
     };
     btn('New certificate', () => { state.uid = `ws_${(hashBytes(new TextEncoder().encode(state.uid)) >>> 0).toString(16)}_proof`; });
@@ -182,36 +209,64 @@ function renderStage() {
     you.append(controls);
   };
 
+  // Held keys walk smoothly, the same as the field: one world, one way of walking.
+  const keys = new Set<string>();
+  const WALK_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'];
   view.addEventListener('keydown', ev => {
     const k = ev.key.toLowerCase();
-    const moves: Record<string, [number, number, Facing]> = {
-      w: [0, -1, 'up'], arrowup: [0, -1, 'up'], s: [0, 1, 'down'], arrowdown: [0, 1, 'down'],
-      a: [-1, 0, 'left'], arrowleft: [-1, 0, 'left'], d: [1, 0, 'right'], arrowright: [1, 0, 'right']
-    };
-    const m = moves[k];
-    if (m) {
-      ev.preventDefault();
-      const nx = state.x + m[0], ny = state.y + m[1];
-      state.facing = m[2];
-      state.step = state.step ? 0 : 1;
-      state.talking = null;
-      if (nx >= 0 && ny >= 0 && nx < layout.width && ny < layout.height && layout.navMesh[ny][nx]) { state.x = nx; state.y = ny; }
-      refresh();
-      draw();
-    } else if (k === 'e') {
-      state.talking = state.nearby;
-      refresh();
-    }
+    if (WALK_KEYS.includes(k)) { ev.preventDefault(); keys.add(k); state.talking = null; }
+    else if (k === 'e') { state.talking = state.nearby; refresh(); }
   });
+  view.addEventListener('keyup', ev => keys.delete(ev.key.toLowerCase()));
+  view.addEventListener('blur', () => keys.clear());
 
+  const blockedAt = (ax: number, ay: number) => {
+    const tx = Math.floor(ax / HUB_TILE), ty = Math.floor(ay / HUB_TILE);
+    return tx < 0 || ty < 0 || tx >= layout.width || ty >= layout.height || !layout.navMesh[ty][tx];
+  };
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   refresh();
-  draw();
-  if (frameTimer) clearInterval(frameTimer);
-  frameTimer = window.setInterval(() => { state.frame = state.frame ? 0 : 1; draw(); }, 500);
+  draw(false);
+  if (stageRaf) cancelAnimationFrame(stageRaf);
+  let last = performance.now();
+  let wasMoving = false;
+  const loop = (time: number) => {
+    const dt = Math.min((time - last) / 1000, 0.1);
+    last = time;
+    let dx = 0, dy = 0;
+    if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+    if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+    if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+    if (keys.has('d') || keys.has('arrowright')) dx += 1;
+    const moving = dx !== 0 || dy !== 0;
+    if (moving) {
+      const len = Math.hypot(dx, dy);
+      const step = 3.0 * HUB_TILE * dt; // 3 tiles/s, in atoms
+      const mx = (dx / len) * step, my = (dy / len) * step;
+      let nx = state.px + mx;
+      if (blockedAt(nx, state.py) && !blockedAt(state.px, state.py)) nx = state.px;
+      let ny = state.py + my;
+      if (blockedAt(nx, ny) && !blockedAt(nx, state.py)) ny = state.py;
+      state.px = nx; state.py = ny;
+      state.facing = Math.abs(mx) > Math.abs(my) ? (mx > 0 ? 'right' : 'left') : (my > 0 ? 'down' : 'up');
+      if (time - state.stepAt > 560 / WALK_PHASES) { state.step = (state.step + 1) % WALK_PHASES; state.stepAt = time; }
+      const tx = Math.floor(state.px / HUB_TILE), ty = Math.floor(state.py / HUB_TILE);
+      if (tx !== state.x || ty !== state.y) { state.x = tx; state.y = ty; refresh(); }
+    } else if (wasMoving) {
+      state.step = 0;
+      state.stepAt = 0;
+    }
+    wasMoving = moving;
+    state.frame = reduced ? 0 : Math.floor(time / 500) % 2;
+    draw(moving);
+    stageRaf = requestAnimationFrame(loop);
+  };
+  stageRaf = requestAnimationFrame(loop);
   (window as any).__hub = { state, nearest, hash: hashBytes(composeHub(layout).data) };
 }
 
-let frameTimer = 0;
+let stageRaf = 0;
 
 function renderCharacters() {
   const table = palette();
@@ -225,12 +280,24 @@ function renderCharacters() {
     archetypes.append(cell(row, archetype));
   });
 
-  const walk = section('WALKING', 'Two stepped frames, never interpolated. Only the legs move.');
+  const prefersStill = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const walk = section(
+    'WALKING (D2: 2 OR 4 FRAMES — CHOOSE BY EYE)',
+    `Stand first, then the two-frame cycle, then the four-frame cycle. Stepped frames, never interpolated; stopping always returns to the stand. The game currently walks on ${WALK_PHASES} frames — one constant switches it.` +
+    (prefersStill ? ' Reduced motion is on: no animated cells.' : ' The last two cells step at the game\'s cadence: 2-frame, then 4-frame.')
+  );
   ARCHETYPE_IDS.forEach(archetype => {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;gap:4px;align-items:flex-end';
-    [0, 1].forEach(step => row.append(toCanvas(figure({ uid: SAMPLE_IDS[1], archetype, step }), table, 4)));
-    walk.append(cell(row, archetype));
+    const uid = SAMPLE_IDS[1];
+    row.append(toCanvas(figure({ uid, archetype, moving: false }), table, 4));
+    [0, 1].forEach(step => row.append(toCanvas(figure({ uid, archetype, step, moving: true, phases: 2 }), table, 4)));
+    [0, 1, 2, 3].forEach(step => row.append(toCanvas(figure({ uid, archetype, step, moving: true, phases: 4 }), table, 4)));
+    if (!prefersStill) {
+      row.append(animated([0, 1].map(step => figure({ uid, archetype, step, moving: true, phases: 2 })), table, 4, 280));
+      row.append(animated([0, 1, 2, 3].map(step => figure({ uid, archetype, step, moving: true, phases: 4 })), table, 4, 140));
+    }
+    walk.append(cell(row, `${archetype}: stand · 2-frame · 4-frame`));
   });
 
   const people = section('TWENTY-FOUR CERTIFICATES', 'Same archetypes, different owners. Who you are comes from the certificate you own, so no one can pick your face and you cannot lose it.');
@@ -289,6 +356,8 @@ function renderCity() {
 function render() {
   root.innerHTML = '';
   frames.length = 0;
+  animTimers.forEach(t => clearInterval(t));
+  animTimers.length = 0;
   renderStage();
   renderCharacters();
   renderCity();

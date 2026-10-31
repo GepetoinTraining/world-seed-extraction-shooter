@@ -199,18 +199,16 @@ export function sampleRect(layer: Uint8Array, w: number, h: number, anyCoverage 
   return out;
 }
 
-const sample = (layer: Uint8Array, s: number, anyCoverage = false) => sampleRect(layer, s, s, anyCoverage);
-
 export interface StampStyle { role: Role; edgeStep: number; minFill: number; maxFill: number; eyeStep?: number; edgeGrain?: boolean }
 
 /** EDGE + GRAIN: turn sampled ink into a sprite with a hard void seam around it. */
-export function stamp(ink: Ink, s: number, m: Material, seed: number, style: StampStyle): Sprite {
-  const body = sample(ink.body, s);
-  const eye = sample(ink.eye, s, true);
-  const w = s + 2, data = new Uint8Array(w * w);
-  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < s && y < s && body[y * s + x] === 1;
+export function stamp(ink: Ink, s: number, m: Material, seed: number, style: StampStyle, sh = s): Sprite {
+  const body = sampleRect(ink.body, s, sh);
+  const eye = sampleRect(ink.eye, s, sh, true);
+  const w = s + 2, h = sh + 2, data = new Uint8Array(w * h);
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < s && y < sh && body[y * s + x] === 1;
 
-  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+  for (let y = 0; y < sh; y++) for (let x = 0; x < s; x++) {
     if (!on(x, y)) continue;
     const edge = !on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1);
     let value: number;
@@ -219,15 +217,15 @@ export function stamp(ink: Ink, s: number, m: Material, seed: number, style: Sta
     else value = px(style.role, Math.min(style.maxFill, style.minFill + grain(m, x, y, seed)));
     data[(y + 1) * w + x + 1] = value;
   }
-  for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     if (data[y * w + x]) continue;
     const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
       const nx = x + dx, ny = y + dy;
-      return nx >= 0 && ny >= 0 && nx < w && ny < w && data[ny * w + nx] !== 0 && data[ny * w + nx] !== px(Role.VOID, 0);
+      return nx >= 0 && ny >= 0 && nx < w && ny < h && data[ny * w + nx] !== 0 && data[ny * w + nx] !== px(Role.VOID, 0);
     });
     if (near) data[y * w + x] = px(Role.VOID, 0);
   }
-  return { w, h: w, data };
+  return { w, h, data };
 }
 
 export const maskOf = (sprite: Sprite): Uint8Array =>
@@ -262,38 +260,44 @@ export function planFor(tags: string[]): Plan {
   return 'swarm';
 }
 
-function drawPlan(plan: Plan, seed: number): Ink {
+/**
+ * Two stepped frames per plan: frame 1 moves only what that body would move.
+ * Every delta is at least ~6 design units, so it survives sampling at TINY size.
+ */
+function drawPlan(plan: Plan, seed: number, frame = 0): Ink {
   const k = new Ink();
   const v = (n: number, mod: number) => hash2(seed, n, 7) % mod;
+  const s = frame % 2; // the step: 0 or 1
 
   switch (plan) {
     case 'swarm':
       k.disc(24, 28, 11).disc(24, 15, 8);
-      k.both(f => { k.disc(f(16), 8, 3); k.line(f(15), 24, f(5), 18 + v(1, 4), 1); k.line(f(15), 33, f(5), 38, 1); });
-      k.line(24, 38, 30 + v(2, 8), 47, 1);
+      k.both(f => { k.disc(f(16), 8, 3); k.line(f(15), 24, f(5), 18 + v(1, 4) + s * 6, 1); k.line(f(15), 33, f(5), 38 - s * 6, 1); });
+      k.line(24, 38, 24 + (s ? -1 : 1) * (6 + v(2, 8)), 47, 1);
       k.eyeAt(20, 13).eyeAt(28, 13);
       break;
     case 'biped':
-      k.disc(24, 10, 7).rect(11, 18, 37, 25).rect(16, 25, 32, 36).rect(16, 36, 21, 47).rect(27, 36, 32, 47);
+      k.disc(24, 10, 7).rect(11, 18, 37, 25).rect(16, 25, 32, 36).rect(16, 36, 21, 47 - s * 6).rect(27, 36, 32, 41 + s * 6);
       k.both(f => k.line(f(11), 21, f(6), 36, 2));
-      k.line(39, 37, 44, 5 + v(1, 6), 2);
+      k.line(39, 37, 44, 5 + v(1, 6) + s * 6, 2);
       k.eyeAt(21, 9).eyeAt(27, 9);
       break;
     case 'wings':
       k.disc(24, 24, 9).disc(24, 10, 6).line(24, 32, 24, 47, 2);
-      k.both(f => { k.line(f(18), 20, f(1), 8 + v(1, 5), 4); k.line(f(18), 27, f(3), 34, 4); k.line(f(14), 30, f(8), 42, 2); });
+      k.both(f => { k.line(f(18), 20, f(1), 8 + v(1, 5) + s * 9, 4); k.line(f(18), 27, f(3), 34 - s * 5, 4); k.line(f(14), 30, f(8), 42, 2); });
       k.eyeAt(21, 9).eyeAt(27, 9);
       break;
     case 'rotor':
       k.both(f => {
         k.line(f(19), 19, f(9), 9, 2); k.line(f(19), 29, f(9), 39, 2);
-        k.disc(f(8), 8, 8); k.disc(f(8), 8, 4, 0); k.disc(f(8), 40, 8); k.disc(f(8), 40, 4, 0);
+        k.disc(f(8), 8, 8); k.disc(f(8), 8 + (s ? -3 : 0), 4, 0).disc(f(8) + (s ? 3 : 0), 8, s ? 3 : 0, 0);
+        k.disc(f(8), 40, 8); k.disc(f(8), 40 + (s ? 3 : 0), 4, 0).disc(f(8) + (s ? -3 : 0), 40, s ? 3 : 0, 0);
       });
       k.disc(24, 24, 8);
       k.eyeAt(24, 23, 3);
       break;
     case 'hull':
-      k.rect(10, 12, 38, 40).rect(20, 0, 28, 14);
+      k.rect(10, 12, 38, 40).rect(20 + s * 5, 0, 28 + s * 5, 14);
       k.both(f => k.rect(Math.min(f(2), f(8)), 14, Math.max(f(2), f(8)), 38));
       k.disc(24, 26, 9, 0).disc(24, 26, 5);
       k.eyeAt(24, 26, 2);
@@ -301,28 +305,34 @@ function drawPlan(plan: Plan, seed: number): Ink {
     case 'tracks':
       k.both(f => k.rect(Math.min(f(0), f(10)), 2, Math.max(f(0), f(10)), 46));
       k.rect(13, 8, 35, 40);
-      k.both(f => { k.disc(f(18), 16, 5); k.rect(Math.min(f(16), f(20)), 0, Math.max(f(16), f(20)), 14); });
+      k.both(f => { k.disc(f(18), 16 + s * 6, 5); k.rect(Math.min(f(16), f(20)), 0, Math.max(f(16), f(20)), 14); });
       k.rect(18, 30, 30, 34, 0);
+      k.both(f => { for (let y = 4 + s * 4; y < 46; y += 8) k.rect(Math.min(f(1), f(9)), y, Math.max(f(1), f(9)), y + 1, 0); });
       k.eyeAt(24, 24, 2);
       break;
     case 'tendril': {
       k.disc(24, 24, 11);
       const ends = [[6, 6], [42, 10], [3, 30], [44, 34], [14, 46], [34, 45]];
-      ends.forEach(([ex, ey], i) => k.line(24, 24, ex + v(i, 5) - 2, ey + v(i + 9, 5) - 2, 1 + v(i + 20, 2)));
+      // Only every other tendril sways, so the body holds while the limbs search.
+      const sway = (i: number) => (s && i % 2 ? 5 : 0);
+      ends.forEach(([ex, ey], i) => k.line(24, 24, ex + v(i, 5) - 2 + sway(i), ey + v(i + 9, 5) - 2 - sway(i), 1 + v(i + 20, 2)));
       k.eyeAt(19, 20).eyeAt(29, 22).eyeAt(24, 29);
       break;
     }
     case 'ring': {
       k.disc(24, 24, 23).disc(24, 24, 15, 0).disc(24, 24, 6);
-      const spots = [[24, 4], [38, 10], [44, 24], [38, 38], [24, 44], [10, 38], [4, 24], [10, 10]];
+      // The halo turns: frame 1 holds the spots at the half-step angles.
+      const spots = s
+        ? [[32, 6], [42, 16], [42, 32], [32, 42], [16, 42], [6, 32], [6, 16], [16, 6]]
+        : [[24, 4], [38, 10], [44, 24], [38, 38], [24, 44], [10, 38], [4, 24], [10, 10]];
       spots.forEach(([x, y]) => k.eyeAt(x, y, 2));
-      k.eyeAt(24, 24, 3);
+      k.eyeAt(24, 24, s ? 2 : 3);
       break;
     }
     case 'spikes':
-      k.disc(24, 28, 18).disc(24, 9, 8);
-      k.both(f => { k.line(f(9), 18, f(0), 8, 2); k.line(f(6), 30, f(0), 30, 2); k.line(f(10), 41, f(2), 47, 2); k.line(f(19), 3, f(16), 0, 1); });
-      k.eyeAt(20, 8).eyeAt(28, 8);
+      k.disc(24, 28, 18).disc(24, 9 + s * 4, 8);
+      k.both(f => { k.line(f(9), 18, f(0), 8 + s * 6, 2); k.line(f(6), 30, f(0), 30, 2); k.line(f(10), 41, f(2), 47, 2); k.line(f(19), 3 + s * 4, f(16), s * 4, 1); });
+      k.eyeAt(20, 8 + s * 4).eyeAt(28, 8 + s * 4);
       break;
   }
   return k;
@@ -341,13 +351,63 @@ export function creatureMaterial(tags: string[]): Material {
 
 export const SIZE_ATOMS: Record<string, number> = { TINY: 10, MEDIUM: 14, LARGE: 20, GIGANTIC: 32, COLOSSAL: 48 };
 
-export function creature(def: { id: string; tags: string[]; size?: string }, s?: number): Sprite {
+export type CreatureFacing = 'down' | 'up' | 'left' | 'right';
+export interface CreaturePose { facing?: CreatureFacing; frame?: number }
+
+/** Radially symmetric bodies have no front, so they keep one face in every direction. */
+export const RADIAL_PLANS: Plan[] = ['ring'];
+
+/** Seen from the side a body narrows to 5/8 of itself and the eyes slide toward where it looks. */
+function sideInk(k: Ink): Ink {
+  const out = new Ink();
+  const c = (D - 1) / 2;
+  for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+    const sx = Math.round(c + ((x - c) * 8) / 5);
+    if (sx >= 0 && sx < D && k.body[y * D + sx]) out.body[y * D + x] = 1;
+  }
+  for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+    if (!k.eye[y * D + x]) continue;
+    // The eye slides toward where it looks, but never off the body: a side view
+    // must keep its eye, or a symmetric body would mirror into itself.
+    let nx = Math.min(D - 1, Math.max(0, Math.round(c + ((x - c) * 5) / 8) + 9));
+    while (nx > 0 && !out.body[y * D + nx]) nx--;
+    if (out.body[y * D + nx]) out.eye[y * D + nx] = 1;
+  }
+  return out;
+}
+
+/**
+ * Seen from behind the eyes are gone and a dashed dorsal line runs down the lower
+ * body — low, so even at TINY size the back never samples like a front-facing eye.
+ */
+function backInk(k: Ink): Ink {
+  const out = new Ink();
+  out.body.set(k.body);
+  for (let y = 30; y <= 46; y += 2) for (let x = 21; x <= 26; x++) {
+    if (k.body[y * D + x]) out.eye[y * D + x] = 1;
+  }
+  return out;
+}
+
+export function creature(def: { id: string; tags: string[]; size?: string }, s?: number, pose: CreaturePose = {}): Sprite {
   const seed = fnv1a(`sprite:v1:${def.id}`);
   const size = s ?? SIZE_ATOMS[def.size || 'MEDIUM'] ?? 14;
-  return stamp(drawPlan(planFor(def.tags), seed), size, creatureMaterial(def.tags), seed, {
+  const plan = planFor(def.tags);
+  const facing = RADIAL_PLANS.includes(plan) ? 'down' : pose.facing ?? 'down';
+  let ink = drawPlan(plan, seed, pose.frame ?? 0);
+  if (facing === 'up') ink = backInk(ink);
+  if (facing === 'left' || facing === 'right') ink = sideInk(ink);
+  const sprite = stamp(ink, size, creatureMaterial(def.tags), seed, {
     role: Role.THREAT, edgeStep: 3, minFill: 0, maxFill: 2, eyeStep: 4
   });
+  return facing === 'left' ? mirrorSprite(sprite) : sprite;
 }
+
+export const mirrorSprite = (s: Sprite): Sprite => {
+  const data = new Uint8Array(s.data.length);
+  for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) data[y * s.w + x] = s.data[y * s.w + (s.w - 1 - x)];
+  return { w: s.w, h: s.h, data };
+};
 
 // ---------------------------------------------------------------------------
 // RESOURCES: form from tags, fill from real material numbers.
@@ -379,24 +439,58 @@ function lump(k: Ink, cx: number, cy: number, r: number, hardness: number, seed:
   }
 }
 
-const CROWN_LOBES = [[-2, -14], [11, -10], [15, 2], [9, 13], [-5, 15], [-15, 6], [-13, -7]];
-const CANOPY_GAPS = [[-9, -5], [8, -6], [-6, 8], [10, 7]];
+const CROWN_LOBES = [[-9, -6], [9, -6], [-12, 3], [12, 3], [0, -11], [-6, 8], [6, 8]];
+const CANOPY_GAPS = [[-7, -2], [6, -5], [-2, 7], [8, 4]];
 
-/** A tree seen from above. Each felling takes a bite out of the crown; the last leaves a stump. */
-function treeInk(seed: number, uses: number, full: number): Ink {
+/**
+ * The tree stands upright (D1): a crown you walk under and a trunk that blocks (D3).
+ * Each felling takes a bite out of the crown; the last leaves a stump.
+ */
+function treeCrownInk(seed: number, uses: number, full: number): Ink {
   const k = new Ink();
-  if (uses <= 0) return k.disc(24, 24, 10).disc(24, 24, 6, 0).disc(24, 24, 3);
-  k.disc(24, 24, 14);
-  CROWN_LOBES.forEach(([dx, dy], i) => k.disc(24 + dx, 24 + dy, 8 + hash2(seed, i, 9) % 3));
-  CANOPY_GAPS.forEach(([dx, dy], i) => k.disc(24 + dx, 24 + dy, 2 + hash2(seed, i, 5) % 2, 0));
-  if (uses * 3 < full * 3) {
+  if (uses <= 0) return k;
+  k.disc(24, 15, 12);
+  CROWN_LOBES.forEach(([dx, dy], i) => k.disc(24 + dx, 15 + dy, 6 + hash2(seed, i, 9) % 3));
+  CANOPY_GAPS.forEach(([dx, dy], i) => k.disc(24 + dx, 15 + dy, 2 + hash2(seed, i, 5) % 2, 0));
+  if (uses < full) {
     const heavy = uses * 2 <= full;
     for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
-      if (heavy ? x >= 24 || y <= 24 : x >= 24 && y <= 24) k.rect(x, y, x, y, 0);
+      if (heavy ? x >= 24 || y <= 12 : x >= 24 && y <= 15) k.rect(x, y, x, y, 0);
     }
   }
-  k.disc(24, 24, 5).eyeAt(24, 24, 2);
   return k;
+}
+
+function treeTrunkInk(uses: number): Ink {
+  const k = new Ink();
+  if (uses <= 0) {
+    // The stump: a short stub with its rings showing. A tree never regrows.
+    k.rect(17, 34, 30, 47).rect(19, 31, 28, 34);
+    k.eyeAt(23, 38, 2);
+    return k;
+  }
+  k.rect(20, 14, 27, 47);
+  k.rect(14, 44, 33, 47);
+  k.line(27, 28, 35, 22, 1);
+  return k;
+}
+
+export const TREE_ATOMS = { w: 16, h: 24 };
+
+/** The standing tree, trunk and crown composed: crown in life, trunk in matter. */
+export function treeSprite(def: any, uses: number, full: number, variant = 0): Sprite {
+  const seed = fnv1a(`sprite:v1:${def.id}`) + variant;
+  const { w, h } = TREE_ATOMS;
+  const trunkStyle: StampStyle = uses <= 0
+    ? { role: Role.MATTER, edgeStep: 2, minFill: 1, maxFill: 1, eyeStep: 3 }
+    : { role: Role.MATTER, edgeStep: 2, minFill: 0, maxFill: 2 };
+  const trunk = stamp(treeTrunkInk(uses), w, material({ density: 60, hardness: 40 }), seed, trunkStyle, h);
+  if (uses <= 0) return trunk;
+  const m = knownMaterial(def.materialProps, KNOWN);
+  const crown = stamp(treeCrownInk(seed, uses, full), w, m, seed, { role: Role.LIFE, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true }, h);
+  const data = new Uint8Array(trunk.data);
+  for (let i = 0; i < data.length; i++) if (crown.data[i]) data[i] = crown.data[i];
+  return { w: trunk.w, h: trunk.h, data };
 }
 
 const isTree = (tags: string[]) => tags.includes('wood') && !tags.includes('seed');
@@ -415,10 +509,13 @@ function resourceInk(def: any, m: Material, seed: number, level = KNOWN): Ink {
   } else if (has('fiber')) {
     [8, 22, 36].forEach(x => k.line(x, 46, x + 8, 3, 2));
   } else if (has('seed')) {
-    k.line(24, 3, 24, 44, 2).line(3, 24, 44, 24, 2).disc(24, 24, 7);
-    [[24, 8], [40, 24], [24, 40], [8, 24]].forEach(([x, y]) => k.disc(x, y, 7));
+    // The sapling stands upright like its parent: a stem, two leaves, and the mound it grows from.
+    k.rect(21, 18, 26, 44).rect(13, 42, 34, 47);
+    k.disc(13, 17, 9).disc(33, 11, 10);
+    k.line(15, 19, 23, 28, 2).line(31, 13, 24, 24, 2);
   } else if (has('wood')) {
-    return treeInk(seed, def.uses ?? 3, def.uses ?? 3);
+    const uses = def.uses ?? 3;
+    return treeCrownInk(seed, uses, uses);
   } else if (has('sand')) {
     for (let y = 26; y < 48; y++) { const half = Math.floor((y - 22) * 1.1); k.rect(24 - half, y, 24 + half, y); }
   } else if (has('glass')) {
@@ -493,10 +590,7 @@ export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
 
   let sprite: Sprite;
   if (isTree(tags)) {
-    const ink = treeInk(seed + (o.variant ?? 0), uses, full);
-    sprite = uses <= 0
-      ? stamp(ink, size, m, seed, { role, edgeStep: 2, minFill: 1, maxFill: 1 })
-      : stamp(ink, size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, eyeStep: 0, edgeGrain: true });
+    sprite = treeSprite(def, uses, full, o.variant ?? 0);
   } else {
     const live = stamp(resourceInk(def, m, seed, level), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
     sprite = uses <= 0 ? spent(live, !!def.regrowMs) : live;

@@ -127,16 +127,21 @@ Three findings that change the brief:
 
 Still weak, by eye, and yours to solve:
 
-- **Rank on the map is a speck.** All nine marks are distinct when enlarged, but at real size pass criterion 2 is not met.
-- **The camera disagrees with itself.** Buildings show their front, and creatures, people and most resources stand upright, but the tree is drawn from straight above. Decide whether the tree joins the others or the rule is something else.
-- **Portraits are the weakest thing here.** They pass their bar, but within an archetype the faces look close to one another, and a hooded Nomad is mostly a shape with eyes. This is your face in a game about owning it. It deserves the most attention of anything on this list.
 - **Near-twins exist.** At 16 atoms a few certificates are almost the same figure. Portraits tell them apart, but decide whether that is enough.
-- **Walking differs by place.** The city moves tile by tile and the field moves smoothly. The city's keepers also stand still and cannot be bumped into.
 - **Wear is subtle at real size.** The first bite, at 70% durability, is easy to miss on a 36px item, and the rank mark covers much of a 1×1 slot.
-- **The sapling** reads as a plus sign.
 - **The inspect card covers neighbors** where the map is crowded. The compact form helps, but placement needs design.
 - **Density and Hardness grains** look similar at thumbnail size.
-- **Water** reads as hollow dark squares, not as water.
+- **The city's keepers** still stand still and cannot be bumped into.
+
+Settled by the motion pass (Wave 8B), kept here as the record:
+
+- **The camera rule is now one rule.** Anything with a height — people, creatures, trees — stands upright and shows its front; only flat ground is seen from above. The tree gained a trunk in matter under a crown in life; the trunk blocks its tile and everything standing is drawn by its feet, so you walk under the crown.
+- **Walking is now one walk.** The city walks like the field: held keys, the same speed, the same stepped cycle, a defined standing frame on stop. Both a 2-frame and a 4-frame cycle exist behind one constant; the hub proof page shows them side by side to be chosen by eye.
+- **Creatures face and step.** Four facings and two frames derive from every body plan with no new art; each definition's `behavior` finally moves it (a Turret holds, a swarm surrounds, a siege plods), and no enemy crosses water, rock or a trunk.
+- **Hits, deaths and enemy health reach the screen**, readable in grayscale: brackets on a hit, a stepped burst on a kill, five pips on the wounded, the screen's own edge marking loss taken. Rank marks draw at double scale in the field.
+- **Portraits grew features** — brows, noses, mouths, more hair, hoods and halos that belong to the id — and their bar was raised from 0.10 to 0.12.
+- **The sapling** is a sprout with leaves. **Water** is a dark body with long broken crest lines, held to the same law as mud: ≥25% from open ground in every genre, and always darker than mud's ripple.
+- **Reduced motion exists** everywhere motion does: effects hold one step, ambient animation stops, `prefers-reduced-motion` is honored.
 
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
 

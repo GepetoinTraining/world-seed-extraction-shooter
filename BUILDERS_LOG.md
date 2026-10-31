@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, for whoever builds next. It assumes you have seen none of the conversation. The next pass is **walking, animation and sprite design**, and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of Wave 8B, for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 9, the interface**, and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -10,9 +10,9 @@ World Seed is a browser extraction game: a signed identity, generated worlds, a 
 
 Pedro's verdict on the current look, seeing it in the real game: *"literally absurdly good"*, and *"EVEN MY WIFE said this has character"*. **The look is approved. Your job is to make it move without losing it.**
 
-- **Tests:** 145 passing (`npm test`), including one recorded known failure (see Known weak spots). Production build passes.
-- **Last commit:** `4b0864e`. **Everything since is uncommitted**: the Tempered Pick, the people and hub art, and all of Wave 8. Check `git status` before you start. Commit only when Pedro asks.
-- **Run it:** `npm run dev`, then `http://localhost:3000`. The proof pages are `/prototype/atoms/index.html` (atoms) and `/prototype/atoms/hub.html` (people and the city, walkable). Press Grayscale first on both.
+- **Tests:** 169 passing (`npm test`), including one recorded known failure (see Known weak spots). The motion bars live in `tests/atoms.motion.test.ts`.
+- **Commits:** Wave 8 and Wave 8B are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
+- **Run it:** `npm run dev`, then `http://localhost:3000`. The proof pages are `/prototype/atoms/index.html` (atoms, creature motion, trees, water) and `/prototype/atoms/hub.html` (people, walk cycles, the city — walkable, smooth). Press Grayscale first on both.
 
 ## Working with Pedro
 
@@ -66,87 +66,42 @@ A chunk is a pure function of seed and position: no shared random stream, and no
 
 A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Everything is pure integer work over byte buffers with no canvas, so it is testable in Node and hashes the same in the browser.
 
-## Your pass: what exists for motion today
+## What the motion pass (Wave 8B) built
 
-A minimal layer already works, and Pedro noticed it: the player walks on two frames in four facings, enemies notice and chase, shots and swings fly, trees lose their crowns as they are felled, and water and lamps flicker in the city. The job is to deepen that, not to start it. **Your scope, decisions and test lines are in `PLAN.md` under "The next legs"**: Wave 8B, decisions D1 to D3, lines 21 to 25.
+Done 2026-10-31, bars in `tests/atoms.motion.test.ts`, full detail in `PLAN.md` 3B. In short:
 
-**The player (`figure`)**
-- 16 atoms plus a seam, 4 facings, 2 step frames. Left is a mirror of right.
-- In the field, `WorldCanvas` flips the step every 220ms while moving, and facing comes from the larger axis.
-- **When you stop, the step frame stays where it was.** There is no standing frame and no idle.
-- The corner brackets that mark "you" are part of the sprite, so they currently mirror and move with it.
+- **One camera rule (D1):** anything with a height stands upright and shows its front; only flat ground is seen from above. The tree gained a life crown over a matter trunk (`treeSprite` in `atoms.ts`); fellings bite the crown; the stump keeps none.
+- **Drawing snaps to the 2px atom grid (8B.1)** in `FieldRenderer` and the hub: movement floats, drawing quantizes, so sprites and terrain never sit half an atom apart.
+- **The walk (D2, still open for Pedro's eye):** a defined standing frame, and both a 2-frame and a 4-frame cycle behind `WALK_PHASES` in `people.ts` (currently 4). The hub proof page shows them side by side, animated. One constant switches the game.
+- **One walk everywhere (D3 of the log's list):** the city now walks like the field — held keys, per-axis navmesh sliding, same speed and cadence, stand on stop (`HubCanvas`, rAF loop).
+- **Creature facings and frames** derive per body plan (`creature(def, s, {facing, frame})`): sides squeeze to 5/8 with the eye sliding but never off the body; backs lose eyes and gain a low dorsal line; `ring` is radial and keeps one face. Sprite memory for all of it: 78KB (bound 512KB).
+- **Enemies obey the world and themselves:** `MobAI.tick` takes the map and moves through `WorldGenerator.resolveMove` (water, rock, trunks refuse; mud slows); `speed`, `viewRange` and `behavior` come from the definition. Turret holds, swarm takes a hashed slot on a ring and bites only from there, siege plods, neutral stirs at touch or damage, passive ignores until provoked. `MobAI.pose(id)` gives the renderer facing and gait; `MobAI.provoke(id)` is called on every HIT.
+- **Trunks block (D3):** `WorldGenerator.trunkAt`; checked at the destination only, so nothing is ever trapped. Standing things (mobs, NPCs, trees, player) y-sort by their feet, so you walk under crowns.
+- **Feedback is on screen:** hit brackets, a stepped death burst with strike-through, five health pips over the wounded, a loss edge when the player is hit, rank marks at double scale in the field. All in `FieldRenderer`, fed by `effects`/`mobPoses`/`hurtAt` on `FieldScene`; grayscale-barred.
+- **Sprite pass:** portraits grew brows/noses/mouths/hair and per-id hoods and halos (bar raised 0.10 → 0.12); the sapling is a sprout; water is a dark body with broken crest lines, held to mud's law (≥25% vs open ground, every genre) and always darker than mud.
+- **Reduced motion:** `prefers-reduced-motion` honored in field, city and both proof pages — effects hold one step, ambient animation stops, walks still step (they carry state).
 
-**Creatures (`creature` in `atoms.ts`)**
-- One frame, front-on, with no facing. Nine body plans come from tags through `planFor`: ring, tracks, spikes, rotor, hull, wings, tendril, biped, swarm.
-- Sizes are `SIZE_ATOMS`: Tiny 10, Medium 14, Large 20, Gigantic 32, Colossal 48.
-- Rank is a 5×5 mark at the lower right, and it is a speck at real size.
+**Left open, honestly:**
+- **Line 25 is unmeasured in the real game.** The session's browser pane ran throttled in the background, so no honest frame number exists for 300 animated things in real play. The proof page's measured table still runs on load. Measure it when you can see the window.
+- A moved enemy still belongs to its original chunk's entity list (the leash hides it; it is still the wrong shape).
+- Hit-flash and death-burst were verified by code path and color bars, not caught by eye — they last 140/450ms. Watch one kill when you run the game.
+- Keepers still stand still and cannot be bumped into.
 
-**Enemy movement (`MobAI.tick`)**
-- Dormant until 8 tiles away, active until 16. Moves at 2 tiles a second, straight at you.
-- **It ignores terrain, so enemies walk across water and rock.**
-- `mobMemory` holds state and last attack, but there is no facing. You will need one.
-- Every enemy decides with fixed values (`Temperament.AGGRESSIVE`, `GenreType.SCIFI`). The definition's `behavior` (Swarm, Siege, Turret) is not used at all, so a Turret walks like a rat.
-- A moved enemy stays in its original chunk's list. `FieldRenderer` and the simulation look at chunks near you, so one that wanders far can drop out of both.
-- Generated positions are on tile centers, but active enemies move in floats.
+## Your pass: the interface (Wave 9)
 
-**Combat feedback**
-- `CombatSystem.tick` already emits `HIT`, `KILL`, `LOOT_SPAWN` and `PLAYER_DAMAGE`. `WorldCanvas` only reads `ACTION_LOG`. **The hooks for hit flashes and death exist and nothing uses them.** This also means kill XP is calculated and never applied; Wave 9 fixes that.
-- Shots are 4px squares, swings are five small squares, drops are a small cross. Enemies have no health display.
-
-**Everything else in the field**
-- Resources, ruins, chests, NPCs and the exit beacon are all single static frames.
-- Trees change shape per felling, and resources have spent states, but those are state changes with no transition.
-
-**The hub**
-- Movement jumps one tile per keypress, with no tween. The step frame comes from position parity.
-- Keepers are one frame, standing still, and cannot be bumped into.
-- Only water and lamp flames animate, on a 500ms timer, with 2 frames composed for the whole city. `composeHub` takes about 19ms, so per-frame recomposition is not an option; draw moving things as sprites on top.
-
-**Rendering limits to respect**
-- Current frame time is 4.2ms typical and 12.5ms at worst while crossing chunks, against 26 FPS before Wave 8. Do not give this back.
-- Sprites become bitmaps through a `WeakMap` keyed by `Sprite` identity, and `entitySprite` caches sprites by a string key. Add frames and facings to those keys. Colossal sprites at 48 atoms with many frames are the memory risk, so bound it and measure.
-- **Sprites and the camera round to whole pixels, but an atom is 2px.** Things therefore move in half-atom steps, and a 1px offset between terrain and sprites is possible. Decide deliberately whether positions snap to the atom grid. It may matter more to the look than any new frame.
-
-## Decisions for this pass
-
-These expand on D1 to D3 in `PLAN.md`. Ask Pedro about the first two early. Each changes what you draw.
-
-1. **The camera.** Buildings show their front, creatures and people stand upright, and the tree is drawn from straight above. Pick one rule. Walking makes this more visible, because a facing needs a viewpoint.
-2. **How much motion.** The design ask says *"a few stepped frames, never smooth interpolation"*, and the character is an old machine. That argues for few frames with strong poses, not fluid animation. My suggestion is to prototype two and four frames side by side and let Pedro choose by eye.
-3. **Hub walking.** Tile steps or smooth like the field? I would match the field, so one world has one way of walking.
-4. **Enemy movement against terrain.** This belongs in this pass, because a walk cycle across a lake looks wrong. Use the existing `TerrainSystem.isBlockedTile`. Real pathfinding may not be needed; sliding along edges, as the player does, may be enough.
-5. **Use `behavior`?** Turrets that hold, swarms that surround and sieges that plod are mostly animation and movement, and they would be the most character per line in the game.
-
-## Bars I would register first
-
-Starting points, to be set before the art exists:
-
-- Every frame of every creature and facing still passes the existing threat-vs-resource and exit bars (25% difference), not just frame 0. **Most likely to catch a real problem.**
-- Walk frames change only the moving parts. `STEP_MAX_CHANGE` is 30% for the player today.
-- All facings are distinct, left is an exact mirror of right, and the same input gives the same bytes.
-- Stopping returns to a defined standing frame.
-- No enemy ends a tick on a blocked tile, across a long simulated chase.
-- Hit and death feedback reads in grayscale, by shape or position and not by a red tint alone.
-- 300 animated moving things stay inside the frame budget in the browser, and sprite memory stays below a stated bound.
-- Reduced motion exists: the design ask requires a version.
-
-Add a sprite sheet to a proof page showing every frame at real size and enlarged, in color and grayscale, and look at it before moving on.
+**Your scope, decisions and test lines are in `PLAN.md` under "The next legs"**: Wave 9, decisions D4 to D7, lines 26 to 31. Fix the kill-XP-never-applied bug first (`CombatSystem` emits `xpReward` on KILL; `WorldCanvas` consumes HIT/KILL for effects now but still applies nothing). The `KILL` event now carries `definitionId` and `position`. Mantine still owns the screens; the kit in 9.1 replaces it piece by piece.
 
 ## Known weak spots
 
 **In the art**
-- **Portraits are the weakest thing.** They pass their bar, but faces look alike within an archetype, and a hooded Nomad is mostly a shape with eyes. In a game about owning your avatar, this matters. They fall under sprite design.
-- **Rank marks** are specks at real size.
-- **Near-twins:** a few certificates differ by only 1–4% as figures.
-- **Water** reads as hollow dark squares, even at lake scale.
-- **The sapling** reads as a plus sign.
+- **Near-twins:** a few certificates differ by only 1–4% as figures. Portraits now tell them apart more, but the figures themselves still stand.
 - **Worn gear:** the first bite is easy to miss at 36px.
 - **Recorded failure:** Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms at real size (bar 3).
 
 **In the game**
 - Balance at the new scale is unplayed. Enemy density, run length and gold are estimates. The worst measured walk from a drop to an exit is about 100 seconds.
-- A full fight-to-exit run at normal health has not been played. Harvest, attack and exit were verified with raised health and teleports.
-- Trees do not block, and you can walk through a house on your own lot.
+- A full fight-to-exit run at normal health has not been played. Harvest, attack and exit were verified with raised health; a plain test character at a drop dies to the first rat in seconds, which is itself unbalanced.
+- You can still walk through a house on your own lot (trees block now; buildings in the hub always did; lot structures in the field of the hub do not).
 - Existing saves have no archetype and default to Operator.
 - An invented genre still gets its look from a hash, and the set of looks needs widening.
 

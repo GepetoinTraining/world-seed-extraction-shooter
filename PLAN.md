@@ -278,19 +278,20 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D10 | 11 | Do residents cost gold? | Yes, through higher upkeep, which already goes to the hub's treasury. No new money path |
 | D11 | 11 | Is a farm a new lot type? | Yes, a `FARM` structure alongside `WORKSHOP`, `VENDOR` and `HOUSE` |
 
-### WAVE 8B — Motion and Sprites
+### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
 
 **Builds on:** a working minimum: a two-frame walk and four facings for the player, enemies that notice and chase, shots and swings, felling stages, and rippling water and flickering lamps in the city. The job is to deepen it and keep the approved look.
 
-- **8B.1 Atom grid:** decide whether motion snaps to the 2px grid. Sprites move in 1px steps today, and that may matter more to the look than any new frame.
-- **8B.2 The player:** a standing frame (it freezes mid-step today), the chosen walk cycle, and the same walk in the city.
-- **8B.3 Creatures:** facings and frames from each body plan, so a new creature still needs no new art.
-- **8B.4 Behavior:** enemies respect terrain and use their definition's `behavior`, which is never read today, so a Turret walks like a rat.
-- **8B.5 Feedback:** hit and death on the `HIT`, `KILL` and `PLAYER_DAMAGE` events that are already emitted. Enemy health. Readable in grayscale.
-- **8B.6 Sprite pass:** portraits first, then rank marks, water, the sapling, and the tree under D1 and D3.
-- **Bars:** every frame still passes the threat-vs-resource and exit bars; no enemy ends a tick on a blocked tile in a long chase; 300 animated things stay inside the frame budget; sprite memory stays under a stated bound; a reduced-motion mode exists.
-- **Gate:** test lines 21–25.
+- **8B.1 Atom grid:** ✅ Decided: everything drawn snaps to the 2px atom grid — camera, sprites, effects. Movement stays float; only drawing quantizes, so sprites and terrain can never sit half an atom apart.
+- **8B.2 The player:** ✅ A defined standing frame (stopping always returns to it), and BOTH walk cycles built behind one constant (`WALK_PHASES` in `people.ts`, currently 4): 2-frame is contact-L/contact-R, 4-frame adds passing poses with a head-sink. The hub proof page shows them side by side, animated — **D2 is Pedro's to choose by eye; one constant switches it.** The city walks like the field now: held keys, per-axis sliding, the same speed and cadence, standing on stop.
+- **8B.3 Creatures:** ✅ Four facings and two stepped frames derived from every body plan, no new art: sides narrow to 5/8 with the eye sliding (never off the body), backs lose eyes and gain a low dorsal line, radial bodies (the god-ring) keep one face. Each plan moves only what that body would move; every delta survives TINY size.
+- **8B.4 Behavior:** ✅ Enemies move through the same resolver as the player (water, rock and trunks refuse; mud slows), at their definition's own `speed` and `viewRange`. `behavior` is finally read: a Turret holds and shoots, a swarm walks to its own slot on a ring and bites only from there, a siege plods straight, neutral stirs at touch or when hit, passive ignores until provoked. Being hit provokes. Each enemy carries a facing from its own motion.
+- **8B.5 Feedback:** ✅ `HIT` → four loss-brackets close on the target; `KILL` → a three-step burst and a strike-through; `PLAYER_DAMAGE` → the screen's own edge marks loss briefly. Wounded enemies show five pips (count and position, not hue). Rank marks draw at double scale in the field. All grayscale-barred.
+- **8B.6 Sprite pass:** ✅ Portraits grew brows, noses, mouths, more hair, and per-id hoods and halos; the portrait bar was raised from 0.10 to 0.12 and holds per archetype. The tree stands upright (D1): life crown over matter trunk, fellings bite the crown, the stump keeps no crown and blocks nothing; the trunk blocks its tile and you walk under the crown (D3), with standing things y-sorted by their feet. The sapling is a sprout, not a plus sign. Water is a dark body with long broken crest lines inside its seams, barred ≥25% against open ground in every genre and always darker than mud's ripple.
+- **Bars:** all registered in `tests/atoms.motion.test.ts` and green: every frame and facing against every resource and the exit (≥25%); walk frames change only moving parts (player ≤30%, creatures ≤40%); a 2,400-tick chase around a real lake ends 0 ticks on blocked ground; sprite memory 78KB for all creatures × facings × frames (bound 512KB); reduced motion exists (`prefers-reduced-motion` honored in field, city and both proof pages — effects hold one step, ambient animation stops).
+- **Gate:** lines 21–24 pass (21–23 by test and by play; 24 by test, pips seen in play). **Line 25 is NOT measured**: the browser pane this session ran throttled in the background, so no honest frame number from the real game was possible. The proof page's own 300-sprite measure still runs on load. Carried to the next pass.
+- **Also carried:** a moved enemy still belongs to its original chunk's entity list (leash keeps it near, but it is the known wrong shape); kill XP still never applied (Wave 9.5); hit-flash and death-burst were verified by code path and color bars, not caught by eye in a screenshot.
 
 ### WAVE 9 — The Interface
 **Builds on:** `itemArt`, `figure`, `portrait`, the 3×5 type, the inspect card and `hitTest`, all unused by the screens. `DESIGN_ASK.md` lists every screen and moment.

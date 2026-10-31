@@ -34,8 +34,36 @@ export const armorClass = (tags: string[]): ArmorClass | undefined => {
 };
 
 export interface FigureInput {
-  uid: string; archetype: Archetype; facing?: Facing; step?: number;
+  uid: string; archetype: Archetype; facing?: Facing; step?: number; moving?: boolean; phases?: 2 | 4;
   weapon?: WeaponClass; armor?: ArmorClass; you?: boolean;
+}
+
+/**
+ * THE WALK (D2): both cycles exist; this constant is the one the game uses.
+ * The proof page shows 2 and 4 side by side, to be chosen by eye.
+ */
+export const WALK_PHASES: 2 | 4 = 4;
+
+/**
+ * A pose is three numbers. lead: which leg is forward (-1 left, 1 right, 0 none).
+ * amp: how far the stride reaches, in design units (3 units = 1 atom).
+ * sink: how far the head drops into the step. Standing is all zeros, so stopping
+ * always returns to one defined frame.
+ */
+interface Gait { lead: -1 | 0 | 1; amp: number; sink: number }
+
+const STAND: Gait = { lead: 0, amp: 0, sink: 0 };
+const GAIT_2: Gait[] = [{ lead: -1, amp: 5, sink: 3 }, { lead: 1, amp: 5, sink: 3 }];
+const GAIT_4: Gait[] = [
+  { lead: -1, amp: 5, sink: 3 }, { lead: 1, amp: 3, sink: 0 },
+  { lead: 1, amp: 5, sink: 3 }, { lead: -1, amp: 3, sink: 0 }
+];
+
+function gaitOf(o: FigureInput): Gait {
+  // No step named and not said to be moving: the figure stands.
+  if (!(o.moving ?? (o.step !== undefined))) return STAND;
+  const cycle = (o.phases ?? WALK_PHASES) === 2 ? GAIT_2 : GAIT_4;
+  return cycle[(((o.step ?? 0) % cycle.length) + cycle.length) % cycle.length];
 }
 
 /** A shape that widens row by row, for robes, cloaks and shields. */
@@ -61,7 +89,8 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
   const k = new Ink();
   const seed = fnv1a(`figure:v1:${o.uid}`);
   const cx = 22;
-  const lift = o.step ? 5 : 0;
+  const g = gaitOf(o);
+  const sink = g.sink;
   const narrow = (n: number) => (side ? (n * 5) >> 3 : n);
   const build = seed % 3;
   const sw = narrow(9 + build * 2);
@@ -70,10 +99,10 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
 
   const legs = (top: number) => {
     if (side) {
-      if (o.step) k.line(cx, top, cx - 7, 46, 2).line(cx, top, cx + 7, 46, 2);
+      if (g.lead !== 0) k.line(cx, top, cx + (3 + g.amp) * g.lead, 46, 2).line(cx, top, cx - g.amp * g.lead, 46, 2);
       else k.rect(cx - 3, top, cx + 3, 47);
     } else {
-      k.rect(cx - 7, top, cx - 2, 47 - lift).rect(cx + 2, top, cx + 7, 47 - (o.step ? 0 : 0));
+      k.rect(cx - 7, top, cx - 2, 47 - (g.lead === -1 ? g.amp : 0)).rect(cx + 2, top, cx + 7, 47 - (g.lead === 1 ? g.amp : 0));
     }
   };
 
@@ -85,35 +114,36 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
       else if (side) k.rect(cx - sw - 6, 17, cx - sw, 31);
       else k.rect(cx - sw - 2, 18, cx - sw, 30).rect(cx + sw, 18, cx + sw + 2, 30);
       k.line(cx - (side ? 4 : sw - 2), 18, cx - (side ? 8 : sw + 2), 1, 1).disc(cx - (side ? 8 : sw + 2), 2, 2);
-      k.disc(cx, 10, headR);
+      k.disc(cx, 10 + sink, headR);
       break;
     case 'STREET_SAMURAI':
       legs(32);
       k.rect(cx - 5, 18, cx + 5, 33);
       if (side) k.rect(cx - 9, 15, cx + 9, 21);
       else { k.line(cx - sw - 6, 13, cx - 2, 22, 2); k.line(cx + sw + 6, 13, cx + 2, 22, 2); }
-      k.disc(cx, 10, headR).rect(cx - 2, 0, cx + 2, 5);
+      k.disc(cx, 10 + sink, headR).rect(cx - 2, sink, cx + 2, 5 + sink);
       if (!side) k.rect(cx - 6, 29, cx + 6, 31, 0);
       break;
     case 'NOMAD':
-      k.rect(cx - (side ? 3 : 7), 36, cx + (side ? 3 : 7), 47 - lift);
+      k.rect(cx - (side ? 3 : 7) + 3 * g.lead, 36, cx + (side ? 3 : 7) + 3 * g.lead, 47 - (g.lead ? 3 : 0));
       flare(k, cx, 16, narrow(7), 39, narrow(18));
-      k.disc(cx, 11, headR + 4);
-      if (!back) k.disc(cx + (side ? 3 : 0), 11, headR, 0).disc(cx + (side ? 3 : 0), 11, headR - 2);
+      k.disc(cx, 11 + sink, headR + 4);
+      if (!back) k.disc(cx + (side ? 3 : 0), 11 + sink, headR, 0).disc(cx + (side ? 3 : 0), 11 + sink, headR - 2);
       break;
     case 'ARCANIST':
-      flare(k, cx + (o.step ? 1 : 0), 18, narrow(6), 47, narrow(14));
+      // The halo holds still; only the head inside it and the orbs answer the step.
+      flare(k, cx + 2 * g.lead, 18, narrow(6), 47, narrow(14));
       k.disc(cx, 11, 15).disc(cx, 11, 12, 0);
-      k.disc(cx, 11, headR);
-      k.disc(cx - 20, 30 + (o.step ? 2 : 0), 2).disc(cx + 20, 26 - (o.step ? 2 : 0), 2);
+      k.disc(cx, 11 + sink, headR);
+      k.disc(cx - 20, 30 + 3 * g.lead, 2).disc(cx + 20, 26 - 3 * g.lead, 2);
       break;
   }
 
   const torso = o.archetype === 'NOMAD' ? 28 : 24;
-  if (crown === 1) k.rect(cx - 5, 1, cx + 5, 3);
-  if (crown === 2) k.rect(cx + headR - 2, 6, cx + headR + 2, 13);
-  if (crown === 3) k.rect(cx - headR - 2, 6, cx - headR + 2, 13);
-  if (crown === 4) k.rect(cx - headR, 7, cx + headR, 8, 0);
+  if (crown === 1) k.rect(cx - 5, 1 + sink, cx + 5, 3 + sink);
+  if (crown === 2) k.rect(cx + headR - 2, 6 + sink, cx + headR + 2, 13 + sink);
+  if (crown === 3) k.rect(cx - headR - 2, 6 + sink, cx - headR + 2, 13 + sink);
+  if (crown === 4) k.rect(cx - headR, 7 + sink, cx + headR, 8 + sink, 0);
   const mark = (seed >>> 6) % 4;
   if (mark === 1) k.rect(cx - 3, torso - 3, cx + 3, torso + 3, 0);
   if (mark === 2) k.rect(cx - sw + 2, torso, cx + sw - 2, torso + 2, 0);
@@ -137,7 +167,8 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
     if (sleeve === 1) k.rect(cx - 13, 20, cx - 8, 30);
     if (sleeve === 2) k.rect(cx + 8, 20, cx + 13, 30);
   } else {
-    if (hem === 1) k.rect(cx - 8, 44 - lift, cx - 2, 47 - lift);
+    const hop = g.lead ? 3 : 0;
+    if (hem === 1) k.rect(cx - 8, 44 - hop, cx - 2, 47 - hop);
     if (hem === 2) k.rect(cx + 2, 44, cx + 8, 47);
   }
   const patch = (seed >>> 12) % 4;
@@ -150,8 +181,8 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
   drawWeapon(k, o.weapon, side ? cx + 13 : cx + 21);
 
   if (!back) {
-    if (side) k.eyeAt(cx + 3, 10, 1);
-    else if (o.archetype !== 'NOMAD' || !back) k.eyeAt(cx - 3, 10, 1).eyeAt(cx + 3, 10, 1);
+    if (side) k.eyeAt(cx + 3, 10 + sink, 1);
+    else if (o.archetype !== 'NOMAD' || !back) k.eyeAt(cx - 3, 10 + sink, 1).eyeAt(cx + 3, 10 + sink, 1);
   }
   return k;
 }
@@ -183,7 +214,11 @@ export function figure(o: FigureInput): Sprite {
   return facing === 'left' ? mirror(marked) : marked;
 }
 
-/** The bust used in dialogue and on the identity card. */
+/**
+ * The bust used in dialogue and on the identity card. The face is the ownership
+ * fantasy made visible, so it carries the most variation of anything drawn:
+ * hair, brows, eyes, nose, mouth, jaw, marks and collar all come from the id.
+ */
 function faceInk(seed: number, r0 = 10): Ink {
   const k = new Ink();
   const h = (n: number, mod: number) => hash2(seed, n, 3) % mod;
@@ -193,16 +228,34 @@ function faceInk(seed: number, r0 = 10): Ink {
   k.rect(20, y + r - 3, 27, 36);
   k.disc(24, y, r);
   k.rect(24 - r + 2, y + 2, 24 + r - 2, y + r - 2 - h(12, 3));
-  const hair = h(4, 5);
+  const hair = h(4, 8);
   if (hair === 1) k.rect(24 - r, y - r, 24 + r, y - r + 5);
   if (hair === 2) k.both(f => k.rect(Math.min(f(24 - r), f(24 - r + 4)), y - 6, Math.max(f(24 - r), f(24 - r + 4)), y + 8));
   if (hair === 3) k.disc(24, y - r, 6);
   if (hair === 4) for (let i = 0; i < 5; i++) k.rect(24 - r + i * 6, y - r - 2, 24 - r + i * 6 + 2, y - r + 3);
+  if (hair === 5) k.rect(22, y - r - 4, 25, y - r + 4);
+  if (hair === 6) k.both(f => k.rect(Math.min(f(24 - r - 2), f(24 - r + 1)), y - 4, Math.max(f(24 - r - 2), f(24 - r + 1)), y + r + 4));
+  if (hair === 7) k.rect(24 - r + 3, y - r - 1, 24 + r - 3, y - r, 0);
   const gap = 4 + h(5, 2), eyeY = y - 1 + h(6, 2);
-  k.both(f => { k.rect(Math.min(f(24 - gap - 2), f(24 - gap + 2)), eyeY - 3, Math.max(f(24 - gap - 2), f(24 - gap + 2)), eyeY - 3, h(7, 3) ? 0 : 1); });
+  // Brows: level, raised, knitted, or none — each reads as a temperament.
+  const brow = h(7, 4);
+  if (brow === 1) k.both(f => { k.rect(Math.min(f(24 - gap - 2), f(24 - gap + 2)), eyeY - 3, Math.max(f(24 - gap - 2), f(24 - gap + 2)), eyeY - 3, 0); });
+  if (brow === 2) k.both(f => { k.line(f(24 - gap - 2), eyeY - 2, f(24 - gap + 2), eyeY - 4, 0, 0); });
+  if (brow === 3) k.both(f => { k.line(f(24 - gap - 2), eyeY - 4, f(24 - gap + 2), eyeY - 2, 0, 0); });
   k.eyeAt(24 - gap, eyeY, 1).eyeAt(23 + gap, eyeY, 1);
-  k.rect(24 - 1 - h(9, 3), y + 6 + h(10, 2), 24 + 1 + h(9, 3), y + 6 + h(10, 2), 0);
+  // The nose: a shadow line of varying length, or a notch.
+  const nose = h(8, 3);
+  if (nose === 0) k.rect(24, eyeY + 1, 24, eyeY + 3 + h(16, 2), 0);
+  if (nose === 1) k.rect(23, eyeY + 3, 25, eyeY + 3, 0);
+  // The mouth: width, height and set (level, wry, grim) from the id.
+  const mouthY = y + 6 + h(10, 2);
+  const mouthW = 1 + h(9, 3);
+  const wry = h(17, 3);
+  if (wry === 0) k.rect(24 - mouthW, mouthY, 24 + mouthW, mouthY, 0);
+  if (wry === 1) k.line(24 - mouthW, mouthY + 1, 24 + mouthW, mouthY, 0, 0);
+  if (wry === 2) k.rect(24 - mouthW, mouthY, 24 + mouthW, mouthY + 1, 0);
   if (h(11, 3) === 0) k.line(24 + gap, y - 6, 24 + gap + 3, y + 4, 0, 0);
+  if (h(18, 4) === 0) k.rect(24 - gap - 2, mouthY - 1, 24 - gap, mouthY, 0);
   const jaw = h(14, 3);
   if (jaw === 1) k.rect(24 - r, y, 24 + r, y + r - 3);
   if (jaw === 2) k.both(f => k.rect(Math.min(f(24 - r - 2), f(24 - r)), y - 2, Math.max(f(24 - r - 2), f(24 - r)), y + 2));
@@ -227,19 +280,41 @@ export function portrait(o: { uid: string; archetype: Archetype }): Sprite {
     case 'OPERATOR': k.line(40, 20, 45, 2, 1).rect(9, 15, 14, 24); break;
     case 'STREET_SAMURAI': k.rect(21, 0, 27, 6); k.line(4, 40, 16, 34, 3); k.line(44, 40, 32, 34, 3); break;
     case 'NOMAD': {
+      // The hood opens wider than it used to, and the hood itself belongs to the
+      // id: its size, its opening, its fold and its wear all vary, so two hooded
+      // faces are never nearly the same shape with eyes.
       const inner = faceInk(seed);
-      k.disc(24, 16, 19).disc(24, 18, 12, 0);
-      flare(k, 24, 30, 15, 47, 23);
-      inner.body.forEach((v, i) => { if (v && i < D * 32) k.body[i] = 1; });
+      const hv = (n: number, mod: number) => hash2(seed, 60 + n, 3) % mod;
+      const hoodR = 18 + hv(0, 3);
+      const openR = 13 + hv(1, 3);
+      k.disc(24, 16, hoodR).disc(24 + hv(2, 3) - 1, 19, openR, 0);
+      flare(k, 24, 30, 14 + hv(3, 3), 47, 21 + hv(4, 4));
+      const hood = hv(5, 4);
+      if (hood === 1) k.rect(22, 0, 25, 4, 0);
+      if (hood === 2) k.rect(24 - hoodR, 14, 24 - hoodR + 4, 17, 0);
+      if (hood === 3) k.rect(24 + hoodR - 4, 10, 24 + hoodR, 13, 0);
+      const band = hv(6, 3);
+      if (band > 0) k.rect(24 - hoodR + 2, 2 + band * 3, 24 + hoodR - 2, 3 + band * 3, 0);
+      inner.body.forEach((v, i) => { if (v && i < D * 34) k.body[i] = 1; });
       k.eye = inner.eye;
       break;
     }
     case 'ARCANIST': {
+      // The halo belongs to the id too: its radius, its break and its spike vary.
       const inner = faceInk(seed);
-      k.disc(24, 17, 20).disc(24, 17, 17, 0);
+      const av = (n: number, mod: number) => hash2(seed, 70 + n, 3) % mod;
+      const ringR = 19 + av(0, 3);
+      k.disc(24, 17, ringR).disc(24, 17, ringR - 3, 0);
       inner.body.forEach((v, i) => { if (v) k.body[i] = 1; });
       k.eye = inner.eye;
-      k.rect(23, 0, 24, 4);
+      const spike = av(1, 4);
+      if (spike === 0) k.rect(23, 0, 24, 4);
+      if (spike === 1) k.rect(24 - ringR - 2, 15, 24 - ringR + 1, 18);
+      if (spike === 2) k.rect(24 + ringR - 1, 15, 24 + ringR + 2, 18);
+      if (spike === 3) k.rect(21, 0, 26, 2);
+      const gap = av(2, 3);
+      if (gap === 1) k.rect(20, 17 - ringR, 27, 17 - ringR + 2, 0);
+      if (gap === 2) k.rect(24 - ringR, 20, 24 - ringR + 3, 24, 0);
       break;
     }
   }

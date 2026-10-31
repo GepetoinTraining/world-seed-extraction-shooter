@@ -12,11 +12,12 @@ import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { WorldGenerator } from '../entities/world/WorldGenerator';
 import { TILE_PX, chunkOf, quadrantOf, sectorOf } from '../entities/world/grid';
-import { FieldRenderer, FieldScene } from '../render/FieldRenderer';
-import { genreForWorld, entitySprite } from '../render/atoms/world';
-import { ATOM_PX } from '../render/atoms/atoms';
+import { FieldRenderer, FieldScene, FieldEffect, MobPose, DEATH_BURST_MS } from '../render/FieldRenderer';
+import { genreForWorld, entitySprite, baselinePx } from '../render/atoms/world';
+import { ATOM_PX, SIZE_ATOMS } from '../render/atoms/atoms';
 import { hitTest, targetsFrom } from '../render/atoms/inspect';
-import { Archetype, Facing, armorClass, weaponClass } from '../render/atoms/people';
+import { Archetype, Facing, WALK_PHASES, armorClass, weaponClass } from '../render/atoms/people';
+import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
@@ -300,7 +301,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const rendererRef = useRef<{ seed: string; renderer: FieldRenderer } | null>(null);
   const facingRef = useRef<Facing>('down');
   const stepRef = useRef({ step: 0, at: 0 });
+  const movingRef = useRef(false);
   const loadedQuadrantRef = useRef('');
+
+  // Wave 8B: hit flashes, death bursts and the hurt edge; reduced motion holds them still
+  const effectsRef = useRef<FieldEffect[]>([]);
+  const hurtAtRef = useRef(0);
+  const reducedMotionRef = useRef(
+    typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 
   // Wave 3.1: pack grid visibility
   const [showPack, setShowPack] = useState(false);
@@ -442,7 +451,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         dz *= loadMod;
 
         facingRef.current = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'down' : 'up');
-        if (now - stepRef.current.at > 220) stepRef.current = { step: stepRef.current.step ? 0 : 1, at: now };
+        movingRef.current = true;
+        // A full stride is ~560ms whatever the cycle: 4 phases step quicker than 2
+        if (now - stepRef.current.at > 560 / WALK_PHASES) {
+          stepRef.current = { step: (stepRef.current.step + 1) % WALK_PHASES, at: now };
+        }
 
         // The ground has a say (water and rock block, mud slows), and the world has an edge
         const map = useWorldStore.getState().currentMap;
@@ -462,6 +475,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             }
           };
         });
+      } else if (movingRef.current) {
+        // Stopping returns to the standing frame, cleanly
+        movingRef.current = false;
+        stepRef.current = { step: 0, at: 0 };
       }
 
       // B. Entity & Combat Logic
@@ -503,8 +520,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         });
       }
 
-      // AI Tick
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt);
+      // AI Tick — the map goes along so terrain can refuse an enemy's step
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap);
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
@@ -546,12 +563,23 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (!survivingIds.has(b.id)) spentShots.current.set(b.id, now);
       });
 
-      // Process Events
+      // Process Events (Wave 8B: the HIT/KILL hooks finally reach the screen)
       combatResult.events.forEach(event => {
         if (event.type === 'ACTION_LOG' && event.actionContext) {
             processAction(event.actionContext);
+        } else if ((event.type === 'HIT' || event.type === 'KILL') && event.position) {
+          const def = event.definitionId ? MOB_DEFINITIONS[event.definitionId] : undefined;
+          const size = (SIZE_ATOMS[def?.size || 'MEDIUM'] ?? 14) * ATOM_PX;
+          effectsRef.current.push({
+            kind: event.type === 'HIT' ? 'hit' : 'death',
+            x: event.position.x, y: event.position.y, at: now, size
+          });
+          if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
         }
       });
+      if (effectsRef.current.length > 0) {
+        effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);
+      }
 
       // Persist mob movement/deaths back into the world
       const chunkUpdates = { ...aiResult.updatedChunks, ...combatResult.updatedChunks };
@@ -604,6 +632,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           : state);
 
         SessionJournal.record('DAMAGE', { amount: totalDamage, health: newHealth });
+        hurtAtRef.current = now; // the screen edge answers the blow
 
         // Wave 2.5: taking damage interrupts the extraction channel
         if (channelRef.current) {
@@ -649,15 +678,30 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const me = usePlayerStore.getState().player;
         const held = getEquipped('mainHand');
         const worn = getEquipped('armor');
+        const sceneChunks = WorldGenerator.chunkKeysInBox(playerPos.x, playerPos.z, Math.max(canvas.width, canvas.height) / 2 + 100)
+          .map(key => liveMap.chunks[key]).filter(Boolean);
+        // Each enemy in view carries its AI's facing and a two-frame step
+        const mobPoses: Record<string, MobPose> = {};
+        const mobFrame = reducedMotionRef.current ? 0 : Math.floor(now / 240) % 2;
+        sceneChunks.forEach(chunk => chunk.entities.forEach(e => {
+          if (e.type !== EntityType.MOB) return;
+          const pose = MobAI.pose(e.id);
+          if (pose) mobPoses[e.id] = { facing: pose.facing, frame: pose.moving ? mobFrame : 0 };
+        }));
         const scene: FieldScene = {
           camera: { x: playerPos.x, z: playerPos.z },
           player: {
-            uid: me.id, archetype: (me.archetype || 'OPERATOR') as Archetype, facing: facingRef.current, step: stepRef.current.step,
+            uid: me.id, archetype: (me.archetype || 'OPERATOR') as Archetype, facing: facingRef.current,
+            step: stepRef.current.step, moving: movingRef.current,
             weapon: held ? weaponClass(held.tags || []) : undefined,
             armor: worn ? armorClass(worn.tags || []) : undefined
           },
-          chunks: WorldGenerator.chunkKeysInBox(playerPos.x, playerPos.z, Math.max(canvas.width, canvas.height) / 2 + 100)
-            .map(key => liveMap.chunks[key]).filter(Boolean),
+          chunks: sceneChunks,
+          mobPoses,
+          effects: effectsRef.current,
+          hurtAt: hurtAtRef.current,
+          now,
+          reducedMotion: reducedMotionRef.current,
           bullets: [
             ...combatResult.survivingBullets.map(b => ({ x: b.x, y: b.y, hostile: false })),
             ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true }))
@@ -731,7 +775,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const near = WorldGenerator.chunkKeysInBox(clickX, clickZ, 60).flatMap(key => map.chunks[key]?.entities ?? []);
       const things = near.map(n => {
         const s = entitySprite(n);
-        return { id: n.id, type: n.type, x: n.position.x, y: n.position.y, w: (s?.w ?? 12) * ATOM_PX, h: (s?.h ?? 12) * ATOM_PX };
+        const h = (s?.h ?? 12) * ATOM_PX;
+        // Upright things hang above their feet, so their hit box does too
+        const cy = s ? n.position.y + baselinePx(n, s) - h / 2 : n.position.y;
+        return { id: n.id, type: n.type, x: n.position.x, y: cy, w: (s?.w ?? 12) * ATOM_PX, h };
       });
       const hit = hitTest(targetsFrom(things), clickX, clickZ);
       const entity = hit ? near.find(n => n.id === hit) : undefined;

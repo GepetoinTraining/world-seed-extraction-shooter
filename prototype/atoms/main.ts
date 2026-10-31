@@ -4,8 +4,9 @@ import {
   ATOM_PX, Genre, Material, RANKS, RARITIES, Role, STEPS, Sprite, avatar, buildPalette, chest, creature, exitBeacon,
   ITEM_CELL, gearMaterial, grain, grayscale, hashBytes, itemArt, material, materialFromProps, npcFigure, px, rankMark, resource, ruin, seal, worldForm
 } from '../../src/render/atoms/atoms';
-import { GENRES, STATIC_CONTEXT, composeView, entitySprite, proofView } from '../../src/render/atoms/world';
+import { GENRES, STATIC_CONTEXT, composeView, entitySprite, proofView, terrainBuffer } from '../../src/render/atoms/world';
 import { WorldGenerator } from '../../src/entities/world/WorldGenerator';
+import { TerrainSystem, TerrainType } from '../../src/entities/world/TerrainSystem';
 import { BiomeType } from '../../src/entities/world/types';
 import { CHUNK_PX, QUADRANT_PX, quadrantOf } from '../../src/entities/world/grid';
 import { Card, Target, cycleTarget, hitTest, inspectEntity, inspectItem, targetsFrom } from '../../src/render/atoms/inspect';
@@ -38,6 +39,22 @@ function toCanvas(data: Uint8Array, w: number, h: number, palette: Uint8Array, s
 }
 
 const spriteCanvas = (s: Sprite, palette: Uint8Array, scale = ATOM_PX) => toCanvas(s.data, s.w, s.h, palette, scale);
+
+// Stepped animation for the proof page: frames swap, nothing interpolates.
+const animTimers: number[] = [];
+function animated(framesList: Sprite[], palette: Uint8Array, scale: number, ms: number): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:flex-end';
+  const canvases = framesList.map(s => spriteCanvas(s, palette, scale));
+  canvases.forEach((c, i) => { c.style.display = i === 0 ? '' : 'none'; wrap.append(c); });
+  let at = 0;
+  animTimers.push(window.setInterval(() => {
+    canvases[at].style.display = 'none';
+    at = (at + 1) % canvases.length;
+    canvases[at].style.display = '';
+  }, ms));
+  return wrap;
+}
 
 function cell(node: HTMLElement, label: string) {
   const d = document.createElement('div');
@@ -223,6 +240,8 @@ function renderInspect(base: Uint8Array) {
 function render() {
   root.innerHTML = '';
   hashes = [];
+  animTimers.forEach(t => clearInterval(t));
+  animTimers.length = 0;
 
   // 1. THREE WORLDS
   const worlds = section(
@@ -248,6 +267,23 @@ function render() {
   atSize('THE QUESTION: ALL NINE AT 10x10, SHOWN AT REAL 2px', 10, 2);
   atSize('ALL NINE AT 10x10, ENLARGED', 10, 6);
   atSize('TOO COARSE? ALL NINE AT 5x5, ENLARGED', 5, 12);
+
+  // 2b. MOTION (Wave 8B)
+  const prefersStill = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motion = section(
+    'CREATURES FACE AND STEP',
+    'Four facings (front, right, back, left) and two stepped frames from every body plan, with no new art. ' +
+    'Left is a mirror of right; the back loses its eyes and shows a dorsal line; a radial body has no front. ' +
+    (prefersStill ? 'Reduced motion is on: frames are shown side by side only.' : 'The last cell steps at the game\'s own cadence.')
+  );
+  (Object.values(MOB_DEFINITIONS) as any[]).forEach(c => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:4px;align-items:flex-end';
+    (['down', 'right', 'up', 'left'] as const).forEach(facing => row.append(spriteCanvas(creature(c, 14, { facing }), base, 3)));
+    [0, 1].forEach(frame => row.append(spriteCanvas(creature(c, 14, { facing: 'down', frame }), base, 3)));
+    if (!prefersStill) row.append(animated([creature(c, 14, { frame: 0 }), creature(c, 14, { frame: 1 })], base, 3, 240));
+    motion.append(cell(row, c.name));
+  });
 
   // 3. RESOURCES AND THINGS
   const res = section('EXTRACTABLES', 'Form from tags, fill from the real material numbers in the game.');
@@ -280,7 +316,7 @@ function render() {
   const logDef = RESOURCE_DEFINITIONS['res_tree_log'] as any;
   const berry = RESOURCE_DEFINITIONS['res_berry_bush'] as any;
   const sapling = RESOURCE_DEFINITIONS['res_tree_sapling'] as any;
-  const trees = section('TREES', 'From above, at real 2px. Each felling takes a bite; the last leaves a stump. The same definition in the pack is a 1x3 log.');
+  const trees = section('TREES', 'The tree stands upright now (D1): a crown in life over a trunk in matter. The trunk blocks its tile and you walk under the crown (D3). Each felling bites the crown; the last leaves a stump that blocks nothing. The same definition in the pack is a 1x3 log.');
   trees.append(cell(spriteCanvas(worldForm(berry), base), 'Berry, for scale'));
   trees.append(cell(spriteCanvas(worldForm(sapling), base), 'Sapling'));
   [3, 2, 1, 0].forEach(uses => trees.append(cell(spriteCanvas(worldForm(logDef, { uses }), base), `${uses} of 3 left`)));
@@ -304,6 +340,24 @@ function render() {
   GENRES.forEach(g => {
     const view = composeView(map, g, forestSpot, 240, 150);
     forests.append(cell(toCanvas(view.data, view.w, view.h, paletteFor(g), ATOM_PX), g.name));
+  });
+
+  const waterRow = section('WATER', 'Long broken crest lines over a dark body, inside hard seams: water, not hollow squares. The same lake in each genre, terrain only.');
+  const lakeSpot = (() => {
+    const mid = 16.5 * 512;
+    for (let ty = mid - 400; ty < mid + 400; ty += 2) for (let tx = mid - 400; tx < mid + 400; tx += 2) {
+      if (TerrainSystem.typeAt(map.seed, tx, ty) === TerrainType.WATER &&
+          TerrainSystem.typeAt(map.seed, tx + 2, ty) === TerrainType.WATER &&
+          TerrainSystem.typeAt(map.seed, tx, ty + 2) === TerrainType.WATER) {
+        return { x: tx * 10, y: ty * 10 };
+      }
+    }
+    return { x: Math.floor(center.x / ATOM_PX), y: Math.floor(center.y / ATOM_PX) };
+  })();
+  GENRES.forEach(g => {
+    const W2 = 240, H2 = 150;
+    const buf = terrainBuffer(map, g, lakeSpot.x - W2 / 2, lakeSpot.y - H2 / 2, W2, H2);
+    waterRow.append(cell(toCanvas(buf, W2, H2, paletteFor(g), ATOM_PX), g.name));
   });
 
   const gone = section('SPENT: EVERY RESOURCE', 'Live, then spent. A broken outline means gone for good; a live center means it will return.');
