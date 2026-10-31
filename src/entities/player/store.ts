@@ -31,6 +31,8 @@ import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the Dreaming (1
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { IRoomState, roomAdditions } from '../hub/room';
 import { chunkOf } from '../world/grid';
+import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the web and the auto skill
+import { TagLaw } from '../../logic/content/TagLaw';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
@@ -146,6 +148,8 @@ interface PlayerState {
   recalcAttributes: () => void; // NEW
   performInteraction: (interactionId: string, targetId: string) => void;
   gainSkillXp: (skillId: string, amount: number, tags: string[], actionContext?: IActionContext) => void;
+  /** D27: work done with a pair. Held, it grows by use. Not held, it wings it and accrues. */
+  workOn: (pair: ISkillPair, rank: number, xp: number) => void;
   processAction: (context: IActionContext) => void;
 }
 
@@ -567,6 +571,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }));
     const level = StudySystem.identifyLevel(get().player, item);
     feed(`Studied ${item.name}. The ${scope} eye stands at ${level}; what was banked on it is open.`, 'proof');
+    // D27: loot teaches. What the piece implies accrues, and settles only at a rest.
+    const teaches = WebSystem.reverseEngineer(item).designs.filter(d => !get().player.bank.universalSkills[d.skillId]);
+    if (teaches.length > 0) {
+      set(s => ({ player: teaches.reduce((p, d) => WebSystem.accrueFromStudy(p, { id: d.skillId, tags: d.tags }, rankIndexOf(item.rank)), s.player) }));
+      feed(`Taking ${item.name} apart in your head: ${teaches.map(d => WebSystem.nameOf(d.skillId)).join(', ')}. It will settle, or it won't.`, 'signal');
+    }
     return { ok: true };
   },
 
@@ -1332,7 +1342,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
     void import('../../logic/sovereignty/Provenance').then(({ Provenance }) =>
       Provenance.record(result.item!, 'MINT', { origin: 'IMPROVISATION', rollKey }));
-    get().processAction({ tags: ['crafting', 'improvisation', 'survival'], magnitude: 8 });
+    get().processAction({ tags: ['craft', 'improvised', 'survival'], magnitude: 8 });
     feed(`Lashed together: ${result.item.name}. No bench, no apology.`, 'proof');
     return { ok: true };
   },
@@ -1480,7 +1490,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
          const updatedPlayer = MaterialScience.studyMaterial(targetDefId, state.player);
          return { player: updatedPlayer };
        });
-       get().gainSkillXp('skill_analysis', 100, ['intel', 'science'], { tags: ['study'], magnitude: 10 });
+       get().gainSkillXp('skill_analysis', 100, ['intel', 'analysis'], { tags: ['study'], magnitude: 10 });
        return;
     }
 
@@ -1509,7 +1519,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const def = RESOURCE_DEFINITIONS[entity.definitionId];
       if (!def?.harvestConfig) return;
       if ((entity.usesRemaining ?? 1) <= 0) return;
-      if (!spendEnergy(def.harvestConfig.energyCost)) return;
+      // D27: a tool on a material mints from that pair. Winging it costs more.
+      const pair = WebSystem.pairOfHarvest(get().player, def);
+      const effort = WebSystem.energyFor(get().player, pair, def.harvestConfig.energyCost);
+      if (!spendEnergy(effort.cost)) return;
 
       const usesLeft = (entity.usesRemaining ?? 1) - 1;
       const rollKey = SessionJournal.rollKey('harvest', `${entity.id}:${usesLeft}`);
@@ -1543,7 +1556,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         world.updateEntity(entity.id, { usesRemaining: usesLeft });
       }
 
-      get().processAction({ tags: ['gathering', 'strength', ...(def.tags || [])], magnitude: 10 * quantity });
+      if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5));
       feed(`Harvested ${quantity}× ${def.name}.`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
@@ -1661,7 +1674,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         rank: entity.rank,
         value: 200,
         rarity: Rarity.RARE,
-        tags: ['npc_contract', 'social']
+        tags: ['npc_contract', 'social'],
+        // D27, Wave 11's seam: the bond names the person, so their sheet reads back the same
+        bondData: {
+          worldSeed: useWorldStore.getState().currentMap?.seed ?? '',
+          entityId: entity.id,
+          webVersion: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion,
+          rank: entity.rank,
+          rarity: entity.rarity,
+          sheet: { ...entity.npc }
+        }
       };
 
       addToInventory([contract]);
@@ -1674,6 +1696,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   gainSkillXp: (skillId, amount, tags, actionContext) => {
+    // D28, clause 4: no throwaway identity. A door handed an id the law did not compute refuses it.
+    if (!get().player.bank.universalSkills[skillId] && !WebSystem.isLawfulId(skillId)) {
+      console.warn(`[SKILL] ${skillId} is not an identity the tag law can read. Refused.`);
+      return;
+    }
+    const rungBefore = (() => {
+      const held = get().player.bank.universalSkills[skillId];
+      return held ? WebSystem.masteryOf(held).rung : -1;
+    })();
     set((state) => {
       const { player } = state;
       const skills = { ...player.bank.universalSkills };
@@ -1683,7 +1714,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           id: skillId,
           level: 1,
           currentXp: 0,
-          tags: tags,
+          tags: TagLaw.parseSkillId(skillId) ?? tags,
           scalingAttribute: 'intelligence', 
           origin: {
             timestamp: Date.now(),
@@ -1705,18 +1736,44 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       skills[skillId] = skill;
       return { player: { ...player, bank: { ...player.bank, universalSkills: skills } } };
     });
+    // D27: crossing a rung reveals more of the material, through the one ledger
+    const held = get().player.bank.universalSkills[skillId];
+    const { rung } = WebSystem.masteryOf(held);
+    if (rung > rungBefore && rungBefore >= 0) {
+      set(s => ({ player: WebSystem.revealByMastery(s.player, skillId) }));
+      feed(`${WebSystem.nameOf(skillId)}: ${MASTERY_RUNGS[rung]}. The material reads further.`, 'proof');
+    }
+  },
+
+  workOn: (pair, rank, xp) => {
+    if (get().player.bank.universalSkills[pair.id]) {
+      get().gainSkillXp(pair.id, xp, pair.tags);
+      set(s => {
+        const skill = s.player.bank.universalSkills[pair.id];
+        if ((skill.rank ?? 0) >= rank) return s;
+        return { player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [pair.id]: { ...skill, rank } } } } };
+      });
+      return;
+    }
+    if (!get().player.skillProgress?.[pair.id]) {
+      feed(`Winging it: ${WebSystem.nameOf(pair.id)}. It costs more without the skill, and it counts toward it.`, 'signal');
+    }
+    set(s => ({ player: WebSystem.accrue(s.player, pair, rank) }));
   },
 
   processAction: (context) => {
-    const { gainSkillXp, currentWeight, maxWeight } = get();
+    const { currentWeight, maxWeight } = get();
     if (context.tags.includes('pickup') && (context as any).item) {
         const item = (context as any).item as IItem;
         const itemWeight = item.weight || 1.0;
         if (currentWeight + itemWeight > maxWeight) return; 
         setTimeout(() => get().recalcWeight(), 50); 
     }
-    const skillId = SkillDiscovery.discoverSkill(context);
-    const xpAmount = Math.ceil(context.magnitude * 0.5);
-    gainSkillXp(skillId, xpAmount, context.tags, context);
+    // D27: the fixed table is gone. What identifies is the registry's word, and a
+    // blow's tool is whatever is in the hand, not what the combat log assumed.
+    const weapon = get().player.equipment ? LoadoutSystem.itemIn(get().player.equipment!, 'RIGHT_HAND') : undefined;
+    const pair = SkillDiscovery.identify(WebSystem.withHeldTool(context, weapon?.tags ?? []));
+    if (!pair) return;
+    get().workOn(pair, rankIndexOf(context.targetRank), Math.ceil(context.magnitude * 0.5));
   }
 }));

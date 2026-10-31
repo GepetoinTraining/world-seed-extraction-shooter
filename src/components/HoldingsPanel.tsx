@@ -30,6 +30,9 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
   const [applyOpen, setApplyOpen] = useState(false);
   // D13: the walls are the builder's choice. Nobody chose: the stash pays in order.
   const [wallMaterial, setWallMaterial] = useState('');
+  // D27: what a further bench is fitted as. A connection opened it; the list comes from the web.
+  const [fitting, setFitting] = useState('');
+  const openFittings = hub.openStationsNow();
   const wallOptions = [...new Set(stash.filter(i => answersTag(i, 'building')).map(i => i.universalDefinitionId))];
   const jobs = hub.craftingJobs.filter(j => j.lotId === lot.id && !j.collected);
   const shellJob = hub.buildJobs.find(j => j.lotId === lot.id && !j.applied && j.kind === 'SHELL');
@@ -91,8 +94,19 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
               ))}
             </select>
           )}
+          {/* D27: a further bench can be fitted as a station a connection has opened */}
+          {openFittings.length > 0 && hub.shellBillNow('WORKSHOP').length >= SHELL_BILLS.WORKSHOP.length && (
+            <select className="ws-input" value={fitting} onChange={e => setFitting(e.target.value)} aria-label="What the bench is fitted as">
+              <option value="">Fitted as a plain Work Bench</option>
+              {openFittings.map(station => (
+                <option key={station.id} value={station.id}>
+                  Fitted as {station.name} — needs {station.minArea} clear tiles
+                </option>
+              ))}
+            </select>
+          )}
           {STRUCTURES.map(s => {
-            const askNow = hub.shellBillNow(s);
+            const askNow = hub.shellBillNow(s, s === 'WORKSHOP' && fitting ? fitting : undefined);
             const bill = pickBill(askNow, stash, wallMaterial || undefined);
             const short = !bill.ok ? bill.missing : player.bank.gold < STRUCTURE_COSTS[s].build ? `${STRUCTURE_COSTS[s].build}G permit` : null;
             return (
@@ -100,7 +114,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
                 key={s}
                 disabled={!!short}
                 title={short ? `Short: ${short}` : `${SHELL_BUILD_SECONDS[s]}s to raise`}
-                onClick={() => hub.buildStructure(lot.id, s, wallMaterial || undefined)}
+                onClick={() => hub.buildStructure(lot.id, s, wallMaterial || undefined, s === 'WORKSHOP' && fitting ? fitting : undefined)}
               >
                 BUILD {s} ({STRUCTURE_COSTS[s].build}G + {billText(askNow)})
               </Button>
@@ -115,11 +129,12 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
       {mine && lot.structureType === 'WORKSHOP' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {/* Wave 10D: gear recipes join the bench here too */}
-          {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP')].map(recipe => {
+          {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP'), ...hub.stationRecipesOn(lot.id)].map(recipe => {
             const ready = recipe.inputs.every(i => countOf(stash, i.itemId) >= i.quantity);
+            const refusal = hub.craftRefusal(lot.id, recipe.id);
             return (
-              <Button key={recipe.id} disabled={!ready} title={recipe.description} onClick={() => hub.queueCraft(lot.id, recipe.id)}>
-                {recipe.name.toUpperCase()} ({recipe.laborTimeSeconds}s)
+              <Button key={recipe.id} disabled={!ready || !!refusal} title={refusal ?? recipe.description} onClick={() => hub.queueCraft(lot.id, recipe.id)}>
+                {recipe.name.toUpperCase()} ({hub.craftSecondsNow(lot.id, recipe.id)}s)
               </Button>
             );
           })}

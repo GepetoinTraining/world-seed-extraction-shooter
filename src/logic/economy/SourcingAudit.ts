@@ -14,7 +14,8 @@ import { ItemType } from '../../../types';
 import { RESOURCE_DEFINITIONS, BIOME_RESOURCES } from '../../entities/item/data/resourceDefinitions';
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES } from '../../entities/economy/data/recipeDefinitions';
-import { PIECE_BILLS, SHELL_BILLS, SHELL_STATION, STATION_MIN_AREA, shellBillFor } from '../../entities/hub/room';
+import { PIECE_BILLS, SHELL_BILLS, SHELL_STATION, isStation, shellBillFor } from '../../entities/hub/room';
+import { WebBank } from '../content/WebBank';
 import { TEMPLATE_MINT_BILL } from '../../entities/hub/template';
 
 export interface ISourcingRow {
@@ -41,7 +42,8 @@ const WAIVERS: Record<string, string> = {
 const billLines = (): { tag: string; label: string }[] => [
   ...Object.entries(PIECE_BILLS).map(([kind, line]) => ({ tag: line.tag, label: `bill:${line.tag} (${kind})` })),
   ...Object.entries(SHELL_BILLS).flatMap(([kind, lines]) => lines.map(line => ({ tag: line.tag, label: `bill:${line.tag} (${kind} shell)` }))),
-  ...TEMPLATE_MINT_BILL.map(line => ({ tag: line.tag, label: `bill:${line.tag} (the mint)` }))
+  ...TEMPLATE_MINT_BILL.map(line => ({ tag: line.tag, label: `bill:${line.tag} (the mint)` })),
+  ...WebBank.current().stations.flatMap(s => s.bill.map(line => ({ tag: line.tag, label: `bill:${line.tag} (${s.name})` })))
 ];
 
 export class SourcingAudit {
@@ -69,9 +71,24 @@ export class SourcingAudit {
       if (station && answered(shellBillFor(kind, false))) reach.add(station);
     });
     const benchStands = reach.has('stn_bench');
+    // D27: a shelf's material is in reach, and a further station stands once its bill can be answered.
+    for (const material of WebBank.current().materials) if (material.shelfPrice) reach.add(material.id);
     let grew = true;
     while (grew) {
       grew = false;
+      for (const station of WebBank.current().stations) {
+        if (benchStands && !reach.has(station.id) && answered(station.bill) && answered(SHELL_BILLS.WORKSHOP)) {
+          reach.add(station.id);
+          grew = true;
+        }
+      }
+      for (const recipe of WebBank.current().recipes) {
+        if (!reach.has(recipe.requiredStation)) continue;
+        if (!recipe.inputs.every(input => reach.has(input.itemId))) continue;
+        for (const out of recipe.outputs) {
+          if (!reach.has(out.itemId)) { reach.add(out.itemId); grew = true; }
+        }
+      }
       for (const recipe of Object.values(RECIPE_DEFINITIONS)) {
         if (recipe.requiredFacility === 'WORKSHOP' && !benchStands) continue;
         if (!recipe.inputs.every(input => reach.has(input.itemId))) continue;
@@ -86,18 +103,20 @@ export class SourcingAudit {
   static run(): ISourcingRow[] {
     const reach = this.reachableFromRaw();
     const bills = billLines();
-    const inputsOf = [...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES)];
+    const inputsOf = [...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES), ...WebBank.current().recipes];
 
     const row = (defId: string, def: any, raw: boolean): ISourcingRow => {
       const sourced = raw
         ? Object.entries(BIOME_RESOURCES).filter(([, ids]) => ids.includes(defId)).map(([biome]) => biome)
         : [
-            ...Object.values(RECIPE_DEFINITIONS).filter(r => r.outputs.some(o => o.itemId === defId)).map(r => r.id),
-            ...Object.entries(SHELL_STATION).filter(([, station]) => station === defId).map(([kind]) => `${kind} shell`)
+            ...[...Object.values(RECIPE_DEFINITIONS), ...WebBank.current().recipes].filter(r => r.outputs.some(o => o.itemId === defId)).map(r => r.id),
+            ...Object.entries(SHELL_STATION).filter(([, station]) => station === defId).map(([kind]) => `${kind} shell`),
+            ...WebBank.current().stations.filter(s => s.id === defId).map(s => `a further bench, fitted as ${s.name}`),
+            ...WebBank.current().materials.filter(m => m.id === defId && m.shelfPrice).map(() => 'the alchemist\'s shelf')
           ];
       const refined = inputsOf.filter(r => r.inputs.some(i => i.itemId === defId)).map(r => r.id);
       const eaten = def.type === ItemType.CONSUMABLE && (def.stats?.health_restore ?? 0) > 0;
-      const stands = defId in STATION_MIN_AREA;
+      const stands = isStation(defId);
       const sinks = [
         ...refined.map(id => `recipe:${id}`),
         ...new Set(bills.filter(line => (def.tags ?? []).includes(line.tag)).map(line => line.label)),

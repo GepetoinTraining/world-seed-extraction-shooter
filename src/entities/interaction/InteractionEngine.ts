@@ -1,6 +1,7 @@
 import { IPlayer, IItem, InteractionType, IInteractionOption } from '../../../types';
 import { EntityType, IWorldEntity } from '../world/types';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { WebSystem } from '../../logic/systems/WebSystem';
 
 export class InteractionEngine {
 
@@ -53,7 +54,8 @@ export class InteractionEngine {
           label: `Extract ${resourceDef.name}`,
           type: InteractionType.HARVEST,
           icon: bareHands ? '✋' : (bestTool.icon || '🛠️'),
-          energyCost: config.energyCost,
+          // D27: the menu says what the store will charge: winging it costs more
+          energyCost: WebSystem.energyFor(player, WebSystem.pairOfHarvest(player, resourceDef), config.energyCost).cost,
           timeCostSeconds: config.baseTimeSeconds,
           requirements: {
             toolType: config.requiredToolTags[0],
@@ -176,7 +178,7 @@ export class InteractionEngine {
           energyCost: 2,
           timeCostSeconds: 5.0,
           requirements: { skillId: 'analysis' },
-          consequence: { knowledgeId: target.definitionId, xpTags: ['intel', 'science'] }
+          consequence: { knowledgeId: target.definitionId, xpTags: ['intel', 'analysis'] }
         });
       }
     }

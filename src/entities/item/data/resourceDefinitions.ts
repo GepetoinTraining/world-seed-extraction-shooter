@@ -25,6 +25,9 @@ export type ResourceDef = Partial<IItem> & {
   uses?: number;        // node uses before depletion (default 1)
   regrowMs?: number;    // flora regrow time; minerals never regrow
   yieldPerUse?: [number, number]; // min/max items per harvest
+  /** D27: a station a web batch added: what it asks of a room, and what it opens. */
+  stationMinArea?: number;
+  stationFunction?: 'WORKSHOP' | 'VENDOR' | 'SCRIBE';
 };
 
 const handsConfig = (energy: number, seconds: number): IHarvestConfig => ({

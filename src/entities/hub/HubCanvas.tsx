@@ -13,7 +13,7 @@ import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
 import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
-  IRoomState, RoomPieceKind, STATION_FUNCTION, PIECE_BILLS, PIECE_BUILD_SECONDS,
+  IRoomState, RoomPieceKind, stationFunctionOf, PIECE_BILLS, PIECE_BUILD_SECONDS,
   answersTag, builtLotBlocksAt, materialLabel, roomAdditions, roomDoor, roomEntry, roomSolid
 } from './room';
 import { lotConstruction } from './template';
@@ -339,7 +339,7 @@ export const HubCanvas: React.FC = () => {
   const workStation = () => {
     const near = nearPlacementRef.current;
     if (!near) return false;
-    const fn = STATION_FUNCTION[near.item.universalDefinitionId];
+    const fn = stationFunctionOf(near.item.universalDefinitionId);
     if (!fn) return false;
     keysRef.current.clear();
     setStationPanel(fn);
@@ -609,7 +609,7 @@ export const HubCanvas: React.FC = () => {
   const streetCard = nearbyRoom ? inspectBuiltRoom(nearbyRoom, player) : null;
   const insideCard = roomData ? inspectBuiltRoom(roomData, player) : null;
   const myPendingJobs = insideLotId ? buildJobs.filter(j => !j.applied && j.lotId === insideLotId) : [];
-  const nearStationFn = nearPlacement ? STATION_FUNCTION[nearPlacement.item.universalDefinitionId] : undefined;
+  const nearStationFn = nearPlacement ? stationFunctionOf(nearPlacement.item.universalDefinitionId) : undefined;
 
   return (
     <div className="ws-ui" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--ws-void-1)', overflow: 'hidden' }}>
@@ -810,8 +810,10 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {/* Wave 10D: gear recipes (the chain is the power budget) join the bench */}
-        {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP')].map(recipe => {
-          const ready = recipe.inputs.every(i => countOf(i.itemId) >= i.quantity);
+        {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP'), ...hub.stationRecipesOn(lotId)].map(recipe => {
+          const refusal = hub.craftRefusal(lotId, recipe.id);
+          const seconds = hub.craftSecondsNow(lotId, recipe.id);
+          const ready = !refusal && recipe.inputs.every(i => countOf(i.itemId) >= i.quantity);
           const mayName = hub.canNameCraft(recipe.id).ok;
           return (
             <div key={recipe.id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -824,14 +826,15 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
               )}
               <Button
                 disabled={!ready}
-                title={recipe.description}
+                title={refusal ?? recipe.description}
                 onClick={async () => {
                   const ok = await hub.queueCraft(lotId, recipe.id, mayName ? makerName : undefined);
-                  pushFeed(ok ? `${recipe.name} on the bench (${recipe.laborTimeSeconds}s).` : `${recipe.name}: the inputs are short.`, ok ? 'signal' : 'loss');
+                  pushFeed(ok ? `${recipe.name} on the bench (${seconds}s).` : `${recipe.name}: the inputs are short.`, ok ? 'signal' : 'loss');
                 }}
               >
-                {recipe.name.toUpperCase()} ({recipe.laborTimeSeconds}s)
+                {recipe.name.toUpperCase()} ({seconds}s)
               </Button>
+              {refusal && <span className="ws-dim ws-small">{refusal}</span>}
             </div>
           );
         })}

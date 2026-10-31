@@ -235,6 +235,190 @@ export interface ISignedContentPack {
 }
 
 // ==========================================================================
+// 2E. THE TAG LAW AND THE WEB (D27, D28, D29)
+// ==========================================================================
+
+/** What a tag is. Every kind states, once, whether it counts toward a skill's identity. */
+export type TagKind =
+  | 'tool'        // what the work is done with
+  | 'family'      // the broad nature of a thing worked: living, mineral, built...
+  | 'material'    // the substance worked
+  | 'trade'       // a body of work that has no one tool: carpentry, a schooled eye
+  | 'action'      // work done with the body and no object: melee, talk
+  | 'descriptive' // a quality that never splits a skill: crafted, heavy
+  | 'magnitude'   // how much of something: grunt, elite, boss. Rank rides beside identity
+  | 'use'         // what a thing answers: a bill, a meal, a station
+  | 'class'       // what kind of item: tool, armor, pouch
+  | 'scope'       // what a banked affix may roll on
+  | 'stat'        // an attribute named in a context
+  | 'context'     // what sort of moment an action was, and nothing more
+  | 'verb';       // what a held skill lets its holder do
+
+export const TAG_KIND_IDENTITY: Record<TagKind, boolean> = {
+  tool: true, family: true, material: true, trade: true, action: true,
+  descriptive: false, magnitude: false, use: false, class: false, scope: false, stat: false, context: false, verb: false
+};
+
+/** THE TAG LAW, clause 1: one registry. A tag has a kind and one meaning, forever. */
+export interface ITagEntry {
+  tag: string;
+  kind: TagKind;
+  meaning: string;
+  /** Words that mean the same thing. They can never be registered. */
+  refuses?: string[];
+  /** Clause 2: retired, never reused. The spelling stays on the books. */
+  retired?: { runId: string; replacedBy?: string; why: string };
+}
+
+/** A tool the web knows: its tag, what it works, and what its holder can do with it. */
+export interface IWebTool {
+  id: string;
+  name: string;
+  tag: string;
+  rank: UniversalRank;
+  /** True when the item already lives in the item definitions. Otherwise this entry mints it. */
+  existing?: boolean;
+  basePower?: number;
+  powerStat?: string;
+  /** Material tags it answers. Any match connects it. */
+  works: string[];
+  /** A verb opens at its rung (D27): the same pair gains actions as it is mastered. */
+  verbs: { verb: string; rung: number }[];
+}
+
+/** A good or a raw material that exists only because a batch said so. */
+export interface IWebMaterial {
+  id: string;
+  name: string;
+  tags: string[];
+  rank: UniversalRank;
+  rarity: Rarity;
+  weight: number;
+  width?: number;
+  height?: number;
+  description?: string;
+  type?: ItemType;
+  stats?: Record<string, number>;
+  /** Raw and sold on the alchemist's shelf: how a batch's material reaches play with no code. */
+  shelfPrice?: number;
+}
+
+/** D25: a further station, opened by a skill's tool + material connection, never by a list. */
+export interface IWebStation {
+  id: string;
+  name: string;
+  description?: string;
+  connection: { tool: string[]; material: string[] };
+  /** Asked on top of a further bench's own bill, at shellBillFor. */
+  bill: { tag: string; count: number }[];
+  /** D8: higher technology asks for a bigger room. */
+  minArea: number;
+  weight: number;
+  width: number;
+  height: number;
+}
+
+export interface IWebRecipe {
+  id: string;
+  name: string;
+  description: string;
+  inputs: { itemId: string; quantity: number; consume: boolean }[];
+  outputs: { itemId: string; quantity: number; probability: number }[];
+  energyCost: number;
+  laborTimeSeconds: number;
+  requiredFacility: 'WORKSHOP';
+  requiredStation: string;
+  /** A held skill must carry this verb (hasVerb). The verb is the gate, not a list. */
+  requiresVerb?: string;
+  /** The trade the work grows, and whose additions the step draws (D26). */
+  trade: string;
+  requiredSkill?: string;
+  minSkillLevel?: number;
+}
+
+/** Loot teaches: a piece bearing these tags implies this tool + material connection. */
+export interface IWebDesign {
+  matches: string[];
+  tool: string;
+  material: string[];
+}
+
+export interface IWebVerbLink {
+  tags: string[];
+  verb: string;
+  rung: number;
+}
+
+/** D20: one batched run. Refused WHOLE when any entry breaks the law. */
+export interface IWebBatch {
+  runId: string;
+  model: string;
+  ranAt: number;
+  tags?: ITagEntry[];
+  retire?: { tag: string; replacedBy?: string; why: string }[];
+  tools?: IWebTool[];
+  materials?: IWebMaterial[];
+  goods?: IWebMaterial[];
+  stations?: IWebStation[];
+  recipes?: IWebRecipe[];
+  designs?: IWebDesign[];
+  verbLinks?: IWebVerbLink[];
+  /** Clause 6: a word attaches to an id. A later batch may rename; nothing else moves. */
+  names?: { tags: string[]; name: string; flavor?: string }[];
+}
+
+export interface IWebPack {
+  packId: string;
+  version: number;
+  batches: { runId: string; model: string; ranAt: number }[];
+  tags: ITagEntry[];
+  tools: IWebTool[];
+  materials: IWebMaterial[];
+  goods: IWebMaterial[];
+  stations: IWebStation[];
+  recipes: IWebRecipe[];
+  designs: IWebDesign[];
+  verbLinks: IWebVerbLink[];
+  names: { tags: string[]; name: string; flavor?: string }[];
+}
+
+export interface ISignedWebPack {
+  pack: IWebPack;
+  signerUid: string;
+  signature: string;
+}
+
+/** The work toward a skill not yet held, batched until a rest (D30). */
+export interface ISkillProgress {
+  id: string;
+  tags: string[];
+  /** The deepest rank worked. Magnitude rides beside the identity (clause 5). */
+  rank: number;
+  attempts: number;
+  weight: number;
+}
+
+/** One credit: who, when. */
+export interface IWebCredit {
+  uid: string;
+  name: string;
+  at: number;
+}
+
+/** A skill as the hub knows it. The web is the hub's; the exp stays on each person. */
+export interface IWebNodeRecord {
+  id: string;
+  tags: string[];
+  rank: number;
+  firstBy: IWebCredit;
+  rungRecord: IWebCredit & { rung: number };
+}
+
+export interface IHubWeb {
+  nodes: Record<string, IWebNodeRecord>;
+}
+
+// ==========================================================================
 // 3. THE ITEM CONTRACT
 // ==========================================================================
 
@@ -313,6 +497,23 @@ export interface IItem {
 
   /** The raw materials leg (D26): a trade note, whose reading opens what a process adds. */
   loreData?: { processFamily: string; tier: number };
+
+  /** D27, Wave 11's seam: the person an Escort Bond names, enough to read their sheet back. */
+  bondData?: {
+    worldSeed: string;
+    entityId: string;
+    webVersion?: number;
+    rank: UniversalRank;
+    rarity: Rarity;
+    sheet: {
+      name: string;
+      temperament: string;
+      objective: string;
+      want: string;
+      disposition: number;
+      attempts: number;
+    };
+  };
 
   deedData?: {
     originBiome: string;
@@ -474,6 +675,10 @@ export interface ISkillState {
   currentXp: number;
   tags: string[];
   scalingAttribute: string;
+  /** D28: the deepest rank this skill has worked. It rides beside the identity, never in it. */
+  rank?: number;
+  /** D28: a track from an old save the law cannot read. Kept whole, off the web. */
+  legacy?: boolean;
   origin?: {
     timestamp: number;
     triggerAction: string;
@@ -592,6 +797,8 @@ export interface IPlayer {
   guildId?: string;
   ownedCityId?: string;
   materialMastery: Record<string, IMaterialKnowledge>;
+  /** D27: work toward skills not yet held, by skill id. It settles only at a rest (D30). */
+  skillProgress?: Record<string, ISkillProgress>;
   
   // FIXED: Separated Base vs Effective Attributes
   baseAttributes: IAttributes; // Raw stats (XP/Levels)
@@ -637,4 +844,5 @@ export interface IMaterialKnowledge {
   resourceId: string;        // "res_iron"
   knowledgeLevel: number;    // 0 = Unknown, 1 = Name, 2 = Basic Props, 3 = Affixes
   discoveredAffixes: string[]; // IDs of affixes this player knows exist on this material
+  graded?: boolean;          // D27: the rung between props and affixes: what it can become
 }

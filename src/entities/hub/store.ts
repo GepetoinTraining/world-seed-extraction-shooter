@@ -5,7 +5,7 @@
 
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { create } from 'zustand';
-import { IAffix, IComposition, IItem, ItemType, UniversalRank } from '../../../types';
+import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStation, ItemType, Rarity, UniversalRank } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
@@ -32,7 +32,10 @@ import { genreForWorld } from '../../render/atoms/world';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on the latest law
 import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
-import { PROCESS_FAMILIES, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { PROCESS_FAMILIES, PROCESS_SKILL_XP_PER_JOB, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { WebBank } from '../../logic/content/WebBank'; // D27
+import { WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the technology web
+import { useFeed } from '../../components/ui/stores';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
@@ -100,6 +103,8 @@ export interface IBuildJob {
   /** The raw materials leg (D26): what the shell's bill carried. The shell records
    * it and the station it mints inherits it. */
   inherited?: IAffix[];
+  /** D27: the station a further bench was fitted as, opened by a connection. */
+  stationId?: string;
   /** The owner's signature over the queued record: every completed step is signed. */
   signature?: string;
   /** Wave 10B: jobs raised together from one template share its item id. */
@@ -197,6 +202,8 @@ interface HubState {
   // Wave 10: the rooms behind the doors, and the construction queue
   rooms: Record<string, IRoomState>;
   buildJobs: IBuildJob[];
+  /** D27: the web is the hub's. The exp stays on each person. */
+  web: IHubWeb;
   weaponShop: IShopListing[];
   armorShop: IShopListing[];
   consumableShop: IShopListing[];
@@ -214,9 +221,22 @@ interface HubState {
   // Wave 5: society
   buyLot: (lotId: string) => Promise<boolean>;
   /** `material` is the builder's choice (D13): that material pays first. */
-  buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR', material?: string) => Promise<boolean>;
+  buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR', material?: string, stationId?: string) => Promise<boolean>;
   /** D25: what this shell asks of this owner, right now. A first WORKSHOP asks no metal. */
-  shellBillNow: (type: 'HOUSE' | 'WORKSHOP' | 'VENDOR') => { tag: string; count: number }[];
+  shellBillNow: (type: 'HOUSE' | 'WORKSHOP' | 'VENDOR', stationId?: string) => { tag: string; count: number }[];
+  /** D27: the further stations this hub's web and these hands have opened. */
+  openStationsNow: () => IWebStation[];
+  /** D27: the recipes of whatever further stations stand in this room. */
+  stationRecipesOn: (lotId: string) => IWebRecipe[];
+  /** D27: why this recipe will not run here, or null when it will. */
+  craftRefusal: (lotId: string, recipeId: string) => string | null;
+  /** D27: how long this job would really take, winging it or knowing it. */
+  craftSecondsNow: (lotId: string, recipeId: string) => number;
+  /** D30: the rest. What was worked at may settle, and the first to reach it is credited. */
+  restAndCredit: (kind: 'SEALED' | 'DIED' | 'WITHDREW') => Promise<ISkillState[]>;
+  /** D27: bring what this person holds into the hub's web. Idempotent. */
+  creditHeld: () => Promise<void>;
+  creditMastery: (skillId: string) => Promise<void>;
   // Wave 10: construction and placement
   resolveBuilds: () => Promise<number>;
   // Wave 10B: raise a house from a template, materials chosen per element class
@@ -245,6 +265,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   craftingJobs: [],
   rooms: {},
   buildJobs: [],
+  web: { nodes: {} },
   weaponShop: [],
   armorShop: [],
   consumableShop: [],
@@ -256,7 +277,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[] }>(
+      const hubStateDoc = await VectorStore.get<{ lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -268,7 +289,8 @@ export const useHubStore = create<HubState>((set, get) => ({
           lots: hubStateDoc.data.lots,
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
-          buildJobs: hubStateDoc.data.buildJobs || []
+          buildJobs: hubStateDoc.data.buildJobs || [],
+          web: hubStateDoc.data.web || { nodes: {} }
         });
       } else {
         // GENERATE FRESH (First time this Hub is visited)
@@ -289,7 +311,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           price: 5000 // Base price from POI metadata
         }));
 
-        set({ lots: freshLots });
+        set({ lots: freshLots, web: { nodes: {} } });
         // Save immediately
         await get().saveHubState();
       }
@@ -303,6 +325,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       // banked into the CONTENT namespace. A broken batch would refuse whole here.
       const signer = useIdentityStore.getState().certificate?.metadata.uid ?? 'SYSTEM';
       void AffixBank.bankAndSign(signer);
+      void WebBank.bankAndSign(signer);
 
       // 2. Generate/Load Shop Stock (Simulated Daily Refresh)
       // In a real app, this would be server-side. Here we simulate it.
@@ -314,6 +337,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       await get().resolveCrafts();
       await get().resolveBuilds();
       await get().resolveUpkeep();
+      // D27: whatever this person already holds enters this hub's web when the hub looks.
+      await get().creditHeld();
 
     } catch (e) {
       console.error('[HUB] Failed to load hub:', e);
@@ -323,7 +348,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   saveHubState: async () => {
-    const { activeHubId, lots, craftingJobs, rooms, buildJobs } = get();
+    const { activeHubId, lots, craftingJobs, rooms, buildJobs, web } = get();
     if (!activeHubId) return;
 
     // Hub changes usually move gold or items, so the bank is saved with them
@@ -332,7 +357,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     await VectorStore.put({
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: { lots, craftingJobs, rooms, buildJobs },
+      data: { lots, craftingJobs, rooms, buildJobs, web },
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -403,13 +428,84 @@ export const useHubStore = create<HubState>((set, get) => ({
    * treasury); the walls are materials, consumed from the stash exactly once,
    * at queue time; the building finishes on the clock (resolveBuilds).
    */
-  shellBillNow: (type) => {
+  shellBillNow: (type, stationId) => {
     const { lots, rooms, buildJobs } = get();
     const p = usePlayerStore.getState().player;
-    return shellBillFor(type, ownerHasBench(p.id, { lots, rooms, jobs: buildJobs, stash: p.bank.stashTabs[0]?.items || [] }));
+    const fitting = stationId ? WebBank.current().stations.find(s => s.id === stationId) : undefined;
+    return shellBillFor(type, ownerHasBench(p.id, { lots, rooms, jobs: buildJobs, stash: p.bank.stashTabs[0]?.items || [] }), fitting);
   },
 
-  buildStructure: async (lotId, type, material) => {
+  openStationsNow: () => WebSystem.openStationsOf(get().web, usePlayerStore.getState().player.bank.universalSkills),
+
+  stationRecipesOn: (lotId) => {
+    const placed = new Set((get().rooms[lotId]?.placements ?? []).map(p => p.item.universalDefinitionId));
+    return WebBank.current().recipes.filter(r => placed.has(r.requiredStation));
+  },
+
+  craftRefusal: (lotId, recipeId) => {
+    const web = WebBank.recipe(recipeId);
+    if (!web) return null;
+    const station = WebBank.current().stations.find(s => s.id === web.requiredStation)!;
+    const placed = (get().rooms[lotId]?.placements ?? []).some(p => p.item.universalDefinitionId === web.requiredStation);
+    if (!placed) return `${web.name} wants a ${station.name} standing in this room.`;
+    const skills = usePlayerStore.getState().player.bank.universalSkills;
+    if (web.requiresVerb && !WebSystem.hasVerb(skills, web.requiresVerb)) {
+      return `${web.name} wants hands that can ${web.requiresVerb.replace(/_/g, ' ')}. Yours can't, yet.`;
+    }
+    return null;
+  },
+
+  craftSecondsNow: (lotId, recipeId) => {
+    const recipe = RECIPE_DEFINITIONS[recipeId] ?? WebBank.recipe(recipeId);
+    const gear = GEAR_RECIPES[recipeId];
+    const labor = recipe?.laborTimeSeconds ?? gear?.laborTimeSeconds ?? 0;
+    const inputs = (recipe?.inputs ?? gear?.inputs ?? []).map(i => i.itemId);
+    const room = get().rooms[lotId];
+    const mono = room ? monoMaterialOf(room) : null;
+    const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
+    const held = usePlayerStore.getState().player;
+    const factor = WebSystem.clockFactor(held, WebSystem.pairOfJob(recipeId, inputs, held.bank.universalSkills));
+    return Math.max(1, Math.round(labor * (1 - speedPct / 100) * factor));
+  },
+
+  restAndCredit: async (kind) => {
+    const { player, emerged } = WebSystem.rest(usePlayerStore.getState().player);
+    usePlayerStore.setState({ player });
+    for (const skill of emerged) {
+      useFeed.getState().push(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
+    }
+    if (kind === 'DIED' && emerged.length > 0) useFeed.getState().push('Dying taught you that much, at least.', 'plain');
+    await get().creditHeld();
+    return emerged;
+  },
+
+  creditHeld: async () => {
+    const p = usePlayerStore.getState().player;
+    if (!p.id || p.id === 'temp_id') return;
+    const { web, firsts, records } = WebSystem.admit(get().web, { uid: p.id, name: p.username }, p.bank.universalSkills, Date.now());
+    if (firsts.length === 0 && records.length === 0) return;
+    set({ web });
+    const hubId = get().activeHubId;
+    const lore = { ...usePlayerStore.getState().player.bank.lore };
+    for (const skillId of firsts) {
+      const name = WebSystem.nameOf(skillId);
+      await Ledger.append('TECH', { kind: 'FIRST', skillId, name, hubId, rung: 0 });
+      const topic = `First in this hub: ${name}`;
+      lore[topic] = lore[topic] ?? { topic, xp: 0, level: 1, dateDiscovered: Date.now() };
+      useFeed.getState().push(`First in this hub to reach ${name}. The bank has it signed.`, 'proof');
+    }
+    for (const { id, rung } of records) {
+      await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameOf(id), hubId, rung });
+    }
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore } } }));
+    await get().saveHubState();
+  },
+
+  creditMastery: async () => {
+    await get().creditHeld();
+  },
+
+  buildStructure: async (lotId, type, material, stationId) => {
     const { lots, activeHubId, buildJobs, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const p = usePlayerStore.getState().player;
@@ -433,7 +529,20 @@ export const useHubStore = create<HubState>((set, get) => ({
       return false;
     }
     const stash = p.bank.stashTabs[0]?.items || [];
-    const bill = pickBill(get().shellBillNow(type), stash, material);
+    // D27: a further bench can be fitted as a station, once a connection has opened it.
+    if (stationId) {
+      if (type !== 'WORKSHOP') return false;
+      const open = get().openStationsNow().some(s => s.id === stationId);
+      if (!open) {
+        console.log('[BUILD] No hand in this hub has connected that tool and that material yet.');
+        return false;
+      }
+      if (!ownerHasBench(p.id, { lots, rooms: get().rooms, jobs: buildJobs, stash })) {
+        console.log('[BUILD] Your first bench comes first. It is raised from what you carried in.');
+        return false;
+      }
+    }
+    const bill = pickBill(get().shellBillNow(type, stationId), stash, material);
     if (!bill.ok) {
       console.log(`[BUILD] The bill is short: ${bill.missing}. Bring the materials.`);
       return false;
@@ -454,9 +563,10 @@ export const useHubStore = create<HubState>((set, get) => ({
       applied: false,
       consumedIds: bill.items.map(i => i.id),
       consumedDefIds: bill.items.map(i => i.universalDefinitionId),
-      inherited: inheritedOf(bill.items)
+      inherited: inheritedOf(bill.items),
+      ...(stationId ? { stationId } : {})
     };
-    job.signature = await signRecord({ kind: 'SHELL', lotId, structureType: type, consumedIds: job.consumedIds, at: job.queuedAt });
+    job.signature = await signRecord({ kind: 'SHELL', lotId, structureType: type, consumedIds: job.consumedIds, at: job.queuedAt, ...(stationId ? { stationId } : {}) });
 
     set({ buildJobs: [...get().buildJobs, job] });
     await Ledger.append('GOLD_DELTA', { reason: 'BUILD_PERMIT', lotId, structure: type, amount: -cost, treasuryId: activeHubId, treasuryDelta: cost });
@@ -638,7 +748,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           rooms: { ...get().rooms, [job.lotId]: room }
         });
         // The structure brings its station: an item like any other, into the stash.
-        const stationDefId = SHELL_STATION[job.structureType];
+        const stationDefId = job.stationId ?? SHELL_STATION[job.structureType];
         if (stationDefId) {
           // D26: a station inherits its shell. Raw walls hand on nothing: nothing was worked.
           const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION', affixes: ProcessSystem.inherit(job.inherited ?? []) });
@@ -846,10 +956,17 @@ export const useHubStore = create<HubState>((set, get) => ({
   queueCraft: async (lotId, recipeId, customName) => {
     const { lots, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
-    const recipe = RECIPE_DEFINITIONS[recipeId];
+    const recipe = RECIPE_DEFINITIONS[recipeId] ?? WebBank.recipe(recipeId);
     const gearRecipe = GEAR_RECIPES[recipeId];
     const p = usePlayerStore.getState().player;
     if (!lot || (!recipe && !gearRecipe)) return false;
+    // D27: a further station's recipe wants the station standing, and the verb in hand.
+    const refusal = get().craftRefusal(lotId, recipeId);
+    if (refusal) {
+      console.log(`[CRAFT] ${refusal}`);
+      useFeed.getState().push(refusal, 'loss');
+      return false;
+    }
     // Wave 10E (D6): a name below rank S refuses the whole queue, in voice
     if (customName?.trim()) {
       const mayName = get().canNameCraft(recipeId);
@@ -874,11 +991,11 @@ export const useHubStore = create<HubState>((set, get) => ({
     const jobId = `job_${Date.now().toString(36)}_${lot.lotIndex}_${get().craftingJobs.length}`;
     let consumedIds: string[];
     if (recipe) {
-      if (!TransformationEngine.canProcess({ } as any, recipe, stash)) {
+      if (!TransformationEngine.canProcess({ } as any, recipe as any, stash)) {
         console.log(`[CRAFT] Missing inputs for ${recipe.name}.`);
         return false;
       }
-      consumedIds = TransformationEngine.processCycle(recipe, stash, Rng.fromKey(`${jobId}:consume`)).consumedIds;
+      consumedIds = TransformationEngine.processCycle(recipe as any, stash, Rng.fromKey(`${jobId}:consume`)).consumedIds;
     } else {
       const picked: IItem[] = [];
       const taken = new Set<string>();
@@ -913,7 +1030,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     const mono = room ? monoMaterialOf(room) : null;
     // D26: and what is worked into the room and its furniture acts here, studied or not.
     const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
-    const effectiveSeconds = Math.max(1, Math.round(laborSeconds * (1 - speedPct / 100)));
+    // D27: and working without the skill takes longer, while knowing it takes less.
+    const pair = WebSystem.pairOfJob(recipeId, consumed.map(c => c.defId), p.bank.universalSkills);
+    const effectiveSeconds = Math.max(1, Math.round(laborSeconds * (1 - speedPct / 100) * WebSystem.clockFactor(p, pair)));
 
     const job: ICraftJob = {
       id: jobId,
@@ -946,7 +1065,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     let minted = 0;
     for (const job of due) {
-      const recipe = RECIPE_DEFINITIONS[job.recipeId];
+      const recipe = RECIPE_DEFINITIONS[job.recipeId] ?? WebBank.recipe(job.recipeId);
       const gearRecipe = GEAR_RECIPES[job.recipeId];
       if (!recipe && !gearRecipe) continue;
 
@@ -1014,6 +1133,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       // D6, D26: the doing teaches. Practice grows the trade's own skill, and hands
       // that have done the work come to know what it leaves.
       if (family && outputs.length > 0) usePlayerStore.getState().practiceTrade(family);
+      // D27: and the pair itself: the trade and what it worked. It settles at a rest.
+      const pair = WebSystem.pairOfJob(job.recipeId, (job.consumed ?? []).map(c => c.defId), usePlayerStore.getState().player.bank.universalSkills);
+      if (pair && outputs.length > 0) {
+        const worked = Math.max(0, ...outputs.map(o => rankIndexOf(o.rank)));
+        usePlayerStore.getState().workOn(pair, worked, PROCESS_SKILL_XP_PER_JOB);
+      }
       await Ledger.append('CRAFT', { kind: 'COLLECTED', jobId: job.id, outputIds: outputs.map(o => o.id) });
       // Wave 6.2: crafted goods carry their maker's signature from birth —
       // Wave 10D: and the signed record carries the composition's own hash.
@@ -1247,7 +1372,13 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.F, 3, 'tool', ['tool_axe_field_t1', 'tool_pick_rusty_t1']),
         ...generateStock(UniversalRank.D, 1, 'tool', ['tool_pick_tempered_t3']),
         // Wave 10C (D16/D17): the carrier's shelf — the cart and the pouches
-        ...generateStock(UniversalRank.F, 3, 'tool', ['cart_field_t1', 'pouch_vial_t1', 'pouch_scroll_t1'], 'carrier')
+        ...generateStock(UniversalRank.F, 3, 'tool', ['cart_field_t1', 'pouch_vial_t1', 'pouch_scroll_t1'], 'carrier'),
+        // D27: every tool a web batch added is on the shelf, by its own keyed stream, so no older roll moves
+        ...WebBank.current().tools.filter(t => !t.existing).map(tool => {
+          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:web_tool:${tool.id}`);
+          const item = WebBank.mintTool(WebBank.current(), tool.id, rng);
+          return { id: `listing_web_${tool.id}`, item, price: item.value * 1.5, vendorId: 'vendor_sys', stock: rng.int(1, 4) };
+        })
       ],
       armorShop: [
         ...generateStock(UniversalRank.F, 5, 'armor'),
@@ -1263,6 +1394,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       ],
       // Wave 10B: the gallpod joins the shelf — the alchemist sells the ink's bitter half.
       consumableShop: [
+        // D27: a raw material a web batch added reaches play through this shelf, with no code
+        ...WebBank.current().materials.filter(m => m.shelfPrice).map(material => {
+          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:web_material:${material.id}`);
+          const item = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[material.id] as any, rng, { origin: 'PURCHASE' });
+          return { id: `listing_web_${material.id}`, item, price: material.shelfPrice!, vendorId: 'vendor_sys', stock: rng.int(3, 10) };
+        }),
         ...['res_berry_bush', 'res_fruit_amber', 'res_fruit_gallpod'].map((defId, i) => {
           const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
           const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);

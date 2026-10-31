@@ -19,11 +19,88 @@ import { figure, weaponClass, armorClass } from '../render/atoms/people';
 import { useAppView } from './ui/stores';
 import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
 import { ISignedPayload } from '../entities/identity/certificateSystem';
+import { MASTERY_RUNGS, WebSystem } from '../logic/systems/WebSystem';
+import { WebBank } from '../logic/content/WebBank';
 
 const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
   HARDWARE: ['strength', 'constitution', 'agility', 'dexterity', 'endurance'],
   SOFTWARE: ['intelligence', 'focus', 'engineering', 'hacking', 'perception'],
   WETWARE: ['charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership']
+};
+
+// ---------------------------------------------------------------------------
+// D27: what the hands know. A rung reads by position and fill, never by hue.
+// ---------------------------------------------------------------------------
+
+const RungNotches: React.FC<{ rung: number; into: number }> = ({ rung, into }) => (
+  <span style={{ display: 'inline-flex', gap: 2, verticalAlign: 'middle' }} aria-label={`${MASTERY_RUNGS[rung]}, rung ${rung + 1} of ${MASTERY_RUNGS.length}`}>
+    {MASTERY_RUNGS.map((_, i) => {
+      const fill = i < rung ? 100 : i === rung ? Math.max(12, Math.round(into * 100)) : 0;
+      return (
+        <span key={i} style={{ width: 16, height: 10, border: '1px solid var(--ws-text-bright)', position: 'relative', background: 'transparent' }}>
+          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${fill}%`, background: 'var(--ws-text-bright)' }} />
+        </span>
+      );
+    })}
+  </span>
+);
+
+/** A skill forming: a broken outline that fills. It says how far, never how far is far enough. */
+const FormingFill: React.FC<{ fill: number }> = ({ fill }) => (
+  <span style={{ display: 'inline-block', width: 66, height: 10, border: '1px dashed var(--ws-text-bright)', position: 'relative', verticalAlign: 'middle' }}>
+    <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(fill * 100)}%`, background: 'repeating-linear-gradient(90deg, var(--ws-text-bright) 0 2px, transparent 2px 4px)' }} />
+  </span>
+);
+
+const HandsPanel: React.FC = () => {
+  const { player } = usePlayerStore();
+  const { web } = useHubStore();
+  const sheet = useMemo(() => WebSystem.earnedSheet(player, WebBank.current(), web), [player, web]);
+  return (
+    <Panel title="WHAT THE HANDS KNOW" right={<span className="ws-dim ws-small">{sheet.earned.length} held</span>}>
+      {sheet.earned.length === 0 && sheet.forming.length === 0 && (
+        <div className="ws-dim ws-small">Nothing yet. Work a material with a tool, and rest.</div>
+      )}
+      <div className="ws-list">
+        {sheet.earned.map(row => (
+          <div key={row.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
+            <div className="ws-row" style={{ padding: 0 }}>
+              <span className="ws-bright">{row.name}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="ws-dim ws-small">{row.rungName}</span>
+                <RungNotches rung={row.rung} into={row.into} />
+              </span>
+            </div>
+            {row.flavor && <div className="ws-dim ws-small">{row.flavor}</div>}
+            {row.verbs.length > 0 && <div className="ws-small">can {row.verbs.join(', ')}</div>}
+            {row.opens.length > 0 && <div className="ws-small">opens {row.opens.join(', ')}</div>}
+            {row.firstBy && <div className="ws-dim ws-small">first in this hub: {row.firstBy}</div>}
+          </div>
+        ))}
+      </div>
+      {sheet.forming.length > 0 && (
+        <>
+          <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>FORMING. IT SETTLES AT A REST, OR IT DOESN'T.</div>
+          {sheet.forming.map(row => (
+            <div key={row.name} className="ws-row ws-small" style={{ padding: '2px 0' }}>
+              <span style={{ minWidth: 0 }}>{row.worked ? `${row.tool} on ${row.worked}` : row.tool}</span>
+              <FormingFill fill={row.fill} />
+            </div>
+          ))}
+        </>
+      )}
+      {sheet.opens.length > 0 && (
+        <>
+          <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>THE HUB CAN RAISE</div>
+          {sheet.opens.map(station => (
+            <div key={station.id} className="ws-small" style={{ padding: '1px 0' }}>
+              {station.name}{station.description ? <span className="ws-dim"> — {station.description}</span> : null}
+            </div>
+          ))}
+        </>
+      )}
+    </Panel>
+  );
 };
 
 // ---------------------------------------------------------------------------
@@ -53,6 +130,7 @@ const AgentTab: React.FC = () => {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(440px, auto) 300px 1fr', gap: 10, alignItems: 'start' }}>
       <PaperDoll />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <Panel title="IDENTITY">
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
           <PortraitView uid={player.id} archetype={(player.archetype || 'OPERATOR') as Archetype} scale={3} />
@@ -82,6 +160,8 @@ const AgentTab: React.FC = () => {
           Kills feed the rank. Each rank grants {POINTS_PER_RANK_UP} attribute points.
         </div>
       </Panel>
+      <HandsPanel />
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {points}</span> : undefined}>
@@ -171,7 +251,7 @@ const SkillsTab: React.FC = () => {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return Object.entries(skills)
-      .filter(([name]) => name.toLowerCase().includes(q))
+      .filter(([id]) => WebSystem.nameOf(id).toLowerCase().includes(q))
       .sort((a, b) => b[1].level - a[1].level);
   }, [skills, query]);
 
@@ -192,7 +272,7 @@ const SkillsTab: React.FC = () => {
                 <RankMark rank={rank} scale={2} />
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span className="t" style={{ display: 'block', textTransform: 'uppercase' }}>
-                    {skill.id.replace('skill_', '').replace(/_/g, ' ')}
+                    {WebSystem.nameOf(skill.id)}
                   </span>
                   <span className="s">
                     base {skill.level}

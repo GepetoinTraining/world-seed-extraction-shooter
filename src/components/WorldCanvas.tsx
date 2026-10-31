@@ -4,6 +4,8 @@ import { StudySystem } from '../logic/systems/StudySystem';
 import { DreamingSystem } from '../entities/world/Dreaming';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
+import { useHubStore } from '../entities/hub/store';
+import { WebSystem } from '../logic/systems/WebSystem';
 import { ProjectileSystem, PatternType, IProjectile, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../entities/combat/projectileSystem';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { applyKillRewards } from '../entities/combat/killRewards';
@@ -417,6 +419,7 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
     const st = usePlayerStore.getState();
     st.emergencyJackOut(); // nothing was risked yet; the kit banks back untouched
     useWorldStore.getState().exitWorld();
+    void useHubStore.getState().restAndCredit('WITHDREW'); // D30: back at the hub, a rest all the same
     void SessionJournal.abort(PlayerPersistence.persistableJson(usePlayerStore.getState().player));
   };
 
@@ -733,6 +736,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     });
 
     void (async () => {
+      // D30: the sealed session is the rest. What was worked at may settle, and the receipt says so.
+      const settled = await useHubStore.getState().restAndCredit('SEALED');
       const charged = await ExitLevy.charge(worldCertUid || 'unknown', haulValue, rate);
       if (charged > 0) console.log(`[TAX] Hub levied ${charged}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
       // Wave 6.2: everything that made it home gets its story signed
@@ -745,6 +750,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
           outcome: 'EXTRACTED', haul, haulValue, tax,
+          settled: settled.map(s => WebSystem.nameOf(s.id)),
           worldName: card?.name ?? 'UNKNOWN',
           durationMs: signed?.payload.durationMs ?? (Date.now() - startedAt),
           actionCount: signed?.payload.actionCount ?? 0,
@@ -841,7 +847,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const card = inspectEntity(entity, {
       player: usePlayerStore.getState().player,
       dist,
-      level: defId => usePlayerStore.getState().player.materialMastery[defId]?.knowledgeLevel ?? 2
+      level: WebSystem.knowledgeReader(usePlayerStore.getState().player),
+      worldSeed: useWorldStore.getState().currentMap?.seed,
+      webVersion: useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion
     });
     const screenX = entity.position.x - liveSession.position.x + window.innerWidth / 2;
     const screenY = entity.position.y - liveSession.position.z + window.innerHeight / 2;
@@ -1167,6 +1175,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
 
           useWorldStore.getState().exitWorld();
+          void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
           useReceipt.getState().show({
             outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
             worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
@@ -1301,7 +1310,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       inspectById(entity.id, near.length ? near : [entity]);
       const card = inspectEntity(entity, {
         player: usePlayerStore.getState().player, dist,
-        level: defId => usePlayerStore.getState().player.materialMastery[defId]?.knowledgeLevel ?? 2
+        level: WebSystem.knowledgeReader(usePlayerStore.getState().player),
+      worldSeed: useWorldStore.getState().currentMap?.seed,
+      webVersion: useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion
       });
       feed(card.needs[0] ? `${card.title}: ${card.needs[0]}` : `${card.title}: nothing to be done here.`, 'loss');
     }

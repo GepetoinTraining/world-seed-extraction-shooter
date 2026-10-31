@@ -2,7 +2,7 @@
 
 Design the atoms that every World Seed world is made of, then prove them across the whole game: the smallest pieces of pixel and the rules that compose them into any terrain, creature, item, avatar and screen. The game works. It has no character yet. Give it one, at the level of the pixel.
 
-**Status, 2026-10-31.** This began as a brief to a designer, and Waves 8 through 10E and the raw materials leg have since answered most of it in the game itself, and Pedro approved the look in the real game. Read it as the design record. The "Settled by…" blocks say what was decided. Passages that say "today" or "currently" describe the game when the brief was written, unless a status note beside them says otherwise. Still open: the weak spots listed under "Still weak, by eye", the widening of the look family, invented genres reaching world generation, sound, and a chosen typeface.
+**Status, 2026-10-31.** This began as a brief to a designer, and Waves 8 through 10E, the raw materials leg and the technology web have since answered most of it in the game itself, and Pedro approved the look in the real game. Read it as the design record. The "Settled by…" blocks say what was decided. Passages that say "today" or "currently" describe the game when the brief was written, unless a status note beside them says otherwise. Still open: the weak spots listed under "Still weak, by eye", the widening of the look family, invented genres reaching world generation, sound, and a chosen typeface.
 
 ## What this game is
 
@@ -214,6 +214,17 @@ Settled by the raw materials pass (D23–D26), kept here as the record:
 - **Knowledge comes through play, three ways, into one ledger.** Sit with a piece at the bench and it opens, exactly as rolled. Read a trade's notes, off the alchemist's shelf or out of a chest in a world new enough to hold them, and that trade's common tier opens. Or do the work: a first attempt teaches nothing, a practised hand knows what common carpentry leaves behind, and the feed says when. "The actual knowledge is through play."
 - **Every material earns its place, and a bar says so.** Each raw thing takes a process or is eaten; each good has a way out; a fresh origin can reach all of it. Grain presses into straw paper, pebbles flux glass, scrap melts down, shards melt whole, titanium draws into a bar. The sapling alone waits, for the farms.
 - **A later bench is not this pass's business.** After the first, stations come from tool and material connected, which is the technology web.
+
+Settled by the web pass (D27–D30), kept here as the record, awaiting Pedro's word:
+
+- **A skill is the tool and the thing it worked.** An axe on a log is Felling, on every machine, in any order of arrival, and nothing but that pair can make it. The bare hand adds nothing, so a hand skill is the material itself, and it sits under every tool skill that works that material.
+- **Nobody learns on the spot.** You wing it, and the card says so: 12 energy, not 8, "winging it". A bench button shows the longer clock. It counts, and it settles only when you stop: the seal, a death, a withdrawal. The receipt reads IT SETTLED, or says nothing. It might not settle, and reloading will not change that; only more work buys another chance.
+- **What your hands know reads by shape.** Four notches, filled, name how far: named, handled, graded, attuned. A skill still forming is a broken outline that fills. Neither carries a number, and the fill never says how far is far enough. The Agent tab lists only what is held, so nothing closed is ever named.
+- **Knowing more shows on the card.** A stranger to a log reads its name. Handled, its density and hardness. Graded, what it becomes. Attuned, what can land on it unseen. All of it files in the one knowledge ledger.
+- **A further bench is a fitting.** Once a tool and a material are connected, the next workshop can be raised as a Sawpit, a Bloomery, an Anvil, and the button says the extra bill. Bigger technology asks for a bigger room. A station's work wants the verb in your own hands: "wants hands that can hew", said in words, not only on a hover.
+- **The web belongs to the hub, the exp to the person.** What anyone here has reached opens for everyone here, and someone is on record as first. The credit is a signed ledger row, and lore.
+- **Tags are law.** Every tag has one kind and one meaning in one registry, a variant spelling is refused, a retired spelling is never reused, and a batch that breaks any of it falls whole. Nothing caps what batches can add.
+- **People have hands.** Someone met in the field has stats and skills dealt from their own seed, the same forever, read through the same web as yours. You learn what they are good at by talking to them: the card says Hands after the first word. A bond carries the person home, and Wave 11 puts them to work.
 
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
 

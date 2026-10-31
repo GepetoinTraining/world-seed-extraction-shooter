@@ -66,6 +66,8 @@ export interface IReceiptView {
   // Wave 10C (D21): a death keeps exactly the protected slots — and the
   // receipt says what was kept, and by whose magic
   kept?: { item: IItem; by: string }[];
+  // D30: what settled at this rest. Names only; the rest is on the Agent tab.
+  settled?: string[];
 }
 
 interface ReceiptState {

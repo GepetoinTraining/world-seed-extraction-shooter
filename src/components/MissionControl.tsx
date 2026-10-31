@@ -37,7 +37,7 @@ const WorldCard = ({ world, onDeploy }: { world: IWorldCard; onDeploy: () => voi
       </div>
       {/* Wave 10E (D20): the pin is on the card — this world dreams this bank, forever */}
       <div className="ws-dim ws-small">
-        {world.packVersion ? `DREAM PACK v${world.packVersion} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
+        {world.packVersion ? `DREAM PACK v${world.packVersion}${world.webVersion ? ` · WEB v${world.webVersion}` : ''} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
       </div>
 
       <div

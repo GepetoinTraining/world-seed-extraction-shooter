@@ -23,6 +23,7 @@ import { RECIPE_DEFINITIONS, GEAR_RECIPES } from '../../entities/economy/data/re
 import { ItemFactory } from '../../entities/item/ItemFactory';
 import { AffixBank } from '../content/AffixBank';
 import { Rng, SeededRNG } from '../rng/DeterministicRNG';
+import { WebBank } from '../content/WebBank';
 
 export const PROCESS_THEME = 'PROCESS';
 
@@ -76,6 +77,9 @@ export class ProcessSystem {
   }
 
   static familyOfRecipe(recipeId: string): ProcessFamily | null {
+    // D27: a web recipe names its trade itself, and the additions are that trade's.
+    const web = WebBank.recipe(recipeId);
+    if (web) return PROCESS_FAMILIES.includes(web.trade as ProcessFamily) ? web.trade as ProcessFamily : null;
     const skill = RECIPE_DEFINITIONS[recipeId]?.requiredSkill;
     if (skill) {
       const family = skill.replace(/^skill_/, '') as ProcessFamily;
@@ -186,6 +190,14 @@ export class ProcessSystem {
     if (known <= 0) return player;
     const prior = player.materialMastery[`process_${family}`]?.discoveredAffixes ?? [];
     const ids = this.familyEntries(AffixBank.current(), family, known).map(e => e.id).filter(id => !prior.includes(id));
+    return ids.length > 0 ? this.file(player, family, ids) : player;
+  }
+
+  /** D27: mastery reveals. A graded pair opens its trade's first tier, an attuned one the next. */
+  static revealTier(player: IPlayer, family: ProcessFamily, tier: number): IPlayer {
+    if (!PROCESS_FAMILIES.includes(family)) return player;
+    const prior = player.materialMastery[`process_${family}`]?.discoveredAffixes ?? [];
+    const ids = this.familyEntries(AffixBank.current(), family, tier).map(e => e.id).filter(id => !prior.includes(id));
     return ids.length > 0 ? this.file(player, family, ids) : player;
   }
 

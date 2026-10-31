@@ -64,6 +64,16 @@ export const ReceiptScreen: React.FC = () => {
           </div>
         )}
 
+        {/* D30: the sealed session is the rest, and what settled there is on the record */}
+        {(receipt.settled?.length ?? 0) > 0 && (
+          <div style={{ borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginBottom: 10 }}>
+            <div className="ws-proof ws-small" style={{ letterSpacing: '0.12em', marginBottom: 4 }}>IT SETTLED</div>
+            {receipt.settled!.map(name => (
+              <div key={name} className="ws-row ws-small"><span>{name}</span><span className="ws-dim">the hands know it now</span></div>
+            ))}
+          </div>
+        )}
+
         {/* Wave 10C (D21): the death kept exactly what the magic named */}
         {died && (receipt.kept?.length ?? 0) > 0 && (
           <div style={{ borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginBottom: 10 }}>

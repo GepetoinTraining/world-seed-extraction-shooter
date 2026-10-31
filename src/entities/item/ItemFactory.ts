@@ -54,6 +54,14 @@ export class ItemFactory {
       template = rng.pick(allBases);
     }
 
+    return this.createFromTemplate(template, isIdentified, rng, pool);
+  }
+
+  /**
+   * D27: the same mint, for a base handed in rather than picked: a tool only a
+   * batch has heard of. The base never joins a random pool, so no keyed roll moves.
+   */
+  static createFromTemplate(template: ItemDefinition, isIdentified: boolean, rng: SeededRNG, pool?: IAffixPool): IItem {
     // 2. Roll Rarity
     const rarity = this.rollRarity(rng);
 

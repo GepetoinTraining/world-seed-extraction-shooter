@@ -29,6 +29,8 @@ export interface IWorldCard {
   // Wave 10E (D20): the content-pack version pinned at mint. Absent = minted
   // before the banks; the world keeps the purged legacy pool, forever.
   packVersion?: number;
+  // D27: the web this world's people are read through. Absent = the first version.
+  webVersion?: number;
 }
 
 interface WorldState {
@@ -89,7 +91,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           ipCap: cert.data.rules.ipCap,
           ipFloor: cert.data.rules.ipFloor,
           retired: (cert.data.gridVersion ?? 1) < GRID_VERSION,
-          packVersion: cert.data.rules.contentPackVersion
+          packVersion: cert.data.rules.contentPackVersion,
+          webVersion: cert.data.rules.webVersion
       }));
 
       // Dev World - Using the Service!

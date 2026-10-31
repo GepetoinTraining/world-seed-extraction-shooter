@@ -15,6 +15,8 @@ import { LAYER } from './world';
 import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
 import { setBonusText } from '../../entities/hub/template';
 import { IRoomState, roomAdditions } from '../../entities/hub/room';
+import { WebSystem } from '../../logic/systems/WebSystem';
+import { NpcSheet } from '../../logic/systems/NpcSheet';
 
 export interface Card {
   title: string;
@@ -28,6 +30,9 @@ export interface InspectContext {
   player: IPlayer;
   dist: number;
   level: (definitionId: string) => number;
+  /** D27: what it takes to read a person's sheet back. */
+  worldSeed?: string;
+  webVersion?: number;
 }
 
 const COMPACT_MAX = 36;
@@ -72,7 +77,11 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   else {
     rows.push(['Rank', String(def.rank)]);
     if (def.uses) rows.push(['Left', `${Math.max(0, uses)} of ${def.uses}`]);
-    if (config) rows.push(['Cost', `${config.energyCost} energy, ${config.baseTimeSeconds}s`]);
+    if (config) {
+      // D27: working without the skill costs more, and the card says so
+      const { cost, winging } = WebSystem.energyFor(ctx.player, WebSystem.pairOfHarvest(ctx.player, def), config.energyCost);
+      rows.push(['Cost', `${cost} energy, ${config.baseTimeSeconds}s${winging ? ', winging it' : ''}`]);
+    }
   }
   if (level >= 2) {
     Object.entries(def.materialProps || {}).forEach(([k, v]) => rows.push([PROPERTY_NAMES[k] || k, String(v)]));
@@ -102,6 +111,12 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
       const npc = e.npc;
       const title = npc?.name || 'Unknown Figure';
       const rows: [string, string][] = npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] : [];
+      // D27: you learn what someone is good at by talking to them
+      if (npc && npc.attempts > 0 && ctx.worldSeed) {
+        const sheet = NpcSheet.read(ctx.worldSeed, e, ctx.webVersion);
+        const names = Object.keys(sheet.skills ?? {}).map(id => WebSystem.nameOf(id));
+        if (names.length > 0) rows.push(['Hands', names.join(', ')]);
+      }
       return { title, rows, needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'talk' : 'too far') };
     }
     case EntityType.CONTAINER: {
@@ -248,6 +263,17 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   const { durability, maxDurability } = item.stats as Record<string, number>;
   if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${durability} of ${maxDurability}`]);
   rows.push(['Weight', `${item.weight} kg`]);
+  // D27: a handled hand reads what a material plainly is
+  const knowledge = player?.materialMastery[item.universalDefinitionId];
+  if ((knowledge?.knowledgeLevel ?? 0) >= 2) {
+    const def = (CRAFTED_DEFINITIONS[item.universalDefinitionId] ?? RESOURCE_DEFINITIONS[item.universalDefinitionId]) as any;
+    Object.entries(def?.materialProps ?? {}).forEach(([k, v]) => rows.push([PROPERTY_NAMES[k] || k, String(v)]));
+  }
+  // D27: a graded hand reads what a material can become
+  if (player?.materialMastery[item.universalDefinitionId]?.graded) {
+    const into = WebSystem.becomes(item.universalDefinitionId);
+    if (into.length > 0) rows.push(['Becomes', into.join(', ')]);
+  }
   // D19: the sheet is BLIND to unstudied affixes — their numbers never show,
   // while the item acts with them regardless. 10E made study real: a studied
   // affix shows exactly its banked record, negative offsets included.

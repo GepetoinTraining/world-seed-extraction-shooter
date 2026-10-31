@@ -3,6 +3,7 @@ import { GRID_VERSION } from './grid';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { UniversalRank } from '../../../types';
+import { WebBank } from '../../logic/content/WebBank';
 import { AffixBank } from '../../logic/content/AffixBank';
 
 export enum WorldType {
@@ -47,6 +48,8 @@ export interface IWorldRules {
    * minted before the banks: they keep the purged legacy pool, forever.
    */
   contentPackVersion?: number;
+  /** D27: the web this world's people are read through, pinned the same way. */
+  webVersion?: number;
 }
 
 export interface IWorldCertificateData {
@@ -117,6 +120,7 @@ export class WorldCertificateSystem {
       // Wave 10E (D20): pin the bank's CURRENT version into the certificate.
       // The pin is the one-way door: this world dreams this bank forever.
       contentPackVersion: AffixBank.version(),
+      webVersion: WebBank.version(),
       ...rules
     };
 

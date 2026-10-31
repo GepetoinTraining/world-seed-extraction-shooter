@@ -11,6 +11,7 @@ import { ITransformationRecipe, MaterialPropertyType } from '../types';
 import { ResourceDef } from '../../item/data/resourceDefinitions';
 import { ItemType, UniversalRank, Rarity } from '../../../../types';
 import { registerCompositionDefs } from '../../../logic/economy/CompositionSystem';
+import { WEB_BATCHES } from '../../generation/packs/webBatches';
 
 export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {
   'recipe_plank': {
@@ -355,7 +356,7 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {
     weight: 4.5, dimensions: { width: 1, height: 1 }, icon: 'stone_icon',
     visuals: { modelId: 'stone_block', colorHex: '#78716c' },
     materialProps: { [MaterialPropertyType.DENSITY]: 9, [MaterialPropertyType.HARDNESS]: 40 },
-    tags: ['crafted', 'stone', 'building', 'masonry']
+    tags: ['crafted', 'stone', 'building']
   },
 
   // The raw materials leg (line 45): titanium gets a process, and the rank and
@@ -369,6 +370,30 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {
     tags: ['crafted', 'metal', 'building']
   }
 };
+
+// D27: what the web's batches add joins this table as data, with no code change.
+// Recipes stay in the web's own pack: they stand at further stations, not at every bench.
+for (const batch of WEB_BATCHES) {
+  for (const good of [...(batch.materials ?? []), ...(batch.goods ?? [])]) {
+    CRAFTED_DEFINITIONS[good.id] = {
+      id: good.id, name: good.name, description: good.description,
+      type: good.type ?? ItemType.RESOURCE, rank: good.rank, rarity: good.rarity,
+      weight: good.weight, dimensions: { width: good.width ?? 1, height: good.height ?? 1 },
+      icon: `${good.id}_icon`, visuals: { modelId: good.id, colorHex: '#9ca3af' },
+      stats: good.stats, tags: good.tags
+    };
+  }
+  for (const station of batch.stations ?? []) {
+    CRAFTED_DEFINITIONS[station.id] = {
+      id: station.id, name: station.name, description: station.description,
+      type: ItemType.STRUCTURE, rank: UniversalRank.F, rarity: Rarity.UNCOMMON,
+      weight: station.weight, dimensions: { width: station.width, height: station.height },
+      icon: `${station.id}_icon`, visuals: { modelId: station.id, colorHex: '#a16207' },
+      tags: ['crafted', 'station'],
+      stationMinArea: station.minArea, stationFunction: 'WORKSHOP'
+    };
+  }
+}
 
 // Wave 10D: crafted goods price through the composition law like any atom.
 registerCompositionDefs(CRAFTED_DEFINITIONS);

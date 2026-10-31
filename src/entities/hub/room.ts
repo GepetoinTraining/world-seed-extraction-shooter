@@ -283,12 +283,18 @@ export const SHELL_BUILD_SECONDS: Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', number
 /**
  * D25: the first bench is raised from raw materials, so with no bench to its
  * name an owner's WORKSHOP bill drops every line but the walls. This is the ONE
- * place that knows about "first". Later stations come through the technology
- * web (D27), which plugs in beside this: it decides what a further bench asks,
- * and nothing else here needs to change.
+ * place that knows about "first". A further bench can be FITTED as a station the
+ * technology web opened (D27): the station says what else it asks. What opens it
+ * is a held skill's tool + material connection (WebSystem.openStationsOf), and no
+ * list of stations lives here.
  */
-export function shellBillFor(type: 'HOUSE' | 'WORKSHOP' | 'VENDOR', ownerHasABench: boolean): { tag: string; count: number }[] {
+export function shellBillFor(
+  type: 'HOUSE' | 'WORKSHOP' | 'VENDOR',
+  ownerHasABench: boolean,
+  fitting?: { bill: { tag: string; count: number }[] }
+): { tag: string; count: number }[] {
   if (type === 'WORKSHOP' && !ownerHasABench) return SHELL_BILLS.WORKSHOP.filter(line => line.tag === 'building');
+  if (type === 'WORKSHOP' && fitting) return [...SHELL_BILLS.WORKSHOP, ...fitting.bill];
   return SHELL_BILLS[type];
 }
 
@@ -334,7 +340,14 @@ export const STATION_FUNCTION: Record<string, 'WORKSHOP' | 'VENDOR' | 'SCRIBE'> 
   stn_scribe: 'SCRIBE' // Wave 10B: the builder view opens here
 };
 
-export const isStation = (defId: string) => defId in STATION_MIN_AREA;
+export const isStation = (defId: string) => defId in STATION_MIN_AREA || CRAFTED_DEFINITIONS[defId]?.stationMinArea !== undefined;
+
+/** D8, D27: what a station asks of a room, read from the table or from the batch that added it. */
+export const stationMinAreaOf = (defId: string): number | undefined =>
+  STATION_MIN_AREA[defId] ?? CRAFTED_DEFINITIONS[defId]?.stationMinArea;
+
+export const stationFunctionOf = (defId: string): 'WORKSHOP' | 'VENDOR' | 'SCRIBE' | undefined =>
+  STATION_FUNCTION[defId] ?? CRAFTED_DEFINITIONS[defId]?.stationFunction;
 
 // ---------------------------------------------------------------------------
 // VALIDATION: the builder refuses out loud, with the reason
@@ -412,7 +425,7 @@ export function canPlaceItem(room: IRoomState, item: IItem, x: number, y: number
     }
   }
 
-  const minArea = STATION_MIN_AREA[item.universalDefinitionId];
+  const minArea = stationMinAreaOf(item.universalDefinitionId);
   if (minArea !== undefined) {
     const area = regionAreaAround(after, preview);
     if (area < minArea) {

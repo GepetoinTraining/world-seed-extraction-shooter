@@ -19,6 +19,8 @@ export interface ICombatEvent {
     sourceRarity: Rarity;
   };
   actionContext?: {
+    targetTags?: string[];
+    targetRank?: string;
     tags: string[];
     magnitude: number;
   };
@@ -117,7 +119,9 @@ export class CombatSystem {
           type: 'ACTION_LOG',
           actionContext: {
               tags: ['ranged', 'projectile', 'tech', 'precision'],
-              magnitude: damage
+              magnitude: damage,
+              targetTags: MOB_DEFINITIONS[mob.definitionId]?.tags,
+              targetRank: mob.rank
           }
         });
 
@@ -157,7 +161,9 @@ export class CombatSystem {
             type: 'ACTION_LOG',
             actionContext: {
                 tags: ['melee', 'physical', 'violence', 'blade'],
-                magnitude: damage
+                magnitude: damage,
+                targetTags: MOB_DEFINITIONS[mob.definitionId]?.tags,
+                targetRank: mob.rank
             }
           });
 

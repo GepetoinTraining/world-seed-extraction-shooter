@@ -124,6 +124,9 @@ Added since Wave 7, and not all drawn on the diagram above:
 | Content banks | `logic/content/AffixBank.ts`, `entities/world/Dreaming.ts`, `entities/generation/packs/affixBatches.ts` | Versioned affix packs; a world pins its version at mint |
 | Knowledge | `logic/systems/StudySystem.ts` | Identify as a trained skill scoped by item type; goods and furniture joined the scopes in the raw materials leg |
 | Processes | `logic/systems/ProcessSystem.ts` | What a transformation step adds; pools by rank and rarity; the reveal by skill and lore |
+| The tag law | `logic/content/TagLaw.ts`, `logic/content/WebBank.ts` | One registry, canonical identity, the web's batch law, derived connections (D27–D29) |
+| The web | `logic/systems/WebSystem.ts` | The mint, the auto skill and the rest, rungs and their reveal, nodes, verbs, stations, reverse engineering, the hub's web, migration |
+| NPC sheets | `logic/systems/NpcSheet.ts` | Stats and skills dealt at read time from (world seed, entity, pinned web); read back from a bond |
 | Sourcing audit | `logic/economy/SourcingAudit.ts` | Line 45 over the live definitions |
 | Protection | `logic/systems/InsuranceSystem.ts` | Charms and scrolls that name what a death keeps |
 | Entry | `logic/systems/Deploy.ts`, `entities/identity/roster.ts` | One door into a world; several avatars per device |
@@ -149,6 +152,8 @@ Treat `types.ts` as the shared agreement, and only add to it. These additions we
 | `IComposition` | What an item is made of, its chain and its depth (Wave 10D) |
 | `IBankedAffix`, `IAffixBatch`, `IContentPack` | The content banks (Wave 10E) |
 | `ROOM_ACTING_STATS`, `IItem.loreData` | The stats an addition acts through in a room; a trade note's reading (raw materials leg) |
+| `TagKind`, `TAG_KIND_IDENTITY`, `ITagEntry`, `IWebBatch`, `IWebPack`, `IHubWeb`, `ISkillProgress` | The tag law and the web's content (D27, D28) |
+| `IItem.bondData`, `IPlayer.skillProgress`, `ISkillState.rank`/`legacy`, `IMaterialKnowledge.graded`, `IWorldRules.webVersion` | A bond's person; work toward a skill; rank beside identity; the graded rung; the web's pin |
 
 Two contracts live outside `types.ts`: `IWorldRules` (with `contentPackVersion`) in `entities/world/WorldCertificate.ts`, and the room and template types in `entities/hub/room.ts` and `template.ts`.
 
@@ -246,6 +251,11 @@ These are the current values, set by reasoning and very little play. Expect to c
 | Process pools | Tier 1 + rank step + rarity step, 4 at most | `ProcessSystem.ts` |
 | Trade XP per finished job / to reveal a tier | 20 / level = tier + 1 | `ProcessSystem.ts` |
 | Trade note in a chest fragment | 25%, worlds pinned at v4 or later | `ProcessSystem.ts` |
+| Winging it, harvest energy / bench clock | ×1.5 / ×1.25 | `WebSystem.ts` |
+| Each rung, energy / clock | −10% / −5% | `WebSystem.ts` |
+| Mastery rungs, cumulative XP | 0, 60, 180, 420 | `WebSystem.ts` |
+| Emergence DC / chance once past it | 10 + 10 per rank / 20 + how far past, 95 at most | `WebSystem.ts` |
+| NPC skills / stat deal | 1 + rank index / 1 + rank + a shuffled nature | `NpcSheet.ts` |
 | Room bonus caps | Upkeep 40%, bench speed 30%, no floor | `hub/room.ts` |
 | Field identify | 12s, falling with skill, never under 2s | `StudySystem.ts` |
 | Attribute points per rank-up | 3 | `ProgressionSystem.ts` |

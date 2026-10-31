@@ -38,7 +38,11 @@ export class StartupSequence {
       // Wave 10D: the anatomy's own instruments join the console
       const { CompositionSystem } = await import('../economy/CompositionSystem');
       const { MintRegistry } = await import('../economy/MintRegistry');
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry };
+      // D27: the web's own instruments
+      const { WebBank } = await import('../content/WebBank');
+      const { WebSystem: Web } = await import('../systems/WebSystem');
+      const { NpcSheet } = await import('../systems/NpcSheet');
+      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry, WebBank, WebSystem: Web, NpcSheet };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 
@@ -118,7 +122,9 @@ console.log('[BOOT] Refreshing World List...');
            console.log('[BOOT] Neural Imprint verified. Restoring state...');
            // Wave 10C: the three Wave-4 buckets migrate into the slot tree, once
            const { LoadoutSystem } = await import('../../entities/player/systems/LoadoutSystem');
-           usePlayerStore.setState({ player: LoadoutSystem.migrate(result.player) });
+           // D28: and old skill tracks land on lawful ids, once, without loss
+           const { WebSystem } = await import('../systems/WebSystem');
+           usePlayerStore.setState({ player: WebSystem.migrate(LoadoutSystem.migrate(result.player)) });
            usePlayerStore.getState().recalcAttributes();
            usePlayerStore.getState().recalcWeight();
            // Wave 9.3: the select screen learns the real archetype from the save
