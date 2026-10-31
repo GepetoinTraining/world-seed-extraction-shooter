@@ -275,7 +275,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10, D11 and D24–D26. D23 and D27 are decided and not yet built.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D23 through D27 are decided and not yet built.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -302,10 +302,10 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D21 | 10C+10E | Dying without losing everything | ✅ DECIDED (Pedro, 2026-10-31): protection from loss is never a rule — it is a MAGIC ITEM. Usage-limited or single-use charms, and scrolls that buff for a time (the scribe's table's paper-and-ink hook, D14), each naming HOW MANY slots it protects and whether they are chosen or random. A death keeps exactly what the magic named; everything else stays behind as ever. Variability huge, value player-determinable by what is protected. The slot-protection contract (which slots survive a death) lands in 10C with the slot tree; the items, scrolls and their affixes land in 10E's banks |
 | D22 | 10C | The head budget | ✅ DECIDED (Pedro, refined, 2026-10-31): head-and-neck gear and cognitive frames CANCEL EACH OTHER OUT. The region is FOUR positions — HEAD (helmet), EYES (glasses), EARRING and NECKLACE — and each holds EITHER its gear OR a cognitive frame, three frames at most: max frames still leaves one piece of gear up there. THE REASON IS A STAT LAW, not geography: ONLY frames can carry mental stats — physical gear never does, in any slot — so the trade is always mind against matter and can never be dodged by mental-stat jewelry. The law binds 10E's banks too: a mental affix can only ever roll on a frame. And mental stats are not combat-dead: they drive the RECON PHASE as well (scan depth and speed draw on them — the analyst build earns its keep before the drop) |
 | D23 | Raw materials leg | Raw materials and what processing adds | ✅ DECIDED (Pedro, restated 2026-10-31): base materials, non processed, can be used, and transformation processes add bonuses, affixes and suffixes — to buildings and furniture too, to everything. NOT BUILT: see "D23 against the code" under Wave 11B. This rule replaces the "cold-start gap" as a separate problem |
-| D24 | Raw materials leg | Which raw materials raise walls and shells | Give logs and stone the `building` tag, so bills stay by tag and nothing else changes. Pebbles stay out: too small to build with |
-| D25 | Raw materials leg | How furniture starts from raw | Extend the no-bench route gear already has: rough furniture with `requiredFacility: null`, and a first bench among it, so a fresh origin can begin |
-| D26 | Raw materials leg | What processing adds | Each transformation names what it adds, as a process affix on its output (milled, smelted, cut), banked by the same batch law. Room pieces start recording affixes, so buildings and furniture inherit them |
-| D27 | Technology web | A technology web before Wave 11 | ✅ DECIDED (Pedro, 2026-10-31): "we'll need to tackle technology web as pre 11, without it the npcs add little to nothing". The shape is open: ask at the leg's start |
+| D24 | Raw materials leg | Which raw materials raise walls and shells | ✅ DECIDED (Pedro, 2026-10-31), as recommended: logs and stone take the `building` tag, so bills stay by tag and nothing else changes. Pebbles stay out |
+| D25 | Raw materials leg | How furniture starts from raw | ✅ DECIDED (Pedro, 2026-10-31): the first bench is raised from those raw materials, and "then the next ones are tool + material connected". That connection is the technology web (D27), which is why the web comes before the NPCs |
+| D26 | Raw materials leg | What processing adds | ✅ DECIDED (Pedro, 2026-10-31): the additions are deterministic with ranges, and higher rarity and rank add pools. Studying, lore and the skill itself reveal them: "the actual knowledge is through play". D19's knowledge law carries this. Room pieces must start recording what they inherit, so it reaches buildings and furniture |
+| D27 | Technology web | A technology web before Wave 11 | ✅ DECIDED (Pedro, 2026-10-31): "we'll need to tackle technology web as pre 11, without it the npcs add little to nothing". D25 gives its core: tool + material connected. The rest of the shape is open: ask at the leg's start |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.
@@ -411,9 +411,11 @@ Done 2026-10-31; **approved by Pedro (2026-10-31)**. Bars in `tests/affixes.test
 - **Gate:** test lines 52, 53, 55 and 56 pass — 52/55/56 by test and by play; 53 by test, and by play as far as one minted world shows (pin seen on the card, the dream read on the survey, the same keys rolling the same records).
 
 ### THE RAW MATERIALS LEG (D23) — next
-Pedro placed this first on 2026-10-31, ahead of the playtest fixes and Wave 11, because Wave 11's pooling pays against these same bills. Scope and the current gaps are under "D23 against the code" in Wave 11B. Ask D24–D26 at the start, register bars first, and play it on a fresh origin.
+Pedro placed this first on 2026-10-31, ahead of the playtest fixes and Wave 11, because Wave 11's pooling pays against these same bills. Scope and the current gaps are under "D23 against the code" in Wave 11B. D24–D26 are answered. Register bars first, and play it on a fresh origin.
 
-- **Gate:** proposed lines 60–61 once agreed, with line 45's sourcing audit run in the same leg, since the bills it audits change here.
+- **Scope line:** this leg raises the first bench from raw materials and builds D26's process law. Later stations belong to the technology web, per D25.
+- **One thing to settle in the build:** a WORKSHOP shell mints the first bench, and its bill also asks for 2 `metal`. D25 says logs and stone raise that bench, so that line has to give way for the first one.
+- **Gate:** proposed lines 60–62 once agreed, with line 45's sourcing audit run in the same leg, since the bills it audits change here.
 - **Mind the one-way door:** a raw-built house must read apart from a plank-built one in grayscale, and finished houses, stored rooms and pinned worlds must not change. Check the golden vectors after any change to definitions.
 
 ### THE PLAYTEST FIXES — after the raw materials leg
@@ -434,11 +436,12 @@ Pedro's word on 2026-10-31: without it, the NPCs add little to nothing. It follo
 
 **Pattern to borrow (never the code):** `D:\primordial\crates/tech/src/lib.rs`, a hub's tech tree rooted in its land. It keeps one level per extraction vertical, derives starting tech from geography, and advances a domain by working it. Its comments name downstream branches: smithing from mining, masonry from quarrying, woodworking from lumber.
 
+**Its core, from Pedro's D25 (2026-10-31):** after the first bench, the next stations are tool + material connected. That connection is the web, and it is why the web comes before the NPCs.
+
 **To ask at the start:**
 - Is it a hub's technology, a player's, or both?
-- What advances a node: work done, materials delivered, residents' jobs?
-- What does a node unlock: recipes, stations, lot sizes, process affixes?
-- What exactly does an NPC add through it?
+- Which tool and material pairs open what?
+- Does a resident's job extend the web, work inside it, or both?
 
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
@@ -456,7 +459,7 @@ Absorbed 2026-10-31 into Pedro's itemization program: 11B.1's sourcing audit and
 
 **D23 against the code (checked against the definitions, 2026-10-31).** Three things stand between the code and the rule:
 - **Raw materials cannot raise a building.** Every shell bill and the WALL and STAIR bills ask for the `building` tag, and only crafted goods carry it (plank, ingot, glass, stone block). Every recipe for those goods needs a WORKSHOP, and a WORKSHOP's shell needs six of them, so a fresh origin can raise no shell at all. The other bill lines already take raw materials: a log answers `wood`, ore answers `metal`, sand and shards answer `glass`. Bills go by tag, so `building` is the one line in the way.
-- **Furniture has no raw path.** Stations come from WORKSHOP recipes that take crafted goods, or from a finished shell. Only gear has a no-bench route (`GEAR_RECIPES` with `requiredFacility: null`).
+- **The first bench has no raw path.** Stations come from WORKSHOP recipes that take crafted goods, or from a finished shell. Only gear has a no-bench route (`GEAR_RECIPES` with `requiredFacility: null`). D25: the first bench is raised from raw materials, and later ones come through the technology web.
 - **Processing adds nothing of its own.** A transformation carries its inputs' affixes forward, and depth raises price and gear power, but no step adds a bonus, affix or suffix. Room pieces record only material and quality, so affixes do not reach buildings at all. A placed station's affixes have not been shown to change what it does.
 
 **Line 45 is not closed.** The sourceability audit moved to 10E was never run and no bar holds the line. Beyond D23's points above, the data shows:
@@ -511,8 +514,9 @@ Guardrail 1 still holds: nothing gets built without a line here.
 
 Proposed for D23, not yet agreed:
 
-60. A house and its furniture can be raised from raw materials alone, with no workshop, on a fresh origin
-61. Each transformation step adds something the raw material lacks (a bonus, an affix or a suffix), on buildings and furniture as on gear
+60. A fresh origin raises a house and its first bench from raw logs and stone alone
+61. Each transformation step adds something the raw material lacks, drawn deterministically from pools that grow with rarity and rank, with ranges, on buildings and furniture as on gear
+62. What a step added stays unknown until study, lore or the skill itself reveals it
 
 Proposed for the playtest fixes, not yet agreed:
 
@@ -567,6 +571,6 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10D/10E (from 11B) | 45 | **Not closed**: see Wave 11B |
 | Playtest fixes | 57–59 (proposed) | Not started |
 | Technology web (D27) | To be written at its start | Not started; required before 11 |
-| Raw materials leg (D23) | 60–61 (proposed), 45 | Not started; next |
+| Raw materials leg (D23) | 60–62 (proposed), 45 | Not started; next |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |

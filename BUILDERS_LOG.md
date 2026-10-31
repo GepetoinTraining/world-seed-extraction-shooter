@@ -155,7 +155,7 @@ Full detail in `PLAN.md` 3B (Wave 10E ✅) and the settled record in `DESIGN_ASK
 
 ## Your pass: the raw materials leg (D23)
 
-Pedro's rule: base materials, non processed, can be used, and transformation processes add bonuses, affixes and suffixes, to buildings and furniture too, to everything. The code does not do this yet. Start from "The raw materials leg" and "D23 against the code" in `PLAN.md`, ask D24–D26 first (expect answers bigger than the recommendations), and register the bars before anything exists. Run line 45's sourcing audit here too.
+Pedro's rule: base materials, non processed, can be used, and transformation processes add bonuses, affixes and suffixes, to buildings and furniture too, to everything. The code does not do this yet. Start from "The raw materials leg" and "D23 against the code" in `PLAN.md`, read D24–D26 in the decisions table (all answered), and register the bars before anything exists. This leg raises the first bench from raw materials and builds the process law; later stations belong to the technology web. Run line 45's sourcing audit here too.
 
 ## Then: the playtest fixes
 
@@ -167,7 +167,7 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 
 ## Then: the technology web (D27)
 
-Pedro requires this before Wave 11: without it, the NPCs add little to nothing. None of it exists yet, and its shape is open. Start from "The technology web" in `PLAN.md`, which lists the hooks, the Primordial pattern and the questions to ask first.
+Pedro requires this before Wave 11: without it, the NPCs add little to nothing. None of it exists yet. Its core is D25's: after the first bench, the next stations are tool + material connected. The rest of its shape is open. Start from "The technology web" in `PLAN.md`, which lists the hooks, the Primordial pattern and the questions to ask first.
 
 ## Then: bringing the Nexi home (Wave 11)
 
