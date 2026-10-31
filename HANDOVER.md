@@ -4,6 +4,8 @@ For the next builder, human or agent. It describes the game as it is today, incl
 
 **State on 2026-10-30:** the full loop is playable in a browser on one machine. It is not yet multiplayer, has no server, and has never been played by a person from start to finish.
 
+**Reconciled with the code on 2026-10-31, at commit d75f541 (through Wave 10E).** Section 1 is still the Wave 7 run and has not been repeated; Wave 12 repeats it. Pedro has played parts of the game since, and that play produced the fixes listed in `BUILDERS_LOG.md`. Sections 2 to 9 were checked against the code and corrected. For the record of each wave after 7, read `PLAN.md` section 3B.
+
 Run it:
 
 ```bash
@@ -16,7 +18,7 @@ npm run dev
 npm test
 ```
 
-The game runs on `http://localhost:3000`. The USER/DEV toggle in the header turns on the admin tools and the "grant deed" button in Holdings.
+The game runs on `http://localhost:3000`. The USER/DEV toggle in the bar turns on the admin tools and the "grant deed" button in Holdings.
 
 ---
 
@@ -52,7 +54,7 @@ Lines are from `PLAN.md` section 0. The final run used a fresh profile and real 
 - It was not one unbroken sitting. It took several sessions, and code was fixed between them.
 - There has been no clean re-run on the final code. Automated tests cover the fixes, and the later sessions ran on most of them.
 - A script drove the game, so nobody has judged how it feels. A human playtest is the real next step.
-- The production build compiles but has never been run.
+- The production build compiles (re-checked 2026-10-31) but has never been run.
 
 ---
 
@@ -60,7 +62,7 @@ Lines are from `PLAN.md` section 0. The final run used a fresh profile and real 
 
 ```mermaid
 flowchart TD
-  UI[App, WorldCanvas, HubCanvas, HoldingsPanel, IdentityGate]
+  UI[App, WorldCanvas, HubCanvas, PlayerHub, HoldingsPanel, IdentityGate, TemplateStudio]
   UI --> Player[player/store]
   UI --> World[world/store]
   UI --> Hub[hub/store]
@@ -108,6 +110,22 @@ flowchart TD
 | Pack | `entities/player/systems/InventorySystem.ts` | Grid and weight, pure functions |
 | Economy | `entities/hub/store.ts`, `entities/economy/*` | Lots, building, crafting, shops, upkeep |
 
+Added since Wave 7, and not all drawn on the diagram above:
+
+| System | File | Responsibility |
+|---|---|---|
+| Atoms | `render/atoms/*`, `render/FieldRenderer.ts` | Everything drawn: terrain, creatures, items, people, rooms, the survey |
+| Screen kit | `components/ui/*` | One theme and the shared controls; colors come from the atoms' ramps |
+| Rooms | `entities/hub/room.ts`, `render/atoms/room.ts` | Build records, walkability, refusals, bills by tag |
+| Templates | `entities/hub/template.ts`, `logic/systems/TemplateSystem.ts`, `components/TemplateStudio.tsx`, `components/TemplateApplyModal.tsx` | Signed plans, kept apart from materials |
+| Load-out | `entities/player/systems/LoadoutSystem.ts`, `components/PaperDoll.tsx` | The slot tree, requirements, the head budget |
+| Carts | `entities/world/CartSystem.ts`, `entities/world/CartOverlay.ts` | Towed world entities; the one thing in a world not derived from its seed |
+| Item anatomy | `logic/economy/CompositionSystem.ts`, `logic/economy/MintRegistry.ts`, `logic/systems/ImprovisedCrafting.ts` | What an item is made of, its price and power, global uniqueness |
+| Content banks | `logic/content/AffixBank.ts`, `entities/world/Dreaming.ts`, `entities/generation/packs/affixBatches.ts` | Versioned affix packs; a world pins its version at mint |
+| Knowledge | `logic/systems/StudySystem.ts` | Identify as a trained skill scoped by item type |
+| Protection | `logic/systems/InsuranceSystem.ts` | Charms and scrolls that name what a death keeps |
+| Entry | `logic/systems/Deploy.ts`, `entities/identity/roster.ts` | One door into a world; several avatars per device |
+
 Paths are under `src/`. Note that `WorldCanvas.tsx` still contains the game loop. It should move out of the component.
 
 ---
@@ -120,9 +138,16 @@ Treat `types.ts` as the shared agreement, and only add to it. These additions we
 |---|---|
 | `ItemType.LORE` | Lore fragments and escort bonds |
 | `IGridPlacement`, `inventoryLayout` | Where each item sits in the pack |
-| `IEquippedSlots`, `equipped` | Item IDs in use; the items stay in the pack |
+| `IEquippedSlots`, `equipped` | Wave 4's buckets. Superseded by `IEquipmentState` in Wave 10C and kept so `LoadoutSystem.migrate` can bring old saves in |
 | `kitItemIds` | What came in with the player. The exit fee ignores these |
 | `carryItemIds` | Stash items chosen for the next session; tools always go |
+| `IEquipmentState`, `BODY_SLOT_IDS`, `TOOL_SLOT_COUNT`, `HEAD_BUDGET_POSITIONS`, `MAX_FRAMES` | The body. Equipped items leave the pack and live on `IPlayer.equipment` (Wave 10C) |
+| `MENTAL_ATTRIBUTES`, `PHYSICAL_ATTRIBUTES` | The D22 partition: mental stats come only from frames |
+| `ISlotProtection` | A slot a named magic keeps through a death (D21) |
+| `IComposition` | What an item is made of, its chain and its depth (Wave 10D) |
+| `IBankedAffix`, `IAffixBatch`, `IContentPack` | The content banks (Wave 10E) |
+
+Two contracts live outside `types.ts`: `IWorldRules` (with `contentPackVersion`) in `entities/world/WorldCertificate.ts`, and the room and template types in `entities/hub/room.ts` and `template.ts`.
 
 Do not change `universalDefinitionId` or the meaning of `UniversalRank`. Saved items and generation depend on both.
 
@@ -139,11 +164,16 @@ Everything lives in one RxDB collection in the browser (`worldseed_db`), separat
 | `transactions` | `session_{id}` | Signed session receipt |
 | `items` | `prov_{itemId}` | Signed provenance chain |
 | `worlds` | `inst_{seed}_{size}` | Generated map instance |
+| `items` | `mint_registry_v1` | Every rolled item's claimed tuple (D18) |
 | `content` | definition id | Item, enemy, resource and other definitions; world certificates |
+| `content` | `content_pack_v{n}` | The signed content pack |
 | `territories` | `hub_state_{uid}` | Lots and crafting jobs |
 | `territories` | `treasury_{uid}`, `endowment_{uid}` | Treasury balance and its one-time starting fund |
+| `territories` | `world_carts_{worldUid}` | The carts standing in a world |
 
-**Ledger row types:** `CHARACTER_GENESIS`, `SESSION_RESULT`, `GOLD_DELTA`, `TAX`, `TRADE`, `CRAFT`, `UPKEEP`, `TOMBSTONE`. Rows are never deleted, and appends are queued because each one reads the head first.
+The avatar roster sits in `localStorage` too (`worldseed_avatars`), beside the active certificate.
+
+**Ledger row types:** `CHARACTER_GENESIS`, `SESSION_RESULT`, `GOLD_DELTA`, `TAX`, `TRADE`, `CRAFT`, `BUILD`, `DESIGN`, `UPKEEP`, `TOMBSTONE`. Rows are never deleted, and appends are queued because each one reads the head first.
 
 **Gold rule:** every movement has a ledger row. `GoldAudit` checks that a player's gold equals their rows, and that treasuries equal the endowments plus all rows on the machine. It can read a brief false mismatch while a multi-step write is running.
 
@@ -158,6 +188,10 @@ Everything lives in one RxDB collection in the browser (`worldseed_db`), separat
 | Session receipt | Player key | Not checked anywhere yet |
 | Item provenance | Acting player's key | `Provenance.verify` |
 | World certificate | Creator key | **Never verified** |
+| Construction and placement steps | Owner's key, as `BUILD` rows | `Ledger.audit` |
+| Templates | Author's key; the author rides every copy | Through item provenance |
+| Content pack | The loading identity's key, at hub load | **Signature never verified by code.** The bank law refuses a broken batch whole before it is signed |
+| Cart theft | The taker's own certificate, in the cart's log | Read on the card |
 
 **What this protects against:** accidental corruption and casual edits to stored data. A changed save or backup file is refused.
 
@@ -171,7 +205,9 @@ A provenance record carries its signer's public key. That proves the chain is in
 
 - Every gameplay roll comes from `Rng.fromKey(key)`. The same key always gives the same result.
 - Key formats: loot `{seed}:{sessionId}:loot:{mobId}`, harvest `{seed}:{sessionId}:harvest:{nodeId}:{use}`, shop `{hubId}:shop:{day}:{type}:{rank}:{slot}`, terrain `{seed}:elev:v1:{x},{y}`.
-- `Math.random` in gameplay is a bug. Known remaining case: `SpellEngine.ts:23`. `WorldCertificate.ts:303` is allowed because it creates a new world's identity. The unkeyed fallbacks in `ItemFactory` and `LootTable` log a warning.
+- `Math.random` in gameplay is a bug. `WorldCertificate.ts:316` is allowed because it creates a new world's identity. `SpellEngine.ts:23` still uses it, but nothing imports that module, so it does not run today; fix it before wiring spells in. The unkeyed fallbacks in `ItemFactory`, `LootTable` and `TransformationEngine` log a warning.
+- `crypto.randomUUID` remains for identifiers, never for rolls: session ids (`player/store.ts:948`), world drops (`WorldCanvas.tsx:1102`, `:1121`), and log rows. `history.dropDate` stamps wall-clock time on mints.
+- A world's contents derive from (seed, pinned pack version), so added content never changes an existing world. The hub's shelf deliberately rolls from the latest bank.
 - Definitions are sorted by id before generation, so database order cannot change a world.
 - `tests/world.test.ts` and the boot check pin three reference hashes. If you change generation on purpose, recapture them with `window.__captureGoldens()` in dev and paste the output into `goldens.ts`. Bump the layer version (for example `elev:v1`) when old worlds must keep their shape.
 - Stored world instances are not regenerated, so a generation change does not reach a world that is already stored.
@@ -185,8 +221,9 @@ These are the current values, set by reasoning and very little play. Expect to c
 | Value | Current | Where |
 |---|---|---|
 | Player speed | 3 tiles/s (60px/s) | `WorldCanvas.tsx` |
-| Enemy speed | 2 tiles/s | `MobAI.ts` |
-| Enemy alert / give-up range | 8 / 16 tiles | `MobAI.ts` |
+| Enemy speed | The definition's own `speed`, default 2 tiles/s | `MobAI.ts` |
+| Enemy alert range | The definition's `viewRange`, default 8, capped at 16 tiles | `MobAI.ts` |
+| Enemy give-up range | The larger of 16 tiles and twice the alert range | `MobAI.ts` |
 | Enemy attack interval | 2s | `MobAI.ts` |
 | Projectile speed / flight | 200px/s for 2s | `projectileSystem.ts` |
 | Hit radius, enemy / player | 20px / 15px | `CombatSystems.ts`, `WorldCanvas.tsx` |
@@ -195,19 +232,25 @@ These are the current values, set by reasoning and very little play. Expect to c
 | Mitigation cap | 60% | `CombatMath.ts` |
 | Starting health | 100 + constitution × 10 | `player/store.ts` |
 | Pack | 8 × 6 cells | `InventorySystem.ts` |
-| Carry limit | 30 + strength × 10 kg | `InventorySystem.ts` |
+| Carry limit | 30 + strength × 10 kg, plus bags; equipped gear does not count | `InventorySystem.ts` |
+| Tool slots / frames at most | 1 / 3 | `types.ts` |
+| Cart bed | 10 × 8 cells | `CartSystem.ts` |
 | Over-load slowdown | Above 80%: 0.5× speed | `InventorySystem.ts` |
 | Channel / exit range | 5s / 60px | `WorldCanvas.tsx` |
 | Exit fee | World rule, default 5% of what was gained | `ExitLevy.ts` |
-| Chunk spawns | Enemies 40% (1–2), resources 50% (1–4), ruins 8%, NPCs 5% | `WorldGenerator.ts` |
+| Spawns per quadrant | Enemy pack 45%, ruin 10%, NPC 6%; resources by biome | `WorldGenerator.ts` |
+| Material dream on a harvest | 8% | `Dreaming.ts` |
+| Field identify | 12s, falling with skill, never under 2s | `StudySystem.ts` |
+| Attribute points per rank-up | 3 | `ProgressionSystem.ts` |
 | NPC secure threshold | 70 disposition | `InteractionEngine.ts` |
 | Starting gold | 500 | `player/store.ts` |
-| Shop markup / vendor buyback | 1.5× / 0.6× of value | `hub/store.ts` |
+| Shop markup / vendor buyback | 1.5×, consumables 3× / 0.6× of value | `hub/store.ts` |
 | Player shop fee | 5% | `recipeDefinitions.ts` |
 | Lot price | 5,000G | `hub/store.ts` |
 | Build cost | House 100, Workshop 150, Vendor 250 | `recipeDefinitions.ts` |
 | Upkeep per day | Empty 5, House 5, Workshop 10, Vendor 15 | `recipeDefinitions.ts`, `hub/store.ts` |
 | Hub starting fund | 100,000G | `hub/store.ts` |
+| Shell build time | House 30s, Workshop 45s, Vendor 60s | `hub/room.ts` |
 | Autosave delay | 10s, plus immediately on hub actions | `PlayerPersistence.ts` |
 
 **Open balance questions, for playtest:** gear sold for far more than tools cost (one pair of gauntlets paid 600G against a 36G axe). Deeds are extremely rare. Enemy density around exit points is high, about 7–8 within 300px.
@@ -216,7 +259,7 @@ These are the current values, set by reasoning and very little play. Expect to c
 
 ## 8. Debt register
 
-Each entry says when it will cause trouble.
+Each entry says when it will cause trouble. Items closed since Wave 7 are listed at the end of this section. Newer debts and the playtest findings are in `BUILDERS_LOG.md`, "Known weak spots".
 
 **Architecture**
 
@@ -233,17 +276,15 @@ Each entry says when it will cause trouble.
 
 | Debt | Breaks when |
 |---|---|
-| World changes reset on each deploy (depletion, defeated enemies, caches) | A player returns for a stashed cache, which plan W3.3 promised |
+| World changes reset on each deploy (depletion, defeated enemies, caches). Carts are the one exception | A player returns for a stashed cache, which plan W3.3 promised |
 | Reloading mid-session loses the kit, which has already left the bank | Any refresh or crash during a run. Decide if that is intended |
-| Escort bonds cannot be redeemed for anything, and give no reputation | A player tries to use one |
+| Escort bonds cannot be redeemed for anything, and give no reputation (Wave 11) | A player tries to use one |
 | `XP_LOSS` and `PERMADEATH` behave like `INVENTORY_LOSS` | A world picks them |
 | Entry fee, creator share, world stats and session limits are not enforced | A world creator expects them |
 | World countdown resets on list refresh; worlds do not expire by it | Scarcity matters |
-| The hub appears as a deployable zone | Always; it is confusing |
 | Harvest and interaction times are ignored; energy never regenerates | Long sessions run out of energy |
-| Auto-pickup has no prompt, and walking over drops can overload you | Noticeably annoying already. Plan W3.2 wanted a prompt |
-| Pack has auto-place and rotate but no drag | Plan W3.1 wanted drag |
-| Rendering is 26 FPS with all entities in the DOM; off-screen ones are not culled | Larger worlds |
+| Auto-pickup has no prompt. It respects the caps now, and what does not fit stays on the ground | Plan W3.2 wanted a prompt |
+| Pack has auto-place and rotate but no drag (a playtest finding) | Plan W3.1 wanted drag |
 | Shop stock resets on every reload | Stock limits matter |
 | Rejected saves leave a blank "Unknown" character and no explanation | A save is really damaged |
 
@@ -251,11 +292,16 @@ Each entry says when it will cause trouble.
 
 | Debt | Breaks when |
 |---|---|
-| Enemy AI genre is hardcoded to sci-fi, so rats shoot; enemies ignore terrain | Enemy variety matters |
-| One genre has no enemy definitions, so those chunks and their ruins are unguarded | Ruins are expected to be dangerous |
-| Overlapping entities are hard to click | Dense areas |
-| Vendor dialogue options do nothing: sell, repair, guilds, auction, rest, hints and more | A player clicks them. Selling works from Holdings |
-| `SpellEngine` is a sketch; magic foci only fire a burst pattern | Spells are expected |
+| Overlapping entities are hard to click. Q-cycling on the inspect card eases it, and scripted clicks remain flaky | Dense areas |
+| `SpellEngine` is a sketch that nothing imports, so spells do not run through it | Spells are expected |
+
+**Closed since Wave 7:**
+
+- The hub as a deployable zone (Wave 9.7).
+- 26 FPS with everything in the DOM: the field is one canvas now, measured at 4.17ms a frame with 314 things (Waves 8 and 9).
+- Enemy AI hardcoded to one genre and ignoring terrain: enemies read their own definition's genre and behavior, and move through the player's resolver (Wave 8B.4).
+- A genre with no enemy definitions leaving regions unguarded (Wave 8).
+- Vendor dialogue options that did nothing: each is built or refuses in voice (Wave 9.7).
 
 ---
 
@@ -265,6 +311,8 @@ Each entry says when it will cause trouble.
 2. **Mid-session reload.** Treat it as a loss (current), or save sessions so they resume?
 3. **Persistent worlds.** Should changes survive between sessions within a world's lifetime? Plan W3.3 implies yes.
 4. **Starting kit.** New characters get one random item and must buy a weapon. Should they start with one?
+
+Still unanswered on 2026-10-31. Wave 10D's audit confirmed the first point: the 500G grant is the only way a player gains gold from nothing, and the hub fund pays for everything sold. D10 and D11 in `PLAN.md` are also open, for Wave 11.
 
 ---
 
@@ -276,7 +324,7 @@ Noted here so the seams stay visible. None of it has been started.
 - **Real multiplayer:** shared hubs, then shared sessions.
 - **Certificate registry:** real identity for world creators and item history.
 - **Auction house:** types exist; no system.
-- **3D renderer:** the React Three Fiber dependencies are installed but unused.
+- **3D renderer:** the React Three Fiber dependencies are installed but unused. Nothing in `src` imports them.
 - **Browser end-to-end tests:** turn the true test into a Playwright script so it can run unattended.
 
 ---

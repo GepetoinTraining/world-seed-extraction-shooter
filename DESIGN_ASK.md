@@ -2,6 +2,8 @@
 
 Design the atoms that every World Seed world is made of, then prove them across the whole game: the smallest pieces of pixel and the rules that compose them into any terrain, creature, item, avatar and screen. The game works. It has no character yet. Give it one, at the level of the pixel.
 
+**Status, 2026-10-31.** This began as a brief to a designer, and Waves 8 through 10E have since answered most of it in the game itself, and Pedro approved the look in the real game. Read it as the design record. The "Settled by…" blocks say what was decided. Passages that say "today" or "currently" describe the game when the brief was written, unless a status note beside them says otherwise. Still open: the weak spots listed under "Still weak, by eye", the widening of the look family, invented genres reaching world generation, sound, and a chosen typeface.
+
 ## What this game is
 
 World Seed is a browser extraction game. You create a cryptographic identity, scan a generated world from above, drop in, gather and fight, and try to reach an exit point alive with what you found. Whatever you carry out is signed into a permanent ledger and banked in a shared hub, where you can own land, build, craft and sell. Die, and it stays behind.
@@ -93,7 +95,7 @@ World Seed has no single world to draw. It has a seed that makes worlds, up to 6
 3. A Hardness 80 material reads as hard in every genre, and a Rank S mark reads as Rank S everywhere.
 4. It stays fast with about 300 things on screen.
 
-**What a prototype has already tested.** `prototype/atoms/` computes these atoms from the game's real seeds, creature definitions and material numbers, with no image files. Run `npm run dev`, then open `http://localhost:3000/prototype/atoms/index.html` for the atoms and `http://localhost:3000/prototype/atoms/hub.html` for the people and the city, which you can walk. Grayscale is the first button to press on both. `tests/atoms.test.ts`, `tests/atoms.depth.test.ts` and `tests/atoms.people.test.ts` hold the bars. They were set before each check first ran and were not lowered; four were added afterward, when the eye caught something the numbers had missed. It is one map, nine creatures and fourteen resources, with no animation, and it is a working sketch to beat, not art to polish.
+**What a prototype has already tested.** `prototype/atoms/` computes these atoms from the game's real seeds, creature definitions and material numbers, with no image files. Run `npm run dev`, then open `http://localhost:3000/prototype/atoms/index.html` for the atoms and `http://localhost:3000/prototype/atoms/hub.html` for the people and the city, which you can walk. `http://localhost:3000/prototype/atoms/room.html` was added for rooms in Wave 10. Grayscale is the first button to press on all three. `tests/atoms.test.ts`, `tests/atoms.depth.test.ts`, `tests/atoms.people.test.ts` and `tests/atoms.motion.test.ts` hold the bars. They were set before each check first ran and were not lowered; four were added afterward, when the eye caught something the numbers had missed. It is one map, nine creatures and fourteen resources, with no animation, and it is a working sketch to beat, not art to polish.
 
 | Question | Measured | Verdict |
 |---|---|---|
@@ -206,6 +208,8 @@ Strong, and worth keeping: body plans from tags, the seven property grains as a 
 
 **Four things the atoms must answer.** The prototype has tried each, so start from what it found and beat it.
 
+*Status: the tree's blocking was settled by D1 and D3 (Wave 8B). Quality became one scale, and `purity` was retired (Wave 10D). The inspect card reached the pack, stash and shops (Wave 9). The text below is the original finding.*
+
 - **Trees.** The game has one definition, `Hardwood Log`, for both the standing tree and the 1×3 log in the pack. The prototype gives it two forms: a canopy from above, six times a berry's area, and a log at its real footprint. Each of its three fellings bites the crown, ending in a stump, since a tree never regrows. Every other depleted resource also has its own state in place of today's fade to 35% opacity: a broken outline if it is gone for good, and a live center if it will return. Two things need a decision, not art. Forests now grow in Overgrowth, at about 112 trees a chunk. One thing needs a decision: **you walk straight through a tree**, because only terrain blocks movement. Say whether a forest should block, because that changes what it is.
 - **Materials.** Properties are the core of the atoms, yet no player can see one: no tooltip shows them, and `MaterialScience.inspectMaterial` has knowledge levels that nothing calls. The prototype draws those levels. At level 0, things of one form share every pixel, so Iron and Titanium are identical and Amberfruit cannot be told from the poisonous Gallpod. Naming reveals density, and study reveals the rest. Consider the consequence: a new player knows nothing, so at first every ore looks the same. Decide what a new player starts knowing, and how this relates to `isIdentified`, a separate flag that resources skip. The grain scale is fixed and versioned, because deriving it from data would change old worlds whenever a material arrived. Density and Conductivity sit on a square root because their ranges are so wide. Those multipliers are the prototype's own choice, so review them. No real material has Resonance, so its grain has only been drawn from invented values. The affixes `Compressed`, `Volatile` and `Ley-Touched` are never rolled and their numbers are ambiguous (additive or multiplied), so the prototype only marks them. Gear has no material data at all, and `gearMaterial` proposes a profile from tags.
 - **Quality.** Gear rolls −20% to +20% at creation, which scales its stats and item power, and nothing reads it afterward. It only surfaces as `Broken` or `Superior` in the name, past ±15%, and one line of description, past ±10%. Resources and deeds store `quality: 100`, on a different scale, which the prototype treats as no roll. Commodity `purity` is defined and unused. `Broken` as a low-quality name also means something other than the `BROKEN` shown at zero durability, so the card says `Crude` for the first and keeps `Broken` for the second. The prototype puts each fact in its own place on a real pack footprint (36px, 18 atoms a cell): rarity in the frame, wear as bites from the middle of the frame, quality in the fill and plate, rank in its mark. An unidentified item shows only noise, and hides its rank, which today's Bank does not.
@@ -259,24 +263,24 @@ Every string in `code style` exists today. Rewrite anything that doesn't carry t
 
 ## Moments that have no UI yet
 
-This is the most valuable part of the job. These all happen in the game today, but most only appear in a hidden log or not at all. Design each one:
+This is the most valuable part of the job. These all happened in the game when this was written, but most only appeared in a hidden log or not at all. Design each one:
 
-| Moment | Today |
-|---|---|
-| **Sealing a haul: the signed receipt after a successful exit** | Silently returns to a menu |
-| **Losing everything: the `DIED` receipt** | Silently returns to a menu |
-| Hitting and being hit; enemy health; low health | Almost nothing |
-| Channel interrupted by damage | Button quietly reappears |
-| Pack refuses an item, or overflow lands in a cache | Log only |
-| Why an action isn't offered (wrong tool, too far, no energy) | Nothing happens |
-| What was just harvested | Log only |
-| Which direction the exit is | Distance only, no direction |
-| Reading a lore fragment | Tooltip in the Bank only, and it's the best writing in the game |
-| An NPC reacting to you | A number in a button label |
-| Securing an NPC for escort | An item quietly appears |
-| Viewing your ledger, your receipts and an item's history | Not visible anywhere, though it's the core of the fantasy |
-| Craft finished, lot foreclosed for unpaid upkeep | Log only, or a timer you must watch |
-| Unidentified items | Blur and a `?`, with no explanation |
+| Moment | When written | Now (2026-10-31) |
+|---|---|---|
+| **Sealing a haul: the signed receipt after a successful exit** | Silently returns to a menu | Built: holds the screen (Wave 9.6) |
+| **Losing everything: the `DIED` receipt** | Silently returns to a menu | Built, with KEPT BY MAGIC (Waves 9.6, 10C) |
+| Hitting and being hit; enemy health; low health | Almost nothing | Built: brackets, burst, pips, the hurt edge (Wave 8B.5) |
+| Channel interrupted by damage | Button quietly reappears | Built: a feed line |
+| Pack refuses an item, or overflow lands in a cache | Log only | Built: a feed line |
+| Why an action isn't offered (wrong tool, too far, no energy) | Nothing happens | Built: the inspect card gives the reason |
+| What was just harvested | Log only | Built: a feed line |
+| Which direction the exit is | Distance only, no direction | Built: bearing on the beacon chip |
+| Reading a lore fragment | Tooltip in the Bank only, and it's the best writing in the game | Built: the stash and the Study window |
+| An NPC reacting to you | A number in a button label | Built: a feed line |
+| Securing an NPC for escort | An item quietly appears | Not designed as a moment of its own |
+| Viewing your ledger, your receipts and an item's history | Not visible anywhere, though it's the core of the fantasy | Ledger tab with audit (Wave 9.6); the card shows MADE OF and CHAIN (Wave 10D). No view of a provenance chain or past receipts yet |
+| Craft finished, lot foreclosed for unpaid upkeep | Log only, or a timer you must watch | **Still open:** no feed line for either; a foreclosed lot has only its mark in the hub's art |
+| Unidentified items | Blur and a `?`, with no explanation | Built: noise art and the blind sheet; study reveals (Waves 9.4, 10E) |
 
 ## The design system to deliver
 
@@ -301,6 +305,8 @@ Use a naming rule from the lore: surnames from function, failure or geology (*St
 
 ## What to fix along the way
 
+*Status: all of these are closed. Item art replaced the raw icon text and built lots block (Wave 10.2). Labels hold the 12px floor and one theme (Wave 9). Signs are set in full and survey cells share one logic (Waves 8 and 9). Dialogue options are built or refuse in voice (Wave 9.7). The lots' walk-through question was answered by D8 and D9.*
+
 - Item icons currently show raw text such as `weapon_icon` spilling across the Bank grid.
 - **Lots stay walkable with a building on them.** You can walk through your own house. Decide whether a structure should block.
 - Many low-contrast labels are close to unreadable on the void background.
@@ -309,6 +315,8 @@ Use a naming rule from the lore: surnames from function, failure or geology (*St
 - Many dialogue options and Bank menu items do nothing yet: identify, repair, guilds, auction, rest, rumors, study, and equip from the Bank. Design what the world needs, and mark clearly which of these need building, so nothing looks finished that isn't.
 
 ## Constraints
+
+*Status: the first two were overtaken. Screens now use the kit in `src/components/ui/` with `tokens.ts` as the one theme, and Mantine remains only for the admin Genre Creator (D4, D7). The field is on canvas, measured at 4.17ms a frame with 314 things (Waves 8 and 9). Gear now draws from a tag-based material profile (`gearMaterial`). Invented genres still do not reach world generation: `genreForWorld` chooses only among the built-in looks.*
 
 - Built with React 18, TypeScript and Mantine v7, themed through one `theme.ts`. No Tailwind. Layout uses Mantine components.
 - The field is currently DOM elements over a 2D canvas, running about 26 FPS. Assume it moves entirely to canvas with cached bitmaps, and that it must stay fast with about 300 things moving. Avoid effects that are expensive per element, such as blur and large shadows. A later 3D version is planned but isn't part of this ask.
