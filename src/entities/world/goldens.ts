@@ -24,9 +24,9 @@ export interface IGoldenVector {
 
 // Captured 2026-10-30 (Wave 2 generation: terrain-era entities, ruins, NPCs, beacons)
 export const GOLDEN_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 510390627 },
-  { seed: 'golden-beta', size: 32, hash: 1682457704 },
-  { seed: 'dev-sandbox-v3', size: 32, hash: 3902260507 }
+  { seed: 'golden-alpha', size: 16, hash: 2658983577 },
+  { seed: 'golden-beta', size: 32, hash: 407355742 },
+  { seed: 'dev-sandbox-v3', size: 32, hash: 3891877500 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */

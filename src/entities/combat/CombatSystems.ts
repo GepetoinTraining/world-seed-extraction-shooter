@@ -1,4 +1,4 @@
-import { IProjectile } from './projectileSystem';
+import { IProjectile, ProjectileSystem } from './projectileSystem';
 import { IWorldEntity, EntityType, IChunk } from '../world/types';
 import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 import { LootTable } from '../world/LootTable';
@@ -30,8 +30,8 @@ export class CombatSystem {
     chunks: Record<string, IChunk>,
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
-    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number }[]
-  ): { 
+    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; hitIds?: Set<string> }[]
+  ): {
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
     survivingBullets: IProjectile[];
@@ -39,13 +39,20 @@ export class CombatSystem {
     spawnedLoot: { position: { x: number; y: number }; items: IItem[] }[];
   } {
     const events: ICombatEvent[] = [];
-    const updatedChunks = { ...chunks };
+    // Worlds resumed from the database are read-only, so enemies are copied before any change.
+    const updatedChunks: Record<string, IChunk> = {};
+    Object.entries(chunks).forEach(([key, chunk]) => {
+      updatedChunks[key] = {
+        ...chunk,
+        entities: chunk.entities.map(ent => (ent.type === EntityType.MOB ? { ...ent } : ent))
+      };
+    });
     const spawnedLoot: { position: { x: number; y: number }; items: IItem[] }[] = [];
     let playerDamage = 0;
     let survivingBullets = [...bullets];
 
     const allMobs: { mob: IWorldEntity; chunkKey: string }[] = [];
-    Object.entries(chunks).forEach(([key, chunk]) => {
+    Object.entries(updatedChunks).forEach(([key, chunk]) => {
       chunk.entities.forEach(ent => {
         if (ent.type === EntityType.MOB && ent.health && ent.health > 0) {
           allMobs.push({ mob: ent, chunkKey: key });
@@ -53,66 +60,69 @@ export class CombatSystem {
       });
     });
 
+    const resolveDefeat = (mob: IWorldEntity, chunkKey: string) => {
+      const xpAmount = ProgressionSystem.calculateKillXp(mob.rank, mob.rarity, 1);
+      events.push({
+        type: 'KILL',
+        entityId: mob.id,
+        xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity }
+      });
+
+      const def = MOB_DEFINITIONS[mob.definitionId];
+      if (def) {
+        const rollKey = SessionJournal.rollKey('loot', mob.id);
+        const origin = chunks[chunkKey];
+        const loot = LootTable.generateLoot(def, 1.0, origin ? {
+          chunkX: origin.x,
+          chunkY: origin.y,
+          layerId: 'field',
+          biome: origin.biome,
+          magicFind: 1.0,
+          quantityBonus: 1.0
+        } : undefined, rollKey);
+        SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
+        if (loot.length > 0) {
+          spawnedLoot.push({ position: mob.position, items: loot });
+          events.push({ type: 'LOOT_SPAWN', position: mob.position, loot });
+        }
+      }
+
+      const chunk = updatedChunks[chunkKey];
+      if (chunk) {
+        updatedChunks[chunkKey] = {
+          ...chunk,
+          entities: chunk.entities.filter(e => e.id !== mob.id)
+        };
+      }
+    };
+
     // 1. BULLET -> MOB
     const bulletsToRemove = new Set<number>();
-    
+
     bullets.forEach((bullet, bulletIdx) => {
-      allMobs.forEach(({ mob, chunkKey }) => {
-        if (!mob.health || mob.health <= 0) return;
-        
-        const dx = bullet.x - mob.position.x;
-        const dy = bullet.y - mob.position.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      for (const { mob, chunkKey } of allMobs) {
+        if (!mob.health || mob.health <= 0) continue;
 
-        if (dist < 20) { // px: mob radius (12) + bullet radius + grace
-          const damage = bullet.damage ?? 25; // Wave 4: the weapon decides
-          mob.health -= damage;
-          bulletsToRemove.add(bulletIdx);
-          
-          // ACTION: Ranged Hit
-          events.push({
-            type: 'ACTION_LOG',
-            actionContext: {
-                tags: ['ranged', 'projectile', 'tech', 'precision'],
-                magnitude: damage
-            }
-          });
+        // px: mob radius (12) + bullet radius + grace
+        if (ProjectileSystem.sweptDistance(bullet, mob.position.x, mob.position.y) >= 20) continue;
 
-          events.push({ type: 'HIT', entityId: mob.id, damage, position: mob.position });
+        const damage = bullet.damage ?? 25;
+        mob.health -= damage;
+        bulletsToRemove.add(bulletIdx);
 
-          if (mob.health <= 0) {
-            // KILL LOGIC
-            const xpAmount = ProgressionSystem.calculateKillXp(mob.rank, mob.rarity, 1);
-            
-            events.push({ 
-                type: 'KILL', 
-                entityId: mob.id,
-                xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity }
-            });
-
-            const def = MOB_DEFINITIONS[mob.definitionId];
-            if (def) {
-              // Wave 1.3: journaled roll key — replaying this kill re-mints this loot
-              const rollKey = SessionJournal.rollKey('loot', mob.id);
-              const loot = LootTable.generateLoot(def, 1.0, undefined, rollKey);
-              SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
-              if (loot.length > 0) {
-                spawnedLoot.push({ position: mob.position, items: loot });
-                events.push({ type: 'LOOT_SPAWN', position: mob.position, loot });
-              }
-            }
-
-            // Remove mob
-            const chunk = updatedChunks[chunkKey];
-            if (chunk) {
-              updatedChunks[chunkKey] = {
-                ...chunk,
-                entities: chunk.entities.filter(e => e.id !== mob.id)
-              };
-            }
+        events.push({
+          type: 'ACTION_LOG',
+          actionContext: {
+              tags: ['ranged', 'projectile', 'tech', 'precision'],
+              magnitude: damage
           }
-        }
-      });
+        });
+
+        events.push({ type: 'HIT', entityId: mob.id, damage, position: mob.position });
+
+        if (mob.health <= 0) resolveDefeat(mob, chunkKey);
+        break; // a projectile is spent on its first target
+      }
     });
 
     survivingBullets = bullets.filter((_, idx) => !bulletsToRemove.has(idx));
@@ -121,9 +131,11 @@ export class CombatSystem {
     const now = Date.now();
     meleeArcs.forEach(arc => {
       if (now - arc.startTime > 200) return;
-      
+      const hitIds = arc.hitIds ?? (arc.hitIds = new Set<string>());
+
       allMobs.forEach(({ mob, chunkKey }) => {
         if (!mob.health || mob.health <= 0) return;
+        if (hitIds.has(mob.id)) return; // one swing lands once per target
         const dx = mob.position.x - arc.origin.x;
         const dy = mob.position.y - arc.origin.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -135,7 +147,8 @@ export class CombatSystem {
         if (angleDiff < 0.75 || angleDiff > Math.PI * 2 - 0.75) {
           const damage = arc.damage ?? 50; // Wave 4: the weapon decides
           mob.health -= damage;
-          
+          hitIds.add(mob.id);
+
           // ACTION: Melee Hit
           events.push({
             type: 'ACTION_LOG',
@@ -147,15 +160,7 @@ export class CombatSystem {
 
           events.push({ type: 'HIT', entityId: mob.id, damage, position: mob.position });
 
-          if (mob.health <= 0) {
-             const xpAmount = ProgressionSystem.calculateKillXp(mob.rank, mob.rarity, 1);
-             events.push({ type: 'KILL', entityId: mob.id, xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity } });
-             // ... (loot logic repeated) ...
-             const chunk = updatedChunks[chunkKey];
-             if (chunk) {
-               updatedChunks[chunkKey] = { ...chunk, entities: chunk.entities.filter(e => e.id !== mob.id) };
-             }
-          }
+          if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         }
       });
     });

@@ -14,6 +14,9 @@ import { Ledger } from '../../logic/ledger/Ledger';
 import { Treasury } from '../../logic/economy/Treasury';
 import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../economy/data/recipeDefinitions';
 import { TransformationEngine } from '../economy/TransformationEngine';
+import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
+
+export const HUB_ENDOWMENT_GOLD = 100_000;
 
 // =============================================================================
 // TYPES
@@ -32,6 +35,8 @@ export interface IPlayerLot {
   shopListings?: { item: IItem; price: number }[];
   // Wave 5.4: upkeep is charged per world-day; unpaid lots revert to market
   upkeepPaidThroughDay?: number;
+  // Sale money held on the lot until its owner collects it
+  proceeds?: number;
 }
 
 // Wave 5.2: a queued transformation. Accumulate/resolve — the job is just
@@ -96,8 +101,10 @@ interface HubState {
   buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR') => Promise<boolean>;
   queueCraft: (lotId: string, recipeId: string) => Promise<boolean>;
   resolveCrafts: () => Promise<number>;
+  sellToVendor: (itemId: string) => Promise<number | null>;
   listItemForSale: (lotId: string, itemId: string, price: number) => Promise<boolean>;
   buyFromLot: (lotId: string, itemId: string) => Promise<boolean>;
+  collectProceeds: (lotId: string) => Promise<number>;
   resolveUpkeep: (simDay?: number) => Promise<void>;
 
   // Admin / Generator
@@ -156,6 +163,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       // In a real app, this would be server-side. Here we simulate it.
       get().generateDailyStock();
 
+      await Treasury.endow(hubWorldUid, HUB_ENDOWMENT_GOLD);
+
       // 3. Wave 5: resolve what time finished while nobody watched
       await get().resolveCrafts();
       await get().resolveUpkeep();
@@ -170,6 +179,9 @@ export const useHubStore = create<HubState>((set, get) => ({
   saveHubState: async () => {
     const { activeHubId, lots, craftingJobs } = get();
     if (!activeHubId) return;
+
+    // Hub changes usually move gold or items, so the bank is saved with them
+    void PlayerPersistence.flush('hub');
 
     await VectorStore.put({
       id: `hub_state_${activeHubId}`,
@@ -196,7 +208,8 @@ export const useHubStore = create<HubState>((set, get) => ({
             ...l, 
             ownerId: playerId, 
             ownerName: playerName, 
-            purchaseDate: Date.now() 
+            purchaseDate: Date.now(),
+            upkeepPaidThroughDay: worldDay()
           }
         : l
     );
@@ -346,6 +359,40 @@ export const useHubStore = create<HubState>((set, get) => ({
     return minted;
   },
 
+  /**
+   * Sell a stash item to the system vendor at 60% of its value. The gold comes
+   * from the hub treasury, so a hub with no funds cannot buy.
+   */
+  sellToVendor: async (itemId) => {
+    const { activeHubId } = get();
+    const p = usePlayerStore.getState().player;
+    if (!activeHubId) return null;
+    const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
+    if (!item) return null;
+
+    const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
+    const treasuryGold = await Treasury.balance(activeHubId);
+    if (treasuryGold < offer) {
+      console.log(`[VENDOR] The hub treasury cannot cover ${offer}G. Nothing moves.`);
+      return null;
+    }
+
+    usePlayerStore.setState(s => ({
+      player: { ...s.player, bank: {
+        ...s.player.bank,
+        gold: s.player.bank.gold + offer,
+        stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+          idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== itemId) } : tab
+        )
+      } }
+    }));
+    await Treasury.credit(activeHubId, -offer);
+    await Ledger.append('GOLD_DELTA', { reason: 'VENDOR_BUYBACK', itemId, defId: item.universalDefinitionId, amount: offer, treasuryId: activeHubId, treasuryDelta: -offer });
+    void PlayerPersistence.flush('vendor');
+    console.log(`[VENDOR] Sold ${item.name} for ${offer}G (treasury-funded).`);
+    return offer;
+  },
+
   /** Put a stash item on your VENDOR lot's shelf. */
   listItemForSale: async (lotId, itemId, price) => {
     const { lots, saveHubState } = get();
@@ -401,22 +448,36 @@ export const useHubStore = create<HubState>((set, get) => ({
       } }
     }));
     await Treasury.credit(activeHubId, fee);
-    if (!buyerIsOwner && lot.ownerId) {
-      // A remote owner's proceeds accrue to their lot inventory as an IOU of
-      // gold — settled when multiplayer arrives (debt noted in the handover)
-      console.log(`[SHOP] ${net}G owed to ${lot.ownerName} (remote settlement pending).`);
-    }
     await Ledger.append('TRADE', { kind: 'SHOP_SALE', lotId, itemId, price: listing.price, fee, playerDelta, treasuryDelta: fee });
     // Wave 6.2: ownership change goes on the item's record
     const { Provenance } = await import('../../logic/sovereignty/Provenance');
     await Provenance.record(listing.item, 'TRANSFER', { via: 'PLAYER_SHOP', lotId, price: listing.price, fee });
 
     set({ lots: get().lots.map(l => l.id === lotId
-      ? { ...l, shopListings: (l.shopListings || []).filter(li => li.item.id !== itemId) }
+      ? {
+          ...l,
+          shopListings: (l.shopListings || []).filter(li => li.item.id !== itemId),
+          proceeds: (l.proceeds || 0) + (buyerIsOwner ? 0 : net)
+        }
       : l) });
     await saveHubState();
     console.log(`[SHOP] Bought ${listing.item.name} for ${listing.price}G (hub kept ${fee}G).`);
     return true;
+  },
+
+  /** Move a lot's held sale money to its owner's bank. */
+  collectProceeds: async (lotId) => {
+    const { lots, saveHubState } = get();
+    const lot = lots.find(l => l.id === lotId);
+    const p = usePlayerStore.getState().player;
+    const amount = lot?.proceeds || 0;
+    if (!lot || lot.ownerId !== p.id || amount <= 0) return 0;
+
+    set({ lots: get().lots.map(l => l.id === lotId ? { ...l, proceeds: 0 } : l) });
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + amount } } }));
+    await Ledger.append('GOLD_DELTA', { reason: 'SHOP_PROCEEDS', lotId, amount });
+    await saveHubState();
+    return amount;
   },
 
   /** Charge upkeep per world-day on owned lots; unpaid lots revert to market. */
@@ -432,6 +493,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       const paidThrough = lot.upkeepPaidThroughDay ?? day;
       const owed = day - paidThrough;
       if (owed <= 0) continue;
+      if (lot.ownerId === p.id) await get().collectProceeds(lot.id);
       changed = true;
 
       const rate = lot.structureType === 'EMPTY' ? 5 : STRUCTURE_COSTS[lot.structureType].upkeepPerDay;
@@ -477,7 +539,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool') => {
       return Array.from({ length: count }, (_, i) => {
         const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${i}`);
-        const item = ItemFactory.createItem(rank, true, rng, type); // Identified, category-pinned
+        // The first two tool slots are always the two harvesting tools
+        const toolBase = type === 'tool' ? ['tool_axe_field_t1', 'tool_pick_rusty_t1'][i] : undefined;
+        const item = ItemFactory.createItem(rank, true, rng, type, toolBase);
         return {
           id: `listing_${type}_${rank}_${i}`,
           item,
@@ -532,6 +596,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     // Wave 5.1: conservation — the system vendor's take belongs to the hub
     const hubId = get().activeHubId || 'hub_unknown';
     void Treasury.credit(hubId, price);
+    void PlayerPersistence.flush('shop');
     void Ledger.append('GOLD_DELTA', { reason: 'SHOP_PURCHASE', itemId: purchasedItem.id, defId: purchasedItem.universalDefinitionId, amount: -price, treasuryId: hubId, treasuryDelta: price });
 
     const updatedListings = listings.map(l =>

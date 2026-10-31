@@ -58,6 +58,9 @@ interface PlayerState {
   dropItem: (itemId: string) => void;
   rotateItem: (itemId: string) => void;
 
+  toggleCarry: (itemId: string) => void;
+  consumeItem: (itemId: string) => void;
+
   // Wave 4: stats mean something
   equipItem: (itemId: string) => void;
   unequipSlot: (slot: keyof IEquippedSlots) => void;
@@ -192,8 +195,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // They leave the bank (they're on your back now) and return on extraction
     // via normal banking. Wave 4's death rules will make losing them real.
     const mainStash = player.bank.stashTabs[0]?.items || [];
-    const fieldKit = mainStash.filter(i => i.tags?.includes('tool'));
-    const remainingStash = mainStash.filter(i => !i.tags?.includes('tool'));
+    const carried = (i: IItem) => i.tags?.includes('tool') || player.bank.carryItemIds?.includes(i.id);
+    const fieldKit = mainStash.filter(carried);
+    const remainingStash = mainStash.filter(i => !carried(i));
     if (fieldKit.length > 0) console.log(`[DIVE] Field kit equipped: ${fieldKit.map(i => i.name).join(', ')}`);
 
     set((state) => ({
@@ -202,6 +206,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         ...state.player,
         bank: {
           ...state.player.bank,
+          carryItemIds: [],
           stashTabs: state.player.bank.stashTabs.map((tab, idx) =>
             idx === 0 ? { ...tab, items: remainingStash } : tab
           )
@@ -210,8 +215,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           sessionId: crypto.randomUUID(),
           layerId: layerId,
           inventory: fieldKit,
+          kitItemIds: fieldKit.map(i => i.id),
           inventoryLayout: InventorySystem.placeAll(fieldKit),
-          health: 100,
+          health: 100 + (state.player.attributes.constitution * 10),
           maxHealth: 100 + (state.player.attributes.constitution * 10),
           energy: 50 + (state.player.attributes.endurance * 5),
           position: { x: 1500, y: 0, z: 1500 },
@@ -428,6 +434,37 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   // --------------------------------------------------------------------
   // WAVE 4: EQUIPMENT
   // --------------------------------------------------------------------
+
+  /** Use a carried consumable. Negative restore values are harmful on purpose. */
+  consumeItem: (itemId) => {
+    const session = get().player.currentSession;
+    const item = session?.inventory.find(i => i.id === itemId);
+    if (!session || !item || item.type !== ItemType.CONSUMABLE) return;
+
+    const restore = item.stats?.health_restore || 0;
+    const health = Math.max(1, Math.min(session.maxHealth, session.health + restore));
+    const layout = { ...(session.inventoryLayout || {}) };
+    delete layout[itemId];
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: {
+        ...s.player.currentSession,
+        health,
+        inventory: s.player.currentSession.inventory.filter(i => i.id !== itemId),
+        inventoryLayout: layout
+      } }
+    }) : s);
+    get().recalcWeight();
+    SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, health });
+  },
+
+  /** Mark a stash item to go along on the next session. */
+  toggleCarry: (itemId) => {
+    set(s => {
+      const current = s.player.bank.carryItemIds || [];
+      const carryItemIds = current.includes(itemId) ? current.filter(id => id !== itemId) : [...current, itemId];
+      return { player: { ...s.player, bank: { ...s.player.bank, carryItemIds } } };
+    });
+  },
 
   /** Wield/wear an item from the pack. The slot bucket follows SlotType. */
   equipItem: (itemId) => {

@@ -9,6 +9,7 @@ import { PlayerHub } from './src/components/PlayerHub';
 import { GenreCreator } from './src/components/admin/GenreCreator';
 import { IdentityGate } from './src/components/IdentityGate'; 
 import { HubSelector } from './src/components/HubSelector'; // NEW IMPORT
+import { HoldingsPanel } from './src/components/HoldingsPanel';
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
 import { 
   Box, Text, Button, Stack, Group, Badge,
@@ -21,7 +22,7 @@ import { installConsoleInterceptor, useLogStore } from './src/components/debug/L
 
 installConsoleInterceptor();
 
-type AppView = 'HUB' | 'MISSIONS' | 'SESSION' | 'BANK' | 'ADMIN';
+type AppView = 'HUB' | 'MISSIONS' | 'SESSION' | 'BANK' | 'HOLDINGS' | 'ADMIN';
 
 const App: React.FC = () => {
   const { player, emergencyJackOut } = usePlayerStore();
@@ -184,6 +185,15 @@ const App: React.FC = () => {
             variant="light"
           />
           
+          <NavLink
+            label="Holdings"
+            leftSection={<Text>🏗️</Text>}
+            active={view === 'HOLDINGS'}
+            onClick={() => setView('HOLDINGS')}
+            color="emerald"
+            variant="light"
+          />
+
           {devMode && (
             <>
               <Divider my="sm" />
@@ -206,6 +216,7 @@ const App: React.FC = () => {
           {view === 'HUB' && <HubCanvas />}
           {view === 'MISSIONS' && <MissionControl />}
           {view === 'BANK' && <PlayerHub />}
+          {view === 'HOLDINGS' && <HoldingsPanel devMode={devMode} />}
           {view === 'ADMIN' && <GenreCreator />}
         </Box>
       </AppShell.Main>

@@ -37,8 +37,17 @@ export class Ledger {
     return `ledger_${uid}_${seq.toString().padStart(8, '0')}`;
   }
 
+  // Each append reads the head then writes it, so overlapping appends must queue.
+  private static queue: Promise<unknown> = Promise.resolve();
+
   /** Append one signed row. Returns the new seq, or null on failure. */
-  static async append(type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
+  static append(type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
+    const run = this.queue.then(() => this.write(type, data));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private static async write(type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return null;
     const uid = cert.metadata.uid;
@@ -90,6 +99,14 @@ export class Ledger {
       if (doc?.data) rows.push(doc.data);
     }
     return rows;
+  }
+
+  /** Every identity's rows held on this machine. */
+  static async listAll(): Promise<ISignedPayload<ILedgerRow>[]> {
+    const docs = await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS });
+    return docs
+      .filter(d => d.id.startsWith('ledger_') && !d.id.startsWith('ledger_head_'))
+      .map(d => d.data);
   }
 
   /** Verify every row's signature and the seq chain. */

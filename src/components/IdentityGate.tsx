@@ -3,7 +3,7 @@ import { useIdentityStore, IdentityState } from '../entities/identity/store';
 import { usePlayerStore, ARCHETYPES } from '../entities/player/store';
 import { 
   Center, Paper, Stack, TextInput, Button, Text, Loader, Alert, 
-  SimpleGrid, Card, Badge, Group, Divider, ActionIcon
+  SimpleGrid, Card, Badge, Group, Divider, ActionIcon, FileInput, PasswordInput
 } from '@mantine/core';
 
 export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
@@ -13,6 +13,9 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   const [name, setName] = useState('');
   const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [backupPass, setBackupPass] = useState('');
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   useEffect(() => {
     checkExistingIdentity();
@@ -30,6 +33,15 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
       }
     }
     setCreating(false);
+  };
+
+  const handleRestore = async () => {
+    if (!backupFile) return;
+    setRestoreError(null);
+    const { AvatarExport } = await import('../logic/sovereignty/AvatarExport');
+    const result = await AvatarExport.importAvatar(await backupFile.text(), backupPass);
+    if (result.ok) window.location.reload();
+    else setRestoreError(result.reason || 'Unknown error');
   };
 
   const handleLogin = () => {
@@ -197,6 +209,16 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           >
             MINT IDENTITY CERTIFICATE
           </Button>
+
+          <Divider label="OR RESTORE A BACKUP" labelPosition="center" />
+          <Group align="flex-end" grow>
+            <FileInput label="Backup file" placeholder="wsav_....json" value={backupFile} onChange={setBackupFile} accept="application/json" />
+            <PasswordInput label="Passphrase" value={backupPass} onChange={(e) => setBackupPass(e.target.value)} />
+            <Button variant="outline" color="emerald" disabled={!backupFile || !backupPass} onClick={handleRestore}>
+              RESTORE AVATAR
+            </Button>
+          </Group>
+          {restoreError && <Alert color="red" title="Restore refused">{restoreError}</Alert>}
         </Stack>
       </Paper>
     </Center>

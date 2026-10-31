@@ -193,6 +193,7 @@ export class MobAI {
                 type: decision.action === BehaviorPrimitive.ATTACK_RANGED ? PatternType.SINGLE : 'MELEE',
                 // Wave 4.3: the definition decides what this attack costs you
                 damage: CombatMath.mobDamage(MOB_DEFINITIONS[entity.definitionId]),
+                shooterId: entity.id,
                 // Origin is 2D { x, y }
                 origin: { x: entity.position.x, y: entity.position.y },
                 angle: angle,

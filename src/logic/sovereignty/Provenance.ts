@@ -12,7 +12,7 @@
  */
 
 import { IItem } from '../../../types';
-import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
+import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../entities/identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
 import { useIdentityStore } from '../../entities/identity/store';
 
@@ -25,9 +25,13 @@ export interface IProvenanceEvent {
   at: number;
 }
 
+export interface IProvenanceRecord extends ISignedPayload<IProvenanceEvent> {
+  signerKey: JsonWebKey;
+}
+
 export interface IProvenanceChain {
   itemId: string;
-  events: ISignedPayload<IProvenanceEvent>[];
+  events: IProvenanceRecord[];
 }
 
 export class Provenance {
@@ -51,8 +55,10 @@ export class Provenance {
       const signed = await CertificateSystem.signPayload(cert.metadata.uid, event);
 
       const existing = await VectorStore.get<IProvenanceChain>(VectorNamespace.ITEMS, this.docId(item.id));
-      const chain: IProvenanceChain = existing?.data ?? { itemId: item.id, events: [] };
-      chain.events.push(signed);
+      const chain: IProvenanceChain = {
+        itemId: item.id,
+        events: [...(existing?.data?.events ?? []), { ...signed, signerKey: cert.publicKeyJWK }]
+      };
 
       await VectorStore.put({
         id: this.docId(item.id),
@@ -76,12 +82,11 @@ export class Provenance {
     const doc = await VectorStore.get<IProvenanceChain>(VectorNamespace.ITEMS, this.docId(itemId));
     if (!doc?.data) return { ok: false, events: 0 };
 
-    const cert = useIdentityStore.getState().certificate;
-    for (const signed of doc.data.events) {
-      // A multi-identity world would resolve each actor's cert from a registry;
-      // locally every event is ours.
-      if (!cert || signed.certUid !== cert.metadata.uid) return { ok: false, events: doc.data.events.length };
-      const valid = await CertificateSystem.verifyPayload(signed, cert);
+    // Each record carries its signer's public key, so items that changed hands
+    // verify. This proves the chain is intact, not who a key belongs to.
+    for (const record of doc.data.events) {
+      const { signerKey, ...signed } = record;
+      const valid = await CertificateSystem.verifyPayload(signed, { publicKeyJWK: signerKey } as IPlayerCertificate);
       if (!valid) return { ok: false, events: doc.data.events.length };
     }
     return {

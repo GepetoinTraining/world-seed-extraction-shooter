@@ -144,22 +144,6 @@ export class InteractionEngine {
       }
     }
 
-    // 3. PICKUP (Simple)
-    if (target.type === EntityType.CONTAINER || (target.type === EntityType.RESOURCE && target.rank === 'F')) {
-       if (dist < 2.0) {
-         options.push({
-           id: 'int_pickup',
-           label: 'Grab',
-           type: InteractionType.PICKUP,
-           icon: '✋',
-           energyCost: 0,
-           timeCostSeconds: 0.5,
-           requirements: {},
-           consequence: {}
-         });
-       }
-    }
-
     return options;
   }
 }

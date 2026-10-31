@@ -51,7 +51,7 @@ export const HubCanvas: React.FC = () => {
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
   
   const { player } = usePlayerStore();
-  const { lots, weaponShop, purchaseLot, purchaseFromShop } = useHubStore();
+  const { weaponShop, armorShop, purchaseFromShop } = useHubStore();
   const { refreshWorlds, availableWorlds, selectWorld } = useWorldStore();
   
   // Additional UI states
@@ -422,7 +422,7 @@ export const HubCanvas: React.FC = () => {
         <Stack>
           <Text size="sm" c="dimmed">Your Gold: {player.bank.gold.toLocaleString()} G</Text>
           <Divider />
-          {(shopType === 'weapon' ? weaponShop : []).map(listing => (
+          {(shopType === 'weapon' ? weaponShop : shopType === 'armor' ? armorShop : []).map(listing => (
             <Paper key={listing.id} p="sm" bg="dark.6" withBorder>
               <Group justify="space-between">
                 <div>

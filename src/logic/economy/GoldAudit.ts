@@ -32,33 +32,22 @@ export class GoldAudit {
 
     const rows = await Ledger.list(cert.metadata.uid);
     let player = 0;
-    let treasury = 0;
-
     for (const signed of rows) {
       const { type, data } = signed.payload;
-      switch (type) {
-        case 'CHARACTER_GENESIS':
-          player += data.gold ?? 500; // the birthright grant
-          break;
-        case 'GOLD_DELTA':
-          player += data.amount ?? 0;
-          treasury += data.treasuryDelta ?? 0;
-          break;
-        case 'TAX':
-          player -= data.tax ?? 0;
-          treasury += data.tax ?? 0;
-          break;
-        case 'UPKEEP':
-          player -= data.amount ?? 0;
-          treasury += data.amount ?? 0;
-          break;
-        case 'TRADE':
-          player += data.playerDelta ?? 0;
-          treasury += data.treasuryDelta ?? 0;
-          break;
-        default:
-          break; // SESSION_RESULT, CRAFT, TOMBSTONE carry no gold
-      }
+      if (type === 'CHARACTER_GENESIS') player += data.gold ?? 500;
+      if (type === 'GOLD_DELTA') player += data.amount ?? 0;
+      if (type === 'TAX') player -= data.tax ?? 0;
+      if (type === 'UPKEEP') player -= data.amount ?? 0;
+      if (type === 'TRADE') player += data.playerDelta ?? 0;
+    }
+
+    // Treasuries are shared, so their expectation spans every identity's rows.
+    let treasury = await Treasury.totalEndowed();
+    for (const signed of await Ledger.listAll()) {
+      const { type, data } = signed.payload;
+      if (type === 'GOLD_DELTA' || type === 'TRADE') treasury += data.treasuryDelta ?? 0;
+      if (type === 'TAX') treasury += data.tax ?? 0;
+      if (type === 'UPKEEP') treasury += data.amount ?? 0;
     }
 
     const actualPlayer = usePlayerStore.getState().player.bank.gold;

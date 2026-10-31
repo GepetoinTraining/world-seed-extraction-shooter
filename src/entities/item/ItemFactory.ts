@@ -16,7 +16,7 @@ export class ItemFactory {
    *              it from a journaled key; the unkeyed fallback exists only so
    *              nothing crashes while legacy call sites migrate, and it logs.
    */
-  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool'): IItem {
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string): IItem {
     if (!rng) {
       console.warn('[FACTORY] Unkeyed item mint — roll is not replayable. Pass an Rng.fromKey stream.');
       rng = Rng.fromKey(`unkeyed:${Date.now()}:${Math.random()}`);
@@ -32,9 +32,12 @@ export class ItemFactory {
         ...ITEM_DEFINITIONS.tool_bases
       ];
 
+    const pinned = baseId ? allBases.find(b => b.id === baseId) : undefined;
     let template: ItemDefinition;
 
-    if (targetRank) {
+    if (pinned) {
+      template = pinned;
+    } else if (targetRank) {
       const candidates = allBases.filter(b => b.rank === targetRank);
       template = candidates.length > 0
         ? rng.pick(candidates)

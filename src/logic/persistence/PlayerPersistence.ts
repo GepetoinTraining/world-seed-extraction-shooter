@@ -65,7 +65,10 @@ export class PlayerPersistence {
   /** Sign and write the player doc now. */
   static async flush(reason: string): Promise<boolean> {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    if (this.saving) return false;
+    if (this.saving) {
+      this.scheduleAutosave();
+      return false;
+    }
 
     const cert = useIdentityStore.getState().certificate;
     const { player } = usePlayerStore.getState();

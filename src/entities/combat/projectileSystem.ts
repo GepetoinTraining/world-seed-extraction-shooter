@@ -10,7 +10,15 @@ export interface IProjectile {
   lifespan: number;
   color: string;
   damage?: number; // Wave 4: carried from the weapon/mob that fired it
+  // Position on the previous frame, so a slow frame cannot skip over a target
+  prevX?: number;
+  prevY?: number;
 }
+
+const PROJECTILE_SPEED_PX = 200; // 10 tiles/s at 20px tiles
+const PROJECTILE_FLIGHT_S = 2.0;
+export const PROJECTILE_RANGE_PX = PROJECTILE_SPEED_PX * PROJECTILE_FLIGHT_S;
+export const SIM_RADIUS_CHUNKS = Math.ceil(PROJECTILE_RANGE_PX / 100) + 1;
 
 export enum PatternType {
   SINGLE = 'SINGLE',
@@ -33,8 +41,8 @@ export class ProjectileSystem {
     if (elapsed < 0) return [];
 
     const bullets: IProjectile[] = [];
-    const speed = 200; // px per second (10 tiles/s at 20px tiles)
-    const range = 2.0; // seconds of flight (400px reach)
+    const speed = PROJECTILE_SPEED_PX;
+    const range = PROJECTILE_FLIGHT_S;
 
     if (elapsed > range) return [];
 
@@ -73,6 +81,42 @@ export class ProjectileSystem {
     return bullets;
   }
   
+  /**
+   * Projectiles of one firing pattern that are still in flight this frame.
+   * Positions are recomputed from time, so `spent` remembers shots that landed.
+   */
+  static liveShots(
+    pattern: { type: PatternType; origin: { x: number; y: number }; startTime: number; angle: number; damage?: number },
+    shotId: (bulletId: string) => string,
+    now: number,
+    prevTick: number,
+    spent: Map<string, number>
+  ): IProjectile[] {
+    return this.getProjectilesAtTime(pattern.type, pattern.origin, pattern.startTime, now, pattern.angle)
+      .map(b => {
+        const back = (Math.min(now - prevTick, now - pattern.startTime) / 1000) * b.speed;
+        return {
+          ...b,
+          id: shotId(b.id),
+          damage: pattern.damage,
+          prevX: b.x - Math.cos(b.angle) * back,
+          prevY: b.y - Math.sin(b.angle) * back
+        };
+      })
+      .filter(b => !spent.has(b.id));
+  }
+
+  /** Closest approach of a projectile's path this frame to a point. */
+  static sweptDistance(bullet: IProjectile, px: number, py: number): number {
+    const ax = bullet.prevX ?? bullet.x;
+    const ay = bullet.prevY ?? bullet.y;
+    const abx = bullet.x - ax;
+    const aby = bullet.y - ay;
+    const lengthSq = abx * abx + aby * aby;
+    const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSq));
+    return Math.hypot(ax + abx * t - px, ay + aby * t - py);
+  }
+
   // --- NEW: COLLISION/DEFLECTION LOGIC ---
   static checkDeflection(bullet: IProjectile, swingOrigin: {x: number, y: number}, swingAngle: number): boolean {
       // Simple check: Is bullet within swing range (2.0) and within arc?

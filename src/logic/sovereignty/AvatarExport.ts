@@ -19,6 +19,7 @@ import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../ent
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
 import { sha256Hex } from '../journal/SessionJournal';
+import { PlayerPersistence } from '../persistence/PlayerPersistence';
 
 const MAGIC = 'WSAV';
 const VERSION = 1;
@@ -72,6 +73,7 @@ export class AvatarExport {
       { name: 'AES-GCM', iv: iv as BufferSource }, aes, new TextEncoder().encode(JSON.stringify(jwk))
     );
 
+    await PlayerPersistence.flush('export');
     const playerDoc = await VectorStore.get<ISignedPayload<IPlayer>>(VectorNamespace.CHARACTERS, uid);
     const ledger = await Ledger.list(uid);
 

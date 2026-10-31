@@ -15,7 +15,13 @@ export interface IGenerationContext {
 export class WorldGenerator {
   
   // NOW ACCEPTS CONTEXT
-  static generate(seed: string, size: number, context: IGenerationContext): IMap {
+  static generate(seed: string, size: number, loaded: IGenerationContext): IMap {
+    // Rolls pick by index, so definitions need an order the database cannot change.
+    const byId = (a: any, b: any) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const context: IGenerationContext = {
+      mobDefinitions: [...loaded.mobDefinitions].sort(byId),
+      resourceDefinitions: [...loaded.resourceDefinitions].sort(byId)
+    };
     const rng = new SeededRNG(seed);
     const chunks: Record<string, IChunk> = {};
     const extractionPoints: string[] = [];
@@ -70,6 +76,23 @@ export class WorldGenerator {
     };
   }
 
+  /**
+   * Enemies a chunk may spawn: its genre, at or below its rank. When a genre has
+   * nothing that low, only its weakest non-boss member qualifies.
+   */
+  private static spawnPool(context: IGenerationContext, genre: GenreType, rank: UniversalRank): any[] {
+    const order = Object.values(UniversalRank);
+    const rankOf = (m: any) => order.indexOf(m.rank);
+    const genreMobs = context.mobDefinitions.filter((m: any) => m.genre === genre);
+    const eligible = genreMobs.filter((m: any) => rankOf(m) <= order.indexOf(rank));
+    if (eligible.length > 0) return eligible;
+
+    const regulars = genreMobs.filter((m: any) => !(m.tags || []).some((t: string) => ['boss', 'god', 'titan'].includes(t)));
+    const candidates = regulars.length > 0 ? regulars : genreMobs;
+    const lowest = Math.min(...candidates.map(rankOf));
+    return candidates.filter((m: any) => rankOf(m) === lowest);
+  }
+
   private static rollRarity(rng: SeededRNG): { rank: UniversalRank, rarity: Rarity } {
       const roll = rng.next() * 100;
       if (roll < 45) return { rank: UniversalRank.F, rarity: Rarity.COMMON };
@@ -112,15 +135,7 @@ export class WorldGenerator {
     // ~40% of chunks host 1-2 mobs; keeps aggro manageable at 100px chunk scale
     const mobCount = rng.next() < 0.4 ? Math.floor(rng.range(1, 3)) : 0;
     for(let i=0; i<mobCount; i++) {
-        const genreMobs = context.mobDefinitions.filter((m: any) => m.genre === genre);
-        const rankIndex = Object.values(UniversalRank).indexOf(rank);
-        
-        let validMobs = genreMobs.filter((m: any) => {
-            const mobRankIndex = Object.values(UniversalRank).indexOf(m.rank);
-            return mobRankIndex <= rankIndex; 
-        });
-        
-        if (validMobs.length === 0 && genreMobs.length > 0) validMobs = [genreMobs[0]]; 
+        const validMobs = this.spawnPool(context, genre, rank);
 
         if (validMobs.length > 0) {
             const template = rng.pick(validMobs);
@@ -188,9 +203,9 @@ export class WorldGenerator {
         });
 
         // The garrison: two extra mobs guarding it
-        const genreMobs = context.mobDefinitions.filter((m: any) => m.genre === genre);
-        for (let g = 0; g < 2 && genreMobs.length > 0; g++) {
-            const guard: any = rng.pick(genreMobs);
+        const guardPool = this.spawnPool(context, genre, rank);
+        for (let g = 0; g < 2 && guardPool.length > 0; g++) {
+            const guard: any = rng.pick(guardPool);
             chunk.entities.push({
                 id: `ent_${x}_${y}_guard${g}`,
                 type: EntityType.MOB,

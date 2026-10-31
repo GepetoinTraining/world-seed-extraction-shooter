@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { IActiveSession, IItem } from '../../types';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
-import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/projectileSystem';
+import { ProjectileSystem, PatternType, IProjectile, SIM_RADIUS_CHUNKS } from '../entities/combat/projectileSystem';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
@@ -14,8 +14,7 @@ import { TerrainSystem, TILE_PX } from '../entities/world/TerrainSystem';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
-import { Ledger } from '../logic/ledger/Ledger';
-import { Treasury } from '../logic/economy/Treasury';
+import { ExitLevy } from '../logic/economy/ExitLevy';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -142,7 +141,7 @@ const TerrainCanvas = ({ seed, playerX, playerZ }: { seed: string; playerX: numb
  */
 const CELL = 36;
 const PackGrid = ({ session }: { session: IActiveSession }) => {
-  const { dropItem, rotateItem, equipItem, currentWeight, maxWeight } = usePlayerStore();
+  const { dropItem, rotateItem, equipItem, consumeItem, currentWeight, maxWeight } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
 
   const layout = session.inventoryLayout || {};
@@ -212,7 +211,10 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
             {selectedItem.name}
             {selectedItem.stats?.durability !== undefined ? ` (${selectedItem.stats.durability}/${selectedItem.stats.maxDurability ?? 100})` : ''}
           </Text>
-          {selectedItem.slot !== 'NONE' && (
+          {selectedItem.type === 'CONSUMABLE' && (
+            <Button size="compact-xs" variant="light" color="emerald" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>Use</Button>
+          )}
+          {selectedItem.slot !== 'NONE' && selectedItem.type !== 'CONSUMABLE' && (
             <Button size="compact-xs" variant="light" color="gold" onClick={() => equipItem(selectedItem.id)}>Equip</Button>
           )}
           <Button size="compact-xs" variant="light" onClick={() => rotateItem(selectedItem.id)}>Rotate</Button>
@@ -409,6 +411,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   // Wave 4.1: fire-rate limiter
   const lastShotRef = useRef<number>(0);
+  const spentShots = useRef<Map<string, number>>(new Map());
 
   // Equipped gear resolvers (ids -> live items)
   const getEquipped = (slot: 'mainHand' | 'armor' | 'accessory') => {
@@ -434,25 +437,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const world = useWorldStore.getState();
     const card = world.availableWorlds.find(w => w.id === world.activeWorldId);
     const worldCertUid = world.activeWorldId;
-    const haulValue = session.inventory.reduce((s, i) => s + (i.value || 0), 0);
+    const haul = session.inventory.filter(i => !session.kitItemIds?.includes(i.id));
+    const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
     const rate = card?.extractionTaxRate ?? 0.05;
     const tax = Math.floor(haulValue * rate);
 
-    const haul = [...session.inventory];
     SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax });
     st.emergencyJackOut();
     world.exitWorld();
 
     void (async () => {
-      if (tax > 0) {
-        // The hub takes its cut from the bank — interdependence is not optional
-        usePlayerStore.setState(state => ({
-          player: { ...state.player, bank: { ...state.player.bank, gold: Math.max(0, state.player.bank.gold - tax) } }
-        }));
-        await Ledger.append('TAX', { worldCertUid, haulValue, rate, tax });
-        await Treasury.credit(worldCertUid || 'unknown', tax);
-        console.log(`[TAX] Hub levied ${tax}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
-      }
+      const charged = await ExitLevy.charge(worldCertUid || 'unknown', haulValue, rate);
+      if (charged > 0) console.log(`[TAX] Hub levied ${charged}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
       // Wave 6.2: everything that made it home gets its story signed
       const { Provenance } = await import('../logic/sovereignty/Provenance');
       await Provenance.recordMany(haul, 'MINT', { origin: 'EXTRACTION', sessionId: session.sessionId, worldCertUid });
@@ -513,7 +509,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const gameLoop = (time: number) => {
       const now = Date.now();
       // --- PHYSICS FIX: DELTA TIME (Seconds, clamped) ---
-      const dt = Math.min((now - lastTickRef.current) / 1000, MAX_DELTA);
+      const prevTick = lastTickRef.current;
+      const dt = Math.min((now - prevTick) / 1000, MAX_DELTA);
       lastTickRef.current = now;
 
       // A. Movement Logic (Time-Based)
@@ -567,13 +564,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         return;
       }
 
-      // Filter visible chunks
+      // Simulate every chunk a projectile fired from here can reach
       const visibleChunks: Record<string, IChunk> = {};
       const pChunkX = Math.floor(playerPos.x / 100);
       const pChunkY = Math.floor(playerPos.z / 100);
 
-      for (let y = pChunkY - 1; y <= pChunkY + 1; y++) {
-        for (let x = pChunkX - 1; x <= pChunkX + 1; x++) {
+      for (let y = pChunkY - SIM_RADIUS_CHUNKS; y <= pChunkY + SIM_RADIUS_CHUNKS; y++) {
+        for (let x = pChunkX - SIM_RADIUS_CHUNKS; x <= pChunkX + SIM_RADIUS_CHUNKS; x++) {
           const key = `${x},${y}`;
           if (liveMap.chunks[key]) visibleChunks[key] = liveMap.chunks[key];
         }
@@ -610,22 +607,23 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (ranged.length > 0) setEnemyPatterns(prev => [...prev.filter(isAlive), ...ranged]);
       }
 
-      // Projectiles: player bullets hit mobs, enemy bullets hit the player
-      const playerBullets: IProjectile[] = [];
-      playerPatterns.filter(isAlive).forEach((p, pi) => {
-        playerBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle)
-          .map(b => ({ ...b, id: `pl_${pi}_${p.startTime}_${b.id}`, damage: p.damage })));
+      // Projectile positions are recomputed from time every frame, so a shot
+      // that has landed must be remembered or it would land again next frame.
+      spentShots.current.forEach((firedAt, id) => {
+        if (now - firedAt > 2500) spentShots.current.delete(id);
       });
 
-      const enemyBullets: IProjectile[] = [];
-      enemyPatterns.filter(isAlive).forEach((p, pi) => {
-        enemyBullets.push(...ProjectileSystem.getProjectilesAtTime(p.type, p.origin, p.startTime, now, p.angle)
-          .map(b => ({ ...b, id: `e_${pi}_${p.startTime}_${b.id}`, color: '#ef4444', damage: p.damage })));
-      });
+      const playerBullets: IProjectile[] = playerPatterns.filter(isAlive).flatMap(p =>
+        ProjectileSystem.liveShots(p, id => `pl_${p.startTime}_${id}`, now, prevTick, spentShots.current));
+
+      const enemyBullets: IProjectile[] = enemyPatterns.filter(isAlive).flatMap(p =>
+        ProjectileSystem.liveShots(p, id => `e_${p.shooterId}_${p.startTime}_${id}`, now, prevTick, spentShots.current)
+          .map(b => ({ ...b, color: '#ef4444' })));
 
       const survivingEnemyBullets = enemyBullets.filter(b => {
-        if (Math.hypot(b.x - playerPos.x, b.y - playerPos.z) < 15) {
+        if (ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) < 15) {
           incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
+          spentShots.current.set(b.id, now);
           return false;
         }
         return true;
@@ -633,6 +631,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // Collision-check ALL visible chunks (AI only returns the modified ones)
       const combatResult = CombatSystem.tick(playerBullets, { ...visibleChunks, ...aiResult.updatedChunks }, playerPos, liveSession.health, activeSwings);
+      const survivingIds = new Set(combatResult.survivingBullets.map(b => b.id));
+      playerBullets.forEach(b => {
+        if (!survivingIds.has(b.id)) spentShots.current.set(b.id, now);
+      });
 
       // Process Events
       combatResult.events.forEach(event => {
@@ -736,6 +738,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const handleEntityClick = (e: React.MouseEvent, entity: IWorldEntity) => {
     e.stopPropagation();
     e.preventDefault();
+
+    // Clicking an enemy aims at it, same as clicking the ground beside it
+    if (entity.type === EntityType.MOB) {
+      handleCanvasClick(e);
+      return;
+    }
 
     const playerPos = usePlayerStore.getState().player.currentSession?.position;
     if (!playerPos) return;

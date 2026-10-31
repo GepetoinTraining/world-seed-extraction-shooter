@@ -274,6 +274,7 @@ export interface ISkillState {
 export interface IBank {
   accountId: string;
   gold: number;
+  carryItemIds?: string[]; // stash items taken into the next session, beside tools
   stashTabs: {
     name: string;
     items: IItem[];
@@ -304,6 +305,8 @@ export interface IActiveSession {
   // Wave 3.1: spatial layout of the inventory (itemId -> cell). Optional so
   // pre-Wave-3 session snapshots stay valid; the system repairs missing layouts.
   inventoryLayout?: Record<string, IGridPlacement>;
+  // What came in with the player; everything else in the pack was found in the field
+  kitItemIds?: string[];
   // Wave 4.1: equipped gear (additive contract change)
   equipped?: IEquippedSlots;
   health: number;

@@ -31,14 +31,14 @@ When all lines pass in one unbroken sitting — including the browser reload —
 12. [x] Reach an extraction beacon → channel timer → extraction tax applied
 13. [x] Loot banked, XP applied, deed (if dropped) in stash — all SIGNED
 14. [x] Reload browser → everything from 13 is still there, signatures verify
-15. [x] Redeem deed → own a lot → build a workshop
+15. [~] Redeem deed → own a lot → build a workshop
 16. [x] Refine raw logs → planks at the workshop (recipe consumes, produces)
 17. [x] List planks in a shop → another identity could buy them
 18. [x] Die on a second run → death penalty from the WORLD CERT rules applies
         (inventory lost, not banked)
 19. [x] Export avatar (cert + encrypted key + signed player doc) → import in a
         fresh browser profile → same character, provably the same
-20. [x] Same world seed on two clients → identical map, chunk for chunk
+20. [~] Same world seed on two clients → identical map, chunk for chunk
 ```
 
 ---
@@ -217,7 +217,8 @@ claim/receipt; ledger chain audits clean.)*
   its stats (creator revenue share becomes payable).
 - **Gate:** test lines **19, 20**.
 
-### WAVE 7 — The True Test + Design Handover
+### WAVE 7 — The True Test + Design Handover ✅ RUN, WITH LIMITS
+*(See HANDOVER.md section 1 for the result of each line. Line 15 was assisted, line 20 is partial, and lines 10, 17 and 19 have noted limits. It was not one unbroken sitting.)*
 - **W7.1 Run the list.** All 20 lines, one sitting, one reload, fresh profile for line 19.
   Every failure becomes a fix ticket; re-run until green.
 - **W7.2 The Design Handover** (the final thing). One document, written for the next
