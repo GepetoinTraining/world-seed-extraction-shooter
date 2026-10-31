@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>World Seed Atoms</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px; background: #050505; color: #d4d4d8; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+  h1 { font-size: 16px; color: #20de81; letter-spacing: 0.1em; margin: 0 0 4px; }
+  h2 { font-size: 13px; color: #ffd700; letter-spacing: 0.08em; margin: 28px 0 8px; border-bottom: 1px solid #27272a; padding-bottom: 4px; }
+  p { margin: 0 0 8px; color: #a1a1aa; max-width: 900px; }
+  canvas { image-rendering: pixelated; display: block; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  .cell { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .label { font-size: 11px; color: #a1a1aa; max-width: 150px; }
+  button { background: #0a0a0a; color: #20de81; border: 1px solid #20de81; font: inherit; padding: 4px 12px; cursor: pointer; }
+  button[aria-pressed="true"] { background: #20de81; color: #050505; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #27272a; padding: 3px 10px; text-align: left; }
+  .pass { color: #20de81; } .fail { color: #ef4444; }
+</style>
+</head>
+<body>
+  <h1>WORLD SEED // THE ATOMS</h1>
+  <p>Every pixel below is computed from a seed, real game data and six small families. There are no image files.</p>
+  <button id="gray" aria-pressed="false">Grayscale</button>
+  <div id="root"></div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
