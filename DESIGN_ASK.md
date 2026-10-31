@@ -161,6 +161,16 @@ Settled by the interiors pass (Wave 10), kept here as the record:
 - **A built lot blocks exactly what it draws.** The three built-lot faces (gable, corrugation and chimney, striped awning) fill every tile they block, hard-seamed, with the doorway at the bottom centre and the door tile you stand on one row below the footprint. Entering keeps your place in the street; leaving is walking the doorway, not a button.
 - **Light without color, again.** Windows brighten the floor around them by ramp steps at a fixed radius, the same law as the lamps, so a lit room survives grayscale.
 
+Settled by the architect pass (Wave 10B), kept here as the record:
+
+- **A plan is geometry; the house is materials.** Pedro's D12–D14 shaped it: templates fix what stands where — walls, doors, windows, named floor zones with promised open areas — and the buyer picks one material per element class on the apply sheet, billed by tag (D13: never by type or subtype; anything carrying the tag answers). The same record and the same sheet give the same bytes, so a plan IS the house it promises.
+- **An invalid plan cannot be minted.** The pen obeys the builder's own law: the mint runs the same validators, and refuses in voice — the sealed pocket, the interior window, the stair, the way out, the zone that promises more open tiles than the plan holds (with the numbers).
+- **Designing is work done somewhere.** The SCRIBE'S TABLE (D12) is a craftable, placeable, generalist writing station — [E] opens the design surface; the same table is where scrolls and documents will be written when they come. The mint and every copy are paid in PAPER AND INK (D14): paper pressed from planks, iron gall ink boiled from gallpods and raw iron. Scarcity comes from labor and materials, never from burning drawings — a plan is never consumed by use.
+- **The architect's name travels with the house.** The author is fixed into the plan at design time and rides every copy, every resale, and the standing building: the inspect card reads the plan's name and its architect from the street and from inside. Your face from your certificate, your house from someone's signed hand.
+- **A house of one material is known.** D13's expansion: a building raised fully of one material is detected and recorded on the room and said on its card. The set bonus's numbers land with the materials pass, where properties reach bonuses.
+- **UNDER CONSTRUCTION is a state the street can read.** The scaffold blocks exactly what it draws, and the building rises solid from the ground as steps complete — progress by shape, forward only, no words needed. After the shell stands you can walk in and watch the interior fill, outline by outline, in the plan's own order.
+- **Template thumbnails are the plan itself.** The item's art is the composed room, downsampled — real atoms through the one composer, never an icon.
+
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
 
 **Four things the atoms must answer.** The prototype has tried each, so start from what it found and beat it.

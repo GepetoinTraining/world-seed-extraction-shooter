@@ -11,6 +11,10 @@ import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
 import { SHELL_BILLS, SHELL_BUILD_SECONDS, billText, pickBill } from '../entities/hub/room';
 import { Button, Chip, Input, ItemSprite, Panel } from './ui/kit';
+import { lotConstruction } from '../entities/hub/template';
+import { isTemplateItem } from '../logic/systems/TemplateSystem';
+import { TemplateApplyModal } from './TemplateApplyModal';
+import { TemplateStudio } from './TemplateStudio';
 
 const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
 const countOf = (items: IItem[], defId: string) => items.filter(i => i.universalDefinitionId === defId).length;
@@ -23,8 +27,12 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
   const mine = lot.ownerId === player.id;
   const [listId, setListId] = useState<string>('');
   const [listPrice, setListPrice] = useState('50');
+  const [applyOpen, setApplyOpen] = useState(false);
   const jobs = hub.craftingJobs.filter(j => j.lotId === lot.id && !j.collected);
   const shellJob = hub.buildJobs.find(j => j.lotId === lot.id && !j.applied && j.kind === 'SHELL');
+  // Wave 10B: a rising template batch, counted step by step
+  const construction = lotConstruction(hub.buildJobs, lot.id);
+  const templatesHeld = stash.some(i => isTemplateItem(i));
 
   const stateChip = !lot.ownerId
     ? <Chip tone="proof">{lot.price.toLocaleString()} G</Chip>
@@ -54,11 +62,22 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
           building finishes on the clock. The shell job shows its countdown. */}
       {mine && shellJob && (
         <span className="ws-dim ws-small">
-          {shellJob.structureType} under construction — {Math.max(0, Math.ceil((shellJob.finishesAt - now) / 1000))}s on the clock
+          {shellJob.template ? shellJob.template.data.name : shellJob.structureType} under construction — {Math.max(0, Math.ceil((shellJob.finishesAt - now) / 1000))}s on the clock
         </span>
       )}
-      {mine && !shellJob && lot.structureType === 'EMPTY' && (
+      {mine && !shellJob && construction && (
+        <span className="ws-dim ws-small">
+          UNDER CONSTRUCTION — {construction.applied} of {construction.total} steps stand
+        </span>
+      )}
+      {mine && !shellJob && !construction && lot.structureType === 'EMPTY' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {templatesHeld && (
+            <Button tone="signal" onClick={() => setApplyOpen(true)}>
+              RAISE FROM A PLAN (template)
+            </Button>
+          )}
+          {applyOpen && <TemplateApplyModal lot={lot} onClose={() => setApplyOpen(false)} />}
           {STRUCTURES.map(s => {
             const bill = pickBill(SHELL_BILLS[s], stash);
             const short = !bill.ok ? bill.missing : player.bank.gold < STRUCTURE_COSTS[s].build ? `${STRUCTURE_COSTS[s].build}G permit` : null;
@@ -140,6 +159,8 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
   const { lots } = useHubStore();
   const [now, setNow] = useState(Date.now());
+  // D12: dev mode opens the builder view free, for testing. The real door is the scribe's table.
+  const [scribeOpen, setScribeOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -167,8 +188,14 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
         <span className="ws-dim ws-small">
           Six lots. Upkeep is charged by the world-day; an unpaid lot reverts to the market with its goods returned.
         </span>
-        {devMode && <Button tone="quiet" onClick={grantTestDeed}>DEV: GRANT DEED</Button>}
+        {devMode && (
+          <span style={{ display: 'flex', gap: 4 }}>
+            <Button tone="quiet" onClick={grantTestDeed}>DEV: GRANT DEED</Button>
+            <Button tone="quiet" onClick={() => setScribeOpen(true)}>DEV: SCRIBE VIEW</Button>
+          </span>
+        )}
       </div>
+      {scribeOpen && <TemplateStudio onClose={() => setScribeOpen(false)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
         {lots.map(lot => <LotCard key={lot.id} lot={lot} now={now} />)}
       </div>

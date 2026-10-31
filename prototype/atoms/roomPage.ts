@@ -6,9 +6,10 @@
 
 import { IItem } from '../../types';
 import {
-  IRoomState, ROOM_PRESETS, STATION_MIN_AREA, TAG_DEFAULT_MATERIAL,
-  canPlaceItem, emptyRoom, fullyWalkable, presetToRoom, roomDoor
+  IRoomState, STATION_MIN_AREA, TAG_DEFAULT_MATERIAL,
+  canPlaceItem, emptyRoom, fullyWalkable, roomDoor
 } from '../../src/entities/hub/room';
+import { ROOM_PRESETS, presetToRoom } from '../../src/entities/hub/template';
 import { CRAFTED_DEFINITIONS } from '../../src/entities/economy/data/recipeDefinitions';
 import { ItemFactory } from '../../src/entities/item/ItemFactory';
 import { Rng } from '../../src/logic/rng/DeterministicRNG';

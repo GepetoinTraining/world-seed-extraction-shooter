@@ -73,6 +73,50 @@ export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {
     requiredFacility: 'WORKSHOP',
     requiredSkill: 'skill_carpentry',
     minSkillLevel: 0
+  },
+  // Wave 10B (D14): paper and ink are the template economy's raw goods. Paper
+  // is beaten from planks; the ink is iron gall, the oldest recipe there is.
+  'recipe_paper': {
+    id: 'recipe_paper',
+    name: 'Press Paper',
+    description: 'One plank beaten thin: two sheets that remember the tree.',
+    inputs: [{ itemId: 'crf_plank', quantity: 1, consume: true }],
+    outputs: [{ itemId: 'crf_paper', quantity: 2, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 8,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_carpentry',
+    minSkillLevel: 0
+  },
+  'recipe_ink': {
+    id: 'recipe_ink',
+    name: 'Boil Iron Gall Ink',
+    description: 'A gallpod and raw iron, boiled black. Everything signed is signed in this.',
+    inputs: [
+      { itemId: 'res_fruit_gallpod', quantity: 1, consume: true },
+      { itemId: 'res_iron_vein', quantity: 1, consume: true }
+    ],
+    outputs: [{ itemId: 'crf_ink', quantity: 2, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 12,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_alchemy',
+    minSkillLevel: 0
+  },
+  'recipe_scribe_table': {
+    id: 'recipe_scribe_table',
+    name: "Join a Scribe's Table",
+    description: 'Two planks and a well of ink. Where plans, and one day scrolls, get written.',
+    inputs: [
+      { itemId: 'crf_plank', quantity: 2, consume: true },
+      { itemId: 'crf_ink', quantity: 1, consume: true }
+    ],
+    outputs: [{ itemId: 'stn_scribe', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 20,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_carpentry',
+    minSkillLevel: 0
   }
 };
 
@@ -136,6 +180,33 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {
     weight: 8.0, dimensions: { width: 2, height: 2 }, icon: '🪑',
     visuals: { modelId: 'table', colorHex: '#a16207' },
     materialProps: { [MaterialPropertyType.DENSITY]: 5, [MaterialPropertyType.HARDNESS]: 20 },
+    tags: ['crafted', 'station', 'wood']
+  },
+
+  // Wave 10B (D12/D14): the writing economy. Paper and ink pay for every plan
+  // minted or copied; the scribe's table is the generalist station it happens at.
+  'crf_paper': {
+    id: 'crf_paper', name: 'Pressed Paper', type: ItemType.RESOURCE,
+    rank: UniversalRank.F, rarity: Rarity.COMMON,
+    weight: 0.2, dimensions: { width: 1, height: 1 }, icon: 'paper_icon',
+    visuals: { modelId: 'paper', colorHex: '#e7e5e4' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 0.4, [MaterialPropertyType.ELASTICITY]: 8 },
+    tags: ['crafted', 'paper']
+  },
+  'crf_ink': {
+    id: 'crf_ink', name: 'Iron Gall Ink', type: ItemType.RESOURCE,
+    rank: UniversalRank.F, rarity: Rarity.UNCOMMON,
+    weight: 0.4, dimensions: { width: 1, height: 1 }, icon: 'ink_icon',
+    visuals: { modelId: 'ink', colorHex: '#1c1917' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 1.2, [MaterialPropertyType.TOXICITY]: 6 },
+    tags: ['crafted', 'ink']
+  },
+  'stn_scribe': {
+    id: 'stn_scribe', name: "Scribe's Table", type: ItemType.STRUCTURE,
+    rank: UniversalRank.F, rarity: Rarity.UNCOMMON,
+    weight: 9.0, dimensions: { width: 2, height: 1 }, icon: 'scribe_icon',
+    visuals: { modelId: 'scribe', colorHex: '#a16207' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 6, [MaterialPropertyType.HARDNESS]: 22 },
     tags: ['crafted', 'station', 'wood']
   }
 };

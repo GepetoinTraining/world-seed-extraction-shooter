@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface) and Wave 10 (the interiors), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 10B, the Architect** — Pedro reordered the legs the day Wave 10 landed — and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors) and Wave 10B (the Architect), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 11, Bringing the Nexi Home** — residents, farms, materials — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -10,9 +10,9 @@ World Seed is a browser extraction game: a signed identity, generated worlds, a 
 
 Pedro's verdict on the look, seeing it in the real game: *"literally absurdly good"*. **The look is approved, and the interface is now made of it.** Mantine survives only under the admin Genre Creator; every player-facing screen is built from the kit in `src/components/ui/`.
 
-- **Tests:** 227 passing (`npm test`), including one recorded known failure (bar 3, in the art). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`.
-- **Commits:** Waves 8, 8B, 9 and 10 are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
-- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts.
+- **Tests:** 252 passing (`npm test`), including one recorded known failure (bar 3, in the art). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`.
+- **Commits:** Waves 8, 8B, 9, 10 and 10B are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
+- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
 
 ## Working with Pedro
 
@@ -64,6 +64,11 @@ Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → q
 | `src/entities/hub/store.ts` | Now also: `rooms`, `buildJobs`, `resolveBuilds`, `queuePiece`, `placeItem`, `reclaimItem` — construction and placement, signed |
 | `tests/interface.test.ts` | Wave 9's bars: lines 26–31, emoji, text floor, keyboard, recon grayscale, dialogue |
 | `tests/rooms.test.ts` | Wave 10's bars: lines 32–34, determinism, walkability, refusals, materials-once, persistence, grayscale, lot blocking |
+| `src/entities/hub/template.ts` | NEW: the template contract (`ITemplate`, sheets, bills, validators, `templateToRoom`, mono-material, `lotConstruction`) — the presets live here now as SYSTEM TEMPLATES |
+| `src/logic/systems/TemplateSystem.ts` | NEW: mint and copy plans for paper and ink, signed, author riding every copy |
+| `src/components/TemplateStudio.tsx` | NEW: the builder view at the scribe's table — tile cursor, live refusals, zones, grayscale preview, MINT/COPY |
+| `src/components/TemplateApplyModal.tsx` | NEW: the material sheet — one material per element class, billed by tag, APPLY |
+| `tests/templates.test.ts` | Wave 10B's bars: lines 41–44, determinism, mint law, paper-and-ink, bill-once, scaffold, thumbnails, mono-material |
 
 A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer work over byte buffers, testable in Node.
 
@@ -84,11 +89,23 @@ Full detail in `PLAN.md` 3B. Pedro's D8/D9 reshaped it at the start: rooms are B
 - Balance is still unplayed at scale (Wave 12). A fresh F-rank still dies to the first pack of anything.
 - An invented genre still gets its look from a hash; the look family still needs widening.
 
-## Your pass: the Architect (Wave 10B)
+## What the architect pass (Wave 10B) built
 
-**Scope, decisions (D12–D14) and bars are in `PLAN.md`**: templates separate geometry from materials. The template contract as data first (`ITemplate`: structure layer, floor zones, size needs — `ROOM_PRESETS` fold into it, one contract, no second path), then the builder view opened at a craftable DRAFTING TABLE, minting signed tradable template items with the author's provenance riding every copy; then raising a house from a template — the material sheet (one material per element class), the bill consumed exactly once, an UNDER CONSTRUCTION lot state, pieces filling in on the clock, and the finished room matching the template piece for piece. Wave 10 left you everything: the validators in `room.ts` ARE the template validators (a template that composes an invalid room cannot be minted), `composeRoom` draws thumbnails and ghost previews, `IBuildJob` is the construction queue, the counter already sells any item, and `DeedSystem`'s `IDeedItem extends IItem` is the pattern for an item that carries data. Register the bars before the view exists. Ask D12–D14 at the start if unanswered.
+Full detail in `PLAN.md` 3B. Pedro's D12/D13/D14 shaped it at the start, each bigger than the recommendation: the station is a SCRIBE'S TABLE (generalist — scrolls will be written there too), a house built fully of one material earns a recorded set bonus (numbers land in 11B), and the mint runs on PAPER AND INK (paper from planks, iron gall ink from gallpods and raw iron; the alchemist stocks the gallpod).
 
-**After 10B:** Wave 11 (residents from `Escort Bond`, farms, materials home — its brief is in PLAN.md; NPC pooling then pools against a TEMPLATE's bill), then Wave 11B (the materials pass: the full economic and transformation loops, D15), then Wave 12.
+In short: the template contract as data (`ITemplate` — geometry, zones with promised areas, size needs; the presets folded in as SYSTEM TEMPLATES through the one `templateToRoom` path; an invalid plan cannot be minted and refuses in voice) (10B.1); the builder view at the placed scribe's table — tile cursor, keyboard-complete, live refusals, zones measured live, color/grayscale preview through composeRoom, MINT and COPY both paid in paper and ink with the ORIGINAL author riding every copy (10B.2); trade through the existing counter unchanged, with the template card (needs, pieces, zones, ARCHITECT) and thumbnails that are the composed plan itself (10B.3); `applyTemplate` — size needs refused with the numbers, the material sheet one-choice-per-class billed by tag, everything consumed exactly once, an UNDER_CONSTRUCTION lot state whose scaffold blocks exactly what it draws and whose building rises by shape as the signed job batch lands shell-first-then-pieces-in-order, finished meaning piece-for-piece equal (10B.4); and the house remembering its architect on cards from the street and inside, with the mono-material line (10B.5). The whole loop was played as BASALT: tools and gallpods bought → an honest death in the ruins → a real harvest run (logs, iron, pack-refusal caches) → sealed haul → planks/paper/ink/scribe's table milled and joined → plan drawn, minted, copied, sold and bought back over the counter → applied → the scaffold watched from the street and the pieces from inside → the finished house, its plaque, and a full reload keeping every byte.
+
+**Left open, honestly:**
+- Line 43's size refusal passes by test and shows in the sheet, but all six city lots are one 4×4 class, so it cannot be PLAYED until lots grow with the hub. The 3×3 and 6×5 classes already exist in the studio.
+- The mono-material set bonus is detected and recorded; its numbers land in 11B with D9's property bonuses.
+- Switching app tabs (BANK/HOLDINGS) while walking the city returns you to the plaza spawn — pre-existing, now on record.
+- The glass chain still needs a field trip for sand; BASALT's first apply was refused on the glass bill (honestly, in voice) and the built house is the windowless all-plank plan.
+
+## Your pass: bringing the Nexi home (Wave 11)
+
+**Scope, decisions (D10, D11) and bars are in `PLAN.md`** (gate lines 35–38): redeeming an `Escort Bond` places a RESIDENT whose sheet was already rolled in the world (recognisably that person), with a job that has a real effect; FARMS as a lot structure (D11) — plant what you harvested, growth on the accumulate-and-resolve clock, nothing running while away; materials stored and displayed by their real grain with history; residents visible in the city using 8B's walk. D8's deferred half lands here: NPC pooling pools player materials against a TEMPLATE's bill — `SYSTEM_TEMPLATES` and `templateBill` in `src/entities/hub/template.ts` are exactly that bill, and `applyTemplate`/the `IBuildJob` batch in the hub store is the construction path to reuse (a resident's house should rise through the same UNDER_CONSTRUCTION state, pooled instead of paid by one hand). Upkeep for residents goes through the existing treasury path (D10). Register the bars before anything exists; ask D10/D11 at the start if unanswered.
+
+**After 11:** Wave 11B (the materials pass: the full economic and transformation loops, D15 — mono-material bonus numbers, property-derived prices, demolish salvage, the full-loop gold audit), then Wave 12 (the second true test).
 
 ## Known weak spots
 
@@ -106,8 +123,11 @@ Full detail in `PLAN.md` 3B. Pedro's D8/D9 reshaped it at the start: rooms are B
 - **Windows files are CRLF**; long edits are safest as a Python script that normalizes endings and asserts each target string exists.
 - **RxDB freezes documents in dev.** Copy before mutating anything from the database (CombatSystem already copies mobs).
 - **Generation hashes:** any change to world generation changes `GOLDEN_VECTORS` in `src/entities/world/goldens.ts`. Interface work should never touch them; a change there means something leaked.
-- **Vite port:** another session's dev server may hold 3000. `.claude/launch.json` has `world-seed-dev-3100` (`--port 3100 --strictPort`) for a second server.
+- **Vite port:** another session's dev server may hold 3000. `.claude/launch.json` has `world-seed-dev-3100` and `world-seed-dev-3101` (`--strictPort`). The test avatar BASALT lives under origin `localhost:3101` — use 3101 to inherit it.
+- **Clicking field entities from a script is flaky**: the DOM hit areas don't always sit where the sprite draws. The first click proved the real menu path; after that, `InteractionEngine.getAvailableInteractions` + `performInteraction` from the console is the same function the menu button calls. Harvest outputs that don't fit the pack become ground caches at your feet (the feed says so) — the field pack is 8 columns × 3 rows, and six 1×3 logs plus two 1×3 tools fill ALL of it.
+- **The studio canvas is CSS-scaled** in screenshots: tile = 20 CSS px × (screenshot width / viewport width). Compute tile centers from the canvas origin before clicking, or use the keyboard cursor.
+- **Walking long field distances by held keys stalls on lakes** — the resolver refuses water and the straight-line walker just grinds. Wave 8's recorded practice stands: raised in-memory health for material runs and a teleport past a pinning lake are testing tools, never balance claims; say so in the record.
 
 ## After this pass
 
-`PLAN.md`, under "The next legs": Wave 10B (the Architect — templates), Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a template's bill), Wave 11B (the materials pass — the full economic and transformation loops, D15; D9's furniture-from-materials bonuses land there, and D6's crafting half lands there or in the crafting waves proper), Wave 12 (the second true test, played honestly, with balance).
+`PLAN.md`, under "The next legs": Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists), Wave 11B (the materials pass — the full economic and transformation loops, D15; the mono-material set bonus numbers and D9's furniture-from-materials bonuses land there, and D6's crafting half lands there or in the crafting waves proper), Wave 12 (the second true test, played honestly, with balance).

@@ -8,6 +8,7 @@ import { IItem, IPlayer, InteractionType } from '../../../types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
 import { EntityType, IWorldEntity } from '../../entities/world/types';
 import { QUALITY_NAMES, qualityBand } from './atoms';
 import { LAYER } from './world';
@@ -123,8 +124,56 @@ export function inspectEntity(e: IWorldEntity, ctx: InspectContext): Card {
   return inspectOther(e, ctx);
 }
 
+/**
+ * Wave 10B.3: the template's card — its size needs, its promised regions and
+ * its AUTHOR. The thumbnail beside it is the composed plan (itemArtFor).
+ */
+function inspectTemplate(item: IItem): Card {
+  const tpl = (item as any).templateData;
+  const count = (kind: string) => tpl.pieces.filter((p: any) => p.kind === kind).length;
+  const rows: [string, string][] = [
+    ['Needs', `a ${tpl.footprint.width}×${tpl.footprint.height} lot, ${tpl.structureType.toLowerCase()} permit`],
+    ['Pieces', `${count('WALL')} wall, ${count('DOOR')} door, ${count('WINDOW')} window`]
+  ];
+  for (const zone of tpl.zones) rows.push(['Zone', `${zone.name} — at least ${zone.minArea} open tiles`]);
+  rows.push(['Architect', tpl.authorName]);
+  rows.push(['Signed', new Date(tpl.designedAt).toLocaleDateString()]);
+  return { title: item.name, rows, needs: [], canAct: false, compact: compact(item.name, tpl.authorName) };
+}
+
+/**
+ * Wave 10B.5: the card on a STANDING templated building, inside or from the
+ * street. The house remembers its architect; a mono-material house says so
+ * (D13 — the set bonus's numbers land with the materials pass).
+ */
+export function inspectTemplateRoom(room: {
+  template?: { name: string; authorName: string; authorUid: string };
+  shellMaterialDefId: string;
+  pieces: { materialDefId: string }[];
+  floorZones?: { materialDefId: string }[];
+}): Card | null {
+  if (!room.template) return null;
+  const materials = new Set<string>([room.shellMaterialDefId]);
+  for (const p of room.pieces) materials.add(p.materialDefId);
+  for (const z of room.floorZones ?? []) materials.add(z.materialDefId);
+  const rows: [string, string][] = [['Architect', room.template.authorName]];
+  if (materials.size === 1) {
+    const only = [...materials][0];
+    const def = (CRAFTED_DEFINITIONS[only] ?? RESOURCE_DEFINITIONS[only]) as any;
+    rows.push(['One material', `${def?.name ?? only}. The set bonus is on record; it pays when the materials pass lands.`]);
+  }
+  return {
+    title: room.template.name,
+    rows,
+    needs: [],
+    canAct: false,
+    compact: compact(room.template.name, room.template.authorName)
+  };
+}
+
 /** `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word. */
 export function inspectItem(item: IItem): Card {
+  if ((item as any).templateData) return inspectTemplate(item);
   if (item.isIdentified === false) {
     return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
   }

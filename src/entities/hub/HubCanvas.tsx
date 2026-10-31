@@ -16,6 +16,9 @@ import {
   IRoomState, RoomPieceKind, STATION_FUNCTION, PIECE_BILLS, PIECE_BUILD_SECONDS,
   builtLotBlocksAt, roomDoor, roomEntry, roomSolid
 } from './room';
+import { lotConstruction } from './template';
+import { TemplateStudio } from '../../components/TemplateStudio';
+import { inspectTemplateRoom } from '../../render/atoms/inspect';
 import { RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
@@ -73,7 +76,7 @@ export const HubCanvas: React.FC = () => {
   const [roomTile, setRoomTile] = useState({ x: 0, y: 0 });
   const [buildKind, setBuildKind] = useState<RoomPieceKind | null>(null);
   const [placeSelId, setPlaceSelId] = useState<string>('');
-  const [stationPanel, setStationPanel] = useState<'WORKSHOP' | 'VENDOR' | null>(null);
+  const [stationPanel, setStationPanel] = useState<'WORKSHOP' | 'VENDOR' | 'SCRIBE' | null>(null);
   const roomPosRef = useRef({ x: 0, y: 0 });
   const insideLotIdRef = useRef<string | null>(null);
   insideLotIdRef.current = insideLotId;
@@ -113,14 +116,17 @@ export const HubCanvas: React.FC = () => {
       if (poi.type !== POIType.PLAYER_LOT) continue;
       const lot = lots.find(l => l.id === poi.id);
       const built = !!lot && !!lot.ownerId && lot.structureType !== 'EMPTY';
+      // Wave 10B: an under-construction lot blocks like a built one — the
+      // scaffold blocks exactly what it draws.
+      const rising = !!lot && lotConstruction(buildJobs, poi.id) !== null;
       for (let ty = poi.position.y; ty < poi.position.y + poi.size.height; ty++) {
         for (let tx = poi.position.x; tx < poi.position.x + poi.size.width; tx++) {
-          if (builtLotBlocksAt(poi, built, tx, ty)) blocked.add(ty * layout.width + tx);
+          if (builtLotBlocksAt(poi, built || rising, tx, ty)) blocked.add(ty * layout.width + tx);
         }
       }
     }
     return blocked;
-  }, [layout, lots]);
+  }, [layout, lots, buildJobs]);
 
   const blockedAt = useCallback((x: number, y: number) => {
     const tx = Math.floor(x / TILE_SIZE), ty = Math.floor(y / TILE_SIZE);
@@ -236,17 +242,17 @@ export const HubCanvas: React.FC = () => {
   const nearPlacementRef = useRef(nearPlacement);
   nearPlacementRef.current = nearPlacement;
 
-  // Accumulate-and-resolve: while you stand in the room, the clock is looked at.
+  // Accumulate-and-resolve: the clock is looked at wherever you stand — the
+  // street too, so a rising house (Wave 10B) can be watched from outside.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    if (!insideLotId) return;
     const timer = setInterval(() => {
       setNow(Date.now());
       const due = useHubStore.getState().buildJobs.some(j => !j.applied && j.finishesAt <= Date.now());
       if (due) void useHubStore.getState().resolveBuilds();
     }, 1000);
     return () => clearInterval(timer);
-  }, [insideLotId]);
+  }, []);
 
   // =========================================================================
   // INTERACTION
@@ -376,17 +382,27 @@ export const HubCanvas: React.FC = () => {
     [layout, playerTile]
   );
 
+  // Wave 10B: a lot with pending construction shows the scaffold, its progress
+  // read by shape. Progress only changes when a job applies, so the city only
+  // recomposes when something really moved.
   const lotStates = useMemo(() => {
     const states: Partial<Record<number, LotState>> = {};
+    const construction: Partial<Record<number, number>> = {};
     lots.forEach(l => {
-      states[l.lotIndex] = !l.ownerId ? 'FOR_SALE' : l.structureType === 'EMPTY' ? 'OWNED_EMPTY' : l.structureType;
+      const con = lotConstruction(buildJobs, l.id);
+      if (con) {
+        states[l.lotIndex] = 'UNDER_CONSTRUCTION';
+        construction[l.lotIndex] = con.progress;
+      } else {
+        states[l.lotIndex] = !l.ownerId ? 'FOR_SALE' : l.structureType === 'EMPTY' ? 'OWNED_EMPTY' : l.structureType;
+      }
     });
-    return states;
-  }, [lots]);
+    return { states, construction };
+  }, [lots, buildJobs]);
 
   const cityBitmaps = useMemo(() => {
     const palette = buildPalette(HUB_GENRE);
-    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates }), palette));
+    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction }), palette));
   }, [layout, lotStates]);
 
   const cameraOffset = useCallback(() => {
@@ -572,6 +588,11 @@ export const HubCanvas: React.FC = () => {
 
   const insideLot = insideLotId ? lots.find(l => l.id === insideLotId) ?? null : null;
   const mineInside = !!insideLot && insideLot.ownerId === player.id;
+  // Wave 10B.5: the inspect card on a templated building, from the street and inside.
+  const nearbyConstruction = nearbyPOI?.type === POIType.PLAYER_LOT ? lotConstruction(buildJobs, nearbyPOI.id) : null;
+  const nearbyRoom = nearbyPOI?.type === POIType.PLAYER_LOT ? rooms[nearbyPOI.id] : undefined;
+  const streetCard = nearbyRoom ? inspectTemplateRoom(nearbyRoom) : null;
+  const insideCard = roomData ? inspectTemplateRoom(roomData) : null;
   const myPendingJobs = insideLotId ? buildJobs.filter(j => !j.applied && j.lotId === insideLotId) : [];
   const nearStationFn = nearPlacement ? STATION_FUNCTION[nearPlacement.item.universalDefinitionId] : undefined;
   const buildMaterialFor = (kind: RoomPieceKind) => stashItems.find(i => (i.tags || []).includes(PIECE_BILLS[kind].tag));
@@ -595,11 +616,26 @@ export const HubCanvas: React.FC = () => {
 
       {/* Interaction Prompt */}
       {nearbyPOI && !activeNPC && !panel && !insideLot && (
-        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
+        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          {nearbyConstruction && (
+            <Chip tone="proof">UNDER CONSTRUCTION — {nearbyConstruction.applied} of {nearbyConstruction.total} steps stand</Chip>
+          )}
           <Chip tone="signal"><b>{nearbyPOI.name}</b> <Kbd>E</Kbd> {
             nearbyPOI.type === POIType.PLAYER_LOT &&
             lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType !== 'EMPTY') ? 'ENTER' : 'INTERACT'
           }</Chip>
+        </div>
+      )}
+      {/* Wave 10B.5: the house remembers its architect — the card from the street */}
+      {streetCard && !activeNPC && !panel && !insideLot && (
+        <div style={{ position: 'absolute', bottom: 90, left: 12, zIndex: 100, width: 230 }}>
+          <CardView card={streetCard} />
+        </div>
+      )}
+      {/* …and from inside: the house's own plaque */}
+      {insideCard && insideLot && !stationPanel && (
+        <div style={{ position: 'absolute', bottom: 90, left: 12, zIndex: 100, width: 230 }}>
+          <CardView card={insideCard} />
         </div>
       )}
       {insideLot && nearPlacement && !stationPanel && (
@@ -709,6 +745,9 @@ export const HubCanvas: React.FC = () => {
       )}
       {stationPanel === 'VENDOR' && insideLot && (
         <CounterStationModal lotId={insideLot.id} onClose={() => setStationPanel(null)} />
+      )}
+      {stationPanel === 'SCRIBE' && (
+        <TemplateStudio onClose={() => setStationPanel(null)} />
       )}
 
       {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}

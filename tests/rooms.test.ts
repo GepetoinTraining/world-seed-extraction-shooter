@@ -38,8 +38,10 @@ import {
   IRoomState, IRoomPlacement, emptyRoom, interiorSize, roomDoor, roomEntry, roomSolid,
   fullyWalkable, reachableFrom, placementReachable, canBuildPiece, canPlaceItem,
   builtLotBlocksAt, PIECE_BILLS, SHELL_BILLS, SHELL_STATION, STATION_MIN_AREA,
-  STATION_FUNCTION, ROOM_PRESETS, presetToRoom
+  STATION_FUNCTION
 } from '../src/entities/hub/room';
+// Wave 10B: the presets fold into the template contract — one path, no second.
+import { ROOM_PRESETS, presetToRoom } from '../src/entities/hub/template';
 import { composeRoom, ROOM_TILE } from '../src/render/atoms/room';
 import { HUB_GENRE, lotArt } from '../src/render/atoms/hub';
 import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../src/render/atoms/atoms';

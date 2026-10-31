@@ -55,7 +55,8 @@ export enum ItemType {
   STRUCTURE = 'STRUCTURE',
   COMMODITY = 'COMMODITY',
   TOOL = 'TOOL',
-  LORE = 'LORE' // Wave 2.3: lore fragments & social contracts (contract upgrade: additive)
+  LORE = 'LORE', // Wave 2.3: lore fragments & social contracts (contract upgrade: additive)
+  TEMPLATE = 'TEMPLATE' // Wave 10B: a signed building plan, designed at the scribe's table (additive)
 }
 
 export enum SlotType {

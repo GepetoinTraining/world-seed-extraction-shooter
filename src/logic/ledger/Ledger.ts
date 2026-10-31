@@ -20,6 +20,7 @@ export type LedgerRowType =
   | 'TRADE'             // item changed owners (Wave 5/6)
   | 'CRAFT'             // a transformation job queued or collected (Wave 5.2)
   | 'BUILD'             // construction and placement in a room (Wave 10)
+  | 'DESIGN'            // a plan minted or copied at the scribe's table (Wave 10B)
   | 'UPKEEP'            // lot upkeep charged (Wave 5.4)
   | 'TOMBSTONE';        // marks an earlier row as superseded — never delete
 

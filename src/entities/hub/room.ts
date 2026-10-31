@@ -45,6 +45,13 @@ export interface IRoomPlacement {
   signature?: string;
 }
 
+/** Wave 10B: a named floor zone, drawn from its own material (D13). */
+export interface IRoomFloorZone {
+  name: string;
+  tiles: { x: number; y: number }[];
+  materialDefId: string;
+}
+
 export interface IRoomState {
   lotId: string;
   version: 1;
@@ -53,6 +60,10 @@ export interface IRoomState {
   shellMaterialDefId: string;
   pieces: IRoomPiece[];
   placements: IRoomPlacement[];
+  /** Wave 10B (additive): floor zones from a template's material sheet. */
+  floorZones?: IRoomFloorZone[];
+  /** Wave 10B (D14): the house remembers its architect, forever. */
+  template?: { itemId: string; name: string; authorUid: string; authorName: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -246,13 +257,15 @@ export const SHELL_STATION: Partial<Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', stri
 export const STATION_MIN_AREA: Record<string, number> = {
   stn_bench: 12,
   stn_counter: 9,
-  stn_table: 4
+  stn_table: 4,
+  stn_scribe: 6 // Wave 10B (D12): the scribe's table wants room to spread the plans
 };
 
 /** What a placed station opens when you work at it. */
-export const STATION_FUNCTION: Record<string, 'WORKSHOP' | 'VENDOR'> = {
+export const STATION_FUNCTION: Record<string, 'WORKSHOP' | 'VENDOR' | 'SCRIBE'> = {
   stn_bench: 'WORKSHOP',
-  stn_counter: 'VENDOR'
+  stn_counter: 'VENDOR',
+  stn_scribe: 'SCRIBE' // Wave 10B: the builder view opens here
 };
 
 export const isStation = (defId: string) => defId in STATION_MIN_AREA;
@@ -360,9 +373,8 @@ export function builtLotBlocksAt(
 }
 
 // ---------------------------------------------------------------------------
-// NPC PRESETS (D8: NPCs never design; they use these. The pooling flow —
-// players bring the materials, a timer runs, a resident moves in — lands with
-// Wave 11's residents. The composer proves the blueprints now.)
+// BILLS BY TAG (IBlueprint's law). The NPC presets moved to template.ts in
+// Wave 10B: presets are SYSTEM TEMPLATES now — one contract, no second path.
 // ---------------------------------------------------------------------------
 
 /** Pick items answering a bill of tags, never the same item twice (IBlueprint's law). */
@@ -393,82 +405,5 @@ export const TAG_DEFAULT_MATERIAL: Record<string, string> = {
   metal: 'crf_iron_ingot'
 };
 
-export interface IRoomPreset {
-  id: string;
-  name: string;
-  structureType: 'HOUSE' | 'WORKSHOP' | 'VENDOR';
-  /** Interior pieces, on the 4x4-lot interior (16x12). Materials by tag at pool time. */
-  pieces: { kind: RoomPieceKind; x: number; y: number; materialTag: string }[];
-  stations: { defId: string; x: number; y: number }[];
-}
-
-export const ROOM_PRESETS: IRoomPreset[] = [
-  {
-    id: 'preset_keeper_house',
-    name: "Keeper's House",
-    structureType: 'HOUSE',
-    pieces: [
-      { kind: 'WALL', x: 10, y: 1, materialTag: 'building' },
-      { kind: 'WALL', x: 10, y: 2, materialTag: 'building' },
-      { kind: 'WALL', x: 10, y: 3, materialTag: 'building' },
-      { kind: 'DOOR', x: 10, y: 4, materialTag: 'wood' },
-      { kind: 'WINDOW', x: 4, y: 0, materialTag: 'glass' },
-      { kind: 'WINDOW', x: 12, y: 0, materialTag: 'glass' }
-    ],
-    stations: [{ defId: 'stn_table', x: 3, y: 3 }]
-  },
-  {
-    id: 'preset_mill',
-    name: 'Carpenter Mill',
-    structureType: 'WORKSHOP',
-    pieces: [
-      { kind: 'WINDOW', x: 5, y: 0, materialTag: 'glass' },
-      { kind: 'WINDOW', x: 10, y: 0, materialTag: 'glass' }
-    ],
-    stations: [{ defId: 'stn_bench', x: 6, y: 2 }]
-  },
-  {
-    id: 'preset_stall',
-    name: 'Market Stall',
-    structureType: 'VENDOR',
-    pieces: [
-      { kind: 'WINDOW', x: 3, y: 0, materialTag: 'glass' },
-      { kind: 'WINDOW', x: 8, y: 0, materialTag: 'glass' },
-      { kind: 'WINDOW', x: 12, y: 0, materialTag: 'glass' }
-    ],
-    stations: [{ defId: 'stn_counter', x: 6, y: 4 }, { defId: 'stn_table', x: 2, y: 7 }]
-  }
-];
-
-/** A preset made concrete: default materials answer each tag, stations are minted by the caller. */
-export function presetToRoom(
-  preset: IRoomPreset,
-  lotId: string,
-  lotFootprint: { width: number; height: number },
-  mintItem: (defId: string, key: string) => IItem
-): IRoomState {
-  const room = emptyRoom(lotId, lotFootprint, TAG_DEFAULT_MATERIAL.building);
-  preset.pieces.forEach((p, i) => {
-    room.pieces.push({
-      id: `${preset.id}:pc:${i}`,
-      kind: p.kind,
-      x: p.x,
-      y: p.y,
-      materialDefId: TAG_DEFAULT_MATERIAL[p.materialTag] ?? TAG_DEFAULT_MATERIAL.building,
-      builtBy: 'PRESET',
-      at: 0
-    });
-  });
-  preset.stations.forEach((s, i) => {
-    room.placements.push({
-      id: `${preset.id}:st:${i}`,
-      item: mintItem(s.defId, `${preset.id}:st:${i}`),
-      x: s.x,
-      y: s.y,
-      rotated: false,
-      placedBy: 'PRESET',
-      at: 0
-    });
-  });
-  return room;
-}
+// The NPC presets and their room composition live in template.ts (Wave 10B):
+// IRoomPreset, ROOM_PRESETS, presetToRoom — each preset rides a SYSTEM TEMPLATE.

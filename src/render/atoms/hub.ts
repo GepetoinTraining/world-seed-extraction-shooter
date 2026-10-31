@@ -191,7 +191,7 @@ export function emblem(type: POIType, s = 12): Sprite {
 // LOTS: the states the game really has, each its own shape.
 // ---------------------------------------------------------------------------
 
-export const LOT_STATES = ['FOR_SALE', 'OWNED_EMPTY', 'HOUSE', 'WORKSHOP', 'VENDOR', 'FORECLOSED'] as const;
+export const LOT_STATES = ['FOR_SALE', 'OWNED_EMPTY', 'UNDER_CONSTRUCTION', 'HOUSE', 'WORKSHOP', 'VENDOR', 'FORECLOSED'] as const;
 export type LotState = typeof LOT_STATES[number];
 
 function lotInk(state: LotState): Ink {
@@ -271,7 +271,37 @@ function builtLotArt(state: 'HOUSE' | 'WORKSHOP' | 'VENDOR', w: number, h: numbe
   return { w, h, data };
 }
 
-export function lotArt(state: LotState, w: number, h: number, seed: number): Sprite {
+/**
+ * Wave 10B: UNDER CONSTRUCTION. A scaffold dense enough to read as blocked on
+ * every tile it covers (the city blocks exactly this footprint), with the
+ * building itself rising solid from the ground as progress climbs — progress
+ * is read by shape, from the street, with no words.
+ */
+function constructionLotArt(w: number, h: number, seed: number, progress: number): Sprite {
+  const data = new Uint8Array(w * h);
+  const p = Math.max(0, Math.min(1, progress));
+  const builtH = Math.round((h - 2) * p); // solid rows, rising from the ground
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+    if (edge) { data[y * w + x] = px(Role.VOID, 0); continue; }
+    if (y >= h - 1 - builtH) {
+      // The risen part: built matter, seamed every course.
+      data[y * w + x] = y % 10 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1 + ((x + y + seed) % 2));
+      continue;
+    }
+    const dx = x % 10, dy = y % 10;
+    const post = dx < 2;                 // standards, one per tile
+    const board = dy < 2;                // ledgers and walkboards
+    const brace = Math.abs(dx - dy) <= 1 || dx + dy === 9 || dx + dy === 10 || dx + dy === 8;
+    if (post || board) data[y * w + x] = px(Role.MATTER, 3);
+    else if (brace) data[y * w + x] = px(Role.MATTER, 1);
+    // what remains stays open: the street shows through the scaffold
+  }
+  return { w, h, data };
+}
+
+export function lotArt(state: LotState, w: number, h: number, seed: number, progress = 0): Sprite {
+  if (state === 'UNDER_CONSTRUCTION') return constructionLotArt(w, h, seed, progress);
   if (state === 'HOUSE' || state === 'WORKSHOP' || state === 'VENDOR') return builtLotArt(state, w, h, seed);
   const s = Math.min(w, h) - 2;
   const sprite = stamp(lotInk(state), s, material({ density: 40, hardness: 50 }), fnv1a(`lot:v1:${state}`), {
@@ -380,7 +410,7 @@ function blit(data: Uint8Array, W: number, s: Sprite, x0: number, y0: number) {
 }
 
 /** Floors, light and everything solid. What this draws as solid is what the navmesh blocks. */
-export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}): Sprite {
+export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}): Sprite {
   const W = layout.width * HUB_TILE, H = layout.height * HUB_TILE;
   const data = new Uint8Array(W * H);
   const zoneOf: (ZoneType | null)[] = [];
@@ -409,7 +439,12 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
 
   const pois = allPois(layout);
   pois.filter(p => p.type === POIType.PLAYER_LOT).forEach(p => {
-    const art = lotArt(lots[p.metadata.lotIndex] ?? 'FOR_SALE', p.size.width * HUB_TILE, p.size.height * HUB_TILE, p.metadata.lotIndex);
+    const art = lotArt(
+      lots[p.metadata.lotIndex] ?? 'FOR_SALE',
+      p.size.width * HUB_TILE, p.size.height * HUB_TILE,
+      p.metadata.lotIndex,
+      construction[p.metadata.lotIndex] ?? 0
+    );
     blit(data, W, art, p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });
   pois.filter(p => p.type === POIType.PORTAL).forEach(p => {
@@ -421,11 +456,16 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
   return { w: W, h: H, data };
 }
 
-export interface HubOptions { frame?: number; lots?: Partial<Record<number, LotState>> }
+export interface HubOptions {
+  frame?: number;
+  lots?: Partial<Record<number, LotState>>;
+  /** Wave 10B: per-lot construction progress (0..1), read by shape on the scaffold. */
+  construction?: Partial<Record<number, number>>;
+}
 
 /** The whole city: ground, signs, and the cast standing at their doors. */
 export function composeHub(layout: IHubLayout, o: HubOptions = {}): Sprite {
-  const ground = hubGround(layout, o.frame ?? 0, o.lots);
+  const ground = hubGround(layout, o.frame ?? 0, o.lots, o.construction);
   const { data, w: W } = ground;
   allPois(layout).filter(p => isBuilding(p) || p.type === POIType.PORTAL).forEach(p => {
     if (!p.npcId) return;

@@ -20,8 +20,9 @@ import { CertificateSystem } from '../identity/certificateSystem';
 import { useIdentityStore } from '../identity/store';
 import {
   IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill,
-  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BILLS, SHELL_BUILD_SECONDS, SHELL_STATION
+  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BILLS, SHELL_BUILD_SECONDS, SHELL_STATION, TAG_DEFAULT_MATERIAL
 } from './room';
+import { ITemplate, ITemplateSheet, sizeNeedsVerdict, templateBill } from './template';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
@@ -77,6 +78,14 @@ export interface IBuildJob {
   consumedDefIds: string[];
   /** The owner's signature over the queued record: every completed step is signed. */
   signature?: string;
+  /** Wave 10B: jobs raised together from one template share its item id. */
+  batch?: string;
+  /** Wave 10B: a template shell carries the plan, the sheet and the architect. */
+  template?: {
+    itemId: string;
+    data: ITemplate;
+    sheet: ITemplateSheet;
+  };
 }
 
 const dominantDefId = (defIds: string[]): string => {
@@ -159,6 +168,8 @@ interface HubState {
   buildStructure: (lotId: string, type: 'HOUSE' | 'WORKSHOP' | 'VENDOR') => Promise<boolean>;
   // Wave 10: construction and placement
   resolveBuilds: () => Promise<number>;
+  // Wave 10B: raise a house from a template, materials chosen per element class
+  applyTemplate: (lotId: string, templateItemId: string, sheet: ITemplateSheet) => Promise<RoomVerdict>;
   queuePiece: (lotId: string, kind: RoomPieceKind, x: number, y: number, materialItemId: string) => Promise<RoomVerdict>;
   demolishPiece: (lotId: string, pieceId: string) => Promise<boolean>;
   placeItem: (lotId: string, itemId: string, x: number, y: number, rotated: boolean) => Promise<RoomVerdict>;
@@ -385,6 +396,123 @@ export const useHubStore = create<HubState>((set, get) => ({
     return true;
   },
 
+  /**
+   * Wave 10B.4: APPLY — raise a house from a template on a lot you own. Size
+   * needs refuse with the numbers (line 43); the material sheet is one choice
+   * per element class (D13), billed by tag and consumed exactly once; the lot
+   * goes UNDER CONSTRUCTION, shell first, then the pieces in order on the
+   * clock. The drawing itself is never consumed (D14).
+   */
+  applyTemplate: async (lotId, templateItemId, sheet) => {
+    const { lots, activeHubId, buildJobs, saveHubState } = get();
+    const lot = lots.find(l => l.id === lotId);
+    const p = usePlayerStore.getState().player;
+    if (!lot || !activeHubId) return { ok: false, reason: 'There is no lot here.' };
+    if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this lot.' };
+    if (lot.structureType !== 'EMPTY') return { ok: false, reason: 'The lot already carries a building. Plans are raised on empty ground.' };
+    if (buildJobs.some(j => j.lotId === lotId && !j.applied)) {
+      return { ok: false, reason: 'Construction is already underway on this lot.' };
+    }
+
+    const stash = p.bank.stashTabs[0]?.items || [];
+    const tplItem = stash.find(i => i.id === templateItemId) as (IItem & { templateData?: ITemplate }) | undefined;
+    const tpl = tplItem?.templateData;
+    if (!tpl) return { ok: false, reason: 'That plan is not in your stash.' };
+
+    // Line 43: the size needs, with the numbers.
+    const layout = HubGenerator.generate();
+    const poi = HubGenerator.findPOI(layout, lotId);
+    const lotFootprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
+    const sized = sizeNeedsVerdict(tpl, lotFootprint);
+    if (!sized.ok) return sized;
+
+    // D13: one material per element class, each carrying the class's tag.
+    const bill = templateBill(tpl, sheet);
+    const defName = (defId: string) => (CRAFTED_DEFINITIONS[defId] ?? RESOURCE_DEFINITIONS[defId])?.name ?? defId;
+    const picked: IItem[] = [];
+    const taken = new Set<string>();
+    for (const line of bill.choices) {
+      const candidates = stash.filter(i => i.universalDefinitionId === line.defId && !taken.has(i.id) && i.id !== templateItemId);
+      if (candidates[0] && !(candidates[0].tags || []).includes(line.tag)) {
+        return { ok: false, reason: `${line.cls} ask for something ${line.tag}; ${defName(line.defId)} is not.` };
+      }
+      if (candidates.length < line.count) {
+        return { ok: false, reason: `The bill is short: ${line.count - candidates.length} more ${defName(line.defId)} for ${line.cls}.` };
+      }
+      for (let i = 0; i < line.count; i++) { picked.push(candidates[i]); taken.add(candidates[i].id); }
+    }
+    for (const line of bill.tagLines) {
+      const rest = stash.filter(i => !taken.has(i.id) && i.id !== templateItemId);
+      const got = pickBill([line], rest);
+      if (!got.ok) return { ok: false, reason: `The bill is short: ${got.missing}.` };
+      for (const item of got.items) { picked.push(item); taken.add(item.id); }
+    }
+
+    const cost = STRUCTURE_COSTS[tpl.structureType].build;
+    if (p.bank.gold < cost) {
+      return { ok: false, reason: `The ${tpl.structureType} permit costs ${cost}G; you have ${p.bank.gold}G.` };
+    }
+
+    // Everything checked: pay once, consume once, queue the whole batch.
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+    removeFromStash(picked.map(i => i.id));
+    await Treasury.credit(activeHubId, cost);
+
+    const now = Date.now();
+    const jobs: IBuildJob[] = [];
+    const shellIds = picked.filter(i => i.universalDefinitionId === sheet.WALL || bill.tagLines.some(l => (i.tags || []).includes(l.tag))).map(i => i.id);
+    const shellFinish = now + SHELL_BUILD_SECONDS[tpl.structureType] * 1000;
+    const shellJob: IBuildJob = {
+      id: `bld_${now.toString(36)}_tpl_${lot.lotIndex}`,
+      lotId,
+      kind: 'SHELL',
+      structureType: tpl.structureType,
+      ownerCertUid: p.id,
+      queuedAt: now,
+      finishesAt: shellFinish,
+      applied: false,
+      consumedIds: shellIds,
+      consumedDefIds: [sheet.WALL],
+      batch: templateItemId,
+      template: { itemId: templateItemId, data: tpl, sheet }
+    };
+    shellJob.signature = await signRecord({ kind: 'TEMPLATE_SHELL', lotId, template: tpl.name, authorUid: tpl.authorUid, sheet, consumedIds: shellIds, at: now });
+    jobs.push(shellJob);
+
+    // The pieces rise in the plan's own order, each on its own clock after the last.
+    let finish = shellFinish;
+    tpl.pieces.forEach((piece, i) => {
+      finish += PIECE_BUILD_SECONDS[piece.kind] * 1000;
+      const materialDefId = piece.kind === 'WINDOW' ? sheet.WINDOW : piece.kind === 'DOOR' ? sheet.DOOR : sheet.WALL;
+      jobs.push({
+        id: `bld_${now.toString(36)}_tpl_${lot.lotIndex}_${i}`,
+        lotId,
+        kind: 'PIECE',
+        piece: { kind: piece.kind, x: piece.x, y: piece.y, materialDefId },
+        ownerCertUid: p.id,
+        queuedAt: now,
+        finishesAt: finish,
+        applied: false,
+        consumedIds: [],
+        consumedDefIds: [materialDefId],
+        batch: templateItemId
+      });
+    });
+    for (const job of jobs.slice(1)) {
+      job.signature = await signRecord({ kind: 'TEMPLATE_PIECE', lotId, piece: job.piece, at: now });
+    }
+
+    set({ buildJobs: [...get().buildJobs, ...jobs] });
+    await Ledger.append('GOLD_DELTA', { reason: 'BUILD_PERMIT', lotId, structure: tpl.structureType, template: tpl.name, amount: -cost, treasuryId: activeHubId, treasuryDelta: cost });
+    await Ledger.append('BUILD', {
+      kind: 'TEMPLATE_APPLIED', lotId, templateItemId, template: tpl.name, authorUid: tpl.authorUid,
+      sheet, consumedIds: picked.map(i => i.id), jobs: jobs.length
+    });
+    await saveHubState();
+    console.log(`[BUILD] ${tpl.name} rising on lot ${lot.lotIndex}: ${jobs.length} steps on the clock.`);
+    return { ok: true };
+  },
+
   /** Apply every finished construction job: shells stand up, pieces join the room. */
   resolveBuilds: async () => {
     const now = Date.now();
@@ -395,12 +523,28 @@ export const useHubStore = create<HubState>((set, get) => ({
     let applied = 0;
     for (const job of due) {
       if (job.kind === 'SHELL' && job.structureType) {
-        const poi = HubGenerator.findPOI(layout, job.lotId);
-        const footprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
-        const shellMaterial = dominantDefId(job.consumedDefIds);
+        let room: IRoomState;
+        if (job.template) {
+          // Wave 10B: the shell stands at the PLAN's footprint, in the sheet's
+          // wall material, with its floor zones laid and its architect on record.
+          const tpl = job.template.data;
+          room = emptyRoom(job.lotId, tpl.footprint, job.template.sheet.WALL);
+          if (tpl.zones.length > 0) {
+            room.floorZones = tpl.zones.map(z => ({
+              name: z.name,
+              tiles: z.tiles.map(t => ({ ...t })),
+              materialDefId: job.template!.sheet.zones[z.name] ?? TAG_DEFAULT_MATERIAL.building
+            }));
+          }
+          room.template = { itemId: job.template.itemId, name: tpl.name, authorUid: tpl.authorUid, authorName: tpl.authorName };
+        } else {
+          const poi = HubGenerator.findPOI(layout, job.lotId);
+          const footprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
+          room = emptyRoom(job.lotId, footprint, dominantDefId(job.consumedDefIds));
+        }
         set({
           lots: get().lots.map(l => l.id === job.lotId ? { ...l, structureType: job.structureType!, upkeepPaidThroughDay: worldDay() } : l),
-          rooms: { ...get().rooms, [job.lotId]: emptyRoom(job.lotId, footprint, shellMaterial) }
+          rooms: { ...get().rooms, [job.lotId]: room }
         });
         // The structure brings its station: an item like any other, into the stash.
         const stationDefId = SHELL_STATION[job.structureType];
@@ -852,7 +996,8 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.F, 5, 'armor'),
         ...generateStock(UniversalRank.E, 2, 'armor')
       ],
-      consumableShop: ['res_berry_bush', 'res_fruit_amber'].map((defId, i) => {
+      // Wave 10B: the gallpod joins the shelf — the alchemist sells the ink's bitter half.
+      consumableShop: ['res_berry_bush', 'res_fruit_amber', 'res_fruit_gallpod'].map((defId, i) => {
         const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
         const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);
         return {

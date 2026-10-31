@@ -9,6 +9,7 @@
  */
 
 import { IRoomPiece, IRoomState, placementFootprint, roomDoor } from '../../entities/hub/room';
+import { ITemplate, defaultSheet, templateToRoom } from '../../entities/hub/template';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
 import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
@@ -55,6 +56,13 @@ export function composeRoom(room: IRoomState, _opts: { frame?: number } = {}): S
 
   const pieceAt = new Map<number, IRoomPiece>();
   for (const p of room.pieces) pieceAt.set(p.y * w + p.x, p);
+
+  // Wave 10B (D13): floor zones, each drawn from its own material, read by
+  // grain and a hard seam at the zone's edge — position and shape, never hue.
+  const zoneAt = new Map<number, number>(); // tile index -> zone index
+  const zones = room.floorZones ?? [];
+  zones.forEach((z, zi) => z.tiles.forEach(t => zoneAt.set(t.y * w + t.x, zi)));
+  const zoneMats = zones.map(z => matOf(z.materialDefId));
 
   // Window light: brightness without color, at a fixed radius, like the lamps.
   const windows = room.pieces.filter(p => p.kind === 'WINDOW');
@@ -107,7 +115,18 @@ export function composeRoom(room: IRoomState, _opts: { frame?: number } = {}): S
         if (x < 2 || x >= ROOM_TILE - 2) v = px(Role.MATTER, 3);
         else v = floorAtom(ax, ay);
       } else {
-        v = floorAtom(ax, ay);
+        const zi = zoneAt.get(ty * w + tx);
+        if (zi !== undefined) {
+          // The zone's own floor: its material's grain between seams at its edge.
+          const seam =
+            (x === 0 && zoneAt.get(ty * w + tx - 1) !== zi) ||
+            (x === ROOM_TILE - 1 && zoneAt.get(ty * w + tx + 1) !== zi) ||
+            (y === 0 && zoneAt.get((ty - 1) * w + tx) !== zi) ||
+            (y === ROOM_TILE - 1 && zoneAt.get((ty + 1) * w + tx) !== zi);
+          v = seam ? px(Role.GROUND, 0) : px(Role.GROUND, clampStep(1 + grain(zoneMats[zi], ax, ay, seed), 1, 3));
+        } else {
+          v = floorAtom(ax, ay);
+        }
         const lit = lightAt(ax, ay);
         if (lit) v = px(Role.GROUND, clampStep((v - px(Role.GROUND, 0)) + lit, 0, 4));
       }
@@ -133,5 +152,28 @@ export function composeRoom(room: IRoomState, _opts: { frame?: number } = {}): S
     }
   }
 
+  return { w: W, h: H, data };
+}
+
+/**
+ * Wave 10B: a template's THUMBNAIL is the composed plan itself, downsampled —
+ * real atoms, never an icon. Default (ghost) materials answer every tag, so
+ * the thumbnail shows geometry, which is all the template fixes.
+ */
+export function templateThumb(tpl: ITemplate, cells: { width: number; height: number }): Sprite {
+  const room = templateToRoom(tpl, defaultSheet(tpl), `thumb:${tpl.name}`);
+  const full = composeRoom(room);
+  const W = cells.width * 18, H = cells.height * 18; // the pack's cell, 18 atoms
+  const data = new Uint8Array(W * H);
+  // Fit the room inside the cell, letterboxed, nearest-neighbour.
+  const scale = Math.min(W / full.w, H / full.h);
+  const dw = Math.max(1, Math.floor(full.w * scale));
+  const dh = Math.max(1, Math.floor(full.h * scale));
+  const x0 = (W - dw) >> 1, y0 = (H - dh) >> 1;
+  for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) {
+    const sx = Math.min(full.w - 1, Math.floor(x / scale));
+    const sy = Math.min(full.h - 1, Math.floor(y / scale));
+    data[(y0 + y) * W + x0 + x] = full.data[sy * full.w + sx];
+  }
   return { w: W, h: H, data };
 }
