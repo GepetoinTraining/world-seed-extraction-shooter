@@ -485,7 +485,7 @@ Done 2026-10-31; **approved by Pedro (2026-10-31), with its readings standing as
   - **The admin Genre Creator's tags do not pass the registry.** It is run-time LLM work under Mantine, and nothing it makes reaches the web today. When it does, it goes through `WebBank`.
   - **Every number here is the donor's or a guess:** 1.5 and 1.25 for winging, the rung discounts, the DC. A fresh F-rank still dies on the way to the beacon. Wave 12's.
   - **`STATION_MIN_AREA` still holds the four old stations.** D8's "as the hub's technology accrues" is half done: bigger technology asks for bigger rooms, but lots still do not grow with the hub.
-- **Gate:** lines 63–68 pass by test, and by play within the carried items above. Awaiting Pedro's word.
+- **Gate:** lines 63–68 pass by test, and by play within the carried items above.
 
 **The brief this leg was built from, kept as the record.** Pedro's word on 2026-10-31: without it, the NPCs add little to nothing. The same day: this was already built in another project, so find it and build that version here before continuing, so NPCs can have stat sheets and skills. It now runs ahead of the playtest fixes.
 
