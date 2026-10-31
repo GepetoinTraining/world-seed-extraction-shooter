@@ -39,8 +39,8 @@ export interface FigureInput {
 }
 
 /**
- * THE WALK (D2): both cycles exist; this constant is the one the game uses.
- * The proof page shows 2 and 4 side by side, to be chosen by eye.
+ * THE WALK (D2, decided): both cycles exist; this constant is the one the game uses.
+ * Pedro chose 4 by eye on the proof page (2026-10-31); 2 stays as the alternative.
  */
 export const WALK_PHASES: 2 | 4 = 4;
 

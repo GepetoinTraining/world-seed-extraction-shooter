@@ -136,7 +136,7 @@ Still weak, by eye, and yours to solve:
 Settled by the motion pass (Wave 8B), kept here as the record:
 
 - **The camera rule is now one rule.** Anything with a height — people, creatures, trees — stands upright and shows its front; only flat ground is seen from above. The tree gained a trunk in matter under a crown in life; the trunk blocks its tile and everything standing is drawn by its feet, so you walk under the crown.
-- **Walking is now one walk.** The city walks like the field: held keys, the same speed, the same stepped cycle, a defined standing frame on stop. Both a 2-frame and a 4-frame cycle exist behind one constant; the hub proof page shows them side by side to be chosen by eye.
+- **Walking is now one walk.** The city walks like the field: held keys, the same speed, the same stepped cycle, a defined standing frame on stop. Both a 2-frame and a 4-frame cycle exist behind one constant; the hub proof page shows them side by side. Pedro chose the 4-frame cycle by eye (2026-10-31), and the game ships with it.
 - **Creatures face and step.** Four facings and two frames derive from every body plan with no new art; each definition's `behavior` finally moves it (a Turret holds, a swarm surrounds, a siege plods), and no enemy crosses water, rock or a trunk.
 - **Hits, deaths and enemy health reach the screen**, readable in grayscale: brackets on a hit, a stepped burst on a kill, five pips on the wounded, the screen's own edge marking loss taken. Rank marks draw at double scale in the field.
 - **Portraits grew features** — brows, noses, mouths, more hair, hoods and halos that belong to the id — and their bar was raised from 0.10 to 0.12.
