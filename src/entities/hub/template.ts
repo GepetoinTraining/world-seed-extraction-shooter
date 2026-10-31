@@ -17,6 +17,9 @@ import {
   IRoomState, RoomPieceKind, RoomVerdict, PIECE_BILLS, SHELL_BILLS, TAG_DEFAULT_MATERIAL,
   canBuildPiece, emptyRoom, fullyWalkable, interiorSize, roomDoor, roomSolid
 } from './room';
+import { CRAFTED_DEFINITIONS } from '../economy/data/recipeDefinitions';
+import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { MaterialPropertyType } from '../economy/types';
 
 // ---------------------------------------------------------------------------
 // THE CONTRACT
@@ -327,6 +330,48 @@ export function monoMaterialOf(room: IRoomState): string | null {
   for (const p of room.pieces) materials.add(p.materialDefId);
   for (const z of room.floorZones ?? []) materials.add(z.materialDefId);
   return materials.size === 1 ? [...materials][0] : null;
+}
+
+/**
+ * Wave 10D (D13's deferred numbers, with D9's property bonuses): the
+ * mono-material set bonus is REAL now, and its numbers come from the
+ * material's own properties — properties reach bonuses, the STAB law:
+ *   hardness + density  -> the house stands cheaper (upkeep discount, %)
+ *   conductivity        -> the bench runs faster (craft speed, %)
+ *   luminosity          -> the rooms sit brighter (light radius bonus)
+ * Versioned by the composition rules; recorded on the standing house's card.
+ */
+export interface ISetBonus {
+  upkeepDiscountPct: number;
+  craftSpeedPct: number;
+  lightBonus: number;
+}
+
+export function setBonusFor(materialDefId: string): ISetBonus | null {
+  const def = (CRAFTED_DEFINITIONS[materialDefId] ?? RESOURCE_DEFINITIONS[materialDefId]) as
+    { materialProps?: Partial<Record<MaterialPropertyType, number>> } | undefined;
+  const props = def?.materialProps;
+  if (!props) return null;
+  const hardness = props[MaterialPropertyType.HARDNESS] ?? 0;
+  const density = props[MaterialPropertyType.DENSITY] ?? 0;
+  const conductivity = props[MaterialPropertyType.CONDUCTIVITY] ?? 0;
+  const luminosity = props[MaterialPropertyType.LUMINOSITY] ?? 0;
+  return {
+    upkeepDiscountPct: Math.min(40, Math.round((hardness + density) / 2)),
+    craftSpeedPct: Math.min(30, Math.round(conductivity / 2)),
+    lightBonus: Math.floor(luminosity / 5)
+  };
+}
+
+/** The set bonus said in the bank's voice, numbers and all. */
+export function setBonusText(materialDefId: string): string {
+  const bonus = setBonusFor(materialDefId);
+  if (!bonus) return 'The set bonus is on record.';
+  const parts: string[] = [];
+  if (bonus.upkeepDiscountPct > 0) parts.push(`upkeep −${bonus.upkeepDiscountPct}%`);
+  if (bonus.craftSpeedPct > 0) parts.push(`crafts ${bonus.craftSpeedPct}% faster`);
+  if (bonus.lightBonus > 0) parts.push(`light +${bonus.lightBonus}`);
+  return parts.length > 0 ? `Set bonus: ${parts.join(', ')}.` : 'The set bonus is on record.';
 }
 
 // ---------------------------------------------------------------------------

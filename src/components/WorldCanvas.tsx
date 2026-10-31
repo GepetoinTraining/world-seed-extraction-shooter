@@ -27,6 +27,7 @@ import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
+import { GEAR_RECIPES } from '../entities/economy/data/recipeDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { Bar, Button, CardView, Chip, ItemSprite, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
@@ -163,6 +164,23 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
           </div>
         </div>
       )}
+      {/* Wave 10D (10D.2): the floor — improvised crafting, right here, no bench */}
+      {Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === null).map(recipe => {
+        const canPay = recipe.inputs.every(req =>
+          items.filter(i => i.universalDefinitionId === req.itemId).length >= req.quantity);
+        if (!canPay) return null;
+        return (
+          <div key={recipe.id} onClick={e => e.stopPropagation()} style={{ marginTop: 6 }}>
+            <Button
+              tone="quiet"
+              title={recipe.description}
+              onClick={() => { usePlayerStore.getState().improviseInField(recipe.id); setSelected(null); }}
+            >
+              IMPROVISE · {recipe.name.toUpperCase()}
+            </Button>
+          </div>
+        );
+      })}
       <div className="ws-dim ws-small" style={{ marginTop: 4 }}><Kbd>TAB</Kbd> close</div>
     </Panel>
   );

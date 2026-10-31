@@ -35,7 +35,10 @@ export class StartupSequence {
       // items that grant protection are 10E's; until then the console is the charm:
       //   __ws.protectSlot('CHEST', 'Dev Ward')
       const protectSlot = (slot: any, by = 'Dev Ward (console)') => usePlayerStore.getState().markSlotProtected(slot, by);
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot };
+      // Wave 10D: the anatomy's own instruments join the console
+      const { CompositionSystem } = await import('../economy/CompositionSystem');
+      const { MintRegistry } = await import('../economy/MintRegistry');
+      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 

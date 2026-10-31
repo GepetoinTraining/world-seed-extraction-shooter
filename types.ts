@@ -142,6 +142,47 @@ export interface IEquipmentState {
 }
 
 // ==========================================================================
+// 2C. THE ANATOMY OF ITEMS (Wave 10D — composition, the chain, the budget)
+// ==========================================================================
+
+/** Where an atom of an item's composition entered the economy. */
+export type MaterialOrigin =
+  | 'HARVEST'        // taken from the world by hand or tool
+  | 'PURCHASE'       // minted at a counter, gold on record
+  | 'IMPROVISATION'  // combined in the field, no bench, no apology
+  | 'WORLD'          // rolled by the world itself (loot, chests, genesis)
+  | 'CONSTRUCTION'   // minted by a finished shell (bench, counter)
+  | 'SALVAGE';       // torn back out of a demolished piece, bitten
+
+/** One step of labor in an item's transformation chain. */
+export interface ICompositionStep {
+  recipeId: string;
+  name: string;
+  laborSeconds: number;
+  /** null = improvised: no facility, anywhere, including the field (the floor). */
+  facility: string | null;
+}
+
+/**
+ * Wave 10D — what an item is MADE OF: its atoms and the chain that made it.
+ * Counts and labor are per item (a batch's share divides at compose time), so
+ * the same chain gives byte-identical composition on every machine. The chain
+ * is the power budget: more chain, better item. Versioned: the rules may grow,
+ * old items keep the law they were made under.
+ */
+export interface IComposition {
+  version: number;
+  materials: { defId: string; name: string; count: number; origin: MaterialOrigin }[];
+  steps: ICompositionStep[];
+  /** Longest transformation path — THE POWER BUDGET. 0 = raw or world-rolled. */
+  depth: number;
+  /** Total labor invested in this one item, seconds (batch share included). */
+  laborSeconds: number;
+  /** How many items the final step minted from these atoms (the record). */
+  batchYield: number;
+}
+
+// ==========================================================================
 // 3. THE ITEM CONTRACT
 // ==========================================================================
 
@@ -243,6 +284,10 @@ export interface IItem {
     gridW: number;
     gridH: number;
   };
+
+  // Wave 10D (contract upgrade: additive)
+  /** 10D.2: what this item is made of — its atoms and its chain. */
+  composition?: IComposition;
 }
 
 // ==========================================================================

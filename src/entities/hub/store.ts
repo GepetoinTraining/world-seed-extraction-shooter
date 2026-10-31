@@ -5,7 +5,7 @@
 
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { create } from 'zustand';
-import { IItem, UniversalRank } from '../../../types';
+import { IComposition, IItem, ItemType, UniversalRank } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
 import { HubGenerator } from './HubGenerator';
@@ -13,16 +13,18 @@ import { Rng } from '../../logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
 import { Ledger } from '../../logic/ledger/Ledger';
 import { Treasury } from '../../logic/economy/Treasury';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../economy/data/recipeDefinitions';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../economy/data/recipeDefinitions';
 import { TransformationEngine } from '../economy/TransformationEngine';
 import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
 import { CertificateSystem } from '../identity/certificateSystem';
 import { useIdentityStore } from '../identity/store';
 import {
-  IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill,
+  IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill, salvageFor,
   PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BILLS, SHELL_BUILD_SECONDS, SHELL_STATION, TAG_DEFAULT_MATERIAL
 } from './room';
-import { ITemplate, ITemplateSheet, sizeNeedsVerdict, templateBill } from './template';
+import { ITemplate, ITemplateSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from './template';
+import { CompositionSystem } from '../../logic/economy/CompositionSystem';
+import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { genreForWorld } from '../../render/atoms/world';
 
@@ -59,6 +61,9 @@ export interface ICraftJob {
   queuedAt: number;
   finishesAt: number;
   collected: boolean;
+  /** Wave 10D (additive): what the job consumed, composition and all, so the
+   * outputs can carry the whole chain when they mint (resolveCrafts). */
+  consumed?: { defId: string; name: string; composition?: IComposition }[];
 }
 
 /** Logical world-day (observed time, never stored clocks). */
@@ -71,7 +76,7 @@ export interface IBuildJob {
   lotId: string;
   kind: 'SHELL' | 'PIECE';
   structureType?: 'HOUSE' | 'WORKSHOP' | 'VENDOR';
-  piece?: { kind: RoomPieceKind; x: number; y: number; materialDefId: string };
+  piece?: { kind: RoomPieceKind; x: number; y: number; materialDefId: string; materialQuality?: number };
   ownerCertUid: string;
   queuedAt: number;
   finishesAt: number;
@@ -119,6 +124,22 @@ const addToStash = (items: IItem[]) => usePlayerStore.setState(s => ({
     idx === 0 ? { ...tab, items: [...tab.items, ...items] } : tab
   ) } }
 }));
+
+// Wave 10D (D18): the bank's mint registry persists write-behind. Claims are
+// never released; a debounced save keeps the doc close behind the memory.
+let registrySaveTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleRegistrySave(): void {
+  if (registrySaveTimer) clearTimeout(registrySaveTimer);
+  registrySaveTimer = setTimeout(() => {
+    registrySaveTimer = null;
+    void VectorStore.put({
+      id: 'mint_registry_v1',
+      namespace: VectorNamespace.ITEMS,
+      data: { rows: MintRegistry.snapshot() },
+      metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: 'SYSTEM', version: 1 }
+    });
+  }, 800);
+}
 
 export interface IShopListing {
   id: string;
@@ -242,6 +263,11 @@ export const useHubStore = create<HubState>((set, get) => ({
         // Save immediately
         await get().saveHubState();
       }
+
+      // Wave 10D (D18): wake the bank's registry before anything mints today.
+      const regDoc = await VectorStore.get<{ rows: [string, string][] }>(VectorNamespace.ITEMS, 'mint_registry_v1');
+      if (regDoc?.data?.rows) MintRegistry.hydrate(regDoc.data.rows);
+      MintRegistry.onClaim = () => scheduleRegistrySave();
 
       // 2. Generate/Load Shop Stock (Simulated Daily Refresh)
       // In a real app, this would be server-side. Here we simulate it.
@@ -551,7 +577,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         // The structure brings its station: an item like any other, into the stash.
         const stationDefId = SHELL_STATION[job.structureType];
         if (stationDefId) {
-          const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`));
+          const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION' });
           addToStash([station]);
           const { Provenance } = await import('../../logic/sovereignty/Provenance');
           await Provenance.record(station, 'MINT', { origin: 'CONSTRUCTION', jobId: job.id, lotId: job.lotId, structure: job.structureType });
@@ -571,6 +597,7 @@ export const useHubStore = create<HubState>((set, get) => ({
                   x: job.piece.x,
                   y: job.piece.y,
                   materialDefId: job.piece.materialDefId,
+                  materialQuality: job.piece.materialQuality,
                   builtBy: job.ownerCertUid,
                   at: job.finishesAt,
                   signature: job.signature
@@ -621,7 +648,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       id: `bld_${Date.now().toString(36)}_${x}_${y}`,
       lotId,
       kind: 'PIECE',
-      piece: { kind, x, y, materialDefId: material.universalDefinitionId },
+      piece: {
+        kind, x, y, materialDefId: material.universalDefinitionId,
+        // Wave 10D: the material's quality rides the piece, so salvage knows
+        // how far the bite has already gone.
+        materialQuality: Math.abs(material.quality) <= 1 ? material.quality : 0
+      },
       ownerCertUid: p.id,
       queuedAt: Date.now(),
       finishesAt: Date.now() + PIECE_BUILD_SECONDS[kind] * 1000,
@@ -636,7 +668,10 @@ export const useHubStore = create<HubState>((set, get) => ({
     return { ok: true };
   },
 
-  /** Take a piece down. The materials do not come back; the ledger remembers. */
+  /** Take a piece down. Wave 10D.5 — THE SALVAGE LAW, decided and enacted: the
+   * whole bill comes back as real items of the material that paid it, but every
+   * demolition bites the quality by 0.10, floored at −0.20. Build-and-tear
+   * grinds the material toward Crude; the permit and the shell never return. */
   demolishPiece: async (lotId, pieceId) => {
     const { lots, rooms, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
@@ -646,8 +681,24 @@ export const useHubStore = create<HubState>((set, get) => ({
     const piece = room.pieces.find(pc => pc.id === pieceId);
     if (!piece) return false;
     set({ rooms: { ...get().rooms, [lotId]: { ...room, pieces: room.pieces.filter(pc => pc.id !== pieceId) } } });
-    await Ledger.append('BUILD', { kind: 'DEMOLISHED', lotId, pieceId, piece: { kind: piece.kind, x: piece.x, y: piece.y } });
+
+    const salvage = salvageFor(piece);
+    const def = (CRAFTED_DEFINITIONS[salvage.defId] ?? RESOURCE_DEFINITIONS[salvage.defId]) as any;
+    const salvaged: IItem[] = def
+      ? Array.from({ length: salvage.count }, (_, i) =>
+          ItemFactory.createResourceItem(def, Rng.fromKey(`${lotId}:${pieceId}:salvage:${i}`), { origin: 'SALVAGE', quality: salvage.quality }))
+      : [];
+    if (salvaged.length > 0) {
+      addToStash(salvaged);
+      const { Provenance } = await import('../../logic/sovereignty/Provenance');
+      await Provenance.recordMany(salvaged, 'MINT', { origin: 'SALVAGE', lotId, pieceId, quality: salvage.quality });
+    }
+    await Ledger.append('BUILD', {
+      kind: 'SALVAGED', lotId, pieceId, piece: { kind: piece.kind, x: piece.x, y: piece.y },
+      defId: salvage.defId, count: salvaged.length, quality: salvage.quality
+    });
     await saveHubState();
+    console.log(`[BUILD] Took down the ${piece.kind.toLowerCase()}; ${salvaged.length}x ${def?.name ?? salvage.defId} salvaged at ${Math.round(salvage.quality * 100)}%.`);
     return true;
   },
 
@@ -708,26 +759,58 @@ export const useHubStore = create<HubState>((set, get) => ({
     return true;
   },
 
-  /** Queue a transformation at a WORKSHOP you own. Inputs leave the stash now. */
+  /** Queue a transformation at a WORKSHOP you own. Inputs leave the stash now.
+   * Wave 10D: gear recipes (GEAR_RECIPES) queue the same way; the job keeps the
+   * consumed items' compositions so the outputs carry the whole chain; and a
+   * mono-material workshop runs faster by its set bonus (D13's numbers). */
   queueCraft: async (lotId, recipeId) => {
     const { lots, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const recipe = RECIPE_DEFINITIONS[recipeId];
+    const gearRecipe = GEAR_RECIPES[recipeId];
     const p = usePlayerStore.getState().player;
-    if (!lot || !recipe) return false;
-    if (lot.ownerId !== p.id || lot.structureType !== recipe.requiredFacility) {
-      console.log(`[CRAFT] ${recipe.name} needs your own ${recipe.requiredFacility}.`);
+    if (!lot || (!recipe && !gearRecipe)) return false;
+    const facility = recipe?.requiredFacility ?? gearRecipe!.requiredFacility;
+    const name = recipe?.name ?? gearRecipe!.name;
+    const laborSeconds = recipe?.laborTimeSeconds ?? gearRecipe!.laborTimeSeconds;
+    if (lot.ownerId !== p.id || lot.structureType !== facility) {
+      console.log(`[CRAFT] ${name} needs your own ${facility}.`);
       return false;
     }
 
     // Inputs come from the main stash
     const stash = p.bank.stashTabs[0]?.items || [];
-    if (!TransformationEngine.canProcess({ } as any, recipe, stash)) {
-      console.log(`[CRAFT] Missing inputs for ${recipe.name}.`);
-      return false;
+    // Wave 10D fix (found by the bars): two crafts queued in the same
+    // millisecond on one lot used to share a job id — and their outputs then
+    // minted with IDENTICAL item ids. The queue's length breaks the tie.
+    const jobId = `job_${Date.now().toString(36)}_${lot.lotIndex}_${get().craftingJobs.length}`;
+    let consumedIds: string[];
+    if (recipe) {
+      if (!TransformationEngine.canProcess({ } as any, recipe, stash)) {
+        console.log(`[CRAFT] Missing inputs for ${recipe.name}.`);
+        return false;
+      }
+      consumedIds = TransformationEngine.processCycle(recipe, stash, Rng.fromKey(`${jobId}:consume`)).consumedIds;
+    } else {
+      const picked: IItem[] = [];
+      const taken = new Set<string>();
+      for (const req of gearRecipe!.inputs) {
+        let need = req.quantity;
+        for (const item of stash) {
+          if (need <= 0) break;
+          if (item.universalDefinitionId === req.itemId && !taken.has(item.id)) { picked.push(item); taken.add(item.id); need--; }
+        }
+        if (need > 0) {
+          console.log(`[CRAFT] Missing inputs for ${gearRecipe!.name}.`);
+          return false;
+        }
+      }
+      consumedIds = picked.map(i => i.id);
     }
-    const jobId = `job_${Date.now().toString(36)}_${lot.lotIndex}`;
-    const { consumedIds } = TransformationEngine.processCycle(recipe, stash, Rng.fromKey(`${jobId}:consume`));
+
+    // Wave 10D: the chain rides the job — what was consumed, composition and all
+    const consumed = stash.filter(i => consumedIds.includes(i.id))
+      .map(i => ({ defId: i.universalDefinitionId, name: i.name, composition: i.composition }));
 
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
@@ -735,23 +818,34 @@ export const useHubStore = create<HubState>((set, get) => ({
       ) } }
     }));
 
+    // D13's numbers: a mono-material workshop runs faster. The composition still
+    // records the recipe's own labor — the bench is a convenience, not a chain fact.
+    const room = get().rooms[lotId];
+    const mono = room ? monoMaterialOf(room) : null;
+    const speedPct = (mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0;
+    const effectiveSeconds = Math.max(1, Math.round(laborSeconds * (1 - speedPct / 100)));
+
     const job: ICraftJob = {
       id: jobId,
       lotId,
       recipeId,
       ownerCertUid: p.id,
       queuedAt: Date.now(),
-      finishesAt: Date.now() + recipe.laborTimeSeconds * 1000,
-      collected: false
+      finishesAt: Date.now() + effectiveSeconds * 1000,
+      collected: false,
+      consumed
     };
     set({ craftingJobs: [...get().craftingJobs, job] });
     await Ledger.append('CRAFT', { kind: 'QUEUED', jobId, recipeId, lotId, consumedIds });
     await saveHubState();
-    console.log(`[CRAFT] ${recipe.name} queued (${recipe.laborTimeSeconds}s).`);
+    console.log(`[CRAFT] ${name} queued (${effectiveSeconds}s${speedPct ? `, ${speedPct}% faster: one material` : ''}).`);
     return true;
   },
 
-  /** Collect every finished job: outputs mint from the job's key into the stash. */
+  /** Collect every finished job: outputs mint from the job's key into the stash.
+   * Wave 10D: every output carries its composition — the inputs' chains folded
+   * in plus this step — and its value derives from that chain (10D.4). Gear
+   * recipes mint through createComposedItem: the chain is the power budget. */
   resolveCrafts: async () => {
     const now = Date.now();
     const { craftingJobs, saveHubState } = get();
@@ -761,16 +855,46 @@ export const useHubStore = create<HubState>((set, get) => ({
     let minted = 0;
     for (const job of due) {
       const recipe = RECIPE_DEFINITIONS[job.recipeId];
-      if (!recipe) continue;
+      const gearRecipe = GEAR_RECIPES[job.recipeId];
+      if (!recipe && !gearRecipe) continue;
+
+      // The chain: what the job consumed (older jobs without the snapshot fall
+      // back to the recipe's nominal inputs as raw roots — honest and replayable).
+      const nominalInputs = recipe
+        ? recipe.inputs.flatMap(req => Array.from({ length: req.quantity }, () => req.itemId))
+        : gearRecipe!.inputs.flatMap(req => Array.from({ length: req.quantity }, () => req.itemId));
+      const inputComps: IComposition[] = job.consumed
+        ? job.consumed.map(c => c.composition ?? CompositionSystem.root({ id: c.defId, name: c.name }, 'HARVEST'))
+        : nominalInputs.map(defId => CompositionSystem.root(
+            { id: defId, name: (CRAFTED_DEFINITIONS[defId] ?? RESOURCE_DEFINITIONS[defId])?.name ?? defId }, 'HARVEST'));
+
       const outputs: IItem[] = [];
-      recipe.outputs.forEach((out, oi) => {
-        const def = CRAFTED_DEFINITIONS[out.itemId];
-        if (!def) return;
-        const rng = Rng.fromKey(`${job.id}:out:${oi}`);
-        if (rng.next() <= out.probability) {
-          for (let q = 0; q < out.quantity; q++) outputs.push(ItemFactory.createResourceItem(def, rng));
-        }
-      });
+      if (recipe) {
+        const nominalYield = recipe.outputs.reduce((n, o) => n + o.quantity, 0);
+        const composition = CompositionSystem.compose(
+          { recipeId: recipe.id, name: recipe.name, laborSeconds: recipe.laborTimeSeconds, facility: recipe.requiredFacility },
+          inputComps, nominalYield);
+        recipe.outputs.forEach((out, oi) => {
+          const def = CRAFTED_DEFINITIONS[out.itemId];
+          if (!def) return;
+          const rng = Rng.fromKey(`${job.id}:out:${oi}`);
+          if (rng.next() <= out.probability) {
+            for (let q = 0; q < out.quantity; q++) {
+              const item = ItemFactory.createResourceItem(def, rng);
+              item.composition = composition;
+              item.value = CompositionSystem.priceOf(composition);
+              outputs.push(item);
+            }
+          }
+        });
+      } else {
+        const composition = CompositionSystem.compose(
+          { recipeId: gearRecipe!.id, name: gearRecipe!.name, laborSeconds: gearRecipe!.laborTimeSeconds, facility: gearRecipe!.requiredFacility },
+          inputComps, 1);
+        const item = ItemFactory.createComposedItem(gearRecipe!.outputBase, composition, Rng.fromKey(`${job.id}:gear`));
+        if (item) outputs.push(item);
+      }
+
       usePlayerStore.setState(s => ({
         player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
           idx === 0 ? { ...tab, items: [...tab.items, ...outputs] } : tab
@@ -778,10 +902,14 @@ export const useHubStore = create<HubState>((set, get) => ({
       }));
       minted += outputs.length;
       await Ledger.append('CRAFT', { kind: 'COLLECTED', jobId: job.id, outputIds: outputs.map(o => o.id) });
-      // Wave 6.2: crafted goods carry their maker's signature from birth
+      // Wave 6.2: crafted goods carry their maker's signature from birth —
+      // Wave 10D: and the signed record carries the composition's own hash.
       const { Provenance } = await import('../../logic/sovereignty/Provenance');
-      await Provenance.recordMany(outputs, 'MINT', { origin: 'CRAFT', jobId: job.id, recipeId: job.recipeId, lotId: job.lotId });
-      console.log(`[CRAFT] Collected ${outputs.length}x from ${recipe.name}.`);
+      await Provenance.recordMany(outputs, 'MINT', {
+        origin: 'CRAFT', jobId: job.id, recipeId: job.recipeId, lotId: job.lotId,
+        compositionHash: outputs[0]?.composition ? CompositionSystem.compositionHash(outputs[0].composition) : undefined
+      });
+      console.log(`[CRAFT] Collected ${outputs.length}x from ${(recipe ?? gearRecipe)!.name}.`);
     }
 
     set({ craftingJobs: get().craftingJobs.map(j => due.some(d => d.id === j.id) ? { ...j, collected: true } : j) });
@@ -926,7 +1054,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       if (lot.ownerId === p.id) await get().collectProceeds(lot.id);
       changed = true;
 
-      const rate = lot.structureType === 'EMPTY' ? 5 : STRUCTURE_COSTS[lot.structureType].upkeepPerDay;
+      let rate = lot.structureType === 'EMPTY' ? 5 : STRUCTURE_COSTS[lot.structureType].upkeepPerDay;
+      // Wave 10D (D13's numbers): a mono-material house stands cheaper.
+      const lotRoom = get().rooms[lot.id];
+      const mono = lotRoom ? monoMaterialOf(lotRoom) : null;
+      const discount = (mono ? setBonusFor(mono)?.upkeepDiscountPct : 0) || 0;
+      if (discount > 0) rate = Math.max(1, Math.round(rate * (1 - discount / 100)));
       const cost = rate * owed;
       const isLocal = lot.ownerId === p.id;
       const canPay = isLocal && usePlayerStore.getState().player.bank.gold >= cost;
@@ -1038,7 +1171,18 @@ export const useHubStore = create<HubState>((set, get) => ({
     const price = Math.ceil(listing.price);
     if (playerStore.player.bank.gold < price) return null;
 
-    const purchasedItem = { ...listing.item, id: crypto.randomUUID() };
+    // Wave 10D: each unit sold is its OWN mint, deterministically keyed by the
+    // listing and its remaining stock (the old crypto.randomUUID was a
+    // determinism leak), with PURCHASE on its record. Rolled gear goes through
+    // the bank's registry (D18): the shelf shows the pattern; every unit stands
+    // on its own rung, the display item keeping the first claim.
+    const unitRng = Rng.fromKey(`purchase:${get().activeHubId || 'hub_unknown'}:${listingId}:unit:${listing.stock}`);
+    const unit: IItem = {
+      ...listing.item,
+      id: `itm_${unitRng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${unitRng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
+      composition: CompositionSystem.root({ id: listing.item.universalDefinitionId, name: listing.item.name }, 'PURCHASE')
+    };
+    const purchasedItem = unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
 
     usePlayerStore.setState(s => ({
       player: {

@@ -31,8 +31,40 @@ export interface ItemDatabase {
   };
   weapon_bases: ItemDefinition[];
   armor_bases: ItemDefinition[];
-  tool_bases: ItemDefinition[]; 
+  tool_bases: ItemDefinition[];
 }
+
+/**
+ * Wave 10D: gear that can only be MADE, never found on a shelf or in a chest.
+ * These bases never join the random mint pools; their item power comes from
+ * the chain (CompositionSystem.powerBudget), not from base_ip — base_ip here
+ * is only the fallback for an item minted with no composition at all.
+ */
+export const CRAFTED_GEAR_BASES: ItemDefinition[] = [
+  {
+    id: 'wpn_improvised_club',
+    universal_name: 'Stonebound Club',
+    rank: UniversalRank.F,
+    base_ip: 10,
+    slot: SlotType.MAIN_HAND,
+    tags: ['melee', 'one_hand', 'physical', 'improvised'],
+    implicits: [
+      { stat: 'attack_speed', value: 0.8 }
+    ]
+  },
+  {
+    id: 'wpn_iron_maul_t1',
+    universal_name: 'Iron-Headed Maul',
+    rank: UniversalRank.E,
+    base_ip: 60,
+    slot: SlotType.MAIN_HAND,
+    tags: ['melee', 'two_hand', 'physical', 'heavy'],
+    implicits: [
+      { stat: 'stun_duration_multiplier', min: 0.10, max: 0.15 },
+      { stat: 'attack_speed', value: 0.85 }
+    ]
+  }
+];
 
 export const ITEM_DEFINITIONS: ItemDatabase = {
   "meta": {

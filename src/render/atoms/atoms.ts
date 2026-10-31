@@ -691,7 +691,9 @@ function glyphInk(tags: string[], m: Material, seed: number): Ink {
 export const ITEM_CELL = 18;
 export const QUALITY_NAMES = ['Crude', 'Rough', 'Standard', 'Fine', 'Superior'];
 
-/** Gear rolls -0.2 to +0.2. Resources and deeds store 100, which means no roll at all. */
+/** The one quality law (Wave 10D): everything sits on the gear scale, -0.2 to
+ * +0.2; 0 means no roll was taken. Values outside the scale are legacy 100s
+ * from before the law and still read as no roll. */
 export function qualityBand(q?: number): number {
   if (q === undefined || q === null || Math.abs(q) > 1) return 2;
   if (q < -0.12) return 0;

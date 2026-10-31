@@ -51,7 +51,7 @@ export class DeedSystem {
       rarity: rarity,
       
       level: 1,
-      quality: 100, // Deeds are always "Perfect" quality
+      quality: 0, // Wave 10D: the one scale — a deed takes no roll
       value: this.calculateDeedValue(rank),
 
       tags: ['deed', 'document', 'untradeable_on_death'],

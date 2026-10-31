@@ -1,11 +1,13 @@
-import { IItem, IAffix, ItemType, SlotType, UniversalRank, Rarity } from '../../../types';
+import { IItem, IAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin } from '../../../types';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
-import { ITEM_DEFINITIONS, ItemDefinition } from './data/itemDefinitions';
+import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from './data/itemDefinitions';
 import { AFFIX_DEFINITIONS, AffixDefinition } from './data/affixDefinitions';
 import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
 import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { ResourceDef } from './data/resourceDefinitions';
 import { MaterialPropertyType } from '../economy/types';
+import { CompositionSystem } from '../../logic/economy/CompositionSystem';
+import { MintRegistry } from '../../logic/economy/MintRegistry';
 
 export class ItemFactory {
 
@@ -124,17 +126,74 @@ export class ItemFactory {
     // 10C.2: requirements are stamped at mint — deterministic from rank and tags
     item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
 
-    return item;
+    // Wave 10D: a world-rolled thing says so — no chain to lie about — and the
+    // bank's registry claims its tuple (D18): the first keeps its claim.
+    item.composition = CompositionSystem.root({ id: template.id, name: template.universal_name }, 'WORLD');
+    return MintRegistry.claim(item);
+  }
+
+  /**
+   * Wave 10D.2: mint GEAR from a recipe and the composition of what it
+   * consumed. The chain is the power budget; the price derives from the chain;
+   * the registry claims the tuple like any rolled mint.
+   */
+  static createComposedItem(baseId: string, composition: IComposition, rng: SeededRNG): IItem | null {
+    const template = CRAFTED_GEAR_BASES.find(b => b.id === baseId)
+      ?? [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases, ...ITEM_DEFINITIONS.tool_bases].find(b => b.id === baseId);
+    if (!template) return null;
+
+    const quality = (rng.next() * 0.4) - 0.2;
+    const baseStats = this.generateBaseStats(template, quality, rng);
+    const itemPower = CompositionSystem.powerBudget(composition);
+    const dimensions = this.getDimensions(template);
+
+    const item: IItem = {
+      id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
+      universalDefinitionId: template.id,
+      name: this.constructName(template.universal_name, [], quality),
+      description: composition.steps[0]?.facility === null
+        ? 'Lashed together where it was needed. The bank signed it anyway.'
+        : `Made, not found. ${composition.steps.length} step(s) on its record.`,
+      type: ItemType.GEAR,
+      slot: template.slot,
+      rank: template.rank,
+      rarity: Rarity.COMMON,
+      quality,
+      level: this.getLevelForRank(template.rank),
+      value: CompositionSystem.priceOf(composition),
+      itemPower,
+      tags: [...template.tags],
+      dimensions,
+      weight: this.getWeight(template, dimensions),
+      affixes: [],
+      stats: { ...baseStats, durability: 100, maxDurability: 100 },
+      visuals: { modelId: 'weapon_mesh', colorHex: '#9ca3af' },
+      icon: 'weapon_icon',
+      history: { dropDate: Date.now(), killCount: 0 },
+      isIdentified: true,
+      composition
+    };
+    item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
+    return MintRegistry.claim(item);
   }
 
   /**
    * Wave 2.2: mint a RESOURCE item from its definition (not random gear).
    * Weight derives from material DENSITY (primordial: properties drive physics);
    * the def's hand-set weight is the fallback.
+   * Wave 10D: quality sits on the ONE scale now (0 = no roll; the dead 100 is
+   * gone), the value law reads it, and every mint carries its composition —
+   * origin HARVEST unless the caller says otherwise (PURCHASE, CONSTRUCTION,
+   * SALVAGE...). Commodities stay fungible: the registry does not claim them.
    */
-  static createResourceItem(def: ResourceDef, rng: SeededRNG): IItem {
+  static createResourceItem(
+    def: ResourceDef,
+    rng: SeededRNG,
+    opts?: { origin?: MaterialOrigin; quality?: number }
+  ): IItem {
     const density = def.materialProps?.[MaterialPropertyType.DENSITY];
     const weight = density !== undefined ? parseFloat((density * 0.5).toFixed(1)) : (def.weight ?? 1.0);
+    const quality = opts?.quality ?? 0;
 
     return {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
@@ -145,9 +204,9 @@ export class ItemFactory {
       slot: def.slot ?? ('NONE' as any),
       rank: def.rank ?? UniversalRank.F,
       rarity: def.rarity ?? Rarity.COMMON,
-      quality: 100,
+      quality,
       level: 1,
-      value: Math.max(1, Math.round(weight * 4 + (def.materialProps?.[MaterialPropertyType.HARDNESS] ?? 0))),
+      value: CompositionSystem.baseMaterialValue(def, quality),
       itemPower: 0,
       tags: [...(def.tags ?? [])],
       affixes: [],
@@ -157,7 +216,8 @@ export class ItemFactory {
       visuals: def.visuals ?? { modelId: 'resource', colorHex: '#9ca3af' },
       icon: def.icon ?? 'resource_icon',
       history: { dropDate: Date.now(), killCount: 0 },
-      isIdentified: true
+      isIdentified: true,
+      composition: CompositionSystem.root({ id: def.id, name: def.name }, opts?.origin ?? 'HARVEST')
     };
   }
 

@@ -28,6 +28,9 @@ export interface IRoomPiece {
   y: number;
   /** What it is made of. Properties become pixels: a plank wall and an ingot wall differ. */
   materialDefId: string;
+  /** Wave 10D (additive): the quality of the material that paid the bill, on
+   * the one scale. Salvage reads it to know how far the bite has gone. */
+  materialQuality?: number;
   builtBy: string; // cert uid
   at: number;
   signature?: string;
@@ -232,6 +235,30 @@ export const PIECE_BILLS: Record<RoomPieceKind, { tag: string; count: number }> 
 export const PIECE_BUILD_SECONDS: Record<RoomPieceKind, number> = {
   WALL: 8, DOOR: 8, WINDOW: 10, STAIR: 15
 };
+
+/**
+ * DEMOLISH-SALVAGE (Wave 10D.5 — the decision, taken this leg and enacted):
+ * tearing a piece down returns its WHOLE bill, as real items of the material
+ * that paid it — but every demolition bites the material's quality by 0.10,
+ * floored at the scale's own floor (−0.20). Build-and-tear cycles grind the
+ * material toward Crude; the gold permit and the shell bill never return.
+ * Deterministic, signed as SALVAGED, and the one-quality law pays its rent.
+ */
+export const SALVAGE_QUALITY_BITE = 0.10;
+export const QUALITY_FLOOR = -0.20;
+
+export function salvageFor(piece: Pick<IRoomPiece, 'kind' | 'materialDefId' | 'materialQuality'>): {
+  defId: string; count: number; quality: number;
+} {
+  const bill = PIECE_BILLS[piece.kind];
+  const prior = typeof piece.materialQuality === 'number' && Math.abs(piece.materialQuality) <= 1
+    ? piece.materialQuality : 0;
+  return {
+    defId: piece.materialDefId,
+    count: bill.count,
+    quality: Math.round(Math.max(QUALITY_FLOOR, prior - SALVAGE_QUALITY_BITE) * 1e6) / 1e6
+  };
+}
 
 /** The shell's material bill, paid with the gold permit when construction is queued. */
 export const SHELL_BILLS: Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', { tag: string; count: number }[]> = {

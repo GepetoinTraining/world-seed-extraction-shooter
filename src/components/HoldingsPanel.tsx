@@ -8,7 +8,7 @@ import { IItem, ItemType, UniversalRank } from '../../types';
 import { useHubStore, IPlayerLot } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
-import { RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
+import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
 import { SHELL_BILLS, SHELL_BUILD_SECONDS, billText, pickBill } from '../entities/hub/room';
 import { Button, Chip, Input, ItemSprite, Panel } from './ui/kit';
 import { lotConstruction } from '../entities/hub/template';
@@ -97,7 +97,8 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 
       {mine && lot.structureType === 'WORKSHOP' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {Object.values(RECIPE_DEFINITIONS).map(recipe => {
+          {/* Wave 10D: gear recipes join the bench here too */}
+          {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP')].map(recipe => {
             const ready = recipe.inputs.every(i => countOf(stash, i.itemId) >= i.quantity);
             return (
               <Button key={recipe.id} disabled={!ready} title={recipe.description} onClick={() => hub.queueCraft(lot.id, recipe.id)}>
@@ -109,7 +110,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
             const left = Math.ceil((job.finishesAt - now) / 1000);
             return (
               <div key={job.id} className="ws-row">
-                <span className="ws-small">{RECIPE_DEFINITIONS[job.recipeId]?.name}</span>
+                <span className="ws-small">{(RECIPE_DEFINITIONS[job.recipeId] ?? GEAR_RECIPES[job.recipeId])?.name}</span>
                 {left > 0
                   ? <span className="ws-dim ws-small">{left}s on the bench</span>
                   : <Button tone="signal" onClick={() => hub.resolveCrafts()}>COLLECT</Button>}

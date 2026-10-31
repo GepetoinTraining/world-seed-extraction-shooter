@@ -19,7 +19,7 @@ import {
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
 import { inspectTemplateRoom } from '../../render/atoms/inspect';
-import { RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
+import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, runDialogueAction, quickDeployTargetId } from './dialogue';
@@ -778,7 +778,8 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
         Inputs leave the stash now; outputs mint when you look. The same bench the Holdings screen works.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {Object.values(RECIPE_DEFINITIONS).map(recipe => {
+        {/* Wave 10D: gear recipes (the chain is the power budget) join the bench */}
+        {[...Object.values(RECIPE_DEFINITIONS), ...Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === 'WORKSHOP')].map(recipe => {
           const ready = recipe.inputs.every(i => countOf(i.itemId) >= i.quantity);
           return (
             <Button
@@ -798,7 +799,7 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
           const left = Math.ceil((job.finishesAt - now) / 1000);
           return (
             <div key={job.id} className="ws-row">
-              <span className="ws-small">{RECIPE_DEFINITIONS[job.recipeId]?.name}</span>
+              <span className="ws-small">{(RECIPE_DEFINITIONS[job.recipeId] ?? GEAR_RECIPES[job.recipeId])?.name}</span>
               {left > 0
                 ? <span className="ws-dim ws-small">{left}s on the bench</span>
                 : <Button tone="signal" onClick={() => void hub.resolveCrafts()}>COLLECT</Button>}

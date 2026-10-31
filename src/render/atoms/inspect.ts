@@ -4,7 +4,7 @@
  * the card only explains the answer. Hover and keyboard share one target list.
  */
 
-import { IItem, IPlayer, InteractionType, MENTAL_ATTRIBUTES } from '../../../types';
+import { IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
@@ -13,6 +13,7 @@ import { EntityType, IWorldEntity } from '../../entities/world/types';
 import { QUALITY_NAMES, qualityBand } from './atoms';
 import { LAYER } from './world';
 import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
+import { setBonusText } from '../../entities/hub/template';
 
 export interface Card {
   title: string;
@@ -181,7 +182,8 @@ export function inspectTemplateRoom(room: {
   if (materials.size === 1) {
     const only = [...materials][0];
     const def = (CRAFTED_DEFINITIONS[only] ?? RESOURCE_DEFINITIONS[only]) as any;
-    rows.push(['One material', `${def?.name ?? only}. The set bonus is on record; it pays when the materials pass lands.`]);
+    // Wave 10D (D13's numbers): the bonus is real now, and the card says it.
+    rows.push(['One material', `${def?.name ?? only}. ${setBonusText(only)}`]);
   }
   return {
     title: room.template.name,
@@ -201,7 +203,10 @@ export function inspectItem(item: IItem): Card {
   const title = item.name.replace(/\bBroken\b/, QUALITY_NAMES[0]);
   const rows: [string, string][] = [['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
   const q = (item as any).quality as number | undefined;
-  if (q !== undefined && Math.abs(q) <= 1) {
+  // Wave 10D (one quality law): everything sits on the gear scale now. Gear
+  // always says its roll; a commodity at exactly 0 took no roll and says
+  // nothing — but a salvage-bitten plank (−10%) shows its wear like anything.
+  if (q !== undefined && Math.abs(q) <= 1 && (q !== 0 || item.type === ItemType.GEAR)) {
     rows.push(['Quality', `${QUALITY_NAMES[qualityBand(q)]} ${q >= 0 ? '+' : ''}${Math.round(q * 100)}%`]);
   }
   const { durability, maxDurability } = item.stats as Record<string, number>;
@@ -227,6 +232,24 @@ export function inspectItem(item: IItem): Card {
   if (item.pouchData) rows.push(['Stacks', `${item.pouchData.accepts.join(', ')} — ${item.pouchData.contents.length} of ${item.pouchData.capacity}`]);
   if (item.beltData) rows.push(['Belt', `${item.beltData.pouchSlots} pouch slots`]);
   if (item.cartData) rows.push(['Unfolds', `a ${item.cartData.gridW}×${item.cartData.gridH} cart bed`]);
+  // Wave 10D (10D.2): the anatomy reaches the eye. An item knows what it is
+  // made of — its atoms and its chain, labor and all — and the card says so.
+  const comp = item.composition;
+  if (comp && comp.steps.length > 0) {
+    const fmtCount = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+    rows.push(['Made of', comp.materials.map(m => `${fmtCount(m.count)} ${m.name}`).join(', ')]);
+    rows.push(['Chain', comp.steps.map(s => `${s.name}${s.facility === null ? ' (no bench)' : ''}`).join(' → ')]);
+    rows.push(['Labor', `${Math.round(comp.laborSeconds)}s on the record, depth ${comp.depth}`]);
+  } else if (comp && comp.materials[0]) {
+    const origin = comp.materials[0].origin;
+    const said = origin === 'HARVEST' ? 'Taken from the world'
+      : origin === 'PURCHASE' ? 'Bought over a counter'
+      : origin === 'SALVAGE' ? 'Torn back out of a wall'
+      : origin === 'CONSTRUCTION' ? 'Minted by a finished shell'
+      : origin === 'IMPROVISATION' ? 'Lashed together in the field'
+      : 'Rolled by the world itself';
+    rows.push(['Origin', said]);
+  }
   return { title, rows, needs: [], canAct: false, compact: compact(title, String(item.rank)) };
 }
 

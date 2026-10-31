@@ -10,6 +10,7 @@
 import { ITransformationRecipe, MaterialPropertyType } from '../types';
 import { ResourceDef } from '../../item/data/resourceDefinitions';
 import { ItemType, UniversalRank, Rarity } from '../../../../types';
+import { registerCompositionDefs } from '../../../logic/economy/CompositionSystem';
 
 export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {
   'recipe_plank': {
@@ -117,6 +118,62 @@ export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {
     requiredFacility: 'WORKSHOP',
     requiredSkill: 'skill_carpentry',
     minSkillLevel: 0
+  },
+  // Wave 10D (10D.5): stone joins the building economy. Two dense stones cut
+  // one honest block, and the block carries the 'building' tag — a wall at last.
+  'recipe_masonry': {
+    id: 'recipe_masonry',
+    name: 'Cut Stone Block',
+    description: 'Two stones squared into one. The oldest wall there is.',
+    inputs: [{ itemId: 'res_rock_small', quantity: 2, consume: true }],
+    outputs: [{ itemId: 'crf_stone_block', quantity: 1, probability: 1.0 }],
+    energyCost: 0,
+    laborTimeSeconds: 15,
+    requiredFacility: 'WORKSHOP',
+    requiredSkill: 'skill_masonry',
+    minSkillLevel: 0
+  }
+};
+
+/**
+ * Wave 10D (10D.2): recipes whose output is GEAR, minted with its chain as its
+ * power budget. requiredFacility null = IMPROVISED: no bench, anywhere,
+ * including the field — the deliberate floor of the whole item system.
+ */
+export interface IGearRecipe {
+  id: string;
+  name: string;
+  description: string;
+  inputs: { itemId: string; quantity: number }[];
+  outputBase: string;            // an id in CRAFTED_GEAR_BASES
+  laborTimeSeconds: number;
+  requiredFacility: string | null;
+}
+
+export const GEAR_RECIPES: Record<string, IGearRecipe> = {
+  'improv_club': {
+    id: 'improv_club',
+    name: 'Lash Stone to Haft',
+    description: 'A stone, a length of hardwood, and no apology. The crudest thing the bank will sign.',
+    inputs: [
+      { itemId: 'res_rock_small', quantity: 1 },
+      { itemId: 'res_tree_log', quantity: 1 }
+    ],
+    outputBase: 'wpn_improvised_club',
+    laborTimeSeconds: 5,
+    requiredFacility: null
+  },
+  'recipe_iron_maul': {
+    id: 'recipe_iron_maul',
+    name: 'Hang an Iron Head',
+    description: 'Two planks shaped to a haft, an ingot hung as the head. The chain shows in the swing.',
+    inputs: [
+      { itemId: 'crf_plank', quantity: 2 },
+      { itemId: 'crf_iron_ingot', quantity: 1 }
+    ],
+    outputBase: 'wpn_iron_maul_t1',
+    laborTimeSeconds: 30,
+    requiredFacility: 'WORKSHOP'
   }
 };
 
@@ -208,8 +265,21 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {
     visuals: { modelId: 'scribe', colorHex: '#a16207' },
     materialProps: { [MaterialPropertyType.DENSITY]: 6, [MaterialPropertyType.HARDNESS]: 22 },
     tags: ['crafted', 'station', 'wood']
+  },
+
+  // Wave 10D (10D.5): masonry. Stone finally answers a building bill.
+  'crf_stone_block': {
+    id: 'crf_stone_block', name: 'Cut Stone Block', type: ItemType.RESOURCE,
+    rank: UniversalRank.F, rarity: Rarity.COMMON,
+    weight: 4.5, dimensions: { width: 1, height: 1 }, icon: 'stone_icon',
+    visuals: { modelId: 'stone_block', colorHex: '#78716c' },
+    materialProps: { [MaterialPropertyType.DENSITY]: 9, [MaterialPropertyType.HARDNESS]: 40 },
+    tags: ['crafted', 'stone', 'building', 'masonry']
   }
 };
+
+// Wave 10D: crafted goods price through the composition law like any atom.
+registerCompositionDefs(CRAFTED_DEFINITIONS);
 
 /** Build costs in gold (paid to the hub treasury) and daily upkeep. */
 export const STRUCTURE_COSTS: Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', { build: number; upkeepPerDay: number }> = {

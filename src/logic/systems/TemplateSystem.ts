@@ -55,7 +55,7 @@ export class TemplateSystem {
       rank: UniversalRank.F,
       rarity: Rarity.UNCOMMON,
       level: 1,
-      quality: 100,
+      quality: 0, // Wave 10D: the one scale — 0 means no roll was taken
       value: 25 + pieces * 5 + tpl.zones.length * 10,
       itemPower: 0,
       tags: ['template', 'document'],

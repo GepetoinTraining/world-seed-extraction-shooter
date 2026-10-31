@@ -23,6 +23,8 @@ import { EntityType, ICartState } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
 import { useFeed } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
+import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
+import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
@@ -101,6 +103,8 @@ interface PlayerState {
   // Wave 3: the body is real
   tryAddItems: (items: IItem[]) => { added: IItem[]; rejected: IItem[] };
   dropItem: (itemId: string) => void;
+  // Wave 10D (10D.2): the floor — stone-and-stick, no bench, anywhere
+  improviseInField: (recipeId: string) => { ok: boolean; reason?: string };
   rotateItem: (itemId: string) => void;
 
   toggleCarry: (itemId: string) => void;
@@ -1070,6 +1074,68 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
     SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
     feed(`Left behind: ${item.name}. The cache is still yours, if you come back for it.`, 'plain');
+  },
+
+  /**
+   * Wave 10D (10D.2): IMPROVISE — the deliberate floor of the item system. A
+   * stone and a stick combine with no bench and no processing, anywhere,
+   * including here in the field. The chain is the power budget, and this is
+   * depth one of it. The roll is journaled; the mint carries its composition.
+   */
+  improviseInField: (recipeId) => {
+    const state = get();
+    const session = state.player.currentSession;
+    if (!session) return { ok: false, reason: 'Nothing is improvised at the bank.' };
+
+    const rollKey = SessionJournal.rollKey('improvise', `${recipeId}:${session.inventory.length}`);
+    const result = improvise(recipeId, session.inventory, rollKey);
+    if (!result.ok || !result.item) {
+      feed(result.reason ?? 'Refused.', 'loss');
+      return { ok: false, reason: result.reason };
+    }
+
+    // the atoms leave the pack...
+    const layout = { ...(session.inventoryLayout || {}) };
+    for (const id of result.consumedIds) delete layout[id];
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: {
+        ...s.player.currentSession,
+        inventory: s.player.currentSession.inventory.filter(i => !result.consumedIds.includes(i.id)),
+        inventoryLayout: layout
+      } }
+    }) : s);
+
+    // ...and the crude thing enters through the caps like anything else
+    const { added, rejected } = get().tryAddItems([result.item]);
+    if (rejected.length > 0) {
+      const pos = get().player.currentSession?.position;
+      if (pos) {
+        const cacheId = `cache_imp_${Date.now().toString(36)}`;
+        useWorldStore.getState().addEntity({
+          id: cacheId,
+          type: EntityType.CONTAINER,
+          definitionId: 'ground_cache',
+          position: { x: pos.x + 15, y: pos.z + 15 },
+          rank: result.item.rank,
+          rarity: result.item.rarity,
+          isHostile: false,
+          container: { lootRank: result.item.rank, looted: false, hasLore: false, items: rejected, cacheOwner: get().player.id }
+        });
+        feed(`The pack refuses ${result.item.name}; a cache holds it at your feet.`, 'loss');
+      }
+    }
+    get().recalcWeight();
+
+    SessionJournal.record('INTERACT', {
+      kind: 'IMPROVISE', recipeId, rollKey,
+      consumedIds: result.consumedIds, itemId: result.item.id,
+      compositionHash: result.item.composition ? CompositionSystem.compositionHash(result.item.composition) : undefined
+    });
+    void import('../../logic/sovereignty/Provenance').then(({ Provenance }) =>
+      Provenance.record(result.item!, 'MINT', { origin: 'IMPROVISATION', rollKey }));
+    get().processAction({ tags: ['crafting', 'improvisation', 'survival'], magnitude: 8 });
+    feed(`Lashed together: ${result.item.name}. No bench, no apology.`, 'proof');
+    return { ok: true };
   },
 
   // --------------------------------------------------------------------
