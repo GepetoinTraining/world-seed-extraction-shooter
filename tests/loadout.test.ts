@@ -330,10 +330,14 @@ describe('the head budget (D22)', () => {
     const v = LoadoutSystem.validateStatPartition(psychicHelm);
     expect(v.ok).toBe(false);
     expect(v.reason).toMatch(/frame/i);
-    // and the equip path itself refuses it
+    // but the WARDROBE admits it: the partition is a stat law and a bank law,
+    // not a dress code. Worn contraband moves no attribute — gear has no
+    // pathway into the mind, so the robe is just armor with a dead line.
     bootPlayer('uid_partition');
     addToPack([psychicHelm]);
-    expect(usePlayerStore.getState().equipToSlot(psychicHelm.id, 'HEAD').ok).toBe(false);
+    const before = { ...usePlayerStore.getState().player.attributes };
+    expect(usePlayerStore.getState().equipToSlot(psychicHelm.id, 'HEAD').ok).toBe(true);
+    expect(usePlayerStore.getState().player.attributes).toEqual(before);
     // physical attributes on gear pass the partition
     const bracer = synth('bracer', SlotType.CHEST, {
       affixes: [{ id: 'af_ox', name: 'of the Ox', type: 'SUFFIX', stats: { strength: 2 }, tier: 1 }]

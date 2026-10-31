@@ -173,6 +173,7 @@ const SlotPicker: React.FC<{
   onWord: (w: string) => void;
 }> = ({ slot, stash, onClose, onWord }) => {
   const { player, equipToSlot, unequipFromSlot, setFrame } = usePlayerStore();
+  const [hovered, setHovered] = React.useState<IItem | null>(null);
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
   const worn = LoadoutSystem.itemIn(equipment, slot);
   const frameHere = (HEAD_BUDGET_POSITIONS as string[]).includes(slot)
@@ -187,7 +188,10 @@ const SlotPicker: React.FC<{
   return (
     <Modal title={`FIT ${slot.replace('_', ' ')}`} onClose={onClose} width={480}>
       {worn && (
-        <div className="ws-row" style={{ marginBottom: 6 }}>
+        <div
+          className="ws-row ws-row--live" style={{ marginBottom: 6 }}
+          onMouseEnter={() => setHovered(worn)} onMouseLeave={() => setHovered(h => (h === worn ? null : h))}
+        >
           <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <ItemSprite item={worn} cellPx={18} />
             <span>{worn.name} <span className="ws-dim ws-small">— worn now</span></span>
@@ -209,7 +213,15 @@ const SlotPicker: React.FC<{
             {Object.values(COGNITIVE_FRAMES).map(f => {
               const v = LoadoutSystem.canSlotFrame(equipment, slot as HeadPositionId, f.id);
               return (
-                <div key={f.id} className="ws-row">
+                <div
+                  key={f.id} className="ws-row ws-row--live" role="button" tabIndex={0}
+                  onClick={() => {
+                    if (!v.ok) { if (v.reason) onWord(v.reason); return; }
+                    const r = usePlayerStore.getState().setFrame(slot as HeadPositionId, f.id);
+                    if (!r.ok && r.reason) onWord(r.reason); else onClose();
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLElement).click(); }}
+                >
                   <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
                     <SpriteView sprite={frameMark(f)} scale={1} title={f.type} />
                     <span style={{ minWidth: 0 }}>
@@ -218,7 +230,7 @@ const SlotPicker: React.FC<{
                     </span>
                   </span>
                   {v.ok
-                    ? <Button tone="signal" onClick={() => { const r = usePlayerStore.getState().setFrame(slot as HeadPositionId, f.id); if (!r.ok && r.reason) onWord(r.reason); else onClose(); }}>SEAT</Button>
+                    ? <Button tone="signal" onClick={e => { e.stopPropagation(); const r = usePlayerStore.getState().setFrame(slot as HeadPositionId, f.id); if (!r.ok && r.reason) onWord(r.reason); else onClose(); }}>SEAT</Button>
                     : <span className="ws-loss ws-small" style={{ maxWidth: 200, textAlign: 'right' }}>{v.reason}</span>}
                 </div>
               );
@@ -232,7 +244,16 @@ const SlotPicker: React.FC<{
       <div className="ws-list" style={{ maxHeight: 280, overflow: 'auto' }}>
         {candidates.length === 0 && <div className="ws-dim ws-small">Nothing stored would ever sit here.</div>}
         {candidates.map(({ item, verdict }) => (
-          <div key={item.id} className="ws-row">
+          <div
+            key={item.id} className="ws-row ws-row--live" role="button" tabIndex={0}
+            onMouseEnter={() => setHovered(item)} onMouseLeave={() => setHovered(h => (h === item ? null : h))}
+            onClick={() => {
+              if (!verdict.ok) { if (verdict.reason) onWord(verdict.reason); return; }
+              const r = usePlayerStore.getState().equipToSlot(item.id, slot);
+              if (!r.ok && r.reason) onWord(r.reason); else onClose();
+            }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLElement).click(); }}
+          >
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
               <ItemSprite item={item} cellPx={16} />
               <span style={{ minWidth: 0 }}>
@@ -241,11 +262,16 @@ const SlotPicker: React.FC<{
               </span>
             </span>
             {verdict.ok
-              ? <Button tone="proof" onClick={() => { const r = usePlayerStore.getState().equipToSlot(item.id, slot); if (!r.ok && r.reason) onWord(r.reason); else onClose(); }}>EQUIP</Button>
+              ? <Button tone="proof" onClick={e => { e.stopPropagation(); const r = usePlayerStore.getState().equipToSlot(item.id, slot); if (!r.ok && r.reason) onWord(r.reason); else onClose(); }}>EQUIP</Button>
               : <span className="ws-loss ws-small" style={{ maxWidth: 220, textAlign: 'right' }}>{verdict.reason}</span>}
           </div>
         ))}
       </div>
+      {hovered && (
+        <div style={{ marginTop: 8 }}>
+          <CardView card={inspectItem(hovered)} />
+        </div>
+      )}
     </Modal>
   );
 };

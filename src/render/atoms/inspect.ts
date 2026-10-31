@@ -4,7 +4,7 @@
  * the card only explains the answer. Hover and keyboard share one target list.
  */
 
-import { IItem, IPlayer, InteractionType } from '../../../types';
+import { IItem, IPlayer, InteractionType, MENTAL_ATTRIBUTES } from '../../../types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
@@ -211,8 +211,12 @@ export function inspectItem(item: IItem): Card {
   // their numbers never show, while the item acts with them regardless. The
   // stub in LoadoutSystem decides what counts as studied (10E makes it real).
   const visible = LoadoutSystem.visibleItemStats(item, undefined as any);
+  const mental = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
   Object.entries(visible).forEach(([k, v]) => {
-    if (!['durability', 'maxDurability', 'weight'].includes(k)) rows.push([k.replace(/_/g, ' '), String(v)]);
+    if (['durability', 'maxDurability', 'weight'].includes(k)) return;
+    // D22: a mental stat on gear is a dead line — it never reaches the mind
+    if (mental.has(k)) rows.push([k.replace(/_/g, ' '), `${v} — asleep. Gear doesn't think.`]);
+    else rows.push([k.replace(/_/g, ' '), String(v)]);
   });
   (item.affixes || []).forEach(a => rows.push(['Affix', `${a.name} — unstudied. It does its work; the sheet can't see it.`]));
   // Wave 10C (10C.2): the ask is part of the record

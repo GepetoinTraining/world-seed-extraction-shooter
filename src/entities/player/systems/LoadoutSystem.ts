@@ -250,11 +250,11 @@ export class LoadoutSystem {
       if (frame) return no(`${slotId} holds the ${frame.name} — a cognitive frame. Mind or matter; not both in one place.`);
     }
 
-    // D22: the partition — mental stats never ride gear
-    const partition = this.validateStatPartition(item);
-    if (!partition.ok) return partition;
-
-    // 10C.2: requirements with the numbers
+    // 10C.2: requirements with the numbers. The D22 partition is NOT asked
+    // here: it is a stat law (attributes only ever come from frames — gear
+    // has no pathway into the mind, see recalcAttributes) and a bank law
+    // (validateStatPartition, which 10E's content validation inherits).
+    // Contraband gear wears fine; its mental line is simply dead.
     return this.checkRequirements(player.attributes, item);
   }
 

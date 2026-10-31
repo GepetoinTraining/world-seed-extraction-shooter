@@ -129,6 +129,10 @@
   padding: 4px 2px;
   border-bottom: 1px solid var(--ws-void-3);
 }
+/* a row that answers the pointer: the fitting list, any pickable line */
+.ws-row--live { cursor: pointer; }
+.ws-row--live:hover, .ws-row--live:focus-visible { background: var(--ws-void-2); }
+.ws-row--live:hover .t { color: var(--ws-text-bright); }
 .ws-row__main { min-width: 0; flex: 1; }
 .ws-row__main .t { color: var(--ws-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-row__main .s { color: var(--ws-text-dim); font-size: var(--ws-font-small); }
