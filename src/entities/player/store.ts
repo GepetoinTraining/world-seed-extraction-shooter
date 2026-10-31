@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame, IEquippedSlots, SlotType } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
-import { ProgressionSystem } from './systems/ProgressionSystem';
+import { POINTS_PER_RANK_UP, ProgressionSystem } from './systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
@@ -16,6 +16,9 @@ import { InventorySystem } from './systems/InventorySystem';
 import { EntityType } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
+import { useFeed } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
+
+const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
 // Archetype Definitions for Character Creation
 export const ARCHETYPES: Record<string, Partial<IBaseAttributes>> = {
@@ -37,6 +40,13 @@ interface PlayerState {
 
   // --- ACTIONS ---
   initializeSession: (certificate: IPlayerCertificate, archetypeId: string) => void;
+  // Wave 9.3: idempotent login — initializes ONLY when the store does not
+  // already hold this identity's character, so a returning player is never
+  // reset (handleLogin used to rebuild everyone as an Operator).
+  ensureCharacter: (certificate: IPlayerCertificate, archetypeId: string) => void;
+  // Wave 9.5: kills feed the universal rank
+  applyKillXp: (amount: number) => { rankedUp: boolean; from: UniversalRank; to: UniversalRank; pointsGranted: number };
+  spendAttributePoint: (attribute: keyof IAttributes) => boolean;
   setView: (view: 'BANK' | 'SESSION') => void;
   diveIntoLayer: (layerId?: string) => void;
   emergencyJackOut: (penalty?: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH') => void;
@@ -123,10 +133,54 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           universalSkills: {},
           lore: {}
         },
+        rankXp: 0,
+        attributePoints: 0,
         materialMastery: {},
         floatMemory: [null, null, null]
       }
     });
+  },
+
+  ensureCharacter: (certificate, archetypeId) => {
+    if (get().player.id === certificate.metadata.uid) return;
+    get().initializeSession(certificate, archetypeId);
+  },
+
+  // --- RANK (Wave 9.5): kills count, and a rank-up gives something real ---
+
+  applyKillXp: (amount) => {
+    const before = get().player.rankXp ?? 0;
+    const from = ProgressionSystem.rankFromXp(before);
+    const after = before + Math.max(0, amount);
+    const to = ProgressionSystem.rankFromXp(after);
+    const ranks = ProgressionSystem.rankIndex(to) - ProgressionSystem.rankIndex(from);
+    const pointsGranted = ranks > 0 ? ranks * POINTS_PER_RANK_UP : 0;
+    set(state => ({
+      player: {
+        ...state.player,
+        rankXp: after,
+        attributePoints: (state.player.attributePoints ?? 0) + pointsGranted
+      }
+    }));
+    return { rankedUp: ranks > 0, from, to, pointsGranted };
+  },
+
+  spendAttributePoint: (attribute) => {
+    const p = get().player;
+    if ((p.attributePoints ?? 0) <= 0) return false;
+    if (!(attribute in p.baseAttributes)) return false;
+    set(state => ({
+      player: {
+        ...state.player,
+        attributePoints: (state.player.attributePoints ?? 0) - 1,
+        baseAttributes: {
+          ...state.player.baseAttributes,
+          [attribute]: (state.player.baseAttributes as any)[attribute] + 1
+        }
+      }
+    }));
+    get().recalcAttributes();
+    return true;
   },
 
   // --- FLOAT MEMORY LOGIC ---
@@ -429,7 +483,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: state.player.id }
     });
     SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
-    console.log(`[CARRY] Left behind: ${item.name} (cache ${cacheId})`);
+    feed(`Left behind: ${item.name}. The cache is still yours, if you come back for it.`, 'plain');
   },
 
   // --------------------------------------------------------------------
@@ -456,6 +510,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }) : s);
     get().recalcWeight();
     SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, health });
+    feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
   },
 
   /** Mark a stash item to go along on the next session. */
@@ -487,7 +542,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         equipped: { ...(s.player.currentSession.equipped || {}), [bucket]: itemId }
       } }
     }) : s);
-    console.log(`[GEAR] Equipped ${item.name} (${bucket}).`);
+    feed(`Equipped ${item.name}.`, 'proof');
   },
 
   unequipSlot: (slot) => {
@@ -511,7 +566,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         const dur = i.stats?.durability;
         if (dur === undefined) return i;
         const next = Math.max(0, dur - amount);
-        if (next === 0 && dur > 0) console.warn(`[GEAR] ${i.name} BROKE.`);
+        if (next === 0 && dur > 0) feed(`${i.name} BROKE. It stays in the pack; it stops working.`, 'loss');
         return { ...i, stats: { ...i.stats, durability: next } };
       });
       return { player: { ...s.player, currentSession: { ...s.player.currentSession, inventory } } };
@@ -551,7 +606,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const spendEnergy = (cost: number): boolean => {
       const s = get().player.currentSession;
       if (!s || s.energy < cost) {
-        console.log('[ACTION] Not enough energy.');
+        feed(`Refused: needs ${cost} energy, you hold ${Math.floor(s?.energy ?? 0)}.`, 'loss');
         return false;
       }
       set(state => state.player.currentSession ? ({
@@ -578,6 +633,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             container: { lootRank: rejected[0].rank, looted: false, hasLore: false, items: rejected, cacheOwner: get().player.id }
           });
           SessionJournal.record('INTERACT', { kind: 'OVERFLOW_CACHE', cacheId, itemIds: rejected.map(i => i.id) });
+          feed(`The pack refuses ${rejected.length} item${rejected.length === 1 ? '' : 's'}; a cache holds them at your feet.`, 'loss');
         }
       }
       return added;
@@ -631,7 +687,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       get().processAction({ tags: ['gathering', 'strength', ...(def.tags || [])], magnitude: 10 * quantity });
-      console.log(`[HARVEST] +${quantity}x ${def.name}`);
+      feed(`Harvested ${quantity}× ${def.name}.`, 'proof');
+      if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
     }
 
@@ -675,7 +732,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       world.updateEntity(entity.id, { container: { ...entity.container, looted: true } });
       SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id) });
       get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });
-      console.log(`[CHEST] Opened: ${loot.length} items (lore included).`);
+      feed(`Chest opened: ${loot.length} item${loot.length === 1 ? '' : 's'}${entity.container.hasLore ? ', one of them a fragment' : ''}.`, 'proof');
       return;
     }
 
@@ -699,7 +756,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition, attempts: attempt } });
       SessionJournal.record('INTERACT', { kind: 'TALK', targetId: entity.id, rollKey, success, disposition });
       get().processAction({ tags: ['social', 'charisma'], magnitude: success ? 15 : 5 });
-      console.log(`[SOCIAL] ${entity.npc.name}: ${success ? 'warms to you' : 'is unconvinced'} (${disposition}/100)`);
+      feed(`${entity.npc.name} ${success ? 'warms to you' : 'is unconvinced'} (${disposition}/100).`, success ? 'signal' : 'plain');
       return;
     }
 
@@ -722,7 +779,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition } });
       SessionJournal.record('INTERACT', { kind: 'GIFT', targetId: entity.id, itemId: gift.id, disposition });
       get().processAction({ tags: ['social', 'trade'], magnitude: 10 });
-      console.log(`[SOCIAL] Gave ${gift.name} to ${entity.npc.name} (${disposition}/100)`);
+      feed(`Gave ${gift.name} to ${entity.npc.name} (${disposition}/100).`, 'plain');
       return;
     }
 
@@ -747,7 +804,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       useWorldStore.getState().removeEntity(entity.id);
       SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name, contractId: contract.id });
       get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
-      console.log(`[SOCIAL] ${entity.npc.name} secured for extraction!`);
+      feed(`${entity.npc.name} walks beside you now. Reach the beacon together.`, 'signal');
       return;
     }
   },

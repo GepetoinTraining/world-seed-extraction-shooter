@@ -1,27 +1,31 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { IActiveSession, IItem } from '../../types';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { IActiveSession, ItemType } from '../../types';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { ProjectileSystem, PatternType, IProjectile, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../entities/combat/projectileSystem';
 import { CombatSystem } from '../entities/combat/CombatSystems';
+import { applyKillRewards } from '../entities/combat/killRewards';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
-import { EntityType, IChunk, ISector, ScanLevel, IWorldEntity, BiomeType } from '../entities/world/types';
-import { Center, Loader, Menu, Text, Badge, ActionIcon, Group, Paper, Button, Stack } from '@mantine/core';
+import { EntityType, IChunk, ISector, ScanLevel, IWorldEntity } from '../entities/world/types';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { WorldGenerator } from '../entities/world/WorldGenerator';
-import { TILE_PX, chunkOf, quadrantOf, sectorOf } from '../entities/world/grid';
+import { TILE_PX, quadrantOf } from '../entities/world/grid';
 import { FieldRenderer, FieldScene, FieldEffect, MobPose, DEATH_BURST_MS } from '../render/FieldRenderer';
 import { genreForWorld, entitySprite, baselinePx } from '../render/atoms/world';
-import { ATOM_PX, SIZE_ATOMS } from '../render/atoms/atoms';
-import { hitTest, targetsFrom } from '../render/atoms/inspect';
+import { ATOM_PX, SIZE_ATOMS, Sprite } from '../render/atoms/atoms';
+import { hitTest, targetsFrom, cycleTarget, inspectEntity, inspectItem, Card } from '../render/atoms/inspect';
+import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { Archetype, Facing, WALK_PHASES, armorClass, weaponClass } from '../render/atoms/people';
 import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
+import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { Bar, Button, CardView, Chip, ItemSprite, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
+import { useFeed, useRankMoment, useReceipt } from './ui/stores';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -29,9 +33,11 @@ const PLAYER_SPEED = 3.0; // Tiles per second (a quadrant takes about 5s to cros
 const LOAD_RADIUS_PX = 1000; // Chunks exist this far out, so nothing is built in view
 const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't teleport the player
 
+const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
+
 /**
- * PACK GRID (Wave 3.1): the 8x6 spatial inventory. Pure render over the
- * store's layout; selection offers Rotate and Leave Behind.
+ * PACK GRID (Wave 9.4): the 8x6 spatial inventory, drawn in the items' real
+ * art at their real footprints. Selection shows the one inspect card.
  */
 const CELL = 36;
 const PackGrid = ({ session }: { session: IActiveSession }) => {
@@ -45,106 +51,161 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
   const equippedIds = Object.values(session.equipped || {});
 
   return (
-    <Paper
-      p="sm" bg="dark.8"
-      style={{ border: '1px solid var(--mantine-color-dark-4)', pointerEvents: 'auto' }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <Group justify="space-between" mb={6}>
-        <Text size="xs" fw={700} c="emerald">PACK ({InventorySystem.usedCells(items, layout)}/{GRID_W * GRID_H} cells)</Text>
-        <Text size="xs" c={ratio > 0.8 ? 'red' : 'dimmed'} ff="monospace">
+    <Panel
+      title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS`}
+      right={
+        <span className={ratio > 0.8 ? 'ws-loss' : 'ws-dim'}>
           {currentWeight.toFixed(1)}/{maxWeight}kg{ratio > 0.8 ? ' · SLOWED' : ''}
-        </Text>
-      </Group>
-
-      <div style={{ position: 'relative', width: GRID_W * CELL, height: GRID_H * CELL, background: '#0a0a0a' }}>
-        {/* cell lines */}
+        </span>
+      }
+      style={{ pointerEvents: 'auto' }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ position: 'relative', width: GRID_W * CELL, height: GRID_H * CELL, background: 'var(--ws-void-0)' }}
+      >
         {Array.from({ length: GRID_W * GRID_H }, (_, i) => (
           <div key={i} style={{
             position: 'absolute',
             left: (i % GRID_W) * CELL, top: Math.floor(i / GRID_W) * CELL,
             width: CELL, height: CELL,
-            border: '1px solid #1f1f1f'
+            border: '1px solid var(--ws-void-3)'
           }} />
         ))}
-        {/* items */}
         {items.map(item => {
           const place = layout[item.id];
           if (!place) return null;
           const { w, h } = InventorySystem.footprint(item, place.rotated);
           const isSel = item.id === selected;
           const isEquipped = equippedIds.includes(item.id);
-          const broken = item.stats?.durability === 0;
           return (
-            <div
+            <button
               key={item.id}
-              onClick={() => setSelected(isSel ? null : item.id)}
-              title={`${item.name} · ${item.weight}kg${isEquipped ? ' · EQUIPPED' : ''}${broken ? ' · BROKEN' : ''}`}
+              type="button"
+              onClick={e => { e.stopPropagation(); setSelected(isSel ? null : item.id); }}
+              title={item.isIdentified === false ? 'Unidentified signal' : item.name}
+              className="ws-ui"
               style={{
                 position: 'absolute',
-                left: place.x * CELL + 2, top: place.y * CELL + 2,
-                width: w * CELL - 4, height: h * CELL - 4,
-                background: broken ? '#45151533' : item.visuals?.colorHex ? `${item.visuals.colorHex}33` : '#33415577',
-                border: isEquipped ? '2px solid var(--mantine-color-gold-5)' : `1px solid ${isSel ? '#fff' : (item.visuals?.colorHex || '#64748b')}`,
-                borderRadius: 3,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: Math.min(w, h) > 1 ? 20 : 14,
-                cursor: 'pointer',
-                overflow: 'hidden'
+                left: place.x * CELL + 1, top: place.y * CELL + 1,
+                width: w * CELL - 2, height: h * CELL - 2,
+                background: 'transparent',
+                border: isEquipped ? '2px solid var(--ws-proof-3)' : isSel ? '2px solid var(--ws-signal-3)' : '1px solid transparent',
+                padding: 0, cursor: 'pointer', overflow: 'hidden',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}
             >
-              {RESOURCE_DEFINITIONS[item.universalDefinitionId]?.icon || (item.tags?.includes('tool') ? '🛠️' : item.type === 'LORE' ? '📜' : '⚔️')}
-            </div>
+              <ItemSprite
+                item={place.rotated ? { ...item, dimensions: { width: h, height: w } } : item}
+                cellPx={CELL - 4}
+                style={place.rotated ? { transform: 'rotate(90deg)' } : undefined}
+              />
+            </button>
           );
         })}
       </div>
 
       {selectedItem && (
-        <Group gap="xs" mt={8}>
-          <Text size="xs" style={{ flex: 1 }} truncate>
-            {selectedItem.name}
-            {selectedItem.stats?.durability !== undefined ? ` (${selectedItem.stats.durability}/${selectedItem.stats.maxDurability ?? 100})` : ''}
-          </Text>
-          {selectedItem.type === 'CONSUMABLE' && (
-            <Button size="compact-xs" variant="light" color="emerald" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>Use</Button>
-          )}
-          {selectedItem.slot !== 'NONE' && selectedItem.type !== 'CONSUMABLE' && (
-            <Button size="compact-xs" variant="light" color="gold" onClick={() => equipItem(selectedItem.id)}>Equip</Button>
-          )}
-          <Button size="compact-xs" variant="light" onClick={() => rotateItem(selectedItem.id)}>Rotate</Button>
-          <Button size="compact-xs" variant="light" color="red" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>
-            Leave Behind
-          </Button>
-        </Group>
+        <div onClick={e => e.stopPropagation()} style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <CardView card={inspectItem(selectedItem)} right={<RankMark rank={String(selectedItem.rank)} scale={2} />} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {selectedItem.type === ItemType.CONSUMABLE && (
+              <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>USE</Button>
+            )}
+            {selectedItem.type === ItemType.LORE && selectedItem.description && (
+              <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
+            )}
+            {selectedItem.slot !== 'NONE' && selectedItem.type !== ItemType.CONSUMABLE && (
+              <Button tone="proof" onClick={() => equipItem(selectedItem.id)}>EQUIP</Button>
+            )}
+            <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE</Button>
+            <Button tone="loss" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>LEAVE BEHIND</Button>
+          </div>
+        </div>
       )}
-      <Text size="xs" c="dimmed" mt={4}>[TAB] close</Text>
-    </Paper>
+      <div className="ws-dim ws-small" style={{ marginTop: 4 }}><Kbd>TAB</Kbd> close</div>
+    </Panel>
   );
 };
 
 // =============================================================================
-// DRONE RECON (Pre-drop satellite view)
+// DRONE RECON (Wave 9: the survey is drawn from the atoms, not five hues)
 // =============================================================================
 
-const BIOME_COLORS: Record<BiomeType, string> = {
-  [BiomeType.WASTELAND]: '#8a7a4e',
-  [BiomeType.OVERGROWTH]: '#1b7a52',
-  [BiomeType.RUINS]: '#5d6b7a',
-  [BiomeType.INDUSTRIAL]: '#8a5a2a',
-  [BiomeType.CYBER_CITY]: '#4a4a8a'
-};
+const RECON_SCALE = 2;
 
 const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ onDrop }) => {
   const { currentMap, scanSector, selectSector, selectedDropZone } = useWorldStore();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const deskRef = useRef<HTMLDivElement>(null);
+
+  const cellPx = RECON_CELL_ATOMS * RECON_SCALE;
+
+  // The survey keeps its true cell size and the desk pans; it opens centered.
+  useEffect(() => {
+    const desk = deskRef.current;
+    if (!desk || !currentMap) return;
+    desk.scrollLeft = (currentMap.width * cellPx - desk.clientWidth) / 2;
+    desk.scrollTop = (currentMap.height * cellPx - desk.clientHeight) / 2;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMap?.seed]);
+
+  // The survey bitmap: one composed buffer, repainted when a scan deepens it.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx || !currentMap) return;
+    const s = RECON_CELL_ATOMS;
+    const w = currentMap.width * s, h = currentMap.height * s;
+    const buffer = new Uint8Array(w * h);
+    for (let sy = 0; sy < currentMap.height; sy++) for (let sx = 0; sx < currentMap.width; sx++) {
+      const sector = currentMap.sectors[`${sx},${sy}`];
+      if (!sector) continue;
+      const cell: Sprite = reconCell({
+        biome: sector.biome,
+        scanLevel: sector.scanLevel,
+        hasExit: sector.scanLevel > ScanLevel.UNKNOWN && sector.hasExtraction,
+        hostiles: sector.scanLevel >= ScanLevel.DETAILED && sector.entities.some(e => e.isHostile),
+        seed: currentMap.seed, sx, sy
+      });
+      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+        buffer[(sy * s + y) * w + sx * s + x] = cell.data[y * s + x];
+      }
+    }
+    const img = ctx.createImageData(w, h);
+    for (let i = 0; i < buffer.length; i++) {
+      const v = buffer[i], j = i * 4;
+      img.data[j] = TERMINAL_PALETTE[v * 3];
+      img.data[j + 1] = TERMINAL_PALETTE[v * 3 + 1];
+      img.data[j + 2] = TERMINAL_PALETTE[v * 3 + 2];
+      img.data[j + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }, [currentMap, currentMap?.sectors]);
+
   if (!currentMap) return null;
 
-  const cellSize = Math.max(8, Math.min(20, Math.floor(560 / currentMap.width)));
   const selectedKey = selectedDropZone ? `${selectedDropZone.x},${selectedDropZone.y}` : null;
   const selected = selectedKey ? currentMap.sectors[selectedKey] : null;
 
-  const handleSectorClick = (sector: ISector) => {
-    selectSector(sector.x, sector.y);
-    scanSector(sector.x, sector.y, 1); // Each click deepens the scan one level
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const sx = Math.floor((e.clientX - box.left) / cellPx);
+    const sy = Math.floor((e.clientY - box.top) / cellPx);
+    const sector = currentMap.sectors[`${sx},${sy}`];
+    if (!sector) return;
+    selectSector(sx, sy);
+    scanSector(sx, sy, 1); // Each click deepens the scan one level
+  };
+
+  // Wave 9: recon can be left without dropping — the survey was free, the drop is not.
+  const withdraw = () => {
+    const st = usePlayerStore.getState();
+    st.emergencyJackOut(); // nothing was risked yet; the kit banks back untouched
+    useWorldStore.getState().exitWorld();
+    void SessionJournal.abort(PlayerPersistence.persistableJson(usePlayerStore.getState().player));
   };
 
   // At this scale a list of things is hundreds long, so it groups them and leads with the danger.
@@ -168,107 +229,126 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
   };
 
   return (
-    <Center h="100%" bg="#050505">
-      <Group align="flex-start" gap="xl">
-        {/* The Satellite Map */}
-        <Stack gap="xs">
-          <Badge color="blue" size="lg">DRONE RECON // SELECT DROP ZONE</Badge>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${currentMap.width}, ${cellSize}px)`,
-              gap: 1,
-              background: '#111',
-              padding: 4,
-              border: '1px solid #333'
-            }}
-          >
-            {Array.from({ length: currentMap.height }, (_, y) =>
-              Array.from({ length: currentMap.width }, (_, x) => {
-                const key = `${x},${y}`;
-                const sector = currentMap.sectors[key];
-                if (!sector) return <div key={key} style={{ width: cellSize, height: cellSize }} />;
-                const isSelected = key === selectedKey;
-                const known = sector.scanLevel > ScanLevel.UNKNOWN;
-                return (
-                  <div
-                    key={key}
-                    onClick={() => handleSectorClick(sector)}
-                    title={known ? `${sector.biome} [${sector.difficulty}]` : 'UNKNOWN'}
-                    style={{
-                      width: cellSize,
-                      height: cellSize,
-                      cursor: 'pointer',
-                      background: known ? BIOME_COLORS[sector.biome] : '#1a1a1a',
-                      outline: isSelected ? '2px solid #fff' : 'none',
-                      boxShadow: sector.hasExtraction && known ? 'inset 0 0 0 2px #10b981' : 'none',
-                      opacity: known ? 0.5 + sector.scanLevel * 0.17 : 1
-                    }}
-                  />
-                );
-              })
+    <div className="ws-ui" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, background: 'var(--ws-void-0)' }}>
+      {/* The survey: true-size cells on a pannable desk */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <Chip tone="signal">DRONE RECON — SELECT DROP ZONE</Chip>
+        <div
+          ref={deskRef}
+          style={{
+            border: '1px solid var(--ws-void-4)', lineHeight: 0,
+            width: 'min(640px, 62vw)', height: 'min(560px, 66vh)', overflow: 'auto'
+          }}
+        >
+          <div style={{ position: 'relative', width: currentMap.width * cellPx, height: currentMap.height * cellPx }}>
+            <canvas
+              ref={canvasRef}
+              width={currentMap.width * RECON_CELL_ATOMS}
+              height={currentMap.height * RECON_CELL_ATOMS}
+              onClick={handleClick}
+              style={{
+                width: currentMap.width * cellPx,
+                height: currentMap.height * cellPx,
+                imageRendering: 'pixelated',
+                cursor: 'pointer',
+                display: 'block'
+              }}
+            />
+            {selectedDropZone && (
+              <div style={{
+                position: 'absolute',
+                left: selectedDropZone.x * cellPx - 1,
+                top: selectedDropZone.y * cellPx - 1,
+                width: cellPx, height: cellPx,
+                outline: '2px solid var(--ws-text-bright)',
+                pointerEvents: 'none'
+              }} />
             )}
           </div>
-          <Text size="xs" c="dimmed">Click a sector to scan it. Click again for deeper intel.</Text>
-        </Stack>
+        </div>
+        <span className="ws-dim ws-small">
+          Drag the desk to pan the survey. Click a sector to scan it; click again for deeper intel.<br />
+          Static is unscanned. The lozenge is an exit; ticks along an edge are contacts.
+        </span>
+      </div>
 
-        {/* Intel Panel */}
-        <Paper p="md" w={280} bg="dark.8" style={{ border: '1px solid var(--mantine-color-dark-4)' }}>
-          <Stack gap="sm">
-            <Text fw={700} size="sm" c="blue">SECTOR INTEL</Text>
-            {!selected && <Text size="xs" c="dimmed">No sector selected.</Text>}
-            {selected && (
+      {/* Intel Panel */}
+      <Panel title="SECTOR INTEL" right={<Button tone="quiet" onClick={withdraw}>WITHDRAW</Button>} style={{ width: 290 }}>
+        {!selected && <span className="ws-dim ws-small">No sector selected. The survey renders only what the drone has recorded.</span>}
+        {selected && (
+          <div className="ws-list ws-small">
+            <div className="ws-row"><span className="ws-dim">COORDS</span><span>{selected.x}, {selected.y}</span></div>
+            {selected.scanLevel >= ScanLevel.BASIC && (
               <>
-                <Group justify="space-between">
-                  <Text size="xs" c="dimmed">COORDS</Text>
-                  <Text size="xs" ff="monospace">{selected.x}, {selected.y}</Text>
-                </Group>
-                {selected.scanLevel >= ScanLevel.BASIC && (
-                  <>
-                    <Group justify="space-between">
-                      <Text size="xs" c="dimmed">BIOME</Text>
-                      <Badge size="xs" style={{ background: BIOME_COLORS[selected.biome] }}>{selected.biome}</Badge>
-                    </Group>
-                    <Group justify="space-between">
-                      <Text size="xs" c="dimmed">THREAT</Text>
-                      <Badge size="xs" color="red">{selected.difficulty}</Badge>
-                    </Group>
-                    {selected.hasExtraction && <Badge size="xs" color="emerald">EXTRACTION POINT</Badge>}
-                  </>
-                )}
-                {selected.scanLevel >= ScanLevel.DETAILED && (
-                  <Stack gap={4}>
-                    <Text size="xs" c="dimmed">CONTACTS</Text>
-                    {Object.entries(entityCounts(selected)).map(([type, count]) => (
-                      <Text key={type} size="xs" ff="monospace">{count}x {type}</Text>
-                    ))}
-                    {selected.entities.length === 0 && <Text size="xs" ff="monospace" c="dimmed">Sector clear.</Text>}
-                  </Stack>
-                )}
-                {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
-                  <Stack gap={2}>
-                    <Text size="xs" c="dimmed">MANIFEST</Text>
-                    {manifest(selected).map(line => (
-                      <Text key={line.id} size="xs" ff="monospace" c={line.hostile ? 'red' : 'gray'}>
-                        {line.count}x [{line.rank}] {line.id}
-                      </Text>
-                    ))}
-                  </Stack>
-                )}
-                <Button
-                  color="emerald"
-                  fullWidth
-                  mt="sm"
-                  onClick={() => onDrop(selected.x, selected.y)}
-                >
-                  CONFIRM DROP
-                </Button>
+                <div className="ws-row"><span className="ws-dim">BIOME</span><span>{selected.biome}</span></div>
+                <div className="ws-row">
+                  <span className="ws-dim">THREAT</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={String(selected.difficulty)} scale={2} />{selected.difficulty}</span>
+                </div>
+                {selected.hasExtraction && <div className="ws-row"><span className="ws-dim">EXIT</span><span className="ws-signal">BEACON PRESENT</span></div>}
               </>
             )}
-          </Stack>
-        </Paper>
-      </Group>
-    </Center>
+            {selected.scanLevel >= ScanLevel.DETAILED && (
+              <>
+                <div className="ws-row"><span className="ws-dim">CONTACTS</span><span /></div>
+                {Object.entries(entityCounts(selected)).map(([type, count]) => (
+                  <div key={type} className="ws-row"><span>{count}× {type}</span><span /></div>
+                ))}
+                {selected.entities.length === 0 && <div className="ws-row"><span className="ws-dim">Sector clear.</span><span /></div>}
+              </>
+            )}
+            {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
+              <>
+                <div className="ws-row"><span className="ws-dim">MANIFEST</span><span /></div>
+                {manifest(selected).map(line => (
+                  <div key={line.id} className="ws-row">
+                    <span className={line.hostile ? 'ws-loss' : undefined}>{line.count}× [{line.rank}] {line.id}</span><span />
+                  </div>
+                ))}
+              </>
+            )}
+            <div style={{ marginTop: 10 }}>
+              <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => onDrop(selected.x, selected.y)}>
+                CONFIRM DROP
+              </Button>
+            </div>
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+};
+
+// =============================================================================
+// THE RANK MOMENT (Wave 9.5): a rank-up holds the corner of the screen
+// =============================================================================
+
+const RankMomentView: React.FC = () => {
+  const { moment, clear } = useRankMoment();
+  useEffect(() => {
+    if (!moment) return;
+    const t = setTimeout(clear, 6000);
+    return () => clearTimeout(t);
+  }, [moment, clear]);
+  if (!moment) return null;
+  return (
+    <div className="ws-ui ws-overlay" style={{ background: 'rgba(3,3,3,0.6)', zIndex: 900 }} onClick={clear}>
+      <Panel tone="signal" style={{ width: 380, textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0' }}>
+          <RankMark rank={moment.to} scale={10} />
+        </div>
+        <div className="ws-signal" style={{ fontSize: 'var(--ws-font-display)', letterSpacing: '0.3em', fontWeight: 700 }}>
+          RANK {moment.to}
+        </div>
+        <div className="ws-dim ws-small" style={{ margin: '4px 0 8px' }}>
+          The rank is not a measure of power. It is a measure of how much the world believes in you.
+        </div>
+        <Chip tone="signal">+{moment.points} ATTRIBUTE POINTS — SPEND THEM IN THE BANK</Chip>
+        <div style={{ marginTop: 10 }}>
+          <Button tone="quiet" onClick={clear} autoFocus>CONTINUE</Button>
+        </div>
+      </Panel>
+    </div>
   );
 };
 
@@ -276,21 +356,30 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
 // WORLD CANVAS
 // =============================================================================
 
+const OCTANTS = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+
 export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) => {
   // Store Hooks
   const { currentMap, reconMode, confirmDrop } = useWorldStore();
-  const { movePlayer, performInteraction, processAction, player } = usePlayerStore();
+  const { performInteraction, processAction, player } = usePlayerStore();
 
   // Local State
   const [playerPatterns, setPlayerPatterns] = useState<any[]>([]);
   const [enemyPatterns, setEnemyPatterns] = useState<any[]>([]);
   const [activeSwings, setActiveSwings] = useState<any[]>([]);
   const [lootDrops, setLootDrops] = useState<any[]>([]);
-  
+
   // Interaction Menu State
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [interactionOptions, setInteractionOptions] = useState<any[]>([]);
+
+  // Inspect card (line 29): one target list answers the cursor and the keyboard
+  const [inspected, setInspected] = useState<{ id: string; card: Card; x: number; y: number } | null>(null);
+  const mouseRef = useRef<{ x: number; y: number } | null>(null);
+  const inspectedIdRef = useRef<string | null>(null);
+  inspectedIdRef.current = inspected?.id ?? null;
+  const lastInspectAt = useRef(0);
 
   // Refs for Game Loop
   const requestRef = useRef<number>();
@@ -333,7 +422,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const CHANNEL_MS = 5000;
   const BEACON_RANGE = 60; // px
 
-  // Completes the extraction: tax, journal seal, banking, save
+  // Completes the extraction: tax, journal seal, banking, save — and the SEAL moment
   const completeExtraction = useCallback(() => {
     const st = usePlayerStore.getState();
     const session = st.player.currentSession;
@@ -346,10 +435,17 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
     const rate = card?.extractionTaxRate ?? 0.05;
     const tax = Math.floor(haulValue * rate);
+    const startedAt = Date.now();
 
     SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax });
     st.emergencyJackOut();
     world.exitWorld();
+
+    // The vault door starts closing now; the signature lands on it when sealed.
+    useReceipt.getState().show({
+      outcome: 'EXTRACTED', haul, haulValue, tax,
+      worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
+    });
 
     void (async () => {
       const charged = await ExitLevy.charge(worldCertUid || 'unknown', haulValue, rate);
@@ -359,8 +455,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       await Provenance.recordMany(haul, 'MINT', { origin: 'EXTRACTION', sessionId: session.sessionId, worldCertUid });
 
       const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
-      await SessionJournal.finish('EXTRACTED', after);
+      const signed = await SessionJournal.finish('EXTRACTED', after);
       await PlayerPersistence.flush('extract');
+      if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
+        useReceipt.getState().show({
+          outcome: 'EXTRACTED', haul, haulValue, tax,
+          worldName: card?.name ?? 'UNKNOWN',
+          durationMs: signed?.payload.durationMs ?? (Date.now() - startedAt),
+          actionCount: signed?.payload.actionCount ?? 0,
+          signature: signed?.signature,
+          receipt: signed?.payload
+        });
+      }
     })();
   }, []);
 
@@ -398,6 +504,37 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
   }, [handleConfirmDrop]);
 
+  // Shared target list: everything near a point, shaped for the hit test (line 29)
+  const targetsNear = useCallback((cx: number, cz: number, reach = 220) => {
+    const map = useWorldStore.getState().currentMap;
+    if (!map) return { targets: [], near: [] as IWorldEntity[] };
+    const near = WorldGenerator.chunkKeysInBox(cx, cz, reach).flatMap(key => map.chunks[key]?.entities ?? []);
+    const things = near.map(n => {
+      const s = entitySprite(n);
+      const h = (s?.h ?? 12) * ATOM_PX;
+      // Upright things hang above their feet, so their hit box does too
+      const cy = s ? n.position.y + baselinePx(n, s) - h / 2 : n.position.y;
+      return { id: n.id, type: n.type, x: n.position.x, y: cy, w: (s?.w ?? 12) * ATOM_PX, h };
+    });
+    return { targets: targetsFrom(things), near };
+  }, []);
+
+  const inspectById = useCallback((id: string | null, near: IWorldEntity[]) => {
+    if (!id) { setInspected(cur => (cur ? null : cur)); return; }
+    const entity = near.find(n => n.id === id);
+    const liveSession = usePlayerStore.getState().player.currentSession;
+    if (!entity || !liveSession) { setInspected(cur => (cur ? null : cur)); return; }
+    const dist = Math.hypot(entity.position.x - liveSession.position.x, entity.position.y - liveSession.position.z) / TILE_SIZE;
+    const card = inspectEntity(entity, {
+      player: usePlayerStore.getState().player,
+      dist,
+      level: defId => usePlayerStore.getState().player.materialMastery[defId]?.knowledgeLevel ?? 2
+    });
+    const screenX = entity.position.x - liveSession.position.x + window.innerWidth / 2;
+    const screenY = entity.position.y - liveSession.position.z + window.innerHeight / 2;
+    setInspected({ id, card, x: screenX, y: screenY });
+  }, []);
+
   // 2. Input Handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -406,6 +543,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         setShowPack(prev => !prev);
         return;
       }
+      // Q cycles the inspect card through what is near, nearest first (line 29)
+      if (e.key.toLowerCase() === 'q') {
+        const liveSession = usePlayerStore.getState().player.currentSession;
+        if (!liveSession) return;
+        const { targets, near } = targetsNear(liveSession.position.x, liveSession.position.z);
+        const next = cycleTarget(targets, { x: liveSession.position.x, y: liveSession.position.z }, inspectedIdRef.current, 220);
+        inspectById(next, near);
+        return;
+      }
+      if (e.key === 'Escape') setInspected(null);
       keysPressed.current.add(e.key.toLowerCase());
     };
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key.toLowerCase());
@@ -415,7 +562,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [targetsNear, inspectById]);
 
   // 3. THE GAME LOOP
   useEffect(() => {
@@ -563,7 +710,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (!survivingIds.has(b.id)) spentShots.current.set(b.id, now);
       });
 
-      // Process Events (Wave 8B: the HIT/KILL hooks finally reach the screen)
+      // Process Events (Wave 8B effects; Wave 9.5 finally APPLIES the kill XP)
       combatResult.events.forEach(event => {
         if (event.type === 'ACTION_LOG' && event.actionContext) {
             processAction(event.actionContext);
@@ -575,8 +722,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             x: event.position.x, y: event.position.y, at: now, size
           });
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
+          if (event.type === 'KILL' && event.xpReward) {
+            feed(`${def?.name ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
+          }
         }
       });
+      const rewards = applyKillRewards(combatResult.events);
+      if (rewards.rankUp) {
+        useRankMoment.getState().show({ from: rewards.rankUp.from, to: rewards.rankUp.to, points: rewards.rankUp.points, at: now });
+      }
       if (effectsRef.current.length > 0) {
         effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);
       }
@@ -605,10 +759,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (pickedUp.length > 0) {
           const { added, rejected } = usePlayerStore.getState().tryAddItems(pickedUp);
           if (added.length > 0) {
-            console.log(`[LOOT] Picked up ${added.length} item(s).`);
+            feed(`Recovered ${added.length === 1 ? added[0].name : `${added.length} items`}.`, 'proof');
             SessionJournal.record('LOOT', { itemIds: added.map((i: any) => i.id) });
           }
           if (rejected.length > 0) {
+            feed(`The pack refuses ${rejected.length} item${rejected.length === 1 ? '' : 's'} — space or weight.`, 'loss');
             finalDrops = [...finalDrops, {
               id: crypto.randomUUID(),
               position: { x: playerPos.x, y: playerPos.z },
@@ -638,7 +793,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (channelRef.current) {
           channelRef.current = null;
           setChanneling(false);
-          console.warn('[EXTRACT] Channel interrupted by damage!');
+          feed('CHANNEL BROKEN. The exit does not argue with damage.', 'loss');
         }
 
         if (newHealth <= 0) {
@@ -648,11 +803,32 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           const penalty = card?.deathPenalty ?? 'INVENTORY_LOSS';
           console.warn(`[SESSION] Agent flatlined. Penalty: ${penalty}.`);
           SessionJournal.record('DEATH', { penalty });
+
+          // The DIED receipt (Wave 9.6): what was carried is what is lost
+          const lost = penalty === 'NONE' ? [] : [...(usePlayerStore.getState().player.currentSession?.inventory ?? [])];
+          const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
+
           usePlayerStore.getState().emergencyJackOut(penalty);
           useWorldStore.getState().exitWorld();
+          useReceipt.getState().show({
+            outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0,
+            worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
+          });
           // Seal the journal and the bank (async; loop is already stopped)
           const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
-          void SessionJournal.finish('DIED', after).then(() => PlayerPersistence.flush('death'));
+          void SessionJournal.finish('DIED', after).then(signed => {
+            if (useReceipt.getState().receipt?.outcome === 'DIED') {
+              useReceipt.getState().show({
+                outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0,
+                worldName: card?.name ?? 'UNKNOWN',
+                durationMs: signed?.payload.durationMs ?? 0,
+                actionCount: signed?.payload.actionCount ?? 0,
+                signature: signed?.signature,
+                receipt: signed?.payload
+              });
+            }
+            return PlayerPersistence.flush('death');
+          });
           return; // Stop the loop; component unmounts
         }
       }
@@ -663,6 +839,22 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         setChanneling(false);
         completeExtraction();
         return; // Extraction unmounts the canvas
+      }
+
+      // The inspect card follows the cursor (line 29), re-tested a few times a second;
+      // a card pinned by Q keeps tracking its target and clears when it is gone.
+      if (now - lastInspectAt.current > 120 && !menuPosition) {
+        lastInspectAt.current = now;
+        if (mouseRef.current) {
+          const worldX = playerPos.x + (mouseRef.current.x - window.innerWidth / 2);
+          const worldZ = playerPos.z + (mouseRef.current.y - window.innerHeight / 2);
+          const { targets, near } = targetsNear(worldX, worldZ, 160);
+          const hit = hitTest(targets, worldX, worldZ, inspectedIdRef.current);
+          inspectById(hit, near);
+        } else if (inspectedIdRef.current) {
+          const { near } = targetsNear(playerPos.x, playerPos.z, 300);
+          inspectById(near.some(n => n.id === inspectedIdRef.current) ? inspectedIdRef.current : null, near);
+        }
       }
 
       const canvas = fieldRef.current;
@@ -718,7 +910,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     requestRef.current = requestAnimationFrame(gameLoop);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops, completeExtraction]);
+  }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops, completeExtraction, menuPosition, targetsNear, inspectById]);
 
   // 4. Interaction Handler
   const handleEntityClick = (e: React.MouseEvent, entity: IWorldEntity) => {
@@ -747,7 +939,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       setSelectedEntityId(entity.id);
       setMenuPosition({ x: e.clientX, y: e.clientY });
     } else {
-      console.log("No interactions available (too far or missing tools)");
+      // The refusal is explained, not swallowed (Wave 9.6): the card says why
+      const { near } = targetsNear(entity.position.x, entity.position.y, 60);
+      inspectById(entity.id, near.length ? near : [entity]);
+      const card = inspectEntity(entity, {
+        player: usePlayerStore.getState().player, dist,
+        level: defId => usePlayerStore.getState().player.materialMastery[defId]?.knowledgeLevel ?? 2
+      });
+      feed(card.needs[0] ? `${card.title}: ${card.needs[0]}` : `${card.title}: nothing to be done here.`, 'loss');
     }
   };
 
@@ -772,15 +971,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (map && e.target === fieldRef.current) {
       const clickX = playerPos.x + (e.clientX - window.innerWidth / 2);
       const clickZ = playerPos.z + (e.clientY - window.innerHeight / 2);
-      const near = WorldGenerator.chunkKeysInBox(clickX, clickZ, 60).flatMap(key => map.chunks[key]?.entities ?? []);
-      const things = near.map(n => {
-        const s = entitySprite(n);
-        const h = (s?.h ?? 12) * ATOM_PX;
-        // Upright things hang above their feet, so their hit box does too
-        const cy = s ? n.position.y + baselinePx(n, s) - h / 2 : n.position.y;
-        return { id: n.id, type: n.type, x: n.position.x, y: cy, w: (s?.w ?? 12) * ATOM_PX, h };
-      });
-      const hit = hitTest(targetsFrom(things), clickX, clickZ);
+      const { targets, near } = targetsNear(clickX, clickZ, 60);
+      const hit = hitTest(targets, clickX, clickZ);
       const entity = hit ? near.find(n => n.id === hit) : undefined;
       if (entity && entity.type !== EntityType.MOB) {
         handleEntityClick(e, entity);
@@ -810,7 +1002,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Focus: a NOVA burst, paid in energy
       const energyCost = 10;
       if ((st.player.currentSession?.energy || 0) < energyCost) {
-        console.log('[CAST] Not enough energy.');
+        feed('Not enough energy to cast. The focus hums and refuses.', 'loss');
         return;
       }
       usePlayerStore.setState(s => s.player.currentSession ? ({
@@ -833,7 +1025,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   };
 
   // 5. Render
-  if (!currentMap) return <Center h="100%"><Loader color="emerald" /></Center>;
+  if (!currentMap) {
+    return (
+      <div className="ws-ui" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="ws-dim">Rendering the survey…</span>
+      </div>
+    );
+  }
 
   // RECON MODE: satellite view for drop zone selection
   if (reconMode) {
@@ -842,110 +1040,126 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   const playerPos = session.position;
 
-  // Wave 2.5: distance to the nearest extraction beacon
-  const beaconDist = WorldGenerator.nearestExit(currentMap, playerPos.x, playerPos.z)?.distance ?? Infinity;
+  // Wave 2.5 + 9.6: distance AND direction to the nearest extraction beacon
+  const exit = WorldGenerator.nearestExit(currentMap, playerPos.x, playerPos.z);
+  const beaconDist = exit?.distance ?? Infinity;
   const nearBeacon = beaconDist < BEACON_RANGE;
+  const exitAngle = exit ? Math.atan2(exit.y - playerPos.z, exit.x - playerPos.x) : 0;
+  const exitOctant = exit ? OCTANTS[((Math.round(exitAngle / (Math.PI / 4)) % 8) + 8) % 8] : '';
+
+  const rank = ProgressionSystem.rankFromXp(usePlayerStore.getState().player.rankXp ?? 0);
+  const loadRatio = usePlayerStore.getState().maxWeight > 0
+    ? usePlayerStore.getState().currentWeight / usePlayerStore.getState().maxWeight : 0;
 
   return (
-    <div 
+    <div
       ref={canvasRef}
-      className="full-size"
-      style={{ overflow: 'hidden', background: '#050505', position: 'relative', cursor: 'crosshair' }}
+      className="full-size ws-ui"
+      style={{ overflow: 'hidden', background: 'var(--ws-void-1)', position: 'relative', cursor: 'crosshair' }}
       onContextMenu={(e) => { e.preventDefault(); setMenuPosition(null); }}
       onClick={handleCanvasClick}
+      onMouseMove={e => { mouseRef.current = { x: e.clientX, y: e.clientY }; }}
+      onMouseLeave={() => { mouseRef.current = null; }}
     >
       {/* The whole field, drawn each frame by the game loop */}
       <canvas ref={fieldRef} style={{ position: 'absolute', top: 0, left: 0, imageRendering: 'pixelated' }} />
 
       {/* Extraction Control (Wave 2.5): the beacon is a place, not a button */}
-      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 100 }}>
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }} onClick={e => e.stopPropagation()}>
         {channeling ? (
-          <Paper p="sm" bg="dark.8" style={{ border: '1px solid var(--mantine-color-emerald-6)' }}>
-            <Group gap="sm">
-              <Loader color="emerald" size="sm" />
-              <Text size="sm" c="emerald" ff="monospace">CHANNELING… hold position</Text>
-              <Button size="xs" variant="subtle" color="red" onClick={(e) => {
-                e.stopPropagation();
-                channelRef.current = null;
-                setChanneling(false);
-              }}>ABORT</Button>
-            </Group>
-          </Paper>
+          <Panel tone="signal" style={{ pointerEvents: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="ws-signal">CHANNELING… HOLD POSITION</span>
+              <Button tone="loss" onClick={() => { channelRef.current = null; setChanneling(false); }}>ABORT</Button>
+            </div>
+            <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Damage breaks the channel. Five seconds of stillness buy the way home.</div>
+          </Panel>
         ) : nearBeacon ? (
-          <Button color="gold" onClick={(e) => {
-            e.stopPropagation();
-            channelRef.current = Date.now();
-            setChanneling(true);
-            console.log('[EXTRACT] Channel opened. 5 seconds. Don\'t get hit.');
-          }}>
+          <Button
+            tone="proof" primary
+            onClick={() => {
+              channelRef.current = Date.now();
+              setChanneling(true);
+              feed('Channel opened. Five seconds. Don\'t get hit.', 'signal');
+            }}
+          >
             EXTRACT (5s)
           </Button>
         ) : (
-          <Badge color="gray" variant="outline" size="lg">
-            BEACON: {Math.round(beaconDist / TILE_PX)}m {beaconDist === Infinity ? '— NONE' : '→ 🌀'}
-          </Badge>
+          <Chip title="Distance and heading to the nearest exit beacon">
+            {beaconDist === Infinity ? 'BEACON: NONE RECORDED' : (
+              <>
+                <span
+                  aria-hidden
+                  style={{ display: 'inline-block', transform: `rotate(${Math.round((exitAngle * 180) / Math.PI) + 90}deg)`, color: 'var(--ws-signal-3)' }}
+                >
+                  ▲
+                </span>
+                BEACON {Math.round(beaconDist / TILE_PX)}m {exitOctant}
+              </>
+            )}
+          </Chip>
         )}
       </div>
 
-      {/* UI Overlay */}
-      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, pointerEvents: 'none' }}>
-        <Badge color={reconMode ? 'blue' : 'emerald'} size="lg">
-          {reconMode ? 'DRONE RECON' : 'ACTIVE AGENT'}
-        </Badge>
-        <Text c="dimmed" size="xs" mt={4}>
-          POS: {Math.floor(playerPos.x)}, {Math.floor(playerPos.z)}
-        </Text>
-        {/* Vitals HUD */}
-        <div style={{ width: 160, height: 8, background: '#2a0a0a', border: '1px solid #444', marginTop: 6 }}>
-          <div style={{
-            width: `${Math.max(0, (session.health / session.maxHealth) * 100)}%`,
-            height: '100%',
-            background: session.health / session.maxHealth > 0.3 ? '#10b981' : '#ef4444',
-            transition: 'width 0.2s'
-          }} />
+      {/* Vitals HUD (Wave 9.2: bars, rank and load — the exposure is the point) */}
+      <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Chip tone="signal">ACTIVE AGENT</Chip>
+          <Chip title={`Rank ${rank}`}><RankMark rank={rank} scale={2} />{rank}</Chip>
         </div>
-        <Text c="dimmed" size="xs" mt={2}>
-          HP: {Math.ceil(session.health)}/{session.maxHealth} · PACK: {session.inventory.length} · [TAB] pack · Click to fire
-        </Text>
+        <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
+        <Bar label="ENERGY" value={session.energy} max={50 + (player.attributes.endurance * 5)} tone="proof" text={`${Math.floor(session.energy)}`} />
+        <Bar label="LOAD" value={Math.round(loadRatio * 100)} max={100} tone={loadRatio > 0.8 ? 'loss' : 'signal'} text={loadRatio > 0.8 ? 'SLOWED' : `${Math.round(loadRatio * 100)}%`} />
+        <span className="ws-dim ws-small">
+          POS {Math.floor(playerPos.x)}, {Math.floor(playerPos.z)} · PACK {session.inventory.length} · <Kbd>TAB</Kbd> pack · <Kbd>Q</Kbd> inspect · click to fire
+        </span>
       </div>
 
-      {/* Pack Grid (Wave 3.1) */}
+      {/* Pack Grid (Wave 3.1 / 9.4) */}
       {showPack && (
-        <div style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 150 }}>
+        <div style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 150 }} onClick={e => e.stopPropagation()}>
           <PackGrid session={session} />
         </div>
       )}
 
-      {/* Interaction Menu */}
-      {menuPosition && (
-        <Paper
-          shadow="md"
-          p="xs"
+      {/* The one inspect card (line 29): hover, or Q to cycle */}
+      {inspected && !menuPosition && (
+        <div
           style={{
             position: 'absolute',
-            left: menuPosition.x,
-            top: menuPosition.y,
-            zIndex: 200,
-            background: 'var(--mantine-color-dark-8)',
-            border: '1px solid var(--mantine-color-dark-4)'
+            left: Math.min(window.innerWidth - 320, Math.max(8, inspected.x + 18)),
+            top: Math.min(window.innerHeight - 200, Math.max(8, inspected.y - 10)),
+            zIndex: 180, pointerEvents: 'none'
           }}
         >
-          <Group gap="xs">
-            {interactionOptions.map((opt) => (
-              <ActionIcon 
-                key={opt.id} 
-                size="lg" 
-                variant="filled" 
-                color="emerald"
-                onClick={(e) => { e.stopPropagation(); handleActionSelect(opt); }}
-                title={`${opt.label} (${opt.timeCostSeconds}s)`}
-              >
-                {opt.icon}
-              </ActionIcon>
-            ))}
-          </Group>
-        </Paper>
+          <CardView card={inspected.card} />
+        </div>
       )}
+
+      {/* Interaction Menu — words, not icons (Wave 9.7) */}
+      {menuPosition && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{ position: 'absolute', left: menuPosition.x, top: menuPosition.y, zIndex: 200 }}
+        >
+          <Panel style={{ pointerEvents: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {interactionOptions.map((opt) => (
+                <Button
+                  key={opt.id}
+                  tone="signal"
+                  onClick={(e) => { e.stopPropagation(); handleActionSelect(opt); }}
+                >
+                  {opt.label} · {opt.energyCost > 0 ? `${opt.energyCost} energy` : 'free'}{opt.timeCostSeconds ? ` · ${opt.timeCostSeconds}s` : ''}
+                </Button>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      <RankMomentView />
     </div>
   );
 };

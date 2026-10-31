@@ -107,6 +107,11 @@ console.log('[BOOT] Refreshing World List...');
        if (result.status === 'OK') {
            console.log('[BOOT] Neural Imprint verified. Restoring state...');
            usePlayerStore.setState({ player: result.player });
+           // Wave 9.3: the select screen learns the real archetype from the save
+           if (result.player.archetype) {
+             const { AvatarRoster } = await import('../../entities/identity/roster');
+             AvatarRoster.remember(certificate, result.player.archetype);
+           }
        } else if (result.status === 'TAMPERED') {
            console.error('[BOOT] ⛔ Neural Imprint REJECTED (signature mismatch). Booting clean slate.');
            // The tampered doc stays in the DB as evidence; we refuse to load it.
@@ -116,7 +121,9 @@ console.log('[BOOT] Refreshing World List...');
            // If the gate auto-passed (existing identity), the store still holds the
            // blank template — initialize the character from the cert first.
            if (usePlayerStore.getState().player.id !== certificate.metadata.uid) {
-             usePlayerStore.getState().initializeSession(certificate, 'OPERATOR');
+             // Wave 9.3: genesis uses the archetype chosen at the gate, not a default
+             const { AvatarRoster } = await import('../../entities/identity/roster');
+             usePlayerStore.getState().initializeSession(certificate, AvatarRoster.archetypeOf(certificate.metadata.uid) ?? 'OPERATOR');
            }
            const saved = await PlayerPersistence.flush('genesis');
            if (saved) {

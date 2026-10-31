@@ -1,15 +1,17 @@
+/**
+ * THE CONSOLE (kept in-world): the machine talking to itself. Slides up on `~`.
+ * ("NerveGear" belonged to someone else's book — the terminal is the Seed's.)
+ */
+
 import React, { useEffect, useRef, useState } from 'react';
 import { useLogStore } from './LogStore';
-import { 
-  Paper, Stack, Text, ScrollArea, TextInput, 
-  Badge, Group, ActionIcon, Kbd, Transition
-} from '@mantine/core';
+import { Button, Input } from '../ui/kit';
 
-const LEVEL_COLORS = {
-  info: 'emerald',
-  warn: 'yellow',
-  error: 'red',
-  debug: 'gray'
+const LEVEL_CLASS: Record<string, string> = {
+  info: 'ws-signal',
+  warn: 'ws-proof',
+  error: 'ws-loss',
+  debug: 'ws-dim'
 };
 
 export const SystemConsole: React.FC = () => {
@@ -17,7 +19,6 @@ export const SystemConsole: React.FC = () => {
   const [filter, setFilter] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Global Keybind listener for `~`
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '`' || e.key === '~') {
@@ -29,93 +30,50 @@ export const SystemConsole: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggle]);
 
-  // Filter logic
-  const filteredLogs = logs.filter(l => 
-    l.message.toLowerCase().includes(filter.toLowerCase()) || 
+  if (!isOpen) return null;
+
+  const filteredLogs = logs.filter(l =>
+    l.message.toLowerCase().includes(filter.toLowerCase()) ||
     l.tag.toLowerCase().includes(filter.toLowerCase())
   );
 
   return (
-    <Transition transition="slide-up" mounted={isOpen} duration={200}>
-      {(styles) => (
-        <Paper
-          style={{ 
-            ...styles,
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: '40vh',
-            zIndex: 9999,
-            borderTop: '2px solid var(--mantine-color-emerald-6)',
-            backgroundColor: 'rgba(5, 5, 5, 0.95)',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-          shadow="xl"
-          radius={0}
-        >
-          {/* Toolbar */}
-          <Group p="xs" justify="space-between" bg="dark.8" style={{ borderBottom: '1px solid #333' }}>
-            <Group>
-              <Text fw={900} c="emerald" size="sm" tt="uppercase" style={{ letterSpacing: 1 }}>
-                NerveGear Console
-              </Text>
-              <Badge variant="outline" color="gray" size="xs">{logs.length} EVENTS</Badge>
-            </Group>
-            
-            <Group>
-              <TextInput 
-                placeholder="Filter logs..." 
-                size="xs" 
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                styles={{ input: { backgroundColor: '#111', borderColor: '#333' } }}
-              />
-              <ActionIcon variant="subtle" color="gray" onClick={clear} title="Clear Log">
-                🗑️
-              </ActionIcon>
-              <ActionIcon variant="subtle" color="red" onClick={toggle} title="Close (~) ">
-                ✕
-              </ActionIcon>
-            </Group>
-          </Group>
+    <div
+      className="ws-ui"
+      style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, height: '40vh', zIndex: 9999,
+        borderTop: '2px solid var(--ws-signal-2)',
+        background: 'rgba(3, 3, 3, 0.95)',
+        display: 'flex', flexDirection: 'column'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--ws-void-1)', borderBottom: '1px solid var(--ws-void-4)' }}>
+        <b className="ws-signal" style={{ letterSpacing: '0.15em' }}>SEED CONSOLE</b>
+        <span className="ws-dim ws-small">{logs.length} events — the machine talking to itself</span>
+        <span style={{ flex: 1 }} />
+        <Input placeholder="FILTER…" value={filter} onChange={e => setFilter(e.target.value)} style={{ width: 200 }} />
+        <Button tone="quiet" onClick={clear} title="Clear the stream (the ledger keeps what matters)">CLEAR</Button>
+        <Button tone="quiet" onClick={toggle} title="Close (~)">CLOSE</Button>
+      </div>
 
-          {/* Log Stream */}
-          <ScrollArea flex={1} p="xs" viewportRef={scrollRef}>
-            <Stack gap={2}>
-              {filteredLogs.map((log) => (
-                <Group key={log.id} gap="xs" align="flex-start" wrap="nowrap">
-                  <Text size="xs" c="dimmed" ff="monospace" style={{ minWidth: 60 }}>
-                    {new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
-                  </Text>
-                  
-                  <Badge 
-                    size="xs" 
-                    variant="filled" 
-                    color={LEVEL_COLORS[log.level]} 
-                    style={{ minWidth: 70 }}
-                  >
-                    {log.tag}
-                  </Badge>
-                  
-                  <Text 
-                    size="xs" 
-                    ff="monospace" 
-                    c={log.level === 'error' ? 'red.4' : 'gray.3'}
-                    style={{ wordBreak: 'break-all' }}
-                  >
-                    {log.message.replace(`[${log.tag}]`, '')}
-                  </Text>
-                </Group>
-              ))}
-              {filteredLogs.length === 0 && (
-                <Text c="dimmed" size="xs" ta="center" mt="md">-- NO SIGNALS DETECTED --</Text>
-              )}
-            </Stack>
-          </ScrollArea>
-        </Paper>
-      )}
-    </Transition>
+      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '6px 10px' }}>
+        {filteredLogs.map(log => (
+          <div key={log.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }} className="ws-small">
+            <span className="ws-dim" style={{ minWidth: 62, fontFamily: 'var(--ws-mono)' }}>
+              {new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+            <span className={LEVEL_CLASS[log.level] ?? 'ws-dim'} style={{ minWidth: 86, letterSpacing: '0.05em' }}>
+              {log.tag}
+            </span>
+            <span style={{ wordBreak: 'break-all', color: log.level === 'error' ? 'var(--ws-loss-4)' : 'var(--ws-text-body)' }}>
+              {log.message.replace(`[${log.tag}]`, '')}
+            </span>
+          </div>
+        ))}
+        {filteredLogs.length === 0 && (
+          <div className="ws-dim ws-small" style={{ textAlign: 'center', marginTop: 14 }}>— NO SIGNALS DETECTED —</div>
+        )}
+      </div>
+    </div>
   );
 };

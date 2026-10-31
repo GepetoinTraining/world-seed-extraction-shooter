@@ -1,0 +1,218 @@
+/* THE KIT (Wave 9.1) — panels, buttons, inputs, lists, tabs, bars, cards.
+   Colors and sizes come only from the custom properties tokens.ts injects.
+   Sharp corners, monospace, worn — an old machine, not a nightclub. */
+
+.ws-ui, .ws-ui * { box-sizing: border-box; }
+.ws-ui {
+  font-family: var(--ws-mono);
+  font-size: var(--ws-font-body);
+  color: var(--ws-text-body);
+  line-height: 1.45;
+}
+
+/* --- PANEL: a record frame. Ledger rules as grain, a seamed border as edge. --- */
+.ws-panel {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 17px, rgba(214, 214, 207, 0.025) 17px 18px),
+    var(--ws-void-1);
+  border: 1px solid var(--ws-void-4);
+  box-shadow: inset 0 0 0 1px rgba(3, 3, 3, 0.9);
+  padding: 10px 12px;
+}
+.ws-panel--signal { border-color: var(--ws-signal-1); }
+.ws-panel--proof  { border-color: var(--ws-proof-1); }
+.ws-panel--loss   { border-color: var(--ws-loss-2); }
+.ws-panel__title {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  font-size: var(--ws-font-small);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-text-dim);
+  margin: -2px 0 8px 0;
+  border-bottom: 1px solid var(--ws-void-3);
+  padding-bottom: 4px;
+  white-space: nowrap;
+}
+.ws-panel__title b { color: var(--ws-text-bright); font-weight: 600; }
+
+/* --- BUTTON: a native control dressed as a stamped key. --- */
+.ws-btn {
+  font-family: var(--ws-mono);
+  font-size: var(--ws-font-small);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--ws-void-2);
+  color: var(--ws-text-body);
+  border: 1px solid var(--ws-void-4);
+  padding: 5px 12px;
+  cursor: pointer;
+  border-radius: 0;
+  text-align: left;
+}
+.ws-btn:hover:not(:disabled) { background: var(--ws-void-3); color: var(--ws-text-bright); }
+.ws-btn:active:not(:disabled) { transform: translateY(1px); }
+.ws-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ws-btn--signal { border-color: var(--ws-signal-1); color: var(--ws-signal-3); }
+.ws-btn--signal:hover:not(:disabled) { background: var(--ws-signal-0); color: var(--ws-signal-4); }
+.ws-btn--proof { border-color: var(--ws-proof-1); color: var(--ws-proof-3); }
+.ws-btn--proof:hover:not(:disabled) { background: var(--ws-proof-0); color: var(--ws-proof-4); }
+.ws-btn--loss { border-color: var(--ws-loss-1); color: var(--ws-loss-3); }
+.ws-btn--loss:hover:not(:disabled) { background: var(--ws-loss-0); color: var(--ws-loss-4); }
+.ws-btn--quiet { border-color: transparent; color: var(--ws-text-dim); background: transparent; }
+.ws-btn--primary { border-width: 2px; padding: 8px 16px; font-size: var(--ws-font-label); }
+
+/* Keyboard is a first-class citizen: focus is always visible, in signal. */
+.ws-ui :focus-visible, .ws-btn:focus-visible, .ws-input:focus-visible, .ws-tab:focus-visible {
+  outline: 2px solid var(--ws-signal-3);
+  outline-offset: 1px;
+}
+
+/* --- INPUT --- */
+.ws-input {
+  font-family: var(--ws-mono);
+  font-size: var(--ws-font-body);
+  background: var(--ws-void-0);
+  color: var(--ws-signal-4);
+  border: 1px solid var(--ws-void-4);
+  padding: 6px 8px;
+  border-radius: 0;
+  width: 100%;
+}
+.ws-input::placeholder { color: var(--ws-text-ghost); }
+.ws-input:focus { border-color: var(--ws-signal-2); outline: none; }
+.ws-field { display: flex; flex-direction: column; gap: 3px; }
+.ws-field > label { font-size: var(--ws-font-small); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ws-text-dim); }
+
+/* --- TABS --- */
+.ws-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--ws-void-4); }
+.ws-tab {
+  font-family: var(--ws-mono);
+  font-size: var(--ws-font-small);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--ws-text-dim);
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 5px 12px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.ws-tab:hover { color: var(--ws-text-bright); }
+.ws-tab[aria-selected="true"] {
+  color: var(--ws-signal-3);
+  border-color: var(--ws-void-4);
+  background: var(--ws-void-1);
+  position: relative;
+  top: 1px;
+}
+
+/* --- BAR: stepped, never smooth. The fill is quantized by the component. --- */
+.ws-bar { display: flex; align-items: center; gap: 8px; }
+.ws-bar__label { font-size: var(--ws-font-small); color: var(--ws-text-dim); text-transform: uppercase; letter-spacing: 0.08em; min-width: 42px; }
+.ws-bar__track {
+  flex: 1; height: 10px; position: relative;
+  background: var(--ws-void-0);
+  border: 1px solid var(--ws-void-4);
+}
+.ws-bar__fill { position: absolute; inset: 1px auto 1px 1px; }
+.ws-bar__fill--signal { background: var(--ws-signal-2); }
+.ws-bar__fill--proof { background: var(--ws-proof-2); }
+.ws-bar__fill--loss { background: var(--ws-loss-2); }
+.ws-bar__ticks { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(20% - 1px), var(--ws-void-0) calc(20% - 1px) 20%); }
+.ws-bar__value { font-size: var(--ws-font-small); color: var(--ws-text-body); min-width: 64px; text-align: right; }
+
+/* --- LIST / ROWS --- */
+.ws-list { display: flex; flex-direction: column; }
+.ws-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--ws-void-3);
+}
+.ws-row__main { min-width: 0; flex: 1; }
+.ws-row__main .t { color: var(--ws-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-row__main .s { color: var(--ws-text-dim); font-size: var(--ws-font-small); }
+
+/* --- CARD (the inspect card) --- */
+.ws-card {
+  background: var(--ws-void-1);
+  border: 1px solid var(--ws-void-4);
+  box-shadow: 0 0 0 2px rgba(3, 3, 3, 0.85);
+  padding: 8px 10px;
+  min-width: 190px;
+  max-width: 300px;
+}
+.ws-card__title { color: var(--ws-text-bright); font-size: var(--ws-font-label); letter-spacing: 0.04em; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
+.ws-card__row { display: flex; justify-content: space-between; gap: 12px; font-size: var(--ws-font-small); }
+.ws-card__row .k { color: var(--ws-text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.ws-card__row .v { color: var(--ws-text-body); text-align: right; }
+.ws-card__need { color: var(--ws-loss-3); font-size: var(--ws-font-small); margin-top: 4px; }
+.ws-card__ready { color: var(--ws-signal-3); font-size: var(--ws-font-small); margin-top: 4px; }
+
+/* --- DIALOGUE --- */
+.ws-dialogue { display: flex; flex-direction: column; gap: 10px; }
+.ws-dialogue__head { display: flex; gap: 10px; align-items: flex-start; }
+.ws-dialogue__speech {
+  flex: 1;
+  background: var(--ws-void-0);
+  border: 1px solid var(--ws-void-3);
+  padding: 8px 10px;
+  font-style: italic;
+  color: var(--ws-text-body);
+}
+.ws-dialogue__options { display: flex; flex-direction: column; gap: 4px; }
+
+/* --- OVERLAYS --- */
+.ws-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(3, 3, 3, 0.78);
+  display: flex; align-items: center; justify-content: center;
+}
+.ws-modal { max-height: 86vh; overflow: auto; min-width: 420px; max-width: 920px; }
+
+/* --- SMALL THINGS --- */
+.ws-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--ws-font-small);
+  letter-spacing: 0.06em;
+  border: 1px solid var(--ws-void-4);
+  padding: 2px 8px;
+  color: var(--ws-text-body);
+  white-space: nowrap;
+}
+.ws-chip--signal { border-color: var(--ws-signal-1); color: var(--ws-signal-3); }
+.ws-chip--proof { border-color: var(--ws-proof-1); color: var(--ws-proof-3); }
+.ws-chip--loss { border-color: var(--ws-loss-2); color: var(--ws-loss-3); }
+.ws-kbd {
+  font-size: var(--ws-font-small);
+  border: 1px solid var(--ws-void-4);
+  border-bottom-width: 2px;
+  padding: 0 5px;
+  color: var(--ws-text-dim);
+}
+.ws-dim { color: var(--ws-text-dim); }
+.ws-bright { color: var(--ws-text-bright); }
+.ws-signal { color: var(--ws-signal-3); }
+.ws-proof { color: var(--ws-proof-3); }
+.ws-loss { color: var(--ws-loss-3); }
+.ws-small { font-size: var(--ws-font-small); }
+
+/* The feed: the machine speaking in the corner of the record. */
+.ws-feed { display: flex; flex-direction: column-reverse; gap: 3px; pointer-events: none; }
+.ws-feed__line {
+  font-family: var(--ws-mono);
+  font-size: var(--ws-font-small);
+  color: var(--ws-text-body);
+  background: rgba(3, 3, 3, 0.8);
+  border-left: 2px solid var(--ws-void-4);
+  padding: 2px 8px;
+  max-width: 420px;
+}
+.ws-feed__line--signal { border-left-color: var(--ws-signal-2); color: var(--ws-signal-4); }
+.ws-feed__line--proof { border-left-color: var(--ws-proof-2); color: var(--ws-proof-4); }
+.ws-feed__line--loss { border-left-color: var(--ws-loss-2); color: var(--ws-loss-4); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ws-feed__line { animation: ws-feed-in 120ms steps(2, end); }
+  @keyframes ws-feed-in { from { transform: translateY(4px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+}

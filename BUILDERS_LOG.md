@@ -1,122 +1,101 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of Wave 8B, for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 9, the interface**, and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion) and again at the end of Wave 9 (the interface), for whoever builds next. It assumes you have seen none of the conversation. The next pass is **Wave 10, inside the houses**, and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
 ## Where it stands
 
-World Seed is a browser extraction game: a signed identity, generated worlds, a drop, a haul, a ledger. It is meant to feel like the bank's own terminal, running alone for a very long time.
+World Seed is a browser extraction game: a signed identity, generated worlds, a drop, a haul, a ledger. It is meant to feel like the bank's own terminal, running alone for a very long time — and as of Wave 9, the screens finally are that terminal.
 
-Pedro's verdict on the current look, seeing it in the real game: *"literally absurdly good"*, and *"EVEN MY WIFE said this has character"*. **The look is approved. Your job is to make it move without losing it.**
+Pedro's verdict on the look, seeing it in the real game: *"literally absurdly good"*. **The look is approved, and the interface is now made of it.** Mantine survives only under the admin Genre Creator; every player-facing screen is built from the kit in `src/components/ui/`.
 
-- **Tests:** 169 passing (`npm test`), including one recorded known failure (see Known weak spots). The motion bars live in `tests/atoms.motion.test.ts`.
-- **Commits:** Wave 8 and Wave 8B are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
-- **Run it:** `npm run dev`, then `http://localhost:3000`. The proof pages are `/prototype/atoms/index.html` (atoms, creature motion, trees, water) and `/prototype/atoms/hub.html` (people, walk cycles, the city — walkable, smooth). Press Grayscale first on both.
+- **Tests:** 200 passing (`npm test`), including one recorded known failure (bar 3, in the art). Wave 9's bars live in `tests/interface.test.ts`.
+- **Commits:** Waves 8, 8B and 9 are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
+- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html` and `/prototype/atoms/hub.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the survey, the field, the receipts.
 
 ## Working with Pedro
 
 - **Pedro approves wave by wave**, usually "Yes, Wave N". Report plainly, including what failed. Don't call something done that you have not seen working.
-- **Don't side-track.** "Do not change your plan from fixing this because something else is cool." `agent.md` holds the original vision and it stays fixed: SAO-style world, hubs, owning your avatar.
+- **Don't side-track.** "Do not change your plan from fixing this because something else is cool." `agent.md` holds the original vision and it stays fixed.
 - **Colourblind:** code by position, shape and hard seams, never by hue alone. Grayscale is a real test, not a courtesy.
 - **Game terms** stay in code and design documents. In commentary to Pedro, use neutral language.
 - **One design document.** `DESIGN_ASK.md` stays singular. Update it; do not start another.
-- **Pedro thinks in structure and is often right.** The tile, quadrant, chunk and sector hierarchy was Pedro's call, better than my proposal, and quadrants turned out to be the natural cache unit exactly as predicted. Listen for that.
+- **Pedro thinks in structure and is often right.** The grid hierarchy was his call and it was better. His D6 answer redesigned ranks as *effectiveness against the task* with a 3-rank auto-success rule — half of it is built, the crafting half is recorded in the decisions table. Listen for that.
 
 ## The method that produced this look
 
 This is why it works. Keep it.
 
-1. **Real data.** Art comes from real seeds, definitions and certificates. No image files, no hand-placed pixels outside the families.
-2. **Register bars before the art exists**, in a test file, and never lower one to get a pass. If a bar is wrong, say so and record it.
-3. **Then look with your eyes.** Every important failure here passed its numbers first: worlds "different" per pixel but identical to the eye, a tree that read as a flower, a forest that was a solid carpet. When the eye catches something, add a bar for it, then fix the art.
-4. **Play it through the real interface.** Unit tests never found the worst bugs. Dying in seconds found the drop bug; a silent empty map found the missing Post-Apoc creatures.
-5. **Report failures as failures.** A bar you cannot clear becomes `it.fails` with a comment, which turns red if it ever starts passing.
+1. **Real data.** Art comes from real seeds, definitions and certificates. No image files, no hand-placed pixels outside the families. The UI's colors come from the same ramps as the sprites (`tokens.ts` reads `buildPalette`).
+2. **Register bars before the art exists**, in a test file, and never lower one to get a pass.
+3. **Then look with your eyes.** Wave 9's example: recon cells drawn only in the ground ramp PASSED their numeric grayscale bar and were still unreadably dark on screen. The eye moved the structures to the matter ramp; the bar stayed. The numbers measure, the eye decides.
+4. **Play it through the real interface.** The whole Wave 9 loop was played: mint → select → city → deploy → survey → drop → fight → rank-up → extract (and die) → receipts → ledger.
+5. **Report failures as failures.** A bar you cannot clear becomes `it.fails` with a comment.
 
 ## The grid
 
-Defined in `src/entities/world/grid.ts`. World size counts sectors.
-
-| Cell | Size | Purpose |
-|---|---|---|
-| Atom | 2px | The one unit of art |
-| Tile | 10 atoms, 20px | Terrain is decided here; things stand on tile centers when generated |
-| Quadrant | 16 tiles, 320px | Things are placed here and terrain art is cached here |
-| Chunk | 64 tiles, 1,280px | Built on demand and simulated |
-| Sector | 512 tiles, 10,240px | Scanned and dropped into |
-
-A chunk is a pure function of seed and position: no shared random stream, and no dependence on world size or generation order. Worlds made on the old grid are retired, with Deploy disabled.
+Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → quadrant 16 tiles → chunk 64 tiles → sector 512 tiles. A chunk is a pure function of seed and position. Worlds on the old grid are retired.
 
 ## Where the code is
 
 | File | What it does |
 |---|---|
-| `src/render/atoms/atoms.ts` | Pixel encoding, ramps, grain, `Ink` and `stamp`, creatures, resources, items, marks |
-| `src/render/atoms/people.ts` | `figure` (player, 4 facings, 2 steps), `portrait`, `castFigure`, `castPortrait` |
-| `src/render/atoms/hub.ts` | The city from `HubGenerator`: floors, lamplight, buildings, signs, type, lots |
-| `src/render/atoms/world.ts` | Genres and looks, terrain buffer, `entitySprite`, `composeView` |
-| `src/render/atoms/inspect.ts` | Inspect card and `hitTest`. Clicks use the hit test; the card is not in the game yet |
-| `src/render/FieldRenderer.ts` | Draws the field on one canvas, with terrain cached per quadrant |
-| `src/components/WorldCanvas.tsx` | Field game loop, recon, input, HUD |
-| `src/entities/hub/HubCanvas.tsx` | City view, movement, dialogue, shops |
-| `src/entities/world/WorldGenerator.ts` | Regions, exits, drops, chunks on demand |
-| `src/entities/mob/ai/MobAI.ts` | Enemy state and movement |
-| `prototype/atoms/` | The two proof pages. Add new sprite sheets here |
-| `tests/atoms*.test.ts`, `tests/grid.test.ts` | The bars |
+| `src/render/atoms/atoms.ts` | Pixel encoding, ramps, grain, creatures, resources, `itemArt`, marks, `seal`, `avatar` |
+| `src/render/atoms/people.ts` | `figure`, `portrait`, `castFigure`, `castPortrait`, `WALK_PHASES` (4, Pedro's D2) |
+| `src/render/atoms/world.ts` / `hub.ts` | Terrain, `entitySprite`, `composeView`; the city, signs, lots |
+| `src/render/atoms/recon.ts` | NEW: survey cells — biome structure in matter ink, void static, exit lozenges |
+| `src/render/atoms/items.ts` | NEW: `itemArtFor(item)` — the one rule for what an item looks like |
+| `src/render/atoms/inspect.ts` | The one card, `hitTest`, `cycleTarget` — now used everywhere |
+| `src/components/ui/tokens.ts` | THE theme: machine colors from the atoms' own ramps, `TERMINAL_GENRE`, `FONT_PX` (12px floor) |
+| `src/components/ui/kit.tsx` + `kit.css` | Panel, Button, Input, Tabs, Bar, Chip, Row, CardView, Modal, Dialogue, SpriteView/ItemSprite/PortraitView/RankMark/SealView |
+| `src/components/ui/stores.ts` | View router (`useAppView`), feed, receipt, rank moment |
+| `src/components/IdentityGate.tsx` | Birth, restore, CHARACTER SELECT (D5); `ensureCharacter` kills the reset-to-Operator bug |
+| `src/entities/identity/roster.ts` | `AvatarRoster`: several complete owners per device, legacy slot migrated |
+| `src/components/PlayerHub.tsx` | THE BANK: Agent (stats/build/loadout, attribute spending), Skills, Stash, Ledger |
+| `src/components/WorldCanvas.tsx` | Recon survey (pannable, WITHDRAW), field HUD, pack grid, inspect by hover/Q, kill rewards, both receipts |
+| `src/entities/hub/HubCanvas.tsx` | The city, kit dialogue, shop/sell/repair/lore/missions windows |
+| `src/entities/hub/dialogue.ts` | THE dialogue registry: every option's effect, or its honest refusal |
+| `src/entities/combat/killRewards.ts` | The Wave 9.5 fix: KILL xpReward → the rank track |
+| `src/entities/player/systems/ProgressionSystem.ts` | `RANK_XP_THRESHOLDS`, `rankFromXp`, `checkSkill` (D6 auto-success) |
+| `src/logic/systems/Deploy.ts` | The one door into a world (Mission Control AND quick deploy) |
+| `tests/interface.test.ts` | Wave 9's bars: lines 26–31, emoji, text floor, keyboard, recon grayscale, dialogue |
 
-A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Everything is pure integer work over byte buffers with no canvas, so it is testable in Node and hashes the same in the browser.
+A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer work over byte buffers, testable in Node.
 
-## What the motion pass (Wave 8B) built
+## What the interface pass (Wave 9) built
 
-Done 2026-10-31, bars in `tests/atoms.motion.test.ts`, full detail in `PLAN.md` 3B. In short:
-
-- **One camera rule (D1):** anything with a height stands upright and shows its front; only flat ground is seen from above. The tree gained a life crown over a matter trunk (`treeSprite` in `atoms.ts`); fellings bite the crown; the stump keeps none.
-- **Drawing snaps to the 2px atom grid (8B.1)** in `FieldRenderer` and the hub: movement floats, drawing quantizes, so sprites and terrain never sit half an atom apart.
-- **The walk (D2, decided):** a defined standing frame, and both a 2-frame and a 4-frame cycle behind `WALK_PHASES` in `people.ts`. **Pedro chose 4 frames by eye (2026-10-31); the constant stays 4.** The hub proof page still shows both side by side; the 2-frame cycle stays in the code as the documented alternative.
-- **One walk everywhere (D3 of the log's list):** the city now walks like the field — held keys, per-axis navmesh sliding, same speed and cadence, stand on stop (`HubCanvas`, rAF loop).
-- **Creature facings and frames** derive per body plan (`creature(def, s, {facing, frame})`): sides squeeze to 5/8 with the eye sliding but never off the body; backs lose eyes and gain a low dorsal line; `ring` is radial and keeps one face. Sprite memory for all of it: 78KB (bound 512KB).
-- **Enemies obey the world and themselves:** `MobAI.tick` takes the map and moves through `WorldGenerator.resolveMove` (water, rock, trunks refuse; mud slows); `speed`, `viewRange` and `behavior` come from the definition. Turret holds, swarm takes a hashed slot on a ring and bites only from there, siege plods, neutral stirs at touch or damage, passive ignores until provoked. `MobAI.pose(id)` gives the renderer facing and gait; `MobAI.provoke(id)` is called on every HIT.
-- **Trunks block (D3):** `WorldGenerator.trunkAt`; checked at the destination only, so nothing is ever trapped. Standing things (mobs, NPCs, trees, player) y-sort by their feet, so you walk under crowns.
-- **Feedback is on screen:** hit brackets, a stepped death burst with strike-through, five health pips over the wounded, a loss edge when the player is hit, rank marks at double scale in the field. All in `FieldRenderer`, fed by `effects`/`mobPoses`/`hurtAt` on `FieldScene`; grayscale-barred.
-- **Sprite pass:** portraits grew brows/noses/mouths/hair and per-id hoods and halos (bar raised 0.10 → 0.12); the sapling is a sprout; water is a dark body with broken crest lines, held to mud's law (≥25% vs open ground, every genre) and always darker than mud.
-- **Reduced motion:** `prefers-reduced-motion` honored in field, city and both proof pages — effects hold one step, ambient animation stops, walks still step (they carry state).
+Full detail in `PLAN.md` 3B. In short: the kit and one theme (9.1); the thin bar and the Agent/loadout screen, HUD-style per Pedro's D7 (9.2); character select with a roster of real owners, birth that ends face-to-face with your real portrait, and the login-reset bug dead (9.3); real item art at real footprints everywhere, no emoji anywhere, the inspect card answering mouse and keyboard (9.4); kill XP finally applied to a rank track with a visible rank-up moment and spendable points (9.5); the SEAL and DIED receipts, the feed, the exit bearing, the ledger viewer (9.6); every dialogue option built or removed in voice (9.7); and the survey redrawn from atoms so it reads in grayscale.
 
 **Left open, honestly:**
-- **Line 25 is unmeasured in the real game.** The session's browser pane ran throttled in the background, so no honest frame number exists for 300 animated things in real play. The proof page's measured table still runs on load. Measure it when you can see the window.
-- A moved enemy still belongs to its original chunk's entity list (the leash hides it; it is still the wrong shape).
-- Hit-flash and death-burst were verified by code path and color bars, not caught by eye — they last 140/450ms. Watch one kill when you run the game.
-- Keepers still stand still and cannot be bumped into.
+- A session left through recon's WITHDRAW is ABORTED and gets no receipt moment.
+- The stash list in the Bank shows footprint-scaled thumbnails in rows, not a spatial grid; the spatial grid lives in the field pack. Decide in Wave 10 whether the Bank wants the grid too (placement will want it).
+- The near-twin figures, worn-gear subtlety at 36px, and the city's motionless keepers stand as before.
+- Balance is still unplayed at scale (Wave 12). A fresh F-rank still dies to the first pack of anything.
+- An invented genre still gets its look from a hash; the look family still needs widening.
 
-## Your pass: the interface (Wave 9)
+## Your pass: inside the houses (Wave 10)
 
-**Your scope, decisions and test lines are in `PLAN.md` under "The next legs"**: Wave 9, decisions D4 to D7, lines 26 to 31. Fix the kill-XP-never-applied bug first (`CombatSystem` emits `xpReward` on KILL; `WorldCanvas` consumes HIT/KILL for effects now but still applies nothing). The `KILL` event now carries `definitionId` and `position`. Mantine still owns the screens; the kit in 9.1 replaces it piece by piece.
+**Scope, decisions (D8, D9) and bars are in `PLAN.md`**: the room generator as a prototype first (pure function of lot and structure, 20px tile, warm ramp, proof page with every structure type — it touches no shared files), then real doors and transitions, stations that call the same store functions the Holdings panels use, signed placement. The interface you need exists now: panels, cards, the pack, `ItemSprite` for placing things by their real grain, and the dialogue registry if keepers move indoors. Ask D8 and D9 at the start if unanswered.
 
 ## Known weak spots
 
-**In the art**
-- **Near-twins:** a few certificates differ by only 1–4% as figures. Portraits now tell them apart more, but the figures themselves still stand.
-- **Worn gear:** the first bite is easy to miss at 36px.
-- **Recorded failure:** Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms at real size (bar 3).
+**In the art:** near-twin certificates at 16 atoms; first wear bite easy to miss at 36px; recorded failure: Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms (bar 3).
 
-**In the game**
-- Balance at the new scale is unplayed. Enemy density, run length and gold are estimates. The worst measured walk from a drop to an exit is about 100 seconds.
-- A full fight-to-exit run at normal health has not been played. Harvest, attack and exit were verified with raised health; a plain test character at a drop dies to the first rat in seconds, which is itself unbalanced.
-- You can still walk through a house on your own lot (trees block now; buildings in the hub always did; lot structures in the field of the hub do not).
-- Existing saves have no archetype and default to Operator.
-- An invented genre still gets its look from a hash, and the set of looks needs widening.
-
-**Still using the old interface, for Wave 9:** the pack (emoji), HUD text (dim and small), recon sector colors (hue only), Mantine panels, and the unused inspect card.
+**In the game:** balance unplayed at the new scale; you can walk through a house on your own lot (trees and city buildings block; lot structures do not — Wave 10.2 fixes this); a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape).
 
 ## Traps that cost me time
 
-- **Test characters die fast.** In-memory health changes are fine for testing and do not reach the save, because sessions are not persisted. Teleporting skips collision, so you can land in a lake, which is what a screenshot of 99,924 health in deep water was.
-- **Driving the game from a script.** `window.__ws` exposes the stores. `await import('/src/entities/world/WorldGenerator.ts')` gives you live modules in the page. To hold a key, dispatch `keydown` and `keyup` on `window`; a plain key press is too short to walk.
-- **The console buffer keeps old errors** across reloads. Check timestamps or the file names in the stack before believing one.
-- **Windows files are often CRLF with trailing spaces**, and shell heredocs can mangle quoting and backslashes. Long edits are safest as a Python script written to the scratchpad, normalising line endings, and asserting that each target string exists. A plain `replace` with no assert fails silently.
-- **RxDB freezes documents in dev mode.** Copy before mutating anything that came from the database.
-- **Generation hashes:** any change to world generation changes `GOLDEN_VECTORS` in `src/entities/world/goldens.ts`. Recapture them deliberately. Animation work should not touch them, so a change there means something leaked.
-- **`composeView` and the proof view** must be a typical terrain mix. A view that was 50% mud once failed a genre bar for a reason that had nothing to do with genres.
+- **The browser pane throttles when hidden — twice over.** 8B lost line 25 to a backgrounded pane. Wave 9 found the deeper layer: `document.hidden` can be FALSE and rAF still runs at ~3fps with an idle main thread, because the desktop pane itself isn't displayed. Front the tab AND show the pane (and keep the window visible) before believing any frame number. The honest measure: 314 things, 4.17ms/frame, vsync-locked at 240Hz.
+- **HMR resets zustand stores.** Editing a store-adjacent module mid-session rebuilds the module graph: the bar suddenly says "Unknown · 100 G". That's the template, not data loss — reload fully and the signed doc rehydrates.
+- **Test characters die fast.** In-memory health/XP changes are fine for testing and never reach the save. Teleporting skips collision: you can land in a lake.
+- **Driving the game from a script.** `window.__ws` exposes the stores; `await import('/src/...')` returns the LIVE module graph (you can monkey-patch `MobAI.tick` etc. for profiling). To walk, dispatch `keydown`/`keyup` on `window` and hold for over a second.
+- **The console buffer keeps old errors** across reloads. Check timestamps before believing one.
+- **Windows files are CRLF**; long edits are safest as a Python script that normalizes endings and asserts each target string exists.
+- **RxDB freezes documents in dev.** Copy before mutating anything from the database (CombatSystem already copies mobs).
+- **Generation hashes:** any change to world generation changes `GOLDEN_VECTORS` in `src/entities/world/goldens.ts`. Interface work should never touch them; a change there means something leaked.
+- **Vite port:** another session's dev server may hold 3000. `.claude/launch.json` has `world-seed-dev-3100` (`--port 3100 --strictPort`) for a second server.
 
 ## After this pass
 
-`PLAN.md`, under "The next legs", has the rest with its decisions, bars and test lines: Wave 9 (interface, character select, skills, level-ups), Waves 10 and 11 (house interiors from our own tile generator, and bringing people, materials and farms home from the nexi), and Wave 12 (a second true test, played honestly, with balance). Most of the hooks exist as dead ends: `Escort Bond`, `res_tree_sapling`, `IFarmPlot`, `attributePoints`.
+`PLAN.md`, under "The next legs": Wave 10 (interiors), Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks), Wave 12 (the second true test, played honestly, with balance). Pedro's D6 crafting half (items raising skills, components carrying affixes, S+ naming) lands with the crafting waves.

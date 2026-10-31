@@ -64,8 +64,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   refreshWorlds: async () => {
       const certs = await WorldCertificateSystem.getPublicWorlds();
       const now = Date.now();
-      
-      const realWorlds: IWorldCard[] = certs.map(cert => ({
+
+      // Wave 9.7: hubs are homes, not extraction zones — they never get a DEPLOY card
+      const realWorlds: IWorldCard[] = certs.filter(cert => cert.data.worldType !== 'HUB').map(cert => ({
           id: cert.data.worldUid,
           seed: cert.data.seedHash,
           size: cert.data.size,

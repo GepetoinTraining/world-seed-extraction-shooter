@@ -1,18 +1,26 @@
+/**
+ * WORLD CREATION (Wave 9): Concept → Laws → Economy → Sign, on the kit.
+ * Minting signs a permanent certificate; the last step says so plainly.
+ */
+
 import React, { useState } from 'react';
 import { useIdentityStore } from '../entities/identity/store';
 import { WorldCertificateSystem, WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
 import { UniversalRank } from '../../types';
-import {
-  Modal, Stack, TextInput, Textarea, Select, NumberInput,
-  Switch, Button, Group, Text, Paper, Slider, Badge,
-  Stepper, Alert, Divider, SimpleGrid
-} from '@mantine/core';
+import { Button, Input, Modal, Panel, Tabs } from './ui/kit';
 
 interface WorldCreatorProps {
   opened: boolean;
   onClose: () => void;
   onCreated: (worldUid: string) => void;
 }
+
+const STEPS = [
+  { id: '0', label: '1 CONCEPT' },
+  { id: '1', label: '2 LAWS' },
+  { id: '2', label: '3 ECONOMY' },
+  { id: '3', label: '4 SIGN' }
+] as const;
 
 export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onCreated }) => {
   const { certificate } = useIdentityStore();
@@ -25,7 +33,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   const [worldDescription, setWorldDescription] = useState('');
   const [worldType, setWorldType] = useState<WorldType>(WorldType.EXTRACTION);
   const [size, setSize] = useState(32);
-  
+
   // Rules
   const [accessMode, setAccessMode] = useState<AccessMode>(AccessMode.PUBLIC);
   const [entryFee, setEntryFee] = useState(0);
@@ -35,12 +43,12 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   const [difficulty, setDifficulty] = useState<UniversalRank>(UniversalRank.D);
   const [sessionDuration, setSessionDuration] = useState(15);
 
+  if (!opened) return null;
+
   const handleCreate = async () => {
     if (!certificate) return;
-    
     setCreating(true);
     setError(null);
-
     try {
       const rules: Partial<IWorldRules> = {
         accessMode,
@@ -49,205 +57,144 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
         creatorRevenueShare: creatorShare / 100,
         pvpEnabled,
         difficulty,
-        sessionDurationMinutes: worldType === WorldType.EXTRACTION ? sessionDuration : undefined,
+        sessionDurationMinutes: worldType === WorldType.EXTRACTION ? sessionDuration : undefined
       };
-
       const worldCert = await WorldCertificateSystem.mintWorld(
-        certificate,
-        worldName,
-        worldDescription,
-        worldType,
-        size,
-        rules
+        certificate, worldName, worldDescription, worldType, size, rules
       );
-
       if (worldCert) {
         onCreated(worldCert.data.worldUid);
-        resetForm();
+        setStep(0); setWorldName(''); setWorldDescription('');
         onClose();
       } else {
-        setError('Failed to sign World Certificate.');
+        setError('The certificate refused to sign.');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error during signing.');
     }
-
     setCreating(false);
   };
 
-  const resetForm = () => {
-    setStep(0);
-    setWorldName('');
-    setWorldDescription('');
-    setWorldType(WorldType.EXTRACTION);
-    setSize(32);
-    setAccessMode(AccessMode.PUBLIC);
-    setEntryFee(0);
-    setExtractionTax(5);
-    setCreatorShare(3);
-    setPvpEnabled(false);
-    setDifficulty(UniversalRank.D);
-    setSessionDuration(15);
-  };
+  const estimatedDailyRevenue = Math.floor((size === 16 ? 10 : 50) * 500 * (creatorShare / 100));
 
-  const estimatedDailyRevenue = Math.floor(
-    (size === 16 ? 10 : 50) * 500 * (creatorShare / 100)
+  const fieldRow = (label: string, control: React.ReactNode) => (
+    <div className="ws-field" style={{ marginBottom: 8 }}>
+      <label>{label}{control}</label>
+    </div>
   );
 
   return (
-    <Modal 
-      opened={opened} 
-      onClose={onClose} 
-      title={<Text fw={700} size="lg" c="gold">MINT NEW REALITY</Text>}
-      size="lg"
-      styles={{ header: { background: '#1a1a1a' }, body: { background: '#1a1a1a' } }}
-    >
-      <Stepper active={step} onStepClick={setStep} size="sm" mb="xl" color="gold">
-        <Stepper.Step label="Concept" description="Define Reality" />
-        <Stepper.Step label="Laws" description="Physics & Rules" />
-        <Stepper.Step label="Economy" description="Taxes & Profit" />
-        <Stepper.Step label="Sign" description="Cryptographic Proof" />
-      </Stepper>
+    <Modal title="MINT NEW REALITY" onClose={onClose} width={560}>
+      <Tabs tabs={STEPS as any} active={String(step)} onChange={id => setStep(Number(id))} />
+      <div style={{ paddingTop: 10 }}>
+        {step === 0 && (
+          <div>
+            <Input label="WORLD NAME" placeholder="e.g. SECTOR 7 SLUMS" maxLength={32} value={worldName} onChange={e => setWorldName(e.target.value)} />
+            <div className="ws-field" style={{ margin: '8px 0' }}>
+              <label>
+                LORE DESCRIPTION
+                <textarea
+                  className="ws-input" rows={3} maxLength={500}
+                  placeholder="A forgotten industrial sector reclaimed by neon flora…"
+                  value={worldDescription}
+                  onChange={e => setWorldDescription(e.target.value)}
+                />
+              </label>
+            </div>
+            {fieldRow('WORLD TYPE', (
+              <select className="ws-input" value={worldType} onChange={e => setWorldType(e.target.value as WorldType)}>
+                <option value={WorldType.EXTRACTION}>Extraction (high risk)</option>
+                <option value={WorldType.HUB}>Social hub (safe)</option>
+                <option value={WorldType.ARENA}>Arena (PvP)</option>
+              </select>
+            ))}
+            {fieldRow('GRID SIZE', (
+              <select className="ws-input" value={String(size)} onChange={e => setSize(parseInt(e.target.value))}>
+                <option value="16">16×16 sectors (skirmish)</option>
+                <option value="32">32×32 sectors (standard)</option>
+                <option value="64">64×64 sectors (expedition)</option>
+              </select>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button tone="signal" disabled={!worldName} onClick={() => setStep(1)}>NEXT: LAWS</Button>
+            </div>
+          </div>
+        )}
 
-      {/* STEP 0: Identity */}
-      {step === 0 && (
-        <Stack gap="md">
-          <TextInput
-            label="World Name"
-            placeholder="e.g. Sector 7 Slums"
-            value={worldName}
-            onChange={(e) => setWorldName(e.target.value)}
-            maxLength={32}
-          />
-          <Textarea
-            label="Lore Description"
-            placeholder="A forgotten industrial sector reclaimed by neon flora..."
-            value={worldDescription}
-            onChange={(e) => setWorldDescription(e.target.value)}
-            maxLength={500}
-            rows={3}
-          />
-          <Select
-            label="World Type"
-            value={worldType}
-            onChange={(v) => setWorldType(v as WorldType)}
-            data={[
-              { value: WorldType.EXTRACTION, label: '⚔️ Extraction (High Risk)' },
-              { value: WorldType.HUB, label: '🏙️ Social Hub (Safe)' },
-              { value: WorldType.ARENA, label: '🏟️ Arena (PvP)' }
-            ]}
-          />
-          <Select
-            label="Grid Size"
-            value={size.toString()}
-            onChange={(v) => setSize(parseInt(v || '32'))}
-            data={[
-              { value: '16', label: '16x16 sectors (Skirmish)' },
-              { value: '32', label: '32x32 sectors (Standard)' },
-              { value: '64', label: '64x64 sectors (Expedition)' }
-            ]}
-          />
-          <Group justify="flex-end" mt="md">
-            <Button onClick={() => setStep(1)} disabled={!worldName} color="gray">Next: Laws →</Button>
-          </Group>
-        </Stack>
-      )}
+        {step === 1 && (
+          <div>
+            {fieldRow('ACCESS PROTOCOL', (
+              <select className="ws-input" value={accessMode} onChange={e => setAccessMode(e.target.value as AccessMode)}>
+                <option value={AccessMode.PUBLIC}>Open access</option>
+                <option value={AccessMode.TICKET}>Ticket required</option>
+                <option value={AccessMode.GUILD}>Guild only</option>
+              </select>
+            ))}
+            {fieldRow('DANGER LEVEL (RANK)', (
+              <select className="ws-input" value={difficulty} onChange={e => setDifficulty(e.target.value as UniversalRank)}>
+                {Object.values(UniversalRank).map(r => <option key={r} value={r}>Rank {r}</option>)}
+              </select>
+            ))}
+            <div className="ws-field" style={{ marginBottom: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, flexDirection: 'row' }}>
+                <input type="checkbox" checked={pvpEnabled} onChange={e => setPvpEnabled(e.target.checked)} />
+                HOSTILE PLAYER ACTION (PVP)
+              </label>
+            </div>
+            {worldType === WorldType.EXTRACTION && (
+              <Input label="COLLAPSE TIMER (MINUTES)" type="number" min={5} max={60} value={sessionDuration}
+                onChange={e => setSessionDuration(Number(e.target.value) || 15)} />
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+              <Button tone="quiet" onClick={() => setStep(0)}>BACK</Button>
+              <Button tone="signal" onClick={() => setStep(2)}>NEXT: ECONOMY</Button>
+            </div>
+          </div>
+        )}
 
-      {/* STEP 1: Rules */}
-      {step === 1 && (
-        <Stack gap="md">
-          <Select
-            label="Access Protocol"
-            value={accessMode}
-            onChange={(v) => setAccessMode(v as AccessMode)}
-            data={[
-              { value: AccessMode.PUBLIC, label: 'Open Access' },
-              { value: AccessMode.TICKET, label: 'Ticket Required' },
-              { value: AccessMode.GUILD, label: 'Guild Only' }
-            ]}
-          />
-          <Select
-            label="Danger Level (Rank)"
-            value={difficulty}
-            onChange={(v) => setDifficulty(v as UniversalRank)}
-            data={Object.values(UniversalRank).map(r => ({ value: r, label: `Rank ${r}` }))}
-          />
-          <Switch
-            label="Enable Hostile Player Action (PvP)"
-            checked={pvpEnabled}
-            onChange={(e) => setPvpEnabled(e.currentTarget.checked)}
-            color="red"
-          />
-          {worldType === WorldType.EXTRACTION && (
-            <NumberInput
-              label="Collapse Timer (Minutes)"
-              value={sessionDuration}
-              onChange={(v) => setSessionDuration(typeof v === 'number' ? v : 15)}
-              min={5}
-              max={60}
-            />
-          )}
-          <Group justify="space-between" mt="md">
-            <Button variant="subtle" onClick={() => setStep(0)}>← Back</Button>
-            <Button onClick={() => setStep(2)} color="gray">Next: Economy →</Button>
-          </Group>
-        </Stack>
-      )}
+        {step === 2 && (
+          <div>
+            <Input label="GATE FEE (GOLD)" type="number" min={0} max={1000} value={entryFee}
+              onChange={e => setEntryFee(Number(e.target.value) || 0)} />
+            <div className="ws-field" style={{ margin: '8px 0' }}>
+              <label>
+                EXTRACTION TAX — {extractionTax}%
+                <input type="range" min={0} max={30} value={extractionTax} onChange={e => setExtractionTax(Number(e.target.value))} />
+              </label>
+            </div>
+            <div className="ws-field" style={{ marginBottom: 8 }}>
+              <label>
+                CREATOR REVENUE SHARE — {creatorShare}%
+                <input type="range" min={0} max={10} value={creatorShare} onChange={e => setCreatorShare(Number(e.target.value))} />
+              </label>
+            </div>
+            <Panel title="EST. DAILY REVENUE" right={<span className="ws-proof">{estimatedDailyRevenue} G</span>}>
+              <span className="ws-dim ws-small">An estimate, not a promise. The ledger will say what really happened.</span>
+            </Panel>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+              <Button tone="quiet" onClick={() => setStep(1)}>BACK</Button>
+              <Button tone="signal" onClick={() => setStep(3)}>NEXT: SIGN</Button>
+            </div>
+          </div>
+        )}
 
-      {/* STEP 2: Economy */}
-      {step === 2 && (
-        <Stack gap="md">
-          <NumberInput
-            label="Gate Fee (Gold)"
-            value={entryFee}
-            onChange={(v) => setEntryFee(typeof v === 'number' ? v : 0)}
-            min={0}
-            max={1000}
-          />
-          <Text size="sm">Extraction Tax: {extractionTax}%</Text>
-          <Slider value={extractionTax} onChange={setExtractionTax} min={0} max={30} color="emerald" />
-          
-          <Text size="sm">Creator Revenue Share: {creatorShare}%</Text>
-          <Slider value={creatorShare} onChange={setCreatorShare} min={0} max={10} color="gold" />
-
-          <Paper p="md" bg="dark.8" withBorder>
-            <Group justify="space-between">
-              <Text size="xs" c="dimmed">Est. Daily Revenue</Text>
-              <Text fw={700} c="gold">{estimatedDailyRevenue} G</Text>
-            </Group>
-          </Paper>
-
-          <Group justify="space-between" mt="md">
-            <Button variant="subtle" onClick={() => setStep(1)}>← Back</Button>
-            <Button onClick={() => setStep(3)} color="gray">Next: Sign →</Button>
-          </Group>
-        </Stack>
-      )}
-
-      {/* STEP 3: Confirm */}
-      {step === 3 && (
-        <Stack gap="md">
-          <Alert color="gold" title="Immutable Action">
-            Minting this World Certificate will generate a cryptographic signature using your Identity Key. 
-            This action creates a permanent asset on the ledger.
-          </Alert>
-
-          {error && <Alert color="red">{error}</Alert>}
-
-          <Group justify="space-between" mt="md">
-            <Button variant="subtle" onClick={() => setStep(2)}>← Back</Button>
-            <Button 
-              color="gold" 
-              size="lg"
-              loading={creating}
-              onClick={handleCreate}
-              className="animate-pulse"
-            >
-              SIGN & MINT WORLD
-            </Button>
-          </Group>
-        </Stack>
-      )}
+        {step === 3 && (
+          <div>
+            <Panel title="IMMUTABLE ACTION" tone="proof">
+              <span className="ws-small">
+                Minting signs this world with your identity key. The certificate becomes a permanent asset on the ledger — it cannot be unsaid.
+              </span>
+            </Panel>
+            {error && <div className="ws-loss ws-small" style={{ marginTop: 8 }}>{error}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+              <Button tone="quiet" onClick={() => setStep(2)}>BACK</Button>
+              <Button tone="proof" primary disabled={creating} onClick={handleCreate}>
+                {creating ? 'SIGNING…' : 'SIGN & MINT WORLD'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </Modal>
   );
 };

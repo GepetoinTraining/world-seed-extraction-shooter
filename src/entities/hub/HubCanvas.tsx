@@ -1,48 +1,28 @@
 /**
- * HubCanvas - The City View
- * Players walk around a fixed city layout, interact with NPCs, access services.
- * NO COMBAT. This is the safe zone.
+ * HubCanvas - The City View (Wave 9: the windows moved onto the kit)
+ * Players walk a fixed city, talk to its keepers, and reach every service.
+ * NO COMBAT. This is the safe zone, and the only warm place.
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Box, Text, Paper, Stack, Group, Button, Badge, Modal, Divider } from '@mantine/core';
-import { HubGenerator, IHubLayout, IPOI, POIType, HUB_NPCS, INPCDefinition, IHubZone } from './HubGenerator';
+import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
 import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
-import { HUB_GENRE, LotState, composeHub } from '../../render/atoms/hub';
+import { HUB_GENRE, composeHub, LotState } from '../../render/atoms/hub';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
-
-// =============================================================================
-// CONSTANTS
-// =============================================================================
+import { DialogueEffect, repairCost, repairItem, runDialogueAction, quickDeployTargetId } from './dialogue';
+import { deployToWorld } from '../../logic/systems/Deploy';
+import { Button, CardView, Chip, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
+import { useAppView, useFeed } from '../../components/ui/stores';
+import { inspectItem } from '../../render/atoms/inspect';
+import { LORE_FRAGMENTS } from '../lore/LoreBible';
+import { ItemType } from '../../../types';
 
 const TILE_SIZE = HUB_TILE_PX;
 const VIEWPORT_TILES = HUB_VIEW_TILES;
-
-// POI Colors for rendering
-const POI_COLORS: Record<POIType, string> = {
-  [POIType.BANK]: '#ffd700',
-  [POIType.PORTAL]: '#06b6d4',
-  [POIType.IDENTIFIER]: '#a855f7',
-  [POIType.GUILD_HALL]: '#f59e0b',
-  [POIType.VENDOR_WEAPONS]: '#ef4444',
-  [POIType.VENDOR_ARMOR]: '#3b82f6',
-  [POIType.VENDOR_CONSUMABLES]: '#22c55e',
-  [POIType.AUCTION_HOUSE]: '#10b981',
-  [POIType.TAVERN]: '#78716c',
-  [POIType.ARENA]: '#dc2626',
-  [POIType.PLAYER_LOT]: '#4b5563',
-  [POIType.FOUNTAIN]: '#0ea5e9',
-  [POIType.STATUE]: '#9ca3af',
-  [POIType.LAMP_POST]: '#fbbf24'
-};
-
-// =============================================================================
-// COMPONENT
-// =============================================================================
 
 function spriteToCanvas(s: Sprite, table: Uint8Array): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -58,54 +38,49 @@ function spriteToCanvas(s: Sprite, table: Uint8Array): HTMLCanvasElement {
   return c;
 }
 
+/** Cast portraits keep the city's warm ramp — the hub is the only warm place. */
 const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const art = spriteToCanvas(castPortrait(npcId), buildPalette(HUB_GENRE));
-    ctx.drawImage(art, 0, 0, canvas.width, canvas.height);
-  }, [npcId]);
-  return <canvas ref={ref} width={68} height={68} style={{ imageRendering: 'pixelated', flexShrink: 0 }} />;
+  const sprite = useMemo(() => castPortrait(npcId), [npcId]);
+  const palette = useMemo(() => buildPalette(HUB_GENRE), []);
+  return <SpriteView sprite={sprite} palette={palette} scale={2} />;
 };
 
 const HUB_WALK_TILES_PER_S = 3.0; // one world, one pace: the same speed as the field
 
+type HubPanel =
+  | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
+  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'missions' };
+
 export const HubCanvas: React.FC = () => {
-  // Generate hub layout once
   const layout = useMemo(() => HubGenerator.generate(), []);
 
-  // Player position in PIXELS (Wave 8B: the city walks like the field, smoothly)
   const posRef = useRef({ x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
   const [playerTile, setPlayerTile] = useState(layout.spawnPoint);
   const [nearbyPOI, setNearbyPOI] = useState<IPOI | null>(null);
-  const [dialogueOpen, setDialogueOpen] = useState(false);
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
+  const [npcReply, setNpcReply] = useState<string | null>(null);
+  const [panel, setPanel] = useState<HubPanel | null>(null);
 
   const { player } = usePlayerStore();
-  const { weaponShop, armorShop, consumableShop, purchaseFromShop, lots } = useHubStore();
-  const { refreshWorlds, availableWorlds, selectWorld } = useWorldStore();
+  const { lots } = useHubStore();
+  const { refreshWorlds } = useWorldStore();
+  const { setView } = useAppView();
+  const pushFeed = useFeed(s => s.push);
 
-  // Additional UI states
-  const [shopOpen, setShopOpen] = useState(false);
-  const [shopType, setShopType] = useState<'weapon' | 'armor' | 'consumable'>('weapon');
-  const [missionOpen, setMissionOpen] = useState(false);
   const cityRef = useRef<HTMLCanvasElement>(null);
-
   const keysRef = useRef<Set<string>>(new Set());
   const facingRef = useRef<Facing>('down');
   const stepRef = useRef({ step: 0, at: 0 });
   const movingRef = useRef(false);
   const lastTickRef = useRef(0);
   const nearbyRef = useRef<IPOI | null>(null);
+  const busyRef = useRef(false); // a window is open: keys belong to it
   const reducedMotion = useMemo(
     () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     []
   );
   nearbyRef.current = nearbyPOI;
+  busyRef.current = !!(activeNPC || panel);
 
   // =========================================================================
   // MOVEMENT: held keys, per-axis sliding against the navmesh
@@ -116,9 +91,9 @@ export const HubCanvas: React.FC = () => {
     return tx < 0 || ty < 0 || tx >= layout.width || ty >= layout.height || !layout.navMesh[ty][tx];
   }, [layout]);
 
-  // Keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (busyRef.current) return; // dialogue and panels take the keyboard
       const key = e.key.toLowerCase();
       if (key === 'e' || key === 'enter') {
         if (nearbyRef.current?.interactable) handleInteract(nearbyRef.current);
@@ -143,95 +118,78 @@ export const HubCanvas: React.FC = () => {
   useEffect(() => {
     let closest: IPOI | null = null;
     let closestDist = Infinity;
-
     for (const zone of layout.zones) {
       for (const poi of zone.pois) {
         if (!poi.interactable) continue;
-
-        // Distance to POI center
         const poiCenterX = poi.position.x + poi.size.width / 2;
         const poiCenterY = poi.position.y + poi.size.height / 2;
         const dist = Math.sqrt(
           Math.pow(playerTile.x + 0.5 - poiCenterX, 2) +
           Math.pow(playerTile.y + 0.5 - poiCenterY, 2)
         );
-
         if (dist < 3 && dist < closestDist) {
           closest = poi;
           closestDist = dist;
         }
       }
     }
-
     setNearbyPOI(closest);
   }, [playerTile, layout]);
-  
+
   // =========================================================================
   // INTERACTION
   // =========================================================================
-  
+
   const handleInteract = (poi: IPOI) => {
     if (poi.npcId && HUB_NPCS[poi.npcId]) {
+      keysRef.current.clear();
+      setNpcReply(null);
       setActiveNPC(HUB_NPCS[poi.npcId]);
-      setDialogueOpen(true);
     } else if (poi.type === POIType.PLAYER_LOT) {
-      // Handle lot purchase/view
-      console.log('[HUB] Interacting with lot:', poi.id);
+      // Until Wave 10 opens the door, the lot points at its working screen.
+      setView('HOLDINGS');
     }
   };
-  
-  const handleDialogueOption = (action: string, payload?: any) => {
-    console.log('[HUB] Dialogue action:', action, payload);
-    
-    switch (action) {
-      case 'CLOSE':
-        setDialogueOpen(false);
-        setActiveNPC(null);
-        break;
-      case 'OPEN_BANK':
-        // Would navigate to bank view
-        console.log('[HUB] Opening Bank...');
-        setDialogueOpen(false);
-        break;
-      case 'OPEN_MISSIONS':
-        refreshWorlds();
-        setMissionOpen(true);
-        setDialogueOpen(false);
-        break;
-      case 'OPEN_SHOP':
-        if (payload?.category === 'weapons') {
-          setShopType('weapon');
-        } else if (payload?.category === 'armor') {
-          setShopType('armor');
-        } else if (payload?.category === 'consumables') {
-          setShopType('consumable');
-        }
-        setShopOpen(true);
-        setDialogueOpen(false);
-        break;
-      case 'IDENTIFY_ITEM':
-        console.log('[HUB] Opening Identifier...');
-        setDialogueOpen(false);
-        break;
-      case 'BUY_CONSUMABLE':
-        console.log('[HUB] Buying consumable:', payload);
-        setDialogueOpen(false);
-        break;
-      default:
-        console.log('[HUB] Unhandled action:', action);
+
+  const applyEffect = async (effect: DialogueEffect) => {
+    switch (effect.kind) {
+      case 'close':
+        setActiveNPC(null); setNpcReply(null);
+        return;
+      case 'reply':
+        setNpcReply(effect.text);
+        return;
+      case 'navigate':
+        setActiveNPC(null); setNpcReply(null);
+        setView(effect.view);
+        return;
+      case 'open':
+        setActiveNPC(null); setNpcReply(null);
+        if (effect.panel === 'shop') setPanel({ kind: 'shop', category: effect.category });
+        else if (effect.panel === 'ledger') setView('BANK', 'ledger');
+        else if (effect.panel === 'missions') { refreshWorlds(); setPanel({ kind: 'missions' }); }
+        else setPanel({ kind: effect.panel });
+        return;
+      case 'deploy': {
+        setActiveNPC(null); setNpcReply(null);
+        const target = quickDeployTargetId();
+        if (!target) { pushFeed('No walkable reality on the registry.', 'loss'); return; }
+        const res = await deployToWorld(target);
+        if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
+        return;
+      }
     }
   };
-  
+
   // =========================================================================
-  // RENDER HELPERS
+  // RENDER HELPERS (unchanged from 8B: the city draws itself from real state)
   // =========================================================================
-  
+
   const currentZone = useMemo(() =>
     HubGenerator.getZoneAtPosition(layout, playerTile.x, playerTile.y),
     [layout, playerTile]
   );
-  
-  // The city as the game really has it: its lots from the store, redrawn only when they change
+
   const lotStates = useMemo(() => {
     const states: Partial<Record<number, LotState>> = {};
     lots.forEach(l => {
@@ -245,7 +203,6 @@ export const HubCanvas: React.FC = () => {
     return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates }), palette));
   }, [layout, lotStates]);
 
-  // Where the camera sits, in px, clamped to the city's edge
   const cameraOffset = useCallback(() => {
     const viewPx = VIEWPORT_TILES * TILE_SIZE;
     return {
@@ -291,7 +248,6 @@ export const HubCanvas: React.FC = () => {
         const len = Math.hypot(dx, dy);
         const step = HUB_WALK_TILES_PER_S * TILE_SIZE * dt;
         const mx = (dx / len) * step, my = (dy / len) * step;
-        // Per-axis sliding against the navmesh, same rule as the field's terrain
         let nx = p.x + mx;
         if (blockedAt(nx, p.y) && !blockedAt(p.x, p.y)) nx = p.x;
         let ny = p.y + my;
@@ -344,49 +300,32 @@ export const HubCanvas: React.FC = () => {
   // =========================================================================
   // RENDER
   // =========================================================================
-  
+
   return (
-    <Box style={{ position: 'relative', width: '100%', height: '100%', background: '#0a0a0a', overflow: 'hidden' }}>
-      
+    <div className="ws-ui" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--ws-void-1)', overflow: 'hidden' }}>
+
       {/* HUD - Top Left */}
-      <Paper pos="absolute" top={16} left={16} p="sm" bg="dark.8" withBorder style={{ zIndex: 100 }}>
-        <Stack gap={4}>
-          <Group gap="xs">
-            <Badge color="gold" size="sm">{player.bank.gold.toLocaleString()} G</Badge>
-            <Badge color="emerald" size="sm">{player.username}</Badge>
-          </Group>
-          {currentZone && (
-            <Text size="xs" c="dimmed">{currentZone.name}</Text>
-          )}
-          <Text size="xs" c="dimmed" ff="monospace">
-            {playerTile.x}, {playerTile.y}
-          </Text>
-        </Stack>
-      </Paper>
-      
+      <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 100, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Chip tone="proof">{player.bank.gold.toLocaleString()} G</Chip>
+          <Chip tone="signal">{player.username}</Chip>
+        </div>
+        {currentZone && <span className="ws-dim ws-small">{currentZone.name}</span>}
+        <span className="ws-dim ws-small" style={{ fontFamily: 'var(--ws-mono)' }}>{playerTile.x}, {playerTile.y}</span>
+      </div>
+
       {/* Interaction Prompt */}
-      {nearbyPOI && (
-        <Paper 
-          pos="absolute" 
-          bottom={100} 
-          left="50%" 
-          style={{ transform: 'translateX(-50%)', zIndex: 100 }}
-          p="sm" 
-          bg="dark.7"
-          withBorder
-        >
-          <Group gap="sm">
-            <Text size="sm" fw={600}>{nearbyPOI.name}</Text>
-            <Badge color="emerald" size="xs">[E] Interact</Badge>
-          </Group>
-        </Paper>
+      {nearbyPOI && !activeNPC && !panel && (
+        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
+          <Chip tone="signal"><b>{nearbyPOI.name}</b> <Kbd>E</Kbd> INTERACT</Chip>
+        </div>
       )}
-      
+
       {/* Controls Hint */}
-      <Paper pos="absolute" bottom={16} right={16} p="xs" bg="dark.8" withBorder style={{ zIndex: 100 }}>
-        <Text size="xs" c="dimmed">WASD to move • E to interact</Text>
-      </Paper>
-      
+      <div style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100 }} className="ws-dim ws-small">
+        <Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact · <Kbd>~</Kbd> console
+      </div>
+
       {/* THE CITY */}
       <canvas
         ref={cityRef}
@@ -395,133 +334,241 @@ export const HubCanvas: React.FC = () => {
         onClick={handleCityClick}
         style={{
           position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-          border: '1px solid #333', imageRendering: 'pixelated', cursor: nearbyPOI ? 'pointer' : 'default'
+          border: '1px solid var(--ws-void-4)', imageRendering: 'pixelated', cursor: nearbyPOI ? 'pointer' : 'default'
         }}
       />
 
-      {/* NPC Dialogue Modal */}
-      <Modal
-        opened={dialogueOpen}
-        onClose={() => setDialogueOpen(false)}
-        title={activeNPC ? `${activeNPC.name} - ${activeNPC.title}` : 'Dialogue'}
-        centered
-        size="md"
-        styles={{
-          header: { backgroundColor: 'var(--mantine-color-dark-7)' },
-          body: { backgroundColor: 'var(--mantine-color-dark-7)' }
-        }}
-      >
-        {activeNPC && (
-          <Stack>
-            {/* NPC Portrait */}
-            <Group>
+      {/* NPC Dialogue */}
+      {activeNPC && (
+        <Modal title={`${activeNPC.name} — ${activeNPC.title}`} onClose={() => { setActiveNPC(null); setNpcReply(null); }} width={520}>
+          <div className="ws-dialogue">
+            <div className="ws-dialogue__head">
               <CastPortrait npcId={activeNPC.id} />
-              <Paper p="sm" bg="dark.6" flex={1}>
-                <Text size="sm" fs="italic">"{activeNPC.dialogue.greeting}"</Text>
-              </Paper>
-            </Group>
-            
-            <Divider />
-            
-            {/* Options */}
-            <Stack gap="xs">
+              <div className="ws-dialogue__speech">"{npcReply ?? activeNPC.dialogue.greeting}"</div>
+            </div>
+            <div className="ws-dialogue__options">
               {activeNPC.dialogue.options.map((opt, i) => (
                 <Button
                   key={i}
-                  variant={opt.action === 'CLOSE' ? 'subtle' : 'outline'}
-                  color={opt.action === 'CLOSE' ? 'gray' : 'emerald'}
-                  onClick={() => handleDialogueOption(opt.action, opt.payload)}
-                  fullWidth
-                  justify="flex-start"
+                  tone={opt.action === 'CLOSE' ? 'quiet' : 'signal'}
+                  autoFocus={i === 0}
+                  onClick={() => void applyEffect(runDialogueAction(opt.action, opt.payload))}
                 >
                   {opt.label}
                 </Button>
               ))}
-            </Stack>
-          </Stack>
-        )}
-      </Modal>
-      
-      {/* Shop Modal */}
-      <Modal
-        opened={shopOpen}
-        onClose={() => setShopOpen(false)}
-        title={`${shopType.charAt(0).toUpperCase() + shopType.slice(1)} Shop`}
-        centered
-        size="lg"
-        styles={{
-          header: { backgroundColor: 'var(--mantine-color-dark-7)' },
-          body: { backgroundColor: 'var(--mantine-color-dark-7)' }
-        }}
-      >
-        <Stack>
-          <Text size="sm" c="dimmed">Your Gold: {player.bank.gold.toLocaleString()} G</Text>
-          <Divider />
-          {(shopType === 'weapon' ? weaponShop : shopType === 'armor' ? armorShop : consumableShop).map(listing => (
-            <Paper key={listing.id} p="sm" bg="dark.6" withBorder>
-              <Group justify="space-between">
-                <div>
-                  <Text fw={600}>{listing.item.name}</Text>
-                  <Text size="xs" c="dimmed">Stock: {listing.stock}</Text>
-                </div>
-                <Group>
-                  <Badge color="gold">{listing.price} G</Badge>
-                  <Button 
-                    size="xs" 
-                    color="emerald"
-                    disabled={listing.stock <= 0 || player.bank.gold < listing.price}
-                    onClick={() => {
-                      const item = purchaseFromShop(listing.id, shopType);
-                      if (item) console.log('[HUB] Purchased:', item.name);
-                    }}
-                  >
-                    Buy
-                  </Button>
-                </Group>
-              </Group>
-            </Paper>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}
+      {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'missions' && <MissionsModal onClose={() => setPanel(null)} />}
+    </div>
+  );
+};
+
+// =============================================================================
+// SERVICE WINDOWS (Wave 9.7: each one is a working thing, or it is not here)
+// =============================================================================
+
+const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose: () => void }> = ({ category, onClose }) => {
+  const { weaponShop, armorShop, consumableShop, purchaseFromShop } = useHubStore();
+  const { player } = usePlayerStore();
+  const pushFeed = useFeed(s => s.push);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const listings = category === 'weapon' ? weaponShop : category === 'armor' ? armorShop : consumableShop;
+  const selected = listings.find(l => l.id === selectedId);
+  const titles = { weapon: 'IRONFIST ARMS', armor: 'STEELWEAVE PROTECTION', consumable: "THE ALCHEMIST'S CORNER" };
+
+  return (
+    <Modal title={titles[category]} onClose={onClose} width={640}>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Your gold: <span className="ws-proof">{player.bank.gold.toLocaleString()} G</span> · stock turns at midnight</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 10, alignItems: 'start' }}>
+        <div className="ws-list">
+          {listings.map(listing => (
+            <div key={listing.id} className="ws-row" style={selectedId === listing.id ? { background: 'var(--ws-void-2)' } : undefined}>
+              <button
+                type="button" className="ws-ui"
+                onClick={() => setSelectedId(listing.id)}
+                style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontFamily: 'var(--ws-mono)', padding: 2 }}
+              >
+                <ItemSprite item={listing.item} cellPx={16} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
+                  <span className="ws-dim ws-small">stock {listing.stock}</span>
+                </span>
+              </button>
+              <Button
+                tone="proof"
+                disabled={listing.stock <= 0 || player.bank.gold < listing.price}
+                onClick={() => {
+                  const item = purchaseFromShop(listing.id, category);
+                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(listing.price)} G. It is in your stash.`, 'proof');
+                }}
+              >
+                BUY {Math.ceil(listing.price)}G
+              </Button>
+            </div>
           ))}
-        </Stack>
-      </Modal>
-      
-      {/* Mission Selection Modal */}
-      <Modal
-        opened={missionOpen}
-        onClose={() => setMissionOpen(false)}
-        title="Available Extraction Zones"
-        centered
-        size="xl"
-        styles={{
-          header: { backgroundColor: 'var(--mantine-color-dark-7)' },
-          body: { backgroundColor: 'var(--mantine-color-dark-7)' }
-        }}
-      >
-        <Stack>
-          {availableWorlds.map(world => (
-            <Paper key={world.id} p="md" bg="dark.6" withBorder>
-              <Group justify="space-between">
-                <div>
-                  <Group gap="xs">
-                    <Text fw={700}>{world.seed.toUpperCase()}</Text>
-                    {world.isDebug && <Badge color="cyan" size="xs">DEV</Badge>}
-                  </Group>
-                  <Text size="xs" c="dimmed">{world.size}x{world.size} • {world.playerCount} agents</Text>
-                </div>
-                <Button 
-                  color={world.isDebug ? 'cyan' : 'red'}
-                  onClick={() => {
-                    selectWorld(world.id);
-                    setMissionOpen(false);
-                  }}
-                >
-                  DEPLOY
-                </Button>
-              </Group>
-            </Paper>
+        </div>
+        {selected
+          ? <CardView card={inspectItem(selected.item)} />
+          : <Panel title="INSPECT"><span className="ws-dim ws-small">Select a listing to read it.</span></Panel>}
+      </div>
+    </Modal>
+  );
+};
+
+const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { player } = usePlayerStore();
+  const { sellToVendor } = useHubStore();
+  const pushFeed = useFeed(s => s.push);
+  const stash = player.bank.stashTabs[0]?.items || [];
+
+  return (
+    <Modal title="SELL TO THE COUNTER" onClose={onClose} width={520}>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
+        The counter pays 60% of value, from the hub treasury. A hub with no funds cannot buy.
+      </div>
+      {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
+      <div className="ws-list">
+        {stash.map(item => {
+          const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
+          return (
+            <div key={item.id} className="ws-row">
+              <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+                <ItemSprite item={item} cellPx={16} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                  <span className="ws-dim ws-small">{item.value}G listed value</span>
+                </span>
+              </span>
+              <Button
+                tone="proof"
+                onClick={async () => {
+                  const paid = await sellToVendor(item.id);
+                  if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
+                  else pushFeed('The treasury cannot cover that. Nothing moves.', 'loss');
+                }}
+              >
+                SELL {offer}G
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+};
+
+const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { player } = usePlayerStore();
+  const pushFeed = useFeed(s => s.push);
+  const stash = player.bank.stashTabs[0]?.items || [];
+  const worn = stash.filter(i => i.stats?.maxDurability && (i.stats.durability ?? 0) < i.stats.maxDurability);
+
+  return (
+    <Modal title="REPAIR — STEELWEAVE" onClose={onClose} width={520}>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
+        A quarter of the item's worth, scaled by the damage. The frame remembers its shape.
+      </div>
+      {worn.length === 0 && <div className="ws-dim ws-small">Nothing in your stash needs work.</div>}
+      <div className="ws-list">
+        {worn.map(item => {
+          const cost = repairCost(item as any);
+          return (
+            <div key={item.id} className="ws-row">
+              <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+                <ItemSprite item={item} cellPx={16} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                  <span className="ws-dim ws-small">{item.stats.durability}/{item.stats.maxDurability} durability</span>
+                </span>
+              </span>
+              <Button
+                tone="signal"
+                disabled={player.bank.gold < cost}
+                onClick={() => {
+                  const res = repairItem(item.id);
+                  pushFeed(res.text, res.ok ? 'signal' : 'loss');
+                }}
+              >
+                REPAIR {cost}G
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+};
+
+const LoreModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { player } = usePlayerStore();
+  const stash = player.bank.stashTabs[0]?.items || [];
+  const fragments = stash.filter(i => i.type === ItemType.LORE && i.description);
+  const topics = Object.values(player.bank.lore || {});
+
+  return (
+    <Modal title="THE STUDY — WHAT THE RUINS SAID" onClose={onClose} width={560}>
+      {fragments.length === 0 && topics.length === 0 && (
+        <div className="ws-dim ws-small">
+          You hold no fragments. They wait in chests in the field, and the best of them read like this:
+          <div style={{ fontStyle: 'italic', marginTop: 6, color: 'var(--ws-text-body)' }}>"{LORE_FRAGMENTS[0]}"</div>
+        </div>
+      )}
+      {fragments.map(f => (
+        <Panel key={f.id} title={f.name.toUpperCase()} tone="proof" style={{ marginBottom: 8 }}>
+          <div className="ws-small" style={{ fontStyle: 'italic' }}>{f.description}</div>
+        </Panel>
+      ))}
+      {topics.length > 0 && (
+        <div className="ws-list">
+          {topics.map(t => (
+            <div key={t.topic} className="ws-row">
+              <span>{t.topic}</span>
+              <span className="ws-dim ws-small">level {t.level} · studied {new Date(t.dateDiscovered).toLocaleDateString()}</span>
+            </div>
           ))}
-        </Stack>
-      </Modal>
-    </Box>
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+const MissionsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { availableWorlds } = useWorldStore();
+  const pushFeed = useFeed(s => s.push);
+
+  return (
+    <Modal title="EXTRACTION ZONES — THE CONDUIT" onClose={onClose} width={560}>
+      <div className="ws-list">
+        {availableWorlds.map(world => (
+          <div key={world.id} className="ws-row">
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block' }} className="ws-bright">{world.name.toUpperCase()}</span>
+              <span className="ws-dim ws-small">{world.size}×{world.size} sectors · {world.playerCount} agents · difficulty {world.difficulty}</span>
+            </span>
+            <Button
+              tone={world.isDebug ? 'quiet' : 'signal'}
+              disabled={world.retired}
+              title={world.retired ? 'Surveyed on an older grid. Its record stands, but it can no longer be walked.' : undefined}
+              onClick={async () => {
+                const res = await deployToWorld(world.id);
+                if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
+                else onClose();
+              }}
+            >
+              DEPLOY
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 };
 

@@ -1,10 +1,11 @@
+/**
+ * HUB SELECTION (Wave 9): search and a card per hub. Coming home starts here.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { WorldCertificateSystem, IWorldCertificate, WorldType } from '../entities/world/WorldCertificate';
 import { useHubStore } from '../entities/hub/store';
-import { 
-  Center, SimpleGrid, Card, Text, Button, Stack, TextInput, 
-  Badge, Group, Loader, Container 
-} from '@mantine/core';
+import { Button, Chip, Input, Panel } from './ui/kit';
 
 interface HubSelectorProps {
   onSelect: (hubWorldUid: string) => void;
@@ -19,85 +20,69 @@ export const HubSelector: React.FC<HubSelectorProps> = ({ onSelect }) => {
   useEffect(() => {
     const fetchHubs = async () => {
       setLoading(true);
-      // Fetch public worlds and filter for HUB type
       const allWorlds = await WorldCertificateSystem.getPublicWorlds();
-      const validHubs = allWorlds.filter(w => w.data.worldType === WorldType.HUB);
-      setHubs(validHubs);
+      setHubs(allWorlds.filter(w => w.data.worldType === WorldType.HUB));
       setLoading(false);
     };
     fetchHubs();
   }, []);
 
   const handleEnter = async (hubUid: string) => {
-    // Initialize the Hub Store with this Hub's ID
     await loadHub(hubUid);
     onSelect(hubUid);
   };
 
-  const filteredHubs = hubs.filter(h => 
+  const filteredHubs = hubs.filter(h =>
     h.data.worldName.toLowerCase().includes(search.toLowerCase())
   );
 
   if (loading) {
     return (
-      <Center h="100vh" bg="dark.9">
-        <Stack align="center">
-          <Loader color="gold" variant="dots" />
-          <Text c="dimmed">Scanning Sector Frequencies...</Text>
-        </Stack>
-      </Center>
+      <div className="ws-ui" style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ws-void-1)' }}>
+        <span className="ws-dim">Scanning sector frequencies…</span>
+      </div>
     );
   }
 
   return (
-    <Container size="xl" py={50} h="100vh" bg="dark.9">
-      <Stack gap="xl">
-        <Stack gap="xs">
-          <Text size="3rem" fw={900} c="emerald" style={{ letterSpacing: 4, lineHeight: 1 }}>
+    <div className="ws-ui" style={{ minHeight: '100vh', background: 'var(--ws-void-1)', padding: '48px 24px' }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div className="ws-signal" style={{ fontSize: 'var(--ws-font-display)', fontWeight: 700, letterSpacing: '0.2em' }}>
             HUB SELECTION
-          </Text>
-          <Text c="dimmed">Choose a frequency to materialize your avatar.</Text>
-        </Stack>
+          </div>
+          <div className="ws-dim">Choose a frequency to materialize your avatar.</div>
+        </div>
 
-        <TextInput 
-          placeholder="Search Hubs..." 
-          size="md"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          styles={{ input: { background: '#111', borderColor: '#333' } }}
-        />
+        <Input placeholder="SEARCH HUBS…" value={search} onChange={e => setSearch(e.target.value)} />
 
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {filteredHubs.map((hub) => (
-            <Card key={hub.data.worldUid} padding="lg" radius="sm" withBorder bg="dark.8" style={{ borderColor: 'var(--mantine-color-emerald-8)' }}>
-              <Group justify="space-between" mb="xs">
-                <Badge color="gold" variant="outline">POP: {hub.data.stats.totalVisitors}</Badge>
-                <Badge color="gray">{hub.data.rules.difficulty}</Badge>
-              </Group>
-
-              <Text fw={700} size="xl" mb="xs" tt="uppercase">{hub.data.worldName}</Text>
-              <Text size="sm" c="dimmed" lineClamp={3} mb="xl" style={{ height: 60 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {filteredHubs.map(hub => (
+            <Panel
+              key={hub.data.worldUid}
+              title={hub.data.worldName.toUpperCase()}
+              right={<Chip tone="proof">POP {hub.data.stats.totalVisitors}</Chip>}
+              tone="signal"
+            >
+              <div className="ws-dim ws-small" style={{ minHeight: 48, marginBottom: 10 }}>
                 {hub.data.worldDescription}
-              </Text>
-
-              <Button 
-                fullWidth 
-                color="emerald" 
-                onClick={() => handleEnter(hub.data.worldUid)}
-                className="animate-pulse"
-              >
-                MATERIALIZE
-              </Button>
-            </Card>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Chip>{hub.data.rules.difficulty}</Chip>
+                <Button tone="signal" primary onClick={() => handleEnter(hub.data.worldUid)}>
+                  MATERIALIZE
+                </Button>
+              </div>
+            </Panel>
           ))}
-        </SimpleGrid>
+        </div>
 
         {filteredHubs.length === 0 && (
-          <Center h={200}>
-            <Text c="dimmed">No Hub Signals Detected. (Did the Genesis Protocol run?)</Text>
-          </Center>
+          <div className="ws-dim" style={{ textAlign: 'center', marginTop: 40 }}>
+            No hub signals detected. (Did the Genesis Protocol run?)
+          </div>
         )}
-      </Stack>
-    </Container>
+      </div>
+    </div>
   );
 };

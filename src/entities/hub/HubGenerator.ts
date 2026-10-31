@@ -102,6 +102,7 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       options: [
         { label: 'Access Stash', action: 'OPEN_BANK' },
         { label: 'Check Balance', action: 'SHOW_BALANCE' },
+        { label: 'Read the Ledger', action: 'OPEN_LEDGER' },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
@@ -182,11 +183,10 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     name: 'Grand Marshal Vex',
     title: 'Guild Registrar',
     dialogue: {
-      greeting: "Strength in numbers. What brings you to the Hall?",
+      // Wave 9.7: guilds are unbuilt, and the Hall says so instead of pretending.
+      greeting: "Strength in numbers. Not that the Seed lets me register any, these days.",
       options: [
-        { label: 'View My Guild', action: 'OPEN_GUILD' },
-        { label: 'Create Guild (10,000g)', action: 'CREATE_GUILD', payload: { cost: 10000 } },
-        { label: 'Guild Listings', action: 'BROWSE_GUILDS' },
+        { label: 'Ask about the Hall', action: 'GUILD_LORE' },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
@@ -197,11 +197,10 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     name: 'Quickfingers',
     title: 'Market Overseer',
     dialogue: {
-      greeting: "Buy low, sell high! The market never sleeps.",
+      // Wave 9.7: the auction house is unbuilt; Quickfingers points at what works.
+      greeting: "Buy low, sell high! Or you would, if the block weren't dark.",
       options: [
-        { label: 'Browse Listings', action: 'OPEN_AUCTION' },
-        { label: 'My Listings', action: 'MY_AUCTIONS' },
-        { label: 'Sell Item', action: 'CREATE_LISTING' },
+        { label: 'Ask about the Market', action: 'AUCTION_LORE' },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
@@ -214,9 +213,9 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     dialogue: {
       greeting: "What'll it be? We got drinks and rumors, both equally watered down.",
       options: [
+        // Wave 9.7: REST removed — nothing in the hub is wounded; runs start whole.
         { label: 'Buy Drink (10g)', action: 'BUY_CONSUMABLE', payload: { itemId: 'drink_ale', cost: 10 } },
         { label: 'Hear Rumors', action: 'GET_HINT' },
-        { label: 'Rest (Restore HP)', action: 'REST' },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },

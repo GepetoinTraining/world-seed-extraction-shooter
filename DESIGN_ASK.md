@@ -143,6 +143,16 @@ Settled by the motion pass (Wave 8B), kept here as the record:
 - **The sapling** is a sprout with leaves. **Water** is a dark body with long broken crest lines, held to the same law as mud: ≥25% from open ground in every genre, and always darker than mud's ripple.
 - **Reduced motion exists** everywhere motion does: effects hold one step, ambient animation stops, `prefers-reduced-motion` is honored.
 
+Settled by the interface pass (Wave 9), kept here as the record:
+
+- **The screens are made of the same matter as the world.** One theme (`src/components/ui/tokens.ts`) computes the machine's CSS colors from the SAME `buildPalette` ramps the sprites use; the ~70 scattered colors are gone. UI sprites (items, seals, portraits in panels) stamp through a cold `TERMINAL_GENRE`; the city keeps its warm ramp, so the hub stays the only warm place. Panels carry ledger-rule grain; bars fill in twentieth steps, never smoothly; every control is native and the keyboard reaches all of it, with focus drawn in signal.
+- **The two vault moments exist.** Sealing a haul and the `DIED` receipt both hold the screen: the haul at its real art, value and levy, duration, actions on record, and a seal computed from the session's real signature. Their copy is the bank's: "The bank honors it", "The world keeps what fell".
+- **The survey stopped being five hues.** Recon cells are computed atoms: per-biome STRUCTURE (dunes, blotches, strata, lattice, traces) in matter ink over a ground value key; void static for the unscanned; a signal lozenge with a void moat for the exit; loss ticks for contacts. A finding for the record: cells drawn only in the ground ramp PASSED the numeric step-difference bar and were still unreadably dark — survey structure needs the matter ramp. The numbers measure; the eye decides.
+- **Properties finally reach a player.** The one inspect card answers hover, click and Q-cycling in the field and selection in the pack, stash and shops; it shows material properties at knowledge level, and every refusal gives its reason (`Needs axe, saw or laser cutter`, `Move closer`, energy shortfalls).
+- **Kills count and the rank is a moment.** The calculated-and-discarded kill XP now lands on the universal rank track; a rank-up takes the screen with the mark at ten times scale and grants attribute points that really spend. "The rank is not a measure of power…" is now on screen where it belongs.
+- **Vocabulary, as now used by the screens:** MINT signs things into existence (identities, worlds); MATERIALIZE enters a hub; DEPLOY enters a zone and the DROP is the landing; EXTRACT leaves with the haul; JACK IN resumes an avatar at the gate; the BANK is the place and the STASH is its storage; AVATAR at the gate, AGENT in the field. "NerveGear" is gone — the console is the SEED CONSOLE.
+- **Every dialogue option does something or says why it cannot.** The Hall and the auction block refuse in voice instead of pretending; REST left with nothing to heal.
+
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
 
 **Four things the atoms must answer.** The prototype has tried each, so start from what it found and beat it.

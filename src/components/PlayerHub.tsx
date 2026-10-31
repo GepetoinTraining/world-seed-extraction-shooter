@@ -1,20 +1,165 @@
-import React, { useState, useMemo } from 'react';
-import { usePlayerStore } from '../entities/player/store';
-import { COGNITIVE_FRAMES } from '../entities/player/data/cognitiveFrames'; // Import Data
-import { InventoryGrid } from '../entities/player/ui/InventoryGrid';
-import { Grid, Paper, Text, Stack, Group, Progress, Tabs, Badge, TextInput, ScrollArea, Tooltip, Divider, Menu, Button } from '@mantine/core';
-import { BASE_SIMULATION_STATS } from '../entities/player/types';
-import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+/**
+ * THE BANK (Wave 9, D7): the player-facing record of who you are — stats,
+ * build and loadout for the next drop — plus skills, the stash, and the
+ * ledger itself. Everything here is a record the Seed keeps about you.
+ */
 
-const ATTRIBUTE_GROUPS = {
+import React, { useEffect, useMemo, useState } from 'react';
+import { usePlayerStore } from '../entities/player/store';
+import { useHubStore } from '../entities/hub/store';
+import { COGNITIVE_FRAMES } from '../entities/player/data/cognitiveFrames';
+import { POINTS_PER_RANK_UP, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { InventorySystem } from '../entities/player/systems/InventorySystem';
+import { IAttributes, IItem, ItemType } from '../../types';
+import { Archetype } from '../render/atoms/people';
+import { inspectItem } from '../render/atoms/inspect';
+import { Bar, Button, CardView, Chip, Input, ItemSprite, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
+import { figure, weaponClass, armorClass } from '../render/atoms/people';
+import { useAppView } from './ui/stores';
+import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
+import { ISignedPayload } from '../entities/identity/certificateSystem';
+
+const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
   HARDWARE: ['strength', 'constitution', 'agility', 'dexterity', 'endurance'],
   SOFTWARE: ['intelligence', 'focus', 'engineering', 'hacking', 'perception'],
-  WETWARE:  ['charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership']
+  WETWARE: ['charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership']
 };
 
-const SkillMatrix = ({ skills }: { skills: Record<string, any> }) => {
+// ---------------------------------------------------------------------------
+// AGENT: the build — attributes, frames, and the loadout for the next drop
+// ---------------------------------------------------------------------------
+
+const AgentTab: React.FC = () => {
+  const { player, spendAttributePoint, equipFrame, unequipFrame, toggleCarry, currentWeight, maxWeight, recalcWeight } = usePlayerStore();
+  useEffect(() => { recalcWeight(); }, [recalcWeight]);
+
+  const rankXp = player.rankXp ?? 0;
+  const rank = ProgressionSystem.rankFromXp(rankXp);
+  const next = ProgressionSystem.xpToNextRank(rankXp);
+  const points = player.attributePoints ?? 0;
+  const stash = player.bank.stashTabs[0]?.items || [];
+
+  // The next drop's kit: tools always ride; the rest is chosen here (D7: test loadouts)
+  const kit = stash.filter(i => i.tags?.includes('tool') || player.bank.carryItemIds?.includes(i.id));
+  const kitWeight = kit.reduce((s, i) => s + (i.weight || 0), 0);
+  const capacity = InventorySystem.maxCarryWeight(player.attributes.strength);
+  const held = kit.find(i => i.slot === 'MAIN_HAND' || i.tags?.includes('melee') || i.tags?.includes('ranged') || i.tags?.includes('caster'));
+  const worn = kit.find(i => i.slot === 'CHEST' || i.tags?.includes('armor'));
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr 1fr', gap: 10, alignItems: 'start' }}>
+      <Panel title="IDENTITY">
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
+          <PortraitView uid={player.id} archetype={(player.archetype || 'OPERATOR') as Archetype} scale={3} />
+          <SpriteView
+            sprite={figure({
+              uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype,
+              weapon: held ? weaponClass(held.tags || []) : undefined,
+              armor: worn ? armorClass(worn.tags || []) : undefined
+            })}
+            scale={4}
+            title="You, as the next drop will draw you"
+          />
+        </div>
+        <div className="ws-bright">{player.username.toUpperCase()}</div>
+        <div className="ws-dim ws-small" style={{ wordBreak: 'break-all' }}>{player.id}</div>
+        <div className="ws-dim ws-small">{(player.archetype || 'OPERATOR').replace('_', ' ')}</div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 4px' }}>
+          <RankMark rank={rank} scale={3} />
+          <span className="ws-bright">RANK {rank}</span>
+          {points > 0 && <Chip tone="signal">{points} POINT{points === 1 ? '' : 'S'} TO SPEND</Chip>}
+        </div>
+        {next
+          ? <Bar label="RANK" value={rankXp - next.floor} max={(rankXp - next.floor) + next.needed} tone="signal" text={`${next.needed.toLocaleString()} XP to ${next.next}`} />
+          : <div className="ws-dim ws-small">The track ends here. The world believes in you completely.</div>}
+        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
+          Kills feed the rank. Each rank grants {POINTS_PER_RANK_UP} attribute points.
+        </div>
+      </Panel>
+
+      <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {points}</span> : undefined}>
+        {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
+          <div key={group} style={{ marginBottom: 8 }}>
+            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>{group}</div>
+            {attrs.map(attr => {
+              const val = player.attributes[attr] || 0;
+              const base = player.baseAttributes[attr] || 0;
+              const diff = val - base;
+              return (
+                <div key={attr} className="ws-row" style={{ padding: '2px 0' }}>
+                  <span style={{ textTransform: 'capitalize' }}>{attr}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {diff !== 0 && <span className={diff > 0 ? 'ws-signal ws-small' : 'ws-loss ws-small'}>{diff > 0 ? '+' : ''}{diff}</span>}
+                    <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
+                    {points > 0 && (
+                      <Button tone="signal" onClick={() => spendAttributePoint(attr)} title={`Raise ${attr} permanently`}>+1</Button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>FLOAT MEMORY — cognitive frames shift the effective numbers</div>
+        {player.floatMemory.map((frame, idx) => (
+          <div key={idx} className="ws-row">
+            <span className={frame ? 'ws-bright' : 'ws-dim'}>{frame ? frame.name : 'EMPTY SLOT'}</span>
+            <span style={{ display: 'flex', gap: 4 }}>
+              <select
+                className="ws-input" style={{ width: 160 }}
+                value={frame?.id ?? ''}
+                onChange={e => e.target.value ? equipFrame(idx, e.target.value) : unequipFrame(idx)}
+              >
+                <option value="">—</option>
+                {Object.values(COGNITIVE_FRAMES).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </span>
+          </div>
+        ))}
+      </Panel>
+
+      <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg</span>}>
+        <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
+          Tools always ride. Mark anything else CARRY in the stash, and it drops with you — and can be lost with you.
+        </div>
+        {kit.length === 0 && <div className="ws-dim ws-small">Nothing marked. You would drop with empty hands.</div>}
+        <div className="ws-list">
+          {kit.map(item => (
+            <div key={item.id} className="ws-row">
+              <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+                <ItemSprite item={item} cellPx={16} />
+                <span style={{ minWidth: 0 }}>
+                  <span className="t" style={{ display: 'block' }}>{item.name}</span>
+                  <span className="s">{item.weight}kg{item.tags?.includes('tool') ? ' · TOOL, ALWAYS CARRIED' : ''}</span>
+                </span>
+              </span>
+              {!item.tags?.includes('tool') && (
+                <Button tone="quiet" onClick={() => toggleCarry(item.id)}>LEAVE HOME</Button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%`} />
+        </div>
+        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
+          Session weight above 80% reads SLOWED in the field. Current bank weight: {currentWeight.toFixed(1)} / {maxWeight} kg.
+        </div>
+      </Panel>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// SKILLS: grown by use; the rank is effectiveness against the task (D6)
+// ---------------------------------------------------------------------------
+
+const SkillsTab: React.FC = () => {
+  const { player } = usePlayerStore();
   const [query, setQuery] = useState('');
-  const filteredSkills = useMemo(() => {
+  const skills = player.bank.universalSkills || {};
+  const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return Object.entries(skills)
       .filter(([name]) => name.toLowerCase().includes(q))
@@ -22,193 +167,227 @@ const SkillMatrix = ({ skills }: { skills: Record<string, any> }) => {
   }, [skills, query]);
 
   return (
-    <Stack h="100%" gap="xs">
-      <TextInput 
-        placeholder="SEARCH NEURAL DATABASE..." 
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        leftSection="🔍"
-        styles={{ input: { fontFamily: 'monospace', textTransform: 'uppercase' } }}
-      />
-      <ScrollArea h={300} offsetScrollbars>
-        {filteredSkills.length === 0 ? <Text c="dimmed" size="sm" ta="center" mt="xl">NO MATCHING ENGRAMS FOUND</Text> : (
-          <Stack gap={4}>
-            {filteredSkills.map(([key, skill]) => {
-              const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level);
-              const progress = (skill.currentXp / xpNeeded) * 100;
-              const rank = ProgressionSystem.getRankFromLevel(skill.level);
-              return (
-                <Group key={key} justify="space-between" p="xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ flex: 1 }}>
-                    <Group justify="space-between" mb={4}>
-                      <Group gap="xs">
-                        <Text size="sm" tt="uppercase" fw={700}>{skill.id.replace('skill_', '').replace(/_/g, ' ')}</Text>
-                        {skill.tags.includes('meme') && <Badge color="pink" size="xs" variant="outline">MEME</Badge>}
-                      </Group>
-                      <Group gap={4}>
-                         <Badge variant="filled" color="dark" size="sm">{rank}</Badge>
-                         <Badge variant="outline" color={skill.level > 75 ? 'gold' : 'blue'}>LVL {skill.level}</Badge>
-                      </Group>
-                    </Group>
-                    <Progress value={progress} size="xs" color={skill.tags.includes('combat') ? 'red' : 'cyan'} />
-                  </div>
-                </Group>
-              );
-            })}
-          </Stack>
-        )}
-      </ScrollArea>
-    </Stack>
+    <Panel title="SKILL ENGRAMS" right={<span className="ws-dim ws-small">{Object.keys(skills).length} known</span>}>
+      <Input placeholder="SEARCH THE ENGRAM INDEX…" value={query} onChange={e => setQuery(e.target.value)} />
+      <div className="ws-dim ws-small" style={{ margin: '6px 0' }}>
+        Skills grow by use. The rank is how much the world believes the skill: outrank a task by three and it simply opens.
+      </div>
+      {filtered.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 10 }}>No matching engrams. Skills are born from actions, not menus.</div>}
+      <div className="ws-list">
+        {filtered.map(([key, skill]) => {
+          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level);
+          const rank = ProgressionSystem.getRankFromLevel(skill.level);
+          return (
+            <div key={key} className="ws-row">
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                <RankMark rank={rank} scale={2} />
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span className="t" style={{ display: 'block', textTransform: 'uppercase' }}>
+                    {skill.id.replace('skill_', '').replace(/_/g, ' ')}
+                  </span>
+                  <span className="s">
+                    base {skill.level}
+                    {skill.origin ? ` · born of ${skill.origin.triggerAction}` : ''}
+                  </span>
+                </span>
+              </span>
+              <span style={{ width: 180 }}>
+                <Bar value={skill.currentXp} max={xpNeeded} tone="signal" text={`${skill.currentXp}/${xpNeeded}`} />
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
   );
 };
 
-export const PlayerHub = () => {
-  const { player, trashItem, currentWeight, maxWeight, equipFrame, unequipFrame } = usePlayerStore();
-  const stash = player.bank.stashTabs[0].items;
-  const attributes = player.attributes || {}; 
-  const weightPercent = (currentWeight / maxWeight) * 100;
-  const weightColor = weightPercent > 90 ? 'red' : weightPercent > 75 ? 'yellow' : 'blue';
+// ---------------------------------------------------------------------------
+// STASH: the vault, with real art and the one inspect card
+// ---------------------------------------------------------------------------
+
+export const StashTab: React.FC = () => {
+  const { player, toggleCarry, trashItem } = usePlayerStore();
+  const { sellToVendor } = useHubStore();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const stash = player.bank.stashTabs[0]?.items || [];
+  const selected = stash.find(i => i.id === selectedId) || null;
 
   return (
-    <Grid h="100%">
-      <Grid.Col span={4}>
-        <Paper h="100%" p="md" bg="dark.8" withBorder display="flex" style={{ flexDirection: 'column' }}>
-            <Stack align="center" mb="xl">
-                <div style={{ width: 100, height: 100, borderRadius: '50%', border: '2px solid var(--mantine-color-emerald-6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text size="2rem">👾</Text>
-                </div>
-                <Stack gap={0} align="center">
-                  <Text fw={700} size="xl">{player.username}</Text>
-                  <Badge color="gold" variant="light">ID: {player.id.substring(0, 8)}</Badge>
-                </Stack>
-            </Stack>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 10, alignItems: 'start' }}>
+      <Panel title="SECURE STORAGE" right={<span className="ws-proof">{player.bank.gold.toLocaleString()} G</span>}>
+        {stash.length === 0 && <div className="ws-dim ws-small">Nothing stored. The vault keeps its silence.</div>}
+        <div className="ws-list">
+          {stash.map(item => {
+            const carrying = item.tags?.includes('tool') || player.bank.carryItemIds?.includes(item.id);
+            const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
+            return (
+              <div key={item.id} className="ws-row" style={selectedId === item.id ? { background: 'var(--ws-void-2)' } : undefined}>
+                <button
+                  type="button"
+                  className="ws-ui"
+                  onClick={() => setSelectedId(item.id === selectedId ? null : item.id)}
+                  style={{
+                    display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0, textAlign: 'left',
+                    background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontFamily: 'var(--ws-mono)', padding: 2
+                  }}
+                >
+                  <ItemSprite item={item} cellPx={16} />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.isIdentified === false ? 'UNIDENTIFIED SIGNAL' : item.name}
+                    </span>
+                    <span className="ws-dim ws-small">{item.weight}kg · {item.value}G · {item.rank}</span>
+                  </span>
+                </button>
+                <span style={{ display: 'flex', gap: 4 }}>
+                  <Button
+                    tone={carrying ? 'signal' : 'quiet'}
+                    disabled={item.tags?.includes('tool')}
+                    title={item.tags?.includes('tool') ? 'Tools always ride' : 'Take it on the next drop'}
+                    onClick={() => toggleCarry(item.id)}
+                  >
+                    {carrying ? 'CARRYING' : 'CARRY'}
+                  </Button>
+                  <Button tone="proof" onClick={() => { void sellToVendor(item.id); if (selectedId === item.id) setSelectedId(null); }}>
+                    SELL {offer}G
+                  </Button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
 
-            <Tabs defaultValue="biometrics" flex={1} style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <Tabs.List grow>
-                    <Tabs.Tab value="biometrics">BIOMETRICS</Tabs.Tab>
-                    <Tabs.Tab value="skills">SKILLS</Tabs.Tab>
-                    <Tabs.Tab value="sim">SIMULATION</Tabs.Tab>
-                </Tabs.List>
+      <div style={{ position: 'sticky', top: 10 }}>
+        {selected ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+              <ItemSprite item={selected} cellPx={36} />
+            </div>
+            <CardView card={inspectItem(selected)} right={<RankMark rank={String(selected.rank)} scale={2} />} />
+            {selected.type === ItemType.LORE && selected.description && (
+              <Panel title="FRAGMENT" tone="proof" style={{ marginTop: 8 }}>
+                <div className="ws-small" style={{ fontStyle: 'italic' }}>{selected.description}</div>
+              </Panel>
+            )}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+              <Button
+                tone="loss"
+                onClick={() => {
+                  if (!confirm(`Discard ${selected.name}? The vault does not take things back.`)) return;
+                  trashItem(selected.id, 'INVENTORY');
+                  setSelectedId(null);
+                }}
+              >
+                DISCARD
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Panel title="INSPECT">
+            <div className="ws-dim ws-small">Select anything stored and the terminal reads it back: rarity in the frame, wear as bites, quality in the fill, rank in its mark.</div>
+          </Panel>
+        )}
+      </div>
+    </div>
+  );
+};
 
-                <Tabs.Panel value="biometrics" pt="md" style={{ overflow: 'auto' }}>
-                    <Stack gap="md">
-                        {/* --- FLOAT MEMORY (NEW) --- */}
-                        <div>
-                            <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb="xs">Float Memory (Cognitive Frames)</Text>
-                            <Group grow>
-                                {player.floatMemory.map((frame, idx) => (
-                                    <Menu key={idx} shadow="md" width={200}>
-                                        <Menu.Target>
-                                            <Paper 
-                                                p="xs" 
-                                                withBorder 
-                                                style={{ 
-                                                    height: 60, 
-                                                    cursor: 'pointer',
-                                                    borderColor: frame ? frame.colorHex : '#333',
-                                                    backgroundColor: frame ? `${frame.colorHex}22` : 'transparent',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                }}
-                                            >
-                                                {frame ? (
-                                                    <Stack gap={0} align="center">
-                                                        <Text size="xs" fw={700} c={frame.colorHex}>{frame.name.split(' ')[0]}</Text>
-                                                        <Text size="8px" c="dimmed">{frame.type}</Text>
-                                                    </Stack>
-                                                ) : <Text c="dimmed" size="xs">EMPTY</Text>}
-                                            </Paper>
-                                        </Menu.Target>
-                                        <Menu.Dropdown>
-                                            <Menu.Label>Available Frames</Menu.Label>
-                                            {Object.values(COGNITIVE_FRAMES).map(f => (
-                                                <Menu.Item 
-                                                    key={f.id}
-                                                    color={f.colorHex}
-                                                    onClick={() => equipFrame(idx, f.id)}
-                                                >
-                                                    {f.name}
-                                                </Menu.Item>
-                                            ))}
-                                            <Menu.Divider />
-                                            <Menu.Item color="red" onClick={() => unequipFrame(idx)}>Unequip</Menu.Item>
-                                        </Menu.Dropdown>
-                                    </Menu>
-                                ))}
-                            </Group>
-                        </div>
+// ---------------------------------------------------------------------------
+// LEDGER: the core of the fantasy, finally visible (line 31)
+// ---------------------------------------------------------------------------
 
-                        <Divider color="dark.4" />
+const ROW_WORDS: Record<string, string> = {
+  CHARACTER_GENESIS: 'Identity minted',
+  SESSION_RESULT: 'Session sealed',
+  GOLD_DELTA: 'Gold moved',
+  TAX: 'Levy charged',
+  TRADE: 'Item changed hands',
+  CRAFT: 'Transformation',
+  UPKEEP: 'Upkeep charged',
+  TOMBSTONE: 'Superseded'
+};
 
-                        {/* ATTRIBUTES */}
-                        {['HARDWARE', 'SOFTWARE', 'WETWARE'].map(group => (
-                            <div key={group}>
-                                <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb="xs">{group}</Text>
-                                <Stack gap={6}>
-                                    {(ATTRIBUTE_GROUPS as any)[group].map((attr: string) => {
-                                        const val = (attributes as any)[attr] || 0;
-                                        const base = (player.baseAttributes as any)[attr] || 0;
-                                        const diff = val - base;
-                                        return (
-                                            <Group key={attr} justify="space-between">
-                                                <Text size="sm" tt="capitalize" c="white">{attr}</Text>
-                                                <Group gap="xs">
-                                                    {diff !== 0 && (
-                                                        <Text size="xs" c={diff > 0 ? 'emerald' : 'red'}>
-                                                            {diff > 0 ? '+' : ''}{diff}
-                                                        </Text>
-                                                    )}
-                                                    <Progress value={val * 10} w={60} color={group === 'HARDWARE' ? 'red' : group === 'SOFTWARE' ? 'cyan' : 'violet'} size="sm" />
-                                                    <Text size="xs" ff="monospace" w={20} ta="right">{val}</Text>
-                                                </Group>
-                                            </Group>
-                                        );
-                                    })}
-                                </Stack>
-                            </div>
-                        ))}
-                    </Stack>
-                </Tabs.Panel>
+const rowSummary = (row: ILedgerRow): string => {
+  const d = row.data || {};
+  if (row.type === 'SESSION_RESULT') return `${d.outcome} · ${d.actionCount} actions`;
+  if (row.type === 'GOLD_DELTA') return `${d.amount > 0 ? '+' : ''}${d.amount} G${d.reason ? ` · ${String(d.reason).toLowerCase().replace(/_/g, ' ')}` : ''}`;
+  if (row.type === 'CHARACTER_GENESIS') return `${d.username} · birthright ${d.gold} G`;
+  if (row.type === 'UPKEEP') return `lot upkeep · ${d.amount} G`;
+  if (row.type === 'TRADE') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
+  if (row.type === 'CRAFT') return String(d.kind || '').toLowerCase();
+  return '';
+};
 
-                <Tabs.Panel value="skills" pt="md" h="100%">
-                    <SkillMatrix skills={player.bank.universalSkills || {}} />
-                </Tabs.Panel>
+const LedgerTab: React.FC = () => {
+  const { player } = usePlayerStore();
+  const [rows, setRows] = useState<ISignedPayload<ILedgerRow>[] | null>(null);
+  const [audit, setAudit] = useState<{ ok: boolean; rows: number } | null>(null);
 
-                <Tabs.Panel value="sim" pt="md">
-                    <Stack gap="xs">
-                        <Group justify="space-between">
-                            <Text size="xs" c="dimmed">RECON EFFICIENCY</Text>
-                            <Text size="sm" c="blue.4">{BASE_SIMULATION_STATS.recon_efficiency.toFixed(1)}x</Text>
-                        </Group>
-                        <Group justify="space-between">
-                            <Text size="xs" c="dimmed">CARRY CAPACITY</Text>
-                            <Group gap={4}>
-                                <Text size="sm" c={weightColor} fw={700}>{currentWeight.toFixed(1)}</Text>
-                                <Text size="sm" c="dimmed"> / {maxWeight} kg</Text>
-                            </Group>
-                        </Group>
-                        <Progress value={weightPercent} color={weightColor} size="sm" />
-                    </Stack>
-                </Tabs.Panel>
-            </Tabs>
-        </Paper>
-      </Grid.Col>
+  useEffect(() => {
+    let alive = true;
+    Ledger.list(player.id).then(r => { if (alive) setRows(r.reverse()); }).catch(() => setRows([]));
+    return () => { alive = false; };
+  }, [player.id]);
 
-      <Grid.Col span={8}>
-        <Stack h="100%">
-            <Paper p="md" bg="dark.8" withBorder>
-                <Group justify="space-between" mb="md">
-                    <Text fw={700}>SECURE STORAGE</Text>
-                    <Text c="gold.4" fw={700} ff="monospace">{player.bank.gold.toLocaleString()} G</Text>
-                </Group>
-                <InventoryGrid 
-                    title="MAIN STASH" 
-                    items={stash} 
-                    capacity={50}
-                    onItemAction={(act, item) => { if (act === 'TRASH') trashItem(item.id, 'INVENTORY'); }}
-                />
-            </Paper>
-        </Stack>
-      </Grid.Col>
-    </Grid>
+  return (
+    <Panel
+      title="THE LEDGER"
+      right={
+        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {audit && <span className={audit.ok ? 'ws-signal' : 'ws-loss'}>{audit.ok ? `CHAIN VERIFIED · ${audit.rows} ROWS` : 'CHAIN BROKEN'}</span>}
+          <Button tone="quiet" onClick={() => Ledger.audit(player.id).then(setAudit)}>AUDIT THE CHAIN</Button>
+        </span>
+      }
+    >
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
+        Append-only, signed, each row chained to the last. This is what the game is actually made of.
+      </div>
+      {rows === null && <div className="ws-dim ws-small">Reading the chain…</div>}
+      {rows !== null && rows.length === 0 && <div className="ws-dim ws-small">No rows yet. Everything you do from here on becomes one.</div>}
+      <div className="ws-list">
+        {rows?.map(signed => {
+          const row = signed.payload;
+          return (
+            <div key={row.seq} className="ws-row">
+              <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1 }}>
+                <SealView hash={signed.signature || String(row.seq)} scale={1} />
+                <span className="ws-dim ws-small" style={{ width: 56 }}>#{String(row.seq).padStart(5, '0')}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>{ROW_WORDS[row.type] ?? row.type}</span>
+                  <span className="ws-dim ws-small">{rowSummary(row)}</span>
+                </span>
+              </span>
+              <span className="ws-dim ws-small">{new Date(row.ts).toLocaleString()}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+};
+
+// ---------------------------------------------------------------------------
+
+export const PlayerHub = () => {
+  const { bankTab, setBankTab } = useAppView();
+  return (
+    <div className="ws-ui" style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Tabs
+        tabs={[
+          { id: 'agent', label: 'AGENT' },
+          { id: 'skills', label: 'SKILLS' },
+          { id: 'stash', label: 'STASH' },
+          { id: 'ledger', label: 'LEDGER' }
+        ]}
+        active={bankTab}
+        onChange={setBankTab}
+      />
+      {bankTab === 'agent' && <AgentTab />}
+      {bankTab === 'skills' && <SkillsTab />}
+      {bankTab === 'stash' && <StashTab />}
+      {bankTab === 'ledger' && <LedgerTab />}
+    </div>
   );
 };

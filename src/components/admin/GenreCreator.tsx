@@ -144,14 +144,15 @@ export const GenreCreator: React.FC = () => {
     }
   };
   
+  // Wave 9: no emoji — the pipeline nodes are labeled in the machine's own words
   const getNodeIcon = (type: string) => {
     switch (type) {
-      case 'GENRE': return '🎭';
-      case 'WEAPONS': return '⚔️';
-      case 'MOBS': return '👾';
-      case 'AFFIXES': return '✨';
-      case 'SPELLS': return '🔮';
-      default: return '📦';
+      case 'GENRE': return 'GEN';
+      case 'WEAPONS': return 'WPN';
+      case 'MOBS': return 'MOB';
+      case 'AFFIXES': return 'AFX';
+      case 'SPELLS': return 'SPL';
+      default: return 'PKG';
     }
   };
   
@@ -286,11 +287,11 @@ export const GenreCreator: React.FC = () => {
           <Paper p="lg" withBorder>
             <Tabs defaultValue="genre">
               <Tabs.List>
-                <Tabs.Tab value="genre">🎭 Genre</Tabs.Tab>
-                <Tabs.Tab value="weapons">⚔️ Weapons</Tabs.Tab>
-                <Tabs.Tab value="mobs">👾 Mobs</Tabs.Tab>
-                <Tabs.Tab value="affixes">✨ Affixes</Tabs.Tab>
-                <Tabs.Tab value="raw">📄 Raw JSON</Tabs.Tab>
+                <Tabs.Tab value="genre">Genre</Tabs.Tab>
+                <Tabs.Tab value="weapons">Weapons</Tabs.Tab>
+                <Tabs.Tab value="mobs">Mobs</Tabs.Tab>
+                <Tabs.Tab value="affixes">Affixes</Tabs.Tab>
+                <Tabs.Tab value="raw">Raw JSON</Tabs.Tab>
               </Tabs.List>
               
               {/* Genre Tab */}

@@ -1,0 +1,191 @@
+/**
+ * DIALOGUE ACTIONS (Wave 9.7): every option on every NPC does something, or is
+ * not there. This registry is the whole set — the dialogue window refuses an
+ * action that is not here, and a test holds every authored option to this map.
+ *
+ * An effect is one of:
+ *   reply     — the NPC answers; the words are the effect (a balance, a rumor)
+ *   navigate  — the terminal switches screen (bank, missions, holdings)
+ *   open      — a working panel opens (shop, sell, repair, lore, missions)
+ *   deploy    — straight into a world through the one deploy door
+ *   close     — the conversation ends
+ */
+
+import { ItemType, Rarity, UniversalRank } from '../../../types';
+import { usePlayerStore } from '../player/store';
+import { useHubStore } from './store';
+import { useWorldStore } from '../world/store';
+import { ItemFactory } from '../item/ItemFactory';
+import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Treasury } from '../../logic/economy/Treasury';
+import { Ledger } from '../../logic/ledger/Ledger';
+import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
+import { LORE_FRAGMENTS } from '../lore/LoreBible';
+
+export type DialogueEffect =
+  | { kind: 'reply'; text: string }
+  | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
+  | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
+  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' }
+  | { kind: 'deploy' }
+  | { kind: 'close' };
+
+type Handler = (payload?: any) => DialogueEffect;
+
+const bank = () => usePlayerStore.getState().player.bank;
+const stashItems = () => bank().stashTabs[0]?.items || [];
+
+/** Gold out of the player, into the hub treasury, onto the ledger. */
+function charge(amount: number, reason: string, data: Record<string, any> = {}): boolean {
+  const p = usePlayerStore.getState().player;
+  const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
+  if (p.bank.gold < amount) return false;
+  usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - amount } } }));
+  Treasury.credit(hubId, amount).catch(() => undefined);
+  void Ledger.append('GOLD_DELTA', { reason, amount: -amount, treasuryId: hubId, treasuryDelta: amount, ...data });
+  void PlayerPersistence.flush('dialogue');
+  return true;
+}
+
+function identifyStashItems(ids: string[]) {
+  usePlayerStore.setState(s => ({
+    player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+      idx === 0 ? { ...tab, items: tab.items.map(i => ids.includes(i.id) ? { ...i, isIdentified: true } : i) } : tab
+    ) } }
+  }));
+}
+
+/** Repair cost: a quarter of the item's value, scaled by what's missing. */
+export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }): number {
+  const { durability, maxDurability } = item.stats;
+  if (durability === undefined || !maxDurability || durability >= maxDurability) return 0;
+  const missing = (maxDurability - durability) / maxDurability;
+  return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing));
+}
+
+export function repairItem(itemId: string): { ok: boolean; text: string } {
+  const item = stashItems().find(i => i.id === itemId);
+  if (!item) return { ok: false, text: 'That is not in your stash.' };
+  const cost = repairCost(item as any);
+  if (cost === 0) return { ok: false, text: `${item.name} needs no work.` };
+  if (!charge(cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank().gold}G.` };
+  usePlayerStore.setState(s => ({
+    player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+      idx === 0 ? { ...tab, items: tab.items.map(i => i.id === itemId
+        ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability }, name: i.name } : i) } : tab
+    ) } }
+  }));
+  return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
+}
+
+/** The day's rumor: deterministic per hub and day, so the whole bar hears the same one. */
+export function rumorOfTheDay(): string {
+  const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
+  const day = Math.floor(Date.now() / 86_400_000);
+  const rng = Rng.fromKey(`${hubId}:rumor:${day}`);
+  return LORE_FRAGMENTS[rng.int(0, LORE_FRAGMENTS.length)];
+}
+
+export const DIALOGUE_HANDLERS: Record<string, Handler> = {
+  CLOSE: () => ({ kind: 'close' }),
+
+  // --- The Consortium (Marcus Goldweave) ---
+  OPEN_BANK: () => ({ kind: 'navigate', view: 'BANK' }),
+  SHOW_BALANCE: () => ({
+    kind: 'reply',
+    text: `The ledger holds ${bank().gold.toLocaleString()} G under your signature. The bank honors it. The bank always honors it.`
+  }),
+  OPEN_LEDGER: () => ({ kind: 'open', panel: 'ledger' }),
+
+  // --- Truthsight (Sera) ---
+  IDENTIFY_ITEM: (payload) => {
+    const cost = payload?.cost ?? 100;
+    const unknown = stashItems().filter(i => i.isIdentified === false);
+    if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
+    if (bank().gold < cost) return { kind: 'reply', text: `Truth costs ${cost}G. You carry ${bank().gold}G.` };
+    const target = unknown[0];
+    charge(cost, 'IDENTIFY', { itemId: target.id });
+    identifyStashItems([target.id]);
+    const after = stashItems().find(i => i.id === target.id);
+    return { kind: 'reply', text: `The noise resolves. It was ${after?.name ?? target.name} all along.` };
+  },
+  IDENTIFY_ALL: (payload) => {
+    const cost = payload?.cost ?? 500;
+    const unknown = stashItems().filter(i => i.isIdentified === false);
+    if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
+    if (bank().gold < cost) return { kind: 'reply', text: `All of it at once costs ${cost}G. You carry ${bank().gold}G.` };
+    charge(cost, 'IDENTIFY_ALL', { count: unknown.length });
+    identifyStashItems(unknown.map(i => i.id));
+    return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} resolved. Read them before you trust them.` };
+  },
+  OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
+
+  // --- The Conduit ---
+  OPEN_MISSIONS: () => ({ kind: 'open', panel: 'missions' }),
+  QUICK_DEPLOY: () => ({ kind: 'deploy' }),
+
+  // --- Vendors ---
+  OPEN_SHOP: (payload) => ({
+    kind: 'open',
+    panel: 'shop',
+    category: payload?.category === 'armor' ? 'armor' : payload?.category === 'consumables' ? 'consumable' : 'weapon'
+  }),
+  OPEN_SELL: () => ({ kind: 'open', panel: 'sell' }),
+  OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
+
+  // --- The Rusty Anchor (Old Mags) ---
+  BUY_CONSUMABLE: (payload) => {
+    const cost = payload?.cost ?? 10;
+    if (!charge(cost, 'TAVERN', { itemId: payload?.itemId })) {
+      return { kind: 'reply', text: `${cost}G. I water it down, I don't give it away.` };
+    }
+    const rng = Rng.fromKey(`tavern:ale:${Date.now().toString(36)}`);
+    const ale = {
+      ...ItemFactory.createResourceItem({
+        id: 'drink_ale', name: 'Watered Ale', weight: 0.5,
+        dimensions: { width: 1, height: 1 }, tags: ['consumable', 'drink']
+      } as any, rng),
+      type: ItemType.CONSUMABLE,
+      rarity: Rarity.COMMON,
+      rank: UniversalRank.F,
+      value: 5,
+      stats: { health_restore: 15 },
+      description: 'Mostly water. The rest is a rumor of barley. Restores a little health in the field.'
+    };
+    usePlayerStore.setState(s => ({
+      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+        idx === 0 ? { ...tab, items: [...tab.items, ale] } : tab
+      ) } }
+    }));
+    return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
+  },
+  GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
+
+  // --- Honest closures: these halls are not open, and they say so ---
+  GUILD_LORE: () => ({
+    kind: 'reply',
+    text: 'The charter ledger is sealed. The Seed has not countersigned a guild since cycle 40,221, and I do not ask it why. When the seal lifts, you will hear it from me first.'
+  }),
+  AUCTION_LORE: () => ({
+    kind: 'reply',
+    text: 'The block is dark — the last auction cleared before your time and the gavel never came back. The lots across the plaza still trade, if you own a counter.'
+  })
+};
+
+/** Every action a dialogue option may carry. The test holds HUB_NPCS to this set. */
+export const HANDLED_ACTIONS = Object.keys(DIALOGUE_HANDLERS);
+
+export function runDialogueAction(action: string, payload?: any): DialogueEffect {
+  const handler = DIALOGUE_HANDLERS[action];
+  if (!handler) {
+    console.warn(`[DIALOGUE] Unregistered action refused: ${action}`);
+    return { kind: 'reply', text: 'The terminal declines. [REFUSED: unregistered request]' };
+  }
+  return handler(payload);
+}
+
+/** Quick deploy target: the standing simulation, else the first walkable world. */
+export function quickDeployTargetId(): string | null {
+  const worlds = useWorldStore.getState().availableWorlds;
+  return (worlds.find(w => w.isDebug && !w.retired) ?? worlds.find(w => !w.retired))?.id ?? null;
+}

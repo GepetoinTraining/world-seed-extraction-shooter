@@ -367,6 +367,11 @@ export interface IPlayer {
   id: string;
   username: string;
   archetype?: string; // chosen at birth; an avatar's look is derived from it
+  // Wave 9.5 (contract upgrade: additive): kills feed the universal rank.
+  // rankXp is lifetime kill XP; attributePoints are granted on each rank-up
+  // and spent into baseAttributes. The rank itself is derived from rankXp.
+  rankXp?: number;
+  attributePoints?: number;
   bank: IBank;
   currentSession?: IActiveSession;
   guildId?: string;
