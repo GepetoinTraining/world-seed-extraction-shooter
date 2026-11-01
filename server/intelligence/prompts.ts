@@ -198,7 +198,7 @@ export function buildGrowthRequest(asks: IGrowthAsk[], theme: IWorldSummary): ID
   };
 }
 
-/** Each kind of ask a window can carry. A further one (D93's goals and plans) joins here, beside its kind in `ScanPass`. */
+/** Each kind of ask a window can carry. A further one (D93's plans) joins here, beside its kind in `ScanPass`. A goal's roll asks nothing: it is compute, on a sheet, under a player's rules. */
 export const WINDOW_REQUESTS: Record<string, (asks: never[], theme: IWorldSummary) => IDoorRequest> = {
   line: buildLineRequest as never,
   growth: buildGrowthRequest as never
