@@ -322,7 +322,7 @@ describe("line 120: a character's rest takes real time, scaled by what that char
 
   it('a rest takes time for the energy that was spent: quick from the start, and 500 is about 8 hours', () => {
     const trained = base();
-    const hardy = { ...trained, attributes: { ...trained.attributes, endurance: 200 } };
+    const hardy = { ...trained, equipment: { slots: { CHEST: 'long_day' }, frames: {}, items: [{ id: 'long_day', stats: { max_energy: 600 } }] } } as unknown as IPlayer;
     const full = StatSystem.maxEnergy(hardy.attributes, hardy.equipment);
     expect(full).toBeGreaterThan(500);
     const spent = (n: number) => RestSystem.restMs({ ...hardy, energyToday: full - n });

@@ -42,8 +42,10 @@ export const GEAR_KINDS = [
 ] as const;
 export type GearKind = typeof GEAR_KINDS[number];
 
-/** Nothing here restores energy: only a rest does (D51). */
-export const CONSUMABLE_KINDS = ['heal', 'scroll'] as const;
+/** Pedro: a potion can refill energy, and the law keeps those off every shelf. */
+export const CONSUMABLE_KINDS = ['heal', 'scroll', 'energy'] as const;
+/** What a material does for whoever eats it. A plant that refills energy is very, very rare. */
+export const MATERIAL_RESTORES = ['none', 'energy'] as const;
 
 export const STAT_BANDS = ['minor', 'moderate', 'major'] as const;
 
@@ -117,6 +119,8 @@ export interface IThemeMaterial {
   habitat: ThemeBiome[];
   /** Sold on the hub's shelf as well as found. */
   onShelf: boolean;
+  /** Eaten for this. Left out of a pack written before there was such a thing. */
+  restores?: typeof MATERIAL_RESTORES[number];
 }
 
 export interface IThemeStation {
@@ -262,7 +266,7 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   }),
   materials: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), form: oneOf(MATERIAL_FORMS), verb: oneOf(HARVEST_VERBS),
-    weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), habitat: manyOf(BIOMES), onShelf: { type: 'boolean' }
+    weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), habitat: manyOf(BIOMES), onShelf: { type: 'boolean' }, restores: oneOf(MATERIAL_RESTORES)
   }),
   stations: list({ key: str, name: str, blurb: str, tool: strs, material: strs, bill: list({ tag: str, count }) }),
   goods: list({

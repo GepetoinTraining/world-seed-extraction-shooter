@@ -271,8 +271,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       usePlayerStore.setState(s => {
         const session = s.player.currentSession;
         if (!session) return s;
+        // Pedro: magic can refill the day's energy
+        const refilled = receipt.effect === 'rest' ? RestSystem.refillEnergy(s.player, receipt.magnitude).currentSession! : session;
         return { player: { ...s.player, currentSession: {
-          ...session,
+          ...refilled,
           health: receipt.effect === 'heal' ? Math.min(session.maxHealth, session.health + receipt.magnitude) : session.health,
           activeEffects: receipt.status ? StatusClock.add(session.activeEffects, receipt.status, now) : session.activeEffects
         } } };
@@ -344,7 +346,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
     }
     // Line 77: keyed by the session's own count of shots, so a run replays the same
-    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes);
+    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon));
 
     if (mode === 'MELEE') {
       // Swing: a short arc resolved by CombatSystem

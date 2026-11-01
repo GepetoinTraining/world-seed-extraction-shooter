@@ -234,7 +234,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         attributePoints: 0,
         rank: UniversalRank.F,
         levelXp: 0,
-        levelsBanked: 0,
         materialMastery: {},
         floatMemory: [null, null, null]
       }
@@ -999,7 +998,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         }
       };
     });
-    SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, health });
+    const refill = item.stats?.energy_restore || 0;
+    if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
+    SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, refill, health });
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
     feed(`${item.name}, straight from the belt: ${restore >= 0 ? '+' : ''}${restore} health. The pack never opened.`, restore >= 0 ? 'signal' : 'loss');
     return { ok: true };
@@ -1620,8 +1621,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       } }
     }) : s);
     get().recalcWeight();
-    SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, health });
-    feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
+    // Pedro: a very rare potion or plant can refill the day's energy, as a rest does
+    const refill = item.stats?.energy_restore || 0;
+    if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
+    SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, refill, health });
+    if (refill > 0 && restore === 0) feed(`${item.name}: +${refill} energy.`, 'proof');
+    else feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
   },
 
   /** Mark a stash item to go along on the next session. */
@@ -1991,8 +1996,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // D84: the road is long; knowing how to learn is what shortens it
       skill.currentXp += Math.round(amount * StatSystem.learnRate(player.attributes));
       
-      while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level)) {
-        skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level);
+      while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level, skill.rank)) {
+        skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level, skill.rank);
         skill.level++;
       }
 

@@ -33,6 +33,7 @@ Law, and a pack that breaks it is refused whole:
 - Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart". A downside is honest: give good things a cost.
 - Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
 - Gear kinds: ${GEAR_KINDS.join(', ')}.
+- Energy is a character's day. An ability with effect "rest" refills it for the caster. A consumable of kind "energy" refills it and is never on a shelf. A material with restores "energy" is a plant eaten for it, gathered by hand, worth rare, on no shelf, and found almost nowhere; every other material has restores "none". These are very rare: most worlds hold one or two at most, and none is required.
 
 Make the world coherent. Creatures, materials, weapons, affixes and lore should all sound like one place. A world of a dozen creatures and two dozen pieces of gear is a good start; more is welcome. Elites and bosses are tagged "elite" or "boss".
 

@@ -70,9 +70,12 @@ export const HandsPanel: React.FC = () => {
         {sheet.earned.map(row => (
           <div key={row.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
             <div className="ws-row" style={{ padding: 0 }}>
-              <span className="ws-bright">{row.name}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <RankMark rank={row.rank} scale={1} />
+                <span className="ws-bright">{row.name}</span>
+              </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="ws-dim ws-small">{row.rungName}</span>
+                <span className="ws-dim ws-small">LV {row.level} · {row.rungName}</span>
                 <RungNotches rung={row.rung} into={row.into} />
               </span>
             </div>
@@ -275,8 +278,8 @@ const SkillsTab: React.FC = () => {
       {filtered.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 10 }}>No matching engrams. Skills are born from actions, not menus.</div>}
       <div className="ws-list">
         {filtered.map(([key, skill]) => {
-          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level);
-          const rank = ProgressionSystem.getRankFromLevel(skill.level);
+          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level, skill.rank);
+          const rank = ProgressionSystem.skillRankOf(skill);
           return (
             <div key={key} className="ws-row">
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>

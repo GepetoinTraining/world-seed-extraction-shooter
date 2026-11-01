@@ -114,6 +114,9 @@ class TileField {
   }
 }
 
+/** Pedro: "very very rare". One quadrant in two thousand: about one a sector and a half. */
+export const RARE_FIND_CHANCE = 1 / 2000;
+
 export class WorldGenerator {
 
   /** Opens a world. Only sector summaries are worked out; chunks are built when reached. */
@@ -372,6 +375,11 @@ export class WorldGenerator {
     return chunk;
   }
 
+  /** Does this quadrant hold a very rare find, if the world has one for this ground? */
+  static rareFindAt(seed: string, qx: number, qy: number): boolean {
+    return Rng.fromKey(`${seed}:rare:v1:${qx},${qy}`).next() < RARE_FIND_CHANCE;
+  }
+
   private static fillQuadrant(
     chunk: IChunk, seed: string, qx: number, qy: number, biome: BiomeType,
     rank: UniversalRank, rarity: Rarity, ctx: IGenerationContext, exits: { x: number; y: number }[]
@@ -458,6 +466,13 @@ export class WorldGenerator {
     for (let i = 0; i < scatter && pool.length > 0; i++) {
       const [tx, ty] = tile();
       resource(`r${i}`, rng.pick(pool), tx, ty);
+    }
+    // A plant that refills energy stands outside that table, on a roll of its own, so a
+    // pack without one generates exactly what it always did.
+    const rare = ctx.resourceDefinitions.filter((r: any) => r.rareFind && r.habitat?.includes(biome));
+    if (rare.length > 0 && this.rareFindAt(seed, qx, qy)) {
+      const own = Rng.fromKey(`${seed}:rare:pick:${qx},${qy}`);
+      resource('rare', own.pick(rare), x0 + own.int(0, QUADRANT_TILES), y0 + own.int(0, QUADRANT_TILES));
     }
 
     // People, rarely, with a rolled sheet.

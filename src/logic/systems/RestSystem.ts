@@ -202,6 +202,19 @@ export class RestSystem {
     return { ...player, rest: undefined };
   }
 
+  /**
+   * Pedro: "magic should be able to refill it, as should potions and plants (very very
+   * rare)". The one door for all of them. It lifts what is left of today toward the top,
+   * no further, and it is not a rest: the day does not turn, and nothing queued settles.
+   */
+  static refillEnergy(player: IPlayer, amount: number): IPlayer {
+    const full = StatSystem.maxEnergyOf(player);
+    const session = player.currentSession;
+    const left = session?.energy ?? player.energyToday ?? full;
+    const energy = Math.max(left, Math.min(full, left + Math.max(0, amount)));
+    return session ? { ...player, currentSession: { ...session, energy } } : { ...player, energyToday: energy };
+  }
+
   static restoreEnergy(player: IPlayer): IPlayer {
     const full = StatSystem.maxEnergyOf(player);
     return {

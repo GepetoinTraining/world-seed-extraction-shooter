@@ -5,6 +5,9 @@
  *       different spreads play differently
  *   128 (the level half) gaining a skill takes about 2.5 times as long as it did,
  *       levels and rank are separate, levels reset at each rank, and stats stay
+ * And Pedro on seeing the first build: energy is an initial value, a fifth of
+ * endurance and items, levels give none, and magic, potions and very rare plants
+ * refill it. A rarer skill levels slowly, with a large impact per level.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -30,9 +33,10 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, Rarity, UniversalRank } from '../types';
+import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, ItemType, Rarity, UniversalRank } from '../types';
 import {
-  LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, SKILL_TIME_FACTOR, XP_CONSTANTS
+  LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS,
+  SKILL_IMPACT_PER_LEVEL, SKILL_RANK_IMPACT_GROWTH, SKILL_RANK_TIME_GROWTH, SKILL_TIME_FACTOR, XP_CONSTANTS
 } from '../src/entities/player/systems/ProgressionSystem';
 import { DEFAULT_ATTRIBUTES } from '../src/entities/player/types';
 import { ARCHETYPES, usePlayerStore } from '../src/entities/player/store';
@@ -41,13 +45,21 @@ import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
 import { ICombatEvent } from '../src/entities/combat/CombatSystems';
 import { CombatMath } from '../src/entities/combat/CombatMath';
-import { ATTRIBUTE_READERS, StatSystem } from '../src/logic/systems/StatSystem';
+import { ATTRIBUTE_READERS, BASE_ENERGY, ENERGY_PER_ENDURANCE, StatSystem } from '../src/logic/systems/StatSystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
 import { MASTERY_RUNGS, RUNG_XP, WebSystem } from '../src/logic/systems/WebSystem';
 import { repairCost } from '../src/entities/hub/dialogue';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { EffectSystem, IEffectAbility } from '../src/logic/systems/EffectSystem';
+import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
+import { compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
+import { BIOMES, IThemeBody } from '../src/logic/theme/ThemeTypes';
+import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
+import { BIOME_RESOURCES } from '../src/entities/item/data/resourceDefinitions';
+import { RARE_FIND_CHANCE, WorldGenerator } from '../src/entities/world/WorldGenerator';
 
 const CERT = (uid: string, name = 'TESTER') => ({
   metadata: { uid, displayName: name, createdAt: 0 },
@@ -81,7 +93,6 @@ describe('line 128: levels come from experience, rank does not', () => {
   it('a new character stands at rank F, level 1, with nothing banked', () => {
     expect(ProgressionSystem.rankOf(player())).toBe(UniversalRank.F);
     expect(ProgressionSystem.levelOf(player())).toBe(1);
-    expect(ProgressionSystem.levelsEarned(player())).toBe(0);
   });
 
   it('no amount of experience moves the rank', () => {
@@ -173,7 +184,6 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
     const before = player();
     const energy = StatSystem.maxEnergyOf(before);
     const health = StatSystem.maxHealth(before.attributes, before.equipment);
-    expect(energy).toBeGreaterThan(StatSystem.maxEnergy(before.attributes, before.equipment));
     store().grantRank();
     const after = player();
     expect(after.baseAttributes).toEqual(before.baseAttributes);
@@ -182,7 +192,6 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
     expect(after.rankXp).toBe(before.rankXp);
     expect(StatSystem.maxEnergyOf(after)).toBe(energy);
     expect(StatSystem.maxHealth(after.attributes, after.equipment)).toBe(health);
-    expect(ProgressionSystem.levelsEarned(after)).toBe(ProgressionSystem.levelsEarned(before));
   });
 
   it('a grant can jump, never falls, and stops at the top', () => {
@@ -205,7 +214,7 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
 
 describe('line 128: an existing character keeps what its old experience earned, once', () => {
   const old = (rankXp: number, more: Partial<IPlayer> = {}): IPlayer => ({
-    ...player(), rank: undefined, levelXp: undefined, levelsBanked: undefined, rankXp, attributePoints: 2, ...more
+    ...player(), rank: undefined, levelXp: undefined, rankXp, attributePoints: 2, ...more
   });
 
   it('the rank its experience earned becomes a stored rank', () => {
@@ -230,14 +239,6 @@ describe('line 128: an existing character keeps what its old experience earned, 
     expect(moved.rankXp).toBe(RANK_XP_THRESHOLDS[UniversalRank.E] + spare);
   });
 
-  it('the ranks it walked count toward energy, as a new character\'s would', () => {
-    const start = ProgressionSystem.migrate(old(0));
-    const veteran = ProgressionSystem.migrate(old(RANK_XP_THRESHOLDS[UniversalRank.C]));
-    expect(ProgressionSystem.levelsEarned(start)).toBe(0);
-    expect(ProgressionSystem.levelsEarned(veteran)).toBeGreaterThan(0);
-    expect(StatSystem.maxEnergyOf(veteran)).toBeGreaterThan(StatSystem.maxEnergyOf(start));
-  });
-
   it('an unmigrated character reading its rank gets what it earned, and feeding it fixes that rank first', () => {
     const raw = old(1_500);
     expect(ProgressionSystem.rankOf(raw)).toBe(UniversalRank.E);
@@ -257,6 +258,15 @@ describe('line 128: an existing character keeps what its old experience earned, 
     expect(WebSystem.masteryOf(moved.bank.universalSkills.skill_y).rung).toBe(1);
     expect(moved.skillProgress!.skill_z.weight).toBe(8 * SKILL_TIME_FACTOR);
     expect(WebSystem.emergenceFill(moved.skillProgress!.skill_z)).toBeCloseTo(8 / 10);
+  });
+
+  it('a rare skill keeps its level and rung too, against its own higher costs', () => {
+    const rare = { id: 'skill_r', name: 'r', level: 3, currentXp: 40, tags: [], rank: 7 } as any;
+    const bank = { ...player().bank, universalSkills: { skill_r: rare } };
+    const moved = ProgressionSystem.migrate(old(0, { bank })).bank.universalSkills.skill_r;
+    expect(moved.level).toBe(3);
+    // Level 3 stood at the old top rung on the old table, whatever the rank
+    expect(WebSystem.masteryOf(moved).rung).toBe(3);
   });
 
   it('a character born after this is never scaled', () => {
@@ -343,46 +353,255 @@ describe('line 128: gaining a skill takes about 2.5 times as long', () => {
 // Energy: tied to levels and a stat, and rest reads it (the clock leg, D79)
 // =============================================================================
 
-describe('energy grows with level and a stat', () => {
-  it('a new character reads what the game read before', () => {
-    expect(StatSystem.maxEnergy(spread())).toBe(50 + 5);
-    expect(StatSystem.maxEnergy(spread({ endurance: 4 }))).toBe(50 + 20);
+describe('energy: an initial value, a fifth of endurance, and items', () => {
+  const worn = (stats: Record<string, number>): IEquipmentState =>
+    ({ slots: { CHEST: 'piece' }, frames: {}, items: [{ id: 'piece', stats }] }) as unknown as IEquipmentState;
+
+  it('it is the initial value and a fifth of endurance', () => {
+    expect(ENERGY_PER_ENDURANCE).toBe(0.2);
+    expect(StatSystem.maxEnergy(spread())).toBeCloseTo(BASE_ENERGY + 0.2);
+    expect(StatSystem.maxEnergy(spread({ endurance: 30 }))).toBeCloseTo(BASE_ENERGY + 6);
   });
 
-  it('levels alone raise it, endurance alone raises it, and together they raise it more than either', () => {
-    const base = StatSystem.maxEnergy(spread());
-    const leveled = StatSystem.maxEnergy(spread(), undefined, 30);
-    const trained = StatSystem.maxEnergy(spread({ endurance: 30 }));
-    const both = StatSystem.maxEnergy(spread({ endurance: 30 }), undefined, 30);
-    expect(leveled).toBeGreaterThan(base);
-    expect(trained).toBeGreaterThan(base);
-    expect(both - base).toBeGreaterThan((leveled - base) + (trained - base));
+  it('what is worn adds to it', () => {
+    expect(StatSystem.maxEnergy(spread(), worn({ max_energy: 100 }))).toBeCloseTo(BASE_ENERGY + 0.2 + 100);
   });
 
-  it('a character trained for energy holds a long run, and rests the long rest it spent', () => {
-    const trained = { ...player(), attributes: spread({ endurance: 30 }), levelsBanked: 30 };
-    const full = StatSystem.maxEnergyOf(trained);
-    expect(full).toBeGreaterThanOrEqual(500);
-    const spent = { ...trained, energyToday: full - 500 };
-    const hours = RestSystem.restMs(spent) / 3_600_000;
-    expect(hours).toBeGreaterThan(7.5);
-    expect(hours).toBeLessThan(8.5);
-    // The same level and no training is a short day: a different character
-    const unfocused = { ...trained, attributes: spread() };
-    expect(StatSystem.maxEnergyOf(unfocused)).toBeLessThan(full / 3);
+  it('levels give none of it, at any rank', () => {
+    const before = StatSystem.maxEnergyOf(player());
+    store().applyKillXp(5_000_000);
+    expect(ProgressionSystem.levelOf(player())).toBeGreaterThan(10);
+    expect(StatSystem.maxEnergyOf(player())).toBe(before);
+    store().grantRank();
+    expect(StatSystem.maxEnergyOf(player())).toBe(before);
   });
 
-  it('every reader of a character\'s energy goes through its levels', () => {
-    const walk = (dir: string, out: string[] = []): string[] => {
-      for (const name of readdirSync(dir)) {
-        const path = join(dir, name);
-        if (statSync(path).isDirectory()) walk(path, out);
-        else if (/\.tsx?$/.test(name)) out.push(path);
+  it('a long day is still a long rest: 500 spent from what is worn is about 8 hours', () => {
+    const long = { ...player(), equipment: worn({ max_energy: 600 }) };
+    const full = StatSystem.maxEnergyOf(long);
+    expect(full).toBeGreaterThan(500);
+    const hours = RestSystem.restMs({ ...long, energyToday: full - 500 }) / 3_600_000;
+    expect(hours).toBeCloseTo(8);
+  });
+});
+
+describe('energy: magic, potions and very rare plants refill it', () => {
+  const drop = () => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { sessionId: 's', layerId: 'l', inventory: [], inventoryLayout: {}, health: 50, maxHealth: 100, energy: 10, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } as any } }));
+  };
+  const tonic = (id: string, stats: Record<string, number>): IItem =>
+    ({ id, name: 'Day Moss', type: ItemType.CONSUMABLE, stats, tags: ['consumable'], isIdentified: true, weight: 0.2, dimensions: { width: 1, height: 1 }, affixes: [] }) as unknown as IItem;
+  const clone = (b: IThemeBody): IThemeBody => JSON.parse(JSON.stringify(b));
+  /** The first theme with a plant that refills energy on every kind of ground. */
+  const withPlant = (over: Record<string, unknown> = {}): IThemeBody => {
+    const b = clone(FIRST_THEME);
+    const habitat = [...new Set(b.materials.flatMap(m => m.habitat))];
+    b.materials.push({ ...b.materials[0], key: 'day_moss', name: 'Day Moss', habitat, verb: 'hands', worth: 'rare', onShelf: false, restores: 'energy', ...over } as never);
+    return b;
+  };
+
+  it('the door lifts what is left, in the field and at home, and stops at the top', () => {
+    drop();
+    const inField = RestSystem.refillEnergy(player(), 20);
+    expect(inField.currentSession!.energy).toBe(30);
+    expect(RestSystem.refillEnergy(player(), 1_000_000).currentSession!.energy).toBe(StatSystem.maxEnergyOf(player()));
+    const home = { ...player(), currentSession: undefined, energyToday: 5 };
+    expect(RestSystem.refillEnergy(home, 20).energyToday).toBe(25);
+  });
+
+  it('it is not a rest: the day does not turn', () => {
+    drop();
+    const before = player().dayCount;
+    expect(RestSystem.refillEnergy(player(), 20).dayCount).toBe(before);
+  });
+
+  it('what somebody already holds over the top is not taken', () => {
+    const over = { ...player(), currentSession: undefined, energyToday: 500 };
+    expect(RestSystem.refillEnergy(over, 20).energyToday).toBe(500);
+  });
+
+  it('a potion refills it from the pack, and the potion is gone', () => {
+    drop();
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, inventory: [tonic('moss', { energy_restore: 25 })] } } }));
+    store().consumeItem('moss');
+    const s = player().currentSession!;
+    expect(s.energy).toBe(35);
+    expect(s.health).toBe(50);
+    expect(s.inventory).toEqual([]);
+  });
+
+  it('energy_restore has a reader, so a batch may roll it', () => {
+    expect(StatSystem.isRead('energy_restore')).toBe(true);
+  });
+
+  it('a working with the rest effect lands on the caster and the field reads it as a refill', () => {
+    const ability = { id: 'ab', effect: 'rest', delivery: 'self', cost: 'low', elements: ['debt'] } as unknown as IEffectAbility;
+    const receipt = EffectSystem.resolve(ability, { rank: UniversalRank.F }, 'k');
+    expect(EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)).toBe(true);
+    expect(receipt.magnitude).toBeGreaterThan(0);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/receipt\.effect === 'rest' \? RestSystem\.refillEnergy\(/);
+  });
+
+  it('the law keeps a refill potion off every shelf', () => {
+    const b = clone(FIRST_THEME);
+    b.consumables.push({ ...b.consumables[0], key: 'long_draught', kind: 'energy', casts: '', onShelf: true });
+    expect(ContentRegistry.judge(b).ok).toBe(false);
+    b.consumables[b.consumables.length - 1].onShelf = false;
+    expect(ContentRegistry.judge(b).ok).toBe(true);
+  });
+
+  it('the law asks a refill plant to be gathered by hand, rare, and on no shelf', () => {
+    expect(ContentRegistry.judge(withPlant()).ok).toBe(true);
+    expect(ContentRegistry.judge(withPlant({ verb: 'chop' })).ok).toBe(false);
+    expect(ContentRegistry.judge(withPlant({ worth: 'common' })).ok).toBe(false);
+    expect(ContentRegistry.judge(withPlant({ onShelf: true })).ok).toBe(false);
+    expect(ContentRegistry.judge(withPlant({ restores: 'gold' })).ok).toBe(false);
+  });
+
+  it('a refill plant is something to eat, and it stands outside the biome table', () => {
+    const compiled = compileTheme(sealTheme(withPlant(), 'test', 0));
+    const def = Object.values(compiled.resources).find(r => r.name === 'Day Moss')!;
+    expect(def.type).toBe(ItemType.CONSUMABLE);
+    expect(def.stats!.energy_restore).toBeGreaterThan(0);
+    expect(def.rareFind).toBe(true);
+    expect(compiled.shelf.materials).not.toContain(def.id);
+    const pack = sealTheme(withPlant(), 'test', 0);
+    expect(ContentRegistry.install(pack)).toEqual({ ok: true });
+    expect(Object.values(BIOME_RESOURCES).flat()).not.toContain(def.id);
+  });
+
+  it('it is very, very rare: about one quadrant in two thousand', () => {
+    expect(RARE_FIND_CHANCE).toBeLessThanOrEqual(1 / 2000);
+    let found = 0;
+    const n = 200_000;
+    for (let i = 0; i < n; i++) if (WorldGenerator.rareFindAt('rarity', i % 500, Math.floor(i / 500))) found++;
+    expect(found / n).toBeGreaterThan(RARE_FIND_CHANCE / 2);
+    expect(found / n).toBeLessThan(RARE_FIND_CHANCE * 2);
+  });
+
+  it('it grows only where the roll says, and a pack without one builds the same chunk as before', () => {
+    const SEED = 'rarity';
+    let cell: { cx: number; cy: number } | null = null;
+    for (let cx = 0; cx < 400 && !cell; cx++) {
+      for (let cy = 0; cy < 400 && !cell; cy++) {
+        for (let q = 0; q < 16; q++) {
+          if (WorldGenerator.rareFindAt(SEED, cx * 4 + (q % 4), cy * 4 + Math.floor(q / 4))) { cell = { cx, cy }; break; }
+        }
       }
-      return out;
-    };
-    const bare = walk('src').filter(path => !path.replace(/\\/g, '/').endsWith('logic/systems/StatSystem.ts') && /maxEnergy\(/.test(readFileSync(path, 'utf8')));
-    expect(bare).toEqual([]);
+    }
+    expect(cell).not.toBeNull();
+    const plant = { id: 'res_day_moss', name: 'Day Moss', rareFind: true, habitat: [...BIOMES], uses: 1 };
+    const without = { mobDefinitions: [], resourceDefinitions: [] } as any;
+    const carrying = { mobDefinitions: [], resourceDefinitions: [plant] } as any;
+    const a = WorldGenerator.buildChunk(SEED, [], cell!.cx, cell!.cy, without);
+    const b = WorldGenerator.buildChunk(SEED, [], cell!.cx, cell!.cy, carrying);
+    expect(a.entities.some(e => e.definitionId === plant.id)).toBe(false);
+    expect(b.entities.filter(e => e.definitionId === plant.id).length).toBeGreaterThan(0);
+    expect(b.entities.filter(e => e.definitionId !== plant.id)).toEqual(a.entities);
+  });
+});
+
+describe('a rarer skill levels slowly, and each level does more', () => {
+  const F = 0;
+  const SS = RANK_ORDER.indexOf(UniversalRank.SS);
+  const skill = (rank: number, level = 1, currentXp = 0) =>
+    ({ id: 'skill_blade+melee', name: 'x', level, currentXp, tags: ['blade', 'melee'], rank, scalingAttribute: 'dexterity' }) as any;
+
+  it('a level at rank SS asks far more than one at rank F, in step with the rank', () => {
+    const ratio = ProgressionSystem.getXpToNextLevel(3, SS) / ProgressionSystem.getXpToNextLevel(3, F);
+    expect(ratio).toBeCloseTo(Math.pow(SKILL_RANK_TIME_GROWTH, SS), 1);
+    expect(ratio).toBeGreaterThan(10);
+    for (let rank = 1; rank < RANK_ORDER.length; rank++) {
+      expect(ProgressionSystem.getXpToNextLevel(1, rank)).toBeGreaterThan(ProgressionSystem.getXpToNextLevel(1, rank - 1));
+    }
+  });
+
+  it('rank F still reads the 2.5 times road and nothing more', () => {
+    expect(ProgressionSystem.getXpToNextLevel(4, F)).toBe(ProgressionSystem.getXpToNextLevel(4));
+    expect(WebSystem.rungXp(2, F)).toBe(RUNG_XP[2]);
+  });
+
+  it('rungs ask more of a rarer skill in the same step, so a rung means the same climb', () => {
+    expect(WebSystem.rungXp(1, SS)).toBeCloseTo(RUNG_XP[1] * Math.pow(SKILL_RANK_TIME_GROWTH, SS));
+    expect(WebSystem.masteryOf(skill(SS, 1, 0)).rung).toBe(0);
+    expect(WebSystem.masteryOf(WebSystem.withCumulativeXp(skill(SS), WebSystem.rungXp(1, SS))).rung).toBe(1);
+    expect(WebSystem.masteryOf(WebSystem.withCumulativeXp(skill(SS), WebSystem.rungXp(1, SS) - 1)).rung).toBe(0);
+  });
+
+  it('the same work takes a rare skill less far', () => {
+    const work = 5_000;
+    expect(WebSystem.withCumulativeXp(skill(SS), work).level).toBeLessThan(WebSystem.withCumulativeXp(skill(F), work).level);
+  });
+
+  it('a first level does nothing yet, and each level after does more the rarer the skill', () => {
+    expect(WebSystem.skillPower(skill(SS, 1))).toBe(0);
+    expect(WebSystem.skillPower(skill(F, 2))).toBeCloseTo(SKILL_IMPACT_PER_LEVEL);
+    expect(WebSystem.skillPower(skill(SS, 2))).toBeCloseTo(SKILL_IMPACT_PER_LEVEL * Math.pow(SKILL_RANK_IMPACT_GROWTH, SS));
+    expect(WebSystem.skillPower(skill(SS, 2)) / WebSystem.skillPower(skill(F, 2))).toBeGreaterThan(10);
+  });
+
+  it('for the same work, the rare skill ends up stronger', () => {
+    const work = 20_000;
+    const rare = WebSystem.withCumulativeXp(skill(SS), work);
+    const common = WebSystem.withCumulativeXp(skill(F), work);
+    expect(rare.level).toBeGreaterThan(1);
+    expect(WebSystem.skillPower(rare)).toBeGreaterThan(WebSystem.skillPower(common));
+  });
+
+  it('a level makes the work cheaper and quicker', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    const holding = (s: any) => ({ ...player(), bank: { ...player().bank, universalSkills: { [pair.id]: { ...s, id: pair.id, tags: pair.tags } } } });
+    const fresh = holding(skill(SS, 1));
+    const risen = holding(skill(SS, 3));
+    expect(WebSystem.energyFor(risen, pair, 20).cost).toBeLessThan(WebSystem.energyFor(fresh, pair, 20).cost);
+    expect(WebSystem.clockFactor(risen, pair)).toBeLessThan(WebSystem.clockFactor(fresh, pair));
+    expect(WebSystem.energyFor(holding(skill(SS, 500)), pair, 20).cost).toBeGreaterThanOrEqual(1);
+    expect(WebSystem.clockFactor(holding(skill(SS, 500)), pair)).toBeGreaterThan(0);
+  });
+
+  it('a skill the weapon answers to lands harder, by its rank and level', () => {
+    const sword = { id: 'sword', stats: { attack_speed: 1 }, itemPower: 100, tags: ['blade', 'melee', 'one_hand'] } as unknown as IItem;
+    const holding = (s: any) => ({ ...player(), bank: { ...player().bank, universalSkills: { [s.id]: s } } });
+    expect(WebSystem.handPower(holding(skill(F, 1)), sword)).toBe(0);
+    const common = WebSystem.handPower(holding(skill(F, 3)), sword);
+    const rare = WebSystem.handPower(holding(skill(SS, 3)), sword);
+    expect(rare).toBeGreaterThan(common);
+    expect(common).toBeGreaterThan(0);
+    expect(WebSystem.handPower(holding(skill(SS, 3)), rifle)).toBe(0);
+    expect(WebSystem.handPower(holding(skill(SS, 3)), undefined)).toBe(0);
+    const key = 'swing';
+    expect(CombatMath.outgoing(sword, undefined, key, undefined, rare).damage).toBeGreaterThan(CombatMath.outgoing(sword, undefined, key).damage);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/WebSystem\.handPower\(st\.player, weapon\)/);
+  });
+
+  it('held work climbs by the skill\'s own rank', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    const give = (rank: number) => usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { [pair.id]: { ...WebSystem.freshSkill(pair.id, pair.tags, rank), currentXp: 0 } } } } }));
+    const need = ProgressionSystem.getXpToNextLevel(1, F);
+    give(F);
+    store().gainSkillXp(pair.id, need, pair.tags);
+    expect(player().bank.universalSkills[pair.id].level).toBe(2);
+    give(SS);
+    store().gainSkillXp(pair.id, need, pair.tags);
+    expect(player().bank.universalSkills[pair.id].level).toBe(1);
+  });
+
+  it('a person in a world keeps the rung their sheet rolled, whatever the rank', () => {
+    expect(readFileSync('src/logic/systems/NpcSheet.ts', 'utf8')).toMatch(/WebSystem\.rungXp\(rung, rank\)/);
+    expect(typeof NpcSheet).toBe('function');
+  });
+
+  it('the sheet of what the hands know says each skill\'s rank and level', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    const sheet = WebSystem.earnedSheet({ ...player(), bank: { ...player().bank, universalSkills: { [pair.id]: { ...WebSystem.freshSkill(pair.id, pair.tags, SS), level: 3 } } } });
+    expect(sheet.earned[0].rank).toBe(UniversalRank.SS);
+    expect(sheet.earned[0].level).toBe(3);
+  });
+
+  it('the screens show a skill\'s own rank, not one worked out from its level', () => {
+    for (const path of ['src/components/CharacterSheet.tsx', 'src/components/PlayerHub.tsx']) {
+      expect(readFileSync(path, 'utf8'), path).toMatch(/ProgressionSystem\.skillRankOf\(skill\)/);
+    }
   });
 });
 

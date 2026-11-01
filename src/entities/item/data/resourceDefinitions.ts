@@ -29,6 +29,8 @@ export type ResourceDef = Partial<IItem> & {
   habitat?: string[];
   /** D53: the theme it came from. */
   themeId?: string;
+  /** Very, very rare: it stands outside the biome's table, on a roll of its own (WorldGenerator.rareFindAt). */
+  rareFind?: boolean;
   /** D27: a station a web batch added: what it asks of a room, and what it opens. */
   stationMinArea?: number;
   stationFunction?: 'WORKSHOP' | 'VENDOR' | 'SCRIBE';

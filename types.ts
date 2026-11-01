@@ -818,8 +818,6 @@ export interface IPlayer {
   rank?: UniversalRank;
   /** D83: experience since the last rank. A grant sets it back to zero; the level reads from it. */
   levelXp?: number;
-  /** D83: levels held at earlier ranks. Whatever grows with level stays grown through a reset. */
-  levelsBanked?: number;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
   energyToday?: number;
   dayCount?: number;

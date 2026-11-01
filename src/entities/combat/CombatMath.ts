@@ -47,11 +47,14 @@ export class CombatMath {
     return Math.max(1, base + StatSystem.total(equipment, 'damage'));
   }
 
-  /** One swing or shot, keyed: what it does, with what is worn and who holds it. The same key answers the same. */
-  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes): IOutgoingHit {
+  /**
+   * One swing or shot, keyed: what it does, with what is worn and who holds it. The same
+   * key answers the same. skillPower is what the hand's own skill adds (WebSystem.handPower).
+   */
+  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes, skillPower: number = 0): IOutgoingHit {
     const rng = Rng.fromKey(key);
     const bare = this.weaponDamage(weapon, equipment);
-    const base = this.isMelee(weapon) ? Math.round(bare * StatSystem.meleeScale(attributes)) : bare;
+    const base = Math.round((this.isMelee(weapon) ? bare * StatSystem.meleeScale(attributes) : bare) * (1 + skillPower));
     const poison = StatSystem.total(equipment, 'poison_damage');
     if (rng.next() < StatSystem.critChance(equipment, attributes)) {
       const multiplier = BASE_CRIT_MULTIPLIER + StatSystem.total(equipment, 'crit_multiplier');
