@@ -42,9 +42,9 @@ export const GOLDEN_VECTORS: IGoldenVector[] = [
  * has no roster.
  */
 export const FIRST_THEME_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 3383833323 },
-  { seed: 'golden-beta', size: 32, hash: 2720242315 },
-  { seed: 'dev-sandbox-v4', size: 32, hash: 2133354407 }
+  { seed: 'golden-alpha', size: 16, hash: 1829812480 },
+  { seed: 'golden-beta', size: 32, hash: 2697284127 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 3807083941 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */

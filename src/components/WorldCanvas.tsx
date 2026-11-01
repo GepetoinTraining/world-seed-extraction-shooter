@@ -1322,15 +1322,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const entity = hit ? near.find(n => n.id === hit) : undefined;
     if (!entity) return;
     const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_SIZE;
-    // D114: a monster answers only if it has reached speech. Only this click reaches it, and it offers only the bargain.
+    // D114: a monster answers only if it has reached speech, and only this click reaches it. D65: a snare in the pack is offered here too.
     if (entity.type === EntityType.MOB) {
-      const bargain = InteractionEngine.getAvailableInteractions(st.player, entity, dist).filter(o => o.id.startsWith('int_bargain_'));
-      if (bargain.length > 0) openMenu(entity, bargain, e.clientX, e.clientY);
+      const offered = InteractionEngine.getAvailableInteractions(st.player, entity, dist).filter(o => o.id.startsWith('int_bargain_') || o.id.startsWith('int_snare_'));
+      if (offered.length > 0) openMenu(entity, offered, e.clientX, e.clientY);
       else if (MonsterMind.speaks(MOB_DEFINITIONS[entity.definitionId])) feed('It cannot hear you from there. Walk closer.', 'plain');
       return;
     }
     const options = InteractionEngine.getAvailableInteractions(st.player, entity, dist);
-    if (entity.type === EntityType.MOB && options.length === 0) return;
     if (options.length > 0) openMenu(entity, options, e.clientX, e.clientY);
     else explainNothing(entity.position.x, entity.position.y);
   };

@@ -30,7 +30,7 @@ export interface ITechDoors {
   /** Someone at home: what they are and what they want. Null: nothing anyone could give them. */
   workshopOffer: (residentId: string) => IWorkshopOffer | null;
   /** C2's door: a person says which building their goal needs. */
-  askForBuilding: (residentId: string, stationId: string, words: string) => Promise<RoomVerdict>;
+  askWorkshop: (residentId: string, stationId: string, words: string) => Promise<RoomVerdict>;
   /** Give someone a workshop on ground you hold: their own station, or a machine for their whole road. */
   provideWorkshop: (residentId: string, lotId: string, mode: WorkshopMode, stationId?: string) => Promise<RoomVerdict>;
   /** D8's pooled bill, from anyone. When it is met, the clock starts. */
@@ -55,6 +55,8 @@ interface IStoreSide {
   dismembered: any;
   hubDoc: () => any;
   saveHubState: () => Promise<void>;
+  openBuildingAsks: () => { id: string; askerId: string; building: string }[];
+  meetBuildingAsk: (askId: string, metBy: string) => Promise<void>;
 }
 
 interface IStoreHelpers {
@@ -97,7 +99,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       return profession ? offerFor(resident.id, profession, get().tech, offerGround(), standingNow()) : null;
     },
 
-    askForBuilding: async (residentId, stationId, words) => {
+    askWorkshop: async (residentId, stationId, words) => {
       if (!residentOf(residentId)) return { ok: false, reason: 'Nobody by that name lives here.' };
       if (!hubStations(get().tech).some((s: IWebStation) => s.id === stationId)) return { ok: false, reason: 'Nobody here could raise that.' };
       const tech = get().tech;
@@ -229,6 +231,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
         for (const shop of due) {
           const resident = residentOf(shop.residentId);
           await Ledger.append('GUILD', { kind: 'WORKSHOP_STANDS', workshopId: shop.id, residentId: shop.residentId, lotId: shop.lotId, mode: shop.mode });
+          for (const ask of get().openBuildingAsks()) if (ask.askerId === shop.residentId && shop.stations.includes(ask.building)) await get().meetBuildingAsk(ask.id, shop.id);
           useFeed.getState().push(`${resident?.name ?? 'Someone'} has their workshop.`, 'proof');
         }
       }

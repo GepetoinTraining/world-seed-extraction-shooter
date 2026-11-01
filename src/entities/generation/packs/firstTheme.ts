@@ -182,5 +182,12 @@ export const FIRST_THEME: IThemeBody = {
     { key: 'escrow_opal', name: 'Escrow Opal', blurb: 'Released to no one, and worth the same in every town that has heard of opals.', tags: ['gem'], rank: 'D', weight: 'light', worth: 'rare', foundIn: ['OVERGROWTH', 'WASTELAND', 'CYBER_CITY'] },
     { key: 'founders_portrait', name: "Founder's Portrait", blurb: 'Oil on board, the eyes following the money. Nobody has ever talked a collector down.', tags: ['art'], rank: 'D', weight: 'medium', worth: 'rare', foundIn: ['RUINS', 'CYBER_CITY'] },
     { key: 'first_depositor_bronze', name: 'Bronze of the First Depositor', blurb: 'Cast to honor a customer. It has been appraised more often than it has been dusted.', tags: ['art'], rank: 'C', weight: 'heavy', worth: 'rare', foundIn: ['RUINS', 'INDUSTRIAL'] }
+  ],
+  professions: [
+    { key: 'lapsed_actuary', name: 'Lapsed Actuary', blurb: 'Still working out how long everyone has left, unasked.', rank: 'F', concept: 'reckoned_term', knows: 'How to say to the day when a debt, a roof or a person gives out.', workshop: 'a back room full of mortality tables', tool: ['saw'], material: ['wood'] },
+    { key: 'repossession_rigger', name: 'Repossession Rigger', blurb: 'Takes machinery out of buildings that no longer agree they owe it.', rank: 'E', concept: 'seized_engine', knows: 'How to pull a running machine out of a foreclosed works and have it run again elsewhere.', workshop: 'a yard with a gantry and no questions', tool: ['blunt'], material: ['metal'] },
+    { key: 'compound_forester', name: 'Compound Forester', blurb: 'Knows which trees have grown past what anyone can pay for.', rank: 'D', concept: 'felled_interest', knows: 'How to take a tree at the one moment its growth is worth more cut than standing.', workshop: 'a mill set where the wood compounds fastest', tool: ['axe'], material: ['wood'] },
+    { key: 'lien_smith', name: 'Lien Smith', blurb: 'Forges a claim into a thing so it can never quite be sold clean.', rank: 'B', concept: 'binding_claim', knows: 'How to work a debt into metal, so whoever holds the piece owes what it owes.', workshop: 'a forge whose fire is on the books', tool: ['blunt'], material: ['metal'] },
+    { key: 'last_auditor', name: 'Last Auditor of the First Branch', blurb: 'Reconciled everything once. Nobody has asked what it came to.', rank: 'S', concept: 'closed_books', knows: 'How to close a set of books for good, so that nothing in them can ever be owed again.', workshop: 'the vault under the queue ropes', tool: ['saw'], material: ['paper'] }
   ]
 };

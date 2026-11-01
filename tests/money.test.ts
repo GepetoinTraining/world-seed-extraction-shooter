@@ -941,7 +941,7 @@ describe('D115: gems, works of art and valuables found in worlds hold value', ()
 
   it('old printings stay banked with their old numbers', () => {
     const banked = clone(FIRST_THEME) as IThemeBody;
-    delete banked.anchors;
+    delete banked.anchors; delete banked.professions;
     banked.tags = banked.tags.filter(t => !['gem', 'art', 'valuable'].includes(t.tag));
     expect(themeIdOf(banked)).toBe('theme_4599bfea360d75a7');
     const old = { ...sealTheme(banked, 'claude-opus-5-5 (dev batch, D53)', 1793491200000), formula: 3 };

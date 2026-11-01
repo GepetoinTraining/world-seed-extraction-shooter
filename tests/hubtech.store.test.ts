@@ -45,7 +45,7 @@ vi.mock('../src/logic/intelligence/IntelligenceClient', async original => {
 });
 
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
-import { useHubStore } from '../src/entities/hub/store';
+import { buildingLabel, useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
@@ -193,11 +193,47 @@ describe('what they want', () => {
   it('a person can ask for the building their goal needs: the door a talk writes', async () => {
     const resident = await findWorking();
     const station = WebBank.current().stations[2];
-    expect(await hub().askForBuilding(resident.id, station.id, 'I need this to do what I came for.')).toEqual({ ok: true });
+    expect(await hub().askWorkshop(resident.id, station.id, 'I need this to do what I came for.')).toEqual({ ok: true });
     expect(hub().tech.asks[resident.id].by).toBe('TALK');
     expect(hub().workshopOffer(resident.id)!.stationId).toBe(station.id);
-    expect((await hub().askForBuilding(resident.id, 'stn_nothing', 'x')).ok).toBe(false);
-    expect((await hub().askForBuilding('nobody', station.id, 'x')).ok).toBe(false);
+    expect((await hub().askWorkshop(resident.id, 'stn_nothing', 'x')).ok).toBe(false);
+    expect((await hub().askWorkshop('nobody', station.id, 'x')).ok).toBe(false);
+  });
+
+  // Where C2's talk met this stream, at the join
+  it('what a talk asks for goes on the Hall\'s board, and is the workshop they now say they want', async () => {
+    const resident = await findWorking();
+    const station = WebBank.current().stations[2];
+    await hub().askForBuilding(resident.id, resident.name, station.id, 'Get a bench of their own.', 'purpose');
+    expect(hub().openBuildingAsks().map(a => a.building)).toEqual([station.id]);
+    expect(hub().tech.asks[resident.id]).toMatchObject({ stationId: station.id, by: 'TALK' });
+    expect(hub().workshopOffer(resident.id)!.stationId).toBe(station.id);
+  });
+
+  it('asking for a house, or a keeper asking, goes on the board and writes no workshop', async () => {
+    const resident = await findWorking();
+    await hub().askForBuilding(resident.id, resident.name, 'house', 'Get a roof.', 'shelter');
+    await hub().askForBuilding('npc_keeper', 'A Keeper', WebBank.current().stations[2].id, 'Get a bench.', 'purpose');
+    expect(hub().openBuildingAsks()).toHaveLength(2);
+    expect(hub().tech.asks).toEqual({});
+  });
+
+  it('a station a chain wrote can be asked for by name, and only a known one', async () => {
+    const before = hub().buildingWords();
+    useHubStore.setState({ tech: { ...hub().tech, chain: { ...hub().tech.chain, stations: [{ key: 'glass_kiln', name: 'Glass Kiln', blurb: 'Hot.', tool: ['blunt'], material: ['stone'], bill: ['stone'] }] } } as never });
+    expect(hub().buildingWords()).toEqual([...before, 'glass_kiln']);
+    expect(buildingLabel('glass_kiln')).toBe('Glass Kiln');
+  });
+
+  it('a workshop that stands answers what its person asked for, and nobody else\'s ask', async () => {
+    const resident = await findWorking();
+    const station = WebBank.current().stations[2];
+    await hub().askForBuilding(resident.id, resident.name, station.id, 'Get a bench.', 'purpose');
+    await hub().askForBuilding('npc_keeper', 'A Keeper', station.id, 'Get a bench.', 'purpose');
+    useHubStore.setState({ tech: { ...hub().tech, workshops: [{ id: 'shop_1', residentId: resident.id, lotId: 'lot_x', mode: 'WORKSTATION', stations: [station.id], name: station.name, bill: [], pool: {}, raised: true }] } });
+    await hub().settleWorkshops();
+    expect(hub().openBuildingAsks().map(a => a.askerId)).toEqual(['npc_keeper']);
+    expect(hub().guild.asks!.find(a => a.askerId === resident.id)).toMatchObject({ state: 'MET', metBy: 'shop_1' });
   });
 });
 

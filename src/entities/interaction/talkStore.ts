@@ -16,7 +16,8 @@ import { create } from 'zustand';
 import { IAttributes, UniversalRank } from '../../../types';
 import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { HUB_NPCS } from '../hub/HubGenerator';
-import { readSheet } from '../hub/guild';
+import { readSheet, residentIdOf } from '../hub/guild';
+import { moreThanTheyNeed } from '../hub/money';
 import { useHubStore, worldDay } from '../hub/store';
 import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 import { MobAI } from '../mob/ai/MobAI';
@@ -170,12 +171,12 @@ function monsterSurface(seed: string, entity: IWorldEntity, webVersion: number |
 function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda; keeper?: boolean } | null {
   const hub = useHubStore.getState();
   const resident = hub.guild.residents.find(r => r.id === npcId);
-  if (resident) return { sheet: readSheet(resident), rank: resident.bond.rank as UniversalRank, facts: { house: !!resident.homeAt } };
+  if (resident) return { sheet: readSheet(resident), rank: resident.bond.rank as UniversalRank, facts: { house: !!resident.homeAt, money: moreThanTheyNeed(hub.wallets[residentIdOf(resident.bond)] ?? 0, resident.bond.rank) } };
   const keeper = HUB_NPCS[npcId];
   if (!keeper) return null;
   const rank = keeper.teaches?.rank ?? UniversalRank.D;
-  // A keeper's shop is where they live. Money and family are not known of anyone yet: C3's wallets and D105's people's half will say.
-  return { sheet: NpcSheet.keeper(hub.activeHubId ?? 'hub_unknown', npcId, rank, keeper.name), rank, facts: { house: true }, agenda: hub.vendors[npcId]?.agenda, keeper: true };
+  // A keeper's shop is where they live. Family is not known of anyone yet: D105's people's half will say.
+  return { sheet: NpcSheet.keeper(hub.activeHubId ?? 'hub_unknown', npcId, rank, keeper.name), rank, facts: { house: true, money: moreThanTheyNeed(hub.wallets[npcId] ?? 0, rank) }, agenda: hub.vendors[npcId]?.agenda, keeper: true };
 }
 
 const addUsage = (spent: number, usage?: IDoorUsage) => spent + (usage?.usd ?? 0);

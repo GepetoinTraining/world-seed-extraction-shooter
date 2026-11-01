@@ -60,7 +60,7 @@ import { workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../logic/systems/TalkTypes';
-import { IHubTech, emptyTech, normalTech, openedChainStations } from './hubTech';
+import { IHubTech, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
 import { ITechDoors, settleSilently, techDoors } from './techDoors';
 
 const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
@@ -166,7 +166,7 @@ const BUILDING_HOUSE = 'house';
 
 /** What an ask's word reads as to a person: a station's own name, never its id. */
 export const buildingLabel = (word: string): string =>
-  WebBank.current().stations.find(s => s.id === word)?.name ?? word.replace(/_/g, ' ');
+  hubStations(useHubStore.getState().tech).find(s => s.id === word)?.name ?? word.replace(/_/g, ' ');
 
 // Wave 10 (D8): a queued construction step. Materials leave the stash when the
 // job is queued — exactly once — and the piece applies when the clock says so.
@@ -1076,7 +1076,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
   centerReach: () => ({ skills: Object.keys(get().web.nodes), stations: WebSystem.openStationsOf(get().web, {}) }),
 
-  buildingWords: () => [BUILDING_HOUSE, ...WebBank.current().stations.map(s => s.id)],
+  buildingWords: () => [BUILDING_HOUSE, ...hubStations(get().tech).map(s => s.id)],
 
   openBuildingAsks: () => (get().guild.asks ?? []).filter(a => a.state === 'OPEN'),
 
@@ -1087,6 +1087,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     const ask: IBuildingAsk = { id: `ask_${askerId}_${asks.length}`, askerId, askerName, building, goal, need, day: worldDay(), state: 'OPEN' };
     set({ guild: { ...guild, asks: [...asks, ask] } });
     useFeed.getState().push(`${askerName} is asking for a ${buildingLabel(building)}.`, 'signal');
+    // Someone who lives here, asking for a station: that is the workshop they now say they want.
+    if (building !== BUILDING_HOUSE && guild.residents.some(r => r.id === askerId)) await get().askWorkshop(askerId, building, goal);
     await get().saveHubState();
   },
 

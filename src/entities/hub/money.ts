@@ -119,5 +119,12 @@ export function walletBrought(personId: string, rank: UniversalRank | string): n
   return residentUpkeepPerDay(rank) * Rng.fromKey(`wallet:${personId}`).int(WALLET_DAYS_MIN, WALLET_DAYS_TOP);
 }
 
+/**
+ * D104's "more money than they need": more days of their own living than anyone brings. A guess
+ * until Wave 12. It reads their coin as a count, and never what coin is worth.
+ */
+export const moreThanTheyNeed = (coin: number, rank: UniversalRank | string): boolean =>
+  coin >= residentUpkeepPerDay(rank) * WALLET_DAYS_TOP;
+
 /** A keeper's rank, for what they bring. */
 export const npcRank = (npcId: string): UniversalRank => rankOfNpc(HUB_NPCS[npcId] ?? {});

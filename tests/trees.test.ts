@@ -159,7 +159,7 @@ describe('line 106: at least two trees in every pack (D63)', () => {
     banked.creatures = banked.creatures.filter(c => !OLD_KEYS_ABSENT(c.key));
     banked.tags = banked.tags.filter(t => t.kind === 'element');
     delete banked.junk;
-    delete banked.anchors;
+    delete banked.anchors; delete banked.professions;
     banked.abilities = banked.abilities.filter(a => a.effect !== 'forced_exit');
     banked.consumables = banked.consumables.filter(c => c.key !== 'writ_of_breach');
     for (const c of banked.creatures) {
