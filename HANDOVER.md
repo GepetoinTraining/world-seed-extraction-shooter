@@ -331,7 +331,7 @@ Each entry says when it will cause trouble. Items closed since Wave 7 are listed
 |---|---|
 | Overlapping entities are hard to click. Q-cycling on the inspect card eases it, and scripted clicks remain flaky | Dense areas |
 
-**Not up yet, on purpose, so not debt:** `SpellEngine` is not finished, and the `Director` depends on the full game loop (Pedro, 2026-10-31). Nothing imports them yet.
+**Not up yet, on purpose, so not debt, until the magic + content layer wakes them (D48):** `SpellEngine` is not finished, and the `Director` depends on the full game loop (Pedro, 2026-10-31). Nothing imports them yet.
 
 **Closed since Wave 7:**
 

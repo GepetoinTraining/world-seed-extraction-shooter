@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete), the raw materials leg (D23) and the technology web and auto skill (D27), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E, the raw materials leg, the technology web (D27) and the usability pass are approved. The stable database is approved and merged. Next is Pedro's full run, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete), the raw materials leg (D23) and the technology web and auto skill (D27), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E, the raw materials leg, the technology web (D27) and the usability pass are approved. The stable database is approved and merged, and Pedro has played. **The next step is the magic + content layer**, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -230,9 +230,22 @@ Pedro then asked for skills and inventory in one place, without the views that s
 
 **Left open, honestly:** the rest of the Agent tab still reads as forms; the card has no damage line, so weapons compare on what the sheet shows; what rides a pouch has no drag; room placement is not the hands yet; the minimap forgets at the end of a run; the beacon chip does not keep the fog the minimap keeps; a worn bag's capacity cannot be filled by pickups.
 
-## Your pass: Pedro's full run
+## Your pass: the magic + content layer
 
-Nothing to build until Pedro has played. During and after the run, add what is found to `PLAYTEST_LEDGER.md`. Pedro decides which items land before Wave 11.
+**This is the next step, by Pedro's word (2026-11-01), after playing the loop and calling it cool.** Everything is in `PLAN.md`, under "The next layer", with D48 to D50 as this leg's rulings. Pedro's words: "monsters need director + magic + rests to update their behavior and start diferentiating) the same goes for everything, once magic is unlocked you get suffix and prefix on material, monsters... everything, and then the possibilities are cool."
+
+**What it has to make true:**
+1. **Rests drive everything.** A rest sends what was queued in play to Claude, through one server door, and what returns passes the bank law and becomes signed data (D43, D46; a rest uses `claude-opus-5-5`, D44).
+2. **Monsters change.** The `Director` wakes: magic and rests update how monsters behave, and they start to differ from one another (D48).
+3. **Magic unlocks prefixes and suffixes on everything:** materials, monsters and the rest, from the banks (D49).
+4. **Identify changes:** you can study a thing, and you only know what it does after a rest (D50). Rewrite line 55 and D32's field roll to match, and tell Pedro what happens to the bars that pin them.
+5. **Stats act first (Layer 0).** Most item stats have no reader, so a prefix on anything means nothing until they do. **Don't trust an item stat because a card shows it.**
+
+**Fix along the way, from `PLAYTEST_LEDGER.md`:** R4 (the dragon: difficulty ignored, flat spawns, neutral that attacks, no wind-up) belongs to the monster work. R5 (the lens) belongs to the identify and stats work. R6 (repair can't see worn gear) is small; do it first.
+
+**The intelligence is Claude, not Gemini (D46):** the Gemini code in `ContentPipeline.ts`, `EmbeddingService.ts` and `GenreCreator.tsx` is from the project's first days and is being replaced, so don't build on it. Load the `claude-api` skill before writing the door. Tests never call the API, and a real run spends real money, so run one on purpose.
+
+**After this:** character creation, then Wave 11, unless Pedro says otherwise (D42).
 
 ## The playtest fixes, now part of the usability pass
 
@@ -256,7 +269,7 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 **In the game:** balance unplayed at the new scale; a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape); a finished craft or a foreclosed lot still has no feed line or other moment on screen (the foreclosed mark exists only in the hub's art). (The walk-through lots are fixed: a built lot blocks exactly what it draws, and its door is real — Wave 10.2.)
 
-**Not up yet, on purpose (Pedro, 2026-10-31), so not faults:** `src/entities/magic/SpellEngine.ts` is not finished, and `src/entities/world/Director.ts` depends on the full game loop. Nothing imports them yet.
+**Not up yet, on purpose (Pedro, 2026-10-31), so not faults, until the magic + content layer wakes them (D48):** `src/entities/magic/SpellEngine.ts` is not finished, and `src/entities/world/Director.ts` depends on the full game loop. Nothing imports them yet.
 
 **In the code:** six more modules are reached by nothing from `index.tsx`: `src/components/Layout.tsx`, `src/entities/hub/types.ts` (it sketches hub expansion, so read it before the technology web), `src/entities/identity/IdentityGenerator.ts`, `src/entities/identity/VectorStore.ts` (the live one is `src/entities/data/VectorStore.ts`), `src/entities/mob/utils/SpriteGenerator.ts` and `src/entities/player/LoreManager.ts`. Nobody has decided about these yet, so ask before removing any. `three` and the React Three Fiber packages are installed, but nothing in `src` imports them.
 
@@ -319,4 +332,4 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 ## After this pass
 
-`PLAN.md`, under "The next legs": the stable database and the usability pass, Pedro's full run, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).
+`PLAN.md`, under "The next layer": the magic + content layer, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).

@@ -4,7 +4,7 @@
 The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
 approved. The usability pass and the stable database are built, approved and merged; the suite stands at 812
 (688 + 124 in the database's own run), with one timing bar that reads load (see the technology web's record).
-Next, in order: Pedro's full run, then Wave 11 and Wave 12.
+Pedro has played. **Next: the magic + content layer** (under "The next layer"), then character creation, Wave 11 and Wave 12.
 Open test lines
 and their status are in section 5.
 
@@ -267,7 +267,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Next: Pedro's full run, with `PLAYTEST_LEDGER.md` kept as the list of what to fix → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. Next: the magic + content layer (D48) → character creation → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -277,7 +277,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10 and D11. D27 through D30 are decided, built and approved. D31 is accepted, built and approved.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10, D11, and D35–D38, D40, D41, D44's spend limit, D45, D47 and the readings on D49 and D50 for the next layer. D43, D46 and D48–D50 are decided and not built. D27 through D30 are decided, built and approved. D31 is accepted, built and approved.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -416,6 +416,7 @@ Done 2026-10-31; **approved by Pedro (2026-10-31)**. Bars in `tests/affixes.test
 - **D6's crafting half:** ✅ components carry their affixes onto the item they make — craft jobs snapshot consumed items' affixes and `createComposedItem` folds them in (stats acting, name riding), the partition holding the door (a mental component affix never lands on gear); `improvise()` inherits the same way through the field button. Rank S+ crafts take the maker's own name: the bench shows the pen only for an S+ making (`canNameCraft`; "The bank lends its pen at rank S…"), and `recipe_masterwork_blade` (3 ingots, plank, cloth, 120s) is the first making it lends to.
 - **Bars (all green, registered first):** batches validate/compile/sign or refuse whole (names-with-stats, stranger effects, duplicates, the Owl Reborn refused whole with its clean sibling); every theme present; negative offsets ≥5 entries; name-only entries exist and roll as nothing; the purge (raw table keeps the Owl, live pool does not; 500 mints clean; the partition names the contraband); biome pools deterministic and in theme (100% over 180 rolls); same (seed, version) → byte-identical rolls; v1 vs v2 ≥30% different; a v1 world identical while v2 stands; sector dream deterministic, in theme, place-varying; material dream keyed and resource-scoped; dreamed loot draws only bank ids while legacy draws none; the blind sheet (acting ≠ shown) and the exact reveal (negatives included); scope refusals in voice; identify timed, monotone falling, floored; training by sittings through the store door; field identify through the one door; knowledge in materialMastery, no parallel ledger; charms name their protection, mark exactly it, death keeps exactly it, receipt names the magic, uses spend and consume; random plans keyed-deterministic; scrolls on a clock (expired keeps nothing) and written for paper+ink exactly once; cart entries cart-scoped, lock time real, zero for the owner, broken lock in the theft log; component affixes ride, mental ones never, S+ names honored, sub-S refused in voice; charms/scrolls on the shelf, charmData surviving the purchase mint.
 - **Played through the real interface, as GABBRO (and MAGPIE) on the 3102 origin:** the signed pack verified in CONTENT at hub load → Clasp, Scroll, the day's "Soldier's Gladius of the Dreaming Seed" (+8 dmg/+12 def/−10 health, ALL invisible on the shelf's blind sheet) and a "Shrieking Field Cart" bought over real counters → the bench placed, the Gladius STUDIED (weapon eye 1, the card now reading the exact record, downside included) → "The Long Account" written into the rank-S pen and drawn on the bench from ledgered TEST_GRANT_10E inputs → THE DREAMT LEDGER minted and PINNED at v2 (the two older worlds honestly reading "minted before the banks") → the COMPLETE scan reading THE DREAM: Spore-Fed, Rootbound, of the Keeping → three honest deaths on the way (one naked in 90s, one at 5,000 test health in 4 minutes — the flyer-swarm balance file grows, Wave 12) → the death that mattered: Clasp invoked on RIGHT_HAND, the DIED receipt reading KEPT BY MAGIC — "Soldier's Gladius of the Dreaming Seed, held by Clasp of Keeping. The death took everything else." → a harvest dreaming ("Mire-Cured Hardwood Log", +7 max health, lost honestly to the second death — the world kept it) → a chest pouring a double-dreamed "Bank-Honored Superior Great Helm of the Dreaming Seed [UNID]" → the field refusing the unschooled armor eye in voice, then identifying the unknown Gladius in its honest 12 seconds → SEALED: 1,564 G of dreamed haul, 78 G levy → MAGPIE jacked in, deployed, and towed GABBRO's shrieking cart away, the theft signed by her own certificate in the cart's log → a cold reload keeping every byte: the eye, the studied record, the blade, the helm.
+- **Corrected 2026-10-31:** this record says unstudied affixes act. Their numbers are merged into `item.stats`, but combat, health and most systems never read them, so the played Gladius's +8 damage and −10 health changed nothing in a fight. See "The next layer", Layer 0.
 - **Carried, honestly:** the alarm's shriek hid behind the lock branch on the played theft (fixed the same day, after the play; the signed theft itself was right) and a cart kit's identify scope read as armor (now the tool eye) — both found only by playing; the Warded lock's tow-delay is proven by bar, not play (no Warded kit on that day's shelf — the shelf will roll one); a scroll's expiry death and the scribe-written scroll are proven by bar, with the written-scroll path played only as far as the SCROLLS tab (no scribe's table stands on 3102 — paper and ink were spent on the bar's mint instead); the Mire-Cured improvised club never happened (Overgrowth grows no stones; inheritance is proven by bar through the same improvise door the field button calls); The Long Account's chain reads depth 1 because its granted inputs were purchase roots — an honestly-smelted blade would carry depth 3 and a deeper budget; station study is a click with the sitting in the feed, not yet on the bench's clock; frames are definitions still, so the bank's one mental affix can roll on nothing yet (the door D22 holds open for a later wave); the extraction channel was broken repeatedly by biters no entity scan could find (the known moved-mob shape — the seal came at the sector's far exit); balance stays loud and stays Wave 12's.
 - **Gate:** test lines 52, 53, 55 and 56 pass — 52/55/56 by test and by play; 53 by test, and by play as far as one minted world shows (pin seen on the card, the dream read on the survey, the same keys rolling the same records).
 
@@ -650,6 +651,122 @@ Done 2026-10-31; **approved by Pedro (2026-10-31), with its readings standing as
 - Is the web the hub's, a player's, or both? Primordial's answer is the web on the hub and the exp on each person.
 - Does a resident's job extend the web, work inside it, or both? Primordial's workers do both.
 
+### THE NEXT LAYER — THE MAGIC + CONTENT LAYER IS THE NEXT STEP (planned 2026-10-31, marked next 2026-11-01, nothing built)
+
+Pedro, 2026-10-31: "read the magic and plan the next layer, the monster skills, the actual magic and upper item effects, the player magic and, most specially, we need to create the character creation process after I play once like this." The fixes Pedro logs in `PLAYTEST_LEDGER.md` run alongside this as the next sprint.
+
+**Pedro's word on what comes next, 2026-11-01, after playing:** "monsters need director + magic + rests to update their behavior and start diferentiating) the same goes for everything, once magic is unlocked you get suffix and prefix on material, monsters... everything, and then the possibilities are cool. We need to change how identify works, you can study it, you only know what it does after rest." So Layers 0 to 4 and the rest are one direction, not a queue of separate features: magic and rests are what make everything else differ.
+
+**What the reading found:**
+
+| System | Here | Primordial | TTRPG engine |
+|---|---|---|---|
+| Casting | None. `SpellEngine` is unwired, and a focus fires one fixed NOVA for 10 energy | None. An ability is a bare integer nothing resolves | `magic.ts` checks costs but applies no effects, and nothing calls it |
+| Spell design | 7 definitions with emoji and `Math.random` | Spellcraft is designed, with a prototype only (`HANDOVER-magic.md`, `magic-art.jsx`) | A composer that gives a spell identity but no effect |
+| Monster abilities | None. One attack, `baseDamage`, and `behavior` | Innate abilities carried and never resolved; none scale by rank | 10 adaptation traits that evolve by fitness; four are labels only |
+| Item effects | **Mostly inert: see below** | Skill-as-affix is built and forge algebra works, with no effect field | 11 affixes with no gameplay reader; no procs |
+| Content | 9 creatures | **240 abilities, 30 magic systems, 133 monsters with innates, 57 races in `catalog/data/`, with no consumer** | 10 traits, a tier ladder |
+
+No donor has working magic to port this time. The designs and the content exist; the runtime is ours to write. So this layer has no "build that version here" shortcut, except the catalog as content and Spellcraft as the design.
+
+**The finding that goes first: most item stats do nothing.** `stats.damage`, `stats.defense` and `stats.max_health` have no reader. `weaponDamage` reads only item power, `mitigation` only power and `physical_reduction`, and health only constitution. Also unread: `accuracy_rating`, `evasion_rating`, `crit_chance`, `crit_multiplier`, `block_chance`, `energy_regen`, `poison_damage`, `light_radius`, `pickup_radius`, `carry_capacity`, `noise_reduction`, `reload_speed` and others. So Wave 10E's record is wrong that an unstudied affix "acts in full": the Soldier's Gladius's +8 damage and −10 health never touched a fight, and "downside pays for upside" is not yet true. Its bars tested that the numbers were merged into `item.stats`, and no bar asked whether anything read them.
+
+**Pedro's rulings that bind this layer:**
+- 2026-06-20: "magic is also the monsters' innate skills — it feeds the skill system!" One effect system for monsters, players and items, and defeating or studying a monster teaches its magic.
+- 2026-06-16: "once a skill is found or made the items can use that as affix."
+- 2026-07-04, the affix operator law: an affix does one of two cheap things, multiply a value or add a die. Replay-exact, computed at use.
+- Spellcraft (Primordial's design handover, for Pedro to confirm here): skills are study from practice, and magic reverses it: practice first, study after. A weave's effect is deterministic and visible; its name resolves at rest. The first to name it names it for everyone, and monsters cast it too.
+- 2026-05-01: "I cannot accept anything that isnt deterministic."
+- D19, D26: what acts and is unstudied stays hidden. D22: mental stats only on frames, so a mage pays with head gear. D29: no caps. D14: scrolls on paper and ink. D21: protection is magic.
+
+#### LAYER 0: THE STATS ACT (first, and small)
+Every stat a bank can roll either changes play or is refused. Combat, health, energy and the card read the worn stats through one function, per the operator law (add or multiply; adding a die waits on Layer 1's numbers). The batch law gains a clause: a stat with no registered reader refuses the batch, so this cannot recur. This will shift balance, so it lands before Pedro's next tuning, not after. Energy regeneration lands here too, since nothing restores energy today and every later layer spends it.
+
+#### LAYER 1: THE EFFECT SYSTEM (one door)
+`EffectSystem.resolve(ability, caster, target, key)`: pure, keyed, returning a receipt, called by monsters, players and items alike. The vocabulary is the catalog's, already written: **delivery** (self, touch, melee, ranged, area, aura), **effect** (damage, control, heal, buff, debuff, ward, summon, reveal, transform, move), **cost band**, **elements**. Delivery maps onto the existing projectile patterns and swings, and new patterns arrive as data. Statuses have durations and read in grayscale by shape and position. Elements are registered tags under the tag law, with no fixed enum: `ElementType`'s 6, Primordial's 5 families and the catalog's 11 all give way to a batch.
+
+**Numbers:** the catalog bans digits by law, so numbers derive from rank, cost band and the caster's attributes, with one versioned formula. Rank scaling is a gap in both donors and is ours to design.
+
+**Import:** bring the catalog through `scripts/run-affix-batch.ts` as banked runs under the existing law, pinned per world like every pack. World Seed becomes that catalog's first consumer.
+
+#### LAYER 2: MONSTER SKILLS
+A definition carries `innate` ability ids from the bank, dealt at read time from (seed, pack version) as NPC sheets are, so positions and golden vectors do not move. Creature variety grows from 9 toward the catalog's 133 by batch, with no code. Monsters telegraph, on a cooldown and by behavior: a Turret's pattern, a swarm's bite, a siege's slam, and RotmG's lesson that a readable pattern is what makes dodging fun. **Bosses:** phases and a signature, from the catalog's boss shape (17 stubs today, so content must be written). **Learning:** study or defeat teaches through the existing `reverseEngineer`, into the same web as `{tool, material}`. The moved-mob fix, carried since Wave 8, belongs here, because abilities need a mob that can be found and hit. The `Director` has what it needs once traits exist: ask Pedro whether it wakes now.
+
+#### LAYER 3: UPPER ITEM EFFECTS
+An affix can carry an ability, and a trigger says when it fires: on hit, on kill, on being hit, on low health, while worn, on use. **Trigger vocabulary as data, no proc table in code.** A skill or a learned spell becomes an affix through the existing forge and study paths. Set effects extend the one-material law from houses to worn gear. Scrolls cast one spell on paper and ink (D14). A tome casts without learning, at a surcharge (Primordial's open call, recommendation: yes). Unstudied effects act and stay hidden (D19), which only becomes true with Layer 0.
+
+#### LAYER 4: PLAYER MAGIC
+Spellcraft, on our laws. **Reserves:** aether per element, filled from what is gathered, with capacity as the mage's growth axis. **Weave:** pick elements, a tag set, and test it: the effect is fixed by the set and visible, paid in aether, and the name is unknown until rest (D30). **Naming:** the first to name it is credited by a signed row, as `tech-lore` does, and the word goes into the bank. **Casting:** from a focus, on a hotbar slot, limited by reserves and the mind's stats, so D22 makes a mage give up head gear. The weave table is a bank batch, never a code table (D29). `SpellEngine` and its 7 definitions are replaced, since nothing depends on them.
+
+#### REST AND THE DREAM: the LLM enters through a rest
+Pedro, 2026-11-01, after playing: "the game loop is cool, what's missing is the ability to rest and send to the LLM to get more content." This is D43, and it lifts D20's "dev-time for now" for this one door. Primordial's ruling already gives the shape, 2026-06-16: LLM calls are never made in the hot path; each attempt is queued during play, and the whole batch is processed at rest: "he updates his knowledge in sleep".
+
+**The loop:**
+1. **Play queues.** What the character met and has no words for: forming skills, tool and material pairs, biomes walked, name-only bank entries, later untested weaves. This is cheap data, recorded as it happens, with no call.
+2. **A rest sends the batch.** The player chooses it at a place: the Rusty Anchor's keeper, or a bed in your own HOUSE, which finally gives a HOUSE its function. REST was removed in Wave 9 because nothing in the hub was wounded; now it has a job.
+3. **The server calls the LLM,** never the browser. The batch comes back as an ordinary `IAffixBatch` or `IWebBatch`.
+4. **The law judges it.** The same `AffixBank`, `WebBank` and tag law: unknown tags, mental stats on gear, unread stats (Layer 0) refuse the whole batch. Nothing the LLM says reaches the game unjudged.
+5. **It becomes data.** A signed, versioned pack in `content`. From there it is deterministic forever: **the LLM is not deterministic, but what it wrote is, once banked.** Pinned worlds never change; new worlds and the shelf get it. The first to reach a thing names it for everyone (Spellcraft's rule), and the base sync carries it between databases.
+
+**Without the LLM, the game still works.** No key, no network, a refused batch: the rest still settles skills as it does today, with floor names, and the batch waits for the next rest. The game never blocks on a model.
+
+**THE INTELLIGENCE LAYER, rebuilt on Claude (D46).** Pedro, 2026-11-01: "we're not using gemini... we're using you claude... we need to rebuild the intelligence layer to use you." The Gemini code dates from the project's first days and comes out whole:
+
+| What goes | Where | What replaces it |
+|---|---|---|
+| Gemini calls from the browser, with the key inside the bundle | `src/entities/generation/ContentPipeline.ts`, `vite.config.ts`'s `define` | One server door |
+| The admin tool's key handling | `src/components/admin/GenreCreator.tsx` | The same door, called through the server |
+| Gemini embeddings | `src/services/EmbeddingService.ts` | The offline hash embedding it already falls back to. Nothing in play needs better today; if search ever does, choose then and re-embed. The 768-dimension note in `server/schema.pg.ts` goes too |
+
+**One door, on the server:** `server/intelligence/`, using `@anthropic-ai/sdk`. Credentials come from the server's environment (`ANTHROPIC_API_KEY` or an `ant auth login` profile) and never reach a browser.
+- **Structured outputs** (`output_config.format`), one schema per kind of content, so the bank law judges parsed data rather than prose.
+- **Prompt caching** on a frozen system prompt: the lore bible's voice and the tag registry, with volatile batch data after it.
+- **Message Batches for a rest:** asynchronous, at half the price, and literally sleeping on it. A live call only where a person is waiting, such as creation.
+- **Refusals and errors are outcomes:** a `refusal` stop reason, a rate limit or an outage leaves the batch queued, and the game goes on.
+- **Tests never call the API.** A real run spends real money, so it is run on purpose and its model and tokens go on the pack's record, as batches 001 and 002 already record theirs.
+
+**What calls this door:** the rest (content, naming), character creation (skills, the reincarnation talk), the admin Genre Creator, and the dev harness `scripts/run-affix-batch.ts`, which gains a way to generate as well as judge. NPC speech is a decision of its own (D47).
+
+#### THE CHARACTER CREATION PROCESS — its own leg, after Pedro's first run
+Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-14 (written for Primordial, and asked again here to confirm):
+
+> "The character creation is going to be modelled as an isekai trope, without showing this to the player... the character creations needs to be structured around main ability to focus and sub ability to focus + skills that are all derived by haiku at the end of the character creation screen. Basically the player will archetype then choose initial set of gear, then choose the face of the world they'll spawn into then they'll talk with the god of reincarnaiton and be granted skills."
+
+**Proposed flow, one screen each, under a minute if you know what you want:**
+1. **Who you were:** a hidden isekai trope behind plain choices (economic genius, science wielder, power fantasy, infrastructure and politics, jack of all trades, slow life, cooking, animal tamer; open-ended, from a bank). This sets the main focus and sub focus. The word "archetype" and the trope stay unseen.
+2. **What you carry:** a starting kit that fits it, which also answers `HANDOVER.md`'s open "starting kit" question. Spent from the 500 G grant or granted on the ledger, so the gold audit holds.
+3. **The face of the world:** the hub or genre you arrive in, shown as its real map thumbnail.
+4. **The conversation:** the reincarnation scene, which is where the skills are granted from focus and answers. Ends with the codename and the mint, then the existing face-to-face moment with your portrait.
+
+**Keep:** the face comes from the certificate and nobody chooses it (approved). Stats deal from the certificate by `NpcSheet`'s law, so players and NPCs read alike, with focus shaping the spread. Character select, restore and the roster stay as they are. **Also:** a draft survives a stray click (P2's lesson), and TTRPG's chargen review step is the pattern for a final check, not its nine steps.
+
+**Decisions to ask at each leg's start:**
+
+| # | Leg | Decision | Recommendation |
+|---|---|---|---|
+| D35 | Creation | Are skills "derived by haiku" at the end of creation? | Yes, through the rest door (D43), so it passes the same law and is signed. The floor from a bank keyed by the answers still works with no key or network |
+| D36 | Creation | Who is the god of reincarnation, in a game whose voice is the bank's terminal? | The Seed speaks through the terminal: the same voice as "The bank honors it", and no blue windows |
+| D37 | Creation | Do races exist? The catalog has 57 races, 49 playable | Not at first. The four silhouettes stay, and races come through a later batch if Pedro wants them |
+| D38 | Layer 1 | Do fights stay real-time? Primordial and TTRPG are d20 | Real-time. Adding a die means a rolled damage range, keyed, with no turns |
+| D39 | Next step | Does the `Director` wake with monster traits? | ✅ ANSWERED by D48: yes, and with more than a trait pool |
+| D40 | Layer 3 | Does a tome's borrowed cast cost more? | Yes, a surcharge above one, as the Primordial handover proposed |
+| D41 | Layer 4 | Spellcraft as the player's magic, reversing the skill order? | Yes. It is the most distinct idea in any of the donors, and it fits the tag law exactly |
+| D42 | Order | Where does this sit against Wave 11? | ✅ ANSWERED by D48: the magic + content layer is next. Reading to confirm: creation after it, then Wave 11 |
+| D43 | Rest | Does the LLM enter the running game? | ✅ DECIDED (Pedro, 2026-11-01): yes, at a rest: "rest and send to the LLM to get more content". Lifts D20's dev-time limit for this door only; never in the hot path |
+| D44 | Rest | Which model and what spend limit? | ✅ MODEL DECIDED (Pedro, 2026-11-01): `claude-opus-5-5` for a rest ($4 in, $20 out per million tokens, halved by batches). It stays one constant per kind of content. STILL OPEN: a limit on what one rest may spend, which guards the bill and caps no content: a batch over it waits for the next rest |
+| D45 | Rest | Who may rest and send, once several players exist? | Anyone, batched per hub so a hub pays once. Authentication arrives with deploy, so a public server must not expose this route before then |
+| D46 | Rest | Which intelligence? | ✅ DECIDED (Pedro, 2026-11-01): Claude, not Gemini. The intelligence layer is rebuilt on the Claude API, behind one server door |
+| D47 | Wave 11 | Do NPCs talk through Claude? W2.4 ruled "no AI text generation in the loop", and Pedro's June plan had NPC talk on Haiku | Not in the hot path: their words are banked at rest from their sheet, as Primordial's persona seeds did, and menus stay. Ask at Wave 11's start |
+| D48 | Next step | What comes next | ✅ DECIDED (Pedro, 2026-11-01): the magic + content layer. Monsters need the Director, magic and rests to update their behavior and start differentiating. The Director wakes for this, so what `BUILDERS_LOG.md` calls "not up yet on purpose" ends here |
+| D49 | Next step | What magic unlocks | ✅ DECIDED (Pedro, 2026-11-01): once magic is unlocked, prefixes and suffixes reach materials, monsters, everything, from the banks. To settle at the leg's start: is the unlock per world, per hub or per person? |
+| D50 | Next step | How identify works | ✅ DECIDED (Pedro, 2026-11-01): you can study a thing, and you only know what it does after a rest. This replaces D32's field roll, and line 55 and its bars change with it. Readings to confirm at the leg's start: studying still costs the clock and energy, can be done in the field and at a bench, and queues; any rest (D30 and D43) resolves the queue; an unread piece still acts on whoever wears it (D19), and can't be read early |
+
+**Order and why (D48):** the magic + content layer as one direction, in this build order: R6 and Layer 0 (the current game becomes true) → rest and the dream on Claude (the door all later content comes through) → Layer 1 → Layer 2 with the Director → Layer 4 with the prefix and suffix unlock (D49) and study-then-rest (D50) → Layer 3. Then character creation → Wave 11 → Wave 12. Effects come before monsters, monsters before players: a monster casting first proves the door, gives the player something to study, and tunes the numbers against something real.
+
+**Guardrail 3, flagged:** `agent.md`'s magic is three scales (local, tactical, strategic) with entropy. Tactical and strategic spells change the world, and biome shifts against a pinned world are a one-way-door question. Local only in this layer; the larger scales are noted for later, and the entropy risk becomes a cost band for now.
+
+**Proposed test lines, not yet agreed:** see lines 77–92.
+
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
 
@@ -716,7 +833,7 @@ Guardrail 1 still holds: nothing gets built without a line here.
 52. Affix banks grow by themed batches; an unstudied affix shows nothing on equip, and study reveals exactly what was banked
 53. A world populates from the banks during recon, deterministically for its seed and pinned pack version, and no later batch changes it
 54. The gold and item audit balances across the whole itemization economy
-55. Identify is a skill: scoped by item type, trained at a workstation or by trying, usable in the field on a keyed roll paid in energy (D32), always timed, faster with skill
+55. Identify is a skill: scoped by item type, trained at a workstation or by trying, usable in the field on a keyed roll paid in energy (D32), always timed, faster with skill. **To be rewritten by D50:** study, and know only after a rest
 56. Protection is an item: a death keeps exactly the slots the magic named, nothing more, and the receipt shows it
 
 For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the leg:
@@ -747,6 +864,25 @@ For the usability pass, registered as bars in `tests/usability.test.ts`, approve
 74. Items drag between every grid and slot with the same hands, by mouse and by keyboard, and no sequence loses or duplicates one
 75. Hands and tools are on a hotbar the HUD shows, and the field and city have a minimap
 76. One key opens one character sheet, in the field and the city alike: the body, what you carry, attributes and skills together, through no other view
+
+Proposed for the next layer, not yet agreed:
+
+77. Every stat a bank can roll changes play, a stat nothing reads is refused, and a piece's downside really costs what its card says once studied
+78. One effect door serves monsters, players and items, and the same key gives the same result and receipt
+79. A monster casts its own innate abilities, telegraphed and readable in grayscale, scaled by rank, and the world's map does not move
+80. Studying or defeating a monster teaches what it casts, into the same web as tool and material
+81. An item can carry an ability and a trigger, and it acts while unstudied and stays hidden
+82. A player tests a weave and sees its effect; its name resolves at a rest; the first to name it is credited, signed
+83. Magic costs a real choice: reserves limit it, and the mind that powers it takes head slots
+84. A new player goes from nothing to a minted character with focus, kit, world and skills in under a minute, all through the real interface, with the gold audit balanced
+85. New abilities, monsters and triggers arrive by batch with no code change
+86. A rest sends what was queued in play, and new content arrives as a signed, versioned pack that passes the same law; a broken batch is refused whole
+87. With no key, no network or a refused batch, a rest still settles skills and the game goes on
+88. A pack from a rest changes no pinned world, and the key never reaches the browser
+89. All intelligence goes through one server door on Claude, no test calls the API, and no Gemini code remains
+90. Monsters change between rests: magic and the Director update how they behave, and they come to differ, deterministically for a pinned world
+91. Once magic is unlocked, prefixes and suffixes appear on materials, monsters and everything else, from the banks, and they act
+92. A thing can be studied, and what it does is known only after a rest
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
@@ -803,4 +939,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | Usability pass, with the playtest fixes | 57–59, 72–76 | Passed, by test and by play within its carried items; approved "for now" |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
+| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–92 (proposed) | **Next.** Planned, not started |
+| Rest and the dream, the intelligence layer | 86–89 (proposed) | **Next,** as part of that layer. Planned, not started |
+| Character creation | 84 (proposed) | Planned, after Pedro's first run |
 | 12 The Second True Test | 39–40 | Not started |
