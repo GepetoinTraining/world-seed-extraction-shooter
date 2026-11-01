@@ -15,6 +15,8 @@
  *      by keyboard, and no sequence loses or duplicates one
  *   75 hands and tools are on a hotbar the HUD shows, and the field and city
  *      have a minimap
+ *   76 one key opens one character sheet, in the field and the city alike: the
+ *      body, what you carry, attributes and skills together, through no other view
  * Plus PLAYTEST_LEDGER's U-items that have a bar of their own, and the standing
  * laws: colourblind coding, grayscale, the knowledge law (D19, D26).
  * This pass changes how things are used, not how they look.
@@ -544,7 +546,7 @@ describe('line 73: every item shows its card at once, compared, moving nothing',
   it('U10: selecting an item grows nothing: the pack\'s actions live in a fixed column', () => {
     const canvas = SRC('src/components/WorldCanvas.tsx');
     expect(canvas).not.toMatch(/\{selectedItem && \(\s*<div onClick=\{e => e\.stopPropagation\(\)\} style=\{\{ marginTop: 8/);
-    expect(canvas).toMatch(/PACK_ACTIONS_W/);
+    expect(SRC('src/components/CharacterSheet.tsx')).toMatch(/PACK_ACTIONS_W/);
   });
 
   it('U11: the shop, the sale, the repair, the counter and the fitting list all compare', () => {
@@ -1042,13 +1044,145 @@ describe('U15–U21: the views', () => {
 });
 
 // -----------------------------------------------------------------------------
+// LINE 76 — the character sheet
+// -----------------------------------------------------------------------------
+
+describe('line 76: one key, one sheet, field and city alike', () => {
+  const mount = async () => {
+    const React = (await import('react')).default;
+    const { createRoot } = await import('react-dom/client');
+    const { act } = await import('react-dom/test-utils');
+    const { CharacterSheet } = await import('../src/components/CharacterSheet');
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () => { root.render(React.createElement(CharacterSheet)); });
+    const press = async (key: string, target: EventTarget = window) => {
+      await act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
+    };
+    const done = async () => { await act(async () => { root.unmount(); }); host.remove(); };
+    return { host, press, done, act };
+  };
+
+  it('it opens and closes on one key, and is not there until asked', async () => {
+    const { host, press, done } = await mount();
+    expect(host.querySelector('[data-pack-window]')).toBeNull();
+    await press('Tab');
+    expect(host.querySelector('[data-pack-window]')).not.toBeNull();
+    await press('Tab');
+    expect(host.querySelector('[data-pack-window]')).toBeNull();
+    await press('c');
+    expect(host.querySelector('[data-pack-window]')).not.toBeNull();
+    await press('Escape');
+    expect(host.querySelector('[data-pack-window]')).toBeNull();
+    await done();
+  });
+
+  it('at home: the vault, the body, the attributes and the skills on one screen', async () => {
+    usePlayerStore.setState(s => ({
+      player: {
+        ...s.player, currentSession: undefined,
+        bank: {
+          ...s.player.bank,
+          stashTabs: [{ name: 'MAIN', items: [rock('at_home')] }],
+          universalSkills: { skill_felling_test: { id: 'skill_felling_test', level: 3, currentXp: 1 } as any }
+        }
+      }
+    }));
+    const { host, press, done } = await mount();
+    await press('Tab');
+    const sheet = host.querySelector('[data-pack-window]') as HTMLElement;
+    expect(sheet.textContent).toMatch(/THE VAULT/);
+    expect(sheet.textContent).toMatch(/THE BODY/);
+    expect(sheet.textContent).toMatch(/STR/);
+    expect(sheet.textContent).toMatch(/SKILLS/);
+    expect(sheet.querySelector('[data-item-id="at_home"]')).not.toBeNull();
+    expect(sheet.querySelector('[data-drop-zone="sheet_vault"]')).not.toBeNull();
+    await done();
+  });
+
+  it('in the field: the pack instead of the vault, and the same sheet around it', async () => {
+    field([rock('in_field')]);
+    const { host, press, done } = await mount();
+    await press('Tab');
+    const sheet = host.querySelector('[data-pack-window]') as HTMLElement;
+    expect(sheet.textContent).toMatch(/PACK/);
+    expect(sheet.textContent).not.toMatch(/THE VAULT/);
+    expect(sheet.textContent).toMatch(/THE BODY/);
+    expect(sheet.textContent).toMatch(/STR/);
+    expect(sheet.querySelector('[data-item-id="in_field"]')).not.toBeNull();
+    expect(sheet.querySelector('[data-drop-zone="pack"]')).not.toBeNull();
+    await done();
+  });
+
+  it('a point spent on the sheet is really spent', async () => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, attributePoints: 2 } }));
+    const before = player().baseAttributes.strength;
+    const { host, press, done, act } = await mount();
+    await press('Tab');
+    const raise = host.querySelector('[aria-label="Raise strength"]') as HTMLButtonElement;
+    await act(async () => { raise.click(); });
+    expect(player().baseAttributes.strength).toBe(before + 1);
+    expect(player().attributePoints).toBe(1);
+    await done();
+  });
+
+  it('it stays out of the way of typing and of an open window', async () => {
+    const { host, press, done } = await mount();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    await press('c', input);
+    expect(host.querySelector('[data-pack-window]')).toBeNull();
+    input.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'ws-overlay';
+    document.body.appendChild(overlay);
+    await press('Tab');
+    expect(host.querySelector('[data-pack-window]')).toBeNull();
+    overlay.remove();
+    await done();
+  });
+
+  it('there is one sheet: the app mounts it, and the field keeps no pack window of its own', () => {
+    const app = SRC('App.tsx');
+    expect((app.match(/<CharacterSheet \/>/g) ?? []).length).toBe(2); // the field's tree and the city's
+    const canvas = SRC('src/components/WorldCanvas.tsx');
+    expect(canvas).not.toMatch(/showPack/);
+    expect(canvas).not.toMatch(/PackWindow/);
+    expect(canvas).toMatch(/SHEET/);
+    expect(SRC('src/components/CharacterSheet.tsx')).toMatch(/<PaperDoll/);
+  });
+
+  it('the other views are not on the player\'s bar; the city is the way to them, and each has a way back', () => {
+    const app = SRC('App.tsx');
+    const bar = app.slice(app.indexOf('const TerminalBar'), app.indexOf('const App: React.FC'));
+    const beforeDev = bar.slice(0, bar.indexOf('{devMode && ('));
+    expect(beforeDev).not.toMatch(/label: 'ZONES'/);
+    expect(beforeDev).not.toMatch(/label: 'BANK'/);
+    expect(beforeDev).not.toMatch(/label: 'HOLDINGS'/);
+    expect(beforeDev).not.toMatch(/VIEW_KEYS/);
+    expect(beforeDev).toMatch(/BACK TO THE CITY/);
+    const city = SRC('src/entities/hub/HubCanvas.tsx');
+    expect(city).toMatch(/effect\.panel === 'missions'\) setView\('MISSIONS'\)/); // the Conduit reaches the zones and the mint
+    expect(city).toMatch(/setView\('HOLDINGS'\)[\s\S]*THE DEEDS|THE DEEDS[\s\S]*setView\('HOLDINGS'\)/); // an owner reaches the deeds from a room
+  });
+
+  it('DISCARD in the vault really discards, and only what was asked', () => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: undefined, bank: { ...s.player.bank, stashTabs: [{ name: 'MAIN', items: [rock('keep'), rock('gone')] }] } } }));
+    store().trashItem('gone', 'INVENTORY');
+    expect(stash().map(i => i.id)).toEqual(['keep']);
+  });
+});
+
+// -----------------------------------------------------------------------------
 // THE STANDING LAWS
 // -----------------------------------------------------------------------------
 
 describe('the standing laws reach everything this pass adds', () => {
   const FILES = [
     'src/components/ui/hands.tsx', 'src/components/ui/ItemGrid.tsx', 'src/components/ui/HoverLayer.tsx',
-    'src/components/ui/MinimapView.tsx', 'src/components/Hotbar.tsx'
+    'src/components/ui/MinimapView.tsx', 'src/components/Hotbar.tsx', 'src/components/CharacterSheet.tsx'
   ];
   const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{1F1E6}-\u{1F1FF}]/u;
 
