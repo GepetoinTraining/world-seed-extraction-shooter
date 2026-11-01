@@ -5,6 +5,7 @@ import { LootTable } from '../world/LootTable';
 import { IItem, UniversalRank, Rarity } from '../../../types';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
+import { IStatusPlan, StatusClock } from '../../logic/systems/EffectSystem';
 
 export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG';
@@ -31,8 +32,11 @@ const POISON_MS = 3000;
 const POISON_TICK_MS = 1000;
 
 const poisoned = (mob: IWorldEntity, perTick: number, now: number) => {
-  mob.statuses = [...(mob.statuses ?? []).filter(s => s.kind !== 'poison'),
-    { kind: 'poison', magnitude: perTick, until: now + POISON_MS, nextAt: now + POISON_TICK_MS }];
+  mob.statuses = StatusClock.add(mob.statuses as never, { kind: 'dot', magnitude: perTick, durationMs: POISON_MS, tickMs: POISON_TICK_MS }, now) as never;
+};
+
+const struck = (mob: IWorldEntity, status: IStatusPlan | undefined, now: number) => {
+  if (status) mob.statuses = StatusClock.add(mob.statuses as never, status, now) as never;
 };
 
 export class CombatSystem {
@@ -42,7 +46,7 @@ export class CombatSystem {
     chunks: Record<string, IChunk>,
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
-    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; hitIds?: Set<string> }[],
+    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string> }[],
     opts: { magicFind?: number } = {}
   ): {
     events: ICombatEvent[]; 
@@ -115,17 +119,13 @@ export class CombatSystem {
     const tickNow = Date.now();
     allMobs.forEach(({ mob, chunkKey }) => {
       if (!mob.statuses?.length) return;
-      let health = mob.health ?? 0;
-      mob.statuses = mob.statuses.flatMap(s => {
-        if (s.kind === 'poison' && s.nextAt <= tickNow) {
-          health -= s.magnitude;
-          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage: s.magnitude, position: mob.position });
-          return s.until > tickNow ? [{ ...s, nextAt: s.nextAt + POISON_TICK_MS }] : [];
-        }
-        return s.until > tickNow ? [s] : [];
-      });
-      mob.health = health;
-      if (health <= 0) resolveDefeat(mob, chunkKey);
+      const { damage, statuses } = StatusClock.tick(mob.statuses as never, tickNow);
+      mob.statuses = statuses as never;
+      if (damage > 0) {
+        mob.health = (mob.health ?? 0) - damage;
+        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
+        if (mob.health <= 0) resolveDefeat(mob, chunkKey);
+      }
     });
 
     // 1. BULLET -> MOB
@@ -141,6 +141,7 @@ export class CombatSystem {
         const damage = bullet.damage ?? 25;
         mob.health -= damage;
         if (bullet.poison) poisoned(mob, bullet.poison, tickNow);
+        struck(mob, bullet.status, tickNow);
         bulletsToRemove.add(bulletIdx);
 
         events.push({
@@ -183,6 +184,7 @@ export class CombatSystem {
           const damage = arc.damage ?? 50; // Wave 4: the weapon decides
           mob.health -= damage;
           if (arc.poison) poisoned(mob, arc.poison, tickNow);
+          struck(mob, arc.status, tickNow);
           hitIds.add(mob.id);
 
           // ACTION: Melee Hit

@@ -100,6 +100,19 @@
         "--strictPort"
       ],
       "port": 3107
+    },
+    {
+      "name": "world-seed-dev-3108",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3108",
+        "--strictPort"
+      ],
+      "port": 3108
     }
   ]
 }

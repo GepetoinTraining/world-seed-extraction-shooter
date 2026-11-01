@@ -20,6 +20,8 @@ import { Rng } from '../../logic/rng/DeterministicRNG';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
+import { RestDoor } from '../../logic/systems/RestDoor';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
@@ -47,12 +49,9 @@ function charge(amount: number, reason: string, data: Record<string, any> = {}):
   return true;
 }
 
-function identifyStashItems(ids: string[]) {
-  usePlayerStore.setState(s => ({
-    player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: tab.items.map(i => ids.includes(i.id) ? { ...i, isIdentified: true } : i) } : tab
-    ) } }
-  }));
+/** D50: even a paid reader needs the night. What she has is known at the next rest. */
+function studyOvernight(ids: string[]) {
+  usePlayerStore.setState(s => ({ player: ids.reduce((p, id) => RestSystem.queueStudy(p, id), s.player) }));
 }
 
 /** Repair cost: a quarter of the item's value, scaled by what's missing. */
@@ -118,11 +117,11 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     const unknown = stashItems().filter(i => i.isIdentified === false);
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
     if (bank().gold < cost) return { kind: 'reply', text: `Truth costs ${cost}G. You carry ${bank().gold}G.` };
-    const target = unknown[0];
+    const target = unknown.find(i => !RestSystem.isStudied(usePlayerStore.getState().player, i.id));
+    if (!target) return { kind: 'reply', text: 'I have everything of yours already. Sleep on it. You will know when you wake.' };
     charge(cost, 'IDENTIFY', { itemId: target.id });
-    identifyStashItems([target.id]);
-    const after = stashItems().find(i => i.id === target.id);
-    return { kind: 'reply', text: `The noise resolves. It was ${after?.name ?? target.name} all along.` };
+    studyOvernight([target.id]);
+    return { kind: 'reply', text: 'Leave it with me tonight. Nobody knows a thing until they have slept on it, not even me.' };
   },
   IDENTIFY_ALL: (payload) => {
     const cost = payload?.cost ?? 500;
@@ -130,8 +129,8 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
     if (bank().gold < cost) return { kind: 'reply', text: `All of it at once costs ${cost}G. You carry ${bank().gold}G.` };
     charge(cost, 'IDENTIFY_ALL', { count: unknown.length });
-    identifyStashItems(unknown.map(i => i.id));
-    return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} resolved. Read them before you trust them.` };
+    studyOvernight(unknown.map(i => i.id));
+    return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} on my table. You will know when you wake. Read them before you trust them.` };
   },
   OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
 
@@ -149,6 +148,10 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
 
   // --- The Rusty Anchor (Old Mags) ---
+  REST: () => {
+    void RestDoor.sleep('INN');
+    return { kind: 'reply', text: `${INN_FEE}G, and the bed by the wall. Whatever you have been carrying around in your head, leave it on the pillow.` };
+  },
   BUY_CONSUMABLE: (payload) => {
     const cost = payload?.cost ?? 10;
     if (!charge(cost, 'TAVERN', { itemId: payload?.itemId })) {

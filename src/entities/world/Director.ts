@@ -1,123 +1,119 @@
-import { MobMutation } from '../mob/types';
+/**
+ * THE DIRECTOR (D48, line 90): monsters change between rests, and come to differ.
+ *
+ * What it remembers is plain data on a world's record: how each creature fared. At
+ * a rest the generation rises, and each creature's chance of a trait follows its own
+ * fitness: what wore people down grows more common, what fell at once grows less so.
+ *
+ * Which body gets which trait is keyed by (seed, generation, entity), so the same
+ * record reads the same on every machine, and generation 0 changes nothing at all.
+ * Traits come from the world's theme, as data: a banked affix scoped to `mob`, and
+ * the theme's own magic. Nothing here names one, and nothing caps how many a theme holds.
+ */
 
-// Track performance of each mutation
-interface MutationStats {
-  spawnCount: number;
-  playerKills: number;
-  averageLifespan: number; // Seconds alive before death
+import { fnv1a, Rng } from '../../logic/rng/DeterministicRNG';
+
+export interface IDirectorRecord {
+  generation: number;
+  /** Per creature: how many times it brought a person down, and how many times it fell. */
+  felled: Record<string, number>;
+  fell: Record<string, number>;
+  /** Per creature: its trait chance, moved by fitness at each rest. */
+  weights: Record<string, number>;
 }
 
+export const emptyDirectorRecord = (): IDirectorRecord => ({ generation: 0, felled: {}, fell: {}, weights: {} });
+
+export interface IMobTrait {
+  id: string;
+  name: string;
+  type: 'PREFIX' | 'SUFFIX';
+  stats: Record<string, number>;
+}
+
+export interface IMobVariant {
+  traits: IMobTrait[];
+  /** Magic it has picked up beyond what it was born with. */
+  learned: string[];
+  displayName: string;
+  bonusHealth: number;
+  bonusDamage: number;
+}
+
+/** The chance a body carries a trait, before its fitness. Guesses until Wave 12. */
+const BASE_TRAIT_CHANCE = 0.08;
+const PER_GENERATION = 0.04;
+const MIN_WEIGHT = 0.1;
+const LEARN_CHANCE = 0.15;
+
+export interface IDirectorPool {
+  affixes: { id: string; name: string; type: 'PREFIX' | 'SUFFIX'; statModifiers?: Record<string, [number, number]> }[];
+  abilities: string[];
+}
+
+const NONE = (name: string): IMobVariant => ({ traits: [], learned: [], displayName: name, bonusHealth: 0, bonusDamage: 0 });
+
 export class Director {
-  // The "Genome" of the server. 
-  // Higher weight = Higher chance to spawn in next generation.
-  private static mutationWeights: Record<MobMutation, number> = {
-    [MobMutation.ARMORED_SHELL]: 1.0,
-    [MobMutation.ABLATIVE_COATING]: 1.0,
-    [MobMutation.ADRENAL_GLANDS]: 1.0,
-    [MobMutation.HIVE_MIND]: 1.0,
-    [MobMutation.EXPLOSIVE_DEATH]: 1.0
-  };
 
-  // Active Session Data
-  private static sessionStats: Record<MobMutation, MutationStats> = {
-    [MobMutation.ARMORED_SHELL]: { spawnCount: 0, playerKills: 0, averageLifespan: 0 },
-    [MobMutation.ABLATIVE_COATING]: { spawnCount: 0, playerKills: 0, averageLifespan: 0 },
-    [MobMutation.ADRENAL_GLANDS]: { spawnCount: 0, playerKills: 0, averageLifespan: 0 },
-    [MobMutation.HIVE_MIND]: { spawnCount: 0, playerKills: 0, averageLifespan: 0 },
-    [MobMutation.EXPLOSIVE_DEATH]: { spawnCount: 0, playerKills: 0, averageLifespan: 0 }
-  };
-
-  // --- RUNTIME LOGIC ---
-
-  static reportSpawn(mutations: MobMutation[]) {
-    mutations.forEach(m => {
-      if (!this.sessionStats[m]) return;
-      this.sessionStats[m].spawnCount++;
-    });
+  static report(record: IDirectorRecord, kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string): IDirectorRecord {
+    if (kind === 'FELLED_A_PERSON') {
+      return { ...record, felled: { ...record.felled, [definitionId]: (record.felled[definitionId] ?? 0) + 1 } };
+    }
+    return { ...record, fell: { ...record.fell, [definitionId]: (record.fell[definitionId] ?? 0) + 1 } };
   }
 
-  static reportMobDeath(mutations: MobMutation[], lifespanSeconds: number) {
-    mutations.forEach(m => {
-      if (!this.sessionStats[m]) return;
-      // Rolling average for lifespan
-      const stats = this.sessionStats[m];
-      const currentTotal = stats.averageLifespan * (stats.spawnCount - 1); // Approx
-      stats.averageLifespan = (currentTotal + lifespanSeconds) / stats.spawnCount;
-    });
+  /**
+   * A rest passes: the generation rises, fitness moves each weight, the tallies reset.
+   * Pure: the same record always gives the same next record.
+   */
+  static evolve(record: IDirectorRecord): IDirectorRecord {
+    const weights = { ...record.weights };
+    const seen = new Set([...Object.keys(record.felled), ...Object.keys(record.fell)]);
+    for (const id of [...seen].sort()) {
+      const felled = record.felled[id] ?? 0;
+      const fell = record.fell[id] ?? 0;
+      const fitness = 1 + (felled * 2 - fell * 0.1) / Math.max(1, felled + fell);
+      weights[id] = Math.max(MIN_WEIGHT, Math.round((weights[id] ?? 1) * fitness * 1000) / 1000);
+    }
+    return { generation: record.generation + 1, felled: {}, fell: {}, weights };
   }
 
-  static reportPlayerDeath(killerMutations: MobMutation[]) {
-    killerMutations.forEach(m => {
-      if (!this.sessionStats[m]) return;
-      this.sessionStats[m].playerKills++;
-    });
-  }
+  /**
+   * What this one body has become, this generation. Read at chunk build, so positions
+   * and the land never move; only what stands on them differs.
+   */
+  static variantOf(
+    seed: string, entityId: string, definitionId: string, name: string,
+    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined
+  ): IMobVariant {
+    if (!record || record.generation === 0 || !pool) return NONE(name);
+    const rng = Rng.fromKey(`director:${seed}:${record.generation}:${entityId}`);
+    const weight = record.weights[definitionId] ?? 1;
+    const chance = (BASE_TRAIT_CHANCE + PER_GENERATION * record.generation) * weight;
 
-  // --- GENERATION LOGIC ---
-
-  // Called by WorldGenerator to pick mutations for a new chunk
-  static getEvolutionaryMutations(rngNext: () => number): MobMutation[] {
-    const mutations: MobMutation[] = [];
-    
-    // Roll for mutations based on weighted pool
-    const possibleMutations = Object.keys(this.mutationWeights) as MobMutation[];
-    
-    // Limit to 1-2 mutations for now
-    const mutationCount = rngNext() > 0.8 ? 2 : 1;
-
-    for (let i = 0; i < mutationCount; i++) {
-      // Weighted Selection
-      const totalWeight = possibleMutations.reduce((sum, m) => sum + this.mutationWeights[m], 0);
-      let random = rngNext() * totalWeight;
-      
-      for (const m of possibleMutations) {
-        random -= this.mutationWeights[m];
-        if (random <= 0) {
-          if (!mutations.includes(m)) mutations.push(m);
-          break;
-        }
+    const traits: IMobTrait[] = [];
+    const affixes = [...pool.affixes].sort((a, b) => fnv1a(a.id) - fnv1a(b.id));
+    if (affixes.length > 0 && rng.next() < chance) {
+      const entry = affixes[rng.int(0, affixes.length)];
+      const stats: Record<string, number> = {};
+      for (const [stat, [low, high]] of Object.entries(entry.statModifiers ?? {})) {
+        stats[stat] = Math.round((low + rng.next() * (high - low)) * 100) / 100;
       }
+      traits.push({ id: entry.id, name: entry.name, type: entry.type, stats });
     }
 
-    return mutations;
-  }
+    const learned: string[] = [];
+    if (pool.abilities.length > 0 && rng.next() < chance * LEARN_CHANCE) {
+      learned.push(pool.abilities[rng.int(0, pool.abilities.length)]);
+    }
 
-  // --- THE "END OF CYCLE" EVENT ---
-  // This would be run by the server once per day/week/match-end
-  static evolveCycle() {
-    console.log("[DIRECTOR] EVOLUTION CYCLE INITIATED...");
-    
-    const possibleMutations = Object.keys(this.mutationWeights) as MobMutation[];
-
-    possibleMutations.forEach(m => {
-      const stats = this.sessionStats[m];
-      if (stats.spawnCount === 0) return; // No data
-
-      // Fitness Function:
-      // 1. Did it kill players? (High Weight)
-      // 2. Did it survive long? (Medium Weight)
-      let fitnessScore = 1.0;
-      
-      // Kill Rate Bonus
-      const killRate = stats.playerKills / stats.spawnCount;
-      if (killRate > 0.1) fitnessScore += 0.5; // Highly lethal
-      if (killRate > 0.5) fitnessScore += 1.0; // Broken OP
-
-      // Survival Bonus (e.g., standard survival is 10s)
-      if (stats.averageLifespan > 20) fitnessScore += 0.2; 
-      if (stats.averageLifespan < 5) fitnessScore -= 0.2; // Died too fast (Useless)
-
-      // Apply Evolution
-      // We clamp weights to prevent one trait from taking over 100% (Diversity preservation)
-      const newWeight = Math.max(0.1, Math.min(5.0, this.mutationWeights[m] * fitnessScore));
-      
-      console.log(`[DIRECTOR] Mutation [${m}]: Fitness ${fitnessScore.toFixed(2)} -> Weight ${newWeight.toFixed(2)}`);
-      this.mutationWeights[m] = newWeight;
-
-      // Reset Stats for next cycle
-      this.sessionStats[m] = { spawnCount: 0, playerKills: 0, averageLifespan: 0 };
-    });
-
-    console.log("[DIRECTOR] CYCLE COMPLETE. NEW META ESTABLISHED.");
+    const prefix = traits.find(t => t.type === 'PREFIX')?.name;
+    const suffix = traits.find(t => t.type === 'SUFFIX')?.name;
+    return {
+      traits, learned,
+      displayName: [prefix, name, suffix].filter(Boolean).join(' '),
+      bonusHealth: traits.reduce((sum, t) => sum + (t.stats.max_health ?? 0), 0),
+      bonusDamage: traits.reduce((sum, t) => sum + (t.stats.damage ?? 0), 0)
+    };
   }
 }

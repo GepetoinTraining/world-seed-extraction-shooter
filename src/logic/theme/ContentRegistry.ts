@@ -18,7 +18,8 @@ import { GEAR_RECIPES, RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, absorbWebBatch }
 import { registerCompositionDefs } from '../economy/CompositionSystem';
 import { WebBank } from '../content/WebBank';
 import { AffixBank } from '../content/AffixBank';
-import { IGenerationContext } from '../../entities/world/WorldGenerator';
+import type { IGenerationContext } from '../../entities/world/WorldGenerator';
+import type { IDirectorRecord } from '../../entities/world/Director';
 import { ICompiledTheme, IAbility, bodyOf, compileTheme, themeIdOf } from './ThemeCompiler';
 import { IThemeBody, IThemePack } from './ThemeTypes';
 import { IThemeVerdict, ThemeLaw } from './ThemeLaw';
@@ -112,11 +113,21 @@ export class ContentRegistry {
   }
 
   /** What a world builds its chunks from: its own theme and nothing else, at its own difficulty. */
-  static contextFor(themeId: string | undefined, difficulty?: UniversalRank | string): IGenerationContext {
+  static contextFor(themeId: string | undefined, difficulty?: UniversalRank | string, director?: IDirectorRecord, magicUnlocked = false): IGenerationContext {
     const own = <T extends { themeId?: string }>(defs: T[]) => defs.filter(d => d.themeId === themeId);
     const mobs = own(Object.values(MOB_DEFINITIONS) as { themeId?: string }[]);
     const resources = own(Object.values(RESOURCE_DEFINITIONS) as { themeId?: string }[]);
-    return { mobDefinitions: mobs, resourceDefinitions: resources, difficulty: difficulty as UniversalRank | undefined, themeId };
+    const context: IGenerationContext = { mobDefinitions: mobs, resourceDefinitions: resources, difficulty: difficulty as UniversalRank | undefined, themeId };
+    if (director && director.generation > 0) {
+      context.director = director;
+      const compiled = this.compiled(themeId);
+      context.directorPool = {
+        // D49: only once magic is unlocked do prefixes and suffixes reach a monster
+        affixes: magicUnlocked ? this.affixEntries(themeId).filter(e => e.allowedTags.includes('mob')) : [],
+        abilities: compiled ? Object.keys(compiled.abilities).sort() : []
+      };
+    }
+    return context;
   }
 
   static lore(themeId: string | undefined): string[] {

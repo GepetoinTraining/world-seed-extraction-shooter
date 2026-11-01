@@ -31,6 +31,8 @@ import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { SHELF } from '../../logic/theme/shelf';
+import { RestDoor } from '../../logic/systems/RestDoor';
+import { HubUnlock } from '../../logic/systems/HubUnlock';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on the latest law
 import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
@@ -277,6 +279,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   isLoading: false,
   
   loadHub: async (hubWorldUid: string) => {
+    void HubUnlock.isUnlocked(hubWorldUid);
     set({ isLoading: true, activeHubId: hubWorldUid });
 
     try {
@@ -491,8 +494,9 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   restAndCredit: async (kind) => {
-    const { player, emerged } = WebSystem.rest(usePlayerStore.getState().player);
-    usePlayerStore.setState({ player });
+    const { emerged: settled } = RestDoor.settle();
+    const emerged = settled as ISkillState[];
+    void RestDoor.collect();
     for (const skill of emerged) {
       useFeed.getState().push(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
     }

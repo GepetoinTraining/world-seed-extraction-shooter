@@ -20,6 +20,8 @@ import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { RestSystem } from '../../logic/systems/RestSystem';
+import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
@@ -763,20 +765,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const scope = StudySystem.identifyScopeOf(item);
     if (!scope) return { ok: false, reason: `${item.name} holds no maker's riddle. There is nothing to study.` };
 
-    // The sitting: the scoped skill grows by use (D6), the record opens.
+    // D50: a sitting costs the day's energy, and what it found is known only after a rest.
+    const { cost } = StudySystem.identifyAsk(player, item);
+    const today = player.energyToday ?? StatSystem.maxEnergy(player.attributes, player.equipment);
+    if (today < cost) {
+      const v = { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(today)}. Rest first.` };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    // The sitting: the scoped skill grows by use (D6).
     get().gainSkillXp(StudySystem.scopeSkillId(scope), 60, ['study', 'intel'], { tags: ['study'], magnitude: 10 } as any);
-    set(s => ({
-      player: {
-        ...StudySystem.reveal(s.player, item),
-        bank: {
-          ...s.player.bank,
-          stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-            idx === 0 ? { ...tab, items: tab.items.map(i => i.id === itemId ? { ...i, isIdentified: true } : i) } : tab)
-        }
-      }
-    }));
+    set(s => ({ player: { ...RestSystem.queueStudy(s.player, itemId), energyToday: today - cost } }));
     const level = StudySystem.identifyLevel(get().player, item);
-    feed(`Studied ${item.name}. The ${scope} eye stands at ${level}; what was banked on it is open.`, 'proof');
+    feed(`You sat with it. The ${scope} eye stands at ${level}. You will know after you rest.`, 'proof');
     // D27: loot teaches. What the piece implies accrues, and settles only at a rest.
     const teaches = WebSystem.reverseEngineer(item).designs.filter(d => !get().player.bank.universalSkills[d.skillId]);
     if (teaches.length > 0) {
@@ -861,45 +862,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!verdict.ok) return verdict;
     if (!paidIdentifies.delete(itemId)) return { ok: false, reason: 'Nothing was paid for. The eye has not looked.' };
 
-    // D32: the same attempt always answers the same; only another attempt can differ.
-    const attempt = item.identifyAttempts ?? 0;
-    const rollKey = SessionJournal.rollKey('identify', `${itemId}:${attempt}`);
-    const hit = Rng.fromKey(rollKey).next() * 100 < StudySystem.identifyChance(player, item);
-    SessionJournal.record('INTERACT', { kind: 'IDENTIFY_ROLL', itemId, attempt, rollKey, hit });
-
-    // The eye grows either way. Unschooled, it is winging it, and it settles at a rest;
-    // said aloud only once the piece is read, because the eye's name is the piece's kind.
+    // D50: there is no roll. The looking is done; what it found is known after a rest.
+    SessionJournal.record('INTERACT', { kind: 'STUDY', itemId });
+    // The eye grows. Unschooled, it is winging it, and it settles at a rest.
     const scope = StudySystem.identifyScopeOf(item)!;
     const eyeId = StudySystem.scopeSkillId(scope);
-    if (player.bank.universalSkills[eyeId]) get().gainSkillXp(eyeId, hit ? 15 : 5, ['study', 'intel']);
+    if (player.bank.universalSkills[eyeId]) get().gainSkillXp(eyeId, 15, ['study', 'intel']);
     else set(s => ({ player: WebSystem.accrue(s.player, { id: eyeId, tags: [`identify_${scope}`] }, 0) }));
-
-    if (!hit) {
-      set(s => s.player.currentSession ? ({
-        player: { ...s.player, currentSession: {
-          ...s.player.currentSession,
-          inventory: s.player.currentSession.inventory.map(i => i.id === itemId ? { ...i, identifyAttempts: attempt + 1 } : i)
-        } }
-      }) : s);
-      const v = { ok: false, reason: `${shown(item)} gives nothing up. The energy is gone; the piece is not.` };
-      feed(v.reason, 'plain');
-      return v;
-    }
-
-    set(s => {
-      if (!s.player.currentSession) return s;
-      const revealed = StudySystem.reveal(s.player, item);
-      return {
-        player: {
-          ...revealed,
-          currentSession: {
-            ...s.player.currentSession,
-            inventory: s.player.currentSession.inventory.map(i => i.id === itemId ? { ...i, isIdentified: true } : i)
-          }
-        }
-      };
-    });
-    feed(`${item.name} identified. The record reads exactly what was banked — downsides included.`, 'proof');
+    set(s => ({ player: RestSystem.queueStudy(s.player, itemId) }));
+    feed(`You looked at ${shown(item)} for as long as it took. You will know after you rest.`, 'plain');
     return { ok: true };
   },
 
@@ -1832,6 +1803,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5));
+      // Layer 4: what is gathered gives up its element, from its own world's elements
+      const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
+      if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
       feed(`Harvested ${quantity}× ${def.name}.`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;

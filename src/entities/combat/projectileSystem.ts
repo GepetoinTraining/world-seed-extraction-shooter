@@ -11,6 +11,7 @@ export interface IProjectile {
   color: string;
   damage?: number; // Wave 4: carried from the weapon/mob that fired it
   poison?: number; // Layer 0: what the blade left on it
+  status?: { kind: 'dot' | 'slow' | 'stun' | 'ward' | 'haste' | 'weaken'; magnitude: number; durationMs: number; tickMs?: number }; // Layer 1: what it leaves behind
   // Position on the previous frame, so a slow frame cannot skip over a target
   prevX?: number;
   prevY?: number;
@@ -88,7 +89,7 @@ export class ProjectileSystem {
    * Positions are recomputed from time, so `spent` remembers shots that landed.
    */
   static liveShots(
-    pattern: { type: PatternType; origin: { x: number; y: number }; startTime: number; angle: number; damage?: number; poison?: number },
+    pattern: { type: PatternType; origin: { x: number; y: number }; startTime: number; angle: number; damage?: number; poison?: number; status?: IProjectile['status'] },
     shotId: (bulletId: string) => string,
     now: number,
     prevTick: number,
@@ -102,6 +103,7 @@ export class ProjectileSystem {
           id: shotId(b.id),
           damage: pattern.damage,
           poison: pattern.poison,
+          status: pattern.status,
           prevX: b.x - Math.cos(b.angle) * back,
           prevY: b.y - Math.sin(b.angle) * back
         };

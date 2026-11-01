@@ -17,9 +17,9 @@
  * card agree by construction.
  */
 
-import { IItem, IPlayer, ItemType, Rarity, SlotType } from '../../../types';
+import { IItem, IPlayer, ItemType, SlotType } from '../../../types';
 import { LoadoutSystem, Verdict } from '../../entities/player/systems/LoadoutSystem';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
+import { StatSystem } from './StatSystem';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
 export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';
@@ -32,14 +32,6 @@ export const IDENTIFY_FLOOR_SECONDS = 2;
 /** D32: what a field attempt costs. A guess until Wave 12. Half again if no eye is schooled at all. */
 export const IDENTIFY_ENERGY = 10;
 const WINGING_FACTOR = 1.5;
-/** D32: the odds, in percent. Guesses until Wave 12. */
-const CHANCE_BASE = 20;
-const CHANCE_SCHOOLED = 10;
-const CHANCE_PER_RANK = 15;
-const CHANCE_PER_RARITY = 5;
-const CHANCE_FLOOR = 3;
-const CHANCE_CEILING = 95;
-
 const ok: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
 
@@ -95,24 +87,12 @@ export class StudySystem {
    */
   static identifyAsk(player: IPlayer, item: IItem): { cost: number; seconds: number } {
     const level = item.isIdentified === false ? this.bestEye(player) : this.identifyLevel(player, item);
+    // Line 77: glasses shorten the clock. Skill and gear make it quick, never instant.
+    const eyes = 1 + Math.max(0, StatSystem.total(player.equipment, 'field_analysis_speed'));
     return {
       cost: level < 1 ? Math.ceil(IDENTIFY_ENERGY * WINGING_FACTOR) : IDENTIFY_ENERGY,
-      seconds: this.identifySeconds(level)
+      seconds: Math.max(IDENTIFY_FLOOR_SECONDS, Math.round(this.identifySeconds(level) / eyes))
     };
-  }
-
-  /**
-   * D32: the odds, in percent, by the scoped eye against the piece's rank and rarity.
-   * Never shown: rank and rarity are what is hidden. D6: outranking by three opens it.
-   */
-  static identifyChance(player: IPlayer, item: IItem): number {
-    const level = this.identifyLevel(player, item);
-    const eye = ProgressionSystem.getRankFromLevel(level);
-    const { autoSuccess, gap } = ProgressionSystem.checkSkill(eye, item.rank);
-    if (level >= 1 && autoSuccess) return 100;
-    const rarity = Math.max(0, Object.values(Rarity).indexOf(item.rarity) - Object.values(Rarity).indexOf(Rarity.COMMON));
-    const chance = CHANCE_BASE + (level >= 1 ? CHANCE_SCHOOLED : 0) + gap * CHANCE_PER_RANK - rarity * CHANCE_PER_RARITY;
-    return Math.max(CHANCE_FLOOR, Math.min(CHANCE_CEILING, chance));
   }
 
   /** The knowledge scope key the mastery machinery files gear study under. */

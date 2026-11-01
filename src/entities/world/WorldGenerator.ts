@@ -9,6 +9,7 @@ import { UniversalRank, Rarity } from '../../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { hash2, layerSeed, valueNoise } from '../../logic/rng/noise';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { Director, IDirectorPool, IDirectorRecord } from './Director';
 
 export interface IGenerationContext {
   mobDefinitions: any[];
@@ -17,6 +18,9 @@ export interface IGenerationContext {
   difficulty?: UniversalRank;
   /** D53: the theme this world pinned. */
   themeId?: string;
+  /** D48: how this world's monsters have come along, and what they may become. */
+  director?: IDirectorRecord;
+  directorPool?: IDirectorPool;
 }
 
 /** Timber: what makes a forest, and what a trunk is. Read from what it is, never by a name. */
@@ -387,9 +391,14 @@ export class WorldGenerator {
     const mob = (suffix: string, template: any, tx: number, ty: number) => {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
+      const body = id(suffix);
+      const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool);
       push({
-        id: id(suffix), type: EntityType.MOB, definitionId: template.id, position: at,
-        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth
+        id: body, type: EntityType.MOB, definitionId: template.id, position: at,
+        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth + variant.bonusHealth,
+        ...(variant.traits.length > 0 || variant.learned.length > 0 ? {
+          displayName: variant.displayName, bonusHealth: variant.bonusHealth, bonusDamage: variant.bonusDamage, learned: variant.learned
+        } : {})
       });
     };
 

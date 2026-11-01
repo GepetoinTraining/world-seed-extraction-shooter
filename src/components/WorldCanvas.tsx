@@ -30,6 +30,11 @@ import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { StatSystem } from '../logic/systems/StatSystem';
+import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
+import { RestSystem } from '../logic/systems/RestSystem';
+import type { IPlayer as IPlayerShape } from '../../types';
+import { WeaveSystem } from '../logic/systems/WeaveSystem';
+import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
@@ -494,6 +499,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Line 75: quadrants this session has had in sight, and the exits of sectors it knows
   const seenRef = useRef<Set<string>>(new Set());
   const shotCountRef = useRef(0);
+  const triggerReadyRef = useRef<Record<string, number>>({});
+  const lastHurtByRef = useRef<string | null>(null);
   const hurtCountRef = useRef(0);
   const exitsRef = useRef<Map<string, { x: number; y: number }[]>>(new Map());
 
@@ -542,6 +549,53 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     return LoadoutSystem.itemIn(eq, slotId);
   };
 
+  // The player's side of the one effect door: a weave, a known ability, a scroll or a piece's trigger.
+  const applyPlayerReceipt = (receipt: IEffectReceipt, now: number, origin: { x: number; z: number }, angle: number) => {
+    if (EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)) {
+      usePlayerStore.setState(s => {
+        const session = s.player.currentSession;
+        if (!session) return s;
+        return { player: { ...s.player, currentSession: {
+          ...session,
+          health: receipt.effect === 'heal' ? Math.min(session.maxHealth, session.health + receipt.magnitude) : session.health,
+          activeEffects: receipt.status ? StatusClock.add(session.activeEffects, receipt.status, now) : session.activeEffects
+        } } };
+      });
+      return;
+    }
+    const damage = receipt.effect === 'damage' ? receipt.magnitude : Math.round(receipt.magnitude / 4);
+    if (receipt.delivery === 'ranged') {
+      setPlayerPatterns(prev => [...prev.filter(p => now - p.startTime < 2000),
+        { type: PatternType.SINGLE, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status }]);
+    } else if (receipt.delivery === 'melee' || receipt.delivery === 'touch') {
+      setActiveSwings(prev => [...prev.filter(s => now - s.startTime < 300),
+        { origin: { x: origin.x, y: origin.z }, angle, range: receipt.reachPx, startTime: now, damage, status: receipt.status }]);
+    } else {
+      setPlayerPatterns(prev => [...prev.filter(p => now - p.startTime < 2000),
+        { type: PatternType.NOVA, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status }]);
+    }
+  };
+
+  const castFromFocus = (cast: NonNullable<IPlayerShape['activeCast']>, now: number, origin: { x: number; z: number }, angle: number) => {
+    const player = usePlayerStore.getState().player;
+    const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
+    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements) : ContentRegistry.ability(cast.id);
+    if (!ability) return;
+    const can = WeaveSystem.canCast(player, ability, rank);
+    if (!can.ok) {
+      if (!energyToldRef.current) feed(`Not enough ${can.short} held to work that. Gather more.`, 'loss');
+      energyToldRef.current = true;
+      return;
+    }
+    const receipt = EffectSystem.resolve(ability, { rank, power: (player.attributes.focus ?? 0) * 0.02 }, SessionJournal.rollKey('cast', String(shotCountRef.current++)));
+    usePlayerStore.setState(s => {
+      let next = WeaveSystem.spend(s.player, ability, rank);
+      if (cast.kind === 'weave') next = RestSystem.queueWeave(next, cast.elements);
+      return { player: next };
+    });
+    applyPlayerReceipt(receipt, now, origin, angle);
+  };
+
   // Line 72: one shot, if the gate says so. The weapon decides how; the hand decides which.
   fireRef.current = (now: number) => {
     const st = usePlayerStore.getState();
@@ -581,6 +635,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         ...prev.filter(s => now - s.startTime < 300),
         { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage, poison }
       ]);
+    } else if (mode === 'FOCUS' && st.player.activeCast) {
+      // Layer 4: what the focus was set to cast, through the one door
+      castFromFocus(st.player.activeCast, now, playerPos, angle);
     } else if (mode === 'FOCUS') {
       // Focus: a NOVA burst, paid in energy
       usePlayerStore.setState(s => s.player.currentSession ? ({
@@ -895,7 +952,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (dx !== 0 || dz !== 0) {
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
-        const moveStep = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * dt * TILE_SIZE;
+        const walker = usePlayerStore.getState().player;
+        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
 
@@ -994,6 +1052,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       });
 
       let incomingDamage = 0;
+      const landedStatuses: IStatusPlan[] = [];
       const isAlive = (p: any) => (now - p.startTime) < 2000;
 
       // Line 72: a held button fires at the weapon's own rate, whatever the weapon
@@ -1019,12 +1078,17 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
-          if (p.type === 'MELEE') {
+          if (p.type === 'MELEE' || p.type === 'AREA') {
+            // A wind-up can be walked away from: what lands is measured when it lands
             const d = Math.hypot(p.origin.x - playerPos.x, p.origin.y - playerPos.z);
-            if (d < 50) incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
+            if (d < (p.reachPx ?? 50)) {
+              lastHurtByRef.current = p.shooterId ?? lastHurtByRef.current;
+              incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
+              if (p.status) landedStatuses.push(p.status);
+            }
           }
         });
-        const ranged = aiResult.spawnedPatterns.filter(p => p.type !== 'MELEE');
+        const ranged = aiResult.spawnedPatterns.filter(p => p.type !== 'MELEE' && p.type !== 'AREA');
         if (ranged.length > 0) setEnemyPatterns(prev => [...prev.filter(isAlive), ...ranged]);
       }
 
@@ -1044,6 +1108,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const survivingEnemyBullets = enemyBullets.filter(b => {
         if (ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) < 15) {
           incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
+          const firedBy = enemyPatterns.find(p => b.id.startsWith(`e_${p.shooterId}_${p.startTime}_`));
+          if (firedBy) lastHurtByRef.current = firedBy.shooterId;
+          if (firedBy?.status) landedStatuses.push(firedBy.status);
           spentShots.current.set(b.id, now);
           return false;
         }
@@ -1071,9 +1138,27 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
           if (event.type === 'KILL' && event.xpReward) {
             feed(`${def?.name ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
+            // Line 80: defeating a thing teaches what it casts, at the next rest. Line 90: the Director hears.
+            const innate = (def as { innate?: string[] } | undefined)?.innate ?? [];
+            if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));
+            if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId);
           }
         }
       });
+      // Layer 3: what worn pieces fire. The trigger is a word from a pack, and it acts unstudied (D19).
+      const fired = (trigger: string) => {
+        const live = usePlayerStore.getState().player;
+        for (const abilityId of EffectSystem.triggered(live.equipment as never, trigger)) {
+          if ((triggerReadyRef.current[abilityId] ?? 0) > now) continue;
+          const ability = ContentRegistry.ability(abilityId);
+          if (!ability) continue;
+          const receipt = EffectSystem.resolve(ability, { rank: ProgressionSystem.rankFromXp(live.rankXp ?? 0) }, SessionJournal.rollKey('trigger', String(shotCountRef.current++)));
+          triggerReadyRef.current[abilityId] = now + receipt.cooldownMs;
+          applyPlayerReceipt(receipt, now, { x: playerPos.x, z: playerPos.z }, 0);
+        }
+      };
+      if (combatResult.events.some(e => e.type === 'HIT')) fired('on_hit');
+      if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events);
       if (rewards.rankUp) {
         useRankMoment.getState().show({ from: rewards.rankUp.from, to: rewards.rankUp.to, points: rewards.rankUp.points, at: now });
@@ -1125,7 +1210,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Apply damage to the agent (Wave 4.1: armor mitigates, and wears)
       const rawDamage = incomingDamage + combatResult.playerDamage;
       const armor = getEquipped('armor');
-      const totalDamage = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0))).damage;
+      // Layer 1: what is working on the body, what just landed, and any ward spending itself
+      let effects = liveSession.activeEffects ?? [];
+      const clock = StatusClock.tick(effects, now);
+      effects = clock.statuses;
+      landedStatuses.forEach(plan => { effects = StatusClock.add(effects, plan, now); });
+      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)));
+      const warded = StatusClock.absorb(effects, hit.damage + clock.damage);
+      effects = warded.statuses;
+      const totalDamage = warded.damage;
+      if (effects !== liveSession.activeEffects && (effects.length > 0 || (liveSession.activeEffects?.length ?? 0) > 0)) {
+        usePlayerStore.setState(state => state.player.currentSession
+          ? { player: { ...state.player, currentSession: { ...state.player.currentSession, activeEffects: effects } } }
+          : state);
+      }
       if (totalDamage > 0) {
         if (armor) usePlayerStore.getState().wearEquipment('armor', 1);
         const newHealth = Math.max(0, liveSession.health - totalDamage);
@@ -1134,6 +1232,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           : state);
 
         SessionJournal.record('DAMAGE', { amount: totalDamage, health: newHealth });
+        fired('on_hurt');
+        if (newHealth < liveSession.maxHealth * 0.25) fired('on_low_health');
         hurtAtRef.current = now; // the screen edge answers the blow
 
         // Wave 2.5: taking damage interrupts the extraction channel
@@ -1150,6 +1250,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           const penalty = card?.deathPenalty ?? 'INVENTORY_LOSS';
           console.warn(`[SESSION] Agent flatlined. Penalty: ${penalty}.`);
           SessionJournal.record('DEATH', { penalty });
+          // Line 90: what brought a person down grows more common, after the next rest
+          const killer = lastHurtByRef.current
+            ? Object.values(visibleChunks).flatMap(c => c.entities).find(e => e.id === lastHurtByRef.current)
+            : undefined;
+          if (killer) useWorldStore.getState().reportToDirector('FELLED_A_PERSON', killer.definitionId);
 
           // Wave 10C (D16): the cart stays in the world, standing where it was
           void usePlayerStore.getState().persistCarts();

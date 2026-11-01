@@ -3,6 +3,7 @@ import { IGenerationContext, WorldGenerator } from '../WorldGenerator';
 import { IMap } from '../types';
 import { GRID_VERSION } from '../grid';
 import { ContentRegistry } from '../../../logic/theme/ContentRegistry';
+import type { IDirectorRecord } from '../Director';
 
 export interface IWorldInstance {
   id: string;
@@ -20,17 +21,17 @@ export interface IWorldInstance {
 export class WorldGenerationService {
 
   /** A world builds from its own theme and nothing else (D53). */
-  private static loadContext(themeId: string | undefined, difficulty?: string): IGenerationContext {
-    return ContentRegistry.contextFor(themeId ?? ContentRegistry.defaultThemeId(), difficulty);
+  private static loadContext(themeId: string | undefined, difficulty?: string, director?: IDirectorRecord, magicUnlocked?: boolean): IGenerationContext {
+    return ContentRegistry.contextFor(themeId ?? ContentRegistry.defaultThemeId(), difficulty, director, magicUnlocked);
   }
 
   /**
    * Opens a world, resuming its timer if it is still live. Only its record is
    * stored: its land comes from the seed, and chunks are built as they are reached.
    */
-  static async activateWorld(seed: string, size: number, themeId?: string, difficulty?: string): Promise<IWorldInstance> {
+  static async activateWorld(seed: string, size: number, themeId?: string, difficulty?: string, director?: IDirectorRecord, magicUnlocked?: boolean): Promise<IWorldInstance> {
     const instanceId = `inst_g${GRID_VERSION}_${seed}_${size}`;
-    const context = this.loadContext(themeId, difficulty);
+    const context = this.loadContext(themeId, difficulty, director, magicUnlocked);
     const now = Date.now();
 
     const existing = await VectorStore.get<IWorldInstance>(VectorNamespace.WORLDS, instanceId);

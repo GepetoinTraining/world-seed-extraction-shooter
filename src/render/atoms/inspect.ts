@@ -95,8 +95,8 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
 
 function inspectMob(e: IWorldEntity): Card {
   const def = MOB_DEFINITIONS[e.definitionId] as any;
-  const title = def?.name || 'Unknown Contact';
-  const max = def?.baseHealth ?? 0;
+  const title = e.displayName || def?.name || 'Unknown Contact';
+  const max = (def?.baseHealth ?? 0) + (e.bonusHealth ?? 0);
   const health = e.health ?? max;
   const rows: [string, string][] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
   if (def?.size) rows.push(['Size', String(def.size)]);

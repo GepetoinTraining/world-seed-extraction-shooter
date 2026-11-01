@@ -163,6 +163,7 @@ export const WEB_BATCHES: IWebBatch[] = [
       { tag: 'utility', kind: 'class', meaning: 'Carried for what it reads rather than what it hits.' },
 
       // SCOPES: what a banked affix may roll on.
+      { tag: 'mob', kind: 'scope', meaning: 'A banked affix that may land on a monster, once magic is unlocked.' },
       { tag: 'resource', kind: 'scope', meaning: 'Rolls on a harvested material.' },
       { tag: 'process_carpentry', kind: 'scope', meaning: 'Banked for what carpentry leaves behind.' },
       { tag: 'process_smelting', kind: 'scope', meaning: 'Banked for what smelting leaves behind.' },

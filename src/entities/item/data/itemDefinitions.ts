@@ -20,6 +20,8 @@ export interface ItemDefinition {
   pouch?: { accepts: string[]; capacity: number };   // D17: what it stacks, and how much
   belt?: { pouchSlots: number };                     // D17: slots the belt opens
   cart?: { gridW: number; gridH: number };           // D16: the bed a packed cart unfolds to
+  /** Layer 3: an ability this base carries, and when it fires. */
+  carries?: { ability: string; trigger: string };
 }
 // -----------------------------------
 

@@ -449,6 +449,10 @@ export interface IHarvestConfig {
 }
 
 export interface IItem {
+  /** Layer 3: an ability this piece carries, and when it fires. It acts unstudied (D19). */
+  carries?: { ability: string; trigger: string };
+  /** Layer 3: what a scroll casts when it is used. */
+  casts?: string;
   id: string;
   universalDefinitionId: string;
   name: string;
@@ -739,6 +743,8 @@ export interface IActiveSession {
   energy: number;
   position: { x: number; y: number; z: number };
   statusEffects: string[];
+  /** Layer 1: what is working on this body right now, on the clock. */
+  activeEffects?: { kind: string; magnitude: number; until: number; nextAt: number; tickMs?: number }[];
 }
 
 // NEW: Interaction Types for UI
@@ -799,6 +805,19 @@ export interface IPlayer {
   attributePoints?: number;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
   energyToday?: number;
+  dayCount?: number;
+  /** D43, D50: what play queued, for the next rest. */
+  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
+  /** What was filed at the door and has not come back. */
+  pendingDream?: { batchId: string; asked: { skills: string[]; weaves: string[] } };
+  /** D58: what a rest's model said of a skill, and what it lets the holder do. */
+  skillWords?: Record<string, { name: string; flavor: string; grants: string[] }>;
+  /** Layer 4: aether per element, from what was gathered. */
+  reserves?: Record<string, number>;
+  weaveNames?: Record<string, string>;
+  knownAbilities?: string[];
+  /** What the focus casts right now. Absent: the plain burst. */
+  activeCast?: { kind: 'weave'; elements: string[] } | { kind: 'ability'; id: string };
   bank: IBank;
   currentSession?: IActiveSession;
   guildId?: string;

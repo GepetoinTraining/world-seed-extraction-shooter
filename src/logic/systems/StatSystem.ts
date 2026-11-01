@@ -38,7 +38,7 @@ export const STAT_READERS: Record<string, string> = {
   movement_speed: 'LoadoutSystem.walkTilesPerSecond',
   movement_speed_penalty: 'LoadoutSystem.walkTilesPerSecond',
   luck_find_rarity: 'CombatSystem.tick',
-  field_analysis_speed: 'StudySystem.studyAsk',
+  field_analysis_speed: 'StudySystem.identifyAsk',
   mining_power: 'InteractionEngine',
   chopping_power: 'InteractionEngine',
   health_restore: 'playerStore.useConsumable',

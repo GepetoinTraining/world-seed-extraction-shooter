@@ -922,9 +922,11 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
     expect(canvas).toMatch(/restAndCredit\('SEALED'\)/);
     expect(canvas).toMatch(/restAndCredit\('DIED'\)/);
     expect(canvas).toMatch(/restAndCredit\('WITHDREW'\)/);
+    // D43: every rest settles through one door, chosen or not
     const callers = sourceFiles.filter(f => /WebSystem\.rest\(/.test(f.text)).map(f => f.path);
     expect(callers.length).toBe(1);
-    expect(callers[0]).toMatch(/hub\/store\.ts$/);
+    expect(callers[0]).toMatch(/RestSystem\.ts$/);
+    expect(source('entities/hub/store.ts')).toMatch(/RestDoor\.settle\(\)/);
   });
 
   it('the forming list is a fill, never a number the player could read as the bar', () => {

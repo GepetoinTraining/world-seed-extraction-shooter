@@ -6,11 +6,16 @@ import { MobBehavior } from '../types';
 import { CombatMath } from '../../combat/CombatMath';
 import { WorldGenerator } from '../../world/WorldGenerator';
 import { fnv1a } from '../../../logic/rng/DeterministicRNG';
+import { EffectSystem, IEffectReceipt, StatusClock } from '../../../logic/systems/EffectSystem';
+import { ContentRegistry } from '../../../logic/theme/ContentRegistry';
 
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;
 /** How much noise reduction it takes to halve the distance you are noticed from. A guess until Wave 12. */
 const NOISE_SCALE = 20;
+/** R4: nothing lands without a wind-up you can see. Guesses until Wave 12. */
+const STRIKE_WINDUP_MS = 450;
+const ATTACK_COOLDOWN_MS = 2000;
 
 // ==========================================
 // 1. ENUMS (Standard)
@@ -101,6 +106,10 @@ export class MobAI {
     facing: MobFacing;
     moving: boolean;
     provoked: boolean;
+    /** What it has started and not yet finished: seen, and dodged, before it lands. */
+    windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean };
+    readyAt: Record<string, number>;
+    casts: number;
   }> = {};
 
   static reset() {
@@ -121,7 +130,7 @@ export class MobAI {
   static provoke(entityId: string) {
     const mem = this.mobMemory[entityId];
     if (mem) { mem.provoked = true; if (mem.state === MobState.DORMANT) mem.state = MobState.ACTIVE; }
-    else this.mobMemory[entityId] = { lastAttackTime: 0, state: MobState.ACTIVE, objective: MobObjective.KILL_PLAYER, facing: 'down', moving: false, provoked: true };
+    else this.mobMemory[entityId] = { lastAttackTime: 0, state: MobState.ACTIVE, objective: MobObjective.KILL_PLAYER, facing: 'down', moving: false, provoked: true, readyAt: {}, casts: 0 };
   }
 
   /**
@@ -167,7 +176,9 @@ export class MobAI {
             objective: MobObjective.KILL_PLAYER,
             facing: 'down',
             moving: false,
-            provoked: false
+            provoked: false,
+            readyAt: {},
+            casts: 0
           };
         }
 
@@ -184,12 +195,17 @@ export class MobAI {
         // 2. Activation by the definition's own senses. Neutral things stir only
         // when touched or provoked; passive things only when provoked.
         const aggroTiles =
-          behavior === MobBehavior.NEUTRAL ? 2 :
+          // R4: neutral is neutral. Standing near it provokes nothing; only harm does.
+          behavior === MobBehavior.NEUTRAL ? 0 :
           behavior === MobBehavior.PASSIVE ? 0 :
           Math.min(def?.viewRange ?? 8, 16) * heard;
         const leashTiles = Math.max(16, aggroTiles * 2);
         if (mem.state === MobState.DORMANT) {
-          if ((aggroTiles > 0 && dist < aggroTiles * PX) || mem.provoked) mem.state = MobState.ACTIVE;
+          if ((aggroTiles > 0 && dist < aggroTiles * PX) || mem.provoked) {
+            mem.state = MobState.ACTIVE;
+            // R4: waking is not striking. The first blow waits its turn like every other.
+            mem.lastAttackTime = now - ATTACK_COOLDOWN_MS + STRIKE_WINDUP_MS;
+          }
         } else if (dist > leashTiles * PX) {
           mem.state = MobState.DORMANT;
           mem.provoked = false;
@@ -209,10 +225,13 @@ export class MobAI {
             isInTerritory: true,
             playerIsLookingAtMob: false
           };
-          const decision = this.decideAction(entity.id, behavior, def?.genre, mem.provoked, ctx, { x: entity.position.x, y: entity.position.y });
+          const known = [...((def as { innate?: string[] })?.innate ?? []), ...(entity.learned ?? [])];
+          const kites = def?.genre === GenreType.SCIFI || known.some(id => ContentRegistry.ability(id)?.delivery === 'ranged');
+          const decision = this.decideAction(entity.id, behavior, kites, mem.provoked, ctx, { x: entity.position.x, y: entity.position.y });
 
           // Move at the definition's own pace, against the world's own ground
-          const moveSpeed = (def?.speed ?? 2.0) * PX * deltaTime;
+          const running = ((entity.statuses ?? []) as { until: number }[]).filter(s => s.until > now) as never[];
+          const moveSpeed = (def?.speed ?? 2.0) * PX * deltaTime * StatusClock.paceScale(running) * (mem.windup ? 0 : 1);
           let moveX = 0;
           let moveY = 0;
           const angle = Math.atan2(dy, dx);
@@ -233,16 +252,50 @@ export class MobAI {
             moveY = -Math.sin(angle) * moveSpeed;
           }
 
-          // Attack
-          if (decision.action === BehaviorPrimitive.ATTACK_RANGED || decision.action === BehaviorPrimitive.ATTACK_MELEE) {
-            if (now - mem.lastAttackTime > 2000) {
-              mem.lastAttackTime = now;
+          // A casting or a blow, when it is ready: it winds up first, where you can see it.
+          const engaged = behavior !== MobBehavior.PASSIVE && decision.action !== BehaviorPrimitive.FLEE && (mem.provoked || behavior !== MobBehavior.NEUTRAL);
+          if (!mem.windup && engaged) {
+            const cast = known.find(id => {
+              const ability = ContentRegistry.ability(id);
+              if (!ability || (mem.readyAt[id] ?? 0) > now) return false;
+              const receipt = EffectSystem.resolve(ability, { rank: entity.rank }, `${entity.id}:${mem.casts}`);
+              return EffectSystem.landsOnCaster(ability.effect, ability.delivery) || dist <= Math.max(receipt.reachPx, 2 * PX);
+            });
+            if (cast) {
+              const ability = ContentRegistry.ability(cast)!;
+              const receipt = EffectSystem.resolve(ability, { rank: entity.rank }, `${entity.id}:${mem.casts++}`);
+              mem.readyAt[cast] = now + receipt.cooldownMs + receipt.telegraphMs;
+              mem.windup = { startedAt: now, until: now + receipt.telegraphMs, receipt, delivery: ability.delivery, reachPx: receipt.reachPx, ranged: ability.delivery === 'ranged' };
+            } else if ((decision.action === BehaviorPrimitive.ATTACK_RANGED || decision.action === BehaviorPrimitive.ATTACK_MELEE) && now - mem.lastAttackTime > ATTACK_COOLDOWN_MS) {
+              mem.windup = {
+                startedAt: now, until: now + STRIKE_WINDUP_MS,
+                delivery: decision.action === BehaviorPrimitive.ATTACK_RANGED ? 'ranged' : 'melee',
+                reachPx: decision.action === BehaviorPrimitive.ATTACK_RANGED ? 400 : 50,
+                ranged: decision.action === BehaviorPrimitive.ATTACK_RANGED
+              };
+            }
+          }
 
+          let health = entity.health ?? 0;
+          let statuses: never[] = running;
+          if (mem.windup && now >= mem.windup.until) {
+            const { receipt, ranged, reachPx } = mem.windup;
+            mem.windup = undefined;
+            mem.lastAttackTime = now;
+            if (receipt && EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)) {
+              if (receipt.effect === 'heal') health = Math.min((def?.baseHealth ?? health) + (entity.bonusHealth ?? 0), health + receipt.magnitude);
+              if (receipt.status) statuses = StatusClock.add(statuses, receipt.status, now) as never[];
+            } else {
               spawnedPatterns.push({
-                // MELEE strikes are resolved instantly by the canvas; ranged uses the projectile system
-                type: decision.action === BehaviorPrimitive.ATTACK_RANGED ? PatternType.SINGLE : 'MELEE',
+                // MELEE and AREA resolve at once by the canvas, within reach; ranged uses the projectile system
+                type: ranged ? PatternType.SINGLE : receipt?.delivery === 'area' || receipt?.delivery === 'aura' ? 'AREA' : 'MELEE',
                 // Wave 4.3: the definition decides what this attack costs you
-                damage: CombatMath.mobDamage(MOB_DEFINITIONS[entity.definitionId]),
+                damage: receipt
+                  ? (receipt.effect === 'damage' ? receipt.magnitude : Math.round(receipt.magnitude / 4))
+                  : CombatMath.mobDamage(def) + (entity.bonusDamage ?? 0),
+                status: receipt?.status,
+                reachPx,
+                abilityId: receipt?.abilityId,
                 shooterId: entity.id,
                 // Origin is 2D { x, y }
                 origin: { x: entity.position.x, y: entity.position.y },
@@ -271,6 +324,9 @@ export class MobAI {
           // Return Updated Entity (Strictly 2D update)
           return {
             ...entity,
+            health,
+            statuses: statuses as never,
+            telegraph: mem.windup ? { startedAt: mem.windup.startedAt, until: mem.windup.until, delivery: mem.windup.delivery, reachPx: mem.windup.reachPx, angle } : undefined,
             position: {
               x: next.x,
               y: next.z
@@ -311,7 +367,7 @@ export class MobAI {
   private static decideAction(
     entityId: string,
     behavior: MobBehavior,
-    genre: GenreType | undefined,
+    kites: boolean,
     provoked: boolean,
     ctx: ICombatContext,
     mobPos: { x: number; y: number }
@@ -343,14 +399,14 @@ export class MobAI {
         return { action: provoked ? BehaviorPrimitive.FLEE : BehaviorPrimitive.IDLE };
 
       case MobBehavior.NEUTRAL:
-        if (!provoked && dist >= 2 * PX) return { action: BehaviorPrimitive.IDLE };
+        if (!provoked) return { action: BehaviorPrimitive.IDLE };
         if (dist < 2 * PX) return { action: BehaviorPrimitive.ATTACK_MELEE };
         return { action: BehaviorPrimitive.APPROACH };
 
       default: {
         if (dist < 2 * PX) return { action: BehaviorPrimitive.ATTACK_MELEE };
-        // Sci-Fi Kiting Logic
-        if (genre === GenreType.SCIFI) {
+        // What fights at a distance keeps its distance
+        if (kites) {
           if (dist < 8 * PX && dist > 4 * PX) return { action: BehaviorPrimitive.ATTACK_RANGED };
           if (dist <= 4 * PX) return { action: BehaviorPrimitive.FLEE };
         }

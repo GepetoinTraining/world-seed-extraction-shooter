@@ -136,6 +136,8 @@ export class ItemFactory {
     if (template.pouch) item.pouchData = { accepts: [...template.pouch.accepts], capacity: template.pouch.capacity, contents: [] };
     if (template.belt) item.beltData = { pouchSlots: template.belt.pouchSlots };
     if (template.cart) item.cartData = { ...template.cart };
+    // Layer 3: a piece can carry an ability. It acts unstudied, and stays hidden until read.
+    if (template.carries) item.carries = { ...template.carries };
     // 10C.2: requirements are stamped at mint — deterministic from rank and tags
     item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
 
@@ -274,6 +276,7 @@ export class ItemFactory {
       icon: def.icon ?? 'resource_icon',
       history: { dropDate: Date.now(), killCount: 0 },
       isIdentified: true,
+      ...((def as { casts?: string }).casts ? { casts: (def as { casts?: string }).casts } : {}),
       composition: CompositionSystem.root({ id: def.id, name: def.name }, opts?.origin ?? 'HARVEST')
     };
     return item;

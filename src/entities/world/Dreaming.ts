@@ -19,6 +19,7 @@
 import { IAffix, IBankedAffix, IContentPack } from '../../../types';
 import { AffixDefinition } from '../item/data/affixDefinitions';
 import { AffixBank } from '../../logic/content/AffixBank';
+import { SHELF_STATE } from '../../logic/theme/shelf';
 import { Rng, SeededRNG } from '../../logic/rng/DeterministicRNG';
 
 /** What a roll pool may hold: the legacy table's shape, or a banked entry
@@ -106,7 +107,10 @@ export class DreamingSystem {
    */
   static hubShelfPool(): IAffixPool {
     const legacy = AffixBank.legacyPool();
-    const extra = AffixBank.current().entries.filter(e => e.theme === 'GLOBAL' || e.theme === 'CART');
+    // D49: a theme's prefixes and suffixes reach the shelf only once this hub has unlocked magic
+    const extra = AffixBank.current().entries
+      .filter(e => e.theme === 'GLOBAL' || e.theme === 'CART')
+      .filter(e => !e.themeId || SHELF_STATE.magicUnlocked);
     return {
       prefixes: [...legacy.prefixes, ...extra.filter(e => e.type === 'PREFIX').map(e => this.toAffixDefinition(e))],
       suffixes: [...legacy.suffixes, ...extra.filter(e => e.type === 'SUFFIX').map(e => this.toAffixDefinition(e))]

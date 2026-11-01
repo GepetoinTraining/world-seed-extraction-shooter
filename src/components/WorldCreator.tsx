@@ -10,6 +10,12 @@ import { WORLD_DRAFT_DEFAULTS, WorldDraft, useWorldDraft } from './ui/stores';
 import { WorldCertificateSystem, WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
 import { UniversalRank } from '../../types';
 import { Button, Input, Modal, Panel, Tabs } from './ui/kit';
+import { ThemeTalk } from './ThemeTalk';
+import { ContentRegistry } from '../logic/theme/ContentRegistry';
+import { ThemeStore } from '../logic/theme/ThemeStore';
+import { sealTheme } from '../logic/theme/ThemeCompiler';
+import { IThemeBody } from '../logic/theme/ThemeTypes';
+import { HubUnlock } from '../logic/systems/HubUnlock';
 
 interface WorldCreatorProps {
   opened: boolean;
@@ -62,7 +68,23 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
     setCreating(true);
     setError(null);
     try {
+      // D56: the theme first. A written one is judged again and banked; its id is its bytes.
+      let themeId = draft.themeId || ContentRegistry.defaultThemeId();
+      if (draft.writtenTheme) {
+        const usage = draft.writtenUsage as { model?: string; inputTokens: number; outputTokens: number; usd: number } | null;
+        const pack = sealTheme(draft.writtenTheme as IThemeBody, usage?.model ?? 'unknown', Date.now(), usage
+          ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, usd: usage.usd } : undefined);
+        const banked = await ThemeStore.bank(pack);
+        if (!banked.ok) {
+          setError(banked.reason ?? 'The law refused what was written.');
+          setCreating(false);
+          return;
+        }
+        themeId = pack.themeId;
+      }
       const rules: Partial<IWorldRules> = {
+        themeId,
+        magicUnlocked: await HubUnlock.isUnlocked(),
         accessMode,
         entryFeeGold: entryFee,
         extractionTaxRate: extractionTax / 100,
@@ -96,7 +118,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   );
 
   return (
-    <Modal title="MINT NEW REALITY" onClose={requestClose} width={560} heavy>
+    <Modal title="MINT NEW REALITY" onClose={requestClose} width={620} heavy>
       {asking && (
         <Panel title="THE DRAFT IS UNSIGNED" tone="loss" style={{ marginBottom: 10 }}>
           <div className="ws-small" style={{ marginBottom: 8 }}>The draft is unsigned. Abandon it?</div>
@@ -122,6 +144,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
                 />
               </label>
             </div>
+            {worldType !== WorldType.HUB && <div style={{ marginBottom: 8 }}><ThemeTalk /></div>}
             {fieldRow('WORLD TYPE', (
               <select className="ws-input" value={worldType} onChange={e => setWorldType(e.target.value as WorldType)}>
                 <option value={WorldType.EXTRACTION}>Extraction (high risk)</option>

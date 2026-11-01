@@ -194,9 +194,7 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
       ...(shape.belt ? { belt: shape.belt } : {}),
       ...(shape.cart ? { cart: shape.cart } : {})
     };
-    if (g.carries) {
-      (base as ItemDefinition & { carries?: { ability: string; trigger: string } }).carries = { ability: ids.get(g.carries)!, trigger: g.trigger };
-    }
+    if (g.carries) base.carries = { ability: ids.get(g.carries)!, trigger: g.trigger };
     if (g.craftAt === 'none') out.items[shape.bucket].push(base);
     else {
       out.craftedGear.push(base);

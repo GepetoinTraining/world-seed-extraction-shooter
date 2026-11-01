@@ -21,6 +21,8 @@ import { WebSystem } from '../logic/systems/WebSystem';
 import { WebBank } from '../logic/content/WebBank';
 import { isTypingTarget } from '../logic/systems/FieldInput';
 import { PaperDoll } from './PaperDoll';
+import { TheWorking } from './TheWorking';
+import { RestSystem } from '../logic/systems/RestSystem';
 import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid } from './PlayerHub';
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, useHands, wholeZone } from './ui/hands';
@@ -181,7 +183,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             {StudySystem.identifyScopeOf(selectedItem) &&
               (selectedItem.isIdentified === false || selectedItem.affixes.some(a => !LoadoutSystem.isAffixStudied(player, a.id))) && (
               identifying?.id === selectedItem.id ? (
-                <Button tone="quiet" disabled>IDENTIFYING…</Button>
+                <Button tone="quiet" disabled>LOOKING…</Button>
               ) : (
                 <Button tone="signal" onClick={() => {
                   const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
@@ -342,6 +344,7 @@ const WhoPanel: React.FC = () => {
       </div>
 
       <HandsPanel />
+      <TheWorking />
 
       <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>SKILLS</div>
       {others.length === 0 && <div className="ws-dim ws-small">None but what the hands know. Skills are born from actions, not menus.</div>}
