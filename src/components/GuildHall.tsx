@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType } from '../../types';
 import {
-  IResident, chainFromMap, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, questPay, residentStage,
+  IResident, chainFromMap, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, mayHaveGround, questPay, residentStage,
   residentUpkeepPerDay, trialFor, trialTakes, wantMayTake
 } from '../entities/hub/guild';
 import { HUB_NPCS, HubGenerator } from '../entities/hub/HubGenerator';
@@ -45,7 +45,7 @@ const Board: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {open.length === 0 && (
         <span className="ws-dim ws-small">
-          Nothing on the board{guild.residents.length === 0 ? '. Nobody in this city wants anything from you yet: a person has to come through the gate, and have a door of their own, first.' : ' today. People with a door of their own post what they want, a day apart.'}
+          Nothing on the board{guild.residents.length === 0 ? '. Nobody in this city wants anything from you yet: a person has to come through the gate first.' : ' today. People post what they want, a day apart, and they pay for it themselves.'}
         </span>
       )}
       {open.map(quest => {
@@ -59,7 +59,7 @@ const Board: React.FC = () => {
             <div className="ws-small" style={{ marginBottom: 4 }}>{quest.text}</div>
             {ready && <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>Goes: {given.map(i => LoadoutSystem.shownName(i)).join(', ')}.</div>}
             <div className="ws-row">
-              <span className="ws-dim ws-small">{ready ? `The hub pays ${questPay(given, quest.payShare).toLocaleString()} G for these.` : `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`}</span>
+              <span className="ws-dim ws-small">{ready ? `${resident.name} pays ${questPay(given, quest.payShare).toLocaleString()} G for these.` : `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`}</span>
               <ArmedButton
                 tone="quiet"
                 disabled={!ready}
@@ -251,7 +251,9 @@ const People: React.FC = () => {
             </div>
             {r.craftsmanId && stage !== 'HOME' && <div className="ws-small" style={{ marginBottom: 4 }}>A master now, and in need of a shop of their own. Whoever sees it raised will pay less in it.</div>}
             {r.craftsmanId && stage === 'HOME' && <MasterShop craftsmanId={r.craftsmanId} />}
-            {stage === 'TAVERN' && <GroundFor resident={r} />}
+            {stage === 'TAVERN' && (mayHaveGround(r)
+              ? <GroundFor resident={r} />
+              : <div className="ws-small">No ground until someone has seen to them. What they want is on the board.</div>)}
             {stage === 'POOLING' && <HouseBill resident={r} />}
             {stage === 'RISING' && rising && <div className="ws-small">{rising.applied} of {rising.total} steps stand.</div>}
           </Panel>

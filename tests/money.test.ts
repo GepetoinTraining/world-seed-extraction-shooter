@@ -143,6 +143,11 @@ const lodge = async (entityId = 'person_1') => {
   const bond = bondOf(entityId);
   give([bond]);
   expect(await hub().redeemBond(bond.id)).toEqual({ ok: true });
+  // No ground until a human has seen to them (tests/immigrants.test.ts holds that). These bars start after it.
+  useHubStore.setState(s => {
+    const id = s.guild.residents.find(r => r.entityId === entityId)!.id;
+    return { guild: { ...s.guild, quests: s.guild.quests.filter(q => q.residentId !== id), residents: s.guild.residents.map(r => r.id === id ? { ...r, wantsMet: 1 } : r) } };
+  });
   return hub().guild.residents.find(r => r.entityId === entityId)!;
 };
 
@@ -463,10 +468,13 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
         quests: [{ id: 'q1', residentId: resident.id, n: 0, tag: 'wood', count: 1, payShare: 1, text: 't', state: 'OPEN', postedDay: 0 }] }
     }));
     await drainTreasury();
-    const item = thing({ value: 10 });
+    // Past what they hold, by 10: their wallet pays first (tests/immigrants.test.ts), and the Hall the rest
+    const held = hub().wallets[resident.id];
+    const item = thing({ value: held + 10 });
     give([item]);
     expect(await hub().fulfilQuest('q1', [item.id])).toEqual({ ok: true });
-    expect(player().bank.gold).toBe(10);
+    expect(player().bank.gold).toBe(held + 10);
+    expect(hub().wallets[resident.id]).toBe(0);
     const perDay = hub().runningNow();
     expect(await Treasury.balance(HUB)).toBe(14 * perDay - 10);
     const prints = await rowsOf('PRINT');
@@ -483,7 +491,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     }));
     await drainTreasury();
     const perDay = hub().runningNow();
-    const item = thing({ value: 14 * perDay * 3 + 1 });
+    const item = thing({ value: hub().wallets[resident.id] + 14 * perDay * 3 + 1 });
     give([item]);
     expect(await hub().fulfilQuest('q1', [item.id])).toEqual({ ok: true });
     const prints = await rowsOf('PRINT');
