@@ -4,7 +4,7 @@
 The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
 approved. The usability pass and the stable database are built, approved and merged; the suite stands at 812
 (688 + 124 in the database's own run), with one timing bar that reads load (see the technology web's record).
-Pedro has played. **Next: the magic + content layer** (under "The next layer"), then character creation, Wave 11 and Wave 12.
+Pedro has played. **Next: the magic + content layer** (under "The next layer"), then the attributes pass, character creation, Wave 11 and Wave 12.
 Open test lines
 and their status are in section 5.
 
@@ -267,7 +267,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. Next: the magic + content layer (D48) → character creation → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. Next: the magic + content layer (D48) → the attributes pass (D52) → character creation → 11 → 12.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -277,7 +277,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 - The materials pass (11B) comes after the houses stand and the farms grow (Pedro, 2026-10-31: the full economic and transformation loops land once the house is there). Superseded the same day: 11B was absorbed into 10D and 10E.
 - The gates stay serial. The one safe exception: the interior generator's prototype in 10.1 touches no shared files, so it could run alongside Wave 9.
 
-**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10, D11, and D35–D38, D40, D41, D44's spend limit, D45, D47 and the readings on D49 and D50 for the next layer. D43, D46 and D48–D50 are decided and not built. D27 through D30 are decided, built and approved. D31 is accepted, built and approved.
+**Decisions.** Each has a recommendation, and each changes what gets built. Ask at the start of the leg named. Still open: D10, D11, and D35–D38, D40, D41, D44's spend limit, D45, D47 and the readings on D49 and D50 for the next layer. D43, D46 and D48–D52 are decided and not built. D27 through D30 are decided, built and approved. D31 is accepted, built and approved.
 
 | # | Leg | Decision | Recommendation |
 |---|---|---|---|
@@ -680,7 +680,7 @@ No donor has working magic to port this time. The designs and the content exist;
 - D19, D26: what acts and is unstudied stays hidden. D22: mental stats only on frames, so a mage pays with head gear. D29: no caps. D14: scrolls on paper and ink. D21: protection is magic.
 
 #### LAYER 0: THE STATS ACT (first, and small)
-Every stat a bank can roll either changes play or is refused. Combat, health, energy and the card read the worn stats through one function, per the operator law (add or multiply; adding a die waits on Layer 1's numbers). The batch law gains a clause: a stat with no registered reader refuses the batch, so this cannot recur. This will shift balance, so it lands before Pedro's next tuning, not after. Energy regeneration lands here too, since nothing restores energy today and every later layer spends it.
+Every stat a bank can roll either changes play or is refused. Combat, health, energy and the card read the worn stats through one function, per the operator law (add or multiply; adding a die waits on Layer 1's numbers). The batch law gains a clause: a stat with no registered reader refuses the batch, so this cannot recur. This will shift balance, so it lands before Pedro's next tuning, not after. Energy changes here too (D51): it is a daily resource that only a rest restores, so `energy_regen` needs a new meaning or retires, under this same law.
 
 #### LAYER 1: THE EFFECT SYSTEM (one door)
 `EffectSystem.resolve(ability, caster, target, key)`: pure, keyed, returning a receipt, called by monsters, players and items alike. The vocabulary is the catalog's, already written: **delivery** (self, touch, melee, ranged, area, aura), **effect** (damage, control, heal, buff, debuff, ward, summon, reveal, transform, move), **cost band**, **elements**. Delivery maps onto the existing projectile patterns and swings, and new patterns arrive as data. Statuses have durations and read in grayscale by shape and position. Elements are registered tags under the tag law, with no fixed enum: `ElementType`'s 6, Primordial's 5 families and the catalog's 11 all give way to a batch.
@@ -727,7 +727,10 @@ Pedro, 2026-11-01, after playing: "the game loop is cool, what's missing is the 
 
 **What calls this door:** the rest (content, naming), character creation (skills, the reincarnation talk), the admin Genre Creator, and the dev harness `scripts/run-affix-batch.ts`, which gains a way to generate as well as judge. NPC speech is a decision of its own (D47).
 
-#### THE CHARACTER CREATION PROCESS — its own leg, after Pedro's first run
+#### THE ATTRIBUTES PASS (D52) — after the magic + content layer
+Pedro, 2026-11-01: "we'll then pass over after this is done and connect stats to atributes to make the character feel different each time." Today few of the 15 attributes reach play: constitution sets health, strength sets carry weight, endurance sets energy, and the mental ones drive recon. This pass gives each one real work over the stats that Layer 0 made act, so two characters play differently. It comes before creation, because a focus only means something once attributes do.
+
+#### THE CHARACTER CREATION PROCESS — its own leg, after the attributes pass
 Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-14 (written for Primordial, and asked again here to confirm):
 
 > "The character creation is going to be modelled as an isekai trope, without showing this to the player... the character creations needs to be structured around main ability to focus and sub ability to focus + skills that are all derived by haiku at the end of the character creation screen. Basically the player will archetype then choose initial set of gear, then choose the face of the world they'll spawn into then they'll talk with the god of reincarnaiton and be granted skills."
@@ -759,13 +762,15 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 | D47 | Wave 11 | Do NPCs talk through Claude? W2.4 ruled "no AI text generation in the loop", and Pedro's June plan had NPC talk on Haiku | Not in the hot path: their words are banked at rest from their sheet, as Primordial's persona seeds did, and menus stay. Ask at Wave 11's start |
 | D48 | Next step | What comes next | ✅ DECIDED (Pedro, 2026-11-01): the magic + content layer. Monsters need the Director, magic and rests to update their behavior and start differentiating. The Director wakes for this, so what `BUILDERS_LOG.md` calls "not up yet on purpose" ends here |
 | D49 | Next step | What magic unlocks | ✅ DECIDED (Pedro, 2026-11-01): once magic is unlocked, prefixes and suffixes reach materials, monsters, everything, from the banks. To settle at the leg's start: is the unlock per world, per hub or per person? |
-| D50 | Next step | How identify works | ✅ DECIDED (Pedro, 2026-11-01): you can study a thing, and you only know what it does after a rest. This replaces D32's field roll, and line 55 and its bars change with it. Readings to confirm at the leg's start: studying still costs the clock and energy, can be done in the field and at a bench, and queues; any rest (D30 and D43) resolves the queue; an unread piece still acts on whoever wears it (D19), and can't be read early |
+| D50 | Next step | How identify works | ✅ DECIDED (Pedro, 2026-11-01): you can study a thing, and you only know what it does after a rest. This replaces D32's field roll, and line 55 and its bars change with it. Studying costs energy, which is the point of D51. Readings to confirm at the leg's start: it also costs the clock, can be done in the field and at a bench, and queues; any rest (D30 and D43) resolves the queue; an unread piece still acts on whoever wears it (D19), and can't be read early |
+| D51 | Next step | What energy is | ✅ DECIDED (Pedro, 2026-11-01): "energy is a daily resource. once it's gone you rest!" No passive regeneration: everything that spends energy draws on one day's supply, and a rest restores it. Today a new drop refills energy, so a full bar must stop coming free with each deploy. To settle at the leg's start: can you rest in the field, or only in the hub and at a seal? |
+| D52 | After the magic + content layer | What makes a character differ | ✅ DECIDED (Pedro, 2026-11-01): a pass of its own, after this layer: connect stats to attributes, "to make the character feel different each time". The 15 attributes come to drive what stats do |
 
-**Order and why (D48):** the magic + content layer as one direction, in this build order: R6 and Layer 0 (the current game becomes true) → rest and the dream on Claude (the door all later content comes through) → Layer 1 → Layer 2 with the Director → Layer 4 with the prefix and suffix unlock (D49) and study-then-rest (D50) → Layer 3. Then character creation → Wave 11 → Wave 12. Effects come before monsters, monsters before players: a monster casting first proves the door, gives the player something to study, and tunes the numbers against something real.
+**Order and why (D48):** the magic + content layer as one direction, in this build order: R6 and Layer 0 (the current game becomes true) → rest and the dream on Claude (the door all later content comes through) → Layer 1 → Layer 2 with the Director → Layer 4 with the prefix and suffix unlock (D49) and study-then-rest (D50) → Layer 3. Then the attributes pass (D52) → character creation → Wave 11 → Wave 12. Effects come before monsters, monsters before players: a monster casting first proves the door, gives the player something to study, and tunes the numbers against something real.
 
 **Guardrail 3, flagged:** `agent.md`'s magic is three scales (local, tactical, strategic) with entropy. Tactical and strategic spells change the world, and biome shifts against a pinned world are a one-way-door question. Local only in this layer; the larger scales are noted for later, and the entropy risk becomes a cost band for now.
 
-**Proposed test lines, not yet agreed:** see lines 77–92.
+**Proposed test lines, not yet agreed:** see lines 77–94.
 
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
@@ -883,6 +888,8 @@ Proposed for the next layer, not yet agreed:
 90. Monsters change between rests: magic and the Director update how they behave, and they come to differ, deterministically for a pinned world
 91. Once magic is unlocked, prefixes and suffixes appear on materials, monsters and everything else, from the banks, and they act
 92. A thing can be studied, and what it does is known only after a rest
+93. Energy is one day's supply: nothing but a rest restores it, and a new drop does not refill it
+94. Every attribute changes how a character plays, so two characters of different spreads play differently
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
@@ -939,7 +946,8 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | Usability pass, with the playtest fixes | 57–59, 72–76 | Passed, by test and by play within its carried items; approved "for now" |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
-| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–92 (proposed) | **Next.** Planned, not started |
+| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–93 (proposed) | **Next.** Planned, not started |
 | Rest and the dream, the intelligence layer | 86–89 (proposed) | **Next,** as part of that layer. Planned, not started |
-| Character creation | 84 (proposed) | Planned, after Pedro's first run |
+| Attributes pass (D52) | 94 (proposed) | Planned, after the magic + content layer |
+| Character creation | 84 (proposed) | Planned, after the attributes pass |
 | 12 The Second True Test | 39–40 | Not started |

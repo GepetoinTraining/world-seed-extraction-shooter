@@ -238,14 +238,15 @@ Pedro then asked for skills and inventory in one place, without the views that s
 1. **Rests drive everything.** A rest sends what was queued in play to Claude, through one server door, and what returns passes the bank law and becomes signed data (D43, D46; a rest uses `claude-opus-5-5`, D44).
 2. **Monsters change.** The `Director` wakes: magic and rests update how monsters behave, and they start to differ from one another (D48).
 3. **Magic unlocks prefixes and suffixes on everything:** materials, monsters and the rest, from the banks (D49).
-4. **Identify changes:** you can study a thing, and you only know what it does after a rest (D50). Rewrite line 55 and D32's field roll to match, and tell Pedro what happens to the bars that pin them.
-5. **Stats act first (Layer 0).** Most item stats have no reader, so a prefix on anything means nothing until they do. **Don't trust an item stat because a card shows it.**
+4. **Energy is a daily resource** (D51): "once it's gone you rest!" No passive regeneration, and a new drop no longer refills it. Everything in this list that costs energy draws on that one supply.
+5. **Identify changes:** you can study a thing, and you only know what it does after a rest (D50). Rewrite line 55 and D32's field roll to match, and tell Pedro what happens to the bars that pin them.
+6. **Stats act first (Layer 0).** Most item stats have no reader, so a prefix on anything means nothing until they do. **Don't trust an item stat because a card shows it.**
 
 **Fix along the way, from `PLAYTEST_LEDGER.md`:** R4 (the dragon: difficulty ignored, flat spawns, neutral that attacks, no wind-up) belongs to the monster work. R5 (the lens) belongs to the identify and stats work. R6 (repair can't see worn gear) is small; do it first.
 
 **The intelligence is Claude, not Gemini (D46):** the Gemini code in `ContentPipeline.ts`, `EmbeddingService.ts` and `GenreCreator.tsx` is from the project's first days and is being replaced, so don't build on it. Load the `claude-api` skill before writing the door. Tests never call the API, and a real run spends real money, so run one on purpose.
 
-**After this:** character creation, then Wave 11, unless Pedro says otherwise (D42).
+**After this:** the attributes pass (D52), connecting stats to attributes "to make the character feel different each time"; then character creation; then Wave 11.
 
 ## The playtest fixes, now part of the usability pass
 
@@ -332,4 +333,4 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 ## After this pass
 
-`PLAN.md`, under "The next layer": the magic + content layer, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).
+`PLAN.md`, under "The next layer": the magic + content layer, the attributes pass, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).

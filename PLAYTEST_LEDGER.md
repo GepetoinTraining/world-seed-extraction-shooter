@@ -66,7 +66,7 @@ Fix shape for R6: repair reads the stash and the body, through one door, with th
 | # | What happens | Where |
 |---|---|---|
 | M1 | Most item stats do nothing. `damage`, `defense` and `max_health` on an affix change no fight, so the card's numbers and an unstudied piece's downside are not real. Also unread: accuracy, evasion, crit, block, energy regen, poison, light, pickup radius | `CombatMath.ts` reads item power only; plan's Layer 0 |
-| M2 | Energy is spent and nothing restores it | No regeneration in `player/store.ts` or `WorldCanvas.tsx`; plan's Layer 0 |
+| M2 | Energy is meant to be a daily resource that a rest restores (D51). Today nothing restores it during a run, and each new drop refills it for free | the new session's energy line in `player/store.ts`; plan's Layer 0 |
 
 ## Fixed
 
