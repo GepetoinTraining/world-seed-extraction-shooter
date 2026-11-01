@@ -789,10 +789,12 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 | D74 | Hub remake | The hub's chunk and its manifest | ✅ DECIDED (Pedro, 2026-11-01): "The chunk size for the hub is still wrong, using the old old old hardcoded one." `HubGenerator.generate` is 50 by 50 tiles where a chunk is 64 (Wave 8). The first things placed are correct except the lots. A manifest-like matrix places the buildings, the first chunk is the middle one, and the hub grows around it |
 | D75 | Hub remake | Lots, and who buys them | ✅ DECIDED (Pedro, 2026-11-01): lots are bought by players and by the guild, "because npcs that are brought out of the gate need to leave the tavern and have their own house, that sets up their wants and quests and makes for the economic loop to function." So a person arrives at the tavern, the guild buys a lot, the house rises through D8's pooled bill, and the wants and quests start. This takes the place of Wave 11.1's redeem-and-place |
 | D76 | 11C | NPCs become adventurers | ✅ DECIDED (Pedro, 2026-11-01): "When a hub gets to 3 chunks (2 expansions after the base), we need the actual npcs becoming adventurers and diving as AI with the player (setting up for the online before online)." Everything but the choice is deterministic: they have goals and set out to accomplish them. Pattern: `D:\-ttrpg-engine\engine\npc-agenda.ts` (`tickAgenda`: needs decay, work and belonging fulfil them, the most pressing need sets the goal; `deriveEconomicRole`) and `mm-npc-agenda.ts` (a daily fold). Pedro's "how they choose their daily energy commit" was not found under that name; ask where it lives |
-| D77 | World clock | A person still inside when the gate goes down | OPEN. Recommendation: warnings by shape as it nears, then the same stake as being lost in the field, so the clock matters. Note: `collapseTime` today is decoration; `store.ts` recomputes it from now on every load and nothing ends a session by it, so this has never been felt |
-| D78 | World clock | Is one cycle one world day? | OPEN. Recommendation: yes, up plus scan is one day, so a small world's day is 90 minutes, and "rescanned daily" and the sky share one clock |
-| D79 | World clock | What a person's rest keeps | OPEN. Recommendation: it keeps a person's energy (D51) and settling (D50), since those are theirs. The Director, growth and what the door writes move to the world's window. A rest no longer turns the world's day |
-| D80 | Creation | What a deed fixes | OPEN. Recommendation: a deed names a size, the free one is small, and the sky is chosen at the mint. A pocket world runs the same cadence as any other |
+| D77 | World clock | A person still inside when the gate goes down | ✅ DECIDED (Pedro, 2026-11-01): "closing a gate needs a visual warning and time, if the player gets locked inside they die and lose that extraction, for that I'm planning to add an item type and magic that allows a player to spend a lot of resources to open a forced out." The warning is by shape and position, never hue alone. The forced exit is its own item type and magic, at a high cost: planned, built after the clock, and the law refuses its effect until something reads it. Note: `collapseTime` today is decoration; `store.ts` recomputes it from now on every load and nothing ends a session by it, so this has never been felt |
+| D78 | World clock | On and off | ✅ DECIDED (Pedro, 2026-11-01): "90 minutes and another 90 of off time, make it phased so a player needs to cycle between worlds, they can't keep farming the same world all the time, that's why the online server is important for players wanting to build their own, if theirs is off they need somewhere to find open worlds." Reading to confirm at the leg's start: D67's up and scan together are the on time, and an equal off follows at every size. Small 1h + 30m, then 90m off. Medium 4h + 1h, then 5h off. Large 12h + 4h, then 16h off. Gates are staggered so somewhere is always open |
+| D79 | World clock | What a person's rest keeps | ✅ DECIDED (Pedro, 2026-11-01): "yup, and rest, when wall clock happens, is the reason to have multiple characters, that's the characters own loop and downtime. just like a world, so we can batch call the LLMs for decisions and never overload the database once live." A rest keeps a character's energy (D51) and settling (D50). The Director, growth and what the door writes move to the world's window. A rest takes real time: a character is down while another plays, and each character's downtime is its own batch window. How long a rest takes is asked at the leg's start. Today's instant rest at the inn stands until then |
+| D80 | Creation | What a deed fixes, and the biggest world | ✅ DECIDED (Pedro, 2026-11-01): a deed names a size, the free one is small, the sky is chosen at the mint, and a pocket world runs the same cadence as any other. "there's one size above large that we haven't set up yet, a world that's 7 days on and 7 days off, the biggest world, which allows for hubs to be founded in the world and rest to happen there (think of black zones in albion)." So the hub remake's manifest must place a hub in a world, not only in the Nexus's city. Open for that leg: its sector count, its scan time, and what happens to a hub and the people in it during the 7 days off |
+| D81 | Final shape | What the server is, and whose a character is | ✅ DECIDED (Pedro, 2026-11-01): "the hub is the always online server, and a player serving to their friends exposes their hub to be logged in, a character doesn't belong to a hub, they belong to a player, just like sword art online post kayaba giving kirito the seed, that's the whole concept and hence the name. the worlds then run on our compute for the ones we provide and player compute for theirs, and goods and services can be exchanged assync or sync using the main online hub or by setting up conversations between players." Against the code: Wave 6's `AvatarExport` already makes a character one file a person owns. Binding from now on: nothing about a character may be stored as if it lived in one hub |
+| D82 | Served runtime | What a hub honours from another | OPEN, raised by the builder. A character signs its own record with its own key, and a person can run their own hub, so someone can sign wealth no world ever produced and carry it to the main hub. `Treasury` and the gold audit hold inside one hub only. Recommendation: goods and gold carry their origin and proof, each hub decides what it honours, and the main hub never takes a self-served hub's word for what was minted. Decide before the market and before anything crosses hubs |
 
 **The reshape (D53–D58, 2026-11-01), which replaces the order below where they differ:** R6 and Layer 0 → the door on Claude, with a provider seam → **the theme: pack, law, formula, one registry, the tables out of `src`, the mint's conversation** → Layer 1 → Layer 2 with the Director and R4 → rest, study and minted skills → Layer 4 with the per-hub unlock → Layer 3. R5's lens goes with the tables it lives in; its rule, that every definition has a slot that takes it, becomes pack law.
 
@@ -829,7 +831,7 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 
 The world stops being static. A world runs on its own clock, what lives in it changes kind, breeds and moves, and the hub grows from what is brought home. Each leg still registers its bars first, asks its open decisions at its start, and plays through the real interface. The order is the builder's, for Pedro to overrule; the attributes pass moved behind the creature legs so that attributes have real behaviour to act against.
 
-**Leg 1: the world clock (D66–D68, D71, D77–D79; lines 100–104).** A pure `WorldClock` reads a certificate and the time and returns the cycle, the phase (up or scan), the time left and the sky. It replaces `collapseTime` and the mint's COLLAPSE TIMER field. The Nexus card shows the gate's state; deploy is refused during scan, and recon and scan stay open. The Director's generation becomes the cycle, no longer a count of rests. What a person scanned is stamped with its cycle and goes stale. Light changes play. Golden vectors keep land and alpha, and everything after alpha is a record over them.
+**Leg 1: the world clock (D66–D68, D71, D77–D79; lines 100–104).** A pure `WorldClock` reads a certificate and the time and returns the cycle, the phase (up, scan or off), the time left and the sky. It replaces `collapseTime` and the mint's COLLAPSE TIMER field. The Nexus card shows the gate's state; deploy is refused during scan, recon and scan stay open, and off is dark. A closing gate warns by shape and gives time, and whoever is still inside loses that run (D77). A character's rest takes real time (D79). The Director's generation becomes the cycle, no longer a count of rests. What a person scanned is stamped with its cycle and goes stale. Light changes play. Golden vectors keep land and alpha, and everything after alpha is a record over them.
 
 **Leg 2: the trees and the scan pass (D60, D61, D63, D69; lines 105–108).** Two trees at least in every pack, by a named field, with the law refusing a pack missing one. Lines hashed with a real hash from each world's alpha, a signed root per cycle, sprites inherited from the parent by shape. A creature can become a different monster, and names (D60) return with it. The scan pass: compute, then what is new goes to the door in small batches across the window, resumable, with a plain name until it comes back. `RestSystem.grownTheme`'s hold on later worlds ends here.
 
@@ -839,7 +841,9 @@ The world stops being static. A world runs on its own clock, what lives in it ch
 
 **Then character creation (D35–D37, D72, D80; line 113).** The free deed joins the flow. The tropes already proposed there, cooking and animal tamer, now have something to stand on.
 
-**Wave 11, rewritten as the hub remake**, and **Wave 11C, NPC adventurers**, below. **Wave 12** stays the honest test. **Wave 13, the served runtime (D65, D70, D73's vote; lines 117–118):** the compute portion, marked "clockwork Faerun style", gate timing as load balancing, the weekly vote, carrying creatures between maps, the market, and the local and own-key providers.
+**Wave 11, rewritten as the hub remake**, and **Wave 11C, NPC adventurers**, below. **Wave 12** stays the honest test. **Wave 13, the served runtime (D65, D70, D73's vote, D81, D82; lines 117–118, 122–123):** the hub as an always-online server that a person can expose to friends, characters logging in to any hub, worlds on our compute or the player's, the compute portion marked "clockwork Faerun style", gate timing as load balancing, the weekly vote, carrying creatures between maps, exchange through the main hub or between players, and the local and own-key providers.
+
+**The name (D81).** The Seed is what Kayaba handed Kirito: a thing anyone can run a world from. The hub is the server, the world runs on whoever's compute provides it, and the character is the player's own.
 
 ### WAVE 11 — The Hub Remake (was Bringing the Nexi Home; rewritten 2026-11-01)
 **In order (D73–D75, D11, D10, D8; lines 35–38, 114–115):**
@@ -981,7 +985,7 @@ For the living worlds program, proposed 2026-11-01, not yet agreed:
 
 100. A world's phase, cycle and sky are a pure function of its certificate and the time, on every machine, and a world nobody watched catches up on opening
 101. During scan no one can deploy, and recon and scanning work; the Nexus shows the gate's state and time left for every world
-102. Small, medium and large worlds run Pedro's three cadences, and any other size reads the curve through them
+102. Small, medium, large and the biggest world run Pedro's cadences with their off time, gates are staggered, and any other size reads the curve through them
 103. What a person scanned goes stale with each regeneration, and scanning again shows how things changed
 104. A person can mint a world of only night or one that does not spin, and the light where they stand changes play
 105. A creature's id commits to its parent's and to what changed; an elder's id never moves, and each cycle signs a root that two machines can compare
@@ -998,6 +1002,11 @@ For the living worlds program, proposed 2026-11-01, not yet agreed:
 116. At three chunks, residents dive beside the person, each with a goal chosen cheaply and every other step deterministic
 117. A captured creature brought to another map joins its population with the proof of its line, and a child of two lines has two parents in its hash
 118. Online, the hub's expansion is decided by a weekly vote
+119. A closing gate warns by shape and gives time; whoever stays is locked in and loses that run; a costly item or magic can force an exit
+120. A character's rest takes real time, in which another character can play, and each character's downtime is its own batch for the door
+121. In the biggest world, a hub can be founded and a rest can happen there
+122. A character logs in to any hub as the same character, and nothing about them lives in one hub
+123. A hub never takes another hub's word for what was minted; goods and gold show where they came from
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
@@ -1056,13 +1065,13 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–93 | Built and merged on Pedro's word. By bar, and by play within the record |
 | Rest and the dream, the intelligence layer | 86–89 | Built and merged. No real model has been called: no key on this machine. See the record |
 | The theme (D53–D57) | 95–99 | Built and merged. See the record |
-| The world clock | 100–104 (proposed) | Next |
+| The world clock | 100–104, 119–120 (proposed) | Next |
 | The trees and the scan pass | 105–108 (proposed) | Planned |
 | Creatures that act | 109–112 (proposed) | Planned |
 | Attributes pass (D52) | 94 (proposed) | Planned, after creatures that act |
 | Character creation with the deed | 113 (proposed) | Planned |
-| 11 The hub remake | 35–38, 114–115 (proposed) | Planned |
+| 11 The hub remake | 35–38, 114–115, 121 (proposed) | Planned |
 | 11C NPC adventurers | 116 (proposed) | Planned |
-| 13 The served runtime | 117–118 (proposed) | Planned, after Wave 12 |
+| 13 The served runtime | 117–118, 122–123 (proposed) | Planned, after Wave 12 |
 | Character creation | 84 (proposed) | Planned, after the attributes pass |
 | 12 The Second True Test | 39–40 | Not started |

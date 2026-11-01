@@ -236,7 +236,7 @@ The record, including what was not built, is in `PLAN.md` ("The magic + content 
 
 ## Your pass: the world clock
 
-The layer is merged. Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The living worlds program", and D60–D80 first. Start with the world clock (lines 100–104), and ask D77, D78 and D79 at its start. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
+The layer is merged. Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The living worlds program", and D60–D80 first. Start with the world clock (lines 100–104, 119–120). D77–D81 are answered; confirm D78's reading of on and off, and ask how long a rest takes (D79). Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
 
 ## Later: the attributes pass (after creatures that act)
 
