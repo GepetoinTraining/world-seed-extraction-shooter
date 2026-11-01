@@ -233,6 +233,7 @@ Settled by the usability pass, kept here as the record (awaiting Pedro's approva
 - **Valid and invalid are a seam.** A ghost has a solid outline or a broken one, in the same ink, over a clean fill or a hatch. In-hand and empty read the same way: a solid frame and a mark, or a broken outline.
 - **A comparison reads by column and mark.** This piece, the worn piece, ▲ or ▼ and the difference. Up means more; nothing says better, and no hue does. What is unstudied stays out of both columns, so no difference can give it away.
 - **Marks on the minimap are shapes.** A cross for you, an X for what can hurt you, a hollow lozenge for an exit, a dot for anything else. What has not been seen is static that knows nothing of the world.
+- **One sheet, everywhere.** Tab shows who you are, what you wear and what you carry, side by side, in the field and at home alike, and the game goes on above it. The tabs left the bar: the city is the way to every other screen, each with a way back.
 - **A heavy step asks; a stray one does nothing.** A sale takes a second press, and the armed button changes shape. A draft ignores the backdrop, and asks in voice before Escape can lose it: "The draft is unsigned. Abandon it?"
 
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.

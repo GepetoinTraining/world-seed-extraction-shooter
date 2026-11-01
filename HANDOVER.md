@@ -131,6 +131,7 @@ Added since Wave 7, and not all drawn on the diagram above:
 | Protection | `logic/systems/InsuranceSystem.ts` | Charms and scrolls that name what a death keeps |
 | Entry | `logic/systems/Deploy.ts`, `entities/identity/roster.ts` | One door into a world; several avatars per device |
 | Controls | `logic/systems/FieldInput.ts`, `components/Hotbar.tsx` | Hold to fire, the one interact key, the hotbar |
+| Character sheet | `components/CharacterSheet.tsx` | One key, field and city: attributes, skills, the body, the pack or the vault |
 | The hands | `logic/systems/ItemHands.ts`, `components/ui/hands.tsx`, `components/ui/ItemGrid.tsx`, `entities/player/systems/StashGrid.ts` | Any item from any place to any other, through the store's doors; the vault's grid |
 | The card on hover | `components/ui/HoverLayer.tsx`, `render/atoms/inspect.ts` | One layer, placed clear of its thing, compared through the blind sheet |
 | Minimap | `render/atoms/minimap.ts`, `components/ui/MinimapView.tsx` | Field and city, from the atoms; the field keeps the fog |

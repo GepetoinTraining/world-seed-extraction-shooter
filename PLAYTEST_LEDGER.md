@@ -9,7 +9,6 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | # | What happens | Where |
 |---|---|---|
 | U15b | The body is a figure now, but the rest of the Agent tab (identity, attributes, what the hands know) still reads as a column of forms | `PlayerHub.tsx` |
-| U20b | The bar has lost its developer controls and its website chrome, but CITY, ZONES, BANK and HOLDINGS are still a row of tabs, now with keys. The city as the only navigation would be a larger change | `App.tsx` |
 | U22 | The card has no damage line, so two weapons compare on what the sheet shows (attack speed, crit) and not on what they hit for. Damage comes from `itemPower`; whether that can be shown without breaking the knowledge law has not been worked out | `inspect.ts`, `CombatMath.ts` |
 | U23 | What rides a pouch has no drag: a right-click on the hotbar's pouch cell takes the last one back into the pack | `Hotbar.tsx` |
 | U24 | Placing a thing in a room is still the tile ahead and a list, not the hands | `HubCanvas.tsx` |
@@ -48,6 +47,10 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | U17 | No minimap | b5cd6ea | Bar, fog included; played in field and city, grayscale looked at |
 | U18 | Recon was a small panel with scrollbars | b5cd6ea | Bar on the advice; played: full window, SCAN HERE then DROP HERE, keys |
 | U19 | A hub stop with one hub | b5cd6ea | Bar on the rule; played: the city follows the gate directly. Two hubs still show the screen, by bar only |
-| U20 | Developer controls in the player's bar | b5cd6ea | Bar; played: SYSTEM holds backup and switch; Ctrl+Shift+D reaches the rest. See U20b |
+| U20 | Developer controls in the player's bar | b5cd6ea | Bar; played: SYSTEM holds backup and switch; Ctrl+Shift+D reaches the rest |
 | U21 | Key help ran into the data | b5cd6ea | Bar; played |
+| U20b | CITY, ZONES, BANK and HOLDINGS were a row of tabs in the player's view | b924a1d | Bar; played: the bar holds CHARACTER and SYSTEM, the Conduit leads to the zones, Esc comes back to the same spot |
+| U27 | Pedro: no one place for skills and inventory, except through views that shouldn't be available | b924a1d | Bars on the real component, field and city; played in both, frame cost and grayscale checked |
+| N2 | DISCARD at the vault did nothing | b924a1d | Bar |
+| N3 | Coming back from a keeper's screen put you at the plaza spawn | b924a1d | Played |
 | N1 | Found by the conservation bar: two caches left in one millisecond shared an id, and taking one took both | b5cd6ea | Bar |

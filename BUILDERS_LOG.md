@@ -10,7 +10,7 @@ World Seed is a browser extraction game: a signed identity, generated worlds, a 
 
 Pedro's verdict on the look, seeing it in the real game: *"literally absurdly good"*. **The look is approved, and the interface is now made of it.** Mantine survives only under the admin Genre Creator (with its provider in `index.tsx`, `src/theme.ts`, and the unused `src/components/Layout.tsx`); every player-facing screen is built from the kit in `src/components/ui/`.
 
-- **Tests:** 654 (`npm test`), including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). The usability pass's bars live in `tests/usability.test.ts` (69, registered before the build). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
+- **Tests:** 662 (`npm test`), including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). The usability pass's bars live in `tests/usability.test.ts` (77, registered before the build). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
 - **Commits:** Waves 8 through 10E, the raw materials leg and the web are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
 - **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
 
@@ -98,6 +98,7 @@ Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → q
 | `src/logic/systems/NpcSheet.ts` | NEW (line 66): stats and skills dealt at read time from (seed, entity, pinned web); `fromBond` is Wave 11's seam |
 | `src/entities/player/systems/SkillDiscovery.ts` | No table any more: a context's identity is what the registry says identifies |
 | `tests/technologyweb.test.ts` | The web's bars: lines 63–68, the seven clauses, source scans of the law's own files, the one-way door |
+| `src/components/CharacterSheet.tsx` | NEW (line 76): one key, one screen, field and city: who you are, the body, the pack or the vault, this piece. It replaced the field's pack window |
 | `src/logic/systems/FieldInput.ts` | NEW (usability pass): the laws behind the controls, pure: `fireGate`, `pickInteract`, `hotbarCells`, `cityCamera`, `suggestStart`, `draftDismissal` |
 | `src/logic/systems/ItemHands.ts` | NEW: any item from any place to any other. `probeMove` asks the laws, `commitMove` walks the store's doors, `Place` names where |
 | `src/components/ui/hands.tsx` | NEW: the one drag, the keyboard's hands, the one ghost; `useDropZone`, `slotZone`, `wholeZone`, `HandsLayer` |
@@ -137,7 +138,7 @@ In short: the template contract as data (`ITemplate` — geometry, zones with pr
 **Left open, honestly:**
 - Line 43's size refusal passes by test and shows in the sheet, but all six city lots are one 4×4 class, so it cannot be PLAYED until lots grow with the hub. The 3×3 and 6×5 classes already exist in the studio.
 - The mono-material set bonus is detected and recorded. (Its numbers landed in 10D.)
-- Switching app tabs (BANK/HOLDINGS) while walking the city returns you to the plaza spawn — pre-existing, now on record.
+- Switching app tabs (BANK/HOLDINGS) while walking the city returned you to the plaza spawn. Fixed by the character sheet's change, because every keeper's screen would have hit it.
 - The glass chain still needs a field trip for sand; BASALT's first apply was refused on the glass bill (honestly, in voice) and the built house is the windowless all-plank plan.
 
 ## What the load-out pass (Wave 10C) built
@@ -203,7 +204,9 @@ Full detail in `PLAN.md` 3B (the technology web and auto skill) and the settled 
 
 Full detail in `PLAN.md` ("The usability pass"), and the list in `PLAYTEST_LEDGER.md`. In short: firing is a held button at the weapon's own rate and only ever fires; E acts everywhere; a hotbar for hands, tools and the belt; one pair of hands across pack, stash, body, belt, cart and ground, by mouse and keyboard, with a ghost that reads by its seam; the one card on hover everywhere, compared through the same blind sheet; the stash a grid; selling a second press; the body a figure; the city the window; a minimap that keeps the fog; recon that says where to start; no hub stop with one hub; developer controls off the player's bar. It changes how things are used, not how they look. Awaiting Pedro's approval.
 
-**Left open, honestly:** the rest of the Agent tab still reads as forms; the bar is still tabs, now with keys; the card has no damage line, so weapons compare on what the sheet shows; what rides a pouch has no drag; room placement is not the hands yet; the minimap forgets at the end of a run; the beacon chip does not keep the fog the minimap keeps; a worn bag's capacity cannot be filled by pickups.
+Pedro then asked for skills and inventory in one place, without the views that shouldn't be available: Tab or C opens the character sheet, the same screen everywhere, and the tabs left the player's bar. The city leads to every other screen, and each has a way back.
+
+**Left open, honestly:** the rest of the Agent tab still reads as forms; the card has no damage line, so weapons compare on what the sheet shows; what rides a pouch has no drag; room placement is not the hands yet; the minimap forgets at the end of a run; the beacon chip does not keep the fog the minimap keeps; a worn bag's capacity cannot be filled by pickups.
 
 ## Your pass: the stable database
 

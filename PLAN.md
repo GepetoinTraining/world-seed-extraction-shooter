@@ -461,7 +461,7 @@ Pedro, 2026-10-31: "before I do run once, we need to have a stable database (sql
 - **Gate:** proposed lines 69–71.
 
 ### THE USABILITY PASS — before the full run, absorbing the playtest fixes
-Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403 (`tests/usability.test.ts`, 69 tests; suite 654). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
+Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 77 tests; suite 662). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
 
 Pedro, 2026-10-31: "take a look at the views and see if they're game like... the usability of the game, the controls, the actual hovers... we can do much better than them and are currently worse", after playing RotmG. The list is `PLAYTEST_LEDGER.md`, P1–P3 and U1–U21. Keep this quick: controls first, then hovers, then the views. The art and the voice are approved, so this changes how things are used, not how they look.
 
@@ -502,7 +502,16 @@ Pedro, 2026-10-31: "take a look at the views and see if they're game like... the
 - **Left open, in the ledger:** U15b, U20b, U22 to U26, and B1, a bag's capacity a pickup cannot use.
 - **Reload loses what the last ten seconds moved,** because a hand move only schedules the existing autosave. It flushes on the tab being hidden, and at every seal and death.
 
-- **Gate:** lines 57–59, proposed lines 72–75, and played through the real interface, within the carried items above.
+**The character sheet (line 76), asked for by Pedro after the pass:** "how to access my skills and inventory in a singular place, without going through the views that shouldn't be available. A character sheet". Bars registered first at 1123dd0, build at b924a1d.
+- **One key, one screen, field and city alike:** ✅ Tab or C opens `components/CharacterSheet.tsx`, over whatever you were doing, and the game goes on underneath. Name, rank, attributes with points to spend, what the hands know and every skill; the body; the pack in the field or the vault at home; this piece's actions. It sits along the lower half of the window, so in the field the player and the fight stay in view. The field's own pack window is gone: this replaced it. It has one mount per tree and one key listener.
+- **The other views left the player's bar:** ✅ The bar is who you are, what you hold, CHARACTER and SYSTEM. The city leads everywhere: the Vault Keeper to the bank and ledger (and the stash's sort and sale), the Conduit to the zones screen and the mint, a lot or THE DEEDS in your own room to the holdings. Each has BACK TO THE CITY and Esc, and you come back standing where you stood. Dev mode keeps all the tabs. This closes U20b.
+- **Decided in the build, for Pedro to overrule:** Tab stays the browser's on a screen of forms, where C still opens the sheet. The sheet has no sort, filter or sale: those stay at the Vault Keeper's screen and the counters, so a sale still means walking to a counter. Dropping off the tab row is a real change of habit, and it is one const away from coming back.
+- **Fixed because this found them:** DISCARD at the vault did nothing (`trashItem` only knew the field), an old fault that my stash panel had kept; the feed spoke over the sheet, so it now speaks from above it; the street position reset on every keeper's screen, on record since 10B, and with the tabs gone everyone would have hit it.
+- **Played at 1280×800 as MORTISE:** Tab in the city; a point spent and kept; walked with the sheet open; closed; walked to the Conduit, E, View Extraction Zones, Esc back onto the same spot; deployed; Tab in the field, the player above the sheet; an axe dragged from the pack to the tool slot; a worn piece hovered; grayscale looked at. With 270 things in view, walking, firing at 8 a second and the sheet open: median 5.7 ms, p95 8.1, p99 10.2, worst 11.7, against 16.7. **Same test practices as above,** and the keys and walks for this were dispatched by script; the drag and hovers were real input to the page.
+- **One older bar re-pointed, not lowered:** the fixed-column bar for U10 now reads `CharacterSheet.tsx`, where the pack's actions moved.
+- **Carried:** below about 1,100 pixels wide the row runs out of room. By bar, not play: the C key and the discard. Not exercised at all: THE DEEDS button, since MORTISE owns no room.
+
+- **Gate:** lines 57–59, proposed lines 72–76, and played through the real interface, within the carried items above.
 
 ### THE PLAYTEST FIXES — absorbed into the usability pass
 Three findings from Pedro's own play on 2026-10-31. All three are fixed at b5cd6ea, awaiting Pedro's approval with the pass. Lines 57–59 are proposed so that guardrail 1 is met.
@@ -695,6 +704,7 @@ Proposed for the usability pass, registered as bars in `tests/usability.test.ts`
 73. Every item anywhere shows its card on hover at once, compared with what is worn or held, without moving the layout
 74. Items drag between every grid and slot with the same hands, by mouse and by keyboard, and no sequence loses or duplicates one
 75. Hands and tools are on a hotbar the HUD shows, and the field and city have a minimap
+76. One key opens one character sheet, in the field and the city alike: the body, what you carry, attributes and skills together, through no other view
 
 Proposed for the playtest fixes, now part of the usability pass, registered in the same file, awaiting the same approval:
 
@@ -748,7 +758,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
 | Technology web and auto skill (D27) | 63–68 | Passed, by test and by play within its carried items; approved |
 | Stable database | 69–71 (proposed) | Not started; before the full run |
-| Usability pass, with the playtest fixes | 57–59, 72–75 (proposed) | Built, by test and by play within its carried items; awaiting approval |
+| Usability pass, with the playtest fixes | 57–59, 72–76 (proposed) | Built, by test and by play within its carried items; awaiting approval |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |
