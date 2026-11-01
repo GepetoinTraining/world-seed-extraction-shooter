@@ -858,8 +858,9 @@ Guardrail 4 said gates are serial because jumping ahead makes logic without syst
 - **Nobody shares a checkout, and everyone stages files by name.** A `git add -A` in a shared tree swept another session's unfinished work into a commit on 2026-11-01. The timer session's work (line 124) has to land before this fan-out is cut from its base.
 - **Streams do not edit `PLAN.md` or `BUILDERS_LOG.md`.** They report what was built, played and not built. The coordinator writes the record, so those files never conflict.
 - **`goldens.ts`, `firstTheme.ts` and `FIRST_THEME_VECTORS` belong to the trees stream alone.** Nobody else moves a vector.
-- **The coordinator checks every stream:** reads the whole diff against its lines, runs the full suite on it, and plays what it claims. A stream's report is a claim, not proof.
-- **Merging is serial and goes through Pedro.** After each merge the next stream is brought up to date and rechecked. The whole wave is played together before the next wave starts.
+- **The coordinator checks every stream:** reads the whole diff against its lines and runs the full suite on it. A stream's report is a claim, not proof.
+- **Merging is serial and goes through Pedro.** After each merge the next stream is brought up to date and rechecked.
+- **One playtest, at the very end, from two views (Pedro, 2026-11-01):** "let's make the playtest once at the end of the fan out, then you test once and I play another round on my world so we can have two views of it." Streams and waves are held by bars until then, and nothing is played between them. When Wave C is merged, the coordinator plays the whole game once on a test avatar and writes down what it found. Then Pedro plays a round on his own world. The two are compared and what they found goes in the ledger before Wave 12. The cost, accepted: a fault only play can show stays hidden until then, and may have later streams built on top of it.
 
 **Wave A, five streams, each needing only the clock:**
 
