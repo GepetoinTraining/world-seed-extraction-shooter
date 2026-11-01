@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { folderUrl, IDatabase, openDatabase } from '../server/connection';
+import { DatabaseUnavailable, folderUrl, IDatabase, openDatabase } from '../server/connection';
 import * as schema from '../server/schema.pg';
 
 type TableName = 'documents' | 'ledger_rows' | 'treasuries' | 'commits';
@@ -313,16 +313,22 @@ export async function carrySave(oldFile: string, targetFolder: string, emit: (li
     rmSync(`${partial}.lock`, { force: true });
 
     // Opened once more under its real name, so what is promised is what a server will find.
-    const final = await openDatabase(folderUrl(target));
     try {
-      for (const shape of TABLES) {
-        const { rows } = await final.db.execute(sql.raw(`SELECT COUNT(*) n FROM ${shape.name}`));
-        if (Number(rows[0].n) !== oldSide.get(shape.name)!.rows) throw new Refusal(`${shape.name} changed on being renamed, and that should not be possible.`);
+      const final = await openDatabase(folderUrl(target));
+      try {
+        for (const shape of TABLES) {
+          const { rows } = await final.db.execute(sql.raw(`SELECT COUNT(*) n FROM ${shape.name}`));
+          if (Number(rows[0].n) !== oldSide.get(shape.name)!.rows) throw new Refusal(`${shape.name} changed on being renamed, and that should not be possible.`);
+        }
+      } finally {
+        await final.close();
       }
-    } finally {
-      await final.close();
+      say('Opened under its real name, and every count holds.');
+    } catch (e) {
+      // A server left running finds the folder the moment it has its name. Everything above was checked before that.
+      if (!(e instanceof DatabaseUnavailable)) throw e;
+      say('A running server opened it under its real name first, so it was not opened again here. It was checked before it took that name.');
     }
-    say('Opened under its real name, and every count holds.');
 
     say(`CARRIED: ${target}`);
     say('That line and the receipt beside the folder are what say this worked. The exit code alone does not: the old database driver can exit 139 after finishing.');

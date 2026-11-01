@@ -12,7 +12,17 @@ npm run dev
 npm test
 ```
 
-`npm run dev` brings up the game and its database with one command: a SQLite file at `data/test-claude.db`, created on first run and never committed. The first load on a browser origin that holds old saves imports them, after verifying their signatures. If the database is not answering, the game refuses to open rather than guess.
+`npm run dev` brings up the game and its database with one command: Postgres in process (PGlite) on the folder `data/test-claude`, created on first run and never committed, so nobody installs a database to play. The first load on a browser origin that holds old saves imports them, after verifying their signatures. If the database is not answering, the game refuses to open rather than guess.
+
+One process holds a database folder at a time. A second dev server in the same checkout is told so in the game and in its log; give it its own folder with `WS_DATABASE_URL=pglite://<folder>`. A killed server loses nothing it acknowledged. A folder does not survive a power cut as a served database does: PGlite never forces a write to the disk.
+
+A save from before the move is a SQLite file, and it is never opened or changed by itself. The game says what to run if it finds one with no folder. It takes the file with its log beside it, writes a new folder, checks every row, and leaves the old file as it is:
+
+```bash
+npm run db:carry -- data/test-claude.db data/test-claude
+```
+
+The `CARRIED` line and the `.carried.txt` receipt beside the folder are what say it worked, and not the exit code: the old driver can exit 139 after finishing.
 
 Pedro's own game has its own database and its own port, so a test session can never touch it:
 
@@ -20,9 +30,9 @@ Pedro's own game has its own database and its own port, so a test session can ne
 npm run pedro
 ```
 
-That plays on `data/test-pedro.db` at `http://localhost:3200`. It first syncs the shared base with `test-claude`: the definitions, every item's history and the registry of claims, in both directions, and nothing that belongs to a character. `npm run db:sync` runs the sync alone.
+That plays on `data/test-pedro` at `http://localhost:3200`. It first syncs the shared base with `test-claude`: the definitions, every item's history and the registry of claims, in both directions, and nothing that belongs to a character. If a server is running on either folder the sync cannot run: this says so and plays on. `npm run db:sync` runs the sync alone, and fails if it cannot.
 
-To run the built game standing alone, on SQLite or on Postgres:
+To run the built game standing alone, on a folder or on a served Postgres:
 
 ```bash
 npm run build
@@ -31,7 +41,7 @@ npm run build
 npm run serve
 ```
 
-`npm run serve` listens on port 3900, and reads `WS_DATABASE_URL` (`file:…` or `postgres://…`), `WS_PORT` and `WS_HOST`. **It has no authentication, so it answers this machine only. A real deploy needs a login in front of it first.**
+`npm run serve` listens on port 3900, and reads `WS_DATABASE_URL` (`pglite://<folder>` or `postgres://…`), `WS_PORT` and `WS_HOST`. **It has no authentication, so it answers this machine only. A real deploy needs a login in front of it first.**
 
 The game runs on `http://localhost:3000`. The proof pages are under `/prototype/atoms/` (`index.html`, `hub.html`, `room.html`).
 

@@ -115,9 +115,16 @@ const TIDY_EVERY_BYTES = 32 * 1024 * 1024;
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-const heldHere = new Map<string, Promise<void>>();
-const locksToRelease = new Set<string>();
-let releasesOnExit = false;
+/**
+ * What this process holds, kept on the process and not on this module. Vite bundles its
+ * config afresh on every restart, so this file can be loaded twice in one process, and a
+ * second copy with its own empty map would take its own process id on a lock for a stale
+ * one, and open a folder the first copy still has open.
+ */
+const processHolds: { folders: Map<string, Promise<void>>; locks: Set<string>; releasesOnExit: boolean } =
+  ((globalThis as any)[Symbol.for('worldseed.database.holds')] ??= { folders: new Map(), locks: new Set(), releasesOnExit: false });
+const heldHere = processHolds.folders;
+const locksToRelease = processHolds.locks;
 
 function isAlive(pid: number): boolean {
   try {
@@ -158,14 +165,15 @@ async function takeLock(folder: string): Promise<() => void> {
   try { still = readFileSync(lock, 'utf8'); } catch { /* taken and gone: not ours */ }
   if (still !== mine) throw new DatabaseUnavailable(heldMessage(folder, lock, 'starting at this moment'));
 
-  if (!releasesOnExit) {
-    releasesOnExit = true;
+  if (!processHolds.releasesOnExit) {
+    processHolds.releasesOnExit = true;
     process.on('exit', () => { for (const l of locksToRelease) { try { rmSync(l, { force: true }); } catch { /* the next opener takes it over */ } } });
   }
   locksToRelease.add(lock);
   return () => {
     locksToRelease.delete(lock);
-    rmSync(lock, { force: true });
+    // Only ever one's own: whoever came next may already hold this name.
+    try { if (readFileSync(lock, 'utf8') === mine) rmSync(lock, { force: true }); } catch { /* gone already */ }
   };
 }
 
@@ -196,11 +204,13 @@ async function openPglite(folder?: string): Promise<IDatabase> {
 
   refuseUncarriedSave(folder);
 
-  // Vite builds a restarted server before it closes the old one, in one process.
-  const closing = heldHere.get(folder);
-  if (closing) {
-    await Promise.race([closing, sleep(SAME_PROCESS_WAIT_MS)]);
-    if (heldHere.get(folder) === closing) throw new DatabaseUnavailable(heldMessage(folder, `${folder}.lock`, `this one, ${process.pid}`));
+  // Vite builds a restarted server before it closes the old one, in one process. Those
+  // who wait go one at a time: nothing happens between the last look here and the set below.
+  const giveUpAt = performance.now() + SAME_PROCESS_WAIT_MS;
+  for (let closing = heldHere.get(folder); closing; closing = heldHere.get(folder)) {
+    const left = giveUpAt - performance.now();
+    if (left <= 0) throw new DatabaseUnavailable(heldMessage(folder, `${folder}.lock`, `this one, ${process.pid}`));
+    await Promise.race([closing, sleep(left)]);
   }
   let released = () => {};
   const closed = new Promise<void>(r => { released = r; });

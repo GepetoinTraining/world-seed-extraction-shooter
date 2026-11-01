@@ -78,17 +78,24 @@ export function createDbHandler(getStore: () => Promise<SqlStore>, options: IHan
   };
 }
 
-/** The store, opened once on first need, and retried if the first try failed. */
+/**
+ * The store, opened once on first need, and retried if the first try failed. Closed
+ * means closed: a request caught in a restart must not open the folder again on a
+ * server that is gone, where nothing would ever close it and the new server could not open it.
+ */
 export function lazyStore(open: () => Promise<SqlStore>): { get: () => Promise<SqlStore>; close: () => Promise<void> } {
   let opening: Promise<SqlStore> | null = null;
+  let closed = false;
   return {
     get: () => {
+      if (closed) return Promise.reject(new Error('This server is closing.'));
       if (!opening) {
         opening = open().catch(e => { opening = null; throw e; });
       }
       return opening;
     },
     close: async () => {
+      closed = true;
       if (opening) await (await opening.catch(() => null))?.close();
       opening = null;
     }

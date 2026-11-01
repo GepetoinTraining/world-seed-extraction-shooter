@@ -14,7 +14,7 @@
  *   across a killed process. The processes below are real and really killed.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { spawn, ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -621,6 +621,44 @@ describe('one process holds a database folder at a time', () => {
     await new Promise(r => setTimeout(r, 200));
     await first.close();
     await (await second).close();
+  }, 60_000);
+
+  it('several waiting in one process go one at a time, and none is refused for it', async () => {
+    const url = folderUrl(join(scratch(), 'queue'));
+    const first = await openDatabase(url);
+    const waiting = [openDatabase(url), openDatabase(url), openDatabase(url)];
+    await new Promise(r => setTimeout(r, 100));
+    await first.close();
+    for (let left = waiting.length; left > 0; left--) {
+      const { held, at } = await Promise.race(waiting.map((p, at) => p.then(held => ({ held, at }))));
+      waiting[at] = new Promise(() => undefined); // answered: out of the race
+      await held.close();
+    }
+  }, 60_000);
+
+  it('a second copy of the module in one process still waits: Vite loads this file afresh at every restart', async () => {
+    const url = folderUrl(join(scratch(), 'twice'));
+    const first = await openDatabase(url);
+    vi.resetModules();
+    const again = await import('../server/connection');
+    expect(again.openDatabase).not.toBe(openDatabase);
+    let opened = false;
+    const second = again.openDatabase(url).then(d => { opened = true; return d; });
+    await new Promise(r => setTimeout(r, 500));
+    expect(opened).toBe(false);
+    await first.close();
+    await (await second).close();
+  }, 60_000);
+
+  it('a closed store stays closed: a request caught in a restart cannot open the folder again', async () => {
+    const { lazyStore } = await import('../server/http');
+    const url = folderUrl(join(scratch(), 'closed'));
+    const lazy = lazyStore(() => openStore(url));
+    await lazy.get();
+    await lazy.close();
+    await expect(lazy.get()).rejects.toThrow(/closing/);
+    // So the folder is free for whoever comes next.
+    await (await openDatabase(url)).close();
   }, 60_000);
 
   it('and refuses, in the end, if the first never does', async () => {
