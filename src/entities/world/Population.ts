@@ -79,6 +79,10 @@ export interface IPopulationRecord {
   down: Record<string, { at: number; kind: string; sector: string; ground?: string }>;
   /** D93: which leaders someone saw, by the cycles they were seen in. */
   seen: Record<string, number[]>;
+  /** D65: the registers bodies were taken alive from, by register id. Absent until one has been. */
+  taken?: Record<string, IKoseki>;
+  /** D65: bodies let go on this land, until the cycle they landed in has been folded. A foreign kind stays its own kind. */
+  released?: { ground: string; kind: string; at: number }[];
 }
 
 export const emptyPopulationRecord = (): IPopulationRecord => ({ sectors: {}, down: {}, seen: {} });
@@ -240,7 +244,7 @@ export class Population {
    * One cycle passes on one sector. Pure: the same state, ledger and land give the same next state.
    * Keys are sorted wherever a sum is taken, so a state read back from a store folds to the same bytes.
    */
-  static step(seed: string, sx: number, sy: number, state: ISectorState, record: Pick<IPopulationRecord, 'down' | 'seen'>, context: IGenerationContext): ISectorState {
+  static step(seed: string, sx: number, sy: number, state: ISectorState, record: Pick<IPopulationRecord, 'down' | 'seen' | 'released'>, context: IGenerationContext): ISectorState {
     const g = state.generation;
     const land = this.landOf(seed, sx, sy, context);
     const sectorKey = `${sx},${sy}`;
@@ -258,6 +262,12 @@ export class Population {
       const on = counts[entry.ground];
       const fellAs = words.get(entry.kind) ?? entry.kind;
       if (on?.[fellAs]) on[fellAs] -= 1;
+    }
+    // Who was let go in the cycle that is closing is one more, and from here it is a count like any other
+    for (const body of record.released ?? []) {
+      if (body.at !== g || sectorKeyOf(body.ground) !== sectorKey) continue;
+      const on = counts[body.ground] ?? (counts[body.ground] = {});
+      on[body.kind] = (on[body.kind] ?? 0) + 1;
     }
 
     this.changeOfForm(counts, land, context, roll('form'), g);
@@ -558,6 +568,11 @@ export class Population {
     if (state.generation < generation) {
       while (state.generation < generation) state = this.step(seed, sx, sy, state, record, context);
       for (const [id, entry] of Object.entries(record.down)) if (entry.sector === key && entry.at < state.generation) delete record.down[id];
+      if (record.released) {
+        const done = state.generation;
+        const left = record.released.filter(body => sectorKeyOf(body.ground) !== key || body.at >= done);
+        if (left.length !== record.released.length) record.released = left;
+      }
       for (const id of Object.keys(state.leaders)) {
         const kept = record.seen[id]?.filter(at => at >= state.generation);
         if (kept) { if (kept.length > 0) record.seen[id] = kept; else delete record.seen[id]; }
@@ -574,8 +589,14 @@ export class Population {
   /** Who stands on this chunk at this cycle. At alpha only what fell is taken away. */
   static layOver(seed: string, chunk: IChunk, record: IPopulationRecord, generation: number, context: IGenerationContext): void {
     const fellNow = (id: string) => record.down[id]?.at === generation;
+    // Let go this cycle: it stands here now, and it is a count once the cycle closes
+    const releasedHere = (): IBodyToStand[][] => (record.released ?? [])
+      .filter(body => body.at === generation && body.ground === keyOfGround(chunk.x, chunk.y) && defOf(body.kind))
+      .map((body, i) => [{ id: `rel_${chunk.x}_${chunk.y}_${i}`, def: defOf(body.kind)! }]);
     if (generation <= 0) {
       chunk.entities = chunk.entities.filter(e => e.type !== EntityType.MOB || !fellNow(e.id));
+      const lands = releasedHere();
+      if (lands.length > 0) WorldGenerator.standBodies(seed, chunk, lands, context);
       return;
     }
     const sx = Math.floor(chunk.x / SECTOR_CHUNKS), sy = Math.floor(chunk.y / SECTOR_CHUNKS);
@@ -608,7 +629,42 @@ export class Population {
       if (led) for (let i = 0; i < leader.pack; i++) if (!fellNow(`${id}_f${i}`)) bodies.push({ id: `${id}_f${i}`, def: led });
       groups.push(bodies);
     }
+    groups.push(...releasedHere());
     WorldGenerator.standBodies(seed, chunk, groups, context);
+  }
+
+  /** A body let go on this ground, at this cycle. Whether it may be is the person's and the map's to say. */
+  static release(record: IPopulationRecord, ground: string, kind: string, generation: number): IPopulationRecord {
+    return { ...record, released: [...(record.released ?? []), { ground, kind, at: generation }] };
+  }
+
+  /**
+   * D65: a body taken alive. It comes off its count as if it had fallen, and it moves from
+   * whatever register holds it onto the person's, through the one door a move has. A body of an
+   * ordinary herd has no register until now, so one is written for it. One from a leader's pack
+   * leaves that leader's.
+   */
+  static captured(record: IPopulationRecord, bodyId: string, kind: string, generation: number, to: IKoseki): { record: IPopulationRecord; to: IKoseki } {
+    const herd = Leaders.herdOf(bodyId);
+    const follower = herd && Leaders.isLeader(herd) && herd !== bodyId ? herd : undefined;
+    const place = /^(?:pop|ent|lead)_(-?\d+)_(-?\d+)_/.exec(bodyId);
+    const sector = place ? (bodyId.startsWith('lead_') ? `${place[1]},${place[2]}` : sectorKeyOf(this.groundOfBody(bodyId) ?? `${place[1]},${place[2]}`)) : 'field';
+    const taken = record.taken ?? {};
+    const founder = follower ?? bodyId;
+    const registerId = Koseki.found(sector, founder, kind, generation).id;
+    let from = taken[registerId] ?? Koseki.found(sector, founder, kind, generation);
+    if (follower) from = Koseki.bear(from, bodyId, kind, [follower], generation);
+    const moved = Koseki.adopt(from, to, bodyId, kind, generation);
+    const fallen = this.fell(record, bodyId, kind, generation);
+    return { record: { ...fallen, taken: { ...taken, [registerId]: moved.from } }, to: moved.to };
+  }
+
+  /** The ground a counted body's name says it stands on. */
+  private static groundOfBody(bodyId: string): string | undefined {
+    const place = /^(pop|ent)_(-?\d+)_(-?\d+)_/.exec(bodyId);
+    if (!place) return undefined;
+    const x = Number(place[2]), y = Number(place[3]);
+    return place[1] === 'ent' ? keyOfGround(Math.floor(x / CHUNK_QUADRANTS), Math.floor(y / CHUNK_QUADRANTS)) : keyOfGround(x, y);
   }
 
   /** A body fell. A count falls by one when its cycle closes, and it stays down until then. */

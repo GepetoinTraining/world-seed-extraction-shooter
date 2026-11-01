@@ -496,6 +496,7 @@ const ROW_WORDS: Record<string, string> = {
   CRAFT: 'Transformation',
   UPKEEP: 'Upkeep charged',
   GUILD: 'The guild',
+  FARM: 'The farm',
   TOMBSTONE: 'Superseded'
 };
 
@@ -506,7 +507,7 @@ const rowSummary = (row: ILedgerRow): string => {
   if (row.type === 'CHARACTER_GENESIS') return `${d.username} · birthright ${d.gold} G`;
   if (row.type === 'UPKEEP') return `lot upkeep · ${d.amount} G`;
   if (row.type === 'TRADE') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
-  if (row.type === 'CRAFT' || row.type === 'GUILD') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
+  if (row.type === 'CRAFT' || row.type === 'GUILD' || row.type === 'FARM') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
   return '';
 };
 

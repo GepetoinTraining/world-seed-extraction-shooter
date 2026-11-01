@@ -209,7 +209,7 @@ export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number,
     const pw = poi.size.width * s, ph = poi.size.height * s;
     const isLot = poi.type === 'PLAYER_LOT';
     const state = isLot ? lots[poi.metadata?.lotIndex] : undefined;
-    const built = !!state && state !== 'FOR_SALE' && state !== 'OWNED_EMPTY';
+    const built = !!state && state !== 'FOR_SALE' && state !== 'OWNED_EMPTY' && state !== 'FARM';
     for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
       const edge = x === 0 || y === 0 || x === pw - 1 || y === ph - 1;
       const cell = (py0 + y) * w + px0 + x;

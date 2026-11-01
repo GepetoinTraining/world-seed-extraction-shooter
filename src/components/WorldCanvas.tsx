@@ -9,6 +9,7 @@ import { LootTable } from '../entities/world/LootTable';
 import { Leaders } from '../entities/world/Leaders';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { applyKillRewards } from '../entities/combat/killRewards';
+import { FieldCapture } from '../logic/systems/FieldCapture';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
 import { EntityType, IChunk, IWorldEntity } from '../entities/world/types';
@@ -410,6 +411,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   // Completes the extraction: tax, journal seal, banking, save — and the SEAL moment
   const completeExtraction = useCallback(() => {
+    // D65: what is still following comes home with the haul, and it never had to fit the pack
+    FieldCapture.walkOut();
     const st = usePlayerStore.getState();
     const session = st.player.currentSession;
     if (!session) return;
@@ -1292,9 +1295,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const { targets, near } = targetsNear(clickX, clickZ, 60);
     const hit = hitTest(targets, clickX, clickZ);
     const entity = hit ? near.find(n => n.id === hit) : undefined;
-    if (!entity || entity.type === EntityType.MOB) return;
+    if (!entity) return;
     const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_SIZE;
     const options = InteractionEngine.getAvailableInteractions(st.player, entity, dist);
+    if (entity.type === EntityType.MOB && options.length === 0) return;
     if (options.length > 0) openMenu(entity, options, e.clientX, e.clientY);
     else explainNothing(entity.position.x, entity.position.y);
   };

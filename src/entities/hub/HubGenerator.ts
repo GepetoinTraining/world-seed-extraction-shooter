@@ -9,7 +9,7 @@ import { UniversalRank } from '../../../types';
 import { CHUNK_TILES } from '../world/grid';
 import { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
 import {
-  CELL_TILES, DISMEMBER_PIECE_MIN, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN,
+  CELL_TILES, DISMEMBER_PIECE_MIN, EMPTY_MARK, FARMLAND_KIND, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN,
   dismemberShape, doorTile, firstPlan, lotPrice, lotPriceShare, resolveChunk, tilesToCell
 } from './hubManifest';
 
@@ -277,7 +277,7 @@ export class HubGenerator {
       }
     };
 
-    chunks.forEach((placed, order) => {
+    const lay = (placed: IPlacedChunk, order: number) => {
       const chunk = manifest.chunks[placed.kind];
       if (!chunk) throw new Error(`The manifest holds no chunk called ${placed.kind}.`);
 
@@ -358,7 +358,36 @@ export class HubGenerator {
         }
       });
 
+    };
+
+    // A chunk made farmland whole after `count` had risen: what stood there goes, its numbers
+    // stay spent, and the plots are numbered then, so nothing raised around it moves.
+    const farmAfter = (count: number) => {
+      plan.chunks.forEach((raised, order) => {
+        if (raised.farmedAfter !== count) return;
+        const placed = chunks[order];
+        const inside = (x: number, y: number) => x >= placed.x && x < placed.x + CHUNK_TILES && y >= placed.y && y < placed.y + CHUNK_TILES;
+        const gone = new Set<string>();
+        for (let i = zones.length - 1; i >= 0; i--) {
+          const zone = zones[i];
+          zone.pois = zone.pois.filter(p => {
+            if (!inside(p.position.x, p.position.y)) return true;
+            gone.add(p.id);
+            return false;
+          });
+          if (inside(zone.bounds.x, zone.bounds.y)) zones.splice(i, 1);
+        }
+        for (let i = roads.length - 1; i >= 0; i--) if (inside(roads[i].x, roads[i].y)) roads.splice(i, 1);
+        for (let i = passages.length - 1; i >= 0; i--) if (gone.has(passages[i].lotId)) passages.splice(i, 1);
+        placed.kind = FARMLAND_KIND;
+        lay(placed, order);
+      });
+    };
+
+    chunks.forEach((placed, order) => {
+      lay(placed, order);
       dismemberAfter(order + 1);
+      farmAfter(order + 1);
     });
 
     return {
@@ -432,6 +461,7 @@ export class HubGenerator {
   static dismemberVerdict(layout: IHubLayout, lotId: string, manifest: IHubManifest = NEW_CARLEON): { ok: boolean; reason?: string; cost?: number; pieces?: number } {
     const lot = HubGenerator.findPOI(layout, lotId);
     if (!lot || lot.type !== POIType.PLAYER_LOT) return { ok: false, reason: 'There is no such lot.' };
+    if (lot.metadata.farmland) return { ok: false, reason: 'The hub portioned this ground evenly, and it stays that way.' };
     if (lot.metadata.locked) return { ok: false, reason: 'It has no street at its door to trace a way from.' };
     if (lot.metadata.carries) return { ok: false, reason: 'A servidão already crosses it, and the way stays open.' };
     const shape = dismemberShape({ x: lot.position.x, y: lot.position.y, width: lot.size.width, height: lot.size.height });

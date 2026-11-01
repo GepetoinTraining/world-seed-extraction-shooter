@@ -3,6 +3,8 @@ import { EntityType, IWorldEntity } from '../world/types';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { Capture } from '../../logic/systems/Capture';
+import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 
 export class InteractionEngine {
 
@@ -69,6 +71,20 @@ export class InteractionEngine {
         });
       }
       // else: wrong/no tool -> no option. The refusal IS the message (test line 7).
+    }
+
+    // 2a. A BODY, WITH A SNARE IN THE PACK (D65). It offers nothing to anyone without one.
+    if (target.type === EntityType.MOB && (target.health ?? 0) > 0 && dist < 3.0 && Capture.canSnare(playerInventory, target.id, MOB_DEFINITIONS[target.definitionId])) {
+      options.push({
+        id: `int_snare_${target.id}`,
+        label: 'Set a Snare',
+        type: InteractionType.PICKUP,
+        icon: 'snare',
+        energyCost: Capture.SNARE_ENERGY,
+        timeCostSeconds: 2.0,
+        requirements: {},
+        consequence: { xpTags: ['trapping'] }
+      });
     }
 
     // 2b. CONTAINERS (Wave 2.3: ruin chests)

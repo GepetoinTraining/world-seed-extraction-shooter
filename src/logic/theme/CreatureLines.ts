@@ -23,7 +23,7 @@ import { sha256Hex } from '../journal/SessionJournal';
 import { Rng } from '../rng/DeterministicRNG';
 import { ContentRegistry } from './ContentRegistry';
 import { canonical, compileTheme, creatureIdOf, junkIdsFor, keyIdsOf } from './ThemeCompiler';
-import { descendantNumbers } from './ThemeFormula';
+import { creatureNumbers, descendantNumbers } from './ThemeFormula';
 import { ThemeLaw } from './ThemeLaw';
 import { BUILDS, ILineBands, ILineChange, ILineWords, IThemePack, LINE_FEATURES, PACES, THREATS } from './ThemeTypes';
 import { IGrownBatch, IThemeGrowth, WorldGrowth } from './WorldGrowth';
@@ -65,6 +65,37 @@ export interface ILineRecord {
   grown?: IGrownBatch[];
   /** Growth code has rolled for, waiting for its words. */
   growing?: IGrowthOrder[];
+  /** D65: what was brought in from other maps. It changes this map's root and never its pack. */
+  foreign?: Record<string, IForeignBranch>;
+}
+
+/**
+ * D55, D65: a kind, and everything that proves it. Each node's id is the hash of its parents and
+ * what changed, so a changed word fails. The definition goes with it for a map that has never
+ * heard of its theme. Where this machine holds the theme, the numbers are checked against it;
+ * where it does not, only the digest stands behind them until something signs it (Wave 13).
+ */
+export interface ILineProof {
+  kind: string;
+  worldSeed: string;
+  themeId: string;
+  /** Every node behind this kind, parents before children. */
+  nodes: ILineNode[];
+  /** The first generations it comes from. */
+  roots: string[];
+  def: Record<string, unknown>;
+  /** What sets its numbers, from the formula, for whatever comes from it next. */
+  bands?: ILineBands;
+  digest?: string;
+}
+
+/** A branch from another map, on this map's record. */
+export interface IForeignBranch {
+  id: string;
+  kind: string;
+  proof: ILineProof;
+  arrivedAt: number;
+  ground: string;
 }
 
 /** A regeneration people fought through has rolled to grow. What came of it is the model's to say. */
@@ -137,7 +168,7 @@ export class CreatureLines {
   /** The first generation, what grew since, and all that came after them. A count is read sector by sector, so no machine knows a kind has gone from a whole world: every line counts as living. */
   static living(pack: IThemePack, lines: ILineRecord): string[] {
     const grown = (lines.grown ?? []).flatMap(b => b.growth.creatures.map(c => creatureIdOf(b.scope, c.key)));
-    return [...pack.creatures.map(c => creatureIdOf(pack.themeId, c.key)), ...grown, ...Object.keys(lines.nodes)].sort();
+    return [...pack.creatures.map(c => creatureIdOf(pack.themeId, c.key)), ...grown, ...Object.keys(lines.nodes), ...Object.keys(lines.foreign ?? {})].sort();
   }
 
   /** A Merkle root over a world's living lines, for one cycle: any order in, one root out. */
@@ -445,6 +476,119 @@ export class CreatureLines {
     return { record: at, installed, refused };
   }
 
+  // -------------------------------------------------------------------------
+  // THE PROOF OF A LINE (D55, D65; line 117)
+  // -------------------------------------------------------------------------
+
+  /** A kind in a record, as what can leave this map and prove itself elsewhere. Undefined for what this machine cannot read. */
+  static proofOf(record: IDirectorRecord | null, world: ILineWorld, kind: string): ILineProof | undefined {
+    const lines = record?.lines ?? this.empty();
+    // What came here from elsewhere goes on with the proof it came with
+    const arrived = Object.values(lines.foreign ?? {}).find(b => b.kind === kind);
+    if (arrived) return arrived.proof;
+    const pack = ContentRegistry.get(world.themeId ?? ContentRegistry.defaultThemeId());
+    const nodes: ILineNode[] = [];
+    const roots = new Set<string>();
+    const seen = new Set<string>();
+    const walk = (id: string) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const node = lines.nodes[id];
+      if (!node) { roots.add(id); return; }
+      node.parents.forEach(walk);
+      nodes.push(node);
+    };
+    walk(kind);
+    const compiled = pack ? this.compile(pack, lines) : {};
+    const def = (MOB_DEFINITIONS[kind] as unknown as Record<string, unknown> | undefined) ?? (compiled[kind] as Record<string, unknown> | undefined);
+    if (!def) return undefined;
+    const bands = pack ? this.states(pack, lines).get(kind)?.bands : undefined;
+    return { kind, worldSeed: world.seed, themeId: pack?.themeId ?? world.themeId ?? '', nodes, roots: [...roots].sort(), def: JSON.parse(JSON.stringify(def)), ...(bands ? { bands } : {}) };
+  }
+
+  /** The proof with its definition's digest on it, for a map that cannot check the numbers itself. */
+  static async sealProof(proof: ILineProof): Promise<ILineProof> {
+    return { ...proof, digest: await sha256Hex(`def:v1:${canonical(proof.def)}`) };
+  }
+
+  /** Whether a proof proves what it claims. */
+  static async verifyProof(proof: ILineProof): Promise<{ ok: boolean; reason?: string }> {
+    const known = new Set(proof.roots);
+    for (const node of proof.nodes) {
+      if (node.parents.some(p => !known.has(p))) return { ok: false, reason: 'Its line has a gap in it.' };
+      if ((await this.childId(node.parents, node.change)) !== node.id) return { ok: false, reason: 'Its line does not prove itself.' };
+      known.add(node.id);
+    }
+    if (!known.has(proof.kind) || proof.roots.length === 0) return { ok: false, reason: 'Its line does not reach what it claims to be.' };
+    if (proof.def.id !== proof.kind) return { ok: false, reason: 'Its definition is of something else.' };
+    if (proof.digest && proof.digest !== await sha256Hex(`def:v1:${canonical(proof.def)}`)) return { ok: false, reason: 'Its definition has been changed.' };
+    // Where this machine holds the theme, the numbers come from the formula and nothing else
+    const pack = ContentRegistry.get(proof.themeId);
+    if (pack) {
+      const nodes = Object.fromEntries(proof.nodes.map(n => [n.id, n]));
+      const compiled = ContentRegistry.compiled(pack.themeId) ?? compileTheme(pack);
+      const lines = { ...this.empty(), nodes };
+      const own = (compiled.mobs[proof.kind] ?? this.compile(pack, lines)[proof.kind]) as Record<string, unknown> | undefined;
+      if (own && (own.baseHealth !== proof.def.baseHealth || own.baseDamage !== proof.def.baseDamage)) return { ok: false, reason: 'Its numbers are not what its line makes them.' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * D65: a body from another map joins this one. Its branch goes on the record, which moves the
+   * signed root and leaves the pack alone. A proof that fails changes nothing.
+   */
+  static async arrive(record: IDirectorRecord, world: ILineWorld, proof: ILineProof, ground: string): Promise<ILineInstall> {
+    const pack = ContentRegistry.get(world.themeId ?? ContentRegistry.defaultThemeId());
+    if (!pack) return { ok: false, record, reason: 'This machine cannot read this map\'s theme.' };
+    const verdict = await this.verifyProof(proof);
+    if (!verdict.ok) return { ok: false, record, reason: verdict.reason };
+    const lines = record.lines ?? this.empty();
+    const id = `mob_foreign_${(await sha256Hex(`foreign:v1:${canonical({ kind: proof.kind, from: proof.worldSeed, nodes: proof.nodes.map(n => n.id) })}`)).slice(0, 32)}`;
+    const branch: IForeignBranch = { id, kind: proof.kind, proof, arrivedAt: record.generation, ground };
+    return {
+      ok: true, id,
+      record: { ...record, lines: await this.signed({ ...lines, foreign: { ...lines.foreign, [id]: branch } }, record.generation, world.seed, pack) }
+    };
+  }
+
+  /**
+   * A child of two lines: two parents in its hash, and it proves both. The first parent gives the
+   * body, as in any line, and its numbers come from the formula. A pen asks no model: it stands
+   * on plain words, like any change whose words have not come.
+   */
+  static async crossed(a: ILineProof, b: ILineProof, key: string, bornAt: number): Promise<ILineProof> {
+    const change: ILineChange = {
+      name: 'Crossbred contact',
+      blurb: 'Two lines in one pen, and this is what came of it. The words for it have not come.',
+      tags: [], innate: [], bands: {},
+      features: [Rng.fromKey(`cross:${key}`).pick([...LINE_FEATURES])]
+    };
+    const parents = [a.kind, b.kind];
+    const id = await this.childId(parents, change);
+    const child: ILineNode = { id, parents, change, bornAt };
+    const seen = new Set<string>();
+    const nodes = [...a.nodes, ...b.nodes].filter(n => !seen.has(n.id) && !!seen.add(n.id));
+    const generation = 1 + Math.max(Number(a.def.generation ?? 1), Number(b.def.generation ?? 1));
+    const bands = a.bands ?? { build: 'sturdy', threat: 'sharp', pace: 'steady' };
+    const list = (d: Record<string, unknown>, field: string) => (Array.isArray(d[field]) ? d[field] as string[] : []);
+    const line = a.def.line as { root?: string; rootTags?: string[]; features?: string[] } | undefined;
+    const def: Record<string, unknown> = {
+      ...a.def, id, name: change.name,
+      tags: union(list(a.def, 'tags'), list(b.def, 'tags')),
+      habitat: union(list(a.def, 'habitat'), list(b.def, 'habitat')),
+      innate: union(list(a.def, 'innate'), list(b.def, 'innate')),
+      generation,
+      line: { root: line?.root ?? a.kind, rootTags: line?.rootTags ?? list(a.def, 'tags'), features: [...(line?.features ?? []), ...change.features] },
+      ...descendantNumbers({ rank: a.def.rank, size: a.def.size, ...bands } as Parameters<typeof creatureNumbers>[0], generation)
+    };
+    return {
+      kind: id, worldSeed: a.worldSeed, themeId: a.themeId,
+      nodes: [...nodes, child], roots: [...new Set([...a.roots, ...b.roots])].sort(),
+      def, bands
+    };
+  }
+
   /** The definitions a record's kinds read as. Pure, and only what can prove itself comes in. */
   static compile(pack: IThemePack, lines: ILineRecord): Record<string, unknown> {
     const scoped = (lines.grown ?? []).flatMap(b => [...keyIdsOf({ themeId: b.scope, materials: [], goods: [], stations: [], abilities: b.growth.abilities })]);
@@ -479,10 +623,16 @@ export class CreatureLines {
     const pack = ContentRegistry.get(themeId ?? ContentRegistry.defaultThemeId());
     if (!lines || !pack) return;
     ContentRegistry.defineGrowth(pack, lines);
-    if (Object.keys(lines.nodes).length === 0) return;
-    const bad = new Set(await this.verify(lines));
-    if (bad.size > 0) console.warn(`[LINES] ${bad.size} kinds in this record do not prove themselves, and were left out.`);
-    const nodes = Object.fromEntries(Object.entries(lines.nodes).filter(([id]) => !bad.has(id)));
-    Object.assign(MOB_DEFINITIONS, this.compile(pack, { ...lines, nodes }));
+    if (Object.keys(lines.nodes).length > 0) {
+      const bad = new Set(await this.verify(lines));
+      if (bad.size > 0) console.warn(`[LINES] ${bad.size} kinds in this record do not prove themselves, and were left out.`);
+      const nodes = Object.fromEntries(Object.entries(lines.nodes).filter(([id]) => !bad.has(id)));
+      Object.assign(MOB_DEFINITIONS, this.compile(pack, { ...lines, nodes }));
+    }
+    // What was brought in stands by the proof it carries, and a proof that fails stays out
+    for (const branch of Object.values(lines.foreign ?? {})) {
+      if (MOB_DEFINITIONS[branch.kind]) continue;
+      if ((await this.verifyProof(branch.proof)).ok) Object.assign(MOB_DEFINITIONS, { [branch.kind]: branch.proof.def });
+    }
   }
 }

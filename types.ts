@@ -159,7 +159,8 @@ export type MaterialOrigin =
   | 'IMPROVISATION'  // combined in the field, no bench, no apology
   | 'WORLD'          // rolled by the world itself (loot, chests, genesis)
   | 'CONSTRUCTION'   // minted by a finished shell (bench, counter)
-  | 'SALVAGE';       // torn back out of a demolished piece, bitten
+  | 'SALVAGE'        // torn back out of a demolished piece, bitten
+  | 'FARMED';        // grown on a plot, or taken from a herd at home
 
 /** One step of labor in an item's transformation chain. */
 export interface ICompositionStep {
@@ -576,6 +577,10 @@ export interface IItem {
   /** D85: a world's sectors as a scribe held them. Levels and counts, never a name (D60). */
   /** D72, D80: what minting a world spends. It names a size and no holder, so it can change hands. */
   worldDeedData?: { size: number; source: 'FREE' | 'FOUND' };
+  /** D65: what is alive in this cage: the body, its kind and the proof of its line. */
+  creatureData?: import('./src/logic/systems/Capture').ICaged;
+  /** Line 37: the bed this came off, the seed it grew from, and how many plantings stand behind it. */
+  farmLine?: { lotId: string; bed: number; seedItemId: string; seedName: string; plantings: number; firstOrigin: string; plantedAt: number; reapedAt: number };
 
   mapData?: {
     worldId: string;
@@ -767,6 +772,8 @@ export interface IActiveSession {
   inventoryLayout?: Record<string, IGridPlacement>;
   // What came in with the player; everything else in the pack was found in the field
   kitItemIds?: string[];
+  /** D65: what walks beside this person for a while, and the cage it goes home in. */
+  tamed?: { entityId: string; item: IItem; until: number }[];
   // Wave 4.1: equipped gear (additive contract change)
   // Wave 10C: LEGACY — the three buckets migrate into IPlayer.equipment's slot
   // tree on load (LoadoutSystem.migrate). Kept so old session snapshots parse.

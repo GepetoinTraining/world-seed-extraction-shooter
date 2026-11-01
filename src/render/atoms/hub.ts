@@ -108,6 +108,9 @@ export function floorAtom(zone: ZoneType | null, ax: number, ay: number): number
     }
     case ZoneType.GARDEN:
       return px(Role.GROUND, hash2(33, ax >> 1, ay >> 1) % 9 === 0 ? 2 : 1);
+    case ZoneType.FARMLAND:
+      // Turned ground, in long even rows
+      return px(Role.GROUND, ay % 5 === 0 ? 1 : 2);
     case ZoneType.RESIDENTIAL: {
       const tuft = hash2(44, ax >> 2, ay >> 2) % 5 === 0 && (ax + ay) % 2 === 0;
       return px(Role.GROUND, tuft ? 4 : 3);
@@ -221,7 +224,7 @@ export function emblem(type: POIType, s = 12): Sprite {
 // LOTS: the states the game really has, each its own shape.
 // ---------------------------------------------------------------------------
 
-export const LOT_STATES = ['FOR_SALE', 'OWNED_EMPTY', 'UNDER_CONSTRUCTION', 'HOUSE', 'WORKSHOP', 'VENDOR', 'FORECLOSED'] as const;
+export const LOT_STATES = ['FOR_SALE', 'OWNED_EMPTY', 'UNDER_CONSTRUCTION', 'HOUSE', 'WORKSHOP', 'VENDOR', 'FORECLOSED', 'FARM'] as const;
 export type LotState = typeof LOT_STATES[number];
 export type RawFacade = RawWallKind;
 
@@ -369,7 +372,41 @@ function constructionLotArt(w: number, h: number, seed: number, progress: number
   return { w, h, data };
 }
 
-export function lotArt(state: LotState, w: number, h: number, seed: number, progress = 0, facade?: RawFacade): Sprite {
+/** What a plot shows of what is on it: a bed's number and how far along, 0 to 1. A tree stands wider. */
+export interface IPlotShow { cols: number; beds: { at: number; growth: number; span: number }[] }
+
+/** Evenly set beds, by shape: a furrow, then a sprig, then a stand, and a ripe one wears a crown. A wider one is a tree. */
+function farmArt(w: number, h: number, show?: IPlotShow): Sprite {
+  const data = new Uint8Array(w * h);
+  const cols = show?.cols ?? 4;
+  const bed = Math.floor(w / cols);
+  const edge = (x: number, y: number) => x === 0 || y === 0 || x === w - 1 || y === h - 1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const gap = x % bed === 0 || y % bed === 0;
+    data[y * w + x] = edge(x, y) && (x + y) % 4 < 2 ? px(Role.MATTER, 3) : gap ? px(Role.GROUND, 1) : px(Role.GROUND, (y >> 1) % 2 === 0 ? 2 : 3);
+  }
+  for (const b of show?.beds ?? []) {
+    const size = bed * b.span;
+    const x0 = (b.at % cols) * bed, y0 = Math.floor(b.at / cols) * bed;
+    const tall = Math.max(1, Math.round((size - 3) * b.growth));
+    const midX = x0 + (size >> 1);
+    const put = (x: number, y: number, ink: number) => { if (x >= 0 && y >= 0 && x < w && y < h) data[y * w + x] = ink; };
+    for (let t = 0; t < tall; t++) {
+      const y = y0 + size - 2 - t;
+      put(midX, y, px(Role.MATTER, 3));
+      if (b.span > 1 && t > tall / 2) for (let dx = 1; dx <= 2; dx++) { put(midX - dx, y, px(Role.MATTER, 3)); put(midX + dx, y, px(Role.MATTER, 3)); }
+    }
+    if (b.growth >= 1) {
+      const top = y0 + size - 2 - tall;
+      for (let dx = -2; dx <= 2; dx++) put(midX + dx, top, px(Role.MATTER, 4));
+      put(midX, top - 1, px(Role.MATTER, 4));
+    }
+  }
+  return { w, h, data };
+}
+
+export function lotArt(state: LotState, w: number, h: number, seed: number, progress = 0, facade?: RawFacade, plot?: IPlotShow): Sprite {
+  if (state === 'FARM') return farmArt(w, h, plot);
   if (state === 'UNDER_CONSTRUCTION') return constructionLotArt(w, h, seed, progress);
   if (state === 'HOUSE' || state === 'WORKSHOP' || state === 'VENDOR') return builtLotArt(state, w, h, seed, facade);
   return plotArt(state, w, h, seed);
@@ -519,7 +556,7 @@ function chunkFloor(layout: IHubLayout, chunk: { x: number; y: number }): Uint8A
 }
 
 /** Floors, light and everything solid. What this draws as solid is what the navmesh blocks. */
-export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}, facades: Partial<Record<number, RawFacade>> = {}): Sprite {
+export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}, facades: Partial<Record<number, RawFacade>> = {}, plots: Partial<Record<number, IPlotShow>> = {}): Sprite {
   const W = layout.width * HUB_TILE, H = layout.height * HUB_TILE;
   const data = new Uint8Array(W * H);
   const lamps = allPois(layout).filter(p => p.type === POIType.LAMP_POST);
@@ -555,7 +592,8 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
       p.size.width * HUB_TILE, p.size.height * HUB_TILE,
       p.metadata.lotIndex,
       construction[p.metadata.lotIndex] ?? 0,
-      facades[p.metadata.lotIndex]
+      facades[p.metadata.lotIndex],
+      plots[p.metadata.lotIndex]
     );
     blit(data, W, art, p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });
@@ -581,11 +619,13 @@ export interface HubOptions {
   construction?: Partial<Record<number, number>>;
   /** The raw materials leg: a lot whose walls are raw draws them from the street. */
   facades?: Partial<Record<number, RawFacade>>;
+  /** What stands on each plot of farmland, by shape. */
+  plots?: Partial<Record<number, IPlotShow>>;
 }
 
 /** The whole city: ground, signs, and the cast standing at their doors. */
 export function composeHub(layout: IHubLayout, o: HubOptions = {}): Sprite {
-  const ground = hubGround(layout, o.frame ?? 0, o.lots, o.construction, o.facades);
+  const ground = hubGround(layout, o.frame ?? 0, o.lots, o.construction, o.facades, o.plots);
   const { data, w: W } = ground;
   allPois(layout).filter(p => isBuilding(p) || p.type === POIType.PORTAL).forEach(p => {
     if (!p.npcId) return;

@@ -10,6 +10,7 @@ import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } f
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { useWorldStore } from '../entities/world/store';
+import { FieldCapture } from '../logic/systems/FieldCapture';
 import { WorldGenerator } from '../entities/world/WorldGenerator';
 import { InventorySystem, GRID_H, GRID_W } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
@@ -155,7 +156,10 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             </div>
             {!read && <Button tone="proof" onClick={() => packPrimary(selectedItem)}>TRY IT</Button>}
             {read && selectedItem.type === ItemType.CONSUMABLE && !selectedItem.charmData && !selectedItem.scrollData && (
-              <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>USE</Button>
+              <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>{selectedItem.creatureData ? 'TRY TO TAME' : 'USE'}</Button>
+            )}
+            {selectedItem.creatureData && (
+              <Button tone="quiet" onClick={() => { void FieldCapture.release(selectedItem.id); setSelected(null); }}>LET IT GO HERE</Button>
             )}
             {/* Wave 10E (D21): insurance is spent, not eaten — the magic names what it keeps */}
             {read && (selectedItem.charmData || selectedItem.scrollData) && (
