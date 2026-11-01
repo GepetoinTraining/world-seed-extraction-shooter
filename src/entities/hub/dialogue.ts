@@ -30,6 +30,7 @@ export type DialogueEffect =
   | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
   | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
   | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' | 'tavern' | 'guild' }
+  | { kind: 'open'; panel: 'apprentices'; npcId: string }
   | { kind: 'deploy' }
   | { kind: 'close' };
 
@@ -148,6 +149,10 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   }),
   OPEN_SELL: () => ({ kind: 'open', panel: 'sell' }),
   OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
+  OPEN_APPRENTICES: (payload) => {
+    void useHubStore.getState().resolveVendors();
+    return { kind: 'open', panel: 'apprentices', npcId: payload?.npcId };
+  },
 
   // --- The Rusty Anchor (Old Mags) ---
   REST: () => {

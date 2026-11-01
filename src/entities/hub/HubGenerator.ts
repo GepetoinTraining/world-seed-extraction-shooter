@@ -5,6 +5,7 @@
  * Think Carleon from Albion, or Stormwind from WoW.
  */
 
+import { UniversalRank } from '../../../types';
 import { CHUNK_TILES } from '../world/grid';
 import { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
 import {
@@ -28,6 +29,8 @@ export interface INPCDefinition {
     options: { label: string; action: string; payload?: any }[];
   };
   spriteColor: string;
+  /** A general vendor: the trade it trains people up in, and the rank its own sheet is dealt at. */
+  teaches?: { trade: string; rank: UniversalRank };
 }
 
 export const HUB_NPCS: Record<string, INPCDefinition> = {
@@ -84,10 +87,12 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       options: [
         { label: 'Browse Weapons', action: 'OPEN_SHOP', payload: { category: 'weapons' } },
         { label: 'Sell Items', action: 'OPEN_SELL' },
+        { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_weapon_vendor' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
-    spriteColor: '#ef4444'
+    spriteColor: '#ef4444',
+    teaches: { trade: 'smithing', rank: UniversalRank.C }
   },
   'npc_armor_vendor': {
     id: 'npc_armor_vendor',
@@ -98,10 +103,12 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       options: [
         { label: 'Browse Armor', action: 'OPEN_SHOP', payload: { category: 'armor' } },
         { label: 'Repair Gear', action: 'OPEN_REPAIR' },
+        { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_armor_vendor' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
-    spriteColor: '#3b82f6'
+    spriteColor: '#3b82f6',
+    teaches: { trade: 'weaving', rank: UniversalRank.C }
   },
   'npc_alchemist': {
     id: 'npc_alchemist',
@@ -111,10 +118,12 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Everything here cures something. Not always the thing you came in with.",
       options: [
         { label: 'Browse Remedies', action: 'OPEN_SHOP', payload: { category: 'consumables' } },
+        { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_alchemist' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
-    spriteColor: '#22c55e'
+    spriteColor: '#22c55e',
+    teaches: { trade: 'alchemy', rank: UniversalRank.C }
   },
   'npc_guild_master': {
     id: 'npc_guild_master',

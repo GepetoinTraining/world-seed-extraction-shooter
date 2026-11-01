@@ -9,7 +9,7 @@ import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStat
 import { ItemFactory } from '../item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace, IVectorDocument } from '../data/VectorStore';
-import { HubGenerator, IHubLayout, IPOI } from './HubGenerator';
+import { HubGenerator, HUB_NPCS, IHubLayout, IPOI } from './HubGenerator';
 import { HubSide, IDismemberment, IRaisedChunk, chunkBillFor, dismemberPlan, firstPlan, raiseChunk } from './hubManifest';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
@@ -52,6 +52,29 @@ import {
 export const HUB_ENDOWMENT_GOLD = 100_000;
 
 const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
+
+import { IVendorRecord, VendorSystem } from '../../logic/systems/VendorSystem';
+import { ApprenticeRoad, ICraftsman, IRoadEvent } from '../../logic/systems/ApprenticeRoad';
+import { NpcAgenda } from '../../logic/systems/NpcAgenda';
+
+
+/** Whose shelf each shop window is, and whose counter buys. */
+const SHOP_VENDOR = { weapon: 'npc_weapon_vendor', armor: 'npc_armor_vendor', consumable: 'npc_alchemist' } as const;
+const COUNTER_NPC = SHOP_VENDOR.weapon;
+/** What taking someone on and seeing them through give a vendor. Guesses until Wave 12. */
+const VENDOR_BELONGING_PER_TAKEN = 10;
+const VENDOR_ESTEEM_PER_RAISED = 20;
+
+/** Every general vendor, standing and folded up to today. Pure: a person's day is not moved here. */
+const vendorsToday = (vendors: Record<string, IVendorRecord>, craftsmen: ICraftsman[], today: number): Record<string, IVendorRecord> => {
+  const out = { ...vendors };
+  for (const npc of Object.values(HUB_NPCS)) {
+    if (!npc.teaches) continue;
+    const raising = craftsmen.filter(c => c.masterId === npc.id).length;
+    out[npc.id] = VendorSystem.fold(vendors[npc.id] ?? VendorSystem.fresh(npc.id, 'GENERAL', today, npc.teaches.trade), today, raising);
+  }
+  return out;
+};
 
 // =============================================================================
 // TYPES
@@ -218,6 +241,8 @@ export interface IShopListing {
   price: number;
   vendorId: string;
   stock: number;
+  /** One of the vendor's own pieces, bought in, not a line of the day's shelf. */
+  held?: boolean;
 }
 
 export interface IAuctionListing {
@@ -245,6 +270,10 @@ interface HubState {
   /** D73: materials held toward the next chunk, by the tag they were given for. */
   planDeposit: Record<string, number>;
   lots: IPlayerLot[];
+  /** Each vendor's own container and goal. Saved with the hub; the day's lines are not. */
+  vendors: Record<string, IVendorRecord>;
+  /** The people on the apprentice road. */
+  craftsmen: ICraftsman[];
   craftingJobs: ICraftJob[];
   // Wave 10: the rooms behind the doors, and the construction queue
   rooms: Record<string, IRoomState>;
@@ -262,6 +291,10 @@ interface HubState {
   // Actions
   loadHub: (hubWorldUid: string) => Promise<void>;
   saveHubState: () => Promise<void>;
+  /** The vendors and the people at their benches, up to today. Time away counts. */
+  resolveVendors: () => Promise<void>;
+  /** A general vendor takes on someone a bond brought out. The bond is spent once. */
+  takeApprentice: (npcId: string, bondItemId: string) => Promise<RoomVerdict>;
   /** D74: one chunk more, on the given side of one standing (the first, unless named). It decides nothing about who pays. */
   raiseChunk: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
   /** D73: give what you hold toward the next chunk, at the Land Office. Items are gone once given. */
@@ -346,6 +379,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   dismembered: [],
   planDeposit: {},
   lots: [],
+  vendors: {},
+  craftsmen: [],
   craftingJobs: [],
   rooms: {},
   buildJobs: [],
@@ -363,7 +398,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb; guild?: IGuildState }>(
+      const hubStateDoc = await VectorStore.get<{ vendors?: Record<string, IVendorRecord>; craftsmen?: ICraftsman[]; chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb; guild?: IGuildState }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -379,6 +414,8 @@ export const useHubStore = create<HubState>((set, get) => ({
           dismembered,
           planDeposit: hubStateDoc.data.planDeposit ?? {},
           lots: lotsFor(hubStateDoc.data.lots, HubGenerator.generate({ chunks, dismembered })),
+          vendors: hubStateDoc.data.vendors ?? {},
+          craftsmen: hubStateDoc.data.craftsmen ?? [],
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
@@ -391,7 +428,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} }, guild: emptyGuild() });
+        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} }, guild: emptyGuild(), vendors: {}, craftsmen: [] });
         // Save immediately
         await get().saveHubState();
       }
@@ -414,6 +451,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       await Treasury.endow(hubWorldUid, HUB_ENDOWMENT_GOLD);
 
       // 3. Wave 5 / Wave 10: resolve what time finished while nobody watched
+      await get().resolveVendors();
       await get().resolveCrafts();
       await get().resolveBuilds();
       await get().resolveUpkeep();
@@ -442,6 +480,59 @@ export const useHubStore = create<HubState>((set, get) => ({
       const result = await unit.commit();
       if (!result.ok) console.error('[HUB] ⛔ The store refused the hub state:', result.reason);
     });
+  },
+
+  resolveVendors: async () => {
+    const { activeHubId, craftsmen, web } = get();
+    if (!activeHubId) return;
+    const today = Math.floor(Date.now() / 86_400_000);
+    const vendors = vendorsToday(get().vendors, craftsmen, today);
+    const out: ICraftsman[] = [];
+    const events: IRoadEvent[] = [];
+    let nextWeb = web;
+    for (const person of craftsmen) {
+      const master = vendors[person.masterId];
+      const walked = ApprenticeRoad.resolve(person, today, () => master ? VendorSystem.teachingHours(master) : 1);
+      out.push(walked.craftsman);
+      events.push(...walked.events);
+      for (const event of walked.events) {
+        // Someone who has finished their term is someone the hub's web can stand on
+        nextWeb = WebSystem.admit(nextWeb, { uid: person.id, name: person.name }, { [walked.craftsman.skill.id]: walked.craftsman.skill }, Date.now()).web;
+        if (master) vendors[person.masterId] = { ...vendors[person.masterId], agenda: NpcAgenda.fill(vendors[person.masterId].agenda, { esteem: VENDOR_ESTEEM_PER_RAISED }) };
+        useFeed.getState().push(`${event.name} is a ${event.to.toLowerCase()} now.`, 'proof');
+        await Ledger.append('TECH', { kind: 'ROAD', craftsmanId: person.id, name: person.name, to: event.to, trade: person.trade, masterId: person.masterId });
+      }
+    }
+    set({ vendors, craftsmen: out, web: nextWeb });
+    get().generateDailyStock();
+    if (events.length > 0) await get().saveHubState();
+  },
+
+  takeApprentice: async (npcId, bondItemId) => {
+    const { activeHubId, craftsmen, vendors } = get();
+    const teaches = HUB_NPCS[npcId]?.teaches;
+    if (!activeHubId || !teaches) return { ok: false, reason: 'Nobody here trains anyone.' };
+    const player = usePlayerStore.getState().player;
+    const bond = (player.bank.stashTabs[0]?.items ?? []).find(i => i.id === bondItemId);
+    if (!bond?.bondData) return { ok: false, reason: 'You hold no such bond.' };
+    const today = Math.floor(Date.now() / 86_400_000);
+    const keeper = NpcSheet.read(activeHubId, { id: npcId, rank: teaches.rank }, undefined);
+    const begun = ApprenticeRoad.begin(bond, {
+      id: npcId, trade: teaches.trade, room: ApprenticeRoad.roomFor(keeper.stats!),
+      taken: craftsmen.filter(c => c.masterId === npcId && c.rank === 'APPRENTICE').length
+    }, player.id, today, WebBank.current());
+    if (!begun.ok || !begun.craftsman) return { ok: false, reason: begun.reason };
+    if (craftsmen.some(c => c.id === begun.craftsman!.id)) return { ok: false, reason: `${begun.craftsman.name} is on the road already.` };
+
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+      idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== bondItemId) } : tab
+    ) } } }));
+    const all = vendorsToday(vendors, craftsmen, today);
+    set({ craftsmen: [...craftsmen, begun.craftsman], vendors: { ...all, [npcId]: { ...all[npcId], agenda: NpcAgenda.fill(all[npcId].agenda, { belonging: VENDOR_BELONGING_PER_TAKEN }) } } });
+    await Ledger.append('TRADE', { kind: 'APPRENTICED', craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId, trade: teaches.trade, consumedIds: [bondItemId], playerDelta: 0, treasuryDelta: 0 });
+    void import('../../logic/sovereignty/Provenance').then(({ Provenance }) => Provenance.record(bond, 'TRANSFER', { via: 'APPRENTICED', masterId: npcId }));
+    await get().saveHubState();
+    return { ok: true };
   },
 
   raiseChunk: async (side, beside) => {
@@ -822,12 +913,12 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   hubDoc: () => {
-    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild } = get();
+    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild, vendors, craftsmen } = get();
     if (!activeHubId) return null;
     return {
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild })),
+      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild, vendors, craftsmen })),
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1673,6 +1764,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'VENDOR_BUYBACK', itemId, defId: item.universalDefinitionId, amount: offer, treasuryId: activeHubId, treasuryDelta: -offer } }],
       treasury: { worldUid: activeHubId, delta: -offer }
     });
+    // What the counter bought is in its container now, not gone
+    const today = Math.floor(Date.now() / 86_400_000);
+    const all = vendorsToday(get().vendors, get().craftsmen, today);
+    set({ vendors: { ...all, [COUNTER_NPC]: VendorSystem.receive(all[COUNTER_NPC], item) } });
+    get().generateDailyStock();
+    await get().saveHubState();
     console.log(`[VENDOR] Sold ${item.name} for ${offer}G (treasury-funded).`);
     return offer;
   },
@@ -1863,6 +1960,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     // legacy pool plus the current pack's GLOBAL and CART entries. Worlds stay
     // pinned; the shelf grows with the bank, day by day.
     const shelfPool = DreamingSystem.hubShelfPool();
+    const vendors = vendorsToday(get().vendors, get().craftsmen, dayIndex);
+    const shelfOf = (npcId: string, rolled: IShopListing[]) =>
+      VendorSystem.shelf(vendors[npcId], rolled, dayIndex, ApprenticeRoad.labor(get().craftsmen, npcId));
     const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool', pinned: string[] = [], batch = '') => {
       return Array.from({ length: count }, (_, i) => {
         const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${batch}:${i}`);
@@ -1878,7 +1978,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     };
 
     set({
-      weaponShop: [
+      vendors,
+      weaponShop: shelfOf(SHOP_VENDOR.weapon, [
         ...generateStock(UniversalRank.F, 5, 'weapon'),
         ...generateStock(UniversalRank.E, 2, 'weapon'),
         // Field tools ride in the weapon shop until lots get their own vendors (Wave 5)
@@ -1892,16 +1993,16 @@ export const useHubStore = create<HubState>((set, get) => ({
           const item = WebBank.mintTool(WebBank.current(), tool.id, rng);
           return { id: `listing_web_${tool.id}`, item, price: item.value * 1.5, vendorId: 'vendor_sys', stock: rng.int(1, 4) };
         })
-      ],
-      armorShop: [
+      ]),
+      armorShop: shelfOf(SHOP_VENDOR.armor, [
         ...generateStock(UniversalRank.F, 5, 'armor'),
         ...generateStock(UniversalRank.E, 2, 'armor'),
         // Wave 10C: the slot tree gets its wardrobe — one of each new branch,
         // always on the shelf, and the SHOULDER piece themed to this hub's genre
         ...generateStock(UniversalRank.F, SHELF.wardrobe.length, 'armor', SHELF.wardrobe, 'tree')
-      ],
+      ]),
       // Wave 10B: the gallpod joins the shelf — the alchemist sells the ink's bitter half.
-      consumableShop: [
+      consumableShop: shelfOf(SHOP_VENDOR.consumable, [
         // D27: a raw material a web batch added reaches play through this shelf, with no code
         ...WebBank.current().materials.filter(m => m.shelfPrice).map(material => {
           const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:web_material:${material.id}`);
@@ -1959,7 +2060,7 @@ export const useHubStore = create<HubState>((set, get) => ({
             stock: rng.int(1, 3)
           };
         })()
-      ]
+      ])
     });
   },
 
@@ -1981,13 +2082,19 @@ export const useHubStore = create<HubState>((set, get) => ({
     // determinism leak), with PURCHASE on its record. Rolled gear goes through
     // the bank's registry (D18): the shelf shows the pattern; every unit stands
     // on its own rung, the display item keeping the first claim.
-    const unitRng = Rng.fromKey(`purchase:${get().activeHubId || 'hub_unknown'}:${listingId}:unit:${listing.stock}`);
+    const npcId = SHOP_VENDOR[shop];
+    const today = Math.floor(Date.now() / 86_400_000);
+    const seller = vendorsToday(state.vendors, state.craftsmen, today)[npcId];
+    const soldToday = seller.sold.lines[listingId] ?? 0;
+    // Keyed by the day and what has gone from this line, so no two units ever share an id
+    const unitRng = Rng.fromKey(`purchase:${get().activeHubId || 'hub_unknown'}:${listingId}:${today}:unit:${soldToday}`);
     const unit: IItem = {
       ...listing.item,
       id: `itm_${unitRng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${unitRng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       composition: CompositionSystem.root({ id: listing.item.universalDefinitionId, name: listing.item.name }, 'PURCHASE')
     };
-    const purchasedItem = unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
+    // What the vendor bought in is the same piece going out: it keeps its id and its story
+    const purchasedItem = listing.held ? listing.item : unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
 
     usePlayerStore.setState(s => ({
       player: {
@@ -2008,11 +2115,18 @@ export const useHubStore = create<HubState>((set, get) => ({
       treasury: { worldUid: hubId, delta: price }
     });
 
-    const updatedListings = listings.map(l =>
-      l.id === listingId ? { ...l, stock: l.stock - 1 } : l
-    );
+    const updatedListings = listings
+      .map(l => l.id === listingId ? { ...l, stock: l.stock - 1 } : l)
+      .filter(l => !(l.held && l.stock <= 0));
+    const total = listings.reduce((sum, l) => sum + l.stock, 0);
+    const left = updatedListings.reduce((sum, l) => sum + l.stock, 0);
+    const sold = listing.held ? VendorSystem.takeHeld(seller, purchasedItem.id) : seller;
 
-    set({ [shopKey]: updatedListings });
+    set({
+      [shopKey]: updatedListings,
+      vendors: { ...vendorsToday(state.vendors, state.craftsmen, today), [npcId]: VendorSystem.recordSale(sold, listingId, today, total > 0 ? left / total : 0) }
+    });
+    void get().saveHubState();
     return purchasedItem;
   }
 }));
