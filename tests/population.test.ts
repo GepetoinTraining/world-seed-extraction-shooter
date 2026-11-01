@@ -779,11 +779,10 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       expect(after.pack).toBe(0);
     });
 
-    it('brought down, it stays down, and what it led goes on as ordinary bodies', () => {
+    it('brought down, it stays down, and what it led goes on behind the next in its register', () => {
+      // Moved on purpose by the koseki: its pack used to dissolve into ordinary bodies
       const l = someGrower();
       const [sx, sy] = home(l);
-      const leads = (MOB_DEFINITIONS[l.kind] as unknown as { leads: string }).leads;
-      const quiet = Population.sectorAt(emptyPopulationRecord(), SEED, sx, sy, 0, context);
       const record = Population.fell(emptyPopulationRecord(), l.id, l.kind, 0);
       const laid = (() => {
         const exits = WorldGenerator.exitsInSector({ seed: SEED }, sx, sy);
@@ -794,8 +793,7 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       expect(laid.entities.some(e => e.id === l.id)).toBe(false);
       const after = Population.sectorAt(record, SEED, sx, sy, 1, context);
       expect(after.leaders[l.id].alive).toBe(false);
-      expect(countOf(after, leads)).toBeGreaterThanOrEqual(1);
-      expect(countOf(quiet, leads)).toBeGreaterThanOrEqual(0);
+      expect(after.koseki![l.id].entries.find(e => e.body === l.id)).toMatchObject({ exit: 'fell' });
     });
 
     it('growing grows its pack by the record, a head at a time, and done it takes its next goal', () => {

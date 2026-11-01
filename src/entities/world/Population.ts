@@ -23,6 +23,7 @@ import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 import { BIOME_RESOURCES } from '../item/data/resourceDefinitions';
 import { CHUNK_QUADRANTS, SECTOR_CHUNKS } from './grid';
+import { IKoseki, Koseki } from './Koseki';
 import { Goal, ILeaderSeed, Leaders } from './Leaders';
 import { EntityType, IChunk } from './types';
 import { IBodyToStand, IGenerationContext, WorldGenerator } from './WorldGenerator';
@@ -67,6 +68,8 @@ export interface ISectorState {
   generation: number;
   ground: Record<string, Record<string, number>>;
   leaders: Record<string, ILeaderState>;
+  /** A line's register, by the roster place it began at. Written when a leader falls, and absent until one has. */
+  koseki?: Record<string, IKoseki>;
 }
 
 export interface IPopulationRecord {
@@ -260,11 +263,22 @@ export class Population {
     this.changeOfForm(counts, land, context, roll('form'), g);
 
     const leaders: ISectorState['leaders'] = {};
+    let koseki = state.koseki;
     // What a leader's pack eats comes out of the same ground, under the kind it is
     const packMouths = new Map<string, Map<string, number>>();
     for (const id of Object.keys(state.leaders).sort()) {
-      const next = this.stepLeader(seed, state.leaders[id], counts, land, g, record, context);
-      leaders[id] = next;
+      let next = this.stepLeader(seed, state.leaders[id], counts, land, g, record, context);
+      if (state.leaders[id].alive && !next.alive) {
+        // It stays down. Its register says who comes next, if anyone is left behind it
+        const after = this.succeed(seed, next, koseki, sectorKey, g, context);
+        koseki = after.koseki;
+        leaders[id] = { ...next, pack: 0 };
+        if (!after.heir) continue;
+        next = after.heir;
+        leaders[next.id] = next;
+      } else {
+        leaders[id] = next;
+      }
       if (!next.alive) continue;
       const def = defOf(next.kind);
       if (!def) continue;
@@ -389,7 +403,25 @@ export class Population {
       }
     }
 
-    return { generation: g + 1, ground: out, leaders };
+    return { generation: g + 1, ground: out, leaders, ...(koseki ? { koseki } : {}) };
+  }
+
+  /** A leader fell: into its register it goes, and the next of its pack takes the head. With no pack, the line ends. */
+  private static succeed(
+    seed: string, fallen: ILeaderState, koseki: ISectorState['koseki'], sectorKey: string, g: number, context: IGenerationContext
+  ): { koseki: NonNullable<ISectorState['koseki']>; heir?: ILeaderState } {
+    const slot = fallen.id.replace(/_h\d+$/, '');
+    let register = koseki?.[slot] ?? Koseki.found(sectorKey, fallen.id, fallen.kind, 0);
+    const heirId = fallen.pack > 0 ? `${slot}_h${register.entries.length}` : undefined;
+    if (heirId) register = Koseki.bear(register, heirId, fallen.kind, [fallen.id], g);
+    register = Koseki.exit(register, fallen.id, 'fell', g);
+    const written = { ...koseki, [slot]: register };
+    if (!heirId) return { koseki: written };
+    const sheet = Leaders.sheetOf(seed, { id: heirId, kind: fallen.kind, cx: 0, cy: 0, pack: 0 }, context);
+    return {
+      koseki: written,
+      heir: { id: heirId, kind: fallen.kind, at: fallen.at, pack: fallen.pack - 1, goal: sheet.goal, tenure: 0, alive: true, log: [] }
+    };
   }
 
   /** Bodies of a kind that has changed stand as what it became, a keyed share each cycle. A count moves, and no body is named. */
@@ -445,19 +477,11 @@ export class Population {
     if (!leader.alive) return leader;
     const def = defOf(leader.kind);
     const leads = def?.leads;
-    const standing = (kind: string, n: number) => {
-      if (n <= 0) return;
-      const on = counts[leader.at] ?? (counts[leader.at] = {});
-      on[kind] = (on[kind] ?? 0) + n;
-    };
     let lost = 0;
     for (let i = 0; i < leader.pack; i++) if (record.down[`${leader.id}_f${i}`]?.at === g) lost++;
     const pack = leader.pack - lost;
-    // Brought down, it stays down, and what it led goes on as ordinary bodies
-    if (record.down[leader.id]?.at === g) {
-      if (leads) standing(leads, pack);
-      return { ...leader, pack: 0, alive: false };
-    }
+    // Brought down, it stays down. Who comes next is its register's to say (`succeed`)
+    if (record.down[leader.id]?.at === g) return { ...leader, pack, alive: false };
 
     const seedOf: ILeaderSeed = { id: leader.id, kind: leader.kind, cx: 0, cy: 0, pack: 0 };
     const sheet = Leaders.sheetOf(seed, seedOf, context);
@@ -577,9 +601,7 @@ export class Population {
       if (!leader.alive || leader.at !== ground) continue;
       const def = defOf(leader.kind);
       if (!def) continue;
-      const seedOf = Leaders.rosterOf(seed, sx, sy, context).find(s => s.id === id);
-      // The record says who it is: what grew since can change who a roster would deal today
-      const numbers = seedOf ? Leaders.numbers(seed, { ...seedOf, kind: leader.kind }, context) : undefined;
+      const numbers = Leaders.numbers(seed, { id, kind: leader.kind, cx: 0, cy: 0, pack: 0 }, context);
       const bodies: IBodyToStand[] = [];
       if (!fellNow(id)) bodies.push({ id, def, ...numbers });
       const led = def.leads ? defOf(def.leads) : undefined;
