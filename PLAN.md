@@ -855,6 +855,7 @@ Guardrail 4 said gates are serial because jumping ahead makes logic without syst
 **How it runs.** One coordinator session holds the whole plan. Each stream is its own session in its own worktree, on its own branch, cut from the same base, with its own database file and its own port (`launch.json` has 3100–3107).
 - **Bars first, as always.** Each stream adds its own test file, registered before its build.
 - **The coordinator answers the decisions before launch**, so a stream is not left guessing. A stream that hits a new one stops and says so.
+- **Nobody shares a checkout, and everyone stages files by name.** A `git add -A` in a shared tree swept another session's unfinished work into a commit on 2026-11-01. The timer session's work (line 124) has to land before this fan-out is cut from its base.
 - **Streams do not edit `PLAN.md` or `BUILDERS_LOG.md`.** They report what was built, played and not built. The coordinator writes the record, so those files never conflict.
 - **`goldens.ts`, `firstTheme.ts` and `FIRST_THEME_VECTORS` belong to the trees stream alone.** Nobody else moves a vector.
 - **The coordinator checks every stream:** reads the whole diff against its lines, runs the full suite on it, and plays what it claims. A stream's report is a claim, not proof.
@@ -865,10 +866,10 @@ Guardrail 4 said gates are serial because jumping ahead makes logic without syst
 | Stream | Lines | Owns | Touches lightly |
 |---|---|---|---|
 | A1 Hub manifest (D74) | part of 114 | `HubGenerator`, the city's layout and lots, `HubCanvas` | city byte-hash bars, moved on purpose; lots already owned stay owned |
-| A2 Experience, levels, attributes (D52, D83, D84) | 94, the level half of 127 | `StatSystem`, `ProgressionSystem`, `WebSystem`'s rates, `killRewards`, `CharacterSheet` | the rank chip in `WorldCanvas`, `player/store` |
-| A3 Recon view and maps (D85) | 124, 125 | a new recon component moved out of `WorldCanvas`, `SurveySystem`, `MissionControl`, the map item at the scribe's table | `TemplateSystem` |
+| A2 Experience, levels, attributes (D52, D83, D84) | 94, the level half of 128 | `StatSystem`, `ProgressionSystem`, `WebSystem`'s rates, `killRewards`, `CharacterSheet` | the rank chip in `WorldCanvas`, `player/store` |
+| A3 Recon view and maps (D85) | 125, 126 | a new recon component moved out of `WorldCanvas`, `SurveySystem`, `MissionControl`, the map item at the scribe's table | `TemplateSystem` |
 | A4 The trees (D60, D61, D63) | 105–107 | `ThemeTypes`, `ThemeLaw`, `ThemeCompiler`, `firstTheme`, `goldens`, `Director`, a new lines module, `creature()` in the atoms, the pack half of `prompts` | one line in `WorldGenerator` |
-| A5 Senses and the readout (N6, D84) | 109, 126 | `MobAI`'s noticing, sight and response; the tuning readout, a new file | none |
+| A5 Senses and the readout (N6, D84) | 109, 127 | `MobAI`'s noticing, sight and response; the tuning readout, a new file | none |
 
 Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts` (additions only). So A3 merges first, then A2. `Director` is A4's, and A5 reads its chance through a function A4 keeps.
 
@@ -879,7 +880,7 @@ Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts`
 | B1 The scan pass (D69) | 108 | A4 | `RestSystem`'s growth, `RestDoor`, `server/intelligence`, a new window pass |
 | B2 Gender, population, movement (D64, D66) | 110–112 | A4, A5 | `WorldGenerator`, a new population module, `MobAI` herding |
 | B3 Character creation and the deed (D35–D37, D72, D80) | 113 | A2 | `IdentityGate`, `WorldCreator`, `DeedSystem` |
-| B4 Guildhall, tavern, houses (D73, D75, rank from the guild in D83) | 114, 115, the rank half of 127 | A1, A2 | `hub/store`, `dialogue`, the guild |
+| B4 Guildhall, tavern, houses (D73, D75, rank from the guild in D83) | 114, 115, the rank half of 128 | A1, A2 | `hub/store`, `dialogue`, the guild |
 | B5 The forced exit (D77) | 119's last clause | A4's vocabulary | `EffectSystem`, the item type |
 
 **Wave C, once B is merged:** C1 food and land (farms, grove keeping, herding at home, cooking; needs B2, B4). C2 NPC adventurers (D76, line 116; needs B2, B4). C3 settling by trade (D62; needs B2).
@@ -1075,10 +1076,10 @@ For the living worlds program, proposed 2026-11-01, not yet agreed:
 121. In the biggest world, a hub can be founded and a rest can happen there
 122. A character logs in to any hub as the same character, and nothing about them lives in one hub
 123. A hub never takes another hub's word for what was minted; goods and gold show where they came from
-124. Recon has its own view, reached without entering a world's field
-125. A scribe can write scan data into a map item, and reading one adds it to the reader's survey, as old as it was when scanned
-126. A tuning readout shows the chance of a body changing at each regeneration, and how long skills and levels take
-127. Gaining a skill takes about 2.5 times as long as it did, and levels and rank are separate: rank comes from the guild, levels reset at each rank, and stats stay
+125. Recon has its own view, reached without entering a world's field
+126. A scribe can write scan data into a map item, and reading one adds it to the reader's survey, as old as it was when scanned
+127. A tuning readout shows the chance of a body changing at each regeneration, and how long skills and levels take
+128. Gaining a skill takes about 2.5 times as long as it did, and levels and rank are separate: rank comes from the guild, levels reset at each rank, and stats stay
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 

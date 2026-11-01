@@ -274,6 +274,7 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 ## Traps that cost me time
 
+- **Another session may be working in your checkout.** Stage files by name, never `git add -A`, and read `git status` before committing. Merging by switching to `main` here also fails or disturbs them, because their uncommitted files come along.
 - **To play a later phase, move the page's clock.** In the browser pane: keep the real `Date.now`, then replace it with one that adds an offset. Nothing else needs changing, and a reload puts it back. A rest's end saved under a moved clock stays that far ahead after the reload.
 - **A character can hold more energy than its maximum.** Losing worn gear lowers the maximum without lowering what is held, so `RestSystem.restMs` reads 0 and a rest ends at once. It looks like a rest refusing to happen; it isn't.
 
