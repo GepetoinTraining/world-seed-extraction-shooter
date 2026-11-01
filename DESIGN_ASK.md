@@ -334,10 +334,15 @@ This is the most valuable part of the job. These all happened in the game when t
 
 ### Who leads
 
-- **Boss:** the seat of a territory, one to a territory. **Elite:** holds one post or band, under a boss or alone. Titan and god stay one of a kind and lead nothing by those words alone. This is a reading, for Pedro to confirm.
-- A kind stays a kind (D64). The leader is the one body the record holds by itself: its kind, its seat, its tenure, its stores.
-- Code decides who comes to lead, from pressure on a kind and ground (B2's population, and the Director's fitness) and a keyed roll. A model never writes its way there. A world is alpha as minted: no record, no territory, and the golden vectors do not move.
-- Names keep D60's rule. Until a leader has earned one, its ground reads as an unknown holding.
+Pedro, 2026-11-01: "elite is a pack leader, MAY BE industrious prior to having set up a base, or simply a pack leader, Elites aren't AS RARE, they're a rare in PoE that has a pack. They're tougher, but aren't unsoloable. they eventually become bosses if you die on repeat to them, afterall when the world closes the ledger for what happened during it being opened levels up the mobs."
+
+- **Elite: a pack leader.** Tougher than its pack, and one person can bring it down, so everything under "Why it takes a party" is the boss's alone. It holds no ground and has no map mark, and it moves with its pack. An industrious one carries its trade with it and has no base yet.
+- **Not as rare, and not alone.** R4's rule in `WorldGenerator` (`ELITE_WEIGHT`, a count of one) stays for boss, titan and god and comes off elite, which spawns at the head of a pack of its own kind. That change moves `GOLDEN_VECTORS` and `FIRST_THEME_VECTORS`, on purpose. The first theme holds no plain elite today, so it needs some written.
+- **Boss: the seat of a territory**, one to a territory, with a base. Titan and god stay one of a kind and lead nothing by those words alone.
+- **Elite becomes boss when people keep falling to it.** The world's ledger settles when it closes, and what happened while it was open levels up its creatures. That is the Director's record, settled at the regeneration, and this is one more thing it decides. Repeated means the same elite brings people down across a formula's count (a guess until Wave 12), with no roll and no model. It stays where it stands, takes that ground as its seat, and its pack is its first band. An industrious one starts building, and any other holds the ground as it is.
+- The tally needs one change: `reportToDirector` hears only a kind today, and this has to name the body too. A kind stays a kind (D64). A leader is the one body the record holds by itself: its kind, its tally, then its seat, tenure and stores.
+- A world is alpha as minted: no record, no territory. Land and alpha bind the vectors as they do now.
+- Names keep D60's rule: boss qualifies as one of a kind, elite does not. Until a leader has earned a name, its ground reads as an unknown holding.
 
 ### The cycle
 
@@ -356,14 +361,14 @@ No model is called during play (D46). A plan becomes standing orders that the bo
 
 ### Why it takes a party
 
-Not health. A leader's health stays ordinary for its rank, because reaching it and leaving are the raid.
+This is the boss's, never the elite's. Not health: a boss's health stays ordinary for its rank, because reaching it and leaving are the raid.
 
 - The seat is warded while its **anchors** stand: posts spread across the territory, whose function is `anchor`.
 - A broken anchor relights after a window, unless all of them are down. The formula sets that window **shorter than the walk between them**, from the real distance. One person cannot be in two places, so the requirement holds at any strength and needs no cap.
-- How many anchors comes from rank, and never fewer than two, so every leader asks for more than one person. Building more is a thing a leader can plan.
-- When the leader falls, the ground does not clear itself. The alarm is up, the bands are still there, and the challenge decides who takes the seat next cycle, or the territory splits. The payoff is its stores, which must be carried out through all of that.
+- How many anchors comes from rank, and never fewer than two, so every boss asks for more than one person. Building more is a thing a boss can plan.
+- When the boss falls, the ground does not clear itself. The alarm is up, the bands are still there, and the challenge decides who takes the seat next cycle, or the territory splits. The payoff is its stores, which must be carried out through all of that.
 
-Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time anyone can stand at a second anchor, and the served runtime is the second. Until then a leader simply cannot be brought down, and nothing else waits on that.
+Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time anyone can stand at a second anchor, and the served runtime is the second. Until then a boss simply cannot be brought down, though every elite can. So a person who keeps falling to an elite makes something they cannot yet remove: that is the ruling's own consequence, and it is worth watching in the playtest.
 
 ### On the map, once seen
 
@@ -374,20 +379,19 @@ Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time an
 
 ### What the industrious build
 
-- **Industrious** means a kind that carries a tag of kind `trade`. Others hold ground and build nothing. This answers D62: its seat picks ground holding the materials its trade works.
+- **Industrious** means a kind that carries a tag of kind `trade`. Others hold ground and build nothing. Its pack works while it is an elite, and building begins at the base. This answers D62 only in part: a seat now starts where the elite stood when it became a boss, so a trade picks what it works from that ground, not the ground itself. Whether an industrious elite may also go and settle is below.
 - A structure is a function with a reader, plus words from the model: `watch` (sight and alarm), `wall` (blocks), `store`, `works` (makes what its bodies wear), `muster` (more bodies), `anchor`, `seat`. The formula sets the bill, by tag and rising with what already stands. Food and stores are the limit, not a count.
 - It builds on the hub's own contract: `ITemplate`, `templateBill`, a building under construction across cycles, walls drawn from the material that paid for them. Loggers raise log walls and miners stone. A scan shows scaffolding, and a raid can stop it mid-build.
 - Territories are a record over the land (D66), read by a chunk the way it reads the Director. The land stays a pure function of the seed.
 
 ### Where it goes in the plan
 
-It grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; the land's vectors do not move.
+Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; repeated felling makes a boss, on the record and by no roll; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
 
 ### For Pedro to rule
 
-1. Is the reading of boss as the seat and elite as a post right?
+1. May an industrious elite go and set up a base on its own, which would make it a boss with nobody having fallen to it? The ruling can read either way. The builder's default is no, so the one road to boss is repeated felling.
 2. Do animals get leaders, directing a herd and building nothing? The builder's default is yes, because a tree is not what makes a leader.
-3. Should the anchors' requirement bind every rank, as written, so the smallest leader still takes two people?
 
 ## The design system to deliver
 
