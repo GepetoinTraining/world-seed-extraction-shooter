@@ -186,14 +186,14 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 <Button tone="signal" onClick={() => {
                   const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
                   if (!ask.ok) return;
-                  feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.seconds}s. The eye does the work.`, 'signal');
+                  feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.cost} energy, ${ask.seconds}s. It may give nothing up.`, 'signal');
                   setIdentifying({ id: selectedItem.id, until: Date.now() + ask.seconds! * 1000 });
                   window.setTimeout(() => {
                     usePlayerStore.getState().completeFieldIdentify(selectedItem.id);
                     setIdentifying(cur => (cur?.id === selectedItem.id ? null : cur));
                   }, ask.seconds! * 1000);
                 }}>
-                  {read ? `IDENTIFY · ${StudySystem.identifySeconds(StudySystem.identifyLevel(player, selectedItem))}s` : 'IDENTIFY'}
+                  IDENTIFY · {StudySystem.identifyAsk(player, selectedItem).cost} energy · {StudySystem.identifyAsk(player, selectedItem).seconds}s
                 </Button>
               )
             )}

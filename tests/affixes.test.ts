@@ -44,7 +44,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAffixBatch, IBankedAffix, IItem, ItemType, MENTAL_ATTRIBUTES, UniversalRank } from '../types';
+import { IAffixBatch, IBankedAffix, IItem, ItemType, MENTAL_ATTRIBUTES, Rarity, UniversalRank } from '../types';
 import { AffixBank } from '../src/logic/content/AffixBank';
 import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
 import { DreamingSystem } from '../src/entities/world/Dreaming';

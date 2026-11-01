@@ -4,9 +4,9 @@
  * Equipping shows no visible change for what you have not studied — knowledge
  * gain IS the mechanic, and the unstudied affix acts regardless: equip at your
  * own peril. Identify is an acquirable SKILL, scoped by item type: study that
- * type at a workstation, time and again, to earn it; once earned it works
- * INSIDE the extraction, always timed, faster with skill (D6's
- * skills-grow-by-use law carries it).
+ * type at a workstation, time and again, to earn it. In the field anyone may try
+ * (D32): always timed, faster with skill, paid in energy, on a keyed roll by the
+ * eye against rank and rarity. The bench needs no roll.
  *
  * This file ties into the machinery that already exists, never beside it:
  *  - the scoped skill is an ISkillState in bank.universalSkills (D6's track)
@@ -17,8 +17,9 @@
  * card agree by construction.
  */
 
-import { IItem, IPlayer, ItemType, SlotType } from '../../../types';
+import { IItem, IPlayer, ItemType, Rarity, SlotType } from '../../../types';
 import { LoadoutSystem, Verdict } from '../../entities/player/systems/LoadoutSystem';
+import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
 export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';
@@ -28,6 +29,16 @@ export const STUDY_SECONDS = 20;
 /** Field identify: the base clock at skill level 1. It NEVER reaches zero. */
 export const IDENTIFY_BASE_SECONDS = 12;
 export const IDENTIFY_FLOOR_SECONDS = 2;
+/** D32: what a field attempt costs. A guess until Wave 12. Half again if no eye is schooled at all. */
+export const IDENTIFY_ENERGY = 10;
+const WINGING_FACTOR = 1.5;
+/** D32: the odds, in percent. Guesses until Wave 12. */
+const CHANCE_BASE = 20;
+const CHANCE_SCHOOLED = 10;
+const CHANCE_PER_RANK = 15;
+const CHANCE_PER_RARITY = 5;
+const CHANCE_FLOOR = 3;
+const CHANCE_CEILING = 95;
 
 const ok: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
@@ -64,15 +75,44 @@ export class StudySystem {
     return Math.max(IDENTIFY_FLOOR_SECONDS, Math.round(IDENTIFY_BASE_SECONDS / (1 + 0.5 * (l - 1))));
   }
 
-  /** The field obeys only an earned, matching scope — the refusal says where to earn it. */
+  /** D32: anyone may try on anything with a riddle in it. The roll is the refusal. */
   static canFieldIdentify(player: IPlayer, item: IItem): Verdict {
     const scope = this.identifyScopeOf(item);
     if (!scope) return no(`${LoadoutSystem.shownName(item)} holds no maker's riddle. There is nothing to identify.`);
-    const level = this.identifyLevel(player, item);
-    if (level < 1) {
-      return no(`Your eye is not schooled for ${scope}. Study ${scope} pieces at a workstation, time and again, and the field will obey.`);
-    }
     return ok;
+  }
+
+  /** The best eye this person has, in any scope. */
+  private static bestEye(player: IPlayer): number {
+    const scopes: IdentifyScope[] = ['weapon', 'armor', 'tool', 'material', 'furniture'];
+    return Math.max(0, ...scopes.map(s => player.bank.universalSkills[this.scopeSkillId(s)]?.level ?? 0));
+  }
+
+  /**
+   * D32: what an attempt costs and how long it takes. What has not been read gives
+   * away nothing by its price: it is asked of the person's best eye, never of the
+   * piece. A piece already read, with something unstudied on it, asks its own scope.
+   */
+  static identifyAsk(player: IPlayer, item: IItem): { cost: number; seconds: number } {
+    const level = item.isIdentified === false ? this.bestEye(player) : this.identifyLevel(player, item);
+    return {
+      cost: level < 1 ? Math.ceil(IDENTIFY_ENERGY * WINGING_FACTOR) : IDENTIFY_ENERGY,
+      seconds: this.identifySeconds(level)
+    };
+  }
+
+  /**
+   * D32: the odds, in percent, by the scoped eye against the piece's rank and rarity.
+   * Never shown: rank and rarity are what is hidden. D6: outranking by three opens it.
+   */
+  static identifyChance(player: IPlayer, item: IItem): number {
+    const level = this.identifyLevel(player, item);
+    const eye = ProgressionSystem.getRankFromLevel(level);
+    const { autoSuccess, gap } = ProgressionSystem.checkSkill(eye, item.rank);
+    if (level >= 1 && autoSuccess) return 100;
+    const rarity = Math.max(0, Object.values(Rarity).indexOf(item.rarity) - Object.values(Rarity).indexOf(Rarity.COMMON));
+    const chance = CHANCE_BASE + (level >= 1 ? CHANCE_SCHOOLED : 0) + gap * CHANCE_PER_RANK - rarity * CHANCE_PER_RARITY;
+    return Math.max(CHANCE_FLOOR, Math.min(CHANCE_CEILING, chance));
   }
 
   /** The knowledge scope key the mastery machinery files gear study under. */

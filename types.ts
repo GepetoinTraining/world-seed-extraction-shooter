@@ -494,6 +494,7 @@ export interface IItem {
   };
 
   isIdentified: boolean;
+  identifyAttempts?: number; // D32: field rolls spent on it so far. Only another attempt can roll differently.
 
   /** The raw materials leg (D26): a trade note, whose reading opens what a process adds. */
   loreData?: { processFamily: string; tier: number };

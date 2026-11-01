@@ -113,7 +113,7 @@ interface PlayerState {
   /** D6, D26: a finished job is practice. The trade's skill grows, and hands learn. */
   practiceTrade: (family: ProcessFamily) => void;
   /** 10E (D19): ask the field identify — scoped and ALWAYS timed; the caller runs the clock. */
-  fieldIdentify: (itemId: string) => { ok: boolean; reason?: string; seconds?: number };
+  fieldIdentify: (itemId: string) => { ok: boolean; reason?: string; seconds?: number; cost?: number };
   /** 10E (D19): the clock ran honestly — reveal the record through the one door. */
   completeFieldIdentify: (itemId: string) => Verdict;
   /** D17: pouches — stow through the pouch's own rule; quick-use without pack-opening. */
@@ -184,6 +184,8 @@ const INITIAL_PLAYER_TEMPLATE: IPlayer = {
 };
 
 let cacheSeq = 0;
+/** D32: an attempt is paid for before the clock runs, and one payment buys one roll. */
+const paidIdentifies = new Set<string>();
 const shown = LoadoutSystem.shownName.bind(LoadoutSystem);
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -834,7 +836,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       feed(verdict.reason!, 'loss');
       return verdict;
     }
-    return { ok: true, seconds: StudySystem.identifySeconds(StudySystem.identifyLevel(player, item)) };
+    // D32: paid up front, by the person's eye and never by the piece
+    const { cost, seconds } = StudySystem.identifyAsk(player, item);
+    const energy = player.currentSession!.energy;
+    if (energy < cost) {
+      const v = { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(energy)}.` };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - cost } }
+    }) : s);
+    paidIdentifies.add(itemId);
+    return { ok: true, seconds, cost };
   },
 
   completeFieldIdentify: (itemId) => {
@@ -843,6 +857,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!item) return { ok: false, reason: 'No such item in the pack.' };
     const verdict = StudySystem.canFieldIdentify(player, item);
     if (!verdict.ok) return verdict;
+    if (!paidIdentifies.delete(itemId)) return { ok: false, reason: 'Nothing was paid for. The eye has not looked.' };
+
+    // D32: the same attempt always answers the same; only another attempt can differ.
+    const attempt = item.identifyAttempts ?? 0;
+    const rollKey = SessionJournal.rollKey('identify', `${itemId}:${attempt}`);
+    const hit = Rng.fromKey(rollKey).next() * 100 < StudySystem.identifyChance(player, item);
+    SessionJournal.record('INTERACT', { kind: 'IDENTIFY_ROLL', itemId, attempt, rollKey, hit });
+
+    // The eye grows either way. Unschooled, it is winging it, and it settles at a rest;
+    // said aloud only once the piece is read, because the eye's name is the piece's kind.
+    const scope = StudySystem.identifyScopeOf(item)!;
+    const eyeId = StudySystem.scopeSkillId(scope);
+    if (player.bank.universalSkills[eyeId]) get().gainSkillXp(eyeId, hit ? 15 : 5, ['study', 'intel']);
+    else set(s => ({ player: WebSystem.accrue(s.player, { id: eyeId, tags: [`identify_${scope}`] }, 0) }));
+
+    if (!hit) {
+      set(s => s.player.currentSession ? ({
+        player: { ...s.player, currentSession: {
+          ...s.player.currentSession,
+          inventory: s.player.currentSession.inventory.map(i => i.id === itemId ? { ...i, identifyAttempts: attempt + 1 } : i)
+        } }
+      }) : s);
+      const v = { ok: false, reason: `${shown(item)} gives nothing up. The energy is gone; the piece is not.` };
+      feed(v.reason, 'plain');
+      return v;
+    }
 
     set(s => {
       if (!s.player.currentSession) return s;
@@ -857,9 +897,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         }
       };
     });
-    // the field use trains the eye too — skills grow by use, smaller away from the bench
-    const scope = StudySystem.identifyScopeOf(item)!;
-    get().gainSkillXp(StudySystem.scopeSkillId(scope), 15, ['study', 'intel']);
     feed(`${item.name} identified. The record reads exactly what was banked — downsides included.`, 'proof');
     return { ok: true };
   },

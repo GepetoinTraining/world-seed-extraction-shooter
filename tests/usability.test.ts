@@ -1304,22 +1304,14 @@ describe('what has not been read cannot be worked, and does not give itself away
 // -----------------------------------------------------------------------------
 
 describe('D32: the field identify is a keyed roll, paid for, and it tells nothing by its price', () => {
-  const signal = (id: string, over: Partial<IItem> = {}) => synth(id, SlotType.MAIN_HAND, {
-    name: 'Zzsecretname', isIdentified: false, rank: UniversalRank.F, tags: ['melee'], ...over
+  const signal = (id: string, over: Partial<IItem> = {}): IItem => ({
+    ...synth(id, over.slot ?? SlotType.MAIN_HAND, { name: 'Zzsecretname', isIdentified: false, rank: UniversalRank.F, tags: ['melee'], ...over }),
+    ...(over.rarity ? { rarity: over.rarity } : {})
   });
   const school = (scope = 'weapon', level = 1) => usePlayerStore.setState(s => ({
     player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [`skill_identify_${scope}`]: { id: `skill_identify_${scope}`, level, currentXp: 0, tags: [`identify_${scope}`] } as any } } }
   }));
   const fed = () => useFeed.getState().lines.map(l => l.text).join(' | ');
-  const untilMiss = (id: string) => {
-    for (let i = 0; i < 300; i++) {
-      usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 1000 } } }));
-      expect(store().fieldIdentify(id).ok).toBe(true);
-      if (!store().completeFieldIdentify(id).ok) return true;
-      return false;
-    }
-    return false;
-  };
 
   it('the odds: low, by rank and rarity, better with the eye, and three ranks above simply opens', () => {
     const p = player();
@@ -1378,18 +1370,20 @@ describe('D32: the field identify is a keyed roll, paid for, and it tells nothin
   });
 
   it('a roll needs paying for: no attempt without an ask, and one ask buys one attempt', () => {
-    field([signal('s1')]);
-    expect(store().completeFieldIdentify('s1').ok).toBe(false);
-    expect(session().inventory[0].isIdentified).toBe(false);
-    expect(session().inventory[0].identifyAttempts ?? 0).toBe(0);
-    store().fieldIdentify('s1');
-    store().completeFieldIdentify('s1');
-    const after = session().inventory[0];
-    if (after.isIdentified === false) {
-      expect(after.identifyAttempts).toBe(1);
-      store().completeFieldIdentify('s1');
-      expect(session().inventory[0].identifyAttempts).toBe(1);
+    // find a piece whose first roll misses: the rolls are keyed, so this is stable
+    let id = '';
+    for (let i = 0; i < 100 && !id; i++) {
+      field([signal(`paid_${i}`)]);
+      expect(store().completeFieldIdentify(`paid_${i}`).ok).toBe(false);
+      expect(session().inventory[0].isIdentified).toBe(false);
+      expect(session().inventory[0].identifyAttempts ?? 0).toBe(0);
+      store().fieldIdentify(`paid_${i}`);
+      store().completeFieldIdentify(`paid_${i}`);
+      if (session().inventory[0].isIdentified === false) id = `paid_${i}`;
     }
+    expect(session().inventory[0].identifyAttempts).toBe(1);
+    expect(store().completeFieldIdentify(id).ok).toBe(false);
+    expect(session().inventory[0].identifyAttempts).toBe(1);
   });
 
   it('the odds hold over many pieces, near what the law says', () => {
@@ -1408,20 +1402,20 @@ describe('D32: the field identify is a keyed roll, paid for, and it tells nothin
   });
 
   it('a miss loses the energy and the seconds only: the piece stays, unread, and says nothing', () => {
-    const affix = { id: 'aff_hidden', name: 'of the Hidden', type: 'SUFFIX', stats: { reach: 5 }, tier: 1 } as any;
-    const item = signal('miss', { affixes: [affix], stats: { reach: 5 } });
-    field([item]);
+    useFeed.setState({ lines: [] });
     let missed = false;
-    for (let i = 0; i < 300 && !missed; i++) {
-      usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 1000 } } }));
-      store().fieldIdentify('miss');
-      const v = store().completeFieldIdentify('miss');
+    for (let i = 0; i < 100 && !missed; i++) {
+      const id = `miss_${i}`;
+      const affix = { id: `aff_hidden_${i}`, name: 'of the Hidden', type: 'SUFFIX', stats: { reach: 5 }, tier: 1 } as any;
+      field([signal(id, { affixes: [affix], stats: { reach: 5 } })]);
+      store().fieldIdentify(id);
+      const v = store().completeFieldIdentify(id);
       if (!v.ok) {
         missed = true;
         expect(v.reason).toMatch(/\S/);
-        expect(session().inventory.map(i => i.id)).toEqual(['miss']);
+        expect(session().inventory.map(i => i.id)).toEqual([id]);
         expect(session().inventory[0].isIdentified).toBe(false);
-        expect(LoadoutSystem.isAffixStudied(player(), 'aff_hidden')).toBe(false);
+        expect(LoadoutSystem.isAffixStudied(player(), affix.id)).toBe(false);
         expect(fed()).not.toContain('Zzsecretname');
         expect(fed()).not.toMatch(/\bweapon\b/i);
       }

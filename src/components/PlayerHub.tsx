@@ -87,7 +87,8 @@ export const HandsPanel: React.FC = () => {
           <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>FORMING. IT SETTLES AT A REST, OR IT DOESN'T.</div>
           {sheet.forming.map(row => (
             <div key={row.name} className="ws-row ws-small" style={{ padding: '2px 0' }}>
-              <span style={{ minWidth: 0 }}>{row.worked ? `${row.tool} on ${row.worked}` : row.tool}</span>
+              {/* D32: which eye is forming would say what the unread piece was */}
+              <span style={{ minWidth: 0 }}>{/identify/.test(row.tool) ? 'the eye' : row.worked ? `${row.tool} on ${row.worked}` : row.tool}</span>
               <FormingFill fill={row.fill} />
             </div>
           ))}
