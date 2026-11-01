@@ -420,9 +420,10 @@ describe('line 115: the house rises through the pooled bill (D8)', () => {
     delete stored.data.guild;
     db.set(`hub_state_${HUB}`, stored);
     await hub().loadHub(HUB);
-    // Moved on purpose (D115): opening a hub starts its running clock, and that is all it adds.
-    const { runningDay, ...rest } = hub().guild;
+    // Moved on purpose (D115): opening a hub starts its running clock and its week, and that is all it adds.
+    const { runningDay, week, ...rest } = hub().guild;
     expect(runningDay).toBe(worldDay());
+    expect(week).toBeDefined();
     expect(rest).toEqual(emptyGuild());
   });
 });
