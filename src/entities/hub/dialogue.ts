@@ -15,6 +15,7 @@ import { IItem, ItemType, Rarity, UniversalRank } from '../../../types';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
+import { WorldClock } from '../world/WorldClock';
 import { ItemFactory } from '../item/ItemFactory';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
@@ -204,6 +205,7 @@ export function runDialogueAction(action: string, payload?: any): DialogueEffect
 
 /** Quick deploy target: the standing simulation, else the first walkable world. */
 export function quickDeployTargetId(): string | null {
-  const worlds = useWorldStore.getState().availableWorlds;
-  return (worlds.find(w => w.isDebug && !w.retired) ?? worlds.find(w => !w.retired))?.id ?? null;
+  const now = Date.now();
+  const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.retired && WorldClock.momentAt(w, now).canDeploy);
+  return (worlds.find(w => w.isDebug) ?? worlds[0])?.id ?? null;
 }

@@ -7,11 +7,33 @@ import { useWorldStore } from '../../entities/world/store';
 import { usePlayerStore } from '../../entities/player/store';
 import { SessionJournal } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
+import { WorldClock } from '../../entities/world/WorldClock';
+import { RestDoor } from './RestDoor';
+import { RestSystem } from './RestSystem';
 
 export async function deployToWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
   const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
   if (card.retired) return { ok: false, reason: 'Made of what no longer exists. Its record stands, but it can no longer be walked.' };
+
+  // D79: a character at rest is down, and another can play
+  const now = Date.now();
+  await RestDoor.wakeIfDue(now);
+  const sleeper = usePlayerStore.getState().player;
+  if (RestSystem.isResting(sleeper, now)) {
+    return { ok: false, reason: `This character is at rest for ${WorldClock.say(sleeper.rest!.until - now)} more. Another can go.` };
+  }
+
+  // D67: the gate runs on the world's clock
+  const moment = WorldClock.momentAt(card, now);
+  if (!moment.canDeploy) {
+    return {
+      ok: false,
+      reason: moment.phase === 'SCAN'
+        ? `${card.name} is booting. Recon is open, and the gate opens in ${WorldClock.say(moment.msLeft)}.`
+        : `The gate to ${card.name} is down. It boots in ${WorldClock.say(moment.msLeft)}.`
+    };
+  }
 
   // Wave 4.4: the world cert's power gates are enforced at the door
   if (card.ipCap || card.ipFloor) {
@@ -28,6 +50,7 @@ export async function deployToWorld(worldId: string): Promise<{ ok: boolean; rea
   }
 
   await useWorldStore.getState().selectWorld(worldId);
+  useWorldStore.getState().applySurvey(usePlayerStore.getState().player.survey?.[worldId]);
   usePlayerStore.getState().diveIntoLayer(card.seed);
 
   // Wave 1.2: open the session journal with the claim's baseHash

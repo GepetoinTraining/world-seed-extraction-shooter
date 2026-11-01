@@ -10,14 +10,17 @@ import { AffixBank } from '../../logic/content/AffixBank';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from './Director';
 import { DirectorStore } from './DirectorStore';
+import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
+import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
 
-export interface IWorldCard {
+export interface IWorldCard extends IClockedWorld {
   id: string;
   seed: string;
   size: number;
   createdAt: number;
-  collapseTime: number; 
-  playerCount: number; 
+  cadence?: ICadence;
+  sky?: SkyKind;
+  playerCount: number;
   isDebug?: boolean;
   name: string;
   difficulty: string;
@@ -46,6 +49,10 @@ interface WorldState {
   availableWorlds: IWorldCard[];
   activeWorldId: string | null; 
   currentMap: IMap | null;
+  /** D67: the regeneration the open world stands at. */
+  generation: number;
+  /** D68: what this character already knows of the open world, decayed to now. */
+  applySurvey: (survey: Record<string, ISurveyEntry> | undefined) => void;
   reconMode: boolean;
   selectedDropZone: { x: number, y: number } | null;
   isGenerating: boolean;
@@ -80,6 +87,22 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   availableWorlds: [],
   activeWorldId: null,
   currentMap: null,
+  generation: 0,
+  applySurvey: (survey) => {
+    const { currentMap, generation } = get();
+    if (!currentMap || !generationContext || !survey) return;
+    const sectors = { ...currentMap.sectors };
+    for (const [key, entry] of Object.entries(survey)) {
+      const sector = sectors[key];
+      if (!sector) continue;
+      const scanLevel = SurveySystem.levelNow(entry, generation) as ScanLevel;
+      sectors[key] = {
+        ...sector, scanLevel,
+        entities: scanLevel >= ScanLevel.DETAILED ? WorldGenerator.sectorContents(currentMap, sector.x, sector.y, generationContext) : sector.entities
+      };
+    }
+    set({ currentMap: { ...currentMap, sectors } });
+  },
   reconMode: true,
   selectedDropZone: null,
   isGenerating: false,
@@ -94,7 +117,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           seed: cert.data.seedHash,
           size: cert.data.size,
           createdAt: cert.data.createdAt,
-          collapseTime: now + (1000 * 60 * (cert.data.rules.sessionDurationMinutes || 60)),
+          cadence: cert.data.rules.cadence,
+          sky: cert.data.rules.sky,
           playerCount: cert.data.stats.totalVisitors,
           name: cert.data.worldName,
           difficulty: cert.data.rules.difficulty,
@@ -119,9 +143,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           id: 'dev-01', 
           seed: 'dev-sandbox-v4',
           size: 32, 
-          createdAt: now, 
-          collapseTime: now + 1000 * 60 * 60 * 4, // 4 Hours
-          playerCount: 1, 
+          createdAt: now,
+          playerCount: 1,
           isDebug: true,
           name: "SIMULATION_DEBUG",
           difficulty: "D",
@@ -142,8 +165,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
 
       try {
         // --- HOOKED UP: CALL SERVICE ---
-        const director = await DirectorStore.load(worldCard.id);
-        set({ directorRecord: director });
+        const moment = WorldClock.momentAt(worldCard, Date.now());
+        const director = await DirectorStore.catchUp(worldCard.id, moment.generation);
+        set({ directorRecord: director, generation: moment.generation });
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, worldCard.magicUnlocked);
 
         generationContext = instance.context;

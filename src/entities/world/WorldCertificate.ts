@@ -8,6 +8,7 @@ import { UniversalRank } from '../../../types';
 import { WebBank } from '../../logic/content/WebBank';
 import { AffixBank } from '../../logic/content/AffixBank';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { ICadence, SkyKind, WorldClock } from './WorldClock';
 
 export enum WorldType {
   EXTRACTION = 'EXTRACTION',
@@ -57,6 +58,10 @@ export interface IWorldRules {
   themeId?: string;
   /** D49: was magic unlocked in this world's hub when it was signed? Pinned, so it never changes. */
   magicUnlocked?: boolean;
+  /** D67: how this world's gate runs, signed at mint. Absent on worlds minted before the clock: their size says. */
+  cadence?: ICadence;
+  /** D71: its sky. Absent means it turns. */
+  sky?: SkyKind;
 }
 
 export interface IWorldCertificateData {
@@ -119,8 +124,7 @@ export class WorldCertificateSystem {
       friendlyFireEnabled: false,
       deathPenalty: 'INVENTORY_LOSS',
       respawnEnabled: worldType !== WorldType.EXTRACTION,
-      sessionDurationMinutes: worldType === WorldType.EXTRACTION ? 15 : undefined,
-      worldLifespanHours: worldType === WorldType.EXTRACTION ? 4 : undefined,
+      cadence: WorldClock.cadenceFor(size),
       difficulty: UniversalRank.D,
       mobDensityMultiplier: 1.0,
       lootMultiplier: 1.0,

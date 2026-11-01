@@ -1,6 +1,6 @@
 /**
  * Where a world's Director record lives: plain data beside the world, in the same
- * database. A rest moves it, a session's fights feed it, and a chunk reads it.
+ * database. The world's clock moves it, a session's fights feed it, and a chunk reads it.
  */
 
 import { VectorNamespace, VectorStore } from '../data/VectorStore';
@@ -21,8 +21,11 @@ export const DirectorStore = {
     });
   },
 
-  /** A rest passes for every world this hub serves. A generation is the only thing that moves. */
-  async evolveAll(worldUids: string[]): Promise<void> {
-    for (const uid of worldUids) await this.save(uid, Director.evolve(await this.load(uid)));
+  /** A world's clock says where it stands; on opening, its record comes up to that. */
+  async catchUp(worldUid: string, generation: number): Promise<IDirectorRecord> {
+    const record = await this.load(worldUid);
+    const caught = Director.catchUp(record, generation);
+    if (caught !== record) await this.save(worldUid, caught);
+    return caught;
   }
 };

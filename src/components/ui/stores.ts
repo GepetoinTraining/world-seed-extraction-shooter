@@ -92,7 +92,7 @@ export const WORLD_DRAFT_DEFAULTS = {
   creatorShare: 3,
   pvpEnabled: false,
   difficulty: 'D',
-  sessionDuration: 15,
+  sky: 'TURNING',
   // D56: what was said, what it wrote, or the world already written that was picked
   talk: [] as { role: 'user' | 'assistant'; content: string }[],
   writtenTheme: null as unknown,
@@ -147,6 +147,8 @@ export interface IReceiptView {
   // Wave 10C (D21): a death keeps exactly the protected slots — and the
   // receipt says what was kept, and by whose magic
   kept?: { item: IItem; by: string }[];
+  // D77: the gate closed on them, which the receipt says plainly
+  cause?: 'GATE';
   // D30: what settled at this rest. Names only; the rest is on the Agent tab.
   settled?: string[];
 }

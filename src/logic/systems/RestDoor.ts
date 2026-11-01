@@ -15,10 +15,12 @@ import { bodyOf, sealTheme } from '../theme/ThemeCompiler';
 import { IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { WebSystem } from './WebSystem';
 import { HubUnlock } from './HubUnlock';
-import { DirectorStore } from '../../entities/world/DirectorStore';
+import { WorldClock } from '../../entities/world/WorldClock';
+import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { IDreamResult, INN_FEE, RestPlace, RestSystem } from './RestSystem';
 
-const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
+let waking = false;
+const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
 export const RestDoor = {
   /** Settling, at any rest. A return to the hub comes through here too (D30). */
@@ -40,10 +42,11 @@ export const RestDoor = {
     }
   },
 
-  /** A chosen rest. Energy, the day, the Director, and what was queued goes to the door. */
+  /** A chosen rest begins (D79): the fee, what is queued goes to the door, and this character is down until it ends. */
   async sleep(place: RestPlace): Promise<{ ok: boolean; reason?: string }> {
     const before = usePlayerStore.getState().player;
-    const verdict = RestSystem.canRest(before, place);
+    const now = Date.now();
+    const verdict = RestSystem.canRest(before, place, now);
     if (!verdict.ok) {
       feed(verdict.reason!, 'loss');
       return verdict;
@@ -60,13 +63,32 @@ export const RestDoor = {
 
     await RestDoor.collect();
     const { emerged } = RestDoor.settle();
-    usePlayerStore.setState(s => ({ player: RestSystem.restoreEnergy(s.player) }));
+    const lying = RestSystem.beginRest(usePlayerStore.getState().player, place, now);
+    usePlayerStore.setState({ player: lying });
     for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
-    feed('You slept. It is another day.', 'signal');
     await useHubStore.getState().creditHeld();
-    await DirectorStore.evolveAll(useWorldStore.getState().availableWorlds.filter(w => !w.retired).map(w => w.id));
     await RestDoor.file(emerged);
+    if (!(await RestDoor.wakeIfDue(now))) {
+      feed(`You lie down. This character is at rest for ${WorldClock.say(lying.rest!.until - now)}. Another can go.`, 'signal');
+      await PlayerPersistence.flush('rest');
+    }
     return { ok: true };
+  },
+
+  /** The rest ends when its time is up, whoever is watching. Called on a timer and at any door out. */
+  async wakeIfDue(now = Date.now()): Promise<boolean> {
+    const { rest } = usePlayerStore.getState().player;
+    if (!rest || now < rest.until || waking) return false;
+    waking = true;
+    try {
+      await RestDoor.collect();
+      usePlayerStore.setState(s => ({ player: RestSystem.wake(s.player) }));
+      feed('You slept. It is another day.', 'signal');
+      await PlayerPersistence.flush('rest');
+    } finally {
+      waking = false;
+    }
+    return true;
   },
 
   /** Send what was queued, if there is anything and a door. Nothing waits on this. */

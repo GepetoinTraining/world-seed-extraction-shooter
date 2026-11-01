@@ -44,9 +44,15 @@ export interface FieldScene {
   hurtAt?: number;
   now?: number;
   reducedMotion?: boolean;
+  /** D71: how dark it is where the player stands, 0 to 1. */
+  darkness?: number;
 }
 
-const snap = (v: number) => Math.round(v / ATOM_PX) * ATOM_PX;
+/** The dark closes in from the screen's edge, and the ground right around you stays readable. */
+const DARK_CLEAR_PX = 120;
+const DARK_NEAR = 0.2, DARK_FAR = 0.92;
+
+const snap =(v: number) => Math.round(v / ATOM_PX) * ATOM_PX;
 
 export class FieldRenderer {
   private palette: Uint8Array;
@@ -214,7 +220,17 @@ export class FieldRenderer {
 
     visible.forEach(e => this.drawTelegraph(ctx, e, ox, oz, now));
     (scene.effects ?? []).forEach(f => this.drawEffect(ctx, f, now, ox, oz, !!scene.reducedMotion));
+    if (scene.darkness) this.drawDark(ctx, width, height, scene.darkness);
     if (scene.hurtAt && now - scene.hurtAt < HURT_EDGE_MS) this.drawHurtEdge(ctx, width, height, now - scene.hurtAt, !!scene.reducedMotion);
+  }
+
+  /** Night is how far you can see, so it reads in grayscale. */
+  private drawDark(ctx: CanvasRenderingContext2D, width: number, height: number, darkness: number) {
+    const dark = ctx.createRadialGradient(width / 2, height / 2, DARK_CLEAR_PX, width / 2, height / 2, Math.max(width, height) * 0.55);
+    dark.addColorStop(0, `rgba(0,0,0,${darkness * DARK_NEAR})`);
+    dark.addColorStop(1, `rgba(0,0,0,${darkness * DARK_FAR})`);
+    ctx.fillStyle = dark;
+    ctx.fillRect(0, 0, width, height);
   }
 
   /**

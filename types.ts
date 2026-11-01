@@ -810,6 +810,16 @@ export interface IPlayer {
   restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
   /** What was filed at the door and has not come back. */
   pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] } };
+  /** D79: a rest takes real time, and until then this character is down. */
+  rest?: { until: number; place: 'INN' | 'BED' | 'FIELD' };
+  /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */
+  survey?: Record<string, Record<string, {
+    level: number;
+    generation: number;
+    contacts: Record<string, number>;
+    changed: number;
+    prior?: { contacts: Record<string, number>; changed: number; generation: number };
+  }>>;
   /** D58: what a rest's model said of a skill, and what it lets the holder do. */
   skillWords?: Record<string, { name: string; flavor: string; grants: string[] }>;
   /** Layer 4: aether per element, from what was gathered. */

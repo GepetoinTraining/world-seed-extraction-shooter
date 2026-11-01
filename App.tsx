@@ -19,6 +19,8 @@ import { HoverLayer } from './src/components/ui/HoverLayer';
 import { isTypingTarget } from './src/logic/systems/FieldInput';
 import { ReceiptScreen } from './src/components/ReceiptScreen';
 import { FeedView } from './src/components/FeedView';
+import { RestDoor } from './src/logic/systems/RestDoor';
+import { WorldClock } from './src/entities/world/WorldClock';
 
 // Debug Console
 import { SystemConsole } from './src/components/debug/SystemConsole';
@@ -70,6 +72,18 @@ const DEV_TABS: { id: AppView; label: string }[] = [
   { id: 'HOLDINGS', label: 'HOLDINGS' },
 ];
 
+/** D79: how long this character is down. Their rest is their own loop, and SYSTEM switches to another. */
+const RestChip: React.FC<{ until?: number }> = ({ until }) => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!until) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [until]);
+  if (!until || now >= until) return null;
+  return <Chip tone="signal" title="This character cannot deploy until it wakes. Another can.">AT REST {WorldClock.say(until - now)}</Chip>;
+};
+
 /** D7: very little frame. One thin bar — who you are and what you hold. The walkable
  * city is the navigation: its keepers lead to every other screen, and each has a way back. */
 const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void }> = ({ devMode, onDevMode }) => {
@@ -108,6 +122,7 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
 
       <span style={{ flex: 1 }} />
 
+      <RestChip until={player.rest?.until} />
       <Chip title={`Rank ${rank} — kills feed it`}><RankMark rank={rank} scale={2} /> {rank}</Chip>
       <Chip tone="proof" title="Gold on the ledger">{player.bank.gold.toLocaleString()} G</Chip>
       <Chip title={player.id}>{player.username}</Chip>
@@ -163,6 +178,14 @@ const App: React.FC = () => {
     };
     boot();
   }, [identityState, bootStatus, gateDone]);
+
+  // D79: a rest ends when its time is up, and this character wakes whoever is watching
+  useEffect(() => {
+    if (bootStatus !== 'READY') return;
+    void RestDoor.wakeIfDue();
+    const interval = setInterval(() => void RestDoor.wakeIfDue(), 5000);
+    return () => clearInterval(interval);
+  }, [bootStatus]);
 
   // --- VIEW ROUTER ---
 
