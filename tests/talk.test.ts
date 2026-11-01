@@ -1005,6 +1005,75 @@ describe('line 149: the goal is set before the answer', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PEDRO, AFTER THE FIRST REPORT: the city center's keepers are the tech web
+// "the city charges weekly as tax on upkeep, and, it charges for the services in the city center.
+// That's where it taxes. And believe me, you can add infinite value to the city center because
+// those NPC are the tech web, they can use the full aggregate you built and not make you walk around"
+// ---------------------------------------------------------------------------
+
+describe("the city center's keepers are the tech web", () => {
+  const bond = () => NpcSheet.read(SEED, { id: 'person_tech', rank: UniversalRank.C, npc: { name: 'Serin Vale', temperament: 'COWARD', objective: 'HOARD', want: 'GIFT', disposition: 60, attempts: 0 } }, WebBank.version());
+  const builtUp = () => {
+    const skills = bond().skills!;
+    const { web } = WebSystem.admit({ nodes: {} }, { uid: 'someone', name: 'Someone' }, skills, 1);
+    useHubStore.setState({ web });
+    return Object.keys(skills).map(id => WebSystem.nameOf(id));
+  };
+
+  it('a keeper speaks for all the hub has built, whoever built it', async () => {
+    const names = builtUp();
+    expect(names.length).toBeGreaterThan(0);
+    const door = answering(words());
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('What can this city do?');
+    const [, ask] = door.mock.calls[0] as [string, any];
+    for (const name of names) expect(ask.who.city.knows).toContain(name);
+    expect(ask.who.city.opens).toEqual(WebSystem.openStationsOf(hub().web, {}).map(s => s.name));
+  });
+
+  it('it grows as the hub does, with no list of its own', async () => {
+    const door = answering(words());
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('Before.');
+    expect((door.mock.calls[0][1] as any).who.city.knows).toHaveLength(0);
+    const names = builtUp();
+    await talk().say('After.');
+    expect((door.mock.calls[1][1] as any).who.city.knows.length).toBe(names.length);
+  });
+
+  it('the door a counter can read: everything the center can reach', () => {
+    builtUp();
+    const reach = hub().centerReach();
+    expect(reach.skills).toEqual(Object.keys(hub().web.nodes));
+    expect(reach.stations).toEqual(WebSystem.openStationsOf(hub().web, {}));
+  });
+
+  it("a resident knows only what their own hands know: the center is the keepers'", async () => {
+    builtUp();
+    const resident = await residentNamed();
+    const door = answering(words());
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    await talk().say('What can you do?');
+    expect((door.mock.calls[0][1] as any).who.city).toBeUndefined();
+  });
+
+  it("the keeper does not send anyone walking, and does not promise what is the counter's to do", () => {
+    const { system } = buildNpcTalkRequest({ who: {}, log: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
+    expect(system).toMatch(/never send them/i);
+    expect(system).toMatch(/counter/i);
+  });
+
+  it('a talk is not where the city taxes: rounds move no gold', async () => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 500 } } }));
+    answering(words());
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('One.');
+    await talk().say('Two.');
+    expect(player().bank.gold).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // LINE 150: QUESTS AND BUILDINGS
 // ---------------------------------------------------------------------------
 

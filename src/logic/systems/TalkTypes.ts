@@ -51,6 +51,8 @@ export interface ITalkSurface {
   body?: { tags: string[]; behavior?: string; size?: string; blurb?: string };
   /** A leader only: what drives it. */
   drive?: string;
+  /** A keeper of the city center only: everything the hub has built, which they speak for. */
+  city?: { knows: string[]; opens: string[] };
 }
 
 export interface IRoundAsk {

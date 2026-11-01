@@ -309,6 +309,12 @@ interface HubState {
   askForBuilding: (askerId: string, askerName: string, building: string, goal: string, need: string) => Promise<void>;
   /** C5's door: an ask has been answered. */
   meetBuildingAsk: (askId: string, metBy: string) => Promise<void>;
+  /**
+   * Pedro: "those NPC are the tech web, they can use the full aggregate you built and not make you
+   * walk around". Everything the city center can reach, whoever in the hub built it. A counter that
+   * sells this as a service reads it here, and that charge is where the city taxes.
+   */
+  centerReach: () => { skills: string[]; stations: IWebStation[] };
   /** The vendors and the people at their benches, up to today. Time away counts. */
   resolveVendors: () => Promise<void>;
   /** A general vendor takes on someone lodged at the tavern (D75's door), who has no ground yet. */
@@ -944,6 +950,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     useFeed.getState().push(`On the board at the Hall: ${quest.text}`, 'signal');
     await get().saveHubState();
   },
+
+  centerReach: () => ({ skills: Object.keys(get().web.nodes), stations: WebSystem.openStationsOf(get().web, {}) }),
 
   buildingWords: () => [BUILDING_HOUSE, ...WebBank.current().stations.map(s => s.id)],
 

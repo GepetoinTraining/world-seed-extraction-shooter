@@ -31,6 +31,7 @@ import { ILadderFacts, INpcAgenda, LADDER, NpcAgenda } from '../../logic/systems
 import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { MonsterMind, Stance } from '../../logic/systems/MonsterMind';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { WebSystem } from '../../logic/systems/WebSystem';
 import { TalkDoor } from '../../logic/systems/TalkDoor';
 import { TALK_ENERGY, TalkLaw } from '../../logic/systems/TalkLaw';
 import { IGoalAsk, ILogLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../logic/systems/TalkTypes';
@@ -166,7 +167,7 @@ function monsterSurface(seed: string, entity: IWorldEntity, webVersion: number |
 }
 
 /** Who a city person is, wherever they come from. */
-function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda } | null {
+function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda; keeper?: boolean } | null {
   const hub = useHubStore.getState();
   const resident = hub.guild.residents.find(r => r.id === npcId);
   if (resident) return { sheet: readSheet(resident), rank: resident.bond.rank as UniversalRank, facts: { house: !!resident.homeAt } };
@@ -174,10 +175,18 @@ function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; fac
   if (!keeper) return null;
   const rank = keeper.teaches?.rank ?? UniversalRank.D;
   // A keeper's shop is where they live. Money and family are not known of anyone yet: C3's wallets and D105's people's half will say.
-  return { sheet: NpcSheet.keeper(hub.activeHubId ?? 'hub_unknown', npcId, rank, keeper.name), rank, facts: { house: true }, agenda: hub.vendors[npcId]?.agenda };
+  return { sheet: NpcSheet.keeper(hub.activeHubId ?? 'hub_unknown', npcId, rank, keeper.name), rank, facts: { house: true }, agenda: hub.vendors[npcId]?.agenda, keeper: true };
 }
 
 const addUsage = (spent: number, usage?: IDoorUsage) => spent + (usage?.usd ?? 0);
+
+/** A person as a model reads them. A keeper of the center speaks for the hub's whole web, read fresh each time. */
+function citySurface(person: NonNullable<ReturnType<typeof cityPerson>>): ITalkSurface {
+  const surface = NpcSheet.surface(person.sheet, person.rank);
+  if (!person.keeper) return surface;
+  const reach = useHubStore.getState().centerReach();
+  return { ...surface, city: { knows: reach.skills.map(id => WebSystem.nameOf(id)), opens: reach.stations.map(s => s.name) } };
+}
 
 export const useTalk = create<ITalkState>((set, get) => {
   /** What a city person keeps, between one reload and the next. */
@@ -205,7 +214,7 @@ export const useTalk = create<ITalkState>((set, get) => {
     const hub = useHubStore.getState();
     const ask: IGoalAsk = {
       binding: 'LADDER',
-      who: NpcSheet.surface(person.sheet, person.rank),
+      who: citySurface(person),
       log: get().log,
       need: rung.need,
       rungs: LADDER.map(r => ({ need: r.need, says: r.says, met: NpcAgenda.met(agenda, r, facts) })),
@@ -345,7 +354,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const rollKey = `${hubId}:social:${subject.npcId}:${attempt}`;
       const roll = TalkLaw.rollOf(rollKey);
       const required = TalkLaw.required(person.sheet.want, attrs, person.rank, person.sheet.stats);
-      const who = NpcSheet.surface(person.sheet, person.rank);
+      const who = citySurface(person);
       const ask: IRoundAsk = { who, log: prior, said, roll, required, bonuses: TalkLaw.bonuses(), meter: get().meter, goal: get().goal?.text };
       const answer = await TalkDoor.round(talkId, ask, { alignment: who.alignment, hidden: [] });
       // Gone mid-round in the city: it never happened. Nothing is on the record, and the same roll waits for the next try.

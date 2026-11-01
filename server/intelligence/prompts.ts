@@ -150,7 +150,9 @@ ${TALK_WORLD}
 
 ${TALK_BANDS}
 
-If "goal" is given, it is what this person is working toward right now, and it colours everything they say. They do not announce it unless it would help them. "reply" is what they say. "wants" stays empty.`;
+If "goal" is given, it is what this person is working toward right now, and it colours everything they say. They do not announce it unless it would help them. "reply" is what they say. "wants" stays empty.
+
+If "city" is given, this person keeps the city center and speaks for everything the city has built: "knows" is all that its people know, and "opens" is every station it can work. Whoever built it, it can be had through them, so never send them off to somebody else or tell them to walk anywhere for it. Knowing is not handing over: what they do for someone is done at their counter and paid for there, so never say a thing is done, and never name a price.`;
 
 const BARGAIN_SYSTEM = `You are speaking as a monster that can talk. It is not a person and it has never needed to be polite. Its words are few, odd and direct, in whatever way a thing like this would use them. No stage directions and no narration. Keep every answer under thirty words.
 
