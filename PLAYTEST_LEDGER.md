@@ -33,7 +33,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | N13 | Tax Evasion's first attempt says "Winging it: ... It costs more without the skill", and it costs nothing more. Farming says the same, and charges no energy | the skill's first-use line, `workOn` |
 | N14 | Reading a scroll feeds "Writ of Breach: +0 health." Every scroll has since Layer 3 | `store.consumeItem` |
 | N15 | Glass panes answer `building`, so a window's panes can go into a wall's line | `resourceDefinitions`, `answersTag` |
-| N16 | The database pass can exit 139, a crash at teardown, after every bar has passed. Counted 2026-11-01, 12 runs each, taking turns: the join 1 at 139, a tree without B2's population code 2 at 139 and 1 at exit 1. So it is not B2's. It comes from `tests/database.store.test.ts` alone (1 of 4 runs of that file; the other two files 0 of 4) and the cause is not found. It reached 2 of 3 on a quiet machine, so `npm test` often reports a failure with every bar green: read the bar count | `tests/database.store.test.ts` at teardown |
+| N16 | The database pass can exit 139, a crash at teardown, after every bar has passed. Counted 2026-11-01, 12 runs each, taking turns: the join 1 at 139, a tree without B2's population code 2 at 139 and 1 at exit 1. So it is not B2's. It comes from `tests/database.store.test.ts` alone (1 of 4 runs of that file; the other two files 0 of 4) and the cause is not found. It reached 2 of 3 on a quiet machine, so `npm test` often reports a failure with every bar green: read the bar count. **Narrowed 2026-11-01: the bare driver, `@libsql/client` 0.17.4 with no game code, exits 139 after finishing in 7 of 10 runs that used transactions. It is not this game's code. The dev server's mid-run `0xC0000005` under refused commits, 3 of 3 on `main`, is related in kind and its cause is not found. The same load on PGlite in memory: 0 of 5** | `tests/database.store.test.ts` at teardown, the driver |
 
 ### Found while building and joining Wave C's first pass, 2026-11-01
 
@@ -44,7 +44,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | W3 | The market a hub's cost reads includes the stash and body of the person present, so what someone carries into the city moves what it costs. A client knows no other player's bank, so this needs the server | `MarketCap`, Wave 13 |
 | W4 | A hidden pane stalls a beacon's channel until a screenshot forces frames, which looks like a stuck seal and is not | the pane, not the game |
 | W6 | A goal on the floor reads badly on the bottom rung: "Working toward fed." | `TalkLaw`'s plain goal |
-| W7 | A hub's document grows with what comes apart, about 45 KB a week on a hub nobody shops in, and it is written whole on each commit | `closeWeeks`, `VendorSystem`'s parts |
+| W7 | A hub's document grows with what comes apart, about 50 KB a week on a hub nobody shops in, and it is written whole on each commit | `closeWeeks`, `VendorSystem`'s parts |
 | W5 | A `.env` at the root of a checkout on `claude/world-clock` would not be ignored, because that branch's `.gitignore` predates it. `main`'s lists it. Staging by name is all that stands in the way until the checkout moves. The only copy of Pedro's key is the `.env` in `.claude/worktrees/wave-b3-creation-deed-0bc7a1`, so removing that worktree removes it | `.gitignore`, B3's worktree |
 
 ### Found while building the timer, 2026-11-01
