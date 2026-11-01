@@ -1,3 +1,4 @@
+import '../../tests/fixtures/content/installOnLoad';
 import { HUB_NPCS, HubGenerator, IPOI, POIType } from '../../src/entities/hub/HubGenerator';
 import { ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
 import { ATOM_PX, Sprite, buildPalette, grayscale, hashBytes } from '../../src/render/atoms/atoms';

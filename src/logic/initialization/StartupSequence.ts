@@ -1,4 +1,4 @@
-import { GenesisInitializer } from '../../entities/data/GenesisInitializer';
+import { ThemeStore } from '../theme/ThemeStore';
 import { WorldCertificateSystem, WorldType, AccessMode } from '../../entities/world/WorldCertificate';
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
 import { useHubStore } from '../../entities/hub/store';
@@ -13,7 +13,9 @@ import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Ledger } from '../ledger/Ledger';
 import { GoldCommit } from '../economy/GoldCommit';
 import { HomeHub } from '../persistence/HomeHub';
-import { runGoldenCheck } from '../../entities/world/goldens';
+import { FIRST_THEME_VECTORS, runGoldenCheck } from '../../entities/world/goldens';
+import { ContentRegistry } from '../theme/ContentRegistry';
+import { FIRST_THEME_PACK } from '../theme/boot';
 
 export class StartupSequence {
 
@@ -57,7 +59,8 @@ export class StartupSequence {
     }
 
     // Wave 2.6: GOLDEN VECTOR CHECK — the generator must never drift silently
-    const goldens = runGoldenCheck();
+    // The shipped theme's land: pinned by bar, and checked here against this build
+    const goldens = runGoldenCheck(ContentRegistry.contextFor(FIRST_THEME_PACK.themeId), FIRST_THEME_VECTORS);
     if (goldens.ok) {
       console.log('[BOOT] Golden vectors verified ✓ (world generation is pinned)');
     } else {
@@ -71,15 +74,8 @@ export class StartupSequence {
       return { status: 'WAITING_FOR_IDENTITY' };
     }
 
-    // 2. VECTOR DB GENESIS (The Big Bang)
-    // Definitions live in CONTENT (saveContent); ITEMS holds minted instances
-    const itemDefs = await VectorStore.query({ namespace: VectorNamespace.CONTENT, limit: 1 });
-    if (itemDefs.length === 0) {
-      console.log('[BOOT] Vector Ledger empty. Executing Big Bang...');
-      await GenesisInitializer.initialize();
-    } else {
-      console.log('[BOOT] Vector Ledger verified.');
-    }
+    // 2. THE THEMES THIS HUB HOLDS: each judged again as it is read, as anything from a store is
+    await ThemeStore.loadBanked();
 
     // 3. GENESIS HUB VERIFICATION
     const worlds = await WorldCertificateSystem.getPublicWorlds();

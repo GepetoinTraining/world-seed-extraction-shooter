@@ -1,0 +1,239 @@
+/**
+ * THE THEME (D53, D57): what a world is made of, as a pack a model can write.
+ *
+ * A theme holds words, tags and bands, and no numbers but small counts. One
+ * versioned formula turns the bands into health, damage and prices, so a model
+ * cannot write a surprise, and balance lives in one file.
+ *
+ * The vocabularies below are the grammar of a pack, not its content. Nothing here
+ * names a creature, a material or a weapon; they all come from the pack.
+ */
+
+import { ITagEntry } from '../../../types';
+
+export const THEME_FORMULA_VERSION = 1;
+
+export const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'] as const;
+export type ThemeRank = typeof RANKS[number];
+
+export const BIOMES = ['WASTELAND', 'OVERGROWTH', 'RUINS', 'INDUSTRIAL', 'CYBER_CITY'] as const;
+export type ThemeBiome = typeof BIOMES[number];
+
+export const SIZES = ['TINY', 'MEDIUM', 'LARGE', 'GIGANTIC', 'COLOSSAL'] as const;
+export const BEHAVIORS = ['PASSIVE', 'NEUTRAL', 'AGGRESSIVE', 'SWARM', 'SIEGE', 'TURRET'] as const;
+export const BUILDS = ['frail', 'sturdy', 'massive'] as const;
+export const THREATS = ['meek', 'sharp', 'deadly'] as const;
+export const PACES = ['slow', 'steady', 'swift'] as const;
+
+/** How a thing is taken from the ground: the art's shape, and what the hands need. */
+export const MATERIAL_FORMS = ['grain', 'shrub', 'fruit', 'tree', 'vein', 'sand', 'rock', 'pebble'] as const;
+export const HARVEST_VERBS = ['hands', 'chop', 'mine'] as const;
+export const WEIGHTS = ['light', 'medium', 'heavy'] as const;
+export const WORTHS = ['common', 'fine', 'rare'] as const;
+
+export const GEAR_KINDS = [
+  'blade', 'bludgeon', 'bow', 'focus',
+  'head', 'chest', 'legs', 'feet', 'shoulder', 'eyes', 'necklace', 'earring', 'ring', 'quiver',
+  'bag', 'belt', 'pouch', 'cart',
+  'chop_tool', 'mine_tool', 'work_tool'
+] as const;
+export type GearKind = typeof GEAR_KINDS[number];
+
+/** Nothing here restores energy: only a rest does (D51). */
+export const CONSUMABLE_KINDS = ['heal', 'scroll'] as const;
+
+export const STAT_BANDS = ['minor', 'moderate', 'major'] as const;
+
+/** The catalog's vocabulary for what an ability is (Layer 1). */
+export const DELIVERIES = ['self', 'touch', 'melee', 'ranged', 'area', 'aura'] as const;
+export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'summon', 'reveal', 'transform', 'move', 'rest'] as const;
+export const COST_BANDS = ['trivial', 'low', 'medium', 'high', 'extreme'] as const;
+
+export interface IThemeCreature {
+  key: string;
+  name: string;
+  blurb: string;
+  tags: string[];
+  rank: ThemeRank;
+  size: typeof SIZES[number];
+  behavior: typeof BEHAVIORS[number];
+  build: typeof BUILDS[number];
+  threat: typeof THREATS[number];
+  pace: typeof PACES[number];
+  habitat: ThemeBiome[];
+  /** Keys of abilities in this pack: its magic, which it casts and teaches. */
+  innate: string[];
+}
+
+export interface IThemeMaterial {
+  key: string;
+  name: string;
+  blurb: string;
+  tags: string[];
+  rank: ThemeRank;
+  form: typeof MATERIAL_FORMS[number];
+  verb: typeof HARVEST_VERBS[number];
+  weight: typeof WEIGHTS[number];
+  worth: typeof WORTHS[number];
+  habitat: ThemeBiome[];
+  /** Sold on the hub's shelf as well as found. */
+  onShelf: boolean;
+}
+
+export interface IThemeStation {
+  key: string;
+  name: string;
+  blurb: string;
+  /** D25: the tool + material connection that opens it. */
+  tool: string[];
+  material: string[];
+  bill: { tag: string; count: number }[];
+}
+
+export interface IThemeGood {
+  key: string;
+  name: string;
+  blurb: string;
+  tags: string[];
+  rank: ThemeRank;
+  weight: typeof WEIGHTS[number];
+  /** The trade the work grows: a tag of kind trade. */
+  trade: string;
+  /** A station's key in this pack, or empty for any workshop bench. */
+  station: string;
+  from: { key: string; count: number }[];
+  makes: number;
+}
+
+export interface IThemeGear {
+  key: string;
+  name: string;
+  blurb: string;
+  kind: GearKind;
+  rank: ThemeRank;
+  tags: string[];
+  /** For a tool: the material tags it answers. Empty otherwise. */
+  works: string[];
+  /** Key of an ability this piece can carry (Layer 3), or empty. */
+  carries: string;
+  /** When it fires: on_hit, on_defeat, on_hurt, on_low_health, while_worn, on_use. Empty with no ability. */
+  trigger: string;
+  /** What it is made of, if it can be made. */
+  from: { key: string; count: number }[];
+  /** 'none' is found only; 'hands' is the improvised floor, anywhere; 'bench' needs a workshop. */
+  craftAt: 'none' | 'hands' | 'bench';
+}
+
+export interface IThemeConsumable {
+  key: string;
+  name: string;
+  blurb: string;
+  kind: typeof CONSUMABLE_KINDS[number];
+  rank: ThemeRank;
+  tags: string[];
+  /** A scroll casts this ability. Empty otherwise. */
+  casts: string;
+  onShelf: boolean;
+}
+
+export interface IThemeAffix {
+  key: string;
+  name: string;
+  type: 'PREFIX' | 'SUFFIX';
+  /** What it may land on: gear tags, 'resource', 'mob', 'frame' or 'cart'. */
+  allowedTags: string[];
+  /** Empty for anywhere, or the biome whose dream it belongs to. */
+  biome: string;
+  tier: number;
+  gives: { stat: string; band: typeof STAT_BANDS[number]; downside: boolean }[];
+}
+
+export interface IThemeAbility {
+  key: string;
+  name: string;
+  blurb: string;
+  /** Tags of kind element. Nothing fixes how many elements a world has. */
+  elements: string[];
+  delivery: typeof DELIVERIES[number];
+  effect: typeof EFFECTS[number];
+  cost: typeof COST_BANDS[number];
+}
+
+export interface IThemeRegion {
+  biome: ThemeBiome;
+  name: string;
+  blurb: string;
+}
+
+/** What a model writes. Its id is computed from these bytes and nothing else. */
+export interface IThemeBody {
+  name: string;
+  premise: string;
+  regions: IThemeRegion[];
+  /** New words for the registry, under the tag law. */
+  tags: ITagEntry[];
+  creatures: IThemeCreature[];
+  materials: IThemeMaterial[];
+  stations: IThemeStation[];
+  goods: IThemeGood[];
+  gear: IThemeGear[];
+  consumables: IThemeConsumable[];
+  affixes: IThemeAffix[];
+  abilities: IThemeAbility[];
+  lore: string[];
+}
+
+export interface IThemePack extends IThemeBody {
+  themeId: string;
+  formula: number;
+  /** Who wrote it, on the record, as every batch records. */
+  model: string;
+  writtenAt: number;
+  /** D55: what it cost to write. Metered per call. */
+  usage?: { inputTokens: number; outputTokens: number; usd: number };
+}
+
+// -------------------------------------------------------------------------
+// The structured-output schema: the same vocabulary, so the model cannot drift
+// -------------------------------------------------------------------------
+
+const str = { type: 'string' };
+const strs = { type: 'array', items: str };
+const oneOf = (values: readonly string[]) => ({ type: 'string', enum: [...values] });
+const manyOf = (values: readonly string[]) => ({ type: 'array', items: oneOf(values) });
+const obj = (properties: Record<string, unknown>) => ({
+  type: 'object', additionalProperties: false, required: Object.keys(properties), properties
+});
+const list = (properties: Record<string, unknown>) => ({ type: 'array', items: obj(properties) });
+const count = { type: 'integer' };
+
+export const THEME_SCHEMA: Record<string, unknown> = obj({
+  name: str,
+  premise: str,
+  regions: list({ biome: oneOf(BIOMES), name: str, blurb: str }),
+  tags: list({ tag: str, kind: oneOf(['tool', 'family', 'material', 'trade', 'action', 'descriptive', 'element', 'verb']), meaning: str }),
+  creatures: list({
+    key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), size: oneOf(SIZES), behavior: oneOf(BEHAVIORS),
+    build: oneOf(BUILDS), threat: oneOf(THREATS), pace: oneOf(PACES), habitat: manyOf(BIOMES), innate: strs
+  }),
+  materials: list({
+    key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), form: oneOf(MATERIAL_FORMS), verb: oneOf(HARVEST_VERBS),
+    weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), habitat: manyOf(BIOMES), onShelf: { type: 'boolean' }
+  }),
+  stations: list({ key: str, name: str, blurb: str, tool: strs, material: strs, bill: list({ tag: str, count }) }),
+  goods: list({
+    key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), trade: str, station: str,
+    from: list({ key: str, count }), makes: count
+  }),
+  gear: list({
+    key: str, name: str, blurb: str, kind: oneOf(GEAR_KINDS), rank: oneOf(RANKS), tags: strs, works: strs, carries: str, trigger: str,
+    from: list({ key: str, count }), craftAt: oneOf(['none', 'hands', 'bench'])
+  }),
+  consumables: list({ key: str, name: str, blurb: str, kind: oneOf(CONSUMABLE_KINDS), rank: oneOf(RANKS), tags: strs, casts: str, onShelf: { type: 'boolean' } }),
+  affixes: list({
+    key: str, name: str, type: oneOf(['PREFIX', 'SUFFIX']), allowedTags: strs, biome: str, tier: count,
+    gives: list({ stat: str, band: oneOf(STAT_BANDS), downside: { type: 'boolean' } })
+  }),
+  abilities: list({ key: str, name: str, blurb: str, elements: strs, delivery: oneOf(DELIVERIES), effect: oneOf(EFFECTS), cost: oneOf(COST_BANDS) }),
+  lore: strs
+});

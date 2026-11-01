@@ -24,13 +24,13 @@ import { useIdentityStore } from '../identity/store';
 import {
   IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill, salvageFor, answersTag,
   ownerHasBench, roomProcessBonus, shellBillFor,
-  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, TAG_DEFAULT_MATERIAL
+  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, tagDefaultMaterial
 } from './room';
 import { ITemplate, ITemplateSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from './template';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
-import { genreForWorld } from '../../render/atoms/world';
+import { SHELF } from '../../logic/theme/shelf';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on the latest law
 import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
@@ -124,7 +124,7 @@ export interface IBuildJob {
 const dominantDefId = (defIds: string[]): string => {
   const counts = new Map<string, number>();
   for (const id of defIds) counts.set(id, (counts.get(id) || 0) + 1);
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'crf_plank';
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? tagDefaultMaterial('building');
 };
 
 /** What these consumed goods carried, each addition once. Nothing at all stays absent from the record. */
@@ -761,7 +761,7 @@ export const useHubStore = create<HubState>((set, get) => ({
             room.floorZones = tpl.zones.map(z => ({
               name: z.name,
               tiles: z.tiles.map(t => ({ ...t })),
-              materialDefId: job.template!.sheet.zones[z.name] ?? TAG_DEFAULT_MATERIAL.building,
+              materialDefId: job.template!.sheet.zones[z.name] ?? tagDefaultMaterial('building'),
               ...(job.template!.zonesInherited?.[z.name] ? { inherited: job.template!.zonesInherited[z.name] } : {})
             }));
           }
@@ -1405,10 +1405,9 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.E, 2, 'weapon'),
         // Field tools ride in the weapon shop until lots get their own vendors (Wave 5)
         // The harvesting tools are always on the shelf, or a resource could be out of reach for a day
-        ...generateStock(UniversalRank.F, 3, 'tool', ['tool_axe_field_t1', 'tool_pick_rusty_t1']),
-        ...generateStock(UniversalRank.D, 1, 'tool', ['tool_pick_tempered_t3']),
+        ...generateStock(UniversalRank.F, 3, 'tool', SHELF.tools),
         // Wave 10C (D16/D17): the carrier's shelf — the cart and the pouches
-        ...generateStock(UniversalRank.F, 3, 'tool', ['cart_field_t1', 'pouch_vial_t1', 'pouch_scroll_t1'], 'carrier'),
+        ...generateStock(UniversalRank.F, 3, 'tool', SHELF.carrier, 'carrier'),
         // D27: every tool a web batch added is on the shelf, by its own keyed stream, so no older roll moves
         ...WebBank.current().tools.filter(t => !t.existing).map(tool => {
           const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:web_tool:${tool.id}`);
@@ -1421,12 +1420,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.E, 2, 'armor'),
         // Wave 10C: the slot tree gets its wardrobe — one of each new branch,
         // always on the shelf, and the SHOULDER piece themed to this hub's genre
-        ...generateStock(UniversalRank.F, 10, 'armor', [
-          'arm_legs_padded_t1', 'arm_shoulder_t1', 'eye_glasses_t1', 'acc_necklace_t1',
-          'acc_earring_t1', 'acc_ring_signet_t1', 'quiver_hide_t1', 'bag_satchel_t1', 'belt_canvas_t1', 'arm_boots_generic_t1'
-        ], 'tree').map(l => l.item.universalDefinitionId === 'arm_shoulder_t1'
-          ? { ...l, item: { ...l.item, name: l.item.name.replace('Mantle', LoadoutSystem.themedShoulderName(genreForWorld(hubId).name)) } }
-          : l)
+        ...generateStock(UniversalRank.F, SHELF.wardrobe.length, 'armor', SHELF.wardrobe, 'tree')
       ],
       // Wave 10B: the gallpod joins the shelf — the alchemist sells the ink's bitter half.
       consumableShop: [
@@ -1436,7 +1430,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           const item = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[material.id] as any, rng, { origin: 'PURCHASE' });
           return { id: `listing_web_${material.id}`, item, price: material.shelfPrice!, vendorId: 'vendor_sys', stock: rng.int(3, 10) };
         }),
-        ...['res_berry_bush', 'res_fruit_amber', 'res_fruit_gallpod'].map((defId, i) => {
+        ...SHELF.consumables.map((defId, i) => {
           const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
           const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);
           return {

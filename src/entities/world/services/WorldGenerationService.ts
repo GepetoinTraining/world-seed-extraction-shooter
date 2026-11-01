@@ -2,6 +2,7 @@ import { VectorStore, VectorNamespace } from '../../data/VectorStore';
 import { IGenerationContext, WorldGenerator } from '../WorldGenerator';
 import { IMap } from '../types';
 import { GRID_VERSION } from '../grid';
+import { ContentRegistry } from '../../../logic/theme/ContentRegistry';
 
 export interface IWorldInstance {
   id: string;
@@ -18,31 +19,18 @@ export interface IWorldInstance {
 
 export class WorldGenerationService {
 
-  private static async loadContext(): Promise<IGenerationContext> {
-    console.log('[GEN_SERVICE] Fetching universal definitions...');
-    const mobDocs = await VectorStore.query<{ content: any }>({
-      namespace: VectorNamespace.CONTENT,
-      filter: { 'data.type': 'MOB_DEFINITION' }
-    });
-    const resDocs = await VectorStore.query<{ content: any }>({
-      namespace: VectorNamespace.CONTENT,
-      filter: { 'data.type': 'RESOURCE_DEFINITION' }
-    });
-    const context = {
-      mobDefinitions: mobDocs.map(d => d.data.content),
-      resourceDefinitions: resDocs.map(d => d.data.content)
-    };
-    console.log(`[GEN_SERVICE] Context Loaded: ${context.mobDefinitions.length} Mobs, ${context.resourceDefinitions.length} Resources`);
-    return context;
+  /** A world builds from its own theme and nothing else (D53). */
+  private static loadContext(themeId: string | undefined, difficulty?: string): IGenerationContext {
+    return ContentRegistry.contextFor(themeId ?? ContentRegistry.defaultThemeId(), difficulty);
   }
 
   /**
    * Opens a world, resuming its timer if it is still live. Only its record is
    * stored: its land comes from the seed, and chunks are built as they are reached.
    */
-  static async activateWorld(seed: string, size: number): Promise<IWorldInstance> {
+  static async activateWorld(seed: string, size: number, themeId?: string, difficulty?: string): Promise<IWorldInstance> {
     const instanceId = `inst_g${GRID_VERSION}_${seed}_${size}`;
-    const context = await this.loadContext();
+    const context = this.loadContext(themeId, difficulty);
     const now = Date.now();
 
     const existing = await VectorStore.get<IWorldInstance>(VectorNamespace.WORLDS, instanceId);

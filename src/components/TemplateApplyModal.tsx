@@ -13,7 +13,7 @@ import { HubGenerator } from '../entities/hub/HubGenerator';
 import { ITemplateSheet, defaultSheet, sizeNeedsVerdict, templateBill, zoneFloorCount } from '../entities/hub/template';
 import { ITemplateItem, isTemplateItem } from '../logic/systems/TemplateSystem';
 import { STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
-import { answersTag, materialLabel } from '../entities/hub/room';
+import { answersTag, materialLabel, tagDefaultMaterial } from '../entities/hub/room';
 import { useFeed } from './ui/stores';
 import { inspectItem } from '../render/atoms/inspect';
 import { Button, CardView, Chip, ItemSprite, Modal } from './ui/kit';
@@ -56,7 +56,7 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
   };
   const liveSheet: ITemplateSheet = useMemo(() => {
     if (sheet) return sheet;
-    if (!tpl) return { WALL: 'crf_plank', DOOR: 'crf_plank', WINDOW: 'crf_glass', zones: {} };
+    if (!tpl) return { WALL: tagDefaultMaterial('building'), DOOR: tagDefaultMaterial('wood'), WINDOW: tagDefaultMaterial('glass'), zones: {} };
     const base = defaultSheet(tpl);
     return {
       WALL: held('building', base.WALL),
@@ -136,7 +136,7 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
                 {bill.choices.filter(c => c.cls === 'DOORS').map(c => select('DOORS', c.tag, liveSheet.DOOR, d => pickClass('DOOR', d), c.count))}
                 {bill.choices.filter(c => c.cls === 'WINDOWS').map(c => select('WINDOWS', c.tag, liveSheet.WINDOW, d => pickClass('WINDOW', d), c.count))}
                 {(tpl.zones ?? []).map(z =>
-                  select(`FLOOR: ${z.name}`, 'building', liveSheet.zones[z.name] ?? 'crf_plank', d => pickZone(z.name, d), zoneFloorCount(z))
+                  select(`FLOOR: ${z.name}`, 'building', liveSheet.zones[z.name] ?? tagDefaultMaterial('building'), d => pickZone(z.name, d), zoneFloorCount(z))
                 )}
                 {bill.tagLines.length > 0 && (
                   <span className="ws-dim ws-small">

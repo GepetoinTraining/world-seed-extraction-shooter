@@ -7,6 +7,7 @@ import { IGenerationContext, WorldGenerator } from './WorldGenerator';
 import { GRID_VERSION, chunkOf } from './grid';
 import { DreamingSystem } from './Dreaming';
 import { AffixBank } from '../../logic/content/AffixBank';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 
 export interface IWorldCard {
   id: string;
@@ -31,6 +32,9 @@ export interface IWorldCard {
   packVersion?: number;
   // D27: the web this world's people are read through. Absent = the first version.
   webVersion?: number;
+  /** D53: the theme it is made of. No theme, while themes exist, means it stood on the old tables: retired. */
+  themeId?: string;
+  magicUnlocked?: boolean;
 }
 
 interface WorldState {
@@ -90,9 +94,13 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           deathPenalty: cert.data.rules.deathPenalty ?? 'INVENTORY_LOSS',
           ipCap: cert.data.rules.ipCap,
           ipFloor: cert.data.rules.ipFloor,
-          retired: (cert.data.gridVersion ?? 1) < GRID_VERSION,
+          // D54: a world on the retired tables keeps its record and can no longer be walked
+          retired: (cert.data.gridVersion ?? 1) < GRID_VERSION
+            || (ContentRegistry.list().length > 0 && !ContentRegistry.get(cert.data.rules.themeId)),
           packVersion: cert.data.rules.contentPackVersion,
-          webVersion: cert.data.rules.webVersion
+          webVersion: cert.data.rules.webVersion,
+          themeId: cert.data.rules.themeId,
+          magicUnlocked: cert.data.rules.magicUnlocked
       }));
 
       // Dev World - Using the Service!
@@ -123,7 +131,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
 
       try {
         // --- HOOKED UP: CALL SERVICE ---
-        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size);
+        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty);
 
         generationContext = instance.context;
         const map = instance.mapData;
@@ -131,7 +139,10 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         // Wave 10E (the Dreaming): the world dreams from the bank it was pinned
         // to at mint — or from nothing new, if it predates the banks.
         DreamingSystem.activate(worldCard.seed,
-          worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
+          worldCard.themeId
+            // D49: only once magic was unlocked does a world dream at all
+            ? (worldCard.magicUnlocked ? ContentRegistry.dreamPack(worldCard.themeId) : null)
+            : worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
 
         const isDev = !!worldCard.isDebug;
 

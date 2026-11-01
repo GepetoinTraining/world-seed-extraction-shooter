@@ -19,6 +19,7 @@ import { ItemFactory } from '../item/ItemFactory';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
@@ -88,12 +89,16 @@ export function repairItem(itemId: string): { ok: boolean; text: string } {
   return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
 }
 
+/** The city hears from every world it serves. */
+export const allLore = (): string[] => [...LORE_FRAGMENTS, ...ContentRegistry.list().flatMap(t => t.lore)];
+
 /** The day's rumor: deterministic per hub and day, so the whole bar hears the same one. */
 export function rumorOfTheDay(): string {
   const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
   const day = Math.floor(Date.now() / 86_400_000);
   const rng = Rng.fromKey(`${hubId}:rumor:${day}`);
-  return LORE_FRAGMENTS[rng.int(0, LORE_FRAGMENTS.length)];
+  const lore = allLore();
+  return lore.length > 0 ? lore[rng.int(0, lore.length)] : 'Nobody is saying anything today.';
 }
 
 export const DIALOGUE_HANDLERS: Record<string, Handler> = {

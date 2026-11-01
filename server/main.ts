@@ -15,6 +15,7 @@ import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDbHandler, lazyStore } from './http';
 import { openStore } from './SqlStore';
+import { createIntelligenceHandler, openDoor } from './intelligence';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.env.WS_DATABASE_URL ?? `file:${join(root, 'data/test-claude.db').replace(/\\/g, '/')}`;
@@ -28,10 +29,15 @@ const MIME: Record<string, string> = {
 };
 
 const store = lazyStore(() => openStore(url));
+const intelligence = createIntelligenceHandler(openDoor());
 const handle = createDbHandler(store.get, { allowRemote: process.env.WS_DB_ALLOW_REMOTE === '1' });
 
 const server = createServer((req, res) => {
   const path = (req.url ?? '/').split('?')[0];
+  if (path.startsWith('/api/intelligence')) {
+    void intelligence(req, res, path.slice('/api/intelligence'.length) || '/');
+    return;
+  }
   if (path.startsWith('/api/db')) {
     void handle(req, res, path.slice('/api/db'.length) || '/');
     return;

@@ -19,6 +19,7 @@ import { InventorySystem } from './systems/InventorySystem';
 import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
@@ -1760,7 +1761,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     if (interactionId === 'int_study') {
        set(state => {
-         const targetDefId = entity?.definitionId || 'res_rock_small';
+         const targetDefId = entity?.definitionId ?? '';
          const updatedPlayer = MaterialScience.studyMaterial(targetDefId, state.player);
          return { player: updatedPlayer };
        });
@@ -1869,7 +1870,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
 
       if (entity.container.hasLore) {
-        const fragment = rng.pick(LORE_FRAGMENTS);
+        const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
+        const worldLore = ContentRegistry.lore(worldCard?.themeId);
+        const fragment = rng.pick(worldLore.length > 0 ? worldLore : LORE_FRAGMENTS);
         const piece = {
           ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
           type: ItemType.LORE,

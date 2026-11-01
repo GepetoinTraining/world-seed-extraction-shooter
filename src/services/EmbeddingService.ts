@@ -1,23 +1,17 @@
 /**
  * EMBEDDING SERVICE
- * Converts text into 768-dimensional vectors using Gemini.
+ * A deterministic local hashed bag-of-words embedding: same text, same vector, and
+ * shared words read as similar. Nothing in play needs better today (D46).
  */
-
-// Safe environment variable access for Vite/React
-const API_KEY = (globalThis as any).process?.env?.GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
 
 import { cosineSimilarity } from '../entities/data/similarity';
 
 const LOCAL_EMBED_DIMS = 256;
-let warnedLocalMode = false;
 
 export class EmbeddingService {
 
   /**
    * Get vector embedding for a single text string.
-   * Uses Gemini when VITE_GEMINI_API_KEY is set; otherwise falls back to a
-   * deterministic local hashed bag-of-words embedding so the Vector DB
-   * works fully offline (same text -> same vector, shared words -> similar vectors).
    */
   static async embed(text: string): Promise<number[]> {
     if (!text || !text.trim()) return [];
@@ -25,37 +19,7 @@ export class EmbeddingService {
     // Clean text to save tokens
     const cleanText = text.replace(/\n/g, " ").trim();
 
-    if (!API_KEY) {
-      if (!warnedLocalMode) {
-        console.warn('[EMBED] No VITE_GEMINI_API_KEY set. Using local hash embeddings (offline mode).');
-        warnedLocalMode = true;
-      }
-      return this.localEmbed(cleanText);
-    }
-
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${API_KEY}`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: "models/text-embedding-004",
-          content: { parts: [{ text: cleanText }] }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Gemini Embedding Error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.embedding.values; // Returns [0.123, -0.456, ...]
-
-    } catch (e) {
-      console.error("[EMBED] Gemini failed, falling back to local embedding:", e);
-      return this.localEmbed(cleanText);
-    }
+    return this.localEmbed(cleanText);
   }
 
   /**

@@ -203,6 +203,8 @@ export interface IBankedAffix {
   allowedTags: string[];
   tier: number;
   statModifiers?: Record<string, [number, number]>;
+  /** D53: the world theme this entry belongs to. Absent means it answers every shelf. */
+  themeId?: string;
 }
 
 /** D20: one batched LLM agent run — a run banks NAMES; a later run defines EFFECTS. */
@@ -252,11 +254,12 @@ export type TagKind =
   | 'scope'       // what a banked affix may roll on
   | 'stat'        // an attribute named in a context
   | 'context'     // what sort of moment an action was, and nothing more
-  | 'verb';       // what a held skill lets its holder do
+  | 'verb'        // what a held skill lets its holder do
+  | 'element';    // what a magic is made of. No fixed list: a theme registers its own (Layer 1)
 
 export const TAG_KIND_IDENTITY: Record<TagKind, boolean> = {
   tool: true, family: true, material: true, trade: true, action: true,
-  descriptive: false, magnitude: false, use: false, class: false, scope: false, stat: false, context: false, verb: false
+  descriptive: false, magnitude: false, use: false, class: false, scope: false, stat: false, context: false, element: true, verb: false
 };
 
 /** THE TAG LAW, clause 1: one registry. A tag has a kind and one meaning, forever. */

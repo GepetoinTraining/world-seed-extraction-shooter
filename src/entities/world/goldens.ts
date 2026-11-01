@@ -16,6 +16,7 @@ import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { IMap } from './types';
 import { SECTOR_CHUNKS } from './grid';
+import type { IGenerationContext } from './WorldGenerator';
 
 export interface IGoldenVector {
   seed: string;
@@ -23,11 +24,18 @@ export interface IGoldenVector {
   hash: number; // fnv1a of the canonical map JSON
 }
 
-// Captured for grid version 2: tile, quadrant, chunk and sector, built on demand.
+// The test fixture's land, recaptured when R4 changed what spawns (D54 retired what stood on it).
 export const GOLDEN_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 767337942 },
-  { seed: 'golden-beta', size: 32, hash: 866170117 },
-  { seed: 'dev-sandbox-v4', size: 32, hash: 1226538477 }
+  { seed: 'golden-alpha', size: 16, hash: 2684391673 },
+  { seed: 'golden-beta', size: 32, hash: 3169500984 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 432684866 }
+];
+
+/** The shipped theme's own land. A change here means generation moved: say so, on purpose. */
+export const FIRST_THEME_VECTORS: IGoldenVector[] = [
+  { seed: 'golden-alpha', size: 16, hash: 1807609162 },
+  { seed: 'golden-beta', size: 32, hash: 2942379941 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 717484978 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */
@@ -45,8 +53,7 @@ export function fingerprintMap(map: IMap): number {
 }
 
 /** A world is on demand, so its fingerprint builds a fixed handful of chunks at its center. */
-export function computeGolden(seed: string, size: number): number {
-  const context = staticContext();
+export function computeGolden(seed: string, size: number, context: IGenerationContext = staticContext()): number {
   const map = WorldGenerator.generate(seed, size, context);
   const mid = (size >> 1) * SECTOR_CHUNKS;
   for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) WorldGenerator.chunkAt(map, mid + x, mid + y, context);
@@ -54,11 +61,11 @@ export function computeGolden(seed: string, size: number): number {
 }
 
 /** Boot check: zero mismatches allowed. */
-export function runGoldenCheck(): { ok: boolean; mismatches: string[] } {
+export function runGoldenCheck(context?: IGenerationContext, vectors: IGoldenVector[] = GOLDEN_VECTORS): { ok: boolean; mismatches: string[] } {
   const mismatches: string[] = [];
-  for (const g of GOLDEN_VECTORS) {
+  for (const g of vectors) {
     if (g.hash === 0) continue; // uncaptured slot
-    const actual = computeGolden(g.seed, g.size);
+    const actual = computeGolden(g.seed, g.size, context);
     if (actual !== g.hash) {
       mismatches.push(`${g.seed}/${g.size}: expected ${g.hash}, got ${actual}`);
     }
