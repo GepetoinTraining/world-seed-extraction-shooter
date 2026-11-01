@@ -27,7 +27,7 @@ import { CartOverlay } from '../entities/world/CartOverlay';
 import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { BASE_CHANNEL_MS, StatSystem } from '../logic/systems/StatSystem';
 import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
@@ -150,7 +150,7 @@ const RankMomentView: React.FC = () => {
         <div className="ws-dim ws-small" style={{ margin: '4px 0 8px' }}>
           The rank is not a measure of power. It is a measure of how much the world believes in you.
         </div>
-        <Chip tone="signal">+{moment.points} ATTRIBUTE POINTS — SPEND THEM IN THE BANK</Chip>
+        <Chip tone="signal">LEVELS BEGIN AGAIN. WHAT YOU BUILT STAYS.</Chip>
         <div style={{ marginTop: 10 }}>
           <Button tone="quiet" onClick={clear} autoFocus>CONTINUE</Button>
         </div>
@@ -167,7 +167,7 @@ const OCTANTS = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
 
 /** What the interact key says it will do, one short line. */
 const promptFor = (pick: InteractPick | 'EXIT'): string => {
-  if (pick === 'EXIT') return 'EXTRACT (5s)';
+  if (pick === 'EXIT') return `EXTRACT (${(StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes) / 1000).toFixed(1)}s)`;
   if (pick.primary) return `${pick.primary.label.toUpperCase()}${pick.primary.energyCost > 0 ? ` · ${pick.primary.energyCost} energy` : ''}`;
   return `${pick.options.length} WAYS TO ACT`;
 };
@@ -294,7 +294,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   const castFromFocus = (cast: NonNullable<IPlayerShape['activeCast']>, now: number, origin: { x: number; z: number }, angle: number) => {
     const player = usePlayerStore.getState().player;
-    const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
+    const rank = ProgressionSystem.rankOf(player);
     const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements) : ContentRegistry.ability(cast.id);
     if (!ability) return;
     const can = WeaveSystem.canCast(player, ability, rank);
@@ -303,7 +303,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       energyToldRef.current = true;
       return;
     }
-    const receipt = EffectSystem.resolve(ability, { rank, power: (player.attributes.focus ?? 0) * 0.02 }, SessionJournal.rollKey('cast', String(shotCountRef.current++)));
+    const receipt = EffectSystem.resolve(ability, { rank, power: StatSystem.castPower(player.attributes) }, SessionJournal.rollKey('cast', String(shotCountRef.current++)));
     usePlayerStore.setState(s => {
       let next = WeaveSystem.spend(s.player, ability, rank);
       if (cast.kind === 'weave') next = RestSystem.queueWeave(next, cast.elements);
@@ -321,7 +321,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const mode = fireMode(weapon);
     const gate = fireGate({
       held: true, now, lastShot: lastShotRef.current,
-      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment), mode,
+      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes), mode,
       energy: st.player.currentSession?.energy ?? 0
     });
     if (gate === 'NO_ENERGY') {
@@ -330,7 +330,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       return;
     }
     if (gate !== 'FIRE') return;
-    useHotbar.getState().fired(slot, now, CombatMath.fireCooldownMs(weapon, st.player.equipment));
+    useHotbar.getState().fired(slot, now, CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes));
 
     // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
     let angle: number;
@@ -344,7 +344,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
     }
     // Line 77: keyed by the session's own count of shots, so a run replays the same
-    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)));
+    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes);
 
     if (mode === 'MELEE') {
       // Swing: a short arc resolved by CombatSystem
@@ -383,11 +383,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Wave 10C (D16): towed-cart follow cadence
   const lastCartSync = useRef<number>(0);
 
-  const CHANNEL_MS = 5000;
+  const channelMs = () => StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes);
   // Line 124: however the channel ends, its bar ends with it
   useEffect(() => {
     if (!channeling || !channelRef.current) return;
-    useWaits.getState().begin({ id: 'channel', label: 'CHANNEL', startedAt: channelRef.current, until: channelRef.current + CHANNEL_MS });
+    useWaits.getState().begin({ id: 'channel', label: 'CHANNEL', startedAt: channelRef.current, until: channelRef.current + channelMs() });
     return () => useWaits.getState().end('channel');
   }, [channeling]);
   const BEACON_RANGE = 60; // px
@@ -440,7 +440,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     haul = [...haul, ...cartHaul, ...wornNewcomers];
 
     const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
-    const rate = card?.extractionTaxRate ?? 0.05;
+    const rate = StatSystem.levyRate(card?.extractionTaxRate ?? 0.05, st.player.attributes);
     const tax = Math.floor(haulValue * rate);
     const startedAt = Date.now();
 
@@ -727,7 +727,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
         const walker = usePlayerStore.getState().player;
-        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
+        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment, walker.attributes) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
 
@@ -861,7 +861,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const ability = ContentRegistry.ability(scroll);
         if (ability) {
           const facing = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
-          applyPlayerReceipt(EffectSystem.resolve(ability, { rank: ProgressionSystem.rankFromXp(usePlayerStore.getState().player.rankXp ?? 0) }, SessionJournal.rollKey('scroll', String(shotCountRef.current++))), now, { x: playerPos.x, z: playerPos.z }, facing);
+          applyPlayerReceipt(EffectSystem.resolve(ability, { rank: ProgressionSystem.rankOf(usePlayerStore.getState().player) }, SessionJournal.rollKey('scroll', String(shotCountRef.current++))), now, { x: playerPos.x, z: playerPos.z }, facing);
           feed(`It reads itself aloud: ${ability.name}.`, 'signal');
         }
       }
@@ -885,7 +885,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
       const liveEquipment = usePlayerStore.getState().player.equipment;
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.total(liveEquipment, 'noise_reduction'), light: lightRef.current });
+      const liveAttributes = usePlayerStore.getState().player.attributes;
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current });
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
@@ -963,7 +964,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           if ((triggerReadyRef.current[abilityId] ?? 0) > now) continue;
           const ability = ContentRegistry.ability(abilityId);
           if (!ability) continue;
-          const receipt = EffectSystem.resolve(ability, { rank: ProgressionSystem.rankFromXp(live.rankXp ?? 0) }, SessionJournal.rollKey('trigger', String(shotCountRef.current++)));
+          const receipt = EffectSystem.resolve(ability, { rank: ProgressionSystem.rankOf(live) }, SessionJournal.rollKey('trigger', String(shotCountRef.current++)));
           triggerReadyRef.current[abilityId] = now + receipt.cooldownMs;
           applyPlayerReceipt(receipt, now, { x: playerPos.x, z: playerPos.z }, 0);
         }
@@ -971,8 +972,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (combatResult.events.some(e => e.type === 'HIT')) fired('on_hit');
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events);
-      if (rewards.rankUp) {
-        useRankMoment.getState().show({ from: rewards.rankUp.from, to: rewards.rankUp.to, points: rewards.rankUp.points, at: now });
+      if (rewards.levelUp) {
+        feed(`LEVEL ${rewards.levelUp.to}. +${rewards.levelUp.points} attribute point${rewards.levelUp.points === 1 ? '' : 's'}. Spend on the sheet.`, 'proof');
       }
       if (effectsRef.current.length > 0) {
         effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);
@@ -1026,7 +1027,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const clock = StatusClock.tick(effects, now);
       effects = clock.statuses;
       landedStatuses.forEach(plan => { effects = StatusClock.add(effects, plan, now); });
-      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)));
+      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)), liveAttributes);
       const warded = StatusClock.absorb(effects, hit.damage + clock.damage);
       effects = warded.statuses;
       const totalDamage = warded.damage;
@@ -1065,7 +1066,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
 
       // Wave 2.5: channel completion
-      if (channelRef.current && now - channelRef.current >= CHANNEL_MS) {
+      if (channelRef.current && now - channelRef.current >= channelMs()) {
         channelRef.current = null;
         setChanneling(false);
         completeExtraction();
@@ -1266,7 +1267,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const map = useWorldStore.getState().currentMap;
     const pos = usePlayerStore.getState().player.currentSession?.position;
     if (!map || !pos) return null;
-    const sight = StatSystem.sightPx(usePlayerStore.getState().player.equipment);
+    const sight = StatSystem.sightPx(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes);
     const halfW = Math.max(TILE_PX, window.innerWidth / 2 + sight), halfH = Math.max(TILE_PX, window.innerHeight / 2 + sight);
     const qMinX = quadrantOf(pos.x - halfW), qMaxX = quadrantOf(pos.x + halfW);
     const qMinY = quadrantOf(pos.z - halfH), qMaxY = quadrantOf(pos.z + halfH);
@@ -1319,7 +1320,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const exitAngle = exit ? Math.atan2(exit.y - playerPos.z, exit.x - playerPos.x) : 0;
   const exitOctant = exit ? OCTANTS[((Math.round(exitAngle / (Math.PI / 4)) % 8) + 8) % 8] : '';
 
-  const rank = ProgressionSystem.rankFromXp(usePlayerStore.getState().player.rankXp ?? 0);
+  const rank = ProgressionSystem.rankOf(usePlayerStore.getState().player);
+  const level = ProgressionSystem.levelOf(usePlayerStore.getState().player);
   const loadRatio = usePlayerStore.getState().maxWeight > 0
     ? usePlayerStore.getState().currentWeight / usePlayerStore.getState().maxWeight : 0;
 
@@ -1352,7 +1354,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           </Panel>
         ) : nearBeacon ? (
           <Button tone="proof" primary onClick={beginChannel}>
-            <Kbd>E</Kbd> EXTRACT (5s)
+            <Kbd>E</Kbd> EXTRACT ({(StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes) / 1000).toFixed(1)}s)
           </Button>
         ) : (
           <Chip title="Distance and heading to the nearest exit beacon">
@@ -1394,14 +1396,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
-          <Chip title={`Rank ${rank}`}><RankMark rank={rank} scale={2} />{rank}</Chip>
+          <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
+          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}</Chip>
           <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>
           </span>
         </div>
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
-        <Bar label="ENERGY" value={session.energy} max={StatSystem.maxEnergy(player.attributes, player.equipment)} tone="proof" text={`${Math.floor(session.energy)}`} />
+        <Bar label="ENERGY" value={session.energy} max={StatSystem.maxEnergyOf(player)} tone="proof" text={`${Math.floor(session.energy)}`} />
         <Bar label="LOAD" value={Math.round(loadRatio * 100)} max={100} tone={loadRatio > 0.8 ? 'loss' : 'signal'} text={loadRatio > 0.8 ? 'SLOWED' : `${Math.round(loadRatio * 100)}%`} />
         <BodyClocks />
         {session.towingCartId && (

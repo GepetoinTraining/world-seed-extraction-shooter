@@ -809,7 +809,7 @@ describe('line 62: the skill itself reveals it, through play', () => {
 
   it('honest repetition opens the common tier and nothing above it, in the one ledger', async () => {
     const lotId = await rawWorkshop();
-    for (let i = 0; i < 12 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
+    for (let i = 0; i < 30 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
       await runRecipe(lotId, 'recipe_plank', `rep:${i}`);
     }
     expect(player().bank.universalSkills['skill_carpentry'].level).toBe(2);
@@ -820,7 +820,7 @@ describe('line 62: the skill itself reveals it, through play', () => {
 
   it('a skill only knows its own trade', async () => {
     const lotId = await rawWorkshop();
-    for (let i = 0; i < 12 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
+    for (let i = 0; i < 30 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
       await runRecipe(lotId, 'recipe_plank', `own:${i}`);
     }
     for (const e of ProcessSystem.poolFor(AffixBank.current(), 'smelting', UniversalRank.S, Rarity.LEGENDARY)) {

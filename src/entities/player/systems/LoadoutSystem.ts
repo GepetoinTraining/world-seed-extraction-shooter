@@ -55,13 +55,12 @@ export class LoadoutSystem {
   /**
    * The pace what you wear gives you. `movement_speed` on any worn piece adds up
    * (0.10 is ten percent), an unstudied one acting like any other. Load, the tow
-   * bar and the ground scale this afterward.
+   * bar and the ground scale this afterward. Agility adds in the same way.
    */
-  static walkTilesPerSecond(equipment?: IEquipmentState): number {
-    if (!equipment) return BASE_WALK_TILES_PER_S;
-    const worn = new Set(Object.values(equipment.slots));
-    let bonus = 0;
-    for (const item of equipment.items) {
+  static walkTilesPerSecond(equipment?: IEquipmentState, attributes?: IAttributes): number {
+    const worn = new Set(Object.values(equipment?.slots ?? {}));
+    let bonus = StatSystem.paceBonus(attributes);
+    for (const item of equipment?.items ?? []) {
       if (!worn.has(item.id)) continue;
       const stats = item.stats ?? {};
       if (stats.maxDurability && stats.durability === 0) continue; // broken gear does nothing

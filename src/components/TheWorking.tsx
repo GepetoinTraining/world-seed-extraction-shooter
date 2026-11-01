@@ -26,7 +26,7 @@ export const TheWorking: React.FC = () => {
   const { player } = usePlayerStore();
   const world = useWorldStore();
   const [picked, setPicked] = useState<string[]>([]);
-  const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
+  const rank = ProgressionSystem.rankOf(player);
 
   const card = world.availableWorlds.find(w => w.id === world.activeWorldId);
   const elements = useMemo(() => {

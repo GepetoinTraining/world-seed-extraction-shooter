@@ -88,7 +88,7 @@ export class StudySystem {
   static identifyAsk(player: IPlayer, item: IItem): { cost: number; seconds: number } {
     const level = item.isIdentified === false ? this.bestEye(player) : this.identifyLevel(player, item);
     // Line 77: glasses shorten the clock. Skill and gear make it quick, never instant.
-    const eyes = 1 + Math.max(0, StatSystem.total(player.equipment, 'field_analysis_speed'));
+    const eyes = 1 + Math.max(0, StatSystem.total(player.equipment, 'field_analysis_speed') + StatSystem.signalEyes(player.attributes));
     return {
       cost: level < 1 ? Math.ceil(IDENTIFY_ENERGY * WINGING_FACTOR) : IDENTIFY_ENERGY,
       seconds: Math.max(IDENTIFY_FLOOR_SECONDS, Math.round(this.identifySeconds(level) / eyes))

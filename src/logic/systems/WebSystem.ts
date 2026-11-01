@@ -23,7 +23,7 @@
 import {
   IHubWeb, IItem, IPlayer, ISkillProgress, ISkillState, IWebCredit, IWebPack, IWebStation, UniversalRank
 } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
+import { ProgressionSystem, SKILL_TIME_FACTOR } from '../../entities/player/systems/ProgressionSystem';
 import { RESOURCE_DEFINITIONS, BIOME_RESOURCES, ResourceDef } from '../../entities/item/data/resourceDefinitions';
 import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
 import { AffixBank } from '../content/AffixBank';
@@ -37,10 +37,12 @@ import { ProcessFamily, ProcessSystem } from './ProcessSystem';
 // TUNABLE, and Wave 12's to balance. Structure numbers that never render.
 // ---------------------------------------------------------------------------
 
-/** Donor's numbers. Rising gaps, so later rungs cost more. */
+export { SKILL_TIME_FACTOR };
+
+/** Donor's numbers, stretched by D84. Rising gaps, so later rungs cost more. */
 export const MASTERY_RUNGS = ['named', 'handled', 'graded', 'attuned'] as const;
 export type MasteryRung = typeof MASTERY_RUNGS[number];
-export const RUNG_XP = [0, 60, 180, 420] as const;
+export const RUNG_XP: readonly number[] = [0, 60, 180, 420].map(xp => xp * SKILL_TIME_FACTOR);
 
 const WINGING_PENALTY = 5;
 const WINGING_ENERGY_FACTOR = 1.5;
@@ -236,7 +238,7 @@ export class WebSystem {
 
   /** The weight it takes to mint: harder material, more work. Never shown; the fill is. */
   static emergenceDC(rank: number): number {
-    return 10 + Math.max(0, rank) * 10;
+    return (10 + Math.max(0, rank) * 10) * SKILL_TIME_FACTOR;
   }
 
   private static attemptRoll(playerId: string, id: string, attempts: number): number {
@@ -277,7 +279,8 @@ export class WebSystem {
   static emerges(progress: ISkillProgress, playerId: string): boolean {
     const dc = this.emergenceDC(progress.rank);
     if (progress.weight < dc) return false;
-    const chance = Math.min(95, 20 + (progress.weight - dc));
+    // D84: stretched in time, so both the climb and each roll's chance read the factor
+    const chance = Math.min(95, (20 + (progress.weight - dc) / SKILL_TIME_FACTOR) / SKILL_TIME_FACTOR);
     return Rng.fromKey(`${playerId}:${progress.id}:emerge:${progress.attempts}`).next() * 100 < chance;
   }
 

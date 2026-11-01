@@ -208,7 +208,7 @@ export const useReceipt = create<ReceiptState>(set => ({
 
 // --- THE RANK MOMENT (Wave 9.5): a rank-up is seen, not logged ---
 
-export interface IRankMoment { from: string; to: string; points: number; at: number }
+export interface IRankMoment { from: string; to: string; at: number }
 
 interface RankMomentState {
   moment: IRankMoment | null;

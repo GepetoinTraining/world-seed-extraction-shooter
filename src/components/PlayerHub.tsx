@@ -7,7 +7,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { POINTS_PER_RANK_UP, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { POINTS_PER_LEVEL, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { StatSystem } from '../logic/systems/StatSystem';
 import { InventorySystem } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
@@ -116,9 +117,8 @@ const AgentTab: React.FC = () => {
   const { player, spendAttributePoint, toggleCarry, currentWeight, maxWeight, recalcWeight } = usePlayerStore();
   useEffect(() => { recalcWeight(); }, [recalcWeight]);
 
-  const rankXp = player.rankXp ?? 0;
-  const rank = ProgressionSystem.rankFromXp(rankXp);
-  const next = ProgressionSystem.xpToNextRank(rankXp);
+  const rank = ProgressionSystem.rankOf(player);
+  const progress = ProgressionSystem.levelProgress(player);
   const points = player.attributePoints ?? 0;
   const stash = player.bank.stashTabs[0]?.items || [];
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
@@ -199,11 +199,9 @@ const AgentTab: React.FC = () => {
           <span className="ws-bright">RANK {rank}</span>
           {points > 0 && <Chip tone="signal">{points} POINT{points === 1 ? '' : 'S'} TO SPEND</Chip>}
         </div>
-        {next
-          ? <Bar label="RANK" value={rankXp - next.floor} max={(rankXp - next.floor) + next.needed} tone="signal" text={`${next.needed.toLocaleString()} XP to ${next.next}`} />
-          : <div className="ws-dim ws-small">The track ends here. The world believes in you completely.</div>}
+        <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Kills feed the rank. Each rank grants {POINTS_PER_RANK_UP} attribute points.
+          Kills feed the level. Each level grants {POINTS_PER_LEVEL} attribute point. The guild sets the rank; the level begins again there, and what you built stays.
         </div>
       </Panel>
       <HandsPanel />
@@ -216,7 +214,7 @@ const AgentTab: React.FC = () => {
               const base = player.baseAttributes[attr] || 0;
               const diff = val - base;
               return (
-                <div key={attr} className="ws-row" style={{ padding: '2px 0' }}>
+                <div key={attr} className="ws-row" title={StatSystem.attributeWork(attr, player.attributes)} style={{ padding: '2px 0' }}>
                   <span style={{ textTransform: 'capitalize' }}>{attr}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {diff !== 0 && <span className={diff > 0 ? 'ws-signal ws-small' : 'ws-loss ws-small'}>{diff > 0 ? '+' : ''}{diff}</span>}
@@ -426,10 +424,10 @@ export const StashTab: React.FC = () => {
               <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'space-between' }}>
                 <ArmedButton
                   tone="proof"
-                  confirmLabel={`SELL FOR ${Math.max(1, Math.floor((selected.value || 1) * 0.6))}G: SURE?`}
+                  confirmLabel={`SELL FOR ${StatSystem.vendorOffer(selected.value, player.attributes)}G: SURE?`}
                   onConfirm={() => { void sellToVendor(selected.id); setSelectedId(null); }}
                 >
-                  SELL {Math.max(1, Math.floor((selected.value || 1) * 0.6))}G
+                  SELL {StatSystem.vendorOffer(selected.value, player.attributes)}G
                 </ArmedButton>
                 <ArmedButton
                   tone="loss"

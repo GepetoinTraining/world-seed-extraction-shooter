@@ -23,6 +23,7 @@ import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
 import { RestDoor } from '../../logic/systems/RestDoor';
+import { StatSystem } from '../../logic/systems/StatSystem';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
@@ -56,11 +57,11 @@ function studyOvernight(ids: string[]) {
 }
 
 /** Repair cost: a quarter of the item's value, scaled by what's missing. */
-export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }): number {
+export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }, attributes = usePlayerStore.getState().player.attributes): number {
   const { durability, maxDurability } = item.stats;
   if (durability === undefined || !maxDurability || durability >= maxDurability) return 0;
   const missing = (maxDurability - durability) / maxDurability;
-  return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing));
+  return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing * StatSystem.repairFactor(attributes)));
 }
 
 /** The one door to what can be repaired: the stash and the body (R6). */

@@ -93,7 +93,7 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
   const { player } = usePlayerStore();
   const { view, setView } = useAppView();
   const toggleConsole = useLogStore(s => s.toggle);
-  const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
+  const rank = ProgressionSystem.rankOf(player);
   const [systemOpen, setSystemOpen] = useState(false);
   const sheetOpen = useSheet(s => s.open);
   const toggleSheet = useSheet(s => s.toggle);
@@ -129,7 +129,7 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
 
       <RestChip rest={player.rest} />
       <DreamChip out={!!player.pendingDream} filedAt={player.pendingDream?.filedAt} />
-      <Chip title={`Rank ${rank} — kills feed it`}><RankMark rank={rank} scale={2} /> {rank}</Chip>
+      <Chip title={`Rank ${rank}, from the guild. Level ${ProgressionSystem.levelOf(player)}, from experience; it begins again at each rank.`}><RankMark rank={rank} scale={2} /> {rank} · LV {ProgressionSystem.levelOf(player)}</Chip>
       <Chip tone="proof" title="Gold on the ledger">{player.bank.gold.toLocaleString()} G</Chip>
       <Chip title={player.id}>{player.username}</Chip>
       <Button tone="quiet" onClick={() => setSystemOpen(true)}>SYSTEM</Button>

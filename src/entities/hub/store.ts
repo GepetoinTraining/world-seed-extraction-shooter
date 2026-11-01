@@ -39,6 +39,7 @@ import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
 import { PROCESS_FAMILIES, PROCESS_SKILL_XP_PER_JOB, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { WebBank } from '../../logic/content/WebBank'; // D27
 import { WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the technology web
+import { StatSystem } from '../../logic/systems/StatSystem';
 import { useFeed } from '../../components/ui/stores';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
@@ -494,7 +495,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
     const held = usePlayerStore.getState().player;
     const factor = WebSystem.clockFactor(held, WebSystem.pairOfJob(recipeId, inputs, held.bank.universalSkills));
-    return Math.max(1, Math.round(labor * (1 - speedPct / 100) * factor));
+    return Math.max(1, Math.round(labor * (1 - speedPct / 100) * factor * StatSystem.craftClockFactor(held.attributes)));
   },
 
   restAndCredit: async (kind) => {
@@ -1203,7 +1204,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
     if (!item) return null;
 
-    const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
+    const offer = StatSystem.vendorOffer(item.value, p.attributes);
     const treasuryGold = await Treasury.balance(activeHubId);
     if (treasuryGold < offer) {
       console.log(`[VENDOR] The hub treasury cannot cover ${offer}G. Nothing moves.`);
@@ -1338,7 +1339,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       const lotRoom = get().rooms[lot.id];
       const mono = lotRoom ? monoMaterialOf(lotRoom) : null;
       // D26: and what is worked into the walls and the furniture acts here, studied or not.
-      const discount = ((mono ? setBonusFor(mono)?.upkeepDiscountPct : 0) || 0) + (lotRoom ? roomProcessBonus(lotRoom).upkeepDiscountPct : 0);
+      const discount = ((mono ? setBonusFor(mono)?.upkeepDiscountPct : 0) || 0) + (lotRoom ? roomProcessBonus(lotRoom).upkeepDiscountPct : 0)
+        + (lot.ownerId === p.id ? StatSystem.upkeepDiscountPct(p.attributes) : 0);
       if (discount !== 0) rate = Math.max(1, Math.round(rate * (1 - discount / 100)));
       const cost = rate * owed;
       const isLocal = lot.ownerId === p.id;
@@ -1503,7 +1505,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     // Wave 2 (Wave 5 plumbing, early): gold actually moves, item actually lands
     const playerStore = usePlayerStore.getState();
-    const price = Math.ceil(listing.price);
+    const price = Math.ceil(StatSystem.shopPrice(listing.price, playerStore.player.attributes));
     if (playerStore.player.bank.gold < price) return null;
 
     // Wave 10D: each unit sold is its OWN mint, deterministically keyed by the
