@@ -97,6 +97,11 @@ export class Director {
     return { ...this.evolve(record), generation };
   }
 
+  /** The chance one body of this kind carries a trait, this generation. Can pass 1 (D84: to be read, then tuned). */
+  static traitChance(record: IDirectorRecord, definitionId: string): number {
+    return (BASE_TRAIT_CHANCE + PER_GENERATION * record.generation) * (record.weights[definitionId] ?? 1);
+  }
+
   /**
    * What this one body has become, this generation. Read at chunk build. Bodies stand
    * where they stood for now; once creatures move (D66), only the land is fixed.
@@ -107,8 +112,7 @@ export class Director {
   ): IMobVariant {
     if (!record || record.generation === 0) return NONE;
     const rng = Rng.fromKey(`director:${seed}:${record.generation}:${entityId}`);
-    const weight = record.weights[definitionId] ?? 1;
-    const chance = (BASE_TRAIT_CHANCE + PER_GENERATION * record.generation) * weight;
+    const chance = this.traitChance(record, definitionId);
 
     const traits: IMobTrait[] = [];
     const affixes = [...(pool?.affixes ?? [])].sort((a, b) => fnv1a(a.id) - fnv1a(b.id));
