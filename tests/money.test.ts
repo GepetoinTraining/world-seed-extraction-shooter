@@ -317,7 +317,7 @@ describe('Pedro: "each one of the buildings in the city center need to have an u
       vendors: { ...s.vendors, keeper_x: { ...VendorSystem.fresh('keeper_x', 'GENERAL', 1), held: [piece(oak().id, 100_000)], listed: [piece(oak().id, 200_000)], parts: [piece(oak().id, 400_000)] } },
       rooms: { ...s.rooms, [lotId]: { placements: [{ item: piece(oak().id, 1_000_000) }] } as never }
     }));
-    expect(hub().runningBook().marketCap).toBe(1_711_110);
+    expect(hub().runningBook().marketCap).toBe(1_311_110);
     useHubStore.setState({ rooms: {} }); // a fresh hub's load does not clear them
   });
 

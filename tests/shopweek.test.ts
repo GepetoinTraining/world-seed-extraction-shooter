@@ -34,13 +34,13 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 }));
 
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
-import { useHubStore, worldDay } from '../src/entities/hub/store';
+import { priceOfListing, useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Treasury } from '../src/logic/economy/Treasury';
 import { Ledger } from '../src/logic/ledger/Ledger';
-import { ShopWeek } from '../src/logic/economy/ShopWeek';
+import { DEAL_DAYS, ShopWeek } from '../src/logic/economy/ShopWeek';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
 import { WebSystem } from '../src/logic/systems/WebSystem';
 import { StatSystem } from '../src/logic/systems/StatSystem';
@@ -118,7 +118,8 @@ describe('"that difference between expected win and component is the weekly cost
     const tools = { recipes: [], salvage: () => [thing({ value: 30 })], make: () => [] };
     const piece = thing({ id: 'p', value: 100 });
     const start = { ...VendorSystem.fresh('k', 'GENERAL', 100), listed: [piece], since: { p: 100 } };
-    const { record } = VendorSystem.work(start, 107, 0, tools);
+    // Past its deal: it went into the bin on day 107
+    const { record } = VendorSystem.work(start, 107 + DEAL_DAYS, 0, tools);
     expect(record.book.loss).toBe(100 * 1.5 - 30);
   });
 
@@ -134,14 +135,22 @@ describe('"that difference between expected win and component is the weekly cost
     expect(KEEPERS.every(k => (hub().vendors[k]?.book?.loss ?? 0) === 0)).toBe(true);
   });
 
-  it('at the week\'s close what stayed on the shelf comes apart, its parts are the keeper\'s, and the loss is a signed cost', async () => {
-    const unsold = shelves().reduce((s, l) => s + l.stock, 0);
-    expect(unsold).toBeGreaterThan(0);
+  it('at the close what stayed on the shelf goes on a deal, and nothing is lost yet', async () => {
+    expect(shelves().reduce((s, l) => s + l.stock, 0)).toBeGreaterThan(0);
     await hub().resolveRunning(nextWeek());
-    expect(KEEPERS.some(k => (hub().vendors[k]?.parts.length ?? 0) > 0)).toBe(true);
+    expect(KEEPERS.some(k => hub().vendors[k].bin.length > 0)).toBe(true);
     const rows = (await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK');
-    expect(rows.length).toBe(1);
-    expect(rows[0].data.loss).toBeGreaterThan(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].data.loss).toBe(0);
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('when the deal runs out it comes apart, its parts are the keeper\'s, and the next close carries the loss on a signed row', async () => {
+    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 2);
+    expect(KEEPERS.some(k => hub().vendors[k].parts.length > 0)).toBe(true);
+    const rows = (await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK');
+    expect(rows).toHaveLength(2);
+    expect(rows[1].data.loss).toBeGreaterThan(0);
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
@@ -177,14 +186,14 @@ describe('"then the guild balances the shops budget out for the cost"', () => {
   it('coin moves on one row, from the treasury to keepers\' wallets, and the audit adds it up', async () => {
     const treasury = await Treasury.balance(HUB);
     const wallets = { ...hub().wallets };
-    const floor = hub().runningBook().floorPerDay * ShopWeek.WEEK_DAYS;
-    await hub().resolveRunning(nextWeek());
-    const row = (await rowsOf('GOLD_DELTA')).find(r => r.data.reason === 'SHOP_WEEK')!;
-    const paid = row.data.shops.reduce((sum: number, s: any) => sum + s.toKeeper + s.pay, 0);
+    const floor = hub().runningBook().floorPerDay * ShopWeek.WEEK_DAYS * 2;
+    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 2);
+    const rows = (await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK');
+    const paid = rows.flatMap(r => r.data.shops).reduce((sum: number, s: any) => sum + s.toKeeper + s.pay, 0);
     expect(paid).toBeGreaterThan(0);
     const prints = (await rowsOf('PRINT')).reduce((sum, p) => sum + p.data.amount, 0);
     expect(await Treasury.balance(HUB)).toBe(treasury + prints - floor - paid);
-    for (const shop of row.data.shops) expect(hub().wallets[shop.npcId]).toBeGreaterThanOrEqual(wallets[shop.npcId] + shop.toKeeper);
+    for (const shop of rows[1].data.shops) expect(hub().wallets[shop.npcId]).toBeGreaterThanOrEqual(wallets[shop.npcId] + shop.toKeeper);
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
@@ -247,11 +256,11 @@ describe('"restocking is based on items sold and what stock is needed ... + new 
     expect(VendorSystem.shelf(VendorSystem.fold(sold, 3), [line], 3, 0)[0].stock).toBe(4);
   });
 
-  it('with nobody coming the shelf falls to its attempts, so the second week costs less', async () => {
-    await hub().resolveRunning(nextWeek());
+  it('with nobody coming the shelf falls to its attempts, so the next loss is smaller', async () => {
+    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 2);
     const first = hub().guild.lastWeek!.shops.reduce((s, x) => s + x.loss, 0);
     expect(shelves().filter(l => !l.held).every(l => l.stock <= 2)).toBe(true);
-    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 2);
+    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 3);
     const second = hub().guild.lastWeek!.shops.reduce((s, x) => s + x.loss, 0);
     expect(second).toBeLessThan(first);
     expect(second).toBeGreaterThan(0);
@@ -431,5 +440,142 @@ describe('the Hall shows the week', () => {
 
   it('the counter window shows the offer it will really pay', () => {
     expect(readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8')).toMatch(/offerFor/);
+  });
+});
+
+describe('"a bargain bin at 40% the item but higher than the component timed deals"', () => {
+  const noRecipes = (worth: number) => ({ recipes: [], salvage: (item: IItem) => [thing({ id: `${item.id}_part`, value: worth })], make: () => [] });
+  const start = (over = {}) => ({ ...VendorSystem.fresh('k', 'GENERAL', 100), listed: [thing({ id: 'p', value: 100 })], since: { p: 100 }, ...over });
+
+  it('it asks 40% of the item', () => {
+    expect(ShopWeek.binPrice(100, 10)).toBe(40);
+  });
+
+  it('and always more than its components', () => {
+    expect(ShopWeek.binPrice(100, 50)).toBe(51);
+    expect(ShopWeek.binPrice(100, 40)).toBe(41);
+    expect(ShopWeek.binPrice(0, 0)).toBe(1);
+  });
+
+  it('a piece whose time ran out goes on a deal, not straight to salvage, and costs nothing yet', () => {
+    const { record } = VendorSystem.work(start(), 107, 0, noRecipes(30));
+    expect(record.listed).toHaveLength(0);
+    expect(record.parts).toHaveLength(0);
+    expect(record.bin[0]).toMatchObject({ price: 40, worth: 30, until: 107 + DEAL_DAYS });
+    expect(record.book.loss).toBe(0);
+  });
+
+  it('the shelf shows it at the deal\'s price, in the bin, until the deal ends', () => {
+    const { record } = VendorSystem.work(start(), 107, 0, noRecipes(30));
+    const row = VendorSystem.shelf(record, [], 107, 0).find(l => l.deal)!;
+    expect(row).toMatchObject({ price: 40, stock: 1, held: true, deal: { until: 107 + DEAL_DAYS } });
+    expect(VendorSystem.shelf(record, [], 107 + DEAL_DAYS + 1, 0).some(l => l.deal)).toBe(false);
+  });
+
+  it('a deal keys its salvage as the piece\'s own, so the bin\'s floor and what comes apart agree', () => {
+    const seen: string[] = [];
+    const tools = { recipes: [], salvage: (item: IItem, key: string) => { seen.push(key); return [thing({ value: 30 })]; }, make: () => [] };
+    VendorSystem.work(start(), 107 + DEAL_DAYS, 0, tools);
+    expect(new Set(seen)).toEqual(new Set(['k:salvage:p']));
+  });
+
+  it('when the deal ends it comes apart, and only then is there a cost', () => {
+    const { record } = VendorSystem.work(start(), 107 + DEAL_DAYS, 0, noRecipes(30));
+    expect(record.bin).toHaveLength(0);
+    expect(record.parts.map(p => p.id)).toEqual(['p_part']);
+    expect(record.book.loss).toBe(120);
+  });
+
+  it('found by playing: what is worth more apart than its asking price is no bargain, so it comes apart at once, at no cost', () => {
+    const { record } = VendorSystem.work(start(), 107, 0, noRecipes(200));
+    expect(record.bin).toHaveLength(0);
+    expect(record.parts.map(p => p.id)).toEqual(['p_part']);
+    expect(record.book.loss).toBe(0);
+  });
+
+  it('found by playing: no deal in a real city asks more than the shelf did', async () => {
+    await hub().resolveRunning(nextWeek());
+    const pieces = KEEPERS.flatMap(k => hub().vendors[k].bin);
+    expect(pieces.length).toBeGreaterThan(0);
+    for (const piece of pieces) expect(piece.price, piece.item.name).toBeLessThan(piece.ask);
+  });
+
+  it('what will not come apart is not binned, and stays on the shelf', () => {
+    const { record } = VendorSystem.work(start(), 107, 0, { ...noRecipes(0), salvage: () => null });
+    expect(record.bin).toHaveLength(0);
+    expect(record.listed.map(i => i.id)).toEqual(['p']);
+  });
+
+  it('a kind still selling stays on the shelf at its price', () => {
+    const { record } = VendorSystem.work(start({ demand: { res_tree_log: 106 } }), 107, 0, noRecipes(30));
+    expect(record.bin).toHaveLength(0);
+    expect(record.listed).toHaveLength(1);
+  });
+
+  it('bought in the bin: it earns the shop its price, costs nothing, and the audit adds up', async () => {
+    await hub().resolveRunning(nextWeek());
+    const row = shelves().find(l => l.deal)!;
+    expect(row).toBeTruthy();
+    const shop = hub().weaponShop.some(l => l.id === row.id) ? 'weapon' : hub().armorShop.some(l => l.id === row.id) ? 'armor' : 'consumable';
+    const npc = { weapon: 'npc_weapon_vendor', armor: 'npc_armor_vendor', consumable: 'npc_alchemist' }[shop];
+    await grant(1_000_000);
+    const bought = hub().purchaseFromShop(row.id, shop as never)!;
+    await new Promise(r => setTimeout(r, 0));
+    await hub().saveHubState();
+    expect(1_000_000 - player().bank.gold).toBe(row.price);
+    expect(hub().vendors[npc].bin.some(p => p.item.id === row.item.id)).toBe(false);
+    expect(hub().vendors[npc].book.earned).toBe(row.price);
+    expect(hub().vendors[npc].book.loss).toBe(0);
+    expect(player().bank.stashTabs[0].items.some(i => i.id === bought.id)).toBe(true);
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('no discount takes a deal under its components: it is the deal\'s price for anyone', () => {
+    const row = { price: 40, deal: { until: 1 } };
+    usePlayerStore.setState(s => ({ player: { ...s.player, attributes: { ...s.player.attributes, bartering: 500, charisma: 500 } } }));
+    expect(priceOfListing(row, player().attributes)).toBe(40);
+  });
+
+  it('nobody stands between a bin and a counter for coin: it buys back at no more than the deal', () => {
+    const item = thing({ value: 1000, binPrice: 400 });
+    expect(hub().offerFor(item)).toBe(400);
+    expect(hub().offerFor(thing({ value: 1000 }))).toBeGreaterThan(400);
+    expect(hub().offerFor(thing({ value: 100, binPrice: 400 }))).toBeLessThan(400);
+  });
+
+  it('"they\'re disconnected systems": a keeper\'s parts and bin are no part of what the web is worth', () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.themeId === FIRST_THEME_PACK.themeId && d.name === "Teller's Reed")!;
+    const tags = WebSystem.materialIdentity(def.tags ?? []);
+    useHubStore.setState(s => ({
+      web: { nodes: { x: { id: 'x', tags, rank: 0, firstBy: { uid: 'u', name: 'U', at: 0 }, rungRecord: { uid: 'u', name: 'U', at: 0, rung: 0 } } } } as never,
+      vendors: { ...s.vendors, npc_alchemist: {
+        ...VendorSystem.fresh('npc_alchemist', 'GENERAL', 1),
+        parts: [thing({ universalDefinitionId: def.id, value: 5_000 })],
+        bin: [{ item: thing({ universalDefinitionId: def.id, value: 7_000 }), ask: 1, price: 1, worth: 0, until: 1 }]
+      } }
+    }));
+    expect(hub().runningBook().marketCap).toBe(0);
+  });
+
+  it('so a week with nobody buying does not raise the tax', async () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.themeId === FIRST_THEME_PACK.themeId && d.name === 'Compound Oak')!;
+    const tags = WebSystem.materialIdentity(def.tags ?? []);
+    useHubStore.setState({ web: { nodes: { x: { id: 'x', tags, rank: 0, firstBy: { uid: 'u', name: 'U', at: 0 }, rungRecord: { uid: 'u', name: 'U', at: 0, rung: 0 } } } } as never });
+    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 3);
+    expect(KEEPERS.some(k => hub().vendors[k].parts.length > 0)).toBe(true);
+    expect(hub().runningBook().techPerTile).toBe(0);
+  });
+
+  it('the bin\'s pending loss is in what the week is expected to cost', async () => {
+    await hub().resolveRunning(nextWeek());
+    const pending = KEEPERS.flatMap(k => hub().vendors[k].bin).reduce((s, p) => s + ShopWeek.lossOf(p.ask, p.worth), 0);
+    expect(pending).toBeGreaterThan(0);
+    expect(hub().runningBook().weekCost).toBeGreaterThanOrEqual(pending);
+  });
+
+  it('the shop window says it is the bin, in words, with its days left', () => {
+    const src = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
+    expect(src).toMatch(/BARGAIN BIN/);
+    expect(src).toMatch(/priceOfListing/);
   });
 });

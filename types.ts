@@ -576,6 +576,8 @@ export interface IItem {
   /** D85: a world's sectors as a scribe held them. Levels and counts, never a name (D60). */
   /** D72, D80: what minting a world spends. It names a size and no holder, so it can change hands. */
   worldDeedData?: { size: number; source: 'FREE' | 'FOUND' };
+  /** D115: bought from a bargain bin at this price. A counter pays no more than this for it. */
+  binPrice?: number;
 
   mapData?: {
     worldId: string;
