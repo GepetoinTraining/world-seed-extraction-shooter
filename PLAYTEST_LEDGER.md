@@ -26,6 +26,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | # | What happens | Where |
 |---|---|---|
 | N5 | `tests/database.store.test.ts`, two processes writing one new file: it failed about one run in three, because both tried to create the tables on first open. `migrateTakingTurns` fixes that cause, and 45 runs since gave 44 passes. The one failure was not captured, so it may be a second cause. Machine load is the likeliest, and that is a guess | `server/connection.ts` |
+| N6 | Found by Pedro in play: a creature can be defeated from beyond where it notices anything, and it never responds. From reading the code, not yet run: a hit calls `MobAI.provoke`, then the next tick sees the shooter past the leash (at least 16 tiles) and puts it back to dormant with `provoked` cleared. Sight is also capped at 16 tiles, and nothing has it look toward where a hit came from | `src/entities/mob/ai/MobAI.ts:197-213` |
 
 ## Fixed
 
