@@ -343,7 +343,10 @@ Pedro, 2026-11-01: "elite is a pack leader, MAY BE industrious prior to having s
 - **A solitary elite that keeps winning becomes a titan.** Pedro: "now you see what a titan is... it becomes a titan, that would be it killing players all the way up to rank S... and if that happens, abandon the world probably."
   - Where a social elite's repeated falls make a boss, a solitary one's make a titan. It climbs by whom it has brought down: the ledger keeps the highest rank that has fallen to it, and reaching S makes the titan.
   - It is a change of form, so it goes through `CreatureLines`: a new node with one body, `titan` written by code and only its words by a model. That also meets D60: changed and one of a kind, so it shows its name.
-  - No roll, no anchors, no bands. It simply can't be expected to fall. The world is not closed or deleted: it goes on running, and the people in it decide to leave.
+  - No roll, no anchors, no bands. The world is not closed or deleted: it goes on running.
+  - **A titan does not end a world.** Pedro: "or not porting near it... you can dive around it and gather npcs and buff yourself up to raid it with sheer numbers, you just won't receive the loot probably." So a person can drop away from it, keep working the rest of the world, and come back with a crowd. Its numbers stay high but finite, and nothing stops enough people from bringing it down.
+  - **Numbers bring it down, and the people who did the work take the loot.** What falls is shared by who did the work. What NPCs did is theirs, so a raid of mostly NPCs leaves the person who gathered them little. Friends count as people.
+  - **Help is a service, and the game does not stand in its way.** Pedro: "you can host and call friends, that's a legit service in PoE for a reason, magic culler, or literally paying for a carry." So no rule ties loot to the rank of who took it, nothing refuses a higher rank in a lower person's world, and a world's host can call anyone in (D81). Payment happens through ordinary trade. Whoever lands the last blow has their own `luck_find_rarity` read for what falls, so a culler is worth paying for. This holds for every leader, not only a titan.
 - **Boss: the seat of a territory**, one to a territory, with a base. Titan and god are one of a kind and lead nothing. A titan is earned, as below.
 - **Elite becomes boss when people keep falling to it.** The world's ledger settles when it closes, and what happened while it was open levels up its creatures. That is the Director's record, settled at the regeneration, and this is one more thing it decides. Repeated means the same elite brings people down across a formula's count (a guess until Wave 12), with no roll and no model. It stays where it stands, takes that ground as its seat, and its pack is its first band. An industrious one starts building, and any other holds the ground as it is.
 - The tally needs one change: `reportToDirector` hears only a kind today, and this has to name the body too, and the rank of who fell. A kind stays a kind (D64). A leader is the one body the record holds by itself: its kind, its tally, then its seat, tenure and stores.
@@ -423,7 +426,7 @@ Pedro: a finished base makes a boss, "and once known about sets up the quest cha
 
 ### Where it goes in the plan
 
-Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads, and a solitary one asks its toll; a solitary elite that has brought down rank S becomes a titan, and no lower rank does; a map handed to the guild posts a chain, and anything less posts nothing; the first to touch a body owns its outcome, and a later report is refused; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
+Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads, and a solitary one asks its toll; a solitary elite that has brought down rank S becomes a titan, and no lower rank does; a titan can be brought down by numbers; loot follows who did the work, and the last blow's luck sets what falls; a map handed to the guild posts a chain, and anything less posts nothing; the first to touch a body owns its outcome, and a later report is refused; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
 
 ### Confirmed by Pedro, 2026-11-01
 
@@ -433,12 +436,10 @@ A goal someone saw is decided by what happened, with no roll, and the client's c
 
 1. A titan's mark is the highest rank fallen to it reaching S, rather than a count at each rank.
 2. A titan is earned, so a pack may no longer write one at the mint. The law would refuse the tag when this is built. The test fixture keeps its own.
-3. The guild posts no chain for a titan, only a warning. Nobody is sent to bring it down.
+3. The guild posts a warning for a titan rather than a chain, so people know where not to drop. A raid on one is for people to raise themselves.
 4. Writing a map stays as A3 built it: anyone at a scribe's table with paper and ink. "Cartographer" adds no new gate.
-
-### For Pedro to rule
-
-A pocket world costs a person's free deed (D72). If a titan takes theirs, do they get anything back? The builder's default is no: the deed was spent, the world stands, and they are left walking other people's worlds or finding another deed.
+5. A titan in a pocket world gives no deed back (D72). The world stands, and its owner works around the titan or calls for help.
+6. Loot is shared by the work done, and the last blow's `luck_find_rarity` sets what falls. Pedro said "probably" about the loot, so the shares are a reading, and their numbers are Wave 12's.
 
 ## The design system to deliver
 
