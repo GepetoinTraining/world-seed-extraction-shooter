@@ -49,8 +49,9 @@ import {
   questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
 
-import { IVendorRecord, VendorSystem } from '../../logic/systems/VendorSystem';
-import { ApprenticeRoad, ICraftsman, IRoadEvent } from '../../logic/systems/ApprenticeRoad';
+import { IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/systems/VendorSystem';
+import { ApprenticeRoad, ICraftsman, generalKeepers } from '../../logic/systems/ApprenticeRoad';
+import { workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
@@ -66,11 +67,12 @@ const VENDOR_ESTEEM_PER_RAISED = 20;
 
 /** Every general vendor, standing and folded up to today. Pure: a person's day is not moved here. */
 const vendorsToday = (vendors: Record<string, IVendorRecord>, craftsmen: ICraftsman[], today: number): Record<string, IVendorRecord> => {
-  const out = { ...vendors };
+  const out: Record<string, IVendorRecord> = {};
+  for (const [id, record] of Object.entries(vendors)) out[id] = VendorSystem.fold(VendorSystem.normal(record), today);
   for (const npc of Object.values(HUB_NPCS)) {
     if (!npc.teaches) continue;
     const raising = craftsmen.filter(c => c.masterId === npc.id).length;
-    out[npc.id] = VendorSystem.fold(vendors[npc.id] ?? VendorSystem.fresh(npc.id, 'GENERAL', today, npc.teaches.trade), today, raising);
+    out[npc.id] = VendorSystem.fold(VendorSystem.normal(vendors[npc.id] ?? VendorSystem.fresh(npc.id, 'GENERAL', today)), today, raising);
   }
   return out;
 };
@@ -294,6 +296,9 @@ interface HubState {
   resolveVendors: () => Promise<void>;
   /** A general vendor takes on someone lodged at the tavern (D75's door), who has no ground yet. */
   takeApprentice: (npcId: string, residentId: string) => Promise<RoomVerdict>;
+  /** A master's own shelf, as this person sees it. */
+  traderShelf: (traderId: string) => IShopListing[];
+  buyFromTrader: (traderId: string, listingId: string) => Promise<IItem | null>;
   /** D74: one chunk more, on the given side of one standing (the first, unless named). It decides nothing about who pays. */
   raiseChunk: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
   /** D73: give what you hold toward the next chunk, at the Land Office. Items are gone once given. */
@@ -362,7 +367,8 @@ interface HubState {
   /** Wave 10E (D6): may this making carry the maker's own name? Rank S+ only. */
   canNameCraft: (recipeId: string) => { ok: boolean; reason?: string };
   resolveCrafts: () => Promise<number>;
-  sellToVendor: (itemId: string) => Promise<number | null>;
+  /** `npcId` is whose counter. Left out, the first keeper's. */
+  sellToVendor: (itemId: string, npcId?: string) => Promise<number | null>;
   listItemForSale: (lotId: string, itemId: string, price: number) => Promise<boolean>;
   buyFromLot: (lotId: string, itemId: string) => Promise<boolean>;
   collectProceeds: (lotId: string) => Promise<number>;
@@ -414,7 +420,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           planDeposit: hubStateDoc.data.planDeposit ?? {},
           lots: lotsFor(hubStateDoc.data.lots, HubGenerator.generate({ chunks, dismembered })),
           vendors: hubStateDoc.data.vendors ?? {},
-          craftsmen: hubStateDoc.data.craftsmen ?? [],
+          craftsmen: (hubStateDoc.data.craftsmen ?? []).map(ApprenticeRoad.normal),
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
@@ -482,29 +488,82 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   resolveVendors: async () => {
-    const { activeHubId, craftsmen, web } = get();
+    const { activeHubId, craftsmen, web, guild } = get();
     if (!activeHubId) return;
     const today = Math.floor(Date.now() / 86_400_000);
     const vendors = vendorsToday(get().vendors, craftsmen, today);
+    const keepers = generalKeepers();
     const out: ICraftsman[] = [];
-    const events: IRoadEvent[] = [];
+    let residents = guild.residents;
     let nextWeb = web;
+    let changed = false;
+    const hoursAt = (masterId: string) => vendors[masterId] ? VendorSystem.teachingHours(vendors[masterId]) : 1;
     for (const person of craftsmen) {
-      const master = vendors[person.masterId];
-      const walked = ApprenticeRoad.resolve(person, today, () => master ? VendorSystem.teachingHours(master) : 1);
+      const walked = ApprenticeRoad.resolve(person, today, hoursAt, keepers);
       out.push(walked.craftsman);
-      events.push(...walked.events);
       for (const event of walked.events) {
-        // Someone who has finished their term is someone the hub's web can stand on
+        changed = true;
+        if (event.movedTo) {
+          useFeed.getState().push(`${event.name} has finished at one bench and gone on to ${HUB_NPCS[event.movedTo]?.name ?? 'the next'}.`, 'signal');
+          continue;
+        }
+        // Crafting is theirs now, and the hub's web can stand on them
         nextWeb = WebSystem.admit(nextWeb, { uid: person.id, name: person.name }, { [walked.craftsman.skill.id]: walked.craftsman.skill }, Date.now()).web;
-        if (master) vendors[person.masterId] = { ...vendors[person.masterId], agenda: NpcAgenda.fill(vendors[person.masterId].agenda, { esteem: VENDOR_ESTEEM_PER_RAISED }) };
+        const teacher = walked.craftsman.masterId;
+        if (vendors[teacher]) vendors[teacher] = { ...vendors[teacher], agenda: NpcAgenda.fill(vendors[teacher].agenda, { esteem: VENDOR_ESTEEM_PER_RAISED }) };
         useFeed.getState().push(`${event.name} is a ${event.to.toLowerCase()} now.`, 'proof');
-        await Ledger.append('TECH', { kind: 'ROAD', craftsmanId: person.id, name: person.name, to: event.to, trade: person.trade, masterId: person.masterId });
+        await Ledger.append('TECH', { kind: 'ROAD', craftsmanId: person.id, name: person.name, to: event.to, masterId: teacher });
       }
     }
-    set({ vendors, craftsmen: out, web: nextWeb });
+
+    // A new master needs a shop of their own: back through the tavern, and the Hall takes it from there
+    for (const person of out) {
+      if (person.rank !== 'MASTER' || vendors[person.id] || residents.some(r => r.craftsmanId === person.id)) continue;
+      changed = true;
+      residents = [...residents, {
+        id: residentIdOf(person.bond), bondItemId: person.bondItemId, bond: person.bond,
+        worldSeed: person.bond.worldSeed, entityId: person.bond.entityId, name: person.name,
+        sponsorId: person.sponsorId, sponsorName: person.sponsorName, arrivedAt: Date.now(),
+        lotId: null, wantsMet: 0, craftsmanId: person.id
+      }];
+      useFeed.getState().push(`${person.name} needs a shop now. The Hall of Banners has them on its books.`, 'signal');
+    }
+
+    // The day's work: what came in is looked over, taken apart, and made into something
+    const tools = workTools();
+    const noted = async (npcId: string, events: IWorkEvent[]) => {
+      if (events.length > 0) changed = true;
+      for (const event of events) {
+        if (event.kind === 'DISCOVERED') {
+          useFeed.getState().push(`${HUB_NPCS[npcId]?.name ?? out.find(c => c.id === npcId)?.name ?? 'Someone'} has worked out how to make ${event.name}.`, 'proof');
+          await Ledger.append('TECH', { kind: 'RECIPE', recipeId: event.recipeId, name: event.name, by: npcId, hubId: activeHubId });
+        } else if (event.kind === 'SALVAGED') {
+          await Ledger.append('CRAFT', { kind: 'VENDOR_SALVAGED', npcId, itemId: event.itemId, defId: event.defId, parts: event.parts, consumedIds: [event.itemId] });
+        } else if (event.kind === 'CRAFTED') {
+          await Ledger.append('CRAFT', { kind: 'VENDOR_CRAFTED', npcId, recipeId: event.recipeId, consumedIds: event.consumed, made: event.made });
+        }
+      }
+    };
+    for (const npcId of keepers) {
+      const worked = VendorSystem.work(vendors[npcId], today, ApprenticeRoad.labor(out, npcId), tools);
+      vendors[npcId] = worked.record;
+      await noted(npcId, worked.events);
+    }
+    // A master works from whichever keeper has the most lying about
+    for (const person of out) {
+      const shop = vendors[person.id];
+      if (!shop || shop.worked >= today) continue;
+      const source = [...keepers].sort((a, b) => vendors[b].parts.length - vendors[a].parts.length || a.localeCompare(b))[0];
+      const shared = VendorSystem.share(vendors[source], shop);
+      vendors[source] = shared.from;
+      const worked = VendorSystem.work(shared.to, today, 0, tools);
+      vendors[person.id] = worked.record;
+      await noted(person.id, worked.events);
+    }
+
+    set({ vendors, craftsmen: out, web: nextWeb, guild: { ...get().guild, residents } });
     get().generateDailyStock();
-    if (events.length > 0) await get().saveHubState();
+    if (changed) await get().saveHubState();
   },
 
   takeApprentice: async (npcId, residentId) => {
@@ -517,9 +576,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     const today = Math.floor(Date.now() / 86_400_000);
     const keeper = NpcSheet.read(activeHubId, { id: npcId, rank: teaches.rank }, undefined);
     const begun = ApprenticeRoad.begin(bondItemOf(resident), {
-      id: npcId, trade: teaches.trade, room: ApprenticeRoad.roomFor(keeper.stats!),
+      id: npcId, room: ApprenticeRoad.roomFor(keeper.stats!),
       taken: craftsmen.filter(c => c.masterId === npcId && c.rank === 'APPRENTICE').length
-    }, resident.sponsorId, today, WebBank.current());
+    }, resident.sponsorId, resident.sponsorName, today, WebBank.current());
     if (!begun.ok || !begun.craftsman) return { ok: false, reason: begun.reason };
     if (craftsmen.some(c => c.id === begun.craftsman!.id)) return { ok: false, reason: `${begun.craftsman.name} is on the road already.` };
 
@@ -529,9 +588,37 @@ export const useHubStore = create<HubState>((set, get) => ({
       craftsmen: [...craftsmen, begun.craftsman],
       vendors: { ...all, [npcId]: { ...all[npcId], agenda: NpcAgenda.fill(all[npcId].agenda, { belonging: VENDOR_BELONGING_PER_TAKEN }) } }
     });
-    await Ledger.append('GUILD', { kind: 'PERSON_APPRENTICED', residentId, craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId, trade: teaches.trade });
+    await Ledger.append('GUILD', { kind: 'PERSON_APPRENTICED', residentId, craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId });
     await get().saveHubState();
     return { ok: true };
+  },
+
+  traderShelf: (traderId) => {
+    const record = get().vendors[traderId];
+    if (!record) return [];
+    return VendorSystem.shelf(VendorSystem.normal(record), [], Math.floor(Date.now() / 86_400_000), 0, usePlayerStore.getState().player.id);
+  },
+
+  buyFromTrader: async (traderId, listingId) => {
+    const { activeHubId, vendors } = get();
+    const row = get().traderShelf(traderId).find(l => l.id === listingId);
+    if (!activeHubId || !row || !vendors[traderId]) return null;
+    const player = usePlayerStore.getState().player;
+    const price = Math.ceil(StatSystem.shopPrice(row.price, player.attributes));
+    if (player.bank.gold < price) return null;
+    const today = Math.floor(Date.now() / 86_400_000);
+    const taken = VendorSystem.takeOwn(VendorSystem.normal(vendors[traderId]), row.item.id);
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - price, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+      idx === 0 ? { ...tab, items: [...tab.items, row.item] } : tab
+    ) } } }));
+    // A master keeps no purse yet: what they take goes where a keeper's does
+    void GoldCommit.commit({
+      rows: [{ type: 'GOLD_DELTA', data: { reason: 'SHOP_PURCHASE', itemId: row.item.id, defId: row.item.universalDefinitionId, amount: -price, treasuryId: activeHubId, treasuryDelta: price, traderId } }],
+      treasury: { worldUid: activeHubId, delta: price }
+    });
+    set({ vendors: { ...vendors, [traderId]: VendorSystem.recordSale(taken, listingId, today, 1, row.item.universalDefinitionId) } });
+    await get().saveHubState();
+    return row.item;
   },
 
   raiseChunk: async (side, beside) => {
@@ -788,6 +875,14 @@ export const useHubStore = create<HubState>((set, get) => ({
     const hubId = get().activeHubId;
     const now = Date.now();
     set({ guild: { ...guild, residents: guild.residents.map(r => due.some(d => d.id === r.id) ? { ...r, homeAt: now, nextWantDay: worldDay() } : r) } });
+    // A master's house is the shop they came back for, and whoever saw it through is remembered there
+    for (const resident of due) {
+      if (!resident.craftsmanId || get().vendors[resident.craftsmanId]) continue;
+      const opened = VendorSystem.fresh(resident.craftsmanId, 'TRADER', Math.floor(now / 86_400_000));
+      set({ vendors: { ...get().vendors, [resident.craftsmanId]: { ...opened, patrons: [usePlayerStore.getState().player.id] } } });
+      await Ledger.append('GUILD', { kind: 'SHOP_OPENED', residentId: resident.id, craftsmanId: resident.craftsmanId, name: resident.name, lotId: resident.lotId });
+      useFeed.getState().push(`${resident.name} has opened a shop of their own, and you will pay less in it.`, 'proof');
+    }
     for (const resident of due) {
       // Their skills extend the hub's web, by the same door a player's emergence uses. The exp stays theirs.
       const { web, firsts, records } = WebSystem.admit(get().web, { uid: resident.id, name: resident.name }, readSheet(resident).skills ?? {}, now);
@@ -1737,7 +1832,7 @@ export const useHubStore = create<HubState>((set, get) => ({
    * Sell a stash item to the system vendor at 60% of its value. The gold comes
    * from the hub treasury, so a hub with no funds cannot buy.
    */
-  sellToVendor: async (itemId) => {
+  sellToVendor: async (itemId, npcId = COUNTER_NPC) => {
     const { activeHubId } = get();
     const p = usePlayerStore.getState().player;
     if (!activeHubId) return null;
@@ -1764,11 +1859,10 @@ export const useHubStore = create<HubState>((set, get) => ({
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'VENDOR_BUYBACK', itemId, defId: item.universalDefinitionId, amount: offer, treasuryId: activeHubId, treasuryDelta: -offer } }],
       treasury: { worldUid: activeHubId, delta: -offer }
     });
-    // What the counter bought is in its container now, not gone
+    // What the counter bought is in its container now. Whether it ever goes on sale is the vendor's call.
     const today = Math.floor(Date.now() / 86_400_000);
     const all = vendorsToday(get().vendors, get().craftsmen, today);
-    set({ vendors: { ...all, [COUNTER_NPC]: VendorSystem.receive(all[COUNTER_NPC], item) } });
-    get().generateDailyStock();
+    set({ vendors: { ...all, [npcId]: VendorSystem.receive(all[npcId], item, today) } });
     await get().saveHubState();
     console.log(`[VENDOR] Sold ${item.name} for ${offer}G (treasury-funded).`);
     return offer;
@@ -2120,12 +2214,14 @@ export const useHubStore = create<HubState>((set, get) => ({
       .filter(l => !(l.held && l.stock <= 0));
     const total = listings.reduce((sum, l) => sum + l.stock, 0);
     const left = updatedListings.reduce((sum, l) => sum + l.stock, 0);
-    const sold = listing.held ? VendorSystem.takeHeld(seller, purchasedItem.id) : seller;
+    const sold = listing.held ? VendorSystem.takeOwn(seller, purchasedItem.id) : seller;
 
     set({
       [shopKey]: updatedListings,
-      vendors: { ...vendorsToday(state.vendors, state.craftsmen, today), [npcId]: VendorSystem.recordSale(sold, listingId, today, total > 0 ? left / total : 0) }
+      vendors: { ...vendorsToday(state.vendors, state.craftsmen, today), [npcId]: VendorSystem.recordSale(sold, listingId, today, total > 0 ? left / total : 0, purchasedItem.universalDefinitionId) }
     });
+    // The next of this kind takes that row's place
+    if (listing.held) get().generateDailyStock();
     void get().saveHubState();
     return purchasedItem;
   }

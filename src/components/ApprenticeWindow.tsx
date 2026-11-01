@@ -9,7 +9,7 @@ import React from 'react';
 import { useHubStore } from '../entities/hub/store';
 import { HUB_NPCS } from '../entities/hub/HubGenerator';
 import { bondItemOf } from '../entities/hub/guild';
-import { ApprenticeRoad, CraftRank, TERM_DAYS } from '../logic/systems/ApprenticeRoad';
+import { ApprenticeRoad, CraftRank, TERM_DAYS, generalKeepers } from '../logic/systems/ApprenticeRoad';
 import { VendorSystem } from '../logic/systems/VendorSystem';
 import { NpcSheet } from '../logic/systems/NpcSheet';
 import { WebBank } from '../logic/content/WebBank';
@@ -32,13 +32,14 @@ export const ApprenticeWindow: React.FC<{ npcId: string; onClose: () => void }> 
   const keeper = NpcSheet.read(activeHubId ?? 'hub_unknown', { id: npcId, rank: teaches.rank }, undefined);
   const room = ApprenticeRoad.roomFor(keeper.stats!);
   const pack = WebBank.current();
-  const lodged = guild.residents.filter(r => !r.lotId);
+  const lodged = guild.residents.filter(r => !r.lotId && !r.craftsmanId);
+  const keepers = generalKeepers();
 
   return (
     <Modal title={`${npc.name.toUpperCase()}: THE BENCH`} onClose={onClose} width={560}>
       <div className="ws-small" style={{ marginBottom: 8 }}>{record ? `"${VendorSystem.say(record)}"` : ''}</div>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
-        Teaches {WebSystem.nameOf(`skill_${teaches.trade}`)}. {bench} of {room} at the bench. A term runs {TERM_DAYS} days, and it passes whether or not you are here.
+        Teaches crafting. A term at each of the {keepers.length} keepers unlocks it, {TERM_DAYS} days each, whether or not you are here. {bench} of {room} at this bench.
       </div>
 
       <div className="ws-dim ws-small">AT THE BENCH</div>
@@ -46,7 +47,7 @@ export const ApprenticeWindow: React.FC<{ npcId: string; onClose: () => void }> 
       <div className="ws-list" style={{ marginBottom: 10 }}>
         {mine.map(c => (
           <div key={c.id} style={{ padding: '4px 0' }}>
-            <Row title={c.name} right={RANK_WORDS[c.rank]} sub={`${WebSystem.nameOf(c.skill.id)}, ${WebSystem.masteryOf(c.skill).rungName}`} />
+            <Row title={c.name} right={RANK_WORDS[c.rank]} sub={ApprenticeRoad.canCraft(c) ? `${WebSystem.nameOf(c.skill.id)}, ${WebSystem.masteryOf(c.skill).rungName}` : `${c.done.length} of ${keepers.length} benches done`} />
             {c.rank === 'APPRENTICE' && <Bar label="TERM" value={c.progress} max={100} text={`${Math.floor(c.progress)}%`} />}
           </div>
         ))}
@@ -67,7 +68,7 @@ export const ApprenticeWindow: React.FC<{ npcId: string; onClose: () => void }> 
                   tone="proof"
                   confirmLabel="TO THIS BENCH: SURE?"
                   onConfirm={() => {
-                    void takeApprentice(npcId, person.id).then(v => pushFeed(v.ok ? `${person.name} is ${npc.name}'s apprentice now.` : v.reason ?? 'The bench refuses.', v.ok ? 'proof' : 'loss'));
+                    void takeApprentice(npcId, person.id).then(v => pushFeed(v.ok ? `${person.name} starts at ${npc.name}'s bench.` : v.reason ?? 'The bench refuses.', v.ok ? 'proof' : 'loss'));
                   }}
                 >
                   TAKE ON

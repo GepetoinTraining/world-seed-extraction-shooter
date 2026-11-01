@@ -2,13 +2,19 @@
  * THE VENDOR: a person with a container and a goal. Pedro, 2026-11-01: "add a stock and
  * goal function to the vendors please, this will be the npc code as well."
  *
- * Each vendor holds its own record: what it sold today, and what it bought and may sell
- * on. The day's rolled shelf stays a pure function of hub and day, so the record is all
- * that has to be saved, and a reload cannot bring back what was bought.
+ * Each vendor holds its own record. The day's rolled shelf stays a pure function of hub
+ * and day, so the record is all that has to be saved, and a reload cannot bring back what
+ * was bought. The goal is read from the agenda and never stored, and each one changes
+ * something (line 77's rule).
  *
- * A GENERAL vendor is a keeper of the city. It always restocks, and it trains people up
- * (ApprenticeRoad). A TRADER has only what it was given. The goal is read from the
- * agenda and never stored, and each one changes something (line 77's rule).
+ * "Bought doesn't mean goes to sale": what a vendor takes in is held, and the next day it
+ * looks at what has been selling. A kind that sells goes on the shelf. Anything else is
+ * salvaged, and the components are sold and worked. A recipe is discovered when the
+ * components in it have met in its hands, and its name comes with that.
+ *
+ * A GENERAL vendor is a keeper of the city: it always restocks and it trains people up
+ * (ApprenticeRoad). A TRADER has only what it holds. Everything here is pure, a fold of
+ * the days: salvage and making are handed in, so being away reaches the same place.
  */
 
 import { IItem } from '../../../types';
@@ -19,13 +25,27 @@ export type VendorKind = 'GENERAL' | 'TRADER';
 export interface IVendorRecord {
   npcId: string;
   kind: VendorKind;
-  /** What it teaches, as a word of kind trade on the web. */
-  trade?: string;
   agenda: INpcAgenda;
   /** How many of each line went today. A new day starts it over. */
   sold: { day: number; lines: Record<string, number> };
-  /** What it has bought. It is held here until someone buys it. */
+  /** Taken in and not yet judged. Nobody can buy these. */
   held: IItem[];
+  /** Judged worth selling whole, or made here. */
+  listed: IItem[];
+  /** Components: sold, and worked. */
+  parts: IItem[];
+  /** The day a piece reached where it is, by id. */
+  since: Record<string, number>;
+  /** The last day a kind sold here, by definition. This is what it sees selling. */
+  demand: Record<string, number>;
+  /** Every definition that has been in its hands as a component. */
+  seen: string[];
+  /** Recipes it has worked out, by id. */
+  known: string[];
+  /** The last day it worked. */
+  worked: number;
+  /** Who saw this shop opened. They pay less here. */
+  patrons: string[];
 }
 
 export interface IVendorListing {
@@ -34,9 +54,30 @@ export interface IVendorListing {
   price: number;
   vendorId: string;
   stock: number;
-  /** One of the vendor's own pieces, not a line of the day's shelf. */
+  /** The vendor's own pieces, not a line of the day's shelf. Buying takes `item` itself. */
   held?: boolean;
 }
+
+export interface IVendorRecipe {
+  id: string;
+  name: string;
+  inputs: { itemId: string; quantity: number }[];
+  /** The definition it makes, so a vendor can see what it already has plenty of. */
+  output: string;
+}
+
+export interface IWorkTools {
+  recipes: IVendorRecipe[];
+  /** What a piece comes apart into. Null if it cannot be. Empty if it was, and nothing was left worth keeping. */
+  salvage: (item: IItem, key: string) => IItem[] | null;
+  make: (recipe: IVendorRecipe, consumed: IItem[], key: string) => IItem[];
+}
+
+export type IWorkEvent =
+  | { kind: 'LISTED'; itemId: string; day: number }
+  | { kind: 'SALVAGED'; itemId: string; defId: string; parts: string[]; day: number }
+  | { kind: 'DISCOVERED'; recipeId: string; name: string; day: number }
+  | { kind: 'CRAFTED'; recipeId: string; name: string; consumed: string[]; made: string[]; day: number };
 
 export const VENDOR_GOALS: Record<NeedKind, { goal: string; say: string }> = {
   survival: { goal: 'MAKE_A_LIVING', say: 'Trade has been slow. Everything on the shelf is marked down until it is not.' },
@@ -46,19 +87,36 @@ export const VENDOR_GOALS: Record<NeedKind, { goal: string; say: string }> = {
   purpose: { goal: 'RAISE_THE_NEXT', say: 'What I know should outlast me. Anyone under me works full days and then some.' }
 };
 
-/** What a person buying on sees, against what the vendor paid to take it in. Guesses until Wave 12. */
-const HELD_MARKUP = 1.5;
+/** Guesses until Wave 12. */
+const OWN_MARKUP = 1.5;
 const MARKDOWN = 0.9;
+const PATRON_FACTOR = 0.85;
 const THIN_SHELF_RESTOCK = 1;
 const FILL_PER_SALE: INeedFill = { survival: 10 };
 /** A full day at the shelf answers what the day takes from safety. Only a sale moves it. */
 const DAILY_SHELF_FILL = 2;
 const BELONGING_PER_PERSON = 3;
 const HOURS: Partial<Record<NeedKind, number>> = { esteem: 1.25, purpose: 1.5 };
+/** A night to look a thing over. */
+const SEE_DAYS = 1;
+/** How recently a kind must have sold to count as selling, and how long a piece may sit. */
+const DEMAND_DAYS = 7;
+const UNSOLD_DAYS = 7;
+const MAKES_PER_DAY = 1;
+
+const defOf = (item: IItem) => item.universalDefinitionId;
+const isRead = (item: IItem) => item.isIdentified !== false;
+
+const FRESH_CONTAINER = { listed: [], parts: [], since: {}, demand: {}, seen: [], known: [], patrons: [] };
 
 export const VendorSystem = {
-  fresh(npcId: string, kind: VendorKind, day: number, trade?: string): IVendorRecord {
-    return { npcId, kind, ...(trade ? { trade } : {}), agenda: NpcAgenda.fresh(day), sold: { day, lines: {} }, held: [] };
+  fresh(npcId: string, kind: VendorKind, day: number): IVendorRecord {
+    return { npcId, kind, agenda: NpcAgenda.fresh(day), sold: { day, lines: {} }, held: [], worked: day, ...FRESH_CONTAINER };
+  },
+
+  /** A record saved before the container grew. */
+  normal(record: IVendorRecord): IVendorRecord {
+    return { ...FRESH_CONTAINER, worked: record.sold.day, ...record };
   },
 
   /** Up to today. `raising` is how many people stand with this vendor. */
@@ -82,41 +140,135 @@ export const VendorSystem = {
 
   /**
    * The container, as a shelf. `rolled` is the day's lines, `labor` what the people it
-   * raised add to each. A piece nobody has read stays held: a shelf says its name aloud.
+   * raised add to each. Its own pieces share a row by kind. A piece nobody has read is
+   * never shown: a shelf says its name aloud.
    */
-  shelf(record: IVendorRecord, rolled: IVendorListing[], today: number, labor: number): IVendorListing[] {
+  shelf(record: IVendorRecord, rolled: IVendorListing[], today: number, labor: number, customer?: string): IVendorListing[] {
     const need = NpcAgenda.pressing(record.agenda);
-    const factor = need === 'survival' ? MARKDOWN : 1;
+    const factor = (need === 'survival' ? MARKDOWN : 1) * (customer && record.patrons.includes(customer) ? PATRON_FACTOR : 1);
     const restock = (need === 'safety' ? THIN_SHELF_RESTOCK : 0) + labor;
     const lines = record.sold.day === today ? record.sold.lines : {};
+    const kinds = new Map<string, IItem[]>();
+    for (const item of [...record.listed, ...record.parts].filter(isRead)) kinds.set(defOf(item), [...(kinds.get(defOf(item)) ?? []), item]);
     return [
       ...rolled.map(line => ({
         ...line, vendorId: record.npcId, price: line.price * factor,
         stock: Math.max(0, line.stock + restock - (lines[line.id] ?? 0))
       })),
-      ...record.held.filter(item => item.isIdentified !== false).map(item => ({
-        id: `listing_held_${item.id}`, item, price: Math.max(1, item.value * HELD_MARKUP * factor),
-        vendorId: record.npcId, stock: 1, held: true
+      ...[...kinds.entries()].map(([def, items]) => ({
+        id: `listing_own_${def}`, item: items[0], price: Math.max(1, items[0].value * OWN_MARKUP * factor),
+        vendorId: record.npcId, stock: items.length, held: true
       }))
     ];
   },
 
   /** `cover` is the share of the shelf left, which is what safety reads. */
-  recordSale(record: IVendorRecord, lineId: string, today: number, cover: number): IVendorRecord {
+  recordSale(record: IVendorRecord, lineId: string, today: number, cover: number, defId?: string): IVendorRecord {
     const lines = record.sold.day === today ? record.sold.lines : {};
     const agenda = NpcAgenda.fill(record.agenda, FILL_PER_SALE);
     return {
       ...record,
       agenda: { ...agenda, needs: { ...agenda.needs, safety: Math.round(cover * 100) } },
-      sold: { day: today, lines: { ...lines, [lineId]: (lines[lineId] ?? 0) + 1 } }
+      sold: { day: today, lines: { ...lines, [lineId]: (lines[lineId] ?? 0) + 1 } },
+      demand: defId ? { ...record.demand, [defId]: today } : record.demand
     };
   },
 
-  receive(record: IVendorRecord, item: IItem): IVendorRecord {
-    return { ...record, held: [...record.held, item] };
+  /** Taken in over the counter. Not for sale until it has been looked over. */
+  receive(record: IVendorRecord, item: IItem, today: number): IVendorRecord {
+    return { ...record, held: [...record.held, item], since: { ...record.since, [item.id]: today } };
   },
 
-  takeHeld(record: IVendorRecord, itemId: string): IVendorRecord {
-    return { ...record, held: record.held.filter(item => item.id !== itemId) };
+  /** One of its own pieces, gone to a buyer. */
+  takeOwn(record: IVendorRecord, itemId: string): IVendorRecord {
+    return { ...record, listed: record.listed.filter(i => i.id !== itemId), parts: record.parts.filter(i => i.id !== itemId) };
+  },
+
+  /** A trader takes half of what its old keeper has lying about, the way a master buys from a teacher. */
+  share(from: IVendorRecord, to: IVendorRecord): { from: IVendorRecord; to: IVendorRecord } {
+    const given = from.parts.slice(0, Math.floor(from.parts.length / 2));
+    return {
+      from: { ...from, parts: from.parts.slice(given.length) },
+      to: { ...to, parts: [...to.parts, ...given] }
+    };
+  },
+
+  /** Every day since it last worked, in turn. `labor` is the hands beyond its own. */
+  work(record: IVendorRecord, today: number, labor: number, tools: IWorkTools): { record: IVendorRecord; events: IWorkEvent[] } {
+    const events: IWorkEvent[] = [];
+    let current = record;
+    for (let day = record.worked + 1; day <= today; day++) {
+      const stepped = this.workDay(current, day, labor, tools);
+      current = stepped.record;
+      events.push(...stepped.events);
+    }
+    return { record: current, events };
+  },
+
+  workDay(start: IVendorRecord, day: number, labor: number, tools: IWorkTools): { record: IVendorRecord; events: IWorkEvent[] } {
+    const events: IWorkEvent[] = [];
+    const held: IItem[] = [];
+    const listed: IItem[] = [];
+    const since = { ...start.since };
+    let parts = [...start.parts];
+    const sells = (item: IItem) => day - (start.demand[defOf(item)] ?? -Infinity) <= DEMAND_DAYS;
+    const list = (item: IItem) => {
+      listed.push(item);
+      since[item.id] = day;
+    };
+    const takeApart = (item: IItem): boolean => {
+      const came = tools.salvage(item, `${start.npcId}:salvage:${item.id}`);
+      if (came === null) return false;
+      parts = [...parts, ...came];
+      events.push({ kind: 'SALVAGED', itemId: item.id, defId: defOf(item), parts: came.map(p => p.id), day });
+      return true;
+    };
+
+    // What it took in: does this kind sell here?
+    for (const item of start.held) {
+      if (day - (since[item.id] ?? start.worked) < SEE_DAYS) {
+        held.push(item);
+      } else if (isRead(item) && sells(item)) {
+        list(item);
+        events.push({ kind: 'LISTED', itemId: item.id, day });
+      } else if (!takeApart(item)) {
+        if (isRead(item)) list(item);
+        else held.push(item);
+      }
+    }
+    // What has been sitting on the shelf.
+    for (const item of start.listed) {
+      if (day - (since[item.id] ?? start.worked) < UNSOLD_DAYS || sells(item)) listed.push(item);
+      // It cannot be taken apart, so it gets another stretch on the shelf
+      else if (!takeApart(item)) list(item);
+    }
+
+    // What has met in its hands.
+    const seen = [...new Set([...start.seen, ...parts.map(defOf)])];
+    const known = [...start.known];
+    for (const recipe of tools.recipes) {
+      if (known.includes(recipe.id) || !recipe.inputs.every(input => seen.includes(input.itemId))) continue;
+      known.push(recipe.id);
+      events.push({ kind: 'DISCOVERED', recipeId: recipe.id, name: recipe.name, day });
+    }
+
+    // What it can make, the thing the shelf has least of first.
+    for (let n = 0; n < MAKES_PER_DAY + labor; n++) {
+      const count = (def: string) => listed.filter(i => defOf(i) === def).length;
+      const able = tools.recipes
+        .filter(r => known.includes(r.id) && r.inputs.every(input => parts.filter(p => defOf(p) === input.itemId).length >= input.quantity))
+        .sort((a, b) => count(a.output) - count(b.output) || a.id.localeCompare(b.id));
+      const recipe = able[0];
+      if (!recipe) break;
+      const consumed = recipe.inputs.flatMap(input => parts.filter(p => defOf(p) === input.itemId).slice(0, input.quantity));
+      const made = tools.make(recipe, consumed, `${start.npcId}:craft:${day}:${n}`);
+      if (made.length === 0) break;
+      const gone = new Set(consumed.map(c => c.id));
+      parts = parts.filter(p => !gone.has(p.id));
+      made.forEach(list);
+      events.push({ kind: 'CRAFTED', recipeId: recipe.id, name: recipe.name, consumed: consumed.map(c => c.id), made: made.map(m => m.id), day });
+    }
+
+    return { record: { ...start, held, listed, parts, since, seen, known, worked: day }, events };
   }
 };

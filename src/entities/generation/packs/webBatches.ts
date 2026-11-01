@@ -289,5 +289,16 @@ export const WEB_BATCHES: IWebBatch[] = [
     names: [
       { tags: ['tax_evasion'], name: 'Tax Evasion', flavor: 'Knowing which crate the clerk will not open.' }
     ]
+  },
+  {
+    runId: 'run_008_the_three_benches',
+    model: 'claude-opus-5-5',
+    ranAt: 20261101,
+    tags: [
+      { tag: 'craftsmanship', kind: 'trade', meaning: 'Knowing how things go together, before anyone has named a way of doing it.' }
+    ],
+    names: [
+      { tags: ['craftsmanship'], name: 'Crafting', flavor: 'Three benches, and none of them taught it by name.' }
+    ]
   }
 ];

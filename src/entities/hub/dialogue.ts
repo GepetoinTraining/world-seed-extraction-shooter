@@ -29,7 +29,8 @@ export type DialogueEffect =
   | { kind: 'reply'; text: string }
   | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
   | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' | 'tavern' | 'guild' }
+  | { kind: 'open'; panel: 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' | 'tavern' | 'guild' }
+  | { kind: 'open'; panel: 'sell'; npcId?: string }
   | { kind: 'open'; panel: 'apprentices'; npcId: string }
   | { kind: 'deploy' }
   | { kind: 'close' };
@@ -147,7 +148,7 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     panel: 'shop',
     category: payload?.category === 'armor' ? 'armor' : payload?.category === 'consumables' ? 'consumable' : 'weapon'
   }),
-  OPEN_SELL: () => ({ kind: 'open', panel: 'sell' }),
+  OPEN_SELL: (payload) => ({ kind: 'open', panel: 'sell', ...(payload?.npcId ? { npcId: payload.npcId } : {}) }),
   OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
   OPEN_APPRENTICES: (payload) => {
     void useHubStore.getState().resolveVendors();
