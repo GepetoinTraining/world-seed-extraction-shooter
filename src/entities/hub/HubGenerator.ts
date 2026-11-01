@@ -130,6 +130,21 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     },
     spriteColor: '#f59e0b'
   },
+  // Pedro: the guildhall is a town hall, and everything that develops the city goes through him.
+  'npc_land_manager': {
+    id: 'npc_land_manager',
+    name: 'Aurelio Quint',
+    title: 'Land Manager',
+    dialogue: {
+      greeting: "Every tile in this city is on my sheet. Tell me what you want to do with yours.",
+      options: [
+        { label: 'The Deeds', action: 'OPEN_DEEDS' },
+        { label: 'Plan the City', action: 'OPEN_PLAN' },
+        { label: 'Leave', action: 'CLOSE' }
+      ]
+    },
+    spriteColor: '#a16207'
+  },
   'npc_auctioneer': {
     id: 'npc_auctioneer',
     name: 'Quickfingers',

@@ -17,6 +17,7 @@ import {
 } from './room';
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
+import { CityPlan } from '../../components/CityPlan';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
@@ -81,7 +82,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' };
+  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' };
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
@@ -309,12 +310,12 @@ export const HubCanvas: React.FC = () => {
       setNpcReply(null);
       setActiveNPC(HUB_NPCS[poi.npcId]);
     } else if (poi.type === POIType.PLAYER_LOT) {
-      // Wave 10.2: a built lot has a real door. An unbuilt one still points at
-      // its working screen, where it is bought and raised.
+      // Wave 10.2: a built lot has a real door. An unbuilt one points you to the
+      // land manager: buying and raising go through him, and only him.
       const hub = useHubStore.getState();
       const lot = hub.lots.find(l => l.id === poi.id);
       if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
-      else setView('HOLDINGS');
+      else pushFeed(`${poi.name} is on the sheet at the Land Office, beside the Hall of Banners.`, 'plain');
     }
   };
 
@@ -791,7 +792,6 @@ export const HubCanvas: React.FC = () => {
               <Button tone="quiet" disabled={!nearPlacement} onClick={() => void reclaimNear()}>
                 RECLAIM {nearPlacement ? nearPlacement.item.name.toUpperCase() : 'IN REACH'}
               </Button>
-              <Button tone="quiet" onClick={() => setView('HOLDINGS')}>THE DEEDS</Button>
 
               {myPendingJobs.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -855,6 +855,7 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
     </div>
   );
 };

@@ -31,10 +31,11 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 }));
 
 import { CHUNK_TILES, QUADRANT_TILES } from '../src/entities/world/grid';
-import { HubGenerator, IHubLayout, IPOI, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
+import { HUB_NPCS, HubGenerator, IHubLayout, IPOI, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
+import { runDialogueAction } from '../src/entities/hub/dialogue';
 import {
   CELL_TILES, CHUNK_CELLS, EMPTY_MARK, HUB_SIDES, HubSide, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN, ROAD_STREET, SPAWN_MARK,
-  DISMEMBER_PIECE_MIN, dismemberPlan, dismemberShape, doorTile, firstPlan, lotPrice, lotPriceShare, openSides, raiseChunk, tilesToCell, validateManifest
+  DISMEMBER_PIECE_MIN, chunkBillFor, dismemberPlan, dismemberShape, doorTile, firstPlan, lotPrice, lotPriceShare, openSides, raiseChunk, tilesToCell, validateManifest
 } from '../src/entities/hub/hubManifest';
 import { HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, floorAtom, hubGround, lotArt, passageAtom, roadAtom } from '../src/render/atoms/hub';
 import { cityMinimap } from '../src/render/atoms/minimap';
@@ -112,8 +113,8 @@ const LOTS_STANDING = 6;
 const LAMPS_STANDING = 7;
 
 // The whole layout, by hash: the same inputs give the same city on every machine.
-const STORED_LAYOUT_HASH = 3668997154;
-const STORED_SECOND_CHUNK_HASH = 2387384195;
+const STORED_LAYOUT_HASH = 4003879988;
+const STORED_SECOND_CHUNK_HASH = 1878524915;
 
 beforeEach(() => {
   db.clear();
@@ -1652,6 +1653,165 @@ describe('dismemberment: at a cost, by the owner', () => {
       expect(SRC(path), path).toMatch(/dismembered/);
     });
     expect(SRC('src/entities/hub/store.ts')).not.toMatch(/generate\(\{ chunks: get\(\)\.chunks \}\)/);
+  });
+});
+
+// Pedro: "the concept is we need to make the guildhall be sorts of like a town hall,
+// make a land manager be there, and that screen is connected through him, then what
+// happens is the player has the options to develop everything through that one npc."
+// And D73: the materials for expansion are deposited there, and the plan decided there.
+describe('the Land Office: the town hall has a land manager', () => {
+  const layout = HubGenerator.generate();
+  const office = poiOf(layout, 'poi_land_office');
+
+  it('stands against the Hall of Banners, on the plaza, with a door that can be walked to', () => {
+    const hall = poiOf(layout, 'poi_guild');
+    expect(office).toBeTruthy();
+    expect(office.type).toBe(POIType.LAND_OFFICE);
+    expect(office.npcId).toBe('npc_land_manager');
+    expect(office.position.x + office.size.width).toBeLessThanOrEqual(hall.position.x);
+    expect(hall.position.x - (office.position.x + office.size.width)).toBeLessThanOrEqual(CELL_TILES);
+    expect(office.position.y).toBe(hall.position.y);
+    expect(HubGenerator.getZoneAtPosition(layout, office.position.x, office.position.y)?.type).toBe(ZoneType.PLAZA);
+    expect(walkable(layout).has(`${doorOf(office).x},${doorOf(office).y}`)).toBe(true);
+  });
+
+  it('is a person of the cast, and offers the deeds and the plan, each doing something', () => {
+    const npc = HUB_NPCS.npc_land_manager;
+    expect(npc.title).toBe('Land Manager');
+    const actions = npc.dialogue.options.map(o => o.action);
+    expect(actions).toContain('OPEN_DEEDS');
+    expect(actions).toContain('OPEN_PLAN');
+    expect(actions).toContain('CLOSE');
+    expect(runDialogueAction('OPEN_DEEDS')).toEqual({ kind: 'navigate', view: 'HOLDINGS' });
+    expect(runDialogueAction('OPEN_PLAN')).toEqual({ kind: 'open', panel: 'plan' });
+  });
+
+  it('is the one way to the deeds in the city', () => {
+    const city = SRC('src/entities/hub/HubCanvas.tsx');
+    expect(city).not.toMatch(/setView\('HOLDINGS'\)/);
+    expect(city).toMatch(/setView\(effect\.view\)/);
+    expect(city).not.toMatch(/THE DEEDS/);
+  });
+
+  it('a lot with nothing to enter points you to him, instead of opening anything', () => {
+    const city = SRC('src/entities/hub/HubCanvas.tsx');
+    expect(city).toMatch(/Land Office/);
+  });
+
+  it('opens the plan from the city', () => {
+    const city = SRC('src/entities/hub/HubCanvas.tsx');
+    expect(city).toMatch(/panel\?\.kind === 'plan'/);
+    expect(city).toMatch(/<CityPlan /);
+  });
+});
+
+describe('the city plan: materials go in, and a chunk comes out', () => {
+  const owner = 'uid_bars';
+  const plank = (i: number, def = 'crf_plank') => ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[def] as any, Rng.fromKey(`a1_plan_${def}_${i}`));
+  const stashIds = () => usePlayerStore.getState().player.bank.stashTabs[0].items.map(i => i.id);
+  const fresh = async (id: string, items: ReturnType<typeof plank>[]) => {
+    useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], chunks: firstPlan().chunks, dismembered: [], planDeposit: {} } as any);
+    await useHubStore.getState().loadHub(id);
+    usePlayerStore.setState(s => ({ player: { ...s.player, id: owner, username: 'TESTER', bank: { ...s.player.bank, stashTabs: [{ ...s.player.bank.stashTabs[0], items }] } } }));
+  };
+  const firstBill = () => chunkBillFor(1)[0];
+
+  it('the bill is data, and each chunk asks more than the last, with no ceiling', () => {
+    expect(NEW_CARLEON.chunkBill.length).toBeGreaterThan(0);
+    const asks = [1, 2, 3, 40, 400].map(n => chunkBillFor(n)[0].count);
+    asks.slice(1).forEach((c, i) => expect(c).toBeGreaterThan(asks[i]));
+    expect(chunkBillFor(1)[0].tag).toBe(NEW_CARLEON.chunkBill[0].tag);
+    const m: IHubManifest = JSON.parse(JSON.stringify(NEW_CARLEON));
+    m.chunkBill = [];
+    expect(validateManifest(m).join()).toMatch(/bill/i);
+  });
+
+  it('a deposit takes the items out of the stash, exactly once', async () => {
+    const items = Array.from({ length: 5 }, (_, i) => plank(i));
+    await fresh('hub_plan_a', items);
+    const res = await useHubStore.getState().depositToPlan(firstBill().tag, items.slice(0, 3).map(i => i.id));
+    expect(res.ok).toBe(true);
+    expect(stashIds()).toEqual(items.slice(3).map(i => i.id));
+    expect(useHubStore.getState().planDeposit[firstBill().tag]).toBe(3);
+    const again = await useHubStore.getState().depositToPlan(firstBill().tag, items.slice(0, 3).map(i => i.id));
+    expect(again.ok).toBe(false);
+    expect(useHubStore.getState().planDeposit[firstBill().tag]).toBe(3);
+  });
+
+  it('refuses what does not answer the bill, and moves nothing', async () => {
+    const wrong = { ...plank(0), id: 'a1_not_building', universalDefinitionId: 'no_such_def', tags: ['consumable'] };
+    await fresh('hub_plan_b', [wrong]);
+    const res = await useHubStore.getState().depositToPlan(firstBill().tag, [wrong.id]);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBeTruthy();
+    expect(stashIds()).toEqual([wrong.id]);
+    expect(useHubStore.getState().planDeposit[firstBill().tag] ?? 0).toBe(0);
+    const unknown = await useHubStore.getState().depositToPlan('no_such_tag', [wrong.id]);
+    expect(unknown.ok).toBe(false);
+  });
+
+  it('takes no more than the next chunk still asks', async () => {
+    const need = firstBill().count;
+    const items = Array.from({ length: need + 3 }, (_, i) => plank(i));
+    await fresh('hub_plan_c', items);
+    await useHubStore.getState().depositToPlan(firstBill().tag, items.map(i => i.id));
+    expect(useHubStore.getState().planDeposit[firstBill().tag]).toBe(need);
+    expect(stashIds().length).toBe(3);
+  });
+
+  it('a chunk will not rise on a short deposit, and says by how much', async () => {
+    await fresh('hub_plan_d', []);
+    const res = await useHubStore.getState().planRaise('EAST');
+    expect(res.ok).toBe(false);
+    expect(res.reason).toContain(String(firstBill().count));
+    expect(useHubStore.getState().chunks.length).toBe(1);
+  });
+
+  it('a full deposit raises the chunk where it was chosen, and is spent', async () => {
+    const need = firstBill().count;
+    const items = Array.from({ length: need }, (_, i) => plank(i));
+    await fresh('hub_plan_e', items);
+    await useHubStore.getState().depositToPlan(firstBill().tag, items.map(i => i.id));
+    const res = await useHubStore.getState().planRaise('WEST');
+    expect(res.ok).toBe(true);
+    const hub = useHubStore.getState();
+    expect(hub.chunks.length).toBe(2);
+    expect({ cx: hub.chunks[1].cx, cy: hub.chunks[1].cy }).toEqual({ cx: -1, cy: 0 });
+    expect(hub.planDeposit[firstBill().tag]).toBe(0);
+    expect(hub.lots.length).toBeGreaterThan(LOTS_STANDING);
+  });
+
+  it('a chunk on taken ground is refused, and the deposit keeps', async () => {
+    const need = firstBill().count;
+    const items = Array.from({ length: need }, (_, i) => plank(i));
+    await fresh('hub_plan_f', items);
+    await useHubStore.getState().raiseChunk('NORTH');
+    const nextNeed = chunkBillFor(2)[0].count;
+    useHubStore.setState({ planDeposit: { [firstBill().tag]: nextNeed } });
+    const res = await useHubStore.getState().planRaise('NORTH');
+    expect(res.ok).toBe(false);
+    expect(useHubStore.getState().planDeposit[firstBill().tag]).toBe(nextNeed);
+    expect(useHubStore.getState().chunks.length).toBe(2);
+  });
+
+  it('what is deposited stays through a reload', async () => {
+    const items = Array.from({ length: 4 }, (_, i) => plank(i));
+    await fresh('hub_plan_g', items);
+    await useHubStore.getState().depositToPlan(firstBill().tag, items.map(i => i.id));
+    useHubStore.setState({ activeHubId: null, lots: [], chunks: firstPlan().chunks, dismembered: [], planDeposit: {} } as any);
+    await useHubStore.getState().loadHub('hub_plan_g');
+    expect(useHubStore.getState().planDeposit[firstBill().tag]).toBe(4);
+  });
+
+  it('deposits and raises are on the ledger, and the screen spends through the one door', () => {
+    expect(SRC('src/entities/hub/store.ts')).toMatch(/kind: 'PLAN_DEPOSIT'/);
+    const plan = SRC('src/components/CityPlan.tsx');
+    expect(plan).toMatch(/planRaise\(/);
+    expect(plan).toMatch(/depositToPlan\(/);
+    expect(plan).not.toMatch(/raiseChunk/);
+    expect(plan).toMatch(/dashed/); // where a chunk could rise reads by its outline, not its hue
+    expect(plan).toMatch(/ArmedButton/); // a deposit does not come back
   });
 });
 

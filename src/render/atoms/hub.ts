@@ -23,7 +23,7 @@ export const HUB_GENRE: Genre = { name: 'New Carleon', palette: ['#7a4210', '#c2
 
 const BUILDING_TYPES = [
   POIType.BANK, POIType.GUILD_HALL, POIType.AUCTION_HOUSE, POIType.VENDOR_WEAPONS,
-  POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES, POIType.TAVERN, POIType.IDENTIFIER
+  POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES, POIType.TAVERN, POIType.IDENTIFIER, POIType.LAND_OFFICE
 ];
 
 const allPois = (layout: IHubLayout) => layout.zones.flatMap(z => z.pois);
@@ -173,6 +173,11 @@ function emblemInk(type: POIType): Ink {
     case POIType.GUILD_HALL:
       k.rect(5, 0, 9, 47).rect(10, 2, 42, 30);
       for (let y = 20; y <= 30; y++) { const half = y - 20; k.rect(26 - half, y, 26 + half, y, 0); }
+      break;
+    case POIType.LAND_OFFICE:
+      // A plot on a sheet, cut into its lots.
+      k.rect(2, 2, 45, 45).rect(6, 6, 41, 41, 0);
+      k.rect(14, 6, 17, 41).rect(30, 6, 33, 41).rect(6, 22, 41, 25);
       break;
     case POIType.VENDOR_WEAPONS:
       k.line(5, 5, 42, 42, 3).line(42, 5, 5, 42, 3).rect(2, 32, 16, 36).rect(31, 32, 45, 36);
@@ -388,6 +393,7 @@ function roofAtom(type: POIType, x: number, y: number): number {
     case POIType.BANK: return (x + y) % 6 === 0 ? px(Role.PROOF, 1) : px(Role.MATTER, 1);
     case POIType.IDENTIFIER: return y % 4 === 0 ? px(Role.MATTER, 2) : px(Role.MATTER, 0);
     case POIType.GUILD_HALL: return (x >> 1) % 3 === 0 ? px(Role.LIFE, 1) : px(Role.MATTER, 1);
+    case POIType.LAND_OFFICE: return (x >> 1) % 3 === 0 ? px(Role.LIFE, 1) : y % 4 === 0 ? px(Role.MATTER, 2) : px(Role.MATTER, 1);
     case POIType.VENDOR_WEAPONS: return x % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 2);
     case POIType.VENDOR_ARMOR: return (x + (y >> 2) * 3) % 6 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1);
     case POIType.VENDOR_CONSUMABLES: return hash2(5, x, y) % 3 === 0 ? px(Role.LIFE, 2) : px(Role.LIFE, 1);
