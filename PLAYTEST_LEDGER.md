@@ -31,6 +31,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | N9 | The holdings screen says `LOT 13` where the sign says `Lot #14`. Predates the hub manifest | `HoldingsPanel.tsx` |
 | N10 | A deep scan's manifest still prints raw ids for what is not a creature (`struct_ruin`, `res_...`) | `SurveySystem.manifest` |
 | N11 | The Agent tab says "Mental stats come only from frames", which is no longer true | `PlayerHub.tsx` |
+| N12 | Three places skip worn `carry_capacity` when reading the carry limit. Pedro asked how carry works and has not asked for a change | `player/store.ts` about 640 and 932, `PlayerHub.tsx` about 130 |
 
 ### Found while building the timer, 2026-11-01
 
