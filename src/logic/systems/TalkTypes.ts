@@ -6,6 +6,9 @@
  * in TalkLaw writes what the band is worth.
  */
 
+/** The longest thing one person can say in one round. It guards the bill, and it is said to them. */
+export const TALK_MESSAGE_LIMIT = 600;
+
 /** How a thing said sits with who they are, from worst to best. */
 export const JUDGE_BANDS = ['repels', 'grates', 'idle', 'lands', 'moves'] as const;
 export type JudgeBand = typeof JUDGE_BANDS[number];

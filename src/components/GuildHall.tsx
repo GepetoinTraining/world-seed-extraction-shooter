@@ -13,7 +13,7 @@ import {
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag, materialLabel } from '../entities/hub/room';
 import { lotConstruction } from '../entities/hub/template';
-import { useHubStore, worldDay } from '../entities/hub/store';
+import { buildingLabel, useHubStore, worldDay } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
@@ -52,7 +52,7 @@ const Board: React.FC = () => {
       {asks.length > 0 && (
         <Panel title="WHAT PEOPLE ARE ASKING FOR">
           {asks.map(ask => (
-            <div key={ask.id} className="ws-small"><b>{ask.askerName}</b> is asking for a {ask.building.replace(/_/g, ' ')}. {ask.goal}</div>
+            <div key={ask.id} className="ws-small"><b>{ask.askerName}</b> is asking for a {buildingLabel(ask.building)}. {ask.goal}</div>
           ))}
         </Panel>
       )}

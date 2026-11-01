@@ -32,8 +32,8 @@ import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { MonsterMind, Stance } from '../../logic/systems/MonsterMind';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { TalkDoor } from '../../logic/systems/TalkDoor';
-import { TalkLaw } from '../../logic/systems/TalkLaw';
-import { IGoalAsk, ILogLine, IRoundAsk, ITalkSurface, JudgeBand } from '../../logic/systems/TalkTypes';
+import { TALK_ENERGY, TalkLaw } from '../../logic/systems/TalkLaw';
+import { IGoalAsk, ILogLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../logic/systems/TalkTypes';
 import { useFeed } from '../../components/ui/stores';
 
 export type TalkSubject =
@@ -57,7 +57,14 @@ export interface IRoundRecord {
   reply: string;
 }
 
-export interface ITalkGoal { need: string; text: string; by: 'DOOR' | 'FLOOR'; setAt: number }
+export interface ITalkGoal {
+  need: string;
+  text: string;
+  by: 'DOOR' | 'FLOOR';
+  setAt: number;
+  /** Nothing has answered yet and nothing was paid for: it asks again next round, in case something does. */
+  unanswered?: boolean;
+}
 
 /** A city person's record, beside the hub. The whole log stays here: only its tail goes out. */
 interface ICityTalkRecord {
@@ -94,9 +101,6 @@ interface ITalkState {
   /** The meter reached the line, and they come. */
   bring: () => void;
 }
-
-/** A round costs the day what a talk always has. It is the first thing that bounds a long talk. */
-export const TALK_ENERGY = 5;
 
 const EMPTY = {
   subject: null, title: '', ready: false, busy: false, log: [], rounds: [], meter: 0, note: '', spentUsd: 0, goal: null, stance: null, wants: null
@@ -143,7 +147,7 @@ function monsterSheet(seed: string, entity: IWorldEntity): INpcSheet {
   const rng = Rng.fromKey(`${seed}:npc:${entity.id}:nature`);
   const kind = monsterKind(entity);
   return {
-    name: entity.displayName ?? '',
+    name: entity.displayName ?? 'Unknown Contact',
     temperament: rng.pick(['AGGRESSIVE', 'COWARD', 'TERRITORIAL', 'PASSIVE', 'OPPORTUNIST']),
     objective: rng.pick(['SURVIVE', 'HOARD', 'WITNESS', 'PROTECT_ASSET']),
     want: rng.pick(['GOLD', 'GIFT', 'RESPECT']),
@@ -197,7 +201,7 @@ export const useTalk = create<ITalkState>((set, get) => {
     const facts = person.facts;
     const rung = NpcAgenda.rung(agenda, facts);
     const standing = get().goal;
-    if (standing && standing.need === rung.need) return;
+    if (standing && standing.need === rung.need && !standing.unanswered) return;
     const hub = useHubStore.getState();
     const ask: IGoalAsk = {
       binding: 'LADDER',
@@ -211,7 +215,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       mayAsk: !hub.openBuildingAsks().some(a => a.askerId === npcId)
     };
     const answer = await TalkDoor.goal(talkId, ask);
-    set(s => ({ goal: { need: answer.words.need, text: answer.words.goal, by: answer.by, setAt: worldDay() }, spentUsd: addUsage(s.spentUsd, answer.usage) }));
+    set(s => ({ goal: { need: answer.words.need, text: answer.words.goal, by: answer.by, setAt: worldDay(), unanswered: answer.by === 'FLOOR' && !answer.usage }, spentUsd: addUsage(s.spentUsd, answer.usage) }));
     if (answer.words.quest) await hub.postTalkQuest(npcId, person.sheet.name, person.rank, person.sheet.want, answer.words.quest);
     if (answer.words.building) await hub.askForBuilding(npcId, person.sheet.name, answer.words.building, answer.words.goal, answer.words.need);
   };
@@ -257,6 +261,9 @@ export const useTalk = create<ITalkState>((set, get) => {
       const said = raw.trim();
       const { subject, busy, ready } = get();
       if (!subject || !said || busy || !ready) return;
+      if (said.length > TALK_MESSAGE_LIMIT) { set({ note: `That is more than anyone can say at once: ${TALK_MESSAGE_LIMIT} characters.` }); return; }
+      // Someone can walk off mid-round. What they said is out, and the window is no longer theirs to write in.
+      const stillHere = () => get().subject === subject;
 
       if (subject.kind === 'MONSTER' && MobAI.isProvoked(subject.entityId)) {
         set({ note: 'It is done talking. You hurt it.' });
@@ -292,24 +299,28 @@ export const useTalk = create<ITalkState>((set, get) => {
         const answer = await TalkDoor.round(`${SessionJournal.rollKey('talk', entity.id)}`, ask, { alignment: isMonster ? undefined : who.alignment, hidden: kind ? [kind.name] : [] });
 
         const now = liveEntity(entity.id);
-        if (!now?.npc) { set({ busy: false, note: 'There is nobody there now.' }); return; }
+        if (!now?.npc) { if (stillHere()) set({ busy: false, note: 'There is nobody there now.' }); return; }
         const sums = TalkLaw.settle({ roll, required, band: answer.band, disposition: now.npc.disposition });
         const reply = answer.reply || TalkLaw.floorReply(sums.landed, isMonster ? undefined : now.npc.name);
         const stance = isMonster ? MonsterMind.stance(sums.disposition, attrs) : null;
+        // Once it has said what it wants in its own words, that stands. Until then its sheet says, and its words can still replace that.
+        const wantsHeard = !!now.bargain?.wantsHeard || (stance === 'FRIENDLY' && !!answer.wants);
         const wants = stance === 'FRIENDLY'
-          ? (now.bargain?.wants ?? (answer.wants || MonsterMind.floorWant(now.npc)))
+          ? (now.bargain?.wantsHeard ? now.bargain.wants! : answer.wants || now.bargain?.wants || MonsterMind.floorWant(now.npc))
           : now.bargain?.wants ?? null;
 
         useWorldStore.getState().updateEntity(entity.id, {
           npc: { ...now.npc, disposition: sums.disposition, attempts: attempt },
-          ...(isMonster ? { bargain: { ...now.bargain, stance: stance!, holding: true, ...(wants ? { wants } : {}) } } : {})
+          ...(isMonster ? { bargain: { ...now.bargain, stance: stance!, holding: stillHere(), wantsHeard, ...(wants ? { wants } : {}) } } : {})
         });
         SessionJournal.record('INTERACT', { kind: isMonster ? 'BARGAIN' : 'TALK', targetId: entity.id, rollKey, roll, required, band: answer.band, bonus: sums.bonus, landed: sums.landed, by: answer.by, disposition: sums.disposition });
         usePlayerStore.getState().processAction({ tags: ['social', 'charisma'], magnitude: sums.landed ? 15 : 5 });
         useFeed.getState().push(`${get().title} ${sums.landed ? 'warms to you' : 'is unconvinced'} (${sums.disposition}/100).`, sums.landed ? 'signal' : 'plain');
 
-        const log: ILogLine[] = [...get().log, { who: 'NPC', text: reply }];
+        // With no model nobody spoke, so the floor's line is narration, never their words.
+        const log: ILogLine[] = [...(stillHere() ? get().log : [...prior, { who: 'THEM' as const, text: said }]), { who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply }];
         fieldLogs.set(`${seed}:${entity.id}`, log);
+        if (!stillHere()) return;
         set(s => ({
           busy: false, log, meter: sums.disposition, stance, wants,
           note: answer.by === 'FLOOR' ? (SAID_WHEN_SILENT[answer.status ?? ''] ?? 'That got no answer: the round rolled without it.') : (answer.gated ? 'They will not do that, whatever you say.' : ''),
@@ -328,6 +339,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const agenda = person.agenda ?? NpcAgenda.fold(kept.agenda, worldDay());
       set({ busy: true, note: '', log: [...prior, { who: 'THEM', text: said, name: usePlayerStore.getState().player.username }] });
       await setCityGoal(subject.npcId, person, agenda, talkId);
+      if (!stillHere()) return;
 
       const attempt = kept.attempts + 1;
       const rollKey = `${hubId}:social:${subject.npcId}:${attempt}`;
@@ -336,10 +348,12 @@ export const useTalk = create<ITalkState>((set, get) => {
       const who = NpcSheet.surface(person.sheet, person.rank);
       const ask: IRoundAsk = { who, log: prior, said, roll, required, bonuses: TalkLaw.bonuses(), meter: get().meter, goal: get().goal?.text };
       const answer = await TalkDoor.round(talkId, ask, { alignment: who.alignment, hidden: [] });
+      // Gone mid-round in the city: it never happened. Nothing is on the record, and the same roll waits for the next try.
+      if (!stillHere()) return;
       const sums = TalkLaw.settle({ roll, required, band: answer.band, disposition: get().meter });
       const reply = answer.reply || TalkLaw.floorReply(sums.landed, person.sheet.name);
       set(s => ({
-        busy: false, meter: sums.disposition, log: [...s.log, { who: 'NPC', text: reply }],
+        busy: false, meter: sums.disposition, log: [...s.log, { who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply }],
         note: answer.by === 'FLOOR' ? (SAID_WHEN_SILENT[answer.status ?? ''] ?? 'That got no answer: the round rolled without it.') : (answer.gated ? 'They will not do that, whatever you say.' : ''),
         spentUsd: addUsage(s.spentUsd, answer.usage),
         rounds: [...s.rounds, { said, roll, required, band: answer.band, gated: answer.gated, by: answer.by, reply, ...sums }]

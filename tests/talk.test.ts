@@ -58,7 +58,7 @@ import { LADDER, NEEDS, NpcAgenda } from '../src/logic/systems/NpcAgenda';
 import { ALIGNMENTS, Alignment } from '../src/logic/systems/Alignment';
 import { TalkLaw } from '../src/logic/systems/TalkLaw';
 import { TalkDoor } from '../src/logic/systems/TalkDoor';
-import { HARM_BANDS, JUDGE_BANDS, PROMISE_BANDS } from '../src/logic/systems/TalkTypes';
+import { HARM_BANDS, JUDGE_BANDS, PROMISE_BANDS, TALK_MESSAGE_LIMIT as SAID_LIMIT } from '../src/logic/systems/TalkTypes';
 import { MIND_TAGS, MonsterMind, SPEECH_RUNG } from '../src/logic/systems/MonsterMind';
 import { StatSystem } from '../src/logic/systems/StatSystem';
 import { WebBank } from '../src/logic/content/WebBank';
@@ -291,6 +291,25 @@ describe('line 147: convincing a person is a talk', () => {
     expect(row.disposition).toBe(live(entity.id).npc!.disposition);
   });
 
+  it('what the meter says moved is what moved, so a round at the top claims nothing', () => {
+    expect(TalkLaw.settle({ roll: 100, required: 5, disposition: 100, band: 'moves' }).delta).toBe(0);
+  });
+
+  it('with no model the floor\'s line is narration, never put in their mouth', async () => {
+    const entity = person();
+    stage(entity);
+    await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+    await talk().say('Hello.');
+    expect(talk().log[talk().log.length - 1].who).toBe('NOTE');
+  });
+
+  it('the menu says what a round costs', () => {
+    const entity = person();
+    stage(entity);
+    const option = InteractionEngine.getAvailableInteractions(player(), entity, 1).find(o => o.id.startsWith('int_talk_'))!;
+    expect(option.energyCost).toBe(5);
+  });
+
   it('a tougher person asks more of the same words, by rank and by mind', () => {
     const attrs = spread({ charisma: 3 });
     const low = TalkLaw.required('GIFT', attrs, UniversalRank.F, spread());
@@ -456,6 +475,54 @@ describe('line 147: what guards a long talk\'s bill', () => {
     expect(door).toHaveBeenCalledTimes(1);
     release({ status: 'OK', data: words() });
     await first;
+  });
+
+  it('walking off mid-round leaves a monster free, and leaves a city record as it was', async () => {
+    const man = monster(humanoidDef());
+    stage(man);
+    let release: (v: any) => void = () => {};
+    vi.spyOn(IntelligenceClient, 'bargain').mockImplementation(() => new Promise(r => { release = r; }) as any);
+    await talk().open({ kind: 'MONSTER', entityId: man.id });
+    const said = talk().say('Wait.');
+    talk().close();
+    release({ status: 'OK', data: words() });
+    await said;
+    expect(live(man.id).bargain!.holding).toBe(false);
+    expect(talk().subject).toBeNull();
+    expect(talk().rounds).toHaveLength(0);
+
+    vi.spyOn(IntelligenceClient, 'npcGoal').mockImplementation(async (_id: string, ask: any) => ({ status: 'OK', data: goalWords({ need: ask.need }) }) as any);
+    answering(words());
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('One.');
+    const meter = talk().meter;
+    const lines = talk().log.length;
+    talk().close();
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    vi.spyOn(IntelligenceClient, 'npcTalk').mockImplementation(() => new Promise(r => { release = r; }) as any);
+    const second = talk().say('Two.');
+    await vi.waitFor(() => expect(release).toBeTruthy());
+    talk().close();
+    release({ status: 'OK', data: words() });
+    await second;
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    expect(talk().meter).toBe(meter);
+    expect(talk().log).toHaveLength(lines);
+  });
+
+  it('a person who is gone takes the talk with them', () => {
+    expect(readFileSync('src/components/TalkWindow.tsx', 'utf8')).toMatch(/useEffect\(\(\) => \(\) => useTalk\.getState\(\)\.close\(\), \[\]\)/);
+  });
+
+  it('a message over the size is said to them, and sends nothing', async () => {
+    const entity = person();
+    stage(entity);
+    const door = answering(words());
+    await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+    await talk().say('y'.repeat(SAID_LIMIT + 1));
+    expect(door).not.toHaveBeenCalled();
+    expect(talk().note).toMatch(/more than anyone can say/i);
+    expect(player().currentSession!.energy).toBe(100);
   });
 
   it('what a talk has spent is kept and shown', async () => {
@@ -654,6 +721,31 @@ describe('line 148: the bargain menu', () => {
     await talk().say('What do you want?');
     expect(talk().wants).toBe('The old road, unwatched.');
     expect(MonsterMind.wantOf(live(man.id))).toBe('The old road, unwatched.');
+  });
+
+  it('its own words replace what its sheet said, and then they stand', async () => {
+    const man = monster(humanoidDef());
+    stage(man);
+    await talk().open({ kind: 'MONSTER', entityId: man.id });
+    useWorldStore.getState().updateEntity(man.id, { npc: { ...live(man.id).npc!, disposition: 99 } });
+    await talk().say('Well?');
+    expect(talk().wants).toBe(MonsterMind.floorWant(live(man.id).npc!));
+    vi.spyOn(IntelligenceClient, 'bargain').mockResolvedValue({ status: 'OK', data: words({ wants: 'First answer.' }) } as any);
+    await talk().say('Well?');
+    expect(talk().wants).toBe('First answer.');
+    vi.spyOn(IntelligenceClient, 'bargain').mockResolvedValue({ status: 'OK', data: words({ wants: 'Second answer.' }) } as any);
+    await talk().say('Well?');
+    expect(talk().wants).toBe('First answer.');
+  });
+
+  it('a humanoid who has reached speech has a real mind, not the rank\'s floor everywhere', () => {
+    const def = humanoidDef();
+    const bands = new Set(Array.from({ length: 30 }, (_, i) => {
+      const body = { ...monster(def, `m${i}`), rank: UniversalRank.D };
+      const mind = MonsterMind.read(SEED, body, def).stats;
+      return Object.values(NpcSheet.surface({ ...NpcSheet.read(SEED, body, undefined), stats: mind }, UniversalRank.D).mind);
+    }).flat());
+    expect(bands.size).toBeGreaterThan(1);
   });
 
   it('with no key a friendly one still tells what it wants, from its sheet', () => {
@@ -875,6 +967,17 @@ describe('line 149: the goal is set before the answer', () => {
     expect(request.system).not.toMatch(/\bcrime|\bcriminal/i);
   });
 
+  it('a goal nothing answered asks again when something can, and one that cost money does not', async () => {
+    await openKeeper();
+    await talk().say('One.');
+    expect(talk().goal!.by).toBe('FLOOR');
+    const door = vi.spyOn(IntelligenceClient, 'npcGoal').mockImplementation(async (_id: string, ask: any) => ({ status: 'OK', data: goalWords({ need: ask.need, goal: 'Now it has a voice.' }) }) as any);
+    await talk().say('Two.');
+    expect(talk().goal!.text).toBe('Now it has a voice.');
+    await talk().say('Three.');
+    expect(door).toHaveBeenCalledTimes(1);
+  });
+
   it('with no key the goal is the rung\'s plain one and the round still rolls', async () => {
     await openKeeper();
     await talk().say('Good morning.');
@@ -961,6 +1064,18 @@ describe('line 150: a person posts a quest and asks for a building', () => {
     const { Treasury } = await import('../src/logic/economy/Treasury');
     vi.spyOn(Treasury, 'balance').mockResolvedValue(100000);
     expect(await hub().fulfilQuest(posted.id, given.map(i => i.id))).toEqual({ ok: true });
+  });
+
+  it('a vendor who asked keeps what was brought, to look over like anything else they take in', async () => {
+    await hub().postTalkQuest('npc_weapon_vendor', 'A Vendor', UniversalRank.F, 'GIFT', quest as any);
+    const posted = hub().guild.quests.find(q => q.residentId === 'npc_weapon_vendor')!;
+    const given = Array.from({ length: posted.count }, () => thing());
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [...t.items, ...given] } : t) } } }));
+    const { Treasury } = await import('../src/logic/economy/Treasury');
+    vi.spyOn(Treasury, 'balance').mockResolvedValue(100000);
+    expect(hub().vendors.npc_weapon_vendor).toBeTruthy();
+    await hub().fulfilQuest(posted.id, given.map(i => i.id));
+    expect(hub().vendors.npc_weapon_vendor.held.map(i => i.id)).toEqual(given.map(i => i.id));
   });
 
   it('a building ask is on the record, in the person\'s words, where C5 can read it', async () => {

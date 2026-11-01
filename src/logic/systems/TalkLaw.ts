@@ -17,6 +17,9 @@ import { LADDER } from './NpcAgenda';
 import { StatSystem } from './StatSystem';
 import { HARM_BANDS, IGoalAsk, IGoalWords, IMeans, IRoundWords, JUDGE_BANDS, JudgeBand, PROMISE_BANDS, QUEST_SIZES, QuestSize } from './TalkTypes';
 
+/** What one round takes out of a person's day. It is the first thing that bounds a long talk. */
+export const TALK_ENERGY = 5;
+
 const BONUS_NEAR = 10;
 const BONUS_FAR = 25;
 /** How much harder each rank is, and each point of will over the rank's floor. */
@@ -83,10 +86,11 @@ export const TalkLaw = {
     const total = round.roll + bonus;
     const margin = total - round.required;
     const landed = margin >= 0;
-    const delta = landed
+    const move = landed
       ? Math.round(MOVE_ON_LANDING + margin * MOVE_PER_MARGIN)
       : Math.min(-1, Math.round(margin * FALL_PER_MARGIN));
-    return { bonus, total, landed, delta, disposition: Math.max(0, Math.min(100, round.disposition + delta)) };
+    const disposition = Math.max(0, Math.min(100, round.disposition + move));
+    return { bonus, total, landed, delta: disposition - round.disposition, disposition };
   },
 
   judgeRound(words: Partial<IRoundWords> | null | undefined, ctx: { alignment?: string; hidden: string[] }): IRoundVerdict {

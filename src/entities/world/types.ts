@@ -129,7 +129,7 @@ export interface IWorldEntity {
   npc?: INpcSheet;
 
   // D114: a monster someone has talked to. The meter is on `npc`, this is where that leaves it.
-  bargain?: { stance: 'AGGRESSIVE' | 'NEUTRAL' | 'FRIENDLY'; holding?: boolean; wants?: string };
+  bargain?: { stance: 'AGGRESSIVE' | 'NEUTRAL' | 'FRIENDLY'; holding?: boolean; wants?: string; wantsHeard?: boolean };
 
   // Wave 10C (D16): the cart's whole state rides on its entity
   cart?: ICartState;

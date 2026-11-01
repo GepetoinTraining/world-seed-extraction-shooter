@@ -133,6 +133,10 @@ export const worldDay = () => Math.floor(Date.now() / 86_400_000);
 /** The one thing anyone can ask to have raised that is not a station on the web. */
 const BUILDING_HOUSE = 'house';
 
+/** What an ask's word reads as to a person: a station's own name, never its id. */
+export const buildingLabel = (word: string): string =>
+  WebBank.current().stations.find(s => s.id === word)?.name ?? word.replace(/_/g, ' ');
+
 // Wave 10 (D8): a queued construction step. Materials leave the stash when the
 // job is queued — exactly once — and the piece applies when the clock says so.
 export interface IBuildJob {
@@ -951,7 +955,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (asks.some(a => a.askerId === askerId && a.state === 'OPEN')) return;
     const ask: IBuildingAsk = { id: `ask_${askerId}_${asks.length}`, askerId, askerName, building, goal, need, day: worldDay(), state: 'OPEN' };
     set({ guild: { ...guild, asks: [...asks, ask] } });
-    useFeed.getState().push(`${askerName} is asking for a ${building.replace(/_/g, ' ')}.`, 'signal');
+    useFeed.getState().push(`${askerName} is asking for a ${buildingLabel(building)}.`, 'signal');
     await get().saveHubState();
   },
 
@@ -1004,6 +1008,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       hubDoc: get().hubDoc() ?? undefined
     });
     await (await provenance()).recordMany(given, 'TRANSFER', { via: 'QUEST', questId, lotId: resident?.lotId });
+    // A keeper's goods go on their own shelves to be looked over, the way anything they take in does.
+    const keeper = !resident && get().vendors[quest.residentId];
+    if (keeper) set({ vendors: { ...get().vendors, [quest.residentId]: given.reduce((record, item) => VendorSystem.receive(record, item, worldDay()), keeper) } });
     useFeed.getState().push(`${resident?.name ?? quest.askerName} has what they wanted. The hub pays ${pay.toLocaleString()} G.`, 'proof');
     return { ok: true };
   },

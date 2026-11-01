@@ -9,14 +9,12 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useTalk, meterOpensFollowing, TALK_ENERGY } from '../entities/interaction/talkStore';
+import { useTalk, meterOpensFollowing } from '../entities/interaction/talkStore';
+import { TALK_ENERGY } from '../logic/systems/TalkLaw';
+import { TALK_MESSAGE_LIMIT } from '../logic/systems/TalkTypes';
 import { usePlayerStore } from '../entities/player/store';
-import { MonsterMind } from '../logic/systems/MonsterMind';
 import { StatSystem } from '../logic/systems/StatSystem';
 import { Busy, Button, Chip, Modal, Panel } from './ui/kit';
-
-/** The door refuses anything longer, and says so. The box stops there first. */
-const SAY_AT_MOST = 600;
 
 /** A 0 to 100 track with notches at what it opens: position and seam, never hue. */
 const MeterTrack: React.FC<{ value: number; lines: { at: number; label: string }[] }> = ({ value, lines }) => (
@@ -42,6 +40,8 @@ export const TalkWindow: React.FC = () => {
 
   useEffect(() => { logRef.current?.scrollTo?.(0, logRef.current.scrollHeight); }, [log.length, busy]);
   useEffect(() => { if (subject) inputRef.current?.focus(); }, [subject]);
+  // The screen it was opened on is gone: a death, a way out, another view. So is the talk.
+  useEffect(() => () => useTalk.getState().close(), []);
 
   if (!subject) return null;
 
@@ -104,7 +104,7 @@ export const TalkWindow: React.FC = () => {
             className="ws-input"
             aria-label="What you say"
             value={saying}
-            maxLength={SAY_AT_MOST}
+            maxLength={TALK_MESSAGE_LIMIT}
             disabled={!ready}
             placeholder={isMonster ? 'Say something to it' : 'Say something'}
             style={{ flex: 1, minWidth: 0 }}
@@ -123,9 +123,7 @@ export const TalkWindow: React.FC = () => {
             {subject.kind === 'FIELD_PERSON' && meterOpensFollowing(meter) && (
               <Button tone="proof" primary disabled={busy} onClick={bring}>THEY WILL COME</Button>
             )}
-            {isMonster && MonsterMind.stance(meter, attributes) !== 'FRIENDLY' && (
-              <Chip title="It will not say until it trusts you">IT HOLDS WHILE YOU TALK</Chip>
-            )}
+            {isMonster && <Chip title="It waits while you talk. Whatever is with it does not.">IT HOLDS WHILE YOU TALK</Chip>}
           </div>
         </div>
       </div>

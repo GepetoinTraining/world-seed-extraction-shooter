@@ -75,8 +75,7 @@ export const WINDOW_SPEND_LIMIT_USD = 0.5;
  */
 export const TALK_SPEND_LIMIT_USD = 0.05;
 
-/** The longest thing one person can say in one round. It guards the bill, and it is said to them. */
-export const TALK_MESSAGE_LIMIT = 600;
+export { TALK_MESSAGE_LIMIT } from '../../src/logic/systems/TalkTypes';
 
 /** A provider that is not there: no key, no model. The game must still go on. */
 export class AbsentProvider implements IIntelligenceProvider {

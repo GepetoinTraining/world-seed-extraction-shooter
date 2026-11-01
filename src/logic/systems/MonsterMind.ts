@@ -15,6 +15,7 @@
 import { IAttributes, ISkillState, MENTAL_ATTRIBUTES } from '../../../types';
 import { MobBehavior } from '../../entities/mob/types';
 import { INpcSheet, IWorldEntity } from '../../entities/world/types';
+import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
 import { NpcSheet } from './NpcSheet';
 import { StatSystem } from './StatSystem';
 import { RUNG_XP, WebSystem } from './WebSystem';
@@ -54,9 +55,15 @@ export const MonsterMind = {
   read(worldSeed: string, entity: Pick<IWorldEntity, 'id' | 'rank'>, kind: IMindKind, _webVersion?: number): { skill: ISkillState | null; stats: IAttributes } {
     const dealt = NpcSheet.statsOf(worldSeed, entity);
     const skill = holds(kind) ? skillOf(kind) : null;
-    const share = skill ? (WebSystem.masteryOf(skill).rung + 1) / RUNG_XP.length : 0;
     const stats = { ...dealt };
-    for (const attr of MENTAL_ATTRIBUTES) stats[attr] = Math.floor(dealt[attr] * share);
+    if (!skill) {
+      for (const attr of MENTAL_ATTRIBUTES) stats[attr] = 0;
+      return { skill, stats };
+    }
+    // Everyone with a mind has the rank's floor of one. What the skill develops is what is over it.
+    const share = (WebSystem.masteryOf(skill).rung + 1) / RUNG_XP.length;
+    const floor = 1 + ProgressionSystem.rankIndex(entity.rank);
+    for (const attr of MENTAL_ATTRIBUTES) stats[attr] = floor + Math.round((dealt[attr] - floor) * share);
     return { skill, stats };
   },
 

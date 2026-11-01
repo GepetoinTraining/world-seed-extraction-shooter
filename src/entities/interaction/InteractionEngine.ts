@@ -4,6 +4,7 @@ import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
+import { TALK_ENERGY } from '../../logic/systems/TalkLaw';
 import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 
 /** D109: you can't talk across a distance. The same reach for a person and a monster. */
@@ -101,7 +102,7 @@ export class InteractionEngine {
         label: `Talk (${npc.name} · ${npc.disposition}/100)`,
         type: InteractionType.COMMUNE,
         icon: '',
-        energyCost: 0,
+        energyCost: TALK_ENERGY,
         timeCostSeconds: 0,
         requirements: { skillId: 'charisma' },
         consequence: { xpTags: ['social', 'charisma'] }
@@ -130,7 +131,7 @@ export class InteractionEngine {
         label: stance ? `Bargain (${stance.toLowerCase()})` : 'Bargain',
         type: InteractionType.COMMUNE,
         icon: '',
-        energyCost: 0,
+        energyCost: TALK_ENERGY,
         timeCostSeconds: 0,
         requirements: { skillId: 'charisma' },
         consequence: { xpTags: ['social', 'charisma'] }
