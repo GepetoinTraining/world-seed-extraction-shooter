@@ -27,12 +27,14 @@ export type RestPlace = 'INN' | 'BED' | 'FIELD';
 export const INN_FEE = 20;
 
 /**
- * D79: a rest takes real time, on a log curve of the energy spent: quick at the start,
- * and someone trained for a long shift still has a long rest, like a rig worker's
- * rotation. ln(1 + spent) squared, in this unit: 20 spent is about 9 minutes, 55 about
- * 16, 500 about 39. A guess until Wave 12.
+ * D79: a rest takes real time, on a curve that starts quick and steepens: someone trained
+ * for a long shift has a truly long rest, like a rig worker's rotation. Pedro's mark is
+ * 500 energy, about 8 hours. 20 spent is about 4 minutes, 55 about 17, 200 about 2 hours.
+ * The power is a guess until Wave 12.
  */
-export const REST_CURVE_UNIT_MS = 60_000;
+export const REST_MARK_ENERGY = 500;
+export const REST_MARK_MS = 8 * 60 * 60_000;
+const REST_CURVE_POWER = 1.5;
 
 export interface IRestQueue {
   /** Items studied, waiting to be known. */
@@ -179,7 +181,7 @@ export class RestSystem {
   static restMs(player: IPlayer): number {
     const full = StatSystem.maxEnergy(player.attributes, player.equipment);
     const left = player.currentSession?.energy ?? player.energyToday ?? full;
-    return Math.round(Math.log1p(Math.max(0, full - left)) ** 2 * REST_CURVE_UNIT_MS);
+    return Math.round(REST_MARK_MS * (Math.max(0, full - left) / REST_MARK_ENERGY) ** REST_CURVE_POWER);
   }
 
   static isResting(player: IPlayer, now = Date.now()): boolean {
