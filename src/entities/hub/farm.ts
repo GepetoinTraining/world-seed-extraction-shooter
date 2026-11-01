@@ -189,7 +189,8 @@ export class Farm {
     const line = item.farmLine;
     const lines: string[] = [];
     if (line) {
-      lines.push(`Off bed ${line.bed + 1} of ${line.lotId.replace('poi_lot_', 'plot ')}.`);
+      // A plot's sign counts from one, and its id from nothing
+      lines.push(`Off bed ${line.bed + 1} of plot ${Number(line.lotId.replace('poi_lot_', '')) + 1}.`);
       lines.push(`From ${line.seedName}, ${line.plantings === 1 ? 'the first planting' : `${line.plantings} plantings on`} from what was ${line.firstOrigin === 'HARVEST' ? 'gathered by hand' : line.firstOrigin.toLowerCase()}.`);
     }
     for (const m of item.composition?.materials ?? []) {

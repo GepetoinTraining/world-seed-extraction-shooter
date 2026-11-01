@@ -380,26 +380,30 @@ function farmArt(w: number, h: number, show?: IPlotShow): Sprite {
   const data = new Uint8Array(w * h);
   const cols = show?.cols ?? 4;
   const bed = Math.floor(w / cols);
-  const edge = (x: number, y: number) => x === 0 || y === 0 || x === w - 1 || y === h - 1;
+  // A worked plot: a fence of posts round it, and its beds in even rows, so it reads as held and worked from the street
+  const fence = (x: number, y: number) => (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) && (x + y) % 6 < 3;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const gap = x % bed === 0 || y % bed === 0;
-    data[y * w + x] = edge(x, y) && (x + y) % 4 < 2 ? px(Role.MATTER, 3) : gap ? px(Role.GROUND, 1) : px(Role.GROUND, (y >> 1) % 2 === 0 ? 2 : 3);
+    const gap = x % bed < 2 || y % bed < 2;
+    data[y * w + x] = fence(x, y) ? px(Role.MATTER, 4) : gap ? px(Role.GROUND, 0) : px(Role.GROUND, (y >> 1) % 2 === 0 ? 2 : 3);
   }
   for (const b of show?.beds ?? []) {
     const size = bed * b.span;
     const x0 = (b.at % cols) * bed, y0 = Math.floor(b.at / cols) * bed;
-    const tall = Math.max(1, Math.round((size - 3) * b.growth));
-    const midX = x0 + (size >> 1);
+    const tall = Math.max(2, Math.round((size - 6) * b.growth));
+    const midX = x0 + (size >> 1) + 1;
     const put = (x: number, y: number, ink: number) => { if (x >= 0 && y >= 0 && x < w && y < h) data[y * w + x] = ink; };
+    // A stalk two atoms wide, with leaves that widen as it rises. A tree grows a crown as wide as its block.
     for (let t = 0; t < tall; t++) {
-      const y = y0 + size - 2 - t;
+      const y = y0 + size - 3 - t;
       put(midX, y, px(Role.MATTER, 3));
-      if (b.span > 1 && t > tall / 2) for (let dx = 1; dx <= 2; dx++) { put(midX - dx, y, px(Role.MATTER, 3)); put(midX + dx, y, px(Role.MATTER, 3)); }
+      put(midX + 1, y, px(Role.MATTER, 3));
+      const reach = b.span > 1 ? (t > tall / 2 ? Math.round((t - tall / 2) / 2) + 2 : 0) : t % 4 === 2 ? 2 : 0;
+      for (let dx = 1; dx <= reach; dx++) { put(midX - dx, y, px(Role.MATTER, 2)); put(midX + 1 + dx, y, px(Role.MATTER, 2)); }
     }
+    // Ripe wears a crown, by shape, so it can be told from across a street with no hue at all
     if (b.growth >= 1) {
-      const top = y0 + size - 2 - tall;
-      for (let dx = -2; dx <= 2; dx++) put(midX + dx, top, px(Role.MATTER, 4));
-      put(midX, top - 1, px(Role.MATTER, 4));
+      const top = y0 + size - 3 - tall;
+      for (let dx = -3; dx <= 4; dx++) { put(midX + dx, top, px(Role.MATTER, 4)); put(midX + dx, top - 1, px(Role.MATTER, 4)); }
     }
   }
   return { w, h, data };

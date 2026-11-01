@@ -433,11 +433,15 @@ describe('line 37: stored by their real grain, with their history', () => {
     await FarmDoors.reap(plotId, 0);
     const piece = hub().lots.find(l => l.id === plotId)!.inventory[0];
     const lines = Farm.historyOf(piece);
-    expect(lines.length).toBeGreaterThan(0);
-    expect(lines.join(' ')).toMatch(/planting/i);
-    const recordSpy = vi.spyOn(Provenance, 'record');
-    await FarmDoors.takeFromStore(plotId, piece.id);
-    expect(recordSpy).toBeDefined();
+    expect(lines.join(' ')).toMatch(/first planting/i);
+    expect(lines.join(' ')).toMatch(/gathered by hand/);
+    // It names the plot as the plot's sign does
+    const sign = HubGenerator.findPOI(HubGenerator.generate({ chunks: hub().chunks }), plotId)!.name.replace('#', '').toLowerCase();
+    expect(lines[0].toLowerCase()).toContain(sign);
+    // And each piece is on the signed record, with what it grew from
+    const events = db.get(`prov_${piece.id}`);
+    expect(JSON.stringify(events)).toContain(s.id);
+    expect(Provenance).toBeTruthy();
   });
 
   it('the store groups what it holds by material and keeps every piece', () => {
@@ -510,8 +514,13 @@ describe('a farm is something a person runs and is bought from', () => {
     const lot = hub().lots.find(l => l.id === plotId)!;
     expect(farm.beds[0]).toBeTruthy();
     expect(farm.beds[0].plantedAt).toBe(Date.now());
-    expect((lot.shopListings ?? []).length + lot.inventory.length).toBeGreaterThanOrEqual(0);
-    expect(Farm.sellers(hub().lots, 'food').every(x => x.lotId === plotId)).toBe(true);
+    // One piece went back in the ground, and what is left is for sale, for anyone who walks up
+    expect((lot.shopListings ?? []).length).toBeGreaterThan(0);
+    expect(lot.inventory).toEqual([]);
+    const sellers = Farm.sellers(hub().lots, 'food');
+    expect(sellers.length).toBe(lot.shopListings!.length);
+    expect(sellers.every(x => x.lotId === plotId)).toBe(true);
+    expect(sellers[0].listing.price).toBeGreaterThan(0);
   });
 
   it('a tender is only one person at a time, and only one who is in the city', async () => {
@@ -525,9 +534,19 @@ describe('a farm is something a person runs and is bought from', () => {
     giveToStash(s);
     at(2_000_000_000_000);
     await FarmDoors.plant(plotId, s.id, 0);
+    const cage = Capture.cageItem(caged(), 'lost');
+    const third = harvested(WHEAT());
+    giveToStash(cage, third);
+    await FarmDoors.admit(plotId, cage.id);
+    const id = hub().farmland.herds[0].id;
+    await FarmDoors.feed(plotId, id, [third.id]);
+    useHubStore.setState({ farmland: { ...hub().farmland, herds: hub().farmland.herds.map(h => ({ ...h, head: 2 })) } });
     await FarmDoors.forget(plotId);
     expect(hub().farmland.farms[plotId]).toBeUndefined();
-    expect(stash().some(i => i.farmLine === undefined)).toBeDefined();
+    expect(hub().farmland.herds).toEqual([]);
+    // Nothing alive is lost with the ground: the one being kept and the two at home come away caged, and the trough with them
+    expect(stash().filter(i => i.creatureData).length).toBe(3);
+    expect(stash().some(i => i.id === third.id)).toBe(true);
     const src = readFileSync('src/entities/hub/store.ts', 'utf8');
     expect(src).toMatch(/structureType: l\.structureType === 'FARM' \? 'FARM' : 'EMPTY'/);
   });
@@ -643,6 +662,33 @@ describe('capture: the four verbs', () => {
     expect(moved.position.x).toBeLessThan(40 * px);
     MobAI.reset();
     expect(MobAI.isFollowing('tame_1')).toBe(false);
+  });
+
+  it('what would come for the person comes for what follows them, when that is nearer', () => {
+    const px = 20;
+    const hunter = creatureIdOf(themeId, 'dun_hound');
+    const body = (id: string, kind: string, x: number) => ({ id, type: EntityType.MOB, definitionId: kind, rank: UniversalRank.E, position: { x: x * px, y: 0 }, health: 30 });
+    const run = (withFollower: boolean) => {
+      MobAI.reset();
+      const entities: any[] = [body('h', hunter, 6)];
+      if (withFollower) { MobAI.follow('tame_d', Date.now() + 60_000); entities.push(body('tame_d', GOAT(), 12)); }
+      const chunk = { id: '0,0', x: 0, y: 0, entities } as any;
+      // The person at the origin, the follower beyond the hound: it turns from the person only if the follower draws it
+      MobAI.tick({ '0,0': chunk }, { x: 0, y: 0 }, 0.5);
+      const once = MobAI.tick({ '0,0': chunk }, { x: 0, y: 0 }, 0.5).updatedChunks['0,0'];
+      return once.entities.find((e: any) => e.id === 'h').position.x;
+    };
+    const alone = run(false);
+    const drawn = run(true);
+    expect(alone).toBeLessThan(6 * px);
+    expect(drawn).toBeGreaterThan(alone);
+    MobAI.reset();
+  });
+
+  it('a cage is not salvaged, and no resident\'s want takes it', async () => {
+    const { wantMayTake } = await import('../src/entities/hub/guild');
+    expect(wantMayTake(Capture.cageItem(caged(), 'x'))).toBe(false);
+    expect(readFileSync('src/logic/systems/SalvageSystem.ts', 'utf8')).toMatch(/item\.creatureData/);
   });
 
   it('domesticating takes days of keeping and cannot be pressed through', () => {

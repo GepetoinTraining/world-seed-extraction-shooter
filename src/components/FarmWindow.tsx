@@ -137,7 +137,7 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
   return (
     <Modal title={`${poi.name.toUpperCase()}${lot.ownerName ? `: ${lot.ownerName.toUpperCase()}` : ''}`} onClose={onClose} width={700}>
       {mine
-        ? <Tabs<FarmTab> tabs={[['BEDS', 'BEDS'], ['STORE', 'STORE'], ['STAND', 'STAND'], ['PEN', 'PEN'], ['HEARTH', 'HEARTH']] as any} active={tab} onChange={setTab} />
+        ? <Tabs<FarmTab> tabs={(['BEDS', 'STORE', 'STAND', 'PEN', 'HEARTH'] as FarmTab[]).map(id => ({ id, label: id }))} active={tab} onChange={setTab} />
         : <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>{lot.ownerName ?? 'Nobody'} works this plot. What they sell stands here.</div>}
 
       {tab === 'BEDS' && mine && (

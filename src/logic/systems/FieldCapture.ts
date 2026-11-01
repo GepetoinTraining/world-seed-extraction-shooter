@@ -98,6 +98,7 @@ export const FieldCapture = {
     const register = hub.farmland.registers[me] ?? Capture.registerOf(hubId, me, world.generation);
     const written = world.reportCaptured(entity.id, entity.definitionId, register);
     useHubStore.setState({ farmland: { ...hub.farmland, registers: { ...hub.farmland.registers, [me]: written } } });
+    void useHubStore.getState().saveHubState();
     world.removeEntity(entity.id);
     MobAI.clearMob(entity.id);
     intoPack(item);
