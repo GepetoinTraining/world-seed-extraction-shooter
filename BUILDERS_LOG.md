@@ -12,7 +12,8 @@ Pedro's verdict on the look, seeing it in the real game: *"literally absurdly go
 
 - **Tests:** 585 (`npm test`), including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
 - **Commits:** Waves 8 through 10E, the raw materials leg and the web are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
-- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
+- **Run it:** `npm run dev`, then `http://localhost:3000`. That one command also brings up the database: `data/worldseed.db`, one file per checkout, never committed. `npm run serve` is the same handler standing alone, serving the built game; `npm run db:studio` opens the file. A database-pass build's first load on an origin imports that origin's old browser saves (see "What the stable database pass built").
+- **Test it:** `npm test` runs the database bars in a second pass, because their real, killed processes load the machine enough to turn the timing bars red. `npx vitest run` with everything is not a fair reading of `tests/grid.test.ts`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
 
 ## Working with Pedro
 
@@ -98,6 +99,19 @@ Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → q
 | `src/logic/systems/NpcSheet.ts` | NEW (line 66): stats and skills dealt at read time from (seed, entity, pinned web); `fromBond` is Wave 11's seam |
 | `src/entities/player/systems/SkillDiscovery.ts` | No table any more: a context's identity is what the registry says identifies |
 | `tests/technologyweb.test.ts` | The web's bars: lines 63–68, the seven clauses, source scans of the law's own files, the one-way door |
+
+| `server/SqlStore.ts` | NEW (D31): THE store. One body of SQL on both dialects; an id says which table a document lives in; a commit is one transaction |
+| `server/schema.sqlite.ts`, `server/schema.pg.ts`, `drizzle/` | NEW: the same tables in each dialect's spelling, and their migrations. Change both, then `npm run db:generate`. A bar holds them together |
+| `server/connection.ts` | NEW: one URL picks the connection: `file:`, `postgres://`, or `pglite://memory` for tests. Migrations run on open |
+| `server/http.ts`, `server/vitePlugin.ts`, `server/main.ts` | NEW: one handler, mounted in the dev server or standing alone. Loopback only: it has no authentication |
+| `src/entities/data/VectorStore.ts` | The same interface, now over HTTP. `put` takes options: `unit`, `increment`, `ifAbsent` |
+| `src/entities/data/StoreClient.ts` | NEW: the transport and `useVault`. A failed read WAITS, it never answers "nothing there" |
+| `src/entities/data/StoreUnit.ts` | NEW: several writes, one transaction; and the one write queue. Never enqueue from inside a turn |
+| `src/logic/economy/GoldCommit.ts` | NEW (line 71): THE door for any gold change. Call it in the same tick as the change, with no await between |
+| `src/logic/persistence/BrowserImport.ts` | NEW: the one-time import. Verifies, never overwrites, deletes nothing. The only file that may touch `RxDBClient`, and only lazily |
+| `src/logic/persistence/HomeHub.ts` | NEW: which hub is whose, now that all hubs share one database |
+| `src/components/VaultGate.tsx` | NEW: no database, no game. The refusal, at load and in play |
+| `tests/database.store.test.ts`, `tests/database.test.ts`, `tests/fixtures/` | NEW: lines 69–71. Nothing there mocks the store; the servers are real processes, really killed |
 
 A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer work over byte buffers, testable in Node.
 
@@ -189,6 +203,14 @@ Full detail in `PLAN.md` 3B (the technology web and auto skill) and the settled 
 - Lots still do not grow with the hub. `STATION_MIN_AREA` holds the four old stations; a batch's station brings its own number.
 - Readings on the record for Pedro: a bare hand's skill IS the material; a death is a return to the hub; the web is the hub's, the exp is the person's; a resident both extends the web and works inside it.
 
+## What the stable database pass built
+
+Full detail in `PLAN.md` 3B (the stable database) and the record of D31. In short: saves live in a SQLite file on a small server inside the dev server, through the same `VectorStore` interface, on libSQL and Drizzle, with one body of SQL that also passes on Postgres. Signed documents stay byte-identical as text; ledger rows and treasuries have real tables. A gold change, its treasury, its ledger row and any hub state it touched land in one transaction, proved against real processes killed mid-write. Existing browser saves import once per origin, on proof. Keys stay in the browser. When the server is down the bank refuses, and everything waits rather than guessing.
+
+**Before the full run: open each origin once on the merged build** (launch entries 3101, 3102, 3104, 3105, and any other where Pedro played), so each imports into `main`'s `data/worldseed.db`. Each checkout has its own file. BASALT's import has not run; its data passed the same checks read-only.
+
+**Left open, honestly:** the full list is in `PLAN.md`. Rows without gold land apart from the state they describe. The extraction is several commits. On the dev server, entries waiting in a tab die when the server comes back, because Vite reloads the page; they vanish whole. The field keeps running under the refusal. No real Postgres server has run the contract. **Deploy needs authentication, and this leg did not build it.**
+
 ## Your pass: the stable database and the usability pass
 
 Pedro wants both before the full run. Start from those sections in `PLAN.md`; the usability pass's list is `PLAYTEST_LEDGER.md`. During and after the run, add what is found to that ledger.
@@ -210,6 +232,8 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 ## Known weak spots
 
 **In the art:** near-twin certificates at 16 atoms; first wear bite easy to miss at 36px; recorded failure: Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms (bar 3).
+
+**In the database (D31):** see "What the stable database pass built".
 
 **In the game:** balance unplayed at the new scale; a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape); the three playtest findings above; a finished craft or a foreclosed lot still has no feed line or other moment on screen (the foreclosed mark exists only in the hub's art). (The walk-through lots are fixed: a built lot blocks exactly what it draws, and its door is real — Wave 10.2.)
 
@@ -254,6 +278,13 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 - **A skill will not appear in the field.** That is line 64. Look in `player.skillProgress`, and take a seal, a death or a withdrawal to settle it. A failed rest with no new attempts gets the same answer forever, by design.
 - **A new tag goes in a batch first.** A tag literal in `src` that is not registered fails a source scan, and a tag on a definition fails the harness. Identity kinds are forever: pick the kind with care, because it decides whether old skills split.
 - **Fresh origin at `localhost:3105`** (`world-seed-dev-3105`): TENON, Nomad, Felling at handled, the first in the hub; a raw log workshop and a Sawpit standing; the world THE LONG STANDS pinned at v4 and web v2, though it collapses on its clock.
+- **A gold change goes through `GoldCommit`, in the same tick.** A bar reads the source: no `Treasury.credit` or gold row outside it on a gold path, and no `await` between the `setState` and the commit. Sign whatever needs signing first.
+- **Read-then-write takes a turn in `StoreUnit.enqueue`, and a turn never enqueues.** Calling `Ledger.append` or `Treasury.credit` from inside a turn deadlocks the queue. Inside a turn, use `writeInto`.
+- **Old test mocks still work, on purpose.** A mocked `VectorStore.put` ignores its options and writes at once, so the unit stays empty and its commit is a no-op with no network. New tests that want a real database follow `tests/database.test.ts`, and need no mock changes.
+- **A read can hang, by design.** With the server down, `VectorStore.get` does not resolve. In a script, a tool call that never returns may mean the vault is closed: look at the page.
+- **`data/worldseed.db` is one file per checkout.** A worktree starts empty and imports again from the browser. Deleting it is safe while the browser still holds the old saves, and not after a browser wipe.
+- **Never clear browser storage on an origin with real saves.** The old RxDB copy is the only backup until that origin has imported. Use a fresh port: `world-seed-dev-3107` (CAIRN lives there) was added for this.
+- **A new worktree may be cut from `origin/main`, far behind local `main`.** This leg's was 40 commits behind, and the app's sync only looks at `origin`. Compare `git rev-parse HEAD main` before reading anything.
 - **Same-millisecond jobs used to share ids** — two crafts queued in one ms on one lot minted outputs with IDENTICAL item ids (fixed in 10D with a queue-length tie-break). If you add any id built from `Date.now()`, break the tie yourself.
 
 ## After this pass

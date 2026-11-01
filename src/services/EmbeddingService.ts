@@ -4,7 +4,9 @@
  */
 
 // Safe environment variable access for Vite/React
-const API_KEY = (window as any).process?.env?.GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
+const API_KEY = (globalThis as any).process?.env?.GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY;
+
+import { cosineSimilarity } from '../entities/data/similarity';
 
 const LOCAL_EMBED_DIMS = 256;
 let warnedLocalMode = false;
@@ -81,22 +83,8 @@ export class EmbeddingService {
 
   /**
    * Calculate Cosine Similarity between two vectors
-   * Updated to accept 'readonly' arrays to work with RxDB
    */
   static cosineSimilarity(vecA: number[] | readonly number[], vecB: number[] | readonly number[]): number {
-    if (vecA.length !== vecB.length || vecA.length === 0) return 0;
-
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-
-    if (normA === 0 || normB === 0) return 0;
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    return cosineSimilarity(vecA, vecB);
   }
 }

@@ -84,7 +84,7 @@ flowchart TD
   Treasury --> Audit[GoldAudit]
   Ledger --> Audit
 
-  Persist --> Store[(VectorStore: RxDB in the browser)]
+  Persist --> Store[(VectorStore: SQL through the server, D31)]
   Ledger --> Store
   Journal --> Store
   Treasury --> Store
@@ -163,7 +163,9 @@ Do not change `universalDefinitionId` or the meaning of `UniversalRank`. Saved i
 
 ## 4. Data model
 
-Everything lives in one RxDB collection in the browser (`worldseed_db`), separated by namespace. The private key is stored separately in IndexedDB (`WorldSeedIdentity`) and the certificate in `localStorage`.
+Everything lives in a SQL database reached through a small server (D31): a SQLite file at `data/worldseed.db`, one per checkout and never committed, or Postgres at deploy. The private key stays in the browser's IndexedDB (`WorldSeedIdentity`) and the certificate in `localStorage`; neither reaches the server. A wiped browser restores from the avatar backup, then finds its saves in the database. The old RxDB collection (`worldseed_db`) is read once by the import and otherwise left alone.
+
+The namespaces below are the `VectorStore` interface. An id decides the table underneath: `ledger_{uid}_{seq}` goes to `ledger_rows`, `treasury_{world}` to `treasuries`, the head is derived from `MAX(seq)`, and everything else goes to `documents`, with its data as byte-identical text and columns for type, genre and owner beside it. `commits` records every commit that landed, so a retry applies once.
 
 | Namespace | Document id | Contents |
 |---|---|---|
@@ -178,12 +180,14 @@ Everything lives in one RxDB collection in the browser (`worldseed_db`), separat
 | `territories` | `hub_state_{uid}` | Lots and crafting jobs |
 | `territories` | `treasury_{uid}`, `endowment_{uid}` | Treasury balance and its one-time starting fund |
 | `territories` | `world_carts_{worldUid}` | The carts standing in a world |
+| `territories` | `home_hub_{uid}` | Which hub is this avatar's own (D31) |
+| `territories` | `browser_import_{origin}`, `import_refused_{uid}` | The one-time import's receipt, and an avatar it refused |
 
 The avatar roster sits in `localStorage` too (`worldseed_avatars`), beside the active certificate.
 
 **Ledger row types:** `CHARACTER_GENESIS`, `SESSION_RESULT`, `GOLD_DELTA`, `TAX`, `TRADE`, `CRAFT`, `BUILD`, `DESIGN`, `UPKEEP`, `TOMBSTONE`. Rows are never deleted, and appends are queued because each one reads the head first.
 
-**Gold rule:** every movement has a ledger row. `GoldAudit` checks that a player's gold equals their rows, and that treasuries equal the endowments plus all rows on the machine. It can read a brief false mismatch while a multi-step write is running.
+**Gold rule:** every movement has a ledger row, and goes through `GoldCommit`: the bank doc, the treasury, the rows and any hub state in one SQL transaction. `GoldAudit` checks that a player's gold equals their rows, and that treasuries equal the endowments plus all rows in the database, now across every hub in it.
 
 ---
 
@@ -200,6 +204,8 @@ The avatar roster sits in `localStorage` too (`worldseed_avatars`), beside the a
 | Templates | Author's key; the author rides every copy | Through item provenance |
 | Content pack | The loading identity's key, at hub load | **Signature never verified by code.** The bank law refuses a broken batch whole before it is signed |
 | Cart theft | The taker's own certificate, in the cart's log | Read on the card |
+
+**Since D31:** signed documents rest as byte-identical text, so a signature means the same after the database as before. The server checks no signatures: it holds no keys and is no notary. The one-time import does check them, in the browser, and a restore refuses a backup whose chain disagrees with the database. World certificates and content packs cannot be verified as stored, whoever tries: `signPayload` signs over a timestamp, and they keep only the signature.
 
 **What this protects against:** accidental corruption and casual edits to stored data. A changed save or backup file is refused.
 
@@ -270,6 +276,10 @@ These are the current values, set by reasoning and very little play. Expect to c
 | Hub starting fund | 100,000G | `hub/store.ts` |
 | Shell build time | House 30s, Workshop 45s, Vendor 60s | `hub/room.ts` |
 | Autosave delay | 10s, plus immediately on hub actions | `PlayerPersistence.ts` |
+| A waiting request's retry | 400ms, doubling to 4s | `StoreClient.ts` |
+| The gate's knock while closed | 2s | `VaultGate.tsx` |
+| SQLite writer's wait for its turn | 30s | `server/connection.ts` |
+| Standalone server's default port | 3900 | `server/main.ts` |
 
 **Open balance questions, for playtest:** gear sold for far more than tools cost (one pair of gauntlets paid 600G against a 36G axe). Deeds are extremely rare. Enemy density around exit points is high, about 7–8 within 300px.
 
@@ -283,12 +293,15 @@ Each entry says when it will cause trouble. Items closed since Wave 7 are listed
 
 | Debt | Breaks when |
 |---|---|
-| No server; all state is in one browser | Two real players need to share anything |
+| The database server has no authentication: it answers loopback only, and anyone who reaches it can rewrite any save | **Any deploy.** A login goes in front of `server/http.ts` first |
+| No real Postgres server has run the contract: it runs on PGlite, in process and over its socket | The first deploy under real concurrent load |
 | Client holds the key and decides all outcomes | Anything of value depends on honesty |
-| Hub, lots and treasury are per-machine | A restored avatar on a new machine gets a new hub, and its treasury audit reports drift |
+| Hub, lots and treasury live in the database, so a restore with no database behind it brings the bank and the chain but not the hub | A restored avatar on a machine that cannot reach that database |
 | Game loop lives in `WorldCanvas.tsx` | You want logic tests without a browser, or a replay notary |
 | Any exception stops the loop silently | Any new bug freezes the game with no message. A freeze like this already happened once |
-| Multi-document writes are not atomic | The tab closes between the gold change and its ledger row |
+| Rows without gold land apart from the state they describe; an extraction is several commits | A kill between them leaves a row with no state, or loses a receipt or an item's history. Gold cannot split: line 71 |
+| On the dev server, entries waiting in a tab die when the server returns, because Vite reloads the page | A dev server restart mid-act loses the last seconds, whole. `npm run serve` keeps them |
+| The field keeps running under the vault's refusal; only the keys are held | The server dies during a fight |
 
 **Gameplay gaps**
 
@@ -316,6 +329,9 @@ Each entry says when it will cause trouble. Items closed since Wave 7 are listed
 
 **Closed since Wave 7:**
 
+- No server, and all state in one browser: saves live in a SQL database now (D31). Multiplayer is still not built.
+- Multi-document writes not atomic: a gold change and its ledger row commit together, across a killed process (D31, line 71).
+- A failed read answering "nothing there", which could have re-minted a character over a real save: it waits now (D31).
 - The hub as a deployable zone (Wave 9.7).
 - 26 FPS with everything in the DOM: the field is one canvas now, measured at 4.17ms a frame with 314 things (Waves 8 and 9).
 - Enemy AI hardcoded to one genre and ignoring terrain: enemies read their own definition's genre and behavior, and move through the player's resolver (Wave 8B.4).
@@ -327,7 +343,7 @@ Each entry says when it will cause trouble. Items closed since Wave 7 are listed
 ## 9. Decisions waiting on you
 
 1. **Gold source.** Total gold was fixed, so a 5,000G lot could never be bought. I added a one-time 100,000G hub fund that pays for sold goods. It keeps gold conserved and is easy to change. The alternative is direct gold drops from enemies, which LootTable originally planned.
-2. **Mid-session reload.** Treat it as a loss (current), or save sessions so they resume?
+2. **Mid-session reload.** Treat it as a loss (current), or save sessions so they resume? Since D31 the store makes resume cheaper: the kit leaving the bank and a live-session document can land as one commit. It does not solve the world's half (see `PLAN.md`, the stable database).
 3. **Persistent worlds.** Should changes survive between sessions within a world's lifetime? Plan W3.3 implies yes.
 4. **Starting kit.** New characters get one random item and must buy a weapon. Should they start with one?
 

@@ -1,5 +1,7 @@
 import { IItem } from '../../../types';
-import { getDatabase, VectorDocType } from './RxDBClient';
+import { StoreClient } from './StoreClient';
+import { StoreUnit } from './StoreUnit';
+import { IWireDoc } from './wire';
 import { EmbeddingService } from '../../services/EmbeddingService';
 
 // ============================================================================
@@ -32,7 +34,18 @@ export interface IVectorDocument<T = any> {
 export interface IQueryOptions {
   namespace: VectorNamespace;
   filter?: Record<string, any>;
+  /** A literal prefix of the id. Lets the database skip the rest of a namespace. */
+  idPrefix?: string;
   limit?: number;
+}
+
+export interface IPutOptions {
+  /** Join this unit: the write waits for unit.commit(), and lands with the unit's other writes or not at all. */
+  unit?: StoreUnit;
+  /** A treasury credit: the database adds this to what it holds, whatever this client last read. */
+  increment?: number;
+  /** Insert, or leave alone what is already there. */
+  ifAbsent?: boolean;
 }
 
 export interface ISemanticSearchOptions extends IQueryOptions {
@@ -41,47 +54,65 @@ export interface ISemanticSearchOptions extends IQueryOptions {
 }
 
 // ============================================================================
-// RXDB BACKEND IMPLEMENTATION
+// THE SQL BACKEND (D31): the database server, reached over HTTP
 // ============================================================================
 
+function toWire(doc: IVectorDocument<any>, embedding?: number[]): IWireDoc {
+  return {
+    id: doc.id,
+    namespace: doc.namespace,
+    // Once, here. Signatures cover this exact text, so it is never parsed and rewritten on the way.
+    dataText: JSON.stringify(doc.data),
+    ...(embedding && embedding.length > 0 ? { embedding } : {}),
+    metadata: doc.metadata
+  };
+}
+
+function fromWire<T>(doc: IWireDoc): IVectorDocument<T> {
+  return {
+    id: doc.id,
+    namespace: doc.namespace as VectorNamespace,
+    data: JSON.parse(doc.dataText) as T,
+    ...(doc.embedding ? { embedding: doc.embedding } : {}),
+    metadata: doc.metadata
+  };
+}
+
+/**
+ * The same interface it always was, on a real database. What changed underneath:
+ * a read that cannot reach the server waits (see StoreClient) rather than saying
+ * "nothing there", and only the server's own refusal comes back as a failure.
+ */
 export class VectorStore {
-  
+
   // --- CRUD OPERATIONS ---
 
-  static async put<T>(doc: IVectorDocument<T>, shouldEmbed: boolean = false): Promise<boolean> {
-    try {
-      const db = await getDatabase();
-      
-      // OPTIONAL: Generate Embedding on Save
-      // Useful for Items/Lore descriptions
-      let embedding = doc.embedding;
-      if (shouldEmbed && !embedding && typeof doc.data === 'object') {
-        // Create a string representation for embedding
-        const textToEmbed = JSON.stringify((doc.data as any).description || (doc.data as any).name || doc.data);
-        embedding = await EmbeddingService.embed(textToEmbed);
-      }
-
-      await db.vectors.upsert({
-        ...doc,
-        embedding: embedding || []
-      });
-      
-      return true;
-    } catch (e) {
-      console.error('[VECTOR] Put failed:', e);
-      return false;
+  static async put<T>(doc: IVectorDocument<T>, shouldEmbed: boolean = false, options: IPutOptions = {}): Promise<boolean> {
+    // OPTIONAL: Generate Embedding on Save
+    // Useful for Items/Lore descriptions
+    let embedding = doc.embedding;
+    if (shouldEmbed && !embedding && typeof doc.data === 'object') {
+      // Create a string representation for embedding
+      const textToEmbed = JSON.stringify((doc.data as any).description || (doc.data as any).name || doc.data);
+      embedding = await EmbeddingService.embed(textToEmbed);
     }
+
+    const unit = options.unit ?? new StoreUnit();
+    if (options.increment !== undefined) {
+      unit.add({ kind: 'add', namespace: doc.namespace, id: doc.id, amount: options.increment, at: doc.metadata.updatedAt });
+    } else {
+      unit.add({ kind: options.ifAbsent ? 'putIfAbsent' : 'put', doc: toWire(doc, embedding) });
+    }
+    if (options.unit) return true;
+
+    const result = await unit.commit();
+    if (!result.ok) console.error(`[VECTOR] The store refused ${doc.id}:`, result.reason);
+    return result.ok;
   }
 
-  static async get<T>(namespace: VectorNamespace, id: string): Promise<IVectorDocument<T> | null> {
-    try {
-      const db = await getDatabase();
-      const doc = await db.vectors.findOne(id).exec();
-      return doc ? (doc.toJSON() as IVectorDocument<T>) : null;
-    } catch (e) {
-      console.error('[VECTOR] Get failed:', e);
-      return null;
-    }
+  static async get<T>(_namespace: VectorNamespace, id: string): Promise<IVectorDocument<T> | null> {
+    const doc = await StoreClient.get(id);
+    return doc ? fromWire<T>(doc) : null;
   }
 
   // --- SEARCH OPERATIONS ---
@@ -90,68 +121,33 @@ export class VectorStore {
    * Standard Metadata Query (Fast, Exact)
    */
   static async query<T>(options: IQueryOptions): Promise<IVectorDocument<T>[]> {
-    try {
-      const db = await getDatabase();
-      // Basic RxDB/Mongo query style
-      const queryObj: any = {
-        selector: {
-          namespace: options.namespace,
-          ...options.filter // e.g. { 'metadata.ownerCertUid': 'abc' }
-        }
-      };
-      
-      if (options.limit) queryObj.limit = options.limit;
-
-      const docs = await db.vectors.find(queryObj).exec();
-      return docs.map(d => d.toJSON() as IVectorDocument<T>);
-    } catch (e) {
-      console.error('[VECTOR] Query failed:', e);
-      return [];
-    }
+    const docs = await StoreClient.query({
+      namespace: options.namespace,
+      ...(options.filter ? { filter: options.filter } : {}), // e.g. { 'metadata.ownerCertUid': 'abc' }
+      ...(options.idPrefix ? { idPrefix: options.idPrefix } : {}),
+      ...(options.limit ? { limit: options.limit } : {})
+    });
+    return docs.map(d => fromWire<T>(d));
   }
 
   /**
    * Semantic Vector Search (The "Magic")
-   * Performs Client-Side Cosine Similarity
+   * The server ranks by cosine similarity. At deploy this is where pgvector
+   * goes, behind this same call (see server/schema.pg.ts).
    */
   static async semanticSearch<T>(options: ISemanticSearchOptions): Promise<IVectorDocument<T>[]> {
-    try {
-      const db = await getDatabase();
-      
-      // 1. Get Query Vector
-      const queryVector = await EmbeddingService.embed(options.query);
-      if (queryVector.length === 0) return [];
+    // 1. Get Query Vector
+    const queryVector = await EmbeddingService.embed(options.query);
+    if (queryVector.length === 0) return [];
 
-      // 2. Fetch Candidates (Filter by Namespace first to reduce load)
-      const candidates = await db.vectors.find({
-        selector: {
-          namespace: options.namespace
-        }
-      }).exec();
-
-      // 3. Rank by Similarity
-      const results = candidates
-        .map(doc => {
-          const docData = doc.toJSON();
-          // FIX: Use .slice() to create a mutable copy of the array if needed, 
-          // though EmbeddingService now accepts readonly arrays too.
-          // The '|| []' handles potential nulls.
-          const docVector = docData.embedding ? docData.embedding : [];
-          
-          const similarity = EmbeddingService.cosineSimilarity(queryVector, docVector);
-          
-          return { doc: docData as IVectorDocument<T>, score: similarity };
-        })
-        .filter(item => item.score >= (options.similarityThreshold || 0.6)) // Filter low relevance
-        .sort((a, b) => b.score - a.score) // Sort desc
-        .slice(0, options.limit || 10); // Top N
-
-      return results.map(r => r.doc);
-
-    } catch (e) {
-      console.error('[VECTOR] Semantic search failed:', e);
-      return [];
-    }
+    // 2. Rank by Similarity, in the namespace, above the threshold
+    const docs = await StoreClient.search({
+      namespace: options.namespace,
+      vector: queryVector,
+      threshold: options.similarityThreshold || 0.6,
+      limit: options.limit || 10
+    });
+    return docs.map(d => fromWire<T>(d));
   }
 
   // --- SPECIFIC HELPERS ---

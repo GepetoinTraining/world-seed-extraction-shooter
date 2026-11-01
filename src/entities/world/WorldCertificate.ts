@@ -2,6 +2,8 @@
 import { GRID_VERSION } from './grid';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../data/VectorStore';
+import { useIdentityStore } from '../identity/store';
+import { HomeHub } from '../../logic/persistence/HomeHub';
 import { UniversalRank } from '../../../types';
 import { WebBank } from '../../logic/content/WebBank';
 import { AffixBank } from '../../logic/content/AffixBank';
@@ -309,7 +311,10 @@ export class WorldCertificateSystem {
 
   static async getPublicWorlds(): Promise<IWorldCertificate[]> {
     const allWorlds = await VectorStore.searchContent<IWorldCertificate>('world_certificate');
-    return allWorlds.filter(w => w.data.rules.accessMode === AccessMode.PUBLIC);
+    // D31: hubs from other browser origins now share this database. Each is someone's home.
+    const uid = useIdentityStore.getState().certificate?.metadata.uid ?? null;
+    const foreign = await HomeHub.foreignTo(uid);
+    return allWorlds.filter(w => w.data.rules.accessMode === AccessMode.PUBLIC && !foreign.has(w.data.worldUid));
   }
 
   private static async generateWorldUid(

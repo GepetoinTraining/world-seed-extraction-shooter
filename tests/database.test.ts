@@ -413,7 +413,8 @@ describe('line 71: a gold change is one commit', () => {
       const rest = lines.slice(at).join('\n');
       const commitAt = rest.indexOf('GoldCommit.commit(');
       expect(commitAt, `no commit after line ${at + 1}`).toBeGreaterThan(-1);
-      expect(rest.slice(0, commitAt), `an await separates the gold change at line ${at + 1} from its commit`).not.toMatch(/\bawait\b/);
+      // The commit's own await ends the window; it is not a gap in it.
+      expect(rest.slice(0, commitAt).replace(/await\s*$/, ''), `an await separates the gold change at line ${at + 1} from its commit`).not.toMatch(/\bawait\b/);
     }
   });
 
@@ -522,7 +523,7 @@ async function legacyAvatar(name: string, hubId: string, opts: { gold?: number; 
   const uid = cert.metadata.uid;
   const start = opts.gold ?? 500;
   const paid = opts.spend ?? 100;
-  const doc = (id: string, namespace: string, data: any, signature?: string): ILegacyDoc => ({
+  const doc = (id: string, namespace: any, data: any, signature?: string): ILegacyDoc => ({
     id, namespace, data, metadata: { createdAt: 10, updatedAt: 20, ownerCertUid: uid, version: 1, ...(signature ? { signature } : {}) }
   });
   const row = async (seq: number, type: string, data: any) => {
@@ -545,10 +546,10 @@ async function legacyAvatar(name: string, hubId: string, opts: { gold?: number; 
 }
 
 const hubDocs = (hubId: string, ownerUid: string, treasury: number, endowment = 100000): ILegacyDoc[] => [
-  { id: `hub_state_${hubId}`, namespace: 'territories', data: { lots: [{ id: 'lot_1', ownerId: ownerUid }], craftingJobs: [], rooms: {}, buildJobs: [] }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } },
-  { id: `treasury_${hubId}`, namespace: 'territories', data: { gold: treasury }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } },
-  { id: `endowment_${hubId}`, namespace: 'territories', data: { gold: endowment }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } },
-  { id: hubId, namespace: 'content', data: { type: 'world_certificate', genre: 'HUB', content: { data: { worldUid: hubId, worldType: 'HUB', worldName: 'New Carleon', rules: { accessMode: 'PUBLIC' } } } }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } }
+  { id: `hub_state_${hubId}`, namespace: VectorNamespace.TERRITORIES, data: { lots: [{ id: 'lot_1', ownerId: ownerUid }], craftingJobs: [], rooms: {}, buildJobs: [] }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } },
+  { id: `treasury_${hubId}`, namespace: VectorNamespace.TERRITORIES, data: { gold: treasury }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } },
+  { id: `endowment_${hubId}`, namespace: VectorNamespace.TERRITORIES, data: { gold: endowment }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } },
+  { id: hubId, namespace: VectorNamespace.CONTENT, data: { type: 'world_certificate', genre: 'HUB', content: { data: { worldUid: hubId, worldType: 'HUB', worldName: 'New Carleon', rules: { accessMode: 'PUBLIC' } } } }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } }
 ];
 
 describe('the one-time import of existing browser data', () => {
@@ -650,7 +651,7 @@ describe('the one-time import of existing browser data', () => {
   });
 
   it('merges the bank\'s registry of claims across origins: the first keeps its claim', async () => {
-    const reg = (rows: [string, string][]): ILegacyDoc => ({ id: 'mint_registry_v1', namespace: 'items', data: { rows }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } });
+    const reg = (rows: [string, string][]): ILegacyDoc => ({ id: 'mint_registry_v1', namespace: VectorNamespace.ITEMS, data: { rows }, metadata: { createdAt: 1, updatedAt: 2, ownerCertUid: 'SYSTEM', version: 1 } });
     const tag = Math.random().toString(36).slice(2);
     await BrowserImport.importDocs([reg([[`tuple_${tag}_a`, 'item_1'], [`tuple_${tag}_shared`, 'item_first']])], [], 'localhost:3101');
     await BrowserImport.importDocs([reg([[`tuple_${tag}_b`, 'item_2'], [`tuple_${tag}_shared`, 'item_second']])], [], 'localhost:3102');
@@ -680,6 +681,37 @@ describe('the one-time import of existing browser data', () => {
     hubs = (await WorldCertificateSystem.getPublicWorlds()).filter(w => w.data.worldType === WorldType.HUB).map(w => w.data.worldUid);
     expect(hubs).toContain(hubB);
     expect(hubs).not.toContain(hubA);
+  });
+
+  it('new avatars share one common hub, and never move into an imported one', async () => {
+    const imported = `hub_imported_${Math.random().toString(36).slice(2)}`;
+    const a = await legacyAvatar('NATIVE', imported);
+    await BrowserImport.importDocs([...a.docs, ...hubDocs(imported, a.uid, 100000 + a.paid)], [a.cert], 'localhost:3101');
+
+    const common = `hub_common_${Math.random().toString(36).slice(2)}`;
+    const { doc } = { doc: hubDocs(common, 'nobody', 0).find(d => d.id === common)! };
+    await VectorStore.put({ ...doc, data: { ...doc.data, type: 'world_certificate' } });
+    const hubsFor = async (cert: IPlayerCertificate) => {
+      useIdentityStore.setState({ certificate: cert });
+      return (await WorldCertificateSystem.getPublicWorlds()).filter(w => w.data.worldType === WorldType.HUB).map(w => w.data.worldUid);
+    };
+
+    const first = await mintCert('NEWONE');
+    let hubs = await hubsFor(first);
+    expect(hubs).toContain(common);
+    expect(hubs).not.toContain(imported);
+    await HomeHub.pin(first.metadata.uid, common);
+
+    // The first new avatar's pin does not close the hub to the second.
+    const second = await mintCert('NEWTWO');
+    hubs = await hubsFor(second);
+    expect(hubs).toContain(common);
+    expect(hubs).not.toContain(imported);
+
+    // And an avatar from the import still sees only its own.
+    hubs = await hubsFor(a.cert);
+    expect(hubs).toContain(imported);
+    expect(hubs).not.toContain(common);
   });
 
   it('reports a treasury that does not balance, without hiding it', async () => {
@@ -717,7 +749,7 @@ describe('vector and semantic search still work through VectorStore', () => {
 
   it('a world certificate minted through the real path comes back through the real path', async () => {
     const cert = await becomeAvatar('MINTER');
-    const world = await WorldCertificateSystem.mintWorld(cert, 'Proof Ground', 'desc', WorldType.WILD, 16, { accessMode: AccessMode.PUBLIC, difficulty: UniversalRank.F, pvpEnabled: false, extractionTaxRate: 0.05 } as any);
+    const world = await WorldCertificateSystem.mintWorld(cert, 'Proof Ground', 'desc', WorldType.EXTRACTION, 16, { accessMode: AccessMode.PUBLIC, difficulty: UniversalRank.F, pvpEnabled: false, extractionTaxRate: 0.05 } as any);
     expect(world).not.toBeNull();
     const all = await WorldCertificateSystem.getPublicWorlds();
     expect(all.some(w => w.data.worldUid === world!.data.worldUid)).toBe(true);

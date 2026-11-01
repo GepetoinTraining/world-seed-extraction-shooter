@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "serve": "node --import tsx server/main.ts",
+    "test": "vitest run --exclude \"tests/database*\" && vitest run tests/database",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.sqlite.ts && drizzle-kit generate --config=drizzle.config.pg.ts",
+    "db:studio": "drizzle-kit studio --config=drizzle.config.sqlite.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",

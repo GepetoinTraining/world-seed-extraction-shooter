@@ -17,9 +17,7 @@ import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
 import { ItemFactory } from '../item/ItemFactory';
 import { Rng } from '../../logic/rng/DeterministicRNG';
-import { Treasury } from '../../logic/economy/Treasury';
-import { Ledger } from '../../logic/ledger/Ledger';
-import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
+import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 
 export type DialogueEffect =
@@ -41,9 +39,10 @@ function charge(amount: number, reason: string, data: Record<string, any> = {}):
   const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
   if (p.bank.gold < amount) return false;
   usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - amount } } }));
-  Treasury.credit(hubId, amount).catch(() => undefined);
-  void Ledger.append('GOLD_DELTA', { reason, amount: -amount, treasuryId: hubId, treasuryDelta: amount, ...data });
-  void PlayerPersistence.flush('dialogue');
+  void GoldCommit.commit({
+    rows: [{ type: 'GOLD_DELTA', data: { reason, amount: -amount, treasuryId: hubId, treasuryDelta: amount, ...data } }],
+    treasury: { worldUid: hubId, delta: amount }
+  });
   return true;
 }
 

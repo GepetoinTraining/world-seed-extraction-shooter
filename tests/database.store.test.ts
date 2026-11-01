@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { spawn, ChildProcess, execFileSync } from 'node:child_process';
+import { spawn, ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -336,9 +336,24 @@ describe('line 70: one code path, no deploy-only surprises', () => {
     expect(src).not.toMatch(/\bfs\b|readFileSync/);
   });
 
-  it('ships a migration for each dialect, and generating again finds nothing new', () => {
-    expect(existsSync(join(ROOT, 'drizzle/sqlite/meta/_journal.json'))).toBe(true);
-    expect(existsSync(join(ROOT, 'drizzle/pg/meta/_journal.json'))).toBe(true);
+  it('ships a migration for each dialect, and neither has drifted from its schema', async () => {
+    const { getTableConfig: sqliteConfig } = await import('drizzle-orm/sqlite-core');
+    const { getTableConfig: pgConfig } = await import('drizzle-orm/pg-core');
+    const sqlite = await import('../server/schema.sqlite');
+    const pg = await import('../server/schema.pg');
+    for (const [folder, schema, config, tableKey] of [
+      ['sqlite', sqlite, sqliteConfig, (n: string) => n],
+      ['pg', pg, pgConfig, (n: string) => `public.${n}`]
+    ] as const) {
+      const journal = JSON.parse(readFileSync(join(ROOT, `drizzle/${folder}/meta/_journal.json`), 'utf8'));
+      const latest = journal.entries[journal.entries.length - 1].idx.toString().padStart(4, '0');
+      const snapshot = JSON.parse(readFileSync(join(ROOT, `drizzle/${folder}/meta/${latest}_snapshot.json`), 'utf8'));
+      for (const name of ['documents', 'ledgerRows', 'treasuries', 'commits']) {
+        const table = (config as any)((schema as any)[name]);
+        const inMigration = snapshot.tables[(tableKey as any)(table.name)];
+        expect(Object.keys(inMigration.columns).sort(), `${folder} ${table.name}`).toEqual(table.columns.map((c: any) => c.name).sort());
+      }
+    }
   });
 
   it('notes where pgvector fits', () => {
@@ -508,5 +523,3 @@ describe('line 71: all or nothing across a killed process', () => {
   }, 60_000);
 });
 
-// Silence the unused-import check on helpers only some environments reach.
-void execFileSync;

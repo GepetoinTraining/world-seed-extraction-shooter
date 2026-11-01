@@ -1,6 +1,6 @@
 # World Seed
 
-A browser extraction game built on a signed identity, generated worlds and a permanent ledger. It runs in one browser, with no server.
+A browser extraction game built on a signed identity, generated worlds and a permanent ledger. Saves live in a SQL database on a small local server, and private keys stay in the browser.
 
 ```bash
 npm install
@@ -11,6 +11,19 @@ npm run dev
 ```bash
 npm test
 ```
+
+`npm run dev` brings up the game and its database with one command: a SQLite file at `data/worldseed.db`, created on first run and never committed. The first load on a browser origin that holds old saves imports them, after verifying their signatures. If the database is not answering, the game refuses to open rather than guess.
+
+To run the built game standing alone, on SQLite or on Postgres:
+
+```bash
+npm run build
+```
+```bash
+npm run serve
+```
+
+`npm run serve` listens on port 3900, and reads `WS_DATABASE_URL` (`file:…` or `postgres://…`), `WS_PORT` and `WS_HOST`. **It has no authentication, so it answers this machine only. A real deploy needs a login in front of it first.**
 
 The game runs on `http://localhost:3000`. The proof pages are under `/prototype/atoms/` (`index.html`, `hub.html`, `room.html`).
 

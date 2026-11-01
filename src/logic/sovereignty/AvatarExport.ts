@@ -17,6 +17,7 @@
 import { IPlayer } from '../../../types';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../entities/identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { StoreUnit } from '../../entities/data/StoreUnit';
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
 import { sha256Hex } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
@@ -156,36 +157,46 @@ export class AvatarExport {
       expectedSeq++;
     }
 
-    // 5. Everything proved — write the sovereign self onto this machine
+    // 5. The database may know more than this file: play goes on after a backup
+    // is taken. Same rows, or more rows, are fine. A different row at a seq the
+    // database holds is a fork, and the file is refused before anything moves.
+    const held = await Ledger.list(uid);
+    for (let i = 0; i < Math.min(held.length, ledger.length); i++) {
+      if (JSON.stringify(held[i]) !== JSON.stringify(ledger[i])) {
+        return { ok: false, reason: `ledger chain disagrees with the database at seq ${i + 1}` };
+      }
+    }
+
+    // A verified save in the database outranks the file unless the file is newer.
+    const storedDoc = await VectorStore.get<ISignedPayload<IPlayer>>(VectorNamespace.CHARACTERS, uid);
+    const storedIsGood = !!storedDoc?.data?.signature && await CertificateSystem.verifyPayload(storedDoc.data, certificate);
+    const fileIsNewer = !!playerDoc && (!storedIsGood || playerDoc.timestamp > storedDoc!.data.timestamp);
+
+    // 6. Everything proved — write the sovereign self onto this machine
     await CertificateSystem.storePrivateKey(uid, privateKey);
     localStorage.setItem('worldseed_certificate', JSON.stringify(certificate));
 
-    if (playerDoc) {
+    const unit = new StoreUnit();
+    if (fileIsNewer) {
       await VectorStore.put({
         id: uid,
         namespace: VectorNamespace.CHARACTERS,
-        data: playerDoc,
-        metadata: { createdAt: certificate.metadata.createdAt, updatedAt: Date.now(), ownerCertUid: uid, signature: playerDoc.signature, version: 1 }
-      });
+        data: playerDoc!,
+        metadata: { createdAt: certificate.metadata.createdAt, updatedAt: Date.now(), ownerCertUid: uid, signature: playerDoc!.signature, version: 1 }
+      }, false, { unit });
     }
-    for (const row of ledger) {
+    for (const row of ledger.slice(held.length)) {
       await VectorStore.put({
         id: `ledger_${uid}_${row.payload.seq.toString().padStart(8, '0')}`,
         namespace: VectorNamespace.TRANSACTIONS,
         data: row,
         metadata: { createdAt: row.payload.ts, updatedAt: row.payload.ts, ownerCertUid: uid, signature: row.signature, version: 1 }
-      });
+      }, false, { unit });
     }
-    if (ledger.length > 0) {
-      await VectorStore.put({
-        id: `ledger_head_${uid}`,
-        namespace: VectorNamespace.TRANSACTIONS,
-        data: { seq: ledger.length },
-        metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: uid, version: 1 }
-      });
-    }
+    const committed = await unit.commit();
+    if (!committed.ok) return { ok: false, reason: committed.reason };
 
-    console.log(`[IMPORT] Avatar restored: ${certificate.metadata.displayName} (${ledger.length} ledger rows, all verified).`);
+    console.log(`[IMPORT] Avatar restored: ${certificate.metadata.displayName} (${ledger.length} ledger rows in the file, all verified; ${held.length} already in the database).`);
     return { ok: true, username: certificate.metadata.displayName };
   }
 }
