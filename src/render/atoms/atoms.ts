@@ -713,6 +713,27 @@ export const ruin = () => fixed(k => {
   k.rect(2, 2, 22, 9).rect(2, 2, 9, 30).rect(30, 16, 45, 23).rect(38, 16, 45, 45).rect(14, 38, 26, 45);
 }, 20, material({ density: 70, hardness: 90 }), { role: Role.MATTER, edgeStep: 2, minFill: 0, maxFill: 1 }, 'ruin');
 
+/**
+ * D93: what a leader raised. Each function is its own silhouette, and scaffolding is one lattice
+ * whatever it will be, because that is what a person can tell of a thing still going up.
+ */
+export const structureForm = (fn: string, built: boolean) => {
+  const style = { role: Role.MATTER, edgeStep: 3, minFill: 1, maxFill: 2 };
+  const hard = material({ density: 70, hardness: 90 });
+  if (!built) return fixed(k => {
+    for (let i = 4; i < 48; i += 12) { k.rect(i, 2, i + 2, 45); k.rect(2, i, 45, i + 2); }
+  }, 20, material({ density: 30, hardness: 40 }), { role: Role.MATTER, edgeStep: 2, minFill: 0, maxFill: 1 }, 'scaffold');
+  switch (fn) {
+    case 'seat': return fixed(k => { k.rect(8, 22, 39, 45).rect(8, 4, 14, 22).rect(33, 4, 39, 22).rect(20, 12, 27, 22); }, 24, hard, { ...style, role: Role.PROOF }, 'seat');
+    case 'anchor': return fixed(k => { k.rect(20, 2, 27, 45).rect(10, 12, 37, 18).disc(24, 38, 11); }, 22, material({ luminosity: 30 }), { ...style, role: Role.SIGNAL }, 'anchor');
+    case 'watch': return fixed(k => { k.rect(16, 16, 31, 45).rect(6, 4, 41, 16).rect(6, 4, 11, 0, 0); }, 24, hard, style, 'watch');
+    case 'wall': return fixed(k => { k.rect(0, 0, 47, 47); k.rect(0, 22, 47, 25, 0); k.rect(22, 0, 25, 22, 0); }, 10, hard, style, 'wall');
+    case 'works': return fixed(k => { k.rect(6, 12, 41, 22).rect(18, 22, 29, 34).rect(10, 34, 37, 44); }, 20, hard, style, 'works');
+    case 'muster': return fixed(k => { k.rect(10, 2, 15, 45).rect(15, 4, 41, 20); k.rect(30, 8, 41, 16, 0); }, 22, hard, style, 'muster');
+    default: return ruin();
+  }
+};
+
 export const npcFigure = (id: string) => fixed(k => {
   k.disc(24, 13, 11).disc(24, 42, 20).rect(0, 0, 47, 0, 0);
 }, 10, material({ density: 30 }), { role: Role.LIFE, edgeStep: 4, minFill: 1, maxFill: 2 }, id);

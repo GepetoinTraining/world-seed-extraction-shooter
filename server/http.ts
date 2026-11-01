@@ -67,6 +67,7 @@ export function createDbHandler(getStore: () => Promise<SqlStore>, options: IHan
       if (path === '/query') return send(res, 200, { docs: await store.query(body) });
       if (path === '/search') return send(res, 200, { docs: await store.search(body) });
       if (path === '/commit') return send(res, 200, await store.commit(body));
+      if (path === '/maintain') return send(res, 200, await store.maintain());
       return send(res, 404, { error: `No such door: ${path}` });
     } catch (e) {
       if (e instanceof StoreConflict) return send(res, 409, { conflict: true, error: e.message });

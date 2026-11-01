@@ -105,6 +105,9 @@ function inspectMob(e: IWorldEntity): Card {
   if (def?.size) rows.push(['Size', String(def.size)]);
   if (def?.behavior) rows.push(['Behavior', String(def.behavior)]);
   if (e.bargain) rows.push(['Stance', e.bargain.stance.toLowerCase()]);
+  // D93: what a person can tell from looking. Its ground, and that blows are landing on nothing
+  if (e.ward) rows.push(['Holds', `${e.holding?.chunks.length ?? 0} chunks`], ['Warded', e.warded ? `by ${e.ward.slots.length} anchors` : 'no longer']);
+  else if (e.heldBy) rows.push(['Answers to', 'whoever holds this ground']);
   return { title, rows, needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`) };
 }
 
@@ -126,7 +129,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     }
     case EntityType.CONTAINER: {
       const looted = !!e.container?.looted;
-      const title = e.definitionId === 'ground_cache' ? 'Ground Cache' : 'Chest';
+      const title = e.definitionId === 'ground_cache' ? 'Ground Cache' : e.definitionId === 'struct_store' ? 'Store' : 'Chest';
       const needs = looted ? ['Already emptied'] : canAct ? [] : ['Move closer'];
       return { title, rows: [['Rank', String(e.container?.lootRank ?? e.rank)]], needs, canAct, compact: compact(title, looted ? 'empty' : canAct ? 'ready' : 'too far') };
     }
@@ -135,6 +138,13 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
       return { title: 'Exit', rows: [['Channel', '5s, broken by damage']], needs: near ? [] : ['Move closer'], canAct: near, compact: compact('Exit', near ? 'channel 5s' : 'too far') };
     }
     case EntityType.STRUCTURE:
+      if (e.structure) {
+        const s = e.structure;
+        const title = s.built ? `${s.fn[0].toUpperCase()}${s.fn.slice(1)}` : 'Scaffolding';
+        const state = s.brokenAt !== undefined ? 'down' : s.built ? `${e.health ?? s.maxHealth} of ${s.maxHealth}` : `${s.paid ?? 0} of ${s.bill ?? 0} paid`;
+        const made = s.material ? (RESOURCE_DEFINITIONS[s.material]?.name ?? s.material) : undefined;
+        return { title, rows: [['State', state], ...(made ? [['Drawn from', made] as [string, string]] : [])], needs: [], canAct: false, compact: compact(title, state) };
+      }
       return { title: 'Ruin', rows: [['Rank', String(e.rank)]], needs: [], canAct: false, compact: compact('Ruin', String(e.rank)) };
     case EntityType.CART: {
       // Wave 10C (D16): the cart says whose it is and what it holds; a theft

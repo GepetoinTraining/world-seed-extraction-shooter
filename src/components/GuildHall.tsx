@@ -4,10 +4,12 @@
  * through, and the maps handed in. Development of the city stays with the Land Office.
  */
 
+import { useWorldStore } from '../entities/world/store';
+import { WorldClock } from '../entities/world/WorldClock';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType } from '../../types';
 import {
-  IResident, chainFromMap, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, questPay, residentStage,
+  IResident, chainFromMap, chainFromMaps, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, questPay, residentStage,
   residentUpkeepPerDay, trialFor, trialTakes, wantMayTake
 } from '../entities/hub/guild';
 import { Farm } from '../entities/hub/farm';
@@ -309,16 +311,24 @@ const Trial: React.FC<{ onPassed: () => void }> = ({ onPassed }) => {
   );
 };
 
-/** D93: a map handed in. The chain it would post waits for a seat a map can show. */
+/** D93: a map handed in. What it shows of held ground posts a chain, and anything less stays on record. */
 const Maps: React.FC = () => {
   const { guild, handMapToGuild } = useHubStore();
   const stash = useStash();
   const pushFeed = useFeed(s => s.push);
   const held = stash.filter(i => i.type === ItemType.MAP && i.mapData);
+  const worlds = useWorldStore(s => s.availableWorlds);
+  const now = Date.now();
+  // Each world's own clock says how old a reading is, so a chain is grouped by the world it is on
+  const posted = [...new Set(guild.maps.map(m => m.item.mapData!.worldId))].flatMap(worldId => {
+    const card = worlds.find(w => w.id === worldId);
+    const generationNow = card ? WorldClock.momentAt(card, now).generation : 0;
+    return chainFromMaps(guild.maps.filter(m => m.item.mapData!.worldId === worldId).map(m => m.item.mapData!), generationNow);
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div className="ws-dim ws-small">A map shared with the Hall stays with the Hall. When one shows who holds a territory, a quest chain posts from it. Nothing on the land can show that yet, so the Hall records it and says what it would ask.</div>
+      <div className="ws-dim ws-small">A map shared with the Hall stays with the Hall. When one shows ground someone holds, a quest chain posts from it. The Hall knows what its maps know, as old as they are.</div>
       {held.map(map => (
         <div key={map.id} className="ws-row" {...hoverProps(map)}>
           <span className="ws-small" style={{ minWidth: 0 }}>{map.name}, in {map.mapData!.scribeName}'s hand</span>
@@ -335,16 +345,24 @@ const Maps: React.FC = () => {
         </div>
       ))}
       {guild.maps.length === 0 && held.length === 0 && <span className="ws-dim ws-small">No maps in your stash, and none in the Hall. A scribe's table writes one from what you have scanned.</span>}
+      {posted.map(chain => (
+        <Panel key={`${chain.worldId}:${chain.seat!.sector}`} title={`${chain.worldName}: ${chain.seat!.named ?? 'an unknown holding'}`} right={<Chip>POSTED</Chip>}>
+          <div className="ws-dim ws-small">
+            Sector {chain.seat!.sector}: {chain.seat!.chunks} chunks held, {chain.seat!.anchors} anchors. {chain.staleBy ? `Read ${chain.staleBy} regeneration(s) ago, and it will have moved.` : 'Read this regeneration.'}
+          </div>
+          {chain.steps.map((step, i) => (
+            <div key={i} className="ws-row ws-small"><span style={{ minWidth: 0 }}>{i + 1}. {step.text}</span><span className="ws-dim">{step.people === 1 ? '1 person' : `${step.people} people`}</span></div>
+          ))}
+        </Panel>
+      ))}
       {guild.maps.map(handed => {
         const chain = chainFromMap(handed.item.mapData!);
         return (
-          <Panel key={handed.item.id} title={handed.item.name} right={<Chip>NOT POSTED</Chip>}>
+          <Panel key={handed.item.id} title={handed.item.name} right={<Chip>{chain.posted ? 'ON RECORD' : 'NOT POSTED'}</Chip>}>
             <div className="ws-dim ws-small">
               From {handed.handedByName}: {chain.sectors} sector{chain.sectors === 1 ? '' : 's'}, {chain.mobs} bodies counted, {chain.changed} changed.
             </div>
-            <div className="ws-small" style={{ marginTop: 4 }}>What it would post, once a seat stands on it:</div>
-            {chain.steps.map((step, i) => <div key={i} className="ws-small">{i + 1}. {step}</div>)}
-            {chain.steps.length === 0 && <div className="ws-dim ws-small">The map holds nothing to chain to.</div>}
+            {!chain.posted && <div className="ws-dim ws-small">It shows nobody holding ground, so it posts nothing.</div>}
           </Panel>
         );
       })}

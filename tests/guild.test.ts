@@ -922,18 +922,17 @@ describe('D93: a map handed to the guild is a real act, and the door to a chain'
     expect(hub().guild.maps[0].item.id).toBe(m.id);
   });
 
-  it('it says what it would post, read from what the map holds', () => {
+  it('it reads what the map holds, and a map showing nobody holding ground asks nothing (C4: moved on purpose)', () => {
     const chain = chainFromMap(map().mapData!);
     expect(chain.worldName).toBe('The Long Stands');
     expect(chain.sectors).toBe(2);
     expect(chain.mobs).toBe(16);
     expect(chain.changed).toBe(2);
     expect(chain.hottest).toBe('3,4');
-    expect(chain.steps.length).toBeGreaterThan(0);
-    expect(chain.steps.join(' ')).toContain('3,4');
+    expect(chain.steps).toEqual([]);
   });
 
-  it('it posts nothing yet: there is no seat to chain to until bosses stand', async () => {
+  it('it posts nothing while the map shows no seat to chain to', async () => {
     const m = map();
     give([m]);
     await hub().handMapToGuild(m.id);

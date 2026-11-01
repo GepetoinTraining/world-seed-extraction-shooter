@@ -25,6 +25,7 @@ import { BIOME_RESOURCES } from '../item/data/resourceDefinitions';
 import { CHUNK_QUADRANTS, SECTOR_CHUNKS } from './grid';
 import { IKoseki, Koseki } from './Koseki';
 import { Goal, ILeaderSeed, Leaders } from './Leaders';
+import { ITerritory, Territory } from './Territory';
 import { EntityType, IChunk } from './types';
 import { IBodyToStand, IGenerationContext, WorldGenerator } from './WorldGenerator';
 import { UniversalRank } from '../../../types';
@@ -59,8 +60,18 @@ export interface ILeaderState {
   tenure: number;
   alive: boolean;
   log: IGoalEntry[];
-  /** The ground a `settle` finished on. What it raises there is the next stream's. */
+  /** The ground a `settle` finished on. What it raises there is `territory`. */
   settledAt?: string;
+  /** D93: the ground it holds. A leader with none holds no ground and has no map mark. */
+  territory?: ITerritory;
+  /** A band: the boss whose orders it follows, and whose anchor it is. */
+  answersTo?: string;
+  /** The register it files on, where it walked away from the one its id says. */
+  register?: string;
+  /** Who it lost a challenge to, or left. */
+  walkedFrom?: string;
+  /** What its last `waylay` took off whatever crossed its ground. */
+  tollTaken?: number;
 }
 
 /** A sector at one cycle: counts by ground and kind, and the leaders on its roster. */
@@ -83,6 +94,10 @@ export interface IPopulationRecord {
   taken?: Record<string, IKoseki>;
   /** D65: bodies let go on this land, until the cycle they landed in has been folded. A foreign kind stays its own kind. */
   released?: { ground: string; kind: string; at: number }[];
+  /** A week's plan for a leader, as the law let it stand (`LeaderPlan`). Absent means the code's own rule picks. */
+  plans?: Record<string, { week: number; decisions: { verb: string; target: string; name: string; why: string }[] }>;
+  /** What was carried out of a store, until the cycle it happened in has been folded. */
+  carried?: Record<string, { at: number; n: number; sector: string }>;
 }
 
 export const emptyPopulationRecord = (): IPopulationRecord => ({ sectors: {}, down: {}, seen: {} });
@@ -93,7 +108,7 @@ interface IKindDef {
   baseHealth: number;
 }
 
-interface ILandCell { key: string; cx: number; cy: number; biome: string; rank: number; food: number; beside: string[]; alpha: Record<string, number> }
+export interface ILandCell { key: string; cx: number; cy: number; biome: string; rank: number; food: number; beside: string[]; alpha: Record<string, number> }
 
 const keyOfGround = (cx: number, cy: number) => `${cx},${cy}`;
 const sectorKeyOf = (ground: string) => {
@@ -244,7 +259,7 @@ export class Population {
    * One cycle passes on one sector. Pure: the same state, ledger and land give the same next state.
    * Keys are sorted wherever a sum is taken, so a state read back from a store folds to the same bytes.
    */
-  static step(seed: string, sx: number, sy: number, state: ISectorState, record: Pick<IPopulationRecord, 'down' | 'seen' | 'released'>, context: IGenerationContext): ISectorState {
+  static step(seed: string, sx: number, sy: number, state: ISectorState, record: Pick<IPopulationRecord, 'down' | 'seen' | 'released' | 'plans' | 'carried'>, context: IGenerationContext): ISectorState {
     const g = state.generation;
     const land = this.landOf(seed, sx, sy, context);
     const sectorKey = `${sx},${sy}`;
@@ -276,13 +291,18 @@ export class Population {
     let koseki = state.koseki;
     // What a leader's pack eats comes out of the same ground, under the kind it is
     const packMouths = new Map<string, Map<string, number>>();
+    // Ground someone already holds is not ground another goes looking for
+    const held = new Set(Object.values(state.leaders).flatMap(l => (l.alive && l.territory ? l.territory.chunks : [])));
+    const vacant: { fallen: ILeaderState; territory: ITerritory }[] = [];
     for (const id of Object.keys(state.leaders).sort()) {
-      let next = this.stepLeader(seed, state.leaders[id], counts, land, g, record, context);
+      let next = this.stepLeader(seed, sx, sy, state.leaders[id], counts, land, g, record, context, held);
       if (state.leaders[id].alive && !next.alive) {
         // It stays down. Its register says who comes next, if anyone is left behind it
         const after = this.succeed(seed, next, koseki, sectorKey, g, context);
         koseki = after.koseki;
-        leaders[id] = { ...next, pack: 0 };
+        const { territory, ...down } = next;
+        leaders[id] = { ...down, pack: 0 };
+        if (territory) vacant.push({ fallen: next, territory });
         if (!after.heir) continue;
         next = after.heir;
         leaders[next.id] = next;
@@ -413,14 +433,21 @@ export class Population {
       }
     }
 
-    return { generation: g + 1, ground: out, leaders, ...(koseki ? { koseki } : {}) };
+    // D93: who holds what. Who takes an empty seat first, then what each place decides this cycle
+    const registers = { ...koseki };
+    const cycle = { seed, sx, sy, g, land, counts: out, leaders, koseki: registers, record, context };
+    for (const { fallen, territory } of vacant) Territory.seatFallen(cycle, fallen, territory);
+    Territory.cycle(cycle);
+    const written = Object.keys(registers).length > 0 ? registers : undefined;
+
+    return { generation: g + 1, ground: out, leaders, ...(written ? { koseki: written } : {}) };
   }
 
   /** A leader fell: into its register it goes, and the next of its pack takes the head. With no pack, the line ends. */
   private static succeed(
     seed: string, fallen: ILeaderState, koseki: ISectorState['koseki'], sectorKey: string, g: number, context: IGenerationContext
   ): { koseki: NonNullable<ISectorState['koseki']>; heir?: ILeaderState } {
-    const slot = fallen.id.replace(/_h\d+$/, '');
+    const slot = fallen.register ?? fallen.id.replace(/_h\d+$/, '');
     let register = koseki?.[slot] ?? Koseki.found(sectorKey, fallen.id, fallen.kind, 0);
     const heirId = fallen.pack > 0 ? `${slot}_h${register.entries.length}` : undefined;
     if (heirId) register = Koseki.bear(register, heirId, fallen.kind, [fallen.id], g);
@@ -430,7 +457,11 @@ export class Population {
     const sheet = Leaders.sheetOf(seed, { id: heirId, kind: fallen.kind, cx: 0, cy: 0, pack: 0 }, context);
     return {
       koseki: written,
-      heir: { id: heirId, kind: fallen.kind, at: fallen.at, pack: fallen.pack - 1, goal: sheet.goal, tenure: 0, alive: true, log: [] }
+      // Behind a boss, the heir stands as a contender for its seat, as a band does
+      heir: {
+        id: heirId, kind: fallen.kind, at: fallen.at, pack: fallen.pack - 1, goal: sheet.goal, tenure: 0, alive: true, log: [],
+        ...(fallen.answersTo || fallen.territory ? { answersTo: fallen.answersTo ?? fallen.id, goal: 'hold' as Goal } : {})
+      }
     };
   }
 
@@ -481,8 +512,8 @@ export class Population {
 
   /** A leader's cycle: what fell, the goal's outcome, what that does, and where it walks next. */
   private static stepLeader(
-    seed: string, leader: ILeaderState, counts: ISectorState['ground'], land: Map<string, ILandCell>, g: number,
-    record: Pick<IPopulationRecord, 'down' | 'seen'>, context: IGenerationContext
+    seed: string, sx: number, sy: number, leader: ILeaderState, counts: ISectorState['ground'], land: Map<string, ILandCell>, g: number,
+    record: Pick<IPopulationRecord, 'down' | 'seen'>, context: IGenerationContext, held: Set<string>
   ): ILeaderState {
     if (!leader.alive) return leader;
     const def = defOf(leader.kind);
@@ -492,6 +523,8 @@ export class Population {
     const pack = leader.pack - lost;
     // Brought down, it stays down. Who comes next is its register's to say (`succeed`)
     if (record.down[leader.id]?.at === g) return { ...leader, pack, alive: false };
+    // A band holds the ground it was given. Its boss's cycle decides everything else
+    if (leader.answersTo) return { ...leader, pack };
 
     const seedOf: ILeaderSeed = { id: leader.id, kind: leader.kind, cx: 0, cy: 0, pack: 0 };
     const sheet = Leaders.sheetOf(seed, seedOf, context);
@@ -513,9 +546,13 @@ export class Population {
     const cell = land.get(leader.at);
     if (!cell) return next;
     const done = entry.outcome === 'done';
+    // D62: it walks for the ground in this sector that best holds what its hands work, and nobody holds
     const workTowards = () => {
-      const open = cell.beside.map(k => land.get(k)!).filter(c => !def || this.canStand(def, c));
-      return open.find(c => Leaders.groundWorks(seed, c.cx, c.cy, sheet, context)) ?? open[0];
+      const trade = Leaders.tradeOf(sheet, context);
+      const target = Territory.bestGround(seed, sx, sy, trade, held, context);
+      const standsHere = (c: ILandCell) => !def || this.canStand(def, c);
+      if (target) return Territory.stepTowards(cell, target, land, standsHere);
+      return cell.beside.map(k => land.get(k)!).find(standsHere)?.key;
     };
 
     if (done) {
@@ -533,14 +570,26 @@ export class Population {
           counts[leader.at][rival] -= Math.min(counts[leader.at][rival], shareOf(counts[leader.at][rival] * LAND_NUMBERS.takeShare, rng.next()));
         }
       }
-      if (leader.goal === 'settle' && Leaders.groundWorks(seed, cell.cx, cell.cy, sheet, context)) next.settledAt = leader.at;
+      if (leader.goal === 'settle' && !leader.territory && !held.has(leader.at) && Leaders.groundWorks(seed, cell.cx, cell.cy, sheet, context)) next.settledAt = leader.at;
+      if (leader.goal === 'waylay') {
+        // It stands in the way, and what crosses its ground pays or fights. No gold on this side: a kind has no purse
+        let taken = 0;
+        for (const crossing of Object.keys(counts[leader.at] ?? {}).sort()) {
+          const crossingDef = defOf(crossing);
+          if (!crossingDef || oneOfAKind(crossingDef)) continue;
+          const pays = Math.min(counts[leader.at][crossing], shareOf(counts[leader.at][crossing] * LAND_NUMBERS.takeShare, rng.next()));
+          counts[leader.at][crossing] -= pays;
+          taken += pays;
+        }
+        next.tollTaken = taken;
+      }
     }
 
     // A goal it means to keep walks it there. What is done takes the next from what it now is; what failed may try again, keyed.
-    if (leader.goal === 'settle' && !next.settledAt && !Leaders.groundWorks(seed, cell.cx, cell.cy, sheet, context)) {
+    if (leader.goal === 'settle' && !next.settledAt && !leader.territory && (held.has(leader.at) || !Leaders.groundWorks(seed, cell.cx, cell.cy, sheet, context))) {
       const to = workTowards();
-      if (to) next.at = to.key;
-    } else if (def?.social && !next.settledAt && leader.goal !== 'waylay' && rng.next() < numbersOf(def).roam) {
+      if (to) next.at = to;
+    } else if (def?.social && !next.settledAt && !leader.territory && leader.goal !== 'waylay' && rng.next() < numbersOf(def).roam) {
       const open = cell.beside.map(k => land.get(k)!).filter(c => this.canStand(def, c));
       if (open.length > 0) {
         // A hunting pack goes where the food is; otherwise its leader takes it where it will
@@ -573,6 +622,7 @@ export class Population {
         const left = record.released.filter(body => sectorKeyOf(body.ground) !== key || body.at >= done);
         if (left.length !== record.released.length) record.released = left;
       }
+      for (const [id, entry] of Object.entries(record.carried ?? {})) if (entry.sector === key && entry.at < state.generation) delete record.carried![id];
       for (const id of Object.keys(state.leaders)) {
         const kept = record.seen[id]?.filter(at => at >= state.generation);
         if (kept) { if (kept.length > 0) record.seen[id] = kept; else delete record.seen[id]; }
@@ -599,6 +649,7 @@ export class Population {
       if (lands.length > 0) WorldGenerator.standBodies(seed, chunk, lands, context);
       return;
     }
+
     const sx = Math.floor(chunk.x / SECTOR_CHUNKS), sy = Math.floor(chunk.y / SECTOR_CHUNKS);
     const state = this.sectorAt(record, seed, sx, sy, generation, context);
     const ground = keyOfGround(chunk.x, chunk.y);
@@ -631,6 +682,7 @@ export class Population {
     }
     groups.push(...releasedHere());
     WorldGenerator.standBodies(seed, chunk, groups, context);
+    Territory.layOver(seed, chunk, state, record, generation);
   }
 
   /** A body let go on this ground, at this cycle. Whether it may be is the person's and the map's to say. */
@@ -679,6 +731,21 @@ export class Population {
     const ground = form === 'ent' ? keyOfGround(Math.floor(x / CHUNK_QUADRANTS), Math.floor(y / CHUNK_QUADRANTS)) : form === 'pop' ? keyOfGround(x, y) : undefined;
     const sector = ground ? sectorKeyOf(ground) : `${x},${y}`;
     return { ...record, down: { ...record.down, [bodyId]: { at: generation, kind, sector, ...(ground ? { ground } : {}) } } };
+  }
+
+  /** D93: a structure that stayed down when the world closed. A post that relit in play never reaches here. */
+  static broke(record: IPopulationRecord, structureId: string, generation: number): IPopulationRecord {
+    const place = /^lead_(-?\d+)_(-?\d+)_/.exec(structureId);
+    if (!place || !Territory.isStructure(structureId)) return record;
+    return { ...record, down: { ...record.down, [structureId]: { at: generation, kind: 'structure', sector: `${Number(place[1])},${Number(place[2])}` } } };
+  }
+
+  /** D93: what a person carried out of a store. The place is that much poorer when the cycle closes. */
+  static robbed(record: IPopulationRecord, structureId: string, n: number, generation: number): IPopulationRecord {
+    const place = /^lead_(-?\d+)_(-?\d+)_/.exec(structureId);
+    if (!place || n <= 0) return record;
+    const had = record.carried?.[structureId]?.at === generation ? record.carried[structureId].n : 0;
+    return { ...record, carried: { ...record.carried, [structureId]: { at: generation, n: had + n, sector: `${Number(place[1])},${Number(place[2])}` } } };
   }
 
   /** D93: who was seen this cycle. Only a leader has a goal to be seen at. */

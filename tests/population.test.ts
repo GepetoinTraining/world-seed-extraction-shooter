@@ -813,7 +813,8 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       record = Director.report(record, 'FELLED_A_PERSON', id, { id: 'lead_8_8_0', rank: UniversalRank.D });
       record = Director.report(record, 'FELLED_A_PERSON', id, { id: 'lead_8_8_0', rank: UniversalRank.F });
       expect(record.felled[id]).toBe(2);
-      expect(record.bodies!['lead_8_8_0']).toEqual({ felled: 2, topRank: UniversalRank.D });
+      // C4, moved on purpose: it also says which cycles, so a sector read late folds as one read early did
+      expect(record.bodies!['lead_8_8_0']).toEqual({ felled: 2, felledAt: [0, 0], topRank: UniversalRank.D });
       const next = Director.catchUp(record, 3);
       expect(next.bodies!['lead_8_8_0'].felled).toBe(2);
       expect(next.felled).toEqual({});

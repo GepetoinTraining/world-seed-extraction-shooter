@@ -8,6 +8,11 @@
 
 import { SlotType, UniversalRank } from '../../../types';
 import { GearKind, ThemeRank, RANKS } from './ThemeTypes';
+import { PROJECTILE_RANGE_PX } from '../../entities/combat/projectileSystem';
+import { TILE_PX } from '../../entities/world/grid';
+
+/** The least pace a relight window is worked from, so a person who has not yet walked still has an answer. */
+const BASE_PACE = 1;
 
 /** A rank's place on the ladder, F = 0. Everything scales from this. */
 export const rankStep = (rank: ThemeRank | UniversalRank): number => RANKS.indexOf(rank as ThemeRank);
@@ -123,10 +128,65 @@ export const leaderNumbers = (c: { baseHealth: number; baseDamage: number; rank:
 /** What a goal asks on a d20, and which stat on the sheet helps. A goal is a word with a reader. */
 export const GOAL_BANDS = {
   grow: { dc: 11, stat: 'leadership' }, hunt: { dc: 10, stat: 'perception' }, take: { dc: 13, stat: 'intimidation' },
-  settle: { dc: 14, stat: 'engineering' }, waylay: { dc: 9, stat: 'intimidation' }
+  settle: { dc: 14, stat: 'engineering' }, waylay: { dc: 9, stat: 'intimidation' },
+  /** A band holds what its boss's orders give it. Nothing rolls for it: its boss's cycle decides. */
+  hold: { dc: 0, stat: 'leadership' }
 } as const;
 /** How far past its band a roll must land to be graded great. */
 export const GOAL_GREAT_BY = 6;
+
+// -------------------------------------------------------------------------
+// TERRITORY (D62, D93). What ground, posts and a seat cost. All guesses until Wave 12.
+// -------------------------------------------------------------------------
+
+export const TERRITORY_NUMBERS = {
+  /** How many people falling to one elite make it a boss. */
+  bossFalls: 3,
+  /** How much ground one body can hold, in chunks. */
+  chunksPerBody: 2,
+  /** How far apart anchors stand, in chunks. Two is already past what two shots can cover. */
+  spreadChunks: 2,
+  /** A relight window, as a share of the walk between anchors. Under 1 is the whole of the rule. */
+  relightShare: 0.5,
+  /** What a body of a base works out of held ground in a cycle, and pays towards a build in a decision. */
+  yieldPerBody: 0.25,
+  payPerBody: 0.5,
+  /** What a verb asks on a d20, and how far under it a decision goes before it opens a challenge. */
+  verbDc: 10,
+  badBy: 8,
+  /** Rolls this close in a challenge split the ground between them. */
+  splitBy: 1,
+  /** A building's bill before what stands raises it. A seat's comes from the hub's own plans. */
+  bills: { anchor: 8, watch: 6, wall: 10, store: 6, works: 12, muster: 12 },
+  billRise: 0.25,
+  /** How long a person stands in front of a toll before it stops asking. */
+  tollGraceMs: 12_000,
+  tollReachTiles: 8
+};
+
+/** How many anchors a boss's rank asks. Never fewer than two, so every boss asks for more than one person. */
+export const anchorsFor = (rank: ThemeRank | UniversalRank): number => 2 + Math.floor(Math.max(0, rankStep(rank)) / 2);
+
+/** What a structure asks, rising with what already stands. The seat's own base is the hub's plan. */
+export const structureBill = (fn: keyof typeof TERRITORY_NUMBERS.bills | 'seat', standing: number, seatBase = 0): number =>
+  Math.ceil((fn === 'seat' ? seatBase : TERRITORY_NUMBERS.bills[fn]) * (1 + TERRITORY_NUMBERS.billRise * standing));
+
+/** A post's health is ordinary for its rank: reaching it and leaving are the raid. */
+export const postHealth = (rank: ThemeRank | UniversalRank): number => Math.round(geometric(60, 1.9, Math.max(0, rankStep(rank))));
+
+/**
+ * The relight window (D93), from the real distance and the fastest pace seen. What a person has to
+ * cover is the distance less a shot's reach from each end, and the window is a share of that walk.
+ * It is below the walk at any pace, so one body cannot be in two places, at any strength.
+ */
+export const relightWindowMs = (distancePx: number, walkTilesPerSecond: number): number => {
+  const covered = Math.max(0, distancePx - PROJECTILE_RANGE_PX * 2);
+  return (covered / TILE_PX / Math.max(walkTilesPerSecond, BASE_PACE)) * 1000 * TERRITORY_NUMBERS.relightShare;
+};
+
+/** What a toll asks: its rank's rate, and how well its sheet bargains. */
+export const tollOwed = (rank: ThemeRank | UniversalRank, bartering: number): number =>
+  Math.max(1, Math.round(geometric(8, 2.2, Math.max(0, rankStep(rank))) * (1 + Math.max(0, bartering) * 0.05)));
 
 const WEIGHT_KG = { light: 0.5, medium: 2, heavy: 5 };
 const FOOTPRINT = { light: { width: 1, height: 1 }, medium: { width: 1, height: 2 }, heavy: { width: 1, height: 3 } };

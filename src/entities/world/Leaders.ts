@@ -8,13 +8,14 @@
  *
  * Only a social species leads. A solitary elite has a sheet and a goal like any other, and no
  * pack. Boss, titan and god stay one of a kind, alone, under R4's rule. A seat, a base and
- * anchors are the next stream's. This one rolls a goal; it builds nothing.
+ * anchors are `Territory`'s. This one reads who a body is; it builds nothing.
  */
 
 import { IAttributes, ISkillState, UniversalRank } from '../../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { TagLaw } from '../../logic/content/TagLaw';
 import { NpcSheet } from '../../logic/systems/NpcSheet';
+import { WebSystem } from '../../logic/systems/WebSystem';
 import { GOAL_BANDS, ROSTER_NUMBERS, leaderNumbers } from '../../logic/theme/ThemeFormula';
 import { BIOME_RESOURCES } from '../item/data/resourceDefinitions';
 import { SECTOR_CHUNKS } from './grid';
@@ -52,6 +53,8 @@ interface ILeaderKind {
 }
 
 const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
+const LEADER_ID = /^lead_-?\d+_-?\d+_\d+(?:_(?:h|w)\d+)*$/;
+const HERD_OF_LEADER = /^(lead_-?\d+_-?\d+_\d+(?:_(?:h|w)\d+)*)(?:_f\d+)?$/;
 
 /**
  * A kind that comes only from the roster: a plain elite that says whether it is social. An
@@ -108,12 +111,12 @@ export class Leaders {
   }
 
   static isLeader(entityId: string): boolean {
-    return /^lead_-?\d+_-?\d+_\d+(?:_h\d+)?$/.test(entityId);
+    return LEADER_ID.test(entityId);
   }
 
   /** The herd a body walks with, read from its id, so nothing new is stored on it. Undefined for a body that walks alone. */
   static herdOf(entityId: string): string | undefined {
-    return /^(lead_-?\d+_-?\d+_\d+(?:_h\d+)?)(?:_f\d+)?$/.exec(entityId)?.[1]
+    return HERD_OF_LEADER.exec(entityId)?.[1]
       ?? /^(pop_-?\d+_-?\d+_[a-z0-9]+)_\d+$/.exec(entityId)?.[1]
       ?? /^(ent_-?\d+_-?\d+)_m\d+$/.exec(entityId)?.[1];
   }
@@ -155,6 +158,20 @@ export class Leaders {
   static numbers(seed: string, leader: ILeaderSeed, context: IGenerationContext) {
     const kind = kindOfSeed(leader, context);
     return leaderNumbers(kind, NpcSheet.statsOf(seed, { id: leader.id, rank: kind.rank }) as unknown as { constitution: number; strength: number });
+  }
+
+  /**
+   * D62: what this body's hands work, as material tags: its best-practised skill that answers
+   * anything the world grows. A trade belongs to a body and is carried with it, so it needs no base.
+   */
+  static tradeOf(sheet: Pick<ILeaderSheet, 'skills'>, context: IGenerationContext): string[] {
+    const tags = new Set((context.resourceDefinitions as { tags?: string[] }[]).flatMap(r => r.tags ?? []));
+    const skills = Object.values(sheet.skills ?? {}).sort((a, b) => WebSystem.cumulativeXp(b) - WebSystem.cumulativeXp(a) || (a.id < b.id ? -1 : 1));
+    for (const skill of skills) {
+      const worked = (TagLaw.parseSkillId(skill.id) ?? []).filter(t => tags.has(t));
+      if (worked.length > 0) return worked;
+    }
+    return [];
   }
 
   /** Does this ground hold what this body's skill works (D62)? Read from what the land can yield, by tag. */

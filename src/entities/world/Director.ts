@@ -34,6 +34,8 @@ export interface IDirectorRecord {
 
 export interface IBodyTally {
   felled: number;
+  /** The cycle of each fall, so a sector read late folds as one read early did. */
+  felledAt?: number[];
   /** The highest rank that has fallen to it. */
   topRank?: UniversalRank;
   /** It fell, and to whom at the highest. A leader stays down, so this is once. */
@@ -96,7 +98,7 @@ export class Director {
       const tally = record.bodies?.[body.id];
       const higher = (a?: UniversalRank, b?: UniversalRank) => (RANKS.indexOf(a as ThemeRank) >= RANKS.indexOf(b as ThemeRank) ? a : b);
       const topRank = higher(tally?.topRank, body.rank);
-      return { ...record, felled, bodies: { ...record.bodies, [body.id]: { ...tally, felled: (tally?.felled ?? 0) + 1, ...(topRank ? { topRank } : {}) } } };
+      return { ...record, felled, bodies: { ...record.bodies, [body.id]: { ...tally, felled: (tally?.felled ?? 0) + 1, felledAt: [...(tally?.felledAt ?? []), record.generation], ...(topRank ? { topRank } : {}) } } };
     }
     if (body) {
       const tally = record.bodies?.[body.id];

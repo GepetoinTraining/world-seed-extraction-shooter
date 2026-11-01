@@ -16,8 +16,8 @@
 
 /** How a body came to be written here. A word with a reader: succession reads each. */
 export type EntryWord = 'head' | 'child' | 'adopted';
-/** Why a body left. `adopted_out` is a move: it stands on another register. */
-export type ExitWord = 'fell' | 'adopted_out';
+/** Why a body left. `adopted_out` is a move: it stands on another register. `walked` lost a challenge and seeds ground of its own. */
+export type ExitWord = 'fell' | 'adopted_out' | 'walked';
 
 export interface IKosekiEntry {
   body: string;
@@ -81,6 +81,12 @@ export class Koseki {
     const next = this.nextHead(after);
     if (!next) return { ...after, head: null, status: 'extinct' };
     return { ...after, head: next.body, entries: entries.map(e => (e.body === next.body && stands(e) ? { ...e, word: 'head' as const } : e)) };
+  }
+
+  /** A challenge named someone other than the next in line. It heads the register now. */
+  static crown(register: IKoseki, body: string): IKoseki {
+    if (!register.entries.some(e => e.body === body && stands(e))) return register;
+    return { ...register, head: body, status: 'active', entries: register.entries.map(e => (e.body === body && stands(e) ? { ...e, word: 'head' as const } : e)) };
   }
 
   /** A body moves to another register (D65's capture is one of these). It is out of one and into the other, in one step. */
