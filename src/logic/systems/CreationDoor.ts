@@ -7,9 +7,9 @@
  */
 
 import { IItem, IPlayer } from '../../../types';
-import { IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClient';
+import { IDoorMessage, IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { LedgerRowType } from '../ledger/Ledger';
-import { CreationSystem, ICreationAsk, ICreationDraftChoices, ICreationSheet, ICreationWords } from './CreationSystem';
+import { CreationSystem, ICreationAsk, ICreationDraftChoices, ICreationSheet, ICreationWords, IKamiWords } from './CreationSystem';
 import { isWorldDeed, WorldDeed } from './WorldDeed';
 
 /** How long a person is kept waiting before the floor answers instead. */
@@ -31,6 +31,23 @@ export const CreationDoor = {
     const verdict = CreationSystem.judge(out.data, ask);
     if (!verdict.ok) {
       console.warn(`[CREATION] What came back was refused whole: ${verdict.reason}`);
+      return { words: floor, by: 'FLOOR', usage: out.usage, reason: verdict.reason };
+    }
+    return { words: out.data, by: 'DOOR', usage: out.usage };
+  },
+
+  /** He sets up the class. Whatever comes back, however late, this answers, and fate deals what he does not. */
+  async seekKami(messages: IDoorMessage[], patienceMs = DOOR_PATIENCE_MS, persona?: string): Promise<{ words: IKamiWords; by: 'DOOR' | 'FLOOR'; usage?: IDoorUsage; reason?: string }> {
+    const floor = CreationSystem.fateFloor(messages);
+    const ask = CreationSystem.kamiAsk();
+    const out = await Promise.race([
+      IntelligenceClient.setKami<IKamiWords>(messages, ask, persona),
+      new Promise<{ status: 'OUTAGE'; data?: undefined; usage?: undefined; reason: string }>(resolve => setTimeout(() => resolve({ status: 'OUTAGE', reason: 'He took too long.' }), patienceMs))
+    ]);
+    if (out.status !== 'OK' || !out.data) return { words: floor, by: 'FLOOR', reason: out.reason ?? out.status };
+    const verdict = CreationSystem.judgeKami(out.data, ask);
+    if (!verdict.ok) {
+      console.warn(`[CREATION] What he set up was refused whole: ${verdict.reason}`);
       return { words: floor, by: 'FLOOR', usage: out.usage, reason: verdict.reason };
     }
     return { words: out.data, by: 'DOOR', usage: out.usage };
@@ -73,6 +90,7 @@ export const CreationDoor = {
       data: {
         kind: 'CREATION_GRANTED',
         origin: made.origin, main: made.main, sub: made.sub, by: made.by,
+        ...(made.className ? { className: made.className } : {}),
         skills: Object.keys(player.skillWords ?? {}),
         words: player.skillWords,
         line: made.line

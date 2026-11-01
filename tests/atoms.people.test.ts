@@ -64,7 +64,7 @@ describe('the character', () => {
     expect(hashBytes(portrait({ uid, archetype: 'NOMAD' }).data)).toBe(hashBytes(portrait({ uid, archetype: 'NOMAD' }).data));
   });
 
-  it('has four archetypes that differ in silhouette', () => {
+  it('has archetypes that all differ in silhouette', () => {
     const sprites = ARCHETYPE_IDS.map(archetype => ({ archetype, mask: maskOf(figure({ uid, archetype })) }));
     pairs(sprites).forEach(([a, b]) => {
       const d = maskDifference(a.mask, b.mask);

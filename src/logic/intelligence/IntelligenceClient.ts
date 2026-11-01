@@ -43,6 +43,41 @@ export const IntelligenceClient = {
   talk: (messages: IDoorMessage[], draft: Record<string, unknown>) => post('/talk', { messages, draft }),
   writeTheme: <T>(messages: IDoorMessage[], draft: Record<string, unknown>) => post<T>('/theme', { messages, draft }),
   grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
+  setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
+  writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),
+
+  /** A conversation as it is written. Every end is an outcome, and a stream that just stops did not finish. */
+  async talkKami(messages: IDoorMessage[], onText: (text: string) => void, signal?: AbortSignal, persona?: string): Promise<IDoorOutcome> {
+    let ended: IDoorOutcome | null = null;
+    const readLine = (line: string) => {
+      if (!line.trim()) return;
+      const piece = JSON.parse(line) as { text?: string; done?: boolean } & IDoorOutcome;
+      if (piece.done) ended = { status: piece.status, usage: piece.usage, reason: piece.reason };
+      else if (piece.text) onText(piece.text);
+    };
+    try {
+      const res = await fetch(`${MOUNT}/kami/talk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, persona }), signal });
+      const reader = res.body?.getReader();
+      if (!reader) {
+        (await res.text()).split('\n').forEach(readLine);
+      } else {
+        const decoder = new TextDecoder();
+        let held = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          held += decoder.decode(value, { stream: true });
+          const lines = held.split('\n');
+          held = lines.pop() ?? '';
+          lines.forEach(readLine);
+        }
+        readLine(held);
+      }
+    } catch {
+      return { status: 'OFFLINE', reason: 'The door cannot be reached.' };
+    }
+    return ended ?? { status: 'OUTAGE', reason: 'It stopped before it finished.' };
+  },
   fileRest: (id: string, queue: unknown, theme: unknown) => post('/rest/file', { id, queue, theme }),
   collectRest: <T>(batchId: string) => post<T>('/rest/collect', { batchId }),
   fileWindow: (id: string, kind: string, asks: unknown[], theme: unknown, spent: number) => post('/window/file', { id, kind, asks, theme, spent }),

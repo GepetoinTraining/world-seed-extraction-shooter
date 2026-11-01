@@ -223,7 +223,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   initializeSession: (certificate, archetypeId, sheet) => {
     const uid = certificate.metadata.uid;
-    const baseAttrs = sheet ? CreationSystem.spread(uid, sheet.record.origin) as IBaseAttributes : { ...DEFAULT_ATTRIBUTES };
+    const baseAttrs = sheet ? CreationSystem.spreadOn(uid, sheet.record.main, sheet.record.sub) as IBaseAttributes : { ...DEFAULT_ATTRIBUTES };
     const bonuses = sheet ? {} : ARCHETYPES[archetypeId] || {};
     const kit = sheet ? CreationSystem.mintKit(uid, sheet.record.kit) : [ItemFactory.createItem(UniversalRank.F, true, Rng.fromKey(`${uid}:genesis:starter`))];
     

@@ -17,7 +17,7 @@ import { firstPlan } from '../entities/hub/hubManifest';
 import { VectorStore, VectorNamespace } from '../entities/data/VectorStore';
 import { OriginBank, SILHOUETTES } from '../logic/content/OriginBank';
 import { CreationDoor } from '../logic/systems/CreationDoor';
-import { CreationSystem, ICreationSheet, ICreationWords } from '../logic/systems/CreationSystem';
+import { CreationSystem, FATE_GAMBLER, ICreationSheet, ICreationWords, IKamiWords } from '../logic/systems/CreationSystem';
 import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { ThemeStore } from '../logic/theme/ThemeStore';
@@ -27,10 +27,13 @@ import { cityMinimap } from '../render/atoms/minimap';
 import { Archetype, figure } from '../render/atoms/people';
 import { RECON_CELL_ATOMS, reconCell } from '../render/atoms/recon';
 import { useCreationDraft } from './ui/creationDraft';
+import { KamiTalk } from './KamiTalk';
 import { ArmedButton, Busy, Button, Input, Panel, SpriteView } from './ui/kit';
 import { ThemePreview } from './ThemeTalk';
 
 const STEPS = ['WHO YOU WERE', 'WHAT YOU CARRY', 'THE FACE OF THE WORLD', 'THE SEED', 'THE SIGNATURE'];
+/** The fifth class names no life and picks no kit: Kami sets them, so those steps do not stand. */
+const FATE_STEPS = ['WHO YOU WERE', null, 'THE FACE OF THE WORLD', 'KAMI', 'THE SIGNATURE'];
 
 const SILHOUETTE_LINES: Record<string, string> = {
   OPERATOR: 'Reads the machine. Pack and antenna; the terminal answers faster.',
@@ -59,10 +62,10 @@ const Choice: React.FC<{ chosen: boolean; onPick: () => void; children: React.Re
   </button>
 );
 
-const Stepper: React.FC<{ at: number }> = ({ at }) => (
+const Stepper: React.FC<{ at: number; fate: boolean }> = ({ at, fate }) => (
   <div className="ws-small" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-    {STEPS.map((s, i) => (
-      <span key={s} className={i === at ? 'ws-bright' : 'ws-dim'} style={i === at ? { borderBottom: '2px solid currentColor' } : undefined}>{i + 1} {s}</span>
+    {(fate ? FATE_STEPS : STEPS).map((s, i) => s && (
+      <span key={s} className={i === at ? 'ws-bright' : 'ws-dim'} style={i === at ? { borderBottom: '2px solid currentColor' } : undefined}>{i + 1 - (fate && i > 1 ? 1 : 0)} {s}</span>
     ))}
   </div>
 );
@@ -117,6 +120,7 @@ export const CreationFlow: React.FC<{
   const { draft, set, reset } = useCreationDraft();
   const { step, originId, kitId, silhouette, hubId, themeId, answers, said, name, grant } = draft;
   const origin = OriginBank.origin(originId);
+  const isFate = silhouette === FATE_GAMBLER;
   const [asking, setAsking] = useState(false);
   const [hubs, setHubs] = useState<IHubFace[] | null>(null);
   const [themesLoaded, setThemesLoaded] = useState(0);
@@ -158,6 +162,8 @@ export const CreationFlow: React.FC<{
     choose({ originId: id, kitId: picked.kits[0], silhouette: picked.silhouette, answers: {} });
   };
 
+  const pickFate = () => choose({ originId: '', kitId: '', silhouette: FATE_GAMBLER, answers: {} });
+
   const hear = async () => {
     setAsking(true);
     const out = await CreationDoor.seek({ originId, kitId, silhouette, hubId, themeId, answers, said });
@@ -176,7 +182,7 @@ export const CreationFlow: React.FC<{
   const nav = (canGo: boolean, nextLabel: string, onNext?: () => void) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
       <span style={{ display: 'flex', gap: 6 }}>
-        {step > 0 && <Button tone="quiet" onClick={() => set({ step: step - 1 })}>BACK</Button>}
+        {step > 0 && <Button tone="quiet" onClick={() => set({ step: step === 2 && isFate ? 0 : step - 1 })}>BACK</Button>}
         <ArmedButton tone="quiet" confirmLabel="PRESS AGAIN TO FORGET THIS DRAFT" onConfirm={reset}>START OVER</ArmedButton>
       </span>
       {onNext && <Button tone="signal" primary disabled={!canGo} onClick={onNext}>{nextLabel}</Button>}
@@ -187,7 +193,7 @@ export const CreationFlow: React.FC<{
 
   return (
     <Panel title="GENESIS PROTOCOL" right={aside} style={{ width: 760, maxHeight: '94vh', overflowY: 'auto' }}>
-      <Stepper at={step} />
+      <Stepper at={step} fate={isFate} />
 
       {step === 0 && (
         <div>
@@ -220,7 +226,17 @@ export const CreationFlow: React.FC<{
               </div>
             </>
           )}
-          {nav(!!origin, 'NEXT: WHAT YOU CARRY', () => set({ step: 1 }))}
+          <div className="ws-dim ws-small" style={{ margin: '12px 0 6px', letterSpacing: '0.08em' }}>OR SAY NOTHING ABOUT IT</div>
+          <Choice chosen={isFate} onPick={pickFate}>
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <SpriteView sprite={figure({ uid: 'preview:unborn', archetype: FATE_GAMBLER as Archetype })} scale={2} />
+              <span>
+                <span className="ws-bright" style={{ display: 'block', letterSpacing: '0.04em' }}>FATE GAMBLER</span>
+                <span className="ws-dim ws-small" style={{ display: 'block' }}>You put it on the table and let it be decided. You will sit down with Kami, and he will set up what you are.</span>
+              </span>
+            </span>
+          </Choice>
+          {nav(!!origin || isFate, isFate ? 'NEXT: THE FACE OF THE WORLD' : 'NEXT: WHAT YOU CARRY', () => set({ step: isFate ? 2 : 1 }))}
         </div>
       )}
 
@@ -281,11 +297,18 @@ export const CreationFlow: React.FC<{
               </Choice>
             ))}
           </div>
-          {nav(!!hubs, 'NEXT: THE SEED', () => set({ step: 3 }))}
+          {nav(!!hubs, isFate ? 'NEXT: KAMI' : 'NEXT: THE SEED', () => set({ step: 3 }))}
         </div>
       )}
 
-      {step === 3 && (
+      {step === 3 && isFate && (
+        <div>
+          <KamiTalk />
+          {nav(false, '')}
+        </div>
+      )}
+
+      {step === 3 && !isFate && (
         <div>
           <div style={{ marginBottom: 8 }} aria-label="What was said">
             <div className="ws-small" style={{ marginBottom: 6 }}>THE SEED: You are not where you were. The bank does not ask how. It has a few plain questions, for the record.</div>
@@ -330,9 +353,9 @@ export const CreationFlow: React.FC<{
         </div>
       )}
 
-      {step === 4 && origin && words && (
+      {step === 4 && (origin || isFate) && words && (
         <div>
-          <div className="ws-small" style={{ marginBottom: 8 }}>THE SEED: {words.line}</div>
+          <div className="ws-small" style={{ marginBottom: 8 }}>{isFate ? 'KAMI' : 'THE SEED'}: {words.line}</div>
           <div className="ws-list" style={{ marginBottom: 8 }} aria-label="What your hands know">
             {words.skills.map(s => (
               <div key={s.id} className="ws-row">
@@ -344,10 +367,12 @@ export const CreationFlow: React.FC<{
             ))}
           </div>
           <div className="ws-small" style={{ marginBottom: 10, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10 }}>
-            <span className="ws-dim">YOU WERE</span><span>{origin.says}</span>
-            <span className="ws-dim">MAIN FOCUS</span><span>{origin.main ? attr(origin.main) : 'THE TOP OF YOUR DEAL'}</span>
-            <span className="ws-dim">SUB FOCUS</span><span>{origin.sub ? attr(origin.sub) : 'THE NEXT OF YOUR DEAL'}</span>
-            <span className="ws-dim">YOU CARRY</span><span>{CreationSystem.kitPreview(kitId).map(p => p.name).join(', ')}</span>
+            {isFate
+              ? <><span className="ws-dim">YOU ARE</span><span>{(words as IKamiWords).name.toUpperCase()}</span></>
+              : <><span className="ws-dim">YOU WERE</span><span>{origin?.says}</span></>}
+            <span className="ws-dim">MAIN FOCUS</span><span>{isFate ? attr((words as IKamiWords).main) : origin?.main ? attr(origin.main) : 'THE TOP OF YOUR DEAL'}</span>
+            <span className="ws-dim">SUB FOCUS</span><span>{isFate ? attr((words as IKamiWords).sub) : origin?.sub ? attr(origin.sub) : 'THE NEXT OF YOUR DEAL'}</span>
+            <span className="ws-dim">YOU CARRY</span><span>{CreationSystem.kitPreview(isFate ? (words as IKamiWords).kit : kitId).map(p => p.name).join(', ')}</span>
             <span className="ws-dim">YOU HOLD</span><span>One world deed: {WorldDeed.say(FREE_DEED_SIZE)}</span>
           </div>
           <Input
@@ -359,16 +384,19 @@ export const CreationFlow: React.FC<{
           {error && <div className="ws-loss ws-small" style={{ marginTop: 8 }}>GENERATION FAILED: {error}</div>}
           {nav(!!name.trim() && !creating, creating ? 'SIGNING…' : 'MINT THE CERTIFICATE', () => {
             const usage = (grant?.usage as IDoorUsage | null) ?? undefined;
-            void onMint(name.trim(), CreationSystem.sheet({ originId, kitId, silhouette, hubId, themeId, answers, said }, words, grant?.by ?? 'FLOOR', usage));
+            const choices = { originId, kitId, silhouette, hubId, themeId, answers, said };
+            void onMint(name.trim(), isFate
+              ? CreationSystem.kamiSheet(choices, words as IKamiWords, grant?.by ?? 'FLOOR', usage)
+              : CreationSystem.sheet(choices, words, grant?.by ?? 'FLOOR', usage));
           })}
         </div>
       )}
 
       {/* A draft restored past where its choices still stand starts that screen again */}
-      {((step >= 1 && !origin) || (step === 4 && !words)) && (
+      {((step >= 1 && !origin && !isFate) || (step === 4 && !words)) && (
         <div>
           <div className="ws-dim ws-small">That part of the draft no longer stands.</div>
-          <Button tone="signal" onClick={() => set({ step: origin ? 3 : 0 })}>GO BACK TO IT</Button>
+          <Button tone="signal" onClick={() => set({ step: origin || isFate ? 3 : 0 })}>GO BACK TO IT</Button>
         </div>
       )}
     </Panel>

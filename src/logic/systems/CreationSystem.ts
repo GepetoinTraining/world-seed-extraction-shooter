@@ -14,6 +14,7 @@
  */
 
 import { IAttributes, ICreationRecord, IItem, ISkillState, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, UniversalRank } from '../../../types';
+import type { IDoorMessage } from '../intelligence/IntelligenceClient';
 import { ITEM_DEFINITIONS, ItemDefinition } from '../../entities/item/data/itemDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
 import { ItemFactory } from '../../entities/item/ItemFactory';
@@ -32,6 +33,15 @@ import { WebSystem } from './WebSystem';
 export const GRANTED_SKILLS = 3;
 /** How many plain things the Seed asks. Under a minute is the point (the plan's own rule). */
 export const QUESTIONS_ASKED = 3;
+
+/**
+ * The fifth (Pedro): "right now we have 4 hardcoded classes, we're adding a 5th one, fate
+ * gambler, that one calls up a stream style conversation with sonnet and you talk with kami
+ * itself, he'll set up the class." No life is picked and no kit: Kami chooses them, the law
+ * judges what he chose, and with no key or no answer, fate deals it from what was said.
+ */
+export const FATE_GAMBLER = 'FATE_GAMBLER';
+export const FATE_ORIGIN = 'fate_gambler';
 
 const ALL_ATTRIBUTES = [...PHYSICAL_ATTRIBUTES, ...MENTAL_ATTRIBUTES] as (keyof IAttributes)[];
 const HIDDEN = /archetype|trope|isekai/i;
@@ -59,6 +69,17 @@ export interface ICreationAsk {
   count: number;
   candidates: { id: string; name: string; tags: string[] }[];
 }
+
+/** What Kami chooses from. Only the bank's kits and the web's skills: he sets a class, he does not mint things. */
+export interface IKamiAsk {
+  attributes: string[];
+  kits: { id: string; says: string; line: string; carries: string[] }[];
+  count: number;
+  candidates: { id: string; name: string; tags: string[] }[];
+}
+
+/** What he sets up. */
+export interface IKamiWords extends ICreationWords { name: string; main: string; sub: string; kit: string }
 
 /** What the flow hands to the store at the mint. */
 export interface ICreationSheet {
@@ -141,15 +162,25 @@ export class CreationSystem {
   /** The top of the deal moves onto what was focused on, and the rest stays as dealt. The total never moves. */
   static spread(uid: string, originId: string): IAttributes {
     const origin = OriginBank.origin(originId);
+    return this.spreadOn(uid, origin?.main, origin?.sub);
+  }
+
+  /** The same deal, for a focus that came from anywhere. With none named it stays as dealt. */
+  static spreadOn(uid: string, main: string | null | undefined, sub: string | null | undefined): IAttributes {
     const out = { ...this.dealt(uid) } as unknown as Record<string, number>;
-    if (!origin?.main || !origin.sub) return out as unknown as IAttributes;
+    if (!main || !sub) return out as unknown as IAttributes;
     const swapTopOnto = (attr: string, keep: string[]) => {
       const top = ALL_ATTRIBUTES.filter(a => !keep.includes(a)).reduce((best, a) => (out[a] > out[best] ? a : best), attr as keyof IAttributes);
       [out[attr], out[top]] = [out[top], out[attr]];
     };
-    swapTopOnto(origin.main, []);
-    swapTopOnto(origin.sub, [origin.main]);
+    swapTopOnto(main, []);
+    swapTopOnto(sub, [main]);
     return out as unknown as IAttributes;
+  }
+
+  /** Read from what was signed, whoever chose it. An empty focus is the top of what the certificate dealt. */
+  static focusOfRecord(record: Pick<ICreationRecord, 'origin' | 'main' | 'sub'>, uid: string): { main: string; sub: string } {
+    return record.main && record.sub ? { main: record.main, sub: record.sub } : this.focusOf(record.origin, uid);
   }
 
   /** What a person focuses on. With none named, the top of what the certificate dealt. */
@@ -275,6 +306,70 @@ export class CreationSystem {
       if (stray) return no(`${s.id} grants "${stray}", and the game has no such thing.`);
     }
     return { ok: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE FIFTH: Kami sets it up
+  // ---------------------------------------------------------------------------
+
+  static kamiAsk(): IKamiAsk {
+    return {
+      attributes: ALL_ATTRIBUTES.map(String),
+      kits: OriginBank.kits().map(k => ({ id: k.id, says: k.says, line: k.line, carries: this.kitPreview(k.id).map(p => p.name) })),
+      count: GRANTED_SKILLS,
+      candidates: WebBank.connections(WebBank.current()).map(c => ({ id: c.skillId, name: WebSystem.nameOf(c.skillId), tags: TagLaw.parseSkillId(c.skillId) ?? [] }))
+    };
+  }
+
+  /** What he chose, refused whole if any of it is wrong. The skills stand before the same law as anyone's. */
+  static judgeKami(words: IKamiWords, ask: IKamiAsk): { ok: boolean; reason?: string } {
+    const no = (reason: string) => ({ ok: false, reason });
+    if (!words || typeof words.name !== 'string' || typeof words.line !== 'string') return no('That is not what he returns.');
+    if (!words.name.trim()) return no('He gave it no name.');
+    if (HIDDEN.test(words.name)) return no('He said what stays unsaid.');
+    if (!ask.attributes.includes(words.main) || !ask.attributes.includes(words.sub)) return no(`"${words.main}" and "${words.sub}" are not both attributes.`);
+    if (words.main === words.sub) return no('He named the same focus twice.');
+    if (!ask.kits.some(k => k.id === words.kit)) return no(`He offered a kit the bank does not hold: ${words.kit}.`);
+    return this.judge(words, { candidates: ask.candidates, count: ask.count } as ICreationAsk);
+  }
+
+  /** With no key, no answer or a broken one: fate deals the whole of it, keyed by what was said. */
+  static fateFloor(messages: Pick<IDoorMessage, 'role' | 'content'>[]): IKamiWords {
+    const key = `creation:fate:${messages.map(m => `${m.role}=${m.content}`).join('|')}`;
+    const [main, sub] = keyedShuffle(ALL_ATTRIBUTES.map(String), `${key}:focus`);
+    const rng = Rng.fromKey(`${key}:words`);
+    const flavors = OriginBank.flavors();
+    const names = OriginBank.fateNames();
+    const lines = OriginBank.fateLines();
+    return {
+      name: names.length > 0 ? rng.pick(names) : 'WHATEVER CAME UP',
+      line: lines.length > 0 ? rng.pick(lines) : 'The bank honors it.',
+      main, sub,
+      kit: keyedShuffle(OriginBank.kits().map(k => k.id), `${key}:kit`)[0],
+      skills: this.ranked([], `${key}:skills`).slice(0, GRANTED_SKILLS).map(c => ({
+        id: c.id, name: WebSystem.nameOf(c.id), flavor: flavors.length > 0 ? rng.pick(flavors) : '', grants: []
+      }))
+    };
+  }
+
+  static kamiSheet(draft: ICreationDraftChoices, words: IKamiWords, by: 'DOOR' | 'FLOOR' = 'FLOOR', usage?: IDoorUsage): ICreationSheet {
+    return {
+      silhouette: FATE_GAMBLER,
+      ...(draft.hubId ? { hubId: draft.hubId } : {}),
+      words,
+      usage,
+      record: {
+        origin: FATE_ORIGIN,
+        className: words.name,
+        main: words.main,
+        sub: words.sub,
+        kit: words.kit,
+        ...(draft.themeId ? { themeId: draft.themeId } : {}),
+        answers: {},
+        line: words.line,
+        by
+      }
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -835,6 +835,8 @@ export interface ICreationRecord {
   main: string;
   sub: string;
   kit: string;
+  /** What Kami called them, when he set it up himself. */
+  className?: string;
   /** The world the Seed spoke of, which the mint then offers first. */
   themeId?: string;
   answers: Record<string, string>;

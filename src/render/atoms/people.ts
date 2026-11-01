@@ -9,7 +9,7 @@
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
 import { D, Ink, Role, Sprite, hash2, material, px, stamp } from './atoms';
 
-export const ARCHETYPE_IDS = ['OPERATOR', 'STREET_SAMURAI', 'NOMAD', 'ARCANIST'] as const;
+export const ARCHETYPE_IDS = ['OPERATOR', 'STREET_SAMURAI', 'NOMAD', 'ARCANIST', 'FATE_GAMBLER'] as const;
 export type Archetype = typeof ARCHETYPE_IDS[number];
 export type Facing = 'down' | 'up' | 'left' | 'right';
 export type WeaponClass = 'blade' | 'heavy' | 'caster' | 'ranged' | 'tool';
@@ -137,6 +137,17 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
       k.disc(cx, 11 + sink, headR);
       k.disc(cx - 20, 30 + 3 * g.lead, 2).disc(cx + 20, 26 - 3 * g.lead, 2);
       break;
+    case 'FATE_GAMBLER':
+      // A flat wide brim, a long coat, and a die held out on one side: all outline, so it reads in grayscale.
+      legs(38);
+      flare(k, cx, 17, narrow(6), 38, narrow(11));
+      k.disc(cx, 11 + sink, headR);
+      k.rect(cx - narrow(19), 5 + sink, cx + narrow(19), 7 + sink).rect(cx - narrow(8), sink, cx + narrow(8), 5 + sink);
+      if (!back) {
+        k.rect(cx + 15, 21 + 2 * g.lead, cx + 22, 28 + 2 * g.lead).rect(cx + 17, 23 + 2 * g.lead, cx + 20, 26 + 2 * g.lead, 0);
+        k.line(cx + 6, 21, cx + 15, 24 + 2 * g.lead, 1);
+      }
+      break;
   }
 
   const torso = o.archetype === 'NOMAD' ? 28 : 24;
@@ -166,6 +177,22 @@ function figureInk(o: FigureInput, side: boolean, back: boolean): Ink {
     const sleeve = (seed >>> 22) % 3;
     if (sleeve === 1) k.rect(cx - 13, 20, cx - 8, 30);
     if (sleeve === 2) k.rect(cx + 8, 20, cx + 13, 30);
+  } else if (o.archetype === 'FATE_GAMBLER') {
+    // The hat and the coat hide what marks everyone else, so they carry the id themselves.
+    const notch = (seed >>> 14) % 4;
+    if (notch > 0) k.rect(cx - 16 + notch * 8, 5 + sink, cx - 13 + notch * 8, 7 + sink, 0);
+    const crownCut = (seed >>> 16) % 4;
+    if (crownCut > 0) k.rect(cx - 8 + crownCut * 3, sink, cx - 6 + crownCut * 3, 2 + sink, 0);
+    const fold = (seed >>> 18) % 4;
+    k.rect(cx - 8 + fold * 5, 24, cx - 7 + fold * 5, 37, 0);
+    const band = (seed >>> 20) % 4;
+    if (band > 0) k.rect(cx - 11, 24 + band * 4, cx + 11, 25 + band * 4, 0);
+    const lapel = (seed >>> 22) % 3;
+    if (lapel === 1) k.rect(cx - 13, 19, cx - 7, 29);
+    if (lapel === 2) k.rect(cx + 7, 19, cx + 13, 29);
+    const tail = (seed >>> 24) % 3;
+    if (tail === 1) k.rect(cx - 12, 34, cx - 7, 42);
+    if (tail === 2) k.rect(cx + 7, 34, cx + 12, 42);
   } else {
     const hop = g.lead ? 3 : 0;
     if (hem === 1) k.rect(cx - 8, 44 - hop, cx - 2, 47 - hop);
@@ -315,6 +342,14 @@ export function portrait(o: { uid: string; archetype: Archetype }): Sprite {
       const gap = av(2, 3);
       if (gap === 1) k.rect(20, 17 - ringR, 27, 17 - ringR + 2, 0);
       if (gap === 2) k.rect(24 - ringR, 20, 24 - ringR + 3, 24, 0);
+      break;
+    }
+    case 'FATE_GAMBLER': {
+      // The brim belongs to the id too: its tilt and its width vary. The die stays.
+      const gv = (n: number, mod: number) => hash2(seed, 80 + n, 3) % mod;
+      const brim = 20 + gv(0, 4), tilt = gv(1, 3);
+      k.rect(24 - brim, 7 + tilt, 24 + brim, 10 + tilt).rect(13 - gv(2, 2), 0, 34 + gv(3, 2), 7 + tilt);
+      k.rect(37, 31, 45, 39).rect(39, 33, 43, 37, 0);
       break;
     }
   }
