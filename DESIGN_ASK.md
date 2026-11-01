@@ -438,8 +438,14 @@ A goal someone saw is decided by what happened, with no roll, and the client's c
 2. A titan is earned, so a pack may no longer write one at the mint. The law would refuse the tag when this is built. The test fixture keeps its own.
 3. The guild posts a warning for a titan rather than a chain, so people know where not to drop. A raid on one is for people to raise themselves.
 4. Writing a map stays as A3 built it: anyone at a scribe's table with paper and ink. "Cartographer" adds no new gate.
-5. A titan in a pocket world gives no deed back (D72). The world stands, and its owner works around the titan or calls for help.
-6. Loot is shared by the work done, and the last blow's `luck_find_rarity` sets what falls. Pedro said "probably" about the loot, so the shares are a reading, and their numbers are Wave 12's.
+5. Loot is shared by the work done, and the last blow's `luck_find_rarity` sets what falls. Pedro said "probably" about the loot, so the shares are a reading, and their numbers are Wave 12's. Nobody's share is kept for them: as with any haul, it counts only if they carry it out.
+
+### Confirmed by Pedro: no softening
+
+"if you go in to fight it and die you're wasting your resources... and clearly if you got a titan inside your pocket world you've fucked up haven't you?"
+
+- Falling in a raid costs what any fall costs, and what was spent getting there stays spent. Each fall to a titan also goes on its ledger.
+- A titan in a pocket world gives no deed back (D72). It got there because its owner kept falling to it. The world stands, and the owner works around it or calls for help.
 
 ## The design system to deliver
 
