@@ -33,7 +33,7 @@ export const ReceiptScreen: React.FC = () => {
             {died ? 'DIED' : 'SEALED'}
           </div>
           <div className="ws-dim ws-small" style={{ letterSpacing: '0.12em', marginTop: 2 }}>
-            {receipt.cause === 'GATE' ? 'THE GATE CLOSED WITH YOU INSIDE — THE WORLD KEEPS WHAT FELL' : died ? 'SESSION RECEIPT — THE WORLD KEEPS WHAT FELL' : 'SESSION RECEIPT — BANKED AND SIGNED'}
+            {receipt.cause === 'GATE' ? 'THE GATE CLOSED WITH YOU INSIDE — THE WORLD KEEPS WHAT FELL' : died ? 'SESSION RECEIPT — THE WORLD KEEPS WHAT FELL' : receipt.forced ? 'SESSION RECEIPT — A WAY OUT FORCED, BANKED AND SIGNED' : 'SESSION RECEIPT — BANKED AND SIGNED'}
           </div>
         </div>
 

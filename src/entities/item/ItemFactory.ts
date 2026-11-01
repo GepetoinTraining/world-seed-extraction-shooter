@@ -265,7 +265,7 @@ export class ItemFactory {
       rarity: def.rarity ?? Rarity.COMMON,
       quality,
       level: 1,
-      value: CompositionSystem.baseMaterialValue(def, quality),
+      value: def.worth ?? CompositionSystem.baseMaterialValue(def, quality),
       itemPower: 0,
       tags: [...(def.tags ?? [])],
       affixes: worked.length > 0 ? worked : dreamAffix ? [dreamAffix] : [],

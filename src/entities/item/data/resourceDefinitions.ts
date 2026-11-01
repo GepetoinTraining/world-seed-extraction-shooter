@@ -36,6 +36,8 @@ export type ResourceDef = Partial<IItem> & {
   /** D27: a station a web batch added: what it asks of a room, and what it opens. */
   stationMinArea?: number;
   stationFunction?: 'WORKSHOP' | 'VENDOR' | 'SCRIBE';
+  /** D77: what the formula says it is worth, for a thing its weight cannot price. */
+  worth?: number;
 };
 
 /** Everything the installed themes let a person gather or use (D53). Empty until one is installed. */

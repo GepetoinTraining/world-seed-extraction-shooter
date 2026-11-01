@@ -9,9 +9,10 @@
  */
 
 import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
-import { STAT_SCALE } from './ThemeFormula';
+import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
+import { EffectSystem } from '../systems/EffectSystem';
 import { MENTAL_ATTRIBUTES } from '../../../types';
 
 export interface IThemeVerdict { ok: boolean; reason?: string }
@@ -77,12 +78,15 @@ export class ThemeLaw {
     }
 
     const abilityKeys = new Set(pack.abilities.map(a => a.key));
+    const wayOut = new Set(pack.abilities.filter(a => a.effect === 'forced_exit').map(a => a.key));
     for (const a of pack.abilities) {
       if (!claim(a.key)) return no(`ability "${a.key}" needs its own plain key.`);
       if (!a.name?.trim()) return no(`ability ${a.key} has no name.`);
       if (!has(DELIVERIES, a.delivery)) return no(`${a.key}: "${a.delivery}" is not a delivery.`);
       if (!has(EFFECTS, a.effect)) return no(`${a.key}: "${a.effect}" is not an effect.`);
       if (!has(COST_BANDS, a.cost)) return no(`${a.key}: "${a.cost}" is not a cost band.`);
+      const exit = EffectSystem.exitRefusal(a);
+      if (exit) return no(`${a.key} ${exit}`);
       const t = unknownTag(a.elements);
       if (t) return no(`${a.key} names the element "${t}", which is not registered.`);
     }
@@ -90,6 +94,8 @@ export class ThemeLaw {
     for (const c of pack.creatures) {
       if (!claim(c.key)) return no(`creature "${c.key}" needs its own plain key.`);
       if (!c.name?.trim()) return no(`creature ${c.key} has no name.`);
+      const opens = c.innate.find(k => wayOut.has(k));
+      if (opens) return no(`${c.key} is born knowing "${opens}", and a way out is never learned by defeating something.`);
       if (!has(RANKS, c.rank)) return no(`${c.key}: "${c.rank}" is not a rank.`);
       if (!has(SIZES, c.size)) return no(`${c.key}: "${c.size}" is not a size.`);
       if (!has(BEHAVIORS, c.behavior)) return no(`${c.key}: "${c.behavior}" is not a behavior.`);
@@ -166,6 +172,7 @@ export class ThemeLaw {
       if (!has(RANKS, g.rank)) return no(`${g.key}: "${g.rank}" is not a rank.`);
       if (!has(GEAR_KINDS, g.kind)) return no(`${g.key}: "${g.kind}" is not a kind of gear, so no slot would take it.`);
       if (g.carries && !abilityKeys.has(g.carries)) return no(`${g.key} carries "${g.carries}", which this pack never defines.`);
+      if (wayOut.has(g.carries)) return no(`${g.key} carries "${g.carries}", and a trigger would open a way out for nothing.`);
       if (g.carries && !(TRIGGERS as readonly string[]).includes(g.trigger)) return no(`${g.key} fires on "${g.trigger}", and nothing in the game fires on that.`);
       const t = unknownTag([...g.tags, ...g.works]);
       if (t) return no(`${g.key} names "${t}", which is not registered.`);
@@ -194,6 +201,8 @@ export class ThemeLaw {
       if (!has(RANKS, c.rank) || !has(CONSUMABLE_KINDS, c.kind)) return no(`${c.key} is outside the bands.`);
       if (c.kind === 'energy' && c.onShelf) return no(`${c.key} refills energy, and that is on no shelf.`);
       if (c.kind === 'scroll' && !abilityKeys.has(c.casts)) return no(`${c.key} is a scroll that casts nothing.`);
+      if (wayOut.has(c.casts) && c.kind !== 'scroll') return no(`${c.key} casts "${c.casts}", and only a scroll may.`);
+      if (wayOut.has(c.casts) && rankStep(c.rank) < rankStep(FORCED_EXIT_FLOOR_RANK)) return no(`${c.key} opens a way out, so it is rank ${FORCED_EXIT_FLOOR_RANK} or above.`);
       const t = unknownTag(c.tags);
       if (t) return no(`${c.key} is tagged "${t}", which is not registered.`);
     }
@@ -262,6 +271,8 @@ export class ThemeLaw {
     if (shape) return no(`"${shape}" is not a shape the art draws.`);
     const missing = words.innate.find(k => !pack.abilities.some(a => a.key === k));
     if (missing) return no(`it is born knowing "${missing}", which this world never defined.`);
+    const opens = words.innate.find(k => pack.abilities.find(a => a.key === k)?.effect === 'forced_exit');
+    if (opens) return no(`it is born knowing "${opens}", and a way out is never learned by defeating something.`);
     return { ok: true };
   }
 

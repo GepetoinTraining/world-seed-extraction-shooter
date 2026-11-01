@@ -56,8 +56,9 @@ export const DELIVERIES = ['self', 'touch', 'melee', 'ranged', 'area', 'aura'] a
 /**
  * What can be applied today. Line 77's law reaches effects too: a word with no reader is
  * not here, and the catalog's summon, reveal, transform and move join when something reads them.
+ * A new word goes on the end: `forced_exit` (D77) is read by EffectSystem.
  */
-export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'rest'] as const;
+export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'rest', 'forced_exit'] as const;
 /** When a piece fires. Each has a reader in the field; the catalog's others join the same way. */
 export const TRIGGERS = ['on_hit', 'on_defeat', 'on_hurt', 'on_low_health'] as const;
 /** What a minted skill can let its holder do. Rest is the one with a reader (D58). */

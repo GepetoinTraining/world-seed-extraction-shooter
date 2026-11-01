@@ -32,7 +32,7 @@ import { CombatMath } from '../entities/combat/CombatMath';
 import { BASE_CHANNEL_MS, StatSystem } from '../logic/systems/StatSystem';
 import { CircleSystem } from '../logic/systems/CircleSystem';
 import { ChestSystem } from '../entities/world/ChestSystem';
-import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
+import { EffectSystem, IEffectAbility, IEffectReceipt, IExitPlan, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
 import type { IPlayer as IPlayerShape } from '../../types';
@@ -271,6 +271,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   // The player's side of the one effect door: a weave, a known ability, a scroll or a piece's trigger.
   const applyPlayerReceipt = (receipt: IEffectReceipt, now: number, origin: { x: number; z: number }, angle: number) => {
+    if (receipt.exit) {
+      if (forcedOpen()) feed('A way out already stands open here.', 'plain');
+      else openForcedExit(receipt.exit, receipt);
+      return;
+    }
     if (EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)) {
       usePlayerStore.setState(s => {
         const session = s.player.currentSession;
@@ -304,6 +309,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements)
       : cast.kind === 'gift' ? CircleSystem.abilityOf(player, cast.id) : ContentRegistry.ability(cast.id);
     if (!ability) return;
+    if (ability.effect === 'forced_exit' && forcedOpen()) return; // a held button pays once
     const can = WeaveSystem.canCast(player, ability, rank);
     if (!can.ok) {
       if (!energyToldRef.current) feed(`Not enough ${can.short} held to work that. Gather more.`, 'loss');
@@ -384,13 +390,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   };
 
   // Wave 2.5: extraction channel + regrow sweep timing
-  const [channeling, setChanneling] = useState(false);
+  const [channeling, setChanneling] = useState<false | 'BEACON' | 'FORCED'>(false);
   const channelRef = useRef<number | null>(null);
+  // D77: how long a forced way out asks, when the channel running is one
+  const forcedMsRef = useRef<number | null>(null);
+  const forcedOpen = () => channelRef.current !== null && forcedMsRef.current !== null;
   const lastRegrowSweep = useRef<number>(0);
   // Wave 10C (D16): towed-cart follow cadence
   const lastCartSync = useRef<number>(0);
 
-  const channelMs = () => StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes);
+  const channelMs = () => forcedMsRef.current ?? StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes);
   // Line 124: however the channel ends, its bar ends with it
   useEffect(() => {
     if (!channeling || !channelRef.current) return;
@@ -450,8 +459,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const rate = StatSystem.levyRate(card?.extractionTaxRate ?? 0.05, st.player.attributes);
     const tax = Math.floor(haulValue * rate);
     const startedAt = Date.now();
+    const forced = forcedMsRef.current !== null ? { forced: true } : {};
 
-    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax, cartItemIds: cartHaul.map(i => i.id) });
+    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax, cartItemIds: cartHaul.map(i => i.id), ...forced });
     // the cart's bed banks straight into the stash (it never fit a pack — that is its point)
     if (cartHaul.length > 0) {
       usePlayerStore.setState(s => ({
@@ -473,7 +483,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     // The vault door starts closing now; the signature lands on it when sealed.
     useReceipt.getState().show({
       outcome: 'EXTRACTED', haul, haulValue, tax, sealing: true,
-      worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
+      worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...forced
     });
 
     void (async () => {
@@ -496,7 +506,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           durationMs: signed?.payload.durationMs ?? (Date.now() - startedAt),
           actionCount: signed?.payload.actionCount ?? 0,
           signature: signed?.signature,
-          receipt: signed?.payload
+          receipt: signed?.payload,
+          ...forced
         });
       }
     })();
@@ -825,21 +836,24 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const gateCard = w.availableWorlds.find(c => c.id === w.activeWorldId);
         if (gateCard) {
           const moment = WorldClock.momentAt(gateCard, now);
-          if (moment.phase !== 'UP') {
+          if (EffectSystem.gateTakes(moment.phase, forcedOpen())) {
             endRun('GATE');
             return; // Stop the loop; component unmounts
           }
           // D71: what the sky is where you stand
           const sky = WorldClock.skyAt(gateCard, now, playerPos.x / (liveMap.width * SECTOR_PX));
           lightRef.current = sky.light;
-          const left = moment.warning === 'NONE' ? '' : WorldClock.say(moment.msLeft);
-          const shown = `${moment.warning}|${left}|${sky.state}`;
+          // Past the close, a forced way out is all that holds: the warning stays at nothing left
+          const shut = moment.phase !== 'UP';
+          const warning = shut ? 'FINAL' : moment.warning;
+          const left = warning === 'NONE' ? '' : WorldClock.say(shut ? 0 : moment.msLeft);
+          const shown = `${warning}|${left}|${sky.state}`;
           if (shown !== gateShownRef.current) {
-            if (moment.warning === 'CLOSING' && !gateShownRef.current.startsWith('CLOSING') && !gateShownRef.current.startsWith('FINAL')) {
+            if (warning === 'CLOSING' && !gateShownRef.current.startsWith('CLOSING') && !gateShownRef.current.startsWith('FINAL')) {
               feed(`The gate closes in ${left}. Whoever stays is locked in.`, 'loss');
             }
             gateShownRef.current = shown;
-            setGate({ warning: moment.warning, left, sky: sky.state });
+            setGate({ warning, left, sky: sky.state });
           }
         }
       }
@@ -1182,9 +1196,24 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   };
 
   const beginChannel = () => {
+    forcedMsRef.current = null;
     channelRef.current = Date.now();
-    setChanneling(true);
+    setChanneling('BEACON');
     feed('Channel opened. Five seconds. Don\'t get hit.', 'signal');
+  };
+
+  // D77: the one reader's way out, for a scroll and a cast alike. Paid when it opens, so
+  // harm can cost all of it. From here it is the beacon's channel, and the beacon's end.
+  const openForcedExit = (exit: IExitPlan, receipt: IEffectReceipt) => {
+    const ms = StatSystem.channelMs(exit.channelMs, usePlayerStore.getState().player.attributes);
+    forcedMsRef.current = ms;
+    channelRef.current = Date.now();
+    setChanneling('FORCED');
+    usePlayerStore.setState(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: { ...s.player.currentSession, energy: Math.max(0, s.player.currentSession.energy - receipt.energy) } }
+    }) : s);
+    SessionJournal.record('INTERACT', { kind: 'FORCED_EXIT', abilityId: receipt.abilityId, key: receipt.key, channelMs: ms, energy: receipt.energy });
+    feed(`A way out tears open where you stand. ${(ms / 1000).toFixed(1)} seconds. Don't get hit.`, 'signal');
   };
 
   const entityScreen = (entity: IWorldEntity) => {
@@ -1242,7 +1271,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (channelRef.current) {
       channelRef.current = null;
       setChanneling(false);
-      feed('Channel closed. The beacon can wait.', 'plain');
+      feed(forcedMsRef.current !== null ? 'The way out closes. What it cost stays spent.' : 'Channel closed. The beacon can wait.', 'plain');
       return;
     }
     if (usePlayerStore.getState().cartWindowId) usePlayerStore.getState().closeCartWindow();
@@ -1372,10 +1401,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         {channeling ? (
           <Panel tone="signal" style={{ pointerEvents: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span className="ws-signal">CHANNELING… HOLD POSITION</span>
+              <span className="ws-signal">{channeling === 'FORCED' ? 'FORCING A WAY OUT… HOLD POSITION' : 'CHANNELING… HOLD POSITION'}</span>
               <Button tone="loss" onClick={() => { channelRef.current = null; setChanneling(false); }}><Kbd>ESC</Kbd> ABORT</Button>
             </div>
-            <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Damage breaks the channel. Five seconds of stillness buy the way home.</div>
+            <div className="ws-dim ws-small" style={{ marginTop: 4 }}>{channeling === 'FORCED' ? 'Damage breaks it, and what it cost stays spent.' : 'Damage breaks the channel. Five seconds of stillness buy the way home.'}</div>
           </Panel>
         ) : nearBeacon ? (
           <Button tone="proof" primary onClick={beginChannel}>
@@ -1398,6 +1427,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         )}
       </div>
 
+      {/* D77: a forced way out stands where you do, as a dashed diamond at your feet */}
+      {channeling === 'FORCED' && (
+        <div aria-hidden style={{ position: 'absolute', left: '50%', top: '50%', width: 72, height: 72, transform: 'translate(-50%, -50%) rotate(45deg)', zIndex: 90, pointerEvents: 'none', border: '3px dashed var(--ws-text-bright)' }} />
+      )}
+
       {/* D77: the gate closing is said by shape and position: a dashed band at the top,
           and in its last moments a dashed frame around the whole field */}
       {gate.warning !== 'NONE' && (
@@ -1410,7 +1444,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           }}
         >
           <div className="ws-bright" style={{ letterSpacing: '0.2em', fontWeight: 700 }}>THE GATE IS CLOSING — {gate.left}</div>
-          <div className="ws-small">Reach a beacon. Whoever stays is locked in.</div>
+          <div className="ws-small">{channeling === 'FORCED' ? 'Your way out holds, unless harm breaks it.' : 'Reach a beacon. Whoever stays is locked in.'}</div>
         </div>
       )}
       {gate.warning === 'FINAL' && (

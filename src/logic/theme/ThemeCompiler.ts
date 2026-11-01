@@ -14,7 +14,7 @@ import type { IGearRecipe } from '../../entities/economy/data/recipeDefinitions'
 import { fnv1a } from '../rng/DeterministicRNG';
 import { IThemeBody, IThemePack, IThemeAbility, LEADER_FEATURES, THEME_FORMULA_VERSION } from './ThemeTypes';
 import {
-  GEAR_SHAPES, affixRange, consumableNumbers, creatureNumbers, gearBaseIp, goodNumbers,
+  GEAR_SHAPES, affixRange, consumableNumbers, creatureNumbers, forcedExitWorth, gearBaseIp, goodNumbers,
   harvestNumbers, junkNumbers, materialNumbers, rankStep, stationNumbers
 } from './ThemeFormula';
 
@@ -270,7 +270,8 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
       stats: consumableNumbers(c.kind, c.rank),
       materialProps: { [MaterialPropertyType.DENSITY]: 0.4 },
       tags: unique([...c.tags, c.kind === 'scroll' ? 'scroll' : 'food']),
-      ...(c.casts ? { casts: ids.get(c.casts) } : {})
+      ...(c.casts ? { casts: ids.get(c.casts) } : {}),
+      ...(pack.abilities.find(a => a.key === c.casts)?.effect === 'forced_exit' ? { worth: forcedExitWorth(c.rank) } : {})
     } as ResourceDef & { themeId: string };
     if (c.onShelf) out.shelf.consumables.push(id);
   }

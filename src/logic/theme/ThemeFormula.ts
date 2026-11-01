@@ -267,3 +267,9 @@ export const abilityNumbers = (cost: keyof typeof COST_POWER, rank: ThemeRank) =
   durationMs: 1500 + COST_POWER[cost] * 1000,
   telegraphMs: 400 + COST_POWER[cost] * 300
 });
+
+/** D77: a forced way out always takes the top band, and a scroll of it is written no lower than this rank. */
+export const FORCED_EXIT_COST = 'extreme' as const;
+export const FORCED_EXIT_FLOOR_RANK: ThemeRank = 'C';
+/** What such a scroll is worth: its rank's shelf price, times what the band is worth. The shelf asks three times this. */
+export const forcedExitWorth = (rank: ThemeRank) => shelfPrice(rank, COST_POWER[FORCED_EXIT_COST]);
