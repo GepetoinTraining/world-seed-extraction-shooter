@@ -54,7 +54,7 @@ import { inspectItem } from '../src/render/atoms/inspect';
 import { itemArtFor } from '../src/render/atoms/items';
 import { WorldDeed, FREE_DEED_SIZE, WORLD_DEED_SIZES, isWorldDeed } from '../src/logic/systems/WorldDeed';
 import { WorldDeedDoor } from '../src/logic/systems/WorldDeedDoor';
-import { CreationSystem, GRANTED_SKILLS, ICreationAsk, ICreationWords } from '../src/logic/systems/CreationSystem';
+import { CreationSystem, FATE_GAMBLER, FATE_ORIGIN, GRANTED_SKILLS, ICreationAsk, ICreationWords, IKamiAsk, IKamiWords } from '../src/logic/systems/CreationSystem';
 import { CreationDoor } from '../src/logic/systems/CreationDoor';
 import { OriginBank } from '../src/logic/content/OriginBank';
 import { ORIGIN_BATCHES, IOriginBatch } from '../src/entities/generation/packs/originBatches';
@@ -62,9 +62,10 @@ import { CREATION_DRAFT_DEFAULTS, CREATION_DRAFT_KEY, useCreationDraft } from '.
 import { CreationFlow } from '../src/components/CreationFlow';
 import { IntelligenceDoor, AbsentProvider } from '../server/intelligence/door';
 import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { buildCreationRequest, CREATION_SCHEMA } from '../server/intelligence/prompts';
+import { buildCreationRequest, buildKamiSetRequest, buildKamiTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
+import { ARCHETYPE_IDS, figure, portrait } from '../src/render/atoms/people';
 import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
 import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 
@@ -1030,6 +1031,438 @@ describe('the flow, one screen each, through the real components', () => {
     const flow = SRC('src/components/CreationFlow.tsx');
     expect(flow).not.toMatch(/PortraitView/);
     expect(SRC('src/components/IdentityGate.tsx')).toMatch(/Nobody chose it/);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// THE FIFTH: Pedro, "right now we have 4 hardcoded classes, we're adding a 5th one, fate
+// gambler, that one calls up a stream style conversation with sonnet and you talk with kami
+// itself, he'll set up the class"
+// -----------------------------------------------------------------------------
+
+describe('the fifth class: fate gambler', () => {
+  const said = [{ role: 'assistant' as const, content: 'Sit. What will you stake.' }, { role: 'user' as const, content: 'Whatever I have left.' }];
+  const ask: IKamiAsk = CreationSystem.kamiAsk();
+  const good = (): IKamiWords => ({
+    name: 'The Last Stake',
+    line: 'It is set. Do not thank me.',
+    main: 'perception',
+    sub: 'subterfuge',
+    kit: OriginBank.origin('cooking')!.kits[0],
+    skills: ask.candidates.slice(0, GRANTED_SKILLS).map((c, i) => ({ id: c.id, name: `Dealt ${i}`, flavor: 'It came up.', grants: [] }))
+  });
+  const draft = { ...draftOf('cooking'), originId: '', kitId: '', silhouette: FATE_GAMBLER, answers: {} };
+
+  it('is its own figure, in its own shape, and the old four keep theirs', () => {
+    expect(ARCHETYPE_IDS).toContain(FATE_GAMBLER);
+    expect(ARCHETYPE_IDS.slice(0, 4)).toEqual(['OPERATOR', 'STREET_SAMURAI', 'NOMAD', 'ARCANIST']);
+    const mine = figure({ uid: 'u_f', archetype: FATE_GAMBLER as any }).data;
+    expect(mine.some(v => v > 0)).toBe(true);
+    expect(portrait({ uid: 'u_f', archetype: FATE_GAMBLER as any }).data.some(v => v > 0)).toBe(true);
+    // The old stat table is for old births. Nobody writes this class's numbers there.
+    expect(Object.keys(ARCHETYPES)).not.toContain(FATE_GAMBLER);
+  });
+
+  it('D35 holds: with no model at all, fate deals the whole class, and it passes the same law', () => {
+    const floor = CreationSystem.fateFloor(said);
+    expect(CreationSystem.judgeKami(floor, ask).ok).toBe(true);
+    expect(floor.main).not.toBe(floor.sub);
+  });
+
+  it('the deal is keyed by what was said: the same words deal the same, and others may not', () => {
+    expect(CreationSystem.fateFloor(said)).toEqual(CreationSystem.fateFloor(said));
+    const seen = new Set(['a', 'b', 'c', 'd', 'e', 'f'].map(w => JSON.stringify(CreationSystem.fateFloor([{ role: 'user', content: w }]))));
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it('the law takes a lawful class, and refuses a broken one whole', () => {
+    expect(CreationSystem.judgeKami(good(), ask).ok).toBe(true);
+    const broken = (fn: (w: IKamiWords) => void) => { const w = good(); fn(w); return CreationSystem.judgeKami(w, ask).ok; };
+    expect(broken(w => { w.main = 'luck'; })).toBe(false);
+    expect(broken(w => { w.sub = w.main; })).toBe(false);
+    expect(broken(w => { w.kit = 'a_kit_of_his_own'; })).toBe(false);
+    expect(broken(w => { w.name = ' '; })).toBe(false);
+    expect(broken(w => { w.name = 'Your Trope'; })).toBe(false);
+    expect(broken(w => { w.line = ''; })).toBe(false);
+    expect(broken(w => { w.skills[0].id = 'skill_nobody+asked'; })).toBe(false);
+    expect(broken(w => { w.skills.pop(); })).toBe(false);
+    expect(broken(w => { w.skills[0].grants = ['fly']; })).toBe(false);
+    expect(CreationSystem.judgeKami(null as any, ask).ok).toBe(false);
+  });
+
+  it('what he set up is what the character is: the focus shapes the deal, the kit is real, the skills are held', () => {
+    const w = good();
+    born('u_fate', FATE_GAMBLER, CreationSystem.kamiSheet(draft, w, 'DOOR'));
+    expect(player().archetype).toBe(FATE_GAMBLER);
+    expect(player().creation!.origin).toBe(FATE_ORIGIN);
+    expect(player().creation!.className).toBe('The Last Stake');
+    const stats = player().baseAttributes as any;
+    const sorted = ALL_ATTRS.map(k => stats[k]).sort((a, b) => b - a);
+    expect(stats.perception).toBe(sorted[0]);
+    expect(stats.subterfuge).toBe(sorted[1]);
+    const total = ALL_ATTRS.reduce((n, k) => n + stats[k], 0);
+    expect(total).toBe(ALL_ATTRS.reduce((n, k) => n + (NpcSheet.read('u_fate', { id: 'u_fate', rank: 'F' as any }, undefined).stats as any)[k], 0));
+    for (const s of w.skills) expect(player().bank.universalSkills[s.id]).toBeTruthy();
+    expect(deeds()).toHaveLength(1);
+    const held = [...stash(), ...(player().equipment?.items ?? [])].map(i => i.universalDefinitionId);
+    for (const piece of CreationSystem.kitPreview(w.kit)) expect(held).toContain(piece.definitionId);
+    expect(player().bank.gold).toBe(500);
+  });
+
+  it('a record from before the class still reads its focus from the bank', () => {
+    born('u_plain_focus', 'NOMAD', sheetOf('cooking'));
+    const focus = CreationSystem.focusOfRecord(player().creation!, 'u_plain_focus');
+    expect(focus.main).toBe(OriginBank.origin('cooking')!.main);
+  });
+
+  it('it is signed, with what was spent, as one row of usage', () => {
+    const usage = { model: 'claude-sonnet-5-5', inputTokens: 10, outputTokens: 10, cacheReadTokens: 0, usd: 0.1 };
+    born('u_fate_rows', FATE_GAMBLER, CreationSystem.kamiSheet(draft, good(), 'DOOR', usage));
+    const rows = CreationDoor.genesisRows(player(), usage);
+    const granted = rows.find(r => r.data.kind === 'CREATION_GRANTED')!;
+    expect(granted.data.by).toBe('DOOR');
+    expect(granted.data.className).toBe('The Last Stake');
+    expect(rows.find(r => r.data.kind === 'KIT_GRANTED')!.data.playerDelta).toBe(0);
+    expect(rows.find(r => r.data.kind === 'INTELLIGENCE_USE')!.data.model).toBe('claude-sonnet-5-5');
+  });
+
+  it('the door\'s class stands when it passes, and fate deals when it does not (a faked answer)', async () => {
+    const fake = (body: any) => vi.spyOn(IntelligenceClient, 'setKami').mockResolvedValue(body);
+    fake({ status: 'OK', data: good() });
+    const ok = await CreationDoor.seekKami(said);
+    expect(ok.by).toBe('DOOR');
+    expect(ok.words.name).toBe('The Last Stake');
+
+    const bad = good(); bad.kit = 'nothing';
+    fake({ status: 'OK', data: bad });
+    const refused = await CreationDoor.seekKami(said);
+    expect(refused.by).toBe('FLOOR');
+    expect(refused.words).toEqual(CreationSystem.fateFloor(said));
+
+    for (const status of ['NO_KEY', 'OFFLINE', 'REFUSED', 'BUSY', 'OUTAGE', 'CUT_OFF']) {
+      fake({ status });
+      expect((await CreationDoor.seekKami(said)).by).toBe('FLOOR');
+    }
+    vi.spyOn(IntelligenceClient, 'setKami').mockReturnValue(new Promise(() => {}));
+    expect((await CreationDoor.seekKami(said, 5)).by).toBe('FLOOR');
+    vi.restoreAllMocks();
+  });
+
+  it('nothing here lets a model write a number', () => {
+    expect(JSON.stringify(KAMI_SCHEMA)).not.toMatch(/"(number|integer)"/);
+    expect(JSON.stringify(KAMI_SCHEMA)).toMatch(/"perception"/);
+  });
+});
+
+describe('the fifth class: the stream, through the one door, against a fake', () => {
+  const talkMessage = (over: any = {}) => ({
+    id: 'msg', stop_reason: 'end_turn',
+    usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0 },
+    content: [{ type: 'text', text: 'Sit down.' }], ...over
+  });
+  const fakeStream = (chunks: string[], message: any, seen?: (p: any, o: any) => void) => ({
+    beta: { messages: { stream: (p: any, o: any) => {
+      seen?.(p, o);
+      return {
+        async *[Symbol.asyncIterator]() {
+          for (const text of chunks) yield { type: 'content_block_delta', delta: { type: 'text_delta', text } };
+        },
+        finalMessage: async () => message
+      };
+    } } },
+    models: { retrieve: async () => ({}) }
+  }) as any;
+
+  it('no test here reaches a model', () => {
+    expect(SRC('tests/creation.test.ts')).not.toMatch(/new ClaudeProvider\(\)\s*\./);
+  });
+
+  it('both kinds are Sonnet, as Pedro asked: one constant each', () => {
+    expect(MODEL_FOR.kami_talk).toBe('claude-sonnet-5-5');
+    expect(MODEL_FOR.kami_set).toBe('claude-sonnet-5-5');
+  });
+
+  it('text arrives as it is written, and the outcome carries the usage at Sonnet\'s rates', async () => {
+    let params: any = {};
+    const got: string[] = [];
+    const out = await new ClaudeProvider(fakeStream(['Sit ', 'down.'], talkMessage(), p => { params = p; }))
+      .askStream(buildKamiTalkRequest([]), t => got.push(t));
+    expect(got).toEqual(['Sit ', 'down.']);
+    expect(out.status).toBe('OK');
+    expect(params.model).toBe('claude-sonnet-5-5');
+    expect(params.output_config.effort).toBe('low');
+    expect(params.fallbacks).toBe('default');
+    expect(out.usage!.usd).toBeCloseTo((100 * 2 + 50 * 10) / 1_000_000, 10);
+  });
+
+  it('a refusal partway is an outcome, and a thrown stream is too', async () => {
+    const refused = await new ClaudeProvider(fakeStream(['Si'], talkMessage({ stop_reason: 'refusal' }))).askStream(buildKamiTalkRequest([]), () => {});
+    expect(refused.status).toBe('REFUSED');
+    const throwing = { beta: { messages: { stream: () => { throw new Error('no api key'); } } } } as any;
+    expect((await new ClaudeProvider(throwing).askStream(buildKamiTalkRequest([]), () => {})).status).toBe('NO_KEY');
+  });
+
+  it('a provider that cannot stream still answers, all at once', async () => {
+    const door = new IntelligenceDoor({
+      name: 'plain', status: async () => ({ available: true, provider: 'plain' }),
+      ask: async () => ({ status: 'OK', text: 'All at once.' }),
+      file: async () => ({ status: 'NO_KEY' as const }), collect: async () => ({ status: 'NO_KEY' as const }), ceiling: () => 0
+    });
+    const got: string[] = [];
+    const out = await door.askStream(buildKamiTalkRequest([]), t => got.push(t));
+    expect(got).toEqual(['All at once.']);
+    expect(out.status).toBe('OK');
+  });
+
+  it('a conversation always opens on the person arriving, so Kami can speak first', () => {
+    expect(buildKamiTalkRequest([]).messages[0].role).toBe('user');
+    expect(buildKamiTalkRequest([{ role: 'assistant', content: 'Sit.' }]).messages[0].role).toBe('user');
+  });
+
+  it('he is Kami, in the terminal, and the frozen part stays frozen', () => {
+    const a = buildKamiTalkRequest([]);
+    const b = buildKamiTalkRequest([{ role: 'user', content: 'x' }]);
+    expect(a.system).toBe(b.system);
+    expect(a.system).toMatch(/Kami/);
+    expect(a.system).toMatch(/terminal/);
+    expect(a.system).toMatch(/fate/i);
+    const set = buildKamiSetRequest([{ role: 'user', content: 'x' }], CreationSystem.kamiAsk());
+    expect(set.kind).toBe('kami_set');
+    expect(set.schema).toBe(KAMI_SCHEMA);
+    expect(set.messages[0].content).toMatch(/x/);
+  });
+
+  const request = (body: unknown) => {
+    const text = JSON.stringify(body);
+    const req: any = {
+      method: 'POST', socket: { remoteAddress: '127.0.0.1' },
+      on(ev: string, fn: any) { if (ev === 'data') fn(Buffer.from(text)); if (ev === 'end') fn(); return req; }
+    };
+    return req;
+  };
+
+  it('the handler sends lines as they come, then how it ended', async () => {
+    const handler = createIntelligenceHandler(new IntelligenceDoor(new ClaudeProvider(fakeStream(['Sit ', 'down.'], talkMessage()))));
+    const lines: string[] = [];
+    const res: any = { setHeader() {}, on() {}, write(t: string) { lines.push(t); return true; }, end(t: string) { lines.push(t); }, statusCode: 0 };
+    await handler(request({ messages: [] }), res, '/kami/talk');
+    const parsed = lines.join('').trim().split('\n').map(l => JSON.parse(l));
+    expect(parsed.slice(0, 2)).toEqual([{ text: 'Sit ' }, { text: 'down.' }]);
+    expect(parsed[2].done).toBe(true);
+    expect(parsed[2].status).toBe('OK');
+    expect(parsed[2].usage.model).toBe('claude-sonnet-5-5');
+  });
+
+  it('no key is an outcome on the stream too', async () => {
+    const handler = createIntelligenceHandler(new IntelligenceDoor(new AbsentProvider('no key here')));
+    const lines: string[] = [];
+    const res: any = { setHeader() {}, on() {}, write(t: string) { lines.push(t); return true; }, end(t: string) { lines.push(t); }, statusCode: 0 };
+    await handler(request({ messages: [] }), res, '/kami/talk');
+    expect(JSON.parse(lines.join('').trim()).status).toBe('NO_KEY');
+  });
+
+  it('the browser reads the lines as they arrive, and a dropped network is an outcome', async () => {
+    const encoder = new TextEncoder();
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(new ReadableStream({
+      start(c) {
+        // A line split across two chunks must still read as one
+        c.enqueue(encoder.encode('{"text":"Sit "}\n{"te'));
+        c.enqueue(encoder.encode('xt":"down."}\n{"done":true,"status":"OK"}\n'));
+        c.close();
+      }
+    }))) as any;
+    const got: string[] = [];
+    const out = await IntelligenceClient.talkKami([], t => got.push(t));
+    expect(got).toEqual(['Sit ', 'down.']);
+    expect(out.status).toBe('OK');
+
+    globalThis.fetch = (async () => { throw new Error('down'); }) as any;
+    expect((await IntelligenceClient.talkKami([], () => {})).status).toBe('OFFLINE');
+
+    // A stream that stops with no ending line did not finish
+    globalThis.fetch = (async () => new Response('{"text":"Si"}\n')) as any;
+    expect((await IntelligenceClient.talkKami([], () => {})).status).toBe('OUTAGE');
+    globalThis.fetch = original;
+  });
+});
+
+describe('the fifth class: the screens', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+  const minted: { name: string; sheet: any }[] = [];
+  const text = () => host.textContent ?? '';
+  const button = (name: RegExp) => [...host.querySelectorAll('button')].find(b => name.test(b.textContent ?? '')) as HTMLButtonElement;
+  const click = async (name: RegExp) => {
+    const b = button(name);
+    expect(b, `a button ${name}`).toBeTruthy();
+    await act(async () => { b.click(); await new Promise(r => setTimeout(r, 0)); });
+  };
+  const type = async (el: HTMLInputElement, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+  const mount = async () => {
+    await act(async () => {
+      root.render(createElement(CreationFlow, { onMint: async (name: string, sheet: any) => { minted.push({ name, sheet }); }, creating: false, error: null }));
+      await new Promise(r => setTimeout(r, 0));
+    });
+  };
+  const lawful = (ask: IKamiAsk) => ({
+    status: 'OK',
+    data: {
+      name: 'Faked Stake', line: 'It is set. Faked, for this bar.', main: 'perception', sub: 'focus', kit: ask.kits[0].id,
+      skills: ask.candidates.slice(0, GRANTED_SKILLS).map((c, i) => ({ id: c.id, name: `Dealt Hand ${i}`, flavor: 'Faked.', grants: [] }))
+    },
+    usage: { model: 'claude-sonnet-5-5', inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, usd: 0.01 }
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    useCreationDraft.getState().reset();
+    minted.length = 0;
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+  });
+  afterEach(async () => {
+    await act(async () => { root.unmount(); });
+    host.remove();
+    vi.restoreAllMocks();
+  });
+
+  const toKami = async () => {
+    await mount();
+    await click(/FATE GAMBLER/);
+    await click(/^NEXT/);
+    expect(text()).toMatch(/THE FACE OF THE WORLD/);
+    await click(/^NEXT/);
+  };
+
+  it('a person can pick it with no life chosen, and it skips what Kami will set', async () => {
+    await mount();
+    expect(button(/FATE GAMBLER/)).toBeTruthy();
+    expect(button(/^NEXT/).disabled).toBe(true);
+    await click(/FATE GAMBLER/);
+    expect(button(/FATE GAMBLER/).textContent).toMatch(/\[X\]/);
+    expect(button(/^NEXT/).disabled).toBe(false);
+    await click(/^NEXT/);
+    expect(text()).not.toMatch(/WHAT YOU CARRY\b.*charges nothing/);
+    expect(text()).toMatch(/WHERE YOU ARRIVE/);
+    await click(/^BACK/);
+    expect(text()).toMatch(/Before this/);
+  });
+
+  it('picking a life afterwards takes the choice back', async () => {
+    await mount();
+    await click(/FATE GAMBLER/);
+    await click(/QUIET/);
+    expect(useCreationDraft.getState().draft.silhouette).not.toBe(FATE_GAMBLER);
+    expect(button(/FATE GAMBLER/).textContent).toMatch(/\[ \]/);
+  });
+
+  it('with a door, he speaks first, in pieces, and the transcript keeps what was said', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+    let resolve: (o: any) => void = () => {};
+    let speak: (t: string) => void = () => {};
+    vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation((_m: any, onText: any) => {
+      speak = onText;
+      return new Promise(r => { resolve = r; });
+    });
+    await toKami();
+    expect(text()).toMatch(/KAMI/);
+    await act(async () => { speak('Sit '); });
+    expect(text()).toMatch(/Sit/);
+    await act(async () => { speak('down.'); });
+    expect(text()).toMatch(/Sit down\./);
+    await act(async () => { resolve({ status: 'OK', usage: { model: 'claude-sonnet-5-5', inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, usd: 0.01 } }); await Promise.resolve(); });
+    expect(useCreationDraft.getState().draft.kami).toEqual([{ role: 'assistant', content: 'Sit down.' }]);
+    expect((useCreationDraft.getState().draft.kamiUsage as any).usd).toBeCloseTo(0.01, 5);
+  });
+
+  it('what the person says goes to him, whole, and he answers it', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+    const talk = vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation(async (_m: any, onText: any) => { onText('Answered.'); return { status: 'OK' } as any; });
+    await toKami();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    await type(host.querySelector('input[aria-label="Say something to Kami"]') as HTMLInputElement, 'I stake it all');
+    await click(/^SAY$/);
+    const last = talk.mock.calls[talk.mock.calls.length - 1][0] as any[];
+    expect(last[last.length - 1]).toEqual({ role: 'user', content: 'I stake it all' });
+    expect(useCreationDraft.getState().draft.kami.map((m: any) => m.role)).toEqual(['assistant', 'user', 'assistant']);
+  });
+
+  it('a draft survives leaving mid-conversation', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+    const talk = vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation(async (_m: any, onText: any) => { onText('Sit.'); return { status: 'OK' } as any; });
+    await toKami();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    const calls = talk.mock.calls.length;
+    await act(async () => { root.unmount(); });
+    root = createRoot(host);
+    await mount();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(text()).toMatch(/Sit\./);
+    // He does not open twice, and nobody pays twice
+    expect(talk.mock.calls.length).toBe(calls);
+    expect(JSON.parse(localStorage.getItem(CREATION_DRAFT_KEY)!).kami).toHaveLength(1);
+  });
+
+  it('he sets up the class (a faked answer), it is shown, and the mint hands it over', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+    vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation(async (_m: any, onText: any) => { onText('Sit.'); return { status: 'OK', usage: { model: 'claude-sonnet-5-5', inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, usd: 0.02 } } as any; });
+    vi.spyOn(IntelligenceClient, 'setKami').mockImplementation(async (_m: any, ask: any) => lawful(ask) as any);
+    await toKami();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    await click(/LET HIM SET IT/);
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(text()).toMatch(/Faked Stake/);
+    expect(text()).toMatch(/Dealt Hand 0/);
+    expect(text()).toMatch(/MAIN FOCUS.*PERCEPTION/);
+    await type(host.querySelector('input') as HTMLInputElement, 'DICE');
+    await click(/MINT/);
+    expect(minted).toHaveLength(1);
+    expect(minted[0].sheet.silhouette).toBe(FATE_GAMBLER);
+    expect(minted[0].sheet.record.className).toBe('Faked Stake');
+    expect(minted[0].sheet.record.by).toBe('DOOR');
+    // What the talk and the setting cost, together
+    expect(minted[0].sheet.usage.usd).toBeCloseTo(0.03, 5);
+  });
+
+  it('with no key, nothing blocks: he does not answer, and fate deals', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: false });
+    const talk = vi.spyOn(IntelligenceClient, 'talkKami');
+    vi.spyOn(IntelligenceClient, 'setKami').mockResolvedValue({ status: 'NO_KEY' } as any);
+    await toKami();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(talk).not.toHaveBeenCalled();
+    expect(text()).toMatch(/does not answer/i);
+    await click(/THROW IT/);
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(useCreationDraft.getState().draft.grant?.by).toBe('FLOOR');
+    expect(host.querySelector('input')).toBeTruthy();
+    expect(text()).toMatch(/MAIN FOCUS/);
+  });
+
+  it('a person is never held by a stream: they can move on while he is speaking', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+    vi.spyOn(IntelligenceClient, 'talkKami').mockReturnValue(new Promise(() => {}));
+    vi.spyOn(IntelligenceClient, 'setKami').mockResolvedValue({ status: 'NO_KEY' } as any);
+    await toKami();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(button(/LET HIM SET IT/).disabled).toBe(false);
+    await click(/LET HIM SET IT/);
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(useCreationDraft.getState().draft.step).toBe(4);
+  });
+
+  it('the hidden words stay hidden here too', async () => {
+    vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: false });
+    await toKami();
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    expect(text()).not.toMatch(/archetype|trope|isekai|reincarnat/i);
   });
 });
 
