@@ -39,6 +39,7 @@ import { TagLaw } from '../src/logic/content/TagLaw';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction } from '../src/entities/hub/dialogue';
 import { useHubStore } from '../src/entities/hub/store';
+import { emptyGuild } from '../src/entities/hub/guild';
 import { usePlayerStore } from '../src/entities/player/store';
 import { ItemFactory } from '../src/entities/item/ItemFactory';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
@@ -361,11 +362,17 @@ describe('the road: untrained, apprentice, journeyman, master', () => {
 describe('the city\'s doors: real stores, real saves', () => {
   const hub = () => useHubStore.getState();
   const stash = () => usePlayerStore.getState().player.bank.stashTabs[0].items;
+  /** Through the tavern, as everyone comes (D75). The bench reads who is lodged there. */
+  const lodge = async (bond: IItem) => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [bond] } : t) } } }));
+    expect((await hub().redeemBond(bond.id)).ok).toBe(true);
+    return hub().guild.residents[hub().guild.residents.length - 1].id;
+  };
 
   beforeEach(async () => {
     db.clear();
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 100_000, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [] } : t) } } }));
-    useHubStore.setState({ vendors: {}, craftsmen: [] });
+    useHubStore.setState({ vendors: {}, craftsmen: [], guild: emptyGuild() });
     await hub().loadHub('hub_vendors');
   });
 
@@ -399,37 +406,33 @@ describe('the city\'s doors: real stores, real saves', () => {
     expect(hub().vendors.npc_weapon_vendor.held).toHaveLength(0);
   });
 
-  it('a bond is spent once, the person stands with the master, and they survive a reload', async () => {
+  it('a person is taken once, stands with the master, and survives a reload', async () => {
     const bond = pick(true);
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [bond] } : t) } } }));
-    expect(await hub().takeApprentice('npc_alchemist', bond.id)).toEqual({ ok: true });
+    const person = await lodge(bond);
+    expect(await hub().takeApprentice('npc_alchemist', person)).toEqual({ ok: true });
     expect(stash().some(i => i.id === bond.id)).toBe(false);
     expect(hub().craftsmen).toHaveLength(1);
     expect(hub().craftsmen[0].trade).toBe(HUB_NPCS.npc_alchemist.teaches!.trade);
-    expect((await hub().takeApprentice('npc_alchemist', bond.id)).ok).toBe(false);
+    expect((await hub().takeApprentice('npc_alchemist', person)).ok).toBe(false);
     await hub().loadHub('hub_vendors');
     expect(hub().craftsmen).toHaveLength(1);
   });
 
-  it('a strong person keeps their bond, and the vendor says why', async () => {
-    const bond = pick(false);
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [bond] } : t) } } }));
-    const v = await hub().takeApprentice('npc_alchemist', bond.id);
+  it('a strong person stays where they are, and the vendor says why', async () => {
+    const person = await lodge(pick(false));
+    const v = await hub().takeApprentice('npc_alchemist', person);
     expect(v.ok).toBe(false);
-    expect(stash().some(i => i.id === bond.id)).toBe(true);
+    expect(v.reason).toBeTruthy();
+    expect(hub().guild.residents.some(r => r.id === person)).toBe(true);
     expect(hub().craftsmen).toHaveLength(0);
   });
 
   it('only a general vendor can be asked', async () => {
-    const bond = pick(true);
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [bond] } : t) } } }));
-    expect((await hub().takeApprentice('npc_banker', bond.id)).ok).toBe(false);
+    expect((await hub().takeApprentice('npc_banker', await lodge(pick(true)))).ok).toBe(false);
   });
 
   it('a journeyman the time away made joins the hub\'s web, and adds to the shelf', async () => {
-    const bond = pick(true);
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [bond] } : t) } } }));
-    await hub().takeApprentice('npc_weapon_vendor', bond.id);
+    await hub().takeApprentice('npc_weapon_vendor', await lodge(pick(true)));
     const before = hub().weaponShop.find(l => l.stock >= 1)!;
     const today = Math.floor(Date.now() / 86_400_000);
     useHubStore.setState(s => ({ craftsmen: s.craftsmen.map(c => ({ ...c, day: today - TERM_DAYS * 2, startedDay: today - TERM_DAYS * 2 })) }));
@@ -459,7 +462,7 @@ describe('the words reach a person', () => {
     const window = readFileSync('src/components/ApprenticeWindow.tsx', 'utf8');
     expect(window).toContain('<Bar');
     expect(window).toContain('RANK_WORDS');
-    expect(window).toContain('shownName');
+    expect(window).toContain('person.name');
   });
 
   it('the store reads every shelf through the container of its own vendor', () => {

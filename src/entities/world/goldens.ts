@@ -40,9 +40,9 @@ export const GOLDEN_VECTORS: IGoldenVector[] = [
  * no plain elite that says it is social, so it has no roster.
  */
 export const FIRST_THEME_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 313407139 },
-  { seed: 'golden-beta', size: 32, hash: 3879797591 },
-  { seed: 'dev-sandbox-v4', size: 32, hash: 4247026207 }
+  { seed: 'golden-alpha', size: 16, hash: 2646139221 },
+  { seed: 'golden-beta', size: 32, hash: 2744287391 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 2784880835 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */

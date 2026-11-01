@@ -117,6 +117,11 @@ const numbersOf = (def: IKindDef) => {
   return n;
 };
 
+/** D69: a plain kind's id moves when its words come. What was counted under it goes with them. */
+const wordsFor = (context: IGenerationContext): Map<string, string> => new Map(
+  Object.values(context.director?.lines?.nodes ?? {}).flatMap(n => (n.was ? [[n.was, n.id] as const] : []))
+);
+
 const lands = new WeakMap<IGenerationContext, Map<string, Map<string, ILandCell>>>();
 const biomeFood = new WeakMap<IGenerationContext, Map<string, number>>();
 
@@ -244,13 +249,15 @@ export class Population {
     for (const [ground, on] of Object.entries(state.ground)) counts[ground] = { ...on };
 
     // Who fell in the cycle that is closing is one fewer, and a birth does not bring them back.
+    const words = wordsFor(context);
     for (const entry of Object.values(record.down)) {
       if (entry.at !== g || entry.sector !== sectorKey || !entry.ground) continue;
       const on = counts[entry.ground];
-      if (on?.[entry.kind]) on[entry.kind] -= 1;
+      const fellAs = words.get(entry.kind) ?? entry.kind;
+      if (on?.[fellAs]) on[fellAs] -= 1;
     }
 
-    this.changeOfForm(counts, land, context, roll('form'));
+    this.changeOfForm(counts, land, context, roll('form'), g);
 
     const leaders: ISectorState['leaders'] = {};
     // What a leader's pack eats comes out of the same ground, under the kind it is
@@ -386,8 +393,9 @@ export class Population {
   }
 
   /** Bodies of a kind that has changed stand as what it became, a keyed share each cycle. A count moves, and no body is named. */
-  private static changeOfForm(counts: ISectorState['ground'], land: Map<string, ILandCell>, context: IGenerationContext, u: (g: ILandCell, k: string) => number) {
-    const nodes = Object.values(context.director?.lines?.nodes ?? {});
+  private static changeOfForm(counts: ISectorState['ground'], land: Map<string, ILandCell>, context: IGenerationContext, u: (g: ILandCell, k: string) => number, g: number) {
+    // Only what stood by the cycle this one closes into: a sector read late folds as one read early did
+    const nodes = Object.values(context.director?.lines?.nodes ?? {}).filter(n => n.bornAt <= g + 1);
     if (nodes.length === 0) return;
     for (const key of Object.keys(counts).sort()) {
       const cell = land.get(key);
@@ -403,6 +411,21 @@ export class Population {
         on[child] = (on[child] ?? 0) + changed;
       }
     }
+  }
+
+  /** Bodies counted under a plain kind stand under the words that replaced it. The same bodies: only the name moved. */
+  private static underTheirWords(state: ISectorState, context: IGenerationContext): ISectorState {
+    const words = wordsFor(context);
+    if (![...words.keys()].some(was => Object.values(state.ground).some(on => on[was]))) return state;
+    const ground: ISectorState['ground'] = {};
+    for (const [at, on] of Object.entries(state.ground)) {
+      ground[at] = {};
+      for (const [kind, n] of Object.entries(on)) {
+        const named = words.get(kind) ?? kind;
+        ground[at][named] = (ground[at][named] ?? 0) + n;
+      }
+    }
+    return { ...state, ground };
   }
 
   /** Where a group walks: the next chunk it can stand on with the most to spare, keyed among those that have any. */
@@ -507,6 +530,7 @@ export class Population {
     const key = `${sx},${sy}`;
     let state = record.sectors[key];
     if (!state) state = this.alpha(seed, sx, sy, context);
+    state = this.underTheirWords(state, context);
     if (state.generation < generation) {
       while (state.generation < generation) state = this.step(seed, sx, sy, state, record, context);
       for (const [id, entry] of Object.entries(record.down)) if (entry.sector === key && entry.at < state.generation) delete record.down[id];
@@ -554,7 +578,8 @@ export class Population {
       const def = defOf(leader.kind);
       if (!def) continue;
       const seedOf = Leaders.rosterOf(seed, sx, sy, context).find(s => s.id === id);
-      const numbers = seedOf ? Leaders.numbers(seed, seedOf, context) : undefined;
+      // The record says who it is: what grew since can change who a roster would deal today
+      const numbers = seedOf ? Leaders.numbers(seed, { ...seedOf, kind: leader.kind }, context) : undefined;
       const bodies: IBodyToStand[] = [];
       if (!fellNow(id)) bodies.push({ id, def, ...numbers });
       const led = def.leads ? defOf(def.leads) : undefined;

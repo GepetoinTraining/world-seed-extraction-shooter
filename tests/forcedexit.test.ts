@@ -2,8 +2,8 @@
  * THE FORCED EXIT: line 119's last clause (D77, D96).
  *
  * One word, one reader, and two ways of reaching it: an item and a spell are not two
- * systems. Registered before the build. The first theme gets its entry when the wave
- * joins, so the item is proved here with a test pack.
+ * systems. Registered before the build. The first theme took its entry when the wave
+ * joined, so these bars take it back out and hold a pack that writes it their own way.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -43,6 +43,8 @@ const WRIT = {
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 const withWayOut = (mutate: (b: IThemeBody) => void = () => {}): IThemeBody => {
   const body = clone(FIRST_THEME) as IThemeBody;
+  body.abilities = body.abilities.filter(a => a.key !== WAY_OUT.key);
+  body.consumables = body.consumables.filter(c => c.key !== WRIT.key);
   body.abilities.push(clone(WAY_OUT));
   body.consumables.push(clone(WRIT));
   mutate(body);
@@ -323,7 +325,7 @@ describe('the field reads it: one channel, one receipt, one levy', () => {
   it('there is still one way a channel ends well, and one levy', () => {
     expect(count('completeExtraction();')).toBe(1);
     expect(count('ExitLevy.charge(')).toBe(1);
-    expect(count('StatSystem.levyRate(')).toBe(1);
+    expect(count('ExitLevy.attemptNow(')).toBe(1);
   });
 
   it('the channel is read through the stat that shortens the beacon\'s', () => {
@@ -354,9 +356,8 @@ describe('nothing that stands moved', () => {
     expect(sealTheme(FIRST_THEME as IThemeBody, FIRST_THEME_PACK.model, FIRST_THEME_PACK.writtenAt).themeId).toBe(FIRST_THEME_PACK.themeId);
   });
 
-  it('a pack without the word compiles no worth onto anything', () => {
-    for (const def of Object.values(compileTheme(FIRST_THEME_PACK).resources)) {
-      expect((def as { worth?: number }).worth, def.name).toBeUndefined();
-    }
+  it('only what casts the word has a worth of its own', () => {
+    const worthy = Object.values(compileTheme(FIRST_THEME_PACK).resources).filter(def => (def as { worth?: number }).worth !== undefined);
+    expect(worthy.map(def => def.name)).toEqual(['Writ of Breach']);
   });
 });

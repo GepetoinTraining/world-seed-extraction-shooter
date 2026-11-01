@@ -961,6 +961,8 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       for (const c of banked.creatures) { delete (c as Partial<typeof c>).social; delete (c as Partial<typeof c>).builds; delete (c as Partial<typeof c>).leads; }
       banked.tags = banked.tags.filter(t => t.tag !== 'junk');
       delete banked.junk;
+      banked.abilities = banked.abilities.filter(a => a.effect !== 'forced_exit');
+      banked.consumables = banked.consumables.filter(c => c.key !== 'writ_of_breach');
       expect(themeIdOf(banked)).toBe('theme_666daceb0516e738');
       const old = { ...sealTheme(banked, 'claude-opus-5-5 (dev batch, D53)', 1793491200000), formula: 2 };
       expect(ContentRegistry.install(old)).toEqual({ ok: true });

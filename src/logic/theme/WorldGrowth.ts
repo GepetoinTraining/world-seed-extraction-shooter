@@ -9,8 +9,8 @@
  */
 
 import type { ILineRecord } from './CreatureLines';
-import { compileTheme, ICompiledTheme, keyIdsOf } from './ThemeCompiler';
-import { IThemeBody, IThemePack } from './ThemeTypes';
+import { compileTheme, creatureIdOf, ICompiledTheme, junkIdsFor, keyIdsOf } from './ThemeCompiler';
+import { IThemeBody, IThemePack, LEADER_FEATURES } from './ThemeTypes';
 
 export interface IThemeGrowth {
   creatures: IThemeBody['creatures'];
@@ -40,6 +40,8 @@ export interface IWorldSummary {
   creatures: { key: string; name: string }[];
   materials: { key: string; name: string }[];
   affixes: { key: string; name: string }[];
+  /** D99: what falling bodies leave, and the tags that leave it. A new creature wears one of these. */
+  junk: { name: string; from: string[] }[];
 }
 
 const grownOf = (lines: ILineRecord | undefined): IGrownBatch[] => lines?.grown ?? [];
@@ -74,24 +76,34 @@ export class WorldGrowth {
     return {
       name: pack.name, premise: pack.premise, tags: pack.tags, regions: pack.regions,
       abilities: pack.abilities.map(({ key, name, blurb }) => ({ key, name, blurb })),
-      creatures: named(pack.creatures), materials: named(pack.materials), affixes: named(pack.affixes)
+      creatures: named(pack.creatures), materials: named(pack.materials), affixes: named(pack.affixes),
+      junk: (pack.junk ?? []).map(({ name, from }) => ({ name, from }))
     };
   }
 
   /**
    * Each batch's own definitions, under its own scope. A key it did not write reads the
-   * id it already has, so a grown creature that knows a pinned ability knows that one.
+   * id it already has, so a grown creature that knows a pinned ability knows that one,
+   * leads a pinned kind, and leaves the pack's junk rather than a copy of it.
    */
   static compile(pack: IThemePack, lines: ILineRecord | undefined): ICompiledTheme[] {
     let known = keyIdsOf(pack);
+    const kinds = new Map(pack.creatures.map(c => [c.key, { id: creatureIdOf(pack.themeId, c.key), tags: c.tags }]));
     return grownOf(lines).map(batch => {
       const own: IThemePack = {
         ...pack, themeId: batch.scope,
         tags: [], regions: [], stations: [], goods: [], gear: [], consumables: [],
         creatures: batch.growth.creatures, materials: batch.growth.materials, affixes: batch.growth.affixes,
-        abilities: batch.growth.abilities, lore: batch.growth.lore
+        abilities: batch.growth.abilities, lore: batch.growth.lore, junk: undefined
       };
       const compiled = compileTheme(own, known);
+      for (const c of batch.growth.creatures) kinds.set(c.key, { id: creatureIdOf(batch.scope, c.key), tags: c.tags });
+      for (const c of batch.growth.creatures) {
+        const mob = compiled.mobs[creatureIdOf(batch.scope, c.key)];
+        if (pack.junk) mob.junk = junkIdsFor(pack, c.tags);
+        const led = c.leads ? kinds.get(c.leads) : undefined;
+        if (led) Object.assign(mob, { leads: led.id, line: { root: led.id, rootTags: led.tags, features: LEADER_FEATURES } });
+      }
       known = new Map([...known, ...keyIdsOf(own)]);
       return compiled;
     });

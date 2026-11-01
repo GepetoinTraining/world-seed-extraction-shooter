@@ -39,6 +39,8 @@ export interface ILineNode {
   bornAt: number;
   /** D69: the order it stands in for until that order's words come. Not in its hash. */
   plain?: string;
+  /** The plain kind these words took the place of, so bodies counted under it can follow. Not in its hash. */
+  was?: string;
 }
 
 export type LinePressure = 'thriving' | 'hunted';
@@ -407,7 +409,7 @@ export class CreatureLines {
     if (plain) delete nodes[plain.id];
     const next: ILineRecord = {
       ...lines,
-      nodes: { ...nodes, [id]: { id, parents: order.parents, change, bornAt: record.generation } },
+      nodes: { ...nodes, [id]: { id, parents: order.parents, change, bornAt: record.generation, ...(plain ? { was: plain.id } : {}) } },
       pending: lines.pending.filter(o => o.id !== orderId)
     };
     const moved = plain ? this.carried(record, plain.id, id) : record;

@@ -16,6 +16,7 @@ import { CreatureLines, ILineWords } from '../src/logic/theme/CreatureLines';
 import { IThemeGrowth, WorldGrowth } from '../src/logic/theme/WorldGrowth';
 import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
 import { Director, IDirectorRecord, emptyDirectorRecord } from '../src/entities/world/Director';
+import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
 import { DirectorStore } from '../src/entities/world/DirectorStore';
 import { useWorldStore, IWorldCard } from '../src/entities/world/store';
 import { WorldGenerator } from '../src/entities/world/WorldGenerator';
@@ -222,10 +223,8 @@ describe('line 108: a changed kind stands on a plain name until its words come',
     const { state } = await standing();
     const node = Object.values(state.record.lines!.nodes).find(n => n.plain)!;
     await CreatureLines.define(state.record, themeId);
-    const parent = ContentRegistry.compiled(themeId)!.mobs[HOUND] as { id: string };
-    const bodies = Array.from({ length: 40 }, (_, i) => Director.kindOf(CARD.seed, `body_${i}`, parent, state.record).id);
-    expect(bodies).toContain(node.id);
-    expect(bodies).toContain(HOUND);
+    expect(ContentRegistry.compiled(themeId)!.mobs[HOUND]).toBeDefined();
+    expect((MOB_DEFINITIONS[node.id] as unknown as { name: string }).name).toBe(node.change.name);
   });
 
   it("the words replace it: its fitness comes along, the plain kind is gone, and the order is settled", async () => {

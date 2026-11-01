@@ -108,6 +108,11 @@ export function readSheet(resident: Pick<IResident, 'bond'>): INpcSheet {
   return NpcSheet.fromBond({ bondData: resident.bond } as IItem)!;
 }
 
+/** Their bond, as a door that reads a bond wants it. It was spent at the tavern, so this is only their paper. */
+export function bondItemOf(resident: Pick<IResident, 'bond' | 'bondItemId'>): IItem {
+  return { id: resident.bondItemId, bondData: resident.bond } as IItem;
+}
+
 export function residentStage(resident: IResident, world: { buildJobs: { lotId: string; applied: boolean }[] }): ResidentStage {
   if (!resident.lotId) return 'TAVERN';
   if (resident.homeAt) return 'HOME';

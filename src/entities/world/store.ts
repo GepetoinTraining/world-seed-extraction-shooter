@@ -161,7 +161,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ directorRecord: told });
     const card = get().availableWorlds.find(w => w.id === worldId);
     if (generationContext && card) {
-      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), lay: generationContext.lay };
+      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), webVersion: generationContext.webVersion, lay: generationContext.lay };
     }
   },
   settled: async () => { await landing; },
@@ -268,7 +268,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           lay: chunk => {
             // Who stands first, then what a chest's guards and contents say
             const living = get().populationRecord;
-            if (living) Population.layOver(worldCard.seed, chunk, living, moment.generation, context);
+            if (living) Population.layOver(worldCard.seed, chunk, living, moment.generation, generationContext ?? context);
             const held = get().chestRecord;
             if (held) ChestSystem.layOver(worldCard.seed, chunk, held, moment.generation);
           }

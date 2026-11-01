@@ -45,18 +45,17 @@ import { useFeed, useRankMoment } from '../../components/ui/stores';
 import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import {
-  GUILD_OWNER_ID, IGuildState, IResident, benchFactor, emptyGuild, guildCover, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
+  GUILD_OWNER_ID, IGuildState, IResident, benchFactor, bondItemOf, emptyGuild, guildCover, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor
 } from './guild';
-
-export const HUB_ENDOWMENT_GOLD = 100_000;
-
-const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
 
 import { IVendorRecord, VendorSystem } from '../../logic/systems/VendorSystem';
 import { ApprenticeRoad, ICraftsman, IRoadEvent } from '../../logic/systems/ApprenticeRoad';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
 
+export const HUB_ENDOWMENT_GOLD = 100_000;
+
+const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
 
 /** Whose shelf each shop window is, and whose counter buys. */
 const SHOP_VENDOR = { weapon: 'npc_weapon_vendor', armor: 'npc_armor_vendor', consumable: 'npc_alchemist' } as const;
@@ -293,8 +292,8 @@ interface HubState {
   saveHubState: () => Promise<void>;
   /** The vendors and the people at their benches, up to today. Time away counts. */
   resolveVendors: () => Promise<void>;
-  /** A general vendor takes on someone a bond brought out. The bond is spent once. */
-  takeApprentice: (npcId: string, bondItemId: string) => Promise<RoomVerdict>;
+  /** A general vendor takes on someone lodged at the tavern (D75's door), who has no ground yet. */
+  takeApprentice: (npcId: string, residentId: string) => Promise<RoomVerdict>;
   /** D74: one chunk more, on the given side of one standing (the first, unless named). It decides nothing about who pays. */
   raiseChunk: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
   /** D73: give what you hold toward the next chunk, at the Land Office. Items are gone once given. */
@@ -508,29 +507,29 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (events.length > 0) await get().saveHubState();
   },
 
-  takeApprentice: async (npcId, bondItemId) => {
-    const { activeHubId, craftsmen, vendors } = get();
+  takeApprentice: async (npcId, residentId) => {
+    const { activeHubId, craftsmen, vendors, guild } = get();
     const teaches = HUB_NPCS[npcId]?.teaches;
     if (!activeHubId || !teaches) return { ok: false, reason: 'Nobody here trains anyone.' };
-    const player = usePlayerStore.getState().player;
-    const bond = (player.bank.stashTabs[0]?.items ?? []).find(i => i.id === bondItemId);
-    if (!bond?.bondData) return { ok: false, reason: 'You hold no such bond.' };
+    const resident = guild.residents.find(r => r.id === residentId);
+    if (!resident) return { ok: false, reason: 'Nobody by that name is lodged at the tavern.' };
+    if (resident.lotId) return { ok: false, reason: `${resident.name} has ground of their own to look to.` };
     const today = Math.floor(Date.now() / 86_400_000);
     const keeper = NpcSheet.read(activeHubId, { id: npcId, rank: teaches.rank }, undefined);
-    const begun = ApprenticeRoad.begin(bond, {
+    const begun = ApprenticeRoad.begin(bondItemOf(resident), {
       id: npcId, trade: teaches.trade, room: ApprenticeRoad.roomFor(keeper.stats!),
       taken: craftsmen.filter(c => c.masterId === npcId && c.rank === 'APPRENTICE').length
-    }, player.id, today, WebBank.current());
+    }, resident.sponsorId, today, WebBank.current());
     if (!begun.ok || !begun.craftsman) return { ok: false, reason: begun.reason };
     if (craftsmen.some(c => c.id === begun.craftsman!.id)) return { ok: false, reason: `${begun.craftsman.name} is on the road already.` };
 
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== bondItemId) } : tab
-    ) } } }));
     const all = vendorsToday(vendors, craftsmen, today);
-    set({ craftsmen: [...craftsmen, begun.craftsman], vendors: { ...all, [npcId]: { ...all[npcId], agenda: NpcAgenda.fill(all[npcId].agenda, { belonging: VENDOR_BELONGING_PER_TAKEN }) } } });
-    await Ledger.append('TRADE', { kind: 'APPRENTICED', craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId, trade: teaches.trade, consumedIds: [bondItemId], playerDelta: 0, treasuryDelta: 0 });
-    void import('../../logic/sovereignty/Provenance').then(({ Provenance }) => Provenance.record(bond, 'TRANSFER', { via: 'APPRENTICED', masterId: npcId }));
+    set({
+      guild: { ...guild, residents: guild.residents.filter(r => r.id !== residentId) },
+      craftsmen: [...craftsmen, begun.craftsman],
+      vendors: { ...all, [npcId]: { ...all[npcId], agenda: NpcAgenda.fill(all[npcId].agenda, { belonging: VENDOR_BELONGING_PER_TAKEN }) } }
+    });
+    await Ledger.append('GUILD', { kind: 'PERSON_APPRENTICED', residentId, craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId, trade: teaches.trade });
     await get().saveHubState();
     return { ok: true };
   },
@@ -628,7 +627,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     const sheet = NpcSheet.fromBond(bond);
     if (!sheet || !bond.bondData) return { ok: false, reason: 'That paper names nobody Mags can find.' };
     const id = residentIdOf(bond.bondData);
-    if (guild.residents.some(r => r.id === id || r.bondItemId === bond.id)) return { ok: false, reason: `${sheet.name} is already in this city. Nobody comes through twice.` };
+    const onTheRoad = get().craftsmen.some(c => c.bond.worldSeed === bond.bondData!.worldSeed && c.bond.entityId === bond.bondData!.entityId);
+    if (onTheRoad || guild.residents.some(r => r.id === id || r.bondItemId === bond.id)) return { ok: false, reason: `${sheet.name} is already in this city. Nobody comes through twice.` };
 
     // From the check to the bond leaving there is no await: one press, one person.
     const resident: IResident = {

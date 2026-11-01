@@ -40,7 +40,8 @@ export const FIRST_THEME: IThemeBody = {
     { key: 'final_notice', name: 'Final Notice', blurb: 'Everything nearby is informed, at once, and at length.', elements: ['seal'], delivery: 'area', effect: 'damage', cost: 'high' },
     { key: 'foreclose', name: 'Foreclose', blurb: 'A blow that takes the ground out from under the argument.', elements: ['seal'], delivery: 'melee', effect: 'damage', cost: 'medium' },
     { key: 'countersign', name: 'Countersign', blurb: 'A second signature over your own, and the next blow finds it binding.', elements: ['seal'], delivery: 'self', effect: 'ward', cost: 'medium' },
-    { key: 'grace_period', name: 'Grace Period', blurb: 'The body is told it may pay later, and believes it.', elements: ['interest'], delivery: 'self', effect: 'heal', cost: 'low' }
+    { key: 'grace_period', name: 'Grace Period', blurb: 'The body is told it may pay later, and believes it.', elements: ['interest'], delivery: 'self', effect: 'heal', cost: 'low' },
+    { key: 'breach_of_contract', name: 'Breach of Contract', blurb: 'Void where you stand, at a price.', elements: ['seal'], delivery: 'self', effect: 'forced_exit', cost: 'extreme' }
   ],
   creatures: [
     { key: 'tally_rat', name: 'Tally Rat', blurb: 'Counts everything it eats. Always comes up short.', tags: ['biological', 'grunt'], rank: 'F', size: 'TINY', behavior: 'SWARM', build: 'frail', threat: 'meek', pace: 'swift', habitat: ALL, innate: [], tree: 'monster', social: true, builds: false, leads: '' },
@@ -130,7 +131,8 @@ export const FIRST_THEME: IThemeBody = {
   consumables: [
     { key: 'interest_tonic', name: 'Interest Tonic', blurb: 'You feel better now. You will pay for it later, the label says, in a smaller font.', kind: 'heal', rank: 'F', tags: ['drink', 'consumable'], casts: '', onShelf: true },
     { key: 'grace_draught', name: 'Grace Draught', blurb: 'An extension, by the mouthful.', kind: 'heal', rank: 'D', tags: ['drink', 'consumable'], casts: '', onShelf: false },
-    { key: 'writ_of_notice', name: 'Writ of Notice', blurb: 'Read it aloud and it serves itself on everyone in earshot.', kind: 'scroll', rank: 'E', tags: ['consumable'], casts: 'final_notice', onShelf: false }
+    { key: 'writ_of_notice', name: 'Writ of Notice', blurb: 'Read it aloud and it serves itself on everyone in earshot.', kind: 'scroll', rank: 'E', tags: ['consumable'], casts: 'final_notice', onShelf: false },
+    { key: 'writ_of_breach', name: 'Writ of Breach', blurb: 'Read it and leave. Keep the receipt.', kind: 'scroll', rank: 'C', tags: ['consumable'], casts: 'breach_of_contract', onShelf: true }
   ],
   affixes: [
     { key: 'overdrawn', name: 'Overdrawn', type: 'PREFIX', allowedTags: ['melee', 'blade'], biome: 'WASTELAND', tier: 1, gives: [{ stat: 'damage', band: 'moderate', downside: false }, { stat: 'max_health', band: 'minor', downside: true }] },

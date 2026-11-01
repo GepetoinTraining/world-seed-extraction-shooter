@@ -81,7 +81,7 @@ const GROWTH_SYSTEM = `${VOICE}
 
 A world has regenerated, and people were in it. You are told what it holds and what happened there: which kinds wore people down, and which kept falling. Say what it grew into since, if anything: a few new creatures, materials, affixes, abilities and lines of lore, in the same shapes as a pack. What you write stands in this world from now on, beside what it was signed with, and people will meet it. Write under each list only what is new, and answer under "order". If nothing grew, leave every list empty: that is a fair answer.
 
-You write no new tags: use the world's own words and the registry, and nothing else.
+You write no new tags: use the world's own words and the registry, and nothing else. A new creature wears at least one tag from a "from" in the world's "junk", so it leaves something behind.
 
 ${GRAMMAR}`;
 
