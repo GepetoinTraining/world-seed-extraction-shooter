@@ -568,6 +568,43 @@ describe('line 135: the challenge for a seat (D93, D105)', () => {
   });
 });
 
+describe('line 135: a boss left alive (Pedro, 2026-11-01: "a legit farming strat")', () => {
+  it('everything under it brought down and it left standing, it is open, keeps its seat, and rebuilds its anchors', () => {
+    const { id, state, context } = makeBoss('old_sow', 12);
+    let record = emptyPopulationRecord();
+    for (const l of Object.values(state.leaders)) {
+      if (l.id !== id) record = Population.fell(record, l.id, l.kind, state.generation);
+      for (let i = 0; i < l.pack; i++) record = Population.fell(record, `${l.id}_f${i}`, 'x', state.generation);
+    }
+    const stripped = Population.step(SEED, SX, SY, state, record, context);
+    expect(stripped.leaders[id].alive).toBe(true);
+    expect(stripped.leaders[id].territory!.bossAt).toBeDefined();
+    expect(Territory.wardOf(SEED, stripped.leaders[id], stripped).slots).toEqual([]);
+    const later = folded(stripped, 180, context);
+    expect(later.leaders[id].alive).toBe(true);
+    expect(Territory.wardOf(SEED, later.leaders[id], later).slots.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a base robbed bare fills its store again, so what it holds can be taken more than once', () => {
+    const { id, state } = makeCamp();
+    const later = folded(state, 120);
+    const store = later.leaders[id].territory!.structures.find(s => s.fn === 'store' && s.builtAt !== undefined)!;
+    const held = Object.values(later.leaders[id].territory!.stores).reduce((a, b) => a + b, 0);
+    const robbed = step(later, Population.robbed(emptyPopulationRecord(), store.id, held, later.generation));
+    const after = Object.values(folded(robbed, 30).leaders[id].territory!.stores).reduce((a, b) => a + b, 0);
+    expect(held).toBeGreaterThan(0);
+    expect(after).toBeGreaterThan(0);
+  });
+
+  it('weak on strategy means fewer decisions: over one year, the lower sheet decides less', () => {
+    const low = Object.fromEntries(MENTAL_ATTRIBUTES.map(a => [a, 2])) as unknown as IAttributes;
+    const high = Object.fromEntries(MENTAL_ATTRIBUTES.map(a => [a, 8])) as unknown as IAttributes;
+    const year = (stats: IAttributes) => Array.from({ length: 365 }, (_, g) => DecisionLayer.dueAt(stats, g, 86_400_000, 'lead_1')).reduce((a, b) => a + b, 0);
+    expect(year(low) * 3).toBeLessThanOrEqual(year(high) + 3);
+    expect(year(low)).toBeLessThan(year(high));
+  });
+});
+
 describe('line 135: decisions on cadence (D103)', () => {
   const sheetAt = (i: number, rank: UniversalRank) => NpcSheet.statsOf(`w${i}`, { id: `e${i}`, rank });
 

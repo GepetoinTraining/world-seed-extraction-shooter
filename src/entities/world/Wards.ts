@@ -9,9 +9,15 @@
  * Otherwise they could run, take their speed off just before the second break, and stretch the
  * window behind them. A shot's reach is already taken off the distance (`relightWindowMs`).
  *
+ * Pedro, 2026-11-01, on what else could beat it: "you can movement speed faster, you can't tp outside
+ * the dives, in the dives we'll do a combat pass with the magic to make tp available as a reactionary
+ * passive dodge, or, an engage". Speed is answered above. Anchors stand in a dive, so that pass reaches
+ * this: what an engage covers has to come off the distance, as a shot's reach does.
+ *
  * An anchor is a post, which relights for as long as it stands on the record, or a body, which
  * relights from whoever stands behind it. So one person who brings down every body of a pride, one
- * at a time, can still open its ward. Posts are the case that holds forever. Said on the record.
+ * at a time, can open its ward, and that stands. Pedro: "That's a legit farming strat ... If the boss
+ * is weak on strategy it would be very good to never erradicate him". Left alive, it rebuilds.
  *
  * What was broken is this opening's, kept here beside the fight. The record hears a post only when
  * it stays down, which is what `Population.broke` is for.
