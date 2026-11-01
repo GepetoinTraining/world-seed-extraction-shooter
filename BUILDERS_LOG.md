@@ -248,7 +248,13 @@ The record is in `PLAN.md` ("Wave B — the record"). **For C1:** food is what t
 
 - **Tests:** 2,003: 1,879 plus 124 in the database's own run. With other sessions running, the grid timing bars went red, on this branch and on `6c7766a` alike. On a quiet machine the file passed 7 runs of 7 on the join. B4 saw a red alone with `-t` at about 35 ms, a form not compared on the base, so measure before calling a red load.
 
-## Your pass: a stream in the fan-out (Wave C, cut from main, on Pedro's word)
+## What fan-out Wave C's first pass built
+
+The record is in `PLAN.md` ("Wave C, first pass — the record"). **For C6:** `Farm.sellers` and `buyFromLot` are how a person buys food, `NpcAgenda.rung` and `mayChase` are pure, wallets are yours to spend through `GoldCommit`'s `wallets`, a keeper's takings still go to the treasury, `Wards.broke` is what a second person at an anchor calls, and `Toll.moves` is ready for people paying. The weekly call's two halves, `TalkLaw.leaderAsk` and `LEADER_ASK`, exist and do not yet meet. **For C7:** add a door kind beside `npc_talk` (`MODEL_FOR`, `EFFORT_FOR`, `NO_FALLBACK`, a builder, a route) and `askTalk` gives you the spend limit. `centerReach()` is what a keeper's counter reads, and a charge goes through the treasury path of `dialogue.ts`'s `charge()`. A chain's goods do not yet run at a bench, because `stationRecipesOn` and `queueCraft` read the shipped pack. `materialsToGenerate(tech)` is the ledger nothing takes from. **For C8:** `IHomeHerd.holder` takes a building, `IWebStation.after` holds a building behind another, `MonsterMind.wantOf` is what it wants, and `target.junk` is on a sitting. **For C10:** read D124's words; `Territory` stops at the sector's edge on purpose.
+
+- **Tests:** 2,548: 2,421 plus 127 in the database's own run, none red. The streams saw the grid timing bars and five usability bars go red under load, and clean runs pass them.
+
+## Your pass: a stream in the fan-out (Wave C's second pass, cut from main, on Pedro's word)
 
 Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The fan-out", "The living worlds program", and D60–D85 first. Build only your stream's lines and files, and report to the coordinator rather than editing this file or the plan. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
 
@@ -284,6 +290,9 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 ## Traps that cost me time
 
+- **Two streams can pick one name for different things, and a clean text merge will not say so.** C1 and C4 both added `taken` to the population record, in places git could join, and only the types of the values differed. Read the additions on a shared interface at a join, not only the conflict markers.
+- **A hidden pane throttles timers as well as frames.** A script with a `setTimeout` can run past the tool's 45 seconds and still finish. Keep each step short, and check the page before running it again.
+- **A `cd` in the Bash tool moved this session's primary folder to the main checkout.** Use `git -C` and absolute paths, and `npx` from a subshell.
 - **Another session may be working in your checkout.** Stage files by name, never `git add -A`, and read `git status` before committing. Merging by switching to `main` here also fails or disturbs them, because their uncommitted files come along.
 - **`preview_start` runs from the session's first folder, whatever the shell's directory is.** A coordinator on the main checkout played the old branch for a minute and saw the old creation screen. Check what is served: fetch one changed source file from the port and look for a new word in it. A worktree can be served with `npm --prefix <worktree> run dev`.
 - **A click in the city no longer reaches across the map.** A play script has to walk to a person or a door first, which is slow in a hidden pane.
