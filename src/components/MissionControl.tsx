@@ -1,36 +1,46 @@
 /**
- * MISSION CONTROL (Wave 9): a card per world, the collapse clock, one deploy
- * door shared with the Conduit's quick deploy.
+ * MISSION CONTROL (Wave 9): a card per world, the state of its gate on the
+ * world's own clock (D67), one deploy door shared with the Conduit's quick deploy,
+ * and recon while a world boots.
  */
 
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import React, { useEffect, useState } from 'react';
 import { useWorldStore, IWorldCard } from '../entities/world/store';
+import { usePlayerStore } from '../entities/player/store';
+import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
+import { ReconOverlay } from './WorldCanvas';
 import { WorldCreator } from './WorldCreator';
 import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
 
-const WorldCard = ({ world, onDeploy }: { world: IWorldCard; onDeploy: () => void }) => {
-  const [timeLeft, setTimeLeft] = useState(0);
+const GATE_WORDS: Record<WorldPhase, string> = {
+  UP: 'GATE OPEN — IT CLOSES IN',
+  OFF: 'GATE DOWN — IT BOOTS IN',
+  SCAN: 'BOOTING, RECON ONLY — THE GATE OPENS IN'
+};
+const SKY_WORDS: Record<SkyKind, string> = { TURNING: 'IT TURNS', LOCKED: 'IT DOES NOT SPIN', NIGHT: 'ONLY NIGHT' };
+
+export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; onDeploy: () => void; onSurvey: () => void }) => {
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const tick = () => setTimeLeft(Math.max(0, Math.floor((world.collapseTime - Date.now()) / 1000)));
-    tick();
-    const interval = setInterval(tick, 1000);
+    const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [world.collapseTime]);
+  }, []);
 
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
-  const isClosing = minutes < 2;
   const isDev = world.isDebug;
+  // A retired world has no gate to speak of: its ground is gone.
+  const moment = WorldClock.momentAt(world.retired ? { ...world, isDebug: true } : world, now);
+  const isClosing = moment.warning !== 'NONE';
+  const dark = moment.phase === 'OFF';
 
   return (
     <Panel
       title={world.name.toUpperCase()}
       right={<Chip tone={world.difficulty === 'F' ? 'none' : 'loss'}>{world.difficulty}</Chip>}
-      tone={world.retired ? 'none' : isClosing && !isDev ? 'loss' : 'signal'}
+      tone={world.retired || dark ? 'none' : isClosing ? 'loss' : 'signal'}
     >
       <div className="ws-dim ws-small" style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span>SECTOR {world.seed.substring(0, 6).toUpperCase()}</span>
@@ -42,25 +52,34 @@ const WorldCard = ({ world, onDeploy }: { world: IWorldCard; onDeploy: () => voi
       </div>
 
       <div
-        className={isDev ? 'ws-dim' : isClosing ? 'ws-loss' : 'ws-bright'}
+        className={isDev || dark || world.retired ? 'ws-dim' : isClosing ? 'ws-loss' : 'ws-bright'}
         style={{ fontSize: 'var(--ws-font-display)', fontWeight: 700, letterSpacing: '0.06em', margin: '6px 0 0' }}
       >
-        {isDev ? 'STABLE' : `${minutes}:${seconds.toString().padStart(2, '0')}`}
+        {isDev ? 'STABLE' : world.retired ? 'RETIRED' : WorldClock.say(moment.msLeft)}
       </div>
-      <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 10 }}>
-        {isDev ? 'SIMULATION — IT DOES NOT COLLAPSE' : 'TIME UNTIL REALITY COLLAPSE'}
+      <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em' }}>
+        {isDev ? 'SIMULATION — OUTSIDE THE CLOCK' : world.retired ? 'NO GATE' : GATE_WORDS[moment.phase]}
       </div>
+      {!isDev && !world.retired && (
+        <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 10 }}>
+          {moment.generation === 0 ? 'ALPHA, AS MINTED' : `REGENERATION ${moment.generation}`} · {SKY_WORDS[world.sky ?? 'TURNING']}
+        </div>
+      )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--ws-void-3)', paddingTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginTop: isDev ? 10 : 0 }}>
         <span className="ws-dim ws-small">AGENTS <span className="ws-bright">{world.playerCount}</span></span>
-        <Button
-          tone="signal" primary={!isDev}
-          onClick={onDeploy}
-          disabled={world.retired}
-          title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : undefined}
-        >
-          DEPLOY
-        </Button>
+        {moment.phase === 'SCAN' ? (
+          <Button tone="signal" primary onClick={onSurvey} disabled={world.retired}>RECON</Button>
+        ) : (
+          <Button
+            tone="signal" primary={!isDev && !dark}
+            onClick={onDeploy}
+            disabled={world.retired || dark}
+            title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : dark ? 'The gate is down.' : undefined}
+          >
+            DEPLOY
+          </Button>
+        )}
       </div>
       {world.retired && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>RETIRED — the record stands; the ground is gone.</div>}
     </Panel>
@@ -82,6 +101,22 @@ export const MissionControl = () => {
     if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
   };
 
+  // D67: while a world boots a person can read it, and nothing is risked.
+  const [surveying, setSurveying] = useState(false);
+  const handleSurvey = async (worldId: string) => {
+    await useWorldStore.getState().selectWorld(worldId);
+    useWorldStore.getState().applySurvey(usePlayerStore.getState().player.survey?.[worldId]);
+    setSurveying(true);
+  };
+
+  if (surveying) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 300 }}>
+        <ReconOverlay surveyOnly onDrop={() => {}} onLeave={() => setSurveying(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="ws-ui" style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -93,7 +128,7 @@ export const MissionControl = () => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
         {availableWorlds.map(w => (
-          <WorldCard key={w.id} world={w} onDeploy={() => handleDeploy(w.id)} />
+          <WorldCard key={w.id} world={w} onDeploy={() => handleDeploy(w.id)} onSurvey={() => handleSurvey(w.id)} />
         ))}
       </div>
 

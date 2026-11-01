@@ -2,6 +2,7 @@ import { GenreType } from '../../../../types';
 import { IChunk, IMap, EntityType } from '../../world/types';
 import { PatternType } from '../../combat/projectileSystem';
 import { MOB_DEFINITIONS } from '../data/mobDefinitions';
+import { WorldClock } from '../../world/WorldClock';
 import { MobBehavior } from '../types';
 import { CombatMath } from '../../combat/CombatMath';
 import { WorldGenerator } from '../../world/WorldGenerator';
@@ -126,6 +127,10 @@ export class MobAI {
     return mem ? { facing: mem.facing, moving: mem.moving } : undefined;
   }
 
+  static isActive(entityId: string): boolean {
+    return this.mobMemory[entityId]?.state === MobState.ACTIVE;
+  }
+
   /** Being hit wakes what would otherwise ignore you: the neutral turn, the passive flee. */
   static provoke(entityId: string) {
     const mem = this.mobMemory[entityId];
@@ -149,7 +154,7 @@ export class MobAI {
     playerPos: { x: number; y: number },
     deltaTime: number,
     map?: IMap,
-    senses: { noiseReduction?: number } = {}
+    senses: { noiseReduction?: number; light?: number } = {}
   ): {
     updatedChunks: Record<string, IChunk>;
     spawnedPatterns: any[]
@@ -159,7 +164,8 @@ export class MobAI {
     const spawnedPatterns: any[] = [];
     const now = Date.now();
     // Quieter gear shortens how far a thing notices you; loud gear lengthens it.
-    const heard = NOISE_SCALE / Math.max(1, NOISE_SCALE + (senses.noiseReduction ?? 0));
+    // D71: and the dark lets it notice you from further away.
+    const heard = NOISE_SCALE / Math.max(1, NOISE_SCALE + (senses.noiseReduction ?? 0)) * WorldClock.noticeFactor(senses.light ?? 1);
 
     Object.entries(visibleChunks).forEach(([chunkKey, chunk]) => {
       let chunkWasModified = false;

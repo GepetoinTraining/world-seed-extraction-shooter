@@ -1,8 +1,8 @@
 /**
- * THE DIRECTOR (D48, line 90): monsters change between rests, and come to differ.
+ * THE DIRECTOR (D48, line 90): monsters change between regenerations, and come to differ.
  *
- * What it remembers is plain data on a world's record: how each creature fared. At
- * a rest the generation rises, and each creature's chance of a trait follows its own
+ * What it remembers is plain data on a world's record: how each creature fared. When
+ * a world boots the generation rises, and each creature's chance of a trait follows its
  * fitness: what wore people down grows more common, what fell at once grows less so.
  *
  * Which body gets which trait is keyed by (seed, generation, entity), so the same
@@ -89,8 +89,17 @@ export class Director {
   }
 
   /**
-   * What this one body has become, this generation. Read at chunk build, so positions
-   * and the land never move; only what stands on them differs.
+   * The world's clock says what generation it is (D67). Regenerations nobody watched
+   * pass as one: what its fights said moves the weights once, and the count catches up.
+   */
+  static catchUp(record: IDirectorRecord, generation: number): IDirectorRecord {
+    if (generation <= record.generation) return record;
+    return { ...this.evolve(record), generation };
+  }
+
+  /**
+   * What this one body has become, this generation. Read at chunk build. Bodies stand
+   * where they stood for now; once creatures move (D66), only the land is fixed.
    */
   static variantOf(
     seed: string, entityId: string, definitionId: string, name: string,

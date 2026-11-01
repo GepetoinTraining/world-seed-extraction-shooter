@@ -16,6 +16,7 @@ import { ThemeStore } from '../logic/theme/ThemeStore';
 import { sealTheme } from '../logic/theme/ThemeCompiler';
 import { IThemeBody } from '../logic/theme/ThemeTypes';
 import { HubUnlock } from '../logic/systems/HubUnlock';
+import { SkyKind, WorldClock } from '../entities/world/WorldClock';
 
 interface WorldCreatorProps {
   opened: boolean;
@@ -38,7 +39,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
 
   // The draft lives in its own small store (line 58), so nothing here can lose it.
   const { draft, set, reset } = useWorldDraft();
-  const { step, worldName, worldDescription, size, entryFee, extractionTax, creatorShare, pvpEnabled, sessionDuration } = draft;
+  const { step, worldName, worldDescription, size, entryFee, extractionTax, creatorShare, pvpEnabled, sky } = draft;
   const worldType = draft.worldType as WorldType;
   const accessMode = draft.accessMode as AccessMode;
   const difficulty = draft.difficulty as UniversalRank;
@@ -53,7 +54,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   const setCreatorShare = (v: number) => set({ creatorShare: v });
   const setPvpEnabled = (v: boolean) => set({ pvpEnabled: v });
   const setDifficulty = (v: UniversalRank) => set({ difficulty: v });
-  const setSessionDuration = (v: number) => set({ sessionDuration: v });
+  const setSky = (v: string) => set({ sky: v });
 
   if (!opened) return null;
 
@@ -91,7 +92,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
         creatorRevenueShare: creatorShare / 100,
         pvpEnabled,
         difficulty,
-        sessionDurationMinutes: worldType === WorldType.EXTRACTION ? sessionDuration : undefined
+        sky: sky as SkyKind
       };
       const worldCert = await WorldCertificateSystem.mintWorld(
         certificate, worldName, worldDescription, worldType, size, rules
@@ -154,9 +155,20 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
             ))}
             {fieldRow('GRID SIZE', (
               <select className="ws-input" value={String(size)} onChange={e => setSize(parseInt(e.target.value))}>
-                <option value="16">16×16 sectors (skirmish)</option>
-                <option value="32">32×32 sectors (standard)</option>
-                <option value="64">64×64 sectors (expedition)</option>
+                <option value="16">Small, 16×16 sectors</option>
+                <option value="32">Medium, 32×32 sectors</option>
+                <option value="64">Large, 64×64 sectors</option>
+              </select>
+            ))}
+            {/* D67: how the gate runs is signed with the world */}
+            <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
+              Its gate stays open {WorldClock.say(WorldClock.cadenceFor(size).upMs)}, then goes down for {WorldClock.say(WorldClock.cadenceFor(size).offMs)}, then boots for {WorldClock.say(WorldClock.cadenceFor(size).scanMs)} of recon. It opens the moment you sign.
+            </div>
+            {worldType !== WorldType.HUB && fieldRow('SKY', (
+              <select className="ws-input" value={sky} onChange={e => setSky(e.target.value)}>
+                <option value="TURNING">It turns: day and night</option>
+                <option value="LOCKED">It does not spin: a night side, a rim, a day side</option>
+                <option value="NIGHT">Only night</option>
               </select>
             ))}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -185,10 +197,6 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
                 HOSTILE PLAYER ACTION (PVP)
               </label>
             </div>
-            {worldType === WorldType.EXTRACTION && (
-              <Input label="COLLAPSE TIMER (MINUTES)" type="number" min={5} max={60} value={sessionDuration}
-                onChange={e => setSessionDuration(Number(e.target.value) || 15)} />
-            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
               <Button tone="quiet" onClick={() => setStep(0)}>BACK</Button>
               <Button tone="signal" onClick={() => setStep(2)}>NEXT: ECONOMY</Button>

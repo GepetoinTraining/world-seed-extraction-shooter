@@ -1,9 +1,10 @@
 /**
- * THE REST (D43, D50, D51, D58): what play queued settles, and the day turns over.
+ * THE REST (D43, D50, D51, D58, D79): what play queued settles, and a character's day turns over.
  *
  * Two things, on purpose. SETTLING happens at any rest, a return to the hub included
- * (D30): skills, and what was studied. SLEEPING is chosen: it restores the day's
- * energy, turns the day, moves the Director, and sends what was queued to the door.
+ * (D30): skills, and what was studied. SLEEPING is chosen and takes real time: what was
+ * queued goes to the door when it begins, and energy returns on waking. That downtime
+ * is the character's own loop, and the world's Director runs on the world's clock.
  *
  * The rest door asks what lets this person rest here (D58): a hub's places, and any
  * skill minted with the grant. No camp exists in code or in a shipped pack; a model
@@ -24,6 +25,16 @@ export type RestPlace = 'INN' | 'BED' | 'FIELD';
 
 /** What a night at the inn costs, in gold to the hub's treasury. A guess until Wave 12. */
 export const INN_FEE = 20;
+
+/**
+ * D79: a rest takes real time, on a curve that starts quick and steepens: someone trained
+ * for a long shift has a truly long rest, like a rig worker's rotation. Pedro's mark is
+ * 500 energy, about 8 hours. 20 spent is about 4 minutes, 55 about 17, 200 about 2 hours.
+ * The power is a guess until Wave 12.
+ */
+export const REST_MARK_ENERGY = 500;
+export const REST_MARK_MS = 8 * 60 * 60_000;
+const REST_CURVE_POWER = 1.5;
 
 export interface IRestQueue {
   /** Items studied, waiting to be known. */
@@ -82,7 +93,8 @@ export class RestSystem {
     return Object.values(player.skillWords ?? {}).some(w => w.grants.includes('rest'));
   }
 
-  static canRest(player: IPlayer, place: RestPlace): { ok: boolean; reason?: string } {
+  static canRest(player: IPlayer, place: RestPlace, now = Date.now()): { ok: boolean; reason?: string } {
+    if (this.isResting(player, now)) return { ok: false, reason: 'This character is already at rest.' };
     if (place === 'FIELD' && !this.grantsFieldRest(player)) {
       return { ok: false, reason: 'You do not know how to rest out here. Not yet.' };
     }
@@ -164,6 +176,31 @@ export class RestSystem {
   // -----------------------------------------------------------------------
   // SLEEPING: chosen. The day turns over (D51).
   // -----------------------------------------------------------------------
+
+  /** How long this rest will take, from the energy this character spent. */
+  static restMs(player: IPlayer): number {
+    const full = StatSystem.maxEnergy(player.attributes, player.equipment);
+    const left = player.currentSession?.energy ?? player.energyToday ?? full;
+    return Math.round(REST_MARK_MS * (Math.max(0, full - left) / REST_MARK_ENERGY) ** REST_CURVE_POWER);
+  }
+
+  static isResting(player: IPlayer, now = Date.now()): boolean {
+    return !!player.rest && now < player.rest.until;
+  }
+
+  static beginRest(player: IPlayer, place: RestPlace, now: number): IPlayer {
+    return { ...player, rest: { until: now + this.restMs(player), place } };
+  }
+
+  /** Energy comes back on waking, never on lying down. */
+  static wake(player: IPlayer): IPlayer {
+    return { ...this.restoreEnergy(player), rest: undefined };
+  }
+
+  /** A hurt in the field ends a rest, and it restored nothing. */
+  static breakRest(player: IPlayer): IPlayer {
+    return { ...player, rest: undefined };
+  }
 
   static restoreEnergy(player: IPlayer): IPlayer {
     const full = StatSystem.maxEnergy(player.attributes, player.equipment);

@@ -32,6 +32,8 @@ import { CombatMath } from '../entities/combat/CombatMath';
 import { StatSystem } from '../logic/systems/StatSystem';
 import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
+import { SurveySystem } from '../logic/systems/SurveySystem';
+import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
 import type { IPlayer as IPlayerShape } from '../../types';
 import { WeaveSystem } from '../logic/systems/WeaveSystem';
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
@@ -131,8 +133,18 @@ const CartWindow: React.FC = () => {
 
 const RECON_SCALE = 2;
 
-const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ onDrop }) => {
-  const { currentMap, scanSector, selectSector, selectedDropZone } = useWorldStore();
+export const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void; surveyOnly?: boolean; onLeave?: () => void }> = ({ onDrop, surveyOnly, onLeave }) => {
+  const { currentMap, scanSector, selectSector, selectedDropZone, generation, activeWorldId, availableWorlds } = useWorldStore();
+  const survey = usePlayerStore(s => (activeWorldId ? s.player.survey?.[activeWorldId] : undefined));
+  // D67: during a boot the gate's time is the whole point, so it stays on screen
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!surveyOnly) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [surveyOnly]);
+  const bootingCard = surveyOnly ? availableWorlds.find(w => w.id === activeWorldId) : undefined;
+  const bootMoment = bootingCard ? WorldClock.momentAt(bootingCard, now) : undefined;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const deskRef = useRef<HTMLDivElement>(null);
 
@@ -199,13 +211,25 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
   const scanAt = (sx: number, sy: number) => {
     const sector = currentMap.sectors[`${sx},${sy}`];
     if (!sector) return;
+    // D68: a first touch on what went stale shows what was known, and the next one scans
+    const known = survey?.[`${sx},${sy}`];
+    const held = selectedDropZone?.x === sx && selectedDropZone?.y === sy;
     selectSector(sx, sy);
     setCursor({ x: sx, y: sy });
+    if (known && SurveySystem.staleBy(known, generation) > 0 && !held) return;
     // Wave 10C (D22): mental stats drive the recon phase — intelligence,
     // perception and focus (framed or raw) deepen each scan. The analyst
     // build earns its keep before the drop.
     const depth = LoadoutSystem.reconEfficiency(usePlayerStore.getState().player.attributes);
     scanSector(sx, sy, depth);
+    // D68: what was read is this character's, until the world regenerates under it
+    const read = useWorldStore.getState().currentMap?.sectors[`${sx},${sy}`];
+    if (read && activeWorldId) {
+      usePlayerStore.setState(s => ({
+        player: SurveySystem.record(s.player, activeWorldId, `${sx},${sy}`,
+          SurveySystem.entry(read.scanLevel, generation, read.entities, s.player.survey?.[activeWorldId]?.[`${sx},${sy}`]))
+      }));
+    }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -232,6 +256,12 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
 
   // Wave 9: recon can be left without dropping — the survey was free, the drop is not.
   const withdraw = () => {
+    if (surveyOnly) {
+      useWorldStore.getState().exitWorld();
+      void PlayerPersistence.flush('survey');
+      onLeave?.();
+      return;
+    }
     const st = usePlayerStore.getState();
     st.emergencyJackOut(); // nothing was risked yet; the kit banks back untouched
     useWorldStore.getState().exitWorld();
@@ -248,7 +278,7 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
     const desk = deskRef.current;
     const PAN = cellPx;
     if (key === 'x') { e.preventDefault(); withdraw(); return; }
-    if (e.key === 'Enter' && !onControl) {
+    if (e.key === 'Enter' && !onControl && !surveyOnly) {
       e.preventDefault();
       e.stopImmediatePropagation(); // this Enter is the drop; it must not also act in the field
       if (selected) onDrop(selected.x, selected.y);
@@ -273,20 +303,6 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
         desk.scrollTop = next.y * cellPx - desk.clientHeight / 2;
       }
     }
-  };
-
-  // At this scale a list of things is hundreds long, so it groups them and leads with the danger.
-  const manifest = (sector: ISector) => {
-    const order = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
-    const lines = new Map<string, { id: string; rank: string; hostile: boolean; count: number }>();
-    sector.entities.forEach(e => {
-      const line = lines.get(e.definitionId);
-      if (line) line.count++;
-      else lines.set(e.definitionId, { id: e.definitionId, rank: e.rank, hostile: !!e.isHostile, count: 1 });
-    });
-    return [...lines.values()]
-      .sort((a, b) => Number(b.hostile) - Number(a.hostile) || order.indexOf(b.rank) - order.indexOf(a.rank) || b.count - a.count)
-      .slice(0, 10);
   };
 
   const entityCounts = (sector: ISector) => {
@@ -334,7 +350,11 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
       </div>
 
       <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start', pointerEvents: 'none' }}>
-        <Chip tone="signal">DRONE RECON — CHOOSE WHERE TO DROP</Chip>
+        <Chip tone="signal">
+          {!surveyOnly ? 'DRONE RECON — CHOOSE WHERE TO DROP'
+            : bootMoment?.phase === 'SCAN' ? `BOOTING, RECON ONLY — THE GATE OPENS IN ${WorldClock.say(bootMoment.msLeft)}`
+            : 'THE WORLD HAS FINISHED BOOTING. LEAVE TO DEPLOY.'}
+        </Chip>
         <Panel title="WHERE TO START" style={{ width: 320 }}>
           <span className="ws-small">{advice.why}</span>
         </Panel>
@@ -357,6 +377,33 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
                 {selected.hasExtraction && <div className="ws-row"><span className="ws-dim">EXIT</span><span className="ws-signal">BEACON PRESENT</span></div>}
               </>
             )}
+            {/* D68: what was read last time, plainly old, and never the truth of now */}
+            {selected.scanLevel < ScanLevel.DETAILED && (() => {
+              const entry = survey?.[`${selected.x},${selected.y}`];
+              if (!entry || entry.level < ScanLevel.DETAILED) return null;
+              return (
+                <>
+                  <div className="ws-row"><span className="ws-dim">LAST READ</span><span>{SurveySystem.staleBy(entry, generation)} regeneration(s) ago</span></div>
+                  {Object.entries(entry.contacts).map(([type, count]) => (
+                    <div key={type} className="ws-row ws-dim"><span>then: {count}× {type}</span><span /></div>
+                  ))}
+                  <div className="ws-dim ws-small">Stale. Scan again to learn what changed.</div>
+                </>
+              );
+            })()}
+            {selected.scanLevel >= ScanLevel.DETAILED && (() => {
+              const prior = survey?.[`${selected.x},${selected.y}`]?.prior;
+              const entry = survey?.[`${selected.x},${selected.y}`];
+              if (!prior || !entry) return null;
+              const total = (c: Record<string, number>) => Object.values(c).reduce((sum, n) => sum + n, 0);
+              return (
+                <>
+                  <div className="ws-row"><span className="ws-dim">SINCE REGENERATION {prior.generation}</span><span /></div>
+                  <div className="ws-row"><span>Contacts</span><span>{total(prior.contacts)} → {total(entry.contacts)}</span></div>
+                  <div className="ws-row"><span>That have changed</span><span>{prior.changed} → {entry.changed}</span></div>
+                </>
+              );
+            })()}
             {selected.scanLevel >= ScanLevel.DETAILED && (
               <>
                 <div className="ws-row"><span className="ws-dim">CONTACTS</span><span /></div>
@@ -369,9 +416,9 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
             {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
               <>
                 <div className="ws-row"><span className="ws-dim">MANIFEST</span><span /></div>
-                {manifest(selected).map(line => (
-                  <div key={line.id} className="ws-row">
-                    <span className={line.hostile ? 'ws-loss' : undefined}>{line.count}× [{line.rank}] {line.id}</span><span />
+                {SurveySystem.manifest(selected.entities).map(line => (
+                  <div key={line.key} className="ws-row">
+                    <span className={line.hostile ? 'ws-loss' : undefined}>{line.count}× [{line.rank}] {line.label}</span><span />
                   </div>
                 ))}
               </>
@@ -393,15 +440,19 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
                 </>
               );
             })()}
-            <div style={{ marginTop: 10 }}>
-              <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => onDrop(selected.x, selected.y)}>
-                <Kbd>ENTER</Kbd> CONFIRM DROP
-              </Button>
-            </div>
+            {!surveyOnly && (
+              <div style={{ marginTop: 10 }}>
+                <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => onDrop(selected.x, selected.y)}>
+                  <Kbd>ENTER</Kbd> CONFIRM DROP
+                </Button>
+              </div>
+            )}
           </div>
         )}
         <div style={{ marginTop: 8 }}>
-          <Button tone="quiet" onClick={withdraw}><Kbd>X</Kbd> WITHDRAW</Button>
+          {surveyOnly
+            ? <Button tone="quiet" onClick={withdraw}><Kbd>X</Kbd> LEAVE</Button>
+            : <Button tone="quiet" onClick={withdraw}><Kbd>X</Kbd> WITHDRAW</Button>}
         </div>
       </Panel>
       </div>
@@ -495,6 +546,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const aimRef = useRef<{ x: number; y: number } | null>(null);
   // Line 72: held buttons; the loop asks the fire gate every frame
   const firingRef = useRef({ mouse: false, key: false });
+  // D71, D77: read from the world's clock each frame, shown when the words change
+  const lightRef = useRef(1);
+  const gateShownRef = useRef('');
+  const [gate, setGate] = useState<{ warning: GateWarning; left: string; sky: SkyState }>({ warning: 'NONE', left: '', sky: 'DAY' });
   const energyToldRef = useRef(false);
   // Line 75: quadrants this session has had in sight, and the exits of sectors it knows
   const seenRef = useRef<Set<string>>(new Set());
@@ -874,6 +929,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (useWorldStore.getState().reconMode || isTypingTarget(e.target)) return;
+      if (RestSystem.isResting(usePlayerStore.getState().player)) return; // D79: a character at rest does nothing
       const onControl = (e.target as HTMLElement)?.tagName === 'BUTTON';
       if (useHands.getState().held || e.key === 'Tab') return; // the hands and the sheet own these
       // Q cycles the inspect card through what is near, nearest first (line 29)
@@ -933,6 +989,54 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   useEffect(() => {
     if (reconMode || !currentMap) return;
 
+    // The one way a run ends badly: by harm, or by the gate closing on it (D77).
+    // The world's death penalty applies either way (Wave 4.4).
+    const endRun = (cause: 'HURT' | 'GATE') => {
+      const w = useWorldStore.getState();
+      const card = w.availableWorlds.find(c => c.id === w.activeWorldId);
+      const penalty = card?.deathPenalty ?? 'INVENTORY_LOSS';
+      console.warn(`[SESSION] Agent flatlined by ${cause}. Penalty: ${penalty}.`);
+      SessionJournal.record('DEATH', { penalty, cause });
+      // Line 90: what brought a person down grows more common, after the next regeneration
+      if (cause === 'HURT' && lastHurtByRef.current) {
+        const killer = Object.values(w.currentMap?.chunks ?? {}).flatMap(c => c.entities).find(e => e.id === lastHurtByRef.current);
+        if (killer) w.reportToDirector('FELLED_A_PERSON', killer.definitionId);
+      }
+
+      // Wave 10C (D16): the cart stays in the world, standing where it was
+      void usePlayerStore.getState().persistCarts();
+
+      // The DIED receipt (Wave 9.6 + D21): what fell is lost — and the
+      // death keeps EXACTLY the slots the magic named, said on the receipt
+      const outcome = usePlayerStore.getState().emergencyJackOut(penalty);
+      const lost = outcome.lost;
+      const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
+      const told = { cause: cause === 'GATE' ? 'GATE' as const : undefined };
+
+      useWorldStore.getState().exitWorld();
+      void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
+      useReceipt.getState().show({
+        outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
+        worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...told
+      });
+      // Seal the journal and the bank (async; loop is already stopped)
+      const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
+      void SessionJournal.finish('DIED', after).then(signed => {
+        if (useReceipt.getState().receipt?.outcome === 'DIED') {
+          useReceipt.getState().show({
+            outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
+            worldName: card?.name ?? 'UNKNOWN',
+            durationMs: signed?.payload.durationMs ?? 0,
+            actionCount: signed?.payload.actionCount ?? 0,
+            signature: signed?.signature,
+            receipt: signed?.payload,
+            ...told
+          });
+        }
+        return PlayerPersistence.flush('death');
+      });
+    };
+
     const gameLoop = (time: number) => {
       const now = Date.now();
       // --- PHYSICS FIX: DELTA TIME (Seconds, clamped) ---
@@ -948,6 +1052,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (keys.has('s') || keys.has('arrowdown')) dz += 1;
       if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
       if (keys.has('d') || keys.has('arrowright')) dx += 1;
+      const atRest = RestSystem.isResting(usePlayerStore.getState().player, now);
+      if (atRest) { dx = 0; dz = 0; } // D79: a character at rest stays where it lay down
 
       if (dx !== 0 || dz !== 0) {
         // Normalize so diagonals aren't faster, then scale to pixels
@@ -1038,6 +1144,31 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         return;
       }
 
+      // D67, D77: the gate runs on the world's clock, whoever is inside
+      {
+        const w = useWorldStore.getState();
+        const gateCard = w.availableWorlds.find(c => c.id === w.activeWorldId);
+        if (gateCard) {
+          const moment = WorldClock.momentAt(gateCard, now);
+          if (moment.phase !== 'UP') {
+            endRun('GATE');
+            return; // Stop the loop; component unmounts
+          }
+          // D71: what the sky is where you stand
+          const sky = WorldClock.skyAt(gateCard, now, playerPos.x / (liveMap.width * SECTOR_PX));
+          lightRef.current = sky.light;
+          const left = moment.warning === 'NONE' ? '' : WorldClock.say(moment.msLeft);
+          const shown = `${moment.warning}|${left}|${sky.state}`;
+          if (shown !== gateShownRef.current) {
+            if (moment.warning === 'CLOSING' && !gateShownRef.current.startsWith('CLOSING') && !gateShownRef.current.startsWith('FINAL')) {
+              feed(`The gate closes in ${left}. Whoever stays is locked in.`, 'loss');
+            }
+            gateShownRef.current = shown;
+            setGate({ warning: moment.warning, left, sky: sky.state });
+          }
+        }
+      }
+
       // Chunks are built ahead of you, once per quadrant walked
       const walked = `${quadrantOf(playerPos.x)},${quadrantOf(playerPos.z)}`;
       if (walked !== loadedQuadrantRef.current) {
@@ -1068,7 +1199,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
 
       // Line 72: a held button fires at the weapon's own rate, whatever the weapon
-      if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held) fireRef.current(now);
+      if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held && !atRest) fireRef.current(now);
 
       // Wave 2.2: REGROW SWEEP (every 2s) — depleted flora comes back
       if (now - lastRegrowSweep.current > 2000) {
@@ -1086,7 +1217,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
       const liveEquipment = usePlayerStore.getState().player.equipment;
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.total(liveEquipment, 'noise_reduction') });
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.total(liveEquipment, 'noise_reduction'), light: lightRef.current });
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
@@ -1244,6 +1375,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           : state);
 
         SessionJournal.record('DAMAGE', { amount: totalDamage, health: newHealth });
+        if (atRest) {
+          usePlayerStore.setState(state => ({ player: RestSystem.breakRest(state.player) }));
+          feed('Something woke you. The rest did you no good.', 'loss');
+        }
         fired('on_hurt');
         if (newHealth < liveSession.maxHealth * 0.25) fired('on_low_health');
         hurtAtRef.current = now; // the screen edge answers the blow
@@ -1256,48 +1391,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
 
         if (newHealth <= 0) {
-          // FLATLINED: the world cert's death penalty applies (Wave 4.4)
-          const w = useWorldStore.getState();
-          const card = w.availableWorlds.find(c => c.id === w.activeWorldId);
-          const penalty = card?.deathPenalty ?? 'INVENTORY_LOSS';
-          console.warn(`[SESSION] Agent flatlined. Penalty: ${penalty}.`);
-          SessionJournal.record('DEATH', { penalty });
-          // Line 90: what brought a person down grows more common, after the next rest
-          const killer = lastHurtByRef.current
-            ? Object.values(visibleChunks).flatMap(c => c.entities).find(e => e.id === lastHurtByRef.current)
-            : undefined;
-          if (killer) useWorldStore.getState().reportToDirector('FELLED_A_PERSON', killer.definitionId);
-
-          // Wave 10C (D16): the cart stays in the world, standing where it was
-          void usePlayerStore.getState().persistCarts();
-
-          // The DIED receipt (Wave 9.6 + D21): what fell is lost — and the
-          // death keeps EXACTLY the slots the magic named, said on the receipt
-          const outcome = usePlayerStore.getState().emergencyJackOut(penalty);
-          const lost = outcome.lost;
-          const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
-
-          useWorldStore.getState().exitWorld();
-          void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
-          useReceipt.getState().show({
-            outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
-            worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
-          });
-          // Seal the journal and the bank (async; loop is already stopped)
-          const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
-          void SessionJournal.finish('DIED', after).then(signed => {
-            if (useReceipt.getState().receipt?.outcome === 'DIED') {
-              useReceipt.getState().show({
-                outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
-                worldName: card?.name ?? 'UNKNOWN',
-                durationMs: signed?.payload.durationMs ?? 0,
-                actionCount: signed?.payload.actionCount ?? 0,
-                signature: signed?.signature,
-                receipt: signed?.payload
-              });
-            }
-            return PlayerPersistence.flush('death');
-          });
+          endRun('HURT');
           return; // Stop the loop; component unmounts
         }
       }
@@ -1370,6 +1464,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           hurtAt: hurtAtRef.current,
           now,
           reducedMotion: reducedMotionRef.current,
+          darkness: 1 - lightRef.current,
           bullets: [
             ...combatResult.survivingBullets.map(b => ({ x: b.x, y: b.y, hostile: false })),
             ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true }))
@@ -1608,17 +1703,42 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         )}
       </div>
 
+      {/* D77: the gate closing is said by shape and position: a dashed band at the top,
+          and in its last moments a dashed frame around the whole field */}
+      {gate.warning !== 'NONE' && (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 110, pointerEvents: 'none',
+            padding: '6px 16px', textAlign: 'center', background: 'var(--ws-void-0)',
+            border: `${gate.warning === 'FINAL' ? 4 : 2}px dashed var(--ws-text-bright)`
+          }}
+        >
+          <div className="ws-bright" style={{ letterSpacing: '0.2em', fontWeight: 700 }}>THE GATE IS CLOSING — {gate.left}</div>
+          <div className="ws-small">Reach a beacon. Whoever stays is locked in.</div>
+        </div>
+      )}
+      {gate.warning === 'FINAL' && (
+        <div aria-hidden style={{ position: 'absolute', inset: 6, zIndex: 105, pointerEvents: 'none', border: '6px dashed var(--ws-text-bright)' }} />
+      )}
+      {RestSystem.isResting(player) && (
+        <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translateX(-50%)', zIndex: 110, pointerEvents: 'none' }}>
+          <Chip tone="signal">AT REST FOR {WorldClock.say(player.rest!.until - Date.now())}. A HURT WILL BREAK IT.</Chip>
+        </div>
+      )}
+
       {/* Vitals HUD (Wave 9.2: bars, rank and load — the exposure is the point) */}
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}`}><RankMark rank={rank} scale={2} />{rank}</Chip>
+          <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>
           </span>
         </div>
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
-        <Bar label="ENERGY" value={session.energy} max={50 + (player.attributes.endurance * 5)} tone="proof" text={`${Math.floor(session.energy)}`} />
+        <Bar label="ENERGY" value={session.energy} max={StatSystem.maxEnergy(player.attributes, player.equipment)} tone="proof" text={`${Math.floor(session.energy)}`} />
         <Bar label="LOAD" value={Math.round(loadRatio * 100)} max={100} tone={loadRatio > 0.8 ? 'loss' : 'signal'} text={loadRatio > 0.8 ? 'SLOWED' : `${Math.round(loadRatio * 100)}%`} />
         {session.towingCartId && (
           <Chip tone="proof" title="The tow bar is in your hand; your pace pays for the load">TOWING</Chip>
