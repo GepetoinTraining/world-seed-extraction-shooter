@@ -9,7 +9,7 @@ import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGene
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
-import { HUB_TILE_PX, HUB_VIEW_TILES } from './HubCanvas.constants';
+import { HUB_TILE_PX } from './HubCanvas.constants';
 import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
@@ -21,11 +21,14 @@ import { TemplateStudio } from '../../components/TemplateStudio';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
-import { ATOM_PX, Sprite, buildPalette } from '../../render/atoms/atoms';
+import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
-import { Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
-import { useAppView, useFeed } from '../../components/ui/stores';
+import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
+import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
+import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
+import { MinimapView } from '../../components/ui/MinimapView';
+import { cityMinimap } from '../../render/atoms/minimap';
 import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
 import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
@@ -34,7 +37,23 @@ import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../types';
 
 const TILE_SIZE = HUB_TILE_PX;
-const VIEWPORT_TILES = HUB_VIEW_TILES;
+
+/** What lies past the city's edge when the window is wider than the city: ground, not a black box. */
+const OUTSKIRTS_ATOMS = 64;
+function outskirtsCanvas(palette: Uint8Array): HTMLCanvasElement {
+  const s = OUTSKIRTS_ATOMS;
+  const data = new Uint8Array(s * s);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    data[y * s + x] = px(Role.GROUND, hash2(811, x >> 1, y >> 1) % 7 === 0 ? 1 : 0);
+  }
+  const small = spriteToCanvas({ w: s, h: s, data }, palette);
+  const big = document.createElement('canvas');
+  big.width = s * ATOM_PX; big.height = s * ATOM_PX;
+  const ctx = big.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(small, 0, 0, big.width, big.height);
+  return big;
+}
 
 function spriteToCanvas(s: Sprite, table: Uint8Array): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -185,10 +204,12 @@ export const HubCanvas: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (busyRef.current) return; // dialogue and panels take the keyboard
+      if (busyRef.current || isTypingTarget(e.target)) return; // dialogue and panels take the keyboard
       const key = e.key.toLowerCase();
+      // A focused control keeps its own Enter; the one interact key is everyone else's (line 72)
+      if (e.key === 'Enter' && (e.target as HTMLElement)?.tagName === 'BUTTON') return;
       if (insideLotIdRef.current && interiorKeyRef.current(key)) return;
-      if (key === 'e' || key === 'enter') {
+      if (isInteractKey(key)) {
         if (nearbyRef.current?.interactable) handleInteract(nearbyRef.current);
         return;
       }
@@ -420,13 +441,35 @@ export const HubCanvas: React.FC = () => {
     return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades }), palette));
   }, [layout, lotStates]);
 
-  const cameraOffset = useCallback(() => {
-    const viewPx = VIEWPORT_TILES * TILE_SIZE;
-    return {
-      x: Math.max(0, Math.min(layout.width * TILE_SIZE - viewPx, posRef.current.x - viewPx / 2)),
-      y: Math.max(0, Math.min(layout.height * TILE_SIZE - viewPx, posRef.current.y - viewPx / 2))
+  // U16: the city fills the window. The canvas is the window; the camera does the rest.
+  const shellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const shell = shellRef.current, canvas = cityRef.current;
+    if (!shell || !canvas || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      canvas.width = Math.max(1, shell.clientWidth);
+      canvas.height = Math.max(1, shell.clientHeight);
     };
+    fit();
+    const watcher = new ResizeObserver(fit);
+    watcher.observe(shell);
+    return () => watcher.disconnect();
+  }, []);
+
+  const cameraOffset = useCallback(() => {
+    const canvas = cityRef.current;
+    return cityCamera(
+      { w: canvas?.width ?? 0, h: canvas?.height ?? 0 },
+      { w: layout.width * TILE_SIZE, h: layout.height * TILE_SIZE },
+      posRef.current
+    );
   }, [layout]);
+
+  // Line 75: the city is known ground, so its map is whole.
+  const composeCityMap = () => insideLotIdRef.current ? null : cityMinimap(
+    layout, lotStates.states as Partial<Record<number, string>>,
+    { x: Math.floor(posRef.current.x / TILE_SIZE), y: Math.floor(posRef.current.y / TILE_SIZE) }
+  );
 
   // THE WALK LOOP: held keys move the player every frame, the same as the field.
   useEffect(() => {
@@ -434,6 +477,7 @@ export const HubCanvas: React.FC = () => {
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     const palette = buildPalette(HUB_GENRE);
+    const outskirts = ctx.createPattern(outskirtsCanvas(palette), 'repeat');
     const bodies = new Map<string, HTMLCanvasElement>();
     const bodyFor = (facing: Facing, step: number, moving: boolean) => {
       const key = `${facing}:${moving ? step : 'stand'}`;
@@ -568,7 +612,7 @@ export const HubCanvas: React.FC = () => {
       ctx.imageSmoothingEnabled = false;
       const cam = cameraOffset();
       const ox = Math.round(cam.x / 2) * 2, oy = Math.round(cam.y / 2) * 2; // snap to the atom grid
-      ctx.fillStyle = '#050505';
+      ctx.fillStyle = outskirts ?? '#050505';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       const frame = reducedMotion ? 0 : Math.floor(time / 500) % 2;
       const city = cityBitmaps[frame];
@@ -612,7 +656,7 @@ export const HubCanvas: React.FC = () => {
   const nearStationFn = nearPlacement ? stationFunctionOf(nearPlacement.item.universalDefinitionId) : undefined;
 
   return (
-    <div className="ws-ui" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--ws-void-1)', overflow: 'hidden' }}>
+    <div ref={shellRef} className="ws-ui" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--ws-void-1)', overflow: 'hidden' }}>
 
       {/* HUD - Top Left */}
       <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 100, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -623,10 +667,14 @@ export const HubCanvas: React.FC = () => {
         {insideLot
           ? <span className="ws-dim ws-small">LOT {insideLot.lotIndex} — {insideLot.structureType}{mineInside ? '' : ` · ${insideLot.ownerName}'s`}</span>
           : currentZone && <span className="ws-dim ws-small">{currentZone.name}</span>}
-        <span className="ws-dim ws-small" style={{ fontFamily: 'var(--ws-mono)' }}>
-          {insideLot ? `${roomTile.x}, ${roomTile.y}` : `${playerTile.x}, ${playerTile.y}`}
-        </span>
       </div>
+
+      {/* Line 75: the minimap, on the street */}
+      {!insideLot && (
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 100 }}>
+          <MinimapView compose={composeCityMap} scale={1} label="Map of the city" />
+        </div>
+      )}
 
       {/* Interaction Prompt */}
       {nearbyPOI && !activeNPC && !panel && !insideLot && (
@@ -664,7 +712,7 @@ export const HubCanvas: React.FC = () => {
       <div style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100 }} className="ws-dim ws-small">
         {insideLot
           ? <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> work · walk the doorway to leave</>
-          : <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact · <Kbd>~</Kbd> console</>}
+          : <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact</>}
       </div>
 
       {/* WAVE 10.3: THE WORKS — building and placing, in the room, by the owner */}
@@ -728,12 +776,10 @@ export const HubCanvas: React.FC = () => {
       {/* THE CITY */}
       <canvas
         ref={cityRef}
-        width={VIEWPORT_TILES * TILE_SIZE}
-        height={VIEWPORT_TILES * TILE_SIZE}
         onClick={handleCityClick}
         style={{
-          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-          border: '1px solid var(--ws-void-4)', imageRendering: 'pixelated', cursor: nearbyPOI ? 'pointer' : 'default'
+          position: 'absolute', left: 0, top: 0, display: 'block',
+          imageRendering: 'pixelated', cursor: nearbyPOI ? 'pointer' : 'default'
         }}
       />
 
@@ -861,7 +907,7 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
               </span>
             </div>
             {studyable.map(item => (
-              <div key={item.id} className="ws-row">
+              <div key={item.id} className="ws-row" {...hoverProps(item)}>
                 <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
                   {item.isIdentified === false ? 'Unidentified signal' : item.name}
                 </span>
@@ -939,7 +985,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
         )}
         {(lot.shopListings || []).length === 0 && <span className="ws-dim ws-small">The shelf is bare.</span>}
         {(lot.shopListings || []).map(listing => (
-          <div key={listing.item.id} className="ws-row">
+          <div key={listing.item.id} className="ws-row" {...hoverProps(listing.item)}>
             <span style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
               <ItemSprite item={listing.item} cellPx={14} />
               <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
@@ -977,10 +1023,10 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
   return (
     <Modal title={titles[category]} onClose={onClose} width={640}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Your gold: <span className="ws-proof">{player.bank.gold.toLocaleString()} G</span> · stock turns at midnight</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 10, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 240px', gap: 10, alignItems: 'start' }}>
         <div className="ws-list">
           {listings.map(listing => (
-            <div key={listing.id} className="ws-row" style={selectedId === listing.id ? { background: 'var(--ws-void-2)' } : undefined}>
+            <div key={listing.id} className="ws-row" {...hoverProps(listing.item)} style={selectedId === listing.id ? { background: 'var(--ws-void-2)' } : undefined}>
               <button
                 type="button" className="ws-ui"
                 onClick={() => setSelectedId(listing.id)}
@@ -1029,7 +1075,7 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {stash.map(item => {
           const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
           return (
-            <div key={item.id} className="ws-row">
+            <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
@@ -1037,16 +1083,18 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   <span className="ws-dim ws-small">{item.value}G listed value</span>
                 </span>
               </span>
-              <Button
+              {/* U14: a sale is a deliberate step */}
+              <ArmedButton
                 tone="proof"
-                onClick={async () => {
+                confirmLabel={`SELL FOR ${offer}G: SURE?`}
+                onConfirm={async () => {
                   const paid = await sellToVendor(item.id);
                   if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
                   else pushFeed('The treasury cannot cover that. Nothing moves.', 'loss');
                 }}
               >
                 SELL {offer}G
-              </Button>
+              </ArmedButton>
             </div>
           );
         })}
@@ -1071,7 +1119,7 @@ const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {worn.map(item => {
           const cost = repairCost(item as any);
           return (
-            <div key={item.id} className="ws-row">
+            <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>

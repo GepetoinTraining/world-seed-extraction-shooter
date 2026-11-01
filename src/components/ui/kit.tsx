@@ -10,7 +10,8 @@ import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '
 import { Archetype, portrait } from '../../render/atoms/people';
 import { itemArtFor } from '../../render/atoms/items';
 import { IItem } from '../../../types';
-import { Card } from '../../render/atoms/inspect';
+import { Card, ItemComparison } from '../../render/atoms/inspect';
+import { hoverProps } from './stores';
 import { TERMINAL_GENRE, cssVariables } from './tokens';
 import './kit.css';
 
@@ -46,7 +47,7 @@ export function spriteDataUrl(s: Sprite, palette: Uint8Array = TERMINAL_PALETTE)
 
 export const SpriteView: React.FC<{
   sprite: Sprite; scale?: number; palette?: Uint8Array; title?: string; style?: React.CSSProperties; className?: string;
-}> = ({ sprite, scale = 2, palette = TERMINAL_PALETTE, title, style, className }) => {
+} & React.CanvasHTMLAttributes<HTMLCanvasElement>> = ({ sprite, scale = 2, palette = TERMINAL_PALETTE, title, style, className, ...rest }) => {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -63,20 +64,21 @@ export const SpriteView: React.FC<{
   }, [sprite, palette]);
   return (
     <canvas
-      ref={ref} width={sprite.w} height={sprite.h} title={title} className={className}
+      ref={ref} width={sprite.w} height={sprite.h} title={title} className={className} {...rest}
       style={{ width: sprite.w * scale, height: sprite.h * scale, imageRendering: 'pixelated', flexShrink: 0, ...style }}
     />
   );
 };
 
-export const ItemSprite: React.FC<{ item: IItem; cellPx?: number; title?: string; style?: React.CSSProperties }> =
-  ({ item, cellPx = 36, title, style }) => {
+/** Every item drawn anywhere answers the pointer with its card (line 73). Only a piece already in the hands opts out. */
+export const ItemSprite: React.FC<{ item: IItem; cellPx?: number; title?: string; style?: React.CSSProperties; noHover?: boolean }> =
+  ({ item, cellPx = 36, title, style, noHover }) => {
     const sprite = useMemo(() => itemArtFor(item), [
       item.id, item.isIdentified, item.stats?.durability, item.dimensions?.width, item.dimensions?.height
     ]);
     // ITEM_CELL(18) atoms per cell minus the shared 2-atom seam → scale to cellPx
     const scale = cellPx / 18;
-    return <SpriteView sprite={sprite} scale={scale} title={title} style={style} />;
+    return <SpriteView sprite={sprite} scale={scale} title={title} style={style} {...(noHover ? {} : hoverProps(item))} />;
   };
 
 export const PortraitView: React.FC<{ uid: string; archetype: Archetype; scale?: number }> = ({ uid, archetype, scale = 2 }) => {
@@ -120,6 +122,35 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { 
       {children}
     </button>
   );
+
+/**
+ * A deliberate step (U14): the first press arms it and changes its shape, the
+ * second acts. Leaving it, Escape, or a few seconds' pause disarm it.
+ */
+export const ArmedButton: React.FC<{
+  onConfirm: () => void; confirmLabel: React.ReactNode; tone?: Tone | 'quiet'; title?: string; disabled?: boolean; children?: React.ReactNode;
+}> = ({ onConfirm, confirmLabel, tone = 'proof', title, disabled, children }) => {
+  const [armed, setArmed] = React.useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <Button
+      tone={tone} title={title} disabled={disabled} primary={armed}
+      aria-pressed={armed}
+      onClick={() => {
+        window.clearTimeout(timer.current);
+        if (armed) { setArmed(false); onConfirm(); return; }
+        setArmed(true);
+        timer.current = window.setTimeout(() => setArmed(false), ARMED_MS);
+      }}
+      onBlur={() => setArmed(false)}
+      onKeyDown={e => { if (e.key === 'Escape' && armed) { e.stopPropagation(); setArmed(false); } }}
+    >
+      {armed ? confirmLabel : children}
+    </Button>
+  );
+};
+const ARMED_MS = 4000;
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { label?: string }>(
   ({ label, className, ...rest }, ref) => {
@@ -184,7 +215,7 @@ export const Row: React.FC<{ title: React.ReactNode; sub?: React.ReactNode; righ
   );
 
 /** The one inspect card, rendered. Data comes from render/atoms/inspect. */
-export const CardView: React.FC<{ card: Card; right?: React.ReactNode }> = ({ card, right }) => (
+export const CardView: React.FC<{ card: Card; right?: React.ReactNode; children?: React.ReactNode }> = ({ card, right, children }) => (
   <div className="ws-ui ws-card">
     <div className="ws-card__title"><span>{card.title}</span>{right}</div>
     {card.rows.map(([k, v], i) => (
@@ -192,6 +223,31 @@ export const CardView: React.FC<{ card: Card; right?: React.ReactNode }> = ({ ca
     ))}
     {card.needs.map((n, i) => <div key={i} className="ws-card__need">{n}</div>)}
     {card.canAct && card.needs.length === 0 && <div className="ws-card__ready">Ready</div>}
+    {children}
+  </div>
+);
+
+/** The comparison reads by column and by mark. Up and down are shapes; no hue says better. */
+export const CompareView: React.FC<{ compare: ItemComparison }> = ({ compare }) => (
+  <div className="ws-card__compare">
+    {!compare.against && <div className="ws-dim">{compare.slot.replace('_', ' ')} holds nothing.</div>}
+    {compare.against && compare.result && (
+      <>
+        <div className="ws-card__against">AGAINST {compare.against.isIdentified === false ? 'UNIDENTIFIED SIGNAL' : compare.against.name.toUpperCase()}</div>
+        {compare.result.rows.length === 0 && <div className="ws-dim">Nothing on the sheet to set against it.</div>}
+        {compare.result.rows.map(r => (
+          <div key={r.stat} className="ws-card__cmp">
+            <span className="k">{r.stat}</span>
+            <span className="n">{r.here}</span>
+            <span className="n ws-dim">{r.there}</span>
+            <span className="n">{r.mark} {r.mark === '=' ? '' : r.delta}</span>
+          </div>
+        ))}
+        {(compare.result.blind.here > 0 || compare.result.blind.there > 0) && (
+          <div className="ws-dim">The sheet can't see {compare.result.blind.here + compare.result.blind.there} unstudied. Neither side counts them.</div>
+        )}
+      </>
+    )}
   </div>
 );
 
@@ -205,15 +261,16 @@ export const Overlay: React.FC<{ onClose?: () => void; children?: React.ReactNod
   </div>
 );
 
-export const Modal: React.FC<{ title?: React.ReactNode; onClose: () => void; children?: React.ReactNode; width?: number }> =
-  ({ title, onClose, children, width }) => {
+/** `heavy`: a flow with work in it. A stray click on the backdrop does nothing at all. */
+export const Modal: React.FC<{ title?: React.ReactNode; onClose: () => void; children?: React.ReactNode; width?: number; heavy?: boolean }> =
+  ({ title, onClose, children, width, heavy }) => {
     useEffect(() => {
       const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
       window.addEventListener('keydown', onKey);
       return () => window.removeEventListener('keydown', onKey);
     }, [onClose]);
     return (
-      <Overlay onClose={onClose}>
+      <Overlay onClose={heavy ? undefined : onClose}>
         <Panel
           title={title}
           right={<Button tone="quiet" onClick={onClose} aria-label="Close">CLOSE [ESC]</Button>}

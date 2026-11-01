@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { EquipSlotId, IActiveSession, ItemType } from '../../types';
+import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../types';
 import { StudySystem } from '../logic/systems/StudySystem';
 import { DreamingSystem } from '../entities/world/Dreaming';
 import { useWorldStore } from '../entities/world/store';
@@ -15,7 +15,7 @@ import { EntityType, IChunk, ISector, ScanLevel, IWorldEntity } from '../entitie
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { WorldGenerator } from '../entities/world/WorldGenerator';
-import { TILE_PX, quadrantOf } from '../entities/world/grid';
+import { QUADRANT_PX, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../entities/world/grid';
 import { FieldRenderer, FieldScene, FieldEffect, MobPose, DEATH_BURST_MS } from '../render/FieldRenderer';
 import { genreForWorld, entitySprite, baselinePx } from '../render/atoms/world';
 import { ATOM_PX, SIZE_ATOMS, Sprite } from '../render/atoms/atoms';
@@ -34,8 +34,16 @@ import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions'
 import { GEAR_RECIPES } from '../entities/economy/data/recipeDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
-import { Bar, Button, CardView, Chip, ItemSprite, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
-import { useFeed, useRankMoment, useReceipt } from './ui/stores';
+import { Bar, Button, CardView, Chip, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
+import { useFeed, useHotbar, useRankMoment, useReceipt } from './ui/stores';
+import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, suggestStart } from '../logic/systems/FieldInput';
+import { ItemGrid } from './ui/ItemGrid';
+import { useDropZone, useHands, wholeZone } from './ui/hands';
+import { PlacedCard } from './ui/HoverLayer';
+import { MinimapView } from './ui/MinimapView';
+import { fieldMinimap } from '../render/atoms/minimap';
+import { PaperDoll } from './PaperDoll';
+import { Hotbar, activateHotbar } from './Hotbar';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -46,11 +54,64 @@ const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't tele
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
 /**
- * PACK GRID (Wave 9.4): the 8x6 spatial inventory, drawn in the items' real
- * art at their real footprints. Selection shows the one inspect card.
+ * THE PACK (Wave 9.4, the usability pass): the 8x6 spatial inventory beside the
+ * body, in the items' real art at their real footprints. The grid never moves:
+ * what can be done with the selected piece lives in a fixed column beside it, and
+ * reading a piece is the card on hover. The ground is a place in the same hands.
  */
 const CELL = 36;
-const PackGrid = ({ session }: { session: IActiveSession }) => {
+const PACK_ACTIONS_W = 200;
+const PACK_BODY_H = 332;
+const GROUND_CELL = 24;
+const GROUND_ROWS = 2;
+
+/** What a piece most plainly wants: E, a double-click or a right-click (U6). */
+const packPrimary = (item: IItem) => {
+  const st = usePlayerStore.getState();
+  if (item.cartData) { void st.deployCart(item.id); return; }
+  if (item.type === ItemType.CONSUMABLE && !item.charmData && !item.scrollData) { st.consumeItem(item.id); return; }
+  if (item.slot !== SlotType.NONE || item.tags?.includes('tool')) { st.equipSwap(item.id); return; }
+  feed(`${item.name} has no slot and no use in the hand. It rides the pack.`, 'plain');
+};
+
+const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
+  const root = useRef<HTMLDivElement>(null);
+  useDropZone('ground', wholeZone(root, { kind: 'GROUND' }));
+  const map = useWorldStore(s => s.currentMap);
+  const reach = 3 * TILE_SIZE;
+  const caches = WorldGenerator.chunkKeysInBox(session.position.x, session.position.z, reach + 40)
+    .flatMap(k => map?.chunks[k]?.entities ?? [])
+    .filter(e => (e.container?.items?.length ?? 0) > 0 && !e.container!.looted &&
+      Math.hypot(e.position.x - session.position.x, e.position.y - session.position.z) < reach);
+  const cache = caches[0];
+  const items = cache?.container?.items ?? [];
+  const cols = Math.floor((GRID_W * CELL - 28) / GROUND_CELL);
+  const rows = Math.max(GROUND_ROWS, Math.ceil(items.reduce((n, i) => n + (i.dimensions?.width ?? 1) * (i.dimensions?.height ?? 1), 0) / cols) + 3);
+  const layout = useMemo(() => InventorySystem.placeAll(items, cols, rows), [items, cols, rows]);
+  return (
+    <div
+      ref={root}
+      data-drop-zone="ground"
+      style={{ marginTop: 6, border: '1px dashed var(--ws-void-4)', width: GRID_W * CELL, height: GROUND_ROWS * GROUND_CELL + 24, padding: '2px 4px', overflowY: 'scroll', overflowX: 'hidden' }}
+    >
+      <div className="ws-dim ws-small">GROUND · {cache ? 'a cache in reach' : 'set a thing here to leave it'}</div>
+      {cache && (
+        <ItemGrid
+          zoneId={`cache_${cache.id}`}
+          place={{ kind: 'CACHE', entityId: cache.id }}
+          items={items}
+          layout={layout}
+          gridW={cols}
+          gridH={rows}
+          cellPx={GROUND_CELL}
+          onPrimary={item => { usePlayerStore.getState().takeFromCache(cache.id, item.id); }}
+        />
+      )}
+    </div>
+  );
+};
+
+const PackWindow = ({ session }: { session: IActiveSession }) => {
   const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
   // Wave 10E (D19): the field identify runs on a real clock
@@ -62,73 +123,49 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
   const items = session.inventory;
   const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
   const selectedItem = items.find(i => i.id === selected);
-  // Wave 10C: equipped items ride the harness, not the pack — nothing here is equipped
-  const equippedIds: string[] = [];
   const pouchSlots = player.equipment
     ? LoadoutSystem.availableSlots(player.equipment).filter(s => s.startsWith('POUCH_') && player.equipment!.slots[s])
     : [];
+  const recipes = Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === null &&
+    r.inputs.every(req => items.filter(i => i.universalDefinitionId === req.itemId).length >= req.quantity));
 
   return (
-    <Panel
-      title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS`}
-      right={
-        <span className={ratio > 0.8 ? 'ws-loss' : 'ws-dim'}>
-          {currentWeight.toFixed(1)}/{maxWeight}kg{ratio > 0.8 ? ' · SLOWED' : ''}
-        </span>
-      }
-      style={{ pointerEvents: 'auto' }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{ position: 'relative', width: GRID_W * CELL, height: GRID_H * CELL, background: 'var(--ws-void-0)' }}
+    <div data-pack-window style={{ display: 'flex', gap: 8, alignItems: 'stretch', pointerEvents: 'auto' }} onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+      <PaperDoll unit={24} compact />
+      <Panel
+        title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS`}
+        right={
+          <span className={ratio > 0.8 ? 'ws-loss' : 'ws-dim'}>
+            {currentWeight.toFixed(1)}/{maxWeight}kg{ratio > 0.8 ? ' · SLOWED' : ''}
+          </span>
+        }
       >
-        {Array.from({ length: GRID_W * GRID_H }, (_, i) => (
-          <div key={i} style={{
-            position: 'absolute',
-            left: (i % GRID_W) * CELL, top: Math.floor(i / GRID_W) * CELL,
-            width: CELL, height: CELL,
-            border: '1px solid var(--ws-void-3)'
-          }} />
-        ))}
-        {items.map(item => {
-          const place = layout[item.id];
-          if (!place) return null;
-          const { w, h } = InventorySystem.footprint(item, place.rotated);
-          const isSel = item.id === selected;
-          const isEquipped = equippedIds.includes(item.id);
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={e => { e.stopPropagation(); setSelected(isSel ? null : item.id); }}
-              title={item.isIdentified === false ? 'Unidentified signal' : item.name}
-              className="ws-ui"
-              style={{
-                position: 'absolute',
-                left: place.x * CELL + 1, top: place.y * CELL + 1,
-                width: w * CELL - 2, height: h * CELL - 2,
-                background: 'transparent',
-                border: isEquipped ? '2px solid var(--ws-proof-3)' : isSel ? '2px solid var(--ws-signal-3)' : '1px solid transparent',
-                padding: 0, cursor: 'pointer', overflow: 'hidden',
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
-              }}
-            >
-              <ItemSprite
-                item={place.rotated ? { ...item, dimensions: { width: h, height: w } } : item}
-                cellPx={CELL - 4}
-                style={place.rotated ? { transform: 'rotate(90deg)' } : undefined}
-              />
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedItem && (
-        <div onClick={e => e.stopPropagation()} style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <CardView card={inspectItem(selectedItem, player)} right={<RankMark rank={String(selectedItem.rank)} scale={2} />} />
+        <ItemGrid
+          zoneId="pack"
+          place={{ kind: 'PACK' }}
+          items={items}
+          layout={layout}
+          gridW={GRID_W}
+          gridH={GRID_H}
+          cellPx={CELL}
+          selectedId={selected}
+          onSelect={setSelected}
+          onPrimary={packPrimary}
+          onRotate={item => rotateItem(item.id)}
+        />
+        <GroundPanel session={session} />
+      </Panel>
+      <Panel title="THIS PIECE" style={{ width: PACK_ACTIONS_W, height: PACK_BODY_H, overflowY: 'auto', flexShrink: 0 }}>
+        {!selectedItem && (
+          <div className="ws-dim ws-small">
+            Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand.
           </div>
+        )}
+        {selectedItem && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="ws-bright ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selectedItem.isIdentified === false ? 'Unidentified Signal' : selectedItem.name}
+            </div>
             {selectedItem.type === ItemType.CONSUMABLE && !selectedItem.charmData && !selectedItem.scrollData && (
               <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>USE</Button>
             )}
@@ -179,13 +216,10 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
             )}
             {(selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool')) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
-              <Button
-                tone="proof"
-                onClick={() => {
-                  const v = usePlayerStore.getState().equipToSlot(selectedItem.id);
-                  if (v.ok) setSelected(null);
-                }}
-              >
+              <Button tone="proof" onClick={() => {
+                const v = usePlayerStore.getState().equipSwap(selectedItem.id);
+                if (v.ok) setSelected(null);
+              }}>
                 EQUIP
               </Button>
             )}
@@ -213,15 +247,10 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
             <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE</Button>
             <Button tone="loss" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>LEAVE BEHIND</Button>
           </div>
-        </div>
-      )}
-      {/* Wave 10D (10D.2): the floor — improvised crafting, right here, no bench */}
-      {Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === null).map(recipe => {
-        const canPay = recipe.inputs.every(req =>
-          items.filter(i => i.universalDefinitionId === req.itemId).length >= req.quantity);
-        if (!canPay) return null;
-        return (
-          <div key={recipe.id} onClick={e => e.stopPropagation()} style={{ marginTop: 6 }}>
+        )}
+        {/* Wave 10D (10D.2): the floor — improvised crafting, right here, no bench */}
+        {recipes.map(recipe => (
+          <div key={recipe.id} style={{ marginTop: 6 }}>
             <Button
               tone="quiet"
               title={recipe.description}
@@ -230,10 +259,9 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
               IMPROVISE · {recipe.name.toUpperCase()}
             </Button>
           </div>
-        );
-      })}
-      <div className="ws-dim ws-small" style={{ marginTop: 4 }}><Kbd>TAB</Kbd> close</div>
-    </Panel>
+        ))}
+      </Panel>
+    </div>
   );
 };
 
@@ -243,9 +271,8 @@ const PackGrid = ({ session }: { session: IActiveSession }) => {
 
 const CART_CELL = 24;
 const CartWindow: React.FC = () => {
-  const { cartWindowId, closeCartWindow, player, loadCart, unloadCart } = usePlayerStore();
+  const { cartWindowId, closeCartWindow, player, loadCart, unloadCart, rotateItem } = usePlayerStore();
   const { currentMap } = useWorldStore();
-  const [selected, setSelected] = useState<string | null>(null);
   if (!cartWindowId) return null;
   const entity = Object.values(currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === cartWindowId);
   const cart = entity?.cart;
@@ -255,74 +282,42 @@ const CartWindow: React.FC = () => {
   const lastTheft = cart.theftLog[cart.theftLog.length - 1];
 
   return (
-    <div className="ws-ui ws-overlay" style={{ background: 'rgba(3,3,3,0.7)', zIndex: 500 }} onClick={closeCartWindow}>
+    <div className="ws-ui ws-overlay" style={{ background: 'rgba(3,3,3,0.7)', zIndex: 500 }} onClick={closeCartWindow} onPointerDown={e => e.stopPropagation()}>
       <div onClick={e => e.stopPropagation()}>
         <Panel
           title={`CART BED — ${cart.gridW}×${cart.gridH}`}
           right={<span className={mine ? 'ws-proof' : 'ws-loss'}>{mine ? 'YOUR SEAL' : `${cart.ownerName}'S SEAL`}</span>}
-          style={{ width: cart.gridW * CART_CELL + 300, maxWidth: '92vw' }}
+          style={{ maxWidth: '96vw' }}
         >
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
             <div>
-              <div style={{ position: 'relative', width: cart.gridW * CART_CELL, height: cart.gridH * CART_CELL, background: 'var(--ws-void-0)' }}>
-                {Array.from({ length: cart.gridW * cart.gridH }, (_, i) => (
-                  <div key={i} style={{
-                    position: 'absolute',
-                    left: (i % cart.gridW) * CART_CELL, top: Math.floor(i / cart.gridW) * CART_CELL,
-                    width: CART_CELL, height: CART_CELL,
-                    border: '1px solid var(--ws-void-3)'
-                  }} />
-                ))}
-                {cart.items.map(item => {
-                  const place = cart.layout[item.id];
-                  if (!place) return null;
-                  const { w, h } = InventorySystem.footprint(item, place.rotated);
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className="ws-ui"
-                      title={item.name}
-                      onClick={() => setSelected(item.id === selected ? null : item.id)}
-                      style={{
-                        position: 'absolute',
-                        left: place.x * CART_CELL + 1, top: place.y * CART_CELL + 1,
-                        width: w * CART_CELL - 2, height: h * CART_CELL - 2,
-                        background: 'transparent',
-                        border: item.id === selected ? '2px solid var(--ws-signal-3)' : '1px solid transparent',
-                        padding: 0, cursor: 'pointer', overflow: 'hidden',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                      }}
-                    >
-                      <ItemSprite item={item} cellPx={CART_CELL - 4} />
-                    </button>
-                  );
-                })}
-              </div>
+              <ItemGrid
+                zoneId="cart"
+                place={{ kind: 'CART', entityId: cartWindowId }}
+                items={cart.items}
+                layout={cart.layout}
+                gridW={cart.gridW}
+                gridH={cart.gridH}
+                cellPx={CART_CELL}
+                onPrimary={item => { unloadCart(cartWindowId, item.id); }}
+              />
               <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
                 {CartSystem.cartWeight(cart).toFixed(1)} kg aboard · tow pace ×{CartSystem.towSpeedModifier(CartSystem.cartWeight(cart)).toFixed(2)}
               </div>
             </div>
-
-            <div style={{ width: 260, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {selected && (
-                <Button tone="signal" onClick={() => { unloadCart(cartWindowId, selected); setSelected(null); }}>
-                  TAKE INTO THE PACK
-                </Button>
-              )}
-              <div className="ws-dim ws-small">PACK — click to load the bed</div>
-              <div className="ws-list" style={{ maxHeight: 220, overflow: 'auto' }}>
-                {(session?.inventory ?? []).map(item => (
-                  <div key={item.id} className="ws-row">
-                    <span style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
-                      <ItemSprite item={item} cellPx={14} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-                    </span>
-                    <Button tone="quiet" onClick={() => loadCart(cartWindowId, item.id)}>LOAD</Button>
-                  </div>
-                ))}
-                {(session?.inventory ?? []).length === 0 && <div className="ws-dim ws-small">The pack is empty.</div>}
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: GRID_W * CART_CELL + 8 }}>
+              <div className="ws-dim ws-small">PACK · drag across, or right-click to send a piece over</div>
+              <ItemGrid
+                zoneId="cart_pack"
+                place={{ kind: 'PACK' }}
+                items={session?.inventory ?? []}
+                layout={session?.inventoryLayout ?? {}}
+                gridW={GRID_W}
+                gridH={GRID_H}
+                cellPx={CART_CELL}
+                onPrimary={item => { loadCart(cartWindowId, item.id); }}
+                onRotate={item => rotateItem(item.id)}
+              />
               {lastTheft && (
                 <div className="ws-loss ws-small">
                   THEFT ON RECORD: towed away by {lastTheft.byName}, {new Date(lastTheft.at).toLocaleString()}{lastTheft.signature ? ' — signed' : ''}.
@@ -331,7 +326,7 @@ const CartWindow: React.FC = () => {
               <div className="ws-dim ws-small">
                 The cart stays in the world when you die or extract without it. Anyone may tow it; the act is signed.
               </div>
-              <Button onClick={closeCartWindow}>CLOSE</Button>
+              <Button onClick={closeCartWindow}>CLOSE <Kbd>ESC</Kbd></Button>
             </div>
           </div>
         </Panel>
@@ -352,6 +347,11 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
   const deskRef = useRef<HTMLDivElement>(null);
 
   const cellPx = RECON_CELL_ATOMS * RECON_SCALE;
+  const [cursor, setCursor] = useState(() => {
+    const at = currentMap ? suggestStart(currentMap) : { x: 0, y: 0 };
+    return { x: at.x, y: at.y };
+  });
+  const dragged = useRef(false);
 
   // The survey keeps its true cell size and the desk pans; it opens centered.
   useEffect(() => {
@@ -395,23 +395,49 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
     ctx.putImageData(img, 0, 0);
   }, [currentMap, currentMap?.sectors]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => reconKeys.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   if (!currentMap) return null;
 
   const selectedKey = selectedDropZone ? `${selectedDropZone.x},${selectedDropZone.y}` : null;
   const selected = selectedKey ? currentMap.sectors[selectedKey] : null;
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const box = e.currentTarget.getBoundingClientRect();
-    const sx = Math.floor((e.clientX - box.left) / cellPx);
-    const sy = Math.floor((e.clientY - box.top) / cellPx);
+  const scanAt = (sx: number, sy: number) => {
     const sector = currentMap.sectors[`${sx},${sy}`];
     if (!sector) return;
     selectSector(sx, sy);
+    setCursor({ x: sx, y: sy });
     // Wave 10C (D22): mental stats drive the recon phase — intelligence,
     // perception and focus (framed or raw) deepen each scan. The analyst
     // build earns its keep before the drop.
     const depth = LoadoutSystem.reconEfficiency(usePlayerStore.getState().player.attributes);
     scanSector(sx, sy, depth);
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (dragged.current) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    scanAt(Math.floor((e.clientX - box.left) / cellPx), Math.floor((e.clientY - box.top) / cellPx));
+  };
+
+  // The desk pans by the pointer: a drag is a pan, and a press that stays put is a scan.
+  const startPan = (e: React.PointerEvent) => {
+    const desk = deskRef.current;
+    if (!desk || e.button !== 0) return;
+    const start = { x: e.clientX, y: e.clientY, left: desk.scrollLeft, top: desk.scrollTop };
+    dragged.current = false;
+    const move = (m: PointerEvent) => {
+      if (Math.hypot(m.clientX - start.x, m.clientY - start.y) > 4) dragged.current = true;
+      desk.scrollLeft = start.left - (m.clientX - start.x);
+      desk.scrollTop = start.top - (m.clientY - start.y);
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
   };
 
   // Wave 9: recon can be left without dropping — the survey was free, the drop is not.
@@ -421,6 +447,42 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
     useWorldStore.getState().exitWorld();
     void useHubStore.getState().restAndCredit('WITHDREW'); // D30: back at the hub, a rest all the same
     void SessionJournal.abort(PlayerPersistence.persistableJson(usePlayerStore.getState().player));
+  };
+
+  // Recon has its keys: walk a cursor, scan, drop, or leave.
+  const reconKeys = useRef<(e: KeyboardEvent) => void>(() => {});
+  reconKeys.current = (e: KeyboardEvent) => {
+    if (isTypingTarget(e.target)) return;
+    const onControl = (e.target as HTMLElement)?.tagName === 'BUTTON';
+    const key = e.key.toLowerCase();
+    const desk = deskRef.current;
+    const PAN = cellPx;
+    if (key === 'x') { e.preventDefault(); withdraw(); return; }
+    if (e.key === 'Enter' && !onControl) {
+      e.preventDefault();
+      e.stopImmediatePropagation(); // this Enter is the drop; it must not also act in the field
+      if (selected) onDrop(selected.x, selected.y);
+      else feed('No sector selected. A drop needs a place.', 'loss');
+      return;
+    }
+    if (e.key === ' ' && !onControl) { e.preventDefault(); scanAt(cursor.x, cursor.y); return; }
+    if (desk && key === 'w') { desk.scrollTop -= PAN; return; }
+    if (desk && key === 's') { desk.scrollTop += PAN; return; }
+    if (desk && key === 'a') { desk.scrollLeft -= PAN; return; }
+    if (desk && key === 'd') { desk.scrollLeft += PAN; return; }
+    const dir = e.key === 'ArrowLeft' ? [-1, 0] : e.key === 'ArrowRight' ? [1, 0] : e.key === 'ArrowUp' ? [0, -1] : e.key === 'ArrowDown' ? [0, 1] : null;
+    if (dir) {
+      e.preventDefault();
+      const next = {
+        x: Math.max(0, Math.min(currentMap.width - 1, cursor.x + dir[0])),
+        y: Math.max(0, Math.min(currentMap.height - 1, cursor.y + dir[1]))
+      };
+      setCursor(next);
+      if (desk) {
+        desk.scrollLeft = next.x * cellPx - desk.clientWidth / 2;
+        desk.scrollTop = next.y * cellPx - desk.clientHeight / 2;
+      }
+    }
   };
 
   // At this scale a list of things is hundreds long, so it groups them and leads with the danger.
@@ -443,56 +505,58 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
     return counts;
   };
 
+  const advice = suggestStart(currentMap);
+  const bracket = (x: number, y: number, label: string, dashed: boolean, shown: boolean) => shown ? (
+    <div style={{
+      position: 'absolute', left: x * cellPx - 3, top: y * cellPx - 3,
+      width: cellPx + 6, height: cellPx + 6, pointerEvents: 'none',
+      outline: `2px ${dashed ? 'dashed' : 'solid'} var(--ws-text-bright)`
+    }}>
+      {label && <span className="ws-bright ws-small" style={{ position: 'absolute', left: 0, top: -19, background: 'var(--ws-void-0)', padding: '0 4px', lineHeight: '16px', whiteSpace: 'nowrap' }}>{label}</span>}
+    </div>
+  ) : null;
+
   return (
-    <div className="ws-ui" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, background: 'var(--ws-void-0)' }}>
-      {/* The survey: true-size cells on a pannable desk */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <Chip tone="signal">DRONE RECON — SELECT DROP ZONE</Chip>
-        <div
-          ref={deskRef}
-          style={{
-            border: '1px solid var(--ws-void-4)', lineHeight: 0,
-            width: 'min(640px, 62vw)', height: 'min(560px, 66vh)', overflow: 'auto'
-          }}
-        >
-          <div style={{ position: 'relative', width: currentMap.width * cellPx, height: currentMap.height * cellPx }}>
-            <canvas
-              ref={canvasRef}
-              width={currentMap.width * RECON_CELL_ATOMS}
-              height={currentMap.height * RECON_CELL_ATOMS}
-              onClick={handleClick}
-              style={{
-                width: currentMap.width * cellPx,
-                height: currentMap.height * cellPx,
-                imageRendering: 'pixelated',
-                cursor: 'pointer',
-                display: 'block'
-              }}
-            />
-            {selectedDropZone && (
-              <div style={{
-                position: 'absolute',
-                left: selectedDropZone.x * cellPx - 1,
-                top: selectedDropZone.y * cellPx - 1,
-                width: cellPx, height: cellPx,
-                outline: '2px solid var(--ws-text-bright)',
-                pointerEvents: 'none'
-              }} />
-            )}
-          </div>
+    <div className="ws-ui" style={{ position: 'relative', height: '100%', background: 'var(--ws-void-0)', overflow: 'hidden' }}>
+      {/* The survey fills the window. Drag or the keys pan it; there is nothing to scroll. */}
+      <div
+        ref={deskRef}
+        onPointerDown={startPan}
+        style={{ position: 'absolute', inset: 0, overflow: 'hidden', display: 'flex', cursor: 'grab', lineHeight: 0, touchAction: 'none' }}
+      >
+        <div style={{ position: 'relative', flexShrink: 0, margin: 'auto', width: currentMap.width * cellPx, height: currentMap.height * cellPx }}>
+          <canvas
+            ref={canvasRef}
+            width={currentMap.width * RECON_CELL_ATOMS}
+            height={currentMap.height * RECON_CELL_ATOMS}
+            onClick={handleClick}
+            style={{
+              width: currentMap.width * cellPx,
+              height: currentMap.height * cellPx,
+              imageRendering: 'pixelated',
+              display: 'block'
+            }}
+          />
+          {bracket(advice.x, advice.y, advice.kind === 'DROP' ? 'DROP HERE' : 'SCAN HERE', false, !(selectedDropZone && selectedDropZone.x === advice.x && selectedDropZone.y === advice.y))}
+          {bracket(cursor.x, cursor.y, '', true, true)}
+          {selectedDropZone && bracket(selectedDropZone.x, selectedDropZone.y, 'SELECTED', false, true)}
         </div>
-        <span className="ws-dim ws-small">
-          Drag the desk to pan the survey. Click a sector to scan it; click again for deeper intel.<br />
-          Static is unscanned. The lozenge is an exit; ticks along an edge are contacts.
-        </span>
+      </div>
+
+      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start', pointerEvents: 'none' }}>
+        <Chip tone="signal">DRONE RECON — CHOOSE WHERE TO DROP</Chip>
+        <Panel title="WHERE TO START" style={{ width: 320 }}>
+          <span className="ws-small">{advice.why}</span>
+        </Panel>
       </div>
 
       {/* Intel Panel */}
-      <Panel title="SECTOR INTEL" right={<Button tone="quiet" onClick={withdraw}>WITHDRAW</Button>} style={{ width: 290 }}>
-        {!selected && <span className="ws-dim ws-small">No sector selected. The survey renders only what the drone has recorded.</span>}
+      <div style={{ position: 'absolute', top: 12, right: 12, width: 290, maxHeight: 'calc(100% - 60px)', overflowY: 'auto' }}>
+      <Panel title="SECTOR INTEL">
+        {!selected && <span className="ws-dim ws-small">No sector selected. The survey renders only what the drone has recorded. Static is unscanned; the lozenge is an exit; ticks along an edge are contacts.</span>}
         {selected && (
           <div className="ws-list ws-small">
-            <div className="ws-row"><span className="ws-dim">COORDS</span><span>{selected.x}, {selected.y}</span></div>
+            <div className="ws-row"><span className="ws-dim">SECTOR</span><span>{selected.x}·{selected.y}</span></div>
             {selected.scanLevel >= ScanLevel.BASIC && (
               <>
                 <div className="ws-row"><span className="ws-dim">BIOME</span><span>{selected.biome}</span></div>
@@ -541,12 +605,21 @@ const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void }> = ({ on
             })()}
             <div style={{ marginTop: 10 }}>
               <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => onDrop(selected.x, selected.y)}>
-                CONFIRM DROP
+                <Kbd>ENTER</Kbd> CONFIRM DROP
               </Button>
             </div>
           </div>
         )}
+        <div style={{ marginTop: 8 }}>
+          <Button tone="quiet" onClick={withdraw}><Kbd>X</Kbd> WITHDRAW</Button>
+        </div>
       </Panel>
+      </div>
+
+      {/* The key help stands apart from the data */}
+      <div className="ws-dim ws-small" style={{ position: 'absolute', bottom: 10, left: 12, background: 'rgba(3,3,3,0.75)', padding: '2px 8px' }}>
+        <Kbd>WASD</Kbd> pan · <Kbd>ARROWS</Kbd> move the cursor · <Kbd>SPACE</Kbd> or click: scan, and again to read deeper
+      </div>
     </div>
   );
 };
@@ -590,6 +663,19 @@ const RankMomentView: React.FC = () => {
 
 const OCTANTS = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
 
+/** What the interact key says it will do, one short line. */
+const promptFor = (pick: InteractPick | 'EXIT'): string => {
+  if (pick === 'EXIT') return 'EXTRACT (5s)';
+  if (pick.primary) return `${pick.primary.label.toUpperCase()}${pick.primary.energyCost > 0 ? ` · ${pick.primary.energyCost} energy` : ''}`;
+  return `${pick.options.length} WAYS TO ACT`;
+};
+
+const KeyHelp: React.FC = () => (
+  <div className="ws-dim ws-small" style={{ position: 'absolute', bottom: 12, right: 16, zIndex: 100, pointerEvents: 'none', background: 'rgba(3,3,3,0.72)', padding: '2px 8px', maxWidth: '30vw', textAlign: 'right' }}>
+    <Kbd>WASD</Kbd> move · <Kbd>HOLD CLICK</Kbd> or <Kbd>SPACE</Kbd> fire · <Kbd>E</Kbd> act · <Kbd>TAB</Kbd> pack · <Kbd>Q</Kbd> read
+  </div>
+);
+
 export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) => {
   // Store Hooks
   const { currentMap, reconMode, confirmDrop } = useWorldStore();
@@ -601,7 +687,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const [activeSwings, setActiveSwings] = useState<any[]>([]);
   const [lootDrops, setLootDrops] = useState<any[]>([]);
 
-  // Interaction Menu State
+  // Interaction Menu State: reached by the interact key or a right-click, never by firing
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [interactionOptions, setInteractionOptions] = useState<any[]>([]);
@@ -612,6 +698,17 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const inspectedIdRef = useRef<string | null>(null);
   inspectedIdRef.current = inspected?.id ?? null;
   const lastInspectAt = useRef(0);
+  // Line 72: what the interact key would do right now, said above the hotbar
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const promptRef = useRef<string | null>(null);
+  // The aim follows the pointer everywhere; the inspect card only over the ground
+  const aimRef = useRef<{ x: number; y: number } | null>(null);
+  // Line 72: held buttons; the loop asks the fire gate every frame
+  const firingRef = useRef({ mouse: false, key: false });
+  const energyToldRef = useRef(false);
+  // Line 75: quadrants this session has had in sight, and the exits of sectors it knows
+  const seenRef = useRef<Set<string>>(new Set());
+  const exitsRef = useRef<Map<string, { x: number; y: number }[]>>(new Map());
 
   // Refs for Game Loop
   const requestRef = useRef<number>();
@@ -639,6 +736,19 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const lastShotRef = useRef<number>(0);
   const spentShots = useRef<Map<string, number>>(new Map());
 
+  // Doors the keyboard effect and the loop reach through, always current
+  const interactRef = useRef<() => void>(() => {});
+  const escapeRef = useRef<() => void>(() => {});
+  const interactPickRef = useRef<() => InteractPick | 'EXIT' | null>(() => null);
+  const fireRef = useRef<(now: number) => void>(() => {});
+
+  // What is in the hand: the hotbar's choice, read from the harness
+  const activeWeapon = () => {
+    const slot = useHotbar.getState().active;
+    const eq = usePlayerStore.getState().player.equipment;
+    return { slot, item: eq ? LoadoutSystem.itemIn(eq, slot) : undefined };
+  };
+
   // Equipped gear resolvers (Wave 10C: the harness is the truth — the three
   // buckets map onto the slot tree for every old caller)
   const getEquipped = (slot: 'mainHand' | 'armor' | 'accessory') => {
@@ -646,6 +756,65 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (!eq) return undefined;
     const slotId = slot === 'mainHand' ? 'RIGHT_HAND' : slot === 'armor' ? 'CHEST' : 'TOOL_1';
     return LoadoutSystem.itemIn(eq, slotId);
+  };
+
+  // Line 72: one shot, if the gate says so. The weapon decides how; the hand decides which.
+  fireRef.current = (now: number) => {
+    const st = usePlayerStore.getState();
+    const playerPos = st.player.currentSession?.position;
+    if (!playerPos) return;
+    const { slot, item: weapon } = activeWeapon();
+    const mode = fireMode(weapon);
+    const gate = fireGate({
+      held: true, now, lastShot: lastShotRef.current,
+      cooldownMs: CombatMath.fireCooldownMs(weapon), mode,
+      energy: st.player.currentSession?.energy ?? 0
+    });
+    if (gate === 'NO_ENERGY') {
+      if (!energyToldRef.current) feed('Not enough energy to cast. The focus hums and refuses.', 'loss');
+      energyToldRef.current = true;
+      return;
+    }
+    if (gate !== 'FIRE') return;
+
+    // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
+    let angle: number;
+    if (firingRef.current.mouse && aimRef.current) {
+      angle = Math.atan2(aimRef.current.y - window.innerHeight / 2, aimRef.current.x - window.innerWidth / 2);
+    } else {
+      const { near } = inspectedIdRef.current ? targetsNear(playerPos.x, playerPos.z, 300) : { near: [] as IWorldEntity[] };
+      const target = near.find(n => n.id === inspectedIdRef.current);
+      angle = target
+        ? Math.atan2(target.position.y - playerPos.z, target.position.x - playerPos.x)
+        : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
+    }
+    const damage = CombatMath.weaponDamage(weapon);
+
+    if (mode === 'MELEE') {
+      // Swing: a short arc resolved by CombatSystem
+      setActiveSwings(prev => [
+        ...prev.filter(s => now - s.startTime < 300),
+        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage }
+      ]);
+    } else if (mode === 'FOCUS') {
+      // Focus: a NOVA burst, paid in energy
+      usePlayerStore.setState(s => s.player.currentSession ? ({
+        player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - FOCUS_ENERGY_COST } }
+      }) : s);
+      setPlayerPatterns(prev => [
+        ...prev.filter(p => now - p.startTime < 2000),
+        { type: PatternType.NOVA, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
+      ]);
+    } else {
+      // Ranged (or unarmed): a single shot
+      setPlayerPatterns(prev => [
+        ...prev.filter(p => now - p.startTime < 2000),
+        { type: PatternType.SINGLE, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
+      ]);
+    }
+
+    lastShotRef.current = now;
+    if (weapon) st.wearSlot(slot, 1); // durability: every use costs
   };
 
   // Wave 2.5: extraction channel + regrow sweep timing
@@ -813,6 +982,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
   }, [confirmDrop]);
 
+  // Every drop starts with the right hand: a hand left empty last time should not surprise you
+  useEffect(() => { useHotbar.getState().setActive('RIGHT_HAND'); }, []);
+
   // A world that skips recon still has to set you down somewhere
   const placedRef = useRef(false);
   useEffect(() => {
@@ -859,9 +1031,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // 2. Input Handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (useWorldStore.getState().reconMode || isTypingTarget(e.target)) return;
+      const inPack = !!(e.target as HTMLElement)?.closest?.('[data-pack-window]');
+      const onControl = (e.target as HTMLElement)?.tagName === 'BUTTON';
+      if (useHands.getState().held) return; // the hands own the keys they use
       if (e.key === 'Tab') {
+        if (inPack) return; // a focused piece walks the window natively
         e.preventDefault();
         setShowPack(prev => !prev);
+        return;
+      }
+      // With the window open, the arrows reach into it: the keyboard's way to the pieces
+      if (e.key.startsWith('Arrow') && document.querySelector('[data-pack-window]') && !inPack) {
+        e.preventDefault();
+        (document.querySelector('[data-pack-window] [data-item-id]') as HTMLElement | null)?.focus();
         return;
       }
       // Q cycles the inspect card through what is near, nearest first (line 29)
@@ -873,20 +1056,47 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         inspectById(next, near);
         return;
       }
-      if (e.key === 'Escape') setInspected(null);
-      // Wave 10C (D17): quick-use — the digits reach the belt, no pack-opening
-      if (/^[1-4]$/.test(e.key)) {
-        usePlayerStore.getState().quickUse(`POUCH_${e.key}` as any);
+      if (e.key === 'Escape') {
+        setInspected(null);
+        setMenuPosition(null);
+        escapeRef.current();
+        return;
+      }
+      // Line 75: a digit reaches a hand, a tool or the belt, no pack-opening
+      if (/^[0-9]$/.test(e.key)) {
+        const slot = hotbarSlotForDigit(usePlayerStore.getState().player.equipment, e.key);
+        if (slot) activateHotbar(slot);
+        return;
+      }
+      // Line 72: one interact key, the city's own; a control keeps its own Enter
+      if (isInteractKey(e.key) && !onControl) {
+        e.preventDefault();
+        if (!e.repeat) interactRef.current();
+        return;
+      }
+      if (e.key === ' ' && !onControl) {
+        e.preventDefault();
+        firingRef.current.key = true;
         return;
       }
       keysPressed.current.add(e.key.toLowerCase());
     };
-    const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key.toLowerCase());
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysPressed.current.delete(e.key.toLowerCase());
+      if (e.key === ' ') { firingRef.current.key = false; energyToldRef.current = false; }
+    };
+    // Line 72: a button let go anywhere stops the firing, and so does losing the window
+    const handlePointerUp = () => { firingRef.current.mouse = false; energyToldRef.current = false; };
+    const handleBlur = () => { firingRef.current = { mouse: false, key: false }; keysPressed.current.clear(); };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [targetsNear, inspectById]);
 
@@ -905,10 +1115,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const keys = keysPressed.current;
       let dx = 0, dz = 0;
 
-      if (keys.has('w')) dz -= 1;
-      if (keys.has('s')) dz += 1;
-      if (keys.has('a')) dx -= 1;
-      if (keys.has('d')) dx += 1;
+      if (keys.has('w') || keys.has('arrowup')) dz -= 1;
+      if (keys.has('s') || keys.has('arrowdown')) dz += 1;
+      if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+      if (keys.has('d') || keys.has('arrowright')) dx += 1;
 
       if (dx !== 0 || dz !== 0) {
         // Normalize so diagonals aren't faster, then scale to pixels
@@ -1013,6 +1223,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       let incomingDamage = 0;
       const isAlive = (p: any) => (now - p.startTime) < 2000;
+
+      // Line 72: a held button fires at the weapon's own rate, whatever the weapon
+      if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held) fireRef.current(now);
 
       // Wave 2.2: REGROW SWEEP (every 2s) — depleted flora comes back
       if (now - lastRegrowSweep.current > 2000) {
@@ -1211,6 +1424,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // a card pinned by Q keeps tracking its target and clears when it is gone.
       if (now - lastInspectAt.current > 120 && !menuPosition) {
         lastInspectAt.current = now;
+        // Line 72: what E would do from here, or that it would leave
+        const pickNow = interactPickRef.current();
+        const nextPrompt = channelRef.current ? null : pickNow ? promptFor(pickNow) : null;
+        if (nextPrompt !== promptRef.current) {
+          promptRef.current = nextPrompt;
+          setPrompt(nextPrompt);
+        }
         if (mouseRef.current) {
           const worldX = playerPos.x + (mouseRef.current.x - window.innerWidth / 2);
           const worldZ = playerPos.z + (mouseRef.current.y - window.innerHeight / 2);
@@ -1234,7 +1454,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           rendererRef.current = { seed: liveMap.seed, renderer: new FieldRenderer(liveMap, genreForWorld(liveMap.seed)) };
         }
         const me = usePlayerStore.getState().player;
-        const held = getEquipped('mainHand');
+        const held = activeWeapon().item;
         const worn = getEquipped('armor');
         const sceneChunks = WorldGenerator.chunkKeysInBox(playerPos.x, playerPos.z, Math.max(canvas.width, canvas.height) / 2 + 100)
           .map(key => liveMap.chunks[key]).filter(Boolean);
@@ -1278,44 +1498,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
   }, [reconMode, currentMap, playerPatterns, enemyPatterns, activeSwings, lootDrops, completeExtraction, menuPosition, targetsNear, inspectById]);
 
-  // 4. Interaction Handler
-  const handleEntityClick = (e: React.MouseEvent, entity: IWorldEntity) => {
-    e.stopPropagation();
-    e.preventDefault();
-
-    // Clicking an enemy aims at it, same as clicking the ground beside it
-    if (entity.type === EntityType.MOB) {
-      handleCanvasClick(e);
-      return;
-    }
-
-    const playerPos = usePlayerStore.getState().player.currentSession?.position;
-    if (!playerPos) return;
-
-    // Calculate Distance
-    const dx = entity.position.x - playerPos.x;
-    const dy = entity.position.y - playerPos.z;
-    const dist = Math.sqrt(dx*dx + dy*dy) / 20; // Convert to meters approx
-
-    // Ask Interaction Engine
-    const options = InteractionEngine.getAvailableInteractions(player, entity, dist);
-
-    if (options.length > 0) {
-      setInteractionOptions(options);
-      setSelectedEntityId(entity.id);
-      setMenuPosition({ x: e.clientX, y: e.clientY });
-    } else {
-      // The refusal is explained, not swallowed (Wave 9.6): the card says why
-      const { near } = targetsNear(entity.position.x, entity.position.y, 60);
-      inspectById(entity.id, near.length ? near : [entity]);
-      const card = inspectEntity(entity, {
-        player: usePlayerStore.getState().player, dist,
-        level: WebSystem.knowledgeReader(usePlayerStore.getState().player),
-      worldSeed: useWorldStore.getState().currentMap?.seed,
-      webVersion: useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion
-      });
-      feed(card.needs[0] ? `${card.title}: ${card.needs[0]}` : `${card.title}: nothing to be done here.`, 'loss');
-    }
+  // 4. Interacting has its own input (line 72): one key, or a right-click on a thing
+  const openMenu = (entity: IWorldEntity, options: any[], x: number, y: number) => {
+    setInteractionOptions(options);
+    setSelectedEntityId(entity.id);
+    setMenuPosition({ x, y });
   };
 
   const handleActionSelect = (option: any) => {
@@ -1325,71 +1512,136 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     setMenuPosition(null);
   };
 
-  // Click a thing to act on it; click anywhere else to ATTACK toward the cursor (the weapon decides how)
-  const handleCanvasClick = (e: React.MouseEvent) => {
-    if (menuPosition) {
-      setMenuPosition(null); // First click just closes the menu
+  const beginChannel = () => {
+    channelRef.current = Date.now();
+    setChanneling(true);
+    feed('Channel opened. Five seconds. Don\'t get hit.', 'signal');
+  };
+
+  const entityScreen = (entity: IWorldEntity) => {
+    const pos = usePlayerStore.getState().player.currentSession?.position;
+    return {
+      x: entity.position.x - (pos?.x ?? 0) + window.innerWidth / 2,
+      y: entity.position.y - (pos?.z ?? 0) + window.innerHeight / 2
+    };
+  };
+
+  // The nearest thing the key could act on; the beacon counts as a thing to act on.
+  interactPickRef.current = () => {
+    const st = usePlayerStore.getState();
+    const pos = st.player.currentSession?.position;
+    if (!pos) return null;
+    const { near } = targetsNear(pos.x, pos.z, 100);
+    const pick = pickInteract(st.player, near, pos);
+    const map = useWorldStore.getState().currentMap;
+    const exit = map ? WorldGenerator.nearestExit(map, pos.x, pos.z) : null;
+    if (exit && exit.distance < BEACON_RANGE && (!pick || exit.distance / TILE_SIZE <= pick.dist)) return 'EXIT';
+    return pick;
+  };
+
+  const explainNothing = (x: number, z: number) => {
+    const st = usePlayerStore.getState();
+    const { targets, near } = targetsNear(x, z, 100);
+    const pos = st.player.currentSession?.position;
+    const next = pos ? cycleTarget(targets, { x: pos.x, y: pos.z }, null, 80) : null;
+    const entity = next ? near.find(n => n.id === next) : undefined;
+    if (!entity || !pos) { feed('Nothing in reach to work.', 'plain'); return; }
+    const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_SIZE;
+    const card = inspectEntity(entity, {
+      player: st.player, dist,
+      level: WebSystem.knowledgeReader(st.player),
+      worldSeed: useWorldStore.getState().currentMap?.seed,
+      webVersion: useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion
+    });
+    // The refusal is explained, not swallowed (Wave 9.6): the card says why
+    feed(card.needs[0] ? `${card.title}: ${card.needs[0]}` : `${card.title}: nothing to be done here.`, 'loss');
+  };
+
+  interactRef.current = () => {
+    if (channelRef.current || usePlayerStore.getState().cartWindowId) return;
+    const pos = usePlayerStore.getState().player.currentSession?.position;
+    if (!pos) return;
+    const pick = interactPickRef.current();
+    if (pick === 'EXIT') { beginChannel(); return; }
+    if (!pick) { explainNothing(pos.x, pos.z); return; }
+    if (pick.primary) { performInteraction(pick.primary.id, pick.entity.id); return; }
+    const at = entityScreen(pick.entity);
+    openMenu(pick.entity, pick.options, at.x, at.y);
+  };
+
+  escapeRef.current = () => {
+    if (channelRef.current) {
+      channelRef.current = null;
+      setChanneling(false);
+      feed('Channel closed. The beacon can wait.', 'plain');
       return;
     }
+    if (usePlayerStore.getState().cartWindowId) { usePlayerStore.getState().closeCartWindow(); return; }
+    setShowPack(false);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+  };
+
+  /** A right-click on a thing in reach asks it directly, study included. */
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (e.target !== fieldRef.current) return;
+    setMenuPosition(null);
     const st = usePlayerStore.getState();
-    const playerPos = st.player.currentSession?.position;
-    if (!playerPos) return;
+    const pos = st.player.currentSession?.position;
+    if (!pos) return;
+    const clickX = pos.x + (e.clientX - window.innerWidth / 2);
+    const clickZ = pos.z + (e.clientY - window.innerHeight / 2);
+    const { targets, near } = targetsNear(clickX, clickZ, 60);
+    const hit = hitTest(targets, clickX, clickZ);
+    const entity = hit ? near.find(n => n.id === hit) : undefined;
+    if (!entity || entity.type === EntityType.MOB) return;
+    const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_SIZE;
+    const options = InteractionEngine.getAvailableInteractions(st.player, entity, dist);
+    if (options.length > 0) openMenu(entity, options, e.clientX, e.clientY);
+    else explainNothing(entity.position.x, entity.position.y);
+  };
 
+  // Firing: the button on the ground fires, held or tapped. It opens nothing.
+  const handleFieldPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || e.target !== fieldRef.current) return;
+    setMenuPosition(null);
+    aimRef.current = { x: e.clientX, y: e.clientY };
+    firingRef.current.mouse = true;
+    fireRef.current(Date.now());
+  };
+
+  // Line 75: drawn a few times a second from what this session has seen, never with the frame
+  const composeMinimap = () => {
     const map = useWorldStore.getState().currentMap;
-    if (map && e.target === fieldRef.current) {
-      const clickX = playerPos.x + (e.clientX - window.innerWidth / 2);
-      const clickZ = playerPos.z + (e.clientY - window.innerHeight / 2);
-      const { targets, near } = targetsNear(clickX, clickZ, 60);
-      const hit = hitTest(targets, clickX, clickZ);
-      const entity = hit ? near.find(n => n.id === hit) : undefined;
-      if (entity && entity.type !== EntityType.MOB) {
-        handleEntityClick(e, entity);
-        return;
+    const pos = usePlayerStore.getState().player.currentSession?.position;
+    if (!map || !pos) return null;
+    const halfW = window.innerWidth / 2, halfH = window.innerHeight / 2;
+    const qMinX = quadrantOf(pos.x - halfW), qMaxX = quadrantOf(pos.x + halfW);
+    const qMinY = quadrantOf(pos.z - halfH), qMaxY = quadrantOf(pos.z + halfH);
+    for (let qy = qMinY; qy <= qMaxY; qy++) for (let qx = qMinX; qx <= qMaxX; qx++) seenRef.current.add(`${qx},${qy}`);
+
+    // Only what is in sight right now is marked: the window is the sight.
+    const things: { x: number; y: number; kind: 'HOSTILE' | 'THING' }[] = [];
+    for (const key of WorldGenerator.chunkKeysInBox(pos.x, pos.z, Math.max(halfW, halfH))) {
+      for (const e of map.chunks[key]?.entities ?? []) {
+        if (Math.abs(e.position.x - pos.x) > halfW || Math.abs(e.position.y - pos.z) > halfH) continue;
+        if (e.type === EntityType.EXTRACTION) continue;
+        things.push({ x: e.position.x, y: e.position.y, kind: e.isHostile ? 'HOSTILE' : 'THING' });
       }
     }
-
-    const weapon = getEquipped('mainHand');
-    const now = Date.now();
-
-    // Fire-rate from attack_speed
-    if (now - lastShotRef.current < CombatMath.fireCooldownMs(weapon)) return;
-
-    // Screen -> World: the viewport keeps the player centered
-    const worldX = playerPos.x + (e.clientX - window.innerWidth / 2);
-    const worldZ = playerPos.z + (e.clientY - window.innerHeight / 2);
-    const angle = Math.atan2(worldZ - playerPos.z, worldX - playerPos.x);
-    const damage = CombatMath.weaponDamage(weapon);
-
-    if (CombatMath.isMelee(weapon)) {
-      // Swing: a short arc resolved by CombatSystem
-      setActiveSwings(prev => [
-        ...prev.filter(s => now - s.startTime < 300),
-        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage }
-      ]);
-    } else if (CombatMath.isFocus(weapon)) {
-      // Focus: a NOVA burst, paid in energy
-      const energyCost = 10;
-      if ((st.player.currentSession?.energy || 0) < energyCost) {
-        feed('Not enough energy to cast. The focus hums and refuses.', 'loss');
-        return;
+    const exits: { x: number; y: number }[] = [];
+    const sx = sectorOf(pos.x), sy = sectorOf(pos.z);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const key = `${sx + dx},${sy + dy}`;
+      if (!map.sectors[key]) continue;
+      let found = exitsRef.current.get(key);
+      if (!found) {
+        found = WorldGenerator.exitsInSector(map, sx + dx, sy + dy);
+        exitsRef.current.set(key, found);
       }
-      usePlayerStore.setState(s => s.player.currentSession ? ({
-        player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - energyCost } }
-      }) : s);
-      setPlayerPatterns(prev => [
-        ...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.NOVA, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
-      ]);
-    } else {
-      // Ranged (or unarmed): a single shot
-      setPlayerPatterns(prev => [
-        ...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.SINGLE, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
-      ]);
+      exits.push(...found);
     }
-
-    lastShotRef.current = now;
-    if (weapon) st.wearEquipment('mainHand', 1); // durability: every use costs
+    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits });
   };
 
   // 5. Render
@@ -1424,34 +1676,31 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       ref={canvasRef}
       className="full-size ws-ui"
       style={{ overflow: 'hidden', background: 'var(--ws-void-1)', position: 'relative', cursor: 'crosshair' }}
-      onContextMenu={(e) => { e.preventDefault(); setMenuPosition(null); }}
-      onClick={handleCanvasClick}
-      onMouseMove={e => { mouseRef.current = { x: e.clientX, y: e.clientY }; }}
+      onContextMenu={handleContextMenu}
+      onPointerDown={handleFieldPointerDown}
+      onMouseMove={e => {
+        aimRef.current = { x: e.clientX, y: e.clientY };
+        mouseRef.current = e.target === fieldRef.current ? { x: e.clientX, y: e.clientY } : null;
+      }}
       onMouseLeave={() => { mouseRef.current = null; }}
     >
       {/* The whole field, drawn each frame by the game loop */}
       <canvas ref={fieldRef} style={{ position: 'absolute', top: 0, left: 0, imageRendering: 'pixelated' }} />
 
       {/* Extraction Control (Wave 2.5): the beacon is a place, not a button */}
-      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }} onClick={e => e.stopPropagation()}>
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }} onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+        <MinimapView compose={composeMinimap} label="Minimap of the ground you have seen" />
         {channeling ? (
           <Panel tone="signal" style={{ pointerEvents: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span className="ws-signal">CHANNELING… HOLD POSITION</span>
-              <Button tone="loss" onClick={() => { channelRef.current = null; setChanneling(false); }}>ABORT</Button>
+              <Button tone="loss" onClick={() => { channelRef.current = null; setChanneling(false); }}><Kbd>ESC</Kbd> ABORT</Button>
             </div>
             <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Damage breaks the channel. Five seconds of stillness buy the way home.</div>
           </Panel>
         ) : nearBeacon ? (
-          <Button
-            tone="proof" primary
-            onClick={() => {
-              channelRef.current = Date.now();
-              setChanneling(true);
-              feed('Channel opened. Five seconds. Don\'t get hit.', 'signal');
-            }}
-          >
-            EXTRACT (5s)
+          <Button tone="proof" primary onClick={beginChannel}>
+            <Kbd>E</Kbd> EXTRACT (5s)
           </Button>
         ) : (
           <Chip title="Distance and heading to the nearest exit beacon">
@@ -1479,69 +1728,59 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
         <Bar label="ENERGY" value={session.energy} max={50 + (player.attributes.endurance * 5)} tone="proof" text={`${Math.floor(session.energy)}`} />
         <Bar label="LOAD" value={Math.round(loadRatio * 100)} max={100} tone={loadRatio > 0.8 ? 'loss' : 'signal'} text={loadRatio > 0.8 ? 'SLOWED' : `${Math.round(loadRatio * 100)}%`} />
-        <span className="ws-dim ws-small">
-          POS {Math.floor(playerPos.x)}, {Math.floor(playerPos.z)} · PACK {session.inventory.length} · <Kbd>TAB</Kbd> pack · <Kbd>Q</Kbd> inspect · click to fire
-        </span>
         {session.towingCartId && (
           <Chip tone="proof" title="The tow bar is in your hand; your pace pays for the load">TOWING</Chip>
         )}
-        {/* Wave 10C (D17): the belt — what rides it, quick to use, keys 1–4 */}
-        {(() => {
-          const eq = usePlayerStore.getState().player.equipment;
-          if (!eq) return null;
-          const worn = LoadoutSystem.availableSlots(eq)
-            .filter(s => s.startsWith('POUCH_') && eq.slots[s])
-            .map(s => ({ slot: s, pouch: LoadoutSystem.itemIn(eq, s)! }));
-          if (worn.length === 0) return null;
-          return (
-            <div style={{ display: 'flex', gap: 4, pointerEvents: 'auto' }}>
-              {worn.map(({ slot, pouch }) => (
-                <Button
-                  key={slot}
-                  tone="quiet"
-                  title={`${pouch.name} — stacks ${pouch.pouchData?.accepts.join(', ')} · press ${slot.split('_')[1]}`}
-                  onClick={e => { e.stopPropagation(); usePlayerStore.getState().quickUse(slot as any); }}
-                >
-                  <Kbd>{slot.split('_')[1]}</Kbd> {pouch.name.toUpperCase()} ×{pouch.pouchData?.contents.length ?? 0}
-                </Button>
-              ))}
-            </div>
-          );
-        })()}
       </div>
 
-      {/* Pack Grid (Wave 3.1 / 9.4) */}
+      {/* The hotbar (line 75): hands, tools, the belt. What E would do sits just above it. */}
+      <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, pointerEvents: 'none', maxWidth: '46vw' }}>
+        {prompt && <Chip tone="signal"><Kbd>E</Kbd> {prompt}</Chip>}
+        <Hotbar />
+      </div>
+
+      {/* The key help stands apart from the data (U21) */}
+      <KeyHelp />
+
+      {/* The pack and the body (Wave 3.1 / 9.4), away from the hotbar and the feed */}
       {showPack && (
-        <div style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 150 }} onClick={e => e.stopPropagation()}>
-          <PackGrid session={session} />
+        <div style={{ position: 'absolute', bottom: 62, right: 16, zIndex: 150 }}>
+          <PackWindow session={session} />
         </div>
       )}
 
       {/* The one inspect card (line 29): hover, or Q to cycle */}
       {inspected && !menuPosition && (
-        <div
-          style={{
-            position: 'absolute',
-            left: Math.min(window.innerWidth - 320, Math.max(8, inspected.x + 18)),
-            top: Math.min(window.innerHeight - 200, Math.max(8, inspected.y - 10)),
-            zIndex: 180, pointerEvents: 'none'
-          }}
+        <PlacedCard
+          anchor={{ left: inspected.x - 14, top: inspected.y - 14, width: 28, height: 28 }}
+          layoutKey={`${inspected.id}:${inspected.card.rows.length}:${inspected.card.needs.length}`}
         >
           <CardView card={inspected.card} />
-        </div>
+        </PlacedCard>
       )}
 
       {/* Interaction Menu — words, not icons (Wave 9.7) */}
       {menuPosition && (
         <div
           onClick={e => e.stopPropagation()}
-          style={{ position: 'absolute', left: menuPosition.x, top: menuPosition.y, zIndex: 200 }}
+          onPointerDown={e => e.stopPropagation()}
+          onKeyDown={e => {
+            // Up and down walk the answers; Enter is the control's own
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            e.stopPropagation();
+            const list = [...e.currentTarget.querySelectorAll('button')] as HTMLButtonElement[];
+            const at = list.indexOf(document.activeElement as HTMLButtonElement);
+            list[(at + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus();
+          }}
+          style={{ position: 'absolute', left: Math.min(menuPosition.x, window.innerWidth - 340), top: Math.min(menuPosition.y, window.innerHeight - 220), zIndex: 200 }}
         >
           <Panel style={{ pointerEvents: 'auto' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {interactionOptions.map((opt) => (
+              {interactionOptions.map((opt, i) => (
                 <Button
                   key={opt.id}
+                  autoFocus={i === 0}
                   tone="signal"
                   onClick={(e) => { e.stopPropagation(); handleActionSelect(opt); }}
                 >

@@ -4,7 +4,7 @@
  * the card only explains the answer. Hover and keyboard share one target list.
  */
 
-import { IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../types';
+import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
@@ -328,6 +328,102 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     rows.push(['Origin', said]);
   }
   return { title, rows, needs: [], canAct: false, compact: compact(title, String(item.rank)) };
+}
+
+// ---------------------------------------------------------------------------
+// THE COMPARISON (the usability pass): this piece against what it would replace.
+// Both sides read through the sheet the player is allowed (D19, D22): nothing
+// unstudied enters a number, so no difference can give one away. Position and a
+// shape mark carry it; no hue does.
+// ---------------------------------------------------------------------------
+
+export interface CompareRow { stat: string; here: string; there: string; delta: string; mark: '▲' | '▼' | '=' }
+export interface Comparison {
+  rows: CompareRow[];
+  /** How many affixes on each side the sheet cannot see. Their names are already on the card. */
+  blind: { here: number; there: number };
+}
+
+const NOT_COMPARED = new Set(['durability', 'maxDurability', 'weight']);
+const trimmed = (n: number) => String(Math.round(n * 100) / 100);
+
+function sheetFor(item: IItem, player: IPlayer | undefined): Record<string, number> {
+  const mental = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(LoadoutSystem.visibleItemStats(item, player))) {
+    if (!NOT_COMPARED.has(k) && !mental.has(k)) out[k] = v;
+  }
+  return out;
+}
+
+const blindCount = (item: IItem, player: IPlayer | undefined) =>
+  item.isIdentified === false ? 0 : (item.affixes || []).filter(a => !LoadoutSystem.isAffixStudied(player, a.id)).length;
+
+export function compareItems(item: IItem, against: IItem, player: IPlayer | undefined): Comparison {
+  const blind = { here: blindCount(item, player), there: blindCount(against, player) };
+  if (item.isIdentified === false) return { rows: [], blind };
+  const here = sheetFor(item, player), there = sheetFor(against, player);
+  const stats = [...new Set([...Object.keys(here), ...Object.keys(there)])].sort();
+  const rows = stats.map((k): CompareRow => {
+    const a = here[k], b = there[k];
+    const diff = (a ?? 0) - (b ?? 0);
+    return {
+      stat: k.replace(/_/g, ' '),
+      here: a === undefined ? '—' : trimmed(a),
+      there: b === undefined ? '—' : trimmed(b),
+      delta: diff === 0 ? '=' : `${diff > 0 ? '+' : '−'}${trimmed(Math.abs(diff))}`,
+      mark: diff > 0 ? '▲' : diff < 0 ? '▼' : '='
+    };
+  });
+  return { rows, blind };
+}
+
+export interface ItemComparison { against: IItem | null; slot: EquipSlotId; result: Comparison | null }
+
+/**
+ * What this piece would be measured against: what its slot holds now, or for a
+ * tool, the worn tool of its own kind. Null when there is nothing to measure:
+ * cargo, or the worn piece itself.
+ */
+export function comparisonFor(item: IItem, player: IPlayer | undefined): ItemComparison | null {
+  const equipment = player?.equipment ?? LoadoutSystem.emptyEquipment();
+  if (equipment.items.some(i => i.id === item.id)) return null;
+  const home = LoadoutSystem.slotForItem(item, equipment);
+  if (!home) return null;
+  let slot: EquipSlotId = home;
+  if (home.startsWith('TOOL_')) {
+    const mine = item.toolData?.toolTags ?? item.tags ?? [];
+    const kin = Object.entries(equipment.slots).find(([s, id]) => {
+      if (!s.startsWith('TOOL_') || !id) return false;
+      const worn = equipment.items.find(i => i.id === id);
+      const theirs = worn?.toolData?.toolTags ?? worn?.tags ?? [];
+      return mine.some(t => t !== 'tool' && theirs.includes(t));
+    });
+    if (kin) slot = kin[0] as EquipSlotId;
+  }
+  const against = LoadoutSystem.itemIn(equipment, slot) ?? null;
+  return { against, slot, result: against ? compareItems(item, against, player) : null };
+}
+
+// ---------------------------------------------------------------------------
+// WHERE A CARD SITS: beside the thing, inside the window, covering neither.
+// ---------------------------------------------------------------------------
+
+export interface AnchorRect { left: number; top: number; width: number; height: number }
+
+export function placeCard(anchor: AnchorRect, card: { w: number; h: number }, view: { w: number; h: number }, gap = 8): { left: number; top: number } {
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(Math.max(min, max), v));
+  const right = anchor.left + anchor.width + gap;
+  const left = anchor.left - gap - card.w;
+  const top = anchor.top + anchor.height + gap;
+  const above = anchor.top - gap - card.h;
+  const beside = clamp(anchor.top, 0, view.h - card.h);
+  const across = clamp(anchor.left, 0, view.w - card.w);
+  if (right + card.w <= view.w) return { left: right, top: beside };
+  if (left >= 0) return { left, top: beside };
+  if (top + card.h <= view.h) return { left: across, top };
+  if (above >= 0) return { left: across, top: above };
+  return { left: right, top: beside }; // a card larger than any free side: the window has spoken
 }
 
 // ---------------------------------------------------------------------------

@@ -4,10 +4,17 @@
  * the middle, hands flank it, jewelry sits right, tools stand apart — and a
  * cognitive frame reads apart from gear by its hollow diamond, never by hue.
  * Keyboard-complete: Tab/arrows walk the slots, Enter opens the fitting list,
- * U unequips, F seats a frame on a budget position. Refusals speak in voice.
+ * G takes the piece in hand, U unequips, F seats a frame on a budget position.
+ * Refusals speak in voice. The body itself stands behind the slots (U15): a
+ * filled figure wearing what is worn, seen through every empty slot. An empty
+ * slot is a broken-free outline and a word; a worn one is filled and framed.
  */
 
 import React, { useMemo, useRef, useState } from 'react';
+import { Archetype, armorClass, figure, weaponClass } from '../render/atoms/people';
+import { Role, Sprite, px } from '../render/atoms/atoms';
+import { grabByKey, handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
+import { hoverProps } from './ui/stores';
 import { usePlayerStore } from '../entities/player/store';
 import {
   EquipSlotId, HeadPositionId, HEAD_BUDGET_POSITIONS, IItem, SlotType
@@ -15,8 +22,7 @@ import {
 import { LoadoutSystem, paperDollLayout } from '../entities/player/systems/LoadoutSystem';
 import { COGNITIVE_FRAMES } from '../entities/player/data/cognitiveFrames';
 import { frameMark } from '../render/atoms/items';
-import { inspectItem } from '../render/atoms/inspect';
-import { Button, CardView, Chip, ItemSprite, Kbd, Modal, Panel, SpriteView } from './ui/kit';
+import { Button, Chip, ItemSprite, Kbd, Modal, Panel, SpriteView } from './ui/kit';
 
 const UNIT = 42; // px per layout grid unit
 
@@ -28,10 +34,48 @@ const SLOT_SHORT: Partial<Record<string, string>> = {
   POUCH_1: 'PCH', POUCH_2: 'PCH', POUCH_3: 'PCH', POUCH_4: 'PCH'
 };
 
+/**
+ * The body behind the slots: the avatar's own shape, one quiet ink with a hard
+ * edge, so it reads as a figure in grayscale and never fights the art worn on it.
+ * Only the connected body is kept; the figure's corner marks are for the field.
+ */
+function bodySilhouette(s: Sprite): Sprite {
+  const seen = new Uint8Array(s.w * s.h);
+  let start = -1;
+  const cx = s.w >> 1;
+  for (let y = s.h >> 1; y < s.h && start < 0; y++) if (s.data[y * s.w + cx]) start = y * s.w + cx;
+  const data = new Uint8Array(s.w * s.h);
+  if (start < 0) return { w: s.w, h: s.h, data };
+  const stack = [start];
+  seen[start] = 1;
+  const fill = px(Role.GROUND, 2), edge = px(Role.MATTER, 1);
+  while (stack.length) {
+    const at = stack.pop()!;
+    const x = at % s.w, y = (at - x) / s.w;
+    let open = false;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= s.w || ny >= s.h) { open = true; continue; }
+      const n = ny * s.w + nx;
+      if (!s.data[n]) { open = true; continue; }
+      if (!seen[n]) { seen[n] = 1; stack.push(n); }
+    }
+    data[at] = open ? edge : fill;
+  }
+  return { w: s.w, h: s.h, data };
+}
+
+// In the compact body a cell is too small for a word: two letters, and position does the rest.
+const SLOT_TINY: Partial<Record<string, string>> = {
+  HEAD: 'HD', EYES: 'EY', EARRING: 'EA', NECKLACE: 'NK', SHOULDER: 'SH', RIGHT_HAND: 'R', LEFT_HAND: 'L',
+  CHEST: 'CH', BAG: 'BG', QUIVER: 'QV', BELT: 'BT', RING_1: 'RG', RING_2: 'RG', LEGS: 'LG', BOOTS: 'BO'
+};
+const tinyLabel = (slot: string) => SLOT_TINY[slot] ?? (slot.startsWith('TOOL_') ? 'TL' : 'PC');
+
 const isHeadPosition = (slot: EquipSlotId): slot is HeadPositionId =>
   (HEAD_BUDGET_POSITIONS as string[]).includes(slot);
 
-export const PaperDoll: React.FC = () => {
+export const PaperDoll: React.FC<{ unit?: number; compact?: boolean }> = ({ unit = UNIT, compact }) => {
   const { player, equipToSlot, unequipFromSlot, setFrame, markSlotProtected, clearSlotProtection } = usePlayerStore();
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
   const layout = useMemo(() => paperDollLayout(), []);
@@ -39,8 +83,12 @@ export const PaperDoll: React.FC = () => {
   const [pickerSlot, setPickerSlot] = useState<EquipSlotId | null>(null);
   const [lastWord, setLastWord] = useState<string | null>(null);
   const cellRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const zoneId = compact ? 'body_field' : 'body';
+  useDropZone(zoneId, slotZone(bodyRef));
 
-  const stash = player.bank.stashTabs[0]?.items || [];
+  // The fitting list offers what is within reach: the pack in the field, the vault at home.
+  const stash = player.currentSession?.inventory ?? (player.bank.stashTabs[0]?.items || []);
   const pouchSlots = LoadoutSystem.availableSlots(equipment).filter(s => s.startsWith('POUCH_'));
 
   // Pouch cells join the doll under the belt when a belt is worn
@@ -74,6 +122,11 @@ export const PaperDoll: React.FC = () => {
     else if (key === 'ArrowRight') { e.preventDefault(); moveFocus(slot, 1, 0); }
     else if (key === 'ArrowUp') { e.preventDefault(); moveFocus(slot, 0, -1); }
     else if (key === 'ArrowDown') { e.preventDefault(); moveFocus(slot, 0, 1); }
+    else if (key.toLowerCase() === 'g') {
+      e.preventDefault();
+      const item = LoadoutSystem.itemIn(equipment, slot);
+      if (item) grabByKey({ item, from: { kind: 'SLOT', slot } }, zoneId);
+    }
     else if (key.toLowerCase() === 'u') {
       e.preventDefault();
       const v = unequipFromSlot(slot);
@@ -97,15 +150,37 @@ export const PaperDoll: React.FC = () => {
   const gridW = Math.max(...cells.map(c => c.x + c.w));
   const gridH = Math.max(...cells.map(c => c.y + c.h));
 
+  // The figure stands on the head column, as tall as the body's slots run.
+  const heldItem = LoadoutSystem.itemIn(equipment, 'RIGHT_HAND');
+  const chestItem = LoadoutSystem.itemIn(equipment, 'CHEST');
+  const bodySprite = useMemo(() => bodySilhouette(figure({
+    uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype,
+    weapon: heldItem ? weaponClass(heldItem.tags || []) : undefined,
+    armor: chestItem ? armorClass(chestItem.tags || []) : undefined
+  })), [player.id, player.archetype, heldItem?.id, chestItem?.id]);
+  const bodyScale = Math.max(1, Math.floor((10 * unit) / bodySprite.h));
+
   return (
     <Panel
       title="THE BODY"
-      right={<span className="ws-dim ws-small">harness {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg — weighs nothing against the limit</span>}
+      right={compact ? undefined : <span className="ws-dim ws-small">harness {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg — weighs nothing against the limit</span>}
     >
-      <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
-        <Kbd>←→↑↓</Kbd> walk the body · <Kbd>ENTER</Kbd> fit the slot · <Kbd>U</Kbd> unequip · <Kbd>F</Kbd> seat a frame{import.meta.env.DEV ? <> · <Kbd>P</Kbd> dev-protect</> : null}
-      </div>
-      <div style={{ position: 'relative', width: gridW * UNIT, height: gridH * UNIT }}>
+      {!compact && (
+        <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
+          Drag a piece on or off · <Kbd>←→↑↓</Kbd> walk · <Kbd>ENTER</Kbd> fit · <Kbd>G</Kbd> take in hand · <Kbd>U</Kbd> unequip · <Kbd>F</Kbd> seat a frame{import.meta.env.DEV ? <> · <Kbd>P</Kbd> dev-protect</> : null}
+        </div>
+      )}
+      <div ref={bodyRef} data-drop-zone={zoneId} style={{ position: 'relative', width: gridW * unit, height: gridH * unit }}>
+        <SpriteView
+          sprite={bodySprite}
+          scale={bodyScale}
+          title="You, as the next drop will draw you"
+          style={{
+            position: 'absolute', pointerEvents: 'none',
+            left: 4 * unit - (bodySprite.w * bodyScale) / 2 - 2,
+            top: 0
+          }}
+        />
         {cells.map(cell => {
           const itemHere = LoadoutSystem.itemIn(equipment, cell.slot);
           const frameHere = frameAt(cell.slot);
@@ -116,22 +191,34 @@ export const PaperDoll: React.FC = () => {
               ref={el => { cellRefs.current[cell.slot] = el; }}
               type="button"
               className="ws-ui"
-              onFocus={() => setFocusSlot(cell.slot)}
+              data-drop-slot={cell.slot}
+              {...(itemHere ? hoverProps(itemHere) : {})}
+              onFocus={e => { setFocusSlot(cell.slot); if (itemHere) hoverProps(itemHere).onFocus(e); }}
               onKeyDown={e => onCellKey(e, cell.slot)}
-              onClick={() => setPickerSlot(cell.slot)}
-              title={
+              onPointerDown={e => { if (itemHere) pressItem(e, { item: itemHere, from: { kind: 'SLOT', slot: cell.slot } }); }}
+              onClick={() => { if (!handsJustDropped()) setPickerSlot(cell.slot); }}
+              onContextMenu={e => {
+                e.preventDefault();
+                if (!itemHere) return;
+                const v = unequipFromSlot(cell.slot);
+                if (!v.ok && v.reason) say(v.reason);
+              }}
+              aria-label={
                 frameHere ? `${cell.slot}: ${frameHere.name} (cognitive frame)` :
                 itemHere ? `${cell.slot}: ${itemHere.name}` : `${cell.slot}: empty`
               }
               style={{
                 position: 'absolute',
-                left: cell.x * UNIT, top: cell.y * UNIT,
-                width: cell.w * UNIT - 4, height: cell.h * UNIT - 4,
-                background: 'var(--ws-void-1)',
+                left: cell.x * unit, top: cell.y * unit,
+                width: cell.w * unit - 4, height: cell.h * unit - 4,
+                // Worn is filled and framed; empty lets the figure through (U15)
+                background: itemHere || frameHere ? 'var(--ws-void-2)' : 'rgba(3, 3, 3, 0.35)',
                 // the budget positions carry a notched (dashed) border: mind may sit here
-                border: frameHere ? '1px dashed var(--ws-signal-3)'
+                border: frameHere ? '2px dashed var(--ws-signal-3)'
+                  : itemHere ? '2px solid var(--ws-text-body)'
                   : isHeadPosition(cell.slot) ? '1px dashed var(--ws-void-4)'
                   : '1px solid var(--ws-void-4)',
+                touchAction: 'none',
                 outline: focusSlot === cell.slot ? '2px solid var(--ws-signal-3)' : undefined,
                 padding: 2, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
@@ -141,8 +228,8 @@ export const PaperDoll: React.FC = () => {
               {frameHere
                 ? <SpriteView sprite={frameMark(frameHere)} scale={2} title={frameHere.name} />
                 : itemHere
-                  ? <ItemSprite item={itemHere} cellPx={Math.min(cell.w, cell.h) * UNIT - 14} />
-                  : <span className="ws-dim ws-small" style={{ letterSpacing: '0.04em' }}>{SLOT_SHORT[cell.slot] ?? cell.slot}</span>}
+                  ? <ItemSprite item={itemHere} cellPx={Math.max(10, Math.floor((Math.min(cell.w * unit / (itemHere.dimensions?.width ?? 1), cell.h * unit / (itemHere.dimensions?.height ?? 1))) - 8))} />
+                  : <span className="ws-dim ws-small" style={{ letterSpacing: '0.04em' }}>{compact ? tinyLabel(cell.slot) : SLOT_SHORT[cell.slot] ?? cell.slot}</span>}
               {protectedBy && (
                 <span className="ws-proof ws-small" title={`Protected by ${protectedBy.by}`}>⌐W¬</span>
               )}
@@ -173,7 +260,6 @@ const SlotPicker: React.FC<{
   onWord: (w: string) => void;
 }> = ({ slot, stash, onClose, onWord }) => {
   const { player, equipToSlot, unequipFromSlot, setFrame } = usePlayerStore();
-  const [hovered, setHovered] = React.useState<IItem | null>(null);
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
   const worn = LoadoutSystem.itemIn(equipment, slot);
   const frameHere = (HEAD_BUDGET_POSITIONS as string[]).includes(slot)
@@ -182,7 +268,8 @@ const SlotPicker: React.FC<{
 
   const candidates = stash
     .filter(i => i.slot !== SlotType.NONE || i.tags?.includes('tool'))
-    .map(item => ({ item, verdict: LoadoutSystem.canEquip(player, item, slot) }))
+    // The slot's occupant is about to step aside: the swap asks the law without it (U6).
+    .map(item => ({ item, verdict: LoadoutSystem.canEquip({ ...player, equipment: { ...equipment, slots: { ...equipment.slots, [slot]: undefined } } }, item, slot) }))
     .sort((a, b) => Number(b.verdict.ok) - Number(a.verdict.ok));
 
   return (
@@ -190,7 +277,7 @@ const SlotPicker: React.FC<{
       {worn && (
         <div
           className="ws-row ws-row--live" style={{ marginBottom: 6 }}
-          onMouseEnter={() => setHovered(worn)} onMouseLeave={() => setHovered(h => (h === worn ? null : h))}
+          {...hoverProps(worn)}
         >
           <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <ItemSprite item={worn} cellPx={18} />
@@ -246,10 +333,10 @@ const SlotPicker: React.FC<{
         {candidates.map(({ item, verdict }) => (
           <div
             key={item.id} className="ws-row ws-row--live" role="button" tabIndex={0}
-            onMouseEnter={() => setHovered(item)} onMouseLeave={() => setHovered(h => (h === item ? null : h))}
+            {...hoverProps(item)}
             onClick={() => {
               if (!verdict.ok) { if (verdict.reason) onWord(verdict.reason); return; }
-              const r = usePlayerStore.getState().equipToSlot(item.id, slot);
+              const r = usePlayerStore.getState().equipSwap(item.id, slot);
               if (!r.ok && r.reason) onWord(r.reason); else onClose();
             }}
             onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLElement).click(); }}
@@ -262,16 +349,11 @@ const SlotPicker: React.FC<{
               </span>
             </span>
             {verdict.ok
-              ? <Button tone="proof" onClick={e => { e.stopPropagation(); const r = usePlayerStore.getState().equipToSlot(item.id, slot); if (!r.ok && r.reason) onWord(r.reason); else onClose(); }}>EQUIP</Button>
+              ? <Button tone="proof" onClick={e => { e.stopPropagation(); const r = usePlayerStore.getState().equipSwap(item.id, slot); if (!r.ok && r.reason) onWord(r.reason); else onClose(); }}>EQUIP</Button>
               : <span className="ws-loss ws-small" style={{ maxWidth: 220, textAlign: 'right' }}>{verdict.reason}</span>}
           </div>
         ))}
       </div>
-      {hovered && (
-        <div style={{ marginTop: 8 }}>
-          <CardView card={inspectItem(hovered, usePlayerStore.getState().player)} />
-        </div>
-      )}
     </Modal>
   );
 };

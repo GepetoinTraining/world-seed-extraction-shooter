@@ -90,6 +90,16 @@ export class CartSystem {
     };
   }
 
+  /** Set an item aboard down on a chosen cell. Null when the grid refuses, and nothing moved. */
+  static placeAt(cart: ICartState, itemId: string, x: number, y: number, rotated: boolean): ICartState | null {
+    const item = cart.items.find(i => i.id === itemId);
+    if (!item) return null;
+    const { w, h } = InventorySystem.footprint(item, rotated);
+    const occ = InventorySystem.buildOccupancy(cart.items, cart.layout, cart.gridW, cart.gridH);
+    if (!InventorySystem.canPlaceAt(occ, w, h, x, y, itemId)) return null;
+    return { ...cart, layout: { ...cart.layout, [itemId]: { x, y, rotated } } };
+  }
+
   /** Unload one item by id. Returns the new cart, or null when it is not aboard. */
   static unload(cart: ICartState, itemId: string): ICartState | null {
     if (!cart.items.some(i => i.id === itemId)) return null;

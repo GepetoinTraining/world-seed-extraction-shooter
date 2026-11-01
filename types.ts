@@ -694,6 +694,7 @@ export interface IBank {
   stashTabs: {
     name: string;
     items: IItem[];
+    layout?: Record<string, IGridPlacement>; // the usability pass: where things sit in the vault's grid
   }[];
   universalSkills: Record<string, ISkillState>;
   lore: Record<string, ILoreEntry>;

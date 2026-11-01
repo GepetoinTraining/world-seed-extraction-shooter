@@ -610,6 +610,9 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
       const h = sources[rng.int(0, sources.length)];
       const all = zones();
       let to = all[rng.int(0, all.length)];
+      // Half the time the hand knows where a piece goes, so the fuzz really moves things
+      const home = LoadoutSystem.slotForItem(h.item, player().equipment);
+      if (home && rng.int(0, 2) === 0) to = { kind: 'SLOT', slot: home };
       if (to.kind === 'PACK' && rng.int(0, 2) === 0) to = { kind: 'PACK', x: rng.int(0, GRID_W), y: rng.int(0, GRID_H), rotated: rng.int(0, 2) === 1 };
       if (to.kind === 'CART' && rng.int(0, 2) === 0) to = { kind: 'CART', entityId: 'cart_1', x: rng.int(0, 10), y: rng.int(0, 8), rotated: false };
       const asked = rng.int(0, 5);

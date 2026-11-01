@@ -16,6 +16,7 @@ import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { ItemType, Rarity } from '../../../types';
 import { InventorySystem } from './systems/InventorySystem';
+import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
@@ -82,6 +83,18 @@ interface PlayerState {
   // Wave 10C: THE SLOT TREE
   /** Equip through every law at once. No slot given: the item finds its home. */
   equipToSlot: (itemId: string, slotId?: EquipSlotId) => Verdict;
+  /** The usability pass (U6): equipping in one step. What the slot held goes where this came from. */
+  equipSwap: (itemId: string, slotId?: EquipSlotId) => Verdict;
+  /** The usability pass (line 59): set a pack item down on a chosen cell. */
+  placeInPack: (itemId: string, x: number, y: number, rotated: boolean) => Verdict;
+  /** The usability pass (U13): where things sit in the vault. Nothing here moves an item out of it. */
+  placeInStash: (itemId: string, x: number, y: number, rotated: boolean) => Verdict;
+  arrangeStash: (key: StashSortKey) => void;
+  /** The usability pass (line 74): one thing out of a ground cache, through the pack's caps. */
+  takeFromCache: (entityId: string, itemId: string) => Verdict;
+  placeOnCart: (entityId: string, itemId: string, x: number, y: number, rotated: boolean) => Verdict;
+  /** What is in this slot wears, whichever hand fired it. */
+  wearSlot: (slot: EquipSlotId, amount: number) => void;
   /** Unequip to the pack (in session, cap-checked) or the stash (in the bank). */
   unequipFromSlot: (slotId: EquipSlotId) => Verdict;
   /** D22: set or clear a cognitive frame on a head-budget position. */
@@ -169,6 +182,8 @@ const INITIAL_PLAYER_TEMPLATE: IPlayer = {
   materialMastery: {},
   floatMemory: [null, null, null]
 };
+
+let cacheSeq = 0;
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   player: INITIAL_PLAYER_TEMPLATE,
@@ -399,6 +414,190 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
     get().recalcWeight();
     feed(`Equipped ${item.name} — ${target.replace('_', ' ')}.`, 'proof');
+    return { ok: true };
+  },
+
+  equipSwap: (itemId, slotId) => {
+    const player = get().player;
+    const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
+    const inSession = !!player.currentSession;
+    const onBody = equipment.items.find(i => i.id === itemId);
+    const pack = player.currentSession?.inventory ?? [];
+    const stash = player.bank.stashTabs[0]?.items ?? [];
+    const item = onBody ?? (inSession ? pack.find(i => i.id === itemId) : stash.find(i => i.id === itemId));
+    if (!item) return { ok: false, reason: 'No such item within reach.' };
+
+    const target = slotId ?? LoadoutSystem.slotForItem(item, equipment);
+    if (!target) {
+      const v = { ok: false, reason: `${item.name} has no slot on the body.` };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    const occupantId = equipment.slots[target];
+    if (!occupantId || occupantId === itemId) return get().equipToSlot(itemId, target);
+    const holder = equipment.items.find(i => i.id === occupantId);
+    if (!holder) return get().equipToSlot(itemId, target);
+
+    // The laws ask first, with the slot as it will be: a refusal moves nothing.
+    const currentSlot = onBody
+      ? (Object.entries(equipment.slots).find(([, id]) => id === itemId)?.[0] as EquipSlotId | undefined)
+      : undefined;
+    const probe: IEquipmentState = {
+      ...equipment,
+      slots: Object.fromEntries(Object.entries(equipment.slots).filter(([k]) => k !== target && k !== currentSlot))
+    };
+    const say = (v: Verdict) => { if (v.reason) feed(v.reason, 'loss'); return v; };
+    const verdict = LoadoutSystem.canEquip({ ...player, equipment: probe }, item, target);
+    if (!verdict.ok) return say(verdict);
+
+    // A belt comes off with its pouches, whole, through the one door that knows how.
+    if (target === 'BELT' && Object.keys(equipment.slots).some(s => s.startsWith('POUCH_') && equipment.slots[s as EquipSlotId])) {
+      const off = get().unequipFromSlot('BELT');
+      return off.ok ? get().equipToSlot(itemId, target) : off;
+    }
+
+    if (onBody && currentSlot) {
+      // Two pieces on the body trade places, if the old piece can sit in the new place.
+      const back = LoadoutSystem.canEquip({ ...player, equipment: probe }, holder, currentSlot);
+      if (!back.ok) return say(back);
+      set(s => {
+        const eq = s.player.equipment!;
+        return { player: { ...s.player, equipment: { ...eq, slots: { ...eq.slots, [target]: itemId, [currentSlot]: holder.id } } } };
+      });
+      get().recalcWeight();
+      feed(`${item.name} and ${holder.name} trade places.`, 'proof');
+      return { ok: true };
+    }
+
+    if (inSession) {
+      const session = player.currentSession!;
+      const inv = pack.filter(i => i.id !== itemId);
+      const layout = { ...(session.inventoryLayout || {}) };
+      const oldPlace = layout[itemId];
+      delete layout[itemId];
+      const newBag = target === 'BAG' ? (item.stats?.carry_bonus_kg ?? 0) : LoadoutSystem.bagCapacityBonus(equipment);
+      const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag;
+      const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([holder]);
+      if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${holder.name} still.` });
+      const occ = InventorySystem.buildOccupancy(inv, layout);
+      const here = oldPlace && (() => {
+        const { w, h } = InventorySystem.footprint(holder, oldPlace.rotated);
+        return InventorySystem.canPlaceAt(occ, w, h, oldPlace.x, oldPlace.y) ? oldPlace : null;
+      })();
+      const place = here || InventorySystem.autoPlace(inv, layout, holder);
+      if (!place) return say({ ok: false, reason: `The pack refuses ${holder.name}: no room in the grid. The harness holds it still.` });
+      layout[holder.id] = place;
+      set(s => {
+        const eq = s.player.equipment!;
+        return {
+          player: {
+            ...s.player,
+            equipment: { ...eq, slots: { ...eq.slots, [target]: itemId }, items: [...eq.items.filter(i => i.id !== holder.id), item] },
+            currentSession: s.player.currentSession
+              ? { ...s.player.currentSession, inventory: [...inv, holder], inventoryLayout: layout }
+              : s.player.currentSession
+          }
+        };
+      });
+    } else {
+      set(s => {
+        const eq = s.player.equipment!;
+        return {
+          player: {
+            ...s.player,
+            equipment: { ...eq, slots: { ...eq.slots, [target]: itemId }, items: [...eq.items.filter(i => i.id !== holder.id), item] },
+            bank: {
+              ...s.player.bank,
+              stashTabs: s.player.bank.stashTabs.map((tab, idx) => {
+                if (idx !== 0) return tab;
+                const layout = tab.layout ? { ...tab.layout } : undefined;
+                if (layout) delete layout[itemId]; // the piece coming home finds its own cell
+                return { ...tab, items: [...tab.items.filter(i => i.id !== itemId), holder], ...(layout ? { layout } : {}) };
+              })
+            }
+          }
+        };
+      });
+    }
+    get().recalcWeight();
+    feed(`Equipped ${item.name} — ${target.replace('_', ' ')}. ${holder.name} comes off.`, 'proof');
+    return { ok: true };
+  },
+
+  placeInPack: (itemId, x, y, rotated) => {
+    const session = get().player.currentSession;
+    const item = session?.inventory.find(i => i.id === itemId);
+    if (!session || !item) return { ok: false, reason: 'No such item in the pack.' };
+    const layout = session.inventoryLayout || {};
+    const { w, h } = InventorySystem.footprint(item, rotated);
+    const occ = InventorySystem.buildOccupancy(session.inventory, layout);
+    if (!InventorySystem.canPlaceAt(occ, w, h, x, y, itemId)) {
+      return { ok: false, reason: `The pack has no room there. ${item.name} stays where it was.` };
+    }
+    set(s => s.player.currentSession ? ({
+      player: { ...s.player, currentSession: {
+        ...s.player.currentSession,
+        inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), [itemId]: { x, y, rotated } }
+      } }
+    }) : s);
+    return { ok: true };
+  },
+
+  placeInStash: (itemId, x, y, rotated) => {
+    const tab = get().player.bank.stashTabs[0];
+    const item = tab?.items.find(i => i.id === itemId);
+    if (!tab || !item) return { ok: false, reason: 'No such item in the vault.' };
+    const layout = StashGrid.resolve(tab.items, tab.layout);
+    const { w, h } = InventorySystem.footprint(item, rotated);
+    if (!StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y)) {
+      return { ok: false, reason: `The vault has something there. ${item.name} stays where it was.` };
+    }
+    layout[itemId] = { x, y, rotated };
+    set(s => ({
+      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, idx) => idx === 0 ? { ...t, layout } : t) } }
+    }));
+    return { ok: true };
+  },
+
+  arrangeStash: (key) => {
+    set(s => ({
+      player: {
+        ...s.player,
+        bank: {
+          ...s.player.bank,
+          stashTabs: s.player.bank.stashTabs.map((t, idx) => idx === 0 ? { ...t, layout: StashGrid.arrange(t.items, key) } : t)
+        }
+      }
+    }));
+  },
+
+  takeFromCache: (entityId, itemId) => {
+    const world = useWorldStore.getState();
+    const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
+    const inside = entity?.container?.items;
+    const item = inside?.find(i => i.id === itemId);
+    if (!entity || !inside || !item) return { ok: false, reason: 'Nothing of that name in the cache.' };
+    const { added } = get().tryAddItems([item]);
+    if (added.length === 0) {
+      const v = { ok: false, reason: `The pack refuses ${item.name}. It stays in the cache.` };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    const left = inside.filter(i => i.id !== itemId);
+    if (left.length === 0) world.removeEntity(entityId);
+    else world.updateEntity(entityId, { container: { ...entity.container!, items: left } });
+    SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entityId, itemIds: [itemId] });
+    return { ok: true };
+  },
+
+  placeOnCart: (entityId, itemId, x, y, rotated) => {
+    const world = useWorldStore.getState();
+    const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
+    if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
+    const placed = CartSystem.placeAt(entity.cart, itemId, x, y, rotated);
+    if (!placed) return { ok: false, reason: 'The cart bed has no room there. It stays where it was.' };
+    world.updateEntity(entityId, { cart: placed });
+    void get().persistCarts();
     return { ok: true };
   },
 
@@ -1270,7 +1469,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().recalcWeight();
 
     const pos = session.position;
-    const cacheId = `cache_${session.sessionId.slice(0, 8)}_${Date.now().toString(36)}`;
+    // The tie-break matters: two caches in one millisecond once shared an id, and taking one took both.
+    const cacheId = `cache_${session.sessionId.slice(0, 8)}_${Date.now().toString(36)}_${++cacheSeq}`;
     useWorldStore.getState().addEntity({
       id: cacheId,
       type: EntityType.CONTAINER,
@@ -1396,7 +1596,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   /** Durability loss on use/hit. Broken gear stays on the body but stops working. */
   wearEquipment: (slot, amount) => {
-    const target: EquipSlotId = slot === 'mainHand' ? 'RIGHT_HAND' : slot === 'armor' ? 'CHEST' : 'TOOL_1';
+    get().wearSlot(slot === 'mainHand' ? 'RIGHT_HAND' : slot === 'armor' ? 'CHEST' : 'TOOL_1', amount);
+  },
+
+  wearSlot: (target, amount) => {
     const equipment = get().player.equipment;
     const itemId = equipment?.slots[target];
     if (!equipment || !itemId) return;
@@ -1463,7 +1666,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (rejected.length > 0) {
         const pos = get().player.currentSession?.position;
         if (pos) {
-          const cacheId = `cache_ovf_${Date.now().toString(36)}`;
+          const cacheId = `cache_ovf_${Date.now().toString(36)}_${++cacheSeq}`;
           useWorldStore.getState().addEntity({
             id: cacheId,
             type: EntityType.CONTAINER,
@@ -1567,21 +1770,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     if (interactionId.startsWith('int_open_')) {
       if (!entity.container || entity.container.looted) return;
-      if (!spendEnergy(2)) return;
 
-      // Wave 3.3: GROUND CACHE — explicit contents, no generation
+      // Wave 3.3: GROUND CACHE — explicit contents, no generation. The source is
+      // already a container, so what the pack refuses simply stays in it (line 57);
+      // the overflow rule is for harvests and chests. A press that moves nothing costs nothing.
       if (entity.container.items && entity.container.items.length > 0) {
-        const taken = addToInventory(entity.container.items);
-        const left = entity.container.items.filter(i => !taken.some(t => t.id === i.id));
-        if (left.length === 0) {
-          world.removeEntity(entity.id);
-        } else {
-          world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
+        const held = get().player.currentSession?.energy ?? 0;
+        if (held < 2) { spendEnergy(2); return; }
+        const { added: taken, rejected } = get().tryAddItems(entity.container.items);
+        if (taken.length > 0) {
+          spendEnergy(2);
+          const left = entity.container.items.filter(i => !taken.some(t => t.id === i.id));
+          if (left.length === 0) world.removeEntity(entity.id);
+          else world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
+          SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
+          feed(`Recovered ${taken.length === 1 ? taken[0].name : `${taken.length} items`}.`, 'proof');
         }
-        SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
-        console.log(`[CACHE] Recovered ${taken.length} item(s)${left.length ? `, ${left.length} still inside` : ''}.`);
+        if (rejected.length > 0) feed(`The pack refuses ${rejected.length}; ${rejected.length === 1 ? 'it stays' : 'they stay'} in the cache.`, 'loss');
         return;
       }
+
+      if (!spendEnergy(2)) return;
 
       const rollKey = SessionJournal.rollKey('chest', entity.id);
       const rng = Rng.fromKey(rollKey);

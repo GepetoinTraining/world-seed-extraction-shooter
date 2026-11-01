@@ -5,6 +5,8 @@
 
 import React, { useState } from 'react';
 import { useIdentityStore } from '../entities/identity/store';
+import { draftDismissal } from '../logic/systems/FieldInput';
+import { WORLD_DRAFT_DEFAULTS, WorldDraft, useWorldDraft } from './ui/stores';
 import { WorldCertificateSystem, WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
 import { UniversalRank } from '../../types';
 import { Button, Input, Modal, Panel, Tabs } from './ui/kit';
@@ -24,26 +26,36 @@ const STEPS = [
 
 export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onCreated }) => {
   const { certificate } = useIdentityStore();
-  const [step, setStep] = useState(0);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
-  // Form state
-  const [worldName, setWorldName] = useState('');
-  const [worldDescription, setWorldDescription] = useState('');
-  const [worldType, setWorldType] = useState<WorldType>(WorldType.EXTRACTION);
-  const [size, setSize] = useState(32);
-
-  // Rules
-  const [accessMode, setAccessMode] = useState<AccessMode>(AccessMode.PUBLIC);
-  const [entryFee, setEntryFee] = useState(0);
-  const [extractionTax, setExtractionTax] = useState(5);
-  const [creatorShare, setCreatorShare] = useState(3);
-  const [pvpEnabled, setPvpEnabled] = useState(false);
-  const [difficulty, setDifficulty] = useState<UniversalRank>(UniversalRank.D);
-  const [sessionDuration, setSessionDuration] = useState(15);
+  // The draft lives in its own small store (line 58), so nothing here can lose it.
+  const { draft, set, reset } = useWorldDraft();
+  const { step, worldName, worldDescription, size, entryFee, extractionTax, creatorShare, pvpEnabled, sessionDuration } = draft;
+  const worldType = draft.worldType as WorldType;
+  const accessMode = draft.accessMode as AccessMode;
+  const difficulty = draft.difficulty as UniversalRank;
+  const setStep = (v: number) => set({ step: v });
+  const setWorldName = (v: string) => set({ worldName: v });
+  const setWorldDescription = (v: string) => set({ worldDescription: v });
+  const setWorldType = (v: WorldType) => set({ worldType: v });
+  const setSize = (v: number) => set({ size: v });
+  const setAccessMode = (v: AccessMode) => set({ accessMode: v });
+  const setEntryFee = (v: number) => set({ entryFee: v });
+  const setExtractionTax = (v: number) => set({ extractionTax: v });
+  const setCreatorShare = (v: number) => set({ creatorShare: v });
+  const setPvpEnabled = (v: boolean) => set({ pvpEnabled: v });
+  const setDifficulty = (v: UniversalRank) => set({ difficulty: v });
+  const setSessionDuration = (v: number) => set({ sessionDuration: v });
 
   if (!opened) return null;
+
+  const dirty = (Object.keys(WORLD_DRAFT_DEFAULTS) as (keyof WorldDraft)[]).some(k => draft[k] !== WORLD_DRAFT_DEFAULTS[k]);
+  const requestClose = () => {
+    if (draftDismissal(dirty, 'ESCAPE') === 'ASK') setAsking(true);
+    else onClose();
+  };
 
   const handleCreate = async () => {
     if (!certificate) return;
@@ -64,7 +76,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
       );
       if (worldCert) {
         onCreated(worldCert.data.worldUid);
-        setStep(0); setWorldName(''); setWorldDescription('');
+        reset();
         onClose();
       } else {
         setError('The certificate refused to sign.');
@@ -84,7 +96,16 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   );
 
   return (
-    <Modal title="MINT NEW REALITY" onClose={onClose} width={560}>
+    <Modal title="MINT NEW REALITY" onClose={requestClose} width={560} heavy>
+      {asking && (
+        <Panel title="THE DRAFT IS UNSIGNED" tone="loss" style={{ marginBottom: 10 }}>
+          <div className="ws-small" style={{ marginBottom: 8 }}>The draft is unsigned. Abandon it?</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Button tone="signal" autoFocus onClick={() => setAsking(false)}>KEEP DRAFTING</Button>
+            <Button tone="loss" onClick={() => { setAsking(false); reset(); onClose(); }}>ABANDON</Button>
+          </div>
+        </Panel>
+      )}
       <Tabs tabs={STEPS as any} active={String(step)} onChange={id => setStep(Number(id))} />
       <div style={{ paddingTop: 10 }}>
         {step === 0 && (

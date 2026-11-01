@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { ISessionReceipt } from '../../logic/journal/SessionJournal';
-import { IItem } from '../../../types';
+import { EquipSlotId, IItem } from '../../../types';
 
 // --- WHICH SCREEN (replaces App-local state so dialogue can navigate) ---
 
@@ -24,6 +24,74 @@ export const useAppView = create<ViewState>(set => ({
   bankTab: 'agent',
   setView: (view, bankTab) => set(s => ({ view, bankTab: bankTab ?? s.bankTab })),
   setBankTab: bankTab => set({ bankTab })
+}));
+
+// --- THE HOVER (the usability pass): which item the one card is reading ---
+// An element keeps the item it answers for, so a sprite inside a hoverable row can
+// hand the card back to its row when the pointer leaves the sprite but not the row.
+
+const hoverOwners = new WeakMap<HTMLElement, IItem>();
+
+interface HoverState {
+  item: IItem | null;
+  el: HTMLElement | null;
+  show: (item: IItem, el: HTMLElement) => void;
+  hide: (el: HTMLElement) => void;
+  clear: () => void;
+}
+
+export const useHover = create<HoverState>((set, get) => ({
+  item: null,
+  el: null,
+  show: (item, el) => { hoverOwners.set(el, item); set({ item, el }); },
+  hide: el => {
+    if (get().el !== el) return;
+    for (let up = el.parentElement; up; up = up.parentElement) {
+      const owner = hoverOwners.get(up);
+      if (owner) { set({ item: owner, el: up }); return; }
+    }
+    set({ item: null, el: null });
+  },
+  clear: () => set({ item: null, el: null })
+}));
+
+/** Spread on anything that shows an item: the pointer and the keyboard both open the card. */
+export const hoverProps = (item: IItem) => ({
+  onMouseEnter: (e: { currentTarget: EventTarget }) => useHover.getState().show(item, e.currentTarget as HTMLElement),
+  onMouseLeave: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement),
+  onFocus: (e: { currentTarget: EventTarget }) => useHover.getState().show(item, e.currentTarget as HTMLElement),
+  onBlur: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement)
+});
+
+// --- THE HOTBAR: what is in the hand right now ---
+
+export const useHotbar = create<{ active: EquipSlotId; setActive: (slot: EquipSlotId) => void }>(set => ({
+  active: 'RIGHT_HAND',
+  setActive: active => set({ active })
+}));
+
+// --- THE MINT-WORLD DRAFT (line 58): it outlives the window it is written in ---
+
+export const WORLD_DRAFT_DEFAULTS = {
+  step: 0,
+  worldName: '',
+  worldDescription: '',
+  worldType: 'EXTRACTION',
+  size: 32,
+  accessMode: 'PUBLIC',
+  entryFee: 0,
+  extractionTax: 5,
+  creatorShare: 3,
+  pvpEnabled: false,
+  difficulty: 'D',
+  sessionDuration: 15
+};
+export type WorldDraft = typeof WORLD_DRAFT_DEFAULTS;
+
+export const useWorldDraft = create<{ draft: WorldDraft; set: (patch: Partial<WorldDraft>) => void; reset: () => void }>(set => ({
+  draft: { ...WORLD_DRAFT_DEFAULTS },
+  set: patch => set(s => ({ draft: { ...s.draft, ...patch } })),
+  reset: () => set({ draft: { ...WORLD_DRAFT_DEFAULTS } })
 }));
 
 // --- THE FEED: what just happened, said plainly, then gone ---

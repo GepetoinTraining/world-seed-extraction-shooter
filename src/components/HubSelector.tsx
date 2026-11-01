@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { WorldCertificateSystem, IWorldCertificate, WorldType } from '../entities/world/WorldCertificate';
 import { useHubStore } from '../entities/hub/store';
+import { shouldSkipHubStop } from '../logic/systems/FieldInput';
 import { Button, Chip, Input, Panel } from './ui/kit';
 
 interface HubSelectorProps {
@@ -21,7 +22,14 @@ export const HubSelector: React.FC<HubSelectorProps> = ({ onSelect }) => {
     const fetchHubs = async () => {
       setLoading(true);
       const allWorlds = await WorldCertificateSystem.getPublicWorlds();
-      setHubs(allWorlds.filter(w => w.data.worldType === WorldType.HUB));
+      const found = allWorlds.filter(w => w.data.worldType === WorldType.HUB);
+      // One hub is not a choice (U19): walk straight in.
+      if (shouldSkipHubStop(found)) {
+        await loadHub(found[0].data.worldUid);
+        onSelect(found[0].data.worldUid);
+        return;
+      }
+      setHubs(found);
       setLoading(false);
     };
     fetchHubs();

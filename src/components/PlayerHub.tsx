@@ -4,17 +4,21 @@
  * ledger itself. Everything here is a record the Seed keeps about you.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { POINTS_PER_RANK_UP, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { InventorySystem } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
-import { EquipSlotId, IAttributes, IItem, ItemType, HEAD_BUDGET_POSITIONS } from '../../types';
+import { EquipSlotId, IAttributes, IItem, ItemType, SlotType, HEAD_BUDGET_POSITIONS } from '../../types';
+import { STASH_COLS, StashFilter, StashGrid, StashKind, StashSortKey } from '../entities/player/systems/StashGrid';
+import { ItemGrid } from './ui/ItemGrid';
+import { useDropZone, wholeZone } from './ui/hands';
+import { hoverProps } from './ui/stores';
 import { Archetype } from '../render/atoms/people';
 import { inspectItem } from '../render/atoms/inspect';
-import { Bar, Button, CardView, Chip, Input, ItemSprite, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
+import { ArmedButton, Bar, Button, CardView, Chip, Input, ItemSprite, Kbd, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
 import { figure, weaponClass, armorClass } from '../render/atoms/people';
 import { useAppView } from './ui/stores';
 import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
@@ -126,11 +130,52 @@ const AgentTab: React.FC = () => {
   // The figure draws what the harness holds (Wave 10C: the tree is the truth)
   const held = LoadoutSystem.itemIn(equipment, 'RIGHT_HAND');
   const worn = LoadoutSystem.itemIn(equipment, 'CHEST');
+  const kitZone = useRef<HTMLDivElement>(null);
+  useDropZone('kit', wholeZone(kitZone, { kind: 'KIT' }));
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(440px, auto) 300px 1fr', gap: 10, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `auto ${STASH_COLS * VAULT_CELL + 26}px minmax(280px, 1fr)`, gap: 10, alignItems: 'start' }}>
       <PaperDoll />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Panel title="THE VAULT" right={<span className="ws-proof">{player.bank.gold.toLocaleString()} G</span>}>
+          <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>Drag a piece onto the body, or right-click to wear it. Sell and sort on the STASH tab.</div>
+          <div style={{ maxHeight: 300, overflowY: 'auto', overflowX: 'hidden' }}>
+            <VaultGrid zoneId="vault" cellPx={VAULT_CELL} />
+          </div>
+        </Panel>
+        <div ref={kitZone} data-drop-zone="kit">
+        <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg</span>}>
+          <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
+            Tools always ride. Drag anything else here, and it drops with you — and can be lost with you.
+          </div>
+          {kit.length === 0 && <div className="ws-dim ws-small">Nothing marked. You would drop with empty hands.</div>}
+          <div className="ws-list">
+            {kit.map(item => (
+              <div key={item.id} className="ws-row" {...hoverProps(item)}>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+                  <ItemSprite item={item} cellPx={16} />
+                  <span style={{ minWidth: 0 }}>
+                    <span className="t" style={{ display: 'block' }}>{item.name}</span>
+                    <span className="s">{item.weight}kg{item.tags?.includes('tool') ? ' · TOOL, ALWAYS CARRIED' : ''}</span>
+                  </span>
+                </span>
+                {!item.tags?.includes('tool') && (
+                  <Button tone="quiet" onClick={() => toggleCarry(item.id)}>LEAVE HOME</Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%`} />
+          </div>
+          <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
+            Session weight above 80% reads SLOWED in the field. Current bank weight: {currentWeight.toFixed(1)} / {maxWeight} kg.
+            {equipment.items.length > 0 && <> The harness carries {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg more, and none of it counts: the limit is the haul, not the harness.</>}
+          </div>
+        </Panel>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       <Panel title="IDENTITY">
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
           <PortraitView uid={player.id} archetype={(player.archetype || 'OPERATOR') as Archetype} scale={3} />
@@ -161,9 +206,6 @@ const AgentTab: React.FC = () => {
         </div>
       </Panel>
       <HandsPanel />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {points}</span> : undefined}>
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
           <div key={group} style={{ marginBottom: 8 }}>
@@ -204,36 +246,6 @@ const AgentTab: React.FC = () => {
           );
         })}
         <div className="ws-dim ws-small" style={{ marginTop: 2 }}>Seat and clear frames on the body, left.</div>
-      </Panel>
-
-      <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg</span>}>
-        <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
-          Tools always ride. Mark anything else CARRY in the stash, and it drops with you — and can be lost with you.
-        </div>
-        {kit.length === 0 && <div className="ws-dim ws-small">Nothing marked. You would drop with empty hands.</div>}
-        <div className="ws-list">
-          {kit.map(item => (
-            <div key={item.id} className="ws-row">
-              <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-                <ItemSprite item={item} cellPx={16} />
-                <span style={{ minWidth: 0 }}>
-                  <span className="t" style={{ display: 'block' }}>{item.name}</span>
-                  <span className="s">{item.weight}kg{item.tags?.includes('tool') ? ' · TOOL, ALWAYS CARRIED' : ''}</span>
-                </span>
-              </span>
-              {!item.tags?.includes('tool') && (
-                <Button tone="quiet" onClick={() => toggleCarry(item.id)}>LEAVE HOME</Button>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%`} />
-        </div>
-        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
-          Session weight above 80% reads SLOWED in the field. Current bank weight: {currentWeight.toFixed(1)} / {maxWeight} kg.
-          {equipment.items.length > 0 && <> The harness carries {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg more, and none of it counts: the limit is the haul, not the harness.</>}
-        </div>
       </Panel>
       </div>
     </div>
@@ -292,78 +304,106 @@ const SkillsTab: React.FC = () => {
 };
 
 // ---------------------------------------------------------------------------
-// STASH: the vault, with real art and the one inspect card
+// STASH: the vault as a grid (U13). It sorts and filters by what can be seen;
+// a piece is read on hover, moved by hand, and sold only on a second press.
 // ---------------------------------------------------------------------------
 
+const STASH_CELL = 36;
+const VAULT_CELL = 24;
+
+const SORT_KEYS: StashSortKey[] = ['NAME', 'RANK', 'VALUE', 'WEIGHT', 'TYPE'];
+const KIND_WORDS: { id: StashKind; label: string }[] = [
+  { id: 'ALL', label: 'ALL' }, { id: 'GEAR', label: 'GEAR' }, { id: 'TOOL', label: 'TOOLS' },
+  { id: 'MATERIAL', label: 'MATERIAL' }, { id: 'USE', label: 'USE' }, { id: 'UNREAD', label: 'UNREAD' }
+];
+
+/** What a piece in the vault most plainly wants: to be worn, if it can be. */
+const vaultPrimary = (item: IItem) => {
+  const st = usePlayerStore.getState();
+  if (item.slot !== SlotType.NONE || item.tags?.includes('tool')) st.equipSwap(item.id);
+};
+
+const VaultGrid: React.FC<{
+  zoneId: string; cellPx: number; selectedId?: string | null; onSelect?: (id: string | null) => void; filter?: StashFilter;
+}> = ({ zoneId, cellPx, selectedId, onSelect, filter }) => {
+  const { player } = usePlayerStore();
+  const tab = player.bank.stashTabs[0];
+  const items = tab?.items ?? [];
+  const layout = useMemo(() => StashGrid.resolve(items, tab?.layout), [items, tab?.layout]);
+  return (
+    <ItemGrid
+      zoneId={zoneId}
+      place={{ kind: 'STASH' }}
+      items={items}
+      layout={layout}
+      gridW={STASH_COLS}
+      gridH={StashGrid.rows(items, layout)}
+      cellPx={cellPx}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      onPrimary={vaultPrimary}
+      dimmed={filter ? item => !StashGrid.matches(item, filter, player) : undefined}
+      badge={item => (!item.tags?.includes('tool') && player.bank.carryItemIds?.includes(item.id) ? 'C' : null)}
+    />
+  );
+};
+
 export const StashTab: React.FC = () => {
-  const { player, toggleCarry, trashItem } = usePlayerStore();
+  const { player, toggleCarry, trashItem, arrangeStash } = usePlayerStore();
   const { sellToVendor } = useHubStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<StashFilter>({ text: '', kind: 'ALL' });
   const stash = player.bank.stashTabs[0]?.items || [];
   const selected = stash.find(i => i.id === selectedId) || null;
+  const shown = stash.filter(i => StashGrid.matches(i, filter, player)).length;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 10, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `${STASH_COLS * STASH_CELL + 26}px minmax(300px, 340px)`, gap: 10, alignItems: 'start' }}>
       <Panel title="SECURE STORAGE" right={<span className="ws-proof">{player.bank.gold.toLocaleString()} G</span>}>
-        {stash.length === 0 && <div className="ws-dim ws-small">Nothing stored. The vault keeps its silence.</div>}
-        <div className="ws-list">
-          {stash.map(item => {
-            const carrying = item.tags?.includes('tool') || player.bank.carryItemIds?.includes(item.id);
-            const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
-            return (
-              <div key={item.id} className="ws-row" style={selectedId === item.id ? { background: 'var(--ws-void-2)' } : undefined}>
-                <button
-                  type="button"
-                  className="ws-ui"
-                  onClick={() => setSelectedId(item.id === selectedId ? null : item.id)}
-                  style={{
-                    display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0, textAlign: 'left',
-                    background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontFamily: 'var(--ws-mono)', padding: 2
-                  }}
-                >
-                  <ItemSprite item={item} cellPx={16} />
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.isIdentified === false ? 'UNIDENTIFIED SIGNAL' : item.name}
-                    </span>
-                    <span className="ws-dim ws-small">{item.weight}kg · {item.value}G · {item.rank}</span>
-                  </span>
-                </button>
-                <span style={{ display: 'flex', gap: 4 }}>
-                  <Button
-                    tone={carrying ? 'signal' : 'quiet'}
-                    disabled={item.tags?.includes('tool')}
-                    title={item.tags?.includes('tool') ? 'Tools always ride' : 'Take it on the next drop'}
-                    onClick={() => toggleCarry(item.id)}
-                  >
-                    {carrying ? 'CARRYING' : 'CARRY'}
-                  </Button>
-                  <Button tone="proof" onClick={() => { void sellToVendor(item.id); if (selectedId === item.id) setSelectedId(null); }}>
-                    SELL {offer}G
-                  </Button>
-                </span>
-              </div>
-            );
-          })}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+          <Input placeholder="FIND BY NAME…" value={filter.text} onChange={e => setFilter(f => ({ ...f, text: e.target.value }))} aria-label="Find by name" />
+          <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="ws-dim ws-small" style={{ width: 44 }}>SHOW</span>
+            {KIND_WORDS.map(k => (
+              <Button key={k.id} tone="quiet" primary={filter.kind === k.id} aria-pressed={filter.kind === k.id} style={{ padding: '2px 6px', borderColor: filter.kind === k.id ? 'var(--ws-text-bright)' : undefined, fontSize: 'var(--ws-font-small)' }} onClick={() => setFilter(f => ({ ...f, kind: k.id }))}>{k.label}</Button>
+            ))}
+            <span className="ws-dim ws-small" style={{ marginLeft: 'auto' }}>{shown} of {stash.length}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="ws-dim ws-small" style={{ width: 44 }}>SORT</span>
+            {SORT_KEYS.map(k => (
+              <Button key={k} tone="quiet" style={{ padding: '2px 6px' }} onClick={() => arrangeStash(k)}>{k}</Button>
+            ))}
+          </div>
         </div>
+        {stash.length === 0 && <div className="ws-dim ws-small">Nothing stored. The vault keeps its silence.</div>}
+        <VaultGrid zoneId="stash" cellPx={STASH_CELL} selectedId={selectedId} onSelect={setSelectedId} filter={filter} />
       </Panel>
 
       <div style={{ position: 'sticky', top: 10 }}>
         {selected ? (
           <>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-              <ItemSprite item={selected} cellPx={36} />
-            </div>
             <CardView card={inspectItem(selected, player)} right={<RankMark rank={String(selected.rank)} scale={2} />} />
             {selected.type === ItemType.LORE && selected.description && (
               <Panel title="FRAGMENT" tone="proof" style={{ marginTop: 8 }}>
                 <div className="ws-small" style={{ fontStyle: 'italic' }}>{selected.description}</div>
               </Panel>
             )}
-            {/* Wave 10E (D21): insurance invokes from the vault — mark before the drop */}
-            {(selected.charmData || selected.scrollData) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-                {(selected.charmData ?? selected.scrollData)!.chosen ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+              {(selected.slot !== SlotType.NONE || selected.tags?.includes('tool')) && (
+                <Button tone="proof" onClick={() => { if (usePlayerStore.getState().equipSwap(selected.id).ok) setSelectedId(null); }}>EQUIP</Button>
+              )}
+              <Button
+                tone={selected.tags?.includes('tool') || player.bank.carryItemIds?.includes(selected.id) ? 'signal' : 'quiet'}
+                disabled={selected.tags?.includes('tool')}
+                title={selected.tags?.includes('tool') ? 'Tools always ride' : 'Take it on the next drop'}
+                onClick={() => toggleCarry(selected.id)}
+              >
+                {selected.tags?.includes('tool') ? 'TOOL, ALWAYS CARRIED' : player.bank.carryItemIds?.includes(selected.id) ? 'CARRYING · LEAVE HOME' : 'CARRY ON THE NEXT DROP'}
+              </Button>
+              {/* Wave 10E (D21): insurance invokes from the vault — mark before the drop */}
+              {(selected.charmData || selected.scrollData) && (
+                (selected.charmData ?? selected.scrollData)!.chosen ? (
                   Object.entries(player.equipment?.slots ?? {}).filter(([, id]) => !!id).length === 0
                     ? <span className="ws-dim ws-small">Nothing is worn. The magic has nothing to hold.</span>
                     : Object.entries(player.equipment?.slots ?? {}).filter(([, id]) => !!id).map(([slot]) => (
@@ -379,25 +419,30 @@ export const StashTab: React.FC = () => {
                     const v = usePlayerStore.getState().useProtection(selected.id);
                     if (v.ok) setSelectedId(null);
                   }}>INVOKE</Button>
-                )}
+                )
+              )}
+              {/* U14: a sale is a deliberate step, and it sits apart from CARRY */}
+              <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'space-between' }}>
+                <ArmedButton
+                  tone="proof"
+                  confirmLabel={`SELL FOR ${Math.max(1, Math.floor((selected.value || 1) * 0.6))}G: SURE?`}
+                  onConfirm={() => { void sellToVendor(selected.id); setSelectedId(null); }}
+                >
+                  SELL {Math.max(1, Math.floor((selected.value || 1) * 0.6))}G
+                </ArmedButton>
+                <ArmedButton
+                  tone="loss"
+                  confirmLabel="DISCARD: IT DOES NOT COME BACK"
+                  onConfirm={() => { trashItem(selected.id, 'INVENTORY'); setSelectedId(null); }}
+                >
+                  DISCARD
+                </ArmedButton>
               </div>
-            )}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-              <Button
-                tone="loss"
-                onClick={() => {
-                  if (!confirm(`Discard ${selected.name}? The vault does not take things back.`)) return;
-                  trashItem(selected.id, 'INVENTORY');
-                  setSelectedId(null);
-                }}
-              >
-                DISCARD
-              </Button>
             </div>
           </>
         ) : (
-          <Panel title="INSPECT">
-            <div className="ws-dim ws-small">Select anything stored and the terminal reads it back: rarity in the frame, wear as bites, quality in the fill, rank in its mark.</div>
+          <Panel title="THIS PIECE">
+            <div className="ws-dim ws-small">Hover anything stored and the terminal reads it back, set against what you wear. Drag to place it, <Kbd>R</Kbd> to turn it. Click to choose a piece and carry, sell or discard it. Right-click wears it.</div>
           </Panel>
         )}
       </div>
