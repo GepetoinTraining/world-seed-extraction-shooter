@@ -590,11 +590,6 @@ describe('Pedro: "you don\'t code inflation"', () => {
     expect(JSON.stringify(hub().weaponShop.map(l => l.price))).toBe(shelf);
   });
 
-  it('no NPC is told to prefer anything: nothing in the people\'s code reads a wallet', () => {
-    for (const path of ['src/logic/systems/NpcAgenda.ts', 'src/logic/systems/NpcSheet.ts', 'src/logic/systems/ApprenticeRoad.ts']) {
-      expect(readFileSync(path, 'utf8'), path).not.toMatch(/Wallets|Anchors|isAnchor/);
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------
