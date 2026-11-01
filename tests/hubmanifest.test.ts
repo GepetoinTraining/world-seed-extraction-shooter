@@ -34,9 +34,9 @@ import { CHUNK_TILES, QUADRANT_TILES } from '../src/entities/world/grid';
 import { HubGenerator, IHubLayout, IPOI, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
 import {
   CELL_TILES, CHUNK_CELLS, EMPTY_MARK, HUB_SIDES, HubSide, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN, ROAD_STREET, SPAWN_MARK,
-  firstPlan, lotPrice, openSides, raiseChunk, validateManifest
+  firstPlan, lotPrice, openSides, raiseChunk, tilesToCell, validateManifest
 } from '../src/entities/hub/hubManifest';
-import { HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, floorAtom, hubGround, lotArt, roadAtom } from '../src/render/atoms/hub';
+import { HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, floorAtom, hubGround, lotArt, passageAtom, roadAtom } from '../src/render/atoms/hub';
 import { cityMinimap } from '../src/render/atoms/minimap';
 import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../src/render/atoms/atoms';
 import { fnv1a } from '../src/logic/rng/DeterministicRNG';
@@ -106,12 +106,14 @@ const ROAD_FLOOR_GRAY_MIN = 12;   // mean luminance apart, a road against a floo
 const ROAD_KERB_GRAY_MIN = 20;    // a kerb against its own road
 const LOT_GRID_GRAY_MIN = 12;     // a tile line against the tile it marks
 const LOT_GROUND_GRAY_MIN = 12;   // a plot against the ground around it
+const STRETCH_FILL_MIN = 0.85;     // share of a raised chunk's blocks that is lots
+const PASSAGE_EDGE_MIN = 0.5;      // share of a passage's crossing that keeps to the crossed lot's edge
 const LOTS_STANDING = 6;
 const LAMPS_STANDING = 7;
 
 // The whole layout, by hash: the same inputs give the same city on every machine.
-const STORED_LAYOUT_HASH = 981373217;
-const STORED_SECOND_CHUNK_HASH = 1857555841;
+const STORED_LAYOUT_HASH = 3668997154;
+const STORED_SECOND_CHUNK_HASH = 2387384195;
 
 beforeEach(() => {
   db.clear();
@@ -169,9 +171,13 @@ describe('the manifest is the one place anything is placed', () => {
       if (mark === EMPTY_MARK || mark === SPAWN_MARK) return;
       placed.push({ x: cx * CELL_TILES, y: cy * CELL_TILES });
     }));
-    const positions = allPois(layout).map(p => p.position);
-    expect(positions.length).toBe(placed.length);
-    placed.forEach(at => expect(positions, `${at.x},${at.y}`).toContainEqual(at));
+    // A stretched lot may start north or west of its mark, and it always covers it.
+    const pois = allPois(layout);
+    expect(pois.length).toBe(placed.length);
+    placed.forEach(at => {
+      const here = pois.filter(p => at.x >= p.position.x && at.x < p.position.x + p.size.width && at.y >= p.position.y && at.y < p.position.y + p.size.height);
+      expect(here.length, `${at.x},${at.y}`).toBe(1);
+    });
   });
 
   it('where you arrive is a mark too', () => {
@@ -474,7 +480,7 @@ describe('a lot someone owns stays theirs (placement migrates, ownership never)'
 
     const planks = Array.from({ length: 8 }, (_, i) => ItemFactory.createResourceItem(CRAFTED_DEFINITIONS.crf_plank as any, Rng.fromKey(`a1_plank_${i}`)));
     usePlayerStore.setState(s => ({
-      player: { ...s.player, id: 'uid_bars', username: 'TESTER', bank: { ...s.player.bank, gold: 20000, stashTabs: [{ ...s.player.bank.stashTabs[0], items: planks }] } }
+      player: { ...s.player, id: 'uid_bars', username: 'TESTER', bank: { ...s.player.bank, gold: 500000, stashTabs: [{ ...s.player.bank.stashTabs[0], items: planks }] } }
     }));
     expect(await useHubStore.getState().buyLot(far.id)).toBe(true);
     expect(await useHubStore.getState().buildStructure(far.id, 'HOUSE', 'crf_plank')).toBe(true);
@@ -811,17 +817,17 @@ describe('a lot asks a price for where it stands and how big it is', () => {
     };
     lots.forEach(p => {
       expect(p.metadata.fromRoad, p.id).toBe(fromMainRoad(p));
-      expect(p.metadata.price, p.id).toBe(lotPrice(NEW_CARLEON, p.size, { fromCentre: fromCentre(grown, p), fromRoad: fromMainRoad(p) }));
+      expect(p.metadata.fromCentre, p.id).toBe(fromCentre(grown, p));
     });
   });
 
-  it('the first chunk stays near the price the economy has been read at, and is no longer flat', () => {
+  // Moved on Pedro's word: lots stretch, so a big lot asks for its size. The smallest
+  // on Homestead Row is what stays near the price the economy has been read at.
+  it('the smallest lot on the first chunk stays near the old price, and prices are no longer flat', () => {
     const prices = lotPois(HubGenerator.generate()).map(p => p.metadata.price);
-    prices.forEach(p => {
-      expect(p).toBeGreaterThanOrEqual(3500);
-      expect(p).toBeLessThanOrEqual(6500);
-    });
-    expect(Math.abs(prices.reduce((a, b) => a + b, 0) / prices.length - 5000)).toBeLessThanOrEqual(250);
+    const least = Math.min(...prices);
+    expect(least).toBeGreaterThanOrEqual(3500);
+    expect(least).toBeLessThanOrEqual(6500);
     expect(new Set(prices).size).toBeGreaterThan(1);
   });
 
@@ -866,10 +872,6 @@ describe('lots come in sizes, and a size can refuse', () => {
 
   it('a raised chunk holds more than one size, read from the manifest', () => {
     expect(new Set(raised.map(p => p.size.width * p.size.height)).size).toBeGreaterThan(1);
-  });
-
-  it('the first chunk\'s lots stay the size their rooms were built at', () => {
-    lotPois(HubGenerator.generate()).forEach(p => expect(p.size, p.id).toEqual({ width: 4, height: 4 }));
   });
 
   it('a plan too big for a small lot is refused with the numbers, and fits a big one', () => {
@@ -944,12 +946,12 @@ describe('the manifest lays roads, and roads join', () => {
     }
   });
 
-  it('every lot in every chunk has a road at its door', () => {
+  it('every lot in every chunk has a road at its door, or a passage to one', () => {
     const l = HubGenerator.generate(planOf('EAST', 'SOUTH'));
     lotPois(l).forEach(p => {
       const d = doorOf(p);
-      const near = Math.min(...l.roads.map(r => Math.max(0, r.x - d.x, d.x - (r.x + CELL_TILES - 1)) + Math.max(0, r.y - d.y, d.y - (r.y + CELL_TILES - 1))));
-      expect(near, p.id).toBeLessThanOrEqual(CELL_TILES);
+      const near = Math.min(...l.roads.map(r => tilesToCell(d, r)));
+      expect(near <= 1 || l.passages.some(q => q.lotId === p.id), p.id).toBe(true);
     });
   });
 
@@ -999,13 +1001,13 @@ describe('the manifest lays roads, and roads join', () => {
     expect(validateManifest(unknown).join()).toMatch(/\?/);
   });
 
-  it('a lot with no street at its door is refused', () => {
+  it('a lot with no street at its door is not refused: the servidão gives it a way', () => {
     const m: IHubManifest = JSON.parse(JSON.stringify(NEW_CARLEON));
     const swap = (s: string, i: number, c: string) => s.slice(0, i) + c + s.slice(i + 1);
     const chunk = m.chunks[m.first];
     chunk.floor[2] = swap(chunk.floor[2], 2, 'H');
     chunk.place[2] = swap(chunk.place[2], 2, 'L');
-    expect(validateManifest(m).join()).toMatch(/street|road/i);
+    expect(validateManifest(m)).toEqual([]);
   });
 
   it('a road reads by value in grayscale, against every floor it crosses', () => {
@@ -1124,6 +1126,221 @@ describe('a lot reads as a plot: you can count its tiles', () => {
   it('an empty lot can still be walked onto: only a building blocks', () => {
     const l = HubGenerator.generate();
     lotPois(l).forEach(p => expect(l.navMesh[p.position.y + 1][p.position.x + 1], p.id).toBe(true));
+  });
+});
+
+// Pedro: "make it stretch to fill and create a 'servidão' rule for locked out of street access lots."
+describe('lots stretch to fill their block', () => {
+  const grown = HubGenerator.generate(planOf('EAST'));
+  const growth = grown.chunks[1];
+  const inRaised = lotPois(grown).filter(p => inChunk(grown, p, growth));
+
+  it('a lot ends where the road, a neighbour or its floor ends: no cell it could take is left free', () => {
+    const covered = (x: number, y: number) => allPois(grown).some(p =>
+      x >= p.position.x && x < p.position.x + p.size.width && y >= p.position.y && y < p.position.y + p.size.height);
+    const isRoad = (x: number, y: number) => grown.roads.some(r => x >= r.x && x < r.x + CELL_TILES && y >= r.y && y < r.y + CELL_TILES);
+    const sameFloor = (x: number, y: number, z: string) => HubGenerator.getZoneAtPosition(grown, x, y)?.id === z;
+    lotPois(grown).forEach(p => {
+      const z = HubGenerator.getZoneAtPosition(grown, p.position.x, p.position.y)!.id;
+      const open = (x: number, y: number) => !covered(x, y) && !isRoad(x, y) && sameFloor(x, y, z);
+      const rowOpen = (y: number) => Array.from({ length: p.size.width }, (_, i) => p.position.x + i).every(x => open(x, y));
+      const colOpen = (x: number) => Array.from({ length: p.size.height }, (_, i) => p.position.y + i).every(y => open(x, y));
+      expect(rowOpen(p.position.y - 1), `${p.id} north`).toBe(false);
+      expect(rowOpen(p.position.y + p.size.height), `${p.id} south`).toBe(false);
+      expect(colOpen(p.position.x - 1), `${p.id} west`).toBe(false);
+      expect(colOpen(p.position.x + p.size.width), `${p.id} east`).toBe(false);
+    });
+  });
+
+  it('a block of a raised chunk is nearly all lots', () => {
+    let lotTiles = 0, blockTiles = 0;
+    for (let y = growth.y + CELL_TILES; y < growth.y + CHUNK_TILES - 2 * CELL_TILES; y++) for (let x = growth.x + CELL_TILES; x < growth.x + CHUNK_TILES - CELL_TILES; x++) {
+      if (grown.roads.some(r => x >= r.x && x < r.x + CELL_TILES && y >= r.y && y < r.y + CELL_TILES)) continue;
+      blockTiles++;
+      if (inRaised.some(p => x >= p.position.x && x < p.position.x + p.size.width && y >= p.position.y && y < p.position.y + p.size.height)) lotTiles++;
+    }
+    expect(lotTiles / blockTiles).toBeGreaterThanOrEqual(STRETCH_FILL_MIN);
+  });
+
+  it('a stretched lot is whole cells, stays a rectangle and touches no other', () => {
+    lotPois(grown).forEach(p => {
+      expect(p.size.width % CELL_TILES, p.id).toBe(0);
+      expect(p.size.height % CELL_TILES, p.id).toBe(0);
+    });
+    const touches = (a: IPOI, b: IPOI) =>
+      a.position.x < b.position.x + b.size.width && b.position.x < a.position.x + a.size.width &&
+      a.position.y < b.position.y + b.size.height && b.position.y < a.position.y + a.size.height;
+    lotPois(grown).forEach(a => allPois(grown).filter(b => b.id !== a.id).forEach(b => expect(touches(a, b), `${a.id}/${b.id}`).toBe(false)));
+  });
+
+  it('stretching moves no lot off its number, and a lot on Homestead Row keeps its door on a street', () => {
+    const first = HubGenerator.generate();
+    expect(lotPois(first).map(p => p.id)).toEqual(Array.from({ length: LOTS_STANDING }, (_, i) => `poi_lot_${i}`));
+    lotPois(first).forEach(p => {
+      const d = doorOf(p);
+      expect(first.roads.some(r => tilesToCell(d, r) === 0), p.id).toBe(true);
+    });
+  });
+
+  it('a house built before the stretch keeps its room as recorded', async () => {
+    const room = emptyRoom('poi_lot_2', { width: 4, height: 4 }, 'crf_plank');
+    const before = JSON.parse(JSON.stringify(room));
+    const owned = { id: 'poi_lot_2', lotIndex: 2, ownerId: 'uid_owner', ownerName: 'OLD HAND', purchaseDate: 1, structureType: 'HOUSE', inventory: [], price: 5000 };
+    db.set('hub_state_hub_room', { id: 'hub_state_hub_room', namespace: 'territories', data: { lots: [owned], craftingJobs: [], rooms: { poi_lot_2: room }, buildJobs: [], web: { nodes: {} } }, metadata: { createdAt: 0, updatedAt: 0, ownerCertUid: 'SYSTEM', version: 1 } });
+    useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], chunks: firstPlan().chunks } as any);
+    await useHubStore.getState().loadHub('hub_room');
+    const hub = useHubStore.getState();
+    expect(hub.rooms.poi_lot_2).toEqual(before);
+    expect(hub.lots.find(l => l.id === 'poi_lot_2')).toEqual(owned);
+  });
+
+  it('you can reach a big lot from its door, not only from its middle', () => {
+    expect(SRC('src/entities/hub/HubCanvas.tsx')).toMatch(/doorOf\(poi\)/);
+  });
+});
+
+describe('servidão: a lot with no street at its door gets a way through', () => {
+  const grown = HubGenerator.generate(planOf('EAST'));
+  const lotsOf = (l: IHubLayout) => lotPois(l);
+  const key = (t: { x: number; y: number }) => `${t.x},${t.y}`;
+  const onRoad = (l: IHubLayout, t: { x: number; y: number }) => l.roads.some(r => tilesToCell(t, r) === 0);
+
+  /** Walk as if every lot were built on: its footprint blocks, except where a passage runs. */
+  const reachWithAllBuilt = (l: IHubLayout) => {
+    const lots = lotsOf(l);
+    const passage = new Set(l.passages.flatMap(p => p.tiles.map(key)));
+    const blocked = (x: number, y: number) => {
+      if (x < 0 || y < 0 || x >= l.width || y >= l.height || !l.navMesh[y][x]) return true;
+      if (passage.has(`${x},${y}`)) return false;
+      return lots.some(p => x >= p.position.x && x < p.position.x + p.size.width && y >= p.position.y && y < p.position.y + p.size.height);
+    };
+    const seen = new Set([key(l.spawnPoint)]);
+    const queue = [l.spawnPoint];
+    while (queue.length) {
+      const { x, y } = queue.shift()!;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+        const k = `${x + dx},${y + dy}`;
+        if (seen.has(k) || blocked(x + dx, y + dy)) return;
+        seen.add(k);
+        queue.push({ x: x + dx, y: y + dy });
+      });
+    }
+    return seen;
+  };
+
+  it('a raised chunk holds lots locked out of the street, and each has its passage', () => {
+    const locked = lotsOf(grown).filter(p => p.metadata.locked);
+    expect(locked.length).toBeGreaterThan(0);
+    locked.forEach(p => expect(grown.passages.some(q => q.lotId === p.id), p.id).toBe(true));
+  });
+
+  it('with every lot in the hub built on, every door can still be walked to', () => {
+    const reach = reachWithAllBuilt(grown);
+    lotsOf(grown).forEach(p => expect(reach.has(key(doorOf(p))), p.id).toBe(true));
+    const raisedAll = HubGenerator.generate(planOf('NORTH', 'EAST', 'SOUTH', 'WEST'));
+    const reachAll = reachWithAllBuilt(raisedAll);
+    lotsOf(raisedAll).forEach(p => expect(reachAll.has(key(doorOf(p))), p.id).toBe(true));
+  });
+
+  it('a passage runs one unbroken line from the door to a road', () => {
+    grown.passages.forEach(q => {
+      const door = doorOf(poiOf(grown, q.lotId));
+      expect(q.tiles[0], q.lotId).toEqual(door);
+      for (let i = 1; i < q.tiles.length; i++) {
+        expect(Math.abs(q.tiles[i].x - q.tiles[i - 1].x) + Math.abs(q.tiles[i].y - q.tiles[i - 1].y), `${q.lotId} step ${i}`).toBe(1);
+      }
+      const last = q.tiles[q.tiles.length - 1];
+      expect([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => onRoad(grown, { x: last.x + dx, y: last.y + dy })), q.lotId).toBe(true);
+      q.tiles.forEach(t => expect(onRoad(grown, t), `${q.lotId} ${key(t)}`).toBe(false));
+    });
+  });
+
+  it('a passage never crosses the lot it serves, or anything solid', () => {
+    grown.passages.forEach(q => {
+      const own = poiOf(grown, q.lotId);
+      q.tiles.forEach(t => {
+        expect(t.x >= own.position.x && t.x < own.position.x + own.size.width && t.y >= own.position.y && t.y < own.position.y + own.size.height, `${q.lotId} ${key(t)}`).toBe(false);
+        expect(grown.navMesh[t.y][t.x], `${q.lotId} ${key(t)}`).toBe(true);
+      });
+    });
+  });
+
+  it('every lot it crosses is named, and carries the count of tiles it gives up', () => {
+    const crossed = new Map<string, number>();
+    grown.passages.forEach(q => q.tiles.forEach(t => {
+      const on = lotsOf(grown).find(p => t.x >= p.position.x && t.x < p.position.x + p.size.width && t.y >= p.position.y && t.y < p.position.y + p.size.height);
+      if (!on) return;
+      expect(q.through, q.lotId).toContain(on.id);
+      crossed.set(on.id, (crossed.get(on.id) ?? 0) + 1);
+    }));
+    expect(crossed.size).toBeGreaterThan(0);
+    lotsOf(grown).forEach(p => expect(p.metadata.carries ?? 0, p.id).toBe(crossed.get(p.id) ?? 0));
+  });
+
+  it('a passage keeps to the edge of the lot it crosses where it can, so a building still fits', () => {
+    grown.passages.forEach(q => q.through.forEach(id => {
+      const lot = poiOf(grown, id);
+      const crossing = q.tiles.filter(t => t.x >= lot.position.x && t.x < lot.position.x + lot.size.width && t.y >= lot.position.y && t.y < lot.position.y + lot.size.height);
+      const edge = crossing.filter(t => t.x === lot.position.x || t.x === lot.position.x + lot.size.width - 1 || t.y === lot.position.y || t.y === lot.position.y + lot.size.height - 1);
+      expect(edge.length / crossing.length, `${q.lotId} through ${id}`).toBeGreaterThanOrEqual(PASSAGE_EDGE_MIN);
+    }));
+  });
+
+  it('price: a locked lot asks less, and a lot that carries a passage asks for the tiles it keeps', () => {
+    const size = { width: 8, height: 8 };
+    const where = { fromCentre: 40, fromRoad: 10 };
+    const plain = lotPrice(NEW_CARLEON, size, where);
+    expect(lotPrice(NEW_CARLEON, size, { ...where, locked: true })).toBeLessThan(plain);
+    expect(lotPrice(NEW_CARLEON, size, { ...where, carries: 8 })).toBeLessThan(plain);
+    lotsOf(grown).forEach(p => expect(p.metadata.price, p.id).toBe(lotPrice(NEW_CARLEON, p.size, {
+      fromCentre: p.metadata.fromCentre, fromRoad: p.metadata.fromRoad, locked: !!p.metadata.locked, carries: p.metadata.carries ?? 0
+    })));
+  });
+
+  it('passages read only their own chunk, so raising one moves no first-chunk byte or passage', () => {
+    const alone = HubGenerator.generate();
+    (Object.keys(HUB_SIDES) as HubSide[]).forEach(side => {
+      const l = HubGenerator.generate(planOf(side));
+      const firstOnes = l.passages.filter(q => inChunk(l, poiOf(l, q.lotId), l.chunks[0]));
+      expect(firstOnes.length, side).toBe(alone.passages.length);
+    });
+    const a = HubGenerator.generate(planOf('EAST')), b = HubGenerator.generate(planOf('EAST'));
+    expect(JSON.stringify(a.passages)).toBe(JSON.stringify(b.passages));
+  });
+
+  it('the law refuses a lot no passage can free, and allows one a neighbour can', () => {
+    const swap = (s: string, i: number, c: string) => s.slice(0, i) + c + s.slice(i + 1);
+    const m: IHubManifest = JSON.parse(JSON.stringify(NEW_CARLEON));
+    const chunk = m.chunks[m.growth];
+    expect(validateManifest(m)).toEqual([]);
+    m.marks.w = { type: POIType.FOUNTAIN, name: 'Wall', size: { width: 4, height: 4 }, interactable: false, solid: true, metadata: {}, series: 'poi_wall' };
+    // A wall in the door's path, on all sides of a lot at the block's corner.
+    const lotRow = chunk.place.findIndex(r => r.includes('L'));
+    chunk.place[lotRow] = swap(chunk.place[lotRow], 13, EMPTY_MARK);
+    chunk.place[1] = swap(chunk.place[1], 13, 'L');
+    [[12, 1], [14, 1], [12, 2], [13, 2], [14, 2]].forEach(([c, r]) => { chunk.place[r] = swap(chunk.place[r], c, 'w'); });
+    expect(validateManifest(m).join()).toMatch(/cannot be reached/);
+  });
+
+  it('is drawn over what stands on the lot it crosses, by shape', () => {
+    const q = grown.passages.find(p => p.through.length > 0)!;
+    const across = q.tiles.find(t => lotsOf(grown).some(p => q.through.includes(p.id) && t.x >= p.position.x && t.x < p.position.x + p.size.width && t.y >= p.position.y && t.y < p.position.y + p.size.height))!;
+    const lot = lotsOf(grown).find(p => q.through.includes(p.id) && across.x >= p.position.x && across.x < p.position.x + p.size.width && across.y >= p.position.y && across.y < p.position.y + p.size.height)!;
+    const g = hubGround(grown, 0, { [lot.metadata.lotIndex]: 'HOUSE' });
+    const at = (x: number, y: number) => g.data[(across.y * HUB_TILE + y) * g.w + across.x * HUB_TILE + x];
+    const values = new Set(Array.from({ length: HUB_TILE * HUB_TILE }, (_, i) => at(i % HUB_TILE, Math.floor(i / HUB_TILE))));
+    const want = new Set(Array.from({ length: HUB_TILE * HUB_TILE }, (_, i) => passageAtom(across.x * HUB_TILE + (i % HUB_TILE), across.y * HUB_TILE + Math.floor(i / HUB_TILE))));
+    expect(values).toEqual(want);
+    expect(want.size).toBeGreaterThan(1);
+  });
+
+  it('a built lot lets the passage through, on the street and on the map', () => {
+    expect(SRC('src/entities/hub/HubCanvas.tsx')).toMatch(/passageTiles/);
+    expect(hashBytes(cityMinimap(grown, {}, { x: 0, y: 0 }).data)).not.toBe(hashBytes(cityMinimap({ ...grown, passages: [] }, {}, { x: 0, y: 0 }).data));
+  });
+
+  it('the deeds screen says which lot serves which', () => {
+    expect(SRC('src/components/HoldingsPanel.tsx')).toMatch(/Servidão/);
   });
 });
 

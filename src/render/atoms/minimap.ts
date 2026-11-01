@@ -158,6 +158,7 @@ export interface CityLayoutLike {
   zones: { pois: { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; metadata?: Record<string, any> }[] }[];
   chunks: { x: number; y: number }[];
   roads: { x: number; y: number; main: boolean }[];
+  passages: { tiles: { x: number; y: number }[] }[];
 }
 
 const ROAD_INK = { main: px(Role.GROUND, 4), street: px(Role.GROUND, 3) };
@@ -202,6 +203,10 @@ export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number,
       else if (!isLot || built) data[cell] = LOT_INK.built;
       else data[cell] = LOT_INK.empty;
     }
+  }
+  // A servidão crosses lots, so it is drawn over them.
+  for (const q of layout.passages) for (const t of q.tiles) {
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) data[(t.y * s + y) * w + t.x * s + x] = ROAD_INK.main;
   }
   stamp(data, w, h, tile.x * s + 1, tile.y * s + 1, 'PLAYER');
   if (w <= CITY_MAP_ATOMS && h <= CITY_MAP_ATOMS) return { w, h, data };

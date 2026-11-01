@@ -7,7 +7,7 @@ import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../types';
 import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
-import { HubGenerator, IPOI } from '../entities/hub/HubGenerator';
+import { HubGenerator, IPOI, IPassage } from '../entities/hub/HubGenerator';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
@@ -22,7 +22,7 @@ const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
 const DAY_MS = 86_400_000;
 const countOf = (items: IItem[], defId: string) => items.filter(i => i.universalDefinitionId === defId).length;
 
-const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; now: number }> = ({ lot, poi, now }) => {
+const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; passages: IPassage[]; now: number }> = ({ lot, poi, passages, now }) => {
   const { player } = usePlayerStore();
   const hub = useHubStore();
   const stash = player.bank.stashTabs[0]?.items || [];
@@ -54,6 +54,12 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; now: number }> = ({
       {poi && (
         <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>
           {poi.size.width}×{poi.size.height}, {poi.metadata.fromRoad} from the main road, {poi.metadata.fromCentre} from the centre
+          {passages.filter(q => q.lotId === lot.id).map(q => (
+            <div key={q.lotId}>Servidão: no street at its door. Its way out crosses {q.through.length > 0 ? q.through.map(id => id.replace('poi_lot_', 'lot ')).join(', ') : 'open ground'}.</div>
+          ))}
+          {passages.filter(q => q.through.includes(lot.id)).map(q => (
+            <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {q.lotId.replace('poi_lot_', 'lot ')}.</div>
+          ))}
         </div>
       )}
       {!lot.ownerId && (
@@ -253,7 +259,7 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
       </div>
       {scribeOpen && <TemplateStudio onClose={() => setScribeOpen(false)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-        {lots.map(lot => <LotCard key={lot.id} lot={lot} poi={HubGenerator.findPOI(layout, lot.id)} now={now} />)}
+        {lots.map(lot => <LotCard key={lot.id} lot={lot} poi={HubGenerator.findPOI(layout, lot.id)} passages={layout.passages} now={now} />)}
       </div>
     </div>
   );

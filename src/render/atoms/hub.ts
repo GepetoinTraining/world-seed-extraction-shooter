@@ -135,6 +135,10 @@ export function roadAtom(kind: string, joins: { n: boolean; e: boolean; s: boole
   return px(Role.GROUND, 0);
 }
 
+/** A servidão's path: stepping stones, so it reads apart from road and lot alike, and it reads from the hub's own atoms. */
+export const passageAtom = (ax: number, ay: number): number =>
+  ((ax >> 2) + (ay >> 2)) % 2 === 0 ? px(Role.GROUND, 4) : px(Role.GROUND, 1);
+
 const lampLevel = (d2: number, r2: number, x: number, y: number) => (d2 * 2 <= r2 ? 2 : (x + y) % 4 !== 0 ? 1 : 0);
 
 /** How much lamplight reaches an atom: 0, 1 or 2 steps, at the lamp's real radius. */
@@ -535,6 +539,12 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
     );
     blit(data, W, art, p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });
+  // Over whatever stands on the lots it crosses: it blocks nobody, so it must look it.
+  layout.passages.forEach(q => q.tiles.forEach(t => {
+    for (let y = t.y * HUB_TILE; y < (t.y + 1) * HUB_TILE; y++) for (let x = t.x * HUB_TILE; x < (t.x + 1) * HUB_TILE; x++) {
+      data[y * W + x] = passageAtom(x, y);
+    }
+  }));
   pois.filter(p => p.type === POIType.PORTAL).forEach(p => {
     blit(data, W, emblem(p.type, p.size.width * HUB_TILE - 2), p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });

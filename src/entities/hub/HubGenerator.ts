@@ -6,11 +6,11 @@
  */
 
 import { CHUNK_TILES } from '../world/grid';
-import { IHubLayout, IHubZone, IPOI, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
-import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN, SPAWN_MARK, doorTile, firstPlan, lotPrice, tilesToCell } from './hubManifest';
+import { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
+import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN, doorTile, firstPlan, lotPrice, resolveChunk, tilesToCell } from './hubManifest';
 
 export { POIType, ZoneType };
-export type { IHubLayout, IHubZone, IPOI, IPlacedChunk, IRoadCell };
+export type { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell };
 
 // =============================================================================
 // NPC DEFINITIONS
@@ -187,6 +187,7 @@ export class HubGenerator {
 
     const zones: IHubZone[] = [];
     const roads: IRoadCell[] = [];
+    const passages: IPassage[] = [];
     const zonesRaised = new Map<string, number>();
     const seriesCount = new Map<string, number>();
     let spawnPoint = { x: chunks[0].x, y: chunks[0].y };
@@ -209,45 +210,67 @@ export class HubGenerator {
       const byLetter = HubGenerator.zonesOf(chunk, placed, manifest, zonesRaised);
       byLetter.forEach(zone => zones.push(zone));
 
-      chunk.place.forEach((row, cy) => [...row].forEach((mark, cx) => {
-        if (mark === EMPTY_MARK) return;
-        const position = { x: placed.x + cx * CELL_TILES, y: placed.y + cy * CELL_TILES };
-        if (mark === SPAWN_MARK) {
-          if (order === 0) spawnPoint = position;
-          return;
-        }
-        const def = manifest.marks[mark];
-        if (!def) throw new Error(`The manifest has no mark called ${mark}.`);
+      const res = resolveChunk(manifest, chunk);
+      if (order === 0 && res.spawn) spawnPoint = { x: placed.x + res.spawn.x, y: placed.y + res.spawn.y };
+
+      // Who stands here, in reading order, each with its number in the hub.
+      const standing = res.things.map(thing => {
+        const def = manifest.marks[thing.mark];
         const n = def.series ? seriesCount.get(def.series) ?? 0 : 0;
         if (def.series) seriesCount.set(def.series, n + 1);
         const poi: IPOI = {
           id: def.id ?? `${def.series}_${n}`,
           type: def.type,
           name: def.name.replace('{n}', String(n + 1)),
-          position,
-          size: { ...def.size },
+          position: { x: placed.x + thing.x, y: placed.y + thing.y },
+          size: { ...thing.size },
           interactable: def.interactable,
-          metadata: { ...def.metadata }
+          metadata: { ...def.metadata, ...(def.type === POIType.PLAYER_LOT ? { lotIndex: n } : {}) }
         };
+        if (def.npcId) poi.npcId = def.npcId;
+        return { thing, def, poi };
+      });
+
+      // The servidão: who is locked out, and how much each neighbour carries.
+      const carries = new Map<number, number>();
+      const lockedOut = new Map<number, string[]>();
+      res.passages.forEach(q => {
+        const through = q.through.map(i => standing[i].poi.id);
+        lockedOut.set(q.thing, through);
+        passages.push({
+          lotId: standing[q.thing].poi.id,
+          tiles: q.tiles.map(p => ({ x: placed.x + p.x, y: placed.y + p.y })),
+          through
+        });
+        q.tiles.forEach(p => q.through.forEach(i => {
+          const on = standing[i].thing;
+          if (p.x >= on.x && p.x < on.x + on.size.width && p.y >= on.y && p.y < on.y + on.size.height) carries.set(i, (carries.get(i) ?? 0) + 1);
+        }));
+      });
+
+      standing.forEach(({ thing, def, poi }, i) => {
         if (def.type === POIType.PLAYER_LOT) {
           const door = doorTile(poi);
           const fromCentre = Math.abs(door.x - centre.x) + Math.abs(door.y - centre.y);
           const fromRoad = Math.min(...mainHere.map(cell => tilesToCell(door, cell)));
-          poi.metadata.lotIndex = n;
+          const locked = lockedOut.has(i);
+          const carried = carries.get(i) ?? 0;
           poi.metadata.fromCentre = fromCentre;
           poi.metadata.fromRoad = fromRoad;
-          poi.metadata.price = lotPrice(manifest, def.size, { fromCentre, fromRoad });
+          if (locked) poi.metadata.locked = true;
+          if (carried) poi.metadata.carries = carried;
+          poi.metadata.price = lotPrice(manifest, thing.size, { fromCentre, fromRoad, locked, carries: carried });
         }
-        if (def.npcId) poi.npcId = def.npcId;
-        const zone = byLetter.get(chunk.floor[cy][cx]);
+        const letterCx = (poi.position.x - placed.x) / CELL_TILES, letterCy = (poi.position.y - placed.y) / CELL_TILES;
+        const zone = byLetter.get(chunk.floor[Math.floor(letterCy)][Math.floor(letterCx)]);
         if (!zone) throw new Error(`${poi.id} has no floor under it.`);
         zone.pois.push(poi);
         if (def.solid) {
-          for (let dy = 0; dy < def.size.height; dy++) {
-            for (let dx = 0; dx < def.size.width; dx++) navMesh[position.y + dy][position.x + dx] = false;
+          for (let dy = 0; dy < thing.size.height; dy++) {
+            for (let dx = 0; dx < thing.size.width; dx++) navMesh[poi.position.y + dy][poi.position.x + dx] = false;
           }
         }
-      }));
+      });
     });
 
     return {
@@ -260,6 +283,7 @@ export class HubGenerator {
       spawnPoint,
       navMesh,
       roads,
+      passages,
       chunks,
       origin: { x: chunks[0].x, y: chunks[0].y }
     };

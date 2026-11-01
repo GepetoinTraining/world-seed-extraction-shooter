@@ -355,7 +355,8 @@ async function ownedLot() {
   useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [] } as any);
   await useHubStore.getState().loadHub('hub_bars');
   primeStash(buildingKit());
-  const lotId = useHubStore.getState().lots[0].id;
+  // Setup moved for the stretch: lot 0 is 8x8 now, and lot 3 is the 4x4 this bar has always meant.
+  const lotId = useHubStore.getState().lots[3].id;
   const ok = await useHubStore.getState().buyLot(lotId);
   expect(ok).toBe(true);
   return lotId;
