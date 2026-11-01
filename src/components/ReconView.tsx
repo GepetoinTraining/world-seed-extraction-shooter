@@ -23,6 +23,7 @@ import { Sprite } from '../render/atoms/atoms';
 import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { SurveySystem } from '../logic/systems/SurveySystem';
+import { ScanPass } from '../logic/systems/ScanPass';
 import { MapSystem, isMapItem } from '../logic/systems/MapSystem';
 import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
 import { isTypingTarget, suggestStart } from '../logic/systems/FieldInput';
@@ -65,6 +66,8 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
   const canDrop = !free || !!moment?.canDeploy;
   const canScan = !free || !!moment?.canSurvey;
   const player = usePlayerStore(s => s.player);
+  // D67, D69: how the world changed since it last stood open. How many, never who (D60)
+  const since = ScanPass.readout(useWorldStore(s => s.directorRecord));
   const maps = (player.bank.stashTabs[0]?.items ?? []).filter(isMapItem).filter(m => m.mapData.worldId === activeWorldId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const deskRef = useRef<HTMLDivElement>(null);
@@ -316,6 +319,17 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
         <Panel title="WHERE TO START" style={{ width: 320 }}>
           <span className="ws-small">{advice.why}</span>
         </Panel>
+        {free && (moment?.phase === 'SCAN' || since.plain + since.writing > 0) && (
+          <Panel title="SINCE IT LAST STOOD OPEN" style={{ width: 320 }}>
+            <div className="ws-list ws-small">
+              <div className="ws-row"><span>Kinds that changed, with their words</span><span>{since.words}</span></div>
+              <div className="ws-row"><span>Kinds that changed, on plain names</span><span>{since.plain}</span></div>
+              <div className="ws-row"><span>What it grew</span><span>{since.grown}</span></div>
+              <div className="ws-row"><span>Still being written</span><span>{since.writing}</span></div>
+            </div>
+            <span className="ws-dim ws-small">What is not written by the time the gate opens stands as it is, and waits for the next boot.</span>
+          </Panel>
+        )}
         {/* D85: a map reads into the same record a scan writes, as old as it was when scanned */}
         {maps.length > 0 && (
           <Panel title="MAPS IN THE STASH" style={{ width: 320, pointerEvents: 'auto' }}>

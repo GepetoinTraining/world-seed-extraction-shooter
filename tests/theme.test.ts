@@ -247,7 +247,7 @@ describe('line 89: one door', () => {
 
   it('a rest uses the model Pedro chose, one constant per kind (D44)', () => {
     expect(MODEL_FOR.rest).toBe('claude-opus-5-5');
-    expect(Object.keys(MODEL_FOR).sort()).toEqual(['rest', 'talk', 'theme']);
+    expect(Object.keys(MODEL_FOR).sort()).toEqual(['rest', 'talk', 'theme', 'window']);
   });
 
   it('a request carries a frozen system prompt: nothing volatile before the cache line', () => {

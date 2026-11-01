@@ -15,6 +15,9 @@ import { Leaders } from './Leaders';
 import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from './ChestSystem';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
+import { StoreUnit } from '../data/StoreUnit';
+import { ScanPass } from '../../logic/systems/ScanPass';
+import { scanRoom } from '../../logic/systems/ScanRoom';
 
 export interface IWorldCard extends IClockedWorld {
   id: string;
@@ -53,6 +56,10 @@ interface WorldState {
   populationRecord: IPopulationRecord | null;
   /** D93: leaders someone has seen, in the field or by a scan. */
   reportSeen: (entityIds: string[]) => void;
+  /** D69: words saved to this world's record while it stands open. A later scan reads them. */
+  adoptRecord: (worldId: string, record: IDirectorRecord) => void;
+  /** Resolves when what closing a world wrote has landed. */
+  settled: () => Promise<void>;
   /** What has been taken from the open world, kept beside it. Null where a world has no cycles to refill on. */
   chestRecord: IChestRecord | null;
   reportChestLooted: (chestId: string) => void;
@@ -89,6 +96,24 @@ interface WorldState {
 // What chunks are built from, kept for as long as the world is open.
 let generationContext: IGenerationContext | null = null;
 
+/**
+ * What this session's fights said, and nothing else about the record. The database's
+ * copy may have moved while the world was open (D69), so closing adds these to it and
+ * never writes the copy held here over it.
+ */
+let reports: { kind: 'FELLED_A_PERSON' | 'FELL'; definitionId: string; body?: { id: string; rank?: UniversalRank } }[] = [];
+let landing: Promise<unknown> = Promise.resolve();
+
+function landReports(worldId: string): void {
+  const told = reports;
+  reports = [];
+  if (told.length === 0) return;
+  landing = StoreUnit.enqueue(async () => {
+    const saved = await DirectorStore.load(worldId);
+    await DirectorStore.save(worldId, told.reduce((at, r) => Director.report(at, r.kind, r.definitionId, r.body), saved));
+  }).catch(e => console.error('[WORLD] What this session reported did not land:', e));
+}
+
 export const useWorldStore = create<WorldState>((set, get) => ({
   directorRecord: null,
   populationRecord: null,
@@ -124,9 +149,22 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
   reportToDirector: (kind, definitionId, body) => {
     const record = get().directorRecord;
+    if (!record) return;
     // A kind stays a kind: the ledger names a body only where the record holds one (D93)
-    if (record) set({ directorRecord: Director.report(record, kind, definitionId, body && Leaders.isLeader(body.id) ? body : undefined) });
+    const named = body && Leaders.isLeader(body.id) ? body : undefined;
+    reports.push({ kind, definitionId, body: named });
+    set({ directorRecord: Director.report(record, kind, definitionId, named) });
   },
+  adoptRecord: (worldId, record) => {
+    if (get().activeWorldId !== worldId) return;
+    const told = reports.reduce((at, r) => Director.report(at, r.kind, r.definitionId, r.body), record);
+    set({ directorRecord: told });
+    const card = get().availableWorlds.find(w => w.id === worldId);
+    if (generationContext && card) {
+      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), lay: generationContext.lay };
+    }
+  },
+  settled: async () => { await landing; },
   availableWorlds: [],
   activeWorldId: null,
   currentMap: null,
@@ -207,9 +245,16 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       set({ isGenerating: true });
 
       try {
+        // Whatever the last world had to say lands first, so what is read next includes it
+        const leaving = get().activeWorldId;
+        if (leaving) landReports(leaving);
+        await landing;
         // --- HOOKED UP: CALL SERVICE ---
         const moment = WorldClock.momentAt(worldCard, Date.now());
-        const director = await DirectorStore.catchUp(worldCard.id, moment.generation, { seed: worldCard.seed, themeId: worldCard.themeId });
+        const lineWorld = { seed: worldCard.seed, themeId: worldCard.themeId };
+        const before = await DirectorStore.load(worldCard.id);
+        const caught = await DirectorStore.catchUp(worldCard.id, moment.generation, lineWorld);
+        const director = await ScanPass.compute(scanRoom, worldCard.id, before, caught, lineWorld);
         set({ directorRecord: director, generation: moment.generation });
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, worldCard.magicUnlocked);
 
@@ -235,7 +280,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         DreamingSystem.activate(worldCard.seed,
           worldCard.themeId
             // D49: only once magic was unlocked does a world dream at all
-            ? (worldCard.magicUnlocked ? ContentRegistry.dreamPack(worldCard.themeId) : null)
+            ? (worldCard.magicUnlocked ? ContentRegistry.dreamPack(worldCard.themeId, director) : null)
             : worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
 
         const isDev = !!worldCard.isDebug;
@@ -302,10 +347,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
 
   exitWorld: () => {
-    // What this session's fights said about the world's monsters, for the next rest
-    const record = get().directorRecord;
+    // What this session's fights said about the world's monsters, for its next regeneration
     const worldId = get().activeWorldId;
-    if (record && worldId) void DirectorStore.save(worldId, record);
+    if (worldId) landReports(worldId);
     // What was folded is kept, so the next opening starts from it
     const living = get().populationRecord;
     if (living && worldId) void PopulationStore.save(worldId, living);

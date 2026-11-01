@@ -5,9 +5,9 @@
  * Nothing here is trusted on the way back. Whatever returns stands before the law.
  */
 import type { IDoorMessage, IDoorRequest } from './door';
+import type { IWorldSummary } from '../../src/logic/theme/WorldGrowth';
 import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, PASSIVE_STATS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
-import type { ILineAsk } from '../../src/logic/theme/CreatureLines';
-import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
+import type { IGrowthAsk, ILineAsk } from '../../src/logic/theme/CreatureLines';
 import { STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 
@@ -58,7 +58,7 @@ A person is resting. While they slept, what they did settles. You are given a wo
 
 "gifts" in what was queued are skills a person has poured their levels into. For each, write as many as it is "owed": either an active skill, something they can now do, or a passive bonus, something that is now always true of them. It must grow out of that skill's own tags, and must not repeat what it already "has". Write "skill" as its id, kind "active" or "passive", a name and one dry line. A rarer skill's gift is stranger and greater. For active, fill delivery (${DELIVERIES.join(', ')}), effect (${EFFECTS.join(', ')}; "rest" refills the caster's energy) and cost (${COST_BANDS.join(', ')}), and elements from the world's list; leave stat and band empty. For passive, fill stat (${PASSIVE_STATS.join(', ')}) and band (${STAT_BANDS.join(', ')}); leave the others empty and elements as an empty list. You never write numbers.
 
-For each queued skill, give it a name and a line of flavor, and say what it lets the holder do; grants come from this list and may be empty (${SKILL_GRANTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. In "growth" you may add a few new creatures, materials, affixes, abilities and lines of lore that the world would have grown into, in the same shapes as a pack; they will only reach worlds signed later, and a world already signed never changes. Leave growth empty if nothing grew.
+For each queued skill, give it a name and a line of flavor, and say what it lets the holder do; grants come from this list and may be empty (${SKILL_GRANTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. What the world itself grows is not yours here: it has its own time. Write only about this person.
 
 ${GRAMMAR}`;
 
@@ -76,11 +76,19 @@ For each, answer under its "order":
 A world's words, its abilities and the kinds to write follow. Registry:
 ${REGISTRY}`;
 
+const GROWTH_SYSTEM = `${VOICE}
+
+A world has regenerated, and people were in it. You are told what it holds and what happened there: which kinds wore people down, and which kept falling. Say what it grew into since, if anything: a few new creatures, materials, affixes, abilities and lines of lore, in the same shapes as a pack. What you write stands in this world from now on, beside what it was signed with, and people will meet it. Write under each list only what is new, and answer under "order". If nothing grew, leave every list empty: that is a fair answer.
+
+You write no new tags: use the world's own words and the registry, and nothing else.
+
+${GRAMMAR}`;
+
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
 export const REST_SCHEMA: Record<string, unknown> = {
-  type: 'object', additionalProperties: false, required: ['skills', 'weaves', 'gifts', 'growth'],
+  type: 'object', additionalProperties: false, required: ['skills', 'weaves', 'gifts'],
   properties: {
     gifts: {
       type: 'array',
@@ -108,15 +116,17 @@ export const REST_SCHEMA: Record<string, unknown> = {
     weaves: {
       type: 'array',
       items: { type: 'object', additionalProperties: false, required: ['id', 'name'], properties: { id: str, name: str } }
-    },
-    growth: {
-      type: 'object', additionalProperties: false,
-      required: ['creatures', 'materials', 'affixes', 'abilities', 'tags', 'lore'],
-      properties: {
-        creatures: themeProperty('creatures'), materials: themeProperty('materials'), affixes: themeProperty('affixes'),
-        abilities: themeProperty('abilities'), tags: themeProperty('tags'), lore: themeProperty('lore')
-      }
     }
+  }
+};
+
+export const GROWTH_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false,
+  required: ['order', 'creatures', 'materials', 'affixes', 'abilities', 'lore'],
+  properties: {
+    order: str,
+    creatures: themeProperty('creatures'), materials: themeProperty('materials'), affixes: themeProperty('affixes'),
+    abilities: themeProperty('abilities'), lore: themeProperty('lore')
   }
 };
 
@@ -138,17 +148,36 @@ export function buildThemeRequest(messages: IDoorMessage[], draft: Record<string
   };
 }
 
+/** Thinking counts against this too, and it cannot be turned off on this model. A ceiling, never a bill. */
+const LINE_TOKENS = 2000;
+const LINE_TOKENS_FLOOR = 8000;
+const GROWTH_TOKENS = 16000;
+
 /**
  * A small batch of lines that changed (D69). It goes as a filed batch, the same road
- * as a rest, so it carries that kind. What comes back stands before `ThemeLaw.validateLine`.
+ * as a rest. What comes back stands before `ThemeLaw.validateLine`.
  */
-export function buildLineRequest(asks: ILineAsk[], theme: Pick<IThemeBody, 'name' | 'premise' | 'abilities' | 'tags'>): IDoorRequest {
+export function buildLineRequest(asks: ILineAsk[], theme: Pick<IWorldSummary, 'name' | 'premise' | 'abilities' | 'tags'>): IDoorRequest {
   const world = { name: theme.name, premise: theme.premise, words: theme.tags, abilities: theme.abilities.map(a => ({ key: a.key, name: a.name, blurb: a.blurb })) };
   return {
-    kind: 'rest', system: LINE_SYSTEM, schema: LINE_SCHEMA, maxTokens: Math.max(2000, asks.length * 800),
+    kind: 'window', system: LINE_SYSTEM, schema: LINE_SCHEMA, maxTokens: Math.max(LINE_TOKENS_FLOOR, asks.length * LINE_TOKENS),
     messages: [{ role: 'user', content: `The world:\n${JSON.stringify(world)}\n\nThe kinds that changed:\n${JSON.stringify(asks)}` }]
   };
 }
+
+/** What a regeneration grew (D64). What comes back stands before the whole pack's law, read with it. */
+export function buildGrowthRequest(asks: IGrowthAsk[], theme: IWorldSummary): IDoorRequest {
+  return {
+    kind: 'window', system: GROWTH_SYSTEM, schema: GROWTH_SCHEMA, maxTokens: GROWTH_TOKENS,
+    messages: [{ role: 'user', content: `The world:\n${JSON.stringify(theme)}\n\nWhat happened there:\n${JSON.stringify(asks[0])}` }]
+  };
+}
+
+/** Each kind of ask a window can carry. A further one (D93's goals and plans) joins here, beside its kind in `ScanPass`. */
+export const WINDOW_REQUESTS: Record<string, (asks: never[], theme: IWorldSummary) => IDoorRequest> = {
+  line: buildLineRequest as never,
+  growth: buildGrowthRequest as never
+};
 
 export function buildRestRequest(queue: unknown, theme: unknown): IDoorRequest {
   return {

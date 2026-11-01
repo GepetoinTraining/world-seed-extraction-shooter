@@ -8,8 +8,10 @@
  *
  * Code decides when, from the Director's fitness record at a regeneration. A model
  * writes the words and the law judges them; with no key an order waits and nothing
- * blocks. Numbers come from the formula: bands plus depth. A descendant stands in its
- * world's own record, never in the pack that world pinned.
+ * blocks: the change stands at once on plain words (D69), and the words take its place
+ * when they come. Numbers come from the formula: bands plus depth. A descendant stands
+ * in its world's own record, never in the pack that world pinned, and so does what the
+ * world grows (D64).
  *
  * Everything hashed happens here, at the regeneration. A chunk only reads the record.
  */
@@ -20,10 +22,11 @@ import { WebBank } from '../content/WebBank';
 import { sha256Hex } from '../journal/SessionJournal';
 import { Rng } from '../rng/DeterministicRNG';
 import { ContentRegistry } from './ContentRegistry';
-import { canonical, compileTheme, creatureIdOf, junkIdsFor } from './ThemeCompiler';
+import { canonical, compileTheme, creatureIdOf, junkIdsFor, keyIdsOf } from './ThemeCompiler';
 import { descendantNumbers } from './ThemeFormula';
 import { ThemeLaw } from './ThemeLaw';
-import { BUILDS, ILineBands, ILineChange, ILineWords, IThemePack, PACES, THREATS } from './ThemeTypes';
+import { BUILDS, ILineBands, ILineChange, ILineWords, IThemePack, LINE_FEATURES, PACES, THREATS } from './ThemeTypes';
+import { IGrownBatch, IThemeGrowth, WorldGrowth } from './WorldGrowth';
 
 export type { ILineWords, ILineChange } from './ThemeTypes';
 
@@ -34,6 +37,8 @@ export interface ILineNode {
   change: ILineChange;
   /** The regeneration it came in at. On the record, and not in its hash. */
   bornAt: number;
+  /** D69: the order it stands in for until that order's words come. Not in its hash. */
+  plain?: string;
 }
 
 export type LinePressure = 'thriving' | 'hunted';
@@ -54,6 +59,25 @@ export interface ILineRecord {
   spent: Record<string, number>;
   /** One per regeneration a machine saw. Two machines at one cycle compare these. */
   roots: { generation: number; root: string }[];
+  /** D64: what this world has grown. Absent means nothing has. */
+  grown?: IGrownBatch[];
+  /** Growth code has rolled for, waiting for its words. */
+  growing?: IGrowthOrder[];
+}
+
+/** A regeneration people fought through has rolled to grow. What came of it is the model's to say. */
+export interface IGrowthOrder {
+  id: string;
+  generation: number;
+  /** Per kind: how it fared in that regeneration. */
+  tally: { id: string; felled: number; fell: number }[];
+}
+
+/** What a model is told about one growth order. */
+export interface IGrowthAsk {
+  order: string;
+  generation: number;
+  happened: { kind: string; felled: number; fell: number }[];
 }
 
 export interface ILineWorld { seed: string; themeId?: string }
@@ -108,9 +132,10 @@ export class CreatureLines {
     return `mob_line_${await sha256Hex(`line:v1:${canonical({ parents, change })}`)}`;
   }
 
-  /** The first generation and all that came after it. A count is read sector by sector, so no machine knows a kind has gone from a whole world: every line counts as living. */
+  /** The first generation, what grew since, and all that came after them. A count is read sector by sector, so no machine knows a kind has gone from a whole world: every line counts as living. */
   static living(pack: IThemePack, lines: ILineRecord): string[] {
-    return [...pack.creatures.map(c => creatureIdOf(pack.themeId, c.key)), ...Object.keys(lines.nodes)].sort();
+    const grown = (lines.grown ?? []).flatMap(b => b.growth.creatures.map(c => creatureIdOf(b.scope, c.key)));
+    return [...pack.creatures.map(c => creatureIdOf(pack.themeId, c.key)), ...grown, ...Object.keys(lines.nodes)].sort();
   }
 
   /** A Merkle root over a world's living lines, for one cycle: any order in, one root out. */
@@ -138,21 +163,46 @@ export class CreatureLines {
     return nodes.filter((n, i) => ids[i] !== n.id).map(n => n.id);
   }
 
+  /**
+   * The scope a batch's ids hang from: its words and its world, so the same words in two
+   * worlds stand apart. The "z" sorts it after every pinned id, because a chunk's pools
+   * are read in id order and a world's first timber should stay its first.
+   */
+  static async scopeOf(seed: string, growth: IThemeGrowth): Promise<string> {
+    return `theme_z${(await sha256Hex(`grown:v1:${seed}:${canonical(growth)}`)).slice(0, 23)}`;
+  }
+
+  /** Which grown batches no longer prove what they claim. */
+  static async verifyGrown(lines: ILineRecord, seed: string): Promise<string[]> {
+    const batches = lines.grown ?? [];
+    const scopes = await Promise.all(batches.map(b => this.scopeOf(seed, b.growth)));
+    return batches.filter((b, i) => scopes[i] !== b.scope).map(b => b.scope);
+  }
+
   /** Who stands where, and how it was built, for every kind a pack and a record hold. */
   private static states(pack: IThemePack, lines: ILineRecord): Map<string, IKindState> {
     const compiled = ContentRegistry.compiled(pack.themeId) ?? compileTheme(pack);
     const states = new Map<string, IKindState>();
+    const elder = (c: IThemePack['creatures'][number], id: string, colorHex: string) => states.set(id, {
+      bands: { build: c.build, threat: c.threat, pace: c.pace },
+      rank: c.rank, size: c.size, behavior: c.behavior, colorHex, tree: c.tree,
+      tags: c.tags, habitat: c.habitat, innate: c.innate,
+      social: c.social, builds: c.builds,
+      name: c.name, blurb: c.blurb, generation: 1,
+      root: id, rootTags: c.tags, features: [], lineage: [c.name]
+    });
     for (const c of pack.creatures) {
       const id = creatureIdOf(pack.themeId, c.key);
-      states.set(id, {
-        bands: { build: c.build, threat: c.threat, pace: c.pace },
-        rank: c.rank, size: c.size, behavior: c.behavior, colorHex: compiled.mobs[id].colorHex, tree: c.tree,
-        tags: c.tags, habitat: c.habitat, innate: c.innate,
-        social: c.social, builds: c.builds,
-        name: c.name, blurb: c.blurb, generation: 1,
-        root: id, rootTags: c.tags, features: [], lineage: [c.name]
-      });
+      elder(c, id, compiled.mobs[id].colorHex);
     }
+    // What a world grew is a first generation of its own, and can change like any other
+    const grown = lines.grown ?? [];
+    WorldGrowth.compile(pack, lines).forEach((batch, i) => {
+      for (const c of grown[i].growth.creatures) {
+        const id = creatureIdOf(grown[i].scope, c.key);
+        elder(c, id, batch.mobs[id].colorHex);
+      }
+    });
     const resolve = (id: string): IKindState | undefined => {
       if (states.has(id)) return states.get(id);
       const node = lines.nodes[id];
@@ -190,6 +240,7 @@ export class CreatureLines {
     const orders: ILineOrder[] = [];
     for (const id of this.living(pack, lines)) {
       if (record.weights[id] === undefined) continue;
+      if (lines.nodes[id]?.plain) continue; // its id moves when its words come, so nothing may hang from it yet
       const moved = pressureOf(record, id) / (lines.spent[id] ?? 1);
       if (moved < CHANGE_AT) continue;
       if (Rng.fromKey(`lines:${seed}:${record.generation}:${id}`).next() >= 1 - 1 / moved) continue;
@@ -224,6 +275,103 @@ export class CreatureLines {
     return { ...record, lines: await this.signed({ ...lines, pending: [...lines.pending, ...orders], spent }, record.generation, world.seed, pack) };
   }
 
+  /**
+   * D69: the change stands at once, on plain words, so a world with no key keeps growing.
+   * Keyed and pure: every machine stands the same kind and signs the same root.
+   */
+  static async standPlain(record: IDirectorRecord, world: ILineWorld): Promise<IDirectorRecord> {
+    const pack = ContentRegistry.get(world.themeId ?? ContentRegistry.defaultThemeId());
+    const lines = record.lines;
+    if (!pack || !lines) return record;
+    const standing = new Set(Object.values(lines.nodes).map(n => n.plain));
+    const bare = lines.pending.filter(o => !standing.has(o.id));
+    if (bare.length === 0) return record;
+    const states = this.states(pack, lines);
+    const nodes = { ...lines.nodes };
+    for (const order of bare) {
+      const parent = states.get(order.parents[0]);
+      if (!parent) continue;
+      const change: ILineChange = {
+        name: `${parent.name}, as of regeneration ${order.generation}`,
+        blurb: `It changed at regeneration ${order.generation}. The words for it have not come.`,
+        tags: [], innate: [], bands: order.bands,
+        features: [Rng.fromKey(`plain:${world.seed}:${order.id}`).pick([...LINE_FEATURES])]
+      };
+      const id = await this.childId(order.parents, change);
+      nodes[id] = { id, parents: order.parents, change, bornAt: order.generation, plain: order.id };
+    }
+    return { ...record, lines: await this.signed({ ...lines, nodes }, record.generation, world.seed, pack) };
+  }
+
+  /** The chance a regeneration grows something: how much happened in it, without end. */
+  static rollGrowth(seed: string, generation: number, happened: number): boolean {
+    return Rng.fromKey(`growth:${seed}:${generation}`).next() < 1 - 1 / (1 + happened);
+  }
+
+  /**
+   * Compute's half of growth: what a regeneration's fights earned, read from the record
+   * before they were folded. Nobody touched it, nothing grows. It waits for its words.
+   */
+  static async orderGrowth(record: IDirectorRecord, before: Pick<IDirectorRecord, 'felled' | 'fell'>, world: ILineWorld, generation: number): Promise<IDirectorRecord> {
+    const lines = record.lines ?? this.empty();
+    const id = `growth_${generation}`;
+    if ((lines.growing ?? []).some(o => o.id === id) || (lines.grown ?? []).some(b => b.order === id)) return record;
+    const seen = [...new Set([...Object.keys(before.felled), ...Object.keys(before.fell)])].sort();
+    const tally = seen.map(kind => ({ id: kind, felled: before.felled[kind] ?? 0, fell: before.fell[kind] ?? 0 }));
+    const happened = tally.reduce((sum, t) => sum + t.felled + t.fell, 0);
+    if (happened === 0 || !this.rollGrowth(world.seed, generation, happened)) return record;
+    return { ...record, lines: { ...lines, growing: [...(lines.growing ?? []), { id, generation, tally }] } };
+  }
+
+  /** What a model hears about one growth order: what happened there, under the names the world knows. */
+  static askForGrowth(order: IGrowthOrder, pack: IThemePack, lines: ILineRecord): IGrowthAsk {
+    const states = this.states(pack, lines);
+    return {
+      order: order.id, generation: order.generation,
+      happened: order.tally.map(t => ({ kind: states.get(t.id)?.name ?? 'something unnamed', felled: t.felled, fell: t.fell }))
+    };
+  }
+
+  /**
+   * Words for a growth order, before the law. Refused whole and it waits; empty and
+   * nothing grew, which is an answer. Never throws on junk.
+   */
+  static async settleGrowth(record: IDirectorRecord, data: unknown, world: ILineWorld) {
+    const answer = (data ?? {}) as Partial<IThemeGrowth> & { order?: unknown };
+    const orderId = String(answer.order ?? '');
+    const pinned = ContentRegistry.get(world.themeId ?? ContentRegistry.defaultThemeId());
+    const lines = record.lines;
+    const order = lines?.growing?.find(o => o.id === orderId);
+    const no = (reason: string) => ({ record, installed: [] as string[], refused: [{ order: orderId, reason }] });
+    if (!pinned || !lines || !order) return no('Growth refused whole: nothing is waiting under that order.');
+    const lists = ['creatures', 'materials', 'affixes', 'abilities', 'lore'] as const;
+    if (lists.some(k => !Array.isArray(answer[k]))) return no('Growth refused whole: it is missing a list.');
+    if (answer.tags !== undefined && (!Array.isArray(answer.tags) || answer.tags.length > 0)) {
+      return no('Growth refused whole: it brings a word of its own. A world grows in the words the web already holds.');
+    }
+    const growth: IThemeGrowth = {
+      creatures: answer.creatures!, materials: answer.materials!, affixes: answer.affixes!,
+      abilities: answer.abilities!, lore: answer.lore!, tags: []
+    };
+    const waiting = lines.growing!.filter(o => o.id !== order.id);
+    if (WorldGrowth.isEmpty(growth)) {
+      return { record: { ...record, lines: { ...lines, growing: waiting } }, installed: [] as string[], refused: [] };
+    }
+    let verdict: { ok: boolean; reason?: string };
+    try {
+      verdict = ContentRegistry.judge(WorldGrowth.grownBody(WorldGrowth.packWith(pinned, lines), growth));
+    } catch {
+      return no('Growth refused whole: what came back is not in the shape of a pack.');
+    }
+    if (!verdict.ok) return no(verdict.reason ?? 'Growth refused whole.');
+    const scope = await this.scopeOf(world.seed, growth);
+    const next: ILineRecord = {
+      ...lines, growing: waiting,
+      grown: [...(lines.grown ?? []), { scope, order: order.id, bornAt: record.generation, growth }]
+    };
+    return { record: { ...record, lines: await this.signed(next, record.generation, world.seed, pinned) }, installed: [scope], refused: [] };
+  }
+
   /** What a model hears about one order. It is told what is decided; it writes the rest. */
   static askFor(order: ILineOrder, pack: IThemePack, lines: ILineRecord): ILineAsk {
     const state = this.states(pack, lines).get(order.parents[0]);
@@ -245,19 +393,35 @@ export class CreatureLines {
     const lines = record.lines;
     const order = lines?.pending.find(o => o.id === orderId);
     if (!pack || !lines || !order) return { ok: false, record, reason: 'Line refused whole: nothing is waiting under that order.' };
-    const elders = [...pack.creatures.map(c => c.name), ...Object.values(lines.nodes).map(n => n.change.name)];
-    const verdict = ThemeLaw.validateLine(words, pack, elders, registered);
+    const reads = WorldGrowth.packWith(pack, lines);
+    const elders = [...reads.creatures.map(c => c.name), ...Object.values(lines.nodes).map(n => n.change.name)];
+    const verdict = ThemeLaw.validateLine(words, reads, elders, registered);
     if (!verdict.ok) return { ok: false, record, reason: verdict.reason };
 
     const { name, blurb, tags, features, innate } = words;
     const change: ILineChange = { name: name.trim(), blurb: blurb.trim(), tags, features, innate, bands: order.bands };
     const id = await this.childId(order.parents, change);
+    // The words take the plain kind's place, and what it earned while it stood comes with them
+    const plain = Object.values(lines.nodes).find(n => n.plain === orderId);
+    const nodes = { ...lines.nodes };
+    if (plain) delete nodes[plain.id];
     const next: ILineRecord = {
       ...lines,
-      nodes: { ...lines.nodes, [id]: { id, parents: order.parents, change, bornAt: record.generation } },
+      nodes: { ...nodes, [id]: { id, parents: order.parents, change, bornAt: record.generation } },
       pending: lines.pending.filter(o => o.id !== orderId)
     };
-    return { ok: true, id, record: { ...record, lines: await this.signed(next, record.generation, world.seed, pack) } };
+    const moved = plain ? this.carried(record, plain.id, id) : record;
+    return { ok: true, id, record: { ...moved, lines: await this.signed(next, record.generation, world.seed, pack) } };
+  }
+
+  /** A kind's standing, moved from one id to another. */
+  private static carried(record: IDirectorRecord, from: string, to: string): IDirectorRecord {
+    const shift = (table: Record<string, number>) => {
+      if (table[from] === undefined) return table;
+      const { [from]: value, ...rest } = table;
+      return { ...rest, [to]: value };
+    };
+    return { ...record, felled: shift(record.felled), fell: shift(record.fell), weights: shift(record.weights) };
   }
 
   /** A batch back from the door: what passes stands, and what does not waits for the next window (D69). */
@@ -281,8 +445,8 @@ export class CreatureLines {
 
   /** The definitions a record's kinds read as. Pure, and only what can prove itself comes in. */
   static compile(pack: IThemePack, lines: ILineRecord): Record<string, unknown> {
-    const compiled = ContentRegistry.compiled(pack.themeId) ?? compileTheme(pack);
-    const abilityId = new Map(Object.values(compiled.abilities).map(a => [a.key, a.id]));
+    const scoped = (lines.grown ?? []).flatMap(b => [...keyIdsOf({ themeId: b.scope, materials: [], goods: [], stations: [], abilities: b.growth.abilities })]);
+    const abilityId = new Map([...keyIdsOf(pack), ...scoped]);
     const states = this.states(pack, lines);
     const defs: Record<string, unknown> = {};
     for (const id of Object.keys(lines.nodes)) {
@@ -311,7 +475,9 @@ export class CreatureLines {
   static async define(record: IDirectorRecord, themeId?: string): Promise<void> {
     const lines = record.lines;
     const pack = ContentRegistry.get(themeId ?? ContentRegistry.defaultThemeId());
-    if (!lines || !pack || Object.keys(lines.nodes).length === 0) return;
+    if (!lines || !pack) return;
+    ContentRegistry.defineGrowth(pack, lines);
+    if (Object.keys(lines.nodes).length === 0) return;
     const bad = new Set(await this.verify(lines));
     if (bad.size > 0) console.warn(`[LINES] ${bad.size} kinds in this record do not prove themselves, and were left out.`);
     const nodes = Object.fromEntries(Object.entries(lines.nodes).filter(([id]) => !bad.has(id)));

@@ -89,7 +89,8 @@ const unique = (tags: string[]) => [...new Set(tags)];
 /** No hue carries meaning (Pedro is colourblind); a thing's color only varies its look. */
 const lookOf = (id: string) => `#${(fnv1a(`look:${id}`) & 0xffffff).toString(16).padStart(6, '0')}`;
 
-export function compileTheme(pack: IThemePack): ICompiledTheme {
+/** The id each key a pack writes will have, for anything that names it by key. */
+export function keyIdsOf(pack: Pick<IThemePack, 'themeId' | 'materials' | 'goods' | 'stations' | 'abilities'>): Map<string, string> {
   const sid = shortIdOf(pack.themeId);
   const idOf = (prefix: string, key: string) => `${prefix}_${sid}_${key}`;
   const ids = new Map<string, string>();
@@ -97,6 +98,14 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
   for (const g of pack.goods) ids.set(g.key, idOf('crf', g.key));
   for (const s of pack.stations) ids.set(s.key, idOf('stn', s.key));
   for (const a of pack.abilities) ids.set(a.key, idOf('abl', a.key));
+  return ids;
+}
+
+/** @param known the ids of keys this pack does not write itself: what a world grew from. */
+export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICompiledTheme {
+  const sid = shortIdOf(pack.themeId);
+  const idOf = (prefix: string, key: string) => `${prefix}_${sid}_${key}`;
+  const ids = new Map([...(known ?? []), ...keyIdsOf(pack)]);
 
   const out: ICompiledTheme = {
     themeId: pack.themeId,
