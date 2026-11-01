@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -196,6 +196,19 @@ export class ThemeLaw {
       if (bare) return no(`${bare.key} leaves nothing behind. Every creature has some junk (D99).`);
     }
 
+    if (formula >= ANCHORS_FROM_FORMULA) {
+      if (!Array.isArray(pack.anchors) || pack.anchors.length === 0) return no('Nothing in this world holds value. A world needs anchors (D115).');
+      for (const a of pack.anchors) {
+        if (!claim(a.key)) return no(`anchor "${a.key}" needs its own plain key.`);
+        if (!a.name?.trim()) return no(`anchor ${a.key} has no name.`);
+        if (!has(RANKS, a.rank)) return no(`${a.key}: "${a.rank}" is not a rank.`);
+        if (!has(WEIGHTS, a.weight) || !has(WORTHS, a.worth)) return no(`${a.key} is outside the bands.`);
+        if (!Array.isArray(a.foundIn) || a.foundIn.length === 0 || a.foundIn.some(b => !has(BIOMES, b))) return no(`${a.key} is found nowhere the world has.`);
+        const t = unknownTag(a.tags);
+        if (t) return no(`${a.key} is tagged "${t}", which is not registered.`);
+      }
+    }
+
     for (const c of pack.consumables) {
       if (!claim(c.key)) return no(`consumable "${c.key}" needs its own plain key.`);
       if (!has(RANKS, c.rank) || !has(CONSUMABLE_KINDS, c.kind)) return no(`${c.key} is outside the bands.`);
@@ -225,6 +238,18 @@ export class ThemeLaw {
       }
       const t = a.allowedTags.find(tag => !SCOPE_WORDS.has(tag) && !known(tag));
       if (t) return no(`${a.key} may land on "${t}", which is not registered.`);
+    }
+
+    // D119: optional, so a pack written before there was such a thing stands as it was.
+    for (const p of pack.professions ?? []) {
+      if (!claim(p.key)) return no(`profession "${p.key}" needs its own plain key.`);
+      if (!p.name?.trim()) return no(`profession ${p.key} has no name.`);
+      if (!has(RANKS, p.rank)) return no(`${p.key}: "${p.rank}" is not a rank.`);
+      if (!p.concept || !TagLaw.isCanonicalSpelling(p.concept)) return no(`${p.key} knows nothing a chain could be written back from.`);
+      if (!p.knows?.trim() || !p.workshop?.trim()) return no(`${p.key} has to say what they know and where they would do it.`);
+      if (p.tool.length === 0 || p.material.length === 0) return no(`${p.key} connects no tool or no material (D25).`);
+      const t = unknownTag([...p.tool, ...p.material]);
+      if (t) return no(`${p.key} names "${t}", which is not registered.`);
     }
 
     // CAN IT BE PLAYED? Line 45's question, asked of a world before it exists.
@@ -277,7 +302,7 @@ export class ThemeLaw {
   }
 
   /** Only `count`, `makes` and `tier` may be numbers. Everything else is a word. */
-  private static strayNumber(node: unknown, path = 'the pack'): string | null {
+  static strayNumber(node: unknown, path = 'the pack'): string | null {
     if (typeof node === 'number') return path;
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
@@ -299,7 +324,7 @@ export class ThemeLaw {
     return null;
   }
 
-  private static findCycle(pack: IThemeBody): string | null {
+  static findCycle(pack: Pick<IThemeBody, 'goods'>): string | null {
     const goods = new Map(pack.goods.map(g => [g.key, g]));
     const walking = new Set<string>();
     const done = new Set<string>();

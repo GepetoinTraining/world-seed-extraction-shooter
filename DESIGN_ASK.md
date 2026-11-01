@@ -401,7 +401,7 @@ Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time an
 
 ### On the map, once seen
 
-- A scan or a walk that reads a territory's ground records a `holding` on the survey entry: which chunks, what stood there, at which generation. Nothing marks it before someone has seen it.
+- A scan or a walk that reads a territory's ground records a holding in the `holdings` list on the survey entry, because play showed one sector holding three: which chunks, what stood there, at which generation. Nothing marks it before someone has seen it.
 - The recon view draws it as hatching with a hard seam at its border, and structures as marks by shape, never hue.
 - It decays as D68 says: the land keeps, the holding goes stale, and a reading says how long ago. Territories grow, so a stale border is a real danger, and a map of one written fresh is worth more (D85).
 - A written map carries the field through `mapSheet` (A3), by name, so a later field cannot ride along.

@@ -33,16 +33,18 @@ export const GOLDEN_VECTORS: IGoldenVector[] = [
 
 /**
  * The shipped theme's own land. A change here means generation moved: say so, on purpose.
- * Recaptured when the theme gained its animals (D63), and again when it gained its elites,
- * its `social` and `builds` words and its junk (D93, D99). Each of those is a new theme: a world
- * pinned to an older one reads the banked pack, and `tests/trees.test.ts` and
- * `tests/population.test.ts` hold their land. The fixture's vectors above did not move: it has
- * no plain elite that says it is social, so it has no roster.
+ * Recaptured when the theme gained its animals (D63), again when it gained its elites, its
+ * `social` and `builds` words and its junk (D93, D99), and again when it gained its anchors
+ * (D115). No generation code moved for the last: a creature's id carries its theme's id. Each of
+ * those is a new theme: a world pinned to an older one reads the banked pack, and
+ * `tests/trees.test.ts`, `tests/population.test.ts` and `tests/money.test.ts` hold their land.
+ * The fixture's vectors above did not move: it has no plain elite that says it is social, so it
+ * has no roster.
  */
 export const FIRST_THEME_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 2646139221 },
-  { seed: 'golden-beta', size: 32, hash: 2744287391 },
-  { seed: 'dev-sandbox-v4', size: 32, hash: 2784880835 }
+  { seed: 'golden-alpha', size: 16, hash: 1829812480 },
+  { seed: 'golden-beta', size: 32, hash: 2697284127 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 3807083941 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */

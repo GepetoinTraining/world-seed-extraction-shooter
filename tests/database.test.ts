@@ -30,6 +30,7 @@ import { BrowserImport, ILegacyDoc } from '../src/logic/persistence/BrowserImpor
 import { HomeHub } from '../src/logic/persistence/HomeHub';
 import { Ledger } from '../src/logic/ledger/Ledger';
 import { Treasury } from '../src/logic/economy/Treasury';
+import { Wallets } from '../src/logic/economy/Wallets';
 import { ExitLevy } from '../src/logic/economy/ExitLevy';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { GoldCommit } from '../src/logic/economy/GoldCommit';
@@ -357,6 +358,35 @@ describe('line 71: a gold change is one commit', () => {
     expect((await VectorStore.get<any>(VectorNamespace.CHARACTERS, cert.metadata.uid))!.data.payload.bank.gold).toBe(880);
   });
 
+  it('maintenance while saves are going does not take the server down, and loses nothing', async () => {
+    const cert = await becomeAvatar('COMPACT', 5000);
+    const hub = `hub_compact_${cert.metadata.uid}`;
+    const padding = 'x'.repeat(300 * 1024);
+    let writing = true;
+    const maintained: number[] = [];
+    const maintenance = (async () => {
+      while (writing) {
+        const res = await fetch(`http://127.0.0.1:${port}/api/db/maintain`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        maintained.push(res.status);
+        await new Promise(r => setTimeout(r, 50));
+      }
+    })();
+    for (let i = 0; i < 40; i++) {
+      spend(10);
+      await GoldCommit.commit({
+        rows: [{ type: 'GOLD_DELTA', data: { reason: 'WHILE_COMPACTING', amount: -10, treasuryId: hub, treasuryDelta: 10, padding } }],
+        treasury: { worldUid: hub, delta: 10 }
+      });
+    }
+    writing = false;
+    await maintenance;
+    expect(child?.exitCode).toBeNull();
+    expect(maintained.length).toBeGreaterThan(0);
+    expect(maintained.every(status => status === 200 || status === 500)).toBe(true);
+    expect((await Ledger.audit(cert.metadata.uid)).ok).toBe(true);
+    expect(await Treasury.balance(hub)).toBe(400);
+  }, 120_000);
+
   it('a save taken between two gold changes can never get ahead of the ledger', async () => {
     const cert = await becomeAvatar('ORDER', 1000);
     const hub = `hub_order_${cert.metadata.uid}`;
@@ -385,6 +415,51 @@ describe('line 71: a gold change is one commit', () => {
     await Promise.all([Treasury.endow(hub, 1000), Treasury.endow(hub, 1000), Treasury.endow(hub, 1000)]);
     expect(await Treasury.balance(hub)).toBe(1000);
     expect((await VectorStore.get<any>(VectorNamespace.TERRITORIES, `endowment_${hub}`))!.data.gold).toBe(1000);
+  });
+
+  it('a wallet comes once, reads back, and moves with its row (D115)', async () => {
+    const cert = await becomeAvatar('PURSE');
+    const hub = `hub_purse_${Math.random().toString(36).slice(2)}`;
+    const total = await Wallets.totalAll();
+    await Promise.all([Wallets.bring(hub, 'res_a', 70, 'A'), Wallets.bring(hub, 'res_a', 70, 'A'), Wallets.bring(hub, 'res_a', 70, 'A')]);
+    await Wallets.bring(hub, 'npc_b', 30, 'B');
+    expect(await Wallets.balance(hub, 'res_a')).toBe(70);
+    expect(await Wallets.allOf(hub)).toEqual({ res_a: 70, npc_b: 30 });
+    expect(await Wallets.totalAll()).toBe(total + 100);
+
+    await GoldCommit.commit({
+      rows: [{ type: 'TRADE', data: { kind: 'TEST', playerDelta: 0, treasuryDelta: 0, wallets: { res_a: -20, npc_b: 20 } } }],
+      wallets: { hubId: hub, deltas: { res_a: -20, npc_b: 20 } }
+    });
+    expect(await Wallets.allOf(hub)).toEqual({ res_a: 50, npc_b: 50 });
+    expect(await Treasury.totalAll()).toBe(await Treasury.totalAll());
+    const rows = await Ledger.list(cert.metadata.uid);
+    expect(rows.filter(r => r.payload.type === 'WALLET')).toHaveLength(2);
+    expect((await Ledger.audit(cert.metadata.uid)).ok).toBe(true);
+  });
+
+  it('a wallet is not a treasury: the two totals never mix (D115)', async () => {
+    await becomeAvatar('APART');
+    const hub = `hub_apart_${Math.random().toString(36).slice(2)}`;
+    const treasuries = await Treasury.totalAll();
+    await Wallets.bring(hub, 'res_a', 40, 'A');
+    expect(await Treasury.totalAll()).toBe(treasuries);
+  });
+
+  it('a print lands with the payment it covers, or neither does (D115)', async () => {
+    const cert = await becomeAvatar('PRINTER');
+    const hub = `hub_print_${Math.random().toString(36).slice(2)}`;
+    await GoldCommit.commit({
+      rows: [
+        { type: 'PRINT', data: { hubId: hub, amount: 1400, perDay: 100, days: 14, why: 'TEST' } },
+        { type: 'GOLD_DELTA', data: { reason: 'TEST', amount: 0, treasuryId: hub, treasuryDelta: -100 } }
+      ],
+      treasury: { worldUid: hub, delta: 1300 }
+    });
+    expect(await Treasury.balance(hub)).toBe(1300);
+    const rows = await Ledger.list(cert.metadata.uid);
+    expect(rows.find(r => r.payload.type === 'PRINT')!.payload.data.amount).toBe(1400);
+    expect((await Ledger.audit(cert.metadata.uid)).ok).toBe(true);
   });
 
   it('every gold write in the game goes through the one commit', () => {

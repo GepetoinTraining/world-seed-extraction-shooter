@@ -10,6 +10,7 @@
 
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
 import { hash2 } from '../../logic/rng/noise';
+import { IThemeLook, LOOK_COLORS } from '../../logic/theme/ThemeTypes';
 
 export { hash2 };
 
@@ -84,9 +85,21 @@ function atLuma(rgb: [number, number, number], target: number): [number, number,
   return out;
 }
 
+/**
+ * D119: the colours a new thing can be, each its own ramp after the eight roles, so no existing
+ * sprite's bytes move. All share one brightness ramp: in grayscale every colour reads the same,
+ * so colour is only ever a look and shape does the telling apart (Pedro is colourblind).
+ */
+export const LOOK_HUES: Record<typeof LOOK_COLORS[number], string> = {
+  ash: '#8c8c88', bone: '#c9bd9a', ochre: '#c2902f', rust: '#b5691f', ember: '#e0352e',
+  moss: '#6f8f3a', verdigris: '#3f9c86', slate: '#5f7f9c', indigo: '#5a5fc0', plum: '#94508f'
+};
+const LOOK_LUMA = [50, 85, 120, 160, 205];
+const lookRole = (color: string): Role => (ROLE_COUNT + Math.max(0, LOOK_COLORS.indexOf(color as typeof LOOK_COLORS[number]))) as Role;
+
 /** RGB per pixel byte. Index 0 is unused (transparent). */
 export function buildPalette(genre: Genre): Uint8Array {
-  const table = new Uint8Array((1 + ROLE_COUNT * STEPS) * 3);
+  const table = new Uint8Array((1 + (ROLE_COUNT + LOOK_COLORS.length) * STEPS) * 3);
   const set = (role: number, step: number, c: [number, number, number]) => {
     const i = (1 + role * STEPS + step) * 3;
     table[i] = c[0]; table[i + 1] = c[1]; table[i + 2] = c[2];
@@ -96,6 +109,7 @@ export function buildPalette(genre: Genre): Uint8Array {
     ROLE_LUMA[role].forEach((l, step) => set(role, step, atLuma(hue, l)));
   });
   Object.entries(MACHINE).forEach(([role, ramp]) => ramp.forEach((c, step) => set(Number(role), step, c)));
+  LOOK_COLORS.forEach((color, i) => LOOK_LUMA.forEach((l, step) => set(ROLE_COUNT + i, step, atLuma(parseHex(LOOK_HUES[color]), l))));
   return table;
 }
 
@@ -652,7 +666,31 @@ const AFFIX_MARKS: Record<string, number[][]> = {
 };
 const AFFIX_THRESHOLD: Record<string, number> = { aff_dense: 2, aff_volatile: 3, aff_arcane: 3 };
 
+/** D119: how many atoms across each size word is. */
+export const LOOK_ATOMS: Record<IThemeLook['size'], number> = { tiny: 8, small: 10, medium: 12, large: 16 };
+
+/** D119: what each shape word draws, on the same 48 by 48 the rest of the art is inked on. */
+const taper = (k: Ink, top: number, bottom: number, widen: number, cx = 24) => {
+  for (let y = top; y <= bottom; y++) { const half = Math.floor((y - top) * widen); k.rect(cx - half, y, cx + half, y); }
+  return k;
+};
+export const LOOK_INKS: Record<IThemeLook['shape'], (m: Material, seed: number) => Ink> = {
+  lump: (m, seed) => { const k = new Ink(); lump(k, 24, 24, 21, m.hardness, seed); return k; },
+  shard: () => taper(new Ink(), 2, 45, 0.3, 18).rect(10, 40, 40, 45).line(18, 3, 40, 42, 3),
+  rod: () => new Ink().rect(19, 1, 29, 46),
+  coil: () => new Ink().disc(24, 24, 23).disc(24, 24, 16, 0).disc(24, 24, 9).disc(24, 24, 3, 0),
+  ring: () => new Ink().disc(24, 24, 23).disc(24, 24, 13, 0),
+  plate: () => new Ink().rect(2, 14, 45, 33),
+  cluster: () => new Ink().disc(13, 15, 9).disc(35, 12, 7).disc(19, 35, 10).disc(38, 35, 7),
+  tuft: () => { const k = new Ink(); [6, 18, 30, 40].forEach((x, i) => k.line(x, 46, x + (i % 2 ? -5 : 5), 3 + i * 3, 3)); return k; },
+  crystal: () => { const k = new Ink(); for (let y = 0; y <= 47; y++) { const half = y < 16 ? y : Math.floor((47 - y) * 0.5); k.rect(24 - half, y, 24 + half, y); } return k; },
+  spike: () => taper(new Ink(), 0, 47, 0.2),
+  pod: () => new Ink().disc(24, 16, 14).disc(24, 32, 14).rect(23, 0, 25, 6),
+  heap: () => taper(new Ink(), 14, 46, 0.72)
+};
+
 export const worldSize = (def: any) => {
+  if (def.look) return LOOK_ATOMS[def.look.size as IThemeLook['size']] ?? 12;
   const tags: string[] = def.tags || [];
   return isTree(tags) ? 22 : tags.includes('seed') ? 10 : 12;
 };
@@ -671,7 +709,11 @@ export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
   const role = tags.includes('flora') ? Role.LIFE : Role.MATTER;
 
   let sprite: Sprite;
-  if (isTree(tags)) {
+  if (def.look) {
+    // D119: three words, and this is what they come to. Form is plain to see at any knowledge.
+    const live = stamp(LOOK_INKS[def.look.shape as IThemeLook['shape']](m, seed), size, m, seed, { role: lookRole(def.look.color), edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
+    sprite = uses <= 0 ? spent(live, !!def.regrowMs) : live;
+  } else if (isTree(tags)) {
     sprite = treeSprite(def, uses, full, o.variant ?? 0);
   } else {
     const live = stamp(resourceInk(def, m, seed, level), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
@@ -712,6 +754,27 @@ export const chest = () => fixed(k => {
 export const ruin = () => fixed(k => {
   k.rect(2, 2, 22, 9).rect(2, 2, 9, 30).rect(30, 16, 45, 23).rect(38, 16, 45, 45).rect(14, 38, 26, 45);
 }, 20, material({ density: 70, hardness: 90 }), { role: Role.MATTER, edgeStep: 2, minFill: 0, maxFill: 1 }, 'ruin');
+
+/**
+ * D93: what a leader raised. Each function is its own silhouette, and scaffolding is one lattice
+ * whatever it will be, because that is what a person can tell of a thing still going up.
+ */
+export const structureForm = (fn: string, built: boolean) => {
+  const style = { role: Role.MATTER, edgeStep: 3, minFill: 1, maxFill: 2 };
+  const hard = material({ density: 70, hardness: 90 });
+  if (!built) return fixed(k => {
+    for (let i = 4; i < 48; i += 12) { k.rect(i, 2, i + 2, 45); k.rect(2, i, 45, i + 2); }
+  }, 20, material({ density: 30, hardness: 40 }), { role: Role.MATTER, edgeStep: 2, minFill: 0, maxFill: 1 }, 'scaffold');
+  switch (fn) {
+    case 'seat': return fixed(k => { k.rect(8, 22, 39, 45).rect(8, 4, 14, 22).rect(33, 4, 39, 22).rect(20, 12, 27, 22); }, 24, hard, { ...style, role: Role.PROOF }, 'seat');
+    case 'anchor': return fixed(k => { k.rect(20, 2, 27, 45).rect(10, 12, 37, 18).disc(24, 38, 11); }, 22, material({ luminosity: 30 }), { ...style, role: Role.SIGNAL }, 'anchor');
+    case 'watch': return fixed(k => { k.rect(16, 16, 31, 45).rect(6, 4, 41, 16).rect(6, 4, 11, 0, 0); }, 24, hard, style, 'watch');
+    case 'wall': return fixed(k => { k.rect(0, 0, 47, 47); k.rect(0, 22, 47, 25, 0); k.rect(22, 0, 25, 22, 0); }, 10, hard, style, 'wall');
+    case 'works': return fixed(k => { k.rect(6, 12, 41, 22).rect(18, 22, 29, 34).rect(10, 34, 37, 44); }, 20, hard, style, 'works');
+    case 'muster': return fixed(k => { k.rect(10, 2, 15, 45).rect(15, 4, 41, 20); k.rect(30, 8, 41, 16, 0); }, 22, hard, style, 'muster');
+    default: return ruin();
+  }
+};
 
 export const npcFigure = (id: string) => fixed(k => {
   k.disc(24, 13, 11).disc(24, 42, 20).rect(0, 0, 47, 0, 0);

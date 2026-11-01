@@ -496,6 +496,9 @@ const ROW_WORDS: Record<string, string> = {
   CRAFT: 'Transformation',
   UPKEEP: 'Upkeep charged',
   GUILD: 'The guild',
+  PRINT: 'The hub printed',
+  WALLET: 'Came with their own coin',
+  FARM: 'The farm',
   TOMBSTONE: 'Superseded'
 };
 
@@ -505,8 +508,10 @@ const rowSummary = (row: ILedgerRow): string => {
   if (row.type === 'GOLD_DELTA') return `${d.amount > 0 ? '+' : ''}${d.amount} G${d.reason ? ` · ${String(d.reason).toLowerCase().replace(/_/g, ' ')}` : ''}`;
   if (row.type === 'CHARACTER_GENESIS') return `${d.username} · birthright ${d.gold} G`;
   if (row.type === 'UPKEEP') return `lot upkeep · ${d.amount} G`;
+  if (row.type === 'PRINT') return `+${d.amount} G into the treasury · ${d.days} days at ${d.perDay} G`;
+  if (row.type === 'WALLET') return `${d.name} · ${d.amount} G`;
   if (row.type === 'TRADE') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
-  if (row.type === 'CRAFT' || row.type === 'GUILD') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
+  if (row.type === 'CRAFT' || row.type === 'GUILD' || row.type === 'FARM') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
   return '';
 };
 

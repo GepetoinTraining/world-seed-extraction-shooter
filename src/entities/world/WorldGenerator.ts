@@ -26,6 +26,8 @@ export interface IGenerationContext {
   lay?: (chunk: IChunk) => void;
   /** D27: the web a leader's sheet is read through. Absent means the first version. */
   webVersion?: number;
+  /** D103: how long this world's cycle runs, so what a week holds is real days in any world. */
+  cycleMs?: number;
 }
 
 /** One body to stand on a chunk, by its kind, with what its sheet adds if it has one. */
@@ -292,7 +294,19 @@ export class WorldGenerator {
 
   static resolveMove(map: IMap, x: number, z: number, dx: number, dz: number) {
     return TerrainSystem.resolveMove(map.seed, x, z, dx, dz, undefined,
-      (nx, nz) => this.isInWorld(map, nx, nz) && !this.trunkAt(map, nx, nz));
+      (nx, nz) => this.isInWorld(map, nx, nz) && !this.trunkAt(map, nx, nz) && !this.structureBlocks(map, nx, nz));
+  }
+
+  /** D93: a wall that stands blocks its tile. One brought down, or still scaffolding, does not. */
+  static structureBlocks(map: IMap, px: number, pz: number): boolean {
+    const chunk = map.chunks[`${chunkOf(px)},${chunkOf(pz)}`];
+    if (!chunk) return false;
+    const tx = tileOf(px), ty = tileOf(pz);
+    for (const e of chunk.entities) {
+      if (e.structure?.fn !== 'wall' || !e.structure.built || e.structure.brokenAt !== undefined) continue;
+      if (tileOf(e.position.x) === tx && tileOf(e.position.y) === ty) return true;
+    }
+    return false;
   }
 
   /**

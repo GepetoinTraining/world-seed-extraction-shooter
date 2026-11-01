@@ -68,6 +68,8 @@ export interface INpcSheet {
   // never stored at generation: a stored field would move the golden vectors.
   stats?: import('../../../types').IAttributes;
   skills?: Record<string, import('../../../types').ISkillState>;
+  // D116: dealt the same way, under its own stream, so nothing above moves.
+  alignment?: string;
 }
 
 /** Something working on an entity right now, on the clock. */
@@ -87,7 +89,43 @@ export interface ITelegraph {
   angle: number;
 }
 
+/** What a leader's ground holds, read at a chunk. Plain words, and no creature's name (D60). */
+export interface IHoldingOnEntity {
+  seat: string;
+  chunks: string[];
+  anchors: number;
+}
+
+/** D93: a thing a leader raised. A function with a reader, and what it was drawn from. */
+export interface IEntityStructure {
+  fn: string;
+  built: boolean;
+  heldBy: string;
+  maxHealth: number;
+  material?: string;
+  paid?: number;
+  bill?: number;
+  /** A watch post, where orders say it calls the bands in. */
+  alarm?: boolean;
+  /** Down, in this opening. A post relights by its ward's clock. */
+  brokenAt?: number;
+}
+
+/** D93: what a plan set for the bodies to read. No model is called during play (D46). */
+export interface IEntityOrders {
+  posture: 'hold' | 'sortie' | 'fall_back';
+  alarmCalls: boolean;
+  seat?: { x: number; y: number };
+}
+
 export interface IWorldEntity {
+  /** D93: a territory's. Who this body or structure answers to, and what it holds. */
+  heldBy?: string;
+  structure?: IEntityStructure;
+  ward?: import('./Wards').IWard;
+  warded?: boolean;
+  orders?: IEntityOrders;
+  holding?: IHoldingOnEntity;
   statuses?: IEntityStatus[];
   telegraph?: ITelegraph;
   /** D60: the only name a person ever reads for this body. Absent means masked. */
@@ -125,6 +163,9 @@ export interface IWorldEntity {
 
   // Wave 2.4: social extraction
   npc?: INpcSheet;
+
+  // D114: a monster someone has talked to. The meter is on `npc`, this is where that leaves it.
+  bargain?: { stance: 'AGGRESSIVE' | 'NEUTRAL' | 'FRIENDLY'; holding?: boolean; wants?: string; wantsHeard?: boolean };
 
   // Wave 10C (D16): the cart's whole state rides on its entity
   cart?: ICartState;

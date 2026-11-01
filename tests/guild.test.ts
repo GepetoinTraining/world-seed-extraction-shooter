@@ -121,6 +121,11 @@ const lodge = async (entityId = 'person_1', over: Record<string, any> = {}): Pro
   give([bond]);
   const res = await hub().redeemBond(bond.id);
   expect(res).toEqual({ ok: true });
+  // D115: no ground until a human has seen to them (tests/immigrants.test.ts holds that). These bars start after it.
+  useHubStore.setState(s => {
+    const id = s.guild.residents.find(r => r.entityId === entityId)!.id;
+    return { guild: { ...s.guild, quests: s.guild.quests.filter(q => q.residentId !== id), residents: s.guild.residents.map(r => r.id === id ? { ...r, wantsMet: 1 } : r) } };
+  });
   return hub().guild.residents.find(r => r.entityId === entityId)!;
 };
 
@@ -223,10 +228,12 @@ describe('line 115: a person brought out stays at the tavern', () => {
     expect(stash().length).toBe(2);
   });
 
-  it('a lodger posts no quest: wants begin once they have a house', async () => {
-    await lodge();
-    await hub().resolveWants();
-    expect(hub().guild.quests.length).toBe(0);
+  // Moved on purpose (D115): this held "a lodger posts no quest: wants begin once they have a house".
+  it('a lodger posts a want at once: it is the way to their ground', async () => {
+    const bond = bondOf('person_arriving');
+    give([bond]);
+    await hub().redeemBond(bond.id);
+    expect(hub().guild.quests.length).toBe(1);
   });
 
   it('Mags keeps her rest, and has work at the tavern now', () => {
@@ -260,23 +267,26 @@ describe('line 115: the guild buys a lot, with the hub treasury behind it', () =
     expect(rows.some(r => r.payload.type === 'TRADE' && r.payload.data.kind === 'GUILD_BOUGHT_LOT' && r.payload.data.price === lot.price)).toBe(true);
   });
 
-  it('what it spent counts against what it may spend next', async () => {
-    const resident = await lodge();
-    const lot = smallestFreeLot();
-    const before = await hub().guildCoverNow();
-    await hub().guildBuyLot(resident.id, lot.id);
-    expect(await hub().guildCoverNow()).toBeLessThan(before - lot.price + 1);
-    expect(await Treasury.balance(HUB)).toBeGreaterThanOrEqual(await hub().guildCoverNow());
+  // Moved on purpose (D108): this held "what it spent counts against what it may spend next".
+  it('it keeps no book against itself: the next lot is as open as the first', async () => {
+    const one = await lodge('person_1');
+    const two = await lodge('person_2');
+    expect(await hub().guildBuyLot(one.id, smallestFreeLot().id)).toEqual({ ok: true });
+    expect(await hub().guildBuyLot(two.id, smallestFreeLot().id)).toEqual({ ok: true });
+    expect(hub().guild).not.toHaveProperty('spent');
   });
 
-  it('the treasury cannot cover it, so it does not buy', async () => {
+  // Moved on purpose (D108): this held "the treasury cannot cover it, so it does not buy".
+  it('the treasury being empty does not stop it, since it moves no gold', async () => {
     const resident = await lodge();
     const lot = smallestFreeLot();
-    useHubStore.setState(s => ({ guild: { ...s.guild, spent: 1_000_000 } }));
-    const res = await hub().guildBuyLot(resident.id, lot.id);
-    expect(res.ok).toBe(false);
-    expect(res.reason).toMatch(/treasury|cover/i);
-    expect(hub().lots.find(l => l.id === lot.id)!.ownerId).toBeNull();
+    const held = await Treasury.balance(HUB);
+    await Treasury.credit(HUB, -held);
+    await Ledger.append('GOLD_DELTA', { reason: 'TEST_DRAIN', amount: 0, treasuryId: HUB, treasuryDelta: -held });
+    expect(await hub().guildBuyLot(resident.id, lot.id)).toEqual({ ok: true });
+    expect(hub().lots.find(l => l.id === lot.id)!.ownerId).toBe(GUILD_OWNER_ID);
+    expect(await Treasury.balance(HUB)).toBe(0);
+    expect((await GoldAudit.run()).ok).toBe(true);
   });
 
   it('it buys free ground only, and each person once', async () => {
@@ -396,11 +406,14 @@ describe('line 115: the house rises through the pooled bill (D8)', () => {
     expect(stash().length).toBe(0);
   });
 
-  it('a person home extends the hub\'s web, the same door a player\'s emergence uses', async () => {
+  it('a person home adds what they know to the web silently, and the web has to reach it (D119)', async () => {
     const resident = await house();
     const skills = Object.keys(readSheet(resident).skills ?? {});
     expect(skills.length).toBeGreaterThan(0);
-    for (const id of skills) expect(hub().web.nodes[id]).toBeTruthy();
+    for (const id of skills) {
+      expect(hub().web.silent?.[id]).toBeTruthy();
+      expect(hub().web.nodes[id]).toBeUndefined();
+    }
   });
 
   it('it all comes back after a reload, and a save from before reads as none', async () => {
@@ -417,7 +430,11 @@ describe('line 115: the house rises through the pooled bill (D8)', () => {
     delete stored.data.guild;
     db.set(`hub_state_${HUB}`, stored);
     await hub().loadHub(HUB);
-    expect(hub().guild).toEqual(emptyGuild());
+    // Moved on purpose (D115): opening a hub starts its running clock and its week, and that is all it adds.
+    const { runningDay, week, ...rest } = hub().guild;
+    expect(runningDay).toBe(worldDay());
+    expect(week).toBeDefined();
+    expect(rest).toEqual(emptyGuild());
   });
 });
 
@@ -462,18 +479,21 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect(pay('GIFT')).toBeLessThan(1.5); // never above what the shelf marks a thing up to
   });
 
-  it('a want met: the things go to their house, and the hub\'s treasury pays', async () => {
+  // Moved on purpose (D115): this held "the hub's treasury pays". They pay it themselves now.
+  it('a want met: the things go to their house, and their own wallet pays', async () => {
     const resident = await house();
     const quest = hub().guild.quests[0];
-    const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 40 }));
+    const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 1 }));
     give(items);
     const before = await Treasury.balance(HUB);
+    const held = hub().wallets[resident.id];
 
     expect(await hub().fulfilQuest(quest.id, items.map(i => i.id))).toEqual({ ok: true });
 
     const paid = player().bank.gold;
     expect(paid).toBeGreaterThan(0);
-    expect(await Treasury.balance(HUB)).toBe(before - paid);
+    expect(hub().wallets[resident.id]).toBe(held - paid);
+    expect(await Treasury.balance(HUB)).toBe(before);
     expect(stash().length).toBe(0);
     const home = hub().lots.find(l => l.id === resident.lotId)!;
     expect(items.every(i => home.inventory.some(h => h.id === i.id))).toBe(true);
@@ -494,15 +514,17 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect((await hub().fulfilQuest('no_such_quest', [])).ok).toBe(false);
   });
 
-  it('the hub\'s treasury cannot pay, and the quest waits', async () => {
+  // Moved on purpose (D115): this held "the hub's treasury cannot pay". It is their wallet now, and it waits on them.
+  it('they cannot pay it, and the want waits: nobody prints for them', async () => {
     await house();
     const quest = hub().guild.quests[0];
     const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 1_000_000 }));
     give(items);
-    const res = await hub().fulfilQuest(quest.id, items.map(i => i.id));
-    expect(res.ok).toBe(false);
+    expect((await hub().fulfilQuest(quest.id, items.map(i => i.id))).ok).toBe(false);
     expect(stash().length).toBe(quest.count);
     expect(hub().guild.quests[0].state).toBe('OPEN');
+    expect(hub().guild.printed.count).toBe(0);
+    expect((await GoldAudit.run()).ok).toBe(true);
   });
 
   it('the next want waits for the next day, then posts, and differs by the count of what came before', async () => {
@@ -519,7 +541,7 @@ describe('line 115: their wants become quests at the guildhall', () => {
     await hub().resolveWants(worldDay() + 1);
     const open = hub().guild.quests.filter(q => q.state === 'OPEN');
     expect(open.length).toBe(1);
-    expect(open[0].n).toBe(1);
+    expect(open[0].n).toBe(first.n + 1);
     expect(open[0].residentId).toBe(resident.id);
   });
 
@@ -914,18 +936,17 @@ describe('D93: a map handed to the guild is a real act, and the door to a chain'
     expect(hub().guild.maps[0].item.id).toBe(m.id);
   });
 
-  it('it says what it would post, read from what the map holds', () => {
+  it('it reads what the map holds, and a map showing nobody holding ground asks nothing (C4: moved on purpose)', () => {
     const chain = chainFromMap(map().mapData!);
     expect(chain.worldName).toBe('The Long Stands');
     expect(chain.sectors).toBe(2);
     expect(chain.mobs).toBe(16);
     expect(chain.changed).toBe(2);
     expect(chain.hottest).toBe('3,4');
-    expect(chain.steps.length).toBeGreaterThan(0);
-    expect(chain.steps.join(' ')).toContain('3,4');
+    expect(chain.steps).toEqual([]);
   });
 
-  it('it posts nothing yet: there is no seat to chain to until bosses stand', async () => {
+  it('it posts nothing while the map shows no seat to chain to', async () => {
     const m = map();
     give([m]);
     await hub().handMapToGuild(m.id);

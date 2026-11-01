@@ -7,9 +7,9 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
-import { craftName, useHubStore } from './store';
+import { craftName, priceOfListing, useHubStore, worldDay } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
-import { HUB_GENRE, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
+import { HUB_GENRE, IPlotShow, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
   IRoomState, RoomPieceKind, stationFunctionOf, PIECE_BILLS, PIECE_BUILD_SECONDS,
@@ -21,7 +21,12 @@ import { CityPlan } from '../../components/CityPlan';
 import { GuildHall } from '../../components/GuildHall';
 import { TavernRoom } from '../../components/TavernRoom';
 import { RankMomentView } from '../../components/WorldCanvas';
+import { TalkWindow } from '../../components/TalkWindow';
+import { useTalk } from '../interaction/talkStore';
 import { ApprenticeWindow } from '../../components/ApprenticeWindow';
+import { FarmWindow } from '../../components/FarmWindow';
+import { Farm } from './farm';
+import { FarmDoors } from './farmDoors';
 import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
@@ -31,11 +36,13 @@ import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, 
 import { deployToWorld } from '../../logic/systems/Deploy';
 import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
+import { AskFor, BuyListing, CollectHeld } from '../../components/ShelfAsk';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
 import { MinimapView } from '../../components/ui/MinimapView';
 import { cityMinimap } from '../../render/atoms/minimap';
 import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
+import { useStudyReach } from '../../components/StudyPanel'; // D118
 import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
@@ -76,6 +83,14 @@ function spriteToCanvas(s: Sprite, table: Uint8Array): HTMLCanvasElement {
 }
 
 /** Cast portraits keep the city's warm ramp — the hub is the only warm place. */
+/** D118: anyone in town can be asked to sit for it, before the way out. */
+const withStudy = (npc: INPCDefinition) => {
+  const options = npc.dialogue.options;
+  const study = { label: 'Study them', action: 'STUDY_PERSON', payload: { id: npc.id, name: npc.name, title: npc.title } };
+  const leave = options.findIndex(o => o.action === 'CLOSE');
+  return leave < 0 ? [...options, study] : [...options.slice(0, leave), study, ...options.slice(leave)];
+};
+
 const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
   const sprite = useMemo(() => castPortrait(npcId), [npcId]);
   const palette = useMemo(() => buildPalette(HUB_GENRE), []);
@@ -88,6 +103,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
+  | { kind: 'farm'; lotId: string }
   | { kind: 'sell'; npcId?: string } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'apprentices'; npcId: string };
 
 export const HubCanvas: React.FC = () => {
@@ -149,7 +165,8 @@ export const HubCanvas: React.FC = () => {
     []
   );
   nearbyRef.current = nearbyPOI;
-  busyRef.current = !!(activeNPC || panel || stationPanel);
+  const talking = useTalk(s => !!s.subject);
+  busyRef.current = !!(activeNPC || panel || stationPanel || talking);
 
   // =========================================================================
   // MOVEMENT: held keys, per-axis sliding against the navmesh
@@ -164,7 +181,8 @@ export const HubCanvas: React.FC = () => {
     for (const zone of layout.zones) for (const poi of zone.pois) {
       if (poi.type !== POIType.PLAYER_LOT) continue;
       const lot = lots.find(l => l.id === poi.id);
-      const built = !!lot && !!lot.ownerId && lot.structureType !== 'EMPTY';
+      // A plot is open ground: it has a door to work from, and nothing stands in anyone's way
+      const built = !!lot && !!lot.ownerId && lot.structureType !== 'EMPTY' && lot.structureType !== 'FARM';
       // Wave 10B: an under-construction lot blocks like a built one — the
       // scaffold blocks exactly what it draws.
       const rising = !!lot && lotConstruction(buildJobs, poi.id) !== null;
@@ -273,6 +291,18 @@ export const HubCanvas: React.FC = () => {
     setNearbyPOI(closest);
   }, [playerTile, layout, insideLotId]);
 
+  // D118: what the sheet can offer to study is whatever is in front of you.
+  useEffect(() => {
+    const npc = nearbyPOI?.npcId ? HUB_NPCS[nearbyPOI.npcId] : undefined;
+    const lot = insideLotId ? layout.zones.flatMap(z => z.pois).find(p => p.id === insideLotId) : undefined;
+    useStudyReach.getState().set([
+      ...(lot ? [StudySystem.targetOfBuilding({ id: lot.id, name: lot.name })] : []),
+      ...(npc ? [StudySystem.targetOfPerson({ id: npc.id, name: npc.name, title: npc.title })] : []),
+      ...(nearbyPOI && !npc ? [StudySystem.targetOfBuilding({ id: nearbyPOI.id, name: nearbyPOI.name })] : [])
+    ]);
+    return () => useStudyReach.getState().set([]);
+  }, [nearbyPOI, insideLotId, layout]);
+
   // Inside: the nearest placed thing you could work, within reach.
   const nearPlacement = useMemo(() => {
     if (!roomData) return null;
@@ -297,6 +327,7 @@ export const HubCanvas: React.FC = () => {
       setNow(Date.now());
       const due = useHubStore.getState().buildJobs.some(j => !j.applied && j.finishesAt <= Date.now());
       if (due) void useHubStore.getState().resolveBuilds();
+      if (FarmDoors.isDue()) void FarmDoors.resolve();
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -315,7 +346,8 @@ export const HubCanvas: React.FC = () => {
       // land manager: buying and raising go through him, and only him.
       const hub = useHubStore.getState();
       const lot = hub.lots.find(l => l.id === poi.id);
-      if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
+      if (lot && lot.ownerId && lot.structureType === 'FARM') { keysRef.current.clear(); setPanel({ kind: 'farm', lotId: lot.id }); }
+      else if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
       else pushFeed(`${poi.name} is on the sheet at the Land Office, beside the Hall of Banners.`, 'plain');
     }
   };
@@ -440,12 +472,24 @@ export const HubCanvas: React.FC = () => {
   // Wave 10B: a lot with pending construction shows the scaffold, its progress
   // read by shape. Progress only changes when a job applies, so the city only
   // recomposes when something really moved.
+  const farmland = useHubStore(s => s.farmland);
+  const nowMinute = Math.floor(now / 60_000);
   const lotStates = useMemo(() => {
     const states: Partial<Record<number, LotState>> = {};
     const construction: Partial<Record<number, number>> = {};
     // The raw materials leg: a raw-walled building reads as one from the street.
     const facades: Partial<Record<number, RawFacade>> = {};
+    // What stands on farmland, read from the time. It changes by the minute, so it is looked at by the minute.
+    const plots: Partial<Record<number, IPlotShow>> = {};
     lots.forEach(l => {
+      if (l.structureType === 'FARM') {
+        const size = HubGenerator.findPOI(layout, l.id)?.size;
+        const farm = farmland.farms[l.id];
+        if (size) plots[l.lotIndex] = {
+          cols: Farm.gridOf(size).cols,
+          beds: Object.entries(farm?.beds ?? {}).map(([at, p]) => ({ at: Number(at), growth: Farm.growth(p, nowMinute * 60_000), span: Farm.spanOf(p) }))
+        };
+      }
       const shell = rooms[l.id]?.shellMaterialDefId;
       const facade = shell ? rawWallKind(shell) : null;
       if (facade) facades[l.lotIndex] = facade;
@@ -457,12 +501,12 @@ export const HubCanvas: React.FC = () => {
         states[l.lotIndex] = !l.ownerId ? 'FOR_SALE' : l.structureType === 'EMPTY' ? 'OWNED_EMPTY' : l.structureType;
       }
     });
-    return { states, construction, facades };
-  }, [lots, buildJobs, rooms]);
+    return { states, construction, facades, plots };
+  }, [lots, buildJobs, rooms, farmland, nowMinute, layout]);
 
   const cityBitmaps = useMemo(() => {
     const palette = buildPalette(HUB_GENRE);
-    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades }), palette));
+    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades, plots: lotStates.plots }), palette));
   }, [layout, lotStates]);
 
   const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
@@ -740,7 +784,8 @@ export const HubCanvas: React.FC = () => {
           )}
           <Chip tone="signal"><b>{nearbyPOI.name}</b> <Kbd>E</Kbd> {
             nearbyPOI.type === POIType.PLAYER_LOT &&
-            lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType !== 'EMPTY') ? 'ENTER' : 'INTERACT'
+            lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType === 'FARM') ? 'WORK IT'
+              : lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType !== 'EMPTY') ? 'ENTER' : 'INTERACT'
           }</Chip>
         </div>
       )}
@@ -853,7 +898,11 @@ export const HubCanvas: React.FC = () => {
               </div>
             </div>
             <div className="ws-dialogue__options">
-              {activeNPC.dialogue.options.map((opt, i) => (
+              {/* D116: a keeper is a person too. Business stays below, and this is everything else. */}
+              <Button tone="signal" onClick={() => { const npcId = activeNPC.id; setActiveNPC(null); setNpcReply(null); void useTalk.getState().open({ kind: 'CITY', npcId }); }}>
+                Talk with them
+              </Button>
+              {withStudy(activeNPC).map((opt, i) => (
                 <Button
                   key={i}
                   tone={opt.action === 'CLOSE' ? 'quiet' : 'signal'}
@@ -878,6 +927,7 @@ export const HubCanvas: React.FC = () => {
         <TemplateStudio onClose={() => setStationPanel(null)} />
       )}
 
+      {panel?.kind === 'farm' && <FarmWindow lotId={panel.lotId} onClose={() => setPanel(null)} />}
       {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}
       {panel?.kind === 'sell' && <SellModal npcId={panel.npcId} onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
@@ -886,6 +936,7 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'tavern' && <TavernRoom onClose={() => setPanel(null)} />}
       {panel?.kind === 'guild' && <GuildHall onClose={() => setPanel(null)} />}
       <RankMomentView />
+      <TalkWindow />
       {panel?.kind === 'apprentices' && <ApprenticeWindow npcId={panel.npcId} onClose={() => setPanel(null)} />}
     </div>
   );
@@ -1011,6 +1062,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
   const mine = lot?.ownerId === player.id;
   const [listId, setListId] = useState('');
   const [listPrice, setListPrice] = useState('50');
+  const [askDefId, setAskDefId] = useState('');
   if (!lot) return null;
 
   return (
@@ -1029,18 +1081,20 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
             COLLECT {lot.proceeds}G
           </Button>
         )}
+        {mine && <CollectHeld lot={lot} />}
         {mine && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <select className="ws-input" style={{ flex: 1 }} value={listId} onChange={e => setListId(e.target.value)} aria-label="Item to list">
               <option value="">Item to list…</option>
               {stash.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
-            <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} aria-label="Price" />
+            <AskFor value={askDefId} onChange={setAskDefId} />
+            {!askDefId && <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} aria-label="Price" />}
             <Button
-              disabled={!listId || !Number(listPrice)}
+              disabled={!listId || (!askDefId && !Number(listPrice))}
               onClick={async () => {
                 if (!listId) return;
-                const ok = await hub.listItemForSale(lotId, listId, Number(listPrice));
+                const ok = await hub.listItemForSale(lotId, listId, askDefId ? 0 : Number(listPrice), askDefId || undefined);
                 if (ok) { pushFeed('Listed. The shelf shows it.', 'signal'); setListId(''); }
               }}
             >
@@ -1055,16 +1109,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
               <ItemSprite item={listing.item} cellPx={14} />
               <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
             </span>
-            <Button
-              tone="proof"
-              disabled={player.bank.gold < listing.price}
-              onClick={async () => {
-                const ok = await hub.buyFromLot(lotId, listing.item.id);
-                pushFeed(ok ? `Bought ${listing.item.name} for ${listing.price} G.` : 'The counter refused the coin.', ok ? 'proof' : 'loss');
-              }}
-            >
-              BUY {listing.price}G
-            </Button>
+            <BuyListing lotId={lotId} listing={listing} />
           </div>
         ))}
       </div>
@@ -1087,7 +1132,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
 
   return (
     <Modal title={titles[category]} onClose={onClose} width={640}>
-      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Your gold: <span className="ws-proof">{player.bank.gold.toLocaleString()} G</span> · stock turns at midnight</div>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Your gold: <span className="ws-proof">{player.bank.gold.toLocaleString()} G</span> · stock turns with the week</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 240px', gap: 10, alignItems: 'start' }}>
         <div className="ws-list">
           {listings.map(listing => (
@@ -1100,18 +1145,18 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
                 <ItemSprite item={listing.item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
-                  <span className="ws-dim ws-small">stock {listing.stock}</span>
+                  <span className="ws-dim ws-small">{listing.deal ? `BARGAIN BIN: ${Math.max(0, listing.deal.until - worldDay())} days left` : `stock ${listing.stock}`}</span>
                 </span>
               </button>
               <Button
                 tone="proof"
-                disabled={listing.stock <= 0 || player.bank.gold < Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}
+                disabled={listing.stock <= 0 || player.bank.gold < priceOfListing(listing, player.attributes)}
                 onClick={() => {
                   const item = purchaseFromShop(listing.id, category);
-                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))} G. It is in your stash.`, 'proof');
+                  if (item) pushFeed(`Bought ${item.name} for ${priceOfListing(listing, player.attributes)} G. It is in your stash.`, 'proof');
                 }}
               >
-                BUY {Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}G
+                BUY {priceOfListing(listing, player.attributes)}G
               </Button>
             </div>
           ))}
@@ -1126,19 +1171,19 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
 
 const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, onClose }) => {
   const { player } = usePlayerStore();
-  const { sellToVendor } = useHubStore();
+  const { sellToVendor, offerFor } = useHubStore();
   const pushFeed = useFeed(s => s.push);
   const stash = player.bank.stashTabs[0]?.items || [];
 
   return (
     <Modal title="SELL TO THE COUNTER" onClose={onClose} width={520}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
-        The counter pays {StatSystem.vendorOffer(100, player.attributes)}% of value, from the hub treasury. A hub with no funds cannot buy.
+        The counter pays {StatSystem.vendorOffer(100, player.attributes)}% of value, from the hub treasury.
       </div>
       {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
       <div className="ws-list">
         {stash.map(item => {
-          const offer = StatSystem.vendorOffer(item.value, player.attributes);
+          const offer = offerFor(item, npcId);
           return (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
@@ -1155,7 +1200,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
                 onConfirm={async () => {
                   const paid = await sellToVendor(item.id, npcId);
                   if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
-                  else pushFeed('The treasury cannot cover that. Nothing moves.', 'loss');
+                  else pushFeed('The counter would not take that. Nothing moves.', 'loss');
                 }}
               >
                 SELL {offer}G

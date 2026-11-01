@@ -813,7 +813,8 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       record = Director.report(record, 'FELLED_A_PERSON', id, { id: 'lead_8_8_0', rank: UniversalRank.D });
       record = Director.report(record, 'FELLED_A_PERSON', id, { id: 'lead_8_8_0', rank: UniversalRank.F });
       expect(record.felled[id]).toBe(2);
-      expect(record.bodies!['lead_8_8_0']).toEqual({ felled: 2, topRank: UniversalRank.D });
+      // C4, moved on purpose: it also says which cycles, so a sector read late folds as one read early did
+      expect(record.bodies!['lead_8_8_0']).toEqual({ felled: 2, felledAt: [0, 0], topRank: UniversalRank.D });
       const next = Director.catchUp(record, 3);
       expect(next.bodies!['lead_8_8_0'].felled).toBe(2);
       expect(next.felled).toEqual({});
@@ -957,8 +958,9 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       const banked = clone(FIRST_THEME) as IThemeBody & { junk?: unknown };
       banked.creatures = banked.creatures.filter(c => !(c.tags.includes('elite') && !c.tags.includes('god')));
       for (const c of banked.creatures) { delete (c as Partial<typeof c>).social; delete (c as Partial<typeof c>).builds; delete (c as Partial<typeof c>).leads; }
-      banked.tags = banked.tags.filter(t => t.tag !== 'junk');
+      banked.tags = banked.tags.filter(t => !['junk', 'gem', 'art', 'valuable'].includes(t.tag));
       delete banked.junk;
+      delete banked.anchors; delete banked.professions;
       banked.abilities = banked.abilities.filter(a => a.effect !== 'forced_exit');
       banked.consumables = banked.consumables.filter(c => c.key !== 'writ_of_breach');
       expect(themeIdOf(banked)).toBe('theme_666daceb0516e738');

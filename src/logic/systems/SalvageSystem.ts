@@ -15,6 +15,7 @@ import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../ent
 import { RESOURCE_DEFINITIONS, ResourceDef } from '../../entities/item/data/resourceDefinitions';
 import { ItemFactory } from '../../entities/item/ItemFactory';
 import { CompositionSystem } from '../economy/CompositionSystem';
+import { Anchors } from '../economy/Anchors';
 import { Rng } from '../rng/DeterministicRNG';
 import { IVendorRecipe, IWorkTools } from './VendorSystem';
 
@@ -48,7 +49,9 @@ export const SalvageSystem = {
   /** What it comes apart into. Null if it cannot be taken apart at all. */
   components(item: IItem, key: string): IItem[] | null {
     // A deed, a map, a plan or a bond is a standing, not material. It stays whole, and the shelf can hold it.
-    if (item.worldDeedData || item.deedData || item.mapData || item.bondData || item.tags?.includes('template')) return null;
+    if (item.worldDeedData || item.deedData || item.mapData || item.bondData || item.creatureData || item.tags?.includes('template')) return null;
+    // D115: what holds value is kept whole, or it holds nothing.
+    if (Anchors.isAnchor(item)) return null;
     const full = `${key}:${item.id}`;
     const composition = item.composition;
     const quality = (item.quality ?? 0) + SALVAGE_BITE;

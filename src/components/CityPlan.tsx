@@ -6,7 +6,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { answersTag, materialLabel } from '../entities/hub/room';
-import { chunkBillFor, openSides } from '../entities/hub/hubManifest';
+import { chunkBillFor, isFarmland, openSides } from '../entities/hub/hubManifest';
+import { FarmDoors } from '../entities/hub/farmDoors';
 import { useHubStore } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { ArmedButton, Button, Modal, Panel } from './ui/kit';
@@ -20,6 +21,7 @@ export const CityPlan: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const pushFeed = useFeed(s => s.push);
   const stash = player.bank.stashTabs[0]?.items || [];
   const [chosen, setChosen] = useState<string | null>(null);
+  const [ploughing, setPloughing] = useState<string | null>(null);
 
   const bill = chunkBillFor(chunks.length);
   const open = useMemo(() => openSides({ chunks }), [chunks]);
@@ -52,19 +54,28 @@ export const CityPlan: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               gridTemplateRows: `repeat(${maxCy - minCy + 1}, ${CELL_PX}px)`
             }}
           >
-            {chunks.map((c, i) => (
-              <div
-                key={`${c.cx},${c.cy}`}
-                className="ws-small"
-                style={{
-                  gridColumn: c.cx - minCx + 1, gridRow: c.cy - minCy + 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: '2px solid var(--ws-text-body)', background: 'var(--ws-void-3)', fontWeight: i === 0 ? 700 : 400
-                }}
-              >
-                {i === 0 ? 'CITY' : `#${i + 1}`}
-              </div>
-            ))}
+            {chunks.map((c, i) => {
+              const key = `${c.cx},${c.cy}`;
+              const farm = isFarmland(c);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className="ws-ui ws-small"
+                  disabled={i === 0 || farm}
+                  aria-pressed={ploughing === key}
+                  aria-label={i === 0 ? 'The city' : farm ? `Chunk ${i + 1}, farmland` : `Chunk ${i + 1}: make it farmland`}
+                  onClick={() => setPloughing(ploughing === key ? null : key)}
+                  style={{
+                    gridColumn: c.cx - minCx + 1, gridRow: c.cy - minCy + 1, color: 'inherit', fontFamily: 'var(--ws-mono)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: i === 0 || farm ? 'default' : 'pointer',
+                    border: `${ploughing === key ? 4 : 2}px ${farm ? 'double' : 'solid'} var(--ws-text-body)`, background: 'var(--ws-void-3)', fontWeight: i === 0 ? 700 : 400
+                  }}
+                >
+                  {i === 0 ? 'CITY' : farm ? `FARM #${i + 1}` : `#${i + 1}`}
+                </button>
+              );
+            })}
             {open.map(o => {
               const key = `${o.at.cx},${o.at.cy}`;
               return (
@@ -99,7 +110,36 @@ export const CityPlan: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               }}
             >
               RAISE THE CHUNK
+            </Button>{' '}
+            <Button
+              tone="quiet"
+              disabled={!met || !choice}
+              title={!choice ? 'Choose where it rises.' : !met ? 'The deposit is short.' : 'The whole chunk, portioned evenly by the hub.'}
+              onClick={async () => {
+                if (!choice) return;
+                const res = await FarmDoors.raiseFarmland(choice.side, choice.beside);
+                pushFeed(res.ok ? 'New ground is ploughed whole. The hub has portioned it into even plots, for sale at the deeds.' : res.reason ?? 'It would not rise.', res.ok ? 'proof' : 'loss');
+                if (res.ok) setChosen(null);
+              }}
+            >
+              RAISE IT AS FARMLAND
             </Button>
+            {ploughing && (
+              <div style={{ marginTop: 6 }}>
+                <ArmedButton
+                  tone="quiet"
+                  confirmLabel="THE WHOLE CHUNK: SURE?"
+                  onConfirm={async () => {
+                    const [cx, cy] = ploughing.split(',').map(Number);
+                    const res = await FarmDoors.makeFarmland({ cx, cy });
+                    pushFeed(res.ok ? 'That ground is farmland now, whole, and the hub has portioned it into even plots.' : res.reason ?? 'It would not go.', res.ok ? 'proof' : 'loss');
+                    if (res.ok) setPloughing(null);
+                  }}
+                >
+                  MAKE THAT CHUNK FARMLAND
+                </ArmedButton>
+              </div>
+            )}
           </div>
         </Panel>
         <Panel title="WHAT IT ASKS">

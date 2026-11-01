@@ -46,7 +46,10 @@ export class StartupSequence {
       const { WebBank } = await import('../content/WebBank');
       const { WebSystem: Web } = await import('../systems/WebSystem');
       const { NpcSheet } = await import('../systems/NpcSheet');
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry, WebBank, WebSystem: Web, NpcSheet };
+      // D113: the talk's own instruments
+      const { useTalk } = await import('../../entities/interaction/talkStore');
+      const { MonsterMind } = await import('../systems/MonsterMind');
+      (window as any).__ws = { useTalk, MonsterMind, usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry, WebBank, WebSystem: Web, NpcSheet };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 
@@ -132,7 +135,9 @@ console.log('[BOOT] Refreshing World List...');
            const { WebSystem } = await import('../systems/WebSystem');
            // D83, D84: and a rank its experience earned is stored, once, with skills kept where they stood
            const { ProgressionSystem } = await import('../../entities/player/systems/ProgressionSystem');
-           usePlayerStore.setState({ player: ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player))) });
+           // D118: and lore already read is held as a resource, once
+           const { LoreSystem } = await import('../systems/LoreSystem');
+           usePlayerStore.setState({ player: LoreSystem.migrate(ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player)))) });
            // D72: nobody is locked out of a pocket world, once
            const { WorldDeedDoor } = await import('../systems/WorldDeedDoor');
            await WorldDeedDoor.grantOnLoad();

@@ -16,6 +16,7 @@ import { HubUnlock } from './HubUnlock';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { IDreamResult, INN_FEE, RestPlace, RestSystem } from './RestSystem';
+import { LoreSystem } from './LoreSystem';
 
 let waking = false;
 const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
@@ -97,7 +98,12 @@ export const RestDoor = {
     const skills = queue.skills as unknown[];
     const weaves = queue.weaves as unknown[];
     const gifts = queue.gifts as { id: string }[];
-    if (skills.length === 0 && weaves.length === 0 && gifts.length === 0) return;
+    const studied = queue.studied as { id: string }[];
+    // D118: gifts also cost lore. What it cannot reach stays owed, and the person is told.
+    for (const g of LoreSystem.giftsWaiting(player)) {
+      feed(`${WebSystem.nameOf(g.id)} is owed a gift. It waits on ${g.price} lore; you hold ${LoreSystem.held(player)}.`, 'plain');
+    }
+    if (skills.length === 0 && weaves.length === 0 && gifts.length === 0 && studied.length === 0 && !LoreSystem.worthFiling(player)) return;
 
     const world = useWorldStore.getState();
     const card = world.availableWorlds.find(w => w.id === world.activeWorldId) ?? world.availableWorlds.find(w => !w.retired);
@@ -117,7 +123,8 @@ export const RestDoor = {
             asked: {
               skills: (skills as { id: string }[]).map(q => q.id),
               weaves: (weaves as { id: string }[]).map(q => q.id),
-              gifts: gifts.map(q => q.id)
+              gifts: gifts.map(q => q.id),
+              sittings: studied.map(q => q.id)
             }
           }
         }
@@ -125,6 +132,7 @@ export const RestDoor = {
     } else if (out.status !== 'NO_KEY' && out.status !== 'OFFLINE') {
       console.log(`[REST] The batch waits for the next rest: ${out.status}. ${out.reason ?? ''}`);
     }
+    if (out.status !== 'PENDING' && studied.length > 0) feed('What you studied waits. Nothing is lost; it comes to something at a rest the dream can reach.', 'plain');
   },
 
   /** Bring back what was filed, if it is ready: judged by the law, signed, and applied. */
@@ -146,6 +154,10 @@ export const RestDoor = {
       return;
     }
     const before = usePlayerStore.getState().player;
+    const said = (out.data.studied ?? []).map(w => {
+      const sitting = RestSystem.queueOf(before).sittings.find(s => s.id === w.id)!;
+      return { ...w, name: sitting.target.name, gained: LoreSystem.paysFor(sitting)[w.depth as 'fair'] };
+    });
     usePlayerStore.setState({ player: RestSystem.applyDream(before, out.data) });
     const hubId = useHubStore.getState().activeHubId;
     if (out.usage) await Ledger.append('TECH', { kind: 'INTELLIGENCE_USE', hubId, door: 'rest', ...out.usage });
@@ -158,5 +170,17 @@ export const RestDoor = {
     }
     for (const s of out.data.skills) feed(`${s.name}: ${s.flavor}`, 'signal');
     for (const g of out.data.gifts ?? []) feed(`${WebSystem.nameOf(g.skill)} gave you ${g.name}. ${g.blurb}`, 'proof');
+    for (const w of said) feed(`${w.name}: ${w.line} +${w.gained} lore.`, 'proof');
+    for (const t of out.data.taught ?? []) feed(`You woke knowing ${t.name}. ${t.flavor}`, 'proof');
+    for (const r of out.data.raised ?? []) feed(r.line, 'proof');
+    // D118: a skill taught is held like any other, so the hub's web hears of it by the same door.
+    if ((out.data.taught ?? []).length > 0) await useHubStore.getState().creditHeld();
+    if (said.length + (out.data.taught?.length ?? 0) + (out.data.raised?.length ?? 0) > 0) {
+      await Ledger.append('TECH', {
+        kind: 'LORE', hubId, by: before.id, gained: said.reduce((sum, w) => sum + w.gained, 0),
+        taught: (out.data.taught ?? []).map(t => t.name), raised: (out.data.raised ?? []).map(r => r.gift),
+        held: LoreSystem.held(usePlayerStore.getState().player)
+      });
+    }
   }
 };

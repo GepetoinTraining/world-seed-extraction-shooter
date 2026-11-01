@@ -35,7 +35,8 @@ export enum ZoneType {
   MARKET = 'MARKET',
   RESIDENTIAL = 'RESIDENTIAL',
   INDUSTRIAL = 'INDUSTRIAL',
-  GARDEN = 'GARDEN'
+  GARDEN = 'GARDEN',
+  FARMLAND = 'FARMLAND'
 }
 
 export interface IPOI {

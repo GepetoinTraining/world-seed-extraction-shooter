@@ -15,7 +15,7 @@
  * batch waits for the next rest, and nothing ever blocks on a model (line 87).
  */
 
-import { IItem, IPlayer } from '../../../types';
+import { IItem, IPlayer, IStudySitting } from '../../../types';
 import { IThemeBody, SKILL_GRANTS } from '../theme/ThemeTypes';
 import { IThemeGrowth, WorldGrowth } from '../theme/WorldGrowth';
 import { WebSystem } from './WebSystem';
@@ -23,6 +23,7 @@ import { StudySystem } from './StudySystem';
 import { StatSystem } from './StatSystem';
 import { WeaveSystem } from './WeaveSystem';
 import { CircleSystem, IGiftWords } from './CircleSystem';
+import { ILoreWords, IRaisedWords, ITaughtWords, LoreSystem } from './LoreSystem';
 
 export type RestPlace = 'INN' | 'BED' | 'FIELD';
 
@@ -49,9 +50,11 @@ export interface IRestQueue {
   met: string[];
   /** Kinds of ground walked since the last rest. */
   ground: string[];
+  /** D118: sittings that paid, logged, waiting for a dream to resolve them. Settling leaves them be. */
+  sittings: IStudySitting[];
 }
 
-export const emptyQueue = (): IRestQueue => ({ studies: [], weaves: [], met: [], ground: [] });
+export const emptyQueue = (): IRestQueue => ({ studies: [], weaves: [], met: [], ground: [], sittings: [] });
 
 export interface ISkillWords {
   name: string;
@@ -64,6 +67,12 @@ export interface IDreamResult {
   weaves: { id: string; name: string }[];
   /** What a skill's third circle earned. */
   gifts?: IGiftWords[];
+  /** D118: how deep each sitting went. Lore is worked out from this, never written. */
+  studied?: ILoreWords[];
+  /** D118: skills lore pays to teach. */
+  taught?: ITaughtWords[];
+  /** D118: passives lore pays to raise. */
+  raised?: IRaisedWords[];
 }
 
 const allInventories = (player: IPlayer): IItem[] => [
@@ -104,7 +113,13 @@ export class RestSystem {
   // -----------------------------------------------------------------------
 
   static queueOf(player: IPlayer): IRestQueue {
-    return player.restQueue ?? emptyQueue();
+    return { ...emptyQueue(), ...player.restQueue };
+  }
+
+  /** D118: a sitting goes on the log. It is resolved at a dream, and nothing waits on it. */
+  static queueSitting(player: IPlayer, sitting: IStudySitting): IPlayer {
+    const q = this.queueOf(player);
+    return { ...player, restQueue: { ...q, sittings: [...q.sittings, sitting] } };
   }
 
   static queueStudy(player: IPlayer, itemId: string): IPlayer {
@@ -165,7 +180,7 @@ export class RestSystem {
         floorNamed.push(id);
       }
     }
-    next = { ...next, weaveNames, restQueue: { ...emptyQueue(), ground: q.ground, weaves: q.weaves } };
+    next = { ...next, weaveNames, restQueue: { ...emptyQueue(), ground: q.ground, weaves: q.weaves, sittings: q.sittings } };
     return { player: next, read, emerged, learned, floorNamed };
   }
 
@@ -228,8 +243,11 @@ export class RestSystem {
       skills: emerged.map(s => ({ id: s.id, tags: s.id.replace(/^skill_/, '').split('+') })),
       forming: Object.values(player.skillProgress ?? {}).slice(0, 40).map(p => ({ id: p.id, tags: p.tags, attempts: p.attempts })),
       weaves: q.weaves.map(elements => ({ id: WeaveSystem.idOf(elements), elements })),
-      gifts: CircleSystem.asks(player),
-      ground: q.ground
+      gifts: LoreSystem.giftsToAsk(player),
+      ground: q.ground,
+      studied: LoreSystem.studiedAsk(player),
+      lore: LoreSystem.purseAsk(player),
+      passives: LoreSystem.passivesToAsk(player)
     };
   }
 
@@ -237,7 +255,7 @@ export class RestSystem {
    * The law over what came back from a rest (D43). Refused whole when broken: a skill
    * it never asked about, or a grant outside the vocabulary, and nothing changes.
    */
-  static judgeDream(result: IDreamResult, asked: { skills: string[]; weaves: string[]; gifts?: string[] }, player?: IPlayer, elements?: string[]): { ok: boolean; reason?: string } {
+  static judgeDream(result: IDreamResult, asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }, player?: IPlayer, elements?: string[]): { ok: boolean; reason?: string } {
     if (!result || !Array.isArray(result.skills) || !Array.isArray(result.weaves)) return { ok: false, reason: 'That is not what a rest returns.' };
     for (const s of result.skills) {
       if (!asked.skills.includes(s.id)) return { ok: false, reason: `Nobody asked about ${s.id}.` };
@@ -253,7 +271,9 @@ export class RestSystem {
     if (player) {
       const verdict = CircleSystem.judgeAll(gifts, player, asked.gifts ?? [], elements);
       if (!verdict.ok) return verdict;
-    } else if (gifts.length > 0) {
+      const lore = LoreSystem.judge(result, asked, player);
+      if (!lore.ok) return lore;
+    } else if (gifts.length > 0 || result.studied?.length || result.taught?.length || result.raised?.length) {
       return { ok: false, reason: 'Nobody can say who these gifts are for.' };
     }
     return { ok: true };
@@ -269,7 +289,8 @@ export class RestSystem {
   }
 
   /** What a judged dream does to this person: its words and its grants. */
-  static applyDream(player: IPlayer, result: IDreamResult): IPlayer {
+  static applyDream(before: IPlayer, result: IDreamResult): IPlayer {
+    const player = LoreSystem.apply(before, result);
     const skillWords = { ...(player.skillWords ?? {}) };
     for (const s of result.skills) skillWords[s.id] = { name: s.name, flavor: s.flavor, grants: s.grants ?? [] };
     const weaveNames = { ...(player.weaveNames ?? {}) };

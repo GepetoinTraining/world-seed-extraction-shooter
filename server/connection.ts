@@ -41,6 +41,8 @@ export interface IDatabase {
   schema: typeof sqliteSchema | typeof pgSchema;
   /** What each dialect needs to open a write transaction. */
   txConfig: unknown;
+  /** Maintenance (D103): gives back what weeks of writes left behind. */
+  compact: () => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -88,6 +90,7 @@ async function openSqlite(url: string): Promise<IDatabase> {
     db,
     schema: sqliteSchema,
     txConfig: { behavior: 'immediate' },
+    compact: async () => { await client.execute('VACUUM'); },
     close: async () => client.close()
   };
 }
@@ -106,6 +109,7 @@ async function openPostgres(url: string, options: IOpenOptions): Promise<IDataba
     db,
     schema: pgSchema,
     txConfig: undefined,
+    compact: async () => { await pool.query('VACUUM'); },
     close: async () => pool.end()
   };
 }
@@ -124,6 +128,7 @@ async function openPglite(): Promise<IDatabase> {
     db,
     schema: pgSchema,
     txConfig: undefined,
+    compact: async () => { await client.exec('VACUUM'); },
     close: async () => client.close()
   };
 }

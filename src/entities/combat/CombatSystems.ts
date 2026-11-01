@@ -8,7 +8,7 @@ import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { IStatusPlan, StatusClock } from '../../logic/systems/EffectSystem';
 
 export interface ICombatEvent {
-  type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG';
+  type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG' | 'WARDED' | 'BROKE';
   entityId?: string;
   definitionId?: string;
   displayName?: string;
@@ -36,6 +36,10 @@ const poisoned = (mob: IWorldEntity, perTick: number, now: number) => {
   mob.statuses = StatusClock.add(mob.statuses as never, { kind: 'dot', magnitude: perTick, durationMs: POISON_MS, tickMs: POISON_TICK_MS }, now) as never;
 };
 
+/** D93: what a blow lands on. A body, or something a leader raised that stands to be broken. */
+const isTarget = (ent: IWorldEntity) =>
+  ent.type === EntityType.MOB || (ent.type === EntityType.STRUCTURE && !!ent.structure && ent.structure.brokenAt === undefined);
+
 const struck = (mob: IWorldEntity, status: IStatusPlan | undefined, now: number) => {
   if (status) mob.statuses = StatusClock.add(mob.statuses as never, status, now) as never;
 };
@@ -62,7 +66,7 @@ export class CombatSystem {
     Object.entries(chunks).forEach(([key, chunk]) => {
       updatedChunks[key] = {
         ...chunk,
-        entities: chunk.entities.map(ent => (ent.type === EntityType.MOB ? { ...ent } : ent))
+        entities: chunk.entities.map(ent => (isTarget(ent) ? { ...ent, ...(ent.structure ? { structure: { ...ent.structure } } : {}) } : ent))
       };
     });
     const spawnedLoot: { position: { x: number; y: number }; items: IItem[] }[] = [];
@@ -72,13 +76,19 @@ export class CombatSystem {
     const allMobs: { mob: IWorldEntity; chunkKey: string }[] = [];
     Object.entries(updatedChunks).forEach(([key, chunk]) => {
       chunk.entities.forEach(ent => {
-        if (ent.type === EntityType.MOB && ent.health && ent.health > 0) {
+        if (isTarget(ent) && ent.health && ent.health > 0) {
           allMobs.push({ mob: ent, chunkKey: key });
         }
       });
     });
 
     const resolveDefeat = (mob: IWorldEntity, chunkKey: string) => {
+      // A post stands where it was, down, until its ward's clock says otherwise. It teaches nothing and drops nothing
+      if (mob.structure) {
+        mob.structure.brokenAt = Date.now();
+        events.push({ type: 'BROKE', entityId: mob.id, definitionId: mob.definitionId, position: mob.position });
+        return;
+      }
       const xpAmount = ProgressionSystem.calculateKillXp(mob.rank, mob.rarity, 1);
       events.push({
         type: 'KILL',
@@ -123,7 +133,7 @@ export class CombatSystem {
       if (!mob.statuses?.length) return;
       const { damage, statuses } = StatusClock.tick(mob.statuses as never, tickNow);
       mob.statuses = statuses as never;
-      if (damage > 0) {
+      if (damage > 0 && !mob.warded) {
         mob.health = (mob.health ?? 0) - damage;
         events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
         if (mob.health <= 0) resolveDefeat(mob, chunkKey);
@@ -139,6 +149,13 @@ export class CombatSystem {
 
         // px: mob radius (12) + bullet radius + grace
         if (ProjectileSystem.sweptDistance(bullet, mob.position.x, mob.position.y) >= 20) continue;
+
+        // D93: while its anchors stand the blow lands on nothing. It is spent, and it says so
+        if (mob.warded) {
+          bulletsToRemove.add(bulletIdx);
+          events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, position: mob.position });
+          break;
+        }
 
         const damage = bullet.damage ?? 25;
         mob.health -= damage;
@@ -183,6 +200,11 @@ export class CombatSystem {
         const angleDiff = Math.abs(angleToMob - arc.angle);
         
         if (angleDiff < 0.75 || angleDiff > Math.PI * 2 - 0.75) {
+          if (mob.warded) {
+            hitIds.add(mob.id);
+            events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, position: mob.position });
+            return;
+          }
           const damage = arc.damage ?? 50; // Wave 4: the weapon decides
           mob.health -= damage;
           if (arc.poison) poisoned(mob, arc.poison, tickNow);

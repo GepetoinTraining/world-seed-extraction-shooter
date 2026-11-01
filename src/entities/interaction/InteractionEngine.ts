@@ -3,6 +3,13 @@ import { EntityType, IWorldEntity } from '../world/types';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { Capture } from '../../logic/systems/Capture';
+import { MonsterMind } from '../../logic/systems/MonsterMind';
+import { TALK_ENERGY } from '../../logic/systems/TalkLaw';
+import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
+
+/** D109: you can't talk across a distance. The same reach for a person and a monster. */
+export const TALK_REACH_TILES = 4.0;
 
 export class InteractionEngine {
 
@@ -71,6 +78,20 @@ export class InteractionEngine {
       // else: wrong/no tool -> no option. The refusal IS the message (test line 7).
     }
 
+    // 2a. A BODY, WITH A SNARE IN THE PACK (D65). It offers nothing to anyone without one.
+    if (target.type === EntityType.MOB && (target.health ?? 0) > 0 && dist < 3.0 && Capture.canSnare(playerInventory, target.id, MOB_DEFINITIONS[target.definitionId])) {
+      options.push({
+        id: `int_snare_${target.id}`,
+        label: 'Set a Snare',
+        type: InteractionType.PICKUP,
+        icon: 'snare',
+        energyCost: Capture.SNARE_ENERGY,
+        timeCostSeconds: 2.0,
+        requirements: {},
+        consequence: { xpTags: ['trapping'] }
+      });
+    }
+
     // 2b. CONTAINERS (Wave 2.3: ruin chests)
     if (target.type === EntityType.CONTAINER && target.container && dist < 3.0) {
       if (!target.container.looted) {
@@ -87,34 +108,20 @@ export class InteractionEngine {
       }
     }
 
-    // 2c. NPCs (Wave 2.4: the social extraction loop)
-    if (target.type === EntityType.NPC && target.npc && dist < 4.0) {
+    // 2c. NPCs (D113): you talk to a person now. The menu opens the talk, and a gift is offered inside it.
+    if (target.type === EntityType.NPC && target.npc && dist < TALK_REACH_TILES) {
       const npc = target.npc;
 
       options.push({
         id: `int_talk_${target.id}`,
         label: `Talk (${npc.name} · ${npc.disposition}/100)`,
         type: InteractionType.COMMUNE,
-        icon: '💬',
-        energyCost: 5,
-        timeCostSeconds: 2.0,
+        icon: '',
+        energyCost: TALK_ENERGY,
+        timeCostSeconds: 0,
         requirements: { skillId: 'charisma' },
         consequence: { xpTags: ['social', 'charisma'] }
       });
-
-      // Offer a gift if the player carries anything at all
-      if (playerInventory.length > 0) {
-        options.push({
-          id: `int_gift_${target.id}`,
-          label: `Give Gift (they want: ${npc.want})`,
-          type: InteractionType.COMMUNE,
-          icon: '🎁',
-          energyCost: 2,
-          timeCostSeconds: 1.0,
-          requirements: {},
-          consequence: { xpTags: ['social', 'trade'] }
-        });
-      }
 
       // The payoff: enough disposition and they will follow, and leadership asks less of it
       if (npc.disposition >= StatSystem.recruitDisposition(player.attributes)) {
@@ -129,6 +136,21 @@ export class InteractionEngine {
           consequence: { xpTags: ['social', 'rescue'] }
         });
       }
+    }
+
+    // 2c-ii. D114: a monster that has reached speech. Only a right click comes here: the interact key walks past monsters.
+    if (target.type === EntityType.MOB && dist < TALK_REACH_TILES && MonsterMind.speaks(MOB_DEFINITIONS[target.definitionId])) {
+      const stance = target.bargain?.stance;
+      options.push({
+        id: `int_bargain_${target.id}`,
+        label: stance ? `Bargain (${stance.toLowerCase()})` : 'Bargain',
+        type: InteractionType.COMMUNE,
+        icon: '',
+        energyCost: TALK_ENERGY,
+        timeCostSeconds: 0,
+        requirements: { skillId: 'charisma' },
+        consequence: { xpTags: ['social', 'charisma'] }
+      });
     }
 
     // 2d. THE CART (Wave 10C, D16): tow, release, open — anyone may, and a

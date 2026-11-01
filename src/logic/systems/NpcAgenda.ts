@@ -26,6 +26,26 @@ const DECAY: Record<NeedKind, number> = { survival: 5, safety: 2, belonging: 1, 
 const PRESSING_BELOW = 50;
 const clampNeed = (value: number) => Math.max(0, Math.min(100, value));
 
+/**
+ * THE LADDER (D104, D116). Pedro: "the goal only comes into play after they've achieved the 5th
+ * scale of maslows. own a house, have more money than need, have a wife or husband and children".
+ * People only: elites and bosses keep the goal D93 deals them.
+ *
+ * It climbs in his order, which is not the order of NEEDS, and `pressing` keeps what the vendors
+ * have always read. `fact` names what can be known of a person outright, so a resident with no
+ * house has no house whatever a number says.
+ */
+export const LADDER: readonly { need: NeedKind; says: string; fact?: keyof ILadderFacts }[] = [
+  { need: 'survival', says: 'fed' },
+  { need: 'safety', says: 'a house of their own', fact: 'house' },
+  { need: 'esteem', says: 'more money than they need', fact: 'money' },
+  { need: 'belonging', says: 'a spouse and children', fact: 'family' },
+  { need: 'purpose', says: 'a goal of their own' }
+];
+
+/** What is known of a person outright. Anything left out reads from their needs. */
+export interface ILadderFacts { house?: boolean; money?: boolean; family?: boolean }
+
 export const NpcAgenda = {
   fresh(day: number): INpcAgenda {
     return { needs: { ...START }, day };
@@ -52,5 +72,21 @@ export const NpcAgenda = {
   pressing(agenda: INpcAgenda): NeedKind {
     const under = NEEDS.find(need => agenda.needs[need] < PRESSING_BELOW);
     return under ?? NEEDS.reduce((low, need) => agenda.needs[need] < agenda.needs[low] ? need : low, NEEDS[0]);
+  },
+
+  /** Is this rung met, by what is known, or else by the number? */
+  met(agenda: INpcAgenda, rung: typeof LADDER[number], facts: ILadderFacts = {}): boolean {
+    const known = rung.fact ? facts[rung.fact] : undefined;
+    return known ?? agenda.needs[rung.need] >= PRESSING_BELOW;
+  },
+
+  /** The first rung not met. Everyone stands on one, and the top one is their own goal. */
+  rung(agenda: INpcAgenda, facts: ILadderFacts = {}): typeof LADDER[number] {
+    return LADDER.find(rung => !this.met(agenda, rung, facts)) ?? LADDER[LADDER.length - 1];
+  },
+
+  /** D104: a goal of their own comes only once everything under it stands. */
+  mayChase(agenda: INpcAgenda, facts: ILadderFacts = {}): boolean {
+    return this.rung(agenda, facts).need === 'purpose';
   }
 };

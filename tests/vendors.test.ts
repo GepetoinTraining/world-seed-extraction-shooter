@@ -111,10 +111,12 @@ describe('a vendor is its own container: stock', () => {
     expect(shelf[0].vendorId).toBe('npc_weapon_vendor');
   });
 
-  it('what was sold today stays sold, and a new day stocks again', () => {
+  // Moved on purpose (D115): stock turns over by the week, on what sold and a new attempt.
+  it('what was sold stays sold until the week closes, and the next week stocks what sold and an attempt', () => {
     const sold = VendorSystem.recordSale(vendor(), 'a', DAY, 0.8);
     expect(VendorSystem.shelf(sold, [listing('a', 5), listing('b', 5)], DAY, 0).map(l => l.stock)).toEqual([4, 5]);
-    expect(VendorSystem.shelf(VendorSystem.fold(sold, DAY + 1), [listing('a', 5)], DAY + 1, 0)[0].stock).toBeGreaterThanOrEqual(5);
+    expect(VendorSystem.shelf(VendorSystem.fold(sold, DAY + 1), [listing('a', 5)], DAY + 1, 0)[0].stock).toBe(4);
+    expect(VendorSystem.shelf(VendorSystem.closeWeek(sold, DAY + 7), [listing('a', 5)], DAY + 7, 0)[0].stock).toBe(2);
   });
 
   it('a shelf never reads below nothing', () => {

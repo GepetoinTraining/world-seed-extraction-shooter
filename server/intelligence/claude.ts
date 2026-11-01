@@ -23,13 +23,22 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   kami_talk: 'claude-sonnet-5-5',
   kami_set: 'claude-sonnet-5-5',
   // Pedro: "you send that seed to a random ass haiku and ask for a personality based on vibes"
-  kami_persona: 'claude-haiku-5-5'
+  kami_persona: 'claude-haiku-5-5',
+  // Pedro: "what we do is load up haiku and talk to it", and "ask haiku to give this npc it's goal"
+  npc_talk: 'claude-haiku-5-5',
+  npc_goal: 'claude-haiku-5-5',
+  bargain: 'claude-haiku-5-5',
+  // Pedro: "the model writes the NPC, the web is resolved backwards"
+  chain: 'claude-haiku-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
+/** Writing to the cache costs a quarter more than plain input, for what it saves on every read after. */
+const CACHE_WRITE_FACTOR = 1.25;
+
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
   'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 },
@@ -39,16 +48,17 @@ const RATES: Record<string, { input: number; output: number; cacheRead: number }
 const CHARS_PER_TOKEN = 3;
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
-/** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead. */
-const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona'];
+/** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead, and a declined round still rolls. */
+const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona', 'npc_talk', 'npc_goal', 'bargain', 'chain'];
 
 const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boolean): IDoorUsage | undefined => {
   if (!usage) return undefined;
   const rate = RATES[model];
   const factor = batched ? 0.5 : 1;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   const usd = rate
-    ? ((usage.input_tokens * rate.input + usage.output_tokens * rate.output + cacheRead * rate.cacheRead) / 1_000_000) * factor
+    ? ((usage.input_tokens * rate.input + usage.output_tokens * rate.output + cacheRead * rate.cacheRead + cacheWrite * rate.input * CACHE_WRITE_FACTOR) / 1_000_000) * factor
     : 0;
   return { model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, cacheReadTokens: cacheRead, usd };
 };

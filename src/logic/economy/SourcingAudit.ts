@@ -35,9 +35,7 @@ export interface ISourcingRow {
   problems: string[];
 }
 
-const WAIVERS: Record<string, string> = {
-  res_tree_sapling: 'Wave 11 (D11, line 36): a sapling is planted on a farm. Until farms stand, it answers only a door bill, by accident of its tag.'
-};
+const WAIVERS: Record<string, string> = {};
 
 const billLines = (): { tag: string; label: string }[] => [
   ...Object.entries(PIECE_BILLS).map(([kind, line]) => ({ tag: line.tag, label: `bill:${line.tag} (${kind})` })),
@@ -108,6 +106,8 @@ export class SourcingAudit {
     const row = (defId: string, def: any, raw: boolean): ISourcingRow => {
       // D99: it comes from what falls, and it leaves by being sold
       if (def.junk) return { defId, name: def.name, raw, sourced: ['a creature that falls'], refined: [], direct: 'sold', sinks: ['the vendor'], closed: true, problems: [] };
+      // D115: it comes from a chest, and it leaves by being kept or taken in place of coin
+      if (def.anchor) return { defId, name: def.name, raw, sourced: ['a chest'], refined: [], direct: 'sold', sinks: ['a counter', 'a shelf that asks for it'], closed: true, problems: [] };
       const sourced = raw
         ? Object.entries(BIOME_RESOURCES).filter(([, ids]) => ids.includes(defId)).map(([biome]) => biome)
         : [
@@ -119,14 +119,17 @@ export class SourcingAudit {
       const refined = inputsOf.filter(r => r.inputs.some(i => i.itemId === defId)).map(r => r.id);
       const eaten = def.type === ItemType.CONSUMABLE && (def.stats?.health_restore ?? 0) > 0;
       const stands = isStation(defId);
+      // What grows can go in the ground, on farmland (line 36): Farm.plantVerdict's own reading
+      const planted = raw && (def.tags ?? []).includes('flora') && !!def.regrowMs;
       const sinks = [
         ...refined.map(id => `recipe:${id}`),
         ...new Set(bills.filter(line => (def.tags ?? []).includes(line.tag)).map(line => line.label)),
         ...(eaten ? ['meal'] : []),
-        ...(stands ? ['stands in a room'] : [])
+        ...(stands ? ['stands in a room'] : []),
+        ...(planted ? ['a bed on farmland'] : [])
       ];
       const waiver = WAIVERS[defId];
-      const direct = raw && eaten ? 'eaten' : undefined;
+      const direct = raw && eaten ? 'eaten' : planted && refined.length === 0 ? 'planted' : undefined;
 
       const problems: string[] = [];
       if (sourced.length === 0) problems.push('nothing sources it');

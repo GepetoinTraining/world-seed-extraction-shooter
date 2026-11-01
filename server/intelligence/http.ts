@@ -5,8 +5,8 @@
  * authentication in front of it (D45): a public route here spends someone's money.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { IntelligenceDoor, type IDoorMessage } from './door';
-import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
+import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
+import { buildBargainRequest, buildChainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildNpcGoalRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -28,7 +28,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
 
-/** `path` is what follows the mount: /status, /talk, /theme, /creation, /kami/persona, /kami/talk, /kami/set, /rest/file, /rest/collect, /window/file, /window/collect. */
+/** `path` is what follows the mount: /status, /talk, /theme, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /rest/file, /rest/collect, /window/file, /window/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
@@ -52,6 +52,8 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
         return send(res, 200, await door.ask(buildThemeRequest(conversation, body.draft ?? {})));
       case '/creation':
         return send(res, 200, await door.ask(buildCreationRequest(body.ask ?? {})));
+      case '/chain':
+        return send(res, 200, await door.ask(buildChainRequest(body.ask ?? {})));
       case '/kami/talk': {
         // One JSON line for each piece as it is written, then one saying how it ended. A closed tab stops the bill.
         res.statusCode = 200;
@@ -69,6 +71,14 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
         return send(res, 200, await door.ask(buildKamiSetRequest(conversation, body.ask ?? {}, body.persona)));
       case '/kami/persona':
         return send(res, 200, await door.ask(buildKamiPersonaRequest(String(body.seed ?? ''))));
+      case '/npc/talk':
+      case '/npc/bargain': {
+        if (String(body.ask?.said ?? '').length > TALK_MESSAGE_LIMIT) return send(res, 200, { status: 'REFUSED', reason: `That is more than one person can say at once: ${TALK_MESSAGE_LIMIT} characters.` });
+        const build = path === '/npc/talk' ? buildNpcTalkRequest : buildBargainRequest;
+        return send(res, 200, await door.askTalk(String(body.talkId ?? 'talk'), build(body.ask ?? {})));
+      }
+      case '/npc/goal':
+        return send(res, 200, await door.askTalk(String(body.talkId ?? 'talk'), buildNpcGoalRequest(body.ask ?? {})));
       case '/rest/file':
         return send(res, 200, await door.fileRest(String(body.id ?? 'rest'), buildRestRequest(body.queue ?? {}, body.theme ?? {})));
       case '/rest/collect':

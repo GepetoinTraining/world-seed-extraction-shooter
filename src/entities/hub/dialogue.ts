@@ -24,6 +24,8 @@ import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
 import { RestDoor } from '../../logic/systems/RestDoor';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { StudySystem } from '../../logic/systems/StudySystem';
+import { StudyDoor } from '../../logic/systems/StudyDoor';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
@@ -137,6 +139,12 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} on my table. You will know when you wake. Read them before you trust them.` };
   },
   OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
+  // D118: anyone in town can be studied. What it comes to is settled at a dream.
+  STUDY_PERSON: (payload) => {
+    const verdict = StudyDoor.start(StudySystem.targetOfPerson(payload));
+    if (!verdict.ok) return { kind: 'reply', text: verdict.reason! };
+    return { kind: 'reply', text: `Look all you like. ${verdict.seconds} seconds of it, and it will cost you ${verdict.cost} energy.` };
+  },
 
   // --- The Conduit ---
   OPEN_MISSIONS: () => ({ kind: 'open', panel: 'missions' }),
@@ -196,7 +204,7 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   OPEN_HALL: () => ({ kind: 'open', panel: 'guild' }),
   GUILD_LORE: () => ({
     kind: 'reply',
-    text: 'People come out of the gate with nothing, and Mags can only give them a bed. We buy them ground on the treasury\'s word, and you bring what their house asks. Then they want things, and the board fills. As for you: the rank is ours to give. Bring out what stands above you, carry it yourself, and hand it over here.'
+    text: 'People come out of the gate with a little coin and no ground, and Mags can only give them a bed. They want things, the board fills, and they pay for what you bring. See to someone and we find them ground, and you bring what their house asks. As for you: the rank is ours to give. Bring out what stands above you, carry it yourself, and hand it over here.'
   }),
 
   // --- Honest closures: these halls are not open, and they say so ---

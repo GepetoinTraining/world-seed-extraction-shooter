@@ -579,7 +579,7 @@ export class WebSystem {
         records.push({ id: skill.id, rung });
       }
     }
-    return { web: { nodes }, firsts, records };
+    return { web: { ...web, nodes }, firsts, records };
   }
 
   // -------------------------------------------------------------------------
@@ -596,8 +596,9 @@ export class WebSystem {
           id: skill.id,
           rank: ProgressionSystem.skillRankOf(skill),
           circles: skill.circles ?? 0,
-          name: node.name,
-          flavor: this.flavorOf(skill.id, pack),
+          // What a rest's model called it, if one has (D58, D118): the sheet says the same name the feed did
+          name: player.skillWords?.[skill.id]?.name ?? node.name,
+          flavor: player.skillWords?.[skill.id]?.flavor ?? this.flavorOf(skill.id, pack),
           rung: mastery.rung,
           rungName: mastery.rungName,
           into: mastery.into,

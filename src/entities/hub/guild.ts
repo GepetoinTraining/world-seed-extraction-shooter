@@ -8,11 +8,11 @@
  * after the choice is deterministic). A resident's day stays out of this record, so C2 can
  * give them one without anything here standing in the way.
  *
- * THE GUILD'S MONEY: it holds none of its own. It spends the hub's treasury, which is the
- * hub's endowment and everything people have paid the hub. The seller of a free lot is that
- * same treasury, so buying moves no gold. What it has spent is kept on its books and counts
- * against what it may spend next, so land is not free to it. Quests pay out of the treasury
- * through the same path a vendor's buyback takes.
+ * THE GUILD'S MONEY (D108, D115): it spends the hub's treasury, and when that falls short it
+ * prints (`money.ts`). The seller of a free lot is that same treasury, so buying moves no gold,
+ * and what limits it is how much ground there is, and who has been seen to. A want is paid out
+ * of the person's own wallet: "they circulate money". What they cannot afford, they go without,
+ * and nobody covers it: "that's the LITERAL MECHANISM OF MASLOW".
  */
 
 import { IAffix, IItem, ISkillState, IWebPack, UniversalRank } from '../../../types';
@@ -24,6 +24,7 @@ import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { WebBank } from '../../logic/content/WebBank';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet, sizeNeedsVerdict, templateBill } from './template';
+import type { IClosedWeek } from '../../logic/economy/ShopWeek';
 
 /** Who holds a lot the guild bought. It is nobody's to sell, split or lose. */
 export const GUILD_OWNER_ID = 'GUILD';
@@ -57,10 +58,12 @@ export interface IResident {
   arrivedAt: number;
   /** The lot the guild bought for them. Null: still at the tavern. */
   lotId: string | null;
+  /** What people brought them before they had ground. It moves in with them. */
+  belongings?: IItem[];
   house?: IHousePool;
   /** Someone the road made a master. Their house is the shop they came back for. */
   craftsmanId?: string;
-  /** When their house was finished. They want nothing before this (D75). */
+  /** When their house was finished. */
   homeAt?: number;
   /** How many wants they have had met. It keys the next. */
   wantsMet: number;
@@ -70,7 +73,9 @@ export interface IResident {
 
 export interface IResidentQuest {
   id: string;
+  /** Who wants it. A keeper's id here means no resident stands behind it, and `askerName` says who. */
   residentId: string;
+  askerName?: string;
   /** Which of this person's wants this is. */
   n: number;
   tag: string;
@@ -89,19 +94,62 @@ export interface IHandedMap {
   at: number;
 }
 
+/**
+ * D116: a person asks for the building their goal needs. C5 reads `openBuildingAsks` from the hub's
+ * store and answers with `meetBuildingAsk`: nothing here raises anything.
+ */
+export interface IBuildingAsk {
+  id: string;
+  askerId: string;
+  askerName: string;
+  /** A word from `buildingWords`: a station on the hub's web, or a house. */
+  building: string;
+  /** The goal it is for, in their words, and the rung that goal answers. */
+  goal: string;
+  need: string;
+  day: number;
+  state: 'OPEN' | 'MET';
+  /** What answered it: a lot, or whatever C5 says. */
+  metBy?: string;
+}
+
 export interface IGuildState {
-  /** Gold's worth of land and permits taken against the treasury. */
-  spent: number;
+  /** How many times this hub has printed, and what it came to. The rows are the record; this is the book. */
+  printed: { count: number; total: number };
+  /** The world-day the hub has paid its running through. Unset: nothing owed from before this was kept. */
+  runningDay?: number;
+  /** D115: the week its shelves are open on. Unset: nothing owed from before this was kept. */
+  week?: number;
+  /** How the last week closed, for the Hall's books. */
+  lastWeek?: IClosedWeek;
   residents: IResident[];
   quests: IResidentQuest[];
   maps: IHandedMap[];
   /** What was handed over to pass a trial. It stays on the hall's record, and no item is lost. */
   trophies: IItem[];
+  /** D116. Absent on a hub saved before people could ask. */
+  asks?: IBuildingAsk[];
 }
 
-export const emptyGuild = (): IGuildState => ({ spent: 0, residents: [], quests: [], maps: [], trophies: [] });
+export const emptyGuild = (): IGuildState => ({ printed: { count: 0, total: 0 }, residents: [], quests: [], maps: [], trophies: [] });
+
+/** A saved guild, as it reads today. An older save's book of what it had taken against the treasury is dropped. */
+export function guildFrom(saved: Partial<IGuildState> | undefined): IGuildState {
+  const { spent: _retired, ...kept } = (saved ?? {}) as Partial<IGuildState> & { spent?: number };
+  return { ...emptyGuild(), ...kept };
+}
 
 export type ResidentStage = 'TAVERN' | 'POOLING' | 'RISING' | 'HOME';
+
+/** How many wants a human must meet before someone gets ground. A guess until Wave 12. */
+const WANTS_BEFORE_GROUND = 1;
+
+/**
+ * D115: "they only get a their plot of land by human questing, because we need to provide their
+ * needs". Someone the road made a master has been seen to already, and only needs their shop.
+ */
+export const mayHaveGround = (resident: Pick<IResident, 'wantsMet' | 'craftsmanId'>): boolean =>
+  !!resident.craftsmanId || resident.wantsMet >= WANTS_BEFORE_GROUND;
 
 export const residentIdOf = (bond: BondData) => `res_${bond.worldSeed}_${bond.entityId}`;
 
@@ -143,10 +191,8 @@ export function houseBill(tpl: ITemplate): { tag: string; count: number }[] {
   return [...lines.entries()].map(([tag, count]) => ({ tag, count }));
 }
 
-/** What the lot and the house's permit take from what the guild may spend. */
+/** What the lot and the house's permit come to, for the row and the window. */
 export const guildHouseCost = (lotPrice: number) => lotPrice + STRUCTURE_COSTS.HOUSE.build;
-
-export const guildCover = (treasury: number, guild: Pick<IGuildState, 'spent'>) => treasury - guild.spent;
 
 // ---------------------------------------------------------------------------
 // D10: UPKEEP
@@ -195,7 +241,7 @@ export function benchFactor(residents: Pick<IResident, 'bond' | 'homeAt'>[], pai
 // ---------------------------------------------------------------------------
 
 /** A guess until Wave 12. Below what a shelf marks a thing up to, above what its counter pays. */
-const PAY_SHARE: Record<INpcSheet['want'], number> = { GOLD: 1, RESPECT: 1.2, GIFT: 1.4 };
+export const PAY_SHARE: Record<INpcSheet['want'], number> = { GOLD: 1, RESPECT: 1.2, GIFT: 1.4 };
 
 const EDIBLE = ['berry', 'fruit', 'grain'];
 
@@ -229,7 +275,7 @@ export function wantFor(
  * A want is for what gets used up. A deed, a map or a plan answers "document" and is a
  * person's standing, so no want takes one, however cheap it reads.
  */
-export const wantMayTake = (item: IItem): boolean => !(item.worldDeedData || item.deedData || item.mapData || item.tags?.includes('template'));
+export const wantMayTake = (item: IItem): boolean => !(item.creatureData || item.worldDeedData || item.deedData || item.mapData || item.tags?.includes('template'));
 
 /** What a want met pays: the worth of what was brought, by the person's own want. */
 export const questPay = (items: IItem[], payShare: number): number =>
@@ -258,10 +304,28 @@ export const trialTakes = (item: IItem, rank: UniversalRank | string): boolean =
   item.isIdentified !== false && ProgressionSystem.rankIndex(item.rank) > ProgressionSystem.rankIndex(rank as UniversalRank);
 
 // ---------------------------------------------------------------------------
-// THE MAP'S DOOR (D93): a chain needs a boss, and bosses are C3's
+// THE MAP'S DOOR (D93): known means a map showing it reached the Hall
 // ---------------------------------------------------------------------------
 
+/** One step of a chain, drawn from the holding. How many it takes is the place's own number. */
+export interface IChainStep {
+  text: string;
+  people: number;
+}
+
+/** What the chain says it knows, from what the map says. Levels and counts, never a name (D60). */
+export interface IChainSeat {
+  sector: string;
+  ground: string;
+  chunks: number;
+  anchors: number;
+  /** The regeneration it was read in. */
+  read: number;
+  named?: string;
+}
+
 export interface IChainDraft {
+  worldId?: string;
   worldName: string;
   sectors: number;
   /** Bodies counted, across what the map holds. */
@@ -272,10 +336,63 @@ export interface IChainDraft {
   /** What the map's scan regenerations run across. */
   oldest: number;
   newest: number;
-  /** The leader a chain would name. No map can show one until C3. */
-  seat: null;
-  posted: false;
-  steps: string[];
+  /** Who it is about. Null until a map shows someone holding ground, and only then does it post. */
+  seat: IChainSeat | null;
+  posted: boolean;
+  steps: IChainStep[];
+  /** How many regenerations old the reading is, when the Hall knows what regeneration it is. */
+  staleBy?: number;
+}
+
+type SectorEntry = NonNullable<IItem['mapData']>['sectors'][string];
+type HoldingEntry = NonNullable<SectorEntry['holdings']>[number];
+
+const chainSteps = (sector: string, h: HoldingEntry): IChainStep[] => {
+  const unfinished = h.marks.filter(m => !m.built).length;
+  const outer = h.marks.filter(m => m.built && m.fn !== 'seat' && m.fn !== 'anchor').length;
+  const works = outer > 0 ? `${outer} of its outer works` : 'the ground around it';
+  return [
+    { text: `Read sector ${sector} again, as it stands now. What holds ${h.chunks.length} chunk${h.chunks.length === 1 ? '' : 's'} will not have stood still.`, people: 1 },
+    { text: `Take ${works}${unfinished > 0 ? `, and what is still going up` : ''}, and come back with what you learned of its bands.`, people: 1 },
+    { text: `Put someone at each of its ${h.anchors} anchors at one moment. One person cannot be in ${h.anchors} places.`, people: Math.max(2, h.anchors) },
+    { text: 'Bring down who sits there, and carry its stores out through everything still standing.', people: Math.max(2, h.anchors) }
+  ];
+};
+
+/** Only a boss posts a chain. A camp still going up is on a person's map, and the Hall has nothing to ask of it yet. */
+const postable = (e: SectorEntry): HoldingEntry[] => (e.holdings ?? []).filter(h => h.anchors > 0);
+
+const seatFrom = (sector: string, h: HoldingEntry): IChainSeat => ({
+  sector, ground: h.seat, chunks: h.chunks.length, anchors: h.anchors, read: h.generation, ...(h.named ? { named: h.named } : {})
+});
+
+/**
+ * What the Hall holds, from every map handed to it: the newest reading of each sector, whichever came
+ * in first (D93). A newer map updates it, one that shows the ground empty closes it, and an older
+ * map never reopens it. Nothing else posts: seeing is not enough, and neither is saying so.
+ */
+export function chainFromMaps(maps: NonNullable<IItem['mapData']>[], generationNow: number): IChainDraft[] {
+  const newest = new Map<string, { entry: SectorEntry; map: NonNullable<IItem['mapData']> }>();
+  for (const map of maps) {
+    for (const [sector, entry] of Object.entries(map.sectors)) {
+      const key = `${map.worldId}:${sector}`;
+      const had = newest.get(key);
+      const readAt = (e: SectorEntry) => Math.max(e.generation, ...(e.holdings ?? []).map(h => h.generation));
+      if (!had || readAt(entry) > readAt(had.entry)) newest.set(key, { entry, map });
+    }
+  }
+  const chains: IChainDraft[] = [];
+  for (const [key, { entry, map }] of [...newest.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    const sector = key.slice(map.worldId.length + 1);
+    for (const holding of postable(entry)) {
+      chains.push({
+        ...chainFromMap({ ...map, sectors: { [sector]: { ...entry, holdings: [holding] } } }),
+        worldId: map.worldId,
+        staleBy: Math.max(0, generationNow - holding.generation)
+      });
+    }
+  }
+  return chains;
 }
 
 /** What this map would post, read from what it holds: levels and counts, never a name (D60). */
@@ -284,6 +401,9 @@ export function chainFromMap(map: NonNullable<IItem['mapData']>): IChainDraft {
   const mobsIn = (e: typeof entries[number][1]) => e.contacts?.MOB ?? 0;
   const hottest = [...entries].sort((a, b) => mobsIn(b[1]) - mobsIn(a[1]) || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
   const generations = entries.map(([, e]) => e.generation);
+  const held = entries
+    .flatMap(([sector, e]) => postable(e).map(h => ({ sector, h })))
+    .sort((a, b) => b.h.chunks.length - a.h.chunks.length || a.sector.localeCompare(b.sector))[0];
   return {
     worldName: map.worldName,
     sectors: entries.length,
@@ -292,10 +412,8 @@ export function chainFromMap(map: NonNullable<IItem['mapData']>): IChainDraft {
     hottest,
     oldest: generations.length > 0 ? Math.min(...generations) : 0,
     newest: generations.length > 0 ? Math.max(...generations) : 0,
-    seat: null,
-    posted: false,
-    steps: hottest
-      ? [`Scan sector ${hottest} again, as it stands now.`, `Walk sector ${hottest} and come back with what holds it.`, 'Bring a party against whoever sits there.']
-      : []
+    seat: held ? seatFrom(held.sector, held.h) : null,
+    posted: !!held,
+    steps: held ? chainSteps(held.sector, held.h) : []
   };
 }

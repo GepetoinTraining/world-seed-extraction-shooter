@@ -159,7 +159,8 @@ export type MaterialOrigin =
   | 'IMPROVISATION'  // combined in the field, no bench, no apology
   | 'WORLD'          // rolled by the world itself (loot, chests, genesis)
   | 'CONSTRUCTION'   // minted by a finished shell (bench, counter)
-  | 'SALVAGE';       // torn back out of a demolished piece, bitten
+  | 'SALVAGE'        // torn back out of a demolished piece, bitten
+  | 'FARMED';        // grown on a plot, or taken from a herd at home
 
 /** One step of labor in an item's transformation chain. */
 export interface ICompositionStep {
@@ -324,6 +325,8 @@ export interface IWebStation {
   weight: number;
   width: number;
   height: number;
+  /** D91: stations that must stand first, though no recipe says so. Read by `hubTech`. */
+  after?: string[];
 }
 
 export interface IWebRecipe {
@@ -422,8 +425,19 @@ export interface IWebNodeRecord {
   rungRecord: IWebCredit & { rung: number };
 }
 
+/** A skill the hub holds and nobody knows of: it opens nothing until the web reaches it. */
+export interface IWebSilentRecord {
+  id: string;
+  tags: string[];
+  rank: number;
+  by: IWebCredit;
+  rung: number;
+}
+
 export interface IHubWeb {
   nodes: Record<string, IWebNodeRecord>;
+  /** D119: "added to the hub silently, the players cannot know, they need to make the web reach it." */
+  silent?: Record<string, IWebSilentRecord>;
 }
 
 // ==========================================================================
@@ -516,6 +530,8 @@ export interface IItem {
     worldSeed: string;
     entityId: string;
     webVersion?: number;
+    /** D119: the theme they came from, whose pool their profession is dealt from. */
+    themeId?: string;
     rank: UniversalRank;
     rarity: Rarity;
     sheet: {
@@ -576,6 +592,12 @@ export interface IItem {
   /** D85: a world's sectors as a scribe held them. Levels and counts, never a name (D60). */
   /** D72, D80: what minting a world spends. It names a size and no holder, so it can change hands. */
   worldDeedData?: { size: number; source: 'FREE' | 'FOUND' };
+  /** D65: what is alive in this cage: the body, its kind and the proof of its line. */
+  creatureData?: import('./src/logic/systems/Capture').ICaged;
+  /** Line 37: the bed this came off, the seed it grew from, and how many plantings stand behind it. */
+  farmLine?: { lotId: string; bed: number; seedItemId: string; seedName: string; plantings: number; firstOrigin: string; plantedAt: number; reapedAt: number };
+  /** D115: bought from a bargain bin at this price. A counter pays no more than this for it. */
+  binPrice?: number;
 
   mapData?: {
     worldId: string;
@@ -689,9 +711,56 @@ export interface IAttributes {
 
 export interface ILoreEntry {
   topic: string;
+  /** D118: all the lore ever gained under this topic. Spending never lowers it: it is what a person knows. */
   xp: number;
   level: number;
   dateDiscovered: number;
+  /** D118: the highest rank studied under this topic. What lore teaches from it is born at this rank. */
+  peak?: number;
+}
+
+/** D118: what a study can be aimed at. Anything: Pedro, "You can study anything and everything". */
+export type StudyTargetKind = 'item' | 'person' | 'creature' | 'building' | 'place' | 'thing';
+
+/** Pedro: "roll based, failure damages it, major failure loses it, major win doubles the amount gained". */
+export type StudyOutcome = 'major_win' | 'success' | 'failure' | 'major_failure';
+
+/** What was looked at, as the person could see it. Only what the screen showed is ever said. */
+export interface IStudyTarget {
+  kind: StudyTargetKind;
+  /** Its id, for the key and the count. It never goes to the door. */
+  ref: string;
+  name: string;
+  tags: string[];
+  /** Its rank, if it has one. Otherwise it stands at the rank of whoever is looking. */
+  rank?: UniversalRank;
+  /** An unread piece: its name and tags were kept from the person, so they are kept from the door. */
+  hidden?: boolean;
+  /** D99, for C8: a piece of junk. What studying one opens is not read here. */
+  junk?: boolean;
+  /** Pedro: a finished product asks for a workstation for it. This is the work it asks for. */
+  station?: string;
+}
+
+/** One sitting, logged when it landed and answered at a dream. */
+export interface IStudySitting {
+  id: string;
+  target: IStudyTarget;
+  outcome: StudyOutcome;
+  /** The rank it was rolled against, as an index. It sets what the sitting pays. */
+  rankIndex: number;
+  energy: number;
+  at: number;
+  /** Sittings on this thing before this one. */
+  before: number;
+}
+
+/** A person's record of a thing they have sat with. Harm is what a failure leaves on what cannot be taken away. */
+export interface IStudyMark {
+  sittings: number;
+  harm: number;
+  /** Lost: it will not sit for this person until this day. */
+  lostUntilDay?: number;
 }
 
 /** What a skill's circles earned: something to cast, or something always true. */
@@ -706,6 +775,8 @@ export interface ISkillGift {
   cost?: string;
   stat?: string;
   value?: number;
+  /** D118: how many times a dream has spent lore to raise this passive. */
+  raises?: number;
 }
 
 export interface ISkillState {
@@ -741,6 +812,10 @@ export interface IBank {
   }[];
   universalSkills: Record<string, ISkillState>;
   lore: Record<string, ILoreEntry>;
+  /** D118: lore as a resource, what study gives and a dream spends. Absent only on a save from before it. */
+  loreHeld?: number;
+  /** What the purse held when a dream last had the chance to spend it. A dream is asked again only for more. */
+  loreOffered?: number;
 }
 
 // Wave 3.1: where an item sits in the session grid (contract upgrade: additive)
@@ -767,6 +842,8 @@ export interface IActiveSession {
   inventoryLayout?: Record<string, IGridPlacement>;
   // What came in with the player; everything else in the pack was found in the field
   kitItemIds?: string[];
+  /** D65: what walks beside this person for a while, and the cage it goes home in. */
+  tamed?: { entityId: string; item: IItem; until: number }[];
   // Wave 4.1: equipped gear (additive contract change)
   // Wave 10C: LEGACY — the three buckets migrate into IPlayer.equipment's slot
   // tree on load (LoadoutSystem.migrate). Kept so old session snapshots parse.
@@ -872,9 +949,13 @@ export interface IPlayer {
   energyToday?: number;
   dayCount?: number;
   /** D43, D50: what play queued, for the next rest. */
-  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
+  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[]; sittings?: IStudySitting[] };
   /** What was filed at the door and has not come back. */
-  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] }; filedAt?: number };
+  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }; filedAt?: number };
+  /** D118: every sitting this character has taken. It keys the next roll, so a reload rolls nothing new. */
+  studyCount?: number;
+  /** D118: what this character has sat with, by `StudySystem.keyOf`. */
+  studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */
   rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */
@@ -884,6 +965,8 @@ export interface IPlayer {
     contacts: Record<string, number>;
     changed: number;
     prior?: { contacts: Record<string, number>; changed: number; generation: number };
+    /** D93: the territories read here, by a scan or on foot. A sector can hold several, and they go stale like the rest (D68). */
+    holdings?: { generation: number; seat: string; chunks: string[]; anchors: number; marks: { fn: string; ground: string; built: boolean }[]; named?: string }[];
   }>>;
   /** D58: what a rest's model said of a skill, and what it lets the holder do. */
   skillWords?: Record<string, { name: string; flavor: string; grants: string[] }>;

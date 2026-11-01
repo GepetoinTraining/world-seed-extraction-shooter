@@ -98,7 +98,8 @@ export const NEW_CARLEON: IHubManifest = {
     M: { id: 'zone_market', name: 'Market District', type: ZoneType.MARKET, ambientColor: '#2d1b1b', floorTexture: 'wooden_planks' },
     T: { id: 'zone_tavern', name: 'The Rusty Anchor', type: ZoneType.GARDEN, ambientColor: '#1f2937', floorTexture: 'dirt' },
     R: { id: 'zone_residential', name: 'Homestead Row', type: ZoneType.RESIDENTIAL, ambientColor: '#1a1a1a', floorTexture: 'grass' },
-    H: { id: 'zone_homesteads', name: 'New Homesteads', type: ZoneType.RESIDENTIAL, ambientColor: '#1a1a1a', floorTexture: 'grass' }
+    H: { id: 'zone_homesteads', name: 'New Homesteads', type: ZoneType.RESIDENTIAL, ambientColor: '#1a1a1a', floorTexture: 'grass' },
+    A: { id: 'zone_farmland', name: 'The Farmland', type: ZoneType.FARMLAND, ambientColor: '#1a1a1a', floorTexture: 'furrow' }
   },
   marks: {
     F: { id: 'poi_fountain', type: POIType.FOUNTAIN, name: 'Founders Fountain', size: { width: 4, height: 4 }, interactable: false, solid: true, metadata: { particles: 'water' } },
@@ -113,7 +114,9 @@ export const NEW_CARLEON: IHubManifest = {
     X: { id: 'poi_auction', type: POIType.AUCTION_HOUSE, name: 'The Exchange', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_auctioneer', metadata: {} },
     T: { id: 'poi_tavern', type: POIType.TAVERN, name: 'The Rusty Anchor', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_bartender', metadata: {} },
     l: { series: 'poi_lamp', type: POIType.LAMP_POST, name: 'Street Lamp', size: { width: 1, height: 1 }, interactable: false, solid: true, metadata: { lightRadius: 3 } },
-    L: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 4, height: 4 }, interactable: true, solid: false, stretch: true, metadata: {} }
+    L: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 4, height: 4 }, interactable: true, solid: false, stretch: true, metadata: {} },
+    // Numbered with the lots, because a lot's number is what the city's drawing reads. It does not stretch: every plot is the same.
+    P: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Plot #{n}', size: { width: 8, height: 8 }, interactable: true, solid: false, metadata: { farmland: true } }
   },
   chunks: {
     // What has always stood here, with the tavern west, the market south, the lots east.
@@ -234,6 +237,65 @@ export const NEW_CARLEON: IHubManifest = {
         '...........=....',
         '...........=....',
       ]
+    },
+    // Pedro: "you make the whole chunk farmland, we're not animals, and then the hub portions
+    // it off as a perfect farmland that has equal spacing". Plots and nothing else, on one pitch
+    // both ways, and the main road runs in a gap, so every door opens straight onto a road.
+    farmland: {
+      floor: [
+        '................',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '.AAAAAAAAAAAAAA.',
+        '................'
+      ],
+      place: [
+        '................',
+        '................',
+        '................',
+        '...P..P..P..P...',
+        '................',
+        '................',
+        '...P..P..P..P...',
+        '................',
+        '................',
+        '...P..P..P..P...',
+        '................',
+        '................',
+        '...P..P..P..P...',
+        '................',
+        '................',
+        '................'
+      ],
+      road: [
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '.----------=---.',
+        '...........=....',
+        '...........=....',
+        '================',
+        '...........=....',
+        '...........=....',
+        '.----------=---.',
+        '...........=....',
+        '...........=....',
+        '.----------=---.',
+        '...........=....',
+      ]
     }
   },
   first: 'carleon',
@@ -257,7 +319,12 @@ export interface IRaisedChunk {
   cx: number;
   cy: number;
   kind: string;
+  /** Made farmland whole after this many chunks had risen. Numbers are handed out in the order things happened. */
+  farmedAfter?: number;
 }
+
+/** The chunk that farmland is. */
+export const FARMLAND_KIND = 'farmland';
 
 /** A lot split up. `after` is how many chunks had risen, because numbers are handed out in the order things happened. */
 export interface IDismemberment {
@@ -297,6 +364,21 @@ export function raiseChunk(
   const cx = beside.cx + step.dx, cy = beside.cy + step.dy;
   if (standing(plan, cx, cy)) return { ok: false, reason: `The ground ${side.toLowerCase()} of there is already raised.` };
   return { ok: true, plan: { ...plan, chunks: [...plan.chunks, { cx, cy, kind }] } };
+}
+
+/** Whether a chunk is farmland, raised as it or made it after. */
+export const isFarmland = (chunk: IRaisedChunk) => chunk.kind === FARMLAND_KIND || chunk.farmedAfter !== undefined;
+
+/**
+ * A chunk already standing, made farmland whole. Only the land's half: whether anyone holds a
+ * lot on it is the hub's to ask. The first chunk is the city itself, so it never is.
+ */
+export function farmChunkPlan(plan: IHubPlan, at: { cx: number; cy: number }): RaiseVerdict {
+  const index = plan.chunks.findIndex(c => c.cx === at.cx && c.cy === at.cy);
+  if (index < 0) return { ok: false, reason: 'Nothing stands there to plough.' };
+  if (index === 0) return { ok: false, reason: 'That is the city. It stays the city.' };
+  if (isFarmland(plan.chunks[index])) return { ok: false, reason: 'That ground is farmland already.' };
+  return { ok: true, plan: { ...plan, chunks: plan.chunks.map((c, i) => (i === index ? { ...c, farmedAfter: plan.chunks.length } : c)) } };
 }
 
 /** This lot, split. Whether it may be is `HubGenerator.dismemberVerdict`'s to say. */

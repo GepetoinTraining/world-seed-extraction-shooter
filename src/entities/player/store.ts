@@ -1,3 +1,4 @@
+import { useTalk } from '../interaction/talkStore';
 import { create } from 'zustand';
 import {
   IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame, IEquippedSlots, SlotType,
@@ -20,6 +21,7 @@ import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { Anchors } from '../../logic/economy/Anchors';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
@@ -28,10 +30,13 @@ import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
+import { Capture } from '../../logic/systems/Capture';
+import { FieldCapture } from '../../logic/systems/FieldCapture';
 import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
+import { LORE_NOTE_PAY } from '../../logic/systems/LoreConstants';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
@@ -189,7 +194,8 @@ const INITIAL_PLAYER_TEMPLATE: IPlayer = {
     gold: 100,
     stashTabs: [{ name: 'MAIN STASH', items: [] }],
     universalSkills: {},
-    lore: {}
+    lore: {},
+    loreHeld: 0
   },
   currentSession: undefined,
   materialMastery: {},
@@ -245,7 +251,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           // Keyed genesis roll: the same identity always starts with the same things. D72: and one free deed.
           stashTabs: [{ name: 'CACHE_01', items: [...kit, WorldDeed.free(uid)] }],
           universalSkills: sheet ? CreationSystem.heldSkills(sheet.words) : {},
-          lore: {}
+          lore: {},
+          loreHeld: 0
         },
         freeDeedGiven: true,
         ...(sheet ? { creation: sheet.record, skillWords: CreationSystem.skillWords(sheet.words) } : {}),
@@ -288,7 +295,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const res = CircleSystem.fill(get().player, skillId);
     if (!res.ok) { feed(res.reason!, 'loss'); return false; }
     set({ player: res.player });
-    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at your next rest.`, 'proof');
+    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at a rest, when you hold the lore for it.`, 'proof');
     return true;
   },
 
@@ -844,7 +851,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return {
         player: {
           ...revealed,
-          bank: { ...revealed.bank, lore: { ...revealed.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } } }
+          bank: {
+            ...revealed.bank,
+            lore: { ...revealed.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } },
+            loreHeld: (revealed.bank.loreHeld ?? 0) + LORE_NOTE_PAY // D118: what is read is lore to spend
+          }
         }
       };
     });
@@ -1012,7 +1023,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const equipment = player.equipment;
     const pouch = equipment ? LoadoutSystem.itemIn(equipment, pouchSlot) : undefined;
     if (!pouch?.pouchData) return { ok: false, reason: `No pouch rides ${pouchSlot}.` };
-    const item = pouch.pouchData.contents.find(c => c.type === IT.CONSUMABLE);
+    // A cage is not something to bring out of a belt in a hurry (D65)
+    const item = pouch.pouchData.contents.find(c => c.type === IT.CONSUMABLE && !c.creatureData);
     if (!item) return { ok: false, reason: `${pouch.name} holds nothing quick to use.` };
     if (!session) return { ok: false, reason: 'Quick-use is for the field.' };
 
@@ -1639,6 +1651,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session || !item || item.type !== ItemType.CONSUMABLE) return;
     const unread = LoadoutSystem.unreadRefusal(item);
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
+    // D65: what is in a cage is tried, not eaten
+    if (item.creatureData) { FieldCapture.tame(item.id); return; }
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
@@ -1819,6 +1833,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     // HARVEST (Wave 2.2): keyed yield, node depletion, flora regrow
     // ------------------------------------------------------------------
+    // D65: a snare on a body in reach. The law and the record are in FieldCapture.
+    if (interactionId.startsWith('int_snare_')) {
+      if (!entity) return;
+      if (!spendEnergy(Capture.SNARE_ENERGY)) return;
+      FieldCapture.snare(entity);
+      return;
+    }
+
     if (interactionId.startsWith('int_harvest_')) {
       const def = RESOURCE_DEFINITIONS[entity.definitionId];
       if (!def?.harvestConfig) return;
@@ -1888,6 +1910,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           if (left.length === 0) world.removeEntity(entity.id);
           else world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
           SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
+          // D93: a leader's store is that much poorer when its cycle closes
+          if (entity.structure) world.reportStoreTaken(entity.id, taken.length);
           feed(`Recovered ${taken.length === 1 ? shown(taken[0]) : `${taken.length} items`}.`, 'proof');
         }
         if (rejected.length > 0) feed(`The pack refuses ${rejected.length}; ${rejected.length === 1 ? 'it stays' : 'they stay'} in the cache.`, 'loss');
@@ -1900,6 +1924,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const rng = Rng.fromKey(rollKey);
       // Wave 10E: a chest in a dreamed world fills from its biome's bank
       const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
+
+      // D115: a gem, a work of art, a valuable. Its own stream, so nothing above or below it moves.
+      const chestWorld = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
+      const anchor = Anchors.fromChest(Anchors.foundIn(chestWorld?.themeId, biomeAt(entity.position), entity.container.lootRank), rollKey);
+      if (anchor) loot.push(anchor);
 
       if (entity.container.hasLore) {
         const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
@@ -1932,22 +1961,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     // NPC SOCIAL LOOP (Wave 2.4): TALK, GIFT, RECRUIT
     // ------------------------------------------------------------------
+    // D113, D114: nobody clicks a person round any more. This opens the talk, and each round happens there.
     if (interactionId.startsWith('int_talk_')) {
       if (!entity.npc) return;
-      if (!spendEnergy(5)) return;
+      void useTalk.getState().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+      return;
+    }
 
-      const attempt = entity.npc.attempts + 1;
-      const rollKey = SessionJournal.rollKey('social', `${entity.id}:${attempt}`);
-      const roll = Rng.fromKey(rollKey).next();
-      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up, and fear counts with them
-      const success = roll < StatSystem.talkOdds(entity.npc.want, get().player.attributes);
-      const delta = success ? 15 : 5;
-      const disposition = Math.min(100, entity.npc.disposition + delta);
-
-      useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition, attempts: attempt } });
-      SessionJournal.record('INTERACT', { kind: 'TALK', targetId: entity.id, rollKey, success, disposition });
-      get().processAction({ tags: ['social', 'charisma'], magnitude: success ? 15 : 5 });
-      feed(`${entity.npc.name} ${success ? 'warms to you' : 'is unconvinced'} (${disposition}/100).`, success ? 'signal' : 'plain');
+    if (interactionId.startsWith('int_bargain_')) {
+      void useTalk.getState().open({ kind: 'MONSTER', entityId: entity.id });
       return;
     }
 
@@ -1994,6 +2016,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           worldSeed: useWorldStore.getState().currentMap?.seed ?? '',
           entityId: entity.id,
           webVersion: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion,
+          themeId: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.themeId,
           rank: entity.rank,
           rarity: entity.rarity,
           sheet: { ...entity.npc }
