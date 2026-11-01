@@ -316,6 +316,25 @@ export function ownerHasBench(ownerId: string, world: {
   );
 }
 
+/**
+ * Does this owner hold a station for this work? Held, placed, on a shelf, or a building
+ * of that kind standing on their own lot. Rising does not count: it can do no work yet.
+ */
+export function ownerHasStationFor(work: string, ownerId: string, world: {
+  lots: { id: string; ownerId: string | null; structureType: string; inventory?: IItem[]; shopListings?: { item: IItem }[] }[];
+  rooms: Record<string, IRoomState>;
+  stash: IItem[];
+}): boolean {
+  const does = (item: IItem) => item.universalDefinitionId === work || stationFunctionOf(item.universalDefinitionId) === work;
+  if (world.stash.some(does)) return true;
+  return world.lots.filter(lot => lot.ownerId === ownerId).some(lot =>
+    lot.structureType === work ||
+    (lot.inventory ?? []).some(does) ||
+    (lot.shopListings ?? []).some(listing => does(listing.item)) ||
+    (world.rooms[lot.id]?.placements ?? []).some(place => does(place.item))
+  );
+}
+
 /** The station each shell mints when its construction completes. */
 export const SHELL_STATION: Partial<Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', string>> = {
   WORKSHOP: 'stn_bench',

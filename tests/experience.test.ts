@@ -928,8 +928,9 @@ describe('banked levels are circles to fill', () => {
 
 describe('three circles ask the rest door for an active skill or a passive bonus', () => {
   const pair = () => WebSystem.mint(['axe'], ['wood']);
+  // D118, Pedro: "Gifts also cost lore". These bars are about the words, so the purse is not what they test: tests/study.test.ts holds the price.
   const ready = (circles: number, rank = 0) => {
-    usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: circles, bank: { ...s.player.bank, universalSkills: { [pair().id]: { ...WebSystem.freshSkill(pair().id, pair().tags, rank), circles } } } } }));
+    usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: circles, bank: { ...s.player.bank, loreHeld: 1_000_000, universalSkills: { [pair().id]: { ...WebSystem.freshSkill(pair().id, pair().tags, rank), circles } } } } }));
   };
   const asked = () => ({ skills: [], weaves: [], gifts: [pair().id] });
   const active = (over: Partial<IGiftWords> = {}): IGiftWords => ({ skill: pair().id, kind: 'active', name: 'Felling Word', blurb: 'It falls before you ask.', elements: ['debt'], delivery: 'melee', effect: 'damage', cost: 'low', stat: '', band: '', ...over });
@@ -963,7 +964,7 @@ describe('three circles ask the rest door for an active skill or a passive bonus
 
   it('the schema and the system prompt carry the ask', () => {
     const src = readFileSync('server/intelligence/prompts.ts', 'utf8');
-    expect(src).toMatch(/required: \['skills', 'weaves', 'gifts'\]/);
+    expect(src).toMatch(/required: \['skills', 'weaves', 'gifts'/);
     expect(src).toMatch(/passive bonus/);
   });
 

@@ -36,6 +36,7 @@ import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
+import { LORE_NOTE_PAY } from '../../logic/systems/LoreConstants';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
 import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
@@ -193,7 +194,8 @@ const INITIAL_PLAYER_TEMPLATE: IPlayer = {
     gold: 100,
     stashTabs: [{ name: 'MAIN STASH', items: [] }],
     universalSkills: {},
-    lore: {}
+    lore: {},
+    loreHeld: 0
   },
   currentSession: undefined,
   materialMastery: {},
@@ -249,7 +251,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           // Keyed genesis roll: the same identity always starts with the same things. D72: and one free deed.
           stashTabs: [{ name: 'CACHE_01', items: [...kit, WorldDeed.free(uid)] }],
           universalSkills: sheet ? CreationSystem.heldSkills(sheet.words) : {},
-          lore: {}
+          lore: {},
+          loreHeld: 0
         },
         freeDeedGiven: true,
         ...(sheet ? { creation: sheet.record, skillWords: CreationSystem.skillWords(sheet.words) } : {}),
@@ -292,7 +295,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const res = CircleSystem.fill(get().player, skillId);
     if (!res.ok) { feed(res.reason!, 'loss'); return false; }
     set({ player: res.player });
-    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at your next rest.`, 'proof');
+    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at a rest, when you hold the lore for it.`, 'proof');
     return true;
   },
 
@@ -848,7 +851,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return {
         player: {
           ...revealed,
-          bank: { ...revealed.bank, lore: { ...revealed.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } } }
+          bank: {
+            ...revealed.bank,
+            lore: { ...revealed.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } },
+            loreHeld: (revealed.bank.loreHeld ?? 0) + LORE_NOTE_PAY // D118: what is read is lore to spend
+          }
         }
       };
     });

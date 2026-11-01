@@ -135,7 +135,9 @@ console.log('[BOOT] Refreshing World List...');
            const { WebSystem } = await import('../systems/WebSystem');
            // D83, D84: and a rank its experience earned is stored, once, with skills kept where they stood
            const { ProgressionSystem } = await import('../../entities/player/systems/ProgressionSystem');
-           usePlayerStore.setState({ player: ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player))) });
+           // D118: and lore already read is held as a resource, once
+           const { LoreSystem } = await import('../systems/LoreSystem');
+           usePlayerStore.setState({ player: LoreSystem.migrate(ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player)))) });
            // D72: nobody is locked out of a pocket world, once
            const { WorldDeedDoor } = await import('../systems/WorldDeedDoor');
            await WorldDeedDoor.grantOnLoad();

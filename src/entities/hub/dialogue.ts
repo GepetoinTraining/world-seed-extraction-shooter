@@ -24,6 +24,8 @@ import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
 import { RestDoor } from '../../logic/systems/RestDoor';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { StudySystem } from '../../logic/systems/StudySystem';
+import { StudyDoor } from '../../logic/systems/StudyDoor';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
@@ -137,6 +139,12 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} on my table. You will know when you wake. Read them before you trust them.` };
   },
   OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
+  // D118: anyone in town can be studied. What it comes to is settled at a dream.
+  STUDY_PERSON: (payload) => {
+    const verdict = StudyDoor.start(StudySystem.targetOfPerson(payload));
+    if (!verdict.ok) return { kind: 'reply', text: verdict.reason! };
+    return { kind: 'reply', text: `Look all you like. ${verdict.seconds} seconds of it, and it will cost you ${verdict.cost} energy.` };
+  },
 
   // --- The Conduit ---
   OPEN_MISSIONS: () => ({ kind: 'open', panel: 'missions' }),
