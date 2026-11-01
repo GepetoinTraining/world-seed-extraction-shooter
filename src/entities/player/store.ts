@@ -1,3 +1,4 @@
+import { useTalk } from '../interaction/talkStore';
 import { create } from 'zustand';
 import {
   IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame, IEquippedSlots, SlotType,
@@ -1951,22 +1952,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     // NPC SOCIAL LOOP (Wave 2.4): TALK, GIFT, RECRUIT
     // ------------------------------------------------------------------
+    // D113, D114: nobody clicks a person round any more. This opens the talk, and each round happens there.
     if (interactionId.startsWith('int_talk_')) {
       if (!entity.npc) return;
-      if (!spendEnergy(5)) return;
+      void useTalk.getState().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+      return;
+    }
 
-      const attempt = entity.npc.attempts + 1;
-      const rollKey = SessionJournal.rollKey('social', `${entity.id}:${attempt}`);
-      const roll = Rng.fromKey(rollKey).next();
-      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up, and fear counts with them
-      const success = roll < StatSystem.talkOdds(entity.npc.want, get().player.attributes);
-      const delta = success ? 15 : 5;
-      const disposition = Math.min(100, entity.npc.disposition + delta);
-
-      useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition, attempts: attempt } });
-      SessionJournal.record('INTERACT', { kind: 'TALK', targetId: entity.id, rollKey, success, disposition });
-      get().processAction({ tags: ['social', 'charisma'], magnitude: success ? 15 : 5 });
-      feed(`${entity.npc.name} ${success ? 'warms to you' : 'is unconvinced'} (${disposition}/100).`, success ? 'signal' : 'plain');
+    if (interactionId.startsWith('int_bargain_')) {
+      void useTalk.getState().open({ kind: 'MONSTER', entityId: entity.id });
       return;
     }
 

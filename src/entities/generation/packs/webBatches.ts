@@ -325,5 +325,17 @@ export const WEB_BATCHES: IWebBatch[] = [
       { tags: ['trapping'], name: 'Trapping', flavor: 'Patience, and a good knot.' },
       { tags: ['taming'], name: 'Taming', flavor: 'It has not forgiven you. It has only stopped mentioning it.' }
     ]
+  },
+  // D114, Pedro: intelligent "is a skill". Moves WebBank.version(), so the next world pins this.
+  {
+    runId: 'run_010_a_mind_of_its_own',
+    model: 'claude-opus-5-5',
+    ranAt: 20261101,
+    tags: [
+      { tag: 'intelligent', kind: 'trade', meaning: 'A thing that can develop a mind and come to speak.' }
+    ],
+    names: [
+      { tags: ['intelligent'], name: 'Intelligence', flavor: 'It has begun to think about you.' }
+    ]
   }
 ];

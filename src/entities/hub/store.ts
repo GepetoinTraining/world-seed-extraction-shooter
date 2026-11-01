@@ -47,7 +47,7 @@ import { useFeed, useRankMoment } from '../../components/ui/stores';
 import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import {
-  GUILD_OWNER_ID, IGuildState, IResident, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
+  GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
 import { EMPTY_LOT_PER_DAY, IRunningBook, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, walletBrought } from './money';
@@ -58,6 +58,8 @@ import { IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/systems/Ven
 import { ApprenticeRoad, ICraftsman, generalKeepers } from '../../logic/systems/ApprenticeRoad';
 import { workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
+import { TalkLaw } from '../../logic/systems/TalkLaw';
+import { IQuestWords } from '../../logic/systems/TalkTypes';
 
 const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
 
@@ -156,6 +158,13 @@ export const craftName = (recipeId: string): string =>
 
 /** Logical world-day (observed time, never stored clocks). */
 export const worldDay = () => Math.floor(Date.now() / 86_400_000);
+
+/** The one thing anyone can ask to have raised that is not a station on the web. */
+const BUILDING_HOUSE = 'house';
+
+/** What an ask's word reads as to a person: a station's own name, never its id. */
+export const buildingLabel = (word: string): string =>
+  WebBank.current().stations.find(s => s.id === word)?.name ?? word.replace(/_/g, ' ');
 
 // Wave 10 (D8): a queued construction step. Materials leave the stash when the
 // job is queued — exactly once — and the piece applies when the clock says so.
@@ -323,6 +332,20 @@ interface HubState {
   // Actions
   loadHub: (hubWorldUid: string) => Promise<void>;
   saveHubState: () => Promise<void>;
+  /** D116: a person's quest, in their words, on the Hall's board. One open at a time. */
+  postTalkQuest: (askerId: string, askerName: string, rank: UniversalRank, want: string, words: IQuestWords) => Promise<void>;
+  /** D116: what a person can ask to have built. C5 widens this as the hub's tech does. */
+  buildingWords: () => string[];
+  openBuildingAsks: () => IBuildingAsk[];
+  askForBuilding: (askerId: string, askerName: string, building: string, goal: string, need: string) => Promise<void>;
+  /** C5's door: an ask has been answered. */
+  meetBuildingAsk: (askId: string, metBy: string) => Promise<void>;
+  /**
+   * Pedro: "those NPC are the tech web, they can use the full aggregate you built and not make you
+   * walk around". Everything the city center can reach, whoever in the hub built it. A counter that
+   * sells this as a service reads it here, and that charge is where the city taxes.
+   */
+  centerReach: () => { skills: string[]; stations: IWebStation[] };
   /** The vendors and the people at their benches, up to today. Time away counts. */
   resolveVendors: () => Promise<void>;
   /** A general vendor takes on someone lodged at the tavern (D75's door), who has no ground yet. */
@@ -1029,6 +1052,41 @@ export const useHubStore = create<HubState>((set, get) => ({
     await get().saveHubState();
   },
 
+  postTalkQuest: async (askerId, askerName, rank, want, words) => {
+    const { guild } = get();
+    if (guild.quests.some(q => q.residentId === askerId && q.state === 'OPEN')) return;
+    const n = guild.quests.filter(q => q.residentId === askerId).length;
+    const quest: IResidentQuest = {
+      id: `q_talk_${askerId}_${n}`, residentId: askerId, askerName, n, tag: words.tag, count: TalkLaw.questCount(words.size, rank),
+      payShare: PAY_SHARE[want as keyof typeof PAY_SHARE] ?? 1, text: words.text, state: 'OPEN', postedDay: worldDay()
+    };
+    set({ guild: { ...guild, quests: [...guild.quests, quest] } });
+    useFeed.getState().push(`On the board at the Hall: ${quest.text}`, 'signal');
+    await get().saveHubState();
+  },
+
+  centerReach: () => ({ skills: Object.keys(get().web.nodes), stations: WebSystem.openStationsOf(get().web, {}) }),
+
+  buildingWords: () => [BUILDING_HOUSE, ...WebBank.current().stations.map(s => s.id)],
+
+  openBuildingAsks: () => (get().guild.asks ?? []).filter(a => a.state === 'OPEN'),
+
+  askForBuilding: async (askerId, askerName, building, goal, need) => {
+    const { guild } = get();
+    const asks = guild.asks ?? [];
+    if (asks.some(a => a.askerId === askerId && a.state === 'OPEN')) return;
+    const ask: IBuildingAsk = { id: `ask_${askerId}_${asks.length}`, askerId, askerName, building, goal, need, day: worldDay(), state: 'OPEN' };
+    set({ guild: { ...guild, asks: [...asks, ask] } });
+    useFeed.getState().push(`${askerName} is asking for a ${buildingLabel(building)}.`, 'signal');
+    await get().saveHubState();
+  },
+
+  meetBuildingAsk: async (askId, metBy) => {
+    const { guild } = get();
+    set({ guild: { ...guild, asks: (guild.asks ?? []).map(a => a.id === askId ? { ...a, state: 'MET' as const, metBy } : a) } });
+    await get().saveHubState();
+  },
+
   fulfilQuest: async (questId, itemIds) => {
     const { activeHubId } = get();
     if (!activeHubId) return { ok: false, reason: 'The Hall is shut.' };
@@ -1055,30 +1113,34 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { quest, given, reason } = check();
     if (!quest) return { ok: false, reason: reason! };
     const { guild, lots } = get();
-    const resident = guild.residents.find(r => r.id === quest.residentId)!;
+    // Someone who posted from a talk may be a keeper, with no resident behind them.
+    const resident = guild.residents.find(r => r.id === quest.residentId);
     const ids = given.map(i => i.id);
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + pay } } }));
     removeFromStash(ids);
     set({
-      lots: lots.map(l => l.id === resident.lotId ? { ...l, inventory: [...l.inventory, ...given] } : l),
+      lots: lots.map(l => resident && l.id === resident.lotId ? { ...l, inventory: [...l.inventory, ...given] } : l),
       guild: {
         ...guild,
         printed: printedPlus(guild, prints, made),
         quests: guild.quests.map(q => q.id === questId ? { ...q, state: 'DONE' as const } : q),
-        residents: guild.residents.map(r => r.id === resident.id ? { ...r, wantsMet: r.wantsMet + 1, nextWantDay: worldDay() + 1 } : r)
+        residents: guild.residents.map(r => r.id === resident?.id ? { ...r, wantsMet: r.wantsMet + 1, nextWantDay: worldDay() + 1 } : r)
       }
     });
     await GoldCommit.commit({
       rows: [
         ...printRows(activeHubId, perDay, prints, 'QUEST_PAID'),
-        { type: 'GOLD_DELTA', data: { reason: 'QUEST_PAID', questId, residentId: resident.id, consumedIds: ids, amount: pay, treasuryId: activeHubId, treasuryDelta: -pay } }
+        { type: 'GOLD_DELTA', data: { reason: 'QUEST_PAID', questId, residentId: quest.residentId, consumedIds: ids, amount: pay, treasuryId: activeHubId, treasuryDelta: -pay } }
       ],
       treasury: { worldUid: activeHubId, delta: made - pay },
       hubDoc: get().hubDoc() ?? undefined
     });
     if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
-    await (await provenance()).recordMany(given, 'TRANSFER', { via: 'QUEST', questId, lotId: resident.lotId });
-    useFeed.getState().push(`${resident.name} has what they wanted. The hub pays ${pay.toLocaleString()} G.`, 'proof');
+    await (await provenance()).recordMany(given, 'TRANSFER', { via: 'QUEST', questId, lotId: resident?.lotId });
+    // A keeper's goods go on their own shelves to be looked over, the way anything they take in does.
+    const keeper = !resident && get().vendors[quest.residentId];
+    if (keeper) set({ vendors: { ...get().vendors, [quest.residentId]: given.reduce((record, item) => VendorSystem.receive(record, item, worldDay()), keeper) } });
+    useFeed.getState().push(`${resident?.name ?? quest.askerName} has what they wanted. The hub pays ${pay.toLocaleString()} G.`, 'proof');
     return { ok: true };
   },
 

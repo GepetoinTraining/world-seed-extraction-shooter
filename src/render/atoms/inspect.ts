@@ -104,6 +104,7 @@ function inspectMob(e: IWorldEntity): Card {
   const rows: [string, string][] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
   if (def?.size) rows.push(['Size', String(def.size)]);
   if (def?.behavior) rows.push(['Behavior', String(def.behavior)]);
+  if (e.bargain) rows.push(['Stance', e.bargain.stance.toLowerCase()]);
   return { title, rows, needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`) };
 }
 
@@ -119,6 +120,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
         const sheet = NpcSheet.read(ctx.worldSeed, e, ctx.webVersion);
         const names = Object.keys(sheet.skills ?? {}).map(id => WebSystem.nameOf(id));
         if (names.length > 0) rows.push(['Hands', names.join(', ')]);
+        if (sheet.alignment) rows.push(['Alignment', sheet.alignment]);
       }
       return { title, rows, needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'talk' : 'too far') };
     }

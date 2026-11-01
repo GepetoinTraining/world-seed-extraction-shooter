@@ -247,7 +247,7 @@ describe('line 89: one door', () => {
 
   it('a rest uses the model Pedro chose, one constant per kind (D44)', () => {
     expect(MODEL_FOR.rest).toBe('claude-sonnet-5-5');
-    expect(Object.keys(MODEL_FOR).sort()).toEqual(['creation', 'kami_persona', 'kami_set', 'kami_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
+    expect(Object.keys(MODEL_FOR).sort()).toEqual(['bargain', 'creation', 'kami_persona', 'kami_set', 'kami_talk', 'npc_goal', 'npc_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
   });
 
   it('only a large world\'s theme is written on Opus (D118)', () => {

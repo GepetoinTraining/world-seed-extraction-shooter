@@ -14,7 +14,7 @@ import { Farm } from '../entities/hub/farm';
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag, materialLabel } from '../entities/hub/room';
 import { lotConstruction } from '../entities/hub/template';
-import { useHubStore, worldDay } from '../entities/hub/store';
+import { buildingLabel, useHubStore, worldDay } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
@@ -40,6 +40,8 @@ const Board: React.FC = () => {
   const stash = useStash();
   const pushFeed = useFeed(s => s.push);
   const open = guild.quests.filter(q => q.state === 'OPEN');
+  // D116: what people have asked to have built. C5's buildings are what answers these.
+  const asks = (guild.asks ?? []).filter(a => a.state === 'OPEN');
   const done = guild.quests.filter(q => q.state === 'DONE').length;
 
   return (
@@ -49,14 +51,21 @@ const Board: React.FC = () => {
           Nothing on the board{guild.residents.length === 0 ? '. Nobody in this city wants anything from you yet: a person has to come through the gate, and have a door of their own, first.' : ' today. People with a door of their own post what they want, a day apart.'}
         </span>
       )}
+      {asks.length > 0 && (
+        <Panel title="WHAT PEOPLE ARE ASKING FOR">
+          {asks.map(ask => (
+            <div key={ask.id} className="ws-small"><b>{ask.askerName}</b> is asking for a {buildingLabel(ask.building)}. {ask.goal}</div>
+          ))}
+        </Panel>
+      )}
       {open.map(quest => {
-        const resident = guild.residents.find(r => r.id === quest.residentId)!;
+        const askerName = guild.residents.find(r => r.id === quest.residentId)?.name ?? quest.askerName ?? 'Someone';
         // The cheapest that answer go first, and the window names them, so nothing dear goes by accident.
         const answers = stash.filter(i => i.isIdentified !== false && answersTag(i, quest.tag) && wantMayTake(i)).sort((a, b) => (a.value || 0) - (b.value || 0));
         const given = answers.slice(0, quest.count);
         const ready = given.length >= quest.count;
         return (
-          <Panel key={quest.id} title={resident.name.toUpperCase()} right={<Chip tone={ready ? 'proof' : 'none'}>{Math.min(answers.length, quest.count)} of {quest.count}</Chip>}>
+          <Panel key={quest.id} title={askerName.toUpperCase()} right={<Chip tone={ready ? 'proof' : 'none'}>{Math.min(answers.length, quest.count)} of {quest.count}</Chip>}>
             <div className="ws-small" style={{ marginBottom: 4 }}>{quest.text}</div>
             {ready && <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>Goes: {given.map(i => LoadoutSystem.shownName(i)).join(', ')}.</div>}
             <div className="ws-row">

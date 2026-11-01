@@ -46,7 +46,10 @@ export class StartupSequence {
       const { WebBank } = await import('../content/WebBank');
       const { WebSystem: Web } = await import('../systems/WebSystem');
       const { NpcSheet } = await import('../systems/NpcSheet');
-      (window as any).__ws = { usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry, WebBank, WebSystem: Web, NpcSheet };
+      // D113: the talk's own instruments
+      const { useTalk } = await import('../../entities/interaction/talkStore');
+      const { MonsterMind } = await import('../systems/MonsterMind');
+      (window as any).__ws = { useTalk, MonsterMind, usePlayerStore, useWorldStore, useHubStore, useIdentityStore, VectorStore, VectorNamespace, Ledger, InteractionEngine, GoldAudit, Treasury, DeedSystem, AvatarExport, Provenance, WorldExport, LoadoutSystem, CartSystem, CartOverlay, protectSlot, CompositionSystem, MintRegistry, WebBank, WebSystem: Web, NpcSheet };
     }
     console.log('[BOOT] Initiating Genesis Protocol...');
 

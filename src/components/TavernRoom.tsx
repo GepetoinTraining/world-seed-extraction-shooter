@@ -12,7 +12,8 @@ import { HUB_GENRE } from '../render/atoms/hub';
 import { buildPalette } from '../render/atoms/atoms';
 import { portrait } from '../render/atoms/people';
 import { NpcSheet } from '../logic/systems/NpcSheet';
-import { ArmedButton, Chip, Modal, Panel, SpriteView } from './ui/kit';
+import { ArmedButton, Button, Chip, Modal, Panel, SpriteView } from './ui/kit';
+import { useTalk } from '../entities/interaction/talkStore';
 import { useFeed } from './ui/stores';
 
 const lower = (word: string) => word.toLowerCase().replace(/_/g, ' ');
@@ -85,6 +86,7 @@ export const TavernRoom: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       : residentStage(r, { buildJobs }) === 'POOLING' ? 'The Hall bought ground. The house waits on its bill.'
                       : 'Their house is rising.'}
                   </div>
+                  <Button tone="quiet" onClick={() => { onClose(); void useTalk.getState().open({ kind: 'CITY', npcId: r.id }); }}>Talk with them</Button>
                 </div>
               </div>
             ))}

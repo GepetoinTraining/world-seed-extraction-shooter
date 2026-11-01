@@ -10,7 +10,7 @@
  * the caller's work stays queued and the game goes on.
  */
 
-export type DoorKind = 'talk' | 'theme' | 'theme_large' | 'rest' | 'window' | 'creation' | 'kami_talk' | 'kami_set' | 'kami_persona';
+export type DoorKind = 'talk' | 'theme' | 'theme_large' | 'rest' | 'window' | 'creation' | 'kami_talk' | 'kami_set' | 'kami_persona' | 'npc_talk' | 'npc_goal' | 'bargain';
 
 export interface IDoorUsage {
   model: string;
@@ -68,6 +68,15 @@ export const REST_SPEND_LIMIT_USD = 0.5;
 /** The same guard over one world's window (D69): what is over it waits for the next window. */
 export const WINDOW_SPEND_LIMIT_USD = 0.5;
 
+/**
+ * D113: what one talk may spend, counted here on what really came back, so a browser cannot talk
+ * its way past it. Over it the round still rolls, on the floor. A guess until Wave 12. It is kept
+ * in memory, so a restart forgets it; a deploy counts it per person (D45).
+ */
+export const TALK_SPEND_LIMIT_USD = 0.05;
+
+export { TALK_MESSAGE_LIMIT } from '../../src/logic/systems/TalkTypes';
+
 /** A provider that is not there: no key, no model. The game must still go on. */
 export class AbsentProvider implements IIntelligenceProvider {
   name = 'none';
@@ -92,6 +101,19 @@ export class IntelligenceDoor {
     if (this.provider.askStream) return this.provider.askStream(request, onText, signal);
     const out = await this.provider.ask(request);
     if (out.status === 'OK' && out.text) onText(out.text);
+    return out;
+  }
+
+  private talkSpent = new Map<string, number>();
+
+  /** A live call inside one talk. Over the talk's limit nothing is sent. */
+  async askTalk(talkId: string, request: IDoorRequest): Promise<IDoorOutcome> {
+    const spent = this.talkSpent.get(talkId) ?? 0;
+    if (spent + this.provider.ceiling(request, false) > TALK_SPEND_LIMIT_USD) {
+      return { status: 'OVER_LIMIT', reason: `This talk has spent $${spent.toFixed(4)} of the $${TALK_SPEND_LIMIT_USD.toFixed(2)} a talk may spend.` };
+    }
+    const out = await this.provider.ask(request);
+    this.talkSpent.set(talkId, spent + (out.usage?.usd ?? 0));
     return out;
   }
 
