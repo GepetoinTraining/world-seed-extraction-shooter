@@ -1994,6 +1994,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           worldSeed: useWorldStore.getState().currentMap?.seed ?? '',
           entityId: entity.id,
           webVersion: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion,
+          themeId: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.themeId,
           rank: entity.rank,
           rarity: entity.rarity,
           sheet: { ...entity.npc }

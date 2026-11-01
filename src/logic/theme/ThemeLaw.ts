@@ -227,6 +227,18 @@ export class ThemeLaw {
       if (t) return no(`${a.key} may land on "${t}", which is not registered.`);
     }
 
+    // D119: optional, so a pack written before there was such a thing stands as it was.
+    for (const p of pack.professions ?? []) {
+      if (!claim(p.key)) return no(`profession "${p.key}" needs its own plain key.`);
+      if (!p.name?.trim()) return no(`profession ${p.key} has no name.`);
+      if (!has(RANKS, p.rank)) return no(`${p.key}: "${p.rank}" is not a rank.`);
+      if (!p.concept || !TagLaw.isCanonicalSpelling(p.concept)) return no(`${p.key} knows nothing a chain could be written back from.`);
+      if (!p.knows?.trim() || !p.workshop?.trim()) return no(`${p.key} has to say what they know and where they would do it.`);
+      if (p.tool.length === 0 || p.material.length === 0) return no(`${p.key} connects no tool or no material (D25).`);
+      const t = unknownTag([...p.tool, ...p.material]);
+      if (t) return no(`${p.key} names "${t}", which is not registered.`);
+    }
+
     // CAN IT BE PLAYED? Line 45's question, asked of a world before it exists.
     if (pack.creatures.length === 0) return no('nothing lives there.');
     if (!pack.creatures.some(c => c.rank === 'F' || c.rank === 'E')) return no('nothing there is small enough to start on.');
@@ -277,7 +289,7 @@ export class ThemeLaw {
   }
 
   /** Only `count`, `makes` and `tier` may be numbers. Everything else is a word. */
-  private static strayNumber(node: unknown, path = 'the pack'): string | null {
+  static strayNumber(node: unknown, path = 'the pack'): string | null {
     if (typeof node === 'number') return path;
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
@@ -299,7 +311,7 @@ export class ThemeLaw {
     return null;
   }
 
-  private static findCycle(pack: IThemeBody): string | null {
+  static findCycle(pack: Pick<IThemeBody, 'goods'>): string | null {
     const goods = new Map(pack.goods.map(g => [g.key, g]));
     const walking = new Set<string>();
     const done = new Set<string>();

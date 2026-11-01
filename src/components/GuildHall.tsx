@@ -21,6 +21,7 @@ import { StatSystem } from '../logic/systems/StatSystem';
 import { ArmedButton, Button, Chip, Modal, Panel, Tabs } from './ui/kit';
 import { hoverProps, useFeed } from './ui/stores';
 import { ResidentFace, ResidentLines } from './TavernRoom';
+import { PopulationLine, WorkshopBlock } from './WorkshopPanel';
 
 type Tab = 'BOARD' | 'PEOPLE' | 'TRIAL' | 'MAPS';
 const TABS: { id: Tab; label: string }[] = [
@@ -199,6 +200,7 @@ const People: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <PopulationLine />
       <div className="ws-dim ws-small">The Hall spends the hub's treasury. It can cover {Math.max(0, cover).toLocaleString()} G more of ground.</div>
       {guild.residents.length === 0 && <span className="ws-dim ws-small">Nobody yet. An Escort Bond taken to Mags at the Rusty Anchor brings someone in.</span>}
       {guild.residents.map(r => {
@@ -223,6 +225,7 @@ const People: React.FC = () => {
             {stage === 'TAVERN' && <GroundFor resident={r} cover={cover} onBought={refresh} />}
             {stage === 'POOLING' && <HouseBill resident={r} />}
             {stage === 'RISING' && rising && <div className="ws-small">{rising.applied} of {rising.total} steps stand.</div>}
+            {stage === 'HOME' && <WorkshopBlock resident={r} />}
           </Panel>
         );
       })}

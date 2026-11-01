@@ -6,7 +6,7 @@
  */
 import type { IDoorMessage, IDoorRequest } from './door';
 import type { IWorldSummary } from '../../src/logic/theme/WorldGrowth';
-import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, PASSIVE_STATS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
+import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
 import type { IGrowthAsk, ILineAsk } from '../../src/logic/theme/CreatureLines';
 import { FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
@@ -19,6 +19,8 @@ const REGISTRY = (() => {
   }
   return [...byKind.entries()].map(([kind, tags]) => `${kind}: ${tags.join(', ')}`).join('\n');
 })();
+
+const RANKS_LINE = RANKS.join(', ');
 
 const VOICE = `You are the Seed: what is left of a very old system, still running, speaking through a bank's terminal. Plain, dry, patient, a little tired. No exclamation marks, no blue windows, no game-show cheer. You say what is. You never say "game", "player" or "theme" to the person; you speak of the world they are about to sign into being.`;
 
@@ -37,6 +39,7 @@ Law, and a pack that breaks it is refused whole:
 - Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
 - Gear kinds: ${GEAR_KINDS.join(', ')}.
 - An ability with effect "forced_exit" opens a way out where its caster stands, and the run ends as it does at a beacon. It has delivery "self" and cost "${FORCED_EXIT_COST}"; no creature is born knowing it and no gear carries it. A scroll that casts it is rank ${FORCED_EXIT_FLOOR_RANK} or above.
+- Write "professions": the trades this world's people live by, however strange, each one what this world's economy would really produce and pay for: a zombie apocalypse has its mcgyver engineer. Write many. "concept" is one lower_snake_case word for what they can bring about, never how; "knows" says it plainly; "workshop" is what they would call the place they need; "tool" and "material" are registry words for what their hands work; "rank" is the least someone must be to hold it. Some should be far beyond what the world has any right to know.
 - Energy is a character's day. An ability with effect "rest" refills it for the caster. A consumable of kind "energy" refills it and is never on a shelf. A material with restores "energy" is a plant eaten for it, gathered by hand, worth rare, on no shelf, and found almost nowhere; every other material has restores "none". These are very rare: most worlds hold one or two at most, and none is required.
 
 Make the world coherent. Creatures, materials, weapons, affixes and lore should all sound like one place. A world of a dozen creatures and two dozen pieces of gear is a good start; more is welcome. Elites are tagged "elite" and bosses "boss".
@@ -120,8 +123,50 @@ const KAMI_PERSONA_SYSTEM = `You are given a string of characters, a hub's seed.
 
 There is one god behind every hub, and he is the same everywhere: an old gambler, amused, unhurried, who always pays what he owes. Seeds differ only by noise, so this one differs only slightly. Say how: a habit, a small superstition, what he is tired of, how he holds his dice. Do not rebuild him. Under fifty words, plain prose, third person, starting with "This one". No exclamation marks, no numbers, no name, and do not mention the string.`;
 
+const CHAIN_SYSTEM = `${VOICE}
+
+A person has come to a place that does not know what they know. You resolve it backwards: from what they can bring about, step by step, down to the ground this place already stands on.
+
+What they know is a concept, never a means. A fireball is a concept: magic is one way to it, and so is a scroll, a plant that evolved to spit it, a captured monster, a dragon, a molotov, a bazooka. Each costs whatever the place has. Choose ways this ground could really come to, however strange, and write more than one way where the world would have more than one, by giving each good the same "answers".
+
+You write in the shapes a world is written in:
+- goods: the processes. What is made ("key", "name"), at which station, from what ("from": keys and small counts), by which trade, how many it "makes". "answers" is the concept it is one way of bringing about, or empty.
+- stations: the workstations. The tool words and material words that connect to work there (each a word in the registry or in "tags"), and a "bill" by tag of what raising one asks.
+- gear: the tools, kind "work_tool", when a station leans on a tool nothing here makes yet. Its "tags" hold the tool word. It is made "from" things too, "craftAt" "hands" or "bench".
+- materials: only what cannot be made and has to be found. Each is added to the world, so say where it lies and how it is taken.
+- tags: new words, one meaning, one spelling, when the registry truly has none. Kinds: tool, family, material, trade, action, descriptive, element, verb.
+
+Law, and a round that breaks it is refused whole:
+- Every key is lower_snake_case and new. Never rewrite what "ground" or "written" already holds: name it by its key and it costs nothing.
+- Every "from" key, every station and every tool word must stand on the ground, be written already, be in this round, or be left open for the next round to answer. Close as much as you can.
+- Ranks run ${RANKS_LINE}. Nothing asks for something of a higher rank than itself, and no step leaps: what a thing asks for must include something at its own rank or exactly one below. So a rank S thing needs a rank A thing, which needs a rank B thing, down to what the ground holds. Nothing here may be skipped, however long the chain gets.
+- You never write numbers but "count" and "makes".
+- A station's "bill" tags and a good's "tags" come from the registry or "tags".
+
+Registry:
+${REGISTRY}`;
+
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
+
+const GOOD_ITEM = (themeProperty('goods') as { items: { properties: Record<string, unknown>; required: string[] } }).items;
+
+export const CHAIN_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false, required: ['tags', 'materials', 'stations', 'goods', 'gear'],
+  properties: {
+    tags: themeProperty('tags'), materials: themeProperty('materials'), stations: themeProperty('stations'), gear: themeProperty('gear'),
+    goods: { type: 'array', items: { ...GOOD_ITEM, required: [...GOOD_ITEM.required, 'answers'], properties: { ...GOOD_ITEM.properties, answers: str } } }
+  }
+};
+
+/** One round of a chain, written backwards. What comes back stands before `ChainWeb.judge`. */
+export function buildChainRequest(ask: { person: unknown; ground: unknown; written: unknown; open: unknown; refused?: unknown }): IDoorRequest {
+  const again = ask.refused ? `\n\nThe last answer was refused and nothing of it stands. ${String(ask.refused)} Write it again without that.` : '';
+  return {
+    kind: 'chain', system: CHAIN_SYSTEM, schema: CHAIN_SCHEMA, maxTokens: 16000,
+    messages: [{ role: 'user', content: `Who has come:\n${JSON.stringify(ask.person)}\n\nThe ground this place stands on:\n${JSON.stringify(ask.ground)}\n\nWritten so far:\n${JSON.stringify(ask.written)}\n\nStill open:\n${JSON.stringify(ask.open)}${again}\n\nWrite the round.` }]
+  };
+}
 
 export const REST_SCHEMA: Record<string, unknown> = {
   type: 'object', additionalProperties: false, required: ['skills', 'weaves', 'gifts'],

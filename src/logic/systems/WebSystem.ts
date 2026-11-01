@@ -579,7 +579,7 @@ export class WebSystem {
         records.push({ id: skill.id, rung });
       }
     }
-    return { web: { nodes }, firsts, records };
+    return { web: { ...web, nodes }, firsts, records };
   }
 
   // -------------------------------------------------------------------------

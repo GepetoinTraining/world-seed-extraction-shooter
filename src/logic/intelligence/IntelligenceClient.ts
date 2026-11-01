@@ -45,6 +45,7 @@ export const IntelligenceClient = {
   grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
   setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
   writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),
+  resolveChain: <T>(ask: unknown) => post<T>('/chain', { ask }),
 
   /** A conversation as it is written. Every end is an outcome, and a stream that just stops did not finish. */
   async talkKami(messages: IDoorMessage[], onText: (text: string) => void, signal?: AbortSignal, persona?: string): Promise<IDoorOutcome> {

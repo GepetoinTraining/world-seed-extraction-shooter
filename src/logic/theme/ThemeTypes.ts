@@ -241,6 +241,29 @@ export interface IThemeRegion {
   blurb: string;
 }
 
+/**
+ * D119: a living people's trades, from the shared pool the theme carries. Pedro: "random
+ * hallucinated (literally) professions that are economical in the theme they came from,
+ * zombie apocalypse has mcgyver engineer". What it knows is a concept, never a means: how
+ * that comes about is resolved backwards from wherever the person ends up (`ChainWeb`).
+ */
+export interface IThemeProfession {
+  key: string;
+  name: string;
+  blurb: string;
+  /** Who can hold it: someone of this rank or above. */
+  rank: ThemeRank;
+  /** What they can bring about, as one lower_snake_case word. */
+  concept: string;
+  /** The same in plain words, for whoever has to resolve it. */
+  knows: string;
+  /** What they would call the place they need. */
+  workshop: string;
+  /** D25: the tool + material connection their hands work. Registry words. */
+  tool: string[];
+  material: string[];
+}
+
 /** What a model writes. Its id is computed from these bytes and nothing else. */
 export interface IThemeBody {
   name: string;
@@ -259,6 +282,8 @@ export interface IThemeBody {
   lore: string[];
   /** D99. Left out of a pack written before there was such a thing. */
   junk?: IThemeJunk[];
+  /** D119. Left out of a pack written before there was such a thing. */
+  professions?: IThemeProfession[];
 }
 
 export interface IThemePack extends IThemeBody {
@@ -320,5 +345,6 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   }),
   abilities: list({ key: str, name: str, blurb: str, elements: strs, delivery: oneOf(DELIVERIES), effect: oneOf(EFFECTS), cost: oneOf(COST_BANDS) }),
   lore: strs,
-  junk: list({ key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), from: strs })
+  junk: list({ key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), from: strs }),
+  professions: list({ key: str, name: str, blurb: str, rank: oneOf(RANKS), concept: str, knows: str, workshop: str, tool: strs, material: strs })
 });

@@ -6,7 +6,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { IntelligenceDoor, type IDoorMessage } from './door';
-import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
+import { buildChainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -28,7 +28,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
 
-/** `path` is what follows the mount: /status, /talk, /theme, /creation, /kami/persona, /kami/talk, /kami/set, /rest/file, /rest/collect, /window/file, /window/collect. */
+/** `path` is what follows the mount: /status, /talk, /theme, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /rest/file, /rest/collect, /window/file, /window/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
@@ -52,6 +52,8 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
         return send(res, 200, await door.ask(buildThemeRequest(conversation, body.draft ?? {})));
       case '/creation':
         return send(res, 200, await door.ask(buildCreationRequest(body.ask ?? {})));
+      case '/chain':
+        return send(res, 200, await door.ask(buildChainRequest(body.ask ?? {})));
       case '/kami/talk': {
         // One JSON line for each piece as it is written, then one saying how it ended. A closed tab stops the bill.
         res.statusCode = 200;
