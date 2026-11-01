@@ -25,10 +25,10 @@ import {
 } from '../src/entities/hub/hubTech';
 
 const good = (key: string, rank: any, station: string, from: string[], answers = ''): IChainRound['goods'][number] => ({
-  key, name: key, blurb: 'x', tags: [], rank, weight: 'light', trade: 'smithing', station, from: from.map(k => ({ key: k, count: 1 })), makes: 1, answers
+  key, name: key, blurb: 'x', tags: [], rank, weight: 'light', trade: 'smithing', station, from: from.map(k => ({ key: k, count: 1 })), makes: 1, answers, look: { color: 'ash', shape: 'lump', size: 'small' }
 });
 const station = (key: string, tool = ['hammer'], material = ['metal'], bill = [{ tag: 'metal', count: 2 }]): IChainRound['stations'][number] => ({ key, name: key, blurb: 'x', tool, material, bill });
-const material = (key: string): IChainRound['materials'][number] => ({ key, name: key, blurb: 'x', tags: ['ore'], rank: 'F', form: 'vein', verb: 'mine', weight: 'light', worth: 'common', habitat: ['RUINS'], onShelf: false, restores: 'none' });
+const material = (key: string): IChainRound['materials'][number] => ({ key, name: key, blurb: 'x', tags: ['ore'], rank: 'F', form: 'vein', verb: 'mine', weight: 'light', worth: 'common', habitat: ['RUINS'], onShelf: false, restores: 'none', look: { color: 'ash', shape: 'lump', size: 'small' } });
 const round = (over: Partial<IChainRound>): IChainRound => ({ tags: [], materials: [], stations: [], goods: [], gear: [], ...over });
 
 const TRIBE: IChainGround = {

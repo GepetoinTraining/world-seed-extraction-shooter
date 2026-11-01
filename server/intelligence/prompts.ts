@@ -6,7 +6,7 @@
  */
 import type { IDoorMessage, IDoorRequest } from './door';
 import type { IWorldSummary } from '../../src/logic/theme/WorldGrowth';
-import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
+import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
 import type { IGrowthAsk, ILineAsk } from '../../src/logic/theme/CreatureLines';
 import { FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
@@ -134,6 +134,7 @@ You write in the shapes a world is written in:
 - stations: the workstations. The tool words and material words that connect to work there (each a word in the registry or in "tags"), and a "bill" by tag of what raising one asks.
 - gear: the tools, kind "work_tool", when a station leans on a tool nothing here makes yet. Its "tags" hold the tool word. It is made "from" things too, "craftAt" "hands" or "bench".
 - materials: only what cannot be made and has to be found. Each is added to the world, so say where it lies and how it is taken.
+- look, on every material, good and gear: what it looks like, in three words, and its picture is drawn from them. "color" is one of ${LOOK_COLORS.join(', ')}. "shape" is one of ${LOOK_SHAPES.join(', ')}. "size" is one of ${LOOK_SIZES.join(', ')}. Choose what would really look like that, so that different things have different shapes.
 - tags: new words, one meaning, one spelling, when the registry truly has none. Kinds: tool, family, material, trade, action, descriptive, element, verb.
 
 Law, and a round that breaks it is refused whole:
@@ -149,13 +150,23 @@ ${REGISTRY}`;
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
-const GOOD_ITEM = (themeProperty('goods') as { items: { properties: Record<string, unknown>; required: string[] } }).items;
+const LOOK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['color', 'shape', 'size'],
+  properties: { color: { type: 'string', enum: [...LOOK_COLORS] }, shape: { type: 'string', enum: [...LOOK_SHAPES] }, size: { type: 'string', enum: [...LOOK_SIZES] } }
+};
+/** A list a theme writes, with more asked of each entry. */
+const chainList = (key: string, extra: Record<string, unknown>) => {
+  const items = (themeProperty(key) as { items: { properties: Record<string, unknown>; required: string[] } }).items;
+  return { type: 'array', items: { ...items, required: [...items.required, ...Object.keys(extra)], properties: { ...items.properties, ...extra } } };
+};
 
 export const CHAIN_SCHEMA: Record<string, unknown> = {
   type: 'object', additionalProperties: false, required: ['tags', 'materials', 'stations', 'goods', 'gear'],
   properties: {
-    tags: themeProperty('tags'), materials: themeProperty('materials'), stations: themeProperty('stations'), gear: themeProperty('gear'),
-    goods: { type: 'array', items: { ...GOOD_ITEM, required: [...GOOD_ITEM.required, 'answers'], properties: { ...GOOD_ITEM.properties, answers: str } } }
+    tags: themeProperty('tags'), stations: themeProperty('stations'),
+    materials: chainList('materials', { look: LOOK_SCHEMA }),
+    gear: chainList('gear', { look: LOOK_SCHEMA }),
+    goods: chainList('goods', { answers: str, look: LOOK_SCHEMA })
   }
 };
 

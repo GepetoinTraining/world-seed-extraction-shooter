@@ -24,7 +24,7 @@
  */
 
 import { IHubWeb, IWebNodeRecord, IWebPack, IWebStation } from '../../../types';
-import { ChainWeb, IChainGround, IChainRoute, IChainStanding, IChainWeb, emptyChain } from '../../logic/theme/ChainWeb';
+import { ChainWeb, IChainGround, IChainMaterial, IChainRoute, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../../logic/theme/ChainWeb';
 import { stationNumbers } from '../../logic/theme/ThemeFormula';
 import { RANKS, ThemeRank } from '../../logic/theme/ThemeTypes';
 import { IProfession } from '../../logic/systems/Profession';
@@ -71,9 +71,20 @@ export interface IHubTech {
   reached: string[];
   /** What each person is, as read when they came home. A later theme does not change it. */
   professions: Record<string, IProfession>;
+  /** D119: "a ledger of new things to be generated". What no world has yet, and who needed it. */
+  ledger: IMaterialEntry[];
 }
 
-export const emptyTech = (): IHubTech => ({ chain: emptyChain(), workshops: [], asks: {}, resolving: {}, reached: [], professions: {} });
+export interface IMaterialEntry {
+  key: string;
+  material: IChainMaterial;
+  askedBy: string;
+  at: number;
+  /** Once a world holds it. It stays on the record. */
+  generatedAt?: number;
+}
+
+export const emptyTech = (): IHubTech => ({ chain: emptyChain(), workshops: [], asks: {}, resolving: {}, reached: [], professions: {}, ledger: [] });
 
 export const normalTech = (saved?: Partial<IHubTech>): IHubTech => ({ ...emptyTech(), ...saved });
 
@@ -87,6 +98,17 @@ export function hubStations(tech: Pick<IHubTech, 'chain'>, pack: IWebPack = WebB
     }))
   ];
 }
+
+/** A round's new materials go on the ledger, each once, whoever else comes to need it. */
+export function addToLedger(tech: IHubTech, round: Pick<IChainRound, 'materials'>, askedBy: string, at: number): IHubTech {
+  const held = new Set(tech.ledger.map(e => e.key));
+  const fresh = round.materials.filter(m => !held.has(m.key)).map(material => ({ key: material.key, material, askedBy, at }));
+  return fresh.length > 0 ? { ...tech, ledger: [...tech.ledger, ...fresh] } : tech;
+}
+
+/** What a world's generation still has to take in. */
+export const materialsToGenerate = (tech: Pick<IHubTech, 'ledger'>): IChainMaterial[] =>
+  tech.ledger.filter(e => !e.generatedAt).map(e => e.material);
 
 // ---------------------------------------------------------------------------
 // THE GROUND: what a chain does not have to write

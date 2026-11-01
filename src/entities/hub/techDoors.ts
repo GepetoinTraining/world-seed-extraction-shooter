@@ -17,7 +17,7 @@ import { usePlayerStore } from '../player/store';
 import { useFeed } from '../../components/ui/stores';
 import { IGuildState, IResident, readSheet } from './guild';
 import {
-  IHubPopulation, IHubTech, IWorkshop, IWorkshopOffer, WorkshopMode, admitSilently, billFor, foldReach, groundOf, hubPopulation, hubStations,
+  IHubPopulation, IHubTech, IWorkshop, IWorkshopOffer, WorkshopMode, addToLedger, admitSilently, billFor, foldReach, groundOf, hubPopulation, hubStations,
   offerFor, openedChainStations, routeFor, sizeVerdict, standingOf
 } from './hubTech';
 import { RoomVerdict, answersTag, tagDefaultMaterial, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS } from './room';
@@ -273,7 +273,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
             const verdict = ChainWeb.judge(out.data, tech.chain, ground, open, registered);
             if (!verdict.ok) { state = { ...state, refused: verdict.reason }; continue; }
             state = { ...state, refused: undefined };
-            set({ tech: { ...get().tech, chain: ChainWeb.merge(tech.chain, out.data, resident.id) } });
+            set({ tech: addToLedger({ ...get().tech, chain: ChainWeb.merge(tech.chain, out.data, resident.id) }, out.data, resident.id, Date.now()) });
             if (ChainWeb.open(profession.concept, profession.rank, get().tech.chain, ground, resident.id).length === 0) { state = { ...state, closed: true }; break; }
           }
           set({ tech: { ...get().tech, resolving: { ...get().tech.resolving, [resident.id]: state } } });

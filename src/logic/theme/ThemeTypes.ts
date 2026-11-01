@@ -235,6 +235,21 @@ export interface IThemeAbility {
   cost: typeof COST_BANDS[number];
 }
 
+/**
+ * D119: what a new thing looks like, in three words a model writes. The art composes the sprite
+ * from them (`worldForm`). A new word goes on the end, with its hue, ink or measure in the atoms,
+ * and a bar holds that every word has one. Shape tells things apart; colour never has to.
+ */
+export const LOOK_COLORS = ['ash', 'bone', 'ochre', 'rust', 'ember', 'moss', 'verdigris', 'slate', 'indigo', 'plum'] as const;
+export const LOOK_SHAPES = ['lump', 'shard', 'rod', 'coil', 'ring', 'plate', 'cluster', 'tuft', 'crystal', 'spike', 'pod', 'heap'] as const;
+export const LOOK_SIZES = ['tiny', 'small', 'medium', 'large'] as const;
+
+export interface IThemeLook {
+  color: typeof LOOK_COLORS[number];
+  shape: typeof LOOK_SHAPES[number];
+  size: typeof LOOK_SIZES[number];
+}
+
 export interface IThemeRegion {
   biome: ThemeBiome;
   name: string;

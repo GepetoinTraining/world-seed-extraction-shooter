@@ -19,22 +19,26 @@
 import { TagLaw } from '../content/TagLaw';
 import { ThemeLaw } from './ThemeLaw';
 import {
-  BIOMES, GEAR_KINDS, HARVEST_VERBS, IThemeBody, IThemeGear, IThemeGood, IThemeMaterial, IThemeStation, MATERIAL_FORMS, RANKS, ThemeRank, WEIGHTS, WORTHS
+  BIOMES, GEAR_KINDS, HARVEST_VERBS, IThemeBody, IThemeGear, IThemeGood, IThemeLook, IThemeMaterial, IThemeStation, LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES, MATERIAL_FORMS, RANKS, ThemeRank, WEIGHTS, WORTHS
 } from './ThemeTypes';
 import { rankStep } from './ThemeFormula';
+import { fnv1a } from '../rng/DeterministicRNG';
 
 const has = (values: readonly string[], v: string) => values.includes(v);
 
 /** A process. `answers` says which concept it is one way of bringing about, or is empty. */
 export type IChainGood = IThemeGood & { answers: string; /** Who this way came from, stamped on the way in. Two people with one concept each bring their own. */ by?: string };
 
+/** D119: a new thing says what it looks like, and the art composes the sprite from that. */
+export type IChainMaterial = IThemeMaterial & { look?: IThemeLook };
+
 /** What a model writes in one round: the theme's own shapes, words and bands. */
 export interface IChainRound {
   tags: IThemeBody['tags'];
-  materials: IThemeMaterial[];
+  materials: IChainMaterial[];
   stations: IThemeStation[];
-  goods: IChainGood[];
-  gear: IThemeGear[];
+  goods: (IChainGood & { look?: IThemeLook })[];
+  gear: (IThemeGear & { look?: IThemeLook })[];
 }
 
 export type IChainWeb = IChainRound;
@@ -75,6 +79,20 @@ export interface IChainNeed {
   by: string;
   /** The most it may be: a need never outranks what needs it, or a chain would never close. */
   rank: ThemeRank;
+}
+
+const lookRefusal = (key: string, look: IThemeLook | undefined): string | null => {
+  if (!look) return `${key} says nothing of what it looks like.`;
+  if (!has(LOOK_COLORS, look.color)) return `${key}: "${look.color}" is not a colour the art holds.`;
+  if (!has(LOOK_SHAPES, look.shape)) return `${key}: "${look.shape}" is not a shape the art draws.`;
+  if (!has(LOOK_SIZES, look.size)) return `${key}: "${look.size}" is not a size.`;
+  return null;
+};
+
+/** A thing written before the look was asked for still gets one: from its key, the same every time. */
+export function lookOfOld(thing: { key: string }): IThemeLook {
+  const pick = <T>(words: readonly T[], salt: string) => words[fnv1a(`look:${salt}:${thing.key}`) % words.length];
+  return { color: pick(LOOK_COLORS, 'color'), shape: pick(LOOK_SHAPES, 'shape'), size: pick(LOOK_SIZES, 'size') };
 }
 
 const conceptsOf = (chain: Pick<IChainWeb, 'goods'>) => new Set(chain.goods.map(g => g.answers).filter(Boolean));
@@ -179,6 +197,8 @@ export const ChainWeb = {
       if (m.habitat.length === 0 || !m.habitat.every(b => has(BIOMES, b))) return no(`${m.key} lies nowhere a world has.`);
       const t = unknown(m.tags);
       if (t) return no(`${m.key} is tagged "${t}", which is not registered.`);
+      const look = lookRefusal(m.key, m.look);
+      if (look) return no(look);
     }
     for (const s of round.stations) {
       if (!claim(s.key)) return no(`station "${s.key}" needs its own plain key.`);
@@ -197,6 +217,8 @@ export const ChainWeb = {
       if (g.from.length === 0) return no(`${g.key} is made from nothing.`);
       const t = unknown(g.tags);
       if (t) return no(`${g.key} is tagged "${t}", which is not registered.`);
+      const look = lookRefusal(g.key, g.look);
+      if (look) return no(look);
     }
     for (const g of round.gear) {
       if (!claim(g.key)) return no(`gear "${g.key}" needs its own plain key.`);
@@ -204,6 +226,8 @@ export const ChainWeb = {
       const t = unknown([...g.tags, ...g.works]);
       if (t) return no(`${g.key} names "${t}", which is not registered.`);
       if (g.craftAt !== 'none' && g.from.length === 0) return no(`${g.key} can be made, from nothing.`);
+      const look = lookRefusal(g.key, g.look);
+      if (look) return no(look);
     }
     // A need never outranks what needs it, so the walk has a floor and always ends.
     for (const maker of [...round.goods, ...round.gear]) {

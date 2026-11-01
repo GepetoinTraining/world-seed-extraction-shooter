@@ -465,7 +465,7 @@ describe('the door', () => {
     door.answers = [{
       tags: [], materials: [], gear: [],
       stations: [{ key: 'scrap_bench', name: 'Scrap Bench', blurb: '', tool: ['hammer'], material: ['metal'], bill: [{ tag: 'metal', count: 1 }] }],
-      goods: [{ key: 'scrap_motor', name: 'Scrap Motor', blurb: '', tags: [], rank: 'F', weight: 'light', trade: 'smithing', station: 'scrap_bench', from: [{ key: 'res_tree_log', count: 1 }], makes: 1, answers: 'repair' }]
+      goods: [{ key: 'scrap_motor', name: 'Scrap Motor', blurb: '', tags: [], rank: 'F', weight: 'light', trade: 'smithing', station: 'scrap_bench', from: [{ key: 'res_tree_log', count: 1 }], makes: 1, answers: 'repair', look: { color: 'ash', shape: 'lump', size: 'small' } }]
     }];
     const resident = await findWorking();
     useHubStore.setState(s => ({ tech: { ...s.tech, professions: { [resident.id]: { name: 'Fixer', blurb: '', concept: 'repair', knows: 'how to fix', workshop: 'a garage', tool: ['hammer'], material: ['metal'], rank: 'F', from: 'THEME' } }, resolving: {} } } as any));
@@ -477,6 +477,24 @@ describe('the door', () => {
     await hub().resolveChains();
     expect(door.calls).toBe(1);
     void pack;
+  });
+
+  it('what a round says must be found goes on the ledger, and it survives a reload', async () => {
+    door.status = 'OK';
+    door.answers = [{
+      tags: [], gear: [], stations: [],
+      materials: [{ key: 'skyglass', name: 'Skyglass', blurb: '', tags: ['glass'], rank: 'F', form: 'rock', verb: 'mine', weight: 'light', worth: 'fine', habitat: ['RUINS'], onShelf: false, restores: 'none', look: { color: 'indigo', shape: 'crystal', size: 'small' } }],
+      goods: [{ key: 'sky_lens', name: 'Sky Lens', blurb: '', tags: [], rank: 'F', weight: 'light', trade: 'smithing', station: '', from: [{ key: 'skyglass', count: 1 }], makes: 1, answers: 'seeing', look: { color: 'indigo', shape: 'ring', size: 'tiny' } }]
+    }];
+    const resident = await findWorking();
+    useHubStore.setState(s => ({ tech: { ...s.tech, professions: { [resident.id]: { name: 'Lens Grinder', blurb: '', concept: 'seeing', knows: 'how to see far', workshop: 'a dark room', tool: ['hammer'], material: ['metal'], rank: 'F', from: 'THEME' } }, resolving: {} } } as any));
+    await hub().resolveChains();
+    expect(hub().tech.ledger.map(e => [e.key, e.askedBy])).toEqual([['skyglass', resident.id]]);
+    expect(hub().tech.ledger[0].material.look?.shape).toBe('crystal');
+    await hub().saveHubState();
+    useHubStore.setState({ tech: emptyTech() } as any);
+    await hub().loadHub(HUB);
+    expect(hub().tech.ledger.map(e => e.key)).toEqual(['skyglass']);
   });
 
   it('a refused round writes nothing and waits', async () => {
