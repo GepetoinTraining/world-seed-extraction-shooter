@@ -65,7 +65,8 @@ import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
 import { buildCreationRequest, CREATION_SCHEMA } from '../server/intelligence/prompts';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
-import { installShippedThemes } from '../src/logic/theme/boot';
+import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
+import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 
 installShippedThemes();
 
@@ -135,6 +136,7 @@ describe('line 113: everyone begins with one free deed', () => {
     expect(deed.type).toBe(ItemType.WORLD_DEED);
     expect(deed.type).not.toBe(ItemType.DEED);
     expect(deed.deedData).toBeUndefined();
+    expect(deed.composition).toBeTruthy(); // every item knows its atoms (10D)
     // The lot deed's screen filters by its type, so it can never offer this one for a lot
     expect(SRC('src/components/HoldingsPanel.tsx')).toMatch(/i\.type === ItemType\.DEED/);
   });
@@ -350,6 +352,26 @@ describe('line 113: a deed can be exchanged like any item', () => {
     expect(audit.expectedPlayerGold).toBe(audit.actualPlayerGold);
   });
 
+  it('goes over a counter from one person to another, with its record, and the buyer can mint with it', async () => {
+    const hub = 'hub_counter';
+    useHubStore.setState({ activeHubId: hub, lots: [{ id: 'lot_c', lotIndex: 0, ownerId: 'u_one', ownerName: 'A', structureType: 'VENDOR', shopListings: [] } as any] });
+    await Treasury.endow(hub, 1000);
+    const deed = deeds()[0];
+    expect(await useHubStore.getState().listItemForSale('lot_c', deed.id, 100)).toBe(true);
+    expect(deeds()).toHaveLength(0);
+
+    born('u_buyer');
+    const own = deeds()[0];
+    expect(await useHubStore.getState().buyFromLot('lot_c', deed.id)).toBe(true);
+    expect(deeds().map(d => d.id).sort()).toEqual([own.id, deed.id].sort());
+    expect(player().bank.gold).toBe(400);
+
+    const res = await WorldDeedDoor.mint(CERT('u_buyer'), deed.id, 'TRADED', 'd', WorldType.EXTRACTION, {});
+    expect(res.ok, res.reason).toBe(true);
+    expect(res.world!.data.rules.mintedWithDeed).toBe(deed.id);
+    expect(deeds().map(d => d.id)).toEqual([own.id]);
+  });
+
   it('whoever holds a deed can mint with it: it names no holder', async () => {
     const deed = deeds()[0];
     expect(deed.worldDeedData).not.toHaveProperty('holder');
@@ -409,6 +431,43 @@ describe('who you were: a bank, with the choices the plan names', () => {
     expect(refuse({ ...good, silhouette: 'ELF' })).toBe(false);
     expect(refuse({ ...good, leans: { main: ['no_such_tag_at_all'], sub: [] } })).toBe(false);
     expect(refuse({ ...good, says: 'YOUR ISEKAI TROPE' })).toBe(false);
+  });
+
+  it('stands on what ships: every tag it names is registered by the game, not by the test fixture', () => {
+    const shipped = new Set([...SRC('src/entities/generation/packs/webBatches.ts').matchAll(/\{ tag: '([a-z_]+)'/g), ...SRC('src/entities/generation/packs/firstTheme.ts').matchAll(/\{ tag: '([a-z_]+)'/g)].map(m => m[1]));
+    expect(shipped.size).toBeGreaterThan(50);
+    for (const batch of ORIGIN_BATCHES) {
+      const named = [
+        ...batch.origins.flatMap(o => [...o.leans.main, ...o.leans.sub]),
+        ...batch.questions.flatMap(q => q.answers.flatMap(a => a.leans)),
+        ...batch.kits.flatMap(k => k.pieces.flatMap(p => (p.tag ? [p.tag] : [])))
+      ];
+      for (const tag of named) expect(shipped.has(tag), tag).toBe(true);
+    }
+  });
+
+  it('stands on what ships: every piece of every kit is answered by the shipped theme alone', () => {
+    const compiled = ContentRegistry.compiled(FIRST_THEME_PACK.themeId)!;
+    const fits = (tags: string[] | undefined, tag?: string) => !tag || (tags ?? []).includes(tag);
+    const gear = [...compiled.items.weapon_bases, ...compiled.items.armor_bases, ...compiled.items.tool_bases];
+    const onShelf = (ids: string[], tag?: string) => ids.some(id => fits(gear.find(g => g.id === id)?.tags, tag));
+    for (const kit of ORIGIN_BATCHES.flatMap(b => b.kits)) {
+      for (const piece of kit.pieces) {
+        const answered =
+          piece.from === 'weapon' ? compiled.items.weapon_bases.some(b => b.rank === 'F' && fits(b.tags, piece.tag))
+          : piece.from === 'armor' ? compiled.items.armor_bases.some(b => b.rank === 'F' && fits(b.tags, piece.tag))
+          : piece.from === 'tool' ? compiled.items.tool_bases.some(b => b.rank === 'F' && fits(b.tags, piece.tag))
+          : piece.from === 'carrier' ? onShelf(compiled.shelf.carrier, piece.tag)
+          : piece.from === 'wardrobe' ? onShelf(compiled.shelf.wardrobe, piece.tag)
+          : [...compiled.shelf.consumables, ...compiled.shelf.materials].some(id => fits(compiled.resources[id]?.tags, piece.tag));
+        expect(answered, `${kit.id}: ${piece.from} ${piece.tag ?? ''}`).toBe(true);
+      }
+    }
+  });
+
+  it('a person always has something to choose: the shipped batch passes its own law', () => {
+    for (const batch of ORIGIN_BATCHES) expect(OriginBank.validate(batch)).toEqual({ ok: true });
+    expect(OriginBank.origins().length).toBeGreaterThanOrEqual(8);
   });
 
   it('the bank holds words and tags, and no item from any theme (D53)', () => {
@@ -486,10 +545,35 @@ describe('focus shapes the spread, and the stats still deal from the certificate
     expect(player().creation!.main).toBe(OriginBank.origin('cooking')!.main);
   });
 
-  it('D81: nothing in the record ties the character to a hub by more than a choice it can leave', () => {
-    const fields = Object.keys(sheetOf('cooking').record);
-    expect(fields).not.toContain('hubState');
+  it('D81: nothing on the character says which hub it arrived at; that is a pin the gate writes', () => {
+    const sheet = CreationSystem.sheet({ ...draftOf('cooking'), hubId: 'hub_somewhere' }, CreationSystem.floor(draftOf('cooking')));
+    expect(sheet.hubId).toBe('hub_somewhere');
+    expect(JSON.stringify(sheet.record)).not.toMatch(/hub/i);
+    born('u_d81', 'NOMAD', sheet);
+    expect(JSON.stringify(player())).not.toContain('hub_somewhere');
     expect(SRC('src/logic/systems/CreationSystem.ts')).not.toMatch(/useHubStore/);
+    expect(SRC('src/components/IdentityGate.tsx')).toMatch(/HomeHub\.pin\(cert\.metadata\.uid, sheet\.hubId\)/);
+  });
+
+  it('a reload between the mint and walking in keeps who they were: the sheet waits for the genesis row', () => {
+    localStorage.clear();
+    const sheet = sheetOf('cooking');
+    CreationDoor.holdSheet('u_reload', sheet);
+    expect(CreationDoor.heldSheet('u_reload')).toEqual(JSON.parse(JSON.stringify(sheet)));
+    expect(CreationDoor.heldSheet('u_other')).toBeUndefined();
+    born('u_reload', 'NOMAD', CreationDoor.heldSheet('u_reload'));
+    expect(player().creation!.origin).toBe('cooking');
+    CreationDoor.releaseSheet('u_reload');
+    expect(CreationDoor.heldSheet('u_reload')).toBeUndefined();
+    expect(SRC('src/components/IdentityGate.tsx')).toMatch(/CreationDoor\.heldSheet\(st\.certificate\.metadata\.uid\)/);
+    const startup = SRC('src/logic/initialization/StartupSequence.ts');
+    expect(startup).toMatch(/CreationDoor\.heldSheet\(certificate\.metadata\.uid\)\)/);
+    expect(startup).toMatch(/CreationDoor\.releaseSheet\(certificate\.metadata\.uid\)/);
+  });
+
+  it('a skill reads under the name it was given, on every screen that lists it', () => {
+    expect(SRC('src/components/CharacterSheet.tsx')).toMatch(/skillWords\?\.\[skill\.id\]\?\.name/);
+    expect(SRC('src/components/PlayerHub.tsx')).toMatch(/skillWords\?\.\[skill\.id\]\?\.name/);
   });
 
   it('an old-style birth with no sheet stays as it was', () => {

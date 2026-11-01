@@ -124,7 +124,9 @@ export const WORLD_DRAFT_DEFAULTS = {
   worldName: '',
   worldDescription: '',
   worldType: 'EXTRACTION',
-  size: 32,
+  // D80: a deed names the size, so this follows the deed
+  size: 16,
+  deedId: '',
   accessMode: 'PUBLIC',
   entryFee: 0,
   extractionTax: 5,

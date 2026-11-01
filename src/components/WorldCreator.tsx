@@ -1,13 +1,17 @@
 /**
  * WORLD CREATION (Wave 9): Concept → Laws → Economy → Sign, on the kit.
  * Minting signs a permanent certificate; the last step says so plainly.
+ * D72, D80: it spends a deed, whose size it takes. The sky is chosen here.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useIdentityStore } from '../entities/identity/store';
 import { draftDismissal } from '../logic/systems/FieldInput';
 import { WORLD_DRAFT_DEFAULTS, WorldDraft, useWorldDraft } from './ui/stores';
-import { WorldCertificateSystem, WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
+import { WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
+import { usePlayerStore } from '../entities/player/store';
+import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
+import { WorldDeedDoor } from '../logic/systems/WorldDeedDoor';
 import { UniversalRank } from '../../types';
 import { Button, Input, Modal, Panel, Tabs } from './ui/kit';
 import { ThemeTalk } from './ThemeTalk';
@@ -39,7 +43,12 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
 
   // The draft lives in its own small store (line 58), so nothing here can lose it.
   const { draft, set, reset } = useWorldDraft();
-  const { step, worldName, worldDescription, size, entryFee, extractionTax, creatorShare, pvpEnabled, sky } = draft;
+  const { step, worldName, worldDescription, deedId, entryFee, extractionTax, creatorShare, pvpEnabled, sky } = draft;
+  const { player } = usePlayerStore();
+  const deeds = WorldDeed.held(player);
+  const deed = deeds.find(d => d.id === deedId) ?? deeds[0];
+  const size = deed?.worldDeedData?.size ?? FREE_DEED_SIZE;
+  const spokenOf = player.creation?.themeId;
   const worldType = draft.worldType as WorldType;
   const accessMode = draft.accessMode as AccessMode;
   const difficulty = draft.difficulty as UniversalRank;
@@ -47,7 +56,6 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   const setWorldName = (v: string) => set({ worldName: v });
   const setWorldDescription = (v: string) => set({ worldDescription: v });
   const setWorldType = (v: WorldType) => set({ worldType: v });
-  const setSize = (v: number) => set({ size: v });
   const setAccessMode = (v: AccessMode) => set({ accessMode: v });
   const setEntryFee = (v: number) => set({ entryFee: v });
   const setExtractionTax = (v: number) => set({ extractionTax: v });
@@ -56,16 +64,25 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   const setDifficulty = (v: UniversalRank) => set({ difficulty: v });
   const setSky = (v: string) => set({ sky: v });
 
+  // The world the Seed spoke of comes chosen, and agreeing to it is not a draft to lose
+  useEffect(() => {
+    if (opened && !draft.themeId && !draft.writtenTheme && spokenOf && ContentRegistry.offered().some(t => t.themeId === spokenOf)) set({ themeId: spokenOf });
+  }, [opened, spokenOf]);
+
   if (!opened) return null;
 
-  const dirty = (Object.keys(WORLD_DRAFT_DEFAULTS) as (keyof WorldDraft)[]).some(k => draft[k] !== WORLD_DRAFT_DEFAULTS[k]);
+  const dirty = (Object.keys(WORLD_DRAFT_DEFAULTS) as (keyof WorldDraft)[]).some(k => {
+    if (k === 'deedId') return false;
+    if (k === 'themeId' && draft.themeId === spokenOf) return false;
+    return draft[k] !== WORLD_DRAFT_DEFAULTS[k];
+  });
   const requestClose = () => {
     if (draftDismissal(dirty, 'ESCAPE') === 'ASK') setAsking(true);
     else onClose();
   };
 
   const handleCreate = async () => {
-    if (!certificate) return;
+    if (!certificate || !deed) return;
     setCreating(true);
     setError(null);
     try {
@@ -94,15 +111,13 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
         difficulty,
         sky: sky as SkyKind
       };
-      const worldCert = await WorldCertificateSystem.mintWorld(
-        certificate, worldName, worldDescription, worldType, size, rules
-      );
-      if (worldCert) {
-        onCreated(worldCert.data.worldUid);
+      const minted = await WorldDeedDoor.mint(certificate, deed.id, worldName, worldDescription, worldType, rules);
+      if (minted.ok && minted.world) {
+        onCreated(minted.world.data.worldUid);
         reset();
         onClose();
       } else {
-        setError('The certificate refused to sign.');
+        setError(minted.reason ?? 'The certificate refused to sign.');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error during signing.');
@@ -153,13 +168,15 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
                 <option value={WorldType.ARENA}>Arena (PvP)</option>
               </select>
             ))}
-            {fieldRow('GRID SIZE', (
-              <select className="ws-input" value={String(size)} onChange={e => setSize(parseInt(e.target.value))}>
-                <option value="16">Small, 16×16 sectors</option>
-                <option value="32">Medium, 32×32 sectors</option>
-                <option value="64">Large, 64×64 sectors</option>
+            {deeds.length > 0 ? fieldRow('THE DEED IT SPENDS', (
+              <select className="ws-input" value={deed?.id ?? ''} onChange={e => set({ deedId: e.target.value })}>
+                {deeds.map(d => <option key={d.id} value={d.id}>{WorldDeed.say(d.worldDeedData!.size)}</option>)}
               </select>
-            ))}
+            )) : (
+              <Panel title="YOU HOLD NO DEED" tone="loss" style={{ marginBottom: 8 }}>
+                <span className="ws-small">A world costs a deed, and you hold no deed. One can be found out there, or had from someone who holds one.</span>
+              </Panel>
+            )}
             {/* D67: how the gate runs is signed with the world */}
             <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
               Its gate stays open {WorldClock.say(WorldClock.cadenceFor(size).upMs)}, then goes down for {WorldClock.say(WorldClock.cadenceFor(size).offMs)}, then boots for {WorldClock.say(WorldClock.cadenceFor(size).scanMs)} of recon. It opens the moment you sign.
@@ -236,11 +253,14 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
               <span className="ws-small">
                 Minting signs this world with your identity key. The certificate becomes a permanent asset on the ledger — it cannot be unsaid.
               </span>
+              <div className="ws-small" style={{ marginTop: 6 }}>
+                {deed ? `It spends ${deed.name}: ${WorldDeed.say(size)}. The deed is gone at the signing.` : 'You hold no deed, so nothing can be signed.'}
+              </div>
             </Panel>
             {error && <div className="ws-loss ws-small" style={{ marginTop: 8 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
               <Button tone="quiet" onClick={() => setStep(2)}>BACK</Button>
-              <Button tone="proof" primary disabled={creating} onClick={handleCreate}>
+              <Button tone="proof" primary disabled={creating || !deed} onClick={handleCreate}>
                 {creating ? 'SIGNING…' : 'SIGN & MINT WORLD'}
               </Button>
             </div>

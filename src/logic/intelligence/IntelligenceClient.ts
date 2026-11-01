@@ -40,6 +40,7 @@ export const IntelligenceClient = {
   },
   talk: (messages: IDoorMessage[], draft: Record<string, unknown>) => post('/talk', { messages, draft }),
   writeTheme: <T>(messages: IDoorMessage[], draft: Record<string, unknown>) => post<T>('/theme', { messages, draft }),
+  grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
   fileRest: (id: string, queue: unknown, theme: unknown) => post('/rest/file', { id, queue, theme }),
   collectRest: <T>(batchId: string) => post<T>('/rest/collect', { batchId })
 };

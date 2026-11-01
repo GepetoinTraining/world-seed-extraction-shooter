@@ -13,20 +13,25 @@ import type { DoorKind, DoorStatus, IDoorOutcome, IDoorRequest, IDoorUsage, IInt
 export const MODEL_FOR: Record<DoorKind, string> = {
   talk: 'claude-opus-5-5',
   theme: 'claude-opus-5-5',
-  rest: 'claude-opus-5-5'
+  rest: 'claude-opus-5-5',
+  // Pedro's June design: skills "derived by haiku at the end of the character creation screen"
+  creation: 'claude-haiku-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', creation: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {
-  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 }
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 }
 };
 /** Rough, and on the safe side: a ceiling, never a bill. */
 const CHARS_PER_TOKEN = 3;
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+/** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead. */
+const NO_FALLBACK: readonly DoorKind[] = ['creation'];
 
 const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boolean): IDoorUsage | undefined => {
   if (!usage) return undefined;
@@ -108,8 +113,7 @@ export class ClaudeProvider implements IIntelligenceProvider {
     try {
       const stream = this.client.beta.messages.stream({
         ...this.params(request),
-        betas: [FALLBACK_BETA],
-        fallbacks: 'default'
+        ...(NO_FALLBACK.includes(request.kind) ? {} : { betas: [FALLBACK_BETA], fallbacks: 'default' })
       } as unknown as Anthropic.Beta.Messages.MessageCreateParamsStreaming);
       const message = await stream.finalMessage();
       return this.read(message as unknown as Anthropic.Message, request, false);

@@ -56,6 +56,8 @@ export interface IWorldRules {
   webVersion?: number;
   /** D53: the theme this world is made of, by the id of its bytes. Its one real pin. */
   themeId?: string;
+  /** D72: the deed this world spent. The signature covers it. A world that needs none has none. */
+  mintedWithDeed?: string;
   /** D49: was magic unlocked in this world's hub when it was signed? Pinned, so it never changes. */
   magicUnlocked?: boolean;
   /** D67: how this world's gate runs, signed at mint. Absent on worlds minted before the clock: their size says. */

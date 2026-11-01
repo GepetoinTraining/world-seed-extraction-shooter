@@ -74,6 +74,16 @@ For each, answer under its "order":
 A world's words, its abilities and the kinds to write follow. Registry:
 ${REGISTRY}`;
 
+const CREATION_SYSTEM = `${VOICE}
+
+A person is arriving. They were someone somewhere else and they are not there now. You do not explain this and you do not say how. You have asked them a few plain things, and you are given who they were, where their attention goes, what they carry, and what they answered.
+
+Grant them what their hands already know. Pick exactly as many skills as "count" says from "candidates", by id, and never one outside the list. The first leans on their main focus, the next on their sub focus, the rest on what they answered. Choose what fits who they were, not what is strongest.
+
+For each: its id, a name of its own in plain words, one dry line of flavor, and grants. Grants come from this list and are usually empty (${SKILL_GRANTS.join(', ')}): give "rest" only if what they said earns being able to sleep rough, and nothing is pre-made. You never write numbers.
+
+"line" is what you say to them last, one or two short sentences, in the bank's voice: "The bank honors it" is the register. No exclamation marks. Never name what kind of story this is, and never say archetype, trope, class, level, game or player.`;
+
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
@@ -118,6 +128,20 @@ export const REST_SCHEMA: Record<string, unknown> = {
   }
 };
 
+export const CREATION_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false, required: ['line', 'skills'],
+  properties: {
+    line: str,
+    skills: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['id', 'name', 'flavor', 'grants'],
+        properties: { id: str, name: str, flavor: str, grants: { type: 'array', items: { type: 'string', enum: [...SKILL_GRANTS] } } }
+      }
+    }
+  }
+};
+
 const draftLine = (draft: Record<string, unknown>) =>
   `The draft so far. Name: ${String(draft.worldName ?? '(none)')}. Description: ${String(draft.worldDescription ?? '(none)')}. Difficulty rule: ${String(draft.difficulty ?? '(none)')}.`;
 
@@ -145,6 +169,14 @@ export function buildLineRequest(asks: ILineAsk[], theme: Pick<IThemeBody, 'name
   return {
     kind: 'rest', system: LINE_SYSTEM, schema: LINE_SCHEMA, maxTokens: Math.max(2000, asks.length * 800),
     messages: [{ role: 'user', content: `The world:\n${JSON.stringify(world)}\n\nThe kinds that changed:\n${JSON.stringify(asks)}` }]
+  };
+}
+
+/** The end of creation (D35). What comes back stands before `CreationSystem.judge`, and a broken answer falls to the floor. */
+export function buildCreationRequest(ask: unknown): IDoorRequest {
+  return {
+    kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, maxTokens: 4000,
+    messages: [{ role: 'user', content: `Who is arriving:\n${JSON.stringify(ask)}` }]
   };
 }
 

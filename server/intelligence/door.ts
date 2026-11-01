@@ -10,7 +10,7 @@
  * the caller's work stays queued and the game goes on.
  */
 
-export type DoorKind = 'talk' | 'theme' | 'rest';
+export type DoorKind = 'talk' | 'theme' | 'rest' | 'creation';
 
 export interface IDoorUsage {
   model: string;

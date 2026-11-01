@@ -57,7 +57,8 @@ export enum ItemType {
   TOOL = 'TOOL',
   LORE = 'LORE', // Wave 2.3: lore fragments & social contracts (contract upgrade: additive)
   TEMPLATE = 'TEMPLATE', // Wave 10B: a signed building plan, designed at the scribe's table (additive)
-  MAP = 'MAP' // D85: what a character scanned of one world, written at the scribe's table (additive)
+  MAP = 'MAP', // D85: what a character scanned of one world, written at the scribe's table (additive)
+  WORLD_DEED = 'WORLD_DEED' // D72: what minting a world spends. Not the lot's DEED (additive)
 }
 
 export enum SlotType {
@@ -573,6 +574,9 @@ export interface IItem {
   };
   /** D21: a scroll's protection runs on a clock — slots held until the time is spent. */
   /** D85: a world's sectors as a scribe held them. Levels and counts, never a name (D60). */
+  /** D72, D80: what minting a world spends. It names a size and no holder, so it can change hands. */
+  worldDeedData?: { size: number; source: 'FREE' | 'FOUND' };
+
   mapData?: {
     worldId: string;
     worldName: string;
@@ -825,9 +829,27 @@ export interface ICognitiveFrame {
   colorHex: string;
 }
 
+/** Who a person was, as the creation flow settled it. `origin` is the bank's id, and it is never shown. */
+export interface ICreationRecord {
+  origin: string;
+  main: string;
+  sub: string;
+  kit: string;
+  /** The world the Seed spoke of, which the mint then offers first. */
+  themeId?: string;
+  answers: Record<string, string>;
+  said?: string;
+  line: string;
+  by: 'DOOR' | 'FLOOR';
+}
+
 export interface IPlayer {
   id: string;
   username: string;
+  /** D72: this character has had its free deed. Set once, whether or not it still holds it. */
+  freeDeedGiven?: boolean;
+  /** Absent on a character from before the flow. */
+  creation?: ICreationRecord;
   archetype?: string; // chosen at birth; an avatar's look is derived from it
   // D83: rank and level are two things. rankXp is lifetime experience, and it no
   // longer decides the rank; attributePoints are granted on each level and spent

@@ -6,7 +6,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { IntelligenceDoor, type IDoorMessage } from './door';
-import { buildRestRequest, buildTalkRequest, buildThemeRequest } from './prompts';
+import { buildCreationRequest, buildRestRequest, buildTalkRequest, buildThemeRequest } from './prompts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -28,7 +28,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
 
-/** `path` is what follows the mount: /status, /talk, /theme, /rest/file, /rest/collect. */
+/** `path` is what follows the mount: /status, /talk, /theme, /creation, /rest/file, /rest/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
@@ -50,6 +50,8 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
         return send(res, 200, await door.ask(buildTalkRequest(conversation, body.draft ?? {})));
       case '/theme':
         return send(res, 200, await door.ask(buildThemeRequest(conversation, body.draft ?? {})));
+      case '/creation':
+        return send(res, 200, await door.ask(buildCreationRequest(body.ask ?? {})));
       case '/rest/file':
         return send(res, 200, await door.fileRest(String(body.id ?? 'rest'), buildRestRequest(body.queue ?? {}, body.theme ?? {})));
       case '/rest/collect':

@@ -133,6 +133,9 @@ console.log('[BOOT] Refreshing World List...');
            // D83, D84: and a rank its experience earned is stored, once, with skills kept where they stood
            const { ProgressionSystem } = await import('../../entities/player/systems/ProgressionSystem');
            usePlayerStore.setState({ player: ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player))) });
+           // D72: nobody is locked out of a pocket world, once
+           const { WorldDeedDoor } = await import('../systems/WorldDeedDoor');
+           await WorldDeedDoor.grantOnLoad();
            usePlayerStore.getState().recalcAttributes();
            usePlayerStore.getState().recalcWeight();
            // Wave 9.3: the select screen learns the real archetype from the save
@@ -145,20 +148,24 @@ console.log('[BOOT] Refreshing World List...');
            // The tampered doc stays in the DB as evidence; we refuse to load it.
        } else {
            // EMPTY: this is a genesis — seal the first player doc and open the ledger
+           const { CreationDoor } = await import('../systems/CreationDoor');
            console.log('[BOOT] No previous state found. Sealing genesis imprint...');
            // If the gate auto-passed (existing identity), the store still holds the
            // blank template — initialize the character from the cert first.
            if (usePlayerStore.getState().player.id !== certificate.metadata.uid) {
              // Wave 9.3: genesis uses the archetype chosen at the gate, not a default
              const { AvatarRoster } = await import('../../entities/identity/roster');
-             usePlayerStore.getState().initializeSession(certificate, AvatarRoster.archetypeOf(certificate.metadata.uid) ?? 'OPERATOR');
+             usePlayerStore.getState().initializeSession(certificate, AvatarRoster.archetypeOf(certificate.metadata.uid) ?? 'OPERATOR', CreationDoor.heldSheet(certificate.metadata.uid));
            }
            // The first bank doc and the birthright's row land as one.
+           // What the creation flow granted lands with them: the kit, the deed and the words, signed.
            await GoldCommit.commit({ rows: [{ type: 'CHARACTER_GENESIS', data: {
              certUid: certificate.metadata.uid,
              username: usePlayerStore.getState().player.username,
              gold: usePlayerStore.getState().player.bank.gold // the birthright grant (audited)
-           } }] });
+           } }, ...CreationDoor.genesisRows(usePlayerStore.getState().player, CreationDoor.heldSheet(certificate.metadata.uid)?.usage)] });
+           CreationDoor.releaseSheet(certificate.metadata.uid);
+           void CreationDoor.provenance(usePlayerStore.getState().player);
        }
 
        // Arm the autosave subscription (10s debounce + critical-moment flushes)

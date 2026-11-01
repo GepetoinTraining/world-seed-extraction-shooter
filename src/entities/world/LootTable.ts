@@ -13,6 +13,7 @@ import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { IItem, UniversalRank, Rarity } from '../../../types';
 import { IMobDefinition } from '../mob/types';
 import { DeedSystem } from '../../logic/systems/DeedSystem';
+import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { BiomeType } from './types';
 import { DreamingSystem, IAffixPool } from './Dreaming';
 
@@ -175,6 +176,8 @@ export class LootTable {
         console.log(`[LOOT] DEED DROPPED! ${deed.name}`);
       }
     }
+
+    loot.push(...WorldDeed.foundOn(mobDef, effectiveMF, rollKey)); // D72: a keyed stream of its own, so no roll above moves
 
     // ========================================================================
     // 6. GOLD (Always)

@@ -89,11 +89,37 @@ function mapThumb(map: NonNullable<IItem['mapData']>, cells: { width: number; he
   return { w: W, h: H, data };
 }
 
+/** D80: a world deed is a sheet with a seal and a ruled square, more finely ruled the larger the world. Shape, not hue. */
+function deedThumb(size: number, dims: { width: number; height: number }): Sprite {
+  const W = dims.width * 18, H = dims.height * 18; // the pack's cell, 18 atoms
+  const data = new Uint8Array(W * H);
+  const set = (x: number, y: number, step: number) => { if (x >= 0 && y >= 0 && x < W && y < H) data[y * W + x] = 1 + Role.MATTER * STEPS + step; };
+  const INK = 0, PAPER = 4;
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    set(x, y, x === 1 || y === 1 || x === W - 2 || y === H - 2 ? INK : PAPER);
+  }
+  const side = Math.min(W, H) - 8;
+  const x0 = Math.floor((W - side) / 2), y0 = 4;
+  // One rule across for every doubling above the smallest
+  const rules = Math.max(1, Math.round(Math.log2(Math.max(16, size) / 16)) + 1);
+  const step = side / (rules + 1);
+  for (let i = 0; i <= rules + 1; i++) {
+    const at = Math.round(i * step);
+    for (let t = 0; t <= side; t++) { set(x0 + at, y0 + t, INK); set(x0 + t, y0 + at, INK); }
+  }
+  // The seal, a filled block under the square
+  for (let y = H - 7; y < H - 3; y++) for (let x = Math.floor(W / 2) - 2; x < Math.floor(W / 2) + 2; x++) set(x, y, INK);
+  return { w: W, h: H, data };
+}
+
 export function itemArtFor(item: IItem): Sprite {
   // Wave 10B: a building plan shows the plan itself, through the composer.
   const templateData = (item as any).templateData;
   if (item.type === ItemType.TEMPLATE && templateData) {
     return templateThumb(templateData, item.dimensions ?? { width: 2, height: 2 });
+  }
+  if (item.type === ItemType.WORLD_DEED && item.worldDeedData) {
+    return deedThumb(item.worldDeedData.size, item.dimensions ?? { width: 1, height: 2 });
   }
   if (item.type === ItemType.MAP && item.mapData) {
     return mapThumb(item.mapData, item.dimensions ?? { width: 2, height: 2 });
