@@ -44,5 +44,8 @@ export interface IMobDefinition {
   colorHex: string;
   symbol?: string; 
   
-  generatedSprite?: string; 
+  generatedSprite?: string;
+
+  /** D60: this creature's place in its own line. Absent means the first. */
+  generation?: number;
 }

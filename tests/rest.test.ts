@@ -155,7 +155,7 @@ describe('line 90: the Director', () => {
   };
 
   it('generation 0 changes nothing at all', () => {
-    expect(land(ctx()).filter(m => m.displayName)).toEqual([]);
+    expect(land(ctx()).filter(m => m.learned)).toEqual([]);
   });
 
   it('rests make monsters differ, where they stood, and the land does not move', () => {
@@ -164,9 +164,8 @@ describe('line 90: the Director', () => {
     for (let i = 0; i < 6; i++) record = Director.evolve(record);
     const after = land(ctx(record));
     expect(after.map(m => [m.id, m.definitionId, m.position])).toEqual(before.map(m => [m.id, m.definitionId, m.position]));
-    const changed = after.filter(m => m.displayName);
-    expect(changed.length).toBeGreaterThan(0);
-    expect(changed.some(m => m.displayName !== MOB_DEFINITIONS[m.definitionId].name)).toBe(true);
+    expect(after.filter(m => m.learned).length).toBeGreaterThan(0);
+    expect(after.filter(m => m.displayName)).toEqual([]); // D60: changed is not yet another monster
   });
 
   it('same record, same monsters: deterministic for a pinned world', () => {
@@ -190,7 +189,7 @@ describe('line 90: the Director', () => {
     let record = emptyDirectorRecord();
     for (let i = 0; i < 6; i++) record = Director.evolve(record);
     const locked = land(ctx(record, false));
-    expect(locked.filter(m => m.displayName && m.displayName !== MOB_DEFINITIONS[m.definitionId].name)).toEqual([]);
+    expect(locked.filter(m => m.bonusHealth || m.bonusDamage)).toEqual([]);
   });
 });
 
@@ -201,24 +200,30 @@ describe('D60: a creature gives its name only when it has earned it', () => {
     return { ...record, weights: { kind: weight } };
   };
   const POOL = { affixes: [{ id: 'a', name: 'Honored', type: 'PREFIX' as const, statModifiers: { max_health: [1, 2] as [number, number] } }], abilities: [] };
-  const nameOf = (rests: number, weight: number, tags: string[], pool: typeof POOL | { affixes: never[]; abilities: string[] } = POOL) =>
-    Director.variantOf('seed', 'b', 'kind', 'Hound', after(rests, weight), pool, tags).displayName;
+  const nameOf = (rests: number, weight: number, tags: string[], pool: typeof POOL | { affixes: never[]; abilities: string[] } = POOL, line = 2) =>
+    Director.variantOf('seed', 'b', 'kind', 'Hound', after(rests, weight), pool, tags, line).displayName;
 
-  it('the first generation is nameless, one of a kind included', () => {
-    expect(nameOf(0, 100, [])).toBeUndefined();
-    expect(nameOf(0, 100, ['boss'])).toBeUndefined();
+  it('the first of a line is nameless, however many rests pass, magical or one of a kind', () => {
+    expect(nameOf(8, 100, [], POOL, 1)).toBeUndefined();
+    expect(nameOf(8, 0, ['boss'], POOL, 1)).toBeUndefined();
+    expect(Director.variantOf('seed', 'b', 'kind', 'Hound', after(8, 100), POOL, []).displayName).toBeUndefined();
   });
 
-  it('a magical body of the second generation or later is named', () => {
+  it('what has become a different monster, and is magical, is named', () => {
     expect(nameOf(1, 100, [])).toBe('Honored Hound');
-    expect(nameOf(5, 100, [])).toBe('Honored Hound');
+    expect(nameOf(5, 100, [], POOL, 3)).toBe('Honored Hound');
+  });
+
+  it('a world that has not rested names nobody', () => {
+    expect(nameOf(0, 100, [])).toBeUndefined();
+    expect(nameOf(0, 100, ['boss'])).toBeUndefined();
   });
 
   it('magic it learned counts as much as a trait', () => {
     expect(nameOf(1, 100, [], { affixes: [], abilities: ['spell'] })).toBe('Hound');
   });
 
-  it('one of a kind is named from the second generation, with no magic on it', () => {
+  it('one of a kind is named once it has become a different monster, with no magic on it', () => {
     expect(nameOf(1, 0, ['boss'])).toBe('Hound');
   });
 
@@ -236,7 +241,7 @@ describe('D60: a creature gives its name only when it has earned it', () => {
     expect(read({ ...body(def), displayName: `Honored ${def.name}` }).title).toBe(`Honored ${def.name}`);
   });
 
-  it('the kill line only knows the name the body earned', () => {
+  it('the defeat message only knows the name the body earned', () => {
     const def = Object.values(compiled.mobs)[0];
     const shot = { id: 's', x: 200, y: 0, angle: 0, speed: 200, spawnTime: 0, lifespan: 2, color: 'x', damage: 1e6 };
     const kill = (e: IWorldEntity) => CombatSystem.tick([shot], chunkWith([e]), { x: 0, y: 0, z: 0 }, 100, []).events.find(ev => ev.type === 'KILL')!;

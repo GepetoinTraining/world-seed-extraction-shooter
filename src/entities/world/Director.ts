@@ -49,10 +49,11 @@ const LEARN_CHANCE = 0.15;
 
 /**
  * D60: a creature's name is masked until it has earned one: it must be magical (a trait
- * or magic it learned) or one of a kind, and of the second generation or later. What
- * a world opens with is its first generation, record 0, so the second is record 1.
+ * or magic it learned) or one of a kind, and of the second generation or later. A
+ * generation here is a creature's own line: the second has become a different monster.
+ * Nothing makes that change yet, so every line is its first and nobody is named.
  */
-const NAMED_FROM_GENERATION = 1;
+const NAMED_FROM_GENERATION = 2;
 const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
 
 export interface IDirectorPool {
@@ -93,7 +94,7 @@ export class Director {
    */
   static variantOf(
     seed: string, entityId: string, definitionId: string, name: string,
-    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined, tags: string[] = []
+    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined, tags: string[] = [], line = 1
   ): IMobVariant {
     if (!record || record.generation === 0) return NONE;
     const rng = Rng.fromKey(`director:${seed}:${record.generation}:${entityId}`);
@@ -119,7 +120,7 @@ export class Director {
 
     const prefix = traits.find(t => t.type === 'PREFIX')?.name;
     const suffix = traits.find(t => t.type === 'SUFFIX')?.name;
-    const earned = record.generation >= NAMED_FROM_GENERATION
+    const earned = line >= NAMED_FROM_GENERATION
       && (traits.length > 0 || learned.length > 0 || tags.some(t => ONE_OF_A_KIND.includes(t)));
     return {
       traits, learned,
