@@ -46,7 +46,7 @@ export const TavernRoom: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <Modal title="THE RUSTY ANCHOR: WHO IS STAYING" onClose={onClose} width={560}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
-        Whoever comes through the gate with you gets a bed here. They stay until the Hall of Banners buys them ground and their own house stands.
+        Whoever comes through the gate with you gets a bed here. They stay until the Hall of Banners buys them ground and their own house stands, or a keeper's bench takes them on.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {bonds.length > 0 && (
