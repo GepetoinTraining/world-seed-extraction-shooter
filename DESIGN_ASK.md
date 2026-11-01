@@ -339,6 +339,7 @@ Pedro, 2026-11-01: "elite is a pack leader, MAY BE industrious prior to having s
 - **Elite: a pack leader.** Tougher than its pack, and one person can bring it down, so everything under "Why it takes a party" is the boss's alone. It holds no ground and has no map mark, and it moves with its pack. An industrious one carries its trade with it and has no base yet.
 - **Not as rare, and not alone.** R4's rule in `WorldGenerator` (`ELITE_WEIGHT`, a count of one) stays for boss, titan and god and comes off elite, which stands at the head of a pack of its own kind. A world rolls its elites at the mint: a keyed roster by sector, so "this world has three" is known without building a chunk, and a regeneration can walk them without building the world. Adding them moves `GOLDEN_VECTORS` and `FIRST_THEME_VECTORS`, on purpose. The first theme holds no plain elite today, so it needs some written.
 - **Only a social species leads.** Pedro: animals get leaders, "but that requires the species to be social, think of a pride of lions." So a pack says `social` on each creature, in both trees, because a pack leader needs a pack. In the first theme a stag can lead its herd and the Compound Bear walks alone. A new field moves that theme's bytes again, on purpose, the same way the trees did.
+- **A solitary monster leads nothing, and can still stand in the way.** Pedro: "it may be aggressive towards them, think an ogre under a bridge asking for a toll." It holds one spot on a way through, and whoever passes, a person or a pack, pays or fights. An elite of a solitary species has a sheet and a goal like any other, and no pack. Its goal is `waylay`. A toll is a new interaction, with a reader to write and its gold going through `GoldCommit`. Packs meeting it needs B2's movement.
 - **Boss: the seat of a territory**, one to a territory, with a base. Titan and god stay one of a kind and lead nothing by those words alone.
 - **Elite becomes boss when people keep falling to it.** The world's ledger settles when it closes, and what happened while it was open levels up its creatures. That is the Director's record, settled at the regeneration, and this is one more thing it decides. Repeated means the same elite brings people down across a formula's count (a guess until Wave 12), with no roll and no model. It stays where it stands, takes that ground as its seat, and its pack is its first band. An industrious one starts building, and any other holds the ground as it is.
 - The tally needs one change: `reportToDirector` hears only a kind today, and this has to name the body too. A kind stays a kind (D64). A leader is the one body the record holds by itself: its kind, its tally, then its seat, tenure and stores.
@@ -360,6 +361,8 @@ Pedro: "elite and higher mobs have goals, they get a cycle to complete it, if no
 - **One cycle to do it.** At the close, for each one on the roster:
   - **Nobody saw it:** a keyed roll, the d20 plus its sheet against the goal's band, graded as the donor grades a month.
   - **Someone saw it:** no roll, because what a person saw must stay true. It finishes if it still stands with most of its pack, and fails if they stopped it. So a person can really prevent it. Seen means read by a scan or within sight in the field, and the ledger has to record that.
+  - **Who computes it:** Pedro: "we accept the compute that came from the client side, the game is arithmetic, so the values can be computed by the client and sent over to be merged." Each client works out the outcome and sends it with what it was worked from, and the world's record merges those. Two clients in one cycle: stopped beats stands, because a body brought down stays down, so the merge does not depend on who arrives first.
+  - **The limit of that:** the arithmetic can be re-run by anyone, but "I stopped it" is a claim about what happened in play. This is D82's question on the world's side, and it should be decided with D82 before anything crosses hubs.
   - **Next:** done, it takes the next goal from what it now is. Failed, it may try again, keyed.
 - **`settle` is the second road to boss.** A finished base is a seat, and a seat makes a boss with nobody having fallen to it. Repeated falls stay the other road, and both go through the same record.
 
@@ -376,7 +379,7 @@ Cycles nobody watched are folded one at a time, as the donor's clockwork folds m
 
 ### Directing the flow
 
-No model is called during play (D46). A plan becomes standing orders that the bodies read: which ground each band holds, whether a post that raises the alarm calls bands in, and the leader's posture (hold, sortie, fall back to the seat). Sight and noise are A5's; herding and moving between chunks are B2's. Orders sit on top of those.
+No model is called during play (D46). A plan becomes standing orders that the bodies read: which ground each band holds, whether a post that raises the alarm calls bands in, and the leader's posture (hold, sortie, fall back to the seat). Sight and noise are A5's; herding and moving between chunks are B2's. Orders sit on top of those. An animal leader builds nothing and directs its herd's movement: where it goes between cycles, and where it stands when someone comes.
 
 ### Why it takes a party
 
@@ -394,7 +397,16 @@ Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time an
 - A scan or a walk that reads a territory's ground records a `holding` on the survey entry: which chunks, what stood there, at which generation. Nothing marks it before someone has seen it.
 - The recon view draws it as hatching with a hard seam at its border, and structures as marks by shape, never hue.
 - It decays as D68 says: the land keeps, the holding goes stale, and a reading says how long ago. Territories grow, so a stale border is a real danger, and a fresh map of one is worth more (D85).
-- A written map carries the field through `mapSheet` (A3), by name, so a later field cannot ride along. The guild's quests read territories as the donor's read danger (B4).
+- A written map carries the field through `mapSheet` (A3), by name, so a later field cannot ride along.
+
+### Once known: the quest chain
+
+Pedro: a finished base makes a boss, "and once known about sets up the quest chain to go get rid of it."
+
+- **Known** means a hub has heard of it: someone who read that ground brings it home, or hands in a map that shows it. Nothing is posted for a holding nobody has seen, so a boss can grow for many cycles unknown.
+- **It comes through the guildhall**, which D73 says receives its quests from the NPCs (B4). The donor's generator turns a danger level into one bounty. Here it reads the holding, so the chain is about this place: read the ground, take its outer works or bands, bring enough people, bring it down.
+- **Each step is drawn from the record**, as arithmetic, with the model writing only its words in the scan window. Until those come it stands on plain words.
+- **The chain moves with the place.** A new anchor adds to it, a stale reading says so, and a boss that has moved on or fallen closes it. The first step needs one person, and the step that brings it down needs a party, which is where a person learns they need one.
 
 ### What the industrious build
 
@@ -406,14 +418,17 @@ Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time an
 
 ### Where it goes in the plan
 
-Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
+Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads, and a solitary one asks its toll; a known holding posts a chain, and an unknown one posts nothing; two clients' outcomes merge the same in any order; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
+
+### Confirmed by Pedro, 2026-11-01
+
+A goal someone saw is decided by what happened, with no roll, and the client's compute is merged. Social binds monsters too. An animal leader builds nothing and directs its herd. A finished base makes a boss, and a known one posts a quest chain.
 
 ### Taken by the builder, for Pedro to overrule
 
-1. A goal someone saw is decided by what happened, with no roll.
-2. Social binds monsters too, so a solitary monster never leads a pack.
-3. An animal leader builds nothing. Pedro said yes to animal leaders, and "building nothing" was the builder's half of that question.
-4. A finished base makes a boss.
+1. In a merge, stopped beats stands.
+2. A solitary elite stays alone: repeated falls toughen it through the Director and do not make it a boss, because a boss has bands to direct.
+3. "Known" means a hub has heard, not that one person saw. A person who keeps it to themselves keeps the chain from being posted.
 
 ## The design system to deliver
 
