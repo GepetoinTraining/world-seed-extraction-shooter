@@ -72,9 +72,9 @@ export class CartSystem {
   }
 
   static canLoad(cart: ICartState, item: IItem): Verdict {
-    if (cart.items.some(i => i.id === item.id)) return no(`${item.name} is already aboard.`);
+    if (cart.items.some(i => i.id === item.id)) return no(`${LoadoutSystem.shownName(item)} is already aboard.`);
     const place = InventorySystem.autoPlace(cart.items, cart.layout, item, cart.gridW, cart.gridH);
-    if (!place) return no(`The cart bed is full. ${item.name} does not fit the grid.`);
+    if (!place) return no(`The cart bed is full. ${LoadoutSystem.shownName(item)} does not fit the grid.`);
     return OK;
   }
 

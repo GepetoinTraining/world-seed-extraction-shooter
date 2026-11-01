@@ -47,7 +47,7 @@ function packTakes(player: IPlayer, item: IItem, leaving?: IItem): Verdict {
   if (leaving) delete layout[leaving.id];
   return InventorySystem.autoPlace(inv, layout, item)
     ? OK
-    : no(`The pack refuses ${item.name}: no room in the grid.`);
+    : no(`The pack refuses ${LoadoutSystem.shownName(item)}: no room in the grid.`);
 }
 
 function packCellTakes(player: IPlayer, item: IItem, x: number, y: number, rotated: boolean): Verdict {
@@ -57,7 +57,7 @@ function packCellTakes(player: IPlayer, item: IItem, x: number, y: number, rotat
   const occ = InventorySystem.buildOccupancy(session.inventory, session.inventoryLayout || {});
   return InventorySystem.canPlaceAt(occ, w, h, x, y, item.id)
     ? OK
-    : no(`The pack has no room there. ${item.name} stays where it was.`);
+    : no(`The pack has no room there. ${LoadoutSystem.shownName(item)} stays where it was.`);
 }
 
 function slotTakes(player: IPlayer, item: IItem, slot: EquipSlotId): Verdict {
@@ -99,7 +99,7 @@ export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
       const { w, h } = InventorySystem.footprint(item, !!to.rotated);
       return StashGrid.canPlace(tab?.items ?? [], layout, item.id, w, h, to.x, to.y)
         ? OK
-        : no(`The vault has something there. ${item.name} stays where it was.`);
+        : no(`The vault has something there. ${LoadoutSystem.shownName(item)} stays where it was.`);
     }
     case 'SLOT':
       return slotTakes(player, item, to.slot);
@@ -119,7 +119,7 @@ export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
         const occ = InventorySystem.buildOccupancy(cart.items, cart.layout, cart.gridW, cart.gridH);
         return InventorySystem.canPlaceAt(occ, w, h, to.x, to.y, item.id)
           ? OK
-          : no(`The cart bed has no room there. ${item.name} stays where it was.`);
+          : no(`The cart bed has no room there. ${LoadoutSystem.shownName(item)} stays where it was.`);
       }
       if (from.kind === 'CART') return ALREADY;
       return CartSystem.canLoad(cart, item);

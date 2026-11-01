@@ -45,6 +45,16 @@ const isTool = (item: IItem): boolean =>
 
 export class LoadoutSystem {
 
+  /** What a piece may be called aloud: until it is read, it has no name to say. */
+  static shownName(item: IItem): string {
+    return item.isIdentified === false ? 'Unidentified Signal' : item.name;
+  }
+
+  /** The refusal for working what has not been read. It says nothing of what the thing is. */
+  static unreadRefusal(item: IItem): Verdict {
+    return item.isIdentified === false ? no(`This signal won't answer until it's read.`) : OK;
+  }
+
   static emptyEquipment(): IEquipmentState {
     return { slots: {}, items: [], frames: {}, protected: [] };
   }
@@ -64,42 +74,42 @@ export class LoadoutSystem {
   /** Does this slot take this item? The refusal names the slot and the reason. */
   static slotAccepts(slotId: EquipSlotId, item: IItem): Verdict {
     if (item.slot === SlotType.NONE && !isTool(item)) {
-      return no(`${item.name} is cargo, not gear. No slot on the body takes it.`);
+      return no(`${this.shownName(item)} is cargo, not gear. No slot on the body takes it.`);
     }
 
     if (slotId.startsWith('TOOL_')) {
       return isTool(item) ? OK
-        : no(`The tool loop holds tools. ${item.name} isn't one.`);
+        : no(`The tool loop holds tools. ${this.shownName(item)} isn't one.`);
     }
     if (slotId.startsWith('POUCH_')) {
       return item.pouchData ? OK
-        : no(`A pouch knows what it stacks. ${item.name} doesn't.`);
+        : no(`A pouch knows what it stacks. ${this.shownName(item)} doesn't.`);
     }
 
     const body = slotId as BodySlotId;
     switch (body) {
-      case 'HEAD': return item.slot === SlotType.HEAD ? OK : no(`The HEAD takes a helm. ${item.name} won't stay on.`);
-      case 'EYES': return item.slot === SlotType.EYES ? OK : no(`The EYES take lenses. ${item.name} would only blind you.`);
+      case 'HEAD': return item.slot === SlotType.HEAD ? OK : no(`The HEAD takes a helm. ${this.shownName(item)} won't stay on.`);
+      case 'EYES': return item.slot === SlotType.EYES ? OK : no(`The EYES take lenses. ${this.shownName(item)} would only blind you.`);
       case 'RIGHT_HAND':
-        return item.slot === SlotType.MAIN_HAND ? OK : no(`The right hand wants a weapon or focus. ${item.name} is neither.`);
+        return item.slot === SlotType.MAIN_HAND ? OK : no(`The right hand wants a weapon or focus. ${this.shownName(item)} is neither.`);
       case 'LEFT_HAND':
         if (item.slot === SlotType.OFF_HAND) return OK;
         if (item.slot === SlotType.MAIN_HAND && (item.tags || []).includes('one_hand')) return OK;
-        if (item.slot === SlotType.MAIN_HAND) return no(`${item.name} wants both hands. The left can't hold it alone.`);
-        return no(`The left hand guards or balances. ${item.name} does neither.`);
-      case 'CHEST': return item.slot === SlotType.CHEST ? OK : no(`The CHEST wears armor. ${item.name} wouldn't cover much.`);
-      case 'LEGS': return item.slot === SlotType.LEGS ? OK : no(`The LEGS wear armor. ${item.name} isn't cut for them.`);
-      case 'BOOTS': return item.slot === SlotType.FEET ? OK : no(`BOOTS are for feet. ${item.name} doesn't walk.`);
-      case 'SHOULDER': return item.slot === SlotType.SHOULDER ? OK : no(`The SHOULDER carries a mantle. ${item.name} would slide off.`);
+        if (item.slot === SlotType.MAIN_HAND) return no(`${this.shownName(item)} wants both hands. The left can't hold it alone.`);
+        return no(`The left hand guards or balances. ${this.shownName(item)} does neither.`);
+      case 'CHEST': return item.slot === SlotType.CHEST ? OK : no(`The CHEST wears armor. ${this.shownName(item)} wouldn't cover much.`);
+      case 'LEGS': return item.slot === SlotType.LEGS ? OK : no(`The LEGS wear armor. ${this.shownName(item)} isn't cut for them.`);
+      case 'BOOTS': return item.slot === SlotType.FEET ? OK : no(`BOOTS are for feet. ${this.shownName(item)} doesn't walk.`);
+      case 'SHOULDER': return item.slot === SlotType.SHOULDER ? OK : no(`The SHOULDER carries a mantle. ${this.shownName(item)} would slide off.`);
       case 'BAG': return item.slot === SlotType.BAG && !item.pouchData ? OK
         : item.pouchData ? no(`A pouch rides the belt, not the back.`)
-        : no(`The back takes a pack. ${item.name} has no straps.`);
-      case 'NECKLACE': return item.slot === SlotType.NECKLACE ? OK : no(`The NECKLACE hangs from the neck. ${item.name} has no chain.`);
-      case 'EARRING': return item.slot === SlotType.EARRING ? OK : no(`An EARRING hangs from the ear. ${item.name} would tear it off.`);
+        : no(`The back takes a pack. ${this.shownName(item)} has no straps.`);
+      case 'NECKLACE': return item.slot === SlotType.NECKLACE ? OK : no(`The NECKLACE hangs from the neck. ${this.shownName(item)} has no chain.`);
+      case 'EARRING': return item.slot === SlotType.EARRING ? OK : no(`An EARRING hangs from the ear. ${this.shownName(item)} would tear it off.`);
       case 'RING_1':
-      case 'RING_2': return item.slot === SlotType.RING ? OK : no(`A finger takes a ring. ${item.name} doesn't fit around one.`);
-      case 'QUIVER': return item.slot === SlotType.QUIVER ? OK : no(`The QUIVER rides the back and holds arrows. ${item.name} holds none.`);
-      case 'BELT': return item.slot === SlotType.BELT ? OK : no(`The BELT goes around the waist. ${item.name} won't buckle.`);
+      case 'RING_2': return item.slot === SlotType.RING ? OK : no(`A finger takes a ring. ${this.shownName(item)} doesn't fit around one.`);
+      case 'QUIVER': return item.slot === SlotType.QUIVER ? OK : no(`The QUIVER rides the back and holds arrows. ${this.shownName(item)} holds none.`);
+      case 'BELT': return item.slot === SlotType.BELT ? OK : no(`The BELT goes around the waist. ${this.shownName(item)} won't buckle.`);
     }
     return no(`No such slot: ${slotId}.`);
   }
@@ -173,7 +183,7 @@ export class LoadoutSystem {
     for (const [attr, need] of Object.entries(reqs)) {
       const have = (attributes as any)[attr] ?? 0;
       if (have < (need as number)) {
-        return no(`Refused: ${item.name} asks ${attr.toUpperCase()} ${need}; you hold ${have}.`);
+        return no(`Refused: ${this.shownName(item)} asks ${attr.toUpperCase()} ${need}; you hold ${have}.`);
       }
     }
     return OK;
@@ -219,7 +229,7 @@ export class LoadoutSystem {
   static canSlotFrame(equipment: IEquipmentState, position: HeadPositionId, frameId: string): Verdict {
     if (!COGNITIVE_FRAMES[frameId]) return no(`No such frame: ${frameId}.`);
     const gear = this.itemIn(equipment, position);
-    if (gear) return no(`${position} holds ${gear.name}. Mind or matter; not both in one place.`);
+    if (gear) return no(`${position} holds ${this.shownName(gear)}. Mind or matter; not both in one place.`);
     const worn = this.frameCount(equipment);
     const replacing = !!equipment.frames[position];
     if (!replacing && worn >= MAX_FRAMES) {
@@ -280,14 +290,14 @@ export class LoadoutSystem {
   // ---------------------------------------------------------------------
 
   static canStow(pouch: IItem, item: IItem): Verdict {
-    if (!pouch.pouchData) return no(`${pouch.name} has no stacking rule. It is not a pouch.`);
+    if (!pouch.pouchData) return no(`${this.shownName(pouch)} has no stacking rule. It is not a pouch.`);
     const { accepts, capacity, contents } = pouch.pouchData;
     const tags = [item.type.toLowerCase(), ...(item.tags || [])];
     if (!accepts.some(a => tags.includes(a.toLowerCase()))) {
-      return no(`${pouch.name} stacks only ${accepts.join(', ')}. ${item.name} is not that.`);
+      return no(`${this.shownName(pouch)} stacks only ${accepts.join(', ')}. ${this.shownName(item)} is not that.`);
     }
     if (contents.length >= capacity) {
-      return no(`${pouch.name} holds ${capacity} and holds ${capacity} only. It is full.`);
+      return no(`${this.shownName(pouch)} holds ${capacity} and holds ${capacity} only. It is full.`);
     }
     return OK;
   }

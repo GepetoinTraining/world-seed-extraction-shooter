@@ -388,6 +388,8 @@ export interface ItemComparison { against: IItem | null; slot: EquipSlotId; resu
 export function comparisonFor(item: IItem, player: IPlayer | undefined): ItemComparison | null {
   const equipment = player?.equipment ?? LoadoutSystem.emptyEquipment();
   if (equipment.items.some(i => i.id === item.id)) return null;
+  // What has not been read has no slot to name: saying what it would replace says what it is.
+  if (item.isIdentified === false) return null;
   const home = LoadoutSystem.slotForItem(item, equipment);
   if (!home) return null;
   let slot: EquipSlotId = home;

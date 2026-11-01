@@ -205,7 +205,7 @@ export const PaperDoll: React.FC<{ unit?: number; compact?: boolean }> = ({ unit
               }}
               aria-label={
                 frameHere ? `${cell.slot}: ${frameHere.name} (cognitive frame)` :
-                itemHere ? `${cell.slot}: ${itemHere.name}` : `${cell.slot}: empty`
+                itemHere ? `${cell.slot}: ${LoadoutSystem.shownName(itemHere)}` : `${cell.slot}: empty`
               }
               style={{
                 position: 'absolute',
@@ -281,7 +281,7 @@ const SlotPicker: React.FC<{
         >
           <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <ItemSprite item={worn} cellPx={18} />
-            <span>{worn.name} <span className="ws-dim ws-small">— worn now</span></span>
+            <span>{LoadoutSystem.shownName(worn)} <span className="ws-dim ws-small">— worn now</span></span>
           </span>
           <Button tone="quiet" onClick={() => { const v = unequipFromSlot(slot); if (!v.ok && v.reason) onWord(v.reason); else onClose(); }}>UNEQUIP</Button>
         </div>
@@ -344,7 +344,7 @@ const SlotPicker: React.FC<{
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
               <ItemSprite item={item} cellPx={16} />
               <span style={{ minWidth: 0 }}>
-                <span className="t" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                <span className="t" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(item)}</span>
                 <span className="s">{item.weight}kg · {item.rank}</span>
               </span>
             </span>

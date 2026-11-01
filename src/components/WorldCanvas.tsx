@@ -1102,7 +1102,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (pickedUp.length > 0) {
           const { added, rejected } = usePlayerStore.getState().tryAddItems(pickedUp);
           if (added.length > 0) {
-            feed(`Recovered ${added.length === 1 ? added[0].name : `${added.length} items`}.`, 'proof');
+            feed(`Recovered ${added.length === 1 ? LoadoutSystem.shownName(added[0]) : `${added.length} items`}.`, 'proof');
             SessionJournal.record('LOOT', { itemIds: added.map((i: any) => i.id) });
           }
           if (rejected.length > 0) {

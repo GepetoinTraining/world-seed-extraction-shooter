@@ -46,6 +46,11 @@ const GROUND_ROWS = 2;
 /** What a piece most plainly wants: E, a double-click or a right-click (U6). */
 const packPrimary = (item: IItem) => {
   const st = usePlayerStore.getState();
+  // A signal may be tried on. Anything else it might be will not answer until it is read.
+  if (item.isIdentified === false && item.slot === SlotType.NONE && !item.tags?.includes('tool')) {
+    feed(LoadoutSystem.unreadRefusal(item).reason!, 'loss');
+    return;
+  }
   if (item.cartData) { void st.deployCart(item.id); return; }
   if (item.type === ItemType.CONSUMABLE && !item.charmData && !item.scrollData) { st.consumeItem(item.id); return; }
   if (item.slot !== SlotType.NONE || item.tags?.includes('tool')) { st.equipSwap(item.id); return; }
@@ -101,6 +106,8 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
   const items = session.inventory;
   const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
   const selectedItem = items.find(i => i.id === selected);
+  // What has not been read offers the same buttons whatever it is, so they tell nothing.
+  const read = !!selectedItem && selectedItem.isIdentified !== false;
   const pouchSlots = player.equipment
     ? LoadoutSystem.availableSlots(player.equipment).filter(s => s.startsWith('POUCH_') && player.equipment!.slots[s])
     : [];
@@ -143,11 +150,12 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             <div className="ws-bright ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {selectedItem.isIdentified === false ? 'Unidentified Signal' : selectedItem.name}
             </div>
-            {selectedItem.type === ItemType.CONSUMABLE && !selectedItem.charmData && !selectedItem.scrollData && (
+            {!read && <Button tone="proof" onClick={() => packPrimary(selectedItem)}>TRY IT</Button>}
+            {read && selectedItem.type === ItemType.CONSUMABLE && !selectedItem.charmData && !selectedItem.scrollData && (
               <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>USE</Button>
             )}
             {/* Wave 10E (D21): insurance is spent, not eaten — the magic names what it keeps */}
-            {(selectedItem.charmData || selectedItem.scrollData) && (
+            {read && (selectedItem.charmData || selectedItem.scrollData) && (
               (selectedItem.charmData ?? selectedItem.scrollData)!.chosen ? (
                 invoking === selectedItem.id ? (
                   Object.keys(player.equipment?.slots ?? {}).filter(s => player.equipment!.slots[s as EquipSlotId]).map(slot => (
@@ -185,14 +193,14 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                     setIdentifying(cur => (cur?.id === selectedItem.id ? null : cur));
                   }, ask.seconds! * 1000);
                 }}>
-                  IDENTIFY · {StudySystem.identifySeconds(StudySystem.identifyLevel(player, selectedItem))}s
+                  {read ? `IDENTIFY · ${StudySystem.identifySeconds(StudySystem.identifyLevel(player, selectedItem))}s` : 'IDENTIFY'}
                 </Button>
               )
             )}
-            {selectedItem.type === ItemType.LORE && selectedItem.description && (
+            {read && selectedItem.type === ItemType.LORE && selectedItem.description && (
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
             )}
-            {(selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool')) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
+            {read && (selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool')) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
               <Button tone="proof" onClick={() => {
                 const v = usePlayerStore.getState().equipSwap(selectedItem.id);
                 if (v.ok) setSelected(null);
@@ -200,7 +208,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 EQUIP
               </Button>
             )}
-            {selectedItem.cartData && (
+            {read && selectedItem.cartData && (
               <Button tone="proof" onClick={() => { void usePlayerStore.getState().deployCart(selectedItem.id); setSelected(null); }}>
                 UNFOLD CART
               </Button>
@@ -211,7 +219,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 <Button
                   key={slot}
                   tone="quiet"
-                  title={`${pouch.name}: stacks ${pouch.pouchData?.accepts.join(', ')}`}
+                  title={`${LoadoutSystem.shownName(pouch)}: stacks ${pouch.pouchData?.accepts.join(', ')}`}
                   onClick={() => {
                     const v = usePlayerStore.getState().stowInPouch(slot, selectedItem.id);
                     if (v.ok) setSelected(null);

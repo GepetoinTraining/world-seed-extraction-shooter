@@ -41,7 +41,7 @@ export function wieldRefusal(item: IItem | undefined): string | null {
   if (!item) return null;
   if (item.slot === SlotType.MAIN_HAND) return null;
   if (item.slot === SlotType.TOOL || (item.tags || []).includes('tool')) return null;
-  return `${item.name} guards. It does not swing.`;
+  return `${LoadoutSystem.shownName(item)} guards. It does not swing.`;
 }
 
 // ---------------------------------------------------------------------------

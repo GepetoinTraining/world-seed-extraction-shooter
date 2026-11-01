@@ -18,7 +18,7 @@
  */
 
 import { IItem, IPlayer, ItemType, SlotType } from '../../../types';
-import { Verdict } from '../../entities/player/systems/LoadoutSystem';
+import { LoadoutSystem, Verdict } from '../../entities/player/systems/LoadoutSystem';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
 export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';
@@ -67,7 +67,7 @@ export class StudySystem {
   /** The field obeys only an earned, matching scope — the refusal says where to earn it. */
   static canFieldIdentify(player: IPlayer, item: IItem): Verdict {
     const scope = this.identifyScopeOf(item);
-    if (!scope) return no(`${item.name} holds no maker's riddle. There is nothing to identify.`);
+    if (!scope) return no(`${LoadoutSystem.shownName(item)} holds no maker's riddle. There is nothing to identify.`);
     const level = this.identifyLevel(player, item);
     if (level < 1) {
       return no(`Your eye is not schooled for ${scope}. Study ${scope} pieces at a workstation, time and again, and the field will obey.`);

@@ -1289,11 +1289,12 @@ describe('what has not been read cannot be worked, and does not give itself away
     expect(SRC('src/components/ui/HoverLayer.tsx')).toMatch(/item\.isIdentified === false \? undefined : <RankMark/);
   });
 
-  it('an eye not yet schooled refuses without naming the kind', () => {
+  // Registered at first to hide the kind too. Line 55's approved bar in tests/affixes.test.ts says the
+  // refusal names its scope, so that clause was withdrawn, on the record: the name stays hidden, the kind does not.
+  it('an eye not yet schooled refuses without saying the name', () => {
     field([kit()]);
     const asked = store().fieldIdentify('sig_kit');
     expect(asked.ok).toBe(false);
-    expect(asked.reason).not.toMatch(/\btool\b/);
     expect(asked.reason).not.toContain(SECRET);
     expect(asked.reason).toMatch(/not schooled/);
   });

@@ -184,6 +184,7 @@ const INITIAL_PLAYER_TEMPLATE: IPlayer = {
 };
 
 let cacheSeq = 0;
+const shown = LoadoutSystem.shownName.bind(LoadoutSystem);
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   player: INITIAL_PLAYER_TEMPLATE,
@@ -358,12 +359,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!item) return { ok: false, reason: 'No such item within reach.' };
 
     const target = slotId ?? LoadoutSystem.slotForItem(item, equipment);
-    if (!target) return { ok: false, reason: `${item.name} has no slot on the body.` };
+    if (!target) return { ok: false, reason: `${shown(item)} has no slot on the body.` };
 
     const occupant = equipment.slots[target];
     if (occupant && occupant !== itemId) {
       const holder = equipment.items.find(i => i.id === occupant);
-      const verdict = { ok: false, reason: `${target} holds ${holder?.name ?? 'something'}. Unequip it first.` };
+      const verdict = { ok: false, reason: `${target} holds ${holder ? shown(holder) : 'something'}. Unequip it first.` };
       feed(verdict.reason, 'loss');
       return verdict;
     }
@@ -413,7 +414,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       };
     });
     get().recalcWeight();
-    feed(`Equipped ${item.name} — ${target.replace('_', ' ')}.`, 'proof');
+    feed(`Equipped ${shown(item)} — ${target.replace('_', ' ')}.`, 'proof');
     return { ok: true };
   },
 
@@ -429,7 +430,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const target = slotId ?? LoadoutSystem.slotForItem(item, equipment);
     if (!target) {
-      const v = { ok: false, reason: `${item.name} has no slot on the body.` };
+      const v = { ok: false, reason: `${shown(item)} has no slot on the body.` };
       feed(v.reason, 'loss');
       return v;
     }
@@ -465,7 +466,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         return { player: { ...s.player, equipment: { ...eq, slots: { ...eq.slots, [target]: itemId, [currentSlot]: holder.id } } } };
       });
       get().recalcWeight();
-      feed(`${item.name} and ${holder.name} trade places.`, 'proof');
+      feed(`${shown(item)} and ${shown(holder)} trade places.`, 'proof');
       return { ok: true };
     }
 
@@ -478,14 +479,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const newBag = target === 'BAG' ? (item.stats?.carry_bonus_kg ?? 0) : LoadoutSystem.bagCapacityBonus(equipment);
       const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag;
       const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([holder]);
-      if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${holder.name} still.` });
+      if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${shown(holder)} still.` });
       const occ = InventorySystem.buildOccupancy(inv, layout);
       const here = oldPlace && (() => {
         const { w, h } = InventorySystem.footprint(holder, oldPlace.rotated);
         return InventorySystem.canPlaceAt(occ, w, h, oldPlace.x, oldPlace.y) ? oldPlace : null;
       })();
       const place = here || InventorySystem.autoPlace(inv, layout, holder);
-      if (!place) return say({ ok: false, reason: `The pack refuses ${holder.name}: no room in the grid. The harness holds it still.` });
+      if (!place) return say({ ok: false, reason: `The pack refuses ${shown(holder)}: no room in the grid. The harness holds it still.` });
       layout[holder.id] = place;
       set(s => {
         const eq = s.player.equipment!;
@@ -520,7 +521,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       });
     }
     get().recalcWeight();
-    feed(`Equipped ${item.name} — ${target.replace('_', ' ')}. ${holder.name} comes off.`, 'proof');
+    feed(`Equipped ${shown(item)} — ${target.replace('_', ' ')}. ${shown(holder)} comes off.`, 'proof');
     return { ok: true };
   },
 
@@ -532,7 +533,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { w, h } = InventorySystem.footprint(item, rotated);
     const occ = InventorySystem.buildOccupancy(session.inventory, layout);
     if (!InventorySystem.canPlaceAt(occ, w, h, x, y, itemId)) {
-      return { ok: false, reason: `The pack has no room there. ${item.name} stays where it was.` };
+      return { ok: false, reason: `The pack has no room there. ${shown(item)} stays where it was.` };
     }
     set(s => s.player.currentSession ? ({
       player: { ...s.player, currentSession: {
@@ -550,7 +551,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const layout = StashGrid.resolve(tab.items, tab.layout);
     const { w, h } = InventorySystem.footprint(item, rotated);
     if (!StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y)) {
-      return { ok: false, reason: `The vault has something there. ${item.name} stays where it was.` };
+      return { ok: false, reason: `The vault has something there. ${shown(item)} stays where it was.` };
     }
     layout[itemId] = { x, y, rotated };
     set(s => ({
@@ -579,7 +580,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!entity || !inside || !item) return { ok: false, reason: 'Nothing of that name in the cache.' };
     const { added } = get().tryAddItems([item]);
     if (added.length === 0) {
-      const v = { ok: false, reason: `The pack refuses ${item.name}. It stays in the cache.` };
+      const v = { ok: false, reason: `The pack refuses ${shown(item)}. It stays in the cache.` };
       feed(v.reason, 'loss');
       return v;
     }
@@ -632,7 +633,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const maxW = InventorySystem.maxCarryWeight(player.attributes.strength) + bagBonus;
       const weight = InventorySystem.totalWeight(session.inventory) + InventorySystem.totalWeight(coming);
       if (weight > maxW) {
-        const v = { ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${maxW} kg. The harness holds ${item.name} still.` };
+        const v = { ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${maxW} kg. The harness holds ${shown(item)} still.` };
         feed(v.reason, 'loss');
         return v;
       }
@@ -641,7 +642,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       for (const c of coming) {
         const place = InventorySystem.autoPlace(inv, layout, c);
         if (!place) {
-          const v = { ok: false, reason: `The pack refuses ${c.name}: no room in the grid. The harness holds it still.` };
+          const v = { ok: false, reason: `The pack refuses ${shown(c)}: no room in the grid. The harness holds it still.` };
           feed(v.reason, 'loss');
           return v;
         }
@@ -679,7 +680,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       });
     }
     get().recalcWeight();
-    feed(`Unequipped ${item.name}${coming.length > 1 ? ` and ${coming.length - 1} pouch${coming.length > 2 ? 'es' : ''}` : ''}.`, 'plain');
+    feed(`Unequipped ${shown(item)}${coming.length > 1 ? ` and ${coming.length - 1} pouch${coming.length > 2 ? 'es' : ''}` : ''}.`, 'plain');
     return { ok: true };
   },
 
@@ -713,6 +714,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const source = inSession ? player.currentSession!.inventory : (player.bank.stashTabs[0]?.items ?? []);
     const item = source.find(i => i.id === itemId);
     if (!item) return { ok: false, reason: 'No such item within reach.' };
+    const unread = LoadoutSystem.unreadRefusal(item);
+    if (!unread.ok) { feed(unread.reason!, 'loss'); return unread; }
     if (!item.charmData && !item.scrollData) return { ok: false, reason: `${item.name} holds no keeping magic.` };
 
     const occupied = Object.entries(equipment.slots)
@@ -897,7 +900,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return { player: { ...s.player, equipment: { ...eq, items }, currentSession, bank: { ...s.player.bank, stashTabs } } };
     });
     get().recalcWeight();
-    feed(`${item.name} rides the ${pouch.name}.`, 'plain');
+    feed(`${shown(item)} rides the ${shown(pouch)}.`, 'plain');
     return { ok: true };
   },
 
@@ -917,10 +920,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const bagBonus = LoadoutSystem.bagCapacityBonus(equipment);
       const maxW = InventorySystem.maxCarryWeight(player.attributes.strength) + bagBonus;
       if (InventorySystem.totalWeight(session.inventory) + (item.weight || 0) > maxW) {
-        return { ok: false, reason: `The pack refuses the weight of ${item.name}.` };
+        return { ok: false, reason: `The pack refuses the weight of ${shown(item)}.` };
       }
       const place = InventorySystem.autoPlace(session.inventory, session.inventoryLayout || {}, item);
-      if (!place) return { ok: false, reason: `The pack refuses ${item.name}: no room in the grid.` };
+      if (!place) return { ok: false, reason: `The pack refuses ${shown(item)}: no room in the grid.` };
       set(s => {
         const eq = s.player.equipment!;
         const items = eq.items.map(i => i.id === pouch.id
@@ -997,6 +1000,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const session = state.player.currentSession;
     if (!session) return { ok: false, reason: 'A cart unfolds in the field, nowhere else.' };
     const item = session.inventory.find(i => i.id === itemId);
+    if (item) {
+      const unread = LoadoutSystem.unreadRefusal(item); // Pedro's run: it unfolded before anyone had read it
+      if (!unread.ok) { feed(unread.reason!, 'loss'); return unread; }
+    }
     if (!item?.cartData) return { ok: false, reason: 'That does not unfold into a cart.' };
 
     const world = useWorldStore.getState();
@@ -1133,7 +1140,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     world.updateEntity(entityId, { cart: loaded });
     get().recalcWeight();
     SessionJournal.record('INTERACT', { kind: 'CART_LOAD', entityId, itemId });
-    feed(`${item.name} onto the cart bed. The pack breathes; the tow bar will not.`, 'plain');
+    feed(`${shown(item)} onto the cart bed. The pack breathes; the tow bar will not.`, 'plain');
     void get().persistCarts();
     return { ok: true };
   },
@@ -1150,7 +1157,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const { added, rejected } = get().tryAddItems([item]);
     if (rejected.length > 0 || added.length === 0) {
-      const v = { ok: false, reason: `The pack refuses ${item.name} — space or weight. It stays aboard.` };
+      const v = { ok: false, reason: `The pack refuses ${shown(item)} — space or weight. It stays aboard.` };
       feed(v.reason, 'loss');
       return v;
     }
@@ -1450,7 +1457,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       get().recalcWeight();
     }
     if (rejected.length > 0) {
-      console.log(`[CARRY] ${rejected.length} item(s) refused: ${rejected.map(i => i.name).join(', ')} (space or weight)`);
+      console.log(`[CARRY] ${rejected.length} item(s) refused: ${rejected.map(shown).join(', ')} (space or weight)`);
     }
     return { added, rejected };
   },
@@ -1494,7 +1501,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: state.player.id }
     });
     SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
-    feed(`Left behind: ${item.name}. The cache is still yours, if you come back for it.`, 'plain');
+    feed(`Left behind: ${shown(item)}. The cache is still yours, if you come back for it.`, 'plain');
   },
 
   /**
@@ -1568,6 +1575,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const session = get().player.currentSession;
     const item = session?.inventory.find(i => i.id === itemId);
     if (!session || !item || item.type !== ItemType.CONSUMABLE) return;
+    const unread = LoadoutSystem.unreadRefusal(item);
+    if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
 
     const restore = item.stats?.health_restore || 0;
     const health = Math.max(1, Math.min(session.maxHealth, session.health + restore));
@@ -1796,7 +1805,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           if (left.length === 0) world.removeEntity(entity.id);
           else world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
           SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
-          feed(`Recovered ${taken.length === 1 ? taken[0].name : `${taken.length} items`}.`, 'proof');
+          feed(`Recovered ${taken.length === 1 ? shown(taken[0]) : `${taken.length} items`}.`, 'proof');
         }
         if (rejected.length > 0) feed(`The pack refuses ${rejected.length}; ${rejected.length === 1 ? 'it stays' : 'they stay'} in the cache.`, 'loss');
         return;

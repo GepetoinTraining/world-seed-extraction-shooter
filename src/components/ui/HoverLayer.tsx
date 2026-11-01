@@ -63,7 +63,7 @@ export const HoverLayer: React.FC = () => {
   const r = el.getBoundingClientRect();
   return (
     <PlacedCard anchor={{ left: r.left, top: r.top, width: r.width, height: r.height }} layoutKey={`${item.id}:${card.compare ? 1 : 0}`}>
-      <CardView card={card.card} right={<RankMark rank={String(item.rank)} scale={2} />}>
+      <CardView card={card.card} right={item.isIdentified === false ? undefined : <RankMark rank={String(item.rank)} scale={2} />}>
         {card.compare && <CompareView compare={card.compare} />}
       </CardView>
     </PlacedCard>

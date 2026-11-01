@@ -34,7 +34,7 @@ export function activateHotbar(slot: EquipSlotId) {
     return;
   }
   useHotbar.getState().setActive(slot);
-  useFeed.getState().push(item ? `${item.name} in hand.` : 'Bare hands.', 'plain');
+  useFeed.getState().push(item ? `${LoadoutSystem.shownName(item)} in hand.` : 'Bare hands.', 'plain');
 }
 
 export const Hotbar: React.FC = () => {
@@ -65,7 +65,7 @@ export const Hotbar: React.FC = () => {
               type="button"
               data-drop-slot={cell.slot}
               {...(item ? hoverProps(item) : {})}
-              aria-label={`${cell.slot.replace('_', ' ')}: ${item?.name ?? 'empty'}${cell.digit ? `, key ${cell.digit}` : ''}`}
+              aria-label={`${cell.slot.replace('_', ' ')}: ${item ? LoadoutSystem.shownName(item) : 'empty'}${cell.digit ? `, key ${cell.digit}` : ''}`}
               aria-pressed={cell.group === 'BELT' ? undefined : isActive}
               onPointerDown={e => { if (item) pressItem(e, { item, from: { kind: 'SLOT', slot: cell.slot } }); }}
               onClick={e => {

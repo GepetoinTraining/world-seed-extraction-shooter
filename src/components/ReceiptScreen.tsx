@@ -53,7 +53,7 @@ export const ReceiptScreen: React.FC = () => {
         {receipt.haul.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0', alignItems: 'flex-end' }}>
             {receipt.haul.slice(0, 24).map(item => (
-              <ItemSprite key={item.id} item={died ? item : { ...item, isIdentified: true }} cellPx={22} title={item.name} />
+              <ItemSprite key={item.id} item={died ? item : { ...item, isIdentified: true }} cellPx={22} title={died && item.isIdentified === false ? 'Unidentified Signal' : item.name} />
             ))}
             {receipt.haul.length > 24 && <span className="ws-dim ws-small">+{receipt.haul.length - 24} more</span>}
           </div>
