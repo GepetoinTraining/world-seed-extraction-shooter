@@ -23,6 +23,7 @@ import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { WebBank } from '../../logic/content/WebBank';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet, sizeNeedsVerdict, templateBill } from './template';
+import type { IClosedWeek } from '../../logic/economy/ShopWeek';
 
 /** Who holds a lot the guild bought. It is nobody's to sell, split or lose. */
 export const GUILD_OWNER_ID = 'GUILD';
@@ -114,6 +115,10 @@ export interface IGuildState {
   printed: { count: number; total: number };
   /** The world-day the hub has paid its running through. Unset: nothing owed from before this was kept. */
   runningDay?: number;
+  /** D115: the week its shelves are open on. Unset: nothing owed from before this was kept. */
+  week?: number;
+  /** How the last week closed, for the Hall's books. */
+  lastWeek?: IClosedWeek;
   residents: IResident[];
   quests: IResidentQuest[];
   maps: IHandedMap[];

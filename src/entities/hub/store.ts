@@ -50,13 +50,14 @@ import {
   GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
-import { EMPTY_LOT_PER_DAY, IRunningBook, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, walletBrought } from './money';
+import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, taxBook, walletBrought } from './money';
+import { IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
 import { Wallets } from '../../logic/economy/Wallets';
 import { Anchors } from '../../logic/economy/Anchors';
 
 import { IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/systems/VendorSystem';
 import { ApprenticeRoad, ICraftsman, generalKeepers } from '../../logic/systems/ApprenticeRoad';
-import { workTools } from '../../logic/systems/SalvageSystem';
+import { SalvageSystem, workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../logic/systems/TalkTypes';
@@ -85,9 +86,47 @@ const marketItems = (s: Pick<HubState, 'lots' | 'rooms' | 'vendors' | 'guild'>):
   ];
 };
 
-/** What the running cost reads: the city as it stands, its web, and what is in it. */
-const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web' | 'rooms' | 'vendors' | 'guild'>) =>
-  ({ layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web, items: marketItems(s) });
+/** D115: what each unit left on a line comes apart into. */
+const salvageLine = (line: IShopListing, key: string): { parts: IItem[]; loss: number } => {
+  const parts: IItem[] = [];
+  let loss = 0;
+  for (let i = 0; i < line.stock; i++) {
+    const came = SalvageSystem.components({ ...line.item, id: `${line.item.id}_${key}_${i}` }, `${key}:${line.id}:${i}`);
+    if (!came) continue;
+    parts.push(...came);
+    loss += ShopWeek.lossOf(line.price, came.reduce((sum, part) => sum + (part.value || 0), 0));
+  }
+  return { parts, loss };
+};
+
+/** A shelf is rolled afresh only when its week or its stock moves, so reading the same one twice costs nothing. */
+const shelfLossSeen = new WeakMap<IShopListing[], number>();
+const shelfLoss = (lines: IShopListing[]): number => {
+  const seen = shelfLossSeen.get(lines);
+  if (seen !== undefined) return seen;
+  const loss = lines.filter(l => !l.held).reduce((sum, line) => sum + salvageLine(line, 'expected').loss, 0);
+  shelfLossSeen.set(lines, loss);
+  return loss;
+};
+
+const SHELF_OF = { [SHOP_VENDOR.weapon]: 'weaponShop', [SHOP_VENDOR.armor]: 'armorShop', [SHOP_VENDOR.consumable]: 'consumableShop' } as const;
+
+/** Who is paid at this keeper's bench, and what. A master has a shop of their own. */
+const benchPay = (craftsmen: ICraftsman[], npcId: string): { deltas: Record<string, number>; total: number } => {
+  const deltas: Record<string, number> = {};
+  for (const person of craftsmen) {
+    if (person.masterId === npcId && person.rank !== 'MASTER') deltas[residentIdOf(person.bond)] = ShopWeek.apprenticePay(person.bond.rank);
+  }
+  return { deltas, total: Object.values(deltas).reduce((sum, n) => sum + n, 0) };
+};
+
+/** What the shops' week comes to as they stand, if nobody comes: the shelves coming apart, and their people. */
+const weekCostOf = (s: Pick<HubState, 'weaponShop' | 'armorShop' | 'consumableShop' | 'craftsmen'>): number =>
+  Object.entries(SHELF_OF).reduce((sum, [npcId, shelf]) => sum + shelfLoss(s[shelf]) + benchPay(s.craftsmen, npcId).total, 0);
+
+/** What the running cost reads: the city as it stands, its web, what is in it, and its shops. */
+const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web' | 'rooms' | 'vendors' | 'guild' | 'weaponShop' | 'armorShop' | 'consumableShop' | 'craftsmen'>) =>
+  ({ layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web, items: marketItems(s), weekCost: weekCostOf(s) });
 
 /** D115: one signed row per print, each of them 14 days of what the hub runs on. */
 const printRows = (hubId: string, perDay: number, prints: number, why: string): { type: 'PRINT'; data: Record<string, any> }[] =>
@@ -125,6 +164,8 @@ export interface IPlayerLot {
   shopListings?: { item: IItem; price: number; ask?: { defId: string; name: string } }[];
   // D115: anchors a shelf took in place of coin, held until its owner collects them
   heldInTrade?: IItem[];
+  // D115: the week its general tax is paid through. Unset: it owes from the week now open.
+  taxPaidWeek?: number;
   // Wave 5.4: upkeep is charged per world-day; unpaid lots revert to market
   upkeepPaidThroughDay?: number;
   // Sale money held on the lot until its owner collects it
@@ -382,8 +423,14 @@ interface HubState extends ITechDoors {
   /** D115: the days the hub has not yet paid for, paid into its people's wallets. It prints when it must. */
   resolveRunning: (simDay?: number) => Promise<void>;
   runningNow: () => number;
-  /** Each building's upkeep, and the web per tile it comes from. */
+  /** Each building's upkeep, the shops' week, and the web per tile. */
   runningBook: () => IRunningBook;
+  /** D115: who holds what outside the centre, and what they pay a week. */
+  taxBook: () => { techPerTile: number; lots: ITaxLine[] };
+  /** D115: the weeks gone by: each shop's book settled with the guild, wages paid, the general tax collected. */
+  closeWeeks: (day: number) => Promise<void>;
+  /** What this counter pays for this piece: more for a kind it has seen selling. */
+  offerFor: (item: IItem, npcId?: string) => number;
   /** D8: give what you hold toward someone's house. When the bill is met, the clock starts. */
   poolToHouse: (residentId: string, tag: string, itemIds: string[]) => Promise<RoomVerdict>;
   /** A house finished: the person is home, and their skills join the hub's web. */
@@ -578,6 +625,105 @@ export const useHubStore = create<HubState>((set, get) => ({
 
   runningBook: () => runningBook(cityOf(get())),
 
+  taxBook: () => taxBook(cityOf(get())),
+
+  offerFor: (item, npcId = COUNTER_NPC) => {
+    const offer = StatSystem.vendorOffer(item.value, usePlayerStore.getState().player.attributes);
+    return Math.ceil(offer * VendorSystem.choiceFactor(get().vendors[npcId], item.universalDefinitionId, worldDay()));
+  },
+
+  closeWeeks: async (day) => {
+    const target = ShopWeek.weekOf(day);
+    for (;;) {
+      const { activeHubId, guild } = get();
+      if (!activeHubId) return;
+      if (guild.week === undefined) {
+        set({ guild: { ...guild, week: target } });
+        await get().saveHubState();
+        return;
+      }
+      if (guild.week >= target) return;
+      const week = guild.week;
+      const balance = await Treasury.balance(activeHubId);
+
+      // The treasury's read was the only wait. From here to the commit there is none.
+      const state = get();
+      const { perDay } = runningBook(cityOf(state));
+      const vendors = vendorsToday(state.vendors, state.craftsmen, day);
+      const deltas: Record<string, number> = {};
+      const add = (who: string, amount: number) => { deltas[who] = (deltas[who] ?? 0) + amount; };
+      const shops: IShopWeekLine[] = [];
+      for (const [npcId, shelf] of Object.entries(SHELF_OF)) {
+        const record = vendors[npcId];
+        const unsold = state[shelf].filter(l => !l.held).map(line => salvageLine(line, `${activeHubId}:${npcId}:${week}`));
+        const book = { ...record.book, loss: record.book.loss + unsold.reduce((sum, u) => sum + u.loss, 0) };
+        const pay = benchPay(state.craftsmen, npcId);
+        const settled = ShopWeek.settle(book, pay.total);
+        for (const [who, amount] of Object.entries(pay.deltas)) add(who, amount);
+        if (settled.toKeeper > 0) add(npcId, settled.toKeeper);
+        shops.push({ npcId, ...book, pay: pay.total, ...settled });
+        vendors[npcId] = VendorSystem.closeWeek(record, day, unsold.flatMap(u => u.parts));
+      }
+      const paidOut = shops.reduce((sum, s) => sum + s.pay + s.toKeeper, 0);
+
+      // The general tax: everyone but the centre. Whoever cannot pay it in full owes it still, and keeps their ground.
+      const taxRows: { type: 'GOLD_DELTA' | 'TRADE'; data: Record<string, any> }[] = [];
+      const me = usePlayerStore.getState().player;
+      let gold = me.bank.gold;
+      let taxIn = 0;
+      let lots = state.lots;
+      for (const line of taxBook(cityOf(state)).lots) {
+        const lot = lots.find(l => l.id === line.lotId)!;
+        const owed = line.perWeek * (week - (lot.taxPaidWeek ?? week - 1));
+        const resident = lot.ownerId === GUILD_OWNER_ID ? state.guild.residents.find(r => r.lotId === lot.id) : undefined;
+        const held = lot.ownerId === me.id ? gold : resident ? (state.wallets[resident.id] ?? 0) + (deltas[resident.id] ?? 0) : -1;
+        if (held < owed) {
+          lots = lots.map(l => l.id === lot.id ? { ...l, taxPaidWeek: lot.taxPaidWeek ?? week - 1 } : l);
+          continue;
+        }
+        if (owed > 0) {
+          taxIn += owed;
+          if (resident) {
+            add(resident.id, -owed);
+            taxRows.push({ type: 'TRADE', data: { kind: 'CITY_TAX', week, lotId: lot.id, residentId: resident.id, playerDelta: 0, treasuryDelta: owed, wallets: { [resident.id]: -owed } } });
+          } else {
+            gold -= owed;
+            taxRows.push({ type: 'GOLD_DELTA', data: { reason: 'CITY_TAX', week, lotId: lot.id, tiles: line.tiles, amount: -owed, treasuryId: activeHubId, treasuryDelta: owed } });
+          }
+        }
+        lots = lots.map(l => l.id === lot.id ? { ...l, taxPaidWeek: week } : l);
+      }
+
+      const prints = printsNeeded(balance + taxIn, paidOut, perDay);
+      const made = prints * printAmount(perDay);
+      const shopDeltas = Object.fromEntries(shops.flatMap(s => [
+        ...(s.toKeeper > 0 ? [[s.npcId, s.toKeeper]] : []),
+        ...Object.entries(benchPay(state.craftsmen, s.npcId).deltas)
+      ]));
+      if (gold !== me.bank.gold) usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold } } }));
+      set({
+        vendors, lots,
+        guild: { ...state.guild, week: week + 1, printed: printedPlus(state.guild, prints, made), lastWeek: { week, shops, tax: taxIn } }
+      });
+      await GoldCommit.commit({
+        rows: [
+          ...taxRows,
+          ...printRows(activeHubId, perDay, prints, 'SHOP_WEEK'),
+          { type: 'GOLD_DELTA', data: {
+            reason: 'SHOP_WEEK', week, amount: 0, loss: shops.reduce((sum, s) => sum + s.loss, 0), shops,
+            treasuryId: activeHubId, treasuryDelta: -paidOut, wallets: shopDeltas
+          } }
+        ],
+        treasury: { worldUid: activeHubId, delta: taxIn + made - paidOut },
+        wallets: { hubId: activeHubId, deltas },
+        hubDoc: get().hubDoc() ?? undefined
+      });
+      set({ wallets: await Wallets.allOf(activeHubId) });
+      get().generateDailyStock();
+      if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
+    }
+  },
+
   settleWallets: async () => {
     const { activeHubId, guild, craftsmen } = get();
     if (!activeHubId) return;
@@ -603,13 +749,17 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (guild.runningDay === undefined) {
       set({ guild: { ...guild, runningDay: day } });
       await get().saveHubState();
+      await get().closeWeeks(day);
       return;
     }
     const days = day - guild.runningDay;
-    if (days <= 0) return;
+    if (days <= 0) {
+      await get().closeWeeks(day);
+      return;
+    }
 
-    const { lines, perDay } = runningBook(cityOf(get()));
-    const { prints, paid } = foldDays(await Treasury.balance(activeHubId), perDay, days);
+    const { lines, floorPerDay, perDay } = runningBook(cityOf(get()));
+    const { prints, paid } = foldDays(await Treasury.balance(activeHubId), floorPerDay, days, perDay);
     const deltas: Record<string, number> = {};
     for (const line of lines) deltas[line.who] = (deltas[line.who] ?? 0) + line.amount * days;
 
@@ -619,7 +769,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     await GoldCommit.commit({
       rows: [
         ...printRows(activeHubId, perDay, prints, 'THE_DAYS'),
-        { type: 'GOLD_DELTA', data: { reason: 'HUB_RUNNING', amount: 0, days, perDay, treasuryId: activeHubId, treasuryDelta: -paid, wallets: deltas } }
+        { type: 'GOLD_DELTA', data: { reason: 'HUB_RUNNING', amount: 0, days, perDay: floorPerDay, treasuryId: activeHubId, treasuryDelta: -paid, wallets: deltas } }
       ],
       treasury: { worldUid: activeHubId, delta: made - paid },
       wallets: { hubId: activeHubId, deltas },
@@ -627,6 +777,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     set({ wallets: await Wallets.allOf(activeHubId) });
     if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
+    await get().closeWeeks(day);
   },
 
   resolveVendors: async () => {
@@ -777,7 +928,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'SHOP_PURCHASE', itemId: row.item.id, defId: row.item.universalDefinitionId, amount: -price, traderId, wallets: deltas } }],
       wallets: { hubId: activeHubId, deltas }
     });
-    set({ vendors: { ...vendors, [traderId]: VendorSystem.recordSale(taken, listingId, today, 1, row.item.universalDefinitionId) } });
+    set({ vendors: { ...vendors, [traderId]: VendorSystem.recordSale(taken, listingId, today, 1, row.item.universalDefinitionId, price) } });
     await get().saveHubState();
     return row.item;
   },
@@ -2036,7 +2187,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
     if (!item) return null;
 
-    const offer = StatSystem.vendorOffer(item.value, p.attributes);
+    const offer = get().offerFor(item, npcId);
     const perDay = runningPerDay(cityOf(get()));
     const prints = printsNeeded(await Treasury.balance(activeHubId), offer, perDay);
     const made = prints * printAmount(perDay);
@@ -2063,7 +2214,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     // What the counter bought is in its container now. Whether it ever goes on sale is the vendor's call.
     const today = Math.floor(Date.now() / 86_400_000);
     const all = vendorsToday(get().vendors, get().craftsmen, today);
-    set({ vendors: { ...all, [npcId]: VendorSystem.receive(all[npcId], item, today) } });
+    set({ vendors: { ...all, [npcId]: VendorSystem.receive(all[npcId], item, today, offer) } });
     await get().saveHubState();
     console.log(`[VENDOR] Sold ${item.name} for ${offer}G (treasury-funded).`);
     return offer;
@@ -2287,10 +2438,12 @@ export const useHubStore = create<HubState>((set, get) => ({
 
 
   generateDailyStock: () => {
-    // Procedural Shop Generation — keyed by hub + UTC day, so stock is the
-    // same for every client of this hub today, and rolls over at midnight.
+    // Procedural Shop Generation — keyed by hub + the week it is open on (D115), so stock is
+    // the same for every client of this hub, and rolls over when the week closes. What each
+    // line then holds is the vendor's: what sold, and a new attempt (VendorSystem.shelf).
     const hubId = get().activeHubId || 'hub_unknown';
     const dayIndex = Math.floor(Date.now() / 86_400_000);
+    const week = get().guild.week ?? ShopWeek.weekOf(dayIndex);
 
     // Wave 10C fix: `batch` keeps listing ids unique when the same type+rank
     // appears twice on one shelf (two rows sharing an id bought the wrong one)
@@ -2303,7 +2456,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       VendorSystem.shelf(vendors[npcId], rolled, dayIndex, ApprenticeRoad.labor(get().craftsmen, npcId));
     const generateStock = (rank: UniversalRank, count: number, type: 'weapon' | 'armor' | 'tool', pinned: string[] = [], batch = '') => {
       return Array.from({ length: count }, (_, i) => {
-        const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:${type}:${rank}:${batch}:${i}`);
+        const rng = Rng.fromKey(`${hubId}:shop:${week}:${type}:${rank}:${batch}:${i}`);
         const item = ItemFactory.createItem(rank, true, rng, type, pinned[i], shelfPool);
         return {
           id: `listing_${type}_${rank}${batch ? `_${batch}` : ''}_${i}`,
@@ -2327,7 +2480,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.F, 3, 'tool', SHELF.carrier, 'carrier'),
         // D27: every tool a web batch added is on the shelf, by its own keyed stream, so no older roll moves
         ...WebBank.current().tools.filter(t => !t.existing).map(tool => {
-          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:web_tool:${tool.id}`);
+          const rng = Rng.fromKey(`${hubId}:shop:${week}:web_tool:${tool.id}`);
           const item = WebBank.mintTool(WebBank.current(), tool.id, rng);
           return { id: `listing_web_${tool.id}`, item, price: item.value * 1.5, vendorId: 'vendor_sys', stock: rng.int(1, 4) };
         })
@@ -2343,12 +2496,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       consumableShop: shelfOf(SHOP_VENDOR.consumable, [
         // D27: a raw material a web batch added reaches play through this shelf, with no code
         ...WebBank.current().materials.filter(m => m.shelfPrice).map(material => {
-          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:web_material:${material.id}`);
+          const rng = Rng.fromKey(`${hubId}:shop:${week}:web_material:${material.id}`);
           const item = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[material.id] as any, rng, { origin: 'PURCHASE' });
           return { id: `listing_web_${material.id}`, item, price: material.shelfPrice!, vendorId: 'vendor_sys', stock: rng.int(3, 10) };
         }),
         ...SHELF.consumables.map((defId, i) => {
-          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:consumable:${i}`);
+          const rng = Rng.fromKey(`${hubId}:shop:${week}:consumable:${i}`);
           const item = ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], rng);
           return {
             id: `listing_consumable_${defId}`,
@@ -2361,10 +2514,10 @@ export const useHubStore = create<HubState>((set, get) => ({
         // The raw materials leg (D26): lore reveals. Two trades' notes on the shelf,
         // which two keyed by the day, so a note is worth coming back for.
         ...[...PROCESS_FAMILIES]
-          .sort((a, b) => Rng.fromKey(`${hubId}:shop:${dayIndex}:note_order:${a}`).next() - Rng.fromKey(`${hubId}:shop:${dayIndex}:note_order:${b}`).next())
+          .sort((a, b) => Rng.fromKey(`${hubId}:shop:${week}:note_order:${a}`).next() - Rng.fromKey(`${hubId}:shop:${week}:note_order:${b}`).next())
           .slice(0, 2)
           .map(family => {
-            const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:trade_note:${family}`);
+            const rng = Rng.fromKey(`${hubId}:shop:${week}:trade_note:${family}`);
             const item = ProcessSystem.tradeNote(family, rng);
             return {
               id: `listing_note_${family}`,
@@ -2377,7 +2530,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         // Wave 10E (D21): insurance on the shelf — the charms; scrolls are also
         // WRITTEN at any scribe's table for paper and ink (D14's hook, kept).
         ...['chm_clasp', 'chm_knot'].map((defId, i) => {
-          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:charm:${i}`);
+          const rng = Rng.fromKey(`${hubId}:shop:${week}:charm:${i}`);
           const item = InsuranceSystem.mintCharm(defId, rng);
           return {
             id: `listing_charm_${defId}`,
@@ -2388,7 +2541,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           };
         }),
         (() => {
-          const rng = Rng.fromKey(`${hubId}:shop:${dayIndex}:scroll:0`);
+          const rng = Rng.fromKey(`${hubId}:shop:${week}:scroll:0`);
           const item = InsuranceSystem.mintScrollItem('scr_keeping', rng);
           return {
             id: 'listing_scroll_scr_keeping',
@@ -2462,7 +2615,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     set({
       [shopKey]: updatedListings,
-      vendors: { ...vendorsToday(state.vendors, state.craftsmen, today), [npcId]: VendorSystem.recordSale(sold, listingId, today, total > 0 ? left / total : 0, purchasedItem.universalDefinitionId) }
+      vendors: { ...vendorsToday(state.vendors, state.craftsmen, today), [npcId]: VendorSystem.recordSale(sold, listingId, today, total > 0 ? left / total : 0, purchasedItem.universalDefinitionId, price) }
     });
     // The next of this kind takes that row's place
     if (listing.held) get().generateDailyStock();

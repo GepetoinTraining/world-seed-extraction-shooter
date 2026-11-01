@@ -1171,7 +1171,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
 
 const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, onClose }) => {
   const { player } = usePlayerStore();
-  const { sellToVendor } = useHubStore();
+  const { sellToVendor, offerFor } = useHubStore();
   const pushFeed = useFeed(s => s.push);
   const stash = player.bank.stashTabs[0]?.items || [];
 
@@ -1183,7 +1183,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
       {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
       <div className="ws-list">
         {stash.map(item => {
-          const offer = StatSystem.vendorOffer(item.value, player.attributes);
+          const offer = offerFor(item, npcId);
           return (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>

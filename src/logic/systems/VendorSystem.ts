@@ -19,6 +19,7 @@
 
 import { IItem } from '../../../types';
 import { INeedFill, INpcAgenda, NeedKind, NpcAgenda } from './NpcAgenda';
+import { CHOICE_PREMIUM, IShopBook, ShopWeek, emptyBook } from '../economy/ShopWeek';
 
 export type VendorKind = 'GENERAL' | 'TRADER';
 
@@ -26,7 +27,7 @@ export interface IVendorRecord {
   npcId: string;
   kind: VendorKind;
   agenda: INpcAgenda;
-  /** How many of each line went today. A new day starts it over. */
+  /** How many of each line have gone this week. The week's close starts it over. */
   sold: { day: number; lines: Record<string, number> };
   /** Taken in and not yet judged. Nobody can buy these. */
   held: IItem[];
@@ -46,6 +47,12 @@ export interface IVendorRecord {
   worked: number;
   /** Who saw this shop opened. They pay less here. */
   patrons: string[];
+  /** D115: this week's takings, what its counter paid, and what came apart for less than was expected. */
+  book: IShopBook;
+  /** How many of each line went last week: what next week's stock is built on. */
+  soldLast: Record<string, number>;
+  /** Weeks closed. A shelf with none behind it opens as it always has. */
+  weeks: number;
 }
 
 export interface IVendorListing {
@@ -88,7 +95,7 @@ export const VENDOR_GOALS: Record<NeedKind, { goal: string; say: string }> = {
 };
 
 /** Guesses until Wave 12. */
-const OWN_MARKUP = 1.5;
+export const OWN_MARKUP = 1.5;
 const MARKDOWN = 0.9;
 const PATRON_FACTOR = 0.85;
 const THIN_SHELF_RESTOCK = 1;
@@ -99,15 +106,16 @@ const BELONGING_PER_PERSON = 3;
 const HOURS: Partial<Record<NeedKind, number>> = { esteem: 1.25, purpose: 1.5 };
 /** A night to look a thing over. */
 const SEE_DAYS = 1;
-/** How recently a kind must have sold to count as selling, and how long a piece may sit. */
+/** How recently a kind must have sold to count as selling. How long a piece may sit is by its rank and rarity (ShopWeek.stockDays). */
 const DEMAND_DAYS = 7;
-const UNSOLD_DAYS = 7;
+/** Each week stocks what sold, and one new attempt at each line. */
+const NEW_ATTEMPTS = 1;
 const MAKES_PER_DAY = 1;
 
 const defOf = (item: IItem) => item.universalDefinitionId;
 const isRead = (item: IItem) => item.isIdentified !== false;
 
-const FRESH_CONTAINER = { listed: [], parts: [], since: {}, demand: {}, seen: [], known: [], patrons: [] };
+const FRESH_CONTAINER = { listed: [], parts: [], since: {}, demand: {}, seen: [], known: [], patrons: [], book: emptyBook(), soldLast: {}, weeks: 0 };
 
 export const VendorSystem = {
   fresh(npcId: string, kind: VendorKind, day: number): IVendorRecord {
@@ -122,7 +130,7 @@ export const VendorSystem = {
   /** Up to today. `raising` is how many people stand with this vendor. */
   fold(record: IVendorRecord, today: number, raising = 0): IVendorRecord {
     const agenda = NpcAgenda.fold(record.agenda, today, { safety: DAILY_SHELF_FILL, belonging: raising * BELONGING_PER_PERSON });
-    return { ...record, agenda, sold: record.sold.day === today ? record.sold : { day: today, lines: {} } };
+    return { ...record, agenda };
   },
 
   goalOf(record: IVendorRecord): string {
@@ -147,13 +155,13 @@ export const VendorSystem = {
     const need = NpcAgenda.pressing(record.agenda);
     const factor = (need === 'survival' ? MARKDOWN : 1) * (customer && record.patrons.includes(customer) ? PATRON_FACTOR : 1);
     const restock = (need === 'safety' ? THIN_SHELF_RESTOCK : 0) + labor;
-    const lines = record.sold.day === today ? record.sold.lines : {};
+    const lines = record.sold.lines;
     const kinds = new Map<string, IItem[]>();
     for (const item of [...record.listed, ...record.parts].filter(isRead)) kinds.set(defOf(item), [...(kinds.get(defOf(item)) ?? []), item]);
     return [
       ...rolled.map(line => ({
         ...line, vendorId: record.npcId, price: line.price * factor,
-        stock: Math.max(0, line.stock + restock - (lines[line.id] ?? 0))
+        stock: Math.max(0, (record.weeks > 0 ? (record.soldLast[line.id] ?? 0) + NEW_ATTEMPTS : line.stock) + restock - (lines[line.id] ?? 0))
       })),
       ...[...kinds.entries()].map(([def, items]) => ({
         id: `listing_own_${def}`, item: items[0], price: Math.max(1, items[0].value * OWN_MARKUP * factor),
@@ -163,20 +171,32 @@ export const VendorSystem = {
   },
 
   /** `cover` is the share of the shelf left, which is what safety reads. */
-  recordSale(record: IVendorRecord, lineId: string, today: number, cover: number, defId?: string): IVendorRecord {
-    const lines = record.sold.day === today ? record.sold.lines : {};
+  recordSale(record: IVendorRecord, lineId: string, today: number, cover: number, defId?: string, price = 0): IVendorRecord {
+    const lines = record.sold.lines;
     const agenda = NpcAgenda.fill(record.agenda, FILL_PER_SALE);
     return {
       ...record,
       agenda: { ...agenda, needs: { ...agenda.needs, safety: Math.round(cover * 100) } },
       sold: { day: today, lines: { ...lines, [lineId]: (lines[lineId] ?? 0) + 1 } },
-      demand: defId ? { ...record.demand, [defId]: today } : record.demand
+      demand: defId ? { ...record.demand, [defId]: today } : record.demand,
+      book: { ...record.book, earned: record.book.earned + price }
     };
   },
 
   /** Taken in over the counter. Not for sale until it has been looked over. */
-  receive(record: IVendorRecord, item: IItem, today: number): IVendorRecord {
-    return { ...record, held: [...record.held, item], since: { ...record.since, [item.id]: today } };
+  receive(record: IVendorRecord, item: IItem, today: number, paid = 0): IVendorRecord {
+    return { ...record, held: [...record.held, item], since: { ...record.since, [item.id]: today }, book: { ...record.book, counter: record.book.counter + paid } };
+  },
+
+  /** What the counter makes of this kind: a kind it has seen selling lately is worth more to it. */
+  choiceFactor(record: IVendorRecord | undefined, defId: string, today: number): number {
+    const last = record?.demand?.[defId];
+    return last !== undefined && today - last <= DEMAND_DAYS ? CHOICE_PREMIUM : 1;
+  },
+
+  /** The week is over: last week's sales are what next week stocks, and its book is closed. */
+  closeWeek(record: IVendorRecord, today: number, parts: IItem[] = []): IVendorRecord {
+    return { ...record, parts: [...record.parts, ...parts], book: emptyBook(), soldLast: record.sold.lines, sold: { day: today, lines: {} }, weeks: record.weeks + 1 };
   },
 
   /** One of its own pieces, gone to a buyer. */
@@ -218,6 +238,7 @@ export const VendorSystem = {
 
   workDay(start: IVendorRecord, day: number, labor: number, tools: IWorkTools): { record: IVendorRecord; events: IWorkEvent[] } {
     const events: IWorkEvent[] = [];
+    let loss = 0;
     const held: IItem[] = [];
     const listed: IItem[] = [];
     const since = { ...start.since };
@@ -231,6 +252,7 @@ export const VendorSystem = {
       const came = tools.salvage(item, `${start.npcId}:salvage:${item.id}`);
       if (came === null) return false;
       parts = [...parts, ...came];
+      loss += ShopWeek.lossOf((item.value || 0) * OWN_MARKUP, came.reduce((sum, part) => sum + (part.value || 0), 0));
       events.push({ kind: 'SALVAGED', itemId: item.id, defId: defOf(item), parts: came.map(p => p.id), day });
       return true;
     };
@@ -249,7 +271,7 @@ export const VendorSystem = {
     }
     // What has been sitting on the shelf.
     for (const item of start.listed) {
-      if (day - (since[item.id] ?? start.worked) < UNSOLD_DAYS || sells(item)) listed.push(item);
+      if (day - (since[item.id] ?? start.worked) < ShopWeek.stockDays(item.rank, item.rarity) || sells(item)) listed.push(item);
       // It cannot be taken apart, so it gets another stretch on the shelf
       else if (!takeApart(item)) list(item);
     }
@@ -280,6 +302,6 @@ export const VendorSystem = {
       events.push({ kind: 'CRAFTED', recipeId: recipe.id, name: recipe.name, consumed: consumed.map(c => c.id), made: made.map(m => m.id), day });
     }
 
-    return { record: { ...start, held, listed, parts, since, seen, known, worked: day }, events };
+    return { record: { ...start, held, listed, parts, since, seen, known, worked: day, book: { ...start.book, loss: start.book.loss + loss } }, events };
   }
 };
