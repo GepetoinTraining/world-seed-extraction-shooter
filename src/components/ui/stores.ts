@@ -179,6 +179,8 @@ export interface IReceiptView {
   haul: IItem[];             // what was banked (EXTRACTED) or lost (DIED)
   haulValue: number;
   tax: number;
+  /** D100: what the gate's roll came to. */
+  levy?: { attempted: boolean; dodged: boolean };
   worldName: string;
   durationMs: number;
   actionCount: number;

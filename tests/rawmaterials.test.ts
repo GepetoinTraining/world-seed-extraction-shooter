@@ -90,7 +90,9 @@ const STORED_MIXED_ROOM_HASH = 277033056;
 const STORED_TEMPLATE_HASHES: Record<string, number> = {
   "Keeper's House": 3226989047,
   'Carpenter Mill': 1904892013,
-  'Market Stall': 2817067909
+  'Market Stall': 2817067909,
+  // B4: the smallest house, for a dismembered piece. New, so its first reading is its own.
+  "Keeper's Cottage": 646253611
 };
 // Recaptured on purpose for D74: the city moved onto the real chunk, from its manifest, with roads and plots.
 const STORED_CITY_HASH = 1310522481;

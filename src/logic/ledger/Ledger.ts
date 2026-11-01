@@ -24,6 +24,7 @@ export type LedgerRowType =
   | 'DESIGN'            // a plan minted or copied at the scribe's table (Wave 10B)
   | 'UPKEEP'            // lot upkeep charged (Wave 5.4)
   | 'TECH'              // first to reach a skill or a rung, in this hub (D27). Moves no gold
+  | 'GUILD'             // what the guild did: a person lodged, a rank granted, a map handed in. Moves no gold
   | 'TOMBSTONE';        // marks an earlier row as superseded — never delete
 
 export interface ILedgerRow {

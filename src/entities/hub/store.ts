@@ -27,7 +27,7 @@ import {
   ownerHasBench, roomProcessBonus, shellBillFor,
   PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, tagDefaultMaterial
 } from './room';
-import { ITemplate, ITemplateSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from './template';
+import { ITemplate, ITemplateSheet, defaultSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from './template';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
@@ -41,9 +41,17 @@ import { PROCESS_FAMILIES, PROCESS_SKILL_XP_PER_JOB, ProcessSystem } from '../..
 import { WebBank } from '../../logic/content/WebBank'; // D27
 import { WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the technology web
 import { StatSystem } from '../../logic/systems/StatSystem';
-import { useFeed } from '../../components/ui/stores';
+import { useFeed, useRankMoment } from '../../components/ui/stores';
+import { NpcSheet } from '../../logic/systems/NpcSheet';
+import { ProgressionSystem } from '../player/systems/ProgressionSystem';
+import {
+  GUILD_OWNER_ID, IGuildState, IResident, benchFactor, emptyGuild, guildCover, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
+  questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor
+} from './guild';
 
 export const HUB_ENDOWMENT_GOLD = 100_000;
+
+const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
 
 // =============================================================================
 // TYPES
@@ -243,6 +251,8 @@ interface HubState {
   buildJobs: IBuildJob[];
   /** D27: the web is the hub's. The exp stays on each person. */
   web: IHubWeb;
+  /** D73, D75: the Hall of Banners: the people it houses, what they want, what it holds. */
+  guild: IGuildState;
   weaponShop: IShopListing[];
   armorShop: IShopListing[];
   consumableShop: IShopListing[];
@@ -264,6 +274,24 @@ interface HubState {
    * one: it is how someone who cannot afford a big lot gets a small one.
    */
   dismemberLot: (lotId: string) => Promise<RoomVerdict>;
+  /** D75: a bond brings a person out, and they lodge at the tavern. One bond, one person. */
+  redeemBond: (itemId: string) => Promise<RoomVerdict>;
+  /** D75: the guild buys ground for someone at the tavern, on the hub treasury's word. */
+  guildBuyLot: (residentId: string, lotId: string) => Promise<RoomVerdict>;
+  /** What the treasury can still cover for the guild, after what it has already spent. */
+  guildCoverNow: () => Promise<number>;
+  /** D8: give what you hold toward someone's house. When the bill is met, the clock starts. */
+  poolToHouse: (residentId: string, tag: string, itemIds: string[]) => Promise<RoomVerdict>;
+  /** A house finished: the person is home, and their skills join the hub's web. */
+  settleHomes: () => Promise<void>;
+  /** D73: what the people at home want today goes on the board. */
+  resolveWants: (simDay?: number) => Promise<void>;
+  /** A want met: the things go to their house, and the hub's treasury pays. */
+  fulfilQuest: (questId: string, itemIds: string[]) => Promise<RoomVerdict>;
+  /** D83: the hard quest. The one door a rank comes through. */
+  passTrial: (itemIds: string[]) => Promise<RoomVerdict>;
+  /** D93: a map handed to the guild. It is kept whole, and what it would post can be read. */
+  handMapToGuild: (itemId: string) => Promise<RoomVerdict>;
   /** The hub as a document, for a commit that changes it along with gold. */
   hubDoc: () => IVectorDocument | null;
 
@@ -322,6 +350,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   rooms: {},
   buildJobs: [],
   web: { nodes: {} },
+  guild: emptyGuild(),
   weaponShop: [],
   armorShop: [],
   consumableShop: [],
@@ -334,7 +363,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
+      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb; guild?: IGuildState }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -353,7 +382,8 @@ export const useHubStore = create<HubState>((set, get) => ({
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
-          web: hubStateDoc.data.web || { nodes: {} }
+          web: hubStateDoc.data.web || { nodes: {} },
+          guild: { ...emptyGuild(), ...hubStateDoc.data.guild }
         });
       } else {
         // GENERATE FRESH (First time this Hub is visited)
@@ -361,7 +391,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} } });
+        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} }, guild: emptyGuild() });
         // Save immediately
         await get().saveHubState();
       }
@@ -389,6 +419,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       await get().resolveUpkeep();
       // D27: whatever this person already holds enters this hub's web when the hub looks.
       await get().creditHeld();
+      await get().resolveWants();
 
     } catch (e) {
       console.error('[HUB] Failed to load hub:', e);
@@ -493,13 +524,310 @@ export const useHubStore = create<HubState>((set, get) => ({
     return { ok: true };
   },
 
+  // ==========================================================================
+  // THE GUILD AND THE TAVERN (D73, D75, D83, D93). The law is in guild.ts.
+  // ==========================================================================
+
+  redeemBond: async (itemId) => {
+    const p = usePlayerStore.getState().player;
+    const { activeHubId, guild } = get();
+    if (!activeHubId) return { ok: false, reason: 'There is no tavern open.' };
+    const bond = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
+    if (!bond) return { ok: false, reason: 'That is not in your stash.' };
+    const sheet = NpcSheet.fromBond(bond);
+    if (!sheet || !bond.bondData) return { ok: false, reason: 'That paper names nobody Mags can find.' };
+    const id = residentIdOf(bond.bondData);
+    if (guild.residents.some(r => r.id === id || r.bondItemId === bond.id)) return { ok: false, reason: `${sheet.name} is already in this city. Nobody comes through twice.` };
+
+    // From the check to the bond leaving there is no await: one press, one person.
+    const resident: IResident = {
+      id, bondItemId: bond.id, bond: bond.bondData, worldSeed: bond.bondData.worldSeed, entityId: bond.bondData.entityId,
+      name: sheet.name, sponsorId: p.id, sponsorName: p.username, arrivedAt: Date.now(), lotId: null, wantsMet: 0
+    };
+    removeFromStash([bond.id]);
+    set({ guild: { ...guild, residents: [...guild.residents, resident] } });
+    await get().saveHubState();
+    await Ledger.append('GUILD', { kind: 'PERSON_LODGED', residentId: id, name: sheet.name, bondItemId: bond.id, consumedIds: [bond.id] });
+    await (await provenance()).record(bond, 'TRANSFER', { via: 'REDEEMED', residentId: id });
+    return { ok: true };
+  },
+
+  guildCoverNow: async () => {
+    const { activeHubId, guild } = get();
+    return activeHubId ? guildCover(await Treasury.balance(activeHubId), guild) : 0;
+  },
+
+  guildBuyLot: async (residentId, lotId) => {
+    const { activeHubId, chunks, dismembered } = get();
+    if (!activeHubId) return { ok: false, reason: 'The Hall is shut.' };
+    const refusal = (): string | null => {
+      const resident = get().guild.residents.find(r => r.id === residentId);
+      if (!resident) return 'The Hall has nobody by that name.';
+      if (resident.lotId) return `${resident.name} has ground already.`;
+      const lot = get().lots.find(l => l.id === lotId);
+      if (!lot || lot.ownerId) return 'That ground is not for sale.';
+      return null;
+    };
+    const early = refusal();
+    if (early) return { ok: false, reason: early };
+
+    const poi = HubGenerator.findPOI(HubGenerator.generate({ chunks, dismembered }), lotId);
+    const tpl = poi ? houseTemplateFor({ width: poi.size.width, height: poi.size.height }) : null;
+    if (!tpl) return { ok: false, reason: 'No house the Hall knows how to raise fits on that ground.' };
+    const asked = guildHouseCost(get().lots.find(l => l.id === lotId)!.price);
+    const cover = await get().guildCoverNow();
+    if (cover < asked) return { ok: false, reason: `That ground and its permit come to ${asked.toLocaleString()} G. The treasury can cover ${Math.max(0, cover).toLocaleString()} G for the Hall.` };
+
+    // The read of the treasury was the only wait. Look again, then the deed and its row land as one.
+    const late = refusal();
+    if (late) return { ok: false, reason: late };
+    const { guild, lots } = get();
+    const lot = lots.find(l => l.id === lotId)!;
+    const resident = guild.residents.find(r => r.id === residentId)!;
+    set({
+      lots: lots.map(l => l.id === lotId
+        ? { ...l, ownerId: GUILD_OWNER_ID, ownerName: resident.name, purchaseDate: Date.now(), upkeepPaidThroughDay: worldDay() }
+        : l),
+      guild: {
+        ...guild,
+        spent: guild.spent + asked,
+        residents: guild.residents.map(r => r.id === residentId ? { ...r, lotId, house: { pool: {}, templateName: tpl.name } } : r)
+      }
+    });
+    // The seller is the treasury that backs the buyer, so no gold moves. The row says so.
+    await GoldCommit.commit({
+      rows: [{ type: 'TRADE', data: { kind: 'GUILD_BOUGHT_LOT', lotId, residentId, price: lot.price, permit: asked - lot.price, playerDelta: 0, treasuryDelta: 0 } }],
+      hubDoc: get().hubDoc() ?? undefined
+    });
+    return { ok: true };
+  },
+
+  poolToHouse: async (residentId, tag, itemIds) => {
+    const { guild, lots } = get();
+    const resident = guild.residents.find(r => r.id === residentId);
+    if (!resident?.lotId || !resident.house) return { ok: false, reason: 'They have no ground to build on yet.' };
+    if (resident.house.raised) return { ok: false, reason: 'The house is already rising. It asks nothing more.' };
+    const tpl = houseTemplateNamed(resident.house.templateName);
+    if (!tpl) return { ok: false, reason: 'The Hall has lost the plan.' };
+    const bill = houseBill(tpl);
+    const line = bill.find(l => l.tag === tag);
+    if (!line) return { ok: false, reason: `The house does not ask for anything ${tag}.` };
+    const short = line.count - (resident.house.pool[tag]?.count ?? 0);
+    if (short <= 0) return { ok: false, reason: `The house holds all the ${tag} it asks for.` };
+
+    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const items = itemIds.map(id => stash.find(i => i.id === id));
+    if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
+    const wrong = items.find(i => !answersTag(i!, tag));
+    if (wrong) return { ok: false, reason: `${LoadoutSystem.shownName(wrong)} is not ${tag}. The house will not take it.` };
+    const given = (items as IItem[]).slice(0, short);
+    if (given.length === 0) return { ok: false, reason: 'Nothing was given.' };
+
+    const prior = resident.house.pool[tag];
+    const pool = {
+      ...resident.house.pool,
+      [tag]: {
+        count: (prior?.count ?? 0) + given.length,
+        consumedIds: [...(prior?.consumedIds ?? []), ...given.map(i => i.id)],
+        defIds: [...(prior?.defIds ?? []), ...given.map(i => i.universalDefinitionId)],
+        ...(inheritedOf(given) || prior?.inherited ? { inherited: [...(prior?.inherited ?? []), ...(inheritedOf(given) ?? [])] } : {})
+      }
+    };
+    const met = bill.every(l => (pool[l.tag]?.count ?? 0) >= l.count);
+    const base = defaultSheet(tpl);
+    const sheet: ITemplateSheet | undefined = met
+      ? {
+          WALL: pool.building ? dominantDefId(pool.building.defIds) : base.WALL,
+          DOOR: pool.wood ? dominantDefId(pool.wood.defIds) : base.DOOR,
+          WINDOW: pool.glass ? dominantDefId(pool.glass.defIds) : base.WINDOW,
+          zones: base.zones
+        }
+      : undefined;
+
+    removeFromStash(given.map(i => i.id));
+    set({
+      guild: {
+        ...guild,
+        residents: guild.residents.map(r => r.id === residentId
+          ? { ...r, house: { ...resident.house!, pool, ...(met ? { raised: true, sheet } : {}) } }
+          : r)
+      }
+    });
+    await Ledger.append('BUILD', { kind: 'HOUSE_POOLED', lotId: resident.lotId, residentId, tag, consumedIds: given.map(i => i.id), consumedDefIds: given.map(i => i.universalDefinitionId) });
+
+    if (met && sheet) {
+      // The same jobs a plan raises, on the same clock: shell first, then the pieces in order.
+      const lot = lots.find(l => l.id === resident.lotId)!;
+      const now = Date.now();
+      const batch = `house_${resident.id}`;
+      const shellFinish = now + SHELL_BUILD_SECONDS[tpl.structureType] * 1000;
+      const owner = usePlayerStore.getState().player.id;
+      const jobs: IBuildJob[] = [{
+        id: `bld_${now.toString(36)}_res_${lot.lotIndex}`,
+        lotId: lot.id, kind: 'SHELL', structureType: tpl.structureType, ownerCertUid: owner,
+        queuedAt: now, finishesAt: shellFinish, applied: false,
+        consumedIds: pool.building?.consumedIds ?? [], consumedDefIds: [sheet.WALL], batch,
+        inherited: pool.building?.inherited,
+        template: { itemId: batch, data: tpl, sheet }
+      }];
+      let finish = shellFinish;
+      tpl.pieces.forEach((piece, i) => {
+        finish += PIECE_BUILD_SECONDS[piece.kind] * 1000;
+        const materialDefId = piece.kind === 'WINDOW' ? sheet.WINDOW : piece.kind === 'DOOR' ? sheet.DOOR : sheet.WALL;
+        jobs.push({
+          id: `bld_${now.toString(36)}_res_${lot.lotIndex}_${i}`,
+          lotId: lot.id, kind: 'PIECE', piece: { kind: piece.kind, x: piece.x, y: piece.y, materialDefId },
+          ownerCertUid: owner, queuedAt: now, finishesAt: finish, applied: false,
+          consumedIds: [], consumedDefIds: [materialDefId], batch
+        });
+      });
+      for (const job of jobs) job.signature = await signRecord({ kind: 'RESIDENT_HOUSE', lotId: lot.id, residentId, template: tpl.name, piece: job.piece, at: now });
+      set({ buildJobs: [...get().buildJobs, ...jobs] });
+      await Ledger.append('BUILD', { kind: 'HOUSE_RISING', lotId: lot.id, residentId, template: tpl.name, sheet, jobs: jobs.length });
+      useFeed.getState().push(`The bill is met. ${resident.name}'s house is rising.`, 'proof');
+    }
+    await get().saveHubState();
+    return { ok: true };
+  },
+
+  settleHomes: async () => {
+    const { guild, buildJobs } = get();
+    const due = guild.residents.filter(r => r.lotId && r.house?.raised && !r.homeAt && !buildJobs.some(j => j.lotId === r.lotId && !j.applied));
+    if (due.length === 0) return;
+    const hubId = get().activeHubId;
+    const now = Date.now();
+    set({ guild: { ...guild, residents: guild.residents.map(r => due.some(d => d.id === r.id) ? { ...r, homeAt: now, nextWantDay: worldDay() } : r) } });
+    for (const resident of due) {
+      // Their skills extend the hub's web, by the same door a player's emergence uses. The exp stays theirs.
+      const { web, firsts, records } = WebSystem.admit(get().web, { uid: resident.id, name: resident.name }, readSheet(resident).skills ?? {}, now);
+      set({ web });
+      await Ledger.append('GUILD', { kind: 'PERSON_HOME', residentId: resident.id, name: resident.name, lotId: resident.lotId });
+      for (const skillId of firsts) await Ledger.append('TECH', { kind: 'FIRST', skillId, name: WebSystem.nameOf(skillId), hubId, rung: 0, by: resident.name });
+      for (const { id, rung } of records) await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameOf(id), hubId, rung, by: resident.name });
+      useFeed.getState().push(`${resident.name} has left the tavern. There is a door with their name on it now.`, 'proof');
+    }
+    await get().resolveWants();
+  },
+
+  resolveWants: async (simDay) => {
+    const day = simDay ?? worldDay();
+    const { activeHubId, lots } = get();
+    if (!activeHubId) return;
+    const posted = get().guild.residents.filter(r => {
+      if (!r.homeAt || (r.nextWantDay ?? day) > day) return false;
+      if (get().guild.quests.some(q => q.residentId === r.id && q.state === 'OPEN')) return false;
+      // Their house's upkeep is behind: they have bigger worries, until it is paid.
+      return (lots.find(l => l.id === r.lotId)?.upkeepPaidThroughDay ?? day) >= day;
+    });
+    if (posted.length === 0) return;
+    const quests = posted.map(r => ({
+      id: `q_${r.id}_${r.wantsMet}`, residentId: r.id, n: r.wantsMet, state: 'OPEN' as const, postedDay: day,
+      ...wantFor(r, readSheet(r), activeHubId, r.wantsMet)
+    }));
+    set({ guild: { ...get().guild, quests: [...get().guild.quests, ...quests] } });
+    for (const q of quests) useFeed.getState().push(`On the board at the Hall: ${q.text}`, 'signal');
+    await get().saveHubState();
+  },
+
+  fulfilQuest: async (questId, itemIds) => {
+    const { activeHubId } = get();
+    if (!activeHubId) return { ok: false, reason: 'The Hall is shut.' };
+    const check = () => {
+      const quest = get().guild.quests.find(q => q.id === questId);
+      if (!quest || quest.state !== 'OPEN') return { reason: 'That want is not on the board.' };
+      const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+      const items = itemIds.map(id => stash.find(i => i.id === id));
+      if (items.some(i => !i)) return { reason: 'That is not in your stash.' };
+      if ((items as IItem[]).some(i => i.isIdentified === false)) return { reason: 'Read it first. Nobody takes a thing nobody has read.' };
+      const wrong = (items as IItem[]).find(i => !answersTag(i, quest.tag));
+      if (wrong) return { reason: `${LoadoutSystem.shownName(wrong)} is not what was asked for.` };
+      if (items.length < quest.count) return { reason: `The want is for ${quest.count}. That is ${items.length}.` };
+      return { quest, given: (items as IItem[]).slice(0, quest.count) };
+    };
+    const first = check();
+    if (!first.quest) return { ok: false, reason: first.reason! };
+    const pay = questPay(first.given, first.quest.payShare);
+    if (await Treasury.balance(activeHubId) < pay) return { ok: false, reason: `That is worth ${pay.toLocaleString()} G, and the hub's treasury cannot cover it. It waits.` };
+
+    // The treasury's read was the only wait. From here to the commit there is none.
+    const { quest, given, reason } = check();
+    if (!quest) return { ok: false, reason: reason! };
+    const { guild, lots } = get();
+    const resident = guild.residents.find(r => r.id === quest.residentId)!;
+    const ids = given.map(i => i.id);
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + pay } } }));
+    removeFromStash(ids);
+    set({
+      lots: lots.map(l => l.id === resident.lotId ? { ...l, inventory: [...l.inventory, ...given] } : l),
+      guild: {
+        ...guild,
+        quests: guild.quests.map(q => q.id === questId ? { ...q, state: 'DONE' as const } : q),
+        residents: guild.residents.map(r => r.id === resident.id ? { ...r, wantsMet: r.wantsMet + 1, nextWantDay: worldDay() + 1 } : r)
+      }
+    });
+    await GoldCommit.commit({
+      rows: [{ type: 'GOLD_DELTA', data: { reason: 'QUEST_PAID', questId, residentId: resident.id, consumedIds: ids, amount: pay, treasuryId: activeHubId, treasuryDelta: -pay } }],
+      treasury: { worldUid: activeHubId, delta: -pay },
+      hubDoc: get().hubDoc() ?? undefined
+    });
+    await (await provenance()).recordMany(given, 'TRANSFER', { via: 'QUEST', questId, lotId: resident.lotId });
+    useFeed.getState().push(`${resident.name} has what they wanted. The hub pays ${pay.toLocaleString()} G.`, 'proof');
+    return { ok: true };
+  },
+
+  passTrial: async (itemIds) => {
+    const p = usePlayerStore.getState().player;
+    const rank = ProgressionSystem.rankOf(p);
+    const trial = trialFor(rank);
+    if (!trial) return { ok: false, reason: 'There is no rank above yours for the Hall to give.' };
+    const inStash = () => {
+      const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+      return itemIds.map(id => stash.find(i => i.id === id));
+    };
+    const items = inStash();
+    if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
+    if ((items as IItem[]).some(i => i.isIdentified === false)) return { ok: false, reason: 'Read it first. The Hall does not take a thing nobody has read.' };
+    const taken = (items as IItem[]).filter(i => trialTakes(i, rank));
+    if (taken.length < trial.count) return { ok: false, reason: `The trial asks for ${trial.count} things from above where you stand. That is ${taken.length}.` };
+    const given = taken.slice(0, trial.count);
+    const carried = await Promise.all(given.map(async i => (await provenance()).cameThroughGate(i.id, p.id)));
+    const notYours = given.find((_, i) => !carried[i]);
+    if (notYours) return { ok: false, reason: `${LoadoutSystem.shownName(notYours)} did not come through a gate in your own hands. The record says so.` };
+    if (inStash().some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
+
+    const ids = given.map(i => i.id);
+    removeFromStash(ids);
+    set({ guild: { ...get().guild, trophies: [...get().guild.trophies, ...given] } });
+    const { from, to } = usePlayerStore.getState().grantRank(trial.to);
+    useRankMoment.getState().show({ from, to, at: Date.now() });
+    await get().saveHubState();
+    await Ledger.append('GUILD', { kind: 'RANK_GRANTED', from, to, consumedIds: ids });
+    await (await provenance()).recordMany(given, 'TRANSFER', { via: 'TRIAL', to });
+    return { ok: true };
+  },
+
+  handMapToGuild: async (itemId) => {
+    const p = usePlayerStore.getState().player;
+    const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'That is not in your stash.' };
+    if (item.type !== ItemType.MAP || !item.mapData) return { ok: false, reason: 'The Hall takes maps here. That is not one.' };
+    // No await from the check to the map leaving: it goes once.
+    removeFromStash([item.id]);
+    const guild = get().guild;
+    set({ guild: { ...guild, maps: [...guild.maps, { item, handedBy: p.id, handedByName: p.username, at: Date.now() }] } });
+    await get().saveHubState();
+    await Ledger.append('GUILD', { kind: 'MAP_HANDED_IN', itemId: item.id, worldId: item.mapData.worldId, consumedIds: [item.id] });
+    await (await provenance()).record(item, 'TRANSFER', { via: 'HANDED_TO_GUILD' });
+    return { ok: true };
+  },
+
   hubDoc: () => {
-    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web } = get();
+    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild } = get();
     if (!activeHubId) return null;
     return {
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web })),
+      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild })),
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -612,7 +940,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     const mono = room ? monoMaterialOf(room) : null;
     const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
     const held = usePlayerStore.getState().player;
-    const factor = WebSystem.clockFactor(held, WebSystem.pairOfJob(recipeId, inputs, held.bank.universalSkills));
+    const pair = WebSystem.pairOfJob(recipeId, inputs, held.bank.universalSkills);
+    // Line 35: and someone home in this hub who works this material lends the bench their hands.
+    const factor = WebSystem.clockFactor(held, pair) * benchFactor(get().guild.residents, pair);
     return Math.max(1, Math.round(labor * (1 - speedPct / 100) * factor * StatSystem.craftClockFactor(held.attributes)));
   },
 
@@ -942,6 +1272,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       applied++;
     }
     set({ buildJobs: get().buildJobs.map(j => due.some(d => d.id === j.id) ? { ...j, applied: true } : j) });
+    await get().settleHomes();
     await get().saveHubState();
     return applied;
   },
@@ -1188,7 +1519,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
     // D27: and working without the skill takes longer, while knowing it takes less.
     const pair = WebSystem.pairOfJob(recipeId, consumed.map(c => c.defId), p.bank.universalSkills);
-    const effectiveSeconds = Math.max(1, Math.round(laborSeconds * (1 - speedPct / 100) * WebSystem.clockFactor(p, pair)));
+    const effectiveSeconds = Math.max(1, Math.round(laborSeconds * (1 - speedPct / 100) * WebSystem.clockFactor(p, pair) * benchFactor(get().guild.residents, pair)));
 
     const job: ICraftJob = {
       id: jobId,
@@ -1449,6 +1780,25 @@ export const useHubStore = create<HubState>((set, get) => ({
       const paidThrough = lot.upkeepPaidThroughDay ?? day;
       const owed = day - paidThrough;
       if (owed <= 0) continue;
+      // D10: a resident costs gold through higher upkeep, paid by whoever brought them out, to the
+      // same treasury by the same row. The Hall holds the deed, so an unpaid one waits and never reverts.
+      if (lot.ownerId === GUILD_OWNER_ID) {
+        const resident = get().guild.residents.find(r => r.lotId === lot.id);
+        if (!resident || resident.sponsorId !== p.id) continue;
+        const base = lot.structureType === 'EMPTY' ? 5 : residentUpkeepPerDay(resident.bond.rank);
+        const bonus = StatSystem.upkeepDiscountPct(p.attributes);
+        const rate = bonus !== 0 ? Math.max(1, Math.round(base * (1 - bonus / 100))) : base;
+        const cost = rate * owed;
+        if (usePlayerStore.getState().player.bank.gold < cost) continue;
+        usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+        set({ lots: get().lots.map(l => l.id === lot.id ? { ...l, upkeepPaidThroughDay: day } : l) });
+        await GoldCommit.commit({
+          rows: [{ type: 'UPKEEP', data: { lotId: lot.id, residentId: resident.id, days: owed, amount: cost, treasuryId: activeHubId } }],
+          treasury: { worldUid: activeHubId, delta: cost },
+          hubDoc: get().hubDoc() ?? undefined
+        });
+        continue;
+      }
       if (lot.ownerId === p.id) await get().collectProceeds(lot.id);
       changed = true;
 

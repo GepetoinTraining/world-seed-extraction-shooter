@@ -15,7 +15,7 @@
  * curve that approaches it. Every rate is a guess until Wave 12.
  */
 
-import { IAttributes, IEquipmentState, IItem, IPlayer, MENTAL_ATTRIBUTES } from '../../../types';
+import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillState, MENTAL_ATTRIBUTES } from '../../../types';
 
 /** Tiles to pixels, as everywhere in the field. */
 const PX = 20;
@@ -84,7 +84,7 @@ const TALK_PER_CHARISMA = 0.05;
 const TALK_RESPECT_PER_INTIMIDATION = 0.02;
 const BLOW_OFF_AT_MOST = 0.5;
 const NOISE_PER_SUBTERFUGE = 2;
-const LEVY_OFF_AT_MOST = 0.5;
+const LEVY_DODGE_BASE = 0.05, LEVY_DODGE_AT_MOST = 0.75;
 /** The counter's own rates. A sale never reaches what the shelf asks, whatever the bartering. */
 const OFFER_BASE = 0.6;
 const OFFER_RISE_AT_MOST = 0.4;
@@ -111,7 +111,7 @@ export const ATTRIBUTE_READERS: Record<keyof IAttributes, string[]> = {
   perception: ['LoadoutSystem.reconEfficiency', 'StatSystem.sightPx', 'StatSystem.critChance'],
   charisma: ['StatSystem.talkOdds'],
   intimidation: ['StatSystem.blowFactor', 'StatSystem.talkOdds'],
-  subterfuge: ['StatSystem.noiseReduction', 'StatSystem.levyRate'],
+  subterfuge: ['StatSystem.noiseReduction', 'StatSystem.levyDodgeOdds'],
   bartering: ['StatSystem.vendorOffer', 'StatSystem.shopPrice'],
   leadership: ['StatSystem.recruitDisposition', 'StatSystem.upkeepDiscountPct']
 };
@@ -258,9 +258,13 @@ export class StatSystem {
     return this.total(equipment, 'noise_reduction') + over(attributes, 'subterfuge') * NOISE_PER_SUBTERFUGE;
   }
 
-  /** Subterfuge: the rate a world's levy reaches, once less of the haul is declared. */
-  static levyRate(rate: number, attributes?: IAttributes): number {
-    return rate * (1 - LEVY_OFF_AT_MOST * climb(over(attributes, 'subterfuge')));
+  /**
+   * D100: the odds a dodge of the levy lands. Subterfuge and the skill both raise them, on a
+   * curve that never arrives: "it doesn't work 100% of the time".
+   */
+  static levyDodgeOdds(attributes?: IAttributes, skill?: Pick<ISkillState, 'level'>): number {
+    const points = over(attributes, 'subterfuge') + Math.max(0, (skill?.level ?? 1) - 1);
+    return LEVY_DODGE_BASE + (LEVY_DODGE_AT_MOST - LEVY_DODGE_BASE) * climb(points);
   }
 
   /** Bartering: what the counter pays for a thing of this value. */
@@ -299,7 +303,7 @@ export class StatSystem {
       case 'perception': return `Telling hits ${Math.round(this.critChance(undefined, attributes) * 1000) / 10}%. Sight +${this.sightPx(undefined, attributes) / PX} tiles. Deepens recon.`;
       case 'charisma': return `A talk lands ${Math.round(this.talkOdds(undefined, attributes) * 100)}%.`;
       case 'intimidation': return `Blows land ${signedPct(this.blowFactor(attributes) - 1)}. Respect ${Math.round(this.talkOdds('RESPECT', attributes) * 100)}%.`;
-      case 'subterfuge': return `Quieter by ${this.noiseReduction(undefined, attributes)}. Levy ${signedPct(this.levyRate(1, attributes) - 1)}.`;
+      case 'subterfuge': return `Quieter by ${this.noiseReduction(undefined, attributes)}. Dodges the levy ${Math.round(this.levyDodgeOdds(attributes) * 100)}%.`;
       case 'bartering': return `The counter pays ${this.vendorOffer(100, attributes)}%. The shelf ${signedPct(this.shopPrice(1, attributes) - 1)}.`;
       case 'leadership': return `Follows at ${this.recruitDisposition(attributes)}/100. Upkeep -${Math.round(this.upkeepDiscountPct(attributes))}%.`;
     }
