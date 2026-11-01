@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
 import App from './App';
+import { VaultGate } from './src/components/VaultGate';
 import { theme } from './src/theme';
 
 // 1. Core Mantine Styles
@@ -19,7 +20,9 @@ const root = createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme="dark">
-      <App />
+      <VaultGate>
+        <App />
+      </VaultGate>
     </MantineProvider>
   </React.StrictMode>
 );

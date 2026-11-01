@@ -1,5 +1,4 @@
-import { Ledger } from '../ledger/Ledger';
-import { Treasury } from './Treasury';
+import { GoldCommit } from './GoldCommit';
 import { usePlayerStore } from '../../entities/player/store';
 
 export class ExitLevy {
@@ -13,8 +12,10 @@ export class ExitLevy {
     usePlayerStore.setState(state => ({
       player: { ...state.player, bank: { ...state.player.bank, gold: state.player.bank.gold - charged } }
     }));
-    await Treasury.credit(worldUid, charged);
-    await Ledger.append('TAX', { worldCertUid: worldUid, haulValue, rate, owed, tax: charged });
+    await GoldCommit.commit({
+      rows: [{ type: 'TAX', data: { worldCertUid: worldUid, haulValue, rate, owed, tax: charged } }],
+      treasury: { worldUid, delta: charged }
+    });
     return charged;
   }
 }

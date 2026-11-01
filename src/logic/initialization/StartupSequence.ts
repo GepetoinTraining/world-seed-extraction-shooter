@@ -11,6 +11,8 @@ import { UniversalRank, IPlayer } from '../../../types';
 // --- FIX END ---
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Ledger } from '../ledger/Ledger';
+import { GoldCommit } from '../economy/GoldCommit';
+import { HomeHub } from '../persistence/HomeHub';
 import { runGoldenCheck } from '../../entities/world/goldens';
 
 export class StartupSequence {
@@ -108,6 +110,12 @@ export class StartupSequence {
       }
     }
 
+    // An avatar's home: the hub it knows, or, for a new one, the one it just found.
+    // A wiped browser finds this pin again in the database.
+    if (!(await HomeHub.of(certificate.metadata.uid))) {
+      await HomeHub.pin(certificate.metadata.uid, hubCert.data.worldUid);
+    }
+
     // 4. HYDRATE STORES
 console.log('[BOOT] Refreshing World List...');
     await useWorldStore.getState().refreshWorlds();
@@ -145,14 +153,12 @@ console.log('[BOOT] Refreshing World List...');
              const { AvatarRoster } = await import('../../entities/identity/roster');
              usePlayerStore.getState().initializeSession(certificate, AvatarRoster.archetypeOf(certificate.metadata.uid) ?? 'OPERATOR');
            }
-           const saved = await PlayerPersistence.flush('genesis');
-           if (saved) {
-             await Ledger.append('CHARACTER_GENESIS', {
-               certUid: certificate.metadata.uid,
-               username: usePlayerStore.getState().player.username,
-               gold: usePlayerStore.getState().player.bank.gold // the birthright grant (audited)
-             });
-           }
+           // The first bank doc and the birthright's row land as one.
+           await GoldCommit.commit({ rows: [{ type: 'CHARACTER_GENESIS', data: {
+             certUid: certificate.metadata.uid,
+             username: usePlayerStore.getState().player.username,
+             gold: usePlayerStore.getState().player.bank.gold // the birthright grant (audited)
+           } }] });
        }
 
        // Arm the autosave subscription (10s debounce + critical-moment flushes)

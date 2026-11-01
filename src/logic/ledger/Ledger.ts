@@ -10,6 +10,7 @@
 
 import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { StoreUnit } from '../../entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 
 export type LedgerRowType =
@@ -40,75 +41,79 @@ export class Ledger {
     return `ledger_${uid}_${seq.toString().padStart(8, '0')}`;
   }
 
-  // Each append reads the head then writes it, so overlapping appends must queue.
-  private static queue: Promise<unknown> = Promise.resolve();
-
-  /** Append one signed row. Returns the new seq, or null on failure. */
+  /** Append one signed row. Returns the new seq, or null on failure. A row that moves gold takes GoldCommit instead. */
   static append(type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
-    const run = this.queue.then(() => this.write(type, data));
-    this.queue = run.catch(() => undefined);
-    return run;
+    return StoreUnit.enqueue(() => this.write(type, data));
   }
 
   private static async write(type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
-    const cert = useIdentityStore.getState().certificate;
-    if (!cert) return null;
-    const uid = cert.metadata.uid;
-
     try {
-      const head = await VectorStore.get<{ seq: number }>(VectorNamespace.TRANSACTIONS, this.headId(uid));
-      const prevSeq = head?.data?.seq ?? 0;
-      const seq = prevSeq + 1;
-
-      const row: ILedgerRow = { seq, prevSeq, ts: Date.now(), type, data };
-      const signed = await CertificateSystem.signPayload(uid, row);
-
-      await VectorStore.put({
-        id: this.rowId(uid, seq),
-        namespace: VectorNamespace.TRANSACTIONS,
-        data: signed,
-        metadata: {
-          createdAt: row.ts,
-          updatedAt: row.ts,
-          ownerCertUid: uid,
-          signature: signed.signature,
-          version: 1
-        }
-      });
-
-      await VectorStore.put({
-        id: this.headId(uid),
-        namespace: VectorNamespace.TRANSACTIONS,
-        data: { seq },
-        metadata: { createdAt: row.ts, updatedAt: row.ts, ownerCertUid: uid, version: 1 }
-      });
-
-      return seq;
+      // A conflict means another tab moved this chain: read its head again and re-sign.
+      for (;;) {
+        const unit = new StoreUnit();
+        const seq = await this.writeInto(unit, type, data);
+        const result = await unit.commit();
+        if (result.ok) return seq;
+        if (!result.conflict) throw new Error(result.reason);
+      }
     } catch (e) {
       console.error('[LEDGER] Append failed:', e);
       return null;
     }
   }
 
+  /** Sign the next row into a unit. Whatever else is in the unit lands with it. */
+  static async writeInto(unit: StoreUnit, type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
+    const cert = useIdentityStore.getState().certificate;
+    if (!cert) return null;
+    const uid = cert.metadata.uid;
+
+    const head = await VectorStore.get<{ seq: number }>(VectorNamespace.TRANSACTIONS, this.headId(uid));
+    const prevSeq = Math.max(head?.data?.seq ?? 0, unit.seqOf(uid));
+    const seq = prevSeq + 1;
+
+    const row: ILedgerRow = { seq, prevSeq, ts: Date.now(), type, data };
+    const signed = await CertificateSystem.signPayload(uid, row);
+
+    await VectorStore.put({
+      id: this.rowId(uid, seq),
+      namespace: VectorNamespace.TRANSACTIONS,
+      data: signed,
+      metadata: {
+        createdAt: row.ts,
+        updatedAt: row.ts,
+        ownerCertUid: uid,
+        signature: signed.signature,
+        version: 1
+      }
+    }, false, { unit });
+
+    await VectorStore.put({
+      id: this.headId(uid),
+      namespace: VectorNamespace.TRANSACTIONS,
+      data: { seq },
+      metadata: { createdAt: row.ts, updatedAt: row.ts, ownerCertUid: uid, version: 1 }
+    }, false, { unit });
+
+    unit.noteSeq(uid, seq);
+    return seq;
+  }
+
   /** Read the chain back (ascending seq). */
   static async list(uid: string): Promise<ISignedPayload<ILedgerRow>[]> {
-    const head = await VectorStore.get<{ seq: number }>(VectorNamespace.TRANSACTIONS, this.headId(uid));
-    const top = head?.data?.seq ?? 0;
-    const rows: ISignedPayload<ILedgerRow>[] = [];
-    for (let seq = 1; seq <= top; seq++) {
-      const doc = await VectorStore.get<ISignedPayload<ILedgerRow>>(
-        VectorNamespace.TRANSACTIONS, this.rowId(uid, seq)
-      );
-      if (doc?.data) rows.push(doc.data);
-    }
-    return rows;
+    const prefix = `ledger_${uid}_`;
+    const docs = await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS, idPrefix: prefix });
+    return docs
+      .filter(d => d?.id?.startsWith?.(prefix))
+      .map(d => d.data)
+      .sort((a, b) => a.payload.seq - b.payload.seq);
   }
 
   /** Every identity's rows held on this machine. */
   static async listAll(): Promise<ISignedPayload<ILedgerRow>[]> {
-    const docs = await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS });
+    const docs = await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS, idPrefix: 'ledger_' });
     return docs
-      .filter(d => d.id.startsWith('ledger_') && !d.id.startsWith('ledger_head_'))
+      .filter(d => d?.id?.startsWith?.('ledger_') && !d.id.startsWith('ledger_head_'))
       .map(d => d.data);
   }
 

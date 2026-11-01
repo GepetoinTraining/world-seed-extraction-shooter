@@ -12,6 +12,7 @@
 
 import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { StoreUnit } from '../../entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { Ledger } from '../ledger/Ledger';
 
@@ -126,26 +127,34 @@ export class SessionJournal {
 
     try {
       const signed = await CertificateSystem.signPayload(claim.certUid, receipt);
-      await VectorStore.put({
-        id: `session_${claim.sessionId}`,
-        namespace: VectorNamespace.TRANSACTIONS,
-        data: signed,
-        metadata: {
-          createdAt: claim.startedAt,
-          updatedAt: Date.now(),
-          ownerCertUid: claim.certUid,
-          signature: signed.signature,
-          version: 1
-        }
-      });
 
-      // The ledger gets the summary row (Wave 1.4)
-      await Ledger.append('SESSION_RESULT', {
-        sessionId: claim.sessionId,
-        worldCertUid: claim.worldCertUid,
-        outcome,
-        actionCount: receipt.actionCount,
-        endHash: receipt.endHash
+      // The receipt and the ledger's summary row (Wave 1.4) land as one.
+      await StoreUnit.enqueue(async () => {
+        for (;;) {
+          const unit = new StoreUnit();
+          await VectorStore.put({
+            id: `session_${claim.sessionId}`,
+            namespace: VectorNamespace.TRANSACTIONS,
+            data: signed,
+            metadata: {
+              createdAt: claim.startedAt,
+              updatedAt: Date.now(),
+              ownerCertUid: claim.certUid,
+              signature: signed.signature,
+              version: 1
+            }
+          }, false, { unit });
+          await Ledger.writeInto(unit, 'SESSION_RESULT', {
+            sessionId: claim.sessionId,
+            worldCertUid: claim.worldCertUid,
+            outcome,
+            actionCount: receipt.actionCount,
+            endHash: receipt.endHash
+          });
+          const result = await unit.commit();
+          if (result.ok) return;
+          if (!result.conflict) throw new Error(result.reason);
+        }
       });
 
       console.log(`[JOURNAL] Session sealed: ${claim.sessionId} → ${outcome} (${receipt.actionCount} actions)`);

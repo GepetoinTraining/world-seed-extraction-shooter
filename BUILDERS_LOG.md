@@ -1,6 +1,6 @@
 # Builder's log
 
-Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete), the raw materials leg (D23) and the technology web and auto skill (D27), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E, the raw materials leg, the technology web (D27) and the usability pass are approved. Next is **the stable database**, built on its own branch and not yet merged, then Pedro's full run, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
+Written 2026-10-31 at the end of Wave 8, updated the same day at the end of 8B (motion), Wave 9 (the interface), Wave 10 (the interiors), Wave 10B (the Architect), Wave 10C (the Load-Out), Wave 10D (the Anatomy of Items), Wave 10E (the Affix Bank and the Dreaming — Pedro's itemization program complete), the raw materials leg (D23) and the technology web and auto skill (D27), for whoever builds next. It assumes you have seen none of the conversation. Wave 10E, the raw materials leg, the technology web (D27) and the usability pass are approved. The stable database is approved and merged. Next is Pedro's full run, then **Wave 11, Bringing the Nexi Home** — residents, farms, materials displayed — and everything you need to start is here.
 
 Read this first, then `PLAN.md` section 3B, then look at the game running. `HANDOVER.md` covers the systems up to Wave 7 (signing, ledger, economy). `DESIGN_ASK.md` is the single design brief and holds the measured results.
 
@@ -10,9 +10,10 @@ World Seed is a browser extraction game: a signed identity, generated worlds, a 
 
 Pedro's verdict on the look, seeing it in the real game: *"literally absurdly good"*. **The look is approved, and the interface is now made of it.** Mantine survives only under the admin Genre Creator (with its provider in `index.tsx`, `src/theme.ts`, and the unused `src/components/Layout.tsx`); every player-facing screen is built from the kit in `src/components/ui/`.
 
-- **Tests:** 680 (`npm test`), including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). The usability pass's bars live in `tests/usability.test.ts` (95, registered before the build). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
+- **Tests:** 793: 680 plus 113 in the database's own run. `npm test` runs them in that order and stops at the first red, so when the load-sensitive timing bar fails, the database bars never run; use `npx vitest run tests/database` to reach them. The 680 (`npm test`) include including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). The usability pass's bars live in `tests/usability.test.ts` (95, registered before the build). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
 - **Commits:** Waves 8 through 10E, the raw materials leg and the web are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
-- **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
+- **Run it:** `npm run dev`, then `http://localhost:3000`. That one command also brings up the database: `data/worldseed.db`, one file per checkout, never committed. `npm run serve` is the same handler standing alone, serving the built game; `npm run db:studio` opens the file. A database-pass build's first load on an origin imports that origin's old browser saves (see "What the stable database pass built").
+- **Test it:** `npm test` runs the database bars in a second pass, because their real, killed processes load the machine enough to turn the timing bars red. `npx vitest run` with everything is not a fair reading of `tests/grid.test.ts`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
 
 ## Working with Pedro
 
@@ -110,6 +111,19 @@ Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → q
 | `src/render/atoms/inspect.ts` | Now also `compareItems`, `comparisonFor`, `placeCard` |
 | `src/components/ui/kit.tsx` | Now also `ArmedButton`, `CompareView`, a heavy `Modal`, and `ItemSprite` answering hover itself |
 
+| `server/SqlStore.ts` | NEW (D31): THE store. One body of SQL on both dialects; an id says which table a document lives in; a commit is one transaction |
+| `server/schema.sqlite.ts`, `server/schema.pg.ts`, `drizzle/` | NEW: the same tables in each dialect's spelling, and their migrations. Change both, then `npm run db:generate`. A bar holds them together |
+| `server/connection.ts` | NEW: one URL picks the connection: `file:`, `postgres://`, or `pglite://memory` for tests. Migrations run on open |
+| `server/http.ts`, `server/vitePlugin.ts`, `server/main.ts` | NEW: one handler, mounted in the dev server or standing alone. Loopback only: it has no authentication |
+| `src/entities/data/VectorStore.ts` | The same interface, now over HTTP. `put` takes options: `unit`, `increment`, `ifAbsent` |
+| `src/entities/data/StoreClient.ts` | NEW: the transport and `useVault`. A failed read WAITS, it never answers "nothing there" |
+| `src/entities/data/StoreUnit.ts` | NEW: several writes, one transaction; and the one write queue. Never enqueue from inside a turn |
+| `src/logic/economy/GoldCommit.ts` | NEW (line 71): THE door for any gold change. Call it in the same tick as the change, with no await between |
+| `src/logic/persistence/BrowserImport.ts` | NEW: the one-time import. Verifies, never overwrites, deletes nothing. The only file that may touch `RxDBClient`, and only lazily |
+| `src/logic/persistence/HomeHub.ts` | NEW: which hub is whose, now that all hubs share one database |
+| `src/components/VaultGate.tsx` | NEW: no database, no game. The refusal, at load and in play |
+| `tests/database.store.test.ts`, `tests/database.test.ts`, `tests/fixtures/` | NEW: lines 69–71. Nothing there mocks the store; the servers are real processes, really killed |
+
 A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer work over byte buffers, testable in Node.
 
 ## What the interface pass (Wave 9) built
@@ -200,6 +214,14 @@ Full detail in `PLAN.md` 3B (the technology web and auto skill) and the settled 
 - Lots still do not grow with the hub. `STATION_MIN_AREA` holds the four old stations; a batch's station brings its own number.
 - Readings on the record for Pedro: a bare hand's skill IS the material; a death is a return to the hub; the web is the hub's, the exp is the person's; a resident both extends the web and works inside it.
 
+## What the stable database pass built
+
+Full detail in `PLAN.md` 3B (the stable database) and the record of D31. In short: saves live in a SQLite file on a small server inside the dev server, through the same `VectorStore` interface, on libSQL and Drizzle, with one body of SQL that also passes on Postgres. Signed documents stay byte-identical as text; ledger rows and treasuries have real tables. A gold change, its treasury, its ledger row and any hub state it touched land in one transaction, proved against real processes killed mid-write. Existing browser saves import once per origin, on proof. Keys stay in the browser. When the server is down the bank refuses, and everything waits rather than guessing.
+
+**Before the full run: open each origin once on the merged build** (launch entries 3101, 3102, 3104, 3105, and any other where Pedro played), so each imports into `main`'s `data/worldseed.db`. Each checkout has its own file. BASALT and TENON have imported on the merged build. BASALT's gold audit reads a drift of about 19,800 G from old unledgered test grants, which its old browser copy shows too, so judge the audit on a newer avatar.
+
+**Left open, honestly:** the full list is in `PLAN.md`. Rows without gold land apart from the state they describe. The extraction is several commits. On the dev server, entries waiting in a tab die when the server comes back, because Vite reloads the page; they vanish whole. The field keeps running under the refusal. No real Postgres server has run the contract. **Deploy needs authentication, and this leg did not build it.**
+
 ## What the usability pass built
 
 Full detail in `PLAN.md` ("The usability pass"), and the list in `PLAYTEST_LEDGER.md`. In short: firing is a held button at the weapon's own rate and only ever fires; E acts everywhere; a hotbar for hands, tools and the belt; one pair of hands across pack, stash, body, belt, cart and ground, by mouse and keyboard, with a ghost that reads by its seam; the one card on hover everywhere, compared through the same blind sheet; the stash a grid; selling a second press; the body a figure; the city the window; a minimap that keeps the fog; recon that says where to start; no hub stop with one hub; developer controls off the player's bar. It changes how things are used, not how they look. Approved by Pedro, "for now", with the ledger's open items standing.
@@ -208,9 +230,9 @@ Pedro then asked for skills and inventory in one place, without the views that s
 
 **Left open, honestly:** the rest of the Agent tab still reads as forms; the card has no damage line, so weapons compare on what the sheet shows; what rides a pouch has no drag; room placement is not the hands yet; the minimap forgets at the end of a run; the beacon chip does not keep the fog the minimap keeps; a worn bag's capacity cannot be filled by pickups.
 
-## Your pass: the stable database
+## Your pass: Pedro's full run
 
-Pedro wants it before the full run. Start from that section in `PLAN.md`. During and after the run, add what is found to `PLAYTEST_LEDGER.md`.
+Nothing to build until Pedro has played. During and after the run, add what is found to `PLAYTEST_LEDGER.md`. Pedro decides which items land before Wave 11.
 
 ## The playtest fixes, now part of the usability pass
 
@@ -229,6 +251,8 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 ## Known weak spots
 
 **In the art:** near-twin certificates at 16 atoms; first wear bite easy to miss at 36px; recorded failure: Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms (bar 3).
+
+**In the database (D31):** see "What the stable database pass built".
 
 **In the game:** balance unplayed at the new scale; a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape); a finished craft or a foreclosed lot still has no feed line or other moment on screen (the foreclosed mark exists only in the hub's art). (The walk-through lots are fixed: a built lot blocks exactly what it draws, and its door is real — Wave 10.2.)
 
@@ -282,6 +306,14 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 - **Name an item aloud through `LoadoutSystem.shownName`.** `item.name` in a door's voice names what has not been read. The bar for it runs a secret name through every moving door.
 - **A hand move saves on the ten-second autosave.** Reloading sooner brings back the older layout, not a bug in `layout`. Wait, or look at `AUTOSAVE_DEBOUNCE_MS`.
 - **Fresh origin at `localhost:3106`** (`world-seed-dev-3106`): MORTISE, Nomad, with test stones banked and the world THE GROUND TRUTH; not a clean avatar. Pedro's run should start on a new one.
+- **A gold change goes through `GoldCommit`, in the same tick.** A bar reads the source: no `Treasury.credit` or gold row outside it on a gold path, and no `await` between the `setState` and the commit. Sign whatever needs signing first.
+- **Read-then-write takes a turn in `StoreUnit.enqueue`, and a turn never enqueues.** Calling `Ledger.append` or `Treasury.credit` from inside a turn deadlocks the queue. Inside a turn, use `writeInto`.
+- **Old test mocks still work, on purpose.** A mocked `VectorStore.put` ignores its options and writes at once, so the unit stays empty and its commit is a no-op with no network. New tests that want a real database follow `tests/database.test.ts`, and need no mock changes.
+- **A read can hang, by design.** With the server down, `VectorStore.get` does not resolve. In a script, a tool call that never returns may mean the vault is closed: look at the page.
+- **`data/worldseed.db` is one file per checkout.** A worktree starts empty and imports again from the browser. Deleting it is safe while the browser still holds the old saves, and not after a browser wipe.
+- **Never clear browser storage on an origin with real saves.** The old RxDB copy is the only backup until that origin has imported. Use a fresh port: `world-seed-dev-3107` (CAIRN lives there) was added for this.
+- **A green suite in your checkout says nothing about what you committed.** This leg's `data/` ignore line swallowed `src/entities/data/`, and everything passed until a clean checkout could not start. Before you report a leg, run it from a fresh worktree of your branch (a junction to `node_modules` works; delete the junction with `.Delete()` or `rmdir` before removing the worktree, or the real folder goes with it).
+- **A new worktree may be cut from `origin/main`, far behind local `main`.** This leg's was 40 commits behind, and the app's sync only looks at `origin`. Compare `git rev-parse HEAD main` before reading anything.
 - **Same-millisecond jobs used to share ids** — two crafts queued in one ms on one lot minted outputs with IDENTICAL item ids (fixed in 10D with a queue-length tie-break). If you add any id built from `Date.now()`, break the tie yourself.
 
 ## After this pass
