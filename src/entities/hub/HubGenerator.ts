@@ -6,11 +6,14 @@
  */
 
 import { CHUNK_TILES } from '../world/grid';
-import { IHubLayout, IHubZone, IPOI, IPlacedChunk, POIType, ZoneType } from './layoutTypes';
-import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, SPAWN_MARK, firstPlan } from './hubManifest';
+import { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
+import {
+  CELL_TILES, DISMEMBER_PIECE_MIN, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN,
+  dismemberShape, doorTile, firstPlan, lotPrice, lotPriceShare, resolveChunk, tilesToCell
+} from './hubManifest';
 
 export { POIType, ZoneType };
-export type { IHubLayout, IHubZone, IPOI, IPlacedChunk };
+export type { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell };
 
 // =============================================================================
 // NPC DEFINITIONS
@@ -186,9 +189,66 @@ export class HubGenerator {
     }));
 
     const zones: IHubZone[] = [];
+    const roads: IRoadCell[] = [];
+    const passages: IPassage[] = [];
     const zonesRaised = new Map<string, number>();
     const seriesCount = new Map<string, number>();
     let spawnPoint = { x: chunks[0].x, y: chunks[0].y };
+    const centre = { x: chunks[0].x + CHUNK_TILES / 2, y: chunks[0].y + CHUNK_TILES / 2 };
+
+    const mainByChunk: IRoadCell[][] = [];
+
+    // A lot split up after `count` chunks had risen. Its pieces are numbered then, in the
+    // order it happened, so nothing that comes later moves them and they move nothing earlier.
+    const dismemberAfter = (count: number) => {
+      for (const { lotId, after } of plan.dismembered ?? []) {
+        if (after !== count) continue;
+        const zone = zones.find(z => z.pois.some(p => p.id === lotId));
+        const old = zone?.pois.find(p => p.id === lotId);
+        if (!zone || !old) continue;
+        const home = chunks.findIndex(c => old.position.x >= c.x && old.position.x < c.x + CHUNK_TILES && old.position.y >= c.y && old.position.y < c.y + CHUNK_TILES);
+        const mark = Object.values(manifest.marks).find(m => m.type === POIType.PLAYER_LOT)!;
+        const series = mark.series ?? 'poi_lot';
+        const shape = dismemberShape({ x: old.position.x, y: old.position.y, width: old.size.width, height: old.size.height });
+        const door = doorTile(old);
+        const onRoad = roads.some(r => tilesToCell(door, r) === 0);
+        const wayOut = shape.way.filter(t => t.x === door.x && t.y > (old.position.y + (old.size.height >> 1)));
+        zone.pois.splice(zone.pois.indexOf(old), 1);
+        for (const piece of shape.pieces) {
+          const n = seriesCount.get(series) ?? 0;
+          seriesCount.set(series, n + 1);
+          const poi: IPOI = {
+            id: `${series}_${n}`,
+            type: POIType.PLAYER_LOT,
+            name: mark.name.replace('{n}', String(n + 1)),
+            position: { x: piece.x, y: piece.y },
+            size: { width: piece.width, height: piece.height },
+            interactable: true,
+            metadata: { ...mark.metadata, lotIndex: n, dismemberedFrom: lotId }
+          };
+          const own = doorTile(poi);
+          const midY = old.position.y + (old.size.height >> 1);
+          const locked = own.y === midY;
+          if (locked) {
+            // Along the crossbar to the way in, then down it to the old door.
+            const tiles: { x: number; y: number }[] = [];
+            const step = own.x <= door.x ? 1 : -1;
+            for (let x = own.x; x !== door.x; x += step) tiles.push({ x, y: midY });
+            tiles.push({ x: door.x, y: midY });
+            wayOut.slice().sort((a, b) => a.y - b.y).forEach(t => tiles.push(t));
+            if (!onRoad) tiles.push(door);
+            passages.push({ lotId: poi.id, tiles, through: [] });
+          }
+          const fromCentre = Math.abs(own.x - centre.x) + Math.abs(own.y - centre.y);
+          const fromRoad = Math.min(...mainByChunk[home].map(cell => tilesToCell(own, cell)));
+          poi.metadata.fromCentre = fromCentre;
+          poi.metadata.fromRoad = fromRoad;
+          if (locked) poi.metadata.locked = true;
+          poi.metadata.price = lotPrice(manifest, poi.size, { fromCentre, fromRoad, locked });
+          zone.pois.push(poi);
+        }
+      }
+    };
 
     chunks.forEach((placed, order) => {
       const chunk = manifest.chunks[placed.kind];
@@ -196,39 +256,82 @@ export class HubGenerator {
 
       for (let y = placed.y; y < placed.y + CHUNK_TILES; y++) navMesh[y].fill(true, placed.x, placed.x + CHUNK_TILES);
 
+      const mainHere: IRoadCell[] = [];
+      chunk.road.forEach((row, cy) => [...row].forEach((c, cx) => {
+        if (c === EMPTY_MARK) return;
+        const cell = { x: placed.x + cx * CELL_TILES, y: placed.y + cy * CELL_TILES, main: c === ROAD_MAIN };
+        roads.push(cell);
+        if (cell.main) mainHere.push(cell);
+      }));
+
+      mainByChunk[order] = mainHere;
+
       const byLetter = HubGenerator.zonesOf(chunk, placed, manifest, zonesRaised);
       byLetter.forEach(zone => zones.push(zone));
 
-      chunk.place.forEach((row, cy) => [...row].forEach((mark, cx) => {
-        if (mark === EMPTY_MARK) return;
-        const position = { x: placed.x + cx * CELL_TILES, y: placed.y + cy * CELL_TILES };
-        if (mark === SPAWN_MARK) {
-          if (order === 0) spawnPoint = position;
-          return;
-        }
-        const def = manifest.marks[mark];
-        if (!def) throw new Error(`The manifest has no mark called ${mark}.`);
+      const res = resolveChunk(manifest, chunk);
+      if (order === 0 && res.spawn) spawnPoint = { x: placed.x + res.spawn.x, y: placed.y + res.spawn.y };
+
+      // Who stands here, in reading order, each with its number in the hub.
+      const standing = res.things.map(thing => {
+        const def = manifest.marks[thing.mark];
         const n = def.series ? seriesCount.get(def.series) ?? 0 : 0;
         if (def.series) seriesCount.set(def.series, n + 1);
         const poi: IPOI = {
           id: def.id ?? `${def.series}_${n}`,
           type: def.type,
           name: def.name.replace('{n}', String(n + 1)),
-          position,
-          size: { ...def.size },
+          position: { x: placed.x + thing.x, y: placed.y + thing.y },
+          size: { ...thing.size },
           interactable: def.interactable,
           metadata: { ...def.metadata, ...(def.type === POIType.PLAYER_LOT ? { lotIndex: n } : {}) }
         };
         if (def.npcId) poi.npcId = def.npcId;
-        const zone = byLetter.get(chunk.floor[cy][cx]);
+        return { thing, def, poi };
+      });
+
+      // The servidão: who is locked out, and how much each neighbour carries.
+      const carries = new Map<number, number>();
+      const lockedOut = new Map<number, string[]>();
+      res.passages.forEach(q => {
+        const through = q.through.map(i => standing[i].poi.id);
+        lockedOut.set(q.thing, through);
+        passages.push({
+          lotId: standing[q.thing].poi.id,
+          tiles: q.tiles.map(p => ({ x: placed.x + p.x, y: placed.y + p.y })),
+          through
+        });
+        q.tiles.forEach(p => q.through.forEach(i => {
+          const on = standing[i].thing;
+          if (p.x >= on.x && p.x < on.x + on.size.width && p.y >= on.y && p.y < on.y + on.size.height) carries.set(i, (carries.get(i) ?? 0) + 1);
+        }));
+      });
+
+      standing.forEach(({ thing, def, poi }, i) => {
+        if (def.type === POIType.PLAYER_LOT) {
+          const door = doorTile(poi);
+          const fromCentre = Math.abs(door.x - centre.x) + Math.abs(door.y - centre.y);
+          const fromRoad = Math.min(...mainHere.map(cell => tilesToCell(door, cell)));
+          const locked = lockedOut.has(i);
+          const carried = carries.get(i) ?? 0;
+          poi.metadata.fromCentre = fromCentre;
+          poi.metadata.fromRoad = fromRoad;
+          if (locked) poi.metadata.locked = true;
+          if (carried) poi.metadata.carries = carried;
+          poi.metadata.price = lotPrice(manifest, thing.size, { fromCentre, fromRoad, locked, carries: carried });
+        }
+        const letterCx = (poi.position.x - placed.x) / CELL_TILES, letterCy = (poi.position.y - placed.y) / CELL_TILES;
+        const zone = byLetter.get(chunk.floor[Math.floor(letterCy)][Math.floor(letterCx)]);
         if (!zone) throw new Error(`${poi.id} has no floor under it.`);
         zone.pois.push(poi);
         if (def.solid) {
-          for (let dy = 0; dy < def.size.height; dy++) {
-            for (let dx = 0; dx < def.size.width; dx++) navMesh[position.y + dy][position.x + dx] = false;
+          for (let dy = 0; dy < thing.size.height; dy++) {
+            for (let dx = 0; dx < thing.size.width; dx++) navMesh[poi.position.y + dy][poi.position.x + dx] = false;
           }
         }
-      }));
+      });
+
+      dismemberAfter(order + 1);
     });
 
     return {
@@ -240,6 +343,8 @@ export class HubGenerator {
       zones,
       spawnPoint,
       navMesh,
+      roads,
+      passages,
       chunks,
       origin: { x: chunks[0].x, y: chunks[0].y }
     };
@@ -290,6 +395,24 @@ export class HubGenerator {
       .sort((a, b) => a.metadata.lotIndex - b.metadata.lotIndex)
       .map(fresh);
     return added.length === 0 ? stored : [...stored, ...added];
+  }
+
+  /**
+   * Whether this lot can be dismembered at all, what it would cost and how many it
+   * would make. The land's half of the question: who owns it and what stands on it is
+   * the hub's to ask.
+   */
+  static dismemberVerdict(layout: IHubLayout, lotId: string, manifest: IHubManifest = NEW_CARLEON): { ok: boolean; reason?: string; cost?: number; pieces?: number } {
+    const lot = HubGenerator.findPOI(layout, lotId);
+    if (!lot || lot.type !== POIType.PLAYER_LOT) return { ok: false, reason: 'There is no such lot.' };
+    if (lot.metadata.locked) return { ok: false, reason: 'It has no street at its door to trace a way from.' };
+    if (lot.metadata.carries) return { ok: false, reason: 'A servidão already crosses it, and the way stays open.' };
+    const shape = dismemberShape({ x: lot.position.x, y: lot.position.y, width: lot.size.width, height: lot.size.height });
+    const tooSmall = shape.pieces.length === 0 || shape.pieces.some(p => p.width < DISMEMBER_PIECE_MIN || p.height < DISMEMBER_PIECE_MIN);
+    if (tooSmall || shape.pieces.length < 3) {
+      return { ok: false, reason: `At ${lot.size.width}×${lot.size.height} it is too small to split. Its pieces would be under ${DISMEMBER_PIECE_MIN} tiles a side.` };
+    }
+    return { ok: true, cost: lotPriceShare(manifest, lot.metadata.price), pieces: shape.pieces.length };
   }
 
   /** Where the ground ends: every side of a raised chunk with nothing raised beyond it, in tiles. */

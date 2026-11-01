@@ -86,7 +86,8 @@ type HubPanel =
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
-  const layout = useMemo(() => HubGenerator.generate({ chunks }), [chunks]);
+  const dismembered = useHubStore(s => s.dismembered);
+  const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
 
   const posRef = useRef(streetPos
     ? { x: streetPos.x + layout.origin.x * TILE_SIZE, y: streetPos.y + layout.origin.y * TILE_SIZE }
@@ -149,9 +150,11 @@ export const HubCanvas: React.FC = () => {
   // =========================================================================
 
   // Wave 10.2: a built lot blocks its whole footprint — the door tile you stand
-  // on to enter lies one row below it. What blocks is exactly what is drawn.
+  // on to enter lies one row below it. What blocks is exactly what is drawn. The
+  // one exception is a servidão: its tiles stay open whatever stands on them.
   const blockedLotTiles = useMemo(() => {
     const blocked = new Set<number>();
+    const passageTiles = new Set(layout.passages.flatMap(q => q.tiles.map(t => t.y * layout.width + t.x)));
     for (const zone of layout.zones) for (const poi of zone.pois) {
       if (poi.type !== POIType.PLAYER_LOT) continue;
       const lot = lots.find(l => l.id === poi.id);
@@ -161,7 +164,8 @@ export const HubCanvas: React.FC = () => {
       const rising = !!lot && lotConstruction(buildJobs, poi.id) !== null;
       for (let ty = poi.position.y; ty < poi.position.y + poi.size.height; ty++) {
         for (let tx = poi.position.x; tx < poi.position.x + poi.size.width; tx++) {
-          if (builtLotBlocksAt(poi, built || rising, tx, ty)) blocked.add(ty * layout.width + tx);
+          const at = ty * layout.width + tx;
+          if (builtLotBlocksAt(poi, built || rising, tx, ty) && !passageTiles.has(at)) blocked.add(at);
         }
       }
     }
@@ -255,10 +259,10 @@ export const HubCanvas: React.FC = () => {
         if (!poi.interactable) continue;
         const poiCenterX = poi.position.x + poi.size.width / 2;
         const poiCenterY = poi.position.y + poi.size.height / 2;
-        const dist = Math.sqrt(
-          Math.pow(playerTile.x + 0.5 - poiCenterX, 2) +
-          Math.pow(playerTile.y + 0.5 - poiCenterY, 2)
-        );
+        const fromMiddle = Math.hypot(playerTile.x + 0.5 - poiCenterX, playerTile.y + 0.5 - poiCenterY);
+        // A stretched lot is bigger than this reach, so its door counts too.
+        const door = doorOf(poi);
+        const dist = Math.min(fromMiddle, Math.hypot(playerTile.x - door.x, playerTile.y - door.y));
         if (dist < 3 && dist < closestDist) {
           closest = poi;
           closestDist = dist;

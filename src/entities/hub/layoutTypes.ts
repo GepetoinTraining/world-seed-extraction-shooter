@@ -68,6 +68,21 @@ export interface IPlacedChunk {
   y: number;
 }
 
+/** One road cell of the layout. The main road joins chunks; a street is what lots front onto. */
+export interface IRoadCell {
+  x: number;
+  y: number;
+  main: boolean;
+}
+
+/** A servidão: a lot's right of way from its door to a road. The tiles stay open whatever is built on them. */
+export interface IPassage {
+  lotId: string;
+  tiles: { x: number; y: number }[];
+  /** The lots it crosses, by id. */
+  through: string[];
+}
+
 export interface IHubLayout {
   id: string;
   name: string;
@@ -77,6 +92,8 @@ export interface IHubLayout {
   zones: IHubZone[];
   spawnPoint: { x: number; y: number };
   navMesh: boolean[][]; // true = walkable
+  roads: IRoadCell[];
+  passages: IPassage[];
   /** Every chunk raised, in the order they rose. The first is the middle one. */
   chunks: IPlacedChunk[];
   /** The tile the first chunk starts at. It moves when a chunk rises north or west. */
