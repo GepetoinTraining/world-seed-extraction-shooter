@@ -29,8 +29,8 @@ export interface INPCDefinition {
     options: { label: string; action: string; payload?: any }[];
   };
   spriteColor: string;
-  /** A general vendor: the trade it trains people up in, and the rank its own sheet is dealt at. */
-  teaches?: { trade: string; rank: UniversalRank };
+  /** A general vendor: it trains people up, at the rank its own sheet is dealt. What it teaches has no name of its own. */
+  teaches?: { rank: UniversalRank };
 }
 
 export const HUB_NPCS: Record<string, INPCDefinition> = {
@@ -86,13 +86,13 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Need something that hits hard? You've come to the right place.",
       options: [
         { label: 'Browse Weapons', action: 'OPEN_SHOP', payload: { category: 'weapons' } },
-        { label: 'Sell Items', action: 'OPEN_SELL' },
+        { label: 'Sell Items', action: 'OPEN_SELL', payload: { npcId: 'npc_weapon_vendor' } },
         { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_weapon_vendor' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
     spriteColor: '#ef4444',
-    teaches: { trade: 'smithing', rank: UniversalRank.C }
+    teaches: { rank: UniversalRank.C }
   },
   'npc_armor_vendor': {
     id: 'npc_armor_vendor',
@@ -102,13 +102,14 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Defense is the best offense... or something like that.",
       options: [
         { label: 'Browse Armor', action: 'OPEN_SHOP', payload: { category: 'armor' } },
+        { label: 'Sell Items', action: 'OPEN_SELL', payload: { npcId: 'npc_armor_vendor' } },
         { label: 'Repair Gear', action: 'OPEN_REPAIR' },
         { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_armor_vendor' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
     spriteColor: '#3b82f6',
-    teaches: { trade: 'weaving', rank: UniversalRank.C }
+    teaches: { rank: UniversalRank.C }
   },
   'npc_alchemist': {
     id: 'npc_alchemist',
@@ -118,12 +119,13 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Everything here cures something. Not always the thing you came in with.",
       options: [
         { label: 'Browse Remedies', action: 'OPEN_SHOP', payload: { category: 'consumables' } },
+        { label: 'Sell Items', action: 'OPEN_SELL', payload: { npcId: 'npc_alchemist' } },
         { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_alchemist' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
     spriteColor: '#22c55e',
-    teaches: { trade: 'alchemy', rank: UniversalRank.C }
+    teaches: { rank: UniversalRank.C }
   },
   'npc_guild_master': {
     id: 'npc_guild_master',

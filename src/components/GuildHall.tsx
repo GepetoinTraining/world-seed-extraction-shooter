@@ -17,6 +17,7 @@ import { useHubStore, worldDay } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { StatSystem } from '../logic/systems/StatSystem';
 import { ArmedButton, Button, Chip, Modal, Panel, Tabs } from './ui/kit';
 import { hoverProps, useFeed } from './ui/stores';
 import { ResidentFace, ResidentLines } from './TavernRoom';
@@ -162,6 +163,33 @@ const HouseBill: React.FC<{ resident: IResident }> = ({ resident }) => {
   );
 };
 
+/** A master's own shop (their house, once it stands). Whoever saw it through pays less. */
+const MasterShop: React.FC<{ craftsmanId: string }> = ({ craftsmanId }) => {
+  const { traderShelf, buyFromTrader, vendors } = useHubStore();
+  const { player } = usePlayerStore();
+  const pushFeed = useFeed(s => s.push);
+  const record = vendors[craftsmanId];
+  if (!record) return null;
+  const shelf = traderShelf(craftsmanId);
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div className="ws-dim ws-small">THEIR SHOP{record.patrons.includes(player.id) ? ' · YOU SAW IT OPENED, AND YOU PAY LESS HERE' : ''}</div>
+      {shelf.length === 0 && <div className="ws-dim ws-small">The shelf is bare. They work from what the keepers take apart.</div>}
+      <div className="ws-list">
+        {shelf.map(row => {
+          const price = Math.ceil(StatSystem.shopPrice(row.price, player.attributes));
+          return (
+            <div key={row.id} className="ws-row ws-small" {...hoverProps(row.item)}>
+              <span>{row.item.name} · stock {row.stock}</span>
+              <Button tone="proof" disabled={player.bank.gold < price} onClick={() => { void buyFromTrader(craftsmanId, row.id).then(item => { if (item) pushFeed(`Bought ${item.name} for ${price} G. It is in your stash.`, 'proof'); }); }}>BUY {price}G</Button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const People: React.FC = () => {
   const { guild, buildJobs, lots, guildCoverNow } = useHubStore();
   const [cover, setCover] = useState(0);
@@ -190,6 +218,8 @@ const People: React.FC = () => {
                 )}
               </div>
             </div>
+            {r.craftsmanId && stage !== 'HOME' && <div className="ws-small" style={{ marginBottom: 4 }}>A master now, and in need of a shop of their own. Whoever sees it raised will pay less in it.</div>}
+            {r.craftsmanId && stage === 'HOME' && <MasterShop craftsmanId={r.craftsmanId} />}
             {stage === 'TAVERN' && <GroundFor resident={r} cover={cover} onBought={refresh} />}
             {stage === 'POOLING' && <HouseBill resident={r} />}
             {stage === 'RISING' && rising && <div className="ws-small">{rising.applied} of {rising.total} steps stand.</div>}

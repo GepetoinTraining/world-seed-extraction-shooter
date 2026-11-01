@@ -31,7 +31,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 import { IAttributes, IItem, ISkillState, ItemType, PHYSICAL_ATTRIBUTES, Rarity, UniversalRank } from '../types';
 import { NEEDS, NpcAgenda } from '../src/logic/systems/NpcAgenda';
 import { IVendorRecord, VENDOR_GOALS, VendorSystem } from '../src/logic/systems/VendorSystem';
-import { ApprenticeRoad, ICraftsman, TERM_DAYS, TRIAL_DC } from '../src/logic/systems/ApprenticeRoad';
+import { ApprenticeRoad, CRAFT_TAG, ICraftsman, TERM_DAYS, TRIAL_DC, generalKeepers } from '../src/logic/systems/ApprenticeRoad';
 import { NpcSheet } from '../src/logic/systems/NpcSheet';
 import { WebBank } from '../src/logic/content/WebBank';
 import { WebSystem } from '../src/logic/systems/WebSystem';
@@ -49,7 +49,7 @@ const DAY = 20_000;
 const GENERAL = ['npc_weapon_vendor', 'npc_armor_vendor', 'npc_alchemist'];
 
 const listing = (id: string, stock = 5, price = 100) => ({ id, item: { id: `item_${id}`, value: 50, isIdentified: true } as IItem, price, vendorId: 'vendor_sys', stock });
-const vendor = (over: Partial<IVendorRecord> = {}): IVendorRecord => ({ ...VendorSystem.fresh('npc_weapon_vendor', 'GENERAL', DAY, 'smithing'), ...over });
+const vendor = (over: Partial<IVendorRecord> = {}): IVendorRecord => ({ ...VendorSystem.fresh('npc_weapon_vendor', 'GENERAL', DAY), ...over });
 
 /** Look through people until one answers to the test. Keyed, so the same one every run. */
 const bondOf = (id: string, rank = UniversalRank.F): IItem => ({
@@ -59,8 +59,8 @@ const bondOf = (id: string, rank = UniversalRank.F): IItem => ({
 } as unknown as IItem);
 const candidates = () => Array.from({ length: 400 }, (_, i) => bondOf(`p${i}`));
 const pick = (want: boolean) => candidates().find(b => ApprenticeRoad.unfit(b, WebBank.current()).ok === want)!;
-const master = (over = {}) => ({ id: 'npc_weapon_vendor', trade: 'smithing', room: 2, taken: 0, ...over });
-const begun = (over = {}): ICraftsman => ApprenticeRoad.begin(pick(true), master(over), 'sponsor', DAY, WebBank.current()).craftsman!;
+const master = (over = {}) => ({ id: 'npc_weapon_vendor', room: 2, taken: 0, ...over });
+const begun = (over = {}): ICraftsman => ApprenticeRoad.begin(pick(true), master(over), 'sponsor', 'Sponsor', DAY, WebBank.current()).craftsman!;
 
 describe('the agenda: the one piece of npc code', () => {
   it('a new person starts with the donor\'s five needs, and the same person starts the same', () => {
@@ -98,13 +98,8 @@ describe('the agenda: the one piece of npc code', () => {
 });
 
 describe('a vendor is its own container: stock', () => {
-  it('each general vendor names a trade the web has, and teaches it', () => {
-    for (const id of GENERAL) {
-      const trade = HUB_NPCS[id].teaches?.trade;
-      expect(trade, id).toBeTruthy();
-      expect(WebBank.hasKind(WebBank.current(), trade!, ['trade']), id).toBe(true);
-      expect(WebSystem.isLawfulId(TagLaw.skillIdOf([trade!])), id).toBe(true);
-    }
+  it('each general vendor teaches, at a rank its own sheet is dealt', () => {
+    for (const id of GENERAL) expect(HUB_NPCS[id].teaches?.rank, id).toBeTruthy();
   });
 
   it('nobody else in the city is a general vendor', () => {
@@ -128,18 +123,8 @@ describe('a vendor is its own container: stock', () => {
     expect(VendorSystem.shelf(v, [listing('a', 2)], DAY, 0)[0].stock).toBe(0);
   });
 
-  it('what a vendor buys sits on its shelf, the same item, once', () => {
-    const piece = { id: 'itm_sold', value: 40, isIdentified: true, name: 'Old Blade' } as IItem;
-    const v = VendorSystem.receive(vendor(), piece);
-    const row = VendorSystem.shelf(v, [listing('a')], DAY, 0).find(l => l.item.id === 'itm_sold')!;
-    expect(row.stock).toBe(1);
-    expect(row.price).toBeGreaterThan(piece.value);
-    const after = VendorSystem.takeHeld(v, 'itm_sold');
-    expect(VendorSystem.shelf(after, [listing('a')], DAY, 0).some(l => l.item.id === 'itm_sold')).toBe(false);
-  });
-
   it('a piece nobody has read stays in the container, and off the shelf, so its name stays secret', () => {
-    const v = VendorSystem.receive(vendor(), { id: 'itm_unread', value: 40, isIdentified: false, name: 'A Secret' } as IItem);
+    const v = VendorSystem.receive(vendor(), { id: 'itm_unread', value: 40, isIdentified: false, name: 'A Secret' } as IItem, DAY);
     expect(v.held).toHaveLength(1);
     expect(VendorSystem.shelf(v, [], DAY, 0)).toEqual([]);
   });
@@ -263,18 +248,17 @@ describe('who the general vendors take: no crafting skill, and weak', () => {
   });
 
   it('anything that is not a bond is refused', () => {
-    const v = ApprenticeRoad.begin({ id: 'x', tags: [] } as unknown as IItem, master(), 's', DAY, WebBank.current());
+    const v = ApprenticeRoad.begin({ id: 'x', tags: [] } as unknown as IItem, master(), 's', 'S', DAY, WebBank.current());
     expect(v.ok).toBe(false);
   });
 });
 
 describe('the road: untrained, apprentice, journeyman, master', () => {
-  it('beginning makes an apprentice of the master\'s trade, with the skill started', () => {
+  it('beginning makes an apprentice at that bench, with the skill started', () => {
     const c = begun();
     expect(c.rank).toBe('APPRENTICE');
     expect(c.masterId).toBe('npc_weapon_vendor');
-    expect(c.trade).toBe('smithing');
-    expect(c.skill.id).toBe(TagLaw.skillIdOf(['smithing']));
+    expect(c.skill.id).toBe(TagLaw.skillIdOf([CRAFT_TAG]));
     expect(c.progress).toBe(0);
   });
 
@@ -285,7 +269,7 @@ describe('the road: untrained, apprentice, journeyman, master', () => {
   });
 
   it('a master with no room says so', () => {
-    const v = ApprenticeRoad.begin(pick(true), master({ taken: 2 }), 's', DAY, WebBank.current());
+    const v = ApprenticeRoad.begin(pick(true), master({ taken: 2 }), 's', 'S', DAY, WebBank.current());
     expect(v.ok).toBe(false);
     expect(v.reason).toMatch(/room/i);
   });
@@ -302,8 +286,8 @@ describe('the road: untrained, apprentice, journeyman, master', () => {
     expect(ApprenticeRoad.resolve(slow, DAY + 1, () => 1.5).craftsman.progress).toBeGreaterThan(ApprenticeRoad.resolve(slow, DAY + 1, () => 1).craftsman.progress);
   });
 
-  it('the term ends at the exam: a journeyman, with the skill at least handled', () => {
-    const { craftsman, events } = ApprenticeRoad.resolve({ ...begun(), intModifier: 0 }, DAY + TERM_DAYS + 1, () => 1);
+  it('the last term ends at the exam: a journeyman, with the skill at least handled', () => {
+    const { craftsman, events } = ApprenticeRoad.resolve({ ...begun(), intModifier: 0 }, DAY + TERM_DAYS * 3 + 3, () => 1, generalKeepers());
     expect(craftsman.rank).toBe('JOURNEYMAN');
     expect(craftsman.progress).toBe(100);
     expect(WebSystem.masteryOf(craftsman.skill).rung).toBeGreaterThanOrEqual(1);
@@ -392,27 +376,13 @@ describe('the city\'s doors: real stores, real saves', () => {
     expect(hub().purchaseFromShop(row.id, 'weapon')!.id).not.toBe(first.id);
   });
 
-  it('what the counter buys comes back on the shelf, the same id, and leaves it when bought', async () => {
-    const piece = ItemFactory.createItem(UniversalRank.F, true, Rng.fromKey('vendor:piece'), 'weapon');
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [piece] } : t) } } }));
-    expect(await hub().sellToVendor(piece.id)).toBeGreaterThan(0);
-    expect(stash().some(i => i.id === piece.id)).toBe(false);
-    const row = hub().weaponShop.find(l => l.item.id === piece.id)!;
-    expect(row.stock).toBe(1);
-    expect(row.vendorId).toBe('npc_weapon_vendor');
-    const back = hub().purchaseFromShop(row.id, 'weapon')!;
-    expect(back.id).toBe(piece.id);
-    expect(hub().weaponShop.find(l => l.item.id === piece.id)).toBeUndefined();
-    expect(hub().vendors.npc_weapon_vendor.held).toHaveLength(0);
-  });
-
   it('a person is taken once, stands with the master, and survives a reload', async () => {
     const bond = pick(true);
     const person = await lodge(bond);
     expect(await hub().takeApprentice('npc_alchemist', person)).toEqual({ ok: true });
     expect(stash().some(i => i.id === bond.id)).toBe(false);
     expect(hub().craftsmen).toHaveLength(1);
-    expect(hub().craftsmen[0].trade).toBe(HUB_NPCS.npc_alchemist.teaches!.trade);
+    expect(hub().craftsmen[0].masterId).toBe('npc_alchemist');
     expect((await hub().takeApprentice('npc_alchemist', person)).ok).toBe(false);
     await hub().loadHub('hub_vendors');
     expect(hub().craftsmen).toHaveLength(1);
@@ -433,13 +403,14 @@ describe('the city\'s doors: real stores, real saves', () => {
 
   it('a journeyman the time away made joins the hub\'s web, and adds to the shelf', async () => {
     await hub().takeApprentice('npc_weapon_vendor', await lodge(pick(true)));
-    const before = hub().weaponShop.find(l => l.stock >= 1)!;
+    // The last of the three benches keeps them, and it is that shelf they add to
+    const before = hub().consumableShop.find(l => l.stock >= 1)!;
     const today = Math.floor(Date.now() / 86_400_000);
-    useHubStore.setState(s => ({ craftsmen: s.craftsmen.map(c => ({ ...c, day: today - TERM_DAYS * 2, startedDay: today - TERM_DAYS * 2 })) }));
+    useHubStore.setState(s => ({ craftsmen: s.craftsmen.map(c => ({ ...c, day: today - TERM_DAYS * 4, startedDay: today - TERM_DAYS * 4 })) }));
     await hub().resolveVendors();
     expect(hub().craftsmen[0].rank).not.toBe('APPRENTICE');
-    expect(Object.keys(hub().web.nodes)).toContain(TagLaw.skillIdOf(['smithing']));
-    expect(hub().weaponShop.find(l => l.id === before.id)!.stock).toBeGreaterThan(before.stock);
+    expect(Object.keys(hub().web.nodes)).toContain(TagLaw.skillIdOf([CRAFT_TAG]));
+    expect(hub().consumableShop.find(l => l.id === before.id)!.stock).toBeGreaterThan(before.stock);
   });
 });
 

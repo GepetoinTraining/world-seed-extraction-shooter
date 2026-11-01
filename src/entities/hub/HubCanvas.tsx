@@ -88,7 +88,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'apprentices'; npcId: string };
+  | { kind: 'sell'; npcId?: string } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'apprentices'; npcId: string };
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
@@ -417,6 +417,7 @@ export const HubCanvas: React.FC = () => {
         setActiveNPC(null); setNpcReply(null);
         if (effect.panel === 'shop') setPanel({ kind: 'shop', category: effect.category });
         else if (effect.panel === 'apprentices') setPanel({ kind: 'apprentices', npcId: effect.npcId });
+        else if (effect.panel === 'sell') setPanel({ kind: 'sell', npcId: effect.npcId });
         else if (effect.panel === 'ledger') setView('BANK', 'ledger');
         else if (effect.panel === 'missions') setView('MISSIONS');
         else setPanel({ kind: effect.panel });
@@ -881,7 +882,7 @@ export const HubCanvas: React.FC = () => {
       )}
 
       {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}
-      {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'sell' && <SellModal npcId={panel.npcId} onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
@@ -1126,7 +1127,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
   );
 };
 
-const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, onClose }) => {
   const { player } = usePlayerStore();
   const { sellToVendor } = useHubStore();
   const pushFeed = useFeed(s => s.push);
@@ -1155,7 +1156,7 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 tone="proof"
                 confirmLabel={`SELL FOR ${offer}G: SURE?`}
                 onConfirm={async () => {
-                  const paid = await sellToVendor(item.id);
+                  const paid = await sellToVendor(item.id, npcId);
                   if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
                   else pushFeed('The treasury cannot cover that. Nothing moves.', 'loss');
                 }}

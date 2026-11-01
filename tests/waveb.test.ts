@@ -283,7 +283,7 @@ describe('B4 and the vendors: everyone comes through the tavern', () => {
 
   it('the window reads the tavern, and asks for a second press', () => {
     const window = readFileSync('src/components/ApprenticeWindow.tsx', 'utf8');
-    expect(window).toContain('guild.residents.filter(r => !r.lotId)');
+    expect(window).toContain('guild.residents.filter(r => !r.lotId && !r.craftsmanId)');
     expect(window).toContain('ArmedButton');
     expect(window).not.toContain('stashTabs');
   });

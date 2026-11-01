@@ -58,6 +58,8 @@ export interface IResident {
   /** The lot the guild bought for them. Null: still at the tavern. */
   lotId: string | null;
   house?: IHousePool;
+  /** Someone the road made a master. Their house is the shop they came back for. */
+  craftsmanId?: string;
   /** When their house was finished. They want nothing before this (D75). */
   homeAt?: number;
   /** How many wants they have had met. It keys the next. */
