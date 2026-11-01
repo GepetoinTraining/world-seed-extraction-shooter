@@ -8,6 +8,8 @@
  */
 
 import { IHubLayout, IPOI, POIType, ZoneType, HubGenerator } from '../../entities/hub/HubGenerator';
+import { doorTile } from '../../entities/hub/hubManifest';
+import { CHUNK_TILES } from '../../entities/world/grid';
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
 import { Genre, Ink, Role, Sprite, hash2, isqrt, material, px, seal, stamp } from './atoms';
 import { castFigure } from './people';
@@ -325,7 +327,7 @@ export function lotArt(state: LotState, w: number, h: number, seed: number, prog
 // BUILDINGS
 // ---------------------------------------------------------------------------
 
-export const doorOf = (p: IPOI) => ({ x: p.position.x + (p.size.width >> 1), y: p.position.y + p.size.height });
+export const doorOf = (p: IPOI) => doorTile(p);
 
 /** Where a keeper stands: beside their door, never in it, so you can always reach it. */
 export function keeperSpot(layout: IHubLayout, p: IPOI): { x: number; y: number } {
@@ -412,14 +414,30 @@ function blit(data: Uint8Array, W: number, s: Sprite, x0: number, y0: number) {
   }
 }
 
+/** A chunk's floor before light, by its own zones. The same zones are the same bytes, so a recompose reads them back. */
+const chunkFloors = new Map<string, Uint8Array>();
+function chunkFloor(layout: IHubLayout, chunk: { x: number; y: number }): Uint8Array {
+  const zones: (ZoneType | null)[] = [];
+  for (let ty = chunk.y; ty < chunk.y + CHUNK_TILES; ty++) for (let tx = chunk.x; tx < chunk.x + CHUNK_TILES; tx++) {
+    zones.push(HubGenerator.getZoneAtPosition(layout, tx, ty)?.type ?? null);
+  }
+  const key = zones.join();
+  let floor = chunkFloors.get(key);
+  if (!floor) {
+    const size = CHUNK_TILES * HUB_TILE;
+    floor = new Uint8Array(size * size);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      floor[y * size + x] = floorAtom(zones[Math.floor(y / HUB_TILE) * CHUNK_TILES + Math.floor(x / HUB_TILE)], x, y);
+    }
+    chunkFloors.set(key, floor);
+  }
+  return floor;
+}
+
 /** Floors, light and everything solid. What this draws as solid is what the navmesh blocks. */
 export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}, facades: Partial<Record<number, RawFacade>> = {}): Sprite {
   const W = layout.width * HUB_TILE, H = layout.height * HUB_TILE;
   const data = new Uint8Array(W * H);
-  const zoneOf: (ZoneType | null)[] = [];
-  for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
-    zoneOf.push(HubGenerator.getZoneAtPosition(layout, tx, ty)?.type ?? null);
-  }
   const lamps = allPois(layout).filter(p => p.type === POIType.LAMP_POST);
   const lit = new Uint8Array(W * H);
   lamps.forEach(p => {
@@ -432,12 +450,18 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
       if (level > lit[y * W + x]) lit[y * W + x] = level;
     }
   });
+  // A chunk's floor is read from its own corner, so raising another beside it moves
+  // no grain. What has not risen stays empty, and the outskirts show through.
+  const chunkAtoms = CHUNK_TILES * HUB_TILE;
+  for (const chunk of layout.chunks) {
+    const floor = chunkFloor(layout, chunk);
+    for (let y = 0; y < chunkAtoms; y++) {
+      data.set(floor.subarray(y * chunkAtoms, (y + 1) * chunkAtoms), (chunk.y * HUB_TILE + y) * W + chunk.x * HUB_TILE);
+    }
+  }
   const ground4 = px(Role.GROUND, 4);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const zone = zoneOf[Math.floor(y / HUB_TILE) * layout.width + Math.floor(x / HUB_TILE)];
-    let v = floorAtom(zone, x, y);
-    if (lit[y * W + x]) v = Math.min(ground4, v + lit[y * W + x]);
-    data[y * W + x] = v;
+  for (let i = 0; i < data.length; i++) {
+    if (lit[i] && data[i]) data[i] = Math.min(ground4, data[i] + lit[i]);
   }
 
   const pois = allPois(layout);

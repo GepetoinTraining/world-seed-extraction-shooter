@@ -272,7 +272,7 @@ describe('the hub', () => {
   });
 
   it('gives every building a door you can walk to and interact from', () => {
-    const start = { x: 25, y: 29 };
+    const start = layout.spawnPoint;
     const seen = new Set([`${start.x},${start.y}`]);
     const queue = [start];
     while (queue.length) {

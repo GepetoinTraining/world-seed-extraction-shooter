@@ -29,7 +29,7 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
   const selected = templates.find(t => t.id === selId);
   const tpl = selected?.templateData;
 
-  const layout = useMemo(() => HubGenerator.generate(), []);
+  const layout = useMemo(() => HubGenerator.generate({ chunks: hub.chunks }), [hub.chunks]);
   const poi = HubGenerator.findPOI(layout, lot.id);
   const lotFootprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
 

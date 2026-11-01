@@ -1,81 +1,16 @@
 /**
- * HubGenerator - Creates a static, persistent city layout
- * Unlike WorldGenerator (procedural extraction zones), the Hub is FIXED.
+ * HubGenerator - Builds a city's layout from its manifest and its plan
+ * Unlike WorldGenerator (procedural extraction zones), a Hub is FIXED: the same
+ * manifest and the same plan give the same city, wherever it is planted.
  * Think Carleon from Albion, or Stormwind from WoW.
  */
 
-import { UniversalRank, Rarity } from '../../../types';
+import { CHUNK_TILES } from '../world/grid';
+import { IHubLayout, IHubZone, IPOI, IPlacedChunk, POIType, ZoneType } from './layoutTypes';
+import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, SPAWN_MARK, firstPlan } from './hubManifest';
 
-// =============================================================================
-// HUB TYPES
-// =============================================================================
-
-export enum POIType {
-  // Core Services
-  BANK = 'BANK',
-  PORTAL = 'PORTAL',
-  IDENTIFIER = 'IDENTIFIER',
-  GUILD_HALL = 'GUILD_HALL',
-  
-  // Commerce
-  VENDOR_WEAPONS = 'VENDOR_WEAPONS',
-  VENDOR_ARMOR = 'VENDOR_ARMOR',
-  VENDOR_CONSUMABLES = 'VENDOR_CONSUMABLES',
-  AUCTION_HOUSE = 'AUCTION_HOUSE',
-  
-  // Social
-  TAVERN = 'TAVERN',
-  ARENA = 'ARENA',
-  
-  // Player-Owned
-  PLAYER_LOT = 'PLAYER_LOT',
-  
-  // Decorative
-  FOUNTAIN = 'FOUNTAIN',
-  STATUE = 'STATUE',
-  LAMP_POST = 'LAMP_POST'
-}
-
-export enum ZoneType {
-  PLAZA = 'PLAZA',
-  MARKET = 'MARKET',
-  RESIDENTIAL = 'RESIDENTIAL',
-  INDUSTRIAL = 'INDUSTRIAL',
-  GARDEN = 'GARDEN'
-}
-
-export interface IPOI {
-  id: string;
-  type: POIType;
-  name: string;
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  interactable: boolean;
-  npcId?: string;
-  ownerId?: string; // For player lots
-  metadata: Record<string, any>;
-}
-
-export interface IHubZone {
-  id: string;
-  name: string;
-  type: ZoneType;
-  bounds: { x: number; y: number; width: number; height: number };
-  pois: IPOI[];
-  ambientColor: string;
-  floorTexture: string;
-}
-
-export interface IHubLayout {
-  id: string;
-  name: string;
-  version: string;
-  width: number;
-  height: number;
-  zones: IHubZone[];
-  spawnPoint: { x: number; y: number };
-  navMesh: boolean[][]; // true = walkable
-}
+export { POIType, ZoneType };
+export type { IHubLayout, IHubZone, IPOI, IPlacedChunk };
 
 // =============================================================================
 // NPC DEFINITIONS
@@ -229,257 +164,154 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
 // =============================================================================
 
 export class HubGenerator {
-  
+
   /**
-   * Generates the canonical Hub layout.
-   * This is deterministic - always produces the same city.
+   * The city, from what has risen. Deterministic: this reads the manifest and the
+   * plan and nothing else. Chunks are laid out so the northwest corner of the whole
+   * hub is tile 0, so raising one north or west moves `origin` and everything with it.
    */
-  static generate(): IHubLayout {
-    const width = 50;  // 50x50 tile grid
-    const height = 50;
-    
-    // Initialize walkable navmesh (true = can walk)
-    const navMesh: boolean[][] = Array(height).fill(null).map(() => 
-      Array(width).fill(true)
-    );
-    
+  static generate(plan: IHubPlan = firstPlan(), manifest: IHubManifest = NEW_CARLEON): IHubLayout {
+    const minCx = Math.min(...plan.chunks.map(c => c.cx)), maxCx = Math.max(...plan.chunks.map(c => c.cx));
+    const minCy = Math.min(...plan.chunks.map(c => c.cy)), maxCy = Math.max(...plan.chunks.map(c => c.cy));
+    const width = (maxCx - minCx + 1) * CHUNK_TILES;
+    const height = (maxCy - minCy + 1) * CHUNK_TILES;
+
+    // What has not risen is not ground: nobody walks it.
+    const navMesh: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
+
+    const chunks: IPlacedChunk[] = plan.chunks.map(c => ({
+      cx: c.cx, cy: c.cy, kind: c.kind,
+      x: (c.cx - minCx) * CHUNK_TILES,
+      y: (c.cy - minCy) * CHUNK_TILES
+    }));
+
     const zones: IHubZone[] = [];
-    
-    // =========================================================================
-    // ZONE 1: CENTRAL PLAZA (The Heart)
-    // =========================================================================
-    const plaza: IHubZone = {
-      id: 'zone_plaza',
-      name: 'Central Plaza',
-      type: ZoneType.PLAZA,
-      bounds: { x: 15, y: 15, width: 20, height: 20 },
-      ambientColor: '#1a1a2e',
-      floorTexture: 'cobblestone',
-      pois: [
-        // Fountain (center)
-        {
-          id: 'poi_fountain',
-          type: POIType.FOUNTAIN,
-          name: 'Founders Fountain',
-          position: { x: 25, y: 25 },
-          size: { width: 4, height: 4 },
-          interactable: false,
-          metadata: { particles: 'water' }
-        },
-        // Bank (northwest)
-        {
-          id: 'poi_bank',
-          type: POIType.BANK,
-          name: 'Consortium Vault',
-          position: { x: 17, y: 17 },
-          size: { width: 4, height: 3 },
-          interactable: true,
-          npcId: 'npc_banker',
-          metadata: {}
-        },
-        // Portal (north)
-        {
-          id: 'poi_portal',
-          type: POIType.PORTAL,
-          name: 'The Nexus',
-          position: { x: 24, y: 16 },
-          size: { width: 3, height: 3 },
-          interactable: true,
-          npcId: 'npc_portal_master',
-          metadata: { glowColor: '#06b6d4' }
-        },
-        // Identifier (northeast)
-        {
-          id: 'poi_identifier',
-          type: POIType.IDENTIFIER,
-          name: 'Truthsight Tower',
-          position: { x: 30, y: 17 },
-          size: { width: 3, height: 3 },
-          interactable: true,
-          npcId: 'npc_identifier',
-          metadata: {}
-        },
-        // Guild Hall (east)
-        {
-          id: 'poi_guild',
-          type: POIType.GUILD_HALL,
-          name: 'Hall of Banners',
-          position: { x: 32, y: 24 },
-          size: { width: 4, height: 4 },
-          interactable: true,
-          npcId: 'npc_guild_master',
-          metadata: {}
+    const zonesRaised = new Map<string, number>();
+    const seriesCount = new Map<string, number>();
+    let spawnPoint = { x: chunks[0].x, y: chunks[0].y };
+
+    chunks.forEach((placed, order) => {
+      const chunk = manifest.chunks[placed.kind];
+      if (!chunk) throw new Error(`The manifest holds no chunk called ${placed.kind}.`);
+
+      for (let y = placed.y; y < placed.y + CHUNK_TILES; y++) navMesh[y].fill(true, placed.x, placed.x + CHUNK_TILES);
+
+      const byLetter = HubGenerator.zonesOf(chunk, placed, manifest, zonesRaised);
+      byLetter.forEach(zone => zones.push(zone));
+
+      chunk.place.forEach((row, cy) => [...row].forEach((mark, cx) => {
+        if (mark === EMPTY_MARK) return;
+        const position = { x: placed.x + cx * CELL_TILES, y: placed.y + cy * CELL_TILES };
+        if (mark === SPAWN_MARK) {
+          if (order === 0) spawnPoint = position;
+          return;
         }
-      ]
-    };
-    zones.push(plaza);
-    
-    // =========================================================================
-    // ZONE 2: MARKET DISTRICT (South)
-    // =========================================================================
-    const market: IHubZone = {
-      id: 'zone_market',
-      name: 'Market District',
-      type: ZoneType.MARKET,
-      bounds: { x: 10, y: 35, width: 30, height: 12 },
-      ambientColor: '#2d1b1b',
-      floorTexture: 'wooden_planks',
-      pois: [
-        // Weapon Vendor
-        {
-          id: 'poi_weapons',
-          type: POIType.VENDOR_WEAPONS,
-          name: "Ironfist Armory",
-          position: { x: 14, y: 38 },
-          size: { width: 4, height: 3 },
-          interactable: true,
-          npcId: 'npc_weapon_vendor',
-          metadata: {}
-        },
-        // Armor Vendor
-        {
-          id: 'poi_armor',
-          type: POIType.VENDOR_ARMOR,
-          name: "Steelweave Outfitters",
-          position: { x: 20, y: 38 },
-          size: { width: 4, height: 3 },
-          interactable: true,
-          npcId: 'npc_armor_vendor',
-          metadata: {}
-        },
-        // Consumables Vendor
-        {
-          id: 'poi_consumables',
-          type: POIType.VENDOR_CONSUMABLES,
-          name: "Alchemist's Corner",
-          position: { x: 26, y: 38 },
-          size: { width: 3, height: 3 },
-          interactable: true,
-          npcId: 'npc_alchemist',
-          metadata: {}
-        },
-        // Auction House
-        {
-          id: 'poi_auction',
-          type: POIType.AUCTION_HOUSE,
-          name: 'The Exchange',
-          position: { x: 32, y: 38 },
-          size: { width: 5, height: 4 },
-          interactable: true,
-          npcId: 'npc_auctioneer',
-          metadata: {}
-        }
-      ]
-    };
-    zones.push(market);
-    
-    // =========================================================================
-    // ZONE 3: TAVERN DISTRICT (West)
-    // =========================================================================
-    const tavern: IHubZone = {
-      id: 'zone_tavern',
-      name: 'The Rusty Anchor',
-      type: ZoneType.GARDEN, // Outdoor seating vibe
-      bounds: { x: 5, y: 20, width: 10, height: 10 },
-      ambientColor: '#1f2937',
-      floorTexture: 'dirt',
-      pois: [
-        {
-          id: 'poi_tavern',
-          type: POIType.TAVERN,
-          name: 'The Rusty Anchor',
-          position: { x: 8, y: 23 },
-          size: { width: 5, height: 4 },
-          interactable: true,
-          npcId: 'npc_bartender',
-          metadata: {}
-        }
-      ]
-    };
-    zones.push(tavern);
-    
-    // =========================================================================
-    // ZONE 4: RESIDENTIAL (East) - Player Lots
-    // =========================================================================
-    const residential: IHubZone = {
-      id: 'zone_residential',
-      name: 'Homestead Row',
-      type: ZoneType.RESIDENTIAL,
-      bounds: { x: 38, y: 15, width: 10, height: 30 },
-      ambientColor: '#1a1a1a',
-      floorTexture: 'grass',
-      pois: []
-    };
-    
-    // Generate 6 player lots
-    for (let i = 0; i < 6; i++) {
-      const row = Math.floor(i / 2);
-      const col = i % 2;
-      residential.pois.push({
-        id: `poi_lot_${i}`,
-        type: POIType.PLAYER_LOT,
-        name: `Lot #${i + 1}`,
-        position: { x: 40 + (col * 5), y: 18 + (row * 8) },
-        size: { width: 4, height: 4 },
-        interactable: true,
-        ownerId: undefined, // Unclaimed
-        metadata: { lotIndex: i, price: 5000 }
-      });
-    }
-    zones.push(residential);
-    
-    // =========================================================================
-    // BUILD NAVMESH (Mark buildings as non-walkable)
-    // =========================================================================
-    zones.forEach(zone => {
-      zone.pois.forEach(poi => {
-        // Buildings block movement
-        if ([POIType.BANK, POIType.GUILD_HALL, POIType.AUCTION_HOUSE, 
-             POIType.VENDOR_WEAPONS, POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES,
-             POIType.TAVERN, POIType.IDENTIFIER, POIType.FOUNTAIN].includes(poi.type)) {
-          for (let dy = 0; dy < poi.size.height; dy++) {
-            for (let dx = 0; dx < poi.size.width; dx++) {
-              const nx = poi.position.x + dx;
-              const ny = poi.position.y + dy;
-              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                navMesh[ny][nx] = false;
-              }
-            }
+        const def = manifest.marks[mark];
+        if (!def) throw new Error(`The manifest has no mark called ${mark}.`);
+        const n = def.series ? seriesCount.get(def.series) ?? 0 : 0;
+        if (def.series) seriesCount.set(def.series, n + 1);
+        const poi: IPOI = {
+          id: def.id ?? `${def.series}_${n}`,
+          type: def.type,
+          name: def.name.replace('{n}', String(n + 1)),
+          position,
+          size: { ...def.size },
+          interactable: def.interactable,
+          metadata: { ...def.metadata, ...(def.type === POIType.PLAYER_LOT ? { lotIndex: n } : {}) }
+        };
+        if (def.npcId) poi.npcId = def.npcId;
+        const zone = byLetter.get(chunk.floor[cy][cx]);
+        if (!zone) throw new Error(`${poi.id} has no floor under it.`);
+        zone.pois.push(poi);
+        if (def.solid) {
+          for (let dy = 0; dy < def.size.height; dy++) {
+            for (let dx = 0; dx < def.size.width; dx++) navMesh[position.y + dy][position.x + dx] = false;
           }
         }
-      });
+      }));
     });
-    
-    // Add some decorative lamp posts
-    const lampPositions = [
-      { x: 20, y: 20 }, { x: 30, y: 20 }, { x: 20, y: 30 }, { x: 30, y: 30 },
-      { x: 19, y: 40 }, { x: 25, y: 40 }, { x: 31, y: 40 }
-    ];
-    lampPositions.forEach((pos, i) => {
-      plaza.pois.push({
-        id: `poi_lamp_${i}`,
-        type: POIType.LAMP_POST,
-        name: 'Street Lamp',
-        position: pos,
-        size: { width: 1, height: 1 },
-        interactable: false,
-        metadata: { lightRadius: 3 }
-      });
-      navMesh[pos.y][pos.x] = false;
-    });
-    
+
     return {
-      id: 'hub_carleon',
-      name: 'New Carleon',
-      version: '1.0.0',
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
       width,
       height,
       zones,
-      spawnPoint: { x: 26, y: 29 }, // South of fountain
-      navMesh
+      spawnPoint,
+      navMesh,
+      chunks,
+      origin: { x: chunks[0].x, y: chunks[0].y }
     };
   }
-  
+
+  /** One zone per floor letter in this chunk, bounded by the cells that letter fills. */
+  private static zonesOf(chunk: IChunkManifest, placed: IPlacedChunk, manifest: IHubManifest, raised: Map<string, number>): Map<string, IHubZone> {
+    const spans = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+    chunk.floor.forEach((row, cy) => [...row].forEach((letter, cx) => {
+      if (letter === EMPTY_MARK) return;
+      const s = spans.get(letter);
+      if (!s) { spans.set(letter, { x0: cx, y0: cy, x1: cx, y1: cy }); return; }
+      s.x0 = Math.min(s.x0, cx); s.y0 = Math.min(s.y0, cy); s.x1 = Math.max(s.x1, cx); s.y1 = Math.max(s.y1, cy);
+    }));
+    const zones = new Map<string, IHubZone>();
+    spans.forEach((s, letter) => {
+      const floor = manifest.floors[letter];
+      if (!floor) throw new Error(`The manifest has no floor called ${letter}.`);
+      const n = raised.get(floor.id) ?? 0;
+      raised.set(floor.id, n + 1);
+      zones.set(letter, {
+        id: n === 0 ? floor.id : `${floor.id}_${n}`,
+        name: floor.name,
+        type: floor.type,
+        bounds: {
+          x: placed.x + s.x0 * CELL_TILES, y: placed.y + s.y0 * CELL_TILES,
+          width: (s.x1 - s.x0 + 1) * CELL_TILES, height: (s.y1 - s.y0 + 1) * CELL_TILES
+        },
+        pois: [],
+        ambientColor: floor.ambientColor,
+        floorTexture: floor.floorTexture
+      });
+    });
+    return zones;
+  }
+
+  /**
+   * The records of a hub's lots against its layout. A stored record is handed back
+   * untouched: where a lot stands is the manifest's and is never written on it, so
+   * re-laying the city moves no owner. A record the layout no longer places is kept,
+   * never dropped, and a lot with no record yet gets a fresh one.
+   */
+  static lotRecords<T extends { id: string }>(stored: T[], layout: IHubLayout, fresh: (poi: IPOI) => T): T[] {
+    const have = new Set(stored.map(l => l.id));
+    const added = layout.zones
+      .flatMap(z => z.pois)
+      .filter(p => p.type === POIType.PLAYER_LOT && !have.has(p.id))
+      .sort((a, b) => a.metadata.lotIndex - b.metadata.lotIndex)
+      .map(fresh);
+    return added.length === 0 ? stored : [...stored, ...added];
+  }
+
+  /** Where the ground ends: every side of a raised chunk with nothing raised beyond it, in tiles. */
+  static edges(layout: IHubLayout): { x0: number; y0: number; x1: number; y1: number }[] {
+    const raised = new Set(layout.chunks.map(c => `${c.cx},${c.cy}`));
+    const out: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    for (const c of layout.chunks) {
+      const x1 = c.x + CHUNK_TILES, y1 = c.y + CHUNK_TILES;
+      if (!raised.has(`${c.cx},${c.cy - 1}`)) out.push({ x0: c.x, y0: c.y, x1, y1: c.y });
+      if (!raised.has(`${c.cx},${c.cy + 1}`)) out.push({ x0: c.x, y0: y1, x1, y1 });
+      if (!raised.has(`${c.cx - 1},${c.cy}`)) out.push({ x0: c.x, y0: c.y, x1: c.x, y1 });
+      if (!raised.has(`${c.cx + 1},${c.cy}`)) out.push({ x0: x1, y0: c.y, x1, y1 });
+    }
+    return out;
+  }
+
+  /** A tile of this layout as a tile of the ground the hub stands on (D80). */
+  static groundTile(layout: IHubLayout, x: number, y: number): { x: number; y: number } {
+    const first = layout.chunks[0];
+    return { x: first.cx * CHUNK_TILES + x - layout.origin.x, y: first.cy * CHUNK_TILES + y - layout.origin.y };
+  }
+
   /**
    * Find a POI by ID across all zones
    */

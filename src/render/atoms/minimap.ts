@@ -7,7 +7,7 @@
 
 import { BiomeType, IMap } from '../../entities/world/types';
 import { TerrainSystem } from '../../entities/world/TerrainSystem';
-import { QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../entities/world/grid';
+import { CHUNK_TILES, QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../entities/world/grid';
 import { Role, Sprite, hash2, px } from './atoms';
 import { RECON_CELL_ATOMS, reconCell } from './recon';
 
@@ -155,6 +155,7 @@ export interface CityLayoutLike {
   height: number;
   navMesh: boolean[][];
   zones: { pois: { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; metadata?: Record<string, any> }[] }[];
+  chunks: { x: number; y: number }[];
 }
 
 const LOT_INK = {
@@ -164,15 +165,20 @@ const LOT_INK = {
 };
 
 const CITY_SCALE = 2;
+/** The map's own size. A hub this grows past keeps the map this big, and the map follows you. */
+const CITY_MAP_ATOMS = CHUNK_TILES * CITY_SCALE;
 
 /** `lots` maps a lot index to its state; anything built fills, the rest stays hollow. */
 export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number, string>>, tile: { x: number; y: number }): Sprite {
-  const s = CITY_SCALE;
+  const s = Math.max(1, Math.min(CITY_SCALE, Math.floor(CITY_MAP_ATOMS / Math.max(layout.width, layout.height))));
   const w = layout.width * s, h = layout.height * s;
   const data = new Uint8Array(w * h);
-  for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
-    const ink = layout.navMesh[ty]?.[tx] ? GROUND : BLOCKED;
-    for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) data[(ty * s + dy) * w + tx * s + dx] = ink;
+  // What has not risen stays blank: it is neither ground nor wall.
+  for (const chunk of layout.chunks) {
+    for (let ty = chunk.y; ty < chunk.y + CHUNK_TILES; ty++) for (let tx = chunk.x; tx < chunk.x + CHUNK_TILES; tx++) {
+      const ink = layout.navMesh[ty]?.[tx] ? GROUND : BLOCKED;
+      for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) data[(ty * s + dy) * w + tx * s + dx] = ink;
+    }
   }
   for (const zone of layout.zones) for (const poi of zone.pois) {
     const px0 = poi.position.x * s, py0 = poi.position.y * s;
@@ -190,5 +196,11 @@ export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number,
     }
   }
   stamp(data, w, h, tile.x * s + 1, tile.y * s + 1, 'PLAYER');
-  return { w, h, data };
+  if (w <= CITY_MAP_ATOMS && h <= CITY_MAP_ATOMS) return { w, h, data };
+  const vw = Math.min(w, CITY_MAP_ATOMS), vh = Math.min(h, CITY_MAP_ATOMS);
+  const x0 = Math.max(0, Math.min(w - vw, tile.x * s - (vw >> 1)));
+  const y0 = Math.max(0, Math.min(h - vh, tile.y * s - (vh >> 1)));
+  const view = new Uint8Array(vw * vh);
+  for (let y = 0; y < vh; y++) view.set(data.subarray((y0 + y) * w + x0, (y0 + y) * w + x0 + vw), y * vw);
+  return { w: vw, h: vh, data: view };
 }
