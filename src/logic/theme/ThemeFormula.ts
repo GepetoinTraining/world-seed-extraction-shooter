@@ -1,7 +1,7 @@
 /**
  * THE FORMULA (D57): every number a theme's bands turn into, in one versioned file.
  *
- * Version 1. All of it is a guess until Wave 12, which tunes this file and nothing
+ * Version 2. All of it is a guess until Wave 12, which tunes this file and nothing
  * else. A pinned world reads the version it was minted under, so a later version
  * never moves a standing world. Nothing here is a ceiling on content.
  */
@@ -31,6 +31,20 @@ export const creatureNumbers = (c: {
   speed: PACE[c.pace],
   viewRange: VIEW_TILES[c.size]
 });
+
+/** How much more a body holds and hits for each step down its line. */
+const PER_LINE_STEP = 0.25;
+
+/**
+ * A kind that has changed (D61): its bands, plus how deep in its line it stands. The
+ * first generation reads exactly `creatureNumbers`. Speed stays with the pace band,
+ * so however deep a line goes, a person can still leave.
+ */
+export const descendantNumbers = (c: Parameters<typeof creatureNumbers>[0], generation: number) => {
+  const n = creatureNumbers(c);
+  const grown = 1 + PER_LINE_STEP * (generation - 1);
+  return { ...n, baseHealth: Math.round(n.baseHealth * grown), baseDamage: Math.max(1, Math.round(n.baseDamage * grown)) };
+};
 
 const WEIGHT_KG = { light: 0.5, medium: 2, heavy: 5 };
 const FOOTPRINT = { light: { width: 1, height: 1 }, medium: { width: 1, height: 2 }, heavy: { width: 1, height: 3 } };

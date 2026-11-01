@@ -392,6 +392,7 @@ export class WorldGenerator {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
       const body = id(suffix);
+      template = Director.kindOf(seed, body, template, ctx.director);
       const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation);
       push({
         id: body, type: EntityType.MOB, definitionId: template.id, position: at,

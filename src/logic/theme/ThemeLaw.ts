@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -25,12 +25,19 @@ const ARMOR_KINDS = new Set(['head', 'chest', 'legs', 'feet', 'shoulder']);
 /** Tags a pack may use that are grammar rather than registry words: what an affix may land on. */
 const SCOPE_WORDS = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scroll']);
 
+/** A line inherits these or it does not: no change of form can talk its way into being one of a kind. */
+const INHERITED_ONLY = new Set(['elite', 'boss', 'titan', 'god']);
+
 const has = (values: readonly string[], v: string) => values.includes(v);
 
 export class ThemeLaw {
 
-  /** @param registered is this tag in the registry? The caller holds the registry. */
-  static validate(pack: IThemeBody, registered: (tag: string) => boolean): IThemeVerdict {
+  /**
+   * @param registered is this tag in the registry? The caller holds the registry.
+   * @param formula the version a sealed pack was written under. A pack banked before
+   * trees stays lawful, or every world pinned to it would be lost at the door.
+   */
+  static validate(pack: IThemeBody, registered: (tag: string) => boolean, formula = THEME_FORMULA_VERSION): IThemeVerdict {
     const no = (why: string): IThemeVerdict => ({ ok: false, reason: `Theme refused whole: ${why}` });
     if (!pack || typeof pack !== 'object') return no('that is not a pack.');
     if (!pack.name?.trim()) return no('it has no name.');
@@ -85,6 +92,12 @@ export class ThemeLaw {
       if (missing) return no(`${c.key} is born knowing "${missing}", which this pack never defines.`);
       const t = unknownTag(c.tags);
       if (t) return no(`${c.key} is tagged "${t}", which is not registered.`);
+      if (formula >= TREES_FROM_FORMULA && !(c.tree && TagLaw.isCanonicalSpelling(c.tree))) return no(`${c.key} names no tree it belongs to.`);
+    }
+    if (formula >= TREES_FROM_FORMULA) {
+      for (const tree of REQUIRED_TREES) {
+        if (!pack.creatures.some(c => c.tree === tree)) return no(`it has no ${tree} tree. Every world holds its animals and its monsters (D63).`);
+      }
     }
 
     const materialKeys = new Set(pack.materials.map(m => m.key));
@@ -181,6 +194,32 @@ export class ThemeLaw {
     }
     if (pack.lore.length === 0) return no('it has no lore to find.');
 
+    return { ok: true };
+  }
+
+  /**
+   * What a model wrote for a line that changed (D60). Refused whole, and the order waits.
+   * @param elders the names this world already knows: a different monster needs its own.
+   */
+  static validateLine(words: ILineWords, pack: IThemeBody, elders: string[], registered: (tag: string) => boolean): IThemeVerdict {
+    const no = (why: string): IThemeVerdict => ({ ok: false, reason: `Line refused whole: ${why}` });
+    if (!words || typeof words !== 'object') return no('those are not words.');
+    const stray = this.strayNumber(words, 'the line');
+    if (stray) return no(`it writes a number at ${stray}. The formula writes the numbers (D57).`);
+    if (typeof words.name !== 'string' || !words.name.trim()) return no('it has no name.');
+    if (typeof words.blurb !== 'string' || !words.blurb.trim()) return no('it has no description.');
+    const name = words.name.trim().toLowerCase();
+    if (elders.some(e => e.trim().toLowerCase() === name)) return no(`"${words.name}" is already a kind here. A different creature needs its own name.`);
+    if (!Array.isArray(words.tags) || !Array.isArray(words.features) || !Array.isArray(words.innate)) return no('it is missing a field.');
+    const unknown = words.tags.find(t => !registered(t));
+    if (unknown) return no(`it is tagged "${unknown}", which is not registered.`);
+    const claimed = words.tags.find(t => INHERITED_ONLY.has(t));
+    if (claimed) return no(`it claims "${claimed}". That is inherited, never written.`);
+    if (words.features.length === 0) return no('nothing about its body changed, so nobody could tell it apart.');
+    const shape = words.features.find(f => !has(LINE_FEATURES, f));
+    if (shape) return no(`"${shape}" is not a shape the art draws.`);
+    const missing = words.innate.find(k => !pack.abilities.some(a => a.key === k));
+    if (missing) return no(`it is born knowing "${missing}", which this world never defined.`);
     return { ok: true };
   }
 

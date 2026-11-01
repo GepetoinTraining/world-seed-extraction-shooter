@@ -25,7 +25,7 @@ export interface IAbility extends IThemeAbility {
 
 export interface ICompiledTheme {
   themeId: string;
-  mobs: Record<string, IMobDefinition & { themeId: string; habitat: string[]; innate: string[] }>;
+  mobs: Record<string, IMobDefinition & { themeId: string; habitat: string[]; innate: string[]; tree?: string }>;
   resources: Record<string, ResourceDef & { themeId: string; habitat?: string[] }>;
   crafted: Record<string, ResourceDef>;
   recipes: Record<string, ITransformationRecipe>;
@@ -41,7 +41,7 @@ export interface ICompiledTheme {
 }
 
 /** Sorted keys, so the same pack always hashes the same whatever order it was written in. */
-const canonical = (value: unknown): string => JSON.stringify(value, (_k, v) => (
+export const canonical = (value: unknown): string => JSON.stringify(value, (_k, v) => (
   v && typeof v === 'object' && !Array.isArray(v)
     ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
     : v
@@ -66,6 +66,11 @@ export function sealTheme(body: IThemeBody, model: string, writtenAt: number, us
   return { ...body, themeId: themeIdOf(body), formula: THEME_FORMULA_VERSION, model, writtenAt, ...(usage ? { usage } : {}) };
 }
 
+const shortIdOf = (themeId: string) => themeId.slice('theme_'.length, 'theme_'.length + 8);
+
+/** A first-generation kind's id. Its sprite is keyed by it, so it does not change. */
+export const creatureIdOf = (themeId: string, key: string) => `mob_${shortIdOf(themeId)}_${key}`;
+
 /** What the art reads to draw a thing's shape on the ground (`worldForm`, `resourceInk`). */
 const FORM_TAGS: Record<string, string[]> = {
   grain: ['flora', 'grain'], shrub: ['flora', 'berry'], fruit: ['flora', 'fruit'], tree: ['flora', 'wood'],
@@ -81,7 +86,7 @@ const unique = (tags: string[]) => [...new Set(tags)];
 const lookOf = (id: string) => `#${(fnv1a(`look:${id}`) & 0xffffff).toString(16).padStart(6, '0')}`;
 
 export function compileTheme(pack: IThemePack): ICompiledTheme {
-  const sid = pack.themeId.slice('theme_'.length, 'theme_'.length + 8);
+  const sid = shortIdOf(pack.themeId);
   const idOf = (prefix: string, key: string) => `${prefix}_${sid}_${key}`;
   const ids = new Map<string, string>();
   for (const m of pack.materials) ids.set(m.key, idOf('res', m.key));
@@ -110,7 +115,7 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
   }
 
   for (const c of pack.creatures) {
-    const id = idOf('mob', c.key);
+    const id = creatureIdOf(pack.themeId, c.key);
     out.mobs[id] = {
       id, name: c.name, themeId: pack.themeId, genre: undefined as never,
       tags: unique(c.tags),
@@ -120,6 +125,7 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
       colorHex: lookOf(id),
       habitat: c.habitat,
       innate: c.innate.map(k => ids.get(k)!),
+      ...(c.tree ? { tree: c.tree } : {}),
       ...creatureNumbers(c)
     };
   }

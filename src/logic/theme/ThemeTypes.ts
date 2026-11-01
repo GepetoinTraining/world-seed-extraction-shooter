@@ -11,7 +11,10 @@
 
 import { ITagEntry } from '../../../types';
 
-export const THEME_FORMULA_VERSION = 1;
+/** Version 2 knows a line's depth (D61). A pack sealed under 1 stands under the law it was written under. */
+export const THEME_FORMULA_VERSION = 2;
+/** From this version a pack must hold its trees (D63). */
+export const TREES_FROM_FORMULA = 2;
 
 export const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'] as const;
 export type ThemeRank = typeof RANKS[number];
@@ -57,6 +60,12 @@ export const TRIGGERS = ['on_hit', 'on_defeat', 'on_hurt', 'on_low_health'] as c
 export const SKILL_GRANTS = ['rest'] as const;
 export const COST_BANDS = ['trivial', 'low', 'medium', 'high', 'extreme'] as const;
 
+/** D63: the trees no pack may lack. A tree is any plain word, and more are welcome. */
+export const REQUIRED_TREES = ['animal', 'monster'] as const;
+/** What a change of form adds to the body it inherits, as the art draws them: shape and place, never hue. */
+export const LINE_FEATURES = ['horns', 'crest', 'spines', 'tail', 'plates', 'fangs', 'mantle', 'barbs', 'brand', 'stilts', 'fins'] as const;
+export type LineFeature = typeof LINE_FEATURES[number];
+
 export interface IThemeCreature {
   key: string;
   name: string;
@@ -71,6 +80,28 @@ export interface IThemeCreature {
   habitat: ThemeBiome[];
   /** Keys of abilities in this pack: its magic, which it casts and teaches. */
   innate: string[];
+  /** D63: which tree it belongs to, since a behaviour word cannot say. */
+  tree: string;
+}
+
+/** What a model writes when a line changes: only what changed. A line's numbers come from the formula. */
+export interface ILineWords {
+  name: string;
+  blurb: string;
+  /** Tags added to what it inherits. */
+  tags: string[];
+  /** Added to the sprite it inherits. */
+  features: LineFeature[];
+  /** Keys of abilities in its pack, added to what it was born knowing. */
+  innate: string[];
+}
+
+/** The bands a change of form moves. Code decides these, from how the kind fared. */
+export type ILineBands = Partial<Pick<IThemeCreature, 'build' | 'threat' | 'pace'>>;
+
+/** All a node commits to, beside its parents: the words and the band moves. */
+export interface ILineChange extends ILineWords {
+  bands: ILineBands;
 }
 
 export interface IThemeMaterial {
@@ -215,6 +246,11 @@ const obj = (properties: Record<string, unknown>) => ({
 const list = (properties: Record<string, unknown>) => ({ type: 'array', items: obj(properties) });
 const count = { type: 'integer' };
 
+/** What comes back for a batch of lines that changed: one entry per order, words only. */
+export const LINE_SCHEMA: Record<string, unknown> = obj({
+  lines: list({ order: str, name: str, blurb: str, tags: strs, features: manyOf(LINE_FEATURES), innate: strs })
+});
+
 export const THEME_SCHEMA: Record<string, unknown> = obj({
   name: str,
   premise: str,
@@ -222,7 +258,7 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   tags: list({ tag: str, kind: oneOf(['tool', 'family', 'material', 'trade', 'action', 'descriptive', 'element', 'verb']), meaning: str }),
   creatures: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), size: oneOf(SIZES), behavior: oneOf(BEHAVIORS),
-    build: oneOf(BUILDS), threat: oneOf(THREATS), pace: oneOf(PACES), habitat: manyOf(BIOMES), innate: strs
+    build: oneOf(BUILDS), threat: oneOf(THREATS), pace: oneOf(PACES), habitat: manyOf(BIOMES), innate: strs, tree: str
   }),
   materials: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), form: oneOf(MATERIAL_FORMS), verb: oneOf(HARVEST_VERBS),
