@@ -11,7 +11,7 @@
  *   close     — the conversation ends
  */
 
-import { ItemType, Rarity, UniversalRank } from '../../../types';
+import { IItem, ItemType, Rarity, UniversalRank } from '../../../types';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
@@ -19,6 +19,9 @@ import { ItemFactory } from '../item/ItemFactory';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
+import { RestDoor } from '../../logic/systems/RestDoor';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
@@ -46,12 +49,9 @@ function charge(amount: number, reason: string, data: Record<string, any> = {}):
   return true;
 }
 
-function identifyStashItems(ids: string[]) {
-  usePlayerStore.setState(s => ({
-    player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: tab.items.map(i => ids.includes(i.id) ? { ...i, isIdentified: true } : i) } : tab
-    ) } }
-  }));
+/** D50: even a paid reader needs the night. What she has is known at the next rest. */
+function studyOvernight(ids: string[]) {
+  usePlayerStore.setState(s => ({ player: ids.reduce((p, id) => RestSystem.queueStudy(p, id), s.player) }));
 }
 
 /** Repair cost: a quarter of the item's value, scaled by what's missing. */
@@ -62,27 +62,42 @@ export function repairCost(item: { value: number; stats: { durability?: number; 
   return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing));
 }
 
+/** The one door to what can be repaired: the stash and the body (R6). */
+export function repairable(): IItem[] {
+  const equipment = usePlayerStore.getState().player.equipment;
+  return [...stashItems(), ...(equipment?.items ?? [])]
+    .filter(i => i.stats?.maxDurability && (i.stats.durability ?? 0) < i.stats.maxDurability);
+}
+
 export function repairItem(itemId: string): { ok: boolean; text: string } {
-  const item = stashItems().find(i => i.id === itemId);
-  if (!item) return { ok: false, text: 'That is not in your stash.' };
+  const item = [...stashItems(), ...(usePlayerStore.getState().player.equipment?.items ?? [])].find(i => i.id === itemId);
+  if (!item) return { ok: false, text: 'That is not in your stash or on your body.' };
   const cost = repairCost(item as any);
   if (cost === 0) return { ok: false, text: `${item.name} needs no work.` };
   if (!charge(cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank().gold}G.` };
+  const mended = <T extends IItem>(i: T): T => i.id === itemId ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability } } : i;
   usePlayerStore.setState(s => ({
-    player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: tab.items.map(i => i.id === itemId
-        ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability }, name: i.name } : i) } : tab
-    ) } }
+    player: {
+      ...s.player,
+      equipment: s.player.equipment ? { ...s.player.equipment, items: s.player.equipment.items.map(mended) } : s.player.equipment,
+      bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+        idx === 0 ? { ...tab, items: tab.items.map(mended) } : tab
+      ) }
+    }
   }));
   return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
 }
+
+/** The city hears from every world it serves. */
+export const allLore = (): string[] => [...LORE_FRAGMENTS, ...ContentRegistry.list().flatMap(t => t.lore)];
 
 /** The day's rumor: deterministic per hub and day, so the whole bar hears the same one. */
 export function rumorOfTheDay(): string {
   const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
   const day = Math.floor(Date.now() / 86_400_000);
   const rng = Rng.fromKey(`${hubId}:rumor:${day}`);
-  return LORE_FRAGMENTS[rng.int(0, LORE_FRAGMENTS.length)];
+  const lore = allLore();
+  return lore.length > 0 ? lore[rng.int(0, lore.length)] : 'Nobody is saying anything today.';
 }
 
 export const DIALOGUE_HANDLERS: Record<string, Handler> = {
@@ -102,11 +117,11 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     const unknown = stashItems().filter(i => i.isIdentified === false);
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
     if (bank().gold < cost) return { kind: 'reply', text: `Truth costs ${cost}G. You carry ${bank().gold}G.` };
-    const target = unknown[0];
+    const target = unknown.find(i => !RestSystem.isStudied(usePlayerStore.getState().player, i.id));
+    if (!target) return { kind: 'reply', text: 'I have everything of yours already. Sleep on it. You will know when you wake.' };
     charge(cost, 'IDENTIFY', { itemId: target.id });
-    identifyStashItems([target.id]);
-    const after = stashItems().find(i => i.id === target.id);
-    return { kind: 'reply', text: `The noise resolves. It was ${after?.name ?? target.name} all along.` };
+    studyOvernight([target.id]);
+    return { kind: 'reply', text: 'Leave it with me tonight. Nobody knows a thing until they have slept on it, not even me.' };
   },
   IDENTIFY_ALL: (payload) => {
     const cost = payload?.cost ?? 500;
@@ -114,8 +129,8 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
     if (bank().gold < cost) return { kind: 'reply', text: `All of it at once costs ${cost}G. You carry ${bank().gold}G.` };
     charge(cost, 'IDENTIFY_ALL', { count: unknown.length });
-    identifyStashItems(unknown.map(i => i.id));
-    return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} resolved. Read them before you trust them.` };
+    studyOvernight(unknown.map(i => i.id));
+    return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} on my table. You will know when you wake. Read them before you trust them.` };
   },
   OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
 
@@ -133,6 +148,10 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
 
   // --- The Rusty Anchor (Old Mags) ---
+  REST: () => {
+    void RestDoor.sleep('INN');
+    return { kind: 'reply', text: `${INN_FEE}G, and the bed by the wall. Whatever you have been carrying around in your head, leave it on the pillow.` };
+  },
   BUY_CONSUMABLE: (payload) => {
     const cost = payload?.cost ?? 10;
     if (!charge(cost, 'TAVERN', { itemId: payload?.itemId })) {

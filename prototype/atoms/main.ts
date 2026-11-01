@@ -1,3 +1,4 @@
+import '../../tests/fixtures/content/installOnLoad';
 import { MOB_DEFINITIONS } from '../../src/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
 import {

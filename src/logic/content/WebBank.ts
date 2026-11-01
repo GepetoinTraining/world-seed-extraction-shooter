@@ -87,11 +87,11 @@ export class WebBank {
   // THE LAW: one batch, judged whole against what the bank holds
   // ---------------------------------------------------------------------
 
-  static validateBatch(batch: IWebBatch, prior: IWebPack): WebVerdict {
-    return this.judge(batch, prior, indexOf(prior));
+  static validateBatch(batch: IWebBatch, prior: IWebPack, alsoKnown?: Set<string>): WebVerdict {
+    return this.judge(batch, prior, indexOf(prior), alsoKnown);
   }
 
-  private static judge(batch: IWebBatch, prior: IWebPack, priorIndex: PackIndex): WebVerdict {
+  private static judge(batch: IWebBatch, prior: IWebPack, priorIndex: PackIndex, alsoKnown?: Set<string>): WebVerdict {
     const refuse = (why: string) => no(`Batch ${batch.runId} refused whole: ${why}`);
     if (!batch.runId?.trim()) return no('A batch with no run id is not a run.');
     if (!batch.model?.trim()) return refuse('it names no model. Who ran it stays on the record.');
@@ -151,7 +151,7 @@ export class WebBank {
       ...prior.materials.map(m => m.id), ...prior.goods.map(g => g.id), ...prior.stations.map(s => s.id),
       ...(batch.materials ?? []).map(m => m.id), ...(batch.goods ?? []).map(g => g.id), ...(batch.stations ?? []).map(s => s.id)
     ]);
-    const exists = (id: string) => known.has(id) || id in RESOURCE_DEFINITIONS || id in CRAFTED_DEFINITIONS;
+    const exists = (id: string) => known.has(id) || !!alsoKnown?.has(id) || id in RESOURCE_DEFINITIONS || id in CRAFTED_DEFINITIONS;
 
     for (const tool of batch.tools ?? []) {
       if (!claim(tool.id)) return refuse(`${tool.id} is already in the web, or has no id.`);
@@ -322,9 +322,9 @@ export class WebBank {
   // WHAT CONNECTS TO WHAT, derived. Never a table.
   // ---------------------------------------------------------------------
 
-  private static allWebIds = new Set<string>(
-    WEB_BATCHES.flatMap(b => [...(b.goods ?? []), ...(b.materials ?? []), ...(b.stations ?? [])].map(e => e.id))
-  );
+  private static get allWebIds(): Set<string> {
+    return new Set<string>(WEB_BATCHES.flatMap(b => [...(b.goods ?? []), ...(b.materials ?? []), ...(b.stations ?? [])].map(e => e.id)));
+  }
 
   /** What can be worked, as of this pack: the standing definitions, plus what this pack added. */
   static workableMaterials(pack: IWebPack): { id: string; tags: string[]; requiredTools: string[]; rank: UniversalRank }[] {

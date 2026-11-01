@@ -212,13 +212,52 @@ export class FieldRenderer {
       ctx.fillRect(snap(b.x - ox) - 2, snap(b.y - oz) - 2, 4, 4);
     });
 
+    visible.forEach(e => this.drawTelegraph(ctx, e, ox, oz, now));
     (scene.effects ?? []).forEach(f => this.drawEffect(ctx, f, now, ox, oz, !!scene.reducedMotion));
     if (scene.hurtAt && now - scene.hurtAt < HURT_EDGE_MS) this.drawHurtEdge(ctx, width, height, now - scene.hurtAt, !!scene.reducedMotion);
   }
 
+  /**
+   * A wind-up reads by shape and position, never hue: corner brackets for a blow,
+   * a broken ring at its true reach for an area, a dashed line for a shot. The marks
+   * close in as it comes due, so timing a dodge needs no number.
+   */
+  private drawTelegraph(ctx: CanvasRenderingContext2D, e: IWorldEntity, ox: number, oz: number, now: number) {
+    const t = e.telegraph;
+    if (!t) return;
+    const left = Math.max(0, (t.until - now) / Math.max(1, t.until - t.startedAt));
+    const x = snap(e.position.x - ox), y = snap(e.position.y - oz);
+    ctx.fillStyle = this.color(Role.THREAT, 4);
+    if (t.delivery === 'ranged') {
+      for (let d = 24; d < 24 + 120 * (1 - left); d += 12) {
+        ctx.fillRect(snap(x + Math.cos(t.angle) * d) - 2, snap(y + Math.sin(t.angle) * d) - 2, 4, 4);
+      }
+      return;
+    }
+    if (t.delivery === 'area' || t.delivery === 'aura') {
+      const marks = 16;
+      for (let i = 0; i < marks; i++) {
+        if (i % 2 === 1) continue;
+        const a = (i / marks) * Math.PI * 2;
+        ctx.fillRect(snap(x + Math.cos(a) * t.reachPx) - 3, snap(y + Math.sin(a) * t.reachPx) - 3, 6, 6);
+      }
+      const r = t.reachPx * (1 - left);
+      for (let i = 0; i < marks; i++) {
+        const a = (i / marks) * Math.PI * 2;
+        ctx.fillRect(snap(x + Math.cos(a) * r) - 1, snap(y + Math.sin(a) * r) - 1, 2, 2);
+      }
+      return;
+    }
+    const r = snap(16 + 24 * left);
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {
+      ctx.fillRect(x + sx * r - (sx > 0 ? 8 : 0), y + sy * r - (sy > 0 ? 2 : 0), 8, 2);
+      ctx.fillRect(x + sx * r - (sx > 0 ? 2 : 0), y + sy * r - (sy > 0 ? 8 : 0), 2, 8);
+    });
+  }
+
   /** Pips under a wounded enemy: count and position carry the reading, not hue. */
   private drawHealth(ctx: CanvasRenderingContext2D, e: IWorldEntity, x: number, y: number, w: number) {
-    const max = MOB_DEFINITIONS[e.definitionId]?.baseHealth ?? 0;
+    const max = (MOB_DEFINITIONS[e.definitionId]?.baseHealth ?? 0) + (e.bonusHealth ?? 0);
     const health = e.health ?? 0;
     if (max <= 0 || health >= max || health <= 0) return;
     const pips = 5;

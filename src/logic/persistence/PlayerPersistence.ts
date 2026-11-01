@@ -34,7 +34,7 @@ export class PlayerPersistence {
 
   /** The persistent half of the player: the session never goes in the bank doc. */
   static persistable(player: IPlayer): IPlayer {
-    return { ...player, currentSession: undefined };
+    return { ...player, energyToday: player.currentSession?.energy ?? player.energyToday, currentSession: undefined };
   }
 
   static persistableJson(player: IPlayer): string {

@@ -4,40 +4,6 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 
 ## Open
 
-### Found by Pedro in the first run, 2026-10-31
-
-| # | What happens | Where |
-|---|---|---|
-| R4 | A "neutral" dragon killed a 120-health character in one hit, 200 damage, with no warning (session 1eb4cd43, 1m53s, 1,260 G lost). Four faults stack, listed below | `MobAI.ts`, `WorldGenerator.ts`, `mobDefinitions.ts` |
-
-R4's four faults:
-
-1. **A world's difficulty does nothing.** Pedro's Test World says E, and nothing in generation reads that rule. Rank comes from noise alone, and in that world's sample 15.8% of the chunks are rank S. The sector he dropped into is almost entirely S.
-2. **The spawn pool is flat.** A chunk picks evenly from everything at or below its rank, so in a Fantasy S chunk, a third of the packs are 1 to 3 dragons, beside rats. An elite should be rare, and alone.
-3. **Neutral isn't neutral.** It stirs and strikes the moment you come within 2 tiles, with no provocation. The definition's comment says it attacks only "if you touch its hoard", and no hoard exists. Its first strike is instant, because the cooldown starts expired, so there is no telegraph.
-4. **You can't get away.** Dragon speed is 5 tiles/s, against the player's 4.
-
-Fix shape, for the sprint: generation reads the world's difficulty; the pool is weighted toward the chunk's rank, with elites scarce; neutral attacks only once provoked, and a strike winds up visibly first (Layer 2's telegraph, starting here). Register the bars first.
-
-| Item | What happens | Where |
-|---|---|---|
-| R5 | An Aetheric Lens, dropped in the field and tried on, stayed in the pack. Which door Pedro used is not known yet; the faults below are all confirmed against the code | `itemDefinitions.ts`, `LoadoutSystem.ts`, `FeedView.tsx` |
-
-R5's faults:
-
-1. **The eyes refuse a lens.** Its slot is `ACCESSORY`, and no body slot takes that. Dragged to the eyes it reads "The EYES take lenses. Aetheric Lens of Radiance would only blind you."
-2. **Its only home is the single tool slot,** through its `tool` tag. If a tool is held, E or double-click swaps them, and a 1×3 tool lands in the lens's own 1×3 cell, so the pack can look unchanged. If the lens is refused, for FOCUS 3 or a full pack, it stays.
-3. **A refusal can be missed.** With the sheet open, the feed draws 402px above the bottom of the window, which can sit off a short window.
-4. **It would do nothing anyway.** `field_analysis_speed`, `luck_find_rarity` and `light_radius` have no reader (M1).
-
-Fix shape: the lens becomes an eye piece, 1×1, with no `tool` tag, as D17 said glasses are the home for identify, scan and study. Its stats act: analysis speed shortens the identify clock. A bar holds that every definition has a slot that takes it, and that a refusal is on screen whatever the window's height.
-
-| Item | What happens | Where |
-|---|---|---|
-| R6 | Repair cannot see what you are wearing. A worn Gladius at 46 of 100 is not on Steelweave's list, which says nothing needs work. Since Wave 10C worn gear lives on the body, and `repairItem` and its window read only the stash, as does its one test, so the bar passes | `dialogue.ts`, `RepairModal` in `HubCanvas.tsx` |
-
-Fix shape for R6: repair reads the stash and the body, through one door, with the gold on the ledger and the fix saved. A bar repairs a worn piece.
-
 ### Left open by the usability pass, approved "for now" by Pedro, 2026-10-31
 
 | # | What happens | Where |
@@ -55,18 +21,12 @@ Fix shape for R6: repair reads the stash and the body, through one door, with th
 |---|---|---|
 | R2 | Pedro said a couple of things; only R1 has been named so far | |
 
-### Found while building the usability pass
+### Found while checking the magic + content layer, 2026-11-01
 
 | # | What happens | Where |
 |---|---|---|
-| B1 | A worn bag raises the limit the HUD shows, but a pickup is still measured against strength alone, so the extra capacity cannot be filled by picking things up | `tryAddItems` in `src/entities/player/store.ts` |
-
-### Found while reading the code for the next layer, 2026-10-31
-
-| # | What happens | Where |
-|---|---|---|
-| M1 | Most item stats do nothing. `damage`, `defense` and `max_health` on an affix change no fight, so the card's numbers and an unstudied piece's downside are not real. Also unread: accuracy, evasion, crit, block, energy regen, poison, light, pickup radius | `CombatMath.ts` reads item power only; plan's Layer 0 |
-| M2 | Energy is meant to be a daily resource that a rest restores (D51). Today nothing restores it during a run, and each new drop refills it for free | the new session's energy line in `player/store.ts`; plan's Layer 0 |
+| N5 | `tests/database.store.test.ts`, two processes writing one new file: it failed about one run in three, because both tried to create the tables on first open. `migrateTakingTurns` fixes that cause, and 45 runs since gave 44 passes. The one failure was not captured, so it may be a second cause. Machine load is the likeliest, and that is a guess | `server/connection.ts` |
+| N6 | Found by Pedro in play: a creature can be defeated from beyond where it notices anything, and it never responds. From reading the code, not yet run: a hit calls `MobAI.provoke`, then the next tick sees the shooter past the leash (at least 16 tiles) and puts it back to dormant with `provoked` cleared. Sight is also capped at 16 tiles, and nothing has it look toward where a hit came from | `src/entities/mob/ai/MobAI.ts:197-213` |
 
 ## Fixed
 
@@ -103,4 +63,10 @@ Fix shape for R6: repair reads the stash and the body, through one door, with th
 | R1 | Pedro: an unidentified cart kit could be unfolded | d09b6cb | Bars; played on a test avatar: refused in voice, stays in the pack. Pedro's own run found it |
 | N4 | Found checking R1: a signal gave itself away by the hover's comparison and rank, by its real name in refusals and the feed, by the fitting list, and by which buttons it offered | d09b6cb | Bars |
 | R3 | Pedro's call on R1: identify in the field refused the unschooled outright, and its refusal named the piece's kind | b6fe63a | D32: a keyed roll paid in energy. Bars; played on a test avatar: paid, timed, hit, read. A miss by bar |
+| R4 | A "neutral" dragon killed a 120-health character in one hit, with no warning | this branch | Bars; played on a test avatar: a world's difficulty bounds its ground, spawns weigh to the chunk's rank and elites are scarce and alone, neutral waits to be harmed, and a hound's brackets show before its blow. Nothing outruns a bare walk, by formula |
+| R5 | An Aetheric Lens could not be worn and did nothing | this branch | Gone with the tables. Its rule is law: every gear kind has a slot, by bar. `field_analysis_speed` shortens the study clock |
+| R6 | Repair could not see what you were wearing | this branch | Bar: a worn piece repaired, paid for, still worn. Not played in the window |
+| B1 | A worn bag's capacity could not be filled by pickups | this branch | Bar: one limit, `LoadoutSystem.carryLimit`, everywhere |
+| M1 | Most item stats did nothing | this branch | Bars: every stat has a reader or the batch falls. Felt in play only as far as reserves and the shelf; balance waits for Wave 12 |
+| M2 | Each new drop refilled energy | this branch | Bars; played: 37 kept through a return and a reload, restored by a night at the inn |
 | N1 | Found by the conservation bar: two caches left in one millisecond shared an id, and taking one took both | b5cd6ea | Bar |

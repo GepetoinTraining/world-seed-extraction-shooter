@@ -11,7 +11,7 @@ import { PlayerPersistence } from '../persistence/PlayerPersistence';
 export async function deployToWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
   const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
-  if (card.retired) return { ok: false, reason: 'Surveyed on an older grid. Its record stands, but it can no longer be walked.' };
+  if (card.retired) return { ok: false, reason: 'Made of what no longer exists. Its record stands, but it can no longer be walked.' };
 
   // Wave 4.4: the world cert's power gates are enforced at the door
   if (card.ipCap || card.ipFloor) {

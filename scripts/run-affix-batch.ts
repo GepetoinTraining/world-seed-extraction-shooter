@@ -33,6 +33,17 @@ import { IAffixBatch, IWebBatch } from '../types';
 
 const candidatePath = process.argv[2];
 
+// D53: a candidate theme stands before the same law. Pass a JSON theme body to judge it.
+if (candidatePath) {
+  const candidate = JSON.parse(readFileSync(candidatePath, 'utf8'));
+  if (Array.isArray(candidate.creatures)) {
+    const { ThemeLaw } = await import('../src/logic/theme/ThemeLaw');
+    const verdict = ThemeLaw.validate(candidate, tag => WebBank.current().tags.some(t => t.tag === tag));
+    console.log(verdict.ok ? `LAWFUL   theme ${candidate.name}` : verdict.reason);
+    process.exit(verdict.ok ? 0 : 1);
+  }
+}
+
 console.log('WORLD SEED // AFFIX AND WEB BATCH HARNESS (D20)');
 console.log('-----------------------------------------------');
 

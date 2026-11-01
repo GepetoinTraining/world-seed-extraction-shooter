@@ -5,11 +5,13 @@ import { LootTable } from '../world/LootTable';
 import { IItem, UniversalRank, Rarity } from '../../../types';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
+import { IStatusPlan, StatusClock } from '../../logic/systems/EffectSystem';
 
 export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG';
   entityId?: string;
   definitionId?: string;
+  displayName?: string;
   damage?: number;
   position?: { x: number; y: number };
   loot?: IItem[];
@@ -26,6 +28,18 @@ export interface ICombatEvent {
   };
 }
 
+/** How long poison keeps working after the hit, and how often it bites. Guesses until Wave 12. */
+const POISON_MS = 3000;
+const POISON_TICK_MS = 1000;
+
+const poisoned = (mob: IWorldEntity, perTick: number, now: number) => {
+  mob.statuses = StatusClock.add(mob.statuses as never, { kind: 'dot', magnitude: perTick, durationMs: POISON_MS, tickMs: POISON_TICK_MS }, now) as never;
+};
+
+const struck = (mob: IWorldEntity, status: IStatusPlan | undefined, now: number) => {
+  if (status) mob.statuses = StatusClock.add(mob.statuses as never, status, now) as never;
+};
+
 export class CombatSystem {
   
   static tick(
@@ -33,7 +47,8 @@ export class CombatSystem {
     chunks: Record<string, IChunk>,
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
-    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; hitIds?: Set<string> }[]
+    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string> }[],
+    opts: { magicFind?: number } = {}
   ): {
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
@@ -69,6 +84,7 @@ export class CombatSystem {
         type: 'KILL',
         entityId: mob.id,
         definitionId: mob.definitionId,
+        displayName: mob.displayName,
         position: mob.position,
         xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity }
       });
@@ -82,9 +98,9 @@ export class CombatSystem {
           chunkY: origin.y,
           layerId: 'field',
           biome: origin.biome,
-          magicFind: 1.0,
+          magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
-        } : undefined, rollKey);
+        } : undefined, rollKey, mob.displayName);
         SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
         if (loot.length > 0) {
           spawnedLoot.push({ position: mob.position, items: loot });
@@ -101,6 +117,19 @@ export class CombatSystem {
       }
     };
 
+    // 0. WHAT IS ALREADY WORKING ON THEM
+    const tickNow = Date.now();
+    allMobs.forEach(({ mob, chunkKey }) => {
+      if (!mob.statuses?.length) return;
+      const { damage, statuses } = StatusClock.tick(mob.statuses as never, tickNow);
+      mob.statuses = statuses as never;
+      if (damage > 0) {
+        mob.health = (mob.health ?? 0) - damage;
+        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
+        if (mob.health <= 0) resolveDefeat(mob, chunkKey);
+      }
+    });
+
     // 1. BULLET -> MOB
     const bulletsToRemove = new Set<number>();
 
@@ -113,6 +142,8 @@ export class CombatSystem {
 
         const damage = bullet.damage ?? 25;
         mob.health -= damage;
+        if (bullet.poison) poisoned(mob, bullet.poison, tickNow);
+        struck(mob, bullet.status, tickNow);
         bulletsToRemove.add(bulletIdx);
 
         events.push({
@@ -154,6 +185,8 @@ export class CombatSystem {
         if (angleDiff < 0.75 || angleDiff > Math.PI * 2 - 0.75) {
           const damage = arc.damage ?? 50; // Wave 4: the weapon decides
           mob.health -= damage;
+          if (arc.poison) poisoned(mob, arc.poison, tickNow);
+          struck(mob, arc.status, tickNow);
           hitIds.add(mob.id);
 
           // ACTION: Melee Hit

@@ -1290,7 +1290,7 @@ describe('what has not been read cannot be worked, and does not give itself away
     expect(SRC('src/components/ui/HoverLayer.tsx')).toMatch(/item\.isIdentified === false \? undefined : <RankMark/);
   });
 
-  it('D32: an eye not yet schooled no longer refuses, so nothing it says can name the kind', () => {
+  it('D50: an eye not yet schooled may still look, so nothing it says can name the kind', () => {
     field([kit()]);
     const asked = store().fieldIdentify('sig_kit');
     expect(asked.ok).toBe(true);
@@ -1300,162 +1300,49 @@ describe('what has not been read cannot be worked, and does not give itself away
 });
 
 // -----------------------------------------------------------------------------
-// D32 (PEDRO, 2026-10-31): identify in the field is a roll paid in energy
+// D50 (PEDRO, 2026-11-01): you can study a thing, and you only know after a rest.
+// This replaced D32's field roll. The new bars for it are in tests/rest.test.ts.
+// What stays here: the price and the voice still give nothing away.
 // -----------------------------------------------------------------------------
 
-describe('D32: the field identify is a keyed roll, paid for, and it tells nothing by its price', () => {
-  const signal = (id: string, over: Partial<IItem> = {}): IItem => ({
-    ...synth(id, over.slot ?? SlotType.MAIN_HAND, { name: 'Zzsecretname', isIdentified: false, rank: UniversalRank.F, tags: ['melee'], ...over }),
-    ...(over.rarity ? { rarity: over.rarity } : {})
-  });
-  const school = (scope = 'weapon', level = 1) => usePlayerStore.setState(s => ({
-    player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [`skill_identify_${scope}`]: { id: `skill_identify_${scope}`, level, currentXp: 0, tags: [`identify_${scope}`] } as any } } }
-  }));
+describe('D50: a study asks of the person, and says nothing of the piece', () => {
   const fed = () => useFeed.getState().lines.map(l => l.text).join(' | ');
-
-  it('the odds: low, by rank and rarity, better with the eye, and three ranks above simply opens', () => {
-    const p = player();
-    const at = (rank: UniversalRank, rarity: Rarity) => StudySystem.identifyChance(p, signal('x', { rank, rarity } as any));
-    expect(at(UniversalRank.F, Rarity.COMMON)).toBe(20);
-    expect(at(UniversalRank.E, Rarity.COMMON)).toBe(5);
-    expect(at(UniversalRank.F, Rarity.RARE)).toBe(10);
-    expect(at(UniversalRank.S, Rarity.RARE)).toBe(3); // the floor: never nothing
-    school('weapon', 1);
-    expect(StudySystem.identifyChance(player(), signal('x', { rarity: Rarity.COMMON } as any))).toBe(30);
-    school('weapon', 45); // rank C, three above F: D6
-    expect(StudySystem.identifyChance(player(), signal('x', { rarity: Rarity.LEGENDARY } as any))).toBe(100);
-    school('weapon', 25); // rank D: two above, no auto, capped below certainty
-    expect(StudySystem.identifyChance(player(), signal('x', { rarity: Rarity.COMMON } as any))).toBeLessThanOrEqual(95);
+  const signal = (id: string, over: Partial<IItem> = {}): IItem => ({
+    ...synth(id, over.slot ?? SlotType.MAIN_HAND, { name: 'Zzsecretname', isIdentified: false, rank: UniversalRank.F }),
+    ...over
   });
 
-  it('it costs energy up front: half again unschooled, and a press with too little costs nothing', () => {
-    field([signal('s1')], [], 100);
-    const ask = store().fieldIdentify('s1');
-    expect(ask.ok).toBe(true);
-    expect(ask.cost).toBe(15);
-    expect(session().energy).toBe(85);
-    school('armor', 1); // schooled in anything
-    expect(store().fieldIdentify('s1').cost).toBe(10);
-    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 3 } } }));
+  it('two unread pieces of very different worth ask the same price and the same clock', () => {
+    const a = signal('cheap', { rank: UniversalRank.F });
+    const b = signal('dear', { rank: UniversalRank.S, rarity: Rarity.LEGENDARY });
+    field([a, b]);
+    const p = store().player;
+    expect(StudySystem.identifyAsk(p, a)).toEqual(StudySystem.identifyAsk(p, b));
+  });
+
+  it('paid up front, and refused plainly when the day is spent', () => {
+    field([signal('s1')]);
+    usePlayerStore.setState(st => ({ player: { ...st.player, currentSession: { ...st.player.currentSession!, energy: 1 } } }));
     const refused = store().fieldIdentify('s1');
     expect(refused.ok).toBe(false);
     expect(refused.reason).toMatch(/energy/);
-    expect(session().energy).toBe(3);
+    expect(refused.reason).not.toContain('Zzsecretname');
   });
 
-  it('price and clock say nothing of what a signal is: the same for any rank, rarity or kind', () => {
-    school('weapon', 30);
-    const ask = (over: Partial<IItem>) => StudySystem.identifyAsk(player(), signal('x', over));
-    const plain = ask({});
-    expect(ask({ rank: UniversalRank.SSS, rarity: Rarity.ARTIFACT } as any)).toEqual(plain);
-    expect(ask({ slot: SlotType.CHEST, tags: [] })).toEqual(plain);
-    expect(ask({ slot: SlotType.TOOL, tags: ['tool'] })).toEqual(plain);
-    expect(SRC('src/components/CharacterSheet.tsx')).not.toMatch(/identifyChance/);
-    expect(SRC('src/components/CharacterSheet.tsx')).toMatch(/identifyAsk/);
+  it('nothing it says names the piece', () => {
+    field([signal('s2')]);
+    usePlayerStore.setState(st => ({ player: { ...st.player, currentSession: { ...st.player.currentSession!, energy: 100 } } }));
+    expect(store().fieldIdentify('s2').ok).toBe(true);
+    expect(store().completeFieldIdentify('s2').ok).toBe(true);
+    expect(fed()).not.toContain('Zzsecretname');
   });
 
-  it('the roll is keyed: the same attempt always answers the same, and only another attempt can differ', () => {
-    const play = () => {
-      field([signal('keyed')]);
-      const out: boolean[] = [];
-      for (let i = 0; i < 40 && session().inventory[0].isIdentified === false; i++) {
-        usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 1000 } } }));
-        store().fieldIdentify('keyed');
-        out.push(store().completeFieldIdentify('keyed').ok);
-      }
-      return out;
-    };
-    expect(play()).toEqual(play());
-    expect(SRC('src/entities/player/store.ts')).toMatch(/rollKey\('identify'/);
-  });
-
-  it('a roll needs paying for: no attempt without an ask, and one ask buys one attempt', () => {
-    // find a piece whose first roll misses: the rolls are keyed, so this is stable
-    let id = '';
-    for (let i = 0; i < 100 && !id; i++) {
-      field([signal(`paid_${i}`)]);
-      expect(store().completeFieldIdentify(`paid_${i}`).ok).toBe(false);
-      expect(session().inventory[0].isIdentified).toBe(false);
-      expect(session().inventory[0].identifyAttempts ?? 0).toBe(0);
-      store().fieldIdentify(`paid_${i}`);
-      store().completeFieldIdentify(`paid_${i}`);
-      if (session().inventory[0].isIdentified === false) id = `paid_${i}`;
-    }
-    expect(session().inventory[0].identifyAttempts).toBe(1);
-    expect(store().completeFieldIdentify(id).ok).toBe(false);
-    expect(session().inventory[0].identifyAttempts).toBe(1);
-  });
-
-  it('the odds hold over many pieces, near what the law says', () => {
-    let hits = 0;
-    const N = 400;
-    const items = Array.from({ length: N }, (_, i) => signal(`odds_${i}`, { dimensions: { width: 1, height: 1 } }));
-    field([]);
-    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, inventory: items, inventoryLayout: {}, energy: 100000 } } }));
-    for (const it of items) {
-      store().fieldIdentify(it.id);
-      if (store().completeFieldIdentify(it.id).ok) hits++;
-    }
-    const rate = hits / N;
-    expect(rate).toBeGreaterThan(0.13);
-    expect(rate).toBeLessThan(0.27);
-  });
-
-  it('a miss loses the energy and the seconds only: the piece stays, unread, and says nothing', () => {
-    useFeed.setState({ lines: [] });
-    let missed = false;
-    for (let i = 0; i < 100 && !missed; i++) {
-      const id = `miss_${i}`;
-      const affix = { id: `aff_hidden_${i}`, name: 'of the Hidden', type: 'SUFFIX', stats: { reach: 5 }, tier: 1 } as any;
-      field([signal(id, { affixes: [affix], stats: { reach: 5 } })]);
-      store().fieldIdentify(id);
-      const v = store().completeFieldIdentify(id);
-      if (!v.ok) {
-        missed = true;
-        expect(v.reason).toMatch(/\S/);
-        expect(session().inventory.map(i => i.id)).toEqual([id]);
-        expect(session().inventory[0].isIdentified).toBe(false);
-        expect(LoadoutSystem.isAffixStudied(player(), affix.id)).toBe(false);
-        expect(fed()).not.toContain('Zzsecretname');
-        expect(fed()).not.toMatch(/\bweapon\b/i);
-      }
-    }
-    expect(missed).toBe(true);
-  });
-
-  it('a hit reads exactly what was banked', () => {
-    const affix = { id: 'aff_hit', name: 'of the Found', type: 'SUFFIX', stats: { reach: 5 }, tier: 1 } as any;
-    field([signal('hit', { affixes: [affix], stats: { reach: 5 } })]);
-    for (let i = 0; i < 300 && session().inventory[0].isIdentified === false; i++) {
-      usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 1000 } } }));
-      store().fieldIdentify('hit');
-      store().completeFieldIdentify('hit');
-    }
-    expect(session().inventory[0].isIdentified).toBe(true);
-    expect(LoadoutSystem.isAffixStudied(player(), 'aff_hit')).toBe(true);
-  });
-
-  it('unschooled tries are winging it: they accrue, and no skill appears until a rest', () => {
-    field([signal('wing')]);
-    store().fieldIdentify('wing');
-    store().completeFieldIdentify('wing');
-    expect(player().bank.universalSkills['skill_identify_weapon']).toBeUndefined();
-    expect(player().skillProgress?.['skill_identify_weapon']?.attempts).toBe(1);
-    expect(fed()).not.toMatch(/Weapon Eye/);
-  });
-
-  it('a schooled eye grows by use, hit or miss', () => {
-    school('weapon', 1);
-    field([signal('use')]);
-    const before = player().bank.universalSkills['skill_identify_weapon'].currentXp;
-    store().fieldIdentify('use');
-    store().completeFieldIdentify('use');
-    const after = player().bank.universalSkills['skill_identify_weapon'];
-    expect(after.currentXp + after.level * 1000).toBeGreaterThan(before + 1000);
-  });
-
-  it('the sheet\'s forming list says "the eye", not which', () => {
-    expect(SRC('src/components/PlayerHub.tsx')).toMatch(/the eye/);
+  it('a second completion with nothing paid gives nothing', () => {
+    field([signal('s3')]);
+    usePlayerStore.setState(st => ({ player: { ...st.player, currentSession: { ...st.player.currentSession!, energy: 100 } } }));
+    store().fieldIdentify('s3');
+    expect(store().completeFieldIdentify('s3').ok).toBe(true);
+    expect(store().completeFieldIdentify('s3').ok).toBe(false);
   });
 });
 

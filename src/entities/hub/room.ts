@@ -501,11 +501,10 @@ export const billText = (bill: { tag: string; count: number }[]) =>
   bill.map(line => `${line.count} ${line.tag}`).join(', ');
 
 /** The material a tag defaults to when nobody chose (presets, previews). */
-export const TAG_DEFAULT_MATERIAL: Record<string, string> = {
-  building: 'crf_plank',
-  wood: 'crf_plank',
-  glass: 'crf_glass',
-  metal: 'crf_iron_ingot'
+export const tagDefaultMaterial = (tag: string): string => {
+  const worked = Object.values(CRAFTED_DEFINITIONS).find(d => (d.tags ?? []).includes(tag));
+  if (worked) return worked.id;
+  return Object.values(RESOURCE_DEFINITIONS).find(d => (d.tags ?? []).includes(tag))?.id ?? '';
 };
 
 // ---------------------------------------------------------------------------

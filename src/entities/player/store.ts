@@ -18,6 +18,10 @@ import { ItemType, Rarity } from '../../../types';
 import { InventorySystem } from './systems/InventorySystem';
 import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
+import { StatSystem } from '../../logic/systems/StatSystem';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { RestSystem } from '../../logic/systems/RestSystem';
+import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
@@ -150,6 +154,8 @@ interface PlayerState {
 
   toggleCarry: (itemId: string) => void;
   consumeItem: (itemId: string) => void;
+  /** Layer 3: what a scroll just asked the field to cast. */
+  pendingCast?: string | null;
 
   // Wave 4: stats mean something
   equipItem: (itemId: string) => void;
@@ -479,7 +485,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const oldPlace = layout[itemId];
       delete layout[itemId];
       const newBag = target === 'BAG' ? (item.stats?.carry_bonus_kg ?? 0) : LoadoutSystem.bagCapacityBonus(equipment);
-      const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag;
+      const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag + StatSystem.total(equipment, 'carry_capacity');
       const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([holder]);
       if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${shown(holder)} still.` });
       const occ = InventorySystem.buildOccupancy(inv, layout);
@@ -761,20 +767,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const scope = StudySystem.identifyScopeOf(item);
     if (!scope) return { ok: false, reason: `${item.name} holds no maker's riddle. There is nothing to study.` };
 
-    // The sitting: the scoped skill grows by use (D6), the record opens.
+    // D50: a sitting costs the day's energy, and what it found is known only after a rest.
+    const { cost } = StudySystem.identifyAsk(player, item);
+    const today = player.energyToday ?? StatSystem.maxEnergy(player.attributes, player.equipment);
+    if (today < cost) {
+      const v = { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(today)}. Rest first.` };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    // The sitting: the scoped skill grows by use (D6).
     get().gainSkillXp(StudySystem.scopeSkillId(scope), 60, ['study', 'intel'], { tags: ['study'], magnitude: 10 } as any);
-    set(s => ({
-      player: {
-        ...StudySystem.reveal(s.player, item),
-        bank: {
-          ...s.player.bank,
-          stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-            idx === 0 ? { ...tab, items: tab.items.map(i => i.id === itemId ? { ...i, isIdentified: true } : i) } : tab)
-        }
-      }
-    }));
+    set(s => ({ player: { ...RestSystem.queueStudy(s.player, itemId), energyToday: today - cost } }));
     const level = StudySystem.identifyLevel(get().player, item);
-    feed(`Studied ${item.name}. The ${scope} eye stands at ${level}; what was banked on it is open.`, 'proof');
+    feed(`You sat with it. The ${scope} eye stands at ${level}. You will know after you rest.`, 'proof');
     // D27: loot teaches. What the piece implies accrues, and settles only at a rest.
     const teaches = WebSystem.reverseEngineer(item).designs.filter(d => !get().player.bank.universalSkills[d.skillId]);
     if (teaches.length > 0) {
@@ -859,45 +864,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!verdict.ok) return verdict;
     if (!paidIdentifies.delete(itemId)) return { ok: false, reason: 'Nothing was paid for. The eye has not looked.' };
 
-    // D32: the same attempt always answers the same; only another attempt can differ.
-    const attempt = item.identifyAttempts ?? 0;
-    const rollKey = SessionJournal.rollKey('identify', `${itemId}:${attempt}`);
-    const hit = Rng.fromKey(rollKey).next() * 100 < StudySystem.identifyChance(player, item);
-    SessionJournal.record('INTERACT', { kind: 'IDENTIFY_ROLL', itemId, attempt, rollKey, hit });
-
-    // The eye grows either way. Unschooled, it is winging it, and it settles at a rest;
-    // said aloud only once the piece is read, because the eye's name is the piece's kind.
+    // D50: there is no roll. The looking is done; what it found is known after a rest.
+    SessionJournal.record('INTERACT', { kind: 'STUDY', itemId });
+    // The eye grows. Unschooled, it is winging it, and it settles at a rest.
     const scope = StudySystem.identifyScopeOf(item)!;
     const eyeId = StudySystem.scopeSkillId(scope);
-    if (player.bank.universalSkills[eyeId]) get().gainSkillXp(eyeId, hit ? 15 : 5, ['study', 'intel']);
+    if (player.bank.universalSkills[eyeId]) get().gainSkillXp(eyeId, 15, ['study', 'intel']);
     else set(s => ({ player: WebSystem.accrue(s.player, { id: eyeId, tags: [`identify_${scope}`] }, 0) }));
-
-    if (!hit) {
-      set(s => s.player.currentSession ? ({
-        player: { ...s.player, currentSession: {
-          ...s.player.currentSession,
-          inventory: s.player.currentSession.inventory.map(i => i.id === itemId ? { ...i, identifyAttempts: attempt + 1 } : i)
-        } }
-      }) : s);
-      const v = { ok: false, reason: `${shown(item)} gives nothing up. The energy is gone; the piece is not.` };
-      feed(v.reason, 'plain');
-      return v;
-    }
-
-    set(s => {
-      if (!s.player.currentSession) return s;
-      const revealed = StudySystem.reveal(s.player, item);
-      return {
-        player: {
-          ...revealed,
-          currentSession: {
-            ...s.player.currentSession,
-            inventory: s.player.currentSession.inventory.map(i => i.id === itemId ? { ...i, isIdentified: true } : i)
-          }
-        }
-      };
-    });
-    feed(`${item.name} identified. The record reads exactly what was banked — downsides included.`, 'proof');
+    set(s => ({ player: RestSystem.queueStudy(s.player, itemId) }));
+    feed(`You looked at ${shown(item)} for as long as it took. You will know after you rest.`, 'plain');
     return { ok: true };
   },
 
@@ -1026,6 +1001,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       };
     });
     SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, health });
+    if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
     feed(`${item.name}, straight from the belt: ${restore >= 0 ? '+' : ''}${restore} health. The pack never opened.`, restore >= 0 ? 'signal' : 'loss');
     return { ok: true };
   },
@@ -1256,9 +1232,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           // field, is haul and gets taxed on the way home like the pack's
           kitItemIds: [...fieldKit.map(i => i.id), ...(state.player.equipment?.items.map(i => i.id) ?? [])],
           inventoryLayout: InventorySystem.placeAll(fieldKit),
-          health: 100 + (state.player.attributes.constitution * 10),
-          maxHealth: 100 + (state.player.attributes.constitution * 10),
-          energy: 50 + (state.player.attributes.endurance * 5),
+          health: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
+          maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
+          // D51: a drop refills nothing. What is left of the day comes along.
+          energy: state.player.energyToday ?? StatSystem.maxEnergy(state.player.attributes, state.player.equipment),
           position: { x: 1500, y: 0, z: 1500 },
           statusEffects: []
         }
@@ -1327,6 +1304,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             stashTabs: state.player.bank.stashTabs.map((tab, idx) =>
               idx === 0 ? { ...tab, items: [...tab.items, ...orphaned] } : tab)
           },
+          energyToday: state.player.currentSession?.energy ?? state.player.energyToday,
           currentSession: undefined
         }
       }));
@@ -1342,6 +1320,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       player: {
         ...state.player,
         bank: { ...state.player.bank, stashTabs: updatedStashTabs },
+        energyToday: state.player.currentSession?.energy ?? state.player.energyToday,
         currentSession: undefined
       }
     }));
@@ -1444,9 +1423,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // gear never counts, and the worn BAG extends the capacity itself.
       set({
         currentWeight: InventorySystem.totalWeight(sessionInv),
-        maxWeight: InventorySystem.maxCarryWeight(player.attributes.strength)
-          + LoadoutSystem.bagCapacityBonus(player.equipment)
+        maxWeight: LoadoutSystem.carryLimit(player.attributes.strength, player.equipment)
       });
+      // Line 77: what is worn sets the top of the health bar; taking a piece off takes its health too
+      const session = player.currentSession;
+      if (session) {
+        const maxHealth = StatSystem.maxHealth(player.attributes, player.equipment);
+        if (maxHealth !== session.maxHealth) {
+          set(s => s.player.currentSession ? { player: { ...s.player, currentSession: {
+            ...s.player.currentSession, maxHealth, health: Math.max(1, Math.min(maxHealth, s.player.currentSession.health))
+          } } } : s);
+        }
+      }
   },
 
   // --------------------------------------------------------------------
@@ -1465,7 +1453,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const session = state.player.currentSession;
     if (!session) return { added: [], rejected: items };
 
-    const maxW = InventorySystem.maxCarryWeight(state.player.attributes.strength);
+    const maxW = LoadoutSystem.carryLimit(state.player.attributes.strength, state.player.equipment);
     let inv = [...session.inventory];
     let layout = { ...(session.inventoryLayout || InventorySystem.placeAll(session.inventory)) };
     let weight = InventorySystem.totalWeight(inv);
@@ -1614,6 +1602,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session || !item || item.type !== ItemType.CONSUMABLE) return;
     const unread = LoadoutSystem.unreadRefusal(item);
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
+    if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
     const health = Math.max(1, Math.min(session.maxHealth, session.health + restore));
@@ -1747,7 +1736,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     if (interactionId === 'int_study') {
        set(state => {
-         const targetDefId = entity?.definitionId || 'res_rock_small';
+         const targetDefId = entity?.definitionId ?? '';
          const updatedPlayer = MaterialScience.studyMaterial(targetDefId, state.player);
          return { player: updatedPlayer };
        });
@@ -1818,6 +1807,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5));
+      // Layer 4: what is gathered gives up its element, from its own world's elements
+      const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
+      if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
       feed(`Harvested ${quantity}× ${def.name}.`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
@@ -1856,7 +1848,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
 
       if (entity.container.hasLore) {
-        const fragment = rng.pick(LORE_FRAGMENTS);
+        const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
+        const worldLore = ContentRegistry.lore(worldCard?.themeId);
+        const fragment = rng.pick(worldLore.length > 0 ? worldLore : LORE_FRAGMENTS);
         const piece = {
           ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
           type: ItemType.LORE,

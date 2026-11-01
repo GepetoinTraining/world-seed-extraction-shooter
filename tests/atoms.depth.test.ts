@@ -447,7 +447,7 @@ describe('mobs on the card', () => {
         { id: 'm', type: EntityType.MOB, definitionId: def.id, position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', health: 1 } as any,
         { player: { currentSession: { inventory: [] }, attributes: {} } as any, dist: 1, level: () => 2 }
       );
-      expect(card.title, def.id).toBe(def.name);
+      expect(card.title, def.id).toBe('Unknown Contact'); // D60: masked until earned
       expect(card.rows.flat().join(' '), def.id).toMatch(/Health/);
     });
   });

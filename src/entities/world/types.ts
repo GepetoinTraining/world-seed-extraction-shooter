@@ -70,7 +70,32 @@ export interface INpcSheet {
   skills?: Record<string, import('../../../types').ISkillState>;
 }
 
+/** Something working on an entity right now, on the clock. */
+export interface IEntityStatus {
+  kind: string;
+  magnitude: number;
+  until: number;
+  nextAt: number;
+}
+
+/** What a thing is winding up to do, shown before it lands (R4, Layer 2). */
+export interface ITelegraph {
+  startedAt: number;
+  until: number;
+  delivery: string;
+  reachPx: number;
+  angle: number;
+}
+
 export interface IWorldEntity {
+  statuses?: IEntityStatus[];
+  telegraph?: ITelegraph;
+  /** D60: the only name a person ever reads for this body. Absent means masked. */
+  displayName?: string;
+  /** D48: what the Director made of this body. Absent means it is as it was born. */
+  bonusHealth?: number;
+  bonusDamage?: number;
+  learned?: string[];
   id: string;
   type: EntityType;
   definitionId: string;

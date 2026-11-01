@@ -14,7 +14,7 @@
 
 import { IItem } from '../../../types';
 import {
-  IRoomState, RoomPieceKind, RoomVerdict, PIECE_BILLS, SHELL_BILLS, TAG_DEFAULT_MATERIAL,
+  IRoomState, RoomPieceKind, RoomVerdict, PIECE_BILLS, SHELL_BILLS, tagDefaultMaterial,
   canBuildPiece, emptyRoom, fullyWalkable, interiorSize, roomDoor, roomSolid, shellBillFor
 } from './room';
 import { CRAFTED_DEFINITIONS } from '../economy/data/recipeDefinitions';
@@ -84,11 +84,11 @@ export const zoneFloorCount = (zone: ITemplateZone) => Math.max(1, Math.ceil(zon
 /** The sheet nobody chose: each tag's default material (previews, presets). */
 export function defaultSheet(tpl: Pick<ITemplate, 'zones'>): ITemplateSheet {
   const zones: Record<string, string> = {};
-  for (const z of tpl.zones) zones[z.name] = TAG_DEFAULT_MATERIAL.building;
+  for (const z of tpl.zones) zones[z.name] = tagDefaultMaterial('building');
   return {
-    WALL: TAG_DEFAULT_MATERIAL.building,
-    DOOR: TAG_DEFAULT_MATERIAL.wood,
-    WINDOW: TAG_DEFAULT_MATERIAL.glass,
+    WALL: tagDefaultMaterial('building'),
+    DOOR: tagDefaultMaterial('wood'),
+    WINDOW: tagDefaultMaterial('glass'),
     zones
   };
 }
@@ -126,7 +126,7 @@ export function templateToRoom(
     room.floorZones = tpl.zones.map(z => ({
       name: z.name,
       tiles: z.tiles.map(t => ({ ...t })),
-      materialDefId: sheet.zones[z.name] ?? TAG_DEFAULT_MATERIAL.building
+      materialDefId: sheet.zones[z.name] ?? tagDefaultMaterial('building')
     }));
   }
   return room;
@@ -292,7 +292,7 @@ export function templateBill(tpl: ITemplate, sheet: ITemplateSheet, firstBench =
   for (const zone of tpl.zones) {
     choices.push({
       cls: `FLOOR: ${zone.name}`,
-      defId: sheet.zones[zone.name] ?? TAG_DEFAULT_MATERIAL.building,
+      defId: sheet.zones[zone.name] ?? tagDefaultMaterial('building'),
       tag: 'building',
       count: zoneFloorCount(zone)
     });

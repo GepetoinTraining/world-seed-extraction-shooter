@@ -92,7 +92,12 @@ export const WORLD_DRAFT_DEFAULTS = {
   creatorShare: 3,
   pvpEnabled: false,
   difficulty: 'D',
-  sessionDuration: 15
+  sessionDuration: 15,
+  // D56: what was said, what it wrote, or the world already written that was picked
+  talk: [] as { role: 'user' | 'assistant'; content: string }[],
+  writtenTheme: null as unknown,
+  writtenUsage: null as unknown,
+  themeId: ''
 };
 export type WorldDraft = typeof WORLD_DRAFT_DEFAULTS;
 

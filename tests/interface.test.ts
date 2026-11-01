@@ -11,6 +11,7 @@
  * recon readable in grayscale, one theme.
  */
 
+import { RestSystem } from '../src/logic/systems/RestSystem';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -203,7 +204,7 @@ describe('line 27: no dialogue option without an effect', () => {
     expect((effect as any).text).toContain(usePlayerStore.getState().player.bank.gold.toLocaleString());
   });
 
-  it('IDENTIFY_ITEM charges gold and resolves the item', () => {
+  it('IDENTIFY_ITEM charges gold, and the piece is known after the night (D50)', () => {
     useHubStore.setState({ activeHubId: 'hub_test' });
     const rng = Rng.fromKey('bars:identify');
     const item = ItemFactory.createItem(UniversalRank.F, false, rng, 'weapon');
@@ -215,7 +216,8 @@ describe('line 27: no dialogue option without an effect', () => {
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(900);
-    expect(after.bank.stashTabs[0].items[0].isIdentified).toBe(true);
+    expect(after.bank.stashTabs[0].items[0].isIdentified).toBe(false);
+    expect(RestSystem.settle(after).player.bank.stashTabs[0].items[0].isIdentified).toBe(true);
   });
 
   it('IDENTIFY refuses honestly when nothing is hidden or gold is short', () => {
@@ -259,9 +261,9 @@ describe('line 27: no dialogue option without an effect', () => {
     expect(ale.stats.health_restore).toBeGreaterThan(0);
   });
 
-  it('the dead ends are gone: no REST, no guild forms, no auction forms', () => {
+  it('the dead ends are gone: no guild forms, no auction forms (REST came back with a job, D43)', () => {
     const actions = Object.values(HUB_NPCS).flatMap(n => n.dialogue.options.map(o => o.action));
-    for (const gone of ['REST', 'OPEN_GUILD', 'CREATE_GUILD', 'BROWSE_GUILDS', 'OPEN_AUCTION', 'MY_AUCTIONS', 'CREATE_LISTING']) {
+    for (const gone of ['OPEN_GUILD', 'CREATE_GUILD', 'BROWSE_GUILDS', 'OPEN_AUCTION', 'MY_AUCTIONS', 'CREATE_LISTING']) {
       expect(actions).not.toContain(gone);
     }
   });

@@ -3,20 +3,15 @@
  *
  * Each batch is one dev-time run, banked as data. Run 005 is the registry: every
  * tag the game already used, audited, given one kind and one meaning, with the
- * three the audit retired on the record. Run 006 is the breadth: tools, stations,
- * goods, recipes, designs and the words for what the pairs make.
+ * three the audit retired on the record. Tools, stations, goods and recipes come
+ * from each theme, compiled at install (D53).
  *
  * The law these pass through is WebBank.validateBatch. Nothing here is a cap and
  * no code reads a list of them by name: add a run, and the web grows.
  */
 
-import { IWebBatch, ItemType, Rarity, UniversalRank } from '../../../../types';
+import { IWebBatch } from '../../../../types';
 
-const F = UniversalRank.F;
-const E = UniversalRank.E;
-const D = UniversalRank.D;
-const COMMON = Rarity.COMMON;
-const UNCOMMON = Rarity.UNCOMMON;
 
 export const WEB_BATCHES: IWebBatch[] = [
   {
@@ -168,6 +163,7 @@ export const WEB_BATCHES: IWebBatch[] = [
       { tag: 'utility', kind: 'class', meaning: 'Carried for what it reads rather than what it hits.' },
 
       // SCOPES: what a banked affix may roll on.
+      { tag: 'mob', kind: 'scope', meaning: 'A banked affix that may land on a monster, once magic is unlocked.' },
       { tag: 'resource', kind: 'scope', meaning: 'Rolls on a harvested material.' },
       { tag: 'process_carpentry', kind: 'scope', meaning: 'Banked for what carpentry leaves behind.' },
       { tag: 'process_smelting', kind: 'scope', meaning: 'Banked for what smelting leaves behind.' },
@@ -222,11 +218,6 @@ export const WEB_BATCHES: IWebBatch[] = [
       { tag: 'crafting', replacedBy: 'craft', why: 'The audit: craft, crafting and crafted were three spellings of one root. The context keeps craft.' },
       { tag: 'improvisation', replacedBy: 'improvised', why: 'The audit: improvisation and improvised were two spellings of one thing.' },
       { tag: 'science', replacedBy: 'analysis', why: 'The audit: science, intel and analysis all named looking hard at a thing. The action keeps analysis.' }
-    ],
-    tools: [
-      { id: 'tool_axe_field_t1', name: 'Field Axe', tag: 'axe', rank: F, existing: true, works: ['wood'], verbs: [{ verb: 'fell', rung: 0 }, { verb: 'hew', rung: 1 }, { verb: 'limb', rung: 2 }] },
-      { id: 'tool_pick_rusty_t1', name: 'Rusty Pick', tag: 'pickaxe', rank: F, existing: true, works: ['stone', 'ore'], verbs: [{ verb: 'mine', rung: 0 }, { verb: 'quarry', rung: 1 }, { verb: 'prospect', rung: 2 }] },
-      { id: 'tool_pick_tempered_t3', name: 'Tempered Pick', tag: 'pickaxe', rank: D, existing: true, works: ['stone', 'ore'], verbs: [] }
     ],
     verbLinks: [
       { tags: ['berry'], verb: 'forage', rung: 0 },
@@ -287,187 +278,4 @@ export const WEB_BATCHES: IWebBatch[] = [
       { tags: ['identify_furniture'], name: 'The Furniture Eye' }
     ]
   },
-  {
-    runId: 'run_006_the_web',
-    model: 'claude-opus-5-5 (dev batch, D27)',
-    ranAt: 1793404800000, // 2026-10-31
-    tags: [
-      { tag: 'sickle', kind: 'tool', meaning: 'A curved blade drawn through standing stalks.' },
-      { tag: 'shears', kind: 'tool', meaning: 'Two blades on a pivot, closed across what they hold.' },
-      { tag: 'shuttle', kind: 'tool', meaning: 'A wound bobbin thrown through a warp by hand.' },
-      { tag: 'hammer', kind: 'tool', meaning: 'A small head on a haft for working what is already hot.' },
-      { tag: 'tongs', kind: 'tool', meaning: 'Long jaws for holding what cannot be held.' },
-      { tag: 'chisel', kind: 'tool', meaning: 'A hard narrow edge driven by a blow.' },
-      { tag: 'mallet', kind: 'tool', meaning: 'A soft-headed maul for driving without bruising.' },
-      { tag: 'adze', kind: 'tool', meaning: 'A blade set across the haft, swung toward the feet.' },
-      { tag: 'blowpipe', kind: 'tool', meaning: 'A long tube that gathers molten glass and breathes it out.' },
-      { tag: 'mortar', kind: 'tool', meaning: 'A heavy bowl and a grinding club for what must become paste.' },
-      { tag: 'awl', kind: 'tool', meaning: 'A sharp spike for opening a way through stitched work.' },
-      { tag: 'resin', kind: 'material', meaning: 'The sticky blood of a tree, slow to set.' },
-      { tag: 'rip', kind: 'verb', meaning: 'To saw along the grain rather than across it.' },
-      { tag: 'quartersaw', kind: 'verb', meaning: 'To cut a log so its boards stay true for a hundred years.' },
-      { tag: 'reap', kind: 'verb', meaning: 'To take standing stalks in one long draw.' },
-      { tag: 'bind', kind: 'verb', meaning: 'To tie or stitch what was cut so it stays together.' },
-      { tag: 'clip', kind: 'verb', meaning: 'To cut strands to a length, clean.' },
-      { tag: 'card', kind: 'verb', meaning: 'To comb strands straight before they are spun.' },
-      { tag: 'throw', kind: 'verb', meaning: 'To send a shuttle through a warp and catch it.' },
-      { tag: 'pattern', kind: 'verb', meaning: 'To set a count into a cloth and keep it there.' },
-      { tag: 'strike', kind: 'verb', meaning: 'To land a hammer where the metal wants it.' },
-      { tag: 'temper', kind: 'verb', meaning: 'To set metal\'s hardness by heat and patience.' },
-      { tag: 'grip', kind: 'verb', meaning: 'To hold hot work steady under the blow.' },
-      { tag: 'quench', kind: 'verb', meaning: 'To cool hot work at the moment that makes it.' },
-      { tag: 'dress', kind: 'verb', meaning: 'To true the face of a stone with an edge.' },
-      { tag: 'carve', kind: 'verb', meaning: 'To cut a shape out of what would rather stay a block.' },
-      { tag: 'drive', kind: 'verb', meaning: 'To send an edge home with even blows.' },
-      { tag: 'tenon', kind: 'verb', meaning: 'To cut one piece so it locks into another.' },
-      { tag: 'shape', kind: 'verb', meaning: 'To take a rough form down toward the one it will hold.' },
-      { tag: 'blow', kind: 'verb', meaning: 'To breathe a gather of glass open.' },
-      { tag: 'gather', kind: 'verb', meaning: 'To wind molten glass onto a pipe from the pot.' },
-      { tag: 'grind', kind: 'verb', meaning: 'To work a thing down to paste against stone.' },
-      { tag: 'decoct', kind: 'verb', meaning: 'To boil a paste and keep what rises.' },
-      { tag: 'pierce', kind: 'verb', meaning: 'To open a clean way through layers.' },
-      { tag: 'bore', kind: 'verb', meaning: 'To sink a turning bit straight into a face.' },
-      { tag: 'chart', kind: 'verb', meaning: 'To read what a bore brings up and write it down.' }
-    ],
-    tools: [
-      { id: 'tool_saw_bow_t1', name: 'Bow Saw', tag: 'saw', rank: F, basePower: 14, powerStat: 'chopping_power', works: ['wood'], verbs: [{ verb: 'rip', rung: 0 }, { verb: 'quartersaw', rung: 2 }] },
-      { id: 'tool_adze_t1', name: 'Shipwright\'s Adze', tag: 'adze', rank: F, basePower: 8, powerStat: 'chopping_power', works: ['wood'], verbs: [{ verb: 'hew', rung: 0 }, { verb: 'shape', rung: 1 }] },
-      { id: 'tool_sickle_t1', name: 'Reaping Sickle', tag: 'sickle', rank: F, basePower: 6, powerStat: 'chopping_power', works: ['grain', 'fiber'], verbs: [{ verb: 'reap', rung: 0 }, { verb: 'bind', rung: 1 }] },
-      { id: 'tool_shears_t1', name: 'Iron Shears', tag: 'shears', rank: F, basePower: 6, powerStat: 'chopping_power', works: ['fiber', 'cloth'], verbs: [{ verb: 'clip', rung: 0 }, { verb: 'card', rung: 1 }] },
-      { id: 'tool_shuttle_t1', name: 'Hand Shuttle', tag: 'shuttle', rank: F, basePower: 4, powerStat: 'chopping_power', works: ['fiber', 'cloth'], verbs: [{ verb: 'throw', rung: 0 }, { verb: 'pattern', rung: 2 }] },
-      { id: 'tool_hammer_t1', name: 'Cross-Peen Hammer', tag: 'hammer', rank: F, basePower: 8, powerStat: 'mining_power', works: ['metal'], verbs: [{ verb: 'strike', rung: 0 }, { verb: 'temper', rung: 2 }] },
-      { id: 'tool_tongs_t1', name: 'Long Tongs', tag: 'tongs', rank: F, basePower: 4, powerStat: 'mining_power', works: ['metal', 'glass'], verbs: [{ verb: 'grip', rung: 0 }, { verb: 'quench', rung: 1 }] },
-      { id: 'tool_chisel_t1', name: 'Mason\'s Chisel', tag: 'chisel', rank: F, basePower: 8, powerStat: 'mining_power', works: ['stone', 'wood'], verbs: [{ verb: 'dress', rung: 0 }, { verb: 'carve', rung: 1 }] },
-      { id: 'tool_mallet_t1', name: 'Oak Mallet', tag: 'mallet', rank: F, basePower: 6, powerStat: 'mining_power', works: ['stone', 'wood'], verbs: [{ verb: 'drive', rung: 0 }, { verb: 'tenon', rung: 2 }] },
-      { id: 'tool_blowpipe_t1', name: 'Blowpipe', tag: 'blowpipe', rank: E, basePower: 4, powerStat: 'mining_power', works: ['glass', 'sand'], verbs: [{ verb: 'blow', rung: 0 }, { verb: 'gather', rung: 1 }] },
-      { id: 'tool_mortar_t1', name: 'Stone Mortar', tag: 'mortar', rank: F, basePower: 4, powerStat: 'mining_power', works: ['berry', 'fruit', 'resin'], verbs: [{ verb: 'grind', rung: 0 }, { verb: 'decoct', rung: 2 }] },
-      { id: 'tool_awl_t1', name: 'Stitching Awl', tag: 'awl', rank: F, basePower: 4, powerStat: 'chopping_power', works: ['fiber', 'cloth', 'paper'], verbs: [{ verb: 'pierce', rung: 0 }, { verb: 'bind', rung: 0 }] },
-      { id: 'tool_drill_hand_t1', name: 'Hand Drill', tag: 'drill', rank: E, basePower: 14, powerStat: 'mining_power', works: ['stone', 'ore'], verbs: [{ verb: 'bore', rung: 0 }, { verb: 'chart', rung: 2 }] }
-    ],
-    materials: [
-      { id: 'mat_resin', name: 'Tree Resin', tags: ['flora', 'resin'], rank: F, rarity: COMMON, weight: 0.4, description: 'Sold by the lump. Nobody at the counter will say which tree.', shelfPrice: 14 }
-    ],
-    goods: [
-      { id: 'crf_fine_board', name: 'Fine Board', tags: ['crafted', 'wood', 'building'], rank: F, rarity: UNCOMMON, weight: 1.6, width: 1, height: 2, description: 'Sawn with the grain, in a pit, by someone who meant it.' },
-      { id: 'crf_ashlar', name: 'Ashlar', tags: ['crafted', 'stone', 'building'], rank: F, rarity: UNCOMMON, weight: 5, description: 'Stone trued on all six faces. The wall will not notice the joint.' },
-      { id: 'crf_bloom_bar', name: 'Bloom Bar', tags: ['crafted', 'metal', 'building'], rank: E, rarity: UNCOMMON, weight: 3.4, description: 'Iron drawn from a bloom in a pit furnace, slag hammered out by hand.' },
-      { id: 'crf_fittings', name: 'Iron Fittings', tags: ['crafted', 'metal'], rank: E, rarity: UNCOMMON, weight: 1, description: 'Hinges, straps and nails. Every door in the city owes somebody for these.' },
-      { id: 'crf_canvas', name: 'Heavy Canvas', tags: ['crafted', 'cloth'], rank: F, rarity: UNCOMMON, weight: 0.8, description: 'Coarse and tight. It keeps the weather off and holds a stitch.' },
-      { id: 'crf_lens', name: 'Ground Lens', tags: ['crafted', 'glass'], rank: F, rarity: UNCOMMON, weight: 0.3, description: 'A pane that has been told where to send the light.' },
-      { id: 'crf_tonic', name: 'Amber Tonic', tags: ['crafted', 'fruit', 'food', 'consumable'], rank: F, rarity: UNCOMMON, weight: 0.4, type: ItemType.CONSUMABLE, stats: { health_restore: 30 }, description: 'Amberfruit ground and boiled down. It tastes like being told it will be fine.' },
-      { id: 'crf_pitch', name: 'Boiled Pitch', tags: ['crafted', 'resin', 'building'], rank: F, rarity: UNCOMMON, weight: 0.8, description: 'Resin taken down until it holds. Boats, roofs and arguments.' },
-      { id: 'crf_bound_ledger', name: 'Bound Ledger', tags: ['crafted', 'paper'], rank: F, rarity: UNCOMMON, weight: 0.6, description: 'Sheets stitched between canvas boards. The bank approves.' },
-      { id: 'crf_thatch', name: 'Thatch Bundle', tags: ['crafted', 'grain', 'building'], rank: F, rarity: COMMON, weight: 0.6, description: 'Straw bound tight. A roof, if you bring enough of it.' },
-      { id: 'crf_fired_brick', name: 'Fired Brick', tags: ['crafted', 'stone', 'building'], rank: F, rarity: COMMON, weight: 2.4, description: 'Sand and crushed stone, fired past the point of arguing.' }
-    ],
-    stations: [
-      { id: 'stn_sawpit', name: 'Sawpit', description: 'A trench and a trestle. One above, one below, and the log between them.', connection: { tool: ['axe', 'saw', 'adze'], material: ['wood'] }, bill: [{ tag: 'wood', count: 3 }], minArea: 16, weight: 18, width: 3, height: 1 },
-      { id: 'stn_masons_yard', name: 'Mason\'s Banker', description: 'A heavy stone table with a straightedge chained to it.', connection: { tool: ['pickaxe', 'chisel'], material: ['stone'] }, bill: [{ tag: 'building', count: 2 }, { tag: 'metal', count: 1 }], minArea: 18, weight: 24, width: 2, height: 2 },
-      { id: 'stn_bloomery', name: 'Bloomery', description: 'A clay stack, a pair of bellows, and a very long afternoon.', connection: { tool: ['pickaxe', 'drill'], material: ['ore'] }, bill: [{ tag: 'building', count: 3 }, { tag: 'metal', count: 1 }], minArea: 20, weight: 30, width: 2, height: 2 },
-      { id: 'stn_anvil', name: 'Anvil', description: 'The one thing in the shop that never gets better or worse.', connection: { tool: ['hammer', 'blade'], material: ['metal'] }, bill: [{ tag: 'metal', count: 2 }], minArea: 16, weight: 26, width: 1, height: 1 },
-      { id: 'stn_loom', name: 'Upright Loom', description: 'A frame, a warp, and a count somebody has to keep.', connection: { tool: ['sickle', 'shears', 'shuttle'], material: ['fiber'] }, bill: [{ tag: 'wood', count: 2 }], minArea: 14, weight: 14, width: 2, height: 1 },
-      { id: 'stn_glass_bench', name: 'Glory Hole', description: 'A furnace mouth and a bench worn smooth by rolled pipes.', connection: { tool: ['blowpipe', 'tongs'], material: ['glass'] }, bill: [{ tag: 'building', count: 2 }, { tag: 'metal', count: 1 }], minArea: 14, weight: 20, width: 2, height: 1 },
-      { id: 'stn_still', name: 'Copper Still', description: 'It rises, it cools, it drips. Mostly it does not explode.', connection: { tool: ['mortar'], material: ['fruit'] }, bill: [{ tag: 'metal', count: 1 }, { tag: 'glass', count: 1 }], minArea: 13, weight: 12, width: 1, height: 2 },
-      { id: 'stn_bindery', name: 'Sewing Frame', description: 'Cords stretched upright, and the patience to stitch to them.', connection: { tool: ['awl'], material: ['fiber'] }, bill: [{ tag: 'wood', count: 1 }, { tag: 'cloth', count: 1 }], minArea: 10, weight: 7, width: 1, height: 1 },
-      { id: 'stn_drying_rack', name: 'Drying Rack', description: 'Slats in a draught. Everything on it is on its way to being something.', connection: { tool: ['sickle'], material: ['grain'] }, bill: [{ tag: 'wood', count: 2 }], minArea: 10, weight: 8, width: 2, height: 1 },
-      { id: 'stn_kiln', name: 'Brick Kiln', description: 'A beehive of stone that stays hot for a day and a half.', connection: { tool: ['blowpipe'], material: ['sand'] }, bill: [{ tag: 'building', count: 3 }], minArea: 18, weight: 32, width: 2, height: 2 },
-      { id: 'stn_joiners_bench', name: 'Joiner\'s Bench', description: 'A long vise, a square, and every offcut anyone was too proud to burn.', connection: { tool: ['chisel', 'mallet'], material: ['wood'] }, bill: [{ tag: 'wood', count: 4 }], minArea: 16, weight: 16, width: 3, height: 1 }
-    ],
-    recipes: [
-      { id: 'recipe_fine_board', name: 'Rip Fine Boards', description: 'One log, three boards, the grain followed the whole way down.', inputs: [{ itemId: 'res_tree_log', quantity: 1, consume: true }], outputs: [{ itemId: 'crf_fine_board', quantity: 3, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 14, requiredFacility: 'WORKSHOP', requiredStation: 'stn_sawpit', requiresVerb: 'hew', trade: 'carpentry' },
-      { id: 'recipe_ashlar', name: 'True Ashlar', description: 'Two stones, one block square on every face.', inputs: [{ itemId: 'res_rock_small', quantity: 2, consume: true }], outputs: [{ itemId: 'crf_ashlar', quantity: 1, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 20, requiredFacility: 'WORKSHOP', requiredStation: 'stn_masons_yard', requiresVerb: 'quarry', trade: 'masonry' },
-      { id: 'recipe_bloom_bar', name: 'Draw a Bloom', description: 'Three ore, one long fire, two bars with the slag beaten out.', inputs: [{ itemId: 'res_iron_vein', quantity: 3, consume: true }], outputs: [{ itemId: 'crf_bloom_bar', quantity: 2, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 30, requiredFacility: 'WORKSHOP', requiredStation: 'stn_bloomery', requiresVerb: 'mine', trade: 'smelting' },
-      { id: 'recipe_fittings', name: 'Strike Fittings', description: 'One ingot makes two sets of hinges and straps.', inputs: [{ itemId: 'crf_iron_ingot', quantity: 1, consume: true }], outputs: [{ itemId: 'crf_fittings', quantity: 2, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 18, requiredFacility: 'WORKSHOP', requiredStation: 'stn_anvil', requiresVerb: 'strike', trade: 'smithing' },
-      { id: 'recipe_canvas', name: 'Weave Canvas', description: 'Four lengths of fiber, one tight bolt.', inputs: [{ itemId: 'res_plant_fiber', quantity: 4, consume: true }], outputs: [{ itemId: 'crf_canvas', quantity: 1, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 16, requiredFacility: 'WORKSHOP', requiredStation: 'stn_loom', requiresVerb: 'bind', trade: 'weaving' },
-      { id: 'recipe_lens', name: 'Grind a Lens', description: 'One pane, two lenses, a great deal of breath.', inputs: [{ itemId: 'crf_glass', quantity: 1, consume: true }], outputs: [{ itemId: 'crf_lens', quantity: 2, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 16, requiredFacility: 'WORKSHOP', requiredStation: 'stn_glass_bench', requiresVerb: 'blow', trade: 'glassblowing' },
-      { id: 'recipe_tonic', name: 'Boil a Tonic', description: 'Two amberfruit ground and boiled to one strong dose.', inputs: [{ itemId: 'res_fruit_amber', quantity: 2, consume: true }], outputs: [{ itemId: 'crf_tonic', quantity: 1, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 14, requiredFacility: 'WORKSHOP', requiredStation: 'stn_still', requiresVerb: 'grind', trade: 'alchemy' },
-      { id: 'recipe_pitch', name: 'Boil Pitch', description: 'Two lumps of resin taken down until they hold.', inputs: [{ itemId: 'mat_resin', quantity: 2, consume: true }], outputs: [{ itemId: 'crf_pitch', quantity: 1, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 12, requiredFacility: 'WORKSHOP', requiredStation: 'stn_still', requiresVerb: 'grind', trade: 'alchemy' },
-      { id: 'recipe_bound_ledger', name: 'Bind a Ledger', description: 'Three sheets of paper between two boards of canvas.', inputs: [{ itemId: 'crf_paper', quantity: 3, consume: true }, { itemId: 'crf_canvas', quantity: 1, consume: true }], outputs: [{ itemId: 'crf_bound_ledger', quantity: 1, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 16, requiredFacility: 'WORKSHOP', requiredStation: 'stn_bindery', requiresVerb: 'pierce', trade: 'weaving' },
-      { id: 'recipe_thatch', name: 'Bind Thatch', description: 'Four heads of grain dried and bound into two bundles.', inputs: [{ itemId: 'res_grain_wild', quantity: 4, consume: true }], outputs: [{ itemId: 'crf_thatch', quantity: 2, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 10, requiredFacility: 'WORKSHOP', requiredStation: 'stn_drying_rack', requiresVerb: 'reap', trade: 'weaving' },
-      { id: 'recipe_fired_brick', name: 'Fire Brick', description: 'Sand and pebbles packed and fired, two to the load.', inputs: [{ itemId: 'res_sand', quantity: 2, consume: true }, { itemId: 'res_pebbles', quantity: 2, consume: true }], outputs: [{ itemId: 'crf_fired_brick', quantity: 2, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 24, requiredFacility: 'WORKSHOP', requiredStation: 'stn_kiln', requiresVerb: 'blow', trade: 'masonry' },
-      { id: 'recipe_joined_board', name: 'Tenon a Panel', description: 'Two planks locked so close the seam disappears.', inputs: [{ itemId: 'crf_plank', quantity: 2, consume: true }], outputs: [{ itemId: 'crf_fine_board', quantity: 2, probability: 1.0 }], energyCost: 0, laborTimeSeconds: 12, requiredFacility: 'WORKSHOP', requiredStation: 'stn_joiners_bench', requiresVerb: 'drive', trade: 'carpentry' }
-    ],
-    designs: [
-      { matches: ['blade'], tool: 'hammer', material: ['metal'] },
-      { matches: ['blunt'], tool: 'hammer', material: ['metal'] },
-      { matches: ['heavy', 'armor'], tool: 'hammer', material: ['metal'] },
-      { matches: ['light', 'armor'], tool: 'shears', material: ['fiber'] },
-      { matches: ['magic', 'armor'], tool: 'shuttle', material: ['fiber'] },
-      { matches: ['projectile'], tool: 'adze', material: ['wood'] },
-      { matches: ['caster'], tool: 'chisel', material: ['wood'] },
-      { matches: ['jewelry'], tool: 'tongs', material: ['metal'] },
-      { matches: ['utility', 'tech'], tool: 'tongs', material: ['glass'] },
-      { matches: ['utility', 'magic'], tool: 'blowpipe', material: ['glass'] },
-      { matches: ['bag'], tool: 'awl', material: ['fiber'] },
-      { matches: ['belt'], tool: 'awl', material: ['fiber'] }
-    ],
-    names: [
-      { tags: ['flora', 'saw', 'wood'], name: 'Sawing', flavor: 'Letting the teeth do it.' },
-      { tags: ['adze', 'flora', 'seed', 'wood'], name: 'Sapling-Hewing' },
-      { tags: ['drill', 'mineral', 'stone'], name: 'Stone-Boring' },
-      { tags: ['drill', 'metal', 'mineral', 'ore'], name: 'Vein-Boring' },
-      { tags: ['chisel', 'mineral', 'stone'], name: 'Stone-Dressing' },
-      { tags: ['mallet', 'mineral', 'stone'], name: 'Stone-Driving' },
-      { tags: ['chisel', 'flora', 'seed', 'wood'], name: 'Green-Carving' },
-      { tags: ['flora', 'grain', 'sickle'], name: 'Reaping' },
-      { tags: ['fiber', 'flora', 'sickle'], name: 'Fiber-Reaping' },
-      { tags: ['fiber', 'flora', 'shears'], name: 'Fiber-Clipping' },
-      { tags: ['fiber', 'flora', 'shuttle'], name: 'Hand-Weaving' },
-      { tags: ['awl', 'fiber', 'flora'], name: 'Stitching' },
-      { tags: ['hammer', 'metal', 'mineral'], name: 'Cold-Beating' },
-      { tags: ['metal', 'mineral', 'tongs'], name: 'Scrap-Tonging' },
-      { tags: ['glass', 'mineral', 'tongs'], name: 'Shard-Handling' },
-      { tags: ['blowpipe', 'glass', 'mineral'], name: 'Shard-Melting' },
-      { tags: ['blowpipe', 'glass', 'mineral', 'sand'], name: 'Sand-Gathering' },
-      { tags: ['flora', 'fruit', 'mortar'], name: 'Pulping' },
-      { tags: ['berry', 'flora', 'mortar'], name: 'Berry-Grinding' },
-      { tags: ['carpentry', 'flora', 'wood'], name: 'Milling' },
-      { tags: ['carpentry', 'wood'], name: 'Joinery' },
-      { tags: ['flora', 'smelting', 'wood'], name: 'Charcoal Work' },
-      { tags: ['masonry', 'mineral', 'stone'], name: 'Stone-Squaring' },
-      { tags: ['metal', 'mineral', 'ore', 'smelting'], name: 'Ore-Smelting' },
-      { tags: ['metal', 'mineral', 'smelting'], name: 'Scrap-Smelting' },
-      { tags: ['fiber', 'flora', 'weaving'], name: 'Cloth-Weaving' },
-      { tags: ['glass', 'glassblowing', 'mineral', 'sand'], name: 'Pane-Firing' },
-      { tags: ['adze', 'flora', 'wood'], name: 'Adze-Hewing' },
-      { tags: ['adze', 'wood'], name: 'Beam-Shaping' },
-      { tags: ['awl', 'cloth'], name: 'Sailmaking' },
-      { tags: ['awl', 'paper'], name: 'Binding' },
-      { tags: ['axe', 'flora', 'seed', 'wood'], name: 'Sapling-Cutting' },
-      { tags: ['axe', 'wood'], name: 'Rough Hewing' },
-      { tags: ['blowpipe', 'glass'], name: 'Glass-Gathering' },
-      { tags: ['chisel', 'flora', 'wood'], name: 'Log-Carving' },
-      { tags: ['chisel', 'stone'], name: 'Block-Cutting' },
-      { tags: ['chisel', 'wood'], name: 'Woodcarving' },
-      { tags: ['cloth', 'shears'], name: 'Tailoring' },
-      { tags: ['cloth', 'shuttle'], name: 'Pattern-Weaving' },
-      { tags: ['drill', 'stone'], name: 'Block-Boring' },
-      { tags: ['flora', 'laser_cutter', 'wood'], name: 'Beam-Felling' },
-      { tags: ['flora', 'mallet', 'seed', 'wood'], name: 'Staking' },
-      { tags: ['flora', 'mallet', 'wood'], name: 'Log-Driving' },
-      { tags: ['flora', 'mortar', 'resin'], name: 'Resin-Grinding' },
-      { tags: ['flora', 'saw', 'seed', 'wood'], name: 'Sapling-Sawing' },
-      { tags: ['fruit', 'mortar'], name: 'Pomace Work' },
-      { tags: ['glass', 'mineral', 'sand', 'tongs'], name: 'Sand-Handling' },
-      { tags: ['glass', 'tongs'], name: 'Pane-Tonging' },
-      { tags: ['grain', 'sickle'], name: 'Sheaf-Cutting' },
-      { tags: ['hammer', 'metal'], name: 'Forge Work' },
-      { tags: ['hammer', 'metal', 'mineral', 'ore'], name: 'Ore-Breaking' },
-      { tags: ['impact_hammer', 'mineral', 'stone'], name: 'Rock-Breaking' },
-      { tags: ['mallet', 'stone'], name: 'Block-Driving' },
-      { tags: ['mallet', 'wood'], name: 'Joint-Driving' },
-      { tags: ['metal', 'mineral', 'mining_laser', 'ore'], name: 'Beam-Mining' },
-      { tags: ['metal', 'mineral', 'ore', 'tongs'], name: 'Ore-Tonging' },
-      { tags: ['metal', 'tongs'], name: 'Fine Metalwork' },
-      { tags: ['mortar', 'resin'], name: 'Pitch-Grinding' },
-      { tags: ['pickaxe', 'stone'], name: 'Block-Splitting' },
-      { tags: ['saw', 'wood'], name: 'Board-Sawing' },
-      { tags: ['fiber', 'shears'], name: 'Fiber-Trimming' },
-      { tags: ['fiber', 'shuttle'], name: 'Thread-Throwing' },
-      { tags: ['awl', 'fiber'], name: 'Hide-Stitching' },
-      { tags: ['adze', 'fiber'], name: 'Rope-Hewing' },
-      { tags: ['blowpipe', 'glass', 'sand'], name: 'Melt-Gathering' },
-      { tags: ['glass', 'glassblowing', 'mineral'], name: 'Shard-Firing' }
-    ]
-  }
 ];

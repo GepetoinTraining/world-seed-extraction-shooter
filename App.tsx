@@ -6,7 +6,6 @@ import { WorldCanvas } from './src/components/WorldCanvas';
 import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
 import { PlayerHub } from './src/components/PlayerHub';
-import { GenreCreator } from './src/components/admin/GenreCreator';
 import { IdentityGate } from './src/components/IdentityGate';
 import { HubSelector } from './src/components/HubSelector';
 import { HoldingsPanel } from './src/components/HoldingsPanel';
@@ -69,7 +68,6 @@ const DEV_TABS: { id: AppView; label: string }[] = [
   { id: 'MISSIONS', label: 'ZONES' },
   { id: 'BANK', label: 'BANK' },
   { id: 'HOLDINGS', label: 'HOLDINGS' },
-  { id: 'ADMIN', label: 'GENRES' }
 ];
 
 /** D7: very little frame. One thin bar — who you are and what you hold. The walkable
@@ -230,7 +228,6 @@ const App: React.FC = () => {
         {view === 'MISSIONS' && <MissionControl />}
         {view === 'BANK' && <PlayerHub />}
         {view === 'HOLDINGS' && <HoldingsPanel devMode={devMode} />}
-        {view === 'ADMIN' && (devMode ? <GenreCreator /> : <div style={{ padding: 20 }} className="ws-dim">Developer tools are off.</div>)}
       </div>
       <SystemConsole />
       <FeedView />

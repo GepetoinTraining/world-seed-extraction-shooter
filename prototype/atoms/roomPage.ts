@@ -4,9 +4,10 @@
  * minimum-size rule — before any of it enters the game. Press Grayscale first.
  */
 
+import '../../tests/fixtures/content/installOnLoad';
 import { IItem } from '../../types';
 import {
-  IRoomState, STATION_MIN_AREA, TAG_DEFAULT_MATERIAL,
+  IRoomState, STATION_MIN_AREA, tagDefaultMaterial,
   canPlaceItem, emptyRoom, fullyWalkable, roomDoor
 } from '../../src/entities/hub/room';
 import { ROOM_PRESETS, presetToRoom } from '../../src/entities/hub/template';
@@ -171,7 +172,7 @@ function renderCitySide() {
   }
   const dg = roomDoor({ w: 16, h: 12 });
   const note = document.createElement('p');
-  note.textContent = `Default materials by tag: ${Object.entries(TAG_DEFAULT_MATERIAL).map(([t, d]) => `${t} -> ${d}`).join(', ')}. Interior door gap sits at ${dg.x},${dg.y}.`;
+  note.textContent = `Default materials by tag: ${Object.entries(tagDefaultMaterial).map(([t, d]) => `${t} -> ${d}`).join(', ')}. Interior door gap sits at ${dg.x},${dg.y}.`;
   root.append(note);
 }
 

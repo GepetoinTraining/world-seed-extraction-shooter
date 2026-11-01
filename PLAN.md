@@ -1,10 +1,10 @@
 # WORLD SEED // THE SYSTEMS PLAN
 
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
-The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
-approved. The usability pass and the stable database are built, approved and merged; the suite stands at 812
-(688 + 124 in the database's own run), with one timing bar that reads load (see the technology web's record).
-Pedro has played. **Next: the magic + content layer** (under "The next layer"), then the attributes pass, character creation, Wave 11 and Wave 12.
+The raw materials leg (D23), the technology web (D27), the usability pass and the stable database are built, approved
+and merged. **The magic + content layer is built on `claude/magic-content-layer`, awaiting Pedro's approval**; the
+suite stands at 906 (782 + 124 in the database's own run). **Next, once approved: the attributes pass**, then
+character creation, Wave 11 and Wave 12.
 Open test lines
 and their status are in section 5.
 
@@ -265,9 +265,9 @@ The grid is **tile (20px) → quadrant (16 tiles, 320px) → chunk (64 tiles, 12
 
 Planned 2026-10-31, after checking each leg against the code. Each leg gets its own full-context session and is approved by Pedro before it starts. Commit at the end of each, so the next starts from a clean tree.
 
-**Order:** commit Wave 8 → 8B Motion → 9 Interface → 10 Inside the Houses → 10B The Architect → 10C The Load-Out → 10D The Anatomy of Items → 10E The Affix Bank and the Dreaming → 11 Bringing the Nexi Home → 12 The Second True Test. (11B is absorbed into 10D/10E; the Found-in-Play fixes card runs between legs, after this program by Pedro's word.)
+**Order:** done through the magic + content layer. Next, by "The living worlds program" below: the world clock → the trees and the scan pass → creatures that act → the attributes pass → character creation with the deed → 11 the hub remake → 11C NPC adventurers → 12 The Second True Test → 13 the served runtime. (11B is absorbed into 10D/10E.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. Next: the magic + content layer (D48) → the attributes pass (D52) → character creation → 11 → 12.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. The magic + content layer (D48) is built and merged on Pedro's word, 2026-11-01. Next: the world clock, the first leg of "The living worlds program".
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -750,21 +750,51 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 | D35 | Creation | Are skills "derived by haiku" at the end of creation? | Yes, through the rest door (D43), so it passes the same law and is signed. The floor from a bank keyed by the answers still works with no key or network |
 | D36 | Creation | Who is the god of reincarnation, in a game whose voice is the bank's terminal? | The Seed speaks through the terminal: the same voice as "The bank honors it", and no blue windows |
 | D37 | Creation | Do races exist? The catalog has 57 races, 49 playable | Not at first. The four silhouettes stay, and races come through a later batch if Pedro wants them |
-| D38 | Layer 1 | Do fights stay real-time? Primordial and TTRPG are d20 | Real-time. Adding a die means a rolled damage range, keyed, with no turns |
+| D38 | Layer 1 | Do fights stay real-time? Primordial and TTRPG are d20 | ✅ TAKEN AS RECOMMENDED, 2026-11-01: real-time. Adding a die means a rolled damage range, keyed, with no turns |
 | D39 | Next step | Does the `Director` wake with monster traits? | ✅ ANSWERED by D48: yes, and with more than a trait pool |
-| D40 | Layer 3 | Does a tome's borrowed cast cost more? | Yes, a surcharge above one, as the Primordial handover proposed |
-| D41 | Layer 4 | Spellcraft as the player's magic, reversing the skill order? | Yes. It is the most distinct idea in any of the donors, and it fits the tag law exactly |
+| D40 | Layer 3 | Does a tome's borrowed cast cost more? | ✅ TAKEN AS RECOMMENDED, 2026-11-01: yes, a surcharge above one, as the Primordial handover proposed |
+| D41 | Layer 4 | Spellcraft as the player's magic, reversing the skill order? | ✅ DECIDED (Pedro, 2026-11-01): yes. It is the most distinct idea in any of the donors, and it fits the tag law exactly |
 | D42 | Order | Where does this sit against Wave 11? | ✅ ANSWERED by D48: the magic + content layer is next. Reading to confirm: creation after it, then Wave 11 |
 | D43 | Rest | Does the LLM enter the running game? | ✅ DECIDED (Pedro, 2026-11-01): yes, at a rest: "rest and send to the LLM to get more content". Lifts D20's dev-time limit for this door only; never in the hot path |
-| D44 | Rest | Which model and what spend limit? | ✅ MODEL DECIDED (Pedro, 2026-11-01): `claude-opus-5-5` for a rest ($4 in, $20 out per million tokens, halved by batches). It stays one constant per kind of content. STILL OPEN: a limit on what one rest may spend, which guards the bill and caps no content: a batch over it waits for the next rest |
-| D45 | Rest | Who may rest and send, once several players exist? | Anyone, batched per hub so a hub pays once. Authentication arrives with deploy, so a public server must not expose this route before then |
+| D44 | Rest | Which model and what spend limit? | ✅ MODEL DECIDED (Pedro, 2026-11-01): `claude-opus-5-5` for a rest ($4 in, $20 out per million tokens, halved by batches). It stays one constant per kind of content. **Limit taken by the builder, 2026-11-01, one constant to change: $0.50 a rest.** It guards the bill and caps no content: a batch over it waits for the next rest |
+| D45 | Rest | Who may rest and send, once several players exist? | ✅ TAKEN AS RECOMMENDED, 2026-11-01: anyone, batched per hub so a hub pays once. Authentication arrives with deploy, so a public server must not expose this route before then |
 | D46 | Rest | Which intelligence? | ✅ DECIDED (Pedro, 2026-11-01): Claude, not Gemini. The intelligence layer is rebuilt on the Claude API, behind one server door |
 | D47 | Wave 11 | Do NPCs talk through Claude? W2.4 ruled "no AI text generation in the loop", and Pedro's June plan had NPC talk on Haiku | Not in the hot path: their words are banked at rest from their sheet, as Primordial's persona seeds did, and menus stay. Ask at Wave 11's start |
 | D48 | Next step | What comes next | ✅ DECIDED (Pedro, 2026-11-01): the magic + content layer. Monsters need the Director, magic and rests to update their behavior and start differentiating. The Director wakes for this, so what `BUILDERS_LOG.md` calls "not up yet on purpose" ends here |
-| D49 | Next step | What magic unlocks | ✅ DECIDED (Pedro, 2026-11-01): once magic is unlocked, prefixes and suffixes reach materials, monsters, everything, from the banks. To settle at the leg's start: is the unlock per world, per hub or per person? |
-| D50 | Next step | How identify works | ✅ DECIDED (Pedro, 2026-11-01): you can study a thing, and you only know what it does after a rest. This replaces D32's field roll, and line 55 and its bars change with it. Studying costs energy, which is the point of D51. Readings to confirm at the leg's start: it also costs the clock, can be done in the field and at a bench, and queues; any rest (D30 and D43) resolves the queue; an unread piece still acts on whoever wears it (D19), and can't be read early |
-| D51 | Next step | What energy is | ✅ DECIDED (Pedro, 2026-11-01): "energy is a daily resource. once it's gone you rest!" No passive regeneration: everything that spends energy draws on one day's supply, and a rest restores it. Today a new drop refills energy, so a full bar must stop coming free with each deploy. To settle at the leg's start: can you rest in the field, or only in the hub and at a seal? |
+| D49 | Next step | What magic unlocks | ✅ DECIDED (Pedro, 2026-11-01): once magic is unlocked, prefixes and suffixes reach materials, monsters, everything, from the banks. **Settled, Pedro 2026-11-01: per hub.** The first rest in a hub that settles a magic discovery unlocks that hub; worlds pinned after it and the shelf roll prefixes and suffixes; earlier worlds stay as pinned |
+| D50 | Next step | How identify works | ✅ DECIDED (Pedro, 2026-11-01): you can study a thing, and you only know what it does after a rest. This replaces D32's field roll, and line 55 and its bars change with it. Studying costs energy, which is the point of D51. **Settled, Pedro 2026-11-01: all of the old identify goes, with everything hardcoded (D53).** It costs energy and the clock, works in the field and at a bench, and queues; any rest resolves the queue; there is no roll; skill makes it cheaper and faster, never instant; an unread piece acts on whoever wears it (D19) and can't be read early |
+| D51 | Next step | What energy is | ✅ DECIDED (Pedro, 2026-11-01): "energy is a daily resource. once it's gone you rest!" No passive regeneration: everything that spends energy draws on one day's supply, and a rest restores it. Today a new drop refills energy, so a full bar must stop coming free with each deploy. Where: D58 |
 | D52 | After the magic + content layer | What makes a character differ | ✅ DECIDED (Pedro, 2026-11-01): a pass of its own, after this layer: connect stats to attributes, "to make the character feel different each time". The 15 attributes come to drive what stats do |
+| D53 | This leg | What content is | ✅ DECIDED (Pedro, 2026-11-01): "anything hard coded is gone, that was a test, we're moving to 100% procedurally generated according to the theme. THE THEME is essential, the player mints a world that has a theme, and we could even include a conversation with AI to mint it, that's the characteristic of that minted world." A world's theme is a signed pack it pins at mint; creatures, materials, gear, affixes, abilities and words all come from it. No content table stays in `src`. |
+| D54 | This leg | What happens to what stands on the test content | ✅ DECIDED (Pedro, 2026-11-01): retire it all. Reading on the record: worlds on the test content are retired, as the old-grid worlds were; the tables leave `src` and live on only as the test suite's fixture, so the bars still pin behaviour; a character keeps their identity and gold, and a piece already in a stash stays as a self-described relic, because nothing here deletes a player's rows |
+| D55 | This leg | How far a theme reaches | ✅ ANSWERED WITH THE FINAL SHAPE (Pedro, 2026-11-01): "this Hub we're building is the one I'll serve live from a service, the person can play from ours, or can download the game and play locally (LLM local) BYOK + local or serve their hub from our website (this is the final shape here), we then charge for LLM usage but we allow players to exchange goods and services through a common market, using some form of crypto we'll mint for this." Reading on the record: a theme belongs to a world; a hub is a service, neutral in the bank's voice, whose shelves stock from the worlds it serves. Binding now: the door has a provider seam and records usage per call; a definition travels with its item. Not built now: the market, the currency, the hosting |
+| D56 | This leg | How a theme is made | ✅ DECIDED (Pedro, 2026-11-01): talk, preview, sign. A conversation in the terminal's voice writes a theme pack that passes the bank law, shown before signing. With no key or network you may pin a theme already banked; the draft keeps and nothing blocks |
+| D57 | This leg | Who writes the numbers | ✅ DECIDED (Pedro, 2026-11-01): words from the model, numbers from one versioned formula. A pack holds names, tags, behaviour and bands (rank, cost, size), and no digits |
+| D59 | This leg | What a shipped theme is | Taken by the builder, 2026-11-01: ordinary data under the same law, written by a dev-time run, so a person with no key has a world. It is banked at boot, so a later build changing its bytes retires no world pinned to it |
+| D58 | This leg | Where a person can rest, and camping | ✅ DECIDED (Pedro, 2026-11-01): "we don't gate a camping skill, we also don't pre create it, the concept here is each LLM loop mints skills, and camping might be possible." The rest door asks what lets this person rest here: the hub's places by default, and any minted skill that carries the grant. No camp exists in code or in a shipped pack |
+| D60 | This leg | Whose name a person reads | ✅ DECIDED (Pedro, 2026-11-01, on seeing the screen): "a mob's name is masked, never player visible. The name needs to be used by if it's legit magical/unique and it's a second generation or more mob." Everything else reads as an unknown contact, on the card, the kill line, what it drops and the mint's preview. Reading on the record: magical is a Director trait or learned magic, not what a kind is born casting; unique is `boss`, `titan` or `god`, not `elite`; and, corrected by Pedro the same day, "they eventually become a different monster, that's what I mean": a generation is a creature's own line, not the count of a world's rests, and the second generation has become a different monster (`generation` on the definition, `NAMED_FROM_GENERATION` in `Director.ts`). Nothing makes that change yet, so nobody is named. How a creature becomes another is not decided and not built |
+| D61 | Next leg | Creature lines as a hash tree | OPEN, Pedro's idea (2026-11-01): "we can Merkel tree them can't we? And make the sprite+content actually easier on future us." Working shape, not built: a child's hash commits to its parent's hash and to what changed, so an elder never moves when a descendant appears; each rest signs a root over a world's living lines. The model writes only what changed, the body plan is inherited, and the sprite adds to the parent's by shape. Use a real hash here, not `fnv1a`, or it proves nothing |
+| D62 | Next leg | Where creatures settle | OPEN, Pedro (2026-11-01): once they act as they should, "we'll need to differentiate where they set up camps (for the specific industrial type)." Reading to confirm: a camp belongs to a branch of the tree, and the branch's trade tag picks ground holding materials with that tag. This changes the rule that what stands on the land is only re-dressed between rests, so camps need their own record over the land, which itself stays fixed |
+| D63 | Next leg | At least two trees per theme | ✅ DECIDED (Pedro, 2026-11-01): "we need at least 2 trees, animals ... and monsters." Each theme or map gets its neutral creatures and types, and its monsters. Cooking, herding, farming and grove keeping land when the hub is remade. Working shape: a creature names its tree in the pack, because a behaviour word cannot say it (in the first theme the Compound Bear and The Auditor General are both NEUTRAL). The law refuses a pack missing either tree, and more trees are welcome. The first theme has no livestock, so its bytes, its id and `FIRST_THEME_VECTORS` move on purpose |
+| D64 | Next leg | Gender and population | ✅ DECIDED (Pedro, 2026-11-01): "we need gender and population." Working shape, not built: a tree node is a kind, never a single body, so a birth changes a count and only a change of form adds a node. A body holds its node and its gender, keyed by (seed, body). Population is a world record by node and ground that decides which bodies stand on the land; the land's own food limits it, not a fixed cap. With no record a world generates exactly as today, like Director generation 0. Ruled by Pedro the same day: "A signed world never changes doesn't mean it's dead, it means it's never again fucked around with after minting by the minter." So signing takes the world out of its minter's hands, and it goes on living: population, the Director and what grows from play all move. `RestSystem.grownTheme` and the rest prompt still hold growth back for worlds signed later, which came from the builder's narrower reading and is to change when this leg is built |
+| D65 | Server runtime | Bringing a creature in from another map | ✅ DECIDED (Pedro, 2026-11-01): "the possibility of a player bringing in an animal or monster they somehow captured from another map into this map." Working shape, not built: the captured body travels with its definition and the proof of its line (D55), and joins the new map's population as a foreign branch, which changes the map's signed root and not its pack. A child of two lines has two parents in the hash, so the tree is really a graph, as git's merges are. Open: how capture works, and who may release what on a shared map. Today no creature runs on the server at all: `MobAI` and `WorldGenerator` run only in the browser, so an authoritative population waits for the runtime remake |
+| D66 | World clock | The world is alpha as minted | ✅ DECIDED (Pedro, 2026-11-01): "you need to make the world alpha as minted, and positions of a monster aren't important between rests, they need to move around between the chunks afterall, meaning the chunk needs to be rescanned." The mint's generation is alpha: land stays a pure function of the seed, and golden vectors bind land and alpha only. After alpha, who stands where comes from the world's record. This replaces D62's and `Director.variantOf`'s rule that positions never move, and answers how settling is stored |
+| D67 | World clock | World cadence, on the world's clock and never a player's | ✅ DECIDED (Pedro, 2026-11-01): a world's gate inside the Nexus goes down and opens periodically. Small: up 1 hour, then 30 minutes of recon with no deploy. Medium: up 4 hours, 1 hour of scan. Large: up 12 hours, 4 hours of scan. While a world boots, a person can recon, scan and learn how things changed between regenerations. Reading: 16, 32 and 64 sectors are small, medium and large; the three are anchors and any other size reads a curve through them, so size stays uncapped. The phase is a pure function of the certificate and the time, so every machine agrees and a world nobody watched catches up on opening |
+| D68 | World clock | Scanning decays | ✅ DECIDED (Pedro, 2026-11-01): "decay over scanning." What a person knows of the land keeps; what they know of who stands on it goes stale with each regeneration until scanned again |
+| D69 | Trees and scan | What the scan window does | ✅ DECIDED (Pedro, 2026-11-01): "First we always use the local or compute ... then what's NEW, as in, what rolled a success or gained experience and needs to have a name, a spot, lore... That's what gets batched to the LLM." The window exists to give generation time, to avoid one huge JSON that can fail, and to balance load on the online Nexus. So: deterministic compute first; only what is new goes to the door, in small batches across the window; what does not finish waits for the next window, is never dropped, and stands on a plain name as a weave does. This moves `RestSystem`'s growth and the Director's turn from a person's rest to the world's window, and growth now reaches the living world (D64) |
+| D70 | Served runtime | The online compute | ✅ MARKED, deferred on purpose (Pedro, 2026-11-01): "it needs to be cheap, simply mark 'clockwork faerun style' and when we get to it we got to it." Pattern to read then: `D:\-ttrpg-engine\engine\clockwork.ts`, `docs\clockwork_wiring.md`, `docs\clockwork_api.md`: layered accumulate and resolve, with no compute while nobody observes |
+| D71 | World clock | Day, night and the sky | ✅ DECIDED (Pedro, 2026-11-01): "day night cycles will matter." A person can mint a world that has only night, or one that does not spin (tidally locked, with a rim between its sides), so a place is always night, dusk or dawn, or day. Light must change play, or the law refuses the choice (line 77's rule) |
+| D72 | Creation | A deed mints a world | ✅ DECIDED (Pedro, 2026-11-01): "to mint it'll cost a deed, that's the thing we'll add during character generation, everyone gets one deed for free to mint their pocket world where they farm what they want, the rest are exchanged, or played online, or they need to find a new deed." Against the code: minting is free today, and `DeedSystem`'s Land Deed is a hub-lot item, so a world deed is a new kind, not that one renamed. Worlds and sizes larger or smaller are offered at the mint |
+| D73 | Hub remake | Guildhall and tavern | ✅ DECIDED (Pedro, 2026-11-01): the guildhall receives quests from the NPCs. The guildmaster takes the materials for hub expansion, and the hub's central planning is decided there; online, on a timer, weekly, players vote on the expansion. Reading to confirm: these are the existing Hall of Banners and Rusty Anchor given real work, where Vex's dialogue admits today that guilds are unbuilt. Mags's REST stays |
+| D74 | Hub remake | The hub's chunk and its manifest | ✅ DECIDED (Pedro, 2026-11-01): "The chunk size for the hub is still wrong, using the old old old hardcoded one." `HubGenerator.generate` is 50 by 50 tiles where a chunk is 64 (Wave 8). The first things placed are correct except the lots. A manifest-like matrix places the buildings, the first chunk is the middle one, and the hub grows around it |
+| D75 | Hub remake | Lots, and who buys them | ✅ DECIDED (Pedro, 2026-11-01): lots are bought by players and by the guild, "because npcs that are brought out of the gate need to leave the tavern and have their own house, that sets up their wants and quests and makes for the economic loop to function." So a person arrives at the tavern, the guild buys a lot, the house rises through D8's pooled bill, and the wants and quests start. This takes the place of Wave 11.1's redeem-and-place |
+| D76 | 11C | NPCs become adventurers | ✅ DECIDED (Pedro, 2026-11-01): "When a hub gets to 3 chunks (2 expansions after the base), we need the actual npcs becoming adventurers and diving as AI with the player (setting up for the online before online)." Everything but the choice is deterministic: they have goals and set out to accomplish them. Pattern: `D:\-ttrpg-engine\engine\npc-agenda.ts` (`tickAgenda`: needs decay, work and belonging fulfil them, the most pressing need sets the goal; `deriveEconomicRole`) and `mm-npc-agenda.ts` (a daily fold). Pedro's "how they choose their daily energy commit" was not found under that name; ask where it lives |
+| D77 | World clock | A person still inside when the gate goes down | OPEN. Recommendation: warnings by shape as it nears, then the same stake as being lost in the field, so the clock matters. Note: `collapseTime` today is decoration; `store.ts` recomputes it from now on every load and nothing ends a session by it, so this has never been felt |
+| D78 | World clock | Is one cycle one world day? | OPEN. Recommendation: yes, up plus scan is one day, so a small world's day is 90 minutes, and "rescanned daily" and the sky share one clock |
+| D79 | World clock | What a person's rest keeps | OPEN. Recommendation: it keeps a person's energy (D51) and settling (D50), since those are theirs. The Director, growth and what the door writes move to the world's window. A rest no longer turns the world's day |
+| D80 | Creation | What a deed fixes | OPEN. Recommendation: a deed names a size, the free one is small, and the sky is chosen at the mint. A pocket world runs the same cadence as any other |
+
+**The reshape (D53–D58, 2026-11-01), which replaces the order below where they differ:** R6 and Layer 0 → the door on Claude, with a provider seam → **the theme: pack, law, formula, one registry, the tables out of `src`, the mint's conversation** → Layer 1 → Layer 2 with the Director and R4 → rest, study and minted skills → Layer 4 with the per-hub unlock → Layer 3. R5's lens goes with the tables it lives in; its rule, that every definition has a slot that takes it, becomes pack law.
 
 **Order and why (D48):** the magic + content layer as one direction, in this build order: R6 and Layer 0 (the current game becomes true) → rest and the dream on Claude (the door all later content comes through) → Layer 1 → Layer 2 with the Director → Layer 4 with the prefix and suffix unlock (D49) and study-then-rest (D50) → Layer 3. Then the attributes pass (D52) → character creation → Wave 11 → Wave 12. Effects come before monsters, monsters before players: a monster casting first proves the door, gives the player something to study, and tunes the numbers against something real.
 
@@ -772,7 +802,58 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 
 **Proposed test lines, not yet agreed:** see lines 77–94.
 
-### WAVE 11 — Bringing the Nexi Home
+### THE MAGIC + CONTENT LAYER — THE RECORD (built 2026-11-01, merged on Pedro's word the same day)
+
+**What Pedro's answers changed.** The leg asked D41, D49, D50 and D51. He answered bigger (D53–D58): everything hardcoded goes, a world's theme is the root of all content, and the final shape is a hub served as a service with a common market. So the theme came first and the rest was built on it.
+
+**Built, by bar and by play (a fresh avatar, LEDGER, on `localhost:3108`):**
+- **R6, Layer 0, D51.** Repair reads the body. Every rollable stat has a named reader (`StatSystem.STAT_READERS`) or the batch falls. Energy carries across a drop and a reload. Played: reserves, a kept 37 of 55 energy through a reload, a night at the inn restoring it.
+- **The door (D43–D46).** `server/intelligence/`, a provider seam, Claude behind it, usage on every call. Gemini is gone. A live call has the server-side refusal fallback on; a rest goes by Message Batches.
+- **The theme (D53–D57, lines 95–99).** Pack, law, formula, compiler, registry. `FIRST_THEME` ships as data. Played: the old worlds read retired, the shelves stock only the theme, a minted world pinned it, the field held only its creatures and materials, and its ground stayed within two ranks of its difficulty.
+- **The mint (D56).** Talk, write, preview, sign, or pin one already written. Played with no key (it says so and offers the written one), and played through the whole screen against a canned network reply, so the screen and the law are real and the words were not.
+- **Layers 1, 2, the Director (line 78–80, 90, R4).** One effect door. Monsters cast what they were born knowing; every blow winds up, drawn by shape. Played: brackets on a hound before any damage landed. The Director moves at each rest and read generation 1 back after one.
+- **The rest (D43, D50, D58).** Inn (played), own bed and a field rest for a minted grant (by bar). Settling at any return, sleeping by choice. Study has no roll.
+- **Layer 4, the unlock (D41, D49).** Reserves fill from gathering, a weave cast from a focus and drew them. Played: withdrawn at the beacon, the weave settled under its plain name, the hub's unlock was signed, and the next shelf carried prefixes and suffixes.
+- **Layer 3.** A worn piece carries an ability and fires on hit, defeat, hurt or low health; a scroll casts. By bar and by source: neither was fired in play.
+
+**Not built, on purpose or not yet, said plainly:**
+- **No real model has been called.** There is no key on this machine. The door is proven against a fake client and a canned reply; a real prompt may need tuning before it writes a lawful pack first time. To run it, set `ANTHROPIC_API_KEY` before `npm run pedro`; a mint then costs real money, by the plan's rule on purpose.
+- The local-model and own-key providers: the seam exists, and only Claude stands behind it (D55). The market, the currency and hosting: not started.
+- `summon`, `reveal`, `transform` and `move` effects, and the `while_worn` and `on_use` triggers: nothing reads them yet, so the law refuses them rather than lying (line 77's rule). A minted skill's only working grant is `rest`.
+- A tome's borrowed cast (D40), worn-gear set effects, boss phases, monsters casting named weaves, and importing Primordial's catalog as themes. The moved-mob fix carried since Wave 8 is still carried.
+- A weave's first name is signed in this hub's ledger; carrying names between hubs waits for the market.
+- Relics (D54) are held by a bar: no avatar holding retired items was played.
+- **Balance is unplayed.** Every number in `ThemeFormula.ts` is a guess until Wave 12, and that is now the one file to tune.
+
+### THE LIVING WORLDS PROGRAM (planned 2026-11-01 from Pedro's rulings D60–D76, nothing built)
+
+The world stops being static. A world runs on its own clock, what lives in it changes kind, breeds and moves, and the hub grows from what is brought home. Each leg still registers its bars first, asks its open decisions at its start, and plays through the real interface. The order is the builder's, for Pedro to overrule; the attributes pass moved behind the creature legs so that attributes have real behaviour to act against.
+
+**Leg 1: the world clock (D66–D68, D71, D77–D79; lines 100–104).** A pure `WorldClock` reads a certificate and the time and returns the cycle, the phase (up or scan), the time left and the sky. It replaces `collapseTime` and the mint's COLLAPSE TIMER field. The Nexus card shows the gate's state; deploy is refused during scan, and recon and scan stay open. The Director's generation becomes the cycle, no longer a count of rests. What a person scanned is stamped with its cycle and goes stale. Light changes play. Golden vectors keep land and alpha, and everything after alpha is a record over them.
+
+**Leg 2: the trees and the scan pass (D60, D61, D63, D69; lines 105–108).** Two trees at least in every pack, by a named field, with the law refusing a pack missing one. Lines hashed with a real hash from each world's alpha, a signed root per cycle, sprites inherited from the parent by shape. A creature can become a different monster, and names (D60) return with it. The scan pass: compute, then what is new goes to the door in small batches across the window, resumable, with a plain name until it comes back. `RestSystem.grownTheme`'s hold on later worlds ends here.
+
+**Leg 3: creatures that act (N6, D62, D64, D66; lines 109–112).** A hit is always felt, and sight loses its 16-tile cap. Response is what evolves. Herding for the neutral tree. Gender on each body, population per kind and ground, food as the limit. Between cycles, bodies move across chunks from the record. Camps by a branch's trade.
+
+**Then the attributes pass (D52, line 94)**, unchanged.
+
+**Then character creation (D35–D37, D72, D80; line 113).** The free deed joins the flow. The tropes already proposed there, cooking and animal tamer, now have something to stand on.
+
+**Wave 11, rewritten as the hub remake**, and **Wave 11C, NPC adventurers**, below. **Wave 12** stays the honest test. **Wave 13, the served runtime (D65, D70, D73's vote; lines 117–118):** the compute portion, marked "clockwork Faerun style", gate timing as load balancing, the weekly vote, carrying creatures between maps, the market, and the local and own-key providers.
+
+### WAVE 11 — The Hub Remake (was Bringing the Nexi Home; rewritten 2026-11-01)
+**In order (D73–D75, D11, D10, D8; lines 35–38, 114–115):**
+- **The manifest first.** A 64-tile chunk, a matrix that places what is there today, the middle chunk first, room to grow around it. Lots are re-laid. The bars holding byte hashes of the city move on purpose, and lots people already own must stay theirs.
+- **The guildmaster and the plan.** Materials deposited, an expansion chosen, a new chunk raised. Solo, the person decides; online, Wave 13's weekly vote.
+- **People.** `Escort Bond` brings someone out; they stay at the tavern; the guild buys a lot; their house rises through the pooled bill; their wants (`NpcSheet` already rolled them) become the guildhall's quests.
+- **Food and land.** Farms, grove keeping, animal herding from the neutral tree, cooking. Patterns to read: the agriculture and cooking modules listed in `D:\-ttrpg-engine\docs\clockwork_wiring.md`.
+
+The original Wave 11 text follows, where it still holds:
+
+### WAVE 11C — NPC Adventurers (D76; line 116)
+At three chunks, residents begin to dive beside the person. Each runs a daily agenda (needs decay, the most pressing sets a goal, the goal commits the day), and everything after the choice is deterministic. They enter a world by the same session path a person does, so this is the first test of several people in one world, before any network exists.
+
+### The original Wave 11 text
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
 
 - **11.1 People:** `Escort Bond` is an item worth 200G today, and its text already says it is worth more than gold. Redeeming one places a resident. Their type comes from the sheet already rolled in the world (temperament, objective, want), so the person you rescued is recognisably that person. A job gives a real effect, such as faster crafting or a tended shop. D10.
@@ -838,7 +919,7 @@ Guardrail 1 still holds: nothing gets built without a line here.
 52. Affix banks grow by themed batches; an unstudied affix shows nothing on equip, and study reveals exactly what was banked
 53. A world populates from the banks during recon, deterministically for its seed and pinned pack version, and no later batch changes it
 54. The gold and item audit balances across the whole itemization economy
-55. Identify is a skill: scoped by item type, trained at a workstation or by trying, usable in the field on a keyed roll paid in energy (D32), always timed, faster with skill. **To be rewritten by D50:** study, and know only after a rest
+55. Identify is a skill: scoped by item type, trained at a workstation or by trying. Anyone may study, in the field or at a bench, paid in the day's energy, always timed, faster with skill and glasses. There is no roll, and what was studied is known only after a rest (D50, replacing D32)
 56. Protection is an item: a death keeps exactly the slots the magic named, nothing more, and the receipt shows it
 
 For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the leg:
@@ -885,11 +966,38 @@ Proposed for the next layer, not yet agreed:
 87. With no key, no network or a refused batch, a rest still settles skills and the game goes on
 88. A pack from a rest changes no pinned world, and the key never reaches the browser
 89. All intelligence goes through one server door on Claude, no test calls the API, and no Gemini code remains
-90. Monsters change between rests: magic and the Director update how they behave, and they come to differ, deterministically for a pinned world
+90. Monsters change between regenerations (rests until the world clock lands): magic and the Director update how they behave, and they come to differ, deterministically for a pinned world
 91. Once magic is unlocked, prefixes and suffixes appear on materials, monsters and everything else, from the banks, and they act
 92. A thing can be studied, and what it does is known only after a rest
 93. Energy is one day's supply: nothing but a rest restores it, and a new drop does not refill it
 94. Every attribute changes how a character plays, so two characters of different spreads play differently
+95. No content table is written in `src`: creatures, items, materials, recipes, affixes and lore come from a theme, and the old tables live only as the test fixture
+96. A theme is words, tags and bands; one versioned formula writes every number; a pack with a stray number, an unread stat, trigger or effect, an unregistered tag or an unplayable world is refused whole
+97. A world pins its theme by the id of its bytes and builds from that theme alone. No later theme and no act of its minter moves it; what it grows for itself does (D64)
+98. A person can talk with the Seed at the mint, see what it wrote and sign; with no key they can pin a theme already written, and the draft keeps
+99. A world's difficulty sets its ground, spawns weigh toward the chunk's rank, an elite is scarce and alone, neutral stays neutral, every blow winds up visibly first, and nothing outruns a bare walk
+
+For the living worlds program, proposed 2026-11-01, not yet agreed:
+
+100. A world's phase, cycle and sky are a pure function of its certificate and the time, on every machine, and a world nobody watched catches up on opening
+101. During scan no one can deploy, and recon and scanning work; the Nexus shows the gate's state and time left for every world
+102. Small, medium and large worlds run Pedro's three cadences, and any other size reads the curve through them
+103. What a person scanned goes stale with each regeneration, and scanning again shows how things changed
+104. A person can mint a world of only night or one that does not spin, and the light where they stand changes play
+105. A creature's id commits to its parent's and to what changed; an elder's id never moves, and each cycle signs a root that two machines can compare
+106. A pack with no animal tree or no monster tree is refused, and more trees are welcome
+107. A creature can become a different monster, its sprite visibly inherited by shape, and it gives its name only if magical or one of a kind (D60)
+108. Compute settles first; only what is new goes to the door, in batches across the window; what does not finish waits, is never lost, and play never blocks on it
+109. A hit is always felt, from any distance
+110. Animals herd, and each body has a gender keyed so every machine agrees
+111. Population moves by births and food, and decides which bodies stand on the land; a birth never adds a tree node
+112. Bodies change chunks between cycles, and a line settles where its trade has something to work
+113. Everyone begins with one free deed, minting spends a deed, and a deed can be found and exchanged
+114. The hub is a chunk from a manifest, the middle one first, and raising a chunk spends what was deposited with the guildmaster
+115. A person brought out through the gate stays at the tavern, the guild buys a lot, their house rises, and their wants become quests at the guildhall; the gold audit balances through a whole cycle of it
+116. At three chunks, residents dive beside the person, each with a goal chosen cheaply and every other step deterministic
+117. A captured creature brought to another map joins its population with the proof of its line, and a child of two lines has two parents in its hash
+118. Online, the hub's expansion is decided by a weekly vote
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
@@ -945,9 +1053,16 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | Stable database | 69–71 | Passed, by test and by play within its carried items; approved |
 | Usability pass, with the playtest fixes | 57–59, 72–76 | Passed, by test and by play within its carried items; approved "for now" |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
-| 11 Bringing the Nexi Home | 35–38 | Not started |
-| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–93 (proposed) | **Next.** Planned, not started |
-| Rest and the dream, the intelligence layer | 86–89 (proposed) | **Next,** as part of that layer. Planned, not started |
-| Attributes pass (D52) | 94 (proposed) | Planned, after the magic + content layer |
+| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–93 | Built and merged on Pedro's word. By bar, and by play within the record |
+| Rest and the dream, the intelligence layer | 86–89 | Built and merged. No real model has been called: no key on this machine. See the record |
+| The theme (D53–D57) | 95–99 | Built and merged. See the record |
+| The world clock | 100–104 (proposed) | Next |
+| The trees and the scan pass | 105–108 (proposed) | Planned |
+| Creatures that act | 109–112 (proposed) | Planned |
+| Attributes pass (D52) | 94 (proposed) | Planned, after creatures that act |
+| Character creation with the deed | 113 (proposed) | Planned |
+| 11 The hub remake | 35–38, 114–115 (proposed) | Planned |
+| 11C NPC adventurers | 116 (proposed) | Planned |
+| 13 The served runtime | 117–118 (proposed) | Planned, after Wave 12 |
 | Character creation | 84 (proposed) | Planned, after the attributes pass |
 | 12 The Second True Test | 39–40 | Not started |

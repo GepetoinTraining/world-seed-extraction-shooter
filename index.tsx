@@ -1,3 +1,4 @@
+import './src/logic/theme/installOnLoad';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';

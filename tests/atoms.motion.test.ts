@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
 import { MobBehavior } from '../src/entities/mob/types';
@@ -229,11 +229,15 @@ describe('enemies against the world', () => {
     let chunks = chunkWith([mobAt(def, 0, 0, 'turret1')]);
     const player = { x: 6 * TILE_PX, y: 0 };
     let patterns = 0;
+    // A blow winds up on the clock now (R4), so the clock has to run
+    vi.useFakeTimers();
     for (let i = 0; i < 200; i++) {
+      vi.advanceTimersByTime(50);
       const out = MobAI.tick(chunks, player, 0.05);
       patterns += out.spawnedPatterns.length;
       chunks = { ...chunks, ...out.updatedChunks };
     }
+    vi.useRealTimers();
     const mob = chunks['0,0'].entities[0];
     expect(mob.position.x).toBe(0);
     expect(mob.position.y).toBe(0);

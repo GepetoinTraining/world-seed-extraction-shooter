@@ -8,8 +8,8 @@
  * Where pgvector fits: `embedding` is JSON text today and search ranks in the
  * server (SqlStore.search). At deploy, add a `vector(n)` column beside it with an
  * ivfflat or hnsw index and replace that one method's body with an ORDER BY on
- * the cosine operator. Gemini's vectors have 768 dimensions and the offline
- * embedding 256, so a vector column needs one model chosen first.
+ * the cosine operator. The offline embedding has 256 dimensions; a better one,
+ * if search ever needs it, means choosing a model and embedding again (D46).
  */
 import { bigint, customType, doublePrecision, index, integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 

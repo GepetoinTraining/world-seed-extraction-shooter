@@ -3,6 +3,7 @@
  * door shared with the Conduit's quick deploy.
  */
 
+import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import React, { useEffect, useState } from 'react';
 import { useWorldStore, IWorldCard } from '../entities/world/store';
 import { WorldCreator } from './WorldCreator';
@@ -37,7 +38,7 @@ const WorldCard = ({ world, onDeploy }: { world: IWorldCard; onDeploy: () => voi
       </div>
       {/* Wave 10E (D20): the pin is on the card — this world dreams this bank, forever */}
       <div className="ws-dim ws-small">
-        {world.packVersion ? `DREAM PACK v${world.packVersion}${world.webVersion ? ` · WEB v${world.webVersion}` : ''} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
+        {ContentRegistry.get(world.themeId) ? `${ContentRegistry.get(world.themeId)!.name.toUpperCase()} — pinned at mint${world.magicUnlocked ? ' · IT DREAMS' : ''}` : world.packVersion ? `DREAM PACK v${world.packVersion}${world.webVersion ? ` · WEB v${world.webVersion}` : ''} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
       </div>
 
       <div
@@ -56,7 +57,7 @@ const WorldCard = ({ world, onDeploy }: { world: IWorldCard; onDeploy: () => voi
           tone="signal" primary={!isDev}
           onClick={onDeploy}
           disabled={world.retired}
-          title={world.retired ? 'Surveyed on an older grid. Its record stands, but it can no longer be walked.' : undefined}
+          title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : undefined}
         >
           DEPLOY
         </Button>

@@ -3,6 +3,7 @@
  * Bank where it belongs — this screen is lots, deeds, workshops and counters.
  */
 
+import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../types';
 import { useHubStore, IPlayerLot } from '../entities/hub/store';
@@ -123,6 +124,13 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
           {hub.shellBillNow('WORKSHOP').length < SHELL_BILLS.WORKSHOP.length && (
             <span className="ws-dim ws-small">Your first bench. Logs and stone will raise it; the metal line waits for the second.</span>
           )}
+        </div>
+      )}
+
+      {mine && lot.structureType === 'HOUSE' && !construction && (
+        <div style={{ marginTop: 6 }}>
+          {/* D43: a bed gives a HOUSE its function. Your own costs nothing. */}
+          <Button tone="signal" onClick={() => void RestDoor.sleep('BED')}>SLEEP HERE</Button>
         </div>
       )}
 

@@ -38,9 +38,10 @@ const GENRE_ORDER = [GenreType.FANTASY, GenreType.SCIFI, GenreType.POST_APOC, Ge
 /** A world keeps one palette, so the same machine draws all of it the same way. */
 export const genreForWorld = (seed: string): Genre => GENRE_LOOKS[GENRE_ORDER[fnv1a(`world:genre:v1:${seed}`) % GENRE_ORDER.length]];
 
+/** Read when it is asked for: a theme may have been installed since this module loaded. */
 export const STATIC_CONTEXT: IGenerationContext = {
-  mobDefinitions: Object.values(MOB_DEFINITIONS),
-  resourceDefinitions: Object.values(RESOURCE_DEFINITIONS)
+  get mobDefinitions() { return Object.values(MOB_DEFINITIONS); },
+  get resourceDefinitions() { return Object.values(RESOURCE_DEFINITIONS); }
 };
 
 /** A view whose terrain is near the world's average: mostly open ground, with some mud. */

@@ -8,12 +8,33 @@ import {
 import { UniversalRank, Rarity } from '../../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { hash2, layerSeed, valueNoise } from '../../logic/rng/noise';
-import { BIOME_RESOURCES } from '../item/data/resourceDefinitions';
+import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { Director, IDirectorPool, IDirectorRecord } from './Director';
 
 export interface IGenerationContext {
   mobDefinitions: any[];
   resourceDefinitions: any[];
+  /** R4: the world's own difficulty rule. Absent only for bars that pin the noise alone. */
+  difficulty?: UniversalRank;
+  /** D53: the theme this world pinned. */
+  themeId?: string;
+  /** D48: how this world's monsters have come along, and what they may become. */
+  director?: IDirectorRecord;
+  directorPool?: IDirectorPool;
 }
+
+/** Timber: what makes a forest, and what a trunk is. Read from what it is, never by a name. */
+export const isTimber = (def: any): boolean => {
+  const tags: string[] = def?.tags ?? [];
+  return tags.includes('flora') && tags.includes('wood') && !tags.includes('seed');
+};
+
+/** R4: an elite is rare, and alone. Read from its tags, so a theme's own elite counts. */
+const ELITE_TAGS = ['elite', 'boss', 'titan', 'god'];
+const isElite = (mob: any) => (mob.tags ?? []).some((t: string) => ELITE_TAGS.includes(t));
+const ELITE_WEIGHT = 0.04;
+/** Each rank further from the chunk's own counts for this much less. */
+const RANK_FALLOFF = 0.35;
 
 // Rolls pick by index, so definitions need an order the database cannot change.
 const byId = (a: any, b: any) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -22,6 +43,7 @@ function ordered(context: IGenerationContext): IGenerationContext {
   let value = sorted.get(context);
   if (!value) {
     value = {
+      ...context,
       mobDefinitions: [...context.mobDefinitions].sort(byId),
       resourceDefinitions: [...context.resourceDefinitions].sort(byId)
     };
@@ -32,7 +54,8 @@ function ordered(context: IGenerationContext): IGenerationContext {
 
 // Periods are in chunks, chosen so a region is several screens of walking across.
 const BIOME_PERIOD = 7;
-const GENRE_PERIOD = 11;
+/** R4: how far above a world's difficulty its worst ground reaches. */
+const MAX_CLIMB = 2;
 const RANK_PERIOD = 14;
 const FOREST_PERIOD = 3;
 const EXITS_PER_SIDE = 2;
@@ -94,10 +117,10 @@ class TileField {
 export class WorldGenerator {
 
   /** Opens a world. Only sector summaries are worked out; chunks are built when reached. */
-  static generate(seed: string, size: number, _context?: IGenerationContext): IMap {
+  static generate(seed: string, size: number, context?: IGenerationContext): IMap {
     const sectors: Record<string, ISector> = {};
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      if (this.sectorExists(seed, size, x, y)) sectors[`${x},${y}`] = this.sectorSummary(seed, x, y);
+      if (this.sectorExists(seed, size, x, y)) sectors[`${x},${y}`] = this.sectorSummary(seed, x, y, context?.difficulty);
     }
     return { seed, width: size, height: size, gridVersion: GRID_VERSION, sectors, chunks: {}, generatedAt: Date.now() };
   }
@@ -123,24 +146,27 @@ export class WorldGenerator {
     return built < 0.44 ? BiomeType.WASTELAND : BiomeType.RUINS;
   }
 
-  static genreAt(seed: string, cx: number, cy: number): GenreType {
-    const n = valueNoise(layerSeed(seed, 'genre:v2'), cx, cy, GENRE_PERIOD);
-    if (n > 0.66) return GenreType.ELDRITCH;
-    if (n > 0.55) return GenreType.SCIFI;
-    if (n < 0.36) return GenreType.FANTASY;
-    return GenreType.POST_APOC;
-  }
 
-  private static rankBand(seed: string, cx: number, cy: number) {
+  /**
+   * R4's first fault: a world's difficulty did nothing. It sets the floor now, and the
+   * noise climbs at most two ranks above it, so a world said to be E is never mostly S.
+   */
+  private static rankBand(seed: string, cx: number, cy: number, difficulty?: UniversalRank) {
     const n = valueNoise(layerSeed(seed, 'rank:v2'), cx, cy, RANK_PERIOD);
-    return RANK_BANDS.find(([limit]) => n < limit)!;
+    const band = RANK_BANDS.find(([limit]) => n < limit)!;
+    if (!difficulty) return band;
+    const order = Object.values(UniversalRank);
+    const index = RANK_BANDS.indexOf(band);
+    const climb = Math.min(MAX_CLIMB, Math.floor((index / RANK_BANDS.length) * (MAX_CLIMB + 1)));
+    const step = Math.min(order.length - 1, order.indexOf(difficulty) + climb);
+    return [band[0], order[step], band[2]] as typeof band;
   }
 
-  static rankAt(seed: string, cx: number, cy: number): UniversalRank {
-    return this.rankBand(seed, cx, cy)[1];
+  static rankAt(seed: string, cx: number, cy: number, difficulty?: UniversalRank): UniversalRank {
+    return this.rankBand(seed, cx, cy, difficulty)[1];
   }
 
-  private static sectorSummary(seed: string, sx: number, sy: number): ISector {
+  private static sectorSummary(seed: string, sx: number, sy: number, difficulty?: UniversalRank): ISector {
     const counts: Partial<Record<BiomeType, number>> = {};
     const order = Object.values(UniversalRank);
     let top = 0;
@@ -150,7 +176,7 @@ export class WorldGenerator {
       const cx = sx * SECTOR_CHUNKS + x, cy = sy * SECTOR_CHUNKS + y;
       const biome = this.biomeAt(seed, cx, cy);
       counts[biome] = (counts[biome] || 0) + 1;
-      const [, rank, r] = this.rankBand(seed, cx, cy);
+      const [, rank, r] = this.rankBand(seed, cx, cy, difficulty);
       if (order.indexOf(rank) > top) { top = order.indexOf(rank); rarity = r; }
     }
     const biome = (Object.entries(counts) as [BiomeType, number][]).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
@@ -258,7 +284,7 @@ export class WorldGenerator {
     if (!chunk) return false;
     const tx = tileOf(px), ty = tileOf(pz);
     for (const e of chunk.entities) {
-      if (e.type !== EntityType.RESOURCE || e.definitionId !== 'res_tree_log') continue;
+      if (e.type !== EntityType.RESOURCE || !isTimber(RESOURCE_DEFINITIONS[e.definitionId])) continue;
       if ((e.usesRemaining ?? 3) <= 0) continue;
       if (tileOf(e.position.x) === tx && tileOf(e.position.y) === ty) return true;
     }
@@ -286,30 +312,45 @@ export class WorldGenerator {
   // ---------------------------------------------------------------------------
 
   /**
-   * Enemies a chunk may spawn: its genre, at or below its rank. When a genre has
-   * nothing that low, only its weakest non-boss member qualifies.
+   * Enemies a chunk may spawn: what lives on this ground, at or below its rank. When
+   * nothing is that low, only the weakest non-boss qualifies.
    */
-  private static spawnPool(context: IGenerationContext, genre: GenreType, rank: UniversalRank): any[] {
+  private static spawnPool(context: IGenerationContext, biome: BiomeType, rank: UniversalRank): any[] {
     const order = Object.values(UniversalRank);
     const rankOf = (m: any) => order.indexOf(m.rank);
-    // A genre with no creatures of its own borrows from everyone, or its whole region would stand empty.
-    const own = context.mobDefinitions.filter((m: any) => m.genre === genre);
-    const genreMobs = own.length > 0 ? own : context.mobDefinitions;
-    const eligible = genreMobs.filter((m: any) => rankOf(m) <= order.indexOf(rank));
+    // Ground with nothing of its own borrows from everyone, or the region would stand empty.
+    const own = context.mobDefinitions.filter((m: any) => !m.habitat || m.habitat.includes(biome));
+    const living = own.length > 0 ? own : context.mobDefinitions;
+    const eligible = living.filter((m: any) => rankOf(m) <= order.indexOf(rank));
     if (eligible.length > 0) return eligible;
 
-    const regulars = genreMobs.filter((m: any) => !(m.tags || []).some((t: string) => ['boss', 'god', 'titan'].includes(t)));
-    const candidates = regulars.length > 0 ? regulars : genreMobs;
+    const regulars = living.filter((m: any) => !isElite(m));
+    const candidates = regulars.length > 0 ? regulars : living;
     const lowest = Math.min(...candidates.map(rankOf));
     return candidates.filter((m: any) => rankOf(m) === lowest);
+  }
+
+  /**
+   * R4's second fault: the pool was flat, so a third of a rich chunk's packs were dragons.
+   * A pick is weighted toward the chunk's own rank, and an elite is scarce.
+   */
+  private static pickSpawn(rng: { next: () => number }, pool: any[], rank: UniversalRank): any {
+    const order = Object.values(UniversalRank);
+    const weight = (m: any) => Math.pow(RANK_FALLOFF, Math.abs(order.indexOf(rank) - order.indexOf(m.rank))) * (isElite(m) ? ELITE_WEIGHT : 1);
+    const total = pool.reduce((sum, m) => sum + weight(m), 0);
+    let roll = rng.next() * total;
+    for (const m of pool) {
+      roll -= weight(m);
+      if (roll <= 0) return m;
+    }
+    return pool[pool.length - 1];
   }
 
   /** A chunk from its place alone: same seed and place, same chunk, in any world and any order. */
   static buildChunk(seed: string, exits: { x: number; y: number }[], cx: number, cy: number, context: IGenerationContext): IChunk {
     const ctx = ordered(context);
     const biome = this.biomeAt(seed, cx, cy);
-    const genre = this.genreAt(seed, cx, cy);
-    const [, rank, rarity] = this.rankBand(seed, cx, cy);
+    const [, rank, rarity] = this.rankBand(seed, cx, cy, ctx.difficulty);
 
     const chunk: IChunk = {
       id: `chk_${cx}_${cy}`, x: cx, y: cy, biome, difficulty: rank, rarity,
@@ -326,13 +367,13 @@ export class WorldGenerator {
     });
 
     for (let qy = 0; qy < CHUNK_QUADRANTS; qy++) for (let qx = 0; qx < CHUNK_QUADRANTS; qx++) {
-      this.fillQuadrant(chunk, seed, cx * CHUNK_QUADRANTS + qx, cy * CHUNK_QUADRANTS + qy, biome, genre, rank, rarity, ctx, inChunk);
+      this.fillQuadrant(chunk, seed, cx * CHUNK_QUADRANTS + qx, cy * CHUNK_QUADRANTS + qy, biome, rank, rarity, ctx, inChunk);
     }
     return chunk;
   }
 
   private static fillQuadrant(
-    chunk: IChunk, seed: string, qx: number, qy: number, biome: BiomeType, genre: GenreType,
+    chunk: IChunk, seed: string, qx: number, qy: number, biome: BiomeType,
     rank: UniversalRank, rarity: Rarity, ctx: IGenerationContext, exits: { x: number; y: number }[]
   ) {
     const rng = Rng.fromKey(`${seed}:quad:v2:${qx},${qy}`);
@@ -350,9 +391,15 @@ export class WorldGenerator {
     const mob = (suffix: string, template: any, tx: number, ty: number) => {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
+      const body = id(suffix);
+      const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation);
       push({
-        id: id(suffix), type: EntityType.MOB, definitionId: template.id, position: at,
-        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth
+        id: body, type: EntityType.MOB, definitionId: template.id, position: at,
+        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth + variant.bonusHealth,
+        ...(variant.displayName ? { displayName: variant.displayName } : {}),
+        ...(variant.traits.length > 0 || variant.learned.length > 0 ? {
+          bonusHealth: variant.bonusHealth, bonusDamage: variant.bonusDamage, learned: variant.learned
+        } : {})
       });
     };
 
@@ -369,18 +416,18 @@ export class WorldGenerator {
             container: { lootRank: rank, looted: false, hasLore: true }
           });
         }
-        const guards = this.spawnPool(ctx, genre, rank);
-        for (let g = 0; g < 2 && guards.length > 0; g++) mob(`guard${g}`, rng.pick(guards), sx + rng.int(-3, 4), sy + rng.int(-3, 4));
+        const guards = this.spawnPool(ctx, biome, rank).filter((m: any) => !isElite(m));
+        for (let g = 0; g < 2 && guards.length > 0; g++) mob(`guard${g}`, this.pickSpawn(rng, guards, rank), sx + rng.int(-3, 4), sy + rng.int(-3, 4));
       }
     }
 
     // Packs: enemies come in small groups, with empty ground between them.
     if (rng.next() < 0.45) {
-      const pool = this.spawnPool(ctx, genre, rank);
+      const pool = this.spawnPool(ctx, biome, rank);
       if (pool.length > 0) {
-        const template = rng.pick(pool);
+        const template = this.pickSpawn(rng, pool, rank);
         const [px, py] = tile();
-        const count = rng.int(1, 4);
+        const count = isElite(template) ? 1 : rng.int(1, 4);
         for (let i = 0; i < count; i++) mob(`m${i}`, template, px + rng.int(-2, 3), py + rng.int(-2, 3));
       }
     }
@@ -397,7 +444,7 @@ export class WorldGenerator {
       });
     };
 
-    const tree = pool.find((r: any) => r.id === 'res_tree_log');
+    const tree = pool.find(isTimber);
     const woodland = valueNoise(layerSeed(seed, 'forest:v2'), qx, qy, FOREST_PERIOD);
     if (tree && woodland > 0.5) {
       const count = rng.int(9, 19);

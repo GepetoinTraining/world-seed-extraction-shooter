@@ -42,12 +42,14 @@ export class LootTable {
    * @param mobDef The mob's definition
    * @param magicFind Player's magic find stat (default 1.0)
    * @param context Optional context for advanced drops like deeds
+   * @param earnedName D60: the body's name, if it has earned one; a drop never reveals more
    */
   static generateLoot(
     mobDef: IMobDefinition, 
     magicFind: number = 1.0,
     context?: ILootContext,
-    rollKey?: string
+    rollKey?: string,
+    earnedName?: string
   ): IItem[] {
     // Wave 1.3: every drop derives from a journaled key. Same key -> same loot.
     const rng = Rng.fromKey(rollKey || `unkeyed:loot:${Date.now()}:${Math.random()}`);
@@ -109,15 +111,16 @@ export class LootTable {
       if (rng.next() < 0.25 * effectiveMF) {
         const legendary = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
         legendary.rarity = Rarity.LEGENDARY;
-        legendary.name = `${mobDef.name}'s ${legendary.name}`;
+        if (earnedName) legendary.name = `${earnedName}'s ${legendary.name}`;
         loot.push(legendary);
       }
 
       // Small chance for Knowledge Tome
       if (rng.next() < 0.10 * effectiveMF) {
         const tome = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
-        tome.name = `Tome of ${mobDef.name}`;
-        tome.description = `Contains forbidden knowledge about ${mobDef.name}. Studying this grants Lore XP.`;
+        const subject = earnedName ?? 'Something Unnamed';
+        tome.name = `Tome of ${subject}`;
+        tome.description = `Contains forbidden knowledge about ${subject}. Studying this grants Lore XP.`;
         tome.rarity = Rarity.LEGENDARY;
         loot.push(tome);
       }
@@ -138,7 +141,7 @@ export class LootTable {
       // Artifact-tier item
       const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool);
       artifact.rarity = Rarity.ARTIFACT;
-      artifact.name = `Relic of ${mobDef.name}`;
+      artifact.name = `Relic of ${earnedName ?? 'Something Unnamed'}`;
       artifact.description = 'An item of impossible origin. Reality bends around it.';
       loot.push(artifact);
     }

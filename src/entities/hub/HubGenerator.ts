@@ -213,7 +213,8 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     dialogue: {
       greeting: "What'll it be? We got drinks and rumors, both equally watered down.",
       options: [
-        // Wave 9.7: REST removed — nothing in the hub is wounded; runs start whole.
+        // D51: energy is a day's supply, and a rest is what restores it (D43: it sends what was queued, too)
+        { label: 'Rest the night (20g)', action: 'REST' },
         { label: 'Buy Drink (10g)', action: 'BUY_CONSUMABLE', payload: { itemId: 'drink_ale', cost: 10 } },
         { label: 'Hear Rumors', action: 'GET_HINT' },
         { label: 'Leave', action: 'CLOSE' }

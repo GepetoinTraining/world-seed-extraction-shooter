@@ -16,6 +16,7 @@
  * from a plank-built one in grayscale.
  */
 
+import { RestSystem } from '../src/logic/systems/RestSystem';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
@@ -759,6 +760,8 @@ describe('line 62: study reveals it', () => {
     const [plank] = await runRecipe(lotId, 'recipe_plank', 'sit');
     const added = additionsOf(plank)[0];
     expect(usePlayerStore.getState().studyItemAtStation(plank.id).ok).toBe(true);
+    expect(LoadoutSystem.isAffixStudied(player(), added.id)).toBe(false); // D50: not until a rest
+    usePlayerStore.setState(s => ({ player: RestSystem.settle(s.player).player }));
     expect(LoadoutSystem.isAffixStudied(player(), added.id)).toBe(true);
     expect(Object.values(player().materialMastery).some(k => k.discoveredAffixes.includes(added.id))).toBe(true);
     const line = inspectItem(plank, player()).rows.find(([k]) => k === 'Affix')!;

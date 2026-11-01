@@ -7,6 +7,7 @@ import { HomeHub } from '../../logic/persistence/HomeHub';
 import { UniversalRank } from '../../../types';
 import { WebBank } from '../../logic/content/WebBank';
 import { AffixBank } from '../../logic/content/AffixBank';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 
 export enum WorldType {
   EXTRACTION = 'EXTRACTION',
@@ -52,6 +53,10 @@ export interface IWorldRules {
   contentPackVersion?: number;
   /** D27: the web this world's people are read through, pinned the same way. */
   webVersion?: number;
+  /** D53: the theme this world is made of, by the id of its bytes. Its one real pin. */
+  themeId?: string;
+  /** D49: was magic unlocked in this world's hub when it was signed? Pinned, so it never changes. */
+  magicUnlocked?: boolean;
 }
 
 export interface IWorldCertificateData {
@@ -123,6 +128,7 @@ export class WorldCertificateSystem {
       // The pin is the one-way door: this world dreams this bank forever.
       contentPackVersion: AffixBank.version(),
       webVersion: WebBank.version(),
+      themeId: worldType === WorldType.HUB ? undefined : ContentRegistry.defaultThemeId(),
       ...rules
     };
 

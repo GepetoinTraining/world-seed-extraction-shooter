@@ -2,6 +2,7 @@
  * MOVEMENT SPEED IS A STAT. Registered before the build. A base pace, scaled by
  * what you wear, then by load, tow and ground as before: boots make you faster.
  */
+import { SHELF } from '../src/logic/theme/shelf';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -52,7 +53,10 @@ describe('movement speed', () => {
   });
 
   it('keeps boots on the armorer\'s shelf, every day', () => {
-    expect(readFileSync(join(ROOT, 'src/entities/hub/store.ts'), 'utf8')).toMatch(/'belt_canvas_t1', 'arm_boots_generic_t1'/);
+    // D53: the shelf is filled by what a theme holds, and the theme law requires boots
+    expect(SHELF.wardrobe).toContain('arm_boots_generic_t1');
+    expect(readFileSync(join(ROOT, 'src/entities/hub/store.ts'), 'utf8')).toMatch(/SHELF\.wardrobe/);
+    expect(readFileSync(join(ROOT, 'src/logic/theme/ThemeLaw.ts'), 'utf8')).toMatch(/kind === 'feet'/);
   });
 
   it('is one pace, read by the field and by the city', () => {
