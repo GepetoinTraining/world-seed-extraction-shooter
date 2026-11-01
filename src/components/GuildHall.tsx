@@ -190,14 +190,25 @@ const MasterShop: React.FC<{ craftsmanId: string }> = ({ craftsmanId }) => {
 
 /** D115: the books as they stand. Figures only: what they mean is for whoever reads them. */
 const TheBooks: React.FC = () => {
-  const { activeHubId, guild, lots, wallets, runningNow } = useHubStore();
+  const { activeHubId, guild, wallets, runningBook } = useHubStore();
   const [held, setHeld] = useState(0);
   useEffect(() => { if (activeHubId) void Treasury.balance(activeHubId).then(setHeld); }, [activeHubId, guild.printed.total, guild.runningDay]);
-  const perDay = runningNow();
+  const { lines, perDay, webValue, tiles, techPerTile } = runningBook();
   const among = Object.values(wallets).reduce((sum, n) => sum + n, 0);
   return (
-    <div className="ws-dim ws-small">
-      The treasury holds {held.toLocaleString()} G. The city runs on {perDay.toLocaleString()} G a day, so that is {perDay > 0 ? Math.floor(held / perDay) : 0} days. Printed {guild.printed.count === 1 ? 'once' : `${guild.printed.count} times`}, {guild.printed.total.toLocaleString()} G in all. People here hold {among.toLocaleString()} G of their own.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="ws-dim ws-small">
+        The treasury holds {held.toLocaleString()} G. The city runs on {perDay.toLocaleString()} G a day, so that is {perDay > 0 ? Math.floor(held / perDay) : 0} days. Printed {guild.printed.count === 1 ? 'once' : `${guild.printed.count} times`}, {guild.printed.total.toLocaleString()} G in all. People here hold {among.toLocaleString()} G of their own.
+      </div>
+      <div className="ws-dim ws-small">The tech web is worth {webValue.toLocaleString()}, over {tiles.toLocaleString()} tiles: {techPerTile.toFixed(2)} a tile.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 130, overflowY: 'auto' }}>
+        {lines.map(line => (
+          <div key={line.poiId ?? line.why} className="ws-row">
+            <span className="ws-small" style={{ minWidth: 0 }}>{line.name}{line.tiles ? `, ${line.tiles} tiles` : ''}</span>
+            <span className="ws-small">{line.amount.toLocaleString()} G a day</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

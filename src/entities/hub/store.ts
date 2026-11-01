@@ -48,7 +48,7 @@ import {
   GUILD_OWNER_ID, IGuildState, IResident, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
-import { EMPTY_LOT_PER_DAY, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningLines, runningPerDay, walletBrought } from './money';
+import { EMPTY_LOT_PER_DAY, IRunningBook, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, walletBrought } from './money';
 import { Wallets } from '../../logic/economy/Wallets';
 import { Anchors } from '../../logic/economy/Anchors';
 
@@ -65,6 +65,10 @@ const COUNTER_NPC = SHOP_VENDOR.weapon;
 /** What taking someone on and seeing them through give a vendor. Guesses until Wave 12. */
 const VENDOR_BELONGING_PER_TAKEN = 10;
 const VENDOR_ESTEEM_PER_RAISED = 20;
+
+/** What the running cost reads: the city as it stands, and its web. */
+const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web'>) =>
+  ({ layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web });
 
 /** D115: one signed row per print, each of them 14 days of what the hub runs on. */
 const printRows = (hubId: string, perDay: number, prints: number, why: string): { type: 'PRINT'; data: Record<string, any> }[] =>
@@ -332,6 +336,8 @@ interface HubState {
   /** D115: the days the hub has not yet paid for, paid into its people's wallets. It prints when it must. */
   resolveRunning: (simDay?: number) => Promise<void>;
   runningNow: () => number;
+  /** Each building's upkeep, and the web per tile it comes from. */
+  runningBook: () => IRunningBook;
   /** D8: give what you hold toward someone's house. When the bill is met, the clock starts. */
   poolToHouse: (residentId: string, tag: string, itemIds: string[]) => Promise<RoomVerdict>;
   /** A house finished: the person is home, and their skills join the hub's web. */
@@ -472,7 +478,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       get().generateDailyStock();
 
       // D115: 14 days of what it runs on. A hub already endowed keeps what it holds.
-      await Treasury.endow(hubWorldUid, printAmount(runningPerDay(get().lots)));
+      await Treasury.endow(hubWorldUid, printAmount(runningPerDay(cityOf(get()))));
       await get().settleWallets();
       await get().resolveRunning();
 
@@ -512,7 +518,9 @@ export const useHubStore = create<HubState>((set, get) => ({
   // THE HUB'S MONEY (D108, D115). The law is in money.ts.
   // ==========================================================================
 
-  runningNow: () => runningPerDay(get().lots),
+  runningNow: () => runningPerDay(cityOf(get())),
+
+  runningBook: () => runningBook(cityOf(get())),
 
   settleWallets: async () => {
     const { activeHubId, guild, craftsmen } = get();
@@ -533,7 +541,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
   resolveRunning: async (simDay) => {
     const day = simDay ?? worldDay();
-    const { activeHubId, guild, lots } = get();
+    const { activeHubId, guild } = get();
     if (!activeHubId) return;
     // A hub from before this was kept owes nothing for those days
     if (guild.runningDay === undefined) {
@@ -544,8 +552,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const days = day - guild.runningDay;
     if (days <= 0) return;
 
-    const lines = runningLines(lots);
-    const perDay = lines.reduce((sum, line) => sum + line.amount, 0);
+    const { lines, perDay } = runningBook(cityOf(get()));
     const { prints, paid } = foldDays(await Treasury.balance(activeHubId), perDay, days);
     const deltas: Record<string, number> = {};
     for (const line of lines) deltas[line.who] = (deltas[line.who] ?? 0) + line.amount * days;
@@ -1014,7 +1021,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const first = check();
     if (!first.quest) return { ok: false, reason: first.reason! };
     const pay = questPay(first.given, first.quest.payShare);
-    const perDay = runningPerDay(get().lots);
+    const perDay = runningPerDay(cityOf(get()));
     const prints = printsNeeded(await Treasury.balance(activeHubId), pay, perDay);
     const made = prints * printAmount(perDay);
 
@@ -1928,7 +1935,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!item) return null;
 
     const offer = StatSystem.vendorOffer(item.value, p.attributes);
-    const perDay = runningPerDay(get().lots);
+    const perDay = runningPerDay(cityOf(get()));
     const prints = printsNeeded(await Treasury.balance(activeHubId), offer, perDay);
     const made = prints * printAmount(perDay);
     if (!(usePlayerStore.getState().player.bank.stashTabs[0]?.items || []).some(i => i.id === itemId)) return null;

@@ -50,6 +50,7 @@ import { Ledger } from '../src/logic/ledger/Ledger';
 import { StatSystem } from '../src/logic/systems/StatSystem';
 import { SalvageSystem } from '../src/logic/systems/SalvageSystem';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
+import { WebSystem } from '../src/logic/systems/WebSystem';
 import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
 import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 import { compileTheme, sealTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
@@ -64,7 +65,7 @@ import { ItemFactory } from '../src/entities/item/ItemFactory';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { emptyGuild, residentIdOf, residentUpkeepPerDay } from '../src/entities/hub/guild';
-import { PRINT_DAYS, foldDays, printAmount, printsNeeded, runningLines, runningPerDay, walletBrought } from '../src/entities/hub/money';
+import { PRINT_DAYS, foldDays, printAmount, printsNeeded, walletBrought, webValue } from '../src/entities/hub/money';
 
 const UID = 'uid_money';
 const HUB = 'hub_money';
@@ -173,39 +174,32 @@ describe('D115: a hub starts with 14 days of what it runs on', () => {
     expect(PRINT_DAYS).toBe(14);
   });
 
-  it('it runs on its people and its free ground, read from what stands', () => {
-    const lines = runningLines(hub().lots);
-    for (const id of Object.keys(HUB_NPCS)) expect(lines.some(l => l.who === id), id).toBe(true);
+  it('it runs on the buildings of its centre and its free ground, read from what stands', () => {
+    const { lines } = hub().runningBook();
     const free = hub().lots.filter(l => !l.ownerId).length;
     expect(free).toBeGreaterThan(0);
     const ground = lines.filter(l => l.why === 'GROUND').reduce((s, l) => s + l.amount, 0);
     expect(ground).toBe(free * 5);
-    expect(runningPerDay(hub().lots)).toBe(lines.reduce((s, l) => s + l.amount, 0));
-  });
-
-  it('a person costs what a person costs elsewhere in the city, by their rank', () => {
-    const keeper = Object.values(HUB_NPCS).find(n => n.teaches)!;
-    const line = runningLines(hub().lots).find(l => l.who === keeper.id && l.why === 'LIVING')!;
-    expect(line.amount).toBe(residentUpkeepPerDay(keeper.teaches!.rank));
+    expect(hub().runningNow()).toBe(lines.reduce((s, l) => s + l.amount, 0));
   });
 
   it('a fresh hub\'s treasury is exactly that, and no fixed endowment stands anywhere', async () => {
-    expect(await Treasury.balance(HUB)).toBe(14 * runningPerDay(hub().lots));
+    expect(await Treasury.balance(HUB)).toBe(14 * hub().runningNow());
     expect(readFileSync('src/entities/hub/store.ts', 'utf8')).not.toMatch(/HUB_ENDOWMENT_GOLD|100_000/);
   });
 
   it('a hub with more ground starts with more, because it runs on more', async () => {
-    const before = runningPerDay(hub().lots);
+    const before = hub().runningNow();
     const raised = await hub().raiseChunk('NORTH');
-    if (raised.ok) expect(runningPerDay(hub().lots)).toBeGreaterThan(before);
+    if (raised.ok) expect(hub().runningNow()).toBeGreaterThan(before);
     else expect.fail(raised.reason);
   });
 
   it('ground a person holds is theirs to keep up, so the hub runs on less', async () => {
-    const before = runningPerDay(hub().lots);
+    const before = hub().runningNow();
     setGold(1_000_000);
     await hub().buyLot(smallestFreeLot().id);
-    expect(runningPerDay(hub().lots)).toBe(before - 5);
+    expect(hub().runningNow()).toBe(before - 5);
   });
 
   it('an existing hub keeps what it holds', async () => {
@@ -215,6 +209,121 @@ describe('D115: a hub starts with 14 days of what it runs on', () => {
     await Treasury.credit('hub_old', 4_321);
     await hub().loadHub('hub_old');
     expect(await Treasury.balance('hub_old')).toBe(104_321);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUILDINGS, AND THE TECH WEB PER TILE
+// ---------------------------------------------------------------------------
+
+describe('Pedro: "each one of the buildings in the city center need to have an upkeep value"', () => {
+  const node = (id: string, rank = 0, rung = 0) => ({ id, tags: [], rank, firstBy: { uid: 'u', name: 'U', at: 0 }, rungRecord: { uid: 'u', name: 'U', at: 0, rung } });
+  const webOf = (...nodes: ReturnType<typeof node>[]) => ({ nodes: Object.fromEntries(nodes.map(n => [n.id, n])) });
+  const many = (count: number, rank = 0, rung = 0) => webOf(...Array.from({ length: count }, (_, i) => node(`skill_${i}`, rank, rung)));
+  const buildings = () => hub().runningBook().lines.filter(l => l.why === 'BUILDING');
+
+  it('every building with a keeper has its own value, and it goes to its keeper', () => {
+    const lines = buildings();
+    expect(lines.map(l => l.who).sort()).toEqual(Object.keys(HUB_NPCS).sort());
+    for (const line of lines) {
+      expect(line.poiId, line.who).toBeTruthy();
+      expect(line.tiles, line.who).toBeGreaterThan(0);
+      expect(line.amount, line.who).toBeGreaterThan(0);
+      expect(Number.isInteger(line.amount), line.who).toBe(true);
+    }
+  });
+
+  it('a lamp or a fountain costs nothing here, and a lot is not a building of the centre', () => {
+    const ids = buildings().map(l => l.poiId);
+    expect(ids.some(id => /lamp|fountain|lot/.test(id!))).toBe(false);
+  });
+
+  it('a larger building costs more, by its tiles', () => {
+    const lines = buildings();
+    const large = lines.find(l => l.poiId === 'poi_tavern')!;
+    const small = lines.find(l => l.poiId === 'poi_land_office')!;
+    expect(large.tiles).toBe(20);
+    expect(small.tiles).toBe(9);
+    expect(large.amount).toBeGreaterThan(small.amount);
+  });
+
+  it('a web has a value: nothing is worth nothing, and more, higher or further along is worth more', () => {
+    expect(webValue({ nodes: {} })).toBe(0);
+    expect(webValue(webOf(node('a')))).toBeGreaterThan(0);
+    expect(webValue(webOf(node('a'), node('b')))).toBeGreaterThan(webValue(webOf(node('a'))));
+    expect(webValue(webOf(node('a', 3)))).toBeGreaterThan(webValue(webOf(node('a', 0))));
+    expect(webValue(webOf(node('a', 0, 2)))).toBeGreaterThan(webValue(webOf(node('a', 0, 0))));
+  });
+
+  it('the web is taken per tile of the city: what its buildings and lots stand on', () => {
+    useHubStore.setState({ web: many(40) });
+    const book = hub().runningBook();
+    expect(book.webValue).toBe(webValue(many(40)));
+    expect(book.tiles).toBeGreaterThan(buildings().reduce((s, l) => s + l.tiles!, 0));
+    expect(book.techPerTile).toBeCloseTo(book.webValue / book.tiles);
+  });
+
+  it('with no tech a building still costs something: the floor is not zero', () => {
+    useHubStore.setState({ web: { nodes: {} } });
+    expect(hub().runningBook().techPerTile).toBe(0);
+    for (const line of buildings()) expect(line.amount).toBeGreaterThan(0);
+  });
+
+  it('"people that live in the bay area don\'t want to live like Amish": more tech, every building costs more', () => {
+    useHubStore.setState({ web: { nodes: {} } });
+    const amish = buildings();
+    useHubStore.setState({ web: many(600, 2, 2) });
+    const bay = buildings();
+    for (const line of bay) expect(line.amount, line.who).toBeGreaterThan(amish.find(a => a.who === line.who)!.amount);
+  });
+
+  it('and so its print is larger, with nothing but the running cost saying so', async () => {
+    await drainTreasury();
+    useHubStore.setState({ web: many(600, 2, 2) });
+    const perDay = hub().runningNow();
+    const item = thing({ value: 10 });
+    give([item]);
+    await hub().sellToVendor(item.id);
+    const [print] = await rowsOf('PRINT');
+    expect(print.data.amount).toBe(14 * perDay);
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('someone coming home with skills moves what the city costs, through the web\'s own door', () => {
+    useHubStore.setState({ web: { nodes: {} } });
+    const before = hub().runningBook().webValue;
+    const { web } = WebSystem.admit(hub().web, { uid: 'u', name: 'U' }, { skill_x: { id: 'skill_x', tags: [], xp: 0, level: 1, rank: 2 } as never }, 1);
+    useHubStore.setState({ web });
+    expect(hub().runningBook().webValue).toBeGreaterThan(before);
+  });
+
+  it('the same web over more ground is thinner: a chunk raised lowers the tech per tile', async () => {
+    useHubStore.setState({ web: many(600, 2, 2) });
+    const before = hub().runningBook();
+    expect((await hub().raiseChunk('NORTH')).ok).toBe(true);
+    const after = hub().runningBook();
+    expect(after.tiles).toBeGreaterThan(before.tiles);
+    expect(after.webValue).toBe(before.webValue);
+    expect(after.techPerTile).toBeLessThan(before.techPerTile);
+  });
+
+  it('a day pays each keeper their own building\'s value', async () => {
+    useHubStore.setState({ web: many(600, 2, 2) });
+    await hub().saveHubState();
+    const lines = hub().runningBook().lines;
+    const before = { ...hub().wallets };
+    await hub().resolveRunning(worldDay() + 1);
+    for (const id of Object.keys(HUB_NPCS)) {
+      const owed = lines.filter(l => l.who === id).reduce((s, l) => s + l.amount, 0);
+      expect(hub().wallets[id] - before[id], id).toBe(owed);
+    }
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('the Hall shows each building\'s value', () => {
+    const hall = readFileSync('src/components/GuildHall.tsx', 'utf8');
+    expect(hall).toMatch(/runningBook/);
+    expect(hall).toMatch(/techPerTile/);
   });
 });
 
@@ -289,7 +398,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     give([item]);
     expect(await hub().fulfilQuest('q1', [item.id])).toEqual({ ok: true });
     expect(player().bank.gold).toBe(10);
-    const perDay = runningPerDay(hub().lots);
+    const perDay = hub().runningNow();
     expect(await Treasury.balance(HUB)).toBe(14 * perDay - 10);
     const prints = await rowsOf('PRINT');
     expect(prints).toHaveLength(1);
@@ -304,7 +413,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
         quests: [{ id: 'q1', residentId: resident.id, n: 0, tag: 'wood', count: 1, payShare: 1, text: 't', state: 'OPEN', postedDay: 0 }] }
     }));
     await drainTreasury();
-    const perDay = runningPerDay(hub().lots);
+    const perDay = hub().runningNow();
     const item = thing({ value: 14 * perDay * 3 + 1 });
     give([item]);
     expect(await hub().fulfilQuest('q1', [item.id])).toEqual({ ok: true });
@@ -339,10 +448,10 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
 
   it('more ground means a larger print: what the expansion does, with no code that says so', async () => {
     await drainTreasury();
-    const small = printAmount(runningPerDay(hub().lots));
+    const small = printAmount(hub().runningNow());
     const raised = await hub().raiseChunk('NORTH');
     expect(raised.ok).toBe(true);
-    const large = printAmount(runningPerDay(hub().lots));
+    const large = printAmount(hub().runningNow());
     expect(large).toBeGreaterThan(small);
     const item = thing({ value: 10 });
     give([item]);
@@ -365,7 +474,7 @@ describe('D115: the cycle going: the hub pays what it runs on, into its people\'
   const walletsTotal = () => Object.values(hub().wallets).reduce((s, n) => s + n, 0);
 
   it('a day costs the treasury a day, and every coin lands in a wallet', async () => {
-    const perDay = runningPerDay(hub().lots);
+    const perDay = hub().runningNow();
     const treasury = await Treasury.balance(HUB);
     const wallets = walletsTotal();
     await hub().resolveRunning(worldDay() + 1);
@@ -375,7 +484,7 @@ describe('D115: the cycle going: the hub pays what it runs on, into its people\'
   });
 
   it('the same day is not paid twice, and days are paid in one fold', async () => {
-    const perDay = runningPerDay(hub().lots);
+    const perDay = hub().runningNow();
     const treasury = await Treasury.balance(HUB);
     await hub().resolveRunning(worldDay() + 3);
     await hub().resolveRunning(worldDay() + 3);
@@ -383,7 +492,7 @@ describe('D115: the cycle going: the hub pays what it runs on, into its people\'
   });
 
   it('with nobody coming, 14 days pass with no print and the 15th prints', async () => {
-    const perDay = runningPerDay(hub().lots);
+    const perDay = hub().runningNow();
     await hub().resolveRunning(worldDay() + 14);
     expect(await Treasury.balance(HUB)).toBe(0);
     expect(await rowsOf('PRINT')).toHaveLength(0);
