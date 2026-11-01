@@ -234,6 +234,7 @@ Settled by the usability pass, kept here as the record (awaiting Pedro's approva
 - **A comparison reads by column and mark.** This piece, the worn piece, ▲ or ▼ and the difference. Up means more; nothing says better, and no hue does. What is unstudied stays out of both columns, so no difference can give it away.
 - **Marks on the minimap are shapes.** A cross for you, an X for what can hurt you, a hollow lozenge for an exit, a dot for anything else. What has not been seen is static that knows nothing of the world.
 - **One sheet, everywhere.** Tab shows who you are, what you wear and what you carry, side by side, in the field and at home alike, and the game goes on above it. The tabs left the bar: the city is the way to every other screen, each with a way back.
+- **Reading is a gamble in the field and a sure thing at the bench.** Anyone may try: energy up front, a clock, no odds shown, and the price is yours, never the piece's. A miss costs only what you paid. The eye that gets it right is earned by trying.
 - **A signal says nothing.** What has not been read has no name, no rank, no slot to compare against, and the same four buttons as any other. It won't unfold or be spent until read.
 - **A heavy step asks; a stray one does nothing.** A sale takes a second press, and the armed button changes shape. A draft ignores the backdrop, and asks in voice before Escape can lose it: "The draft is unsigned. Abandon it?"
 

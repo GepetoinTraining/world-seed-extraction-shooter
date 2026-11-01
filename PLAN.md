@@ -310,6 +310,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D28 | Technology web | What identifies a skill: tags or prime numbers | ✅ DECIDED (Pedro, 2026-10-31): tags, on one condition: "make the tagging rule iron clad so we don't use a uuid throwaway and think that's good enough... the idea is to not have ambiguity". Primes cannot drift and tags can, so the tag law below carries what primes gave for free. **ENACTED**, all seven clauses as bars |
 | D29 | Technology web | How far the web can grow | ✅ DECIDED (Pedro, 2026-10-31): no cap, "not okay by some artificial cap when the content generation is made by LLMs and it's virtually infinite". Nothing in the code limits tools, materials, tags, skills, verbs or edges. Breadth comes from the pairs and from LLM batches through D20's batch law; a fixed adjacency table is a cap wearing another name. **ENACTED**: a bar adds 5,000 entries with no code change |
 | D30 | Technology web | Where a skill emerges, since Wave 9 removed REST | ✅ DECIDED (Pedro, 2026-10-31): at the sealed session and the return to the hub. **ENACTED**: the seal, the death and the withdrawal. Reading on the record: a death is a return to the hub |
+| D32 | Usability pass | How identify works in the field | ✅ DECIDED (Pedro, 2026-10-31, "Yes, build it"): anyone may try. A keyed roll by the scoped eye against rank and rarity, paid in energy up front, always timed. The odds are never shown and the price is the person's, never the piece's. Unschooled tries wing it and settle at a rest. The bench still needs no roll. This amends line 55 and D19's "once earned". Numbers are guesses until Wave 12 |
 | D31 | Stable database | How the SQL database is reached | Recommendation under "The stable database" below: a SQLite file on a small local server, Postgres for deploy, through the existing `VectorStore` interface |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
@@ -461,7 +462,7 @@ Pedro, 2026-10-31: "before I do run once, we need to have a stable database (sql
 - **Gate:** proposed lines 69–71.
 
 ### THE USABILITY PASS — before the full run, absorbing the playtest fixes
-Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 84 tests; suite 669). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
+Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 95 tests; suite 680). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
 
 Pedro, 2026-10-31: "take a look at the views and see if they're game like... the usability of the game, the controls, the actual hovers... we can do much better than them and are currently worse", after playing RotmG. The list is `PLAYTEST_LEDGER.md`, P1–P3 and U1–U21. Keep this quick: controls first, then hovers, then the views. The art and the voice are approved, so this changes how things are used, not how they look.
 
@@ -514,10 +515,20 @@ Pedro, 2026-10-31: "take a look at the views and see if they're game like... the
 **What has not been read, found in Pedro's own run:** "the cart could be used unidentified... but that almost saved my greedy ass". Bars first at 3e49b54, build at d09b6cb.
 - **The fix he named:** ✅ `deployCart` refuses a kit nobody has read, in voice and without saying what it is; `useProtection` and `consumeItem` the same.
 - **The leaks I had built, found while checking:** ✅ the hover card named what a signal would replace and showed its rank; a refusal or a feed line said its real name when it was dragged or worn; the fitting list named it. `LoadoutSystem.shownName` is now what every moving door says, a bar runs a secret name through them all, and every signal offers the same buttons (TRY IT, IDENTIFY, ROTATE, LEAVE BEHIND).
-- **A clause withdrawn, on the record:** I registered a bar that an unschooled eye's refusal should hide the piece's kind. Line 55's approved bar says that refusal names its scope ("not schooled for tool"), so an older law won and the clause came out. A signal's kind can still be learned by pressing IDENTIFY unschooled. For Pedro to overrule.
-- **Decided, and asked:** gear can still be worn unread, because a fresh character's eye cannot identify at all in the field, and refusing would take away every weapon found mid-run. What TRY IT does is the question. A refusal still tells you it isn't wearable by being refused; that is what trying is.
-- **So a found cart kit now comes home first,** where it reads itself at the seal, unless your tool eye is schooled. Pedro's cart that nearly saved him would not have unfolded.
+- **A clause withdrawn, then settled by D32:** I registered a bar that an unschooled eye's refusal should hide the piece's kind; line 55's approved bar said it names its scope, so the clause came out. Pedro then answered with D32, and there is no refusal left to name anything.
+- **Gear can still be worn unread:** Pedro has not ruled otherwise. A refusal on TRY IT still tells you a thing isn't wearable by being refused; that is what trying is.
+- **So a found cart kit now takes a roll in the field,** or comes home and reads itself at the seal. With D32 Pedro's nearly-saving cart costs a gamble first.
 - **Played:** by console on GABBRO (`localhost:3102`), a kit and a blade minted unread and in-memory, because MORTISE was Pedro's own run by then.
+
+**D32, the field identify as a roll:** bars first at aed5d97, build at b6fe63a.
+- `StudySystem.identifyChance`: 20, plus 10 if the scope is schooled, plus 15 per rank the eye stands above the piece (minus 15 per rank below), minus 5 per rarity step above common; floor 3, ceiling 95. D6: outranking by three opens it, 100. Every number is a guess until Wave 12.
+- `StudySystem.identifyAsk`: 10 energy, or 15 if no eye is schooled at all, and the clock, both asked of the person's best eye for anything unread, so the price and the timer say nothing of the piece. A piece already read with something unstudied on it asks its own scope.
+- `fieldIdentify` pays up front and `completeFieldIdentify` rolls, keyed by session, item and attempt, and one payment buys one roll. A miss costs the energy and the seconds: the piece stays, unread, with `identifyAttempts` counted. A hit reveals exactly what was banked.
+- The eye grows either way: schooled by experience (15 on a hit, 5 on a miss), unschooled by `WebSystem.accrue`, settling at a rest under line 64's law. It is not named while the piece is unread; the Hands panel's forming list says "the eye".
+- **Three approved bars rewritten on Pedro's word** (`tests/affixes.test.ts`): the scope bar now holds worse odds outside the scope in place of a refusal, the training bar holds better odds after study in place of a refusal, and the reveal bar takes as many keyed attempts as it needs. Their reveal and clock clauses are unchanged.
+- **Corrected from what I told Pedro:** I said about 7 tries on 70 energy. Unschooled attempts cost 15, so 70 buys 4: about 59% on a plain F-rank piece and 11% on a rare S-rank one. Schooled at 10 energy, 7 tries on a plain F piece is about 92%.
+- **Played on GABBRO (`localhost:3102`), weapon eye schooled:** a cart kit and a blade minted unread by console, health raised and hostiles removed, as test practice, and energy as it stood. The sheet read IDENTIFY · 10 energy · 12s for the kit; a click took 55 energy to 45, the feed "It may give nothing up", the button IDENTIFYING…; twelve seconds on, it hit, the card read Field Cart (Packed), and UNFOLD CART appeared. A miss, the energy refusal and the settling at a rest are by bar, not play. The Hands panel read "the eye".
+- **Carried:** a schooled eye crossing a rung announces itself in the feed, which can say its kind on a miss. `energy_regen` exists on the sheet and nothing applies it, so energy is a run's whole budget; that is how it plays today, not a decision. If a signal's first roll hits, nothing else about attempts is learned, by design.
 
 - **Gate:** lines 57–59, proposed lines 72–76, and played through the real interface, within the carried items above.
 
@@ -682,7 +693,7 @@ Guardrail 1 still holds: nothing gets built without a line here.
 52. Affix banks grow by themed batches; an unstudied affix shows nothing on equip, and study reveals exactly what was banked
 53. A world populates from the banks during recon, deterministically for its seed and pinned pack version, and no later batch changes it
 54. The gold and item audit balances across the whole itemization economy
-55. Identify is a skill: scoped by item type, trained at a workstation, usable in the field, always timed, faster with skill
+55. Identify is a skill: scoped by item type, trained at a workstation or by trying, usable in the field on a keyed roll paid in energy (D32), always timed, faster with skill
 56. Protection is an item: a death keeps exactly the slots the magic named, nothing more, and the receipt shows it
 
 For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the leg:
