@@ -18,6 +18,7 @@ import { ItemType, Rarity } from '../../../types';
 import { InventorySystem } from './systems/InventorySystem';
 import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
+import { StatSystem } from '../../logic/systems/StatSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
@@ -479,7 +480,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const oldPlace = layout[itemId];
       delete layout[itemId];
       const newBag = target === 'BAG' ? (item.stats?.carry_bonus_kg ?? 0) : LoadoutSystem.bagCapacityBonus(equipment);
-      const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag;
+      const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag + StatSystem.total(equipment, 'carry_capacity');
       const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([holder]);
       if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${shown(holder)} still.` });
       const occ = InventorySystem.buildOccupancy(inv, layout);
@@ -1256,9 +1257,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           // field, is haul and gets taxed on the way home like the pack's
           kitItemIds: [...fieldKit.map(i => i.id), ...(state.player.equipment?.items.map(i => i.id) ?? [])],
           inventoryLayout: InventorySystem.placeAll(fieldKit),
-          health: 100 + (state.player.attributes.constitution * 10),
-          maxHealth: 100 + (state.player.attributes.constitution * 10),
-          energy: 50 + (state.player.attributes.endurance * 5),
+          health: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
+          maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
+          // D51: a drop refills nothing. What is left of the day comes along.
+          energy: state.player.energyToday ?? StatSystem.maxEnergy(state.player.attributes, state.player.equipment),
           position: { x: 1500, y: 0, z: 1500 },
           statusEffects: []
         }
@@ -1327,6 +1329,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             stashTabs: state.player.bank.stashTabs.map((tab, idx) =>
               idx === 0 ? { ...tab, items: [...tab.items, ...orphaned] } : tab)
           },
+          energyToday: state.player.currentSession?.energy ?? state.player.energyToday,
           currentSession: undefined
         }
       }));
@@ -1342,6 +1345,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       player: {
         ...state.player,
         bank: { ...state.player.bank, stashTabs: updatedStashTabs },
+        energyToday: state.player.currentSession?.energy ?? state.player.energyToday,
         currentSession: undefined
       }
     }));
@@ -1444,9 +1448,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // gear never counts, and the worn BAG extends the capacity itself.
       set({
         currentWeight: InventorySystem.totalWeight(sessionInv),
-        maxWeight: InventorySystem.maxCarryWeight(player.attributes.strength)
-          + LoadoutSystem.bagCapacityBonus(player.equipment)
+        maxWeight: LoadoutSystem.carryLimit(player.attributes.strength, player.equipment)
       });
+      // Line 77: what is worn sets the top of the health bar; taking a piece off takes its health too
+      const session = player.currentSession;
+      if (session) {
+        const maxHealth = StatSystem.maxHealth(player.attributes, player.equipment);
+        if (maxHealth !== session.maxHealth) {
+          set(s => s.player.currentSession ? { player: { ...s.player, currentSession: {
+            ...s.player.currentSession, maxHealth, health: Math.max(1, Math.min(maxHealth, s.player.currentSession.health))
+          } } } : s);
+        }
+      }
   },
 
   // --------------------------------------------------------------------
@@ -1465,7 +1478,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const session = state.player.currentSession;
     if (!session) return { added: [], rejected: items };
 
-    const maxW = InventorySystem.maxCarryWeight(state.player.attributes.strength);
+    const maxW = LoadoutSystem.carryLimit(state.player.attributes.strength, state.player.equipment);
     let inv = [...session.inventory];
     let layout = { ...(session.inventoryLayout || InventorySystem.placeAll(session.inventory)) };
     let weight = InventorySystem.totalWeight(inv);

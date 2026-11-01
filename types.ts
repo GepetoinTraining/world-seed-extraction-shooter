@@ -794,6 +794,8 @@ export interface IPlayer {
   // and spent into baseAttributes. The rank itself is derived from rankXp.
   rankXp?: number;
   attributePoints?: number;
+  /** D51: what is left of today's energy between sessions. Undefined means a full day. */
+  energyToday?: number;
   bank: IBank;
   currentSession?: IActiveSession;
   guildId?: string;

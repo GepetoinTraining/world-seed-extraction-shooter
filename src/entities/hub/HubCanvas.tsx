@@ -21,7 +21,7 @@ import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
-import { DialogueEffect, repairCost, repairItem, runDialogueAction, quickDeployTargetId } from './dialogue';
+import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
 import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
@@ -1106,15 +1106,14 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { player } = usePlayerStore();
   const pushFeed = useFeed(s => s.push);
-  const stash = player.bank.stashTabs[0]?.items || [];
-  const worn = stash.filter(i => i.stats?.maxDurability && (i.stats.durability ?? 0) < i.stats.maxDurability);
+  const worn = repairable();
 
   return (
     <Modal title="REPAIR — STEELWEAVE" onClose={onClose} width={520}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
         A quarter of the item's worth, scaled by the damage. The frame remembers its shape.
       </div>
-      {worn.length === 0 && <div className="ws-dim ws-small">Nothing in your stash needs work.</div>}
+      {worn.length === 0 && <div className="ws-dim ws-small">Nothing you own needs work.</div>}
       <div className="ws-list">
         {worn.map(item => {
           const cost = repairCost(item as any);

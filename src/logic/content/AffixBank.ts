@@ -21,6 +21,7 @@
 import { IAffixBatch, IBankedAffix, IContentPack, ISignedContentPack, MENTAL_ATTRIBUTES } from '../../../types';
 import { AFFIX_DEFINITIONS, AffixDefinition } from '../../entities/item/data/affixDefinitions';
 import { AFFIX_BATCHES } from '../../entities/generation/packs/affixBatches';
+import { StatSystem } from '../systems/StatSystem';
 
 export interface BankVerdict {
   ok: boolean;
@@ -80,6 +81,8 @@ export class AffixBank {
           return no(`Batch ${batch.runId} refused whole: ${effect.id}'s ${stat} is not a range.`);
         }
         if (range[0] > range[1]) return no(`Batch ${batch.runId} refused whole: ${effect.id}'s ${stat} runs backward.`);
+        // Line 77: a stat nothing reads is a lie on a card
+        if (!StatSystem.isRead(stat)) return no(`Batch ${batch.runId} refused whole: ${effect.id} rolls ${stat}, and nothing in the game reads ${stat}.`);
       }
       // D22 — THE PARTITION IS A BANK LAW
       const mental = mentalIn(mods);

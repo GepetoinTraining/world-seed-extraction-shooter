@@ -70,7 +70,16 @@ export interface INpcSheet {
   skills?: Record<string, import('../../../types').ISkillState>;
 }
 
+/** Something working on an entity right now, on the clock. */
+export interface IEntityStatus {
+  kind: string;
+  magnitude: number;
+  until: number;
+  nextAt: number;
+}
+
 export interface IWorldEntity {
+  statuses?: IEntityStatus[];
   id: string;
   type: EntityType;
   definitionId: string;

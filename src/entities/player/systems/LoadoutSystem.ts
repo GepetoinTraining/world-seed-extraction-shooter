@@ -26,6 +26,8 @@ import {
   IEquipmentState, ICognitiveFrame
 } from '../../../../types';
 import { COGNITIVE_FRAMES } from '../data/cognitiveFrames';
+import { InventorySystem } from './InventorySystem';
+import { StatSystem } from '../../../logic/systems/StatSystem';
 
 export interface Verdict {
   ok: boolean;
@@ -299,6 +301,11 @@ export class LoadoutSystem {
   static harnessWeight(equipment: IEquipmentState): number {
     return parseFloat(equipment.items.reduce((s, i) =>
       s + (i.weight || 0) + (i.pouchData?.contents.reduce((p, c) => p + (c.weight || 0), 0) ?? 0), 0).toFixed(1));
+  }
+
+  /** The one carry limit: what strength lifts, what the bag adds, and what worn gear adds (line 77, B1). */
+  static carryLimit(strength: number, equipment?: IEquipmentState): number {
+    return InventorySystem.maxCarryWeight(strength) + this.bagCapacityBonus(equipment) + StatSystem.total(equipment, 'carry_capacity');
   }
 
   /** Bags extend capacity: the worn BAG's carry bonus, in kg. */

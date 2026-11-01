@@ -11,7 +11,7 @@
  *   close     — the conversation ends
  */
 
-import { ItemType, Rarity, UniversalRank } from '../../../types';
+import { IItem, ItemType, Rarity, UniversalRank } from '../../../types';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
@@ -62,17 +62,28 @@ export function repairCost(item: { value: number; stats: { durability?: number; 
   return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing));
 }
 
+/** The one door to what can be repaired: the stash and the body (R6). */
+export function repairable(): IItem[] {
+  const equipment = usePlayerStore.getState().player.equipment;
+  return [...stashItems(), ...(equipment?.items ?? [])]
+    .filter(i => i.stats?.maxDurability && (i.stats.durability ?? 0) < i.stats.maxDurability);
+}
+
 export function repairItem(itemId: string): { ok: boolean; text: string } {
-  const item = stashItems().find(i => i.id === itemId);
-  if (!item) return { ok: false, text: 'That is not in your stash.' };
+  const item = [...stashItems(), ...(usePlayerStore.getState().player.equipment?.items ?? [])].find(i => i.id === itemId);
+  if (!item) return { ok: false, text: 'That is not in your stash or on your body.' };
   const cost = repairCost(item as any);
   if (cost === 0) return { ok: false, text: `${item.name} needs no work.` };
   if (!charge(cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank().gold}G.` };
+  const mended = <T extends IItem>(i: T): T => i.id === itemId ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability } } : i;
   usePlayerStore.setState(s => ({
-    player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: tab.items.map(i => i.id === itemId
-        ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability }, name: i.name } : i) } : tab
-    ) } }
+    player: {
+      ...s.player,
+      equipment: s.player.equipment ? { ...s.player.equipment, items: s.player.equipment.items.map(mended) } : s.player.equipment,
+      bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+        idx === 0 ? { ...tab, items: tab.items.map(mended) } : tab
+      ) }
+    }
   }));
   return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
 }

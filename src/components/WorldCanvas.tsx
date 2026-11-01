@@ -29,6 +29,7 @@ import { CartOverlay } from '../entities/world/CartOverlay';
 import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
+import { StatSystem } from '../logic/systems/StatSystem';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
@@ -492,6 +493,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const energyToldRef = useRef(false);
   // Line 75: quadrants this session has had in sight, and the exits of sectors it knows
   const seenRef = useRef<Set<string>>(new Set());
+  const shotCountRef = useRef(0);
+  const hurtCountRef = useRef(0);
   const exitsRef = useRef<Map<string, { x: number; y: number }[]>>(new Map());
 
   // Refs for Game Loop
@@ -548,7 +551,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const mode = fireMode(weapon);
     const gate = fireGate({
       held: true, now, lastShot: lastShotRef.current,
-      cooldownMs: CombatMath.fireCooldownMs(weapon), mode,
+      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment), mode,
       energy: st.player.currentSession?.energy ?? 0
     });
     if (gate === 'NO_ENERGY') {
@@ -569,13 +572,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         ? Math.atan2(target.position.y - playerPos.z, target.position.x - playerPos.x)
         : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
     }
-    const damage = CombatMath.weaponDamage(weapon);
+    // Line 77: keyed by the session's own count of shots, so a run replays the same
+    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)));
 
     if (mode === 'MELEE') {
       // Swing: a short arc resolved by CombatSystem
       setActiveSwings(prev => [
         ...prev.filter(s => now - s.startTime < 300),
-        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage }
+        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage, poison }
       ]);
     } else if (mode === 'FOCUS') {
       // Focus: a NOVA burst, paid in energy
@@ -584,13 +588,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }) : s);
       setPlayerPatterns(prev => [
         ...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.NOVA, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
+        { type: PatternType.NOVA, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison }
       ]);
     } else {
       // Ranged (or unarmed): a single shot
       setPlayerPatterns(prev => [
         ...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.SINGLE, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage }
+        { type: PatternType.SINGLE, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison }
       ]);
     }
 
@@ -1010,7 +1014,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap);
+      const liveEquipment = usePlayerStore.getState().player.equipment;
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.total(liveEquipment, 'noise_reduction') });
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
@@ -1095,7 +1100,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // the ground (cooldown so it isn't retried every frame)
         const eligible = drops.filter((d: any) => !d.blockedUntil || d.blockedUntil <= now);
         const blocked = drops.filter((d: any) => d.blockedUntil && d.blockedUntil > now);
-        const { pickedUp, remainingDrops } = CombatSystem.checkLootPickup(playerPos, eligible, 30);
+        const { pickedUp, remainingDrops } = CombatSystem.checkLootPickup(playerPos, eligible, StatSystem.pickupRadiusPx(liveEquipment));
         let finalDrops = [...blocked, ...remainingDrops];
 
         if (pickedUp.length > 0) {
@@ -1120,7 +1125,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Apply damage to the agent (Wave 4.1: armor mitigates, and wears)
       const rawDamage = incomingDamage + combatResult.playerDamage;
       const armor = getEquipped('armor');
-      const totalDamage = rawDamage > 0 ? CombatMath.applyMitigation(rawDamage, armor) : 0;
+      const totalDamage = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0))).damage;
       if (totalDamage > 0) {
         if (armor) usePlayerStore.getState().wearEquipment('armor', 1);
         const newHealth = Math.max(0, liveSession.health - totalDamage);
@@ -1381,7 +1386,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const map = useWorldStore.getState().currentMap;
     const pos = usePlayerStore.getState().player.currentSession?.position;
     if (!map || !pos) return null;
-    const halfW = window.innerWidth / 2, halfH = window.innerHeight / 2;
+    const sight = StatSystem.sightPx(usePlayerStore.getState().player.equipment);
+    const halfW = Math.max(TILE_PX, window.innerWidth / 2 + sight), halfH = Math.max(TILE_PX, window.innerHeight / 2 + sight);
     const qMinX = quadrantOf(pos.x - halfW), qMaxX = quadrantOf(pos.x + halfW);
     const qMinY = quadrantOf(pos.z - halfH), qMaxY = quadrantOf(pos.z + halfH);
     for (let qy = qMinY; qy <= qMaxY; qy++) for (let qx = qMinX; qx <= qMaxX; qx++) seenRef.current.add(`${qx},${qy}`);

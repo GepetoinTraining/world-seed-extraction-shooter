@@ -12,12 +12,25 @@
  * in a simulation instead of by feel (PLAN W4 gate).
  */
 
-import { IItem } from '../../../types';
+import { IEquipmentState, IItem } from '../../../types';
 import { IMobDefinition } from '../mob/types';
+import { StatSystem } from '../../logic/systems/StatSystem';
+import { Rng } from '../../logic/rng/DeterministicRNG';
 
 export const UNARMED_DAMAGE = 5;
 export const UNARMED_SHOTS_PER_SEC = 1.0;
 export const MAX_MITIGATION = 0.6;
+/** Layer 0's odds. Guesses until Wave 12. */
+const BASE_GLANCE = 0.2;
+const GLANCE_FACTOR = 0.5;
+const BASE_CRIT_MULTIPLIER = 1.5;
+const BLOCK_FACTOR = 0.5;
+
+export interface IOutgoingHit { damage: number; crit: boolean; glance: boolean; poison: number }
+export interface IIncomingHit { damage: number; dodged: boolean; blocked: boolean }
+
+/** A rating's pull, approaching but never reaching one, and able to go negative. */
+const curve = (rating: number): number => rating / (Math.abs(rating) + 100);
 
 export class CombatMath {
 
@@ -29,16 +42,34 @@ export class CombatMath {
   }
 
   /** Damage of one player projectile/swing with this weapon. */
-  static weaponDamage(weapon: IItem | undefined): number {
-    if (!this.isUsable(weapon)) return UNARMED_DAMAGE;
-    return Math.round(6 + (weapon!.itemPower || 0) * 0.08);
+  static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState): number {
+    const base = this.isUsable(weapon) ? Math.round(6 + (weapon!.itemPower || 0) * 0.08) : UNARMED_DAMAGE;
+    return Math.max(1, base + StatSystem.total(equipment, 'damage'));
+  }
+
+  /** One swing or shot, keyed: what it does, with what is worn. The same key answers the same. */
+  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string): IOutgoingHit {
+    const rng = Rng.fromKey(key);
+    const base = this.weaponDamage(weapon, equipment);
+    const poison = StatSystem.total(equipment, 'poison_damage');
+    if (rng.next() < StatSystem.total(equipment, 'crit_chance')) {
+      const multiplier = BASE_CRIT_MULTIPLIER + StatSystem.total(equipment, 'crit_multiplier');
+      return { damage: Math.round(base * multiplier), crit: true, glance: false, poison };
+    }
+    const accuracy = Math.max(-99, StatSystem.total(equipment, 'accuracy_rating'));
+    if (rng.next() < BASE_GLANCE * 100 / (100 + accuracy)) {
+      return { damage: Math.max(1, Math.round(base * GLANCE_FACTOR)), crit: false, glance: true, poison };
+    }
+    return { damage: base, crit: false, glance: false, poison };
   }
 
   /** Milliseconds between shots/swings. */
-  static fireCooldownMs(weapon: IItem | undefined): number {
-    if (!this.isUsable(weapon)) return 1000 / UNARMED_SHOTS_PER_SEC;
-    const aps = weapon!.stats?.attack_speed || 1.0;
-    return Math.round(1000 / aps);
+  static fireCooldownMs(weapon: IItem | undefined, equipment?: IEquipmentState): number {
+    const own = this.isUsable(weapon) ? weapon!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
+    // The hand's own rate, and what everything else on the body adds to it
+    const onBody = StatSystem.worn(equipment).some(i => i.id === weapon?.id);
+    const others = StatSystem.total(equipment, 'attack_speed') - (onBody ? weapon!.stats?.attack_speed ?? 0 : 0);
+    return Math.round(1000 / Math.max(0.1, own + others));
   }
 
   /** Melee weapons swing; everything else (and bare hands) fires. */
@@ -62,6 +93,28 @@ export class CombatMath {
   static applyMitigation(raw: number, armor: IItem | undefined): number {
     if (raw <= 0) return 0;
     return Math.max(1, Math.round(raw * (1 - this.mitigation(armor))));
+  }
+
+  /** What everything worn takes off a blow. Negative defense adds to it. */
+  static mitigationOf(equipment: IEquipmentState | undefined): number {
+    const worn = StatSystem.worn(equipment);
+    const reduction = worn.reduce((sum, i) => sum + (i.stats?.physical_reduction ?? 0), 0);
+    const chestId = equipment?.slots.CHEST;
+    const chest = worn.find(i => i.id === chestId);
+    const fallback = chest && !chest.stats?.physical_reduction ? (chest.itemPower || 0) * 0.0004 : 0;
+    return Math.min(MAX_MITIGATION, reduction + fallback + curve(StatSystem.total(equipment, 'defense')));
+  }
+
+  /** One blow arriving, keyed: dodged, blocked, or mitigated. */
+  static incoming(raw: number, equipment: IEquipmentState | undefined, key: string): IIncomingHit {
+    if (raw <= 0) return { damage: 0, dodged: false, blocked: false };
+    const rng = Rng.fromKey(key);
+    if (rng.next() < Math.max(0, curve(StatSystem.total(equipment, 'evasion_rating')))) {
+      return { damage: 0, dodged: true, blocked: false };
+    }
+    const blocked = rng.next() < StatSystem.total(equipment, 'block_chance');
+    const landed = blocked ? raw * BLOCK_FACTOR : raw;
+    return { damage: Math.max(1, Math.round(landed * (1 - this.mitigationOf(equipment)))), dodged: false, blocked };
   }
 
   /** A mob attack's damage from its definition. */

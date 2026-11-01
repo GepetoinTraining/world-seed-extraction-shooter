@@ -41,7 +41,7 @@ function packTakes(player: IPlayer, item: IItem, leaving?: IItem): Verdict {
   if (!session) return no('The pack is in the field.');
   const inv = session.inventory.filter(i => i.id !== leaving?.id);
   const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([item]);
-  const limit = InventorySystem.maxCarryWeight(player.attributes.strength);
+  const limit = LoadoutSystem.carryLimit(player.attributes.strength, player.equipment);
   if (weight > limit) return no(`The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg.`);
   const layout = { ...(session.inventoryLayout || {}) };
   if (leaving) delete layout[leaving.id];

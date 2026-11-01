@@ -9,6 +9,8 @@ import { fnv1a } from '../../../logic/rng/DeterministicRNG';
 
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;
+/** How much noise reduction it takes to halve the distance you are noticed from. A guess until Wave 12. */
+const NOISE_SCALE = 20;
 
 // ==========================================
 // 1. ENUMS (Standard)
@@ -131,12 +133,14 @@ export class MobAI {
    * @param playerPos - 2D Position { x: player.x, y: player.z } <-- Y represents Depth here
    * @param deltaTime - Time since last frame in seconds
    * @param map - The live world; without it, terrain cannot refuse a step (tests only)
+   * @param senses - What the person's gear does to being noticed (line 77)
    */
   static tick(
     visibleChunks: Record<string, IChunk>,
     playerPos: { x: number; y: number },
     deltaTime: number,
-    map?: IMap
+    map?: IMap,
+    senses: { noiseReduction?: number } = {}
   ): {
     updatedChunks: Record<string, IChunk>;
     spawnedPatterns: any[]
@@ -145,6 +149,8 @@ export class MobAI {
     const updatedChunks: Record<string, IChunk> = {};
     const spawnedPatterns: any[] = [];
     const now = Date.now();
+    // Quieter gear shortens how far a thing notices you; loud gear lengthens it.
+    const heard = NOISE_SCALE / Math.max(1, NOISE_SCALE + (senses.noiseReduction ?? 0));
 
     Object.entries(visibleChunks).forEach(([chunkKey, chunk]) => {
       let chunkWasModified = false;
@@ -180,7 +186,7 @@ export class MobAI {
         const aggroTiles =
           behavior === MobBehavior.NEUTRAL ? 2 :
           behavior === MobBehavior.PASSIVE ? 0 :
-          Math.min(def?.viewRange ?? 8, 16);
+          Math.min(def?.viewRange ?? 8, 16) * heard;
         const leashTiles = Math.max(16, aggroTiles * 2);
         if (mem.state === MobState.DORMANT) {
           if ((aggroTiles > 0 && dist < aggroTiles * PX) || mem.provoked) mem.state = MobState.ACTIVE;

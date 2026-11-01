@@ -26,6 +26,15 @@ export interface ICombatEvent {
   };
 }
 
+/** How long poison keeps working after the hit, and how often it bites. Guesses until Wave 12. */
+const POISON_MS = 3000;
+const POISON_TICK_MS = 1000;
+
+const poisoned = (mob: IWorldEntity, perTick: number, now: number) => {
+  mob.statuses = [...(mob.statuses ?? []).filter(s => s.kind !== 'poison'),
+    { kind: 'poison', magnitude: perTick, until: now + POISON_MS, nextAt: now + POISON_TICK_MS }];
+};
+
 export class CombatSystem {
   
   static tick(
@@ -33,7 +42,8 @@ export class CombatSystem {
     chunks: Record<string, IChunk>,
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
-    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; hitIds?: Set<string> }[]
+    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; hitIds?: Set<string> }[],
+    opts: { magicFind?: number } = {}
   ): {
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
@@ -82,7 +92,7 @@ export class CombatSystem {
           chunkY: origin.y,
           layerId: 'field',
           biome: origin.biome,
-          magicFind: 1.0,
+          magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
         } : undefined, rollKey);
         SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
@@ -101,6 +111,23 @@ export class CombatSystem {
       }
     };
 
+    // 0. WHAT IS ALREADY WORKING ON THEM
+    const tickNow = Date.now();
+    allMobs.forEach(({ mob, chunkKey }) => {
+      if (!mob.statuses?.length) return;
+      let health = mob.health ?? 0;
+      mob.statuses = mob.statuses.flatMap(s => {
+        if (s.kind === 'poison' && s.nextAt <= tickNow) {
+          health -= s.magnitude;
+          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage: s.magnitude, position: mob.position });
+          return s.until > tickNow ? [{ ...s, nextAt: s.nextAt + POISON_TICK_MS }] : [];
+        }
+        return s.until > tickNow ? [s] : [];
+      });
+      mob.health = health;
+      if (health <= 0) resolveDefeat(mob, chunkKey);
+    });
+
     // 1. BULLET -> MOB
     const bulletsToRemove = new Set<number>();
 
@@ -113,6 +140,7 @@ export class CombatSystem {
 
         const damage = bullet.damage ?? 25;
         mob.health -= damage;
+        if (bullet.poison) poisoned(mob, bullet.poison, tickNow);
         bulletsToRemove.add(bulletIdx);
 
         events.push({
@@ -154,6 +182,7 @@ export class CombatSystem {
         if (angleDiff < 0.75 || angleDiff > Math.PI * 2 - 0.75) {
           const damage = arc.damage ?? 50; // Wave 4: the weapon decides
           mob.health -= damage;
+          if (arc.poison) poisoned(mob, arc.poison, tickNow);
           hitIds.add(mob.id);
 
           // ACTION: Melee Hit
