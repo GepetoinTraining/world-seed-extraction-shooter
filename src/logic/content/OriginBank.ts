@@ -16,11 +16,11 @@ const HIDDEN = /archetype|trope|isekai|reincarnat/i;
 type Verdict = { ok: boolean; reason?: string };
 const no = (reason: string): Verdict => ({ ok: false, reason });
 
-let merged: { origins: IOrigin[]; kits: IKit[]; questions: IQuestion[]; closings: string[]; flavors: string[] } | null = null;
+let merged: { origins: IOrigin[]; kits: IKit[]; questions: IQuestion[]; closings: string[]; flavors: string[]; fateNames: string[]; fateLines: string[] } | null = null;
 
 const all = () => {
   if (merged) return merged;
-  merged = { origins: [], kits: [], questions: [], closings: [], flavors: [] };
+  merged = { origins: [], kits: [], questions: [], closings: [], flavors: [], fateNames: [], fateLines: [] };
   for (const batch of ORIGIN_BATCHES) {
     const verdict = OriginBank.validate(batch);
     if (!verdict.ok) {
@@ -32,6 +32,8 @@ const all = () => {
     merged.questions.push(...batch.questions);
     merged.closings.push(...batch.closings);
     merged.flavors.push(...batch.flavors);
+    merged.fateNames.push(...(batch.fateNames ?? []));
+    merged.fateLines.push(...(batch.fateLines ?? []));
   }
   return merged;
 };
@@ -41,6 +43,9 @@ export class OriginBank {
   static origins(): IOrigin[] { return all().origins; }
   static origin(id: string): IOrigin | undefined { return all().origins.find(o => o.id === id); }
   static kit(id: string): IKit | undefined { return all().kits.find(k => k.id === id); }
+  static kits(): IKit[] { return all().kits; }
+  static fateNames(): string[] { return all().fateNames; }
+  static fateLines(): string[] { return all().fateLines; }
   static questions(): IQuestion[] { return all().questions; }
   static closings(): string[] { return all().closings; }
   static flavors(): string[] { return all().flavors; }
@@ -51,7 +56,7 @@ export class OriginBank {
   static validate(batch: IOriginBatch): Verdict {
     const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag);
     const kitIds = new Set([...ORIGIN_BATCHES.flatMap(b => b.kits), ...batch.kits].map(k => k.id));
-    const shown: string[] = [...batch.closings, ...batch.flavors];
+    const shown: string[] = [...batch.closings, ...batch.flavors, ...(batch.fateNames ?? []), ...(batch.fateLines ?? [])];
 
     for (const o of batch.origins) {
       if (!o.id || !o.says?.trim() || !o.line?.trim()) return no(`${o.id || 'an origin'} has no words.`);

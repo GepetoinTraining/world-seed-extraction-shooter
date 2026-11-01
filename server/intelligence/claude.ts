@@ -15,16 +15,20 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   theme: 'claude-opus-5-5',
   rest: 'claude-opus-5-5',
   // Pedro's June design: skills "derived by haiku at the end of the character creation screen"
-  creation: 'claude-haiku-5-5'
+  creation: 'claude-haiku-5-5',
+  // Pedro: fate gambler "calls up a stream style conversation with sonnet and you talk with kami itself"
+  kami_talk: 'claude-sonnet-5-5',
+  kami_set: 'claude-sonnet-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', creation: 'low' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium' };
 
 /** Dollars per million tokens. Batches are half. */
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
-  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 }
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.2 }
 };
 /** Rough, and on the safe side: a ceiling, never a bill. */
 const CHARS_PER_TOKEN = 3;
@@ -109,12 +113,29 @@ export class ClaudeProvider implements IIntelligenceProvider {
     return { status: 'OUTAGE', reason: message };
   }
 
+  private liveParams(request: IDoorRequest) {
+    return {
+      ...this.params(request),
+      ...(NO_FALLBACK.includes(request.kind) ? {} : { betas: [FALLBACK_BETA], fallbacks: 'default' })
+    } as unknown as Anthropic.Beta.Messages.MessageCreateParamsStreaming;
+  }
+
+  async askStream(request: IDoorRequest, onText: (text: string) => void, signal?: AbortSignal): Promise<IDoorOutcome> {
+    try {
+      const stream = this.client.beta.messages.stream(this.liveParams(request), signal ? { signal } : undefined);
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') onText(event.delta.text);
+      }
+      const message = await stream.finalMessage();
+      return this.read(message as unknown as Anthropic.Message, request, false);
+    } catch (e) {
+      return this.failure(e);
+    }
+  }
+
   async ask(request: IDoorRequest): Promise<IDoorOutcome> {
     try {
-      const stream = this.client.beta.messages.stream({
-        ...this.params(request),
-        ...(NO_FALLBACK.includes(request.kind) ? {} : { betas: [FALLBACK_BETA], fallbacks: 'default' })
-      } as unknown as Anthropic.Beta.Messages.MessageCreateParamsStreaming);
+      const stream = this.client.beta.messages.stream(this.liveParams(request));
       const message = await stream.finalMessage();
       return this.read(message as unknown as Anthropic.Message, request, false);
     } catch (e) {

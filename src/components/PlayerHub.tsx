@@ -226,7 +226,7 @@ const AgentTab: React.FC = () => {
         </div>
         <div className="ws-bright">{player.username.toUpperCase()}</div>
         <div className="ws-dim ws-small" style={{ wordBreak: 'break-all' }}>{player.id}</div>
-        <div className="ws-dim ws-small">{(player.archetype || 'OPERATOR').replace('_', ' ')}</div>
+        <div className="ws-dim ws-small">{player.creation?.className ?? (player.archetype || 'OPERATOR').replace('_', ' ')}</div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 4px' }}>
           <RankMark rank={rank} scale={3} />

@@ -1253,6 +1253,46 @@ describe('the fifth class: the stream, through the one door, against a fake', ()
     expect(parsed[2].usage.model).toBe('claude-sonnet-5-5');
   });
 
+  it('over a real socket, the pieces arrive apart, before the answer is finished', async () => {
+    const { createServer } = await import('node:http');
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
+    const client = {
+      beta: { messages: { stream: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Sit ' } };
+          await gate; // nothing more until the first piece has been seen on the other side
+          yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'down.' } };
+        },
+        finalMessage: async () => talkMessage()
+      }) } },
+      models: { retrieve: async () => ({}) }
+    } as any;
+    const handler = createIntelligenceHandler(new IntelligenceDoor(new ClaudeProvider(client)));
+    const server = createServer((req, res) => { void handler(req, res, '/kami/talk'); });
+    await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as { port: number };
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/`, { method: 'POST', body: JSON.stringify({ messages: [] }) });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      const first = decoder.decode((await reader.read()).value);
+      expect(JSON.parse(first.trim())).toEqual({ text: 'Sit ' });
+      release();
+      let rest = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        rest += decoder.decode(value);
+      }
+      const lines = rest.trim().split('\n').map(l => JSON.parse(l));
+      expect(lines[0]).toEqual({ text: 'down.' });
+      expect(lines[1].status).toBe('OK');
+    } finally {
+      await new Promise(r => server.close(r));
+    }
+  });
+
   it('no key is an outcome on the stream too', async () => {
     const handler = createIntelligenceHandler(new IntelligenceDoor(new AbsentProvider('no key here')));
     const lines: string[] = [];
@@ -1418,7 +1458,7 @@ describe('the fifth class: the screens', () => {
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
     await click(/LET HIM SET IT/);
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
-    expect(text()).toMatch(/Faked Stake/);
+    expect(text()).toMatch(/FAKED STAKE/);
     expect(text()).toMatch(/Dealt Hand 0/);
     expect(text()).toMatch(/MAIN FOCUS.*PERCEPTION/);
     await type(host.querySelector('input') as HTMLInputElement, 'DICE');

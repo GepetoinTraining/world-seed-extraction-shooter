@@ -10,7 +10,7 @@
  * the caller's work stays queued and the game goes on.
  */
 
-export type DoorKind = 'talk' | 'theme' | 'rest' | 'creation';
+export type DoorKind = 'talk' | 'theme' | 'rest' | 'creation' | 'kami_talk' | 'kami_set';
 
 export interface IDoorUsage {
   model: string;
@@ -53,6 +53,8 @@ export interface IIntelligenceProvider {
   status(): Promise<IProviderStatus>;
   /** A person is waiting. */
   ask(request: IDoorRequest): Promise<IDoorOutcome>;
+  /** A person is waiting and reading as it comes. A provider without it answers all at once. */
+  askStream?(request: IDoorRequest, onText: (text: string) => void, signal?: AbortSignal): Promise<IDoorOutcome>;
   /** Nobody is waiting: file it, come back later. A provider with no batches answers at once. */
   file(id: string, request: IDoorRequest): Promise<{ status: DoorStatus; batchId?: string; outcome?: IDoorOutcome; reason?: string }>;
   collect(batchId: string): Promise<IDoorOutcome>;
@@ -81,6 +83,14 @@ export class IntelligenceDoor {
 
   /** A live call: only where a person is waiting (D46). Never from the hot path. */
   ask(request: IDoorRequest): Promise<IDoorOutcome> { return this.provider.ask(request); }
+
+  /** The same live call, in pieces as they are written. The outcome still says how it ended. */
+  async askStream(request: IDoorRequest, onText: (text: string) => void, signal?: AbortSignal): Promise<IDoorOutcome> {
+    if (this.provider.askStream) return this.provider.askStream(request, onText, signal);
+    const out = await this.provider.ask(request);
+    if (out.status === 'OK' && out.text) onText(out.text);
+    return out;
+  }
 
   /** A rest's batch, filed. Over the limit, it does not go: it waits for the next rest (D44). */
   async fileRest(id: string, request: IDoorRequest) {

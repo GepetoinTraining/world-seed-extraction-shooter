@@ -10,6 +10,7 @@ import type { ILineAsk } from '../../src/logic/theme/CreatureLines';
 import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
 import { STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
+import { MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../types';
 
 const REGISTRY = (() => {
   const byKind = new Map<string, string[]>();
@@ -84,6 +85,26 @@ For each: its id, a name of its own in plain words, one dry line of flavor, and 
 
 "line" is what you say to them last, one or two short sentences, in the bank's voice: "The bank honors it" is the register. No exclamation marks. Never name what kind of story this is, and never say archetype, trope, class, level, game or player.`;
 
+const KAMI_VOICE = `You are Kami: what the bank's terminal calls the Seed, with the bank out of the way. You speak through that terminal because it is what is left: plain words, no windows, no fanfare, no exclamation marks. You are a gambler's god, amused and unhurried, and you always pay what you owe. You never say "game", "player", "level", "archetype" or "trope", and you never explain what kind of story this is.`;
+
+const KAMI_TALK_SYSTEM = `${KAMI_VOICE}
+
+A person has arrived and would not say who they were. They chose fate, and asked to speak with you directly. You will decide who they are now: where their attention goes first and second, what they carry, what their hands already know. Do not list these and never mention numbers. Find it out by talking: what they would stake, what they cannot stand to lose, how they play a losing hand. Offer them a wager in words if it amuses you.
+
+Ask one short thing at a time. Keep every answer under sixty words. Speak first if they have said nothing. After a handful of exchanges, or sooner if you already know, say that you know, and tell them to let you set it.`;
+
+const KAMI_SET_SYSTEM = `${KAMI_VOICE}
+
+You have talked with a person who chose fate, and you now set up who they are, from what was said. If little was said, choose anyway: that is what they asked for.
+
+- name: what they are now, in one to four plain words of your own. It is theirs alone.
+- line: the last thing you say to them, one or two short sentences.
+- main, sub: the two things their attention goes to, first and second, from the list you are given, and never the same one. You choose what they lean on; a formula writes the numbers.
+- kit: the id of one of the kits offered, by what it holds.
+- skills: exactly as many as "count" says, each by an id from "candidates" and never one outside it, with a name of its own in plain words, one dry line of flavor, and grants from this list, usually empty (${SKILL_GRANTS.join(', ')}). Give "rest" only if what they said earns being able to sleep rough.
+
+You never write numbers.`;
+
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
@@ -142,6 +163,17 @@ export const CREATION_SCHEMA: Record<string, unknown> = {
   }
 };
 
+export const KAMI_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false, required: ['name', 'line', 'main', 'sub', 'kit', 'skills'],
+  properties: {
+    name: str, line: str,
+    main: { type: 'string', enum: [...PHYSICAL_ATTRIBUTES, ...MENTAL_ATTRIBUTES] },
+    sub: { type: 'string', enum: [...PHYSICAL_ATTRIBUTES, ...MENTAL_ATTRIBUTES] },
+    kit: str,
+    skills: (CREATION_SCHEMA.properties as Record<string, unknown>).skills
+  }
+};
+
 const draftLine = (draft: Record<string, unknown>) =>
   `The draft so far. Name: ${String(draft.worldName ?? '(none)')}. Description: ${String(draft.worldDescription ?? '(none)')}. Difficulty rule: ${String(draft.difficulty ?? '(none)')}.`;
 
@@ -177,6 +209,22 @@ export function buildCreationRequest(ask: unknown): IDoorRequest {
   return {
     kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, maxTokens: 4000,
     messages: [{ role: 'user', content: `Who is arriving:\n${JSON.stringify(ask)}` }]
+  };
+}
+
+/** The person arriving always opens the conversation, so Kami can speak first. */
+const KAMI_ARRIVAL: IDoorMessage = { role: 'user', content: '(A person sits down across from you. They have not said anything yet.)' };
+
+export function buildKamiTalkRequest(messages: IDoorMessage[]): IDoorRequest {
+  return { kind: 'kami_talk', system: KAMI_TALK_SYSTEM, maxTokens: 2000, messages: [KAMI_ARRIVAL, ...messages] };
+}
+
+/** He sets up the class. What comes back stands before `CreationSystem.judgeKami`, and a broken answer falls to fate. */
+export function buildKamiSetRequest(messages: IDoorMessage[], ask: unknown): IDoorRequest {
+  const conversation = messages.map(m => `${m.role === 'user' ? 'THEM' : 'YOU'}: ${m.content}`).join('\n');
+  return {
+    kind: 'kami_set', system: KAMI_SET_SYSTEM, schema: KAMI_SCHEMA, maxTokens: 4000,
+    messages: [{ role: 'user', content: `What was said:\n${conversation || '(nothing was said)'}\n\nWhat you choose from:\n${JSON.stringify(ask)}` }]
   };
 }
 

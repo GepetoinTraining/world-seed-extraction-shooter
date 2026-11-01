@@ -40,6 +40,9 @@ export interface IOriginBatch {
   closings: string[];
   /** One line for a skill, when no model is there to write one. */
   flavors: string[];
+  /** What fate calls a person when Kami does not answer, and what it says. */
+  fateNames?: string[];
+  fateLines?: string[];
 }
 
 export const ORIGIN_BATCHES: IOriginBatch[] = [
@@ -175,6 +178,12 @@ export const ORIGIN_BATCHES: IOriginBatch[] = [
       'You will not remember learning it. You will only find you can.',
       'The bank holds no record of where this came from. It holds a record of you having it.',
       'You did this somewhere else, for other reasons.'
+    ],
+    fateNames: ['THE ONE WHO THREW IT', 'A LOSING HAND, HELD', 'NOBODY\'S MARKER', 'THE HOUSE\'S MISTAKE', 'THE LAST STAKE', 'WHATEVER CAME UP'],
+    fateLines: [
+      'Nobody answered. The dice came up anyway.',
+      'He did not come to the table. It was thrown without him, and it stands.',
+      'The bank records what came up. It does not record why.'
     ]
   }
 ];

@@ -18,6 +18,9 @@ export const CREATION_DRAFT_DEFAULTS = {
   answers: {} as Record<string, string>,
   said: '',
   name: '',
+  /** The fifth: what was said with Kami, and what it has cost so far. */
+  kami: [] as { role: 'user' | 'assistant'; content: string }[],
+  kamiUsage: null as { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; usd: number } | null,
   /** What the Seed granted, kept until a choice makes it stale, so a stray click never asks twice. */
   grant: null as { words: unknown; by: 'DOOR' | 'FLOOR'; usage: unknown } | null
 };

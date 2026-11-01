@@ -95,7 +95,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   if (mode === 'minted' && certificate) {
     const uid = certificate.metadata.uid;
     const made = player.id === uid ? player.creation : undefined;
-    const focus = made ? CreationSystem.focusOf(made.origin, uid) : null;
+    const focus = made ? CreationSystem.focusOfRecord(made, uid) : null;
     const dealt = player.baseAttributes as unknown as Record<string, number>;
     const deeds = player.id === uid ? WorldDeed.held(player) : [];
     return (
@@ -114,6 +114,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           <div style={{ textAlign: 'center' }} className="ws-small">
             <div className="ws-bright">{certificate.metadata.displayName.toUpperCase()}</div>
             <div className="ws-dim" style={{ wordBreak: 'break-all' }}>{certificate.metadata.uid}</div>
+            {made?.className && <div className="ws-bright" style={{ marginTop: 6 }}>{made.className.toUpperCase()}</div>}
             {focus && (
               <div style={{ marginTop: 6 }}>
                 MAIN FOCUS {focus.main.toUpperCase()} {dealt[focus.main]} · SUB FOCUS {focus.sub.toUpperCase()} {dealt[focus.sub]}
