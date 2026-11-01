@@ -334,7 +334,7 @@ function renderCharacters() {
 
 function renderCity() {
   const table = palette();
-  const whole = section('THE WHOLE CITY', 'All 50 by 50 tiles at half scale. Every sign shows its full name.');
+  const whole = section('THE WHOLE CITY', `All ${layout.width} by ${layout.height} tiles at half scale. Every sign shows its full name.`);
   whole.append(toCanvas(composeHub(layout, { lots: DEMO_LOTS }), table, 1));
 
   const marks = section('EMBLEMS', 'Each kind of building, with no words.');

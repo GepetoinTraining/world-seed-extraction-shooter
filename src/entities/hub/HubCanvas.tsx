@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
-import { useHubStore } from './store';
+import { craftName, useHubStore } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
 import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
@@ -17,13 +17,14 @@ import {
 } from './room';
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
+import { CityPlan } from '../../components/CityPlan';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
 import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
-import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
+import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
 import { MinimapView } from '../../components/ui/MinimapView';
@@ -32,6 +33,7 @@ import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
 import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
+import { StatSystem } from '../../logic/systems/StatSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../types';
 
@@ -76,18 +78,35 @@ const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
 };
 
 // A keeper can lead to a screen of its own. Coming back, you stand where you stood.
+// Kept from the first chunk's corner, since a chunk risen north or west moves every tile.
 let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' };
+  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' };
 
 export const HubCanvas: React.FC = () => {
-  const layout = useMemo(() => HubGenerator.generate(), []);
+  const chunks = useHubStore(s => s.chunks);
+  const dismembered = useHubStore(s => s.dismembered);
+  const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
 
-  const posRef = useRef(streetPos ?? { x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
+  const posRef = useRef(streetPos
+    ? { x: streetPos.x + layout.origin.x * TILE_SIZE, y: streetPos.y + layout.origin.y * TILE_SIZE }
+    : { x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
   const [playerTile, setPlayerTile] = useState({ x: Math.floor(posRef.current.x / TILE_SIZE), y: Math.floor(posRef.current.y / TILE_SIZE) });
-  useEffect(() => () => { streetPos = { ...posRef.current }; }, []);
+  const originRef = useRef(layout.origin);
+  useEffect(() => () => {
+    streetPos = { x: posRef.current.x - originRef.current.x * TILE_SIZE, y: posRef.current.y - originRef.current.y * TILE_SIZE };
+  }, []);
+
+  // A chunk rose to the north or the west, and every tile moved. You stay on your own ground.
+  useEffect(() => {
+    const from = originRef.current, to = layout.origin;
+    if (from.x === to.x && from.y === to.y) return;
+    originRef.current = to;
+    posRef.current = { x: posRef.current.x + (to.x - from.x) * TILE_SIZE, y: posRef.current.y + (to.y - from.y) * TILE_SIZE };
+    setPlayerTile({ x: Math.floor(posRef.current.x / TILE_SIZE), y: Math.floor(posRef.current.y / TILE_SIZE) });
+  }, [layout]);
   const [nearbyPOI, setNearbyPOI] = useState<IPOI | null>(null);
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
   const [npcReply, setNpcReply] = useState<string | null>(null);
@@ -132,9 +151,11 @@ export const HubCanvas: React.FC = () => {
   // =========================================================================
 
   // Wave 10.2: a built lot blocks its whole footprint — the door tile you stand
-  // on to enter lies one row below it. What blocks is exactly what is drawn.
+  // on to enter lies one row below it. What blocks is exactly what is drawn. The
+  // one exception is a servidão: its tiles stay open whatever stands on them.
   const blockedLotTiles = useMemo(() => {
     const blocked = new Set<number>();
+    const passageTiles = new Set(layout.passages.flatMap(q => q.tiles.map(t => t.y * layout.width + t.x)));
     for (const zone of layout.zones) for (const poi of zone.pois) {
       if (poi.type !== POIType.PLAYER_LOT) continue;
       const lot = lots.find(l => l.id === poi.id);
@@ -144,7 +165,8 @@ export const HubCanvas: React.FC = () => {
       const rising = !!lot && lotConstruction(buildJobs, poi.id) !== null;
       for (let ty = poi.position.y; ty < poi.position.y + poi.size.height; ty++) {
         for (let tx = poi.position.x; tx < poi.position.x + poi.size.width; tx++) {
-          if (builtLotBlocksAt(poi, built || rising, tx, ty)) blocked.add(ty * layout.width + tx);
+          const at = ty * layout.width + tx;
+          if (builtLotBlocksAt(poi, built || rising, tx, ty) && !passageTiles.has(at)) blocked.add(at);
         }
       }
     }
@@ -238,10 +260,10 @@ export const HubCanvas: React.FC = () => {
         if (!poi.interactable) continue;
         const poiCenterX = poi.position.x + poi.size.width / 2;
         const poiCenterY = poi.position.y + poi.size.height / 2;
-        const dist = Math.sqrt(
-          Math.pow(playerTile.x + 0.5 - poiCenterX, 2) +
-          Math.pow(playerTile.y + 0.5 - poiCenterY, 2)
-        );
+        const fromMiddle = Math.hypot(playerTile.x + 0.5 - poiCenterX, playerTile.y + 0.5 - poiCenterY);
+        // A stretched lot is bigger than this reach, so its door counts too.
+        const door = doorOf(poi);
+        const dist = Math.min(fromMiddle, Math.hypot(playerTile.x - door.x, playerTile.y - door.y));
         if (dist < 3 && dist < closestDist) {
           closest = poi;
           closestDist = dist;
@@ -289,12 +311,12 @@ export const HubCanvas: React.FC = () => {
       setNpcReply(null);
       setActiveNPC(HUB_NPCS[poi.npcId]);
     } else if (poi.type === POIType.PLAYER_LOT) {
-      // Wave 10.2: a built lot has a real door. An unbuilt one still points at
-      // its working screen, where it is bought and raised.
+      // Wave 10.2: a built lot has a real door. An unbuilt one points you to the
+      // land manager: buying and raising go through him, and only him.
       const hub = useHubStore.getState();
       const lot = hub.lots.find(l => l.id === poi.id);
       if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
-      else setView('HOLDINGS');
+      else pushFeed(`${poi.name} is on the sheet at the Land Office, beside the Hall of Banners.`, 'plain');
     }
   };
 
@@ -441,6 +463,8 @@ export const HubCanvas: React.FC = () => {
     return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades }), palette));
   }, [layout, lotStates]);
 
+  const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
+
   // U16: the city fills the window. The canvas is the window; the camera does the rest.
   const shellRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -518,7 +542,7 @@ export const HubCanvas: React.FC = () => {
         const p = roomPosRef.current;
         if (dx !== 0 || dy !== 0) {
           const len = Math.hypot(dx, dy);
-          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * TILE_SIZE * dt;
+          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes) * TILE_SIZE * dt;
           const mx = (dx / len) * step, my = (dy / len) * step;
           let nx = p.x + mx;
           if (roomBlocked(nx, p.y) && !roomBlocked(p.x, p.y)) nx = p.x;
@@ -590,7 +614,7 @@ export const HubCanvas: React.FC = () => {
       const p = posRef.current;
       if (dx !== 0 || dy !== 0) {
         const len = Math.hypot(dx, dy);
-        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * TILE_SIZE * dt;
+        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes) * TILE_SIZE * dt;
         const mx = (dx / len) * step, my = (dy / len) * step;
         let nx = p.x + mx;
         if (blockedAt(nx, p.y) && !blockedAt(p.x, p.y)) nx = p.x;
@@ -617,6 +641,17 @@ export const HubCanvas: React.FC = () => {
       const frame = reducedMotion ? 0 : Math.floor(time / 500) % 2;
       const city = cityBitmaps[frame];
       ctx.drawImage(city, -ox, -oy, city.width * ATOM_PX, city.height * ATOM_PX);
+      // Where the ground ends, by a broken seam: past it looks much like the bare edge of a chunk.
+      ctx.strokeStyle = '#a1a1aa';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      for (const e of groundEdges) {
+        ctx.moveTo(e.x0 * TILE_SIZE - ox, e.y0 * TILE_SIZE - oy);
+        ctx.lineTo(e.x1 * TILE_SIZE - ox, e.y1 * TILE_SIZE - oy);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
       const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
       ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
@@ -630,7 +665,7 @@ export const HubCanvas: React.FC = () => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cityBitmaps, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
+  }, [cityBitmaps, groundEdges, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -758,14 +793,13 @@ export const HubCanvas: React.FC = () => {
               <Button tone="quiet" disabled={!nearPlacement} onClick={() => void reclaimNear()}>
                 RECLAIM {nearPlacement ? nearPlacement.item.name.toUpperCase() : 'IN REACH'}
               </Button>
-              <Button tone="quiet" onClick={() => setView('HOLDINGS')}>THE DEEDS</Button>
 
               {myPendingJobs.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {myPendingJobs.map(j => (
-                    <span key={j.id} className="ws-dim ws-small">
-                      {j.kind === 'SHELL' ? j.structureType : j.piece?.kind} — {Math.max(0, Math.ceil((j.finishesAt - now) / 1000))}s on the clock
-                    </span>
+                    <div key={j.id} className="ws-small">
+                      <TimerBar label={String(j.kind === 'SHELL' ? j.structureType : j.piece?.kind)} startedAt={j.queuedAt} until={j.finishesAt} />
+                    </div>
                   ))}
                 </div>
               )}
@@ -822,6 +856,7 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
     </div>
   );
 };
@@ -925,9 +960,9 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
           const left = Math.ceil((job.finishesAt - now) / 1000);
           return (
             <div key={job.id} className="ws-row">
-              <span className="ws-small">{(RECIPE_DEFINITIONS[job.recipeId] ?? GEAR_RECIPES[job.recipeId])?.name}</span>
+              <span className="ws-small">{craftName(job.recipeId)}</span>
               {left > 0
-                ? <span className="ws-dim ws-small">{left}s on the bench</span>
+                ? <span style={{ flex: 1, maxWidth: 200 }}><TimerBar startedAt={job.queuedAt} until={job.finishesAt} /></span>
                 : <Button tone="signal" onClick={() => void hub.resolveCrafts()}>COLLECT</Button>}
             </div>
           );
@@ -1040,13 +1075,13 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
               </button>
               <Button
                 tone="proof"
-                disabled={listing.stock <= 0 || player.bank.gold < listing.price}
+                disabled={listing.stock <= 0 || player.bank.gold < Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}
                 onClick={() => {
                   const item = purchaseFromShop(listing.id, category);
-                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(listing.price)} G. It is in your stash.`, 'proof');
+                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))} G. It is in your stash.`, 'proof');
                 }}
               >
-                BUY {Math.ceil(listing.price)}G
+                BUY {Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}G
               </Button>
             </div>
           ))}
@@ -1068,12 +1103,12 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <Modal title="SELL TO THE COUNTER" onClose={onClose} width={520}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
-        The counter pays 60% of value, from the hub treasury. A hub with no funds cannot buy.
+        The counter pays {StatSystem.vendorOffer(100, player.attributes)}% of value, from the hub treasury. A hub with no funds cannot buy.
       </div>
       {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
       <div className="ws-list">
         {stash.map(item => {
-          const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
+          const offer = StatSystem.vendorOffer(item.value, player.attributes);
           return (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>

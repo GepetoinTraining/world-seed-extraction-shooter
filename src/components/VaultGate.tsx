@@ -13,7 +13,7 @@
 import React, { useEffect, useState } from 'react';
 import { StoreClient, useVault } from '../entities/data/StoreClient';
 import { BrowserImport, IImportReport } from '../logic/persistence/BrowserImport';
-import { Button, Panel } from './ui/kit';
+import { Busy, Button, Panel } from './ui/kit';
 
 const POLL_MS = 2000;
 
@@ -130,7 +130,7 @@ export const VaultGate: React.FC<{ children: React.ReactNode }> = ({ children })
     if (status === 'CLOSED') return <Refusal midPlay={false} />;
     return (
       <div className="ws-ui" style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ws-void-1)' }}>
-        <span className="ws-dim">Asking the bank for its books…</span>
+        <div style={{ width: 400 }}><Busy label="ASKING THE BANK" /></div>
       </div>
     );
   }

@@ -26,7 +26,7 @@ export const TheWorking: React.FC = () => {
   const { player } = usePlayerStore();
   const world = useWorldStore();
   const [picked, setPicked] = useState<string[]>([]);
-  const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
+  const rank = ProgressionSystem.rankOf(player);
 
   const card = world.availableWorlds.find(w => w.id === world.activeWorldId);
   const elements = useMemo(() => {
@@ -40,13 +40,14 @@ export const TheWorking: React.FC = () => {
   const receipt = preview ? EffectSystem.resolve(preview, { rank }, 'preview') : null;
   const canRestHere = !!player.currentSession && RestSystem.grantsFieldRest(player);
   const known = player.knownAbilities ?? [];
+  const gifted = Object.values(player.skillGifts ?? {}).flat().filter(g => g.kind === 'active');
 
   const toggle = (e: string) => setPicked(p => (p.includes(e) ? p.filter(x => x !== e) : [...p, e]));
   const setCast = (activeCast: NonNullable<typeof player.activeCast> | undefined) =>
     usePlayerStore.setState(s => ({ player: { ...s.player, activeCast } }));
   const weaveId = preview?.id;
 
-  if (elements.length === 0 && known.length === 0 && !canRestHere) return null;
+  if (elements.length === 0 && known.length === 0 && gifted.length === 0 && !canRestHere) return null;
 
   return (
     <Panel title="THE WORKING" right={<span className="ws-dim ws-small">a focus casts it</span>}>
@@ -84,6 +85,18 @@ export const TheWorking: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {gifted.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div className="ws-dim ws-small">WHAT YOUR SKILLS GAVE</div>
+          {gifted.map(g => (
+            <div key={g.id} className="ws-row ws-small" title={g.blurb}>
+              <span>{g.name}</span>
+              <Button tone="quiet" onClick={() => setCast({ kind: 'gift', id: g.id })}>SET</Button>
+            </div>
+          ))}
         </div>
       )}
 

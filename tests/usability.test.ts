@@ -429,9 +429,10 @@ describe('line 72: holding fires at the weapon\'s own rate; interacting has its 
 
   it('U7: leaving has keys, in the field and in recon', () => {
     const canvas = SRC('src/components/WorldCanvas.tsx');
+    const recon = SRC('src/components/ReconView.tsx');
     expect(canvas).toMatch(/<Kbd>E<\/Kbd> EXTRACT/);
-    expect(canvas).toMatch(/<Kbd>X<\/Kbd> WITHDRAW/);
-    expect(canvas).toMatch(/<Kbd>ENTER<\/Kbd> CONFIRM DROP/);
+    expect(recon).toMatch(/<Kbd>X<\/Kbd> WITHDRAW/);
+    expect(recon).toMatch(/<Kbd>ENTER<\/Kbd> CONFIRM DROP/);
     expect(canvas).toMatch(/<Kbd>ESC<\/Kbd> ABORT/);
   });
 });
@@ -1013,7 +1014,7 @@ describe('U15–U21: the views', () => {
     expect(next.kind).toBe('DROP');
     expect([next.x, next.y]).toEqual([3, 3]);
 
-    const recon = SRC('src/components/WorldCanvas.tsx');
+    const recon = SRC('src/components/ReconView.tsx');
     expect(recon).toMatch(/suggestStart\(/);
     expect(recon).not.toMatch(/overflow: 'auto'\s*\}\}\s*>\s*<div style=\{\{ position: 'relative', width: currentMap\.width/);
   });
@@ -1168,7 +1169,7 @@ describe('line 76: one key, one sheet, field and city alike', () => {
     expect(beforeDev).toMatch(/BACK TO THE CITY/);
     const city = SRC('src/entities/hub/HubCanvas.tsx');
     expect(city).toMatch(/effect\.panel === 'missions'\) setView\('MISSIONS'\)/); // the Conduit reaches the zones and the mint
-    expect(city).toMatch(/setView\('HOLDINGS'\)[\s\S]*THE DEEDS|THE DEEDS[\s\S]*setView\('HOLDINGS'\)/); // an owner reaches the deeds from a room
+    expect(city).toMatch(/setView\(effect\.view\)/); // the land manager reaches the deeds (moved on Pedro's word: everything through him)
   });
 
   it('DISCARD in the vault really discards, and only what was asked', () => {

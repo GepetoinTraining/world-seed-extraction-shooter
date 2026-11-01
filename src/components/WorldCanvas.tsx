@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../types';
-import { DreamingSystem } from '../entities/world/Dreaming';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
@@ -10,16 +9,15 @@ import { CombatSystem } from '../entities/combat/CombatSystems';
 import { applyKillRewards } from '../entities/combat/killRewards';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
-import { EntityType, IChunk, ISector, ScanLevel, IWorldEntity } from '../entities/world/types';
+import { EntityType, IChunk, IWorldEntity } from '../entities/world/types';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { WorldGenerator } from '../entities/world/WorldGenerator';
 import { QUADRANT_PX, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../entities/world/grid';
 import { FieldRenderer, FieldScene, FieldEffect, MobPose, DEATH_BURST_MS } from '../render/FieldRenderer';
 import { genreForWorld, entitySprite, baselinePx } from '../render/atoms/world';
-import { ATOM_PX, SIZE_ATOMS, Sprite } from '../render/atoms/atoms';
+import { ATOM_PX, SIZE_ATOMS } from '../render/atoms/atoms';
 import { hitTest, targetsFrom, cycleTarget, inspectEntity, inspectItem, Card } from '../render/atoms/inspect';
-import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { Archetype, Facing, WALK_PHASES, armorClass, weaponClass } from '../render/atoms/people';
 import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
@@ -29,10 +27,11 @@ import { CartOverlay } from '../entities/world/CartOverlay';
 import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { BASE_CHANNEL_MS, StatSystem } from '../logic/systems/StatSystem';
+import { CircleSystem } from '../logic/systems/CircleSystem';
+import { ChestSystem } from '../entities/world/ChestSystem';
 import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
-import { SurveySystem } from '../logic/systems/SurveySystem';
 import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
 import type { IPlayer as IPlayerShape } from '../../types';
 import { WeaveSystem } from '../logic/systems/WeaveSystem';
@@ -40,9 +39,11 @@ import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
-import { Bar, Button, CardView, Chip, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
-import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet } from './ui/stores';
-import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, suggestStart } from '../logic/systems/FieldInput';
+import { Bar, Busy, Button, CardView, Chip, Kbd, Panel, RankMark } from './ui/kit';
+import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet, useWaits } from './ui/stores';
+import { BodyClocks } from './WaitStrip';
+import { ReconView } from './ReconView';
+import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
@@ -128,344 +129,6 @@ const CartWindow: React.FC = () => {
 };
 
 // =============================================================================
-// DRONE RECON (Wave 9: the survey is drawn from the atoms, not five hues)
-// =============================================================================
-
-const RECON_SCALE = 2;
-
-export const ReconOverlay: React.FC<{ onDrop: (x: number, y: number) => void; surveyOnly?: boolean; onLeave?: () => void }> = ({ onDrop, surveyOnly, onLeave }) => {
-  const { currentMap, scanSector, selectSector, selectedDropZone, generation, activeWorldId, availableWorlds } = useWorldStore();
-  const survey = usePlayerStore(s => (activeWorldId ? s.player.survey?.[activeWorldId] : undefined));
-  // D67: during a boot the gate's time is the whole point, so it stays on screen
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!surveyOnly) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [surveyOnly]);
-  const bootingCard = surveyOnly ? availableWorlds.find(w => w.id === activeWorldId) : undefined;
-  const bootMoment = bootingCard ? WorldClock.momentAt(bootingCard, now) : undefined;
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const deskRef = useRef<HTMLDivElement>(null);
-
-  const cellPx = RECON_CELL_ATOMS * RECON_SCALE;
-  const [cursor, setCursor] = useState(() => {
-    const at = currentMap ? suggestStart(currentMap) : { x: 0, y: 0 };
-    return { x: at.x, y: at.y };
-  });
-  const dragged = useRef(false);
-
-  // The survey keeps its true cell size and the desk pans; it opens centered.
-  useEffect(() => {
-    const desk = deskRef.current;
-    if (!desk || !currentMap) return;
-    desk.scrollLeft = (currentMap.width * cellPx - desk.clientWidth) / 2;
-    desk.scrollTop = (currentMap.height * cellPx - desk.clientHeight) / 2;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMap?.seed]);
-
-  // The survey bitmap: one composed buffer, repainted when a scan deepens it.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !currentMap) return;
-    const s = RECON_CELL_ATOMS;
-    const w = currentMap.width * s, h = currentMap.height * s;
-    const buffer = new Uint8Array(w * h);
-    for (let sy = 0; sy < currentMap.height; sy++) for (let sx = 0; sx < currentMap.width; sx++) {
-      const sector = currentMap.sectors[`${sx},${sy}`];
-      if (!sector) continue;
-      const cell: Sprite = reconCell({
-        biome: sector.biome,
-        scanLevel: sector.scanLevel,
-        hasExit: sector.scanLevel > ScanLevel.UNKNOWN && sector.hasExtraction,
-        hostiles: sector.scanLevel >= ScanLevel.DETAILED && sector.entities.some(e => e.isHostile),
-        seed: currentMap.seed, sx, sy
-      });
-      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
-        buffer[(sy * s + y) * w + sx * s + x] = cell.data[y * s + x];
-      }
-    }
-    const img = ctx.createImageData(w, h);
-    for (let i = 0; i < buffer.length; i++) {
-      const v = buffer[i], j = i * 4;
-      img.data[j] = TERMINAL_PALETTE[v * 3];
-      img.data[j + 1] = TERMINAL_PALETTE[v * 3 + 1];
-      img.data[j + 2] = TERMINAL_PALETTE[v * 3 + 2];
-      img.data[j + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-  }, [currentMap, currentMap?.sectors]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => reconKeys.current(e);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  if (!currentMap) return null;
-
-  const selectedKey = selectedDropZone ? `${selectedDropZone.x},${selectedDropZone.y}` : null;
-  const selected = selectedKey ? currentMap.sectors[selectedKey] : null;
-
-  const scanAt = (sx: number, sy: number) => {
-    const sector = currentMap.sectors[`${sx},${sy}`];
-    if (!sector) return;
-    // D68: a first touch on what went stale shows what was known, and the next one scans
-    const known = survey?.[`${sx},${sy}`];
-    const held = selectedDropZone?.x === sx && selectedDropZone?.y === sy;
-    selectSector(sx, sy);
-    setCursor({ x: sx, y: sy });
-    if (known && SurveySystem.staleBy(known, generation) > 0 && !held) return;
-    // Wave 10C (D22): mental stats drive the recon phase — intelligence,
-    // perception and focus (framed or raw) deepen each scan. The analyst
-    // build earns its keep before the drop.
-    const depth = LoadoutSystem.reconEfficiency(usePlayerStore.getState().player.attributes);
-    scanSector(sx, sy, depth);
-    // D68: what was read is this character's, until the world regenerates under it
-    const read = useWorldStore.getState().currentMap?.sectors[`${sx},${sy}`];
-    if (read && activeWorldId) {
-      usePlayerStore.setState(s => ({
-        player: SurveySystem.record(s.player, activeWorldId, `${sx},${sy}`,
-          SurveySystem.entry(read.scanLevel, generation, read.entities, s.player.survey?.[activeWorldId]?.[`${sx},${sy}`]))
-      }));
-    }
-  };
-
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (dragged.current) return;
-    const box = e.currentTarget.getBoundingClientRect();
-    scanAt(Math.floor((e.clientX - box.left) / cellPx), Math.floor((e.clientY - box.top) / cellPx));
-  };
-
-  // The desk pans by the pointer: a drag is a pan, and a press that stays put is a scan.
-  const startPan = (e: React.PointerEvent) => {
-    const desk = deskRef.current;
-    if (!desk || e.button !== 0) return;
-    const start = { x: e.clientX, y: e.clientY, left: desk.scrollLeft, top: desk.scrollTop };
-    dragged.current = false;
-    const move = (m: PointerEvent) => {
-      if (Math.hypot(m.clientX - start.x, m.clientY - start.y) > 4) dragged.current = true;
-      desk.scrollLeft = start.left - (m.clientX - start.x);
-      desk.scrollTop = start.top - (m.clientY - start.y);
-    };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  };
-
-  // Wave 9: recon can be left without dropping — the survey was free, the drop is not.
-  const withdraw = () => {
-    if (surveyOnly) {
-      useWorldStore.getState().exitWorld();
-      void PlayerPersistence.flush('survey');
-      onLeave?.();
-      return;
-    }
-    const st = usePlayerStore.getState();
-    st.emergencyJackOut(); // nothing was risked yet; the kit banks back untouched
-    useWorldStore.getState().exitWorld();
-    void useHubStore.getState().restAndCredit('WITHDREW'); // D30: back at the hub, a rest all the same
-    void SessionJournal.abort(PlayerPersistence.persistableJson(usePlayerStore.getState().player));
-  };
-
-  // Recon has its keys: walk a cursor, scan, drop, or leave.
-  const reconKeys = useRef<(e: KeyboardEvent) => void>(() => {});
-  reconKeys.current = (e: KeyboardEvent) => {
-    if (isTypingTarget(e.target)) return;
-    const onControl = (e.target as HTMLElement)?.tagName === 'BUTTON';
-    const key = e.key.toLowerCase();
-    const desk = deskRef.current;
-    const PAN = cellPx;
-    if (key === 'x') { e.preventDefault(); withdraw(); return; }
-    if (e.key === 'Enter' && !onControl && !surveyOnly) {
-      e.preventDefault();
-      e.stopImmediatePropagation(); // this Enter is the drop; it must not also act in the field
-      if (selected) onDrop(selected.x, selected.y);
-      else feed('No sector selected. A drop needs a place.', 'loss');
-      return;
-    }
-    if (e.key === ' ' && !onControl) { e.preventDefault(); scanAt(cursor.x, cursor.y); return; }
-    if (desk && key === 'w') { desk.scrollTop -= PAN; return; }
-    if (desk && key === 's') { desk.scrollTop += PAN; return; }
-    if (desk && key === 'a') { desk.scrollLeft -= PAN; return; }
-    if (desk && key === 'd') { desk.scrollLeft += PAN; return; }
-    const dir = e.key === 'ArrowLeft' ? [-1, 0] : e.key === 'ArrowRight' ? [1, 0] : e.key === 'ArrowUp' ? [0, -1] : e.key === 'ArrowDown' ? [0, 1] : null;
-    if (dir) {
-      e.preventDefault();
-      const next = {
-        x: Math.max(0, Math.min(currentMap.width - 1, cursor.x + dir[0])),
-        y: Math.max(0, Math.min(currentMap.height - 1, cursor.y + dir[1]))
-      };
-      setCursor(next);
-      if (desk) {
-        desk.scrollLeft = next.x * cellPx - desk.clientWidth / 2;
-        desk.scrollTop = next.y * cellPx - desk.clientHeight / 2;
-      }
-    }
-  };
-
-  const entityCounts = (sector: ISector) => {
-    const counts: Record<string, number> = {};
-    sector.entities.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
-    return counts;
-  };
-
-  const advice = suggestStart(currentMap);
-  const bracket = (x: number, y: number, label: string, dashed: boolean, shown: boolean) => shown ? (
-    <div style={{
-      position: 'absolute', left: x * cellPx - 3, top: y * cellPx - 3,
-      width: cellPx + 6, height: cellPx + 6, pointerEvents: 'none',
-      outline: `2px ${dashed ? 'dashed' : 'solid'} var(--ws-text-bright)`
-    }}>
-      {label && <span className="ws-bright ws-small" style={{ position: 'absolute', left: 0, top: -19, background: 'var(--ws-void-0)', padding: '0 4px', lineHeight: '16px', whiteSpace: 'nowrap' }}>{label}</span>}
-    </div>
-  ) : null;
-
-  return (
-    <div className="ws-ui" style={{ position: 'relative', height: '100%', background: 'var(--ws-void-0)', overflow: 'hidden' }}>
-      {/* The survey fills the window. Drag or the keys pan it; there is nothing to scroll. */}
-      <div
-        ref={deskRef}
-        onPointerDown={startPan}
-        style={{ position: 'absolute', inset: 0, overflow: 'hidden', display: 'flex', cursor: 'grab', lineHeight: 0, touchAction: 'none' }}
-      >
-        <div style={{ position: 'relative', flexShrink: 0, margin: 'auto', width: currentMap.width * cellPx, height: currentMap.height * cellPx }}>
-          <canvas
-            ref={canvasRef}
-            width={currentMap.width * RECON_CELL_ATOMS}
-            height={currentMap.height * RECON_CELL_ATOMS}
-            onClick={handleClick}
-            style={{
-              width: currentMap.width * cellPx,
-              height: currentMap.height * cellPx,
-              imageRendering: 'pixelated',
-              display: 'block'
-            }}
-          />
-          {bracket(advice.x, advice.y, advice.kind === 'DROP' ? 'DROP HERE' : 'SCAN HERE', false, !(selectedDropZone && selectedDropZone.x === advice.x && selectedDropZone.y === advice.y))}
-          {bracket(cursor.x, cursor.y, '', true, true)}
-          {selectedDropZone && bracket(selectedDropZone.x, selectedDropZone.y, 'SELECTED', false, true)}
-        </div>
-      </div>
-
-      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start', pointerEvents: 'none' }}>
-        <Chip tone="signal">
-          {!surveyOnly ? 'DRONE RECON — CHOOSE WHERE TO DROP'
-            : bootMoment?.phase === 'SCAN' ? `BOOTING, RECON ONLY — THE GATE OPENS IN ${WorldClock.say(bootMoment.msLeft)}`
-            : 'THE WORLD HAS FINISHED BOOTING. LEAVE TO DEPLOY.'}
-        </Chip>
-        <Panel title="WHERE TO START" style={{ width: 320 }}>
-          <span className="ws-small">{advice.why}</span>
-        </Panel>
-      </div>
-
-      {/* Intel Panel */}
-      <div style={{ position: 'absolute', top: 12, right: 12, width: 290, maxHeight: 'calc(100% - 60px)', overflowY: 'auto' }}>
-      <Panel title="SECTOR INTEL">
-        {!selected && <span className="ws-dim ws-small">No sector selected. The survey renders only what the drone has recorded. Static is unscanned; the lozenge is an exit; ticks along an edge are contacts.</span>}
-        {selected && (
-          <div className="ws-list ws-small">
-            <div className="ws-row"><span className="ws-dim">SECTOR</span><span>{selected.x}·{selected.y}</span></div>
-            {selected.scanLevel >= ScanLevel.BASIC && (
-              <>
-                <div className="ws-row"><span className="ws-dim">BIOME</span><span>{selected.biome}</span></div>
-                <div className="ws-row">
-                  <span className="ws-dim">THREAT</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={String(selected.difficulty)} scale={2} />{selected.difficulty}</span>
-                </div>
-                {selected.hasExtraction && <div className="ws-row"><span className="ws-dim">EXIT</span><span className="ws-signal">BEACON PRESENT</span></div>}
-              </>
-            )}
-            {/* D68: what was read last time, plainly old, and never the truth of now */}
-            {selected.scanLevel < ScanLevel.DETAILED && (() => {
-              const entry = survey?.[`${selected.x},${selected.y}`];
-              if (!entry || entry.level < ScanLevel.DETAILED) return null;
-              return (
-                <>
-                  <div className="ws-row"><span className="ws-dim">LAST READ</span><span>{SurveySystem.staleBy(entry, generation)} regeneration(s) ago</span></div>
-                  {Object.entries(entry.contacts).map(([type, count]) => (
-                    <div key={type} className="ws-row ws-dim"><span>then: {count}× {type}</span><span /></div>
-                  ))}
-                  <div className="ws-dim ws-small">Stale. Scan again to learn what changed.</div>
-                </>
-              );
-            })()}
-            {selected.scanLevel >= ScanLevel.DETAILED && (() => {
-              const prior = survey?.[`${selected.x},${selected.y}`]?.prior;
-              const entry = survey?.[`${selected.x},${selected.y}`];
-              if (!prior || !entry) return null;
-              const total = (c: Record<string, number>) => Object.values(c).reduce((sum, n) => sum + n, 0);
-              return (
-                <>
-                  <div className="ws-row"><span className="ws-dim">SINCE REGENERATION {prior.generation}</span><span /></div>
-                  <div className="ws-row"><span>Contacts</span><span>{total(prior.contacts)} → {total(entry.contacts)}</span></div>
-                  <div className="ws-row"><span>That have changed</span><span>{prior.changed} → {entry.changed}</span></div>
-                </>
-              );
-            })()}
-            {selected.scanLevel >= ScanLevel.DETAILED && (
-              <>
-                <div className="ws-row"><span className="ws-dim">CONTACTS</span><span /></div>
-                {Object.entries(entityCounts(selected)).map(([type, count]) => (
-                  <div key={type} className="ws-row"><span>{count}× {type}</span><span /></div>
-                ))}
-                {selected.entities.length === 0 && <div className="ws-row"><span className="ws-dim">Sector clear.</span><span /></div>}
-              </>
-            )}
-            {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
-              <>
-                <div className="ws-row"><span className="ws-dim">MANIFEST</span><span /></div>
-                {SurveySystem.manifest(selected.entities).map(line => (
-                  <div key={line.key} className="ws-row">
-                    <span className={line.hostile ? 'ws-loss' : undefined}>{line.count}× [{line.rank}] {line.label}</span><span />
-                  </div>
-                ))}
-              </>
-            )}
-            {/* Wave 10E (the Dreaming): the deep scan reads what the Seed dreamed
-                into this sector — themed signatures, fixed at the world's mint */}
-            {selected.scanLevel >= ScanLevel.COMPLETE && (() => {
-              const dream = DreamingSystem.active();
-              if (!dream) return null;
-              const names = DreamingSystem.sectorDream(dream.seed, dream.pack, selected.biome, selected.x, selected.y);
-              if (names.length === 0) return null;
-              return (
-                <>
-                  <div className="ws-row"><span className="ws-dim">THE DREAM</span><span className="ws-dim">pack v{dream.pack.version}</span></div>
-                  {names.map(name => (
-                    <div key={name} className="ws-row"><span className="ws-signal">{name}</span><span /></div>
-                  ))}
-                  <div className="ws-dim ws-small">The Seed is still dreaming. These names run in this ground.</div>
-                </>
-              );
-            })()}
-            {!surveyOnly && (
-              <div style={{ marginTop: 10 }}>
-                <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => onDrop(selected.x, selected.y)}>
-                  <Kbd>ENTER</Kbd> CONFIRM DROP
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-        <div style={{ marginTop: 8 }}>
-          {surveyOnly
-            ? <Button tone="quiet" onClick={withdraw}><Kbd>X</Kbd> LEAVE</Button>
-            : <Button tone="quiet" onClick={withdraw}><Kbd>X</Kbd> WITHDRAW</Button>}
-        </div>
-      </Panel>
-      </div>
-
-      {/* The key help stands apart from the data */}
-      <div className="ws-dim ws-small" style={{ position: 'absolute', bottom: 10, left: 12, background: 'rgba(3,3,3,0.75)', padding: '2px 8px' }}>
-        <Kbd>WASD</Kbd> pan · <Kbd>ARROWS</Kbd> move the cursor · <Kbd>SPACE</Kbd> or click: scan, and again to read deeper
-      </div>
-    </div>
-  );
-};
-
-// =============================================================================
 // THE RANK MOMENT (Wave 9.5): a rank-up holds the corner of the screen
 // =============================================================================
 
@@ -489,7 +152,7 @@ const RankMomentView: React.FC = () => {
         <div className="ws-dim ws-small" style={{ margin: '4px 0 8px' }}>
           The rank is not a measure of power. It is a measure of how much the world believes in you.
         </div>
-        <Chip tone="signal">+{moment.points} ATTRIBUTE POINTS — SPEND THEM IN THE BANK</Chip>
+        <Chip tone="signal">LEVELS BEGIN AGAIN. WHAT YOU BUILT STAYS.</Chip>
         <div style={{ marginTop: 10 }}>
           <Button tone="quiet" onClick={clear} autoFocus>CONTINUE</Button>
         </div>
@@ -506,7 +169,7 @@ const OCTANTS = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
 
 /** What the interact key says it will do, one short line. */
 const promptFor = (pick: InteractPick | 'EXIT'): string => {
-  if (pick === 'EXIT') return 'EXTRACT (5s)';
+  if (pick === 'EXIT') return `EXTRACT (${(StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes) / 1000).toFixed(1)}s)`;
   if (pick.primary) return `${pick.primary.label.toUpperCase()}${pick.primary.energyCost > 0 ? ` · ${pick.primary.energyCost} energy` : ''}`;
   return `${pick.options.length} WAYS TO ACT`;
 };
@@ -610,8 +273,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       usePlayerStore.setState(s => {
         const session = s.player.currentSession;
         if (!session) return s;
+        // Pedro: magic can refill the day's energy
+        const refilled = receipt.effect === 'rest' ? RestSystem.refillEnergy(s.player, receipt.magnitude).currentSession! : session;
         return { player: { ...s.player, currentSession: {
-          ...session,
+          ...refilled,
           health: receipt.effect === 'heal' ? Math.min(session.maxHealth, session.health + receipt.magnitude) : session.health,
           activeEffects: receipt.status ? StatusClock.add(session.activeEffects, receipt.status, now) : session.activeEffects
         } } };
@@ -633,8 +298,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   const castFromFocus = (cast: NonNullable<IPlayerShape['activeCast']>, now: number, origin: { x: number; z: number }, angle: number) => {
     const player = usePlayerStore.getState().player;
-    const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
-    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements) : ContentRegistry.ability(cast.id);
+    const rank = ProgressionSystem.rankOf(player);
+    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements)
+      : cast.kind === 'gift' ? CircleSystem.abilityOf(player, cast.id) : ContentRegistry.ability(cast.id);
     if (!ability) return;
     const can = WeaveSystem.canCast(player, ability, rank);
     if (!can.ok) {
@@ -642,7 +308,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       energyToldRef.current = true;
       return;
     }
-    const receipt = EffectSystem.resolve(ability, { rank, power: (player.attributes.focus ?? 0) * 0.02 }, SessionJournal.rollKey('cast', String(shotCountRef.current++)));
+    const receipt = EffectSystem.resolve(ability, { rank, power: StatSystem.castPower(player.attributes) }, SessionJournal.rollKey('cast', String(shotCountRef.current++)));
     usePlayerStore.setState(s => {
       let next = WeaveSystem.spend(s.player, ability, rank);
       if (cast.kind === 'weave') next = RestSystem.queueWeave(next, cast.elements);
@@ -660,7 +326,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const mode = fireMode(weapon);
     const gate = fireGate({
       held: true, now, lastShot: lastShotRef.current,
-      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment), mode,
+      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes), mode,
       energy: st.player.currentSession?.energy ?? 0
     });
     if (gate === 'NO_ENERGY') {
@@ -669,6 +335,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       return;
     }
     if (gate !== 'FIRE') return;
+    useHotbar.getState().fired(slot, now, CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes));
 
     // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
     let angle: number;
@@ -682,7 +349,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
     }
     // Line 77: keyed by the session's own count of shots, so a run replays the same
-    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)));
+    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon));
 
     if (mode === 'MELEE') {
       // Swing: a short arc resolved by CombatSystem
@@ -721,7 +388,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Wave 10C (D16): towed-cart follow cadence
   const lastCartSync = useRef<number>(0);
 
-  const CHANNEL_MS = 5000;
+  const channelMs = () => StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes);
+  // Line 124: however the channel ends, its bar ends with it
+  useEffect(() => {
+    if (!channeling || !channelRef.current) return;
+    useWaits.getState().begin({ id: 'channel', label: 'CHANNEL', startedAt: channelRef.current, until: channelRef.current + channelMs() });
+    return () => useWaits.getState().end('channel');
+  }, [channeling]);
   const BEACON_RANGE = 60; // px
 
   // Completes the extraction: tax, journal seal, banking, save — and the SEAL moment
@@ -772,7 +445,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     haul = [...haul, ...cartHaul, ...wornNewcomers];
 
     const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
-    const rate = card?.extractionTaxRate ?? 0.05;
+    const rate = StatSystem.levyRate(card?.extractionTaxRate ?? 0.05, st.player.attributes);
     const tax = Math.floor(haulValue * rate);
     const startedAt = Date.now();
 
@@ -797,7 +470,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // The vault door starts closing now; the signature lands on it when sealed.
     useReceipt.getState().show({
-      outcome: 'EXTRACTED', haul, haulValue, tax,
+      outcome: 'EXTRACTED', haul, haulValue, tax, sealing: true,
       worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
     });
 
@@ -1016,7 +689,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       useWorldStore.getState().exitWorld();
       void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
       useReceipt.getState().show({
-        outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
+        outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept, sealing: true,
         worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...told
       });
       // Seal the journal and the bank (async; loop is already stopped)
@@ -1059,7 +732,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
         const walker = usePlayerStore.getState().player;
-        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
+        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment, walker.attributes) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
 
@@ -1193,7 +866,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         const ability = ContentRegistry.ability(scroll);
         if (ability) {
           const facing = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
-          applyPlayerReceipt(EffectSystem.resolve(ability, { rank: ProgressionSystem.rankFromXp(usePlayerStore.getState().player.rankXp ?? 0) }, SessionJournal.rollKey('scroll', String(shotCountRef.current++))), now, { x: playerPos.x, z: playerPos.z }, facing);
+          applyPlayerReceipt(EffectSystem.resolve(ability, { rank: ProgressionSystem.rankOf(usePlayerStore.getState().player) }, SessionJournal.rollKey('scroll', String(shotCountRef.current++))), now, { x: playerPos.x, z: playerPos.z }, facing);
           feed(`It reads itself aloud: ${ability.name}.`, 'signal');
         }
       }
@@ -1217,7 +890,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
       const liveEquipment = usePlayerStore.getState().player.equipment;
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.total(liveEquipment, 'noise_reduction'), light: lightRef.current });
+      const liveAttributes = usePlayerStore.getState().player.attributes;
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current });
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
@@ -1285,6 +959,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             const innate = (def as { innate?: string[] } | undefined)?.innate ?? [];
             if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));
             if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId);
+            if (event.entityId) useWorldStore.getState().reportFell(event.entityId);
           }
         }
       });
@@ -1295,7 +970,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           if ((triggerReadyRef.current[abilityId] ?? 0) > now) continue;
           const ability = ContentRegistry.ability(abilityId);
           if (!ability) continue;
-          const receipt = EffectSystem.resolve(ability, { rank: ProgressionSystem.rankFromXp(live.rankXp ?? 0) }, SessionJournal.rollKey('trigger', String(shotCountRef.current++)));
+          const receipt = EffectSystem.resolve(ability, { rank: ProgressionSystem.rankOf(live) }, SessionJournal.rollKey('trigger', String(shotCountRef.current++)));
           triggerReadyRef.current[abilityId] = now + receipt.cooldownMs;
           applyPlayerReceipt(receipt, now, { x: playerPos.x, z: playerPos.z }, 0);
         }
@@ -1303,8 +978,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (combatResult.events.some(e => e.type === 'HIT')) fired('on_hit');
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events);
-      if (rewards.rankUp) {
-        useRankMoment.getState().show({ from: rewards.rankUp.from, to: rewards.rankUp.to, points: rewards.rankUp.points, at: now });
+      if (rewards.levelUp) {
+        feed(ProgressionSystem.levelUpLine(rewards.levelUp.to, rewards.levelUp.points), 'proof');
       }
       if (effectsRef.current.length > 0) {
         effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);
@@ -1358,7 +1033,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const clock = StatusClock.tick(effects, now);
       effects = clock.statuses;
       landedStatuses.forEach(plan => { effects = StatusClock.add(effects, plan, now); });
-      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)));
+      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)), liveAttributes);
       const warded = StatusClock.absorb(effects, hit.damage + clock.damage);
       effects = warded.statuses;
       const totalDamage = warded.damage;
@@ -1397,7 +1072,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
 
       // Wave 2.5: channel completion
-      if (channelRef.current && now - channelRef.current >= CHANNEL_MS) {
+      if (channelRef.current && now - channelRef.current >= channelMs()) {
         channelRef.current = null;
         setChanneling(false);
         completeExtraction();
@@ -1598,7 +1273,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const map = useWorldStore.getState().currentMap;
     const pos = usePlayerStore.getState().player.currentSession?.position;
     if (!map || !pos) return null;
-    const sight = StatSystem.sightPx(usePlayerStore.getState().player.equipment);
+    const sight = StatSystem.sightPx(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes);
     const halfW = Math.max(TILE_PX, window.innerWidth / 2 + sight), halfH = Math.max(TILE_PX, window.innerHeight / 2 + sight);
     const qMinX = quadrantOf(pos.x - halfW), qMaxX = quadrantOf(pos.x + halfW);
     const qMinY = quadrantOf(pos.z - halfH), qMaxY = quadrantOf(pos.z + halfH);
@@ -1606,11 +1281,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // Only what is in sight right now is marked: the window is the sight.
     const things: { x: number; y: number; kind: 'HOSTILE' | 'THING' }[] = [];
+    const worldId = useWorldStore.getState().activeWorldId;
     for (const key of WorldGenerator.chunkKeysInBox(pos.x, pos.z, Math.max(halfW, halfH))) {
       for (const e of map.chunks[key]?.entities ?? []) {
         if (Math.abs(e.position.x - pos.x) > halfW || Math.abs(e.position.y - pos.z) > halfH) continue;
         if (e.type === EntityType.EXTRACTION) continue;
         things.push({ x: e.position.x, y: e.position.y, kind: e.isHostile ? 'HOSTILE' : 'THING' });
+        // A chest in sight is known from now on, and how it looks is how it is remembered
+        if (worldId && e.container && ChestSystem.isChest(e.id)) {
+          const seen = usePlayerStore.getState().player;
+          const marked = ChestSystem.mark(seen, worldId, e);
+          if (marked !== seen) usePlayerStore.setState({ player: marked });
+        }
       }
     }
     const exits: { x: number; y: number }[] = [];
@@ -1625,21 +1307,22 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
       exits.push(...found);
     }
-    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits });
+    const marks = worldId ? Object.values(usePlayerStore.getState().player.chestMarks?.[worldId] ?? {}) : [];
+    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits, marks });
   };
 
   // 5. Render
   if (!currentMap) {
     return (
       <div className="ws-ui" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="ws-dim">Rendering the survey…</span>
+        <div style={{ width: 360 }}><Busy label="RENDERING THE SURVEY" /></div>
       </div>
     );
   }
 
   // RECON MODE: satellite view for drop zone selection
   if (reconMode) {
-    return <ReconOverlay onDrop={handleConfirmDrop} />;
+    return <ReconView onDrop={handleConfirmDrop} />;
   }
 
   const playerPos = session.position;
@@ -1651,7 +1334,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const exitAngle = exit ? Math.atan2(exit.y - playerPos.z, exit.x - playerPos.x) : 0;
   const exitOctant = exit ? OCTANTS[((Math.round(exitAngle / (Math.PI / 4)) % 8) + 8) % 8] : '';
 
-  const rank = ProgressionSystem.rankFromXp(usePlayerStore.getState().player.rankXp ?? 0);
+  const rank = ProgressionSystem.rankOf(usePlayerStore.getState().player);
+  const level = ProgressionSystem.levelOf(usePlayerStore.getState().player);
   const loadRatio = usePlayerStore.getState().maxWeight > 0
     ? usePlayerStore.getState().currentWeight / usePlayerStore.getState().maxWeight : 0;
 
@@ -1684,7 +1368,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           </Panel>
         ) : nearBeacon ? (
           <Button tone="proof" primary onClick={beginChannel}>
-            <Kbd>E</Kbd> EXTRACT (5s)
+            <Kbd>E</Kbd> EXTRACT ({(StatSystem.channelMs(BASE_CHANNEL_MS, usePlayerStore.getState().player.attributes) / 1000).toFixed(1)}s)
           </Button>
         ) : (
           <Chip title="Distance and heading to the nearest exit beacon">
@@ -1721,25 +1405,22 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       {gate.warning === 'FINAL' && (
         <div aria-hidden style={{ position: 'absolute', inset: 6, zIndex: 105, pointerEvents: 'none', border: '6px dashed var(--ws-text-bright)' }} />
       )}
-      {RestSystem.isResting(player) && (
-        <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translateX(-50%)', zIndex: 110, pointerEvents: 'none' }}>
-          <Chip tone="signal">AT REST FOR {WorldClock.say(player.rest!.until - Date.now())}. A HURT WILL BREAK IT.</Chip>
-        </div>
-      )}
 
       {/* Vitals HUD (Wave 9.2: bars, rank and load — the exposure is the point) */}
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
-          <Chip title={`Rank ${rank}`}><RankMark rank={rank} scale={2} />{rank}</Chip>
+          <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
+          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}{CircleSystem.free(player) > 0 ? ` · ${CircleSystem.free(player)} TO FILL` : ''}</Chip>
           <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>
           </span>
         </div>
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
-        <Bar label="ENERGY" value={session.energy} max={StatSystem.maxEnergy(player.attributes, player.equipment)} tone="proof" text={`${Math.floor(session.energy)}`} />
+        <Bar label="ENERGY" value={session.energy} max={StatSystem.maxEnergyOf(player)} tone="proof" text={`${Math.floor(session.energy)}`} />
         <Bar label="LOAD" value={Math.round(loadRatio * 100)} max={100} tone={loadRatio > 0.8 ? 'loss' : 'signal'} text={loadRatio > 0.8 ? 'SLOWED' : `${Math.round(loadRatio * 100)}%`} />
+        <BodyClocks />
         {session.towingCartId && (
           <Chip tone="proof" title="The tow bar is in your hand; your pace pays for the load">TOWING</Chip>
         )}

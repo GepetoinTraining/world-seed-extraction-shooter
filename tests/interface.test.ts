@@ -37,7 +37,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 
 import { UniversalRank, Rarity, ItemType } from '../types';
 import {
-  ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, POINTS_PER_RANK_UP
+  ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, POINTS_PER_LEVEL
 } from '../src/entities/player/systems/ProgressionSystem';
 import { usePlayerStore, ARCHETYPES } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
@@ -80,7 +80,7 @@ beforeEach(() => {
 // LINE 30 — kills count, a rank-up is seen, and what it gives is real
 // -----------------------------------------------------------------------------
 
-describe('line 30: the rank track (kill XP is finally applied)', () => {
+describe('line 30: levels and the old rank ladder (kill XP is finally applied)', () => {
   it('thresholds climb monotonically F to SSS', () => {
     for (let i = 1; i < RANK_ORDER.length; i++) {
       expect(RANK_XP_THRESHOLDS[RANK_ORDER[i]]).toBeGreaterThan(RANK_XP_THRESHOLDS[RANK_ORDER[i - 1]]);
@@ -103,21 +103,21 @@ describe('line 30: the rank track (kill XP is finally applied)', () => {
     expect(usePlayerStore.getState().player.rankXp).toBe(before + 200);
   });
 
-  it('a rank-up grants attribute points, and spending one is real', () => {
-    const res = usePlayerStore.getState().applyKillXp(1_000); // F -> E exactly
-    expect(res.rankedUp).toBe(true);
-    expect(res.from).toBe(UniversalRank.F);
-    expect(res.to).toBe(UniversalRank.E);
-    expect(res.pointsGranted).toBe(POINTS_PER_RANK_UP);
+  it('a level grants attribute points, and spending one is real', () => {
+    const res = usePlayerStore.getState().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1)); // level 1 -> 2 exactly
+    expect(res.leveledUp).toBe(true);
+    expect(res.from).toBe(1);
+    expect(res.to).toBe(2);
+    expect(res.pointsGranted).toBe(POINTS_PER_LEVEL);
     const p1 = usePlayerStore.getState().player;
-    expect(p1.attributePoints).toBe(POINTS_PER_RANK_UP);
+    expect(p1.attributePoints).toBe(POINTS_PER_LEVEL);
 
     const strBefore = p1.baseAttributes.strength;
     expect(usePlayerStore.getState().spendAttributePoint('strength')).toBe(true);
     const p2 = usePlayerStore.getState().player;
     expect(p2.baseAttributes.strength).toBe(strBefore + 1);
     expect(p2.attributes.strength).toBe(strBefore + 1); // effective follows base
-    expect(p2.attributePoints).toBe(POINTS_PER_RANK_UP - 1);
+    expect(p2.attributePoints).toBe(POINTS_PER_LEVEL - 1);
   });
 
   it('no points means no spend', () => {
@@ -125,10 +125,11 @@ describe('line 30: the rank track (kill XP is finally applied)', () => {
     expect(usePlayerStore.getState().spendAttributePoint('strength')).toBe(false);
   });
 
-  it('a jump across several ranks grants points for each', () => {
-    const res = usePlayerStore.getState().applyKillXp(12_000); // F -> C: three rank-ups
-    expect(res.to).toBe(UniversalRank.C);
-    expect(res.pointsGranted).toBe(3 * POINTS_PER_RANK_UP);
+  it('a jump across several levels grants points for each', () => {
+    const three = [1, 2, 3].reduce((sum, level) => sum + ProgressionSystem.levelCost(UniversalRank.F, level), 0);
+    const res = usePlayerStore.getState().applyKillXp(three);
+    expect(res.to).toBe(4);
+    expect(res.pointsGranted).toBe(3 * POINTS_PER_LEVEL);
   });
 
   it('D6: outranking a task by three or more is auto-success, outside combat', () => {

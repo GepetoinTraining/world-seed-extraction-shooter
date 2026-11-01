@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { sealTheme, compileTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
+import { bodyOf, sealTheme, compileTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
 import { creatureNumbers, GEAR_SHAPES } from '../src/logic/theme/ThemeFormula';
 import { GEAR_KINDS, IThemeBody, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
 import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
@@ -341,5 +341,16 @@ describe('the Claude provider, driven by a fake client', () => {
   it('the ceiling of a rest stays inside what a rest may spend', () => {
     const provider = new ClaudeProvider(fake(message({})));
     expect(provider.ceiling(buildRestRequest({}, {}), true)).toBeLessThan(REST_SPEND_LIMIT_USD);
+  });
+});
+
+describe('the mint offers one printing of a theme', () => {
+  it('an older printing stays installed for what is pinned to it, and is not offered', () => {
+    const current = ContentRegistry.get(ContentRegistry.defaultThemeId())!;
+    const older = sealTheme({ ...bodyOf(current), lore: [...current.lore, 'An older printing, for this bar.'] }, 'test', 1);
+    ContentRegistry.install(older);
+    expect(ContentRegistry.get(older.themeId)).toBeDefined();
+    const offered = ContentRegistry.offered();
+    expect(offered.filter(p => p.name === current.name).map(p => p.themeId)).toEqual([current.themeId]);
   });
 });

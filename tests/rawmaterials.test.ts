@@ -92,7 +92,8 @@ const STORED_TEMPLATE_HASHES: Record<string, number> = {
   'Carpenter Mill': 1904892013,
   'Market Stall': 2817067909
 };
-const STORED_CITY_HASH = 1627807467;
+// Recaptured on purpose for D74: the city moved onto the real chunk, from its manifest, with roads and plots.
+const STORED_CITY_HASH = 1310522481;
 const PINNED_PACK_HASHES: Record<number, string> = { 1: 'da2b84b8', 2: '3f842e24' };
 const PINNED_DREAM = ['Mire-Cured', 'Bank-Honored', 'Spore-Fed'];
 const LORE_FRAGMENT_COUNT = 8;       // a chest's rng.pick must keep landing on the same fragment
@@ -809,7 +810,7 @@ describe('line 62: the skill itself reveals it, through play', () => {
 
   it('honest repetition opens the common tier and nothing above it, in the one ledger', async () => {
     const lotId = await rawWorkshop();
-    for (let i = 0; i < 12 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
+    for (let i = 0; i < 30 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
       await runRecipe(lotId, 'recipe_plank', `rep:${i}`);
     }
     expect(player().bank.universalSkills['skill_carpentry'].level).toBe(2);
@@ -820,7 +821,7 @@ describe('line 62: the skill itself reveals it, through play', () => {
 
   it('a skill only knows its own trade', async () => {
     const lotId = await rawWorkshop();
-    for (let i = 0; i < 12 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
+    for (let i = 0; i < 30 && player().bank.universalSkills['skill_carpentry']?.level !== 2; i++) {
       await runRecipe(lotId, 'recipe_plank', `own:${i}`);
     }
     for (const e of ProcessSystem.poolFor(AffixBank.current(), 'smelting', UniversalRank.S, Rarity.LEGENDARY)) {
@@ -1166,9 +1167,9 @@ describe('line 45: the gold and item audit over the full raw loop', () => {
     ]);
 
     // the raw shells: a stone house, then the log workshop that mints the first bench
-    await hub().buyLot(lots[0]);
+    await hub().buyLot(lots[3]);
     await hub().buyLot(lots[1]);
-    expect(await hub().buildStructure(lots[0], 'HOUSE', 'res_rock_small')).toBe(true);
+    expect(await hub().buildStructure(lots[3], 'HOUSE', 'res_rock_small')).toBe(true);
     expect(await hub().buildStructure(lots[1], 'WORKSHOP', 'res_tree_log')).toBe(true);
     await finishBuilds();
     const bench = stash().find(i => i.universalDefinitionId === 'stn_bench')!;
@@ -1179,11 +1180,11 @@ describe('line 45: the gold and item audit over the full raw loop', () => {
 
     // worked goods into the walls, a piece torn back out, and a sale
     const plank = stash().find(i => i.universalDefinitionId === 'crf_plank')!;
-    expect((await hub().queuePiece(lots[0], 'WALL', 4, 4, plank.id)).ok).toBe(true);
+    expect((await hub().queuePiece(lots[3], 'WALL', 4, 4, plank.id)).ok).toBe(true);
     await finishBuilds();
-    const piece = hub().rooms[lots[0]].pieces[0];
+    const piece = hub().rooms[lots[3]].pieces[0];
     expect(piece.inherited?.length).toBeGreaterThanOrEqual(1);
-    await hub().demolishPiece(lots[0], piece.id);
+    await hub().demolishPiece(lots[3], piece.id);
     const back = stash().find(i => i.universalDefinitionId === 'crf_plank' && i.quality < 0)!;
     expect(additionsOf(back).length).toBeGreaterThanOrEqual(1);
     expect(await hub().sellToVendor(back.id)).toBeGreaterThan(0);

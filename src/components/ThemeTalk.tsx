@@ -11,7 +11,7 @@ import { IntelligenceClient, IDoorMessage, IDoorUsage } from '../logic/intellige
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { IThemeBody } from '../logic/theme/ThemeTypes';
 import { useWorldDraft } from './ui/stores';
-import { Button, Panel } from './ui/kit';
+import { Busy, Button, Panel } from './ui/kit';
 
 const SAID_WHEN_CLOSED: Record<string, string> = {
   NO_KEY: 'The Seed is not answering on this server. No key is held here.',
@@ -45,7 +45,7 @@ export const ThemeTalk: React.FC = () => {
   const [busy, setBusy] = useState<'' | 'talk' | 'write'>('');
   const [refusal, setRefusal] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
-  const banked = useMemo(() => ContentRegistry.list(), []);
+  const banked = useMemo(() => ContentRegistry.offered(), []);
 
   useEffect(() => {
     let live = true;
@@ -98,7 +98,7 @@ export const ThemeTalk: React.FC = () => {
 
   return (
     <Panel title="THE WORLD'S FACE">
-      {open === null && <div className="ws-dim ws-small">Asking whether the Seed is awake.</div>}
+      {open === null && <Busy label="ASKING" quietForMs={250} />}
 
       {open === false && closedWhy && <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>{closedWhy}</div>}
 
@@ -111,7 +111,7 @@ export const ThemeTalk: React.FC = () => {
                 {m.content}
               </div>
             ))}
-            {busy === 'talk' && <div className="ws-dim ws-small">The Seed is considering it.</div>}
+            {busy === 'talk' && <Busy label="THE SEED IS CONSIDERING" />}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <input
@@ -127,6 +127,7 @@ export const ThemeTalk: React.FC = () => {
         </>
       )}
 
+      {busy === 'write' && <div style={{ marginTop: 6 }}><Busy label="THE SEED IS WRITING" /></div>}
       {refusal && <div className="ws-loss ws-small" style={{ marginTop: 6 }}>{refusal}</div>}
 
       {written && (

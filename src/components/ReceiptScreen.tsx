@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Button, ItemSprite, Panel, SealView } from './ui/kit';
+import { Busy, Button, ItemSprite, Panel, SealView } from './ui/kit';
 import { useReceipt } from './ui/stores';
 
 const fmtMs = (ms: number) => {
@@ -39,8 +39,8 @@ export const ReceiptScreen: React.FC = () => {
 
         <div className="ws-list ws-small">
           <div className="ws-row"><span className="ws-dim">WORLD</span><span>{receipt.worldName}</span></div>
-          <div className="ws-row"><span className="ws-dim">DURATION</span><span>{fmtMs(receipt.durationMs)}</span></div>
-          <div className="ws-row"><span className="ws-dim">ACTIONS ON RECORD</span><span>{receipt.actionCount}</span></div>
+          <div className="ws-row"><span className="ws-dim">DURATION</span><span>{receipt.sealing ? '…' : fmtMs(receipt.durationMs)}</span></div>
+          <div className="ws-row"><span className="ws-dim">ACTIONS ON RECORD</span><span>{receipt.sealing ? '…' : receipt.actionCount}</span></div>
           <div className="ws-row">
             <span className="ws-dim">{died ? 'LOST TO THE WORLD' : 'HAUL VALUE'}</span>
             <span className={died ? 'ws-loss' : 'ws-proof'}>{receipt.haulValue.toLocaleString()} G</span>
@@ -94,9 +94,11 @@ export const ReceiptScreen: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderTop: '1px solid var(--ws-void-3)', paddingTop: 10 }}>
           {receipt.signature
             ? <SealView hash={receipt.signature} scale={3} />
-            : <span className="ws-dim ws-small" style={{ width: 60 }}>SEALING…</span>}
+            : null}
           <div className="ws-small" style={{ flex: 1 }}>
-            <div className="ws-dim">{receipt.signature ? 'Signed by your certificate. The bank honors it.' : 'The signature is being computed.'}</div>
+            {receipt.sealing
+              ? <Busy label="SEALING" tone={tone} />
+              : <div className="ws-dim">{receipt.signature ? 'Signed by your certificate. The bank honors it.' : 'No signature came back. The bank keeps what it was given.'}</div>}
             {receipt.signature && <div className="ws-ghost" style={{ wordBreak: 'break-all', color: 'var(--ws-text-ghost)' }}>{receipt.signature.slice(0, 48)}…</div>}
           </div>
         </div>

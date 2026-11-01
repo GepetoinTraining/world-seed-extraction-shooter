@@ -23,12 +23,13 @@ import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
 import { RestDoor } from '../../logic/systems/RestDoor';
+import { StatSystem } from '../../logic/systems/StatSystem';
 
 export type DialogueEffect =
   | { kind: 'reply'; text: string }
   | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
   | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' }
+  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' }
   | { kind: 'deploy' }
   | { kind: 'close' };
 
@@ -56,11 +57,11 @@ function studyOvernight(ids: string[]) {
 }
 
 /** Repair cost: a quarter of the item's value, scaled by what's missing. */
-export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }): number {
+export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }, attributes = usePlayerStore.getState().player.attributes): number {
   const { durability, maxDurability } = item.stats;
   if (durability === undefined || !maxDurability || durability >= maxDurability) return 0;
   const missing = (maxDurability - durability) / maxDurability;
-  return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing));
+  return Math.max(5, Math.ceil((item.value || 20) * 0.25 * missing * StatSystem.repairFactor(attributes)));
 }
 
 /** The one door to what can be repaired: the stash and the body (R6). */
@@ -179,6 +180,10 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
   },
   GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
+
+  // --- The Land Office (Aurelio Quint): everything that develops the city ---
+  OPEN_DEEDS: () => ({ kind: 'navigate', view: 'HOLDINGS' }),
+  OPEN_PLAN: () => ({ kind: 'open', panel: 'plan' }),
 
   // --- Honest closures: these halls are not open, and they say so ---
   GUILD_LORE: () => ({

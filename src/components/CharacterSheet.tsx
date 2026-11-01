@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../types';
+import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } from '../../types';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { useWorldStore } from '../entities/world/store';
@@ -23,11 +23,12 @@ import { isTypingTarget } from '../logic/systems/FieldInput';
 import { PaperDoll } from './PaperDoll';
 import { TheWorking } from './TheWorking';
 import { RestSystem } from '../logic/systems/RestSystem';
+import { StatSystem } from '../logic/systems/StatSystem';
 import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid } from './PlayerHub';
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, useHands, wholeZone } from './ui/hands';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
-import { useAppView, useFeed, useSheet } from './ui/stores';
+import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const TILE_SIZE = 20;
@@ -99,8 +100,8 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
 const PackPanels = ({ session }: { session: IActiveSession }) => {
   const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
-  // Wave 10E (D19): the field identify runs on a real clock
-  const [identifying, setIdentifying] = useState<{ id: string; until: number } | null>(null);
+  // Wave 10E (D19): the field identify runs on a real clock, and line 124 keeps it where the HUD can read it
+  const waits = useWaits(s => s.waits);
   // Wave 10E (D21): a chosen charm asks which slot it holds
   const [invoking, setInvoking] = useState<string | null>(null);
 
@@ -182,17 +183,18 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             {/* Wave 10E (D19): identify in the field — scoped, ALWAYS timed, faster with skill */}
             {StudySystem.identifyScopeOf(selectedItem) &&
               (selectedItem.isIdentified === false || selectedItem.affixes.some(a => !LoadoutSystem.isAffixStudied(player, a.id))) && (
-              identifying?.id === selectedItem.id ? (
+              waits.some(w => w.id === `identify_${selectedItem.id}`) ? (
                 <Button tone="quiet" disabled>LOOKING…</Button>
               ) : (
                 <Button tone="signal" onClick={() => {
                   const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
                   if (!ask.ok) return;
                   feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.cost} energy, ${ask.seconds}s. It may give nothing up.`, 'signal');
-                  setIdentifying({ id: selectedItem.id, until: Date.now() + ask.seconds! * 1000 });
+                  const startedAt = Date.now();
+                  useWaits.getState().begin({ id: `identify_${selectedItem.id}`, label: 'LOOKING', startedAt, until: startedAt + ask.seconds! * 1000 });
                   window.setTimeout(() => {
                     usePlayerStore.getState().completeFieldIdentify(selectedItem.id);
-                    setIdentifying(cur => (cur?.id === selectedItem.id ? null : cur));
+                    useWaits.getState().end(`identify_${selectedItem.id}`);
                   }, ask.seconds! * 1000);
                 }}>
                   IDENTIFY · {StudySystem.identifyAsk(player, selectedItem).cost} energy · {StudySystem.identifyAsk(player, selectedItem).seconds}s
@@ -301,15 +303,16 @@ const VaultPanels: React.FC = () => {
 };
 
 // =============================================================================
-// WHO YOU ARE: rank, attributes, what the hands know, every skill
+// WHO YOU ARE: rank, level, attributes, what the hands know, every skill
 // =============================================================================
 
 const WhoPanel: React.FC = () => {
   const { player, spendAttributePoint } = usePlayerStore();
-  const rankXp = player.rankXp ?? 0;
-  const rank = ProgressionSystem.rankFromXp(rankXp);
-  const next = ProgressionSystem.xpToNextRank(rankXp);
+  const rank = ProgressionSystem.rankOf(player);
+  const progress = ProgressionSystem.levelProgress(player);
   const points = player.attributePoints ?? 0;
+  // D52: what an attribute does, in a line of its own that holds its place
+  const [told, setTold] = useState<keyof IAttributes | null>(null);
   const held = useMemo(() => new Set(WebSystem.earnedSheet(player, WebBank.current(), useHubStore.getState().web).earned.map(r => r.id)), [player.bank.universalSkills, player.skillProgress]);
   const others = Object.values(player.bank.universalSkills || {})
     .filter(s => !held.has(s.id))
@@ -321,7 +324,7 @@ const WhoPanel: React.FC = () => {
       right={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={rank} scale={2} />RANK {rank}</span>}
       style={{ flex: '1 1 240px', minWidth: 240, height: PACK_BODY_H, overflowY: 'auto' }}
     >
-      {next && <Bar label="RANK" value={rankXp - next.floor} max={(rankXp - next.floor) + next.needed} tone="signal" text={`${next.needed.toLocaleString()} to ${next.next}`} />}
+      <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
       {points > 0 && <div style={{ margin: '4px 0' }}><Chip tone="signal">{points} POINT{points === 1 ? '' : 'S'} TO SPEND</Chip></div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', columnGap: 10, margin: '6px 0' }}>
@@ -329,7 +332,7 @@ const WhoPanel: React.FC = () => {
           <div key={group} style={{ minWidth: 0 }}>
             <div className="ws-dim ws-small" style={{ letterSpacing: '0.06em', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</div>
             {attrs.map(attr => (
-              <div key={attr} className="ws-small" title={attr} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+              <div key={attr} className="ws-small" title={`${attr}: ${StatSystem.attributeWork(attr, player.attributes)}`} onMouseEnter={() => setTold(attr)} onMouseLeave={() => setTold(null)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                 <span className="ws-dim">{attr === 'intimidation' ? 'IMD' : attr.slice(0, 3).toUpperCase()}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span className="ws-bright">{player.attributes[attr] || 0}</span>
@@ -342,6 +345,9 @@ const WhoPanel: React.FC = () => {
           </div>
         ))}
       </div>
+      <div className="ws-dim ws-small" style={{ minHeight: '2.6em', marginBottom: 4 }}>
+        {told ? `${told.toUpperCase()}: ${StatSystem.attributeWork(told, player.attributes)}` : 'Point at an attribute to read what it does for you.'}
+      </div>
 
       <HandsPanel />
       <TheWorking />
@@ -351,7 +357,7 @@ const WhoPanel: React.FC = () => {
       {others.map(skill => (
         <div key={skill.id} className="ws-row ws-small" style={{ padding: '2px 0' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <RankMark rank={ProgressionSystem.getRankFromLevel(skill.level)} scale={1} />
+            <RankMark rank={ProgressionSystem.skillRankOf(skill)} scale={1} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WebSystem.nameOf(skill.id)}</span>
           </span>
           <span className="ws-dim" style={{ flexShrink: 0 }}>level {skill.level}</span>

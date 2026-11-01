@@ -7,7 +7,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { POINTS_PER_RANK_UP, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { POINTS_PER_LEVEL, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { StatSystem } from '../logic/systems/StatSystem';
+import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../logic/systems/CircleSystem';
 import { InventorySystem } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
@@ -18,7 +20,7 @@ import { useDropZone, wholeZone } from './ui/hands';
 import { hoverProps } from './ui/stores';
 import { Archetype } from '../render/atoms/people';
 import { inspectItem } from '../render/atoms/inspect';
-import { ArmedButton, Bar, Button, CardView, Chip, Input, ItemSprite, Kbd, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
+import { ArmedButton, Bar, Busy, Button, CardView, Chip, Input, ItemSprite, Kbd, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
 import { figure, weaponClass, armorClass } from '../render/atoms/people';
 import { useAppView } from './ui/stores';
 import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
@@ -56,12 +58,33 @@ const FormingFill: React.FC<{ fill: number }> = ({ fill }) => (
   </span>
 );
 
+/**
+ * A skill's circles, in threes. Filled and hollow are told apart by shape, and each
+ * group of three has a gap, so it reads in grayscale. There is always a next group: no top.
+ */
+const Circles: React.FC<{ filled: number }> = ({ filled }) => {
+  const slots = (Math.floor(filled / CIRCLES_FOR_A_GIFT) + 1) * CIRCLES_FOR_A_GIFT;
+  return (
+    <span role="img" aria-label={`${filled} circles`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+      {Array.from({ length: slots }, (_, i) => (
+        <span key={i} style={{
+          width: 7, height: 7, borderRadius: '50%', boxSizing: 'border-box',
+          border: '1px solid var(--ws-text-body)',
+          background: i < filled ? 'var(--ws-text-body)' : 'transparent',
+          marginLeft: i > 0 && i % CIRCLES_FOR_A_GIFT === 0 ? 4 : 0
+        }} />
+      ))}
+    </span>
+  );
+};
+
 export const HandsPanel: React.FC = () => {
-  const { player } = usePlayerStore();
+  const { player, fillCircle } = usePlayerStore();
+  const freeCircles = CircleSystem.free(player);
   const { web } = useHubStore();
   const sheet = useMemo(() => WebSystem.earnedSheet(player, WebBank.current(), web), [player, web]);
   return (
-    <Panel title="WHAT THE HANDS KNOW" right={<span className="ws-dim ws-small">{sheet.earned.length} held</span>}>
+    <Panel title="WHAT THE HANDS KNOW" right={<span className="ws-dim ws-small">{sheet.earned.length} held{freeCircles > 0 ? ` · ${freeCircles} to fill` : ''}</span>}>
       {sheet.earned.length === 0 && sheet.forming.length === 0 && (
         <div className="ws-dim ws-small">Nothing yet. Work a material with a tool, and rest.</div>
       )}
@@ -69,12 +92,24 @@ export const HandsPanel: React.FC = () => {
         {sheet.earned.map(row => (
           <div key={row.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
             <div className="ws-row" style={{ padding: 0 }}>
-              <span className="ws-bright">{row.name}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <RankMark rank={row.rank} scale={1} />
+                <span className="ws-bright">{row.name}</span>
+              </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="ws-dim ws-small">{row.rungName}</span>
+                <span className="ws-dim ws-small">LV {row.level} · {row.rungName}</span>
                 <RungNotches rung={row.rung} into={row.into} />
               </span>
             </div>
+            <div className="ws-row" style={{ padding: '2px 0' }}>
+              <Circles filled={row.circles} />
+              {freeCircles > 0 && (
+                <Button tone="signal" aria-label={`Fill a circle in ${row.name}`} style={{ padding: '0 4px' }} onClick={() => fillCircle(row.id)}>+</Button>
+              )}
+            </div>
+            {CircleSystem.giftsOf(player, row.id).map(g => (
+              <div key={g.id} className="ws-small" title={g.blurb}>{CircleSystem.say(g)}</div>
+            ))}
             {row.flavor && <div className="ws-dim ws-small">{row.flavor}</div>}
             {row.verbs.length > 0 && <div className="ws-small">can {row.verbs.join(', ')}</div>}
             {row.opens.length > 0 && <div className="ws-small">opens {row.opens.join(', ')}</div>}
@@ -116,9 +151,8 @@ const AgentTab: React.FC = () => {
   const { player, spendAttributePoint, toggleCarry, currentWeight, maxWeight, recalcWeight } = usePlayerStore();
   useEffect(() => { recalcWeight(); }, [recalcWeight]);
 
-  const rankXp = player.rankXp ?? 0;
-  const rank = ProgressionSystem.rankFromXp(rankXp);
-  const next = ProgressionSystem.xpToNextRank(rankXp);
+  const rank = ProgressionSystem.rankOf(player);
+  const progress = ProgressionSystem.levelProgress(player);
   const points = player.attributePoints ?? 0;
   const stash = player.bank.stashTabs[0]?.items || [];
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
@@ -199,11 +233,9 @@ const AgentTab: React.FC = () => {
           <span className="ws-bright">RANK {rank}</span>
           {points > 0 && <Chip tone="signal">{points} POINT{points === 1 ? '' : 'S'} TO SPEND</Chip>}
         </div>
-        {next
-          ? <Bar label="RANK" value={rankXp - next.floor} max={(rankXp - next.floor) + next.needed} tone="signal" text={`${next.needed.toLocaleString()} XP to ${next.next}`} />
-          : <div className="ws-dim ws-small">The track ends here. The world believes in you completely.</div>}
+        <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Kills feed the rank. Each rank grants {POINTS_PER_RANK_UP} attribute points.
+          Fights, chests and what you gather feed the level, more for what is riskier. Each level grants {POINTS_PER_LEVEL} attribute point and a circle. The guild sets the rank; the level begins again there, and what you built stays.
         </div>
       </Panel>
       <HandsPanel />
@@ -216,7 +248,7 @@ const AgentTab: React.FC = () => {
               const base = player.baseAttributes[attr] || 0;
               const diff = val - base;
               return (
-                <div key={attr} className="ws-row" style={{ padding: '2px 0' }}>
+                <div key={attr} className="ws-row" title={StatSystem.attributeWork(attr, player.attributes)} style={{ padding: '2px 0' }}>
                   <span style={{ textTransform: 'capitalize' }}>{attr}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {diff !== 0 && <span className={diff > 0 ? 'ws-signal ws-small' : 'ws-loss ws-small'}>{diff > 0 ? '+' : ''}{diff}</span>}
@@ -277,8 +309,8 @@ const SkillsTab: React.FC = () => {
       {filtered.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 10 }}>No matching engrams. Skills are born from actions, not menus.</div>}
       <div className="ws-list">
         {filtered.map(([key, skill]) => {
-          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level);
-          const rank = ProgressionSystem.getRankFromLevel(skill.level);
+          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level, ProgressionSystem.skillRarity(skill));
+          const rank = ProgressionSystem.skillRankOf(skill);
           return (
             <div key={key} className="ws-row">
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
@@ -426,10 +458,10 @@ export const StashTab: React.FC = () => {
               <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'space-between' }}>
                 <ArmedButton
                   tone="proof"
-                  confirmLabel={`SELL FOR ${Math.max(1, Math.floor((selected.value || 1) * 0.6))}G: SURE?`}
+                  confirmLabel={`SELL FOR ${StatSystem.vendorOffer(selected.value, player.attributes)}G: SURE?`}
                   onConfirm={() => { void sellToVendor(selected.id); setSelectedId(null); }}
                 >
-                  SELL {Math.max(1, Math.floor((selected.value || 1) * 0.6))}G
+                  SELL {StatSystem.vendorOffer(selected.value, player.attributes)}G
                 </ArmedButton>
                 <ArmedButton
                   tone="loss"
@@ -501,7 +533,7 @@ const LedgerTab: React.FC = () => {
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
         Append-only, signed, each row chained to the last. This is what the game is actually made of.
       </div>
-      {rows === null && <div className="ws-dim ws-small">Reading the chain…</div>}
+      {rows === null && <Busy label="READING THE CHAIN" quietForMs={250} />}
       {rows !== null && rows.length === 0 && <div className="ws-dim ws-small">No rows yet. Everything you do from here on becomes one.</div>}
       <div className="ws-list">
         {rows?.map(signed => {

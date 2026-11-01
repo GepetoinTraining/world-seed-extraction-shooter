@@ -44,7 +44,7 @@ export class ContentRegistry {
   /** The law alone: nothing changes. What a mint's preview asks. */
   static judge(body: IThemeBody): IThemeVerdict {
     if (installed.has(themeIdOf(body))) return { ok: true };
-    const verdict = ThemeLaw.validate(bodyOf(body), tag => this.registered(tag));
+    const verdict = ThemeLaw.validate(bodyOf(body), tag => this.registered(tag), (body as Partial<IThemePack>).formula);
     if (!verdict.ok) return verdict;
     // The web's own law sits behind the theme's: the tag law, on what it adds
     const compiled = compileTheme({ ...bodyOf(body), themeId: themeIdOf(body), formula: 1, model: 'judging', writtenAt: 0 });
@@ -72,6 +72,7 @@ export class ContentRegistry {
     CRAFTED_GEAR_BASES.push(...compiled.craftedGear);
     Object.assign(GEAR_RECIPES, compiled.gearRecipes);
     for (const def of Object.values(compiled.resources)) {
+      if (def.rareFind) continue;
       for (const biome of def.habitat ?? []) (BIOME_RESOURCES[biome] ??= []).push(def.id);
     }
     AFFIX_BATCHES.push(...compiled.affixBatches);
@@ -101,6 +102,12 @@ export class ContentRegistry {
 
   static list(): IThemePack[] {
     return [...installed.values()].map(i => i.pack);
+  }
+
+  /** What the mint offers. An older printing of the current theme stays installed for the worlds pinned to it, and is not offered. */
+  static offered(): IThemePack[] {
+    const current = this.get(firstThemeId);
+    return this.list().filter(p => !current || p.themeId === current.themeId || p.name !== current.name);
   }
 
   /** The theme a world with no talk behind it pins: the first the hub holds. */

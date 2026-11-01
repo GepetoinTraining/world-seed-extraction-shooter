@@ -122,6 +122,35 @@
 .ws-bar__ticks { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(20% - 1px), var(--ws-void-0) calc(20% - 1px) 20%); }
 .ws-bar__value { font-size: var(--ws-font-small); color: var(--ws-text-body); min-width: 64px; text-align: right; }
 
+/* --- THE WAITS (line 124): a block for what has no known end, a fill for what does. --- */
+.ws-busy__block { position: absolute; top: 1px; bottom: 1px; }
+.ws-busy__block--signal { background: var(--ws-signal-2); }
+.ws-busy__block--proof { background: var(--ws-proof-2); }
+.ws-busy__block--loss { background: var(--ws-loss-2); }
+
+.ws-wait-strip { display: flex; flex-direction: column; gap: 4px; width: 400px; max-width: 80vw; pointer-events: none; }
+.ws-wait-strip__row { background: var(--ws-void-0); border: 1px solid var(--ws-void-4); padding: 4px 8px; }
+.ws-wait-strip > .ws-bar { background: var(--ws-void-0); border: 1px solid var(--ws-void-4); padding: 4px 8px; }
+.ws-wait-strip .ws-bar__label { white-space: nowrap; }
+
+/* A compact bar sits inside a chip: the track keeps its size and the words do not wrap. */
+.ws-chip .ws-bar { gap: 6px; }
+.ws-chip .ws-bar__track { flex: 0 0 56px; }
+.ws-chip .ws-bar__label { min-width: 0; white-space: nowrap; }
+.ws-chip .ws-bar__value { min-width: 0; }
+
+/* The gate's whole cycle. Open is solid, down is empty, booting is hatched: grain and seam, not hue. */
+.ws-ribbon { position: relative; display: flex; height: 10px; border: 1px solid var(--ws-void-4); background: var(--ws-void-0); margin: 6px 0 2px; }
+.ws-ribbon__band { flex-basis: 0; min-width: 0; border-right: 1px solid var(--ws-void-4); }
+.ws-ribbon__band:last-of-type { border-right: none; }
+.ws-ribbon__band--UP { background: var(--ws-text-dim); }
+.ws-ribbon__band--OFF { background: var(--ws-void-0); }
+.ws-ribbon__band--SCAN { background: repeating-linear-gradient(90deg, var(--ws-text-dim) 0 2px, var(--ws-void-0) 2px 4px); }
+.ws-ribbon__at { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ws-text-bright); }
+
+/* The hand is busy: a hatch over the cell that drains in steps. */
+.ws-cool { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(3, 3, 3, 0.8) 0 2px, transparent 2px 4px); }
+
 /* --- LIST / ROWS --- */
 .ws-list { display: flex; flex-direction: column; }
 .ws-row {
@@ -226,4 +255,6 @@
 @media (prefers-reduced-motion: no-preference) {
   .ws-feed__line { animation: ws-feed-in 120ms steps(2, end); }
   @keyframes ws-feed-in { from { transform: translateY(4px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+  .ws-cool { animation: ws-cool-down var(--ws-cool-ms, 1s) steps(5, end) forwards; }
+  @keyframes ws-cool-down { from { height: 100%; } to { height: 0; } }
 }

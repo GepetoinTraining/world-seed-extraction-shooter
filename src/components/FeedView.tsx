@@ -7,7 +7,7 @@ import React, { useEffect } from 'react';
 import { FEED_LINE_MS, useFeed, useSheet } from './ui/stores';
 
 // With the character sheet open, the feed speaks from above it rather than over it.
-const ABOVE_THE_SHEET = 402;
+export const ABOVE_THE_SHEET = 402;
 
 export const FeedView: React.FC = () => {
   const { lines, sweep } = useFeed();

@@ -17,6 +17,10 @@ const NOISE_SCALE = 20;
 /** R4: nothing lands without a wind-up you can see. Guesses until Wave 12. */
 const STRIKE_WINDUP_MS = 450;
 const ATTACK_COOLDOWN_MS = 2000;
+/** How a body heading for a fixed point turns when the ground refuses its line: its own side first, then the other. */
+/** How long it keeps at a line that gets it no nearer before it stands where it is. A guess until Wave 12. */
+const NO_PROGRESS_MS = 4000;
+const TURNS_ASIDE = [Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, -Math.PI / 4, -Math.PI / 2, -3 * Math.PI / 4];
 
 // ==========================================
 // 1. ENUMS (Standard)
@@ -100,6 +104,8 @@ export type MobFacing = 'down' | 'up' | 'left' | 'right';
 export class MobAI {
 
   // Internal memory (Ephemeral state)
+  /** Which opening of a world the memory below belongs to: bodies are built again, and they keep ids. */
+  private static memoryOf?: number;
   private static mobMemory: Record<string, {
     lastAttackTime: number;
     state: MobState;
@@ -107,6 +113,11 @@ export class MobAI {
     facing: MobFacing;
     moving: boolean;
     provoked: boolean;
+    /** N6: where it last knew you to be: where the last hit came from, or where it last saw you. */
+    felt?: { x: number; y: number; safeAtPx: number; bestPx?: number; bestAt: number };
+    feltNew?: boolean;
+    /** Which way it turns past what refuses it. It keeps to one side, or it dithers at a wall. */
+    aside?: 1 | -1;
     /** What it has started and not yet finished: seen, and dodged, before it lands. */
     windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean };
     readyAt: Record<string, number>;
@@ -131,11 +142,15 @@ export class MobAI {
     return this.mobMemory[entityId]?.state === MobState.ACTIVE;
   }
 
-  /** Being hit wakes what would otherwise ignore you: the neutral turn, the passive flee. */
+  /**
+   * N6: a hit is always felt, from any distance. It wakes what would otherwise ignore
+   * you, it stays awake, and it answers by its own behaviour. How it answers can evolve;
+   * whether it notices cannot.
+   */
   static provoke(entityId: string) {
     const mem = this.mobMemory[entityId];
-    if (mem) { mem.provoked = true; if (mem.state === MobState.DORMANT) mem.state = MobState.ACTIVE; }
-    else this.mobMemory[entityId] = { lastAttackTime: 0, state: MobState.ACTIVE, objective: MobObjective.KILL_PLAYER, facing: 'down', moving: false, provoked: true, readyAt: {}, casts: 0 };
+    if (mem) { mem.provoked = true; mem.feltNew = true; if (mem.state === MobState.DORMANT) mem.state = MobState.ACTIVE; }
+    else this.mobMemory[entityId] = { lastAttackTime: 0, state: MobState.ACTIVE, objective: MobObjective.KILL_PLAYER, facing: 'down', moving: false, provoked: true, feltNew: true, readyAt: {}, casts: 0 };
   }
 
   /**
@@ -163,6 +178,10 @@ export class MobAI {
     const updatedChunks: Record<string, IChunk> = {};
     const spawnedPatterns: any[] = [];
     const now = Date.now();
+    if (map && map.generatedAt !== this.memoryOf) {
+      this.memoryOf = map.generatedAt;
+      this.mobMemory = {};
+    }
     // Quieter gear shortens how far a thing notices you; loud gear lengthens it.
     // D71: and the dark lets it notice you from further away.
     const heard = NOISE_SCALE / Math.max(1, NOISE_SCALE + (senses.noiseReduction ?? 0)) * WorldClock.noticeFactor(senses.light ?? 1);
@@ -200,21 +219,28 @@ export class MobAI {
 
         // 2. Activation by the definition's own senses. Neutral things stir only
         // when touched or provoked; passive things only when provoked.
+        const sightTiles = (def?.viewRange ?? 8) * heard;
         const aggroTiles =
           // R4: neutral is neutral. Standing near it provokes nothing; only harm does.
           behavior === MobBehavior.NEUTRAL ? 0 :
           behavior === MobBehavior.PASSIVE ? 0 :
-          Math.min(def?.viewRange ?? 8, 16) * heard;
+          sightTiles;
+        // A floor, not a ceiling: it grows with sight, so it never cuts sight short.
         const leashTiles = Math.max(16, aggroTiles * 2);
+        const seen = dist < sightTiles * PX;
+        // N6: a hit comes from where the person stands now, and that stays once they leave.
+        if (mem.feltNew || (mem.provoked && seen)) {
+          mem.feltNew = false;
+          mem.felt = { x: playerPos.x, y: playerPos.y, safeAtPx: dist + sightTiles * PX, bestAt: now };
+        }
         if (mem.state === MobState.DORMANT) {
           if ((aggroTiles > 0 && dist < aggroTiles * PX) || mem.provoked) {
             mem.state = MobState.ACTIVE;
             // R4: waking is not striking. The first blow waits its turn like every other.
             mem.lastAttackTime = now - ATTACK_COOLDOWN_MS + STRIKE_WINDUP_MS;
           }
-        } else if (dist > leashTiles * PX) {
+        } else if (!mem.provoked && dist > leashTiles * PX) {
           mem.state = MobState.DORMANT;
-          mem.provoked = false;
           mem.moving = false;
         }
 
@@ -222,10 +248,15 @@ export class MobAI {
         if (mem.state === MobState.ACTIVE) {
           chunkWasModified = true;
 
+          // What it answers: you, while it can see you; past that, where it last knew you to be.
+          const unseen = mem.provoked && !seen;
+          const threat = unseen ? { x: mem.felt!.x, y: mem.felt!.y } : playerPos;
+          const toThreat = { x: threat.x - entity.position.x, y: threat.y - entity.position.y };
+
           const ctx: ICombatContext = {
             distanceToPlayer: dist,
             mobHpPercent: (entity.health || 100) / 100,
-            playerPos: { x: playerPos.x, y: playerPos.y },
+            playerPos: { x: threat.x, y: threat.y },
             playerNoiseLevel: 50,
             lightLevelAtMob: 1.0,
             isInTerritory: true,
@@ -240,11 +271,12 @@ export class MobAI {
           const moveSpeed = (def?.speed ?? 2.0) * PX * deltaTime * StatusClock.paceScale(running) * (mem.windup ? 0 : 1);
           let moveX = 0;
           let moveY = 0;
-          const angle = Math.atan2(dy, dx);
+          const angle = Math.atan2(toThreat.y, toThreat.x);
+          const approachTo = decision.targetPos ?? (unseen ? threat : undefined);
 
-          if (decision.action === BehaviorPrimitive.APPROACH && decision.targetPos) {
-            const tx = decision.targetPos.x - entity.position.x;
-            const ty = decision.targetPos.y - entity.position.y;
+          if (decision.action === BehaviorPrimitive.APPROACH && approachTo) {
+            const tx = approachTo.x - entity.position.x;
+            const ty = approachTo.y - entity.position.y;
             const reach = Math.hypot(tx, ty);
             if (reach > 2) {
               moveX = (tx / reach) * Math.min(moveSpeed, reach);
@@ -253,7 +285,7 @@ export class MobAI {
           } else if (decision.action === BehaviorPrimitive.APPROACH) {
             moveX = Math.cos(angle) * moveSpeed;
             moveY = Math.sin(angle) * moveSpeed;
-          } else if (decision.action === BehaviorPrimitive.FLEE) {
+          } else if (decision.action === BehaviorPrimitive.FLEE && !(unseen && Math.hypot(toThreat.x, toThreat.y) >= mem.felt!.safeAtPx)) {
             moveX = -Math.cos(angle) * moveSpeed;
             moveY = -Math.sin(angle) * moveSpeed;
           }
@@ -312,10 +344,31 @@ export class MobAI {
             }
           }
 
+          // N6: nothing here can see a way round a lake. It tries, then it stands, awake.
+          if (unseen && (moveX !== 0 || moveY !== 0)) {
+            const gain = (decision.action === BehaviorPrimitive.FLEE ? 1 : -1) * Math.hypot(toThreat.x, toThreat.y);
+            if (mem.felt!.bestPx === undefined || gain > mem.felt!.bestPx + 1) { mem.felt!.bestPx = gain; mem.felt!.bestAt = now; }
+            if (now - mem.felt!.bestAt > NO_PROGRESS_MS) { moveX = 0; moveY = 0; }
+          }
+
           // The ground has a say: water, rock and trunks refuse the step, mud slows it
           let next = { x: entity.position.x + moveX, z: entity.position.y + moveY };
           if (map && (moveX !== 0 || moveY !== 0)) {
             next = WorldGenerator.resolveMove(map, entity.position.x, entity.position.y, moveX, moveY);
+            // A person moves, so a chase's line shifts past a trunk. A fixed point's does not.
+            const asked = Math.hypot(moveX, moveY);
+            if (unseen && Math.hypot(next.x - entity.position.x, next.z - entity.position.y) < asked / 2) {
+              const side = mem.aside ?? 1;
+              for (const turn of TURNS_ASIDE) {
+                const cos = Math.cos(turn * side), sin = Math.sin(turn * side);
+                const aside = WorldGenerator.resolveMove(map, entity.position.x, entity.position.y, moveX * cos - moveY * sin, moveX * sin + moveY * cos);
+                if (Math.hypot(aside.x - entity.position.x, aside.z - entity.position.y) >= asked / 2) {
+                  next = aside;
+                  mem.aside = turn < 0 ? (side === 1 ? -1 : 1) : side;
+                  break;
+                }
+              }
+            }
           }
           const movedX = next.x - entity.position.x;
           const movedY = next.z - entity.position.y;
@@ -325,6 +378,9 @@ export class MobAI {
           } else if (dist < 12 * PX) {
             // Standing its ground, it still watches you
             mem.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+          } else if (unseen && Math.hypot(toThreat.x, toThreat.y) > 2) {
+            // It cannot see you, and it looks where the hit came from
+            mem.facing = Math.abs(toThreat.x) > Math.abs(toThreat.y) ? (toThreat.x > 0 ? 'right' : 'left') : (toThreat.y > 0 ? 'down' : 'up');
           }
 
           // Return Updated Entity (Strictly 2D update)

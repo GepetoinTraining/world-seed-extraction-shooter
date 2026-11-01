@@ -372,6 +372,14 @@ function castInk(id: string): Ink {
       k.rect(cx + 15, 0, cx + 17, 47).rect(cx + 18, 1, cx + 25, 22).rect(cx + 20, 18, cx + 23, 22, 0);
       face();
       break;
+    case 'npc_land_manager':
+      // A wide-brimmed surveyor, with a rolled plan held across the body.
+      legs();
+      k.rect(cx - 9, 19, cx + 9, 35);
+      k.rect(cx - 6, 0, cx + 6, 3).rect(cx - 13, 4, cx + 13, 6);
+      face(11, 5);
+      k.line(cx - 15, 40, cx + 19, 15, 3);
+      break;
     case 'npc_auctioneer':
       legs();
       k.rect(cx - 6, 20, cx + 6, 35);
@@ -415,6 +423,7 @@ export function castPortrait(id: string): Sprite {
     case 'npc_weapon_vendor': k.rect(2, 34, 45, 47); break;
     case 'npc_armor_vendor': k.rect(4, 32, 16, 47); break;
     case 'npc_guild_master': k.rect(40, 0, 42, 47).rect(30, 1, 39, 14); break;
+    case 'npc_land_manager': k.rect(14, 0, 33, 4).rect(4, 5, 43, 8); k.line(2, 44, 16, 34, 2); break;
     case 'npc_auctioneer': k.rect(12, 0, 35, 6).rect(6, 6, 41, 8); break;
     case 'npc_alchemist': k.rect(36, 24, 40, 30); flare(k, 38, 30, 2, 44, 8); break;
     case 'npc_bartender': k.rect(14, 28, 33, 30); break;

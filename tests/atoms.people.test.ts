@@ -222,7 +222,7 @@ describe('the cast', () => {
 describe('the hub', () => {
   const layout = HubGenerator.generate();
   const pois = layout.zones.flatMap(z => z.pois);
-  const BUILDINGS = [POIType.BANK, POIType.GUILD_HALL, POIType.AUCTION_HOUSE, POIType.VENDOR_WEAPONS, POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES, POIType.TAVERN, POIType.IDENTIFIER];
+  const BUILDINGS = [POIType.BANK, POIType.GUILD_HALL, POIType.AUCTION_HOUSE, POIType.VENDOR_WEAPONS, POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES, POIType.TAVERN, POIType.IDENTIFIER, POIType.LAND_OFFICE];
   const buildings = pois.filter(p => BUILDINGS.includes(p.type));
   const ground = hubGround(layout);
   const W = ground.w;
@@ -272,7 +272,7 @@ describe('the hub', () => {
   });
 
   it('gives every building a door you can walk to and interact from', () => {
-    const start = { x: 25, y: 29 };
+    const start = layout.spawnPoint;
     const seen = new Set([`${start.x},${start.y}`]);
     const queue = [start];
     while (queue.length) {

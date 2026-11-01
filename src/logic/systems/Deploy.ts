@@ -10,8 +10,18 @@ import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { RestDoor } from './RestDoor';
 import { RestSystem } from './RestSystem';
+import { useWaits, whileWaiting } from '../../components/ui/stores';
 
+/** The one wait for opening a world, whichever door it came through. */
+export const OPENING_WORLD = 'opening_world';
+
+/** Press it twice and nothing more happens: the first is still opening. */
 export async function deployToWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
+  if (useWaits.getState().waits.some(w => w.id === OPENING_WORLD)) return { ok: false };
+  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId));
+}
+
+async function enterWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
   const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
   if (card.retired) return { ok: false, reason: 'Made of what no longer exists. Its record stands, but it can no longer be walked.' };

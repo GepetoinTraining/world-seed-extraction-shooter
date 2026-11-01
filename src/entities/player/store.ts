@@ -4,7 +4,7 @@ import {
   EquipSlotId, HeadPositionId, HEAD_BUDGET_POSITIONS, IEquipmentState, ItemType as IT
 } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
-import { POINTS_PER_RANK_UP, ProgressionSystem } from './systems/ProgressionSystem';
+import { ProgressionSystem, THREAT_RADIUS_TILES, XP_SHARE_CHEST, XP_SHARE_HARVEST } from './systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
@@ -21,13 +21,14 @@ import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { RestSystem } from '../../logic/systems/RestSystem';
+import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
-import { useFeed } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
+import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
@@ -75,8 +76,11 @@ interface PlayerState {
   // already hold this identity's character, so a returning player is never
   // reset (handleLogin used to rebuild everyone as an Operator).
   ensureCharacter: (certificate: IPlayerCertificate, archetypeId: string) => void;
-  // Wave 9.5: kills feed the universal rank
-  applyKillXp: (amount: number) => { rankedUp: boolean; from: UniversalRank; to: UniversalRank; pointsGranted: number };
+  // D83: a fight feeds the level; the guild grants the rank
+  applyKillXp: (amount: number) => { leveledUp: boolean; from: number; to: number; pointsGranted: number };
+  grantRank: (to?: UniversalRank) => { granted: boolean; from: UniversalRank; to: UniversalRank };
+  /** A level poured into a skill. The third one earns something at the next rest. */
+  fillCircle: (skillId: string) => boolean;
   spendAttributePoint: (attribute: keyof IAttributes) => boolean;
   setView: (view: 'BANK' | 'SESSION') => void;
   diveIntoLayer: (layerId?: string) => void;
@@ -231,6 +235,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         },
         rankXp: 0,
         attributePoints: 0,
+        rank: UniversalRank.F,
+        levelXp: 0,
+        levelsBanked: 0,
         materialMastery: {},
         floatMemory: [null, null, null]
       }
@@ -242,23 +249,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().initializeSession(certificate, archetypeId);
   },
 
-  // --- RANK (Wave 9.5): kills count, and a rank-up gives something real ---
+  // --- LEVELS AND RANK (D83): a fight counts, and a level gives something real ---
 
   applyKillXp: (amount) => {
-    const before = get().player.rankXp ?? 0;
-    const from = ProgressionSystem.rankFromXp(before);
-    const after = before + Math.max(0, amount);
-    const to = ProgressionSystem.rankFromXp(after);
-    const ranks = ProgressionSystem.rankIndex(to) - ProgressionSystem.rankIndex(from);
-    const pointsGranted = ranks > 0 ? ranks * POINTS_PER_RANK_UP : 0;
-    set(state => ({
-      player: {
-        ...state.player,
-        rankXp: after,
-        attributePoints: (state.player.attributePoints ?? 0) + pointsGranted
-      }
-    }));
-    return { rankedUp: ranks > 0, from, to, pointsGranted };
+    const { player, from, to, points } = ProgressionSystem.gainXp(get().player, amount);
+    set({ player });
+    return { leveledUp: to > from, from, to, pointsGranted: points };
+  },
+
+  grantRank: (to) => {
+    const { player, granted, from, to: landed } = ProgressionSystem.grantRank(get().player, to);
+    set({ player });
+    return { granted, from, to: landed };
+  },
+
+  fillCircle: (skillId) => {
+    const res = CircleSystem.fill(get().player, skillId);
+    if (!res.ok) { feed(res.reason!, 'loss'); return false; }
+    set({ player: res.player });
+    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at your next rest.`, 'proof');
+    return true;
   },
 
   spendAttributePoint: (attribute) => {
@@ -345,7 +355,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const mirror = [worn[0] ?? null, worn[1] ?? null, worn[2] ?? null] as [ICognitiveFrame | null, ICognitiveFrame | null, ICognitiveFrame | null];
 
       return {
-        player: { ...state.player, attributes: newAttributes, floatMemory: mirror }
+        player: CircleSystem.withPassives({ ...state.player, attributes: newAttributes, floatMemory: mirror })
       };
     });
   },
@@ -698,7 +708,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set(s => {
       const eq = s.player.equipment ?? LoadoutSystem.emptyEquipment();
       const kept = (eq.protected ?? []).filter(p => p.slot !== slot);
-      return { player: { ...s.player, equipment: { ...eq, protected: [...kept, until ? { slot, by, until } : { slot, by }] } } };
+      return { player: { ...s.player, equipment: { ...eq, protected: [...kept, until ? { slot, by, until, startedAt: Date.now() } : { slot, by }] } } };
     });
     feed(until
       ? `${slot} stands under ${by} until the clock says otherwise.`
@@ -769,7 +779,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     // D50: a sitting costs the day's energy, and what it found is known only after a rest.
     const { cost } = StudySystem.identifyAsk(player, item);
-    const today = player.energyToday ?? StatSystem.maxEnergy(player.attributes, player.equipment);
+    const today = player.energyToday ?? StatSystem.maxEnergyOf(player);
     if (today < cost) {
       const v = { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(today)}. Rest first.` };
       feed(v.reason, 'loss');
@@ -1000,7 +1010,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         }
       };
     });
-    SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, health });
+    const refill = item.stats?.energy_restore || 0;
+    if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
+    SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, refill, health });
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
     feed(`${item.name}, straight from the belt: ${restore >= 0 ? '+' : ''}${restore} health. The pack never opened.`, restore >= 0 ? 'signal' : 'loss');
     return { ok: true };
@@ -1077,7 +1089,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (isTheft && security && security.lockLevel > 0) {
       const seconds = CartSystem.towBreakSeconds(security.lockLevel);
       feed(`${entity.cart.ownerName}'s cart stands ${security.by}: ${security.lockLevel} lock${security.lockLevel === 1 ? '' : 's'}. Breaking them takes ${seconds}s.`, 'loss');
+      const waitId = `locks_${entityId}`;
+      const startedAt = Date.now();
+      useWaits.getState().begin({ id: waitId, label: 'BREAKING THE LOCKS', startedAt, until: startedAt + seconds * 1000 });
       await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+      useWaits.getState().end(waitId);
       const still = Object.values(useWorldStore.getState().currentMap?.chunks || {})
         .flatMap(c => c.entities).find(e => e.id === entityId);
       if (!still?.cart || still.cart.towedBy) return { ok: false, reason: 'The cart is gone, or another hand beat you to the bar.' };
@@ -1235,7 +1251,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           health: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
           maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
           // D51: a drop refills nothing. What is left of the day comes along.
-          energy: state.player.energyToday ?? StatSystem.maxEnergy(state.player.attributes, state.player.equipment),
+          energy: state.player.energyToday ?? StatSystem.maxEnergyOf(state.player),
           position: { x: 1500, y: 0, z: 1500 },
           statusEffects: []
         }
@@ -1617,8 +1633,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       } }
     }) : s);
     get().recalcWeight();
-    SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, health });
-    feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
+    // Pedro: a very rare potion or plant can refill the day's energy, as a rest does
+    const refill = item.stats?.energy_restore || 0;
+    if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
+    SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, refill, health });
+    if (refill > 0 && restore === 0) feed(`${item.name}: +${refill} energy.`, 'proof');
+    else feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
   },
 
   /** Mark a stash item to go along on the next session. */
@@ -1705,6 +1725,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         player: { ...state.player, currentSession: { ...state.player.currentSession, energy: state.player.currentSession.energy - cost } }
       }) : state);
       return true;
+    };
+
+    // Pedro: experience pays in the world, once, at the taking, by the risk of what still stands near it.
+    // A chest's rarity is its chunk's: richer loot, and no more danger, so it pays by rank alone.
+    const payForRisk = (target: { rank: UniversalRank; rarity?: Rarity }, share: number): number => {
+      const at = entity!.position;
+      const threats = Object.values(world.currentMap?.chunks ?? {}).flatMap(c => c.entities)
+        .filter(e => e.type === EntityType.MOB && e.isHostile && (e.health ?? 0) > 0 && Math.hypot(e.position.x - at.x, e.position.y - at.y) <= THREAT_RADIUS_TILES * 20);
+      const xp = ProgressionSystem.worldXp(target, share, threats);
+      const res = get().applyKillXp(xp);
+      SessionJournal.record('INTERACT', { kind: 'WORLD_XP', targetId: entity!.id, xp, threats: threats.length });
+      if (res.leveledUp) feed(ProgressionSystem.levelUpLine(res.to, res.pointsGranted), 'proof');
+      return xp;
     };
 
     // Wave 3: everything enters through the caps; overflow lands at your feet
@@ -1810,7 +1843,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Layer 4: what is gathered gives up its element, from its own world's elements
       const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
-      feed(`Harvested ${quantity}× ${def.name}.`, 'proof');
+      feed(`Harvested ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
     }
@@ -1868,9 +1901,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       addToInventory(loot);
       world.updateEntity(entity.id, { container: { ...entity.container, looted: true } });
+      world.reportChestLooted(entity.id);
       SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id) });
       get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });
-      feed(`Chest opened: ${loot.length} item${loot.length === 1 ? '' : 's'}${entity.container.hasLore ? ', one of them a fragment' : ''}.`, 'proof');
+      feed(`Chest opened: ${loot.length} item${loot.length === 1 ? '' : 's'}${entity.container.hasLore ? ', one of them a fragment' : ''}. +${payForRisk({ rank: entity.container.lootRank }, XP_SHARE_CHEST)} XP`, 'proof');
       return;
     }
 
@@ -1884,10 +1918,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const attempt = entity.npc.attempts + 1;
       const rollKey = SessionJournal.rollKey('social', `${entity.id}:${attempt}`);
       const roll = Rng.fromKey(rollKey).next();
-      const charisma = get().player.attributes.charisma || 1;
-      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up
-      const threshold = entity.npc.want === 'RESPECT' ? 0.35 : 0.5;
-      const success = roll < threshold + charisma * 0.05;
+      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up, and fear counts with them
+      const success = roll < StatSystem.talkOdds(entity.npc.want, get().player.attributes);
       const delta = success ? 15 : 5;
       const disposition = Math.min(100, entity.npc.disposition + delta);
 
@@ -1922,7 +1954,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     if (interactionId.startsWith('int_recruit_')) {
-      if (!entity.npc || entity.npc.disposition < 70) return;
+      if (!entity.npc || entity.npc.disposition < StatSystem.recruitDisposition(get().player.attributes)) return;
       if (!spendEnergy(5)) return;
 
       // The NPC becomes an extractable asset: a signed-for escort contract item.
@@ -1987,10 +2019,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       const skill = { ...skills[skillId] };
-      skill.currentXp += amount;
+      // D84: the road is long; knowing how to learn is what shortens it
+      skill.currentXp += Math.round(amount * StatSystem.learnRate(player.attributes));
       
-      while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level)) {
-        skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level);
+      while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level, ProgressionSystem.skillRarity(skill))) {
+        skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level, ProgressionSystem.skillRarity(skill));
         skill.level++;
       }
 
@@ -2012,7 +2045,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set(s => {
         const skill = s.player.bank.universalSkills[pair.id];
         if ((skill.rank ?? 0) >= rank) return s;
-        return { player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [pair.id]: { ...skill, rank } } } } };
+        return { player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [pair.id]: { ...skill, bornRank: ProgressionSystem.skillRarity(skill), rank } } } } };
       });
       return;
     }

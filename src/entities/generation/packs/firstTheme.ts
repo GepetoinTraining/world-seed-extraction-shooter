@@ -3,6 +3,10 @@
  * a world to walk (D56). It is ordinary data, written by a dev-time run on Claude
  * Opus 5.5 under the same law every other theme stands before (D20, D53). No code
  * reads it by name, and a shipped game with more themes reads them all alike.
+ *
+ * Its animals (D63) were written afterwards, by hand and as data, in the voice of the
+ * rest, with no model running. Adding them moved its bytes and its id on purpose: a world
+ * pinned to the older bytes stays pinned to the banked pack.
  */
 
 import { IThemeBody } from '../../../logic/theme/ThemeTypes';
@@ -22,7 +26,8 @@ export const FIRST_THEME: IThemeBody = {
   tags: [
     { tag: 'debt', kind: 'element', meaning: 'What is owed, made to weigh on a body.' },
     { tag: 'interest', kind: 'element', meaning: 'What grows on its own while nobody looks.' },
-    { tag: 'seal', kind: 'element', meaning: 'What has been signed and can no longer be argued with.' }
+    { tag: 'seal', kind: 'element', meaning: 'What has been signed and can no longer be argued with.' },
+    { tag: 'livestock', kind: 'descriptive', meaning: 'An animal people keep, or once did.' }
   ],
   abilities: [
     { key: 'small_print', name: 'Small Print', blurb: 'A line too fine to dodge, flung at whoever is reading.', elements: ['debt'], delivery: 'ranged', effect: 'damage', cost: 'low' },
@@ -34,17 +39,24 @@ export const FIRST_THEME: IThemeBody = {
     { key: 'grace_period', name: 'Grace Period', blurb: 'The body is told it may pay later, and believes it.', elements: ['interest'], delivery: 'self', effect: 'heal', cost: 'low' }
   ],
   creatures: [
-    { key: 'tally_rat', name: 'Tally Rat', blurb: 'Counts everything it eats. Always comes up short.', tags: ['biological', 'grunt'], rank: 'F', size: 'TINY', behavior: 'SWARM', build: 'frail', threat: 'meek', pace: 'swift', habitat: ALL, innate: [] },
-    { key: 'lien_moth', name: 'Lien Moth', blurb: 'Lands on what is owed. Ignores you, for now.', tags: ['biological', 'flying', 'grunt'], rank: 'F', size: 'TINY', behavior: 'PASSIVE', build: 'frail', threat: 'meek', pace: 'steady', habitat: ['OVERGROWTH', 'WASTELAND'], innate: [] },
-    { key: 'dun_hound', name: 'Dun Hound', blurb: 'Bred to follow a debtor home. Very good at the first half.', tags: ['beast', 'grunt'], rank: 'E', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'sturdy', threat: 'meek', pace: 'swift', habitat: ['WASTELAND', 'OVERGROWTH', 'RUINS'], innate: ['compounding_bite'] },
-    { key: 'teller', name: 'Teller Still On Shift', blurb: 'Asks for two forms of identification, with a cudgel.', tags: ['humanoid', 'grunt'], rank: 'E', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'frail', threat: 'sharp', pace: 'steady', habitat: ['RUINS', 'CYBER_CITY'], innate: [] },
-    { key: 'receiver', name: 'Receiver', blurb: 'Here for the assets. You are listed among them.', tags: ['humanoid', 'grunt'], rank: 'D', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'sturdy', threat: 'sharp', pace: 'steady', habitat: ['RUINS', 'INDUSTRIAL', 'CYBER_CITY'], innate: ['small_print'] },
-    { key: 'ledger_sentry', name: 'Ledger Sentry', blurb: 'A bolted-down clerk with one question and a long reach.', tags: ['mechanical', 'grunt'], rank: 'D', size: 'MEDIUM', behavior: 'TURRET', build: 'sturdy', threat: 'sharp', pace: 'slow', habitat: ['INDUSTRIAL', 'CYBER_CITY'], innate: ['small_print'] },
-    { key: 'compound_bear', name: 'Compound Bear', blurb: 'Grows a fixed percentage heavier every winter. It has seen a great many winters.', tags: ['beast'], rank: 'C', size: 'LARGE', behavior: 'NEUTRAL', build: 'massive', threat: 'sharp', pace: 'steady', habitat: ['OVERGROWTH'], innate: ['compounding_bite'] },
-    { key: 'escheat_wraith', name: 'Escheat Wraith', blurb: 'What is left when an account is abandoned. It would like yours.', tags: ['horror'], rank: 'C', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'frail', threat: 'deadly', pace: 'swift', habitat: ['RUINS', 'WASTELAND'], innate: ['lien'] },
-    { key: 'foreclosure_engine', name: 'Foreclosure Engine', blurb: 'It has a warrant for the building, and it is already walking.', tags: ['mechanical', 'vehicle', 'armored'], rank: 'B', size: 'LARGE', behavior: 'SIEGE', build: 'massive', threat: 'deadly', pace: 'slow', habitat: ['INDUSTRIAL'], innate: ['foreclose'] },
-    { key: 'collections_chorus', name: 'Collections Chorus', blurb: 'Many clerks, one voice, and they have your number.', tags: ['horror', 'grunt'], rank: 'A', size: 'LARGE', behavior: 'SWARM', build: 'sturdy', threat: 'sharp', pace: 'steady', habitat: ['CYBER_CITY'], innate: ['lien', 'small_print'] },
-    { key: 'auditor_general', name: 'The Auditor General', blurb: 'Leaves you alone until the books say otherwise. They will.', tags: ['god', 'elite', 'flying'], rank: 'S', size: 'GIGANTIC', behavior: 'NEUTRAL', build: 'massive', threat: 'deadly', pace: 'swift', habitat: ['RUINS', 'CYBER_CITY'], innate: ['final_notice', 'lien'] }
+    { key: 'tally_rat', name: 'Tally Rat', blurb: 'Counts everything it eats. Always comes up short.', tags: ['biological', 'grunt'], rank: 'F', size: 'TINY', behavior: 'SWARM', build: 'frail', threat: 'meek', pace: 'swift', habitat: ALL, innate: [], tree: 'monster' },
+    { key: 'lien_moth', name: 'Lien Moth', blurb: 'Lands on what is owed. Ignores you, for now.', tags: ['biological', 'flying', 'grunt'], rank: 'F', size: 'TINY', behavior: 'PASSIVE', build: 'frail', threat: 'meek', pace: 'steady', habitat: ['OVERGROWTH', 'WASTELAND'], innate: [], tree: 'animal' },
+    { key: 'dun_hound', name: 'Dun Hound', blurb: 'Bred to follow a debtor home. Very good at the first half.', tags: ['beast', 'grunt'], rank: 'E', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'sturdy', threat: 'meek', pace: 'swift', habitat: ['WASTELAND', 'OVERGROWTH', 'RUINS'], innate: ['compounding_bite'], tree: 'monster' },
+    { key: 'teller', name: 'Teller Still On Shift', blurb: 'Asks for two forms of identification, with a cudgel.', tags: ['humanoid', 'grunt'], rank: 'E', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'frail', threat: 'sharp', pace: 'steady', habitat: ['RUINS', 'CYBER_CITY'], innate: [], tree: 'monster' },
+    { key: 'receiver', name: 'Receiver', blurb: 'Here for the assets. You are listed among them.', tags: ['humanoid', 'grunt'], rank: 'D', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'sturdy', threat: 'sharp', pace: 'steady', habitat: ['RUINS', 'INDUSTRIAL', 'CYBER_CITY'], innate: ['small_print'], tree: 'monster' },
+    { key: 'ledger_sentry', name: 'Ledger Sentry', blurb: 'A bolted-down clerk with one question and a long reach.', tags: ['mechanical', 'grunt'], rank: 'D', size: 'MEDIUM', behavior: 'TURRET', build: 'sturdy', threat: 'sharp', pace: 'slow', habitat: ['INDUSTRIAL', 'CYBER_CITY'], innate: ['small_print'], tree: 'monster' },
+    { key: 'compound_bear', name: 'Compound Bear', blurb: 'Grows a fixed percentage heavier every winter. It has seen a great many winters.', tags: ['beast'], rank: 'C', size: 'LARGE', behavior: 'NEUTRAL', build: 'massive', threat: 'sharp', pace: 'steady', habitat: ['OVERGROWTH'], innate: ['compounding_bite'], tree: 'animal' },
+    { key: 'escheat_wraith', name: 'Escheat Wraith', blurb: 'What is left when an account is abandoned. It would like yours.', tags: ['horror'], rank: 'C', size: 'MEDIUM', behavior: 'AGGRESSIVE', build: 'frail', threat: 'deadly', pace: 'swift', habitat: ['RUINS', 'WASTELAND'], innate: ['lien'], tree: 'monster' },
+    { key: 'foreclosure_engine', name: 'Foreclosure Engine', blurb: 'It has a warrant for the building, and it is already walking.', tags: ['mechanical', 'vehicle', 'armored'], rank: 'B', size: 'LARGE', behavior: 'SIEGE', build: 'massive', threat: 'deadly', pace: 'slow', habitat: ['INDUSTRIAL'], innate: ['foreclose'], tree: 'monster' },
+    { key: 'collections_chorus', name: 'Collections Chorus', blurb: 'Many clerks, one voice, and they have your number.', tags: ['horror', 'grunt'], rank: 'A', size: 'LARGE', behavior: 'SWARM', build: 'sturdy', threat: 'sharp', pace: 'steady', habitat: ['CYBER_CITY'], innate: ['lien', 'small_print'], tree: 'monster' },
+    { key: 'auditor_general', name: 'The Auditor General', blurb: 'Leaves you alone until the books say otherwise. They will.', tags: ['god', 'elite', 'flying'], rank: 'S', size: 'GIGANTIC', behavior: 'NEUTRAL', build: 'massive', threat: 'deadly', pace: 'swift', habitat: ['RUINS', 'CYBER_CITY'], innate: ['final_notice', 'lien'], tree: 'monster' },
+    { key: 'dividend_hen', name: 'Dividend Hen', blurb: 'Lays on a fixed schedule and pays out in small brown instalments.', tags: ['biological', 'livestock'], rank: 'F', size: 'TINY', behavior: 'PASSIVE', build: 'frail', threat: 'meek', pace: 'steady', habitat: ['WASTELAND', 'RUINS'], innate: [], tree: 'animal' },
+    { key: 'queue_pigeon', name: 'Queue Pigeon', blurb: 'Stands in line at windows that shut long ago. Moves up one place at dusk.', tags: ['biological', 'flying'], rank: 'F', size: 'TINY', behavior: 'PASSIVE', build: 'frail', threat: 'meek', pace: 'steady', habitat: ['RUINS', 'INDUSTRIAL', 'CYBER_CITY'], innate: [], tree: 'animal' },
+    { key: 'collateral_goat', name: 'Collateral Goat', blurb: 'Pledged by nobody in particular. It has eaten the paperwork.', tags: ['biological', 'livestock'], rank: 'E', size: 'MEDIUM', behavior: 'PASSIVE', build: 'sturdy', threat: 'meek', pace: 'steady', habitat: ['WASTELAND'], innate: [], tree: 'animal' },
+    { key: 'clearing_cat', name: 'Clearing Cat', blurb: 'Belongs to the building. Has never once been reconciled.', tags: ['beast'], rank: 'E', size: 'TINY', behavior: 'NEUTRAL', build: 'frail', threat: 'sharp', pace: 'swift', habitat: ['CYBER_CITY'], innate: [], tree: 'animal' },
+    { key: 'overdraft_boar', name: 'Overdraft Boar', blurb: 'Roots up what it cannot afford. Leave it its ground and it leaves you yours.', tags: ['beast'], rank: 'E', size: 'MEDIUM', behavior: 'NEUTRAL', build: 'sturdy', threat: 'sharp', pace: 'steady', habitat: ['OVERGROWTH'], innate: [], tree: 'animal' },
+    { key: 'pension_ox', name: 'Pension Ox', blurb: 'Retired from a plough that no longer exists. Still turns at the end of every row.', tags: ['biological', 'livestock'], rank: 'D', size: 'LARGE', behavior: 'NEUTRAL', build: 'massive', threat: 'meek', pace: 'slow', habitat: ['WASTELAND', 'INDUSTRIAL'], innate: [], tree: 'animal' },
+    { key: 'escrow_stag', name: 'Escrow Stag', blurb: 'Holds its antlers in trust. They are released each spring, to no one.', tags: ['beast'], rank: 'D', size: 'LARGE', behavior: 'NEUTRAL', build: 'sturdy', threat: 'sharp', pace: 'swift', habitat: ['RUINS'], innate: [], tree: 'animal' }
   ],
   materials: [
     { key: 'chaffwheat', name: 'Chaffwheat', blurb: 'Grain that grew over a spilled tithe.', tags: ['flora', 'grain', 'food'], rank: 'F', form: 'grain', verb: 'hands', weight: 'light', worth: 'common', habitat: ['WASTELAND', 'OVERGROWTH'], onShelf: false },

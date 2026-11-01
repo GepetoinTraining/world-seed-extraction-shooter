@@ -4,23 +4,27 @@
  */
 
 import { RestDoor } from '../logic/systems/RestDoor';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../types';
-import { useHubStore, IPlayerLot } from '../entities/hub/store';
+import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
+import { HubGenerator, IHubLayout, IPOI } from '../entities/hub/HubGenerator';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
 import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../entities/hub/room';
-import { Button, Chip, Input, ItemSprite, Panel } from './ui/kit';
+import { ArmedButton, Button, Chip, Input, ItemSprite, Panel, TimerBar } from './ui/kit';
 import { lotConstruction } from '../entities/hub/template';
 import { isTemplateItem } from '../logic/systems/TemplateSystem';
 import { TemplateApplyModal } from './TemplateApplyModal';
 import { TemplateStudio } from './TemplateStudio';
+import { useFeed } from './ui/stores';
 
 const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
+const DAY_MS = 86_400_000;
 const countOf = (items: IItem[], defId: string) => items.filter(i => i.universalDefinitionId === defId).length;
 
-const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
+const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout; now: number }> = ({ lot, poi, layout, now }) => {
+  const { passages } = layout;
   const { player } = usePlayerStore();
   const hub = useHubStore();
   const stash = player.bank.stashTabs[0]?.items || [];
@@ -40,6 +44,25 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
   // Wave 10B: a rising template batch, counted step by step
   const construction = lotConstruction(hub.buildJobs, lot.id);
   const templatesHeld = stash.some(i => isTemplateItem(i));
+  const split: ReturnType<typeof HubGenerator.dismemberVerdict> = !lot.ownerId || mine ? HubGenerator.dismemberVerdict(layout, lot.id) : { ok: false };
+  const pushFeed = useFeed(s => s.push);
+  // A servidão to the centre, and smaller lots all around it. Your own stays yours; a free one goes on the market.
+  const splitButton = split.ok && (
+    <ArmedButton
+      tone="quiet"
+      disabled={player.bank.gold < split.cost!}
+      title={mine
+        ? `A servidão to its centre, with ${split.pieces} smaller lots around it. Each is yours, and each pays its own upkeep.`
+        : `A servidão to its centre, with ${split.pieces} smaller lots around it. Each goes on the market, and you can buy one.`}
+      confirmLabel={`SPLIT INTO ${split.pieces} FOR ${split.cost!.toLocaleString()} G: SURE?`}
+      onConfirm={async () => {
+        const res = await hub.dismemberLot(lot.id);
+        pushFeed(res.ok ? `Lot ${lot.lotIndex} split into ${split.pieces}, by a servidão to its centre.` : res.reason ?? 'It would not split.', res.ok ? 'proof' : 'loss');
+      }}
+    >
+      DISMEMBER INTO {split.pieces} ({split.cost!.toLocaleString()} G)
+    </ArmedButton>
+  );
 
   const stateChip = !lot.ownerId
     ? <Chip tone="proof">{lot.price.toLocaleString()} G</Chip>
@@ -49,11 +72,23 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 
   return (
     <Panel title={`LOT ${lot.lotIndex}`} right={stateChip} tone={mine ? 'signal' : 'none'} data-testid={`lot-${lot.lotIndex}`}>
+      {poi && (
+        <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>
+          {poi.size.width}×{poi.size.height}, {poi.metadata.fromRoad} from the main road, {poi.metadata.fromCentre} from the centre
+          {passages.filter(q => q.lotId === lot.id).map(q => (
+            <div key={q.lotId}>Servidão: no street at its door. Its way out crosses {q.through.length > 0 ? q.through.map(id => id.replace('poi_lot_', 'lot ')).join(', ') : 'open ground'}.</div>
+          ))}
+          {passages.filter(q => q.through.includes(lot.id)).map(q => (
+            <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {q.lotId.replace('poi_lot_', 'lot ')}.</div>
+          ))}
+        </div>
+      )}
       {!lot.ownerId && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <Button disabled={player.bank.gold < lot.price} onClick={() => hub.buyLot(lot.id)}>
             BUY LOT ({lot.price.toLocaleString()} G)
           </Button>
+          {splitButton}
           {deeds.map(deed => (
             <Button
               key={deed.id} tone="proof"
@@ -68,9 +103,10 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
       {/* Wave 10 (D8): the permit is gold, the walls are materials, and the
           building finishes on the clock. The shell job shows its countdown. */}
       {mine && shellJob && (
-        <span className="ws-dim ws-small">
-          {shellJob.template ? shellJob.template.data.name : shellJob.structureType} under construction — {Math.max(0, Math.ceil((shellJob.finishesAt - now) / 1000))}s on the clock
-        </span>
+        <div className="ws-small">
+          <div className="ws-dim">{shellJob.template ? shellJob.template.data.name : shellJob.structureType} under construction</div>
+          <TimerBar startedAt={shellJob.queuedAt} until={shellJob.finishesAt} />
+        </div>
       )}
       {mine && !shellJob && construction && (
         <span className="ws-dim ws-small">
@@ -79,6 +115,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
       )}
       {mine && !shellJob && !construction && lot.structureType === 'EMPTY' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {splitButton}
           {templatesHeld && (
             <Button tone="signal" onClick={() => setApplyOpen(true)}>
               RAISE FROM A PLAN (template)
@@ -150,9 +187,9 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
             const left = Math.ceil((job.finishesAt - now) / 1000);
             return (
               <div key={job.id} className="ws-row">
-                <span className="ws-small">{(RECIPE_DEFINITIONS[job.recipeId] ?? GEAR_RECIPES[job.recipeId])?.name}</span>
+                <span className="ws-small">{craftName(job.recipeId)}</span>
                 {left > 0
-                  ? <span className="ws-dim ws-small">{left}s on the bench</span>
+                  ? <span style={{ flex: 1, maxWidth: 160 }}><TimerBar startedAt={job.queuedAt} until={job.finishesAt} /></span>
                   : <Button tone="signal" onClick={() => hub.resolveCrafts()}>COLLECT</Button>}
               </div>
             );
@@ -198,7 +235,9 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 };
 
 export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
-  const { lots } = useHubStore();
+  const { lots, chunks, dismembered } = useHubStore();
+  const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
+  const playerId = usePlayerStore(s => s.player.id);
   const [now, setNow] = useState(Date.now());
   // D12: dev mode opens the builder view free, for testing. The real door is the scribe's table.
   const [scribeOpen, setScribeOpen] = useState(false);
@@ -227,7 +266,12 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
     <div className="ws-ui" style={{ padding: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <span className="ws-dim ws-small">
-          Six lots. Upkeep is charged by the world-day; an unpaid lot reverts to the market with its goods returned.
+          {lots.length} lots. Upkeep is charged by the world-day; an unpaid lot reverts to the market with its goods returned.
+          {lots.some(l => l.ownerId === playerId) && (
+            <span style={{ display: 'block', width: 320, marginTop: 4 }}>
+              <TimerBar label="THE DAY TURNS" startedAt={worldDay() * DAY_MS} until={(worldDay() + 1) * DAY_MS} />
+            </span>
+          )}
         </span>
         {devMode && (
           <span style={{ display: 'flex', gap: 4 }}>
@@ -238,7 +282,7 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
       </div>
       {scribeOpen && <TemplateStudio onClose={() => setScribeOpen(false)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-        {lots.map(lot => <LotCard key={lot.id} lot={lot} now={now} />)}
+        {lots.map(lot => <LotCard key={lot.id} lot={lot} poi={HubGenerator.findPOI(layout, lot.id)} layout={layout} now={now} />)}
       </div>
     </div>
   );

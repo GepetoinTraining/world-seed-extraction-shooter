@@ -5,7 +5,9 @@
  * a native control, so the keyboard reaches all of it.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { IWorldCycle, WorldClock } from '../../entities/world/WorldClock';
+import { SWEEP_CELLS, SWEEP_STEP_MS, WaitClock } from '../../logic/systems/WaitClock';
 import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '../../render/atoms/atoms';
 import { Archetype, portrait } from '../../render/atoms/people';
 import { itemArtFor } from '../../render/atoms/items';
@@ -194,6 +196,60 @@ export const Bar: React.FC<{ label?: string; value: number; max: number; tone?: 
       </div>
     );
   };
+
+/** A clock for one component, ticking only as often as it has something new to show. */
+export function useNow(everyMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(interval);
+  }, [everyMs]);
+  return now;
+}
+
+const prefersStillness = () =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** A wait with a known end: the same stepped Bar, filling toward it, saying the time left. */
+export const TimerBar: React.FC<{ label?: string; startedAt: number; until: number; tone?: Exclude<Tone, 'none'> }> =
+  ({ label, startedAt, until, tone = 'signal' }) => {
+    const now = useNow(WaitClock.tickMs(startedAt, until));
+    const { leftMs } = WaitClock.read(startedAt, until, now);
+    return <Bar label={label} value={Math.min(now, until) - startedAt} max={until - startedAt} tone={tone} text={WorldClock.say(leftMs)} />;
+  };
+
+/**
+ * A wait nobody can put an end on: a block walking the same track, and how long it has
+ * been. A block is not a fill, so the two read apart in grayscale. Reduced motion holds
+ * the block still, and the count still moves, so it still doesn't read as frozen.
+ */
+export const Busy: React.FC<{ label?: string; startedAt?: number; quietForMs?: number; tone?: Exclude<Tone, 'none'> }> =
+  ({ label, startedAt, quietForMs = 0, tone = 'signal' }) => {
+    const [since] = useState(() => startedAt ?? Date.now());
+    const now = useNow(SWEEP_STEP_MS);
+    const elapsed = Math.max(0, now - since);
+    if (elapsed < quietForMs) return null;
+    const cell = prefersStillness() ? 0 : WaitClock.sweepAt(elapsed);
+    return (
+      <div className="ws-ui ws-bar" role="status" aria-label={label}>
+        {label && <span className="ws-bar__label">{label}</span>}
+        <span className="ws-bar__track">
+          <span className={`ws-busy__block ws-busy__block--${tone}`} style={{ left: `${(cell * 100) / SWEEP_CELLS}%`, width: `${100 / SWEEP_CELLS}%` }} />
+          <span className="ws-bar__ticks" />
+        </span>
+        <span className="ws-bar__value">{WorldClock.say(Math.floor(elapsed / 1000) * 1000)}</span>
+      </div>
+    );
+  };
+
+/** A world's whole cycle: its bands differ by grain and a hard seam, and a notch marks where it stands. */
+export const CycleRibbon: React.FC<{ cycle: IWorldCycle }> = ({ cycle }) => (
+  <div className="ws-ui ws-ribbon" role="img" aria-label={`Gate cycle, ${Math.round(cycle.at * 100)} percent through`}>
+    {cycle.bands.map(band => <span key={band.phase} className={`ws-ribbon__band ws-ribbon__band--${band.phase}`} style={{ flexGrow: band.share }} />)}
+    <span className="ws-ribbon__at" style={{ left: `${Math.round(cycle.at * 100)}%` }} />
+  </div>
+);
 
 export const Chip: React.FC<{ tone?: Tone; title?: string; children?: React.ReactNode; style?: React.CSSProperties }> =
   ({ tone = 'none', title, children, style }) => (

@@ -8,6 +8,8 @@
  */
 
 import { IHubLayout, IPOI, POIType, ZoneType, HubGenerator } from '../../entities/hub/HubGenerator';
+import { CELL_TILES, ROAD_MAIN, ROAD_STREET, doorTile } from '../../entities/hub/hubManifest';
+import { CHUNK_TILES } from '../../entities/world/grid';
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
 import { Genre, Ink, Role, Sprite, hash2, isqrt, material, px, seal, stamp } from './atoms';
 import { castFigure } from './people';
@@ -21,7 +23,7 @@ export const HUB_GENRE: Genre = { name: 'New Carleon', palette: ['#7a4210', '#c2
 
 const BUILDING_TYPES = [
   POIType.BANK, POIType.GUILD_HALL, POIType.AUCTION_HOUSE, POIType.VENDOR_WEAPONS,
-  POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES, POIType.TAVERN, POIType.IDENTIFIER
+  POIType.VENDOR_ARMOR, POIType.VENDOR_CONSUMABLES, POIType.TAVERN, POIType.IDENTIFIER, POIType.LAND_OFFICE
 ];
 
 const allPois = (layout: IHubLayout) => layout.zones.flatMap(z => z.pois);
@@ -115,6 +117,28 @@ export function floorAtom(zone: ZoneType | null, ax: number, ay: number): number
   }
 }
 
+/**
+ * A road cell, from its own corner. Dark, with a bright kerb along every side it does
+ * not join and open where it does. A main road carries a broken centre line; a street
+ * has none. So the two tell apart by shape, and a road from a floor by value.
+ */
+export function roadAtom(kind: string, joins: { n: boolean; e: boolean; s: boolean; w: boolean }, x: number, y: number): number {
+  const size = CELL_TILES * HUB_TILE;
+  const kerb = (!joins.n && y < 2) || (!joins.s && y >= size - 2) || (!joins.w && x < 2) || (!joins.e && x >= size - 2);
+  if (kerb) return px(Role.GROUND, 4);
+  if (kind === ROAD_MAIN) {
+    const across = joins.e || joins.w, along = joins.n || joins.s;
+    const mid = (v: number) => v === (size >> 1) - 1 || v === size >> 1;
+    if (across && !along && mid(y) && (x >> 2) % 2 === 0) return px(Role.GROUND, 4);
+    if (along && !across && mid(x) && (y >> 2) % 2 === 0) return px(Role.GROUND, 4);
+  }
+  return px(Role.GROUND, 0);
+}
+
+/** A servidão's path: stepping stones, so it reads apart from road and lot alike, and it reads from the hub's own atoms. */
+export const passageAtom = (ax: number, ay: number): number =>
+  ((ax >> 2) + (ay >> 2)) % 2 === 0 ? px(Role.GROUND, 4) : px(Role.GROUND, 1);
+
 const lampLevel = (d2: number, r2: number, x: number, y: number) => (d2 * 2 <= r2 ? 2 : (x + y) % 4 !== 0 ? 1 : 0);
 
 /** How much lamplight reaches an atom: 0, 1 or 2 steps, at the lamp's real radius. */
@@ -149,6 +173,11 @@ function emblemInk(type: POIType): Ink {
     case POIType.GUILD_HALL:
       k.rect(5, 0, 9, 47).rect(10, 2, 42, 30);
       for (let y = 20; y <= 30; y++) { const half = y - 20; k.rect(26 - half, y, 26 + half, y, 0); }
+      break;
+    case POIType.LAND_OFFICE:
+      // A plot on a sheet, cut into its lots.
+      k.rect(2, 2, 45, 45).rect(6, 6, 41, 41, 0);
+      k.rect(14, 6, 17, 41).rect(30, 6, 33, 41).rect(6, 22, 41, 25);
       break;
     case POIType.VENDOR_WEAPONS:
       k.line(5, 5, 42, 42, 3).line(42, 5, 5, 42, 3).rect(2, 32, 16, 36).rect(31, 32, 45, 36);
@@ -198,27 +227,64 @@ export type RawFacade = RawWallKind;
 
 function lotInk(state: LotState): Ink {
   const k = new Ink();
-  const stakes = () => {
-    [[0, 0], [41, 0], [0, 41], [41, 41]].forEach(([x, y]) => k.rect(x, y, x + 6, y + 6));
-  };
-  const fence = () => {
-    for (let i = 0; i < 48; i += 6) { k.rect(i, 0, i + 3, 2); k.rect(i, 45, i + 3, 47); k.rect(0, i, 2, i + 3); k.rect(45, i, 47, i + 3); }
-  };
   switch (state) {
     case 'FOR_SALE':
-      stakes();
       k.rect(22, 8, 26, 44).rect(10, 8, 38, 24).rect(14, 12, 34, 20, 0);
-      break;
-    case 'OWNED_EMPTY':
-      fence();
       break;
     // HOUSE / WORKSHOP / VENDOR draw as real buildings now (builtLotArt, Wave 10).
     case 'FORECLOSED':
-      k.rect(0, 0, 8, 2).rect(30, 45, 47, 47).rect(0, 32, 2, 47).rect(45, 0, 47, 12);
       k.line(10, 10, 37, 37, 3).line(37, 10, 10, 37, 3);
       break;
   }
   return k;
+}
+
+/**
+ * An open lot is a plot: its own ground over its whole footprint, a line on every tile
+ * boundary so you can count what you would be buying, and a border that says its state
+ * by shape: broken with corner stakes for sale, whole when held, torn when foreclosed.
+ */
+function plotArt(state: 'FOR_SALE' | 'OWNED_EMPTY' | 'FORECLOSED', w: number, h: number, seed: number): Sprite {
+  const data = new Uint8Array(w * h);
+  const edge = 2;
+  const stake = 6;
+  const borderAt = (x: number, y: number): number => {
+    const along = y < edge || y >= h - edge ? x : y;
+    const onBorder = x < edge || y < edge || x >= w - edge || y >= h - edge;
+    const corner = (x < stake || x >= w - stake) && (y < stake || y >= h - stake);
+    switch (state) {
+      case 'FOR_SALE':
+        if (corner) return px(Role.MATTER, 3);
+        return onBorder && (along >> 1) % 3 === 0 ? px(Role.MATTER, 4) : 0;
+      case 'OWNED_EMPTY':
+        return onBorder ? px(Role.MATTER, 4) : 0;
+      case 'FORECLOSED':
+        return onBorder && (along >> 3) % 3 === 0 ? px(Role.LOSS, 2) : 0;
+    }
+  };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const onLine = x % HUB_TILE === 0 || y % HUB_TILE === 0;
+    const line = px(Role.GROUND, state === 'FORECLOSED' ? 2 : 4);
+    const ground = state === 'OWNED_EMPTY'
+      ? px(Role.GROUND, (x + y) % 4 < 2 ? 2 : 1) // turned earth, in furrows
+      : px(Role.GROUND, state === 'FOR_SALE' ? 1 : 0);
+    data[y * w + x] = borderAt(x, y) || (onLine ? line : ground);
+  }
+  const place = (s: Sprite) => {
+    const x0 = (w - s.w) >> 1, y0 = (h - s.h) >> 1;
+    for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) {
+      const v = s.data[y * s.w + x];
+      if (v) data[(y0 + y) * w + x0 + x] = v;
+    }
+  };
+  if (state === 'OWNED_EMPTY') place(seal(`lot:${seed}`));
+  else {
+    const s = Math.min(w, h) - 12;
+    place(stamp(lotInk(state), s, material({ density: 40, hardness: 50 }), fnv1a(`lot:v1:${state}`), {
+      role: state === 'FORECLOSED' ? Role.LOSS : Role.MATTER, edgeStep: state === 'FORECLOSED' ? 2 : 3, minFill: 1, maxFill: 2
+    }));
+  }
+  return { w, h, data };
 }
 
 /**
@@ -306,26 +372,14 @@ function constructionLotArt(w: number, h: number, seed: number, progress: number
 export function lotArt(state: LotState, w: number, h: number, seed: number, progress = 0, facade?: RawFacade): Sprite {
   if (state === 'UNDER_CONSTRUCTION') return constructionLotArt(w, h, seed, progress);
   if (state === 'HOUSE' || state === 'WORKSHOP' || state === 'VENDOR') return builtLotArt(state, w, h, seed, facade);
-  const s = Math.min(w, h) - 2;
-  const sprite = stamp(lotInk(state), s, material({ density: 40, hardness: 50 }), fnv1a(`lot:v1:${state}`), {
-    role: state === 'FORECLOSED' ? Role.LOSS : Role.MATTER, edgeStep: 3, minFill: 1, maxFill: 2
-  });
-  if (state === 'OWNED_EMPTY') {
-    const mark = seal(`lot:${seed}`);
-    const x0 = (sprite.w - mark.w) >> 1, y0 = (sprite.h - mark.h) >> 1;
-    for (let y = 0; y < mark.h; y++) for (let x = 0; x < mark.w; x++) {
-      const v = mark.data[y * mark.w + x];
-      if (v) sprite.data[(y0 + y) * sprite.w + x0 + x] = v;
-    }
-  }
-  return sprite;
+  return plotArt(state, w, h, seed);
 }
 
 // ---------------------------------------------------------------------------
 // BUILDINGS
 // ---------------------------------------------------------------------------
 
-export const doorOf = (p: IPOI) => ({ x: p.position.x + (p.size.width >> 1), y: p.position.y + p.size.height });
+export const doorOf = (p: IPOI) => doorTile(p);
 
 /** Where a keeper stands: beside their door, never in it, so you can always reach it. */
 export function keeperSpot(layout: IHubLayout, p: IPOI): { x: number; y: number } {
@@ -339,6 +393,7 @@ function roofAtom(type: POIType, x: number, y: number): number {
     case POIType.BANK: return (x + y) % 6 === 0 ? px(Role.PROOF, 1) : px(Role.MATTER, 1);
     case POIType.IDENTIFIER: return y % 4 === 0 ? px(Role.MATTER, 2) : px(Role.MATTER, 0);
     case POIType.GUILD_HALL: return (x >> 1) % 3 === 0 ? px(Role.LIFE, 1) : px(Role.MATTER, 1);
+    case POIType.LAND_OFFICE: return (x >> 1) % 3 === 0 ? px(Role.LIFE, 1) : y % 4 === 0 ? px(Role.MATTER, 2) : px(Role.MATTER, 1);
     case POIType.VENDOR_WEAPONS: return x % 5 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 2);
     case POIType.VENDOR_ARMOR: return (x + (y >> 2) * 3) % 6 === 0 ? px(Role.MATTER, 0) : px(Role.MATTER, 1);
     case POIType.VENDOR_CONSUMABLES: return hash2(5, x, y) % 3 === 0 ? px(Role.LIFE, 2) : px(Role.LIFE, 1);
@@ -412,14 +467,47 @@ function blit(data: Uint8Array, W: number, s: Sprite, x0: number, y0: number) {
   }
 }
 
+/** A chunk's floor before light, by its own zones and roads. The same ones are the same bytes, so a recompose reads them back. */
+const chunkFloors = new Map<string, Uint8Array>();
+function chunkFloor(layout: IHubLayout, chunk: { x: number; y: number }): Uint8Array {
+  const zones: (ZoneType | null)[] = [];
+  for (let ty = chunk.y; ty < chunk.y + CHUNK_TILES; ty++) for (let tx = chunk.x; tx < chunk.x + CHUNK_TILES; tx++) {
+    zones.push(HubGenerator.getZoneAtPosition(layout, tx, ty)?.type ?? null);
+  }
+  // A road's kerb reads only its own chunk. It stays open at a chunk's edge, so what rises next moves no byte here.
+  const roads = layout.roads
+    .filter(r => r.x >= chunk.x && r.x < chunk.x + CHUNK_TILES && r.y >= chunk.y && r.y < chunk.y + CHUNK_TILES)
+    .map(r => ({ cx: (r.x - chunk.x) / CELL_TILES, cy: (r.y - chunk.y) / CELL_TILES, kind: r.main ? ROAD_MAIN : ROAD_STREET }));
+  const key = `${zones.join()}|${roads.map(r => `${r.cx},${r.cy},${r.kind}`).join(';')}`;
+  let floor = chunkFloors.get(key);
+  if (!floor) {
+    const size = CHUNK_TILES * HUB_TILE;
+    floor = new Uint8Array(size * size);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      floor[y * size + x] = floorAtom(zones[Math.floor(y / HUB_TILE) * CHUNK_TILES + Math.floor(x / HUB_TILE)], x, y);
+    }
+    const roadAt = new Set(roads.map(r => `${r.cx},${r.cy}`));
+    const joins = (cx: number, cy: number) => {
+      const cells = CHUNK_TILES / CELL_TILES;
+      const open = (x: number, y: number) => x < 0 || y < 0 || x >= cells || y >= cells || roadAt.has(`${x},${y}`);
+      return { n: open(cx, cy - 1), e: open(cx + 1, cy), s: open(cx, cy + 1), w: open(cx - 1, cy) };
+    };
+    const cellAtoms = CELL_TILES * HUB_TILE;
+    for (const r of roads) {
+      const j = joins(r.cx, r.cy);
+      for (let y = 0; y < cellAtoms; y++) for (let x = 0; x < cellAtoms; x++) {
+        floor[(r.cy * cellAtoms + y) * size + r.cx * cellAtoms + x] = roadAtom(r.kind, j, x, y);
+      }
+    }
+    chunkFloors.set(key, floor);
+  }
+  return floor;
+}
+
 /** Floors, light and everything solid. What this draws as solid is what the navmesh blocks. */
 export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<number, LotState>> = {}, construction: Partial<Record<number, number>> = {}, facades: Partial<Record<number, RawFacade>> = {}): Sprite {
   const W = layout.width * HUB_TILE, H = layout.height * HUB_TILE;
   const data = new Uint8Array(W * H);
-  const zoneOf: (ZoneType | null)[] = [];
-  for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
-    zoneOf.push(HubGenerator.getZoneAtPosition(layout, tx, ty)?.type ?? null);
-  }
   const lamps = allPois(layout).filter(p => p.type === POIType.LAMP_POST);
   const lit = new Uint8Array(W * H);
   lamps.forEach(p => {
@@ -432,12 +520,18 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
       if (level > lit[y * W + x]) lit[y * W + x] = level;
     }
   });
+  // A chunk's floor is read from its own corner, so raising another beside it moves
+  // no grain. What has not risen stays empty, and the outskirts show through.
+  const chunkAtoms = CHUNK_TILES * HUB_TILE;
+  for (const chunk of layout.chunks) {
+    const floor = chunkFloor(layout, chunk);
+    for (let y = 0; y < chunkAtoms; y++) {
+      data.set(floor.subarray(y * chunkAtoms, (y + 1) * chunkAtoms), (chunk.y * HUB_TILE + y) * W + chunk.x * HUB_TILE);
+    }
+  }
   const ground4 = px(Role.GROUND, 4);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const zone = zoneOf[Math.floor(y / HUB_TILE) * layout.width + Math.floor(x / HUB_TILE)];
-    let v = floorAtom(zone, x, y);
-    if (lit[y * W + x]) v = Math.min(ground4, v + lit[y * W + x]);
-    data[y * W + x] = v;
+  for (let i = 0; i < data.length; i++) {
+    if (lit[i] && data[i]) data[i] = Math.min(ground4, data[i] + lit[i]);
   }
 
   const pois = allPois(layout);
@@ -451,6 +545,12 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
     );
     blit(data, W, art, p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });
+  // Over whatever stands on the lots it crosses: it blocks nobody, so it must look it.
+  layout.passages.forEach(q => q.tiles.forEach(t => {
+    for (let y = t.y * HUB_TILE; y < (t.y + 1) * HUB_TILE; y++) for (let x = t.x * HUB_TILE; x < (t.x + 1) * HUB_TILE; x++) {
+      data[y * W + x] = passageAtom(x, y);
+    }
+  }));
   pois.filter(p => p.type === POIType.PORTAL).forEach(p => {
     blit(data, W, emblem(p.type, p.size.width * HUB_TILE - 2), p.position.x * HUB_TILE, p.position.y * HUB_TILE);
   });

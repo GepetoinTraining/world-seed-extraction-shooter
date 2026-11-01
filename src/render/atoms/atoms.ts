@@ -245,7 +245,7 @@ export function maskDifference(a: Uint8Array, b: Uint8Array): number {
 // CREATURES: the body plan comes from tags, so a new creature needs no new art.
 // ---------------------------------------------------------------------------
 
-export type Plan = 'ring' | 'tracks' | 'spikes' | 'rotor' | 'hull' | 'wings' | 'tendril' | 'biped' | 'swarm';
+export type Plan = 'ring' | 'tracks' | 'spikes' | 'rotor' | 'hull' | 'wings' | 'tendril' | 'biped' | 'swarm' | 'grazer';
 
 export function planFor(tags: string[]): Plan {
   const has = (t: string) => tags.includes(t);
@@ -257,6 +257,7 @@ export function planFor(tags: string[]): Plan {
   if (has('flying')) return 'wings';
   if (has('horror')) return 'tendril';
   if (has('humanoid')) return 'biped';
+  if (has('livestock')) return 'grazer';
   return 'swarm';
 }
 
@@ -334,8 +335,81 @@ function drawPlan(plan: Plan, seed: number, frame = 0): Ink {
       k.both(f => { k.line(f(9), 18, f(0), 8 + s * 6, 2); k.line(f(6), 30, f(0), 30, 2); k.line(f(10), 41, f(2), 47, 2); k.line(f(19), 3 + s * 4, f(16), s * 4, 1); });
       k.eyeAt(20, 8 + s * 4).eyeAt(28, 8 + s * 4);
       break;
+    case 'grazer':
+      // Long and low on four legs, head up: nothing else here stands like this
+      k.rect(6, 16, 35, 31).disc(39, 11, 7).line(32, 18, 38, 13, 3);
+      k.rect(8, 32, 13, 47 - s * 6).rect(16, 32, 21, 41 + s * 6).rect(23, 32, 28, 47 - s * 6).rect(30, 32, 35, 41 + s * 6);
+      k.line(6, 18, 1, 26 + v(1, 5), 1);
+      k.eyeAt(41, 10);
+      break;
   }
   return k;
+}
+
+/**
+ * What a change of form adds to the body it inherits (D61). On a thin body a feature is
+ * added and joined to it, and the body stays whole. A dense body has no room outside it,
+ * so there the feature cuts its own hard seam and is drawn inside that. A mark on the
+ * body cuts on any body. The rest pose decides which, so nothing flickers between frames. `tests/trees.test.ts` holds each
+ * one visible on every plan, at every size and from every side. Shape and place, never hue.
+ */
+type FeatureStroke = { from: [number, number]; to: [number, number]; thick?: number; mirror?: boolean; seamOnly?: boolean; mark?: boolean };
+const FEATURE_CUT = 4;
+/** Above this share of the design grid a body is dense: there is no room left to add to. */
+const DENSE_MASS = 0.55;
+
+const FEATURE_STROKES: Record<string, FeatureStroke[]> = {
+  horns: [{ from: [17, 11], to: [6, 2], mirror: true }],
+  crest: [{ from: [24, 13], to: [24, 3], thick: 4 }, { from: [11, 2], to: [36, 2], thick: 2 }],
+  spines: [{ from: [11, 13], to: [2, 7], mirror: true }, { from: [10, 24], to: [2, 24], mirror: true }, { from: [11, 36], to: [2, 41], mirror: true }],
+  tail: [{ from: [27, 35], to: [41, 45], thick: 4 }],
+  plates: [{ from: [3, 10], to: [44, 10], thick: 3, seamOnly: true }, { from: [3, 43], to: [44, 43], thick: 3, seamOnly: true }],
+  fangs: [{ from: [9, 22], to: [22, 46], thick: 4, mirror: true }],
+  mantle: [{ from: [3, 7], to: [44, 7], thick: 4 }],
+  barbs: [{ from: [3, 22], to: [3, 22], thick: 4, mirror: true }, { from: [2, 46], to: [2, 46], thick: 4, mirror: true }],
+  brand: [{ from: [13, 22], to: [34, 22], thick: 2, seamOnly: true, mark: true }, { from: [24, 13], to: [24, 34], thick: 2, seamOnly: true, mark: true }],
+  stilts: [{ from: [20, 33], to: [12, 47], thick: 4, mirror: true }],
+  fins: [{ from: [19, 36], to: [1, 46], thick: 4, mirror: true }]
+};
+
+/**
+ * @param rest the plain body at rest: what decides dense or thin, and where a stroke joins.
+ * @param again how many of this shape the line already bears: a second sits lower and further out.
+ */
+function drawFeature(k: Ink, rest: Ink, feature: string, again: number) {
+  const dx = again * 3, dy = again * 6;
+  const paths = (FEATURE_STROKES[feature] ?? []).flatMap(s => {
+    const thick = s.thick ?? 3;
+    const at = (flip: (x: number) => number) => ({ x0: flip(s.from[0] - dx), y0: s.from[1] + dy, x1: flip(s.to[0] - dx), y1: s.to[1] + dy, thick, seamOnly: s.seamOnly, mark: s.mark });
+    return s.mirror ? [at(x => x), at(x => D - 1 - x)] : [at(x => x)];
+  });
+
+  let cx = 0, cy = 0, mass = 0;
+  for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+    if (rest.body[y * D + x]) { cx += x; cy += y; mass++; }
+  }
+
+  const dense = mass > D * D * DENSE_MASS;
+  const seams = paths.filter(p => dense || p.mark);
+  seams.forEach(p => k.line(p.x0, p.y0, p.x1, p.y1, p.seamOnly ? p.thick : p.thick + FEATURE_CUT, 0));
+  if (!dense && mass > 0) {
+    // Nothing floats: a stroke that starts in the air reaches in to the body's nearest edge
+    const mx = Math.round(cx / mass), my = Math.round(cy / mass);
+    for (const p of paths.filter(p => !p.mark)) {
+      const steps = Math.max(Math.abs(mx - p.x0), Math.abs(my - p.y0), 1);
+      for (let i = 0; i <= steps; i++) {
+        const x = p.x0 + Math.round(((mx - p.x0) * i) / steps), y = p.y0 + Math.round(((my - p.y0) * i) / steps);
+        if (rest.body[y * D + x]) {
+          k.line(p.x0, p.y0, x, y, 1);
+          break;
+        }
+      }
+    }
+  }
+  paths.forEach(p => {
+    if (!seams.includes(p)) k.line(p.x0, p.y0, p.x1, p.y1, p.thick);
+    else if (!p.seamOnly) k.line(p.x0, p.y0, p.x1, p.y1, Math.max(1, p.thick - 1));
+  });
 }
 
 export function creatureMaterial(tags: string[]): Material {
@@ -389,15 +463,23 @@ function backInk(k: Ink): Ink {
   return out;
 }
 
-export function creature(def: { id: string; tags: string[]; size?: string }, s?: number, pose: CreaturePose = {}): Sprite {
-  const seed = fnv1a(`sprite:v1:${def.id}`);
+/** A kind that has changed draws from the first of its line, plus what its line has added. */
+export interface CreatureLineArt { root: string; rootTags: string[]; features: string[] }
+
+export function creature(def: { id: string; tags: string[]; size?: string; line?: CreatureLineArt }, s?: number, pose: CreaturePose = {}): Sprite {
+  const seed = fnv1a(`sprite:v1:${def.line?.root ?? def.id}`);
   const size = s ?? SIZE_ATOMS[def.size || 'MEDIUM'] ?? 14;
-  const plan = planFor(def.tags);
+  const tags = def.line?.rootTags ?? def.tags;
+  const plan = planFor(tags);
   const facing = RADIAL_PLANS.includes(plan) ? 'down' : pose.facing ?? 'down';
   let ink = drawPlan(plan, seed, pose.frame ?? 0);
+  if (def.line) {
+    const rest = drawPlan(plan, seed, 0);
+    def.line.features.forEach((feature, i, all) => drawFeature(ink, rest, feature, all.slice(0, i).filter(f => f === feature).length));
+  }
   if (facing === 'up') ink = backInk(ink);
   if (facing === 'left' || facing === 'right') ink = sideInk(ink);
-  const sprite = stamp(ink, size, creatureMaterial(def.tags), seed, {
+  const sprite = stamp(ink, size, creatureMaterial(tags), seed, {
     role: Role.THREAT, edgeStep: 3, minFill: 0, maxFill: 2, eyeStep: 4
   });
   return facing === 'left' ? mirrorSprite(sprite) : sprite;

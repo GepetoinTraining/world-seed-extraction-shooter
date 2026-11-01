@@ -9,7 +9,7 @@ import { EquipSlotId, IItem } from '../../../types';
 
 // --- WHICH SCREEN (replaces App-local state so dialogue can navigate) ---
 
-export type AppView = 'HUB' | 'MISSIONS' | 'BANK' | 'HOLDINGS' | 'ADMIN';
+export type AppView = 'HUB' | 'MISSIONS' | 'RECON' | 'BANK' | 'HOLDINGS' | 'ADMIN' | 'TUNING';
 export type BankTab = 'agent' | 'skills' | 'stash' | 'ledger';
 
 interface ViewState {
@@ -65,10 +65,49 @@ export const hoverProps = (item: IItem) => ({
 
 // --- THE HOTBAR: what is in the hand right now ---
 
-export const useHotbar = create<{ active: EquipSlotId; setActive: (slot: EquipSlotId) => void }>(set => ({
+/** Shorter than this, a cooldown would only flicker on the cell. */
+const COOLDOWN_SHOWN_FROM_MS = 250;
+
+export const useHotbar = create<{
+  active: EquipSlotId;
+  setActive: (slot: EquipSlotId) => void;
+  /** How long the hand is busy after its last shot, so a press in that time doesn't read as ignored. */
+  cooldown: { slot: EquipSlotId; startedAt: number; ms: number } | null;
+  fired: (slot: EquipSlotId, at: number, ms: number) => void;
+}>(set => ({
   active: 'RIGHT_HAND',
-  setActive: active => set({ active })
+  setActive: active => set({ active }),
+  cooldown: null,
+  fired: (slot, startedAt, ms) => { if (ms >= COOLDOWN_SHOWN_FROM_MS) set({ cooldown: { slot, startedAt, ms } }); }
 }));
+
+// --- THE WAITS (line 124): what the game is making you wait for right now ---
+
+export interface IWait {
+  id: string;
+  label: string;
+  startedAt: number;
+  /** Absent: nobody knows when it ends, and the strip says only how long it has been. */
+  until?: number;
+  /** Too short to notice draws nothing. */
+  quietForMs?: number;
+}
+
+export const useWaits = create<{ waits: IWait[]; begin: (wait: IWait) => void; end: (id: string) => void }>(set => ({
+  waits: [],
+  begin: wait => set(s => ({ waits: [...s.waits.filter(w => w.id !== wait.id), wait] })),
+  end: id => set(s => (s.waits.some(w => w.id === id) ? { waits: s.waits.filter(w => w.id !== id) } : s))
+}));
+
+/** For work whose end nobody knows: it shows while it runs, and ends even if it fails. */
+export async function whileWaiting<T>(id: string, label: string, work: () => Promise<T>, quietForMs = 250): Promise<T> {
+  useWaits.getState().begin({ id, label, startedAt: Date.now(), quietForMs });
+  try {
+    return await work();
+  } finally {
+    useWaits.getState().end(id);
+  }
+}
 
 // --- THE CHARACTER SHEET (line 76): open or not, wherever you are ---
 
@@ -151,6 +190,8 @@ export interface IReceiptView {
   cause?: 'GATE';
   // D30: what settled at this rest. Names only; the rest is on the Agent tab.
   settled?: string[];
+  // Line 124: the record is still being signed, so its numbers are not in yet
+  sealing?: boolean;
 }
 
 interface ReceiptState {
@@ -167,7 +208,7 @@ export const useReceipt = create<ReceiptState>(set => ({
 
 // --- THE RANK MOMENT (Wave 9.5): a rank-up is seen, not logged ---
 
-export interface IRankMoment { from: string; to: string; points: number; at: number }
+export interface IRankMoment { from: string; to: string; at: number }
 
 interface RankMomentState {
   moment: IRankMoment | null;

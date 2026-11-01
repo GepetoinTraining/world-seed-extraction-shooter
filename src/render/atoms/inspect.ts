@@ -17,6 +17,7 @@ import { setBonusText } from '../../entities/hub/template';
 import { IRoomState, roomAdditions } from '../../entities/hub/room';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { NpcSheet } from '../../logic/systems/NpcSheet';
+import { SurveySystem } from '../../logic/systems/SurveySystem';
 
 export interface Card {
   title: string;
@@ -179,6 +180,20 @@ function inspectTemplate(item: IItem): Card {
   return { title: item.name, rows, needs: [], canAct: false, compact: compact(item.name, tpl.authorName) };
 }
 
+/** D85: a map's card says where, how much, how old and whose hand. It holds no name, so it can say none. */
+function inspectMap(item: IItem): Card {
+  const map = item.mapData!;
+  const { sectors, oldest, newest } = SurveySystem.mapSpread(map.sectors);
+  const rows: [string, string][] = [
+    ['World', map.worldName],
+    ['Sectors', String(sectors)],
+    ['Scanned', oldest === newest ? `regeneration ${newest}` : `regeneration ${oldest} to ${newest}`],
+    ['Scribe', map.scribeName],
+    ['Signed', new Date(map.writtenAt).toLocaleDateString()]
+  ];
+  return { title: item.name, rows, needs: [], canAct: false, compact: compact(item.name, map.scribeName) };
+}
+
 /**
  * Wave 10B.5: the card on a STANDING templated building, inside or from the
  * street. The house remembers its architect; a mono-material house says so
@@ -248,6 +263,7 @@ export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | nul
 /** `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word. */
 export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
+  if (item.mapData) return inspectMap(item);
   if (item.isIdentified === false) {
     return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
   }

@@ -21,6 +21,8 @@ export interface IGenerationContext {
   /** D48: how this world's monsters have come along, and what they may become. */
   director?: IDirectorRecord;
   directorPool?: IDirectorPool;
+  /** What a world's record lays over a chunk once it is built. The build itself stays pure. */
+  lay?: (chunk: IChunk) => void;
 }
 
 /** Timber: what makes a forest, and what a trunk is. Read from what it is, never by a name. */
@@ -113,6 +115,9 @@ class TileField {
     return null;
   }
 }
+
+/** Pedro: "very very rare". One quadrant in two thousand: about one a sector and a half. */
+export const RARE_FIND_CHANCE = 1 / 2000;
 
 export class WorldGenerator {
 
@@ -372,6 +377,11 @@ export class WorldGenerator {
     return chunk;
   }
 
+  /** Does this quadrant hold a very rare find, if the world has one for this ground? */
+  static rareFindAt(seed: string, qx: number, qy: number): boolean {
+    return Rng.fromKey(`${seed}:rare:v1:${qx},${qy}`).next() < RARE_FIND_CHANCE;
+  }
+
   private static fillQuadrant(
     chunk: IChunk, seed: string, qx: number, qy: number, biome: BiomeType,
     rank: UniversalRank, rarity: Rarity, ctx: IGenerationContext, exits: { x: number; y: number }[]
@@ -392,6 +402,7 @@ export class WorldGenerator {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
       const body = id(suffix);
+      template = Director.kindOf(seed, body, template, ctx.director);
       const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation);
       push({
         id: body, type: EntityType.MOB, definitionId: template.id, position: at,
@@ -458,6 +469,13 @@ export class WorldGenerator {
       const [tx, ty] = tile();
       resource(`r${i}`, rng.pick(pool), tx, ty);
     }
+    // A plant that refills energy stands outside that table, on a roll of its own, so a
+    // pack without one generates exactly what it always did.
+    const rare = ctx.resourceDefinitions.filter((r: any) => r.rareFind && r.habitat?.includes(biome));
+    if (rare.length > 0 && this.rareFindAt(seed, qx, qy)) {
+      const own = Rng.fromKey(`${seed}:rare:pick:${qx},${qy}`);
+      resource('rare', own.pick(rare), x0 + own.int(0, QUADRANT_TILES), y0 + own.int(0, QUADRANT_TILES));
+    }
 
     // People, rarely, with a rolled sheet.
     if (rng.next() < 0.06) {
@@ -491,6 +509,7 @@ export class WorldGenerator {
     const sx = Math.floor(cx / SECTOR_CHUNKS), sy = Math.floor(cy / SECTOR_CHUNKS);
     if (!map.sectors[`${sx},${sy}`]) return null;
     const chunk = this.buildChunk(map.seed, this.exitsInSector(map, sx, sy), cx, cy, context);
+    context.lay?.(chunk);
     map.chunks[key] = chunk;
     return chunk;
   }
@@ -502,7 +521,11 @@ export class WorldGenerator {
     const exits = this.exitsInSector(map, sx, sy);
     for (let y = 0; y < SECTOR_CHUNKS; y++) for (let x = 0; x < SECTOR_CHUNKS; x++) {
       const cx = sx * SECTOR_CHUNKS + x, cy = sy * SECTOR_CHUNKS + y;
-      const chunk = map.chunks[`${cx},${cy}`] ?? this.buildChunk(map.seed, exits, cx, cy, context);
+      let chunk = map.chunks[`${cx},${cy}`];
+      if (!chunk) {
+        chunk = this.buildChunk(map.seed, exits, cx, cy, context);
+        context.lay?.(chunk);
+      }
       out.push(...chunk.entities);
     }
     return out;

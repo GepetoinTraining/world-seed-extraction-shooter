@@ -5,7 +5,7 @@
  * in hand wears a solid frame and a mark, an empty cell a broken outline.
  */
 
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { EquipSlotId } from '../../types';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
@@ -37,9 +37,20 @@ export function activateHotbar(slot: EquipSlotId) {
   useFeed.getState().push(item ? `${LoadoutSystem.shownName(item)} in hand.` : 'Bare hands.', 'plain');
 }
 
+/** The hand is busy: drains in steps, and with reduced motion simply stands until it is done. */
+const CooldownShade: React.FC<{ ms: number }> = ({ ms }) => {
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setOver(true), ms);
+    return () => clearTimeout(t);
+  }, [ms]);
+  return over ? null : <span aria-hidden className="ws-cool" style={{ '--ws-cool-ms': `${ms}ms` } as React.CSSProperties} />;
+};
+
 export const Hotbar: React.FC = () => {
   const equipment = usePlayerStore(s => s.player.equipment);
   const active = useHotbar(s => s.active);
+  const cooldown = useHotbar(s => s.cooldown);
   const root = useRef<HTMLDivElement>(null);
   useDropZone('hotbar', slotZone(root));
 
@@ -97,6 +108,7 @@ export const Hotbar: React.FC = () => {
               {cell.digit && (
                 <span style={{ position: 'absolute', left: 1, top: 1, lineHeight: 1 }}><Kbd>{cell.digit}</Kbd></span>
               )}
+              {cooldown?.slot === cell.slot && <CooldownShade key={cooldown.startedAt} ms={cooldown.ms} />}
               {count !== undefined && (
                 <span className="ws-bright" style={{ position: 'absolute', right: 2, bottom: 1, fontSize: 'var(--ws-font-small)', lineHeight: 1, background: 'var(--ws-void-0)' }}>×{count}</span>
               )}

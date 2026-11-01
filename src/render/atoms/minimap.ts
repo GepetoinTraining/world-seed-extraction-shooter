@@ -7,7 +7,8 @@
 
 import { BiomeType, IMap } from '../../entities/world/types';
 import { TerrainSystem } from '../../entities/world/TerrainSystem';
-import { QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../entities/world/grid';
+import { CHUNK_TILES, QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../entities/world/grid';
+import { CELL_TILES } from '../../entities/hub/hubManifest';
 import { Role, Sprite, hash2, px } from './atoms';
 import { RECON_CELL_ATOMS, reconCell } from './recon';
 
@@ -80,6 +81,17 @@ export interface FieldMinimapInput {
   seen: Set<string>;
   things: { x: number; y: number; kind: 'HOSTILE' | 'THING' }[];
   exits: { x: number; y: number }[];
+  /** Chests this character has found, drawn wherever they are: knowledge, as last seen. */
+  marks?: { x: number; y: number; empty: boolean }[];
+}
+
+/** A found chest: a solid block, or only its corners if it was last seen empty. Told apart by shape. */
+function stampChest(data: Uint8Array, size: number, sx: number, sy: number, empty: boolean) {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (empty && (dx === 0 || dy === 0)) continue;
+    const ax = sx + dx, ay = sy + dy;
+    if (ax >= 0 && ay >= 0 && ax < size && ay < size) data[ay * size + ax] = px(Role.MATTER, 4);
+  }
 }
 
 export function fieldMinimap(input: FieldMinimapInput): Sprite {
@@ -142,6 +154,10 @@ export function fieldMinimap(input: FieldMinimapInput): Sprite {
     const { sx, sy } = toScreen(exit.x, exit.y);
     stamp(data, size, size, sx, sy, 'EXIT');
   }
+  for (const mark of input.marks ?? []) {
+    const { sx, sy } = toScreen(mark.x, mark.y);
+    stampChest(data, size, sx, sy, mark.empty);
+  }
   stamp(data, size, size, half, half, 'PLAYER');
   return { w: size, h: size, data };
 }
@@ -155,7 +171,12 @@ export interface CityLayoutLike {
   height: number;
   navMesh: boolean[][];
   zones: { pois: { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; metadata?: Record<string, any> }[] }[];
+  chunks: { x: number; y: number }[];
+  roads: { x: number; y: number; main: boolean }[];
+  passages: { tiles: { x: number; y: number }[] }[];
 }
+
+const ROAD_INK = { main: px(Role.GROUND, 4), street: px(Role.GROUND, 3) };
 
 const LOT_INK = {
   outline: px(Role.MATTER, 4),
@@ -164,15 +185,24 @@ const LOT_INK = {
 };
 
 const CITY_SCALE = 2;
+/** The map's own size. A hub this grows past keeps the map this big, and the map follows you. */
+const CITY_MAP_ATOMS = CHUNK_TILES * CITY_SCALE;
 
 /** `lots` maps a lot index to its state; anything built fills, the rest stays hollow. */
 export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number, string>>, tile: { x: number; y: number }): Sprite {
-  const s = CITY_SCALE;
+  const s = Math.max(1, Math.min(CITY_SCALE, Math.floor(CITY_MAP_ATOMS / Math.max(layout.width, layout.height))));
   const w = layout.width * s, h = layout.height * s;
   const data = new Uint8Array(w * h);
-  for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
-    const ink = layout.navMesh[ty]?.[tx] ? GROUND : BLOCKED;
-    for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) data[(ty * s + dy) * w + tx * s + dx] = ink;
+  // What has not risen stays blank: it is neither ground nor wall.
+  for (const chunk of layout.chunks) {
+    for (let ty = chunk.y; ty < chunk.y + CHUNK_TILES; ty++) for (let tx = chunk.x; tx < chunk.x + CHUNK_TILES; tx++) {
+      const ink = layout.navMesh[ty]?.[tx] ? GROUND : BLOCKED;
+      for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) data[(ty * s + dy) * w + tx * s + dx] = ink;
+    }
+  }
+  for (const road of layout.roads) {
+    const ink = road.main ? ROAD_INK.main : ROAD_INK.street;
+    for (let y = 0; y < CELL_TILES * s; y++) for (let x = 0; x < CELL_TILES * s; x++) data[(road.y * s + y) * w + road.x * s + x] = ink;
   }
   for (const zone of layout.zones) for (const poi of zone.pois) {
     const px0 = poi.position.x * s, py0 = poi.position.y * s;
@@ -189,6 +219,16 @@ export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number,
       else data[cell] = LOT_INK.empty;
     }
   }
+  // A servidão crosses lots, so it is drawn over them.
+  for (const q of layout.passages) for (const t of q.tiles) {
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) data[(t.y * s + y) * w + t.x * s + x] = ROAD_INK.main;
+  }
   stamp(data, w, h, tile.x * s + 1, tile.y * s + 1, 'PLAYER');
-  return { w, h, data };
+  if (w <= CITY_MAP_ATOMS && h <= CITY_MAP_ATOMS) return { w, h, data };
+  const vw = Math.min(w, CITY_MAP_ATOMS), vh = Math.min(h, CITY_MAP_ATOMS);
+  const x0 = Math.max(0, Math.min(w - vw, tile.x * s - (vw >> 1)));
+  const y0 = Math.max(0, Math.min(h - vh, tile.y * s - (vh >> 1)));
+  const view = new Uint8Array(vw * vh);
+  for (let y = 0; y < vh; y++) view.set(data.subarray((y0 + y) * w + x0, (y0 + y) * w + x0 + vw), y * vw);
+  return { w: vw, h: vh, data: view };
 }

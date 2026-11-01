@@ -917,7 +917,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
   });
 
   it('D30: the seal, the death and the withdrawal are the rests, and nowhere else calls one', () => {
-    const canvas = source('components/WorldCanvas.tsx');
+    const canvas = source('components/WorldCanvas.tsx') + source('components/ReconView.tsx');
     expect((canvas.match(/restAndCredit\(/g) ?? []).length).toBe(3);
     expect(canvas).toMatch(/restAndCredit\('SEALED'\)/);
     expect(canvas).toMatch(/restAndCredit\('DIED'\)/);
@@ -957,7 +957,7 @@ describe('mastery: rungs join the reveal law', () => {
     expect(MASTERY_RUNGS).toEqual(['named', 'handled', 'graded', 'attuned']);
     expect(RUNG_XP[0]).toBe(0);
     let last = -1;
-    for (let xp = 0; xp < 1000; xp += 7) {
+    for (let xp = 0; xp < RUNG_XP[3] + 7; xp += 7) {
       const rung = WebSystem.masteryOf(WebSystem.withCumulativeXp(WebSystem.freshSkill('skill_axe', ['axe'], 0), xp)).rung;
       expect(rung).toBeGreaterThanOrEqual(last);
       last = rung;

@@ -56,7 +56,8 @@ export enum ItemType {
   COMMODITY = 'COMMODITY',
   TOOL = 'TOOL',
   LORE = 'LORE', // Wave 2.3: lore fragments & social contracts (contract upgrade: additive)
-  TEMPLATE = 'TEMPLATE' // Wave 10B: a signed building plan, designed at the scribe's table (additive)
+  TEMPLATE = 'TEMPLATE', // Wave 10B: a signed building plan, designed at the scribe's table (additive)
+  MAP = 'MAP' // D85: what a character scanned of one world, written at the scribe's table (additive)
 }
 
 export enum SlotType {
@@ -129,6 +130,7 @@ export interface ISlotProtection {
   by: string; // the charm or scroll that holds the line
   /** 10E (scrolls): the magic holds until this clock, then lapses. Absent = until spent. */
   until?: number;
+  startedAt?: number;
 }
 
 /**
@@ -141,6 +143,8 @@ export interface IEquipmentState {
   items: IItem[];                                        // what the body wears
   frames: Partial<Record<HeadPositionId, string>>;       // D22: cognitive frame ids by position
   protected: ISlotProtection[];                          // D21: session marks
+  /** What skills gave that is always true of this body. StatSystem.total reads it beside what is worn. */
+  passives?: Record<string, number>;
 }
 
 // ==========================================================================
@@ -568,6 +572,15 @@ export interface IItem {
     uses: number;
   };
   /** D21: a scroll's protection runs on a clock — slots held until the time is spent. */
+  /** D85: a world's sectors as a scribe held them. Levels and counts, never a name (D60). */
+  mapData?: {
+    worldId: string;
+    worldName: string;
+    scribeUid: string;
+    scribeName: string;
+    writtenAt: number;
+    sectors: NonNullable<IPlayer['survey']>[string];
+  };
   scrollData?: {
     slots: number;
     chosen: boolean;
@@ -677,6 +690,20 @@ export interface ILoreEntry {
   dateDiscovered: number;
 }
 
+/** What a skill's circles earned: something to cast, or something always true. */
+export interface ISkillGift {
+  id: string;
+  kind: 'active' | 'passive';
+  name: string;
+  blurb: string;
+  elements?: string[];
+  delivery?: string;
+  effect?: string;
+  cost?: string;
+  stat?: string;
+  value?: number;
+}
+
 export interface ISkillState {
   id: string;
   level: number;
@@ -685,6 +712,10 @@ export interface ISkillState {
   scalingAttribute: string;
   /** D28: the deepest rank this skill has worked. It rides beside the identity, never in it. */
   rank?: number;
+  /** How rare the skill is: the rank it settled at. It sets the skill's pace and weight, and deeper work does not move it. */
+  bornRank?: number;
+  /** Levels poured into this skill. Each third one earns an active skill or a passive bonus at a rest. */
+  circles?: number;
   /** D28: a track from an old save the law cannot read. Kept whole, off the web. */
   legacy?: boolean;
   origin?: {
@@ -744,7 +775,7 @@ export interface IActiveSession {
   position: { x: number; y: number; z: number };
   statusEffects: string[];
   /** Layer 1: what is working on this body right now, on the clock. */
-  activeEffects?: { kind: string; magnitude: number; until: number; nextAt: number; tickMs?: number }[];
+  activeEffects?: { kind: string; magnitude: number; until: number; nextAt: number; tickMs?: number; startedAt?: number }[];
 }
 
 // NEW: Interaction Types for UI
@@ -798,20 +829,30 @@ export interface IPlayer {
   id: string;
   username: string;
   archetype?: string; // chosen at birth; an avatar's look is derived from it
-  // Wave 9.5 (contract upgrade: additive): kills feed the universal rank.
-  // rankXp is lifetime kill XP; attributePoints are granted on each rank-up
-  // and spent into baseAttributes. The rank itself is derived from rankXp.
+  // D83: rank and level are two things. rankXp is lifetime experience, and it no
+  // longer decides the rank; attributePoints are granted on each level and spent
+  // into baseAttributes.
   rankXp?: number;
   attributePoints?: number;
+  /** D83: set by the guild for hard quests. An old save takes the rank its experience earned, once. */
+  rank?: UniversalRank;
+  /** D83: experience since the last rank. A grant sets it back to zero; the level reads from it. */
+  levelXp?: number;
+  /** D83: levels climbed at earlier ranks. They stay yours through a reset, and each is a circle to fill. */
+  levelsBanked?: number;
+  /** Chests this character has seen, by world and id: where, and how they were last seen. Knowledge, never the truth of now. */
+  chestMarks?: Record<string, Record<string, { x: number; y: number; empty: boolean }>>;
+  /** What each skill's circles have earned, by skill id. Its numbers were rolled here, never by a model. */
+  skillGifts?: Record<string, ISkillGift[]>;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
   energyToday?: number;
   dayCount?: number;
   /** D43, D50: what play queued, for the next rest. */
   restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
   /** What was filed at the door and has not come back. */
-  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] } };
+  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] }; filedAt?: number };
   /** D79: a rest takes real time, and until then this character is down. */
-  rest?: { until: number; place: 'INN' | 'BED' | 'FIELD' };
+  rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */
   survey?: Record<string, Record<string, {
     level: number;
@@ -827,7 +868,7 @@ export interface IPlayer {
   weaveNames?: Record<string, string>;
   knownAbilities?: string[];
   /** What the focus casts right now. Absent: the plain burst. */
-  activeCast?: { kind: 'weave'; elements: string[] } | { kind: 'ability'; id: string };
+  activeCast?: { kind: 'weave'; elements: string[] } | { kind: 'ability'; id: string } | { kind: 'gift'; id: string };
   bank: IBank;
   currentSession?: IActiveSession;
   guildId?: string;

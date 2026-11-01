@@ -241,7 +241,7 @@ These are the current values, set by reasoning and very little play. Expect to c
 |---|---|---|
 | Walking pace | `BASE_WALK_TILES_PER_S` 4 tiles/s (80px/s), × (1 + `movement_speed` on worn gear), then load, tow and ground. Field and city alike, no ceiling | `LoadoutSystem.ts` |
 | Enemy speed | The definition's own `speed`, default 2 tiles/s | `MobAI.ts` |
-| Enemy alert range | The definition's `viewRange`, default 8, capped at 16 tiles | `MobAI.ts` |
+| Enemy alert range | The definition's `viewRange`, default 8, with no cap (N6); `WorldCanvas` only simulates what a shot could reach | `MobAI.ts` |
 | Enemy give-up range | The larger of 16 tiles and twice the alert range | `MobAI.ts` |
 | Enemy attack interval | 2s | `MobAI.ts` |
 | Projectile speed / flight | 200px/s for 2s | `projectileSystem.ts` |

@@ -119,13 +119,15 @@ export interface IActiveStatus {
   until: number;
   nextAt: number;
   tickMs?: number;
+  /** So the time left can be drawn as a share of the whole (line 124). */
+  startedAt?: number;
 }
 
 export const StatusClock = {
   add(statuses: IActiveStatus[] | undefined, plan: IStatusPlan, now: number): IActiveStatus[] {
     return [
       ...(statuses ?? []).filter(s => s.kind !== plan.kind),
-      { kind: plan.kind, magnitude: plan.magnitude, until: now + plan.durationMs, nextAt: now + (plan.tickMs ?? plan.durationMs), tickMs: plan.tickMs }
+      { kind: plan.kind, magnitude: plan.magnitude, until: now + plan.durationMs, nextAt: now + (plan.tickMs ?? plan.durationMs), tickMs: plan.tickMs, startedAt: now }
     ];
   },
 
