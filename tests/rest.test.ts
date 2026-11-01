@@ -3,6 +3,7 @@
  * No bar calls a model. Monsters and wind-ups run on a faked clock.
  */
 
+import { Leaders } from '../src/entities/world/Leaders';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IPlayer, Rarity, UniversalRank } from '../types';
 import { EffectSystem, IEffectAbility, StatusClock } from '../src/logic/systems/EffectSystem';
@@ -189,7 +190,8 @@ describe('line 90: the Director', () => {
     let record = emptyDirectorRecord();
     for (let i = 0; i < 6; i++) record = Director.evolve(record);
     const locked = land(ctx(record, false));
-    expect(locked.filter(m => m.bonusHealth || m.bonusDamage)).toEqual([]);
+    // A leader's own toughness comes from its sheet (D93), and no prefix gave it that
+    expect(locked.filter(m => !Leaders.isLeader(m.id) && (m.bonusHealth || m.bonusDamage))).toEqual([]);
   });
 });
 
@@ -387,7 +389,7 @@ describe('line 86: what a rest brings back stands before the law', () => {
     expect(RestSystem.judgeDream(null as never, asked).ok).toBe(false);
   });
 
-  it('what the world grew is a new pack with a new id, judged; the old one and its worlds do not move', () => {
+  it('a pack read with what grew stands before the law, and the pack itself does not move', () => {
     const grown = RestSystem.grownTheme(FIRST_THEME, growth({ lore: ['A new note was found in a queue rope.'] }))!;
     expect(grown.lore).toHaveLength(FIRST_THEME.lore.length + 1);
     expect(ContentRegistry.judge(grown).ok).toBe(true);

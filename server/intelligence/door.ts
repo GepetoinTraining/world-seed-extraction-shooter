@@ -10,7 +10,7 @@
  * the caller's work stays queued and the game goes on.
  */
 
-export type DoorKind = 'talk' | 'theme' | 'rest';
+export type DoorKind = 'talk' | 'theme' | 'rest' | 'window' | 'creation' | 'kami_talk' | 'kami_set' | 'kami_persona';
 
 export interface IDoorUsage {
   model: string;
@@ -53,6 +53,8 @@ export interface IIntelligenceProvider {
   status(): Promise<IProviderStatus>;
   /** A person is waiting. */
   ask(request: IDoorRequest): Promise<IDoorOutcome>;
+  /** A person is waiting and reading as it comes. A provider without it answers all at once. */
+  askStream?(request: IDoorRequest, onText: (text: string) => void, signal?: AbortSignal): Promise<IDoorOutcome>;
   /** Nobody is waiting: file it, come back later. A provider with no batches answers at once. */
   file(id: string, request: IDoorRequest): Promise<{ status: DoorStatus; batchId?: string; outcome?: IDoorOutcome; reason?: string }>;
   collect(batchId: string): Promise<IDoorOutcome>;
@@ -62,6 +64,9 @@ export interface IIntelligenceProvider {
 
 /** D44: what one rest may spend. It guards the bill and caps no content: what is over it waits. */
 export const REST_SPEND_LIMIT_USD = 0.5;
+
+/** The same guard over one world's window (D69): what is over it waits for the next window. */
+export const WINDOW_SPEND_LIMIT_USD = 0.5;
 
 /** A provider that is not there: no key, no model. The game must still go on. */
 export class AbsentProvider implements IIntelligenceProvider {
@@ -82,6 +87,14 @@ export class IntelligenceDoor {
   /** A live call: only where a person is waiting (D46). Never from the hot path. */
   ask(request: IDoorRequest): Promise<IDoorOutcome> { return this.provider.ask(request); }
 
+  /** The same live call, in pieces as they are written. The outcome still says how it ended. */
+  async askStream(request: IDoorRequest, onText: (text: string) => void, signal?: AbortSignal): Promise<IDoorOutcome> {
+    if (this.provider.askStream) return this.provider.askStream(request, onText, signal);
+    const out = await this.provider.ask(request);
+    if (out.status === 'OK' && out.text) onText(out.text);
+    return out;
+  }
+
   /** A rest's batch, filed. Over the limit, it does not go: it waits for the next rest (D44). */
   async fileRest(id: string, request: IDoorRequest) {
     const ceiling = this.provider.ceiling(request, true);
@@ -92,4 +105,13 @@ export class IntelligenceDoor {
   }
 
   collectRest(batchId: string): Promise<IDoorOutcome> { return this.provider.collect(batchId); }
+
+  /** One small batch of a world's window. It says what it could cost, so a window can add it up. */
+  async fileWindow(id: string, request: IDoorRequest, spent: number) {
+    const ceiling = this.provider.ceiling(request, true);
+    if (spent + ceiling > WINDOW_SPEND_LIMIT_USD) {
+      return { status: 'OVER_LIMIT' as DoorStatus, reason: `This window has spent up to $${spent.toFixed(2)}, and this batch could cost $${ceiling.toFixed(2)} more, over the $${WINDOW_SPEND_LIMIT_USD.toFixed(2)} a window may spend.` };
+    }
+    return { ...(await this.provider.file(id, request)), ceiling };
+  }
 }

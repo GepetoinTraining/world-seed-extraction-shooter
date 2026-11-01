@@ -381,6 +381,20 @@ export function lotArt(state: LotState, w: number, h: number, seed: number, prog
 
 export const doorOf = (p: IPOI) => doorTile(p);
 
+/** How near you stand to deal with a place. Nobody talks across a distance. */
+const REACH_TILES = 3;
+
+/** From a tile to a place. A stretched lot is bigger than the reach, so its door counts too. */
+export const distanceTo = (p: IPOI, tile: { x: number; y: number }) => {
+  const door = doorOf(p);
+  return Math.min(
+    Math.hypot(tile.x + 0.5 - (p.position.x + p.size.width / 2), tile.y + 0.5 - (p.position.y + p.size.height / 2)),
+    Math.hypot(tile.x - door.x, tile.y - door.y)
+  );
+};
+
+export const withinReach = (p: IPOI, tile: { x: number; y: number }) => distanceTo(p, tile) < REACH_TILES;
+
 /** Where a keeper stands: beside their door, never in it, so you can always reach it. */
 export function keeperSpot(layout: IHubLayout, p: IPOI): { x: number; y: number } {
   const door = p.type === POIType.PORTAL ? { x: p.position.x + (p.size.width >> 1), y: p.position.y + p.size.height } : doorOf(p);

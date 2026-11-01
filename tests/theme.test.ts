@@ -193,7 +193,7 @@ describe('R4: the formula, and what generation reads', () => {
     expect(top).toBeGreaterThanOrEqual(order.indexOf(UniversalRank.E));
   });
 
-  it('an elite is scarce and alone, however rich the chunk', () => {
+  it('what leads stays scarce among its people, however rich the chunk (alone only if one of a kind, D93)', () => {
     const context = ContentRegistry.contextFor(themeId, UniversalRank.A);
     const map = WorldGenerator.generate('elite-bar', 32, context);
     const elite = (id: string) => (MOB_DEFINITIONS[id].tags ?? []).includes('elite');
@@ -247,7 +247,7 @@ describe('line 89: one door', () => {
 
   it('a rest uses the model Pedro chose, one constant per kind (D44)', () => {
     expect(MODEL_FOR.rest).toBe('claude-opus-5-5');
-    expect(Object.keys(MODEL_FOR).sort()).toEqual(['rest', 'talk', 'theme']);
+    expect(Object.keys(MODEL_FOR).sort()).toEqual(['creation', 'kami_persona', 'kami_set', 'kami_talk', 'rest', 'talk', 'theme', 'window']);
   });
 
   it('a request carries a frozen system prompt: nothing volatile before the cache line', () => {

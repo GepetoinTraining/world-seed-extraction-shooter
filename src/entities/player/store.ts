@@ -39,6 +39,8 @@ import { IRoomState, roomAdditions } from '../hub/room';
 import { chunkOf } from '../world/grid';
 import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the web and the auto skill
 import { TagLaw } from '../../logic/content/TagLaw';
+import { CreationSystem, ICreationSheet } from '../../logic/systems/CreationSystem';
+import { WorldDeed } from '../../logic/systems/WorldDeed';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
@@ -71,11 +73,12 @@ interface PlayerState {
   maxWeight: number;
 
   // --- ACTIONS ---
-  initializeSession: (certificate: IPlayerCertificate, archetypeId: string) => void;
+  /** A sheet is what the creation flow settled. With none, an older birth, as it always was. */
+  initializeSession: (certificate: IPlayerCertificate, archetypeId: string, sheet?: ICreationSheet) => void;
   // Wave 9.3: idempotent login — initializes ONLY when the store does not
   // already hold this identity's character, so a returning player is never
   // reset (handleLogin used to rebuild everyone as an Operator).
-  ensureCharacter: (certificate: IPlayerCertificate, archetypeId: string) => void;
+  ensureCharacter: (certificate: IPlayerCertificate, archetypeId: string, sheet?: ICreationSheet) => void;
   // D83: a fight feeds the level; the guild grants the rank
   applyKillXp: (amount: number) => { leveledUp: boolean; from: number; to: number; pointsGranted: number };
   grantRank: (to?: UniversalRank) => { granted: boolean; from: UniversalRank; to: UniversalRank };
@@ -193,6 +196,15 @@ const INITIAL_PLAYER_TEMPLATE: IPlayer = {
   floatMemory: [null, null, null]
 };
 
+/** A kit piece the body refuses stays in the vault. That is no fault of anyone's, so nothing is said. */
+const quietEquip = (get: () => PlayerState, itemId: string) => {
+  const player = get().player;
+  const item = player.bank.stashTabs[0]?.items.find(i => i.id === itemId);
+  const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
+  const slot = item && LoadoutSystem.slotForItem(item, equipment);
+  if (item && slot && LoadoutSystem.canEquip({ ...player, equipment }, item, slot).ok) get().equipToSlot(itemId, slot);
+};
+
 let cacheSeq = 0;
 /** D32: an attempt is paid for before the clock runs, and one payment buys one roll. */
 const paidIdentifies = new Set<string>();
@@ -209,9 +221,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentWeight: 0,
   maxWeight: 50,
 
-  initializeSession: (certificate, archetypeId) => {
-    const baseAttrs = { ...DEFAULT_ATTRIBUTES };
-    const bonuses = ARCHETYPES[archetypeId] || {};
+  initializeSession: (certificate, archetypeId, sheet) => {
+    const uid = certificate.metadata.uid;
+    const baseAttrs = sheet ? CreationSystem.spreadOn(uid, sheet.record.main, sheet.record.sub) as IBaseAttributes : { ...DEFAULT_ATTRIBUTES };
+    const bonuses = sheet ? {} : ARCHETYPES[archetypeId] || {};
+    const kit = sheet ? CreationSystem.mintKit(uid, sheet.record.kit) : [ItemFactory.createItem(UniversalRank.F, true, Rng.fromKey(`${uid}:genesis:starter`))];
     
     // Apply Archetype Bonuses to BASE
     Object.entries(bonuses).forEach(([key, val]) => {
@@ -228,11 +242,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         bank: {
           accountId: `acc_${certificate.metadata.uid.substring(0, 8)}`,
           gold: 500,
-          // Keyed genesis roll: the same identity always starts with the same item
-          stashTabs: [{ name: 'CACHE_01', items: [ItemFactory.createItem(UniversalRank.F, true, Rng.fromKey(`${certificate.metadata.uid}:genesis:starter`))] }],
-          universalSkills: {},
+          // Keyed genesis roll: the same identity always starts with the same things. D72: and one free deed.
+          stashTabs: [{ name: 'CACHE_01', items: [...kit, WorldDeed.free(uid)] }],
+          universalSkills: sheet ? CreationSystem.heldSkills(sheet.words) : {},
           lore: {}
         },
+        freeDeedGiven: true,
+        ...(sheet ? { creation: sheet.record, skillWords: CreationSystem.skillWords(sheet.words) } : {}),
         rankXp: 0,
         attributePoints: 0,
         rank: UniversalRank.F,
@@ -242,11 +258,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         floatMemory: [null, null, null]
       }
     });
+    // What you carry is carried: what stays in the vault does not ride into a drop
+    if (sheet) {
+      for (const item of kit) quietEquip(get, item.id);
+      get().recalcAttributes();
+    }
   },
 
-  ensureCharacter: (certificate, archetypeId) => {
+  ensureCharacter: (certificate, archetypeId, sheet) => {
     if (get().player.id === certificate.metadata.uid) return;
-    get().initializeSession(certificate, archetypeId);
+    get().initializeSession(certificate, archetypeId, sheet);
   },
 
   // --- LEVELS AND RANK (D83): a fight counts, and a level gives something real ---
@@ -1882,7 +1903,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       if (entity.container.hasLore) {
         const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
-        const worldLore = ContentRegistry.lore(worldCard?.themeId);
+        const worldLore = ContentRegistry.lore(worldCard?.themeId, useWorldStore.getState().directorRecord ?? undefined);
         const fragment = rng.pick(worldLore.length > 0 ? worldLore : LORE_FRAGMENTS);
         const piece = {
           ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),

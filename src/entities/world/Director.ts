@@ -13,7 +13,8 @@
 
 import { fnv1a, Rng } from '../../logic/rng/DeterministicRNG';
 import type { ILineRecord } from '../../logic/theme/CreatureLines';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
+import { RANKS, ThemeRank } from '../../logic/theme/ThemeTypes';
+import { UniversalRank } from '../../../types';
 
 export interface IDirectorRecord {
   generation: number;
@@ -24,6 +25,25 @@ export interface IDirectorRecord {
   weights: Record<string, number>;
   /** D61: the kinds this world has grown, and the root over them. Absent means none has changed. */
   lines?: ILineRecord;
+  /**
+   * D93: the one body the ledger names: a leader, by id. How many people it has brought down,
+   * and the highest rank among them. It stays across regenerations: it is what the body has done.
+   */
+  bodies?: Record<string, IBodyTally>;
+}
+
+export interface IBodyTally {
+  felled: number;
+  /** The highest rank that has fallen to it. */
+  topRank?: UniversalRank;
+  /** It fell, and to whom at the highest. A leader stays down, so this is once. */
+  fellTo?: UniversalRank;
+}
+
+/** Who a report names, when it names anyone: the body, and the rank of who fell to it. */
+export interface IReportedBody {
+  id: string;
+  rank?: UniversalRank;
 }
 
 export const emptyDirectorRecord = (): IDirectorRecord => ({ generation: 0, felled: {}, fell: {}, weights: {} });
@@ -60,9 +80,6 @@ const LEARN_CHANCE = 0.15;
 const NAMED_FROM_GENERATION = 2;
 const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
 
-/** Of the bodies of a kind that has changed, how many stand as what it became. B2's population replaces this. */
-const CHANGED_SHARE = 0.5;
-
 export interface IDirectorPool {
   affixes: { id: string; name: string; type: 'PREFIX' | 'SUFFIX'; statModifiers?: Record<string, [number, number]> }[];
   abilities: string[];
@@ -72,9 +89,18 @@ const NONE: IMobVariant = { traits: [], learned: [], bonusHealth: 0, bonusDamage
 
 export class Director {
 
-  static report(record: IDirectorRecord, kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string): IDirectorRecord {
+  static report(record: IDirectorRecord, kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string, body?: IReportedBody): IDirectorRecord {
     if (kind === 'FELLED_A_PERSON') {
-      return { ...record, felled: { ...record.felled, [definitionId]: (record.felled[definitionId] ?? 0) + 1 } };
+      const felled = { ...record.felled, [definitionId]: (record.felled[definitionId] ?? 0) + 1 };
+      if (!body) return { ...record, felled };
+      const tally = record.bodies?.[body.id];
+      const higher = (a?: UniversalRank, b?: UniversalRank) => (RANKS.indexOf(a as ThemeRank) >= RANKS.indexOf(b as ThemeRank) ? a : b);
+      const topRank = higher(tally?.topRank, body.rank);
+      return { ...record, felled, bodies: { ...record.bodies, [body.id]: { ...tally, felled: (tally?.felled ?? 0) + 1, ...(topRank ? { topRank } : {}) } } };
+    }
+    if (body) {
+      const tally = record.bodies?.[body.id];
+      record = { ...record, bodies: { ...record.bodies, [body.id]: { felled: tally?.felled ?? 0, ...tally, ...(body.rank ? { fellTo: body.rank } : {}) } } };
     }
     return { ...record, fell: { ...record.fell, [definitionId]: (record.fell[definitionId] ?? 0) + 1 } };
   }
@@ -92,7 +118,11 @@ export class Director {
       const fitness = 1 + (felled * 2 - fell * 0.1) / Math.max(1, felled + fell);
       weights[id] = Math.max(MIN_WEIGHT, Math.round((weights[id] ?? 1) * fitness * 1000) / 1000);
     }
-    return { generation: record.generation + 1, felled: {}, fell: {}, weights, ...(record.lines ? { lines: record.lines } : {}) };
+    return {
+      generation: record.generation + 1, felled: {}, fell: {}, weights,
+      ...(record.lines ? { lines: record.lines } : {}),
+      ...(record.bodies ? { bodies: record.bodies } : {})
+    };
   }
 
   /**
@@ -110,27 +140,8 @@ export class Director {
   }
 
   /**
-   * Which kind this one body stands as, this generation: down the world's own lines
-   * from what the land put here. Keyed, so every machine agrees, and with no line a
-   * body is what it always was. Read at chunk build, so it hashes nothing.
-   */
-  static kindOf<T extends { id: string }>(seed: string, entityId: string, template: T, record: IDirectorRecord | undefined): T {
-    const nodes = Object.values(record?.lines?.nodes ?? {});
-    if (nodes.length === 0) return template;
-    const rng = Rng.fromKey(`line:${seed}:${record!.generation}:${entityId}`);
-    let kind = template;
-    for (;;) {
-      const children = nodes.filter(n => n.parents.includes(kind.id)).map(n => n.id).sort();
-      if (children.length === 0 || rng.next() >= CHANGED_SHARE) return kind;
-      const next = MOB_DEFINITIONS[children[rng.int(0, children.length)]] as unknown as T | undefined;
-      if (!next) return kind;
-      kind = next;
-    }
-  }
-
-  /**
-   * What this one body has become, this generation. Read at chunk build. Bodies stand
-   * where they stood for now; once creatures move (D66), only the land is fixed.
+   * What this one body has become, this generation. Read when it is stood on a chunk.
+   * Which kind it is and where it stands are the population's (D64, D66).
    */
   static variantOf(
     seed: string, entityId: string, definitionId: string, name: string,

@@ -31,9 +31,13 @@ export type ResourceDef = Partial<IItem> & {
   themeId?: string;
   /** Very, very rare: it stands outside the biome's table, on a roll of its own (WorldGenerator.rareFindAt). */
   rareFind?: boolean;
+  /** D99: what a creature leaves that is only worth its sale. It lies where it fell until someone takes it. */
+  junk?: boolean;
   /** D27: a station a web batch added: what it asks of a room, and what it opens. */
   stationMinArea?: number;
   stationFunction?: 'WORKSHOP' | 'VENDOR' | 'SCRIBE';
+  /** D77: what the formula says it is worth, for a thing its weight cannot price. */
+  worth?: number;
 };
 
 /** Everything the installed themes let a person gather or use (D53). Empty until one is installed. */

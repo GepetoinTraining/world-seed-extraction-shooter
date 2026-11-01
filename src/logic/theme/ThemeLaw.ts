@@ -8,10 +8,11 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
-import { STAT_SCALE } from './ThemeFormula';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
+import { EffectSystem } from '../systems/EffectSystem';
 import { MENTAL_ATTRIBUTES } from '../../../types';
 
 export interface IThemeVerdict { ok: boolean; reason?: string }
@@ -31,6 +32,9 @@ const SCOPE_WORDS = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scrol
  * model's word for itself.
  */
 const INHERITED_ONLY = new Set(['elite', 'boss', 'titan', 'god']);
+/** What a plain elite is not (Pedro, 2026-11-01): one of a kind stands alone, and leads nothing. */
+const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
+const isPlainElite = (c: { tags: string[] }) => c.tags.includes('elite') && !c.tags.some(t => ONE_OF_A_KIND.includes(t));
 
 const has = (values: readonly string[], v: string) => values.includes(v);
 
@@ -74,12 +78,15 @@ export class ThemeLaw {
     }
 
     const abilityKeys = new Set(pack.abilities.map(a => a.key));
+    const wayOut = new Set(pack.abilities.filter(a => a.effect === 'forced_exit').map(a => a.key));
     for (const a of pack.abilities) {
       if (!claim(a.key)) return no(`ability "${a.key}" needs its own plain key.`);
       if (!a.name?.trim()) return no(`ability ${a.key} has no name.`);
       if (!has(DELIVERIES, a.delivery)) return no(`${a.key}: "${a.delivery}" is not a delivery.`);
       if (!has(EFFECTS, a.effect)) return no(`${a.key}: "${a.effect}" is not an effect.`);
       if (!has(COST_BANDS, a.cost)) return no(`${a.key}: "${a.cost}" is not a cost band.`);
+      const exit = EffectSystem.exitRefusal(a);
+      if (exit) return no(`${a.key} ${exit}`);
       const t = unknownTag(a.elements);
       if (t) return no(`${a.key} names the element "${t}", which is not registered.`);
     }
@@ -87,6 +94,8 @@ export class ThemeLaw {
     for (const c of pack.creatures) {
       if (!claim(c.key)) return no(`creature "${c.key}" needs its own plain key.`);
       if (!c.name?.trim()) return no(`creature ${c.key} has no name.`);
+      const opens = c.innate.find(k => wayOut.has(k));
+      if (opens) return no(`${c.key} is born knowing "${opens}", and a way out is never learned by defeating something.`);
       if (!has(RANKS, c.rank)) return no(`${c.key}: "${c.rank}" is not a rank.`);
       if (!has(SIZES, c.size)) return no(`${c.key}: "${c.size}" is not a size.`);
       if (!has(BEHAVIORS, c.behavior)) return no(`${c.key}: "${c.behavior}" is not a behavior.`);
@@ -102,6 +111,23 @@ export class ThemeLaw {
       for (const tree of REQUIRED_TREES) {
         if (!pack.creatures.some(c => c.tree === tree)) return no(`it has no ${tree} tree. Every world holds its animals and its monsters (D63).`);
       }
+    }
+    if (formula >= LEADERS_FROM_FORMULA) {
+      const creatureKeys = new Map(pack.creatures.map(c => [c.key, c]));
+      for (const c of pack.creatures) {
+        if (typeof c.social !== 'boolean' || typeof c.builds !== 'boolean') return no(`${c.key} must say whether it is social and whether it builds.`);
+        if (c.builds && c.tree === 'animal') return no(`${c.key} is an animal, and an animal builds nothing (D93).`);
+        // A titan is earned by what it has brought down (D93)
+        if (c.tags.includes('titan')) return no(`${c.key} claims "titan". A titan is earned, never written.`);
+        if (c.leads && !isPlainElite(c)) return no(`${c.key} leads a pack, and only a plain elite does.`);
+        if (isPlainElite(c) && c.social) {
+          const led = creatureKeys.get(c.leads ?? '');
+          if (!led) return no(`${c.key} is a social elite and names no kind in this pack that it leads.`);
+          if (!led.social) return no(`${c.key} leads ${led.key}, which is not social. A pride needs lions (D93).`);
+        }
+        if (isPlainElite(c) && !c.social && c.leads) return no(`${c.key} is solitary and leads a pack. Only a social species leads (D93).`);
+      }
+      if (!pack.creatures.some(c => isPlainElite(c) && c.social)) return no('nothing there leads a pack. Elites are what a world rolls at its mint (D93).');
     }
 
     const materialKeys = new Set(pack.materials.map(m => m.key));
@@ -146,6 +172,7 @@ export class ThemeLaw {
       if (!has(RANKS, g.rank)) return no(`${g.key}: "${g.rank}" is not a rank.`);
       if (!has(GEAR_KINDS, g.kind)) return no(`${g.key}: "${g.kind}" is not a kind of gear, so no slot would take it.`);
       if (g.carries && !abilityKeys.has(g.carries)) return no(`${g.key} carries "${g.carries}", which this pack never defines.`);
+      if (wayOut.has(g.carries)) return no(`${g.key} carries "${g.carries}", and a trigger would open a way out for nothing.`);
       if (g.carries && !(TRIGGERS as readonly string[]).includes(g.trigger)) return no(`${g.key} fires on "${g.trigger}", and nothing in the game fires on that.`);
       const t = unknownTag([...g.tags, ...g.works]);
       if (t) return no(`${g.key} names "${t}", which is not registered.`);
@@ -154,11 +181,28 @@ export class ThemeLaw {
       if (orphan) return no(`${g.key} is made from "${orphan.key}", which this pack never defines.`);
     }
 
+    if (formula >= LEADERS_FROM_FORMULA) {
+      if (!Array.isArray(pack.junk)) return no('junk is missing.');
+      for (const j of pack.junk) {
+        if (!claim(j.key)) return no(`junk "${j.key}" needs its own plain key.`);
+        if (!j.name?.trim()) return no(`junk ${j.key} has no name.`);
+        if (!has(RANKS, j.rank)) return no(`${j.key}: "${j.rank}" is not a rank.`);
+        if (!has(WEIGHTS, j.weight) || !has(WORTHS, j.worth)) return no(`${j.key} is outside the bands.`);
+        if (!Array.isArray(j.from) || j.from.length === 0) return no(`${j.key} comes from nothing.`);
+        const t = unknownTag([...j.tags, ...j.from]);
+        if (t) return no(`${j.key} names "${t}", which is not registered.`);
+      }
+      const bare = pack.creatures.find(c => !pack.junk!.some(j => j.from.some(tag => c.tags.includes(tag))));
+      if (bare) return no(`${bare.key} leaves nothing behind. Every creature has some junk (D99).`);
+    }
+
     for (const c of pack.consumables) {
       if (!claim(c.key)) return no(`consumable "${c.key}" needs its own plain key.`);
       if (!has(RANKS, c.rank) || !has(CONSUMABLE_KINDS, c.kind)) return no(`${c.key} is outside the bands.`);
       if (c.kind === 'energy' && c.onShelf) return no(`${c.key} refills energy, and that is on no shelf.`);
       if (c.kind === 'scroll' && !abilityKeys.has(c.casts)) return no(`${c.key} is a scroll that casts nothing.`);
+      if (wayOut.has(c.casts) && c.kind !== 'scroll') return no(`${c.key} casts "${c.casts}", and only a scroll may.`);
+      if (wayOut.has(c.casts) && rankStep(c.rank) < rankStep(FORCED_EXIT_FLOOR_RANK)) return no(`${c.key} opens a way out, so it is rank ${FORCED_EXIT_FLOOR_RANK} or above.`);
       const t = unknownTag(c.tags);
       if (t) return no(`${c.key} is tagged "${t}", which is not registered.`);
     }
@@ -227,6 +271,8 @@ export class ThemeLaw {
     if (shape) return no(`"${shape}" is not a shape the art draws.`);
     const missing = words.innate.find(k => !pack.abilities.some(a => a.key === k));
     if (missing) return no(`it is born knowing "${missing}", which this world never defined.`);
+    const opens = words.innate.find(k => pack.abilities.find(a => a.key === k)?.effect === 'forced_exit');
+    if (opens) return no(`it is born knowing "${opens}", and a way out is never learned by defeating something.`);
     return { ok: true };
   }
 

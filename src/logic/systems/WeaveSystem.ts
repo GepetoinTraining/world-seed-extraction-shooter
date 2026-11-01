@@ -18,8 +18,8 @@ import { IEffectAbility } from './EffectSystem';
 import { StatSystem } from './StatSystem';
 
 const WEAVE_PREFIX = 'weave_';
-/** What a weave can do in the field. A rest is not chosen by a hash. */
-const WEAVE_EFFECTS = EFFECTS.filter(e => e !== 'rest');
+/** What a weave can do in the field. A rest and a forced way out are not chosen by a hash. */
+const WEAVE_EFFECTS = EFFECTS.filter(e => e !== 'rest' && e !== 'forced_exit');
 const WEAVE_DELIVERIES = DELIVERIES.filter(d => d !== 'aura');
 
 const BASE_RESERVE = 20;

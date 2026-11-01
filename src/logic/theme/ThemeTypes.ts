@@ -11,10 +11,12 @@
 
 import { ITagEntry } from '../../../types';
 
-/** Version 2 knows a line's depth (D61). A pack sealed under 1 stands under the law it was written under. */
-export const THEME_FORMULA_VERSION = 2;
+/** Version 2 knows a line's depth (D61). Version 3 knows who leads and what a body leaves (D93, D99). A pack sealed under an older one stands under the law it was written under. */
+export const THEME_FORMULA_VERSION = 3;
 /** From this version a pack must hold its trees (D63). */
 export const TREES_FROM_FORMULA = 2;
+/** From this version every creature says social and builds, plain elites lead, and creatures leave junk (D93, D99). */
+export const LEADERS_FROM_FORMULA = 3;
 
 export const RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'] as const;
 export type ThemeRank = typeof RANKS[number];
@@ -54,8 +56,9 @@ export const DELIVERIES = ['self', 'touch', 'melee', 'ranged', 'area', 'aura'] a
 /**
  * What can be applied today. Line 77's law reaches effects too: a word with no reader is
  * not here, and the catalog's summon, reveal, transform and move join when something reads them.
+ * A new word goes on the end: `forced_exit` (D77) is read by EffectSystem.
  */
-export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'rest'] as const;
+export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'rest', 'forced_exit'] as const;
 /** When a piece fires. Each has a reader in the field; the catalog's others join the same way. */
 export const TRIGGERS = ['on_hit', 'on_defeat', 'on_hurt', 'on_low_health'] as const;
 /** What a minted skill can let its holder do. Rest is the one with a reader (D58). */
@@ -76,6 +79,8 @@ export const REQUIRED_TREES = ['animal', 'monster'] as const;
 /** What a change of form adds to the body it inherits, as the art draws them: shape and place, never hue. */
 export const LINE_FEATURES = ['horns', 'crest', 'spines', 'tail', 'plates', 'fangs', 'mantle', 'barbs', 'brand', 'stilts', 'fins'] as const;
 export type LineFeature = typeof LINE_FEATURES[number];
+/** What a plain elite adds to the body of what it leads, so a leader is told by shape, never hue. */
+export const LEADER_FEATURES: LineFeature[] = ['crest', 'mantle'];
 
 export interface IThemeCreature {
   key: string;
@@ -93,6 +98,25 @@ export interface IThemeCreature {
   innate: string[];
   /** D63: which tree it belongs to, since a behaviour word cannot say. */
   tree: string;
+  /** D93: does it live in groups? Only a social species leads, or follows. Left out of a pack written before there was such a thing. */
+  social?: boolean;
+  /** D93: can its leaders raise a base? No animal does. */
+  builds?: boolean;
+  /** D93: for a plain elite of a social species, the key of the kind whose pack it heads. Empty otherwise. */
+  leads?: string;
+}
+
+/** D99: what a creature leaves that is only worth its sale. */
+export interface IThemeJunk {
+  key: string;
+  name: string;
+  blurb: string;
+  tags: string[];
+  rank: ThemeRank;
+  weight: typeof WEIGHTS[number];
+  worth: typeof WORTHS[number];
+  /** Creature tags: a body carrying any of these can leave it. */
+  from: string[];
 }
 
 /** What a model writes when a line changes: only what changed. A line's numbers come from the formula. */
@@ -233,6 +257,8 @@ export interface IThemeBody {
   affixes: IThemeAffix[];
   abilities: IThemeAbility[];
   lore: string[];
+  /** D99. Left out of a pack written before there was such a thing. */
+  junk?: IThemeJunk[];
 }
 
 export interface IThemePack extends IThemeBody {
@@ -271,7 +297,8 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   tags: list({ tag: str, kind: oneOf(['tool', 'family', 'material', 'trade', 'action', 'descriptive', 'element', 'verb']), meaning: str }),
   creatures: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), size: oneOf(SIZES), behavior: oneOf(BEHAVIORS),
-    build: oneOf(BUILDS), threat: oneOf(THREATS), pace: oneOf(PACES), habitat: manyOf(BIOMES), innate: strs, tree: str
+    build: oneOf(BUILDS), threat: oneOf(THREATS), pace: oneOf(PACES), habitat: manyOf(BIOMES), innate: strs, tree: str,
+    social: { type: 'boolean' }, builds: { type: 'boolean' }, leads: str
   }),
   materials: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), form: oneOf(MATERIAL_FORMS), verb: oneOf(HARVEST_VERBS),
@@ -292,5 +319,6 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
     gives: list({ stat: str, band: oneOf(STAT_BANDS), downside: { type: 'boolean' } })
   }),
   abilities: list({ key: str, name: str, blurb: str, elements: strs, delivery: oneOf(DELIVERIES), effect: oneOf(EFFECTS), cost: oneOf(COST_BANDS) }),
-  lore: strs
+  lore: strs,
+  junk: list({ key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), from: strs })
 });

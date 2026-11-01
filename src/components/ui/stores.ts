@@ -124,7 +124,9 @@ export const WORLD_DRAFT_DEFAULTS = {
   worldName: '',
   worldDescription: '',
   worldType: 'EXTRACTION',
-  size: 32,
+  // D80: a deed names the size, so this follows the deed
+  size: 16,
+  deedId: '',
   accessMode: 'PUBLIC',
   entryFee: 0,
   extractionTax: 5,
@@ -179,6 +181,8 @@ export interface IReceiptView {
   haul: IItem[];             // what was banked (EXTRACTED) or lost (DIED)
   haulValue: number;
   tax: number;
+  /** D100: what the gate's roll came to. */
+  levy?: { attempted: boolean; dodged: boolean };
   worldName: string;
   durationMs: number;
   actionCount: number;
@@ -188,6 +192,8 @@ export interface IReceiptView {
   kept?: { item: IItem; by: string }[];
   // D77: the gate closed on them, which the receipt says plainly
   cause?: 'GATE';
+  // D77: it left by a way out it paid to force, not by a beacon
+  forced?: boolean;
   // D30: what settled at this rest. Names only; the rest is on the Agent tab.
   settled?: string[];
   // Line 124: the record is still being signed, so its numbers are not in yet

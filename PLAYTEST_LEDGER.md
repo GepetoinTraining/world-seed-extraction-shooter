@@ -26,12 +26,14 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | # | What happens | Where |
 |---|---|---|
 | N5 | `tests/database.store.test.ts`, two processes writing one new file: it failed about one run in three, because both tried to create the tables on first open. `migrateTakingTurns` fixes that cause, and 45 runs since gave 44 passes. The one failure was not captured, so it may be a second cause. Machine load is the likeliest, and that is a guess | `server/connection.ts` |
-| N7 | A creature whose chunk is outside what `WorldCanvas` simulates (what a shot can reach, about 25 tiles) cannot wake or move, so sight has no cap in `MobAI` but the box still limits it. One froze at 49 tiles in play. Left for B2's movement between chunks, since widening it costs frame time | `WorldCanvas.tsx`, `visibleChunks` |
-| N8 | A creature that was hit no longer gives up, so it can follow until its home chunk leaves the simulated area, then freeze there. The old moved-creature problem, now easier to reach. Left for B2 | `MobAI.ts` |
 | N9 | The holdings screen says `LOT 13` where the sign says `Lot #14`. Predates the hub manifest | `HoldingsPanel.tsx` |
 | N10 | A deep scan's manifest still prints raw ids for what is not a creature (`struct_ruin`, `res_...`) | `SurveySystem.manifest` |
 | N11 | The Agent tab says "Mental stats come only from frames", which is no longer true | `PlayerHub.tsx` |
 | N12 | Three places skip worn `carry_capacity` when reading the carry limit. Pedro asked how carry works and has not asked for a change | `player/store.ts` about 640 and 932, `PlayerHub.tsx` about 130 |
+| N13 | Tax Evasion's first attempt says "Winging it: ... It costs more without the skill", and it costs nothing more | the skill's first-use line |
+| N14 | Reading a scroll feeds "Writ of Breach: +0 health." Every scroll has since Layer 3 | `store.consumeItem` |
+| N15 | Glass panes answer `building`, so a window's panes can go into a wall's line | `resourceDefinitions`, `answersTag` |
+| N16 | The database pass can exit 139, a crash at teardown, after every bar has passed. Counted 2026-11-01, 12 runs each, taking turns: the join 1 at 139, a tree without B2's population code 2 at 139 and 1 at exit 1. So it is not B2's. It comes from `tests/database.store.test.ts` alone (1 of 4 runs of that file; the other two files 0 of 4) and the cause is not found. It reached 2 of 3 on a quiet machine, so `npm test` often reports a failure with every bar green: read the bar count | `tests/database.store.test.ts` at teardown |
 
 ### Found while building the timer, 2026-11-01
 
@@ -45,6 +47,8 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | # | What was wrong | Commit | Checked |
 |---|---|---|---|
 | N6 | A creature could be defeated from beyond where it noticed anything, and never answered: a hit woke it, and the next tick put it back to sleep past the leash. A hit is now felt from any distance and answered by the creature's own behaviour, and sight has no cap in `MobAI` | 3f2c6bd | By 22 bars that failed first, and played at 15 to 19 tiles against passive, neutral, turret, swarm, siege and aggressive creatures |
+| N7 | A creature outside the simulated box could not wake or move, so sight was capped by the box | B2, `2beeba1` | The box reaches the widest sight in the dark, and any chunk a provoked body stands in stays simulated. By bars; played at 109 tiles |
+| N8 | A creature that followed froze when its home chunk left the box | B2, `2beeba1` | A body moves to the chunk under its feet as it crosses, and a chunk not yet built holds it at the line. By bars; played across a chunk line |
 | P1 | A cache duplicated its contents into the pack and an overflow cache, one copy per press | b5cd6ea | Bar; played: full pack, five presses, no new entity or item, no energy charged |
 | P2 | A stray click or Escape discarded the mint-world draft | b5cd6ea | Bar on the real component; played: the backdrop does nothing, Escape asks "The draft is unsigned. Abandon it?", reopening restores the draft |
 | P3 | A pack item could not be moved to a chosen cell | b5cd6ea | Bar; played by mouse on the stash, cart and ground; the keyboard walk played on the stash by scripted keys |

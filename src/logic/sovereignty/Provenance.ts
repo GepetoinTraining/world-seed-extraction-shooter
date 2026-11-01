@@ -78,6 +78,12 @@ export class Provenance {
   }
 
   /** Verify every signature in an item's chain (local certs only, for now). */
+  /** Did this person themselves bring this thing out through a gate? Its signed record says. */
+  static async cameThroughGate(itemId: string, uid: string): Promise<boolean> {
+    const doc = await VectorStore.get<IProvenanceChain>(VectorNamespace.ITEMS, this.docId(itemId));
+    return (doc?.data?.events ?? []).some(e => e.payload.type === 'MINT' && e.payload.context?.origin === 'EXTRACTION' && e.payload.actorCertUid === uid);
+  }
+
   static async verify(itemId: string): Promise<{ ok: boolean; events: number; firstEvent?: string }> {
     const doc = await VectorStore.get<IProvenanceChain>(VectorNamespace.ITEMS, this.docId(itemId));
     if (!doc?.data) return { ok: false, events: 0 };

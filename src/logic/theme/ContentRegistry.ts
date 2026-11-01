@@ -24,6 +24,8 @@ import { ICompiledTheme, IAbility, bodyOf, compileTheme, themeIdOf } from './The
 import { IThemeBody, IThemePack } from './ThemeTypes';
 import { IThemeVerdict, ThemeLaw } from './ThemeLaw';
 import { SHELF } from './shelf';
+import { WorldGrowth } from './WorldGrowth';
+import type { ILineRecord } from './CreatureLines';
 
 const installed = new Map<string, { pack: IThemePack; compiled: ICompiledTheme }>();
 const ABILITIES: Record<string, IAbility> = {};
@@ -119,9 +121,31 @@ export class ContentRegistry {
     return ABILITIES[id];
   }
 
-  /** What a world builds its chunks from: its own theme and nothing else, at its own difficulty. */
+  /**
+   * What a world grew joins the tables under its own ids, as a theme's definitions do,
+   * so an item from it keeps working anywhere. No shared bank or shelf hears of it, and
+   * only a world whose record names the scope reads it. Idempotent.
+   */
+  static defineGrowth(pack: IThemePack, lines: ILineRecord): void {
+    for (const compiled of WorldGrowth.compile(pack, lines)) {
+      Object.assign(MOB_DEFINITIONS, compiled.mobs);
+      Object.assign(RESOURCE_DEFINITIONS, compiled.resources);
+      Object.assign(ABILITIES, compiled.abilities);
+      for (const def of Object.values(compiled.resources)) {
+        if (def.rareFind) continue;
+        for (const biome of def.habitat ?? []) {
+          const table = (BIOME_RESOURCES[biome] ??= []);
+          if (!table.includes(def.id)) table.push(def.id);
+        }
+      }
+      registerCompositionDefs(compiled.resources);
+    }
+  }
+
+  /** What a world builds its chunks from: its own theme, what it grew and nothing else, at its own difficulty. */
   static contextFor(themeId: string | undefined, difficulty?: UniversalRank | string, director?: IDirectorRecord, magicUnlocked = false): IGenerationContext {
-    const own = <T extends { themeId?: string }>(defs: T[]) => defs.filter(d => d.themeId === themeId);
+    const scopes = new Set((director?.lines?.grown ?? []).map(b => b.scope));
+    const own = <T extends { themeId?: string }>(defs: T[]) => defs.filter(d => d.themeId === themeId || scopes.has(d.themeId ?? ''));
     const mobs = own(Object.values(MOB_DEFINITIONS) as { themeId?: string }[]);
     const resources = own(Object.values(RESOURCE_DEFINITIONS) as { themeId?: string }[]);
     const context: IGenerationContext = { mobDefinitions: mobs, resourceDefinitions: resources, difficulty: difficulty as UniversalRank | undefined, themeId };
@@ -130,15 +154,20 @@ export class ContentRegistry {
       const compiled = this.compiled(themeId);
       context.directorPool = {
         // D49: only once magic is unlocked do prefixes and suffixes reach a monster
-        affixes: magicUnlocked ? this.affixEntries(themeId).filter(e => e.allowedTags.includes('mob')) : [],
-        abilities: compiled ? Object.keys(compiled.abilities).sort() : []
+        affixes: magicUnlocked ? this.affixEntries(themeId, director).filter(e => e.allowedTags.includes('mob')) : [],
+        abilities: compiled ? [...Object.keys(compiled.abilities), ...this.grownOf(themeId, director).flatMap(c => Object.keys(c.abilities))].sort() : []
       };
     }
     return context;
   }
 
-  static lore(themeId: string | undefined): string[] {
-    return this.get(themeId)?.lore ?? [];
+  private static grownOf(themeId: string | undefined, director?: IDirectorRecord) {
+    const pack = this.get(themeId);
+    return pack && director?.lines?.grown?.length ? WorldGrowth.compile(pack, director.lines) : [];
+  }
+
+  static lore(themeId: string | undefined, director?: IDirectorRecord): string[] {
+    return [...(this.get(themeId)?.lore ?? []), ...(director?.lines?.grown ?? []).flatMap(b => b.growth.lore)];
   }
 
   static regionName(themeId: string | undefined, biome: string): string | undefined {
@@ -146,14 +175,16 @@ export class ContentRegistry {
   }
 
   /** A theme's bank as a pack, for the dream: its own entries only, with effects folded in. */
-  static dreamPack(themeId: string | undefined): IContentPack | null {
+  static dreamPack(themeId: string | undefined, director?: IDirectorRecord): IContentPack | null {
     const compiled = this.compiled(themeId);
-    if (!compiled || compiled.affixBatches.length === 0) return null;
-    const result = AffixBank.compile(compiled.affixBatches);
+    if (!compiled) return null;
+    const batches = [...compiled.affixBatches, ...this.grownOf(themeId, director).flatMap(c => c.affixBatches)];
+    if (batches.length === 0) return null;
+    const result = AffixBank.compile(batches);
     return result.ok ? result.pack! : null;
   }
 
-  static affixEntries(themeId: string | undefined): IBankedAffix[] {
-    return this.dreamPack(themeId)?.entries ?? [];
+  static affixEntries(themeId: string | undefined, director?: IDirectorRecord): IBankedAffix[] {
+    return this.dreamPack(themeId, director)?.entries ?? [];
   }
 }

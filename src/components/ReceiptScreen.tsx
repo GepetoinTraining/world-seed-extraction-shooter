@@ -33,7 +33,7 @@ export const ReceiptScreen: React.FC = () => {
             {died ? 'DIED' : 'SEALED'}
           </div>
           <div className="ws-dim ws-small" style={{ letterSpacing: '0.12em', marginTop: 2 }}>
-            {receipt.cause === 'GATE' ? 'THE GATE CLOSED WITH YOU INSIDE — THE WORLD KEEPS WHAT FELL' : died ? 'SESSION RECEIPT — THE WORLD KEEPS WHAT FELL' : 'SESSION RECEIPT — BANKED AND SIGNED'}
+            {receipt.cause === 'GATE' ? 'THE GATE CLOSED WITH YOU INSIDE — THE WORLD KEEPS WHAT FELL' : died ? 'SESSION RECEIPT — THE WORLD KEEPS WHAT FELL' : receipt.forced ? 'SESSION RECEIPT — A WAY OUT FORCED, BANKED AND SIGNED' : 'SESSION RECEIPT — BANKED AND SIGNED'}
           </div>
         </div>
 
@@ -46,7 +46,10 @@ export const ReceiptScreen: React.FC = () => {
             <span className={died ? 'ws-loss' : 'ws-proof'}>{receipt.haulValue.toLocaleString()} G</span>
           </div>
           {!died && (
-            <div className="ws-row"><span className="ws-dim">HUB LEVY</span><span>{receipt.tax.toLocaleString()} G</span></div>
+            <div className="ws-row">
+              <span className="ws-dim">HUB LEVY{receipt.levy?.attempted ? (receipt.levy.dodged ? ' · DODGED' : ' · CAUGHT: PAID IN FULL') : ''}</span>
+              <span>{receipt.tax.toLocaleString()} G</span>
+            </div>
           )}
         </div>
 

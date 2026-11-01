@@ -29,7 +29,9 @@ export type DialogueEffect =
   | { kind: 'reply'; text: string }
   | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
   | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' }
+  | { kind: 'open'; panel: 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' | 'tavern' | 'guild' }
+  | { kind: 'open'; panel: 'sell'; npcId?: string }
+  | { kind: 'open'; panel: 'apprentices'; npcId: string }
   | { kind: 'deploy' }
   | { kind: 'close' };
 
@@ -146,8 +148,12 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     panel: 'shop',
     category: payload?.category === 'armor' ? 'armor' : payload?.category === 'consumables' ? 'consumable' : 'weapon'
   }),
-  OPEN_SELL: () => ({ kind: 'open', panel: 'sell' }),
+  OPEN_SELL: (payload) => ({ kind: 'open', panel: 'sell', ...(payload?.npcId ? { npcId: payload.npcId } : {}) }),
   OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
+  OPEN_APPRENTICES: (payload) => {
+    void useHubStore.getState().resolveVendors();
+    return { kind: 'open', panel: 'apprentices', npcId: payload?.npcId };
+  },
 
   // --- The Rusty Anchor (Old Mags) ---
   REST: () => {
@@ -180,16 +186,20 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
   },
   GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
+  OPEN_TAVERN: () => ({ kind: 'open', panel: 'tavern' }),
 
   // --- The Land Office (Aurelio Quint): everything that develops the city ---
   OPEN_DEEDS: () => ({ kind: 'navigate', view: 'HOLDINGS' }),
   OPEN_PLAN: () => ({ kind: 'open', panel: 'plan' }),
 
-  // --- Honest closures: these halls are not open, and they say so ---
+  // --- The Hall of Banners (Grand Marshal Vex) ---
+  OPEN_HALL: () => ({ kind: 'open', panel: 'guild' }),
   GUILD_LORE: () => ({
     kind: 'reply',
-    text: 'The charter ledger is sealed. The Seed has not countersigned a guild since cycle 40,221, and I do not ask it why. When the seal lifts, you will hear it from me first.'
+    text: 'People come out of the gate with nothing, and Mags can only give them a bed. We buy them ground on the treasury\'s word, and you bring what their house asks. Then they want things, and the board fills. As for you: the rank is ours to give. Bring out what stands above you, carry it yourself, and hand it over here.'
   }),
+
+  // --- Honest closures: these halls are not open, and they say so ---
   AUCTION_LORE: () => ({
     kind: 'reply',
     text: 'The block is dark — the last auction cleared before your time and the gavel never came back. The lots across the plaza still trade, if you own a counter.'

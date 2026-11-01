@@ -9,7 +9,7 @@ import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGene
 import { usePlayerStore } from '../player/store';
 import { craftName, useHubStore } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
-import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
+import { HUB_GENRE, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
   IRoomState, RoomPieceKind, stationFunctionOf, PIECE_BILLS, PIECE_BUILD_SECONDS,
@@ -18,6 +18,11 @@ import {
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
 import { CityPlan } from '../../components/CityPlan';
+import { GuildHall } from '../../components/GuildHall';
+import { TavernRoom } from '../../components/TavernRoom';
+import { RankMomentView } from '../../components/WorldCanvas';
+import { ApprenticeWindow } from '../../components/ApprenticeWindow';
+import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
@@ -83,7 +88,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' };
+  | { kind: 'sell'; npcId?: string } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'apprentices'; npcId: string };
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
@@ -258,13 +263,8 @@ export const HubCanvas: React.FC = () => {
     for (const zone of layout.zones) {
       for (const poi of zone.pois) {
         if (!poi.interactable) continue;
-        const poiCenterX = poi.position.x + poi.size.width / 2;
-        const poiCenterY = poi.position.y + poi.size.height / 2;
-        const fromMiddle = Math.hypot(playerTile.x + 0.5 - poiCenterX, playerTile.y + 0.5 - poiCenterY);
-        // A stretched lot is bigger than this reach, so its door counts too.
-        const door = doorOf(poi);
-        const dist = Math.min(fromMiddle, Math.hypot(playerTile.x - door.x, playerTile.y - door.y));
-        if (dist < 3 && dist < closestDist) {
+        const dist = distanceTo(poi, playerTile);
+        if (withinReach(poi, playerTile) && dist < closestDist) {
           closest = poi;
           closestDist = dist;
         }
@@ -411,6 +411,8 @@ export const HubCanvas: React.FC = () => {
       case 'open':
         setActiveNPC(null); setNpcReply(null);
         if (effect.panel === 'shop') setPanel({ kind: 'shop', category: effect.category });
+        else if (effect.panel === 'apprentices') setPanel({ kind: 'apprentices', npcId: effect.npcId });
+        else if (effect.panel === 'sell') setPanel({ kind: 'sell', npcId: effect.npcId });
         else if (effect.panel === 'ledger') setView('BANK', 'ledger');
         else if (effect.panel === 'missions') setView('MISSIONS');
         else setPanel({ kind: effect.panel });
@@ -464,6 +466,19 @@ export const HubCanvas: React.FC = () => {
   }, [layout, lotStates]);
 
   const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
+
+  // D75: the people the gate brought out, drawn where they are: by the tavern's door, then their own.
+  const residents = useHubStore(s => s.guild.residents);
+  const residentBodies = useMemo(() => {
+    const palette = buildPalette(HUB_GENRE);
+    const tavern = HubGenerator.findPOI(layout, 'poi_tavern');
+    let lodging = 0;
+    return residents.flatMap(r => {
+      const home = r.homeAt && r.lotId ? HubGenerator.findPOI(layout, r.lotId) : null;
+      const at = home ? doorOf(home) : tavern ? { x: doorOf(tavern).x + 2 + 2 * lodging++, y: doorOf(tavern).y + 1 } : null;
+      return at ? [{ at, body: spriteToCanvas(figure({ uid: r.entityId, archetype: 'NOMAD', facing: 'down', step: 0, moving: false }), palette) }] : [];
+    });
+  }, [residents, layout]);
 
   // U16: the city fills the window. The canvas is the window; the camera does the rest.
   const shellRef = useRef<HTMLDivElement>(null);
@@ -652,6 +667,10 @@ export const HubCanvas: React.FC = () => {
       }
       ctx.stroke();
       ctx.setLineDash([]);
+      for (const { at, body: person } of residentBodies) {
+        const pw = person.width * ATOM_PX, ph = person.height * ATOM_PX;
+        ctx.drawImage(person, Math.round(((at.x + 0.5) * TILE_SIZE - pw / 2 - ox) / 2) * 2, Math.round(((at.y + 0.5) * TILE_SIZE - ph / 2 - oy) / 2) * 2, pw, ph);
+      }
       const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
       ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
@@ -665,7 +684,7 @@ export const HubCanvas: React.FC = () => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cityBitmaps, groundEdges, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
+  }, [cityBitmaps, groundEdges, residentBodies, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -673,7 +692,9 @@ export const HubCanvas: React.FC = () => {
     const tx = Math.floor((e.clientX - box.left + cam.x) / TILE_SIZE);
     const ty = Math.floor((e.clientY - box.top + cam.y) / TILE_SIZE);
     const poi = HubGenerator.getPOIAtPosition(layout, tx, ty);
-    if (poi?.interactable) handleInteract(poi);
+    if (!poi?.interactable) return;
+    if (withinReach(poi, playerTile)) handleInteract(poi);
+    else pushFeed(`${poi.name} is too far off. Walk over.`, 'plain');
   };
 
   // =========================================================================
@@ -824,7 +845,12 @@ export const HubCanvas: React.FC = () => {
           <div className="ws-dialogue">
             <div className="ws-dialogue__head">
               <CastPortrait npcId={activeNPC.id} />
-              <div className="ws-dialogue__speech">"{npcReply ?? activeNPC.dialogue.greeting}"</div>
+              <div className="ws-dialogue__speech">
+                "{npcReply ?? activeNPC.dialogue.greeting}"
+                {!npcReply && useHubStore.getState().vendors[activeNPC.id] && (
+                  <div className="ws-dim ws-small" style={{ marginTop: 4 }}>"{VendorSystem.say(useHubStore.getState().vendors[activeNPC.id])}"</div>
+                )}
+              </div>
             </div>
             <div className="ws-dialogue__options">
               {activeNPC.dialogue.options.map((opt, i) => (
@@ -853,10 +879,14 @@ export const HubCanvas: React.FC = () => {
       )}
 
       {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}
-      {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
+      {panel?.kind === 'sell' && <SellModal npcId={panel.npcId} onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
+      {panel?.kind === 'tavern' && <TavernRoom onClose={() => setPanel(null)} />}
+      {panel?.kind === 'guild' && <GuildHall onClose={() => setPanel(null)} />}
+      <RankMomentView />
+      {panel?.kind === 'apprentices' && <ApprenticeWindow npcId={panel.npcId} onClose={() => setPanel(null)} />}
     </div>
   );
 };
@@ -1094,7 +1124,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
   );
 };
 
-const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, onClose }) => {
   const { player } = usePlayerStore();
   const { sellToVendor } = useHubStore();
   const pushFeed = useFeed(s => s.push);
@@ -1123,7 +1153,7 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 tone="proof"
                 confirmLabel={`SELL FOR ${offer}G: SURE?`}
                 onConfirm={async () => {
-                  const paid = await sellToVendor(item.id);
+                  const paid = await sellToVendor(item.id, npcId);
                   if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
                   else pushFeed('The treasury cannot cover that. Nothing moves.', 'loss');
                 }}

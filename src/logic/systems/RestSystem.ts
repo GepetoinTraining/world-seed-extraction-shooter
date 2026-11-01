@@ -2,9 +2,10 @@
  * THE REST (D43, D50, D51, D58, D79): what play queued settles, and a character's day turns over.
  *
  * Two things, on purpose. SETTLING happens at any rest, a return to the hub included
- * (D30): skills, and what was studied. SLEEPING is chosen and takes real time: what was
- * queued goes to the door when it begins, and energy returns on waking. That downtime
- * is the character's own loop, and the world's Director runs on the world's clock.
+ * (D30): skills, and what was studied. SLEEPING is chosen and takes real time: what this
+ * character queued goes to the door when it begins, and energy returns on waking. That
+ * downtime is the character's own loop. What a world grows is the world's, and goes
+ * through its own window (D69, `ScanPass`).
  *
  * The rest door asks what lets this person rest here (D58): a hub's places, and any
  * skill minted with the grant. No camp exists in code or in a shipped pack; a model
@@ -16,6 +17,7 @@
 
 import { IItem, IPlayer } from '../../../types';
 import { IThemeBody, SKILL_GRANTS } from '../theme/ThemeTypes';
+import { IThemeGrowth, WorldGrowth } from '../theme/WorldGrowth';
 import { WebSystem } from './WebSystem';
 import { StudySystem } from './StudySystem';
 import { StatSystem } from './StatSystem';
@@ -57,21 +59,11 @@ export interface ISkillWords {
   grants: string[];
 }
 
-export interface IThemeGrowth {
-  creatures: IThemeBody['creatures'];
-  materials: IThemeBody['materials'];
-  affixes: IThemeBody['affixes'];
-  abilities: IThemeBody['abilities'];
-  tags: IThemeBody['tags'];
-  lore: string[];
-}
-
 export interface IDreamResult {
   skills: { id: string; name: string; flavor: string; grants: string[] }[];
   weaves: { id: string; name: string }[];
   /** What a skill's third circle earned. */
   gifts?: IGiftWords[];
-  growth?: IThemeGrowth;
 }
 
 const allInventories = (player: IPlayer): IItem[] => [
@@ -268,22 +260,12 @@ export class RestSystem {
   }
 
   /**
-   * What a rest grew, as the next version of a world's theme: a new id, a new pack,
-   * and the same law. It stands beside the old one; a world already signed never moves.
+   * A pack and what grew, read as one for the law (D64). It is the reading only: what
+   * grows stands in that world's own record (`CreatureLines.settleGrowth`), and the pack
+   * the world pinned is not touched.
    */
   static grownTheme(theme: IThemeBody, growth: IThemeGrowth | undefined): IThemeBody | null {
-    if (!growth) return null;
-    const count = growth.creatures.length + growth.materials.length + growth.affixes.length + growth.abilities.length + growth.lore.length;
-    if (count === 0) return null;
-    return {
-      ...theme,
-      tags: [...theme.tags, ...growth.tags],
-      creatures: [...theme.creatures, ...growth.creatures],
-      materials: [...theme.materials, ...growth.materials],
-      affixes: [...theme.affixes, ...growth.affixes],
-      abilities: [...theme.abilities, ...growth.abilities],
-      lore: [...theme.lore, ...growth.lore]
-    };
+    return growth && !WorldGrowth.isEmpty(growth) ? WorldGrowth.grownBody(theme, growth) : null;
   }
 
   /** What a judged dream does to this person: its words and its grants. */

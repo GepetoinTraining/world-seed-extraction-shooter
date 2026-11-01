@@ -5,6 +5,7 @@
  * Think Carleon from Albion, or Stormwind from WoW.
  */
 
+import { UniversalRank } from '../../../types';
 import { CHUNK_TILES } from '../world/grid';
 import { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
 import {
@@ -28,6 +29,8 @@ export interface INPCDefinition {
     options: { label: string; action: string; payload?: any }[];
   };
   spriteColor: string;
+  /** A general vendor: it trains people up, at the rank its own sheet is dealt. What it teaches has no name of its own. */
+  teaches?: { rank: UniversalRank };
 }
 
 export const HUB_NPCS: Record<string, INPCDefinition> = {
@@ -83,11 +86,13 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Need something that hits hard? You've come to the right place.",
       options: [
         { label: 'Browse Weapons', action: 'OPEN_SHOP', payload: { category: 'weapons' } },
-        { label: 'Sell Items', action: 'OPEN_SELL' },
+        { label: 'Sell Items', action: 'OPEN_SELL', payload: { npcId: 'npc_weapon_vendor' } },
+        { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_weapon_vendor' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
-    spriteColor: '#ef4444'
+    spriteColor: '#ef4444',
+    teaches: { rank: UniversalRank.C }
   },
   'npc_armor_vendor': {
     id: 'npc_armor_vendor',
@@ -97,11 +102,14 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Defense is the best offense... or something like that.",
       options: [
         { label: 'Browse Armor', action: 'OPEN_SHOP', payload: { category: 'armor' } },
+        { label: 'Sell Items', action: 'OPEN_SELL', payload: { npcId: 'npc_armor_vendor' } },
         { label: 'Repair Gear', action: 'OPEN_REPAIR' },
+        { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_armor_vendor' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
-    spriteColor: '#3b82f6'
+    spriteColor: '#3b82f6',
+    teaches: { rank: UniversalRank.C }
   },
   'npc_alchemist': {
     id: 'npc_alchemist',
@@ -111,19 +119,22 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       greeting: "Everything here cures something. Not always the thing you came in with.",
       options: [
         { label: 'Browse Remedies', action: 'OPEN_SHOP', payload: { category: 'consumables' } },
+        { label: 'Sell Items', action: 'OPEN_SELL', payload: { npcId: 'npc_alchemist' } },
+        { label: 'The Bench', action: 'OPEN_APPRENTICES', payload: { npcId: 'npc_alchemist' } },
         { label: 'Leave', action: 'CLOSE' }
       ]
     },
-    spriteColor: '#22c55e'
+    spriteColor: '#22c55e',
+    teaches: { rank: UniversalRank.C }
   },
   'npc_guild_master': {
     id: 'npc_guild_master',
     name: 'Grand Marshal Vex',
     title: 'Guild Registrar',
     dialogue: {
-      // Wave 9.7: guilds are unbuilt, and the Hall says so instead of pretending.
-      greeting: "Strength in numbers. Not that the Seed lets me register any, these days.",
+      greeting: "The Hall takes what this city's people want, and it takes proof. Which have you brought?",
       options: [
+        { label: 'The Board', action: 'OPEN_HALL' },
         { label: 'Ask about the Hall', action: 'GUILD_LORE' },
         { label: 'Leave', action: 'CLOSE' }
       ]
@@ -168,6 +179,7 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       options: [
         // D51: energy is a day's supply, and a rest is what restores it (D43: it sends what was queued, too)
         { label: 'Rest the night (20g)', action: 'REST' },
+        { label: 'Who is staying here', action: 'OPEN_TAVERN' },
         { label: 'Buy Drink (10g)', action: 'BUY_CONSUMABLE', payload: { itemId: 'drink_ale', cost: 10 } },
         { label: 'Hear Rumors', action: 'GET_HINT' },
         { label: 'Leave', action: 'CLOSE' }

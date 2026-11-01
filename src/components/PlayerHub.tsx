@@ -226,7 +226,7 @@ const AgentTab: React.FC = () => {
         </div>
         <div className="ws-bright">{player.username.toUpperCase()}</div>
         <div className="ws-dim ws-small" style={{ wordBreak: 'break-all' }}>{player.id}</div>
-        <div className="ws-dim ws-small">{(player.archetype || 'OPERATOR').replace('_', ' ')}</div>
+        <div className="ws-dim ws-small">{player.creation?.className ?? (player.archetype || 'OPERATOR').replace('_', ' ')}</div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 4px' }}>
           <RankMark rank={rank} scale={3} />
@@ -317,7 +317,7 @@ const SkillsTab: React.FC = () => {
                 <RankMark rank={rank} scale={2} />
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span className="t" style={{ display: 'block', textTransform: 'uppercase' }}>
-                    {WebSystem.nameOf(skill.id)}
+                    {player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id)}
                   </span>
                   <span className="s">
                     base {skill.level}
@@ -495,6 +495,7 @@ const ROW_WORDS: Record<string, string> = {
   TRADE: 'Item changed hands',
   CRAFT: 'Transformation',
   UPKEEP: 'Upkeep charged',
+  GUILD: 'The guild',
   TOMBSTONE: 'Superseded'
 };
 
@@ -505,7 +506,7 @@ const rowSummary = (row: ILedgerRow): string => {
   if (row.type === 'CHARACTER_GENESIS') return `${d.username} · birthright ${d.gold} G`;
   if (row.type === 'UPKEEP') return `lot upkeep · ${d.amount} G`;
   if (row.type === 'TRADE') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
-  if (row.type === 'CRAFT') return String(d.kind || '').toLowerCase();
+  if (row.type === 'CRAFT' || row.type === 'GUILD') return String(d.kind || '').toLowerCase().replace(/_/g, ' ');
   return '';
 };
 
