@@ -230,7 +230,7 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
     <div className="ws-ui" style={{ padding: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <span className="ws-dim ws-small">
-          Six lots. Upkeep is charged by the world-day; an unpaid lot reverts to the market with its goods returned.
+          {lots.length} lots. Upkeep is charged by the world-day; an unpaid lot reverts to the market with its goods returned.
           {lots.some(l => l.ownerId === playerId) && (
             <span style={{ display: 'block', width: 320, marginTop: 4 }}>
               <TimerBar label="THE DAY TURNS" startedAt={worldDay() * DAY_MS} until={(worldDay() + 1) * DAY_MS} />

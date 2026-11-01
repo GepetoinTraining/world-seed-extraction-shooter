@@ -9,7 +9,8 @@ import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStat
 import { ItemFactory } from '../item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace, IVectorDocument } from '../data/VectorStore';
-import { HubGenerator } from './HubGenerator';
+import { HubGenerator, IPOI } from './HubGenerator';
+import { HubSide, IRaisedChunk, firstPlan, raiseChunk } from './hubManifest';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
 import { Ledger } from '../../logic/ledger/Ledger';
@@ -127,6 +128,18 @@ export interface IBuildJob {
   };
 }
 
+/** A lot nobody holds yet, at the price the manifest asks. */
+const freshLot = (poi: IPOI): IPlayerLot => ({
+  id: poi.id,
+  lotIndex: poi.metadata.lotIndex,
+  ownerId: null,
+  ownerName: null,
+  purchaseDate: null,
+  structureType: 'EMPTY',
+  inventory: [],
+  price: poi.metadata.price
+});
+
 const dominantDefId = (defIds: string[]): string => {
   const counts = new Map<string, number>();
   for (const id of defIds) counts.set(id, (counts.get(id) || 0) + 1);
@@ -205,6 +218,8 @@ export interface IAuctionListing {
 
 interface HubState {
   activeHubId: string | null;
+  /** D74: what has risen, in order. The first is the middle one. */
+  chunks: IRaisedChunk[];
   lots: IPlayerLot[];
   craftingJobs: ICraftJob[];
   // Wave 10: the rooms behind the doors, and the construction queue
@@ -221,6 +236,8 @@ interface HubState {
   // Actions
   loadHub: (hubWorldUid: string) => Promise<void>;
   saveHubState: () => Promise<void>;
+  /** D74: one chunk more, on the given side of one standing (the first, unless named). It decides nothing about who pays. */
+  raiseChunk: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
   /** The hub as a document, for a commit that changes it along with gold. */
   hubDoc: () => IVectorDocument | null;
 
@@ -271,6 +288,7 @@ interface HubState {
 
 export const useHubStore = create<HubState>((set, get) => ({
   activeHubId: null,
+  chunks: firstPlan().chunks,
   lots: [],
   craftingJobs: [],
   rooms: {},
@@ -288,7 +306,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
+      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -296,8 +314,11 @@ export const useHubStore = create<HubState>((set, get) => ({
       if (hubStateDoc) {
         // LOAD EXISTING
         console.log('[HUB] State loaded from persistence.');
+        // A save from before the manifest has no chunks, and it stands on the first.
+        const chunks = hubStateDoc.data.chunks ?? firstPlan().chunks;
         set({
-          lots: hubStateDoc.data.lots,
+          chunks,
+          lots: HubGenerator.lotRecords(hubStateDoc.data.lots, HubGenerator.generate({ chunks }), freshLot),
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
@@ -307,22 +328,9 @@ export const useHubStore = create<HubState>((set, get) => ({
         // GENERATE FRESH (First time this Hub is visited)
         console.log('[HUB] No state found. Generating fresh layout...');
         
-        // Use the HubGenerator to find lot positions
-        const layout = HubGenerator.generate();
-        const lotPOIs = layout.zones.flatMap(z => z.pois).filter(p => p.type === 'PLAYER_LOT');
-        
-        const freshLots: IPlayerLot[] = lotPOIs.map((poi, idx) => ({
-          id: poi.id,
-          lotIndex: idx,
-          ownerId: null,
-          ownerName: null,
-          purchaseDate: null,
-          structureType: 'EMPTY',
-          inventory: [],
-          price: 5000 // Base price from POI metadata
-        }));
-
-        set({ lots: freshLots, web: { nodes: {} } });
+        // The manifest says where the lots stand
+        const chunks = firstPlan().chunks;
+        set({ chunks, lots: HubGenerator.lotRecords([], HubGenerator.generate({ chunks }), freshLot), web: { nodes: {} } });
         // Save immediately
         await get().saveHubState();
       }
@@ -374,13 +382,24 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
   },
 
+  raiseChunk: async (side, beside) => {
+    const raised = raiseChunk({ chunks: get().chunks }, side, { beside });
+    if (!raised.ok) return raised;
+    const { chunks } = raised.plan;
+    const added = chunks[chunks.length - 1];
+    set({ chunks, lots: HubGenerator.lotRecords(get().lots, HubGenerator.generate(raised.plan), freshLot) });
+    await Ledger.append('BUILD', { kind: 'CHUNK_RAISED', cx: added.cx, cy: added.cy, chunk: added.kind, side });
+    await get().saveHubState();
+    return { ok: true };
+  },
+
   hubDoc: () => {
-    const { activeHubId, lots, craftingJobs, rooms, buildJobs, web } = get();
+    const { activeHubId, chunks, lots, craftingJobs, rooms, buildJobs, web } = get();
     if (!activeHubId) return null;
     return {
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: JSON.parse(JSON.stringify({ lots, craftingJobs, rooms, buildJobs, web })),
+      data: JSON.parse(JSON.stringify({ chunks, lots, craftingJobs, rooms, buildJobs, web })),
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -634,7 +653,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!tpl) return { ok: false, reason: 'That plan is not in your stash.' };
 
     // Line 43: the size needs, with the numbers.
-    const layout = HubGenerator.generate();
+    const layout = HubGenerator.generate({ chunks: get().chunks });
     const poi = HubGenerator.findPOI(layout, lotId);
     const lotFootprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
     const sized = sizeNeedsVerdict(tpl, lotFootprint);
@@ -755,7 +774,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const due = get().buildJobs.filter(j => !j.applied && j.finishesAt <= now);
     if (due.length === 0) return 0;
 
-    const layout = HubGenerator.generate();
+    const layout = HubGenerator.generate({ chunks: get().chunks });
     let applied = 0;
     for (const job of due) {
       if (job.kind === 'SHELL' && job.structureType) {

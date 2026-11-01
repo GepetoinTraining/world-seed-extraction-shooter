@@ -76,6 +76,7 @@ const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
 };
 
 // A keeper can lead to a screen of its own. Coming back, you stand where you stood.
+// Kept from the first chunk's corner, since a chunk risen north or west moves every tile.
 let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
@@ -83,11 +84,26 @@ type HubPanel =
   | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' };
 
 export const HubCanvas: React.FC = () => {
-  const layout = useMemo(() => HubGenerator.generate(), []);
+  const chunks = useHubStore(s => s.chunks);
+  const layout = useMemo(() => HubGenerator.generate({ chunks }), [chunks]);
 
-  const posRef = useRef(streetPos ?? { x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
+  const posRef = useRef(streetPos
+    ? { x: streetPos.x + layout.origin.x * TILE_SIZE, y: streetPos.y + layout.origin.y * TILE_SIZE }
+    : { x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
   const [playerTile, setPlayerTile] = useState({ x: Math.floor(posRef.current.x / TILE_SIZE), y: Math.floor(posRef.current.y / TILE_SIZE) });
-  useEffect(() => () => { streetPos = { ...posRef.current }; }, []);
+  const originRef = useRef(layout.origin);
+  useEffect(() => () => {
+    streetPos = { x: posRef.current.x - originRef.current.x * TILE_SIZE, y: posRef.current.y - originRef.current.y * TILE_SIZE };
+  }, []);
+
+  // A chunk rose to the north or the west, and every tile moved. You stay on your own ground.
+  useEffect(() => {
+    const from = originRef.current, to = layout.origin;
+    if (from.x === to.x && from.y === to.y) return;
+    originRef.current = to;
+    posRef.current = { x: posRef.current.x + (to.x - from.x) * TILE_SIZE, y: posRef.current.y + (to.y - from.y) * TILE_SIZE };
+    setPlayerTile({ x: Math.floor(posRef.current.x / TILE_SIZE), y: Math.floor(posRef.current.y / TILE_SIZE) });
+  }, [layout]);
   const [nearbyPOI, setNearbyPOI] = useState<IPOI | null>(null);
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
   const [npcReply, setNpcReply] = useState<string | null>(null);
@@ -441,6 +457,8 @@ export const HubCanvas: React.FC = () => {
     return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades }), palette));
   }, [layout, lotStates]);
 
+  const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
+
   // U16: the city fills the window. The canvas is the window; the camera does the rest.
   const shellRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -617,6 +635,17 @@ export const HubCanvas: React.FC = () => {
       const frame = reducedMotion ? 0 : Math.floor(time / 500) % 2;
       const city = cityBitmaps[frame];
       ctx.drawImage(city, -ox, -oy, city.width * ATOM_PX, city.height * ATOM_PX);
+      // Where the ground ends, by a broken seam: past it looks much like the bare edge of a chunk.
+      ctx.strokeStyle = '#a1a1aa';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      for (const e of groundEdges) {
+        ctx.moveTo(e.x0 * TILE_SIZE - ox, e.y0 * TILE_SIZE - oy);
+        ctx.lineTo(e.x1 * TILE_SIZE - ox, e.y1 * TILE_SIZE - oy);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
       const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
       ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
@@ -630,7 +659,7 @@ export const HubCanvas: React.FC = () => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cityBitmaps, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
+  }, [cityBitmaps, groundEdges, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
