@@ -25,8 +25,8 @@ export class HubUnlock {
     if (!hubId || await this.isUnlocked(hubId)) return false;
     await VectorStore.put({
       id: keyOf(hubId), namespace: VectorNamespace.TERRITORIES, data: { by, what, at: Date.now() },
-      metadata: { createdAt: Date.now(), owner: by }
-    } as never);
+      metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: 'SYSTEM', version: 1 }
+    });
     SHELF_STATE.magicUnlocked = true;
     await Ledger.append('TECH', { kind: 'MAGIC_UNLOCKED', hubId, by, what });
     return true;

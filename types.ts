@@ -809,7 +809,7 @@ export interface IPlayer {
   /** D43, D50: what play queued, for the next rest. */
   restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
   /** What was filed at the door and has not come back. */
-  pendingDream?: { batchId: string; asked: { skills: string[]; weaves: string[] } };
+  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] } };
   /** D58: what a rest's model said of a skill, and what it lets the holder do. */
   skillWords?: Record<string, { name: string; flavor: string; grants: string[] }>;
   /** Layer 4: aether per element, from what was gathered. */

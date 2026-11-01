@@ -10,6 +10,8 @@ import { useFeed } from '../../components/ui/stores';
 import { GoldCommit } from '../economy/GoldCommit';
 import { Ledger } from '../ledger/Ledger';
 import { ContentRegistry } from '../theme/ContentRegistry';
+import { ThemeStore } from '../theme/ThemeStore';
+import { bodyOf, sealTheme } from '../theme/ThemeCompiler';
 import { IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { WebSystem } from './WebSystem';
 import { HubUnlock } from './HubUnlock';
@@ -62,7 +64,7 @@ export const RestDoor = {
     for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
     feed('You slept. It is another day.', 'signal');
     await useHubStore.getState().creditHeld();
-    await DirectorStore.evolveAll(useWorldStore.getState().availableWorlds.map(w => w.id));
+    await DirectorStore.evolveAll(useWorldStore.getState().availableWorlds.filter(w => !w.retired).map(w => w.id));
     await RestDoor.file(emerged);
     return { ok: true };
   },
@@ -89,6 +91,7 @@ export const RestDoor = {
           ...s.player,
           pendingDream: {
             batchId: out.batchId!,
+            themeId: theme?.themeId,
             asked: {
               skills: (skills as { id: string }[]).map(q => q.id),
               weaves: (weaves as { id: string }[]).map(q => q.id)
@@ -129,5 +132,14 @@ export const RestDoor = {
       }
     }
     for (const s of out.data.skills) feed(`${s.name}: ${s.flavor}`, 'signal');
+
+    // D43: what the world grew becomes a signed pack, or nothing. Refused whole, and the rest stands.
+    const theme = ContentRegistry.get(pending.themeId);
+    const grown = theme ? RestSystem.grownTheme(theme, out.data.growth) : null;
+    if (grown) {
+      const banked = await ThemeStore.bank(sealTheme(bodyOf(grown), out.usage?.model ?? 'unknown', Date.now()));
+      if (banked.ok) feed(`${theme!.name} has grown. Worlds signed from now on will know it.`, 'signal');
+      else console.warn(`[REST] What the world grew was refused whole: ${banked.reason}`);
+    }
   }
 };

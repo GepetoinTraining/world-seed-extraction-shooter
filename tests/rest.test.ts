@@ -11,6 +11,8 @@ import { RestSystem, IDreamResult, emptyQueue } from '../src/logic/systems/RestS
 import { Director, emptyDirectorRecord } from '../src/entities/world/Director';
 import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
+import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
+import { sealTheme } from '../src/logic/theme/ThemeCompiler';
 import { WorldGenerator } from '../src/entities/world/WorldGenerator';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { BiomeType, EntityType, IChunk, IWorldEntity, ScanLevel } from '../src/entities/world/types';
@@ -265,6 +267,7 @@ describe('line 93 and D58: the rest door', () => {
 
   it('no skill in code lets you camp: the door opens only for a minted grant', () => {
     expect(RestSystem.canRest(player(), 'FIELD').ok).toBe(false);
+    expect(JSON.stringify(FIRST_THEME)).not.toMatch(/camp/i);
     const camper = player({ skillWords: { skill_survival: { name: 'Sleeping Rough', flavor: 'x', grants: ['rest'] } } });
     expect(RestSystem.canRest(camper, 'FIELD').ok).toBe(true);
     const fighter = player({ skillWords: { skill_melee: { name: 'Swordplay', flavor: 'x', grants: ['damage'] } } });
@@ -281,6 +284,7 @@ describe('line 93 and D58: the rest door', () => {
 
 describe('line 86: what a rest brings back stands before the law', () => {
   const asked = { skills: ['skill_a'], weaves: ['weave_debt'] };
+  const growth = (over = {}) => ({ creatures: [], materials: [], affixes: [], abilities: [], tags: [], lore: [], ...over });
   const good: IDreamResult = { skills: [{ id: 'skill_a', name: 'A Thing', flavor: 'y', grants: ['rest'] }], weaves: [{ id: 'weave_debt', name: 'The Call' }] };
 
   it('a lawful dream applies, and a grant comes through', () => {
@@ -296,6 +300,23 @@ describe('line 86: what a rest brings back stands before the law', () => {
     expect(RestSystem.judgeDream({ ...good, skills: [{ id: 'skill_z', name: 'Z', flavor: '', grants: [] }] }, asked).ok).toBe(false);
     expect(RestSystem.judgeDream({ ...good, skills: [{ id: 'skill_a', name: 'A', flavor: '', grants: ['fly_to_the_moon'] }] }, asked).ok).toBe(false);
     expect(RestSystem.judgeDream(null as never, asked).ok).toBe(false);
+  });
+
+  it('what the world grew is a new pack with a new id, judged; the old one and its worlds do not move', () => {
+    const grown = RestSystem.grownTheme(FIRST_THEME, growth({ lore: ['A new note was found in a queue rope.'] }))!;
+    expect(grown.lore).toHaveLength(FIRST_THEME.lore.length + 1);
+    expect(ContentRegistry.judge(grown).ok).toBe(true);
+    const pack = sealTheme(grown, 'test', 2);
+    expect(pack.themeId).not.toBe(themeId);
+    expect(ContentRegistry.install(pack).ok).toBe(true);
+    expect(ContentRegistry.get(themeId)!.lore).toHaveLength(FIRST_THEME.lore.length);
+    expect(RestSystem.grownTheme(FIRST_THEME, growth())).toBeNull();
+    expect(RestSystem.grownTheme(FIRST_THEME, undefined)).toBeNull();
+  });
+
+  it('broken growth is refused whole', () => {
+    const grown = RestSystem.grownTheme(FIRST_THEME, growth({ creatures: [{ ...FIRST_THEME.creatures[0], key: 'gone_wrong', tags: ['never_registered_word'] }] }))!;
+    expect(ContentRegistry.judge(grown).ok).toBe(false);
   });
 
   it('line 87: settling needs no door at all', () => {
@@ -381,6 +402,15 @@ describe('line 81: a piece can carry an ability, and it acts unstudied', () => {
     const item = ItemFactory.createFromTemplate(base, false, Rng.fromKey('carry'));
     expect(item.carries).toEqual(base.carries);
     expect(item.isIdentified).toBe(false);
+  });
+
+  it('a pack may not promise a trigger or an effect nothing reads', () => {
+    const b = JSON.parse(JSON.stringify(FIRST_THEME));
+    b.gear.find((g: { carries: string }) => g.carries).trigger = 'on_full_moon';
+    expect(ContentRegistry.judge(b).reason).toMatch(/on_full_moon/);
+    const c = JSON.parse(JSON.stringify(FIRST_THEME));
+    c.abilities[0].effect = 'summon';
+    expect(ContentRegistry.judge(c).ok).toBe(false);
   });
 
   it('nothing in the code keeps a table of triggers', () => {

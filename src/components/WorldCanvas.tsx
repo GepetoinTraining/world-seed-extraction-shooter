@@ -1055,6 +1055,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const landedStatuses: IStatusPlan[] = [];
       const isAlive = (p: any) => (now - p.startTime) < 2000;
 
+      // Layer 3: a scroll, read. It casts through the same door, and asks nothing of the reserves.
+      const scroll = usePlayerStore.getState().pendingCast;
+      if (scroll) {
+        usePlayerStore.setState({ pendingCast: null });
+        const ability = ContentRegistry.ability(scroll);
+        if (ability) {
+          const facing = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
+          applyPlayerReceipt(EffectSystem.resolve(ability, { rank: ProgressionSystem.rankFromXp(usePlayerStore.getState().player.rankXp ?? 0) }, SessionJournal.rollKey('scroll', String(shotCountRef.current++))), now, { x: playerPos.x, z: playerPos.z }, facing);
+          feed(`It reads itself aloud: ${ability.name}.`, 'signal');
+        }
+      }
+
       // Line 72: a held button fires at the weapon's own rate, whatever the weapon
       if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held) fireRef.current(now);
 

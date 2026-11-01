@@ -75,6 +75,8 @@ export class StartupSequence {
     }
 
     // 2. THE THEMES THIS HUB HOLDS: each judged again as it is read, as anything from a store is
+    // A shipped theme is banked too, so a later build changing its bytes retires no world pinned to it
+    await ThemeStore.bank(FIRST_THEME_PACK);
     await ThemeStore.loadBanked();
 
     // 3. GENESIS HUB VERIFICATION

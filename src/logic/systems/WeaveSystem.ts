@@ -18,8 +18,8 @@ import { IEffectAbility } from './EffectSystem';
 import { StatSystem } from './StatSystem';
 
 const WEAVE_PREFIX = 'weave_';
-/** What a weave can do in the field. Resting and summoning are not chosen by a hash. */
-const WEAVE_EFFECTS = EFFECTS.filter(e => !['rest', 'summon', 'transform', 'reveal', 'move'].includes(e));
+/** What a weave can do in the field. A rest is not chosen by a hash. */
+const WEAVE_EFFECTS = EFFECTS.filter(e => e !== 'rest');
 const WEAVE_DELIVERIES = DELIVERIES.filter(d => d !== 'aura');
 
 const BASE_RESERVE = 20;

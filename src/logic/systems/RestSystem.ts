@@ -14,7 +14,7 @@
  */
 
 import { IItem, IPlayer } from '../../../types';
-import { EFFECTS } from '../theme/ThemeTypes';
+import { IThemeBody, SKILL_GRANTS } from '../theme/ThemeTypes';
 import { WebSystem } from './WebSystem';
 import { StudySystem } from './StudySystem';
 import { StatSystem } from './StatSystem';
@@ -44,10 +44,19 @@ export interface ISkillWords {
   grants: string[];
 }
 
+export interface IThemeGrowth {
+  creatures: IThemeBody['creatures'];
+  materials: IThemeBody['materials'];
+  affixes: IThemeBody['affixes'];
+  abilities: IThemeBody['abilities'];
+  tags: IThemeBody['tags'];
+  lore: string[];
+}
+
 export interface IDreamResult {
   skills: { id: string; name: string; flavor: string; grants: string[] }[];
   weaves: { id: string; name: string }[];
-  growth?: { note: string };
+  growth?: IThemeGrowth;
 }
 
 const allInventories = (player: IPlayer): IItem[] => [
@@ -186,7 +195,7 @@ export class RestSystem {
     for (const s of result.skills) {
       if (!asked.skills.includes(s.id)) return { ok: false, reason: `Nobody asked about ${s.id}.` };
       if (!s.name?.trim()) return { ok: false, reason: `${s.id} came back with no name.` };
-      const stray = (s.grants ?? []).find(g => !(EFFECTS as readonly string[]).includes(g));
+      const stray = (s.grants ?? []).find(g => !(SKILL_GRANTS as readonly string[]).includes(g as never));
       if (stray) return { ok: false, reason: `${s.id} grants "${stray}", and the game has no such thing.` };
     }
     for (const w of result.weaves) {
@@ -194,6 +203,25 @@ export class RestSystem {
       if (!w.name?.trim()) return { ok: false, reason: `${w.id} came back with no name.` };
     }
     return { ok: true };
+  }
+
+  /**
+   * What a rest grew, as the next version of a world's theme: a new id, a new pack,
+   * and the same law. It stands beside the old one; a world already signed never moves.
+   */
+  static grownTheme(theme: IThemeBody, growth: IThemeGrowth | undefined): IThemeBody | null {
+    if (!growth) return null;
+    const count = growth.creatures.length + growth.materials.length + growth.affixes.length + growth.abilities.length + growth.lore.length;
+    if (count === 0) return null;
+    return {
+      ...theme,
+      tags: [...theme.tags, ...growth.tags],
+      creatures: [...theme.creatures, ...growth.creatures],
+      materials: [...theme.materials, ...growth.materials],
+      affixes: [...theme.affixes, ...growth.affixes],
+      abilities: [...theme.abilities, ...growth.abilities],
+      lore: [...theme.lore, ...growth.lore]
+    };
   }
 
   /** What a judged dream does to this person: its words and its grants. */

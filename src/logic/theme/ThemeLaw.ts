@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS } from './ThemeTypes';
+import { IThemeBody, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS } from './ThemeTypes';
 import { STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -127,7 +127,7 @@ export class ThemeLaw {
       if (!has(RANKS, g.rank)) return no(`${g.key}: "${g.rank}" is not a rank.`);
       if (!has(GEAR_KINDS, g.kind)) return no(`${g.key}: "${g.kind}" is not a kind of gear, so no slot would take it.`);
       if (g.carries && !abilityKeys.has(g.carries)) return no(`${g.key} carries "${g.carries}", which this pack never defines.`);
-      if (g.carries && !g.trigger) return no(`${g.key} carries an ability and never fires it.`);
+      if (g.carries && !(TRIGGERS as readonly string[]).includes(g.trigger)) return no(`${g.key} fires on "${g.trigger}", and nothing in the game fires on that.`);
       const t = unknownTag([...g.tags, ...g.works]);
       if (t) return no(`${g.key} names "${t}", which is not registered.`);
       if (g.craftAt !== 'none' && g.from.length === 0) return no(`${g.key} can be made, from nothing.`);

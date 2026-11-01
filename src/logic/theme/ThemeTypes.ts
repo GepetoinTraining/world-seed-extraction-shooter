@@ -46,7 +46,15 @@ export const STAT_BANDS = ['minor', 'moderate', 'major'] as const;
 
 /** The catalog's vocabulary for what an ability is (Layer 1). */
 export const DELIVERIES = ['self', 'touch', 'melee', 'ranged', 'area', 'aura'] as const;
-export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'summon', 'reveal', 'transform', 'move', 'rest'] as const;
+/**
+ * What can be applied today. Line 77's law reaches effects too: a word with no reader is
+ * not here, and the catalog's summon, reveal, transform and move join when something reads them.
+ */
+export const EFFECTS = ['damage', 'control', 'heal', 'buff', 'debuff', 'ward', 'rest'] as const;
+/** When a piece fires. Each has a reader in the field; the catalog's others join the same way. */
+export const TRIGGERS = ['on_hit', 'on_defeat', 'on_hurt', 'on_low_health'] as const;
+/** What a minted skill can let its holder do. Rest is the one with a reader (D58). */
+export const SKILL_GRANTS = ['rest'] as const;
 export const COST_BANDS = ['trivial', 'low', 'medium', 'high', 'extreme'] as const;
 
 export interface IThemeCreature {
@@ -116,7 +124,7 @@ export interface IThemeGear {
   works: string[];
   /** Key of an ability this piece can carry (Layer 3), or empty. */
   carries: string;
-  /** When it fires: on_hit, on_defeat, on_hurt, on_low_health, while_worn, on_use. Empty with no ability. */
+  /** When it fires, from TRIGGERS. Empty with no ability. */
   trigger: string;
   /** What it is made of, if it can be made. */
   from: { key: string; count: number }[];

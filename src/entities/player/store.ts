@@ -154,6 +154,8 @@ interface PlayerState {
 
   toggleCarry: (itemId: string) => void;
   consumeItem: (itemId: string) => void;
+  /** Layer 3: what a scroll just asked the field to cast. */
+  pendingCast?: string | null;
 
   // Wave 4: stats mean something
   equipItem: (itemId: string) => void;
@@ -999,6 +1001,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       };
     });
     SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, health });
+    if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
     feed(`${item.name}, straight from the belt: ${restore >= 0 ? '+' : ''}${restore} health. The pack never opened.`, restore >= 0 ? 'signal' : 'loss');
     return { ok: true };
   },
@@ -1599,6 +1602,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session || !item || item.type !== ItemType.CONSUMABLE) return;
     const unread = LoadoutSystem.unreadRefusal(item);
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
+    if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
     const health = Math.max(1, Math.min(session.maxHealth, session.health + restore));

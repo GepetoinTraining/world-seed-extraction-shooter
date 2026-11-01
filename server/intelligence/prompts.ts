@@ -5,7 +5,7 @@
  * Nothing here is trusted on the way back. Whatever returns stands before the law.
  */
 import type { IDoorMessage, IDoorRequest } from './door';
-import { THEME_SCHEMA, BIOMES, EFFECTS, DELIVERIES, GEAR_KINDS } from '../../src/logic/theme/ThemeTypes';
+import { THEME_SCHEMA, BIOMES, EFFECTS, DELIVERIES, GEAR_KINDS, SKILL_GRANTS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
 import { STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 
@@ -28,7 +28,7 @@ Law, and a pack that breaks it is refused whole:
 - There must be something rank F or E to start on; a rank F weapon, a rank F piece of armor; a chop_tool if anything is chopped, a mine_tool if anything is mined; a material tagged "building"; lore to find.
 - Goods are made from materials or other goods in this pack, never from themselves. A station key, or empty for any workshop bench. Goods tagged paper and ink let people draft plans, so give the world some.
 - Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart". A downside is honest: give good things a cost.
-- Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Effect "rest" means the holder can rest where they stand: use it rarely, if the world wants it.
+- Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
 - Gear kinds: ${GEAR_KINDS.join(', ')}.
 
 Make the world coherent. Creatures, materials, weapons, affixes and lore should all sound like one place. A world of a dozen creatures and two dozen pieces of gear is a good start; more is welcome. Elites and bosses are tagged "elite" or "boss".
@@ -50,11 +50,12 @@ const REST_SYSTEM = `${VOICE}
 
 A person is resting. While they slept, what they did settles. You are given a world and what was queued in play: skills forming from practice, tool and material pairs, ground they walked, weaves they tested, things they studied. Write what it comes to, in this world's own words.
 
-For each queued skill, give it a name and a line of flavor, and say what it lets the holder do: each grant is an effect from the list (${EFFECTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. You may also add a few new creatures, materials and affixes that the world would have grown into; they will only reach worlds minted later.
+For each queued skill, give it a name and a line of flavor, and say what it lets the holder do; grants come from this list and may be empty (${SKILL_GRANTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. In "growth" you may add a few new creatures, materials, affixes, abilities and lines of lore that the world would have grown into, in the same shapes as a pack; they will only reach worlds signed later, and a world already signed never changes. Leave growth empty if nothing grew.
 
 ${GRAMMAR}`;
 
 const str = { type: 'string' };
+const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
 export const REST_SCHEMA: Record<string, unknown> = {
   type: 'object', additionalProperties: false, required: ['skills', 'weaves', 'growth'],
@@ -63,7 +64,7 @@ export const REST_SCHEMA: Record<string, unknown> = {
       type: 'array',
       items: {
         type: 'object', additionalProperties: false, required: ['id', 'name', 'flavor', 'grants'],
-        properties: { id: str, name: str, flavor: str, grants: { type: 'array', items: { type: 'string', enum: [...EFFECTS] } } }
+        properties: { id: str, name: str, flavor: str, grants: { type: 'array', items: { type: 'string', enum: [...SKILL_GRANTS] } } }
       }
     },
     weaves: {
@@ -71,8 +72,12 @@ export const REST_SCHEMA: Record<string, unknown> = {
       items: { type: 'object', additionalProperties: false, required: ['id', 'name'], properties: { id: str, name: str } }
     },
     growth: {
-      type: 'object', additionalProperties: false, required: ['note'],
-      properties: { note: str }
+      type: 'object', additionalProperties: false,
+      required: ['creatures', 'materials', 'affixes', 'abilities', 'tags', 'lore'],
+      properties: {
+        creatures: themeProperty('creatures'), materials: themeProperty('materials'), affixes: themeProperty('affixes'),
+        abilities: themeProperty('abilities'), tags: themeProperty('tags'), lore: themeProperty('lore')
+      }
     }
   }
 };

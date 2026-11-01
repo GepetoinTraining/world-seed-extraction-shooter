@@ -31,8 +31,7 @@ export const FIRST_THEME: IThemeBody = {
     { key: 'final_notice', name: 'Final Notice', blurb: 'Everything nearby is informed, at once, and at length.', elements: ['seal'], delivery: 'area', effect: 'damage', cost: 'high' },
     { key: 'foreclose', name: 'Foreclose', blurb: 'A blow that takes the ground out from under the argument.', elements: ['seal'], delivery: 'melee', effect: 'damage', cost: 'medium' },
     { key: 'countersign', name: 'Countersign', blurb: 'A second signature over your own, and the next blow finds it binding.', elements: ['seal'], delivery: 'self', effect: 'ward', cost: 'medium' },
-    { key: 'grace_period', name: 'Grace Period', blurb: 'The body is told it may pay later, and believes it.', elements: ['interest'], delivery: 'self', effect: 'heal', cost: 'low' },
-    { key: 'reconcile', name: 'Reconcile', blurb: 'The accounts of what stands nearby are read aloud.', elements: ['seal'], delivery: 'area', effect: 'reveal', cost: 'trivial' }
+    { key: 'grace_period', name: 'Grace Period', blurb: 'The body is told it may pay later, and believes it.', elements: ['interest'], delivery: 'self', effect: 'heal', cost: 'low' }
   ],
   creatures: [
     { key: 'tally_rat', name: 'Tally Rat', blurb: 'Counts everything it eats. Always comes up short.', tags: ['biological', 'grunt'], rank: 'F', size: 'TINY', behavior: 'SWARM', build: 'frail', threat: 'meek', pace: 'swift', habitat: ALL, innate: [] },

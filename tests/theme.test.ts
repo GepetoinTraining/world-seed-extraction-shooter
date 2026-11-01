@@ -28,6 +28,9 @@ import { IntelligenceDoor, AbsentProvider, IIntelligenceProvider, REST_SPEND_LIM
 import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
 import { buildThemeRequest, buildTalkRequest, buildRestRequest } from '../server/intelligence/prompts';
 import { UniversalRank } from '../types';
+import { usePlayerStore } from '../src/entities/player/store';
+import { inspectItem } from '../src/render/atoms/inspect';
+import { itemArtFor } from '../src/render/atoms/items';
 import { runGoldenCheck, FIRST_THEME_VECTORS } from '../src/entities/world/goldens';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -111,6 +114,14 @@ describe('the shipped theme stands before the same law', () => {
 
   it('a pinned world\'s land is its seed and its theme: the golden vectors stand', () => {
     expect(runGoldenCheck(ContentRegistry.contextFor(themeId), FIRST_THEME_VECTORS)).toEqual({ ok: true, mismatches: [] });
+  });
+
+  it('D54: a piece from retired tables stays a self-described relic: its card and its art do not break', () => {
+    const relic = { ...ItemFactory.createItem(UniversalRank.F, true, Rng.fromKey('relic'), 'weapon'), universalDefinitionId: 'wpn_long_retired' };
+    const player = usePlayerStore.getState().player;
+    expect(() => inspectItem(relic, player)).not.toThrow();
+    expect(inspectItem(relic, player).title).toBe(relic.name);
+    expect(itemArtFor(relic).w).toBeGreaterThan(0);
   });
 
   it('another theme installed later changes nothing about the first', () => {

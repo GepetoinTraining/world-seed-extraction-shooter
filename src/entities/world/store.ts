@@ -115,6 +115,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
 
       // Dev World - Using the Service!
       const devWorld: IWorldCard = { 
+          themeId: ContentRegistry.defaultThemeId(),
           id: 'dev-01', 
           seed: 'dev-sandbox-v4',
           size: 32, 

@@ -1,10 +1,10 @@
 # WORLD SEED // THE SYSTEMS PLAN
 
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
-The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
-approved. The usability pass and the stable database are built, approved and merged; the suite stands at 812
-(688 + 124 in the database's own run), with one timing bar that reads load (see the technology web's record).
-Pedro has played. **Next: the magic + content layer** (under "The next layer"), then the attributes pass, character creation, Wave 11 and Wave 12.
+The raw materials leg (D23), the technology web (D27), the usability pass and the stable database are built, approved
+and merged. **The magic + content layer is built on `claude/magic-content-layer`, awaiting Pedro's approval**; the
+suite stands at 906 (782 + 124 in the database's own run). **Next, once approved: the attributes pass**, then
+character creation, Wave 11 and Wave 12.
 Open test lines
 and their status are in section 5.
 
@@ -770,6 +770,7 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 | D55 | This leg | How far a theme reaches | ✅ ANSWERED WITH THE FINAL SHAPE (Pedro, 2026-11-01): "this Hub we're building is the one I'll serve live from a service, the person can play from ours, or can download the game and play locally (LLM local) BYOK + local or serve their hub from our website (this is the final shape here), we then charge for LLM usage but we allow players to exchange goods and services through a common market, using some form of crypto we'll mint for this." Reading on the record: a theme belongs to a world; a hub is a service, neutral in the bank's voice, whose shelves stock from the worlds it serves. Binding now: the door has a provider seam and records usage per call; a definition travels with its item. Not built now: the market, the currency, the hosting |
 | D56 | This leg | How a theme is made | ✅ DECIDED (Pedro, 2026-11-01): talk, preview, sign. A conversation in the terminal's voice writes a theme pack that passes the bank law, shown before signing. With no key or network you may pin a theme already banked; the draft keeps and nothing blocks |
 | D57 | This leg | Who writes the numbers | ✅ DECIDED (Pedro, 2026-11-01): words from the model, numbers from one versioned formula. A pack holds names, tags, behaviour and bands (rank, cost, size), and no digits |
+| D59 | This leg | What a shipped theme is | Taken by the builder, 2026-11-01: ordinary data under the same law, written by a dev-time run, so a person with no key has a world. It is banked at boot, so a later build changing its bytes retires no world pinned to it |
 | D58 | This leg | Where a person can rest, and camping | ✅ DECIDED (Pedro, 2026-11-01): "we don't gate a camping skill, we also don't pre create it, the concept here is each LLM loop mints skills, and camping might be possible." The rest door asks what lets this person rest here: the hub's places by default, and any minted skill that carries the grant. No camp exists in code or in a shipped pack |
 
 **The reshape (D53–D58, 2026-11-01), which replaces the order below where they differ:** R6 and Layer 0 → the door on Claude, with a provider seam → **the theme: pack, law, formula, one registry, the tables out of `src`, the mint's conversation** → Layer 1 → Layer 2 with the Director and R4 → rest, study and minted skills → Layer 4 with the per-hub unlock → Layer 3. R5's lens goes with the tables it lives in; its rule, that every definition has a slot that takes it, becomes pack law.
@@ -779,6 +780,29 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 **Guardrail 3, flagged:** `agent.md`'s magic is three scales (local, tactical, strategic) with entropy. Tactical and strategic spells change the world, and biome shifts against a pinned world are a one-way-door question. Local only in this layer; the larger scales are noted for later, and the entropy risk becomes a cost band for now.
 
 **Proposed test lines, not yet agreed:** see lines 77–94.
+
+### THE MAGIC + CONTENT LAYER — THE RECORD (built 2026-11-01, on `claude/magic-content-layer`, awaiting Pedro)
+
+**What Pedro's answers changed.** The leg asked D41, D49, D50 and D51. He answered bigger (D53–D58): everything hardcoded goes, a world's theme is the root of all content, and the final shape is a hub served as a service with a common market. So the theme came first and the rest was built on it.
+
+**Built, by bar and by play (a fresh avatar, LEDGER, on `localhost:3108`):**
+- **R6, Layer 0, D51.** Repair reads the body. Every rollable stat has a named reader (`StatSystem.STAT_READERS`) or the batch falls. Energy carries across a drop and a reload. Played: reserves, a kept 37 of 55 energy through a reload, a night at the inn restoring it.
+- **The door (D43–D46).** `server/intelligence/`, a provider seam, Claude behind it, usage on every call. Gemini is gone. A live call has the server-side refusal fallback on; a rest goes by Message Batches.
+- **The theme (D53–D57, lines 95–99).** Pack, law, formula, compiler, registry. `FIRST_THEME` ships as data. Played: the old worlds read retired, the shelves stock only the theme, a minted world pinned it, the field held only its creatures and materials, and its ground stayed within two ranks of its difficulty.
+- **The mint (D56).** Talk, write, preview, sign, or pin one already written. Played with no key (it says so and offers the written one), and played through the whole screen against a canned network reply, so the screen and the law are real and the words were not.
+- **Layers 1, 2, the Director (line 78–80, 90, R4).** One effect door. Monsters cast what they were born knowing; every blow winds up, drawn by shape. Played: brackets on a hound before any damage landed. The Director moves at each rest and read generation 1 back after one.
+- **The rest (D43, D50, D58).** Inn (played), own bed and a field rest for a minted grant (by bar). Settling at any return, sleeping by choice. Study has no roll.
+- **Layer 4, the unlock (D41, D49).** Reserves fill from gathering, a weave cast from a focus and drew them. Played: withdrawn at the beacon, the weave settled under its plain name, the hub's unlock was signed, and the next shelf carried prefixes and suffixes.
+- **Layer 3.** A worn piece carries an ability and fires on hit, defeat, hurt or low health; a scroll casts. By bar and by source: neither was fired in play.
+
+**Not built, on purpose or not yet, said plainly:**
+- **No real model has been called.** There is no key on this machine. The door is proven against a fake client and a canned reply; a real prompt may need tuning before it writes a lawful pack first time. To run it, set `ANTHROPIC_API_KEY` before `npm run pedro`; a mint then costs real money, by the plan's rule on purpose.
+- The local-model and own-key providers: the seam exists, and only Claude stands behind it (D55). The market, the currency and hosting: not started.
+- `summon`, `reveal`, `transform` and `move` effects, and the `while_worn` and `on_use` triggers: nothing reads them yet, so the law refuses them rather than lying (line 77's rule). A minted skill's only working grant is `rest`.
+- A tome's borrowed cast (D40), worn-gear set effects, boss phases, monsters casting named weaves, and importing Primordial's catalog as themes. The moved-mob fix carried since Wave 8 is still carried.
+- A weave's first name is signed in this hub's ledger; carrying names between hubs waits for the market.
+- Relics (D54) are held by a bar: no avatar holding retired items was played.
+- **Balance is unplayed.** Every number in `ThemeFormula.ts` is a guess until Wave 12, and that is now the one file to tune.
 
 ### WAVE 11 — Bringing the Nexi Home
 What comes back through the Nexus populates the hub. The hooks exist as dead ends:
@@ -846,7 +870,7 @@ Guardrail 1 still holds: nothing gets built without a line here.
 52. Affix banks grow by themed batches; an unstudied affix shows nothing on equip, and study reveals exactly what was banked
 53. A world populates from the banks during recon, deterministically for its seed and pinned pack version, and no later batch changes it
 54. The gold and item audit balances across the whole itemization economy
-55. Identify is a skill: scoped by item type, trained at a workstation or by trying, usable in the field on a keyed roll paid in energy (D32), always timed, faster with skill. **To be rewritten by D50:** study, and know only after a rest
+55. Identify is a skill: scoped by item type, trained at a workstation or by trying. Anyone may study, in the field or at a bench, paid in the day's energy, always timed, faster with skill and glasses. There is no roll, and what was studied is known only after a rest (D50, replacing D32)
 56. Protection is an item: a death keeps exactly the slots the magic named, nothing more, and the receipt shows it
 
 For D23, registered as bars in `tests/rawmaterials.test.ts`, approved with the leg:
@@ -898,6 +922,11 @@ Proposed for the next layer, not yet agreed:
 92. A thing can be studied, and what it does is known only after a rest
 93. Energy is one day's supply: nothing but a rest restores it, and a new drop does not refill it
 94. Every attribute changes how a character plays, so two characters of different spreads play differently
+95. No content table is written in `src`: creatures, items, materials, recipes, affixes and lore come from a theme, and the old tables live only as the test fixture
+96. A theme is words, tags and bands; one versioned formula writes every number; a pack with a stray number, an unread stat, trigger or effect, an unregistered tag or an unplayable world is refused whole
+97. A world pins its theme by the id of its bytes, builds from that theme alone, and no later theme or growth moves it
+98. A person can talk with the Seed at the mint, see what it wrote and sign; with no key they can pin a theme already written, and the draft keeps
+99. A world's difficulty sets its ground, spawns weigh toward the chunk's rank, an elite is scarce and alone, neutral stays neutral, every blow winds up visibly first, and nothing outruns a bare walk
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
@@ -954,8 +983,9 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | Usability pass, with the playtest fixes | 57–59, 72–76 | Passed, by test and by play within its carried items; approved "for now" |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
-| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–93 (proposed) | **Next.** Planned, not started |
-| Rest and the dream, the intelligence layer | 86–89 (proposed) | **Next,** as part of that layer. Planned, not started |
+| Magic + content layer: stats act, effects, monsters, items, player magic | 77–83, 85, 90–93 | **Built, awaiting Pedro.** By bar, and by play within the record below |
+| Rest and the dream, the intelligence layer | 86–89 | **Built, awaiting Pedro.** No real model has been called: no key on this machine. See the record |
+| The theme (D53–D57) | 95–99 | **Built, awaiting Pedro.** See the record |
 | Attributes pass (D52) | 94 (proposed) | Planned, after the magic + content layer |
 | Character creation | 84 (proposed) | Planned, after the attributes pass |
 | 12 The Second True Test | 39–40 | Not started |

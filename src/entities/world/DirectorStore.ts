@@ -10,15 +10,15 @@ const keyOf = (worldUid: string) => `director_${worldUid}`;
 
 export const DirectorStore = {
   async load(worldUid: string): Promise<IDirectorRecord> {
-    const doc = await VectorStore.get<IDirectorRecord>(VectorNamespace.WORLDS, keyOf(worldUid));
+    const doc = await VectorStore.get<IDirectorRecord>(VectorNamespace.TERRITORIES, keyOf(worldUid));
     return doc?.data ?? emptyDirectorRecord();
   },
 
   async save(worldUid: string, record: IDirectorRecord): Promise<void> {
     await VectorStore.put({
-      id: keyOf(worldUid), namespace: VectorNamespace.WORLDS, data: record,
-      metadata: { createdAt: Date.now(), owner: 'director' }
-    } as never);
+      id: keyOf(worldUid), namespace: VectorNamespace.TERRITORIES, data: JSON.parse(JSON.stringify(record)) as IDirectorRecord,
+      metadata: { createdAt: Date.now(), updatedAt: Date.now(), ownerCertUid: 'SYSTEM', version: 1 }
+    });
   },
 
   /** A rest passes for every world this hub serves. A generation is the only thing that moves. */

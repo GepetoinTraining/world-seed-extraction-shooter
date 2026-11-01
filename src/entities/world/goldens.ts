@@ -33,9 +33,9 @@ export const GOLDEN_VECTORS: IGoldenVector[] = [
 
 /** The shipped theme's own land. A change here means generation moved: say so, on purpose. */
 export const FIRST_THEME_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 1807609162 },
-  { seed: 'golden-beta', size: 32, hash: 2942379941 },
-  { seed: 'dev-sandbox-v4', size: 32, hash: 717484978 }
+  { seed: 'golden-alpha', size: 16, hash: 3036151310 },
+  { seed: 'golden-beta', size: 32, hash: 3482659051 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 772219746 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */
