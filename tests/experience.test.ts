@@ -36,7 +36,8 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, ItemType, Rarity, UniversalRank } from '../types';
 import {
   LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS,
-  SKILL_IMPACT_PER_LEVEL, SKILL_RANK_IMPACT_GROWTH, SKILL_RANK_TIME_GROWTH, SKILL_TIME_FACTOR, XP_CONSTANTS
+  SKILL_IMPACT_PER_LEVEL, SKILL_RANK_IMPACT_GROWTH, SKILL_RANK_TIME_GROWTH, SKILL_TIME_FACTOR, THREAT_RADIUS_TILES,
+  XP_CONSTANTS, XP_SHARE_CHEST, XP_SHARE_HARVEST, XP_SHARE_THREAT
 } from '../src/entities/player/systems/ProgressionSystem';
 import { DEFAULT_ATTRIBUTES } from '../src/entities/player/types';
 import { ARCHETYPES, usePlayerStore } from '../src/entities/player/store';
@@ -61,7 +62,9 @@ import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 import { compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
 import { BIOMES, IThemeBody } from '../src/logic/theme/ThemeTypes';
 import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { BIOME_RESOURCES } from '../src/entities/item/data/resourceDefinitions';
+import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { useWorldStore } from '../src/entities/world/store';
+import { EntityType, IWorldEntity } from '../src/entities/world/types';
 import { RARE_FIND_CHANCE, WorldGenerator } from '../src/entities/world/WorldGenerator';
 
 const CERT = (uid: string, name = 'TESTER') => ({
@@ -1067,6 +1070,125 @@ describe('three circles ask the rest door for an active skill or a passive bonus
     expect(src).toMatch(/background: i < filled \?/);
     expect(src).toMatch(/Fill a circle in/);
     expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/TO FILL/);
+  });
+});
+
+
+// =============================================================================
+// Taking things pays experience in the world, by the risk, and only once
+// =============================================================================
+
+describe('experience pays in the world, by the risk', () => {
+  const F = { rank: UniversalRank.F, rarity: Rarity.COMMON };
+  const D = { rank: UniversalRank.D, rarity: Rarity.COMMON };
+
+  it('a chest pays far more than a pebble of the same rank', () => {
+    const pebble = ProgressionSystem.worldXp(F, XP_SHARE_HARVEST);
+    const chest = ProgressionSystem.worldXp(F, XP_SHARE_CHEST);
+    expect(pebble).toBeGreaterThan(0);
+    expect(chest).toBeGreaterThanOrEqual(pebble * 10);
+    // A pebble is a small thing beside a fight of its own rank
+    expect(pebble).toBeLessThan(ProgressionSystem.calculateKillXp(UniversalRank.F, Rarity.COMMON) / 10);
+  });
+
+  it('a higher rank and a rarer thing pay more', () => {
+    expect(ProgressionSystem.worldXp(D, XP_SHARE_HARVEST)).toBeGreaterThan(ProgressionSystem.worldXp(F, XP_SHARE_HARVEST));
+    expect(ProgressionSystem.worldXp({ ...F, rarity: Rarity.RARE }, XP_SHARE_HARVEST)).toBeGreaterThanOrEqual(ProgressionSystem.worldXp(F, XP_SHARE_HARVEST));
+  });
+
+  it('whatever still stands near it adds to it, by what it is', () => {
+    const alone = ProgressionSystem.worldXp(F, XP_SHARE_CHEST);
+    const guarded = ProgressionSystem.worldXp(F, XP_SHARE_CHEST, [F, F]);
+    expect(guarded).toBeGreaterThan(alone);
+    expect(guarded).toBe(Math.floor(50 * XP_SHARE_CHEST + 2 * 50 * XP_SHARE_THREAT));
+    expect(ProgressionSystem.worldXp(F, XP_SHARE_CHEST, [D, D])).toBeGreaterThan(guarded);
+  });
+
+  it('nothing is worth less than one', () => {
+    expect(ProgressionSystem.worldXp({ ...F, rarity: Rarity.SCRAP }, 0.0001)).toBe(1);
+  });
+
+  // A session standing in a one-chunk world
+  const stand = (extra: IWorldEntity[]) => {
+    useWorldStore.setState({ currentMap: { seed: 'risk_world', width: 1, height: 1, gridVersion: 2, sectors: {}, generatedAt: 0, chunks: { '0,0': { id: '0,0', x: 0, y: 0, entities: extra } } } } as never);
+    usePlayerStore.setState(s => ({ player: { ...s.player, attributes: { ...s.player.attributes, strength: 500 }, currentSession: { sessionId: 's', layerId: 'l', inventory: [], inventoryLayout: {}, health: 100, maxHealth: 100, energy: 1000, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } as never } }));
+    store().recalcWeight();
+  };
+  const xp = () => player().rankXp ?? 0;
+  const entity = (over: Record<string, unknown>) => ({ position: { x: 5, y: 0 }, rank: UniversalRank.F, rarity: Rarity.COMMON, isHostile: false, ...over }) as unknown as IWorldEntity;
+  const chest = (over: Record<string, unknown> = {}) => entity({ id: 'chest_1', type: EntityType.CONTAINER, definitionId: 'chest_ruin', container: { lootRank: UniversalRank.F, looted: false, hasLore: false }, ...over });
+  const mob = (id: string, x: number, over: Record<string, unknown> = {}) => entity({ id, type: EntityType.MOB, definitionId: 'mob_x', isHostile: true, health: 10, position: { x, y: 0 }, ...over });
+
+  it('opening a chest pays once, and opening it again pays nothing', () => {
+    stand([chest()]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    const paid = xp();
+    expect(paid).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST));
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(paid);
+  });
+
+  it('a chest pays more while its guards stand, and those near enough are the ones that count', () => {
+    stand([chest(), mob('g1', 30), mob('g2', 60), mob('far', 5 + (THREAT_RADIUS_TILES + 2) * 20)]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST, [
+      { rank: UniversalRank.F, rarity: Rarity.COMMON }, { rank: UniversalRank.F, rarity: Rarity.COMMON }
+    ]));
+  });
+
+  it('a richer chunk gives richer loot and no more experience: the risk is the same', () => {
+    stand([chest({ rarity: Rarity.LEGENDARY })]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST));
+  });
+
+  it('what lies dead, or means no harm, is no risk', () => {
+    stand([chest(), mob('dead', 30, { health: 0 }), mob('calm', 40, { isHostile: false })]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST));
+  });
+
+  it('gathering pays for each use of the node, and takes the thing\'s own rank', () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.harvestConfig && (d.uses ?? 1) > 1)!;
+    stand([entity({ id: 'node', type: EntityType.RESOURCE, definitionId: def.id, usesRemaining: 2 })]);
+    store().performInteraction('int_harvest_node', 'node');
+    const once = xp();
+    expect(once).toBe(ProgressionSystem.worldXp({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST));
+    store().performInteraction('int_harvest_node', 'node');
+    expect(xp()).toBe(once * 2);
+  });
+
+  it('a harvest refused for want of energy pays nothing', () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.harvestConfig && d.harvestConfig.energyCost > 0)!;
+    stand([entity({ id: 'node', type: EntityType.RESOURCE, definitionId: def.id, usesRemaining: 2 })]);
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 0 } } }));
+    store().performInteraction('int_harvest_node', 'node');
+    expect(xp()).toBe(0);
+  });
+
+  it('a level earned this way is said, and pays its point and its circle', () => {
+    stand([chest({ container: { lootRank: UniversalRank.A, looted: false, hasLore: false } })]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(ProgressionSystem.levelOf(player())).toBeGreaterThan(1);
+    expect(player().attributePoints).toBeGreaterThan(0);
+    expect(CircleSystem.free(player())).toBeGreaterThan(0);
+  });
+
+  it('no double dip: a cache of what was already yours pays nothing', () => {
+    const rock = { id: 'rock', name: 'rock', weight: 1, dimensions: { width: 1, height: 1 }, affixes: [], stats: {}, tags: [], isIdentified: true } as unknown as IItem;
+    stand([chest({ id: 'cache_1', definitionId: 'ground_cache', container: { lootRank: UniversalRank.A, looted: false, hasLore: false, items: [rock], cacheOwner: 'someone' } })]);
+    store().performInteraction('int_open_cache_1', 'cache_1');
+    expect(player().currentSession!.inventory.map(i => i.id)).toEqual(['rock']);
+    expect(xp()).toBe(0);
+  });
+
+  it('no double dip: only a fight and the taking itself pay; picking up a drop and the beacon do not', () => {
+    const world = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
+    expect(world).not.toMatch(/applyKillXp|worldXp/);
+    const taken = readFileSync('src/entities/player/store.ts', 'utf8');
+    expect(taken.split('payForRisk(').length - 1).toBe(2);
+    const combat = readFileSync('src/entities/combat/killRewards.ts', 'utf8');
+    expect(combat).toMatch(/applyKillXp/);
   });
 });
 

@@ -78,6 +78,19 @@ export const POINTS_PER_LEVEL = 1;
 export const LEVEL_KILLS = 5;
 export const LEVEL_GROWTH = 1.5;
 
+// --- EXPERIENCE IN THE WORLD ---
+// Pedro: looting and extracting yield experience without a double dip, "in world, and
+// be tied to the risk, a chest has guards around it normally, so it should yield more
+// than grabbing a pebble." So it pays once, at the taking, and the beacon pays nothing.
+// The thing's own worth is a share of what defeating something of its rank pays, and
+// every hostile still standing near it adds its own share. Guesses until Wave 12.
+export const XP_SHARE_HARVEST = 0.04;
+export const XP_SHARE_CHEST = 0.5;
+export const XP_SHARE_THREAT = 0.25;
+export const THREAT_RADIUS_TILES = 12;
+
+type HasWorth = { rank: UniversalRank; rarity?: Rarity };
+
 type HasLevels = Pick<IPlayer, 'rank' | 'rankXp' | 'levelXp' | 'levelsBanked'>;
 
 export class ProgressionSystem {
@@ -128,6 +141,17 @@ export class ProgressionSystem {
   /** Every level climbed, at any rank. A reset does not lower this, and circles read from it. */
   static levelsEarned(player: HasLevels): number {
     return (player.levelsBanked ?? 0) + this.levelOf(player) - 1;
+  }
+
+  /** What taking this thing pays: its own worth, and the risk of what still stands near it. At least one. */
+  static worldXp(target: HasWorth, share: number, threats: HasWorth[] = []): number {
+    const worth = (w: HasWorth) => this.calculateKillXp(w.rank, w.rarity ?? Rarity.COMMON);
+    return Math.max(1, Math.floor(worth(target) * share + threats.reduce((sum, t) => sum + worth(t) * XP_SHARE_THREAT, 0)));
+  }
+
+  /** The line a level gets, wherever the experience came from. */
+  static levelUpLine(to: number, points: number): string {
+    return `LEVEL ${to}. +${points} attribute point${points === 1 ? '' : 's'}, and a circle to fill. On the sheet.`;
   }
 
   /** Experience lands: lifetime and level both, and each level crossed pays its points. */

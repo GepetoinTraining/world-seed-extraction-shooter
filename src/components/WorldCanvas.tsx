@@ -977,7 +977,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events);
       if (rewards.levelUp) {
-        feed(`LEVEL ${rewards.levelUp.to}. +${rewards.levelUp.points} attribute point${rewards.levelUp.points === 1 ? '' : 's'}, and a circle to fill. On the sheet.`, 'proof');
+        feed(ProgressionSystem.levelUpLine(rewards.levelUp.to, rewards.levelUp.points), 'proof');
       }
       if (effectsRef.current.length > 0) {
         effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);

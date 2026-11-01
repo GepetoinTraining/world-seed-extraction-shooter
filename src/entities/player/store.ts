@@ -4,7 +4,7 @@ import {
   EquipSlotId, HeadPositionId, HEAD_BUDGET_POSITIONS, IEquipmentState, ItemType as IT
 } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
-import { ProgressionSystem } from './systems/ProgressionSystem';
+import { ProgressionSystem, THREAT_RADIUS_TILES, XP_SHARE_CHEST, XP_SHARE_HARVEST } from './systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
@@ -1727,6 +1727,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return true;
     };
 
+    // Pedro: experience pays in the world, once, at the taking, by the risk of what still stands near it.
+    // A chest's rarity is its chunk's: richer loot, and no more danger, so it pays by rank alone.
+    const payForRisk = (target: { rank: UniversalRank; rarity?: Rarity }, share: number): number => {
+      const at = entity!.position;
+      const threats = Object.values(world.currentMap?.chunks ?? {}).flatMap(c => c.entities)
+        .filter(e => e.type === EntityType.MOB && e.isHostile && (e.health ?? 0) > 0 && Math.hypot(e.position.x - at.x, e.position.y - at.y) <= THREAT_RADIUS_TILES * 20);
+      const xp = ProgressionSystem.worldXp(target, share, threats);
+      const res = get().applyKillXp(xp);
+      SessionJournal.record('INTERACT', { kind: 'WORLD_XP', targetId: entity!.id, xp, threats: threats.length });
+      if (res.leveledUp) feed(ProgressionSystem.levelUpLine(res.to, res.pointsGranted), 'proof');
+      return xp;
+    };
+
     // Wave 3: everything enters through the caps; overflow lands at your feet
     const addToInventory = (items: IItem[]): IItem[] => {
       const { added, rejected } = get().tryAddItems(items);
@@ -1830,7 +1843,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Layer 4: what is gathered gives up its element, from its own world's elements
       const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
-      feed(`Harvested ${quantity}× ${def.name}.`, 'proof');
+      feed(`Harvested ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
     }
@@ -1890,7 +1903,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       world.updateEntity(entity.id, { container: { ...entity.container, looted: true } });
       SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id) });
       get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });
-      feed(`Chest opened: ${loot.length} item${loot.length === 1 ? '' : 's'}${entity.container.hasLore ? ', one of them a fragment' : ''}.`, 'proof');
+      feed(`Chest opened: ${loot.length} item${loot.length === 1 ? '' : 's'}${entity.container.hasLore ? ', one of them a fragment' : ''}. +${payForRisk({ rank: entity.container.lootRank }, XP_SHARE_CHEST)} XP`, 'proof');
       return;
     }
 

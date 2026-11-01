@@ -235,7 +235,7 @@ const AgentTab: React.FC = () => {
         </div>
         <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Kills feed the level. Each level grants {POINTS_PER_LEVEL} attribute point. The guild sets the rank; the level begins again there, and what you built stays.
+          Fights, chests and what you gather feed the level, more for what is riskier. Each level grants {POINTS_PER_LEVEL} attribute point and a circle. The guild sets the rank; the level begins again there, and what you built stays.
         </div>
       </Panel>
       <HandsPanel />
