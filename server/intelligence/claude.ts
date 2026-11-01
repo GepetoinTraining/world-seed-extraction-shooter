@@ -1,6 +1,6 @@
 /**
- * CLAUDE, behind the door (D46). Credentials come from the server's environment
- * (ANTHROPIC_API_KEY, or an `ant auth login` profile) and never reach a browser.
+ * CLAUDE, behind the door (D46). Credentials come from the server's environment (ANTHROPIC_API_KEY,
+ * which `.env` can set, or an `ant auth login` profile) and never reach a browser.
  *
  * One model constant per kind of content (D44). A rest goes through Message Batches:
  * half the price, and literally sleeping on it. A live call has the server-side

@@ -10,7 +10,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createElement } from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
@@ -65,6 +68,7 @@ import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
 import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
 import { KamiPersona } from '../src/logic/systems/KamiPersona';
 import { createIntelligenceHandler } from '../server/intelligence/http';
+import { loadLocalEnv } from '../server/intelligence/index';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
 import { ARCHETYPE_IDS, figure, portrait } from '../src/render/atoms/people';
 import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
@@ -1734,6 +1738,84 @@ describe("a hub's Kami: the seed, read for vibes", () => {
       await toKami();
       expect(persona).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('the key in .env', () => {
+  const NAME = 'ANTHROPIC_API_KEY';
+  let dir: string;
+  let held: string | undefined;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'ws-env-'));
+    held = process.env[NAME];
+    delete process.env[NAME];
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    if (held === undefined) delete process.env[NAME];
+    else process.env[NAME] = held;
+  });
+
+  const file = (text: string) => {
+    const path = join(dir, '.env');
+    writeFileSync(path, text);
+    return path;
+  };
+
+  it('git ignores it, and only the example travels', () => {
+    const ignored = (p: string) => {
+      try {
+        return execFileSync('git', ['check-ignore', p], { encoding: 'utf8' }).trim() === p;
+      } catch {
+        return false;
+      }
+    };
+    expect(ignored('.env')).toBe(true);
+    expect(ignored('.env.production')).toBe(true);
+    expect(ignored('.env.example')).toBe(false);
+  });
+
+  it('the example that travels holds no key', () => {
+    const example = SRC('.env.example');
+    expect(example).toMatch(new RegExp(`^${NAME}=$`, 'm'));
+    expect(example).not.toMatch(/sk-ant/);
+  });
+
+  it('the server reads it', () => {
+    loadLocalEnv(file(`${NAME}=from-the-file\n`));
+    expect(process.env[NAME]).toBe('from-the-file');
+  });
+
+  it('a real environment variable wins', () => {
+    process.env[NAME] = 'from-the-shell';
+    loadLocalEnv(file(`${NAME}=from-the-file\n`));
+    expect(process.env[NAME]).toBe('from-the-shell');
+  });
+
+  it('left blank it means nothing, so it cannot hide a logged-in profile', () => {
+    loadLocalEnv(file(`${NAME}=\n`));
+    expect(NAME in process.env).toBe(false);
+  });
+
+  it('no file is fine', () => {
+    expect(() => loadLocalEnv(join(dir, 'nothing-here'))).not.toThrow();
+    expect(NAME in process.env).toBe(false);
+  });
+
+  it('it can never reach a browser: not named for Vite, and nothing hands the environment over', () => {
+    expect(SRC('.env.example')).not.toMatch(/^VITE_/m);
+    const config = SRC('vite.config.ts');
+    expect(config).not.toMatch(/envPrefix/);
+    expect(config).not.toMatch(/define:/);
+    expect(SRC('server/intelligence/http.ts')).not.toMatch(/process\.env/);
+  });
+
+  it('a checkout reads its own file and looks no further, so a test session never spends a person\'s key', () => {
+    const loader = SRC('server/intelligence/index.ts');
+    expect(loader).toMatch(/resolve\(process\.cwd\(\), '\.env'\)/);
+    expect(loader).not.toMatch(/\.\.\//);
+    expect(SRC('.gitignore')).toMatch(/^\.env$/m);
   });
 });
 

@@ -12,6 +12,10 @@ dist
 /data/
 dist-ssr
 *.local
+# A person's key lives here. The example is the one that travels.
+.env
+.env.*
+!.env.example
 gemini-memory-layer
 
 # Editor directories and files
