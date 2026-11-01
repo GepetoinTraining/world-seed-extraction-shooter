@@ -930,7 +930,7 @@ Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts`
 | B4 Guildhall, tavern, houses (D73, D75, D83, D93's chain, D95) | 115, the rank half of 128 | A1, A2, A3 | `hub/store`, `dialogue`, the guild: `grantRank`, the guild buying lots and pieces, a map handed in posting a chain, the tavern's real work, the levy's roll and the tax evasion skill (D100). It inherits the Land Office: `depositToPlan`, `planRaise`, `OPEN_DEEDS`, `OPEN_PLAN` |
 | B5 The forced exit (D77) | 119's last clause | A4's vocabulary | `EffectSystem`, the item type |
 
-**Wave C, re-cut 2026-11-01 after his answers (D113–D117). Two passes, because the second stands on the first. The first pass is built and joined, record below, awaiting his word:**
+**Wave C, re-cut 2026-11-01 after his answers (D113–D117). Two passes, because the second stands on the first. The first pass is built and merged on his word, record below:**
 
 | Stream | Lines | Needs | Owns |
 |---|---|---|---|
@@ -983,7 +983,7 @@ Each stream played what it built, on its own test avatars and port. The coordina
 
 **Pedro's answers since (D96–D100):** refilling is one very rare skill on the web, a weave's circles wait for the magic system, a home station creates a dungeon, and the levy becomes a roll and a skill. Until B4 builds that roll, subterfuge still simply lowers the levy, as A2 built it. **Open:** the simulation's card is visible to players. Rates for every attribute are guesses until Wave 12, and the numbers can now be read on the TUNING tab.
 
-### WAVE C, FIRST PASS — THE RECORD (built 2026-11-01 on six branches, joined on `claude/wave-c-integration` at the head of this record's commit, awaiting Pedro, not pushed)
+### WAVE C, FIRST PASS — THE RECORD (built 2026-11-01 on six branches, joined on `claude/wave-c-integration`, merged into main on Pedro's word the same day, not pushed)
 
 Each stream played what it built, on its own test avatar and port. The coordinator read each report and each session's messages from Pedro, joined all six in the order C3, C1, C2, C4, C5, C9, fixed what only showed there with bars, ran the full suite, and played the seams on test avatar SEAMER, port 3110, the join's own database, with no key. **Tests on the join: `tsc` clean, 2,493 and 128 in the database's own run, none red.** The grid and population timing bars went red once in a run with an inventory agent reading the tree, and pass alone. A first red run showed only the land vectors, moved on purpose (below).
 
@@ -1336,7 +1336,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | The world clock | 100–104, 119–120 | Built and merged. By bar, and by play within the record |
 | Fan-out Wave A: hub manifest, levels and attributes, recon and maps, the trees, senses and the readout | 114, 94, part of 128, 125–127, 129–133, 105–107, 109 | **Built, awaiting Pedro.** By bar, by each stream's play, and by the coordinator's check |
 | Fan-out Wave B: scan pass, population and packs, creation and the deed, guild and tavern, forced exit, vendors and the road | 108, 110–113, 115, the rank half of 128, the last clause of 119, 134, the junk half of 140, 141–144, 146, and the vendor half of 145 | **Built and merged on Pedro's word.** By bar, and by play within the record. Only Kami has met a real model |
-| Fan-out Wave C, first pass: food and land, the talk, money, territory, buildings in the hub's tech, study and lore | 36, 37, 117, the herding half of 152, 135, 136, 147–151, 153, 154, 156, 161 | **Built and joined, awaiting Pedro.** By bar, and by play within the record. Real Haiku on the talk only; the dream, and C5's chain through the door, have not met a model |
+| Fan-out Wave C, first pass: food and land, the talk, money, territory, buildings in the hub's tech, study and lore | 36, 37, 117, the herding half of 152, 135, 136, 147–151, 153, 154, 156, 161 | **Built and merged on Pedro's word.** By bar, and by play within the record. Real Haiku on the talk only; the dream, and C5's chain through the door, have not met a model |
 | Attributes pass (D52) | 94 (proposed) | Planned, after creatures that act |
 | 11 The hub remake | 35–38, 114–115, 121 (proposed) | Planned |
 | 11C NPC adventurers | 116 (proposed) | Planned |
