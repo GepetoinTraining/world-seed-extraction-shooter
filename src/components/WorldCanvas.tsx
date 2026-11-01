@@ -989,9 +989,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           // D93: its ward's clock starts. One person cannot be at the next before it relights
           useWorldStore.getState().reportBroke(event.entityId);
           feed('A post goes down.', 'signal');
-        } else if (event.type === 'WARDED' && now - wardedSaidRef.current > WARDED_SAID_MS) {
-          wardedSaidRef.current = now;
-          feed('Nothing lands. Something on this ground is holding it up.', 'loss');
+        } else if (event.type === 'WARDED') {
+          // It lands on nothing, and it is still felt
+          if (event.entityId) MobAI.provoke(event.entityId);
+          if (now - wardedSaidRef.current > WARDED_SAID_MS) {
+            wardedSaidRef.current = now;
+            feed('Nothing lands. Something on this ground is holding it up.', 'loss');
+          }
         }
       });
       // Layer 3: what worn pieces fire. The trigger is a word from a pack, and it acts unstudied (D19).

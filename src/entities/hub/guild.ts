@@ -299,7 +299,7 @@ export interface IChainDraft {
 }
 
 type SectorEntry = NonNullable<IItem['mapData']>['sectors'][string];
-type HoldingEntry = NonNullable<SectorEntry['holding']>;
+type HoldingEntry = NonNullable<SectorEntry['holdings']>[number];
 
 const chainSteps = (sector: string, h: HoldingEntry): IChainStep[] => {
   const unfinished = h.marks.filter(m => !m.built).length;
@@ -312,6 +312,9 @@ const chainSteps = (sector: string, h: HoldingEntry): IChainStep[] => {
     { text: 'Bring down who sits there, and carry its stores out through everything still standing.', people: Math.max(2, h.anchors) }
   ];
 };
+
+/** Only a boss posts a chain. A camp still going up is on a person's map, and the Hall has nothing to ask of it yet. */
+const postable = (e: SectorEntry): HoldingEntry[] => (e.holdings ?? []).filter(h => h.anchors > 0);
 
 const seatFrom = (sector: string, h: HoldingEntry): IChainSeat => ({
   sector, ground: h.seat, chunks: h.chunks.length, anchors: h.anchors, read: h.generation, ...(h.named ? { named: h.named } : {})
@@ -328,19 +331,20 @@ export function chainFromMaps(maps: NonNullable<IItem['mapData']>[], generationN
     for (const [sector, entry] of Object.entries(map.sectors)) {
       const key = `${map.worldId}:${sector}`;
       const had = newest.get(key);
-      const readAt = (e: SectorEntry) => Math.max(e.generation, e.holding?.generation ?? -1);
+      const readAt = (e: SectorEntry) => Math.max(e.generation, ...(e.holdings ?? []).map(h => h.generation));
       if (!had || readAt(entry) > readAt(had.entry)) newest.set(key, { entry, map });
     }
   }
   const chains: IChainDraft[] = [];
   for (const [key, { entry, map }] of [...newest.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-    if (!entry.holding) continue;
     const sector = key.slice(map.worldId.length + 1);
-    chains.push({
-      ...chainFromMap({ ...map, sectors: { [sector]: entry } }),
-      worldId: map.worldId,
-      staleBy: Math.max(0, generationNow - entry.holding.generation)
-    });
+    for (const holding of postable(entry)) {
+      chains.push({
+        ...chainFromMap({ ...map, sectors: { [sector]: { ...entry, holdings: [holding] } } }),
+        worldId: map.worldId,
+        staleBy: Math.max(0, generationNow - holding.generation)
+      });
+    }
   }
   return chains;
 }
@@ -351,7 +355,9 @@ export function chainFromMap(map: NonNullable<IItem['mapData']>): IChainDraft {
   const mobsIn = (e: typeof entries[number][1]) => e.contacts?.MOB ?? 0;
   const hottest = [...entries].sort((a, b) => mobsIn(b[1]) - mobsIn(a[1]) || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
   const generations = entries.map(([, e]) => e.generation);
-  const held = entries.filter(([, e]) => e.holding).sort((a, b) => b[1].holding!.chunks.length - a[1].holding!.chunks.length || a[0].localeCompare(b[0]))[0];
+  const held = entries
+    .flatMap(([sector, e]) => postable(e).map(h => ({ sector, h })))
+    .sort((a, b) => b.h.chunks.length - a.h.chunks.length || a.sector.localeCompare(b.sector))[0];
   return {
     worldName: map.worldName,
     sectors: entries.length,
@@ -360,8 +366,8 @@ export function chainFromMap(map: NonNullable<IItem['mapData']>): IChainDraft {
     hottest,
     oldest: generations.length > 0 ? Math.min(...generations) : 0,
     newest: generations.length > 0 ? Math.max(...generations) : 0,
-    seat: held ? seatFrom(held[0], held[1].holding!) : null,
+    seat: held ? seatFrom(held.sector, held.h) : null,
     posted: !!held,
-    steps: held ? chainSteps(held[0], held[1].holding!) : []
+    steps: held ? chainSteps(held.sector, held.h) : []
   };
 }

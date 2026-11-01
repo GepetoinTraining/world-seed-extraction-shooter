@@ -39,7 +39,7 @@ export interface ReconCellInput {
   seed?: string;           // world seed: the static of the unknown is still deterministic
   sx?: number; sy?: number;
   /** D93: ground someone holds, as it was read: chunks across the sector, seen and marked. */
-  holding?: { chunks: [number, number][]; seat?: [number, number]; marks: { at: [number, number]; fn: string; built: boolean }[] };
+  holdings?: { chunks: [number, number][]; seat?: [number, number]; marks: { at: [number, number]; fn: string; built: boolean }[] }[];
 }
 
 /** One sector of the survey, RECON_CELL_ATOMS square. */
@@ -76,10 +76,10 @@ export function reconCell(o: ReconCellInput): Sprite {
   }
 
   // Held ground: hatching with a hard seam at its border, by position and shape, never hue.
-  if (o.holding) {
+  for (const holding of o.holdings ?? []) {
     const per = s / 8;
-    const held = new Set(o.holding.chunks.map(([x, y]) => `${x},${y}`));
-    for (const [cx, cy] of o.holding.chunks) {
+    const held = new Set(holding.chunks.map(([x, y]) => `${x},${y}`));
+    for (const [cx, cy] of holding.chunks) {
       for (let dy = 0; dy < per; dy++) for (let dx = 0; dx < per; dx++) {
         const x = cx * per + dx, y = cy * per + dy;
         if ((x + y) % 2 === 0) data[y * s + x] = px(Role.VOID, 0);
@@ -92,11 +92,11 @@ export function reconCell(o: ReconCellInput): Sprite {
     const fill = ([cx, cy]: [number, number], at: (dx: number, dy: number) => boolean, ink: number) => {
       for (let dy = 0; dy < per; dy++) for (let dx = 0; dx < per; dx++) if (at(dx, dy)) data[(cy * per + dy) * s + cx * per + dx] = ink;
     };
-    for (const m of o.holding.marks) {
+    for (const m of holding.marks) {
       if (m.fn === 'anchor') fill(m.at, (dx, dy) => dx === dy, px(Role.SIGNAL, m.built ? 4 : 2));
       else if (m.fn !== 'seat') fill(m.at, (dx, dy) => dx === 0 && dy === 0, px(Role.MATTER, m.built ? 4 : 2));
     }
-    if (o.holding.seat) fill(o.holding.seat, () => true, px(Role.PROOF, 4));
+    if (holding.seat) fill(holding.seat, () => true, px(Role.PROOF, 4));
   }
 
   // The exit: a signal lozenge, bottom-right, with a void moat so it reads on any ground.

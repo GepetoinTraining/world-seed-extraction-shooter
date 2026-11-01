@@ -450,7 +450,7 @@ export class Population {
       // Behind a boss, the heir stands as a contender for its seat, as a band does
       heir: {
         id: heirId, kind: fallen.kind, at: fallen.at, pack: fallen.pack - 1, goal: sheet.goal, tenure: 0, alive: true, log: [],
-        ...(fallen.answersTo ? { answersTo: fallen.answersTo, goal: 'hold' as Goal } : fallen.territory ? { answersTo: fallen.id } : {})
+        ...(fallen.answersTo || fallen.territory ? { answersTo: fallen.answersTo ?? fallen.id, goal: 'hold' as Goal } : {})
       }
     };
   }

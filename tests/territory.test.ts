@@ -784,15 +784,15 @@ describe('line 135: on the map, once seen', () => {
     const { id, state, context } = makeBoss('old_sow');
     const entities = entitiesOf(state, context);
     const entry = SurveySystem.entry(2, state.generation, entities);
-    expect(entry.holding).toBeDefined();
-    expect(entry.holding!.generation).toBe(state.generation);
-    expect(entry.holding!.chunks.sort()).toEqual([...state.leaders[id].territory!.chunks].sort());
+    expect(entry.holdings).toHaveLength(1);
+    expect(entry.holdings![0].generation).toBe(state.generation);
+    expect(entry.holdings![0].chunks.sort()).toEqual([...state.leaders[id].territory!.chunks].sort());
   });
 
   it('nothing marks it before someone has seen it', () => {
     const { state, context } = makeBoss('old_sow');
     const shallow = SurveySystem.entry(1, state.generation, []);
-    expect(shallow.holding).toBeUndefined();
+    expect(shallow.holdings).toBeUndefined();
     expect(state.leaders).toBeDefined();
     expect(context).toBeDefined();
   });
@@ -801,8 +801,9 @@ describe('line 135: on the map, once seen', () => {
     const { state, context } = makeBoss('old_sow');
     const entry = SurveySystem.entry(2, state.generation, entitiesOf(state, context));
     expect(SurveySystem.staleBy(entry, state.generation + 4)).toBe(4);
-    expect(entry.holding!.generation).toBe(state.generation);
-    expect(SurveySystem.entry(2, state.generation + 4, [], entry).holding).toBeUndefined();
+    expect(entry.holdings![0].generation).toBe(state.generation);
+    expect(SurveySystem.entry(2, state.generation + 4, [], entry).holdings).toBeUndefined();
+    expect(SurveySystem.entry(1, state.generation + 4, [], entry).holdings).toEqual(entry.holdings);
   });
 
   it('a walk marks it too, on what a person saw', () => {
@@ -810,7 +811,7 @@ describe('line 135: on the map, once seen', () => {
     const boss = entitiesOf(state, context).find(e => e.holding)!;
     const player = { survey: {} } as unknown as IPlayer;
     const after = SurveySystem.sawHolding(player, 'w', `${SX},${SY}`, boss, state.generation);
-    expect(after.survey!.w[`${SX},${SY}`].holding!.chunks.length).toBeGreaterThan(0);
+    expect(after.survey!.w[`${SX},${SY}`].holdings![0].chunks.length).toBeGreaterThan(0);
     expect(SurveySystem.sawHolding(after, 'w', `${SX},${SY}`, boss, state.generation)).toBe(after);
   });
 
@@ -820,17 +821,28 @@ describe('line 135: on the map, once seen', () => {
     const sheet = SurveySystem.mapSheet({ [`${SX},${SY}`]: { ...entry, secret: 'x' } as never });
     const on = sheet[`${SX},${SY}`] as unknown as Record<string, unknown>;
     expect(on.secret).toBeUndefined();
-    expect(sheet[`${SX},${SY}`].holding).toEqual(entry.holding);
+    expect(sheet[`${SX},${SY}`].holdings).toEqual(entry.holdings);
     const { player } = SurveySystem.readMap({ survey: {} } as unknown as IPlayer, 'w', sheet);
-    expect(player.survey!.w[`${SX},${SY}`].holding).toEqual(entry.holding);
+    expect(player.survey!.w[`${SX},${SY}`].holdings).toEqual(entry.holdings);
+  });
+
+  it('a sector can hold several, and each stays its own', () => {
+    const { state, context } = makeBoss('old_sow');
+    const other = { ...entitiesOf(state, context).find(e => e.holding)!, holding: { seat: '70,70', chunks: ['70,70'], anchors: 0 }, heldBy: 'other' };
+    const both = SurveySystem.entry(2, state.generation, [...entitiesOf(state, context), other]);
+    expect(both.holdings).toHaveLength(2);
+    const stepped = SurveySystem.sawHolding({ survey: { w: { '8,8': both } } } as unknown as IPlayer, 'w', '8,8', { ...other, holding: { seat: '70,70', chunks: ['70,70', '70,71'], anchors: 2 } }, state.generation + 1);
+    const after = stepped.survey!.w['8,8'].holdings!;
+    expect(after).toHaveLength(2);
+    expect(after.find(h => h.seat === '70,70')!.chunks).toHaveLength(2);
   });
 
   it('a masked name stays masked: a holding carries no creature name', () => {
     const { state, context } = makeBoss('old_sow');
     const entry = SurveySystem.entry(2, state.generation, entitiesOf(state, context));
-    expect(JSON.stringify(entry.holding)).not.toContain('Sow');
-    expect(JSON.stringify(entry.holding)).not.toContain(kind('old_sow'));
-    expect(entry.holding!.named).toBeUndefined();
+    expect(JSON.stringify(entry.holdings)).not.toContain('Sow');
+    expect(JSON.stringify(entry.holdings)).not.toContain(kind('old_sow'));
+    expect(entry.holdings![0].named).toBeUndefined();
   });
 });
 
@@ -846,7 +858,7 @@ describe('line 135: a map reaching the guild posts a chain (D93)', () => {
   });
 
   it('a map showing a holding posts a chain, drawn from it, naming no creature', () => {
-    const chain = chainFromMap(mapOf({ '8,8': entry(5, { holding }) }));
+    const chain = chainFromMap(mapOf({ '8,8': entry(5, { holdings: [holding] }) }));
     expect(chain.posted).toBe(true);
     expect(chain.seat!.ground).toBe('68,68');
     expect(chain.steps.length).toBeGreaterThanOrEqual(3);
@@ -854,15 +866,21 @@ describe('line 135: a map reaching the guild posts a chain (D93)', () => {
     expect(chain.steps.at(-1)!.people).toBeGreaterThanOrEqual(2);
   });
 
+  it('a camp still going up is on a map, and only a boss posts', () => {
+    const camp = { ...holding, anchors: 0 };
+    expect(chainFromMap(mapOf({ '8,8': entry(5, { holdings: [camp] }) })).posted).toBe(false);
+    expect(chainFromMaps([mapOf({ '8,8': entry(5, { holdings: [camp] }) })], 5)).toEqual([]);
+  });
+
   it('a step asks for as many people as there are anchors', () => {
-    const chain = chainFromMap(mapOf({ '8,8': entry(5, { holding: { ...holding, anchors: 4 } }) }));
+    const chain = chainFromMap(mapOf({ '8,8': entry(5, { holdings: [{ ...holding, anchors: 4 }] }) }));
     expect(chain.steps.at(-1)!.people).toBe(4);
   });
 
   it('a newer map updates what the guild holds, and a new anchor adds to the chain', () => {
     const chains = chainFromMaps([
-      mapOf({ '8,8': entry(5, { holding }) }, 1),
-      mapOf({ '8,8': entry(9, { holding: { ...holding, generation: 9, anchors: 3 } }) }, 2)
+      mapOf({ '8,8': entry(5, { holdings: [holding] }) }, 1),
+      mapOf({ '8,8': entry(9, { holdings: [{ ...holding, generation: 9, anchors: 3 }] }) }, 2)
     ], 12);
     expect(chains).toHaveLength(1);
     expect(chains[0].seat!.anchors).toBe(3);
@@ -871,7 +889,7 @@ describe('line 135: a map reaching the guild posts a chain (D93)', () => {
 
   it('a newer map that shows it gone closes the chain', () => {
     const chains = chainFromMaps([
-      mapOf({ '8,8': entry(5, { holding }) }, 1),
+      mapOf({ '8,8': entry(5, { holdings: [holding] }) }, 1),
       mapOf({ '8,8': entry(9) }, 2)
     ], 9);
     expect(chains).toEqual([]);
@@ -880,8 +898,18 @@ describe('line 135: a map reaching the guild posts a chain (D93)', () => {
   it('an older map does not reopen what a newer one closed, whichever came in first', () => {
     const chains = chainFromMaps([
       mapOf({ '8,8': entry(9) }, 2),
-      mapOf({ '8,8': entry(5, { holding }) }, 1)
+      mapOf({ '8,8': entry(5, { holdings: [holding] }) }, 1)
     ], 9);
+    expect(chains).toEqual([]);
+  });
+
+  it('two holdings in one sector post two chains', () => {
+    const chains = chainFromMaps([mapOf({ '8,8': entry(5, { holdings: [holding, { ...holding, seat: '70,70' }] }) })], 5);
+    expect(chains.map(c => c.seat!.ground).sort()).toEqual(['68,68', '70,70']);
+  });
+
+  it('nothing is on the record twice', () => {
+    const chains = chainFromMaps([mapOf({ '8,8': entry(5) })], 9);
     expect(chains).toEqual([]);
   });
 });

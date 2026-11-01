@@ -150,7 +150,7 @@ export const TERRITORY_NUMBERS = {
   relightShare: 0.5,
   /** What a body of a base works out of held ground in a cycle, and pays towards a build in a decision. */
   yieldPerBody: 0.25,
-  payPerBody: 1.5,
+  payPerBody: 0.5,
   /** What a verb asks on a d20, and how far under it a decision goes before it opens a challenge. */
   verbDc: 10,
   badBy: 8,
