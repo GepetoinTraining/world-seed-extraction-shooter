@@ -172,16 +172,21 @@ export class TuningReadout {
   /** @param killsPerHour how fast a person fells things of this rank: again the reader's assumption. */
   static levels(levels: number[], killsPerHour: number, rank: UniversalRank = UniversalRank.F): ILevelRead[] {
     const perKill = ProgressionSystem.calculateKillXp(rank, Rarity.COMMON);
+    const walked = (to: number) => {
+      let total = 0;
+      for (let l = 1; l <= to; l++) total += ProgressionSystem.levelCost(rank, l);
+      return total;
+    };
     return levels.map(level => {
-      const xp = ProgressionSystem.getXpToNextLevel(level);
+      const xp = ProgressionSystem.levelCost(rank, level);
       const kills = Math.ceil(xp / perKill);
-      return { level, xp, totalXp: ProgressionSystem.getXpForLevel(level + 1), kills, ms: (kills / killsPerHour) * HOUR_MS };
+      return { level, xp, totalXp: walked(level), kills, ms: (kills / killsPerHour) * HOUR_MS };
     });
   }
 
   /** The rest curve for this body, at shares of what it can hold, and at the mark the curve is anchored on. */
   static restCurve(player: IPlayer, shares: number[]): IRestRead[] {
-    const full = StatSystem.maxEnergy(player.attributes, player.equipment);
+    const full = StatSystem.maxEnergyOf(player);
     const read = (spent: number): IRestRead => ({
       spent, share: full > 0 ? spent / full : 0,
       ms: RestSystem.restMs({ ...player, currentSession: undefined, energyToday: full - spent })

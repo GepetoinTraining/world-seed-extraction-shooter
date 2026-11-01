@@ -238,7 +238,11 @@ The record, including what was not built, is in `PLAN.md` ("The magic + content 
 
 The record, including what was not built, is in `PLAN.md` ("The world clock — the record"). `WorldClock` reads a certificate and the time; `SurveySystem` holds what a character scanned; `RestSystem` and `RestDoor` make a rest take real time. Its bars are in `tests/worldclock.test.ts`.
 
-## Your pass: a stream in the fan-out (once Pedro approves the clock)
+## What fan-out Wave A built
+
+The record is in `PLAN.md` ("Wave A — the record"). **For B1:** `DirectorStore.catchUp` takes the world now, `CreatureLines` stops at the seam where a model is called, and `exitWorld` saves the store's live record over the database, so words installed during a session would be erased unless the store's record is updated too. **For B2:** `Director.kindOf` is a stand-in for population, and N7 and N8 in the ledger are yours. **For B4:** `raiseChunk` and `grantRank` have no caller yet.
+
+## Your pass: a stream in the fan-out (Wave B, once Pedro approves Wave A)
 
 Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The fan-out", "The living worlds program", and D60–D85 first. Build only your stream's lines and files, and report to the coordinator rather than editing this file or the plan. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
 

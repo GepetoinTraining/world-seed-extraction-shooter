@@ -103,6 +103,12 @@ export class ContentRegistry {
     return [...installed.values()].map(i => i.pack);
   }
 
+  /** What the mint offers. An older printing of the current theme stays installed for the worlds pinned to it, and is not offered. */
+  static offered(): IThemePack[] {
+    const current = this.get(firstThemeId);
+    return this.list().filter(p => !current || p.themeId === current.themeId || p.name !== current.name);
+  }
+
   /** The theme a world with no talk behind it pins: the first the hub holds. */
   static defaultThemeId(): string | undefined {
     return firstThemeId;

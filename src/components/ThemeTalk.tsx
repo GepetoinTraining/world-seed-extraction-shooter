@@ -45,7 +45,7 @@ export const ThemeTalk: React.FC = () => {
   const [busy, setBusy] = useState<'' | 'talk' | 'write'>('');
   const [refusal, setRefusal] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
-  const banked = useMemo(() => ContentRegistry.list(), []);
+  const banked = useMemo(() => ContentRegistry.offered(), []);
 
   useEffect(() => {
     let live = true;

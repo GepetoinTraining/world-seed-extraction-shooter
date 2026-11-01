@@ -503,20 +503,21 @@ describe('line 127: how long skills, levels and a rest take', () => {
     expect(fast[1].ms).toBe((fast[1].jobs / 60) * HOUR);
   });
 
-  it('each level reads getXpToNextLevel and getXpForLevel', () => {
+  it('each level reads what a character level costs at this rank, never the skill curve', () => {
     const rows = TuningReadout.levels([1, 2, 10], 60);
     rows.forEach(r => {
-      expect(r.xp).toBe(ProgressionSystem.getXpToNextLevel(r.level));
-      expect(r.totalXp).toBe(ProgressionSystem.getXpForLevel(r.level + 1));
+      expect(r.xp).toBe(ProgressionSystem.levelCost(UniversalRank.F, r.level));
+      expect(ProgressionSystem.levelFromXp(UniversalRank.F, r.totalXp).level).toBe(r.level + 1);
     });
     expect(rows[2].ms).toBeGreaterThan(rows[1].ms);
   });
 
-  it('a level counts the kills it takes, at a chosen rank, from the real reward', () => {
+  it('a level counts the kills it takes, at a chosen rank, from the real reward; a higher rank asks more and its foes pay more', () => {
     const atF = TuningReadout.levels([5], 60, UniversalRank.F)[0];
     const atA = TuningReadout.levels([5], 60, UniversalRank.A)[0];
     expect(atF.kills).toBe(Math.ceil(atF.xp / ProgressionSystem.calculateKillXp(UniversalRank.F, Rarity.COMMON)));
-    expect(atA.kills).toBeLessThan(atF.kills);
+    expect(atA.xp).toBeGreaterThan(atF.xp);
+    expect(Math.abs(atA.kills - atF.kills)).toBeLessThanOrEqual(1);
   });
 
   it('the rest curve is RestSystem.restMs, at real energy, for this body', () => {
