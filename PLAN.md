@@ -461,7 +461,7 @@ Pedro, 2026-10-31: "before I do run once, we need to have a stable database (sql
 - **Gate:** proposed lines 69–71.
 
 ### THE USABILITY PASS — before the full run, absorbing the playtest fixes
-Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 77 tests; suite 662). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
+Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 84 tests; suite 669). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
 
 Pedro, 2026-10-31: "take a look at the views and see if they're game like... the usability of the game, the controls, the actual hovers... we can do much better than them and are currently worse", after playing RotmG. The list is `PLAYTEST_LEDGER.md`, P1–P3 and U1–U21. Keep this quick: controls first, then hovers, then the views. The art and the voice are approved, so this changes how things are used, not how they look.
 
@@ -510,6 +510,14 @@ Pedro, 2026-10-31: "take a look at the views and see if they're game like... the
 - **Played at 1280×800 as MORTISE:** Tab in the city; a point spent and kept; walked with the sheet open; closed; walked to the Conduit, E, View Extraction Zones, Esc back onto the same spot; deployed; Tab in the field, the player above the sheet; an axe dragged from the pack to the tool slot; a worn piece hovered; grayscale looked at. With 270 things in view, walking, firing at 8 a second and the sheet open: median 5.7 ms, p95 8.1, p99 10.2, worst 11.7, against 16.7. **Same test practices as above,** and the keys and walks for this were dispatched by script; the drag and hovers were real input to the page.
 - **One older bar re-pointed, not lowered:** the fixed-column bar for U10 now reads `CharacterSheet.tsx`, where the pack's actions moved.
 - **Carried:** below about 1,100 pixels wide the row runs out of room. By bar, not play: the C key and the discard. Not exercised at all: THE DEEDS button, since MORTISE owns no room.
+
+**What has not been read, found in Pedro's own run:** "the cart could be used unidentified... but that almost saved my greedy ass". Bars first at 3e49b54, build at d09b6cb.
+- **The fix he named:** ✅ `deployCart` refuses a kit nobody has read, in voice and without saying what it is; `useProtection` and `consumeItem` the same.
+- **The leaks I had built, found while checking:** ✅ the hover card named what a signal would replace and showed its rank; a refusal or a feed line said its real name when it was dragged or worn; the fitting list named it. `LoadoutSystem.shownName` is now what every moving door says, a bar runs a secret name through them all, and every signal offers the same buttons (TRY IT, IDENTIFY, ROTATE, LEAVE BEHIND).
+- **A clause withdrawn, on the record:** I registered a bar that an unschooled eye's refusal should hide the piece's kind. Line 55's approved bar says that refusal names its scope ("not schooled for tool"), so an older law won and the clause came out. A signal's kind can still be learned by pressing IDENTIFY unschooled. For Pedro to overrule.
+- **Decided, and asked:** gear can still be worn unread, because a fresh character's eye cannot identify at all in the field, and refusing would take away every weapon found mid-run. What TRY IT does is the question. A refusal still tells you it isn't wearable by being refused; that is what trying is.
+- **So a found cart kit now comes home first,** where it reads itself at the seal, unless your tool eye is schooled. Pedro's cart that nearly saved him would not have unfolded.
+- **Played:** by console on GABBRO (`localhost:3102`), a kit and a blade minted unread and in-memory, because MORTISE was Pedro's own run by then.
 
 - **Gate:** lines 57–59, proposed lines 72–76, and played through the real interface, within the carried items above.
 

@@ -15,6 +15,12 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | U25 | The field minimap forgets what was seen when the session ends; it is kept for the run only | `WorldCanvas.tsx` |
 | U26 | The beacon chip gives the nearest exit's bearing and distance even when its sector was never scanned. The minimap keeps that fog; the chip, as it always has, does not | `WorldCanvas.tsx` |
 
+### Found by Pedro in the run, 2026-10-31
+
+| # | What happens | Where |
+|---|---|---|
+| R2 | Pedro said a couple of things; only R1 has been named so far | |
+
 ### Found while building the usability pass
 
 | # | What happens | Where |
@@ -53,4 +59,6 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | U27 | Pedro: no one place for skills and inventory, except through views that shouldn't be available | b924a1d | Bars on the real component, field and city; played in both, frame cost and grayscale checked |
 | N2 | DISCARD at the vault did nothing | b924a1d | Bar |
 | N3 | Coming back from a keeper's screen put you at the plaza spawn | b924a1d | Played |
+| R1 | Pedro: an unidentified cart kit could be unfolded | d09b6cb | Bars; played on a test avatar: refused in voice, stays in the pack. Pedro's own run found it |
+| N4 | Found checking R1: a signal gave itself away by the hover's comparison and rank, by its real name in refusals and the feed, by the fitting list, and by which buttons it offered | d09b6cb | Bars |
 | N1 | Found by the conservation bar: two caches left in one millisecond shared an id, and taking one took both | b5cd6ea | Bar |
