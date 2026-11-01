@@ -1,16 +1,16 @@
 /**
  * The database inside the dev server: `npm run dev` and every launch entry bring
  * up the game and its store with one command and one port. `vite preview` too.
- * Each port's dev server opens the same file; SQLite takes the turns between them.
+ * One process holds a database folder at a time, so a second port in one checkout
+ * needs its own WS_DATABASE_URL, and is told so plainly if it has none.
  */
 import type { Plugin, PreviewServer, ViteDevServer } from 'vite';
-import { resolve } from 'node:path';
 import { createDbHandler, lazyStore } from './http';
 import { openStore } from './SqlStore';
+import { defaultDatabaseUrl } from './connection';
 import { createIntelligenceHandler, openDoor } from './intelligence';
 
-export const databaseUrl = (root: string) =>
-  process.env.WS_DATABASE_URL ?? `file:${resolve(root, 'data/test-claude.db').replace(/\\/g, '/')}`;
+export const databaseUrl = (root: string) => process.env.WS_DATABASE_URL ?? defaultDatabaseUrl(root);
 
 export function worldSeedDatabase(root: string): Plugin {
   const mount = (server: ViteDevServer | PreviewServer) => {

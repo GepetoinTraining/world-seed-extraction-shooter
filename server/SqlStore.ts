@@ -1,5 +1,6 @@
 /**
- * THE STORE (D31): the one body of SQL behind `VectorStore`, on both dialects.
+ * THE STORE (D31): the one body of SQL behind `VectorStore`, on Postgres, whether in
+ * process on a folder or served.
  *
  * A document id says where a document lives, so the 25 files above the interface
  * never learned there are tables:
@@ -18,7 +19,7 @@
 import { and, asc, eq, max, sql } from 'drizzle-orm';
 import { cosineSimilarity } from '../src/entities/data/similarity';
 import { CommitOp, ICommitRequest, ICommitResult, IHealth, IWireDoc, IWireQuery, IWireSearch } from '../src/entities/data/wire';
-import { IDatabase, IOpenOptions, isUniqueViolation, openDatabase } from './connection';
+import { IDatabase, IOpenOptions, isDataException, isUniqueViolation, openDatabase } from './connection';
 
 /** The commit disagrees with what is stored (a fork, a gap, a moved head). Nothing applied. */
 export class StoreConflict extends Error {
@@ -93,6 +94,14 @@ function pathValue(doc: IWireDoc, path: string): unknown {
   return (parts[0] === 'metadata' || parts[0] === 'data' ? parts.slice(1) : parts).reduce((at: any, key) => at?.[key], root);
 }
 
+/**
+ * A timestamp or a version column is a whole number. The old store's file kept a
+ * fraction there and said nothing, and Postgres refuses one, so a client's stray
+ * fraction loses it here rather than the whole commit. None of these columns is signed:
+ * a signature covers the data text, which never comes through here.
+ */
+const whole = (n: number) => Math.trunc(n);
+
 const toEmbedding = (text: string | null): number[] | undefined => {
   if (!text) return undefined;
   const parsed = JSON.parse(text);
@@ -102,8 +111,16 @@ const toEmbedding = (text: string | null): number[] | undefined => {
 export class SqlStore {
   private readonly database: IDatabase;
   private readonly fault: (stage: string) => void;
-  /** libSQL hands each transaction its own connection: writes from this process take turns. */
+  /**
+   * Writes from this process take turns, and two things depend on it. A commit reads
+   * before it writes (a guard, a chain's top), and under READ COMMITTED two at once
+   * could both find a guard absent and both land. And VACUUM runs outside any
+   * transaction, so none of ours may be open. PGlite would serialize its transactions
+   * alone; a pool would not. Across several server processes on one Postgres only the
+   * chain's unique index holds: a guard would race. One process per database for now.
+   */
   private writes: Promise<unknown> = Promise.resolve();
+  private writtenSinceTidy = 0;
 
   constructor(database: IDatabase, options: IStoreOptions = {}) {
     this.database = database;
@@ -126,6 +143,7 @@ export class SqlStore {
   /** Maintenance (D103): compacts what weeks of writes left behind. Nothing here reads a row's meaning. */
   async maintain(): Promise<{ ok: true }> {
     // It takes its turn with the writes, so no transaction of ours is open when it runs.
+    // On a folder that is VACUUM FULL and a checkpoint, which give the space back as SQLite's VACUUM did.
     const run = this.writes.then(() => this.database.compact());
     this.writes = run.catch(() => undefined);
     await run;
@@ -176,7 +194,7 @@ export class SqlStore {
 
   private prefixCondition(column: any, prefix?: string) {
     if (!prefix) return undefined;
-    // Not LIKE: SQLite folds case there, and a prefix may hold its wildcards.
+    // Not LIKE: a prefix may hold its wildcards.
     return sql`substr(${column}, 1, ${prefix.length}) = ${prefix}`;
   }
 
@@ -230,8 +248,18 @@ export class SqlStore {
 
   commit(request: ICommitRequest): Promise<ICommitResult> {
     const run = this.writes.then(() => this.commitNow(request));
-    this.writes = run.catch(() => undefined);
+    this.writes = run.then(result => this.tidyIfDue(request, result), () => undefined);
     return run;
+  }
+
+  /** Takes its turn after the commit that made it due. The commit has its answer already: nobody waits on this. */
+  private async tidyIfDue(request: ICommitRequest, result: ICommitResult): Promise<void> {
+    const tidy = this.database.tidy;
+    if (!tidy || !result.applied) return;
+    for (const op of request.ops) this.writtenSinceTidy += op.kind === 'add' ? 0 : op.doc.dataText.length;
+    if (this.writtenSinceTidy < tidy.everyBytes) return;
+    this.writtenSinceTidy = 0;
+    await tidy.run().catch(e => console.error('[DB] Tidying the database failed, and nothing was lost by it:', e));
   }
 
   private async commitNow(request: ICommitRequest): Promise<ICommitResult> {
@@ -254,11 +282,13 @@ export class SqlStore {
         await tx.insert(commits).values({ id: request.commitId, at: Date.now() });
         this.fault('before-commit');
         return { applied: true };
-      }, this.database.txConfig);
+      });
     } catch (e) {
       if (e instanceof StoreConflict || e instanceof StoreRefusal) throw e;
       // Two writers raced for one seq, or for one commit id: the loser re-reads.
       if (isUniqueViolation(e)) throw new StoreConflict('Another writer took that place first.');
+      // Text or a number Postgres cannot hold. A 500 would have the client retry it forever.
+      if (isDataException(e)) throw new StoreRefusal(`The commit holds a value the database cannot store: ${(e as Error).message}`);
       throw e;
     }
   }
@@ -284,9 +314,9 @@ export class SqlStore {
       ...indexedFields(doc.dataText),
       ownerCertUid: doc.metadata.ownerCertUid ?? null,
       signature: doc.metadata.signature ?? null,
-      version: doc.metadata.version,
-      createdAt: doc.metadata.createdAt,
-      updatedAt: doc.metadata.updatedAt
+      version: whole(doc.metadata.version),
+      createdAt: whole(doc.metadata.createdAt),
+      updatedAt: whole(doc.metadata.updatedAt)
     };
     const insert = tx.insert(t).values({ id: doc.id, ...fields });
     await (ifAbsent ? insert.onConflictDoNothing({ target: t.id }) : insert.onConflictDoUpdate({ target: t.id, set: fields }));
@@ -316,13 +346,13 @@ export class SqlStore {
       ownerUid: uid,
       seq,
       prevSeq: payload.prevSeq,
-      ts: payload.ts,
+      ts: whole(payload.ts),
       type: payload.type,
       signature: signed.signature,
       data: doc.dataText,
-      version: doc.metadata.version,
-      createdAt: doc.metadata.createdAt,
-      updatedAt: doc.metadata.updatedAt
+      version: whole(doc.metadata.version),
+      createdAt: whole(doc.metadata.createdAt),
+      updatedAt: whole(doc.metadata.updatedAt)
     });
   }
 
@@ -356,15 +386,15 @@ export class SqlStore {
   private async addToTreasury(tx: any, op: Extract<CommitOp, { kind: 'add' }>): Promise<void> {
     const t = this.t.treasuries;
     await tx.insert(t)
-      .values({ id: op.id, namespace: op.namespace, gold: op.amount, createdAt: op.at, updatedAt: op.at })
-      .onConflictDoUpdate({ target: t.id, set: { gold: sql`${t.gold} + ${op.amount}`, updatedAt: op.at } });
+      .values({ id: op.id, namespace: op.namespace, gold: op.amount, createdAt: whole(op.at), updatedAt: whole(op.at) })
+      .onConflictDoUpdate({ target: t.id, set: { gold: sql`${t.gold} + ${op.amount}`, updatedAt: whole(op.at) } });
   }
 
   private async setTreasury(tx: any, doc: IWireDoc, ifAbsent: boolean): Promise<void> {
     const t = this.t.treasuries;
     const gold = JSON.parse(doc.dataText)?.gold;
     if (typeof gold !== 'number') throw new StoreRefusal(`Treasury ${doc.id} holds no number.`);
-    const fields = { namespace: doc.namespace, gold, createdAt: doc.metadata.createdAt, updatedAt: doc.metadata.updatedAt };
+    const fields = { namespace: doc.namespace, gold, createdAt: whole(doc.metadata.createdAt), updatedAt: whole(doc.metadata.updatedAt) };
     const insert = tx.insert(t).values({ id: doc.id, ...fields });
     await (ifAbsent ? insert.onConflictDoNothing({ target: t.id }) : insert.onConflictDoUpdate({ target: t.id, set: fields }));
   }

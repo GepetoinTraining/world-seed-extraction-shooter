@@ -5,7 +5,7 @@
  *   npm run build
  *   npm run serve
  *
- * WS_DATABASE_URL   file:… (default data/test-claude.db) or postgres://…
+ * WS_DATABASE_URL   pglite://<folder> (default data/test-claude) or postgres://…
  * WS_PORT           default 3900
  * WS_HOST           default 127.0.0.1. There is no authentication: see http.ts.
  */
@@ -15,10 +15,11 @@ import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDbHandler, lazyStore } from './http';
 import { openStore } from './SqlStore';
+import { defaultDatabaseUrl } from './connection';
 import { createIntelligenceHandler, openDoor } from './intelligence';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const url = process.env.WS_DATABASE_URL ?? `file:${join(root, 'data/test-claude.db').replace(/\\/g, '/')}`;
+const url = process.env.WS_DATABASE_URL ?? defaultDatabaseUrl(root);
 const port = Number(process.env.WS_PORT ?? 3900);
 const host = process.env.WS_HOST ?? '127.0.0.1';
 const dist = join(root, 'dist');
@@ -61,3 +62,5 @@ const server = createServer((req, res) => {
 
 server.listen(port, host, () => console.log(`[DB] World Seed's database answers on http://${host}:${port}/api/db (${url.split(':')[0]})`));
 void store.get().catch(e => console.error(`[DB] The database did not open: ${e?.message ?? e}`));
+// A clean close leaves nothing to replay. A kill loses nothing either, and the next open pays for it.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { void store.close().finally(() => process.exit(0)); });

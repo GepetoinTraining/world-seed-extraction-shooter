@@ -62,6 +62,6 @@ export interface IWireSearch {
 export interface IHealth {
   ok: boolean;
   service?: 'worldseed-db';
-  dialect?: 'sqlite' | 'postgres';
+  dialect?: 'postgres';
   reason?: string;
 }

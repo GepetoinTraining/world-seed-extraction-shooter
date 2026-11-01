@@ -6,7 +6,7 @@
  * Line 71's client half: every gold change goes to the server as ONE commit.
  * Plus the refusal when the server is down, and the one-time import.
  *
- * Nothing here mocks the store. A real server process holds a real SQLite file,
+ * Nothing here mocks the store. A real server process holds a real PGlite folder,
  * and the real VectorStore reaches it over HTTP. The certificate system is real
  * too, with only its IndexedDB shelf swapped for a Map, because jsdom has none.
  */
@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Blob as NodeBlob } from 'node:buffer';
 
+import { folderUrl } from '../server/connection';
 import { CertificateSystem, IPlayerCertificate } from '../src/entities/identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../src/entities/data/VectorStore';
 import { StoreClient, useVault } from '../src/entities/data/StoreClient';
@@ -120,7 +121,7 @@ beforeAll(async () => {
   vi.spyOn(CertificateSystem, 'getPrivateKey').mockImplementation(async uid => keys.get(uid) ?? null);
   vi.spyOn(CertificateSystem, 'storePrivateKey').mockImplementation(async (uid, key) => { keys.set(uid, key); });
   const dir = mkdtempSync(join(tmpdir(), 'ws-game-'));
-  dbUrl = `file:${join(dir, 'game.db').replace(/\\/g, '/')}`;
+  dbUrl = folderUrl(join(dir, 'game'));
   port = 21000 + Math.floor(Math.random() * 3000);
   await startServer();
   StoreClient.configure({ baseUrl: `http://127.0.0.1:${port}`, retryMs: 50 });
@@ -156,7 +157,7 @@ describe('line 69: saves live in the SQL database', () => {
     expect(importer).toMatch(/import\(['"].*RxDBClient['"]\)/);
   });
 
-  it('a save and its ledger reach the file, and a second server process finds them', async () => {
+  it('a save and its ledger reach the folder, and a second server process finds them', async () => {
     const cert = await becomeAvatar('LOAM');
     const uid = cert.metadata.uid;
     spend(40);
@@ -256,7 +257,7 @@ describe('line 69: saves live in the SQL database', () => {
     await stopServer();
     const dir = mkdtempSync(join(tmpdir(), 'ws-empty-'));
     const keepUrl = dbUrl;
-    dbUrl = `file:${join(dir, 'empty.db').replace(/\\/g, '/')}`;
+    dbUrl = folderUrl(join(dir, 'empty'));
     await startServer();
     wipeBrowser();
 
@@ -853,7 +854,7 @@ describe('one command brings up everything the game needs', () => {
     const vitePort = 24000 + Math.floor(Math.random() * 2000);
     const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--port', String(vitePort), '--strictPort'], {
       cwd: ROOT,
-      env: { ...process.env, WS_DATABASE_URL: `file:${join(dir, 'vite.db').replace(/\\/g, '/')}` },
+      env: { ...process.env, WS_DATABASE_URL: folderUrl(join(dir, 'vite')) },
       stdio: 'ignore'
     });
     try {
@@ -865,17 +866,17 @@ describe('one command brings up everything the game needs', () => {
         } catch { /* still rising */ }
         if (!body) await new Promise(r => setTimeout(r, 100));
       }
-      expect(body).toMatchObject({ ok: true, service: 'worldseed-db', dialect: 'sqlite' });
+      expect(body).toMatchObject({ ok: true, service: 'worldseed-db', dialect: 'postgres' });
     } finally {
       await new Promise<void>(resolve => { vite.on('exit', () => resolve()); vite.kill('SIGKILL'); });
     }
   }, 60_000);
 
-  it('the database file is never committed, and no source file is ignored along with it', () => {
+  it('the database folders are never committed, and no source file is ignored along with it', () => {
     // Ask git, not the file. The first version of this bar read .gitignore for "data/",
     // which also ignored src/entities/data/: the code passed here and was never committed.
     const git = (...args: string[]) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
-    for (const file of ['data/test-claude.db', 'data/test-claude.db-wal', 'data/test-pedro.db', 'data/test-pedro.db-shm']) {
+    for (const file of ['data/test-claude/PG_VERSION', 'data/test-claude/pg_wal/000000010000000000000001', 'data/test-claude.lock', 'data/test-pedro/base/1/1259', 'data/test-pedro.lock', 'data/test-pedro.partial/PG_VERSION', 'data/test-pedro.carried.txt', 'data/test-claude.db', 'data/test-claude.db-wal', 'data/test-pedro.db', 'data/test-pedro.db-shm']) {
       expect(git('check-ignore', file).trim()).toBe(file);
     }
     expect(git('ls-files', '--others', '--ignored', '--exclude-standard', 'src', 'server', 'tests', 'drizzle').trim()).toBe('');

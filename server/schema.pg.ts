@@ -1,9 +1,9 @@
 /**
- * THE SCHEMA, Postgres's spelling. See `schema.sqlite.ts`.
+ * THE SCHEMA.
  *
- * Text ids use the C collation, so ORDER BY id is byte order on both dialects.
+ * Text ids use the C collation, so ORDER BY id is byte order.
  * `data` must never become a JSON column type: those reorder keys, and signatures
- * cover the exact content.
+ * cover the exact content. Everything a query needs sits in a column beside it.
  *
  * Where pgvector fits: `embedding` is JSON text today and search ranks in the
  * server (SqlStore.search). At deploy, add a `vector(n)` column beside it with an
@@ -33,6 +33,7 @@ export const documents = pgTable('documents', {
   index('documents_owner_idx').on(t.ownerCertUid)
 ]);
 
+/** Append-only, one chain per identity. The chain's head is MAX(seq): it cannot disagree with its rows. */
 export const ledgerRows = pgTable('ledger_rows', {
   id: idText('id').primaryKey(),
   ownerUid: text('owner_uid').notNull(),
@@ -50,6 +51,7 @@ export const ledgerRows = pgTable('ledger_rows', {
   index('ledger_rows_type_idx').on(t.type)
 ]);
 
+/** A balance is a number the database adds to, so overlapping credits lose nothing. */
 export const treasuries = pgTable('treasuries', {
   id: idText('id').primaryKey(),
   namespace: text('namespace').notNull(),
@@ -58,6 +60,7 @@ export const treasuries = pgTable('treasuries', {
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull()
 });
 
+/** Every commit that landed, so a retried request applies once. */
 export const commits = pgTable('commits', {
   id: text('id').primaryKey(),
   at: bigint('at', { mode: 'number' }).notNull()

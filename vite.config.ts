@@ -8,6 +8,8 @@ export default defineConfig(() => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // A database folder is thousands of files the server itself rewrites. Nothing there is source.
+        watch: { ignored: ['**/data/**'] },
       },
       // The database comes up with the dev server: one command, one port (D31).
       plugins: [react(), worldSeedDatabase(__dirname)],
