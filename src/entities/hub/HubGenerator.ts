@@ -121,9 +121,9 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
     name: 'Grand Marshal Vex',
     title: 'Guild Registrar',
     dialogue: {
-      // Wave 9.7: guilds are unbuilt, and the Hall says so instead of pretending.
-      greeting: "Strength in numbers. Not that the Seed lets me register any, these days.",
+      greeting: "The Hall takes what this city's people want, and it takes proof. Which have you brought?",
       options: [
+        { label: 'The Board', action: 'OPEN_HALL' },
         { label: 'Ask about the Hall', action: 'GUILD_LORE' },
         { label: 'Leave', action: 'CLOSE' }
       ]
@@ -168,6 +168,7 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       options: [
         // D51: energy is a day's supply, and a rest is what restores it (D43: it sends what was queued, too)
         { label: 'Rest the night (20g)', action: 'REST' },
+        { label: 'Who is staying here', action: 'OPEN_TAVERN' },
         { label: 'Buy Drink (10g)', action: 'BUY_CONSUMABLE', payload: { itemId: 'drink_ale', cost: 10 } },
         { label: 'Hear Rumors', action: 'GET_HINT' },
         { label: 'Leave', action: 'CLOSE' }

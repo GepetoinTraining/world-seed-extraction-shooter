@@ -18,6 +18,9 @@ import {
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
 import { CityPlan } from '../../components/CityPlan';
+import { GuildHall } from '../../components/GuildHall';
+import { TavernRoom } from '../../components/TavernRoom';
+import { RankMomentView } from '../../components/WorldCanvas';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
@@ -83,7 +86,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' };
+  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' };
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
@@ -465,6 +468,19 @@ export const HubCanvas: React.FC = () => {
 
   const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
 
+  // D75: the people the gate brought out, drawn where they are: by the tavern's door, then their own.
+  const residents = useHubStore(s => s.guild.residents);
+  const residentBodies = useMemo(() => {
+    const palette = buildPalette(HUB_GENRE);
+    const tavern = HubGenerator.findPOI(layout, 'poi_tavern');
+    let lodging = 0;
+    return residents.flatMap(r => {
+      const home = r.homeAt && r.lotId ? HubGenerator.findPOI(layout, r.lotId) : null;
+      const at = home ? doorOf(home) : tavern ? { x: doorOf(tavern).x + 2 + 2 * lodging++, y: doorOf(tavern).y + 1 } : null;
+      return at ? [{ at, body: spriteToCanvas(figure({ uid: r.entityId, archetype: 'NOMAD', facing: 'down', step: 0, moving: false }), palette) }] : [];
+    });
+  }, [residents, layout]);
+
   // U16: the city fills the window. The canvas is the window; the camera does the rest.
   const shellRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -652,6 +668,10 @@ export const HubCanvas: React.FC = () => {
       }
       ctx.stroke();
       ctx.setLineDash([]);
+      for (const { at, body: person } of residentBodies) {
+        const pw = person.width * ATOM_PX, ph = person.height * ATOM_PX;
+        ctx.drawImage(person, Math.round(((at.x + 0.5) * TILE_SIZE - pw / 2 - ox) / 2) * 2, Math.round(((at.y + 0.5) * TILE_SIZE - ph / 2 - oy) / 2) * 2, pw, ph);
+      }
       const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
       ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
@@ -665,7 +685,7 @@ export const HubCanvas: React.FC = () => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cityBitmaps, groundEdges, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
+  }, [cityBitmaps, groundEdges, residentBodies, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -857,6 +877,9 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
+      {panel?.kind === 'tavern' && <TavernRoom onClose={() => setPanel(null)} />}
+      {panel?.kind === 'guild' && <GuildHall onClose={() => setPanel(null)} />}
+      <RankMomentView />
     </div>
   );
 };

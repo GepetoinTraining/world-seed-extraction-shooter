@@ -164,7 +164,7 @@ describe('line 128: levels come from experience, rank does not', () => {
 });
 
 describe('line 128: the rank is granted, levels reset, and stats stay (D83)', () => {
-  it('nothing in the game grants a rank yet: the seam has no caller but the store', () => {
+  it('the guild is the one caller of the seam: nothing else in the game grants a rank (B4)', () => {
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -174,7 +174,7 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
       }
     };
     walk('src');
-    expect(hits.sort()).toEqual(['src/entities/player/store.ts', 'src/entities/player/systems/ProgressionSystem.ts']);
+    expect(hits.sort()).toEqual(['src/entities/hub/store.ts', 'src/entities/player/store.ts', 'src/entities/player/systems/ProgressionSystem.ts']);
   });
 
   it('a grant moves the rank up and resets the level', () => {
@@ -687,7 +687,7 @@ describe('line 94: every attribute does real work, through the one door', () => 
     expect(LoadoutSystem.walkTilesPerSecond(undefined, floor)).toBe(LoadoutSystem.walkTilesPerSecond());
     expect(StatSystem.sightPx(undefined, floor)).toBe(StatSystem.sightPx());
     expect(StatSystem.noiseReduction(undefined, floor)).toBe(0);
-    expect(StatSystem.levyRate(0.05, floor)).toBe(0.05);
+    expect(StatSystem.levyDodgeOdds(floor)).toBe(StatSystem.levyDodgeOdds());
     expect(StatSystem.vendorOffer(100, floor)).toBe(60);
     expect(StatSystem.shopPrice(150, floor)).toBe(150);
     expect(StatSystem.channelMs(5000, floor)).toBe(5000);
@@ -784,10 +784,10 @@ describe('line 94: every attribute does real work, through the one door', () => 
     expect(StatSystem.talkOdds('COIN', raised('intimidation'))).toBe(StatSystem.talkOdds('COIN', spread()));
   });
 
-  it('subterfuge: quieter in the field, and less of the haul is declared at the gate', () => {
+  it('subterfuge: quieter in the field, and a dodge of the levy lands more often, never always', () => {
     expect(StatSystem.noiseReduction(undefined, raised('subterfuge'))).toBeGreaterThan(0);
-    expect(StatSystem.levyRate(0.05, raised('subterfuge'))).toBeLessThan(0.05);
-    expect(StatSystem.levyRate(0.05, spread({ subterfuge: 1_000_000 }))).toBeGreaterThan(0);
+    expect(StatSystem.levyDodgeOdds(raised('subterfuge'))).toBeGreaterThan(StatSystem.levyDodgeOdds(spread()));
+    expect(StatSystem.levyDodgeOdds(spread({ subterfuge: 1_000_000 }))).toBeLessThan(1);
   });
 
   it('bartering: the counter pays more and asks less, and no amount of it mints gold', () => {

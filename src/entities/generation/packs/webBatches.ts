@@ -278,4 +278,16 @@ export const WEB_BATCHES: IWebBatch[] = [
       { tags: ['identify_furniture'], name: 'The Furniture Eye' }
     ]
   },
+  // D100: "it becomes a skill as well, tax evasion!" Moves WebBank.version(), so the next world pins this.
+  {
+    runId: 'run_007_the_books',
+    model: 'claude-opus-5-5',
+    ranAt: 20261101,
+    tags: [
+      { tag: 'tax_evasion', kind: 'trade', meaning: 'Keeping part of a haul off a world\'s books at the gate.' }
+    ],
+    names: [
+      { tags: ['tax_evasion'], name: 'Tax Evasion', flavor: 'Knowing which crate the clerk will not open.' }
+    ]
+  }
 ];

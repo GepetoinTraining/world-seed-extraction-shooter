@@ -46,7 +46,10 @@ export const ReceiptScreen: React.FC = () => {
             <span className={died ? 'ws-loss' : 'ws-proof'}>{receipt.haulValue.toLocaleString()} G</span>
           </div>
           {!died && (
-            <div className="ws-row"><span className="ws-dim">HUB LEVY</span><span>{receipt.tax.toLocaleString()} G</span></div>
+            <div className="ws-row">
+              <span className="ws-dim">HUB LEVY{receipt.levy?.attempted ? (receipt.levy.dodged ? ' · DODGED' : ' · CAUGHT: PAID IN FULL') : ''}</span>
+              <span>{receipt.tax.toLocaleString()} G</span>
+            </div>
           )}
         </div>
 

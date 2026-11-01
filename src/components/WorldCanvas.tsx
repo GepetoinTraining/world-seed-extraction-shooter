@@ -134,7 +134,7 @@ const CartWindow: React.FC = () => {
 // THE RANK MOMENT (Wave 9.5): a rank-up holds the corner of the screen
 // =============================================================================
 
-const RankMomentView: React.FC = () => {
+export const RankMomentView: React.FC = () => {
   const { moment, clear } = useRankMoment();
   useEffect(() => {
     if (!moment) return;
@@ -456,12 +456,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     haul = [...haul, ...cartHaul, ...wornNewcomers];
 
     const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
-    const rate = StatSystem.levyRate(card?.extractionTaxRate ?? 0.05, st.player.attributes);
-    const tax = Math.floor(haulValue * rate);
+    // D100: the levy can be dodged, on a roll that can fail, and trying is practice.
+    const levy = ExitLevy.attemptNow(worldCertUid || 'unknown', session.sessionId, haulValue, card?.extractionTaxRate ?? 0.05);
+    const rate = levy.ratePaid;
+    const tax = levy.owed;
     const startedAt = Date.now();
     const forced = forcedMsRef.current !== null ? { forced: true } : {};
 
-    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, tax, cartItemIds: cartHaul.map(i => i.id), ...forced });
+    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, rateAsked: levy.rateAsked, dodged: levy.dodged, tax, cartItemIds: cartHaul.map(i => i.id), ...forced });
     // the cart's bed banks straight into the stash (it never fit a pack — that is its point)
     if (cartHaul.length > 0) {
       usePlayerStore.setState(s => ({
@@ -482,14 +484,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // The vault door starts closing now; the signature lands on it when sealed.
     useReceipt.getState().show({
-      outcome: 'EXTRACTED', haul, haulValue, tax, sealing: true,
+      outcome: 'EXTRACTED', haul, haulValue, tax, levy, sealing: true,
       worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...forced
     });
 
     void (async () => {
       // D30: the sealed session is the rest. What was worked at may settle, and the receipt says so.
       const settled = await useHubStore.getState().restAndCredit('SEALED');
-      const charged = await ExitLevy.charge(worldCertUid || 'unknown', haulValue, rate);
+      const charged = await ExitLevy.charge(worldCertUid || 'unknown', haulValue, rate, levy);
       if (charged > 0) console.log(`[TAX] Hub levied ${charged}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
       // Wave 6.2: everything that made it home gets its story signed
       const { Provenance } = await import('../logic/sovereignty/Provenance');
@@ -500,7 +502,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       await PlayerPersistence.flush('extract');
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
-          outcome: 'EXTRACTED', haul, haulValue, tax,
+          outcome: 'EXTRACTED', haul, haulValue, tax, levy,
           settled: settled.map(s => WebSystem.nameOf(s.id)),
           worldName: card?.name ?? 'UNKNOWN',
           durationMs: signed?.payload.durationMs ?? (Date.now() - startedAt),

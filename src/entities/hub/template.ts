@@ -444,6 +444,17 @@ export const SYSTEM_TEMPLATES: ITemplate[] = [
       { kind: 'WINDOW', x: 3, y: 0 }, { kind: 'WINDOW', x: 8, y: 0 }, { kind: 'WINDOW', x: 12, y: 0 }
     ],
     zones: []
+  },
+  // A dismembered piece can be as small as 3 by 3, and the guild houses people there too (D75).
+  {
+    ...SYSTEM_AUTHOR,
+    name: "Keeper's Cottage",
+    structureType: 'HOUSE',
+    footprint: { width: 3, height: 3 },
+    pieces: [
+      { kind: 'WINDOW', x: 3, y: 0 }, { kind: 'WINDOW', x: 8, y: 0 }
+    ],
+    zones: []
   }
 ];
 
