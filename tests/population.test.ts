@@ -957,8 +957,9 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       const banked = clone(FIRST_THEME) as IThemeBody & { junk?: unknown };
       banked.creatures = banked.creatures.filter(c => !(c.tags.includes('elite') && !c.tags.includes('god')));
       for (const c of banked.creatures) { delete (c as Partial<typeof c>).social; delete (c as Partial<typeof c>).builds; delete (c as Partial<typeof c>).leads; }
-      banked.tags = banked.tags.filter(t => t.tag !== 'junk');
+      banked.tags = banked.tags.filter(t => !['junk', 'gem', 'art', 'valuable'].includes(t.tag));
       delete banked.junk;
+      delete banked.anchors;
       banked.abilities = banked.abilities.filter(a => a.effect !== 'forced_exit');
       banked.consumables = banked.consumables.filter(c => c.key !== 'writ_of_breach');
       expect(themeIdOf(banked)).toBe('theme_666daceb0516e738');

@@ -16,10 +16,13 @@ import { StoreUnit } from '../../entities/data/StoreUnit';
 import { Ledger, LedgerRowType } from '../ledger/Ledger';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Treasury } from './Treasury';
+import { Wallets } from './Wallets';
 
 export interface IGoldCommit {
   rows: { type: LedgerRowType; data: Record<string, any> }[];
   treasury?: { worldUid: string; delta: number };
+  /** People's own coin (D115). The row beside it says the same in its `wallets`. */
+  wallets?: { hubId: string; deltas: Record<string, number> };
   /** The hub's state, when the same act changed it (a lot bought, a permit queued). */
   hubDoc?: IVectorDocument;
 }
@@ -36,6 +39,7 @@ export class GoldCommit {
         const unit = new StoreUnit();
         if (snapshot) await PlayerPersistence.signInto(unit, snapshot);
         if (spec.treasury) await Treasury.writeInto(unit, spec.treasury.worldUid, spec.treasury.delta);
+        for (const [personId, delta] of Object.entries(spec.wallets?.deltas ?? {})) await Wallets.writeInto(unit, spec.wallets!.hubId, personId, delta);
 
         let seq: number | null = null;
         for (const row of spec.rows) seq = await Ledger.writeInto(unit, row.type, row.data);

@@ -356,8 +356,9 @@ describe('nothing that stands moved', () => {
     expect(sealTheme(FIRST_THEME as IThemeBody, FIRST_THEME_PACK.model, FIRST_THEME_PACK.writtenAt).themeId).toBe(FIRST_THEME_PACK.themeId);
   });
 
-  it('only what casts the word has a worth of its own', () => {
-    const worthy = Object.values(compileTheme(FIRST_THEME_PACK).resources).filter(def => (def as { worth?: number }).worth !== undefined);
+  // Moved on purpose (D115): an anchor has a worth of its own too, since its weight cannot price it.
+  it('only what casts the word, and what holds value, has a worth of its own', () => {
+    const worthy = Object.values(compileTheme(FIRST_THEME_PACK).resources).filter(def => (def as { worth?: number }).worth !== undefined && !def.anchor);
     expect(worthy.map(def => def.name)).toEqual(['Writ of Breach']);
   });
 });

@@ -20,6 +20,7 @@ import { StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { Anchors } from '../../logic/economy/Anchors';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
@@ -1900,6 +1901,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const rng = Rng.fromKey(rollKey);
       // Wave 10E: a chest in a dreamed world fills from its biome's bank
       const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
+
+      // D115: a gem, a work of art, a valuable. Its own stream, so nothing above or below it moves.
+      const chestWorld = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
+      const anchor = Anchors.fromChest(Anchors.foundIn(chestWorld?.themeId, biomeAt(entity.position), entity.container.lootRank), rollKey);
+      if (anchor) loot.push(anchor);
 
       if (entity.container.hasLore) {
         const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);

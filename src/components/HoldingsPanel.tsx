@@ -18,6 +18,7 @@ import { isTemplateItem } from '../logic/systems/TemplateSystem';
 import { TemplateApplyModal } from './TemplateApplyModal';
 import { TemplateStudio } from './TemplateStudio';
 import { useFeed } from './ui/stores';
+import { AskFor, BuyListing, CollectHeld } from './ShelfAsk';
 
 const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
 const DAY_MS = 86_400_000;
@@ -32,6 +33,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
   const mine = lot.ownerId === player.id;
   const [listId, setListId] = useState<string>('');
   const [listPrice, setListPrice] = useState('50');
+  const [askDefId, setAskDefId] = useState('');
   const [applyOpen, setApplyOpen] = useState(false);
   // D13: the walls are the builder's choice. Nobody chose: the stash pays in order.
   const [wallMaterial, setWallMaterial] = useState('');
@@ -202,16 +204,18 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
           {mine && (lot.proceeds || 0) > 0 && (
             <Button tone="proof" onClick={() => hub.collectProceeds(lot.id)}>COLLECT {lot.proceeds}G</Button>
           )}
+          {mine && <CollectHeld lot={lot} />}
           {mine && (
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <select className="ws-input" style={{ flex: 1 }} value={listId} onChange={e => setListId(e.target.value)}>
                 <option value="">Item to list…</option>
                 {stash.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
-              <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} />
+              <AskFor value={askDefId} onChange={setAskDefId} />
+              {!askDefId && <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} />}
               <Button
-                disabled={!listId || !Number(listPrice)}
-                onClick={() => { if (listId) { hub.listItemForSale(lot.id, listId, Number(listPrice)); setListId(''); } }}
+                disabled={!listId || (!askDefId && !Number(listPrice))}
+                onClick={() => { if (listId) { hub.listItemForSale(lot.id, listId, askDefId ? 0 : Number(listPrice), askDefId || undefined); setListId(''); } }}
               >
                 LIST
               </Button>
@@ -223,9 +227,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
                 <ItemSprite item={listing.item} cellPx={14} />
                 <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
               </span>
-              <Button tone="proof" disabled={player.bank.gold < listing.price} onClick={() => hub.buyFromLot(lot.id, listing.item.id)}>
-                BUY {listing.price}G
-              </Button>
+              <BuyListing lotId={lot.id} listing={listing} />
             </div>
           ))}
         </div>

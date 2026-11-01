@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -194,6 +194,19 @@ export class ThemeLaw {
       }
       const bare = pack.creatures.find(c => !pack.junk!.some(j => j.from.some(tag => c.tags.includes(tag))));
       if (bare) return no(`${bare.key} leaves nothing behind. Every creature has some junk (D99).`);
+    }
+
+    if (formula >= ANCHORS_FROM_FORMULA) {
+      if (!Array.isArray(pack.anchors) || pack.anchors.length === 0) return no('Nothing in this world holds value. A world needs anchors (D115).');
+      for (const a of pack.anchors) {
+        if (!claim(a.key)) return no(`anchor "${a.key}" needs its own plain key.`);
+        if (!a.name?.trim()) return no(`anchor ${a.key} has no name.`);
+        if (!has(RANKS, a.rank)) return no(`${a.key}: "${a.rank}" is not a rank.`);
+        if (!has(WEIGHTS, a.weight) || !has(WORTHS, a.worth)) return no(`${a.key} is outside the bands.`);
+        if (!Array.isArray(a.foundIn) || a.foundIn.length === 0 || a.foundIn.some(b => !has(BIOMES, b))) return no(`${a.key} is found nowhere the world has.`);
+        const t = unknownTag(a.tags);
+        if (t) return no(`${a.key} is tagged "${t}", which is not registered.`);
+      }
     }
 
     for (const c of pack.consumables) {

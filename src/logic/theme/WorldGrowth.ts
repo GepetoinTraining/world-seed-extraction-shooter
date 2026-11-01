@@ -94,7 +94,7 @@ export class WorldGrowth {
         ...pack, themeId: batch.scope,
         tags: [], regions: [], stations: [], goods: [], gear: [], consumables: [],
         creatures: batch.growth.creatures, materials: batch.growth.materials, affixes: batch.growth.affixes,
-        abilities: batch.growth.abilities, lore: batch.growth.lore, junk: undefined
+        abilities: batch.growth.abilities, lore: batch.growth.lore, junk: undefined, anchors: undefined
       };
       const compiled = compileTheme(own, known);
       for (const c of batch.growth.creatures) kinds.set(c.key, { id: creatureIdOf(batch.scope, c.key), tags: c.tags });
