@@ -62,7 +62,8 @@ import { CREATION_DRAFT_DEFAULTS, CREATION_DRAFT_KEY, useCreationDraft } from '.
 import { CreationFlow } from '../src/components/CreationFlow';
 import { IntelligenceDoor, AbsentProvider } from '../server/intelligence/door';
 import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { buildCreationRequest, buildKamiSetRequest, buildKamiTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
+import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
+import { KamiPersona } from '../src/logic/systems/KamiPersona';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
 import { ARCHETYPE_IDS, figure, portrait } from '../src/render/atoms/people';
@@ -1503,6 +1504,236 @@ describe('the fifth class: the screens', () => {
     await toKami();
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
     expect(text()).not.toMatch(/archetype|trope|isekai|reincarnat/i);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// WHO KAMI IS: Pedro, "yup, the seed, each hub has their seed, and you send that seed to a
+// random ass haiku and ask for a personality based on vibes. since the seed is always
+// different the minute noise will produce a SLIGHTLY different version"
+// -----------------------------------------------------------------------------
+
+describe("a hub's Kami: the seed, read for vibes", () => {
+  const WRITTEN = 'This one keeps his dice warm in one hand and will not say why.';
+  const hub = async (uid = 'u_hubmaker', name = 'H') => {
+    useIdentityStore.setState({ certificate: CERT(uid) } as any);
+    return (await WorldCertificateSystem.mintWorld(CERT(uid), name, 'd', WorldType.HUB, 50, {}))!;
+  };
+  const writes = (over: any = {}) => vi.spyOn(IntelligenceClient, 'writeKamiPersona').mockResolvedValue({
+    status: 'OK', text: WRITTEN, usage: { model: 'claude-haiku-5-5', inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, usd: 0.001 }, ...over
+  } as any);
+
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('sends the hub\'s own seed, and nothing else about it', async () => {
+    const h = await hub();
+    const spy = writes();
+    const out = await KamiPersona.ofHub(h.data.worldUid);
+    expect(spy).toHaveBeenCalledWith(h.data.seedHash);
+    expect(out!.text).toBe(WRITTEN);
+    expect(out!.usage!.model).toBe('claude-haiku-5-5');
+  });
+
+  it('a hub has one: written once, kept, and nobody pays for it twice', async () => {
+    const h = await hub();
+    const spy = writes();
+    await KamiPersona.ofHub(h.data.worldUid);
+    const again = await KamiPersona.ofHub(h.data.worldUid);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(again!.text).toBe(WRITTEN);
+    expect(again!.usage).toBeUndefined();
+  });
+
+  it('two hubs have two seeds, and each hub keeps its own', async () => {
+    const a = await hub('u_a', 'A');
+    const b = await hub('u_b', 'B');
+    expect(a.data.seedHash).not.toBe(b.data.seedHash);
+    const spy = vi.spyOn(IntelligenceClient, 'writeKamiPersona').mockImplementation(async (seed: string) => ({ status: 'OK', text: `Read from ${seed.slice(0, 6)}.` }) as any);
+    const one = await KamiPersona.ofHub(a.data.worldUid);
+    const two = await KamiPersona.ofHub(b.data.worldUid);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(one!.text).not.toBe(two!.text);
+  });
+
+  it('it belongs to the hub, never to a character (D81)', async () => {
+    const h = await hub();
+    writes();
+    await KamiPersona.ofHub(h.data.worldUid);
+    expect(db.get(KamiPersona.docId(h.data.worldUid)).data.text).toBe(WRITTEN);
+    expect(db.get(KamiPersona.docId(h.data.worldUid)).namespace).toBe('territories');
+    born('u_d81b', FATE_GAMBLER, CreationSystem.kamiSheet({ ...draftOf('cooking'), silhouette: FATE_GAMBLER }, CreationSystem.fateFloor([])));
+    expect(JSON.stringify(player())).not.toContain(WRITTEN);
+  });
+
+  it('with no hub yet, or one that is not on the registry, there is nothing to read', async () => {
+    const spy = writes();
+    expect(await KamiPersona.ofHub('')).toBeNull();
+    expect(await KamiPersona.ofHub('world_nobody')).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('D35: no key, a refusal or a door that never answers leaves him as he is, stores nothing, and asks again next time', async () => {
+    const h = await hub();
+    for (const status of ['NO_KEY', 'OFFLINE', 'REFUSED', 'BUSY', 'OUTAGE', 'CUT_OFF']) {
+      vi.spyOn(IntelligenceClient, 'writeKamiPersona').mockResolvedValue({ status } as any);
+      expect(await KamiPersona.ofHub(h.data.worldUid)).toBeNull();
+    }
+    vi.spyOn(IntelligenceClient, 'writeKamiPersona').mockReturnValue(new Promise(() => {}));
+    expect(await KamiPersona.ofHub(h.data.worldUid, 5)).toBeNull();
+    expect(db.get(KamiPersona.docId(h.data.worldUid))).toBeUndefined();
+    writes();
+    expect((await KamiPersona.ofHub(h.data.worldUid))!.text).toBe(WRITTEN);
+  });
+
+  it('the law: empty or telling is refused whole, and not kept', async () => {
+    const h = await hub();
+    expect(KamiPersona.judge(WRITTEN).ok).toBe(true);
+    for (const bad of ['', '   ', 'He plays the trope well.', 'A real archetype.']) expect(KamiPersona.judge(bad).ok).toBe(false);
+    writes({ text: 'He plays the trope well.' });
+    expect(await KamiPersona.ofHub(h.data.worldUid)).toBeNull();
+    expect(db.get(KamiPersona.docId(h.data.worldUid))).toBeUndefined();
+  });
+
+  it('on the server: its own kind, on Haiku, low effort, no fallback; the seed is the whole message', async () => {
+    let params: any = {};
+    const client = {
+      beta: { messages: { stream: (p: any) => { params = p; return { finalMessage: async () => ({ stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: 'text', text: WRITTEN }] }) }; } } },
+      models: { retrieve: async () => ({}) }
+    } as any;
+    const out = await new ClaudeProvider(client).ask(buildKamiPersonaRequest('a1b2c3'));
+    expect(out.status).toBe('OK');
+    expect(out.text).toBe(WRITTEN);
+    expect(MODEL_FOR.kami_persona).toBe('claude-haiku-5-5');
+    expect(params.model).toBe('claude-haiku-5-5');
+    expect(params.output_config.effort).toBe('low');
+    expect(params).not.toHaveProperty('fallbacks');
+    expect(params.messages).toEqual([{ role: 'user', content: 'a1b2c3' }]);
+    expect(buildKamiPersonaRequest('x').system).toBe(buildKamiPersonaRequest('y').system);
+  });
+
+  it('it asks for vibes, and a slight difference: the same god in every hub', () => {
+    const { system } = buildKamiPersonaRequest('x');
+    expect(system).toMatch(/vibes/i);
+    expect(system).toMatch(/slight/i);
+    expect(system).toMatch(/same/i);
+  });
+
+  it('he talks and sets it up as that hub\'s Kami; with none, as he always was', () => {
+    const plain = buildKamiTalkRequest([]);
+    const his = buildKamiTalkRequest([], WRITTEN);
+    expect(his.system).toContain(plain.system);
+    expect(his.system).toContain(WRITTEN);
+    expect(buildKamiTalkRequest([{ role: 'user', content: 'x' }], WRITTEN).system).toBe(his.system); // frozen for a hub, so it can cache
+    const ask = CreationSystem.kamiAsk();
+    expect(buildKamiSetRequest([], ask).system).not.toContain(WRITTEN);
+    expect(buildKamiSetRequest([], ask, WRITTEN).system).toContain(WRITTEN);
+  });
+
+  const posted = (body: unknown) => {
+    const text = JSON.stringify(body);
+    const req: any = {
+      method: 'POST', socket: { remoteAddress: '127.0.0.1' },
+      on(ev: string, fn: any) { if (ev === 'data') fn(Buffer.from(text)); if (ev === 'end') fn(); return req; }
+    };
+    return req;
+  };
+  const answering = (seen: any[]) => new IntelligenceDoor({
+    name: 'plain', status: async () => ({ available: true, provider: 'plain' }),
+    ask: async (r: any) => { seen.push(r); return { status: 'OK', text: 'ok' }; },
+    file: async () => ({ status: 'NO_KEY' as const }), collect: async () => ({ status: 'NO_KEY' as const }), ceiling: () => 0
+  });
+  const answer = () => {
+    const lines: string[] = [];
+    return { lines, res: { setHeader() {}, on() {}, write(t: string) { lines.push(t); return true; }, end(t: string) { lines.push(t); }, statusCode: 0 } as any };
+  };
+
+  it('the routes carry it', async () => {
+    const seen: any[] = [];
+    const handler = createIntelligenceHandler(answering(seen));
+    await handler(posted({ seed: 'abc' }), answer().res, '/kami/persona');
+    expect(seen[0].kind).toBe('kami_persona');
+    expect(seen[0].messages[0].content).toBe('abc');
+    await handler(posted({ messages: [], persona: WRITTEN }), answer().res, '/kami/talk');
+    expect(seen[1].system).toContain(WRITTEN);
+    await handler(posted({ messages: [], ask: {}, persona: WRITTEN }), answer().res, '/kami/set');
+    expect(seen[2].system).toContain(WRITTEN);
+  });
+
+  describe('on the screen', () => {
+    let host: HTMLDivElement;
+    let root: Root;
+    const button = (name: RegExp) => [...host.querySelectorAll('button')].find(b => name.test(b.textContent ?? '')) as HTMLButtonElement;
+    const click = async (name: RegExp) => {
+      await act(async () => { button(name).click(); await new Promise(r => setTimeout(r, 0)); });
+    };
+    const settle = () => act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    const toKami = async () => {
+      await act(async () => {
+        root.render(createElement(CreationFlow, { onMint: async () => {}, creating: false, error: null }));
+        await new Promise(r => setTimeout(r, 0));
+      });
+      await click(/FATE GAMBLER/);
+      await click(/^NEXT/);
+      await settle();
+      await click(/^NEXT/);
+      await settle();
+      await settle();
+    };
+
+    beforeEach(() => {
+      localStorage.clear();
+      useCreationDraft.getState().reset();
+      host = document.createElement('div');
+      document.body.appendChild(host);
+      root = createRoot(host);
+    });
+    afterEach(async () => {
+      await act(async () => { root.unmount(); });
+      host.remove();
+    });
+
+    it('he reads the chosen hub\'s seed before he speaks, and speaks as that Kami', async () => {
+      const h = await hub();
+      vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+      const persona = writes();
+      const talk = vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation(async (_m: any, onText: any) => { onText('Sit.'); return { status: 'OK', usage: { model: 'claude-sonnet-5-5', inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, usd: 0.01 } } as any; });
+      await toKami();
+      expect(persona).toHaveBeenCalledWith(h.data.seedHash);
+      expect(talk.mock.calls[0][3]).toBe(WRITTEN);
+      // What the reading cost goes with what the talk cost
+      expect((useCreationDraft.getState().draft.kamiUsage as any).usd).toBeCloseTo(0.011, 5);
+    });
+
+    it('what he sets up reads that same Kami', async () => {
+      await hub();
+      vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+      writes();
+      vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation(async (_m: any, onText: any) => { onText('Sit.'); return { status: 'OK' } as any; });
+      const set = vi.spyOn(IntelligenceClient, 'setKami').mockResolvedValue({ status: 'NO_KEY' } as any);
+      await toKami();
+      await click(/LET HIM SET IT/);
+      await settle();
+      expect(set.mock.calls[0][2]).toBe(WRITTEN);
+    });
+
+    it('nothing waits on it: with no reading he still speaks', async () => {
+      await hub();
+      vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: true });
+      vi.spyOn(IntelligenceClient, 'writeKamiPersona').mockResolvedValue({ status: 'OUTAGE' } as any);
+      const talk = vi.spyOn(IntelligenceClient, 'talkKami').mockImplementation(async (_m: any, onText: any) => { onText('Sit.'); return { status: 'OK' } as any; });
+      await toKami();
+      expect(talk).toHaveBeenCalledTimes(1);
+      expect(talk.mock.calls[0][3]).toBeUndefined();
+      expect(host.textContent).toMatch(/Sit\./);
+    });
+
+    it('with no key at all, nobody is asked', async () => {
+      await hub();
+      vi.spyOn(IntelligenceClient, 'status').mockResolvedValue({ available: false });
+      const persona = writes();
+      await toKami();
+      expect(persona).not.toHaveBeenCalled();
+    });
   });
 });
 
