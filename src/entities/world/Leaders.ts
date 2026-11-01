@@ -108,12 +108,12 @@ export class Leaders {
   }
 
   static isLeader(entityId: string): boolean {
-    return /^lead_-?\d+_-?\d+_\d+$/.test(entityId);
+    return /^lead_-?\d+_-?\d+_\d+(?:_h\d+)?$/.test(entityId);
   }
 
   /** The herd a body walks with, read from its id, so nothing new is stored on it. Undefined for a body that walks alone. */
   static herdOf(entityId: string): string | undefined {
-    return /^(lead_-?\d+_-?\d+_\d+)(?:_f\d+)?$/.exec(entityId)?.[1]
+    return /^(lead_-?\d+_-?\d+_\d+(?:_h\d+)?)(?:_f\d+)?$/.exec(entityId)?.[1]
       ?? /^(pop_-?\d+_-?\d+_[a-z0-9]+)_\d+$/.exec(entityId)?.[1]
       ?? /^(ent_-?\d+_-?\d+)_m\d+$/.exec(entityId)?.[1];
   }
