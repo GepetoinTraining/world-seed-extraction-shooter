@@ -340,9 +340,13 @@ Pedro, 2026-11-01: "elite is a pack leader, MAY BE industrious prior to having s
 - **Not as rare, and not alone.** R4's rule in `WorldGenerator` (`ELITE_WEIGHT`, a count of one) stays for boss, titan and god and comes off elite, which stands at the head of a pack of its own kind. A world rolls its elites at the mint: a keyed roster by sector, so "this world has three" is known without building a chunk, and a regeneration can walk them without building the world. Adding them moves `GOLDEN_VECTORS` and `FIRST_THEME_VECTORS`, on purpose. The first theme holds no plain elite today, so it needs some written.
 - **Only a social species leads.** Pedro: animals get leaders, "but that requires the species to be social, think of a pride of lions." So a pack says `social` on each creature, in both trees, because a pack leader needs a pack. In the first theme a stag can lead its herd and the Compound Bear walks alone. A new field moves that theme's bytes again, on purpose, the same way the trees did.
 - **A solitary monster leads nothing, and can still stand in the way.** Pedro: "it may be aggressive towards them, think an ogre under a bridge asking for a toll." It holds one spot on a way through, and whoever passes, a person or a pack, pays or fights. An elite of a solitary species has a sheet and a goal like any other, and no pack. Its goal is `waylay`. A toll is a new interaction, with a reader to write and its gold going through `GoldCommit`. Packs meeting it needs B2's movement.
-- **Boss: the seat of a territory**, one to a territory, with a base. Titan and god stay one of a kind and lead nothing by those words alone.
+- **A solitary elite that keeps winning becomes a titan.** Pedro: "now you see what a titan is... it becomes a titan, that would be it killing players all the way up to rank S... and if that happens, abandon the world probably."
+  - Where a social elite's repeated falls make a boss, a solitary one's make a titan. It climbs by whom it has brought down: the ledger keeps the highest rank that has fallen to it, and reaching S makes the titan.
+  - It is a change of form, so it goes through `CreatureLines`: a new node with one body, `titan` written by code and only its words by a model. That also meets D60: changed and one of a kind, so it shows its name.
+  - No roll, no anchors, no bands. It simply can't be expected to fall. The world is not closed or deleted: it goes on running, and the people in it decide to leave.
+- **Boss: the seat of a territory**, one to a territory, with a base. Titan and god are one of a kind and lead nothing. A titan is earned, as below.
 - **Elite becomes boss when people keep falling to it.** The world's ledger settles when it closes, and what happened while it was open levels up its creatures. That is the Director's record, settled at the regeneration, and this is one more thing it decides. Repeated means the same elite brings people down across a formula's count (a guess until Wave 12), with no roll and no model. It stays where it stands, takes that ground as its seat, and its pack is its first band. An industrious one starts building, and any other holds the ground as it is.
-- The tally needs one change: `reportToDirector` hears only a kind today, and this has to name the body too. A kind stays a kind (D64). A leader is the one body the record holds by itself: its kind, its tally, then its seat, tenure and stores.
+- The tally needs one change: `reportToDirector` hears only a kind today, and this has to name the body too, and the rank of who fell. A kind stays a kind (D64). A leader is the one body the record holds by itself: its kind, its tally, then its seat, tenure and stores.
 - A world is alpha as minted: no record, no territory. Land and alpha bind the vectors as they do now.
 - Names keep D60's rule: boss qualifies as one of a kind, elite does not. Until a leader has earned a name, its ground reads as an unknown holding.
 
@@ -361,7 +365,7 @@ Pedro: "elite and higher mobs have goals, they get a cycle to complete it, if no
 - **One cycle to do it.** At the close, for each one on the roster:
   - **Nobody saw it:** a keyed roll, the d20 plus its sheet against the goal's band, graded as the donor grades a month.
   - **Someone saw it:** no roll, because what a person saw must stay true. It finishes if it still stands with most of its pack, and fails if they stopped it. So a person can really prevent it. Seen means read by a scan or within sight in the field, and the ledger has to record that.
-  - **Who computes it:** Pedro: "we accept the compute that came from the client side, the game is arithmetic, so the values can be computed by the client and sent over to be merged." Each client works out the outcome and sends it with what it was worked from, and the world's record merges those. Two clients in one cycle: stopped beats stands, because a body brought down stays down, so the merge does not depend on who arrives first.
+  - **Who computes it:** Pedro: "we accept the compute that came from the client side, the game is arithmetic, so the values can be computed by the client and sent over to be merged." Each client works out the outcome and sends it with what it was worked from, and the world's record merges those. Two clients in one cycle: Pedro: "first who touches owns it, blame your internet connection and lag, that's life." The first to reach the record for that body owns its outcome this cycle, and a later report is refused and told why. So the order of arrival matters, on purpose.
   - **The limit of that:** the arithmetic can be re-run by anyone, but "I stopped it" is a claim about what happened in play. This is D82's question on the world's side, and it should be decided with D82 before anything crosses hubs.
   - **Next:** done, it takes the next goal from what it now is. Failed, it may try again, keyed.
 - **`settle` is the second road to boss.** A finished base is a seat, and a seat makes a boss with nobody having fallen to it. Repeated falls stay the other road, and both go through the same record.
@@ -403,7 +407,8 @@ Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time an
 
 Pedro: a finished base makes a boss, "and once known about sets up the quest chain to go get rid of it."
 
-- **Known** means a hub has heard of it: someone who read that ground brings it home, or hands in a map that shows it. Nothing is posted for a holding nobody has seen, so a boss can grow for many cycles unknown.
+- **Known** means a map that shows it has been shared with the guild. Pedro: "the map produced (if they are mapping and are a cartographer) needs to be shared with the guild." Seeing is not enough, and neither is saying so. Someone has to write the map (A3's item) and hand it in, so a person who keeps it, or never maps, leaves the boss growing unnoticed.
+- **The guild knows what the map knows.** It reads the map the way any character does, including how old it is, and a newer map updates what it holds. Whether handing one in pays anything is B4's to set.
 - **It comes through the guildhall**, which D73 says receives its quests from the NPCs (B4). The donor's generator turns a danger level into one bounty. Here it reads the holding, so the chain is about this place: read the ground, take its outer works or bands, bring enough people, bring it down.
 - **Each step is drawn from the record**, as arithmetic, with the model writing only its words in the scan window. Until those come it stands on plain words.
 - **The chain moves with the place.** A new anchor adds to it, a stale reading says so, and a boss that has moved on or fallen closes it. The first step needs one person, and the step that brings it down needs a party, which is where a person learns they need one.
@@ -418,17 +423,22 @@ Pedro: a finished base makes a boss, "and once known about sets up the quest cha
 
 ### Where it goes in the plan
 
-Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads, and a solitary one asks its toll; a known holding posts a chain, and an unknown one posts nothing; two clients' outcomes merge the same in any order; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
+Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads, and a solitary one asks its toll; a solitary elite that has brought down rank S becomes a titan, and no lower rank does; a map handed to the guild posts a chain, and anything less posts nothing; the first to touch a body owns its outcome, and a later report is refused; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
 
 ### Confirmed by Pedro, 2026-11-01
 
-A goal someone saw is decided by what happened, with no roll, and the client's compute is merged. Social binds monsters too. An animal leader builds nothing and directs its herd. A finished base makes a boss, and a known one posts a quest chain.
+A goal someone saw is decided by what happened, with no roll, and the client's compute is merged, the first to touch owning it. Social binds monsters too. An animal leader builds nothing and directs its herd. A finished base makes a boss, and a map shared with the guild posts the chain. A solitary elite that keeps winning becomes a titan.
 
 ### Taken by the builder, for Pedro to overrule
 
-1. In a merge, stopped beats stands.
-2. A solitary elite stays alone: repeated falls toughen it through the Director and do not make it a boss, because a boss has bands to direct.
-3. "Known" means a hub has heard, not that one person saw. A person who keeps it to themselves keeps the chain from being posted.
+1. A titan's mark is the highest rank fallen to it reaching S, rather than a count at each rank.
+2. A titan is earned, so a pack may no longer write one at the mint. The law would refuse the tag when this is built. The test fixture keeps its own.
+3. The guild posts no chain for a titan, only a warning. Nobody is sent to bring it down.
+4. Writing a map stays as A3 built it: anyone at a scribe's table with paper and ink. "Cartographer" adds no new gate.
+
+### For Pedro to rule
+
+A pocket world costs a person's free deed (D72). If a titan takes theirs, do they get anything back? The builder's default is no: the deed was spent, the world stands, and they are left walking other people's worlds or finding another deed.
 
 ## The design system to deliver
 
