@@ -917,7 +917,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
   });
 
   it('D30: the seal, the death and the withdrawal are the rests, and nowhere else calls one', () => {
-    const canvas = source('components/WorldCanvas.tsx');
+    const canvas = source('components/WorldCanvas.tsx') + source('components/ReconView.tsx');
     expect((canvas.match(/restAndCredit\(/g) ?? []).length).toBe(3);
     expect(canvas).toMatch(/restAndCredit\('SEALED'\)/);
     expect(canvas).toMatch(/restAndCredit\('DIED'\)/);

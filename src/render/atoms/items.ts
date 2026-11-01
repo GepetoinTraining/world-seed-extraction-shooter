@@ -60,11 +60,43 @@ export function frameMark(frame: ICognitiveFrame): Sprite {
   return { w: S, h: S, data };
 }
 
+/**
+ * D85: a map shows what it holds: a ruled sheet with a block where each sector was read,
+ * the deeper the read the heavier the block. Value and shape, so it reads with no hue at all.
+ */
+function mapThumb(map: NonNullable<IItem['mapData']>, cells: { width: number; height: number }): Sprite {
+  const W = cells.width * 18, H = cells.height * 18; // the pack's cell, 18 atoms
+  const data = new Uint8Array(W * H);
+  const set = (x: number, y: number, step: number) => { data[y * W + x] = 1 + Role.MATTER * STEPS + step; };
+  const INK = 0, RULE = 2, PAPER = 4, INSET = 2;
+  for (let y = INSET; y < H - INSET; y++) for (let x = INSET; x < W - INSET; x++) {
+    const edge = x === INSET || y === INSET || x === W - INSET - 1 || y === H - INSET - 1;
+    set(x, y, edge ? RULE : PAPER);
+  }
+  const held = Object.entries(map.sectors).map(([key, entry]) => {
+    const [sx, sy] = key.split(',').map(Number);
+    return { sx, sy, level: entry.level };
+  });
+  const minX = Math.min(...held.map(s => s.sx)), minY = Math.min(...held.map(s => s.sy));
+  const span = Math.max(...held.map(s => s.sx - minX), ...held.map(s => s.sy - minY)) + 1;
+  const room = Math.min(W, H) - (INSET + 2) * 2;
+  const per = room / span;
+  for (const { sx, sy, level } of held) {
+    const size = Math.max(1, Math.round(per * Math.min(1, (level + 1) / 4)));
+    const x0 = INSET + 2 + Math.floor((sx - minX) * per), y0 = INSET + 2 + Math.floor((sy - minY) * per);
+    for (let y = y0; y < y0 + size && y < H - INSET - 1; y++) for (let x = x0; x < x0 + size && x < W - INSET - 1; x++) set(x, y, INK);
+  }
+  return { w: W, h: H, data };
+}
+
 export function itemArtFor(item: IItem): Sprite {
   // Wave 10B: a building plan shows the plan itself, through the composer.
   const templateData = (item as any).templateData;
   if (item.type === ItemType.TEMPLATE && templateData) {
     return templateThumb(templateData, item.dimensions ?? { width: 2, height: 2 });
+  }
+  if (item.type === ItemType.MAP && item.mapData) {
+    return mapThumb(item.mapData, item.dimensions ?? { width: 2, height: 2 });
   }
   const def = RESOURCE_DEFINITIONS[item.universalDefinitionId] as any;
   const material = def?.materialProps ? materialFromProps(def.materialProps) : gearMaterial(item.tags || []);

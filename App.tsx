@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { usePlayerStore } from './src/entities/player/store';
 import { useWorldStore } from './src/entities/world/store';
 import { useIdentityStore, IdentityState } from './src/entities/identity/store';
 import { WorldCanvas } from './src/components/WorldCanvas';
 import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
+import { ReconView, closeRecon } from './src/components/ReconView';
 import { PlayerHub } from './src/components/PlayerHub';
 import { IdentityGate } from './src/components/IdentityGate';
 import { HubSelector } from './src/components/HubSelector';
@@ -105,7 +106,8 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
         return;
       }
       if (e.key !== 'Escape' || isTypingTarget(e.target) || document.querySelector('.ws-overlay')) return;
-      if (useAppView.getState().view !== 'HUB') setView('HUB');
+      const from = useAppView.getState().view;
+      if (from !== 'HUB') setView(from === 'RECON' ? 'MISSIONS' : 'HUB');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -119,7 +121,8 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
         background: 'var(--ws-void-1)', borderBottom: '1px solid var(--ws-void-4)'
       }}
     >
-      {view !== 'HUB' && <Button tone="signal" onClick={() => setView('HUB')}><Kbd>ESC</Kbd> BACK TO THE CITY</Button>}
+      {view === 'RECON' && <Button tone="signal" onClick={() => setView('MISSIONS')}><Kbd>ESC</Kbd> BACK TO THE ZONES</Button>}
+      {view !== 'HUB' && view !== 'RECON' && <Button tone="signal" onClick={() => setView('HUB')}><Kbd>ESC</Kbd> BACK TO THE CITY</Button>}
       <Button tone="quiet" aria-pressed={sheetOpen} onClick={toggleSheet}><Kbd>TAB</Kbd> CHARACTER</Button>
 
       <span style={{ flex: 1 }} />
@@ -166,6 +169,13 @@ const App: React.FC = () => {
   const [gateDone, setGateDone] = useState(false);
 
   const session = player.currentSession;
+
+  // Recon holds a world open with nobody in it. Leaving its view lets go, unless the leaving was a drop.
+  const lastView = useRef(view);
+  useEffect(() => {
+    if (lastView.current === 'RECON' && view !== 'RECON' && !usePlayerStore.getState().player.currentSession) closeRecon();
+    lastView.current = view;
+  }, [view]);
 
   // 1. BOOT SEQUENCE
   useEffect(() => {
@@ -286,9 +296,10 @@ const App: React.FC = () => {
   return (
     <div className="ws-ui" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--ws-void-1)' }}>
       <TerminalBar devMode={devMode} onDevMode={setDevMode} />
-      <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' ? 'hidden' : 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' || view === 'RECON' ? 'hidden' : 'auto' }}>
         {view === 'HUB' && <HubCanvas />}
-        {view === 'MISSIONS' && <MissionControl />}
+        {(view === 'MISSIONS' || (view === 'RECON' && !currentMap)) && <MissionControl />}
+        {view === 'RECON' && currentMap && <ReconView />}
         {view === 'BANK' && <PlayerHub />}
         {view === 'HOLDINGS' && <HoldingsPanel devMode={devMode} />}
       </div>
