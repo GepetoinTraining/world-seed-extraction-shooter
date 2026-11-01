@@ -261,7 +261,7 @@ export const VendorSystem = {
       const recipe = able[0];
       if (!recipe) break;
       const consumed = recipe.inputs.flatMap(input => parts.filter(p => defOf(p) === input.itemId).slice(0, input.quantity));
-      const made = tools.make(recipe, consumed, `${start.npcId}:craft:${day}:${n}`);
+      const made = tools.make(recipe, consumed, `${start.npcId}:craft:${day}:${n}:${consumed.map(c => c.id).join(',')}`);
       if (made.length === 0) break;
       const gone = new Set(consumed.map(c => c.id));
       parts = parts.filter(p => !gone.has(p.id));

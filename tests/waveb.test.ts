@@ -43,6 +43,8 @@ import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { emptyGuild, wantMayTake } from '../src/entities/hub/guild';
 import { WorldDeed } from '../src/logic/systems/WorldDeed';
+import { SalvageSystem } from '../src/logic/systems/SalvageSystem';
+import { VendorSystem } from '../src/logic/systems/VendorSystem';
 import { ApprenticeRoad } from '../src/logic/systems/ApprenticeRoad';
 import { WebBank } from '../src/logic/content/WebBank';
 
@@ -195,6 +197,44 @@ describe('B5 and B2: the forced exit stands in the first theme', () => {
   it('a kit stays rank F, so nobody starts life holding a way out', () => {
     const creation = readFileSync('src/logic/systems/CreationSystem.ts', 'utf8');
     expect(creation).toMatch(/rankF = \(b: ItemDefinition\) => b\.rank === UniversalRank\.F/);
+  });
+});
+
+describe('B3, A3 and the salvage: a paper of record stays whole', () => {
+  it('a world deed, a land deed, a map, a plan or a bond is never taken apart', () => {
+    const deed = WorldDeed.free('someone');
+    const papers: IItem[] = [
+      deed,
+      { ...deed, worldDeedData: undefined, deedData: {} as never },
+      { ...deed, worldDeedData: undefined, mapData: {} as never },
+      { ...deed, worldDeedData: undefined, bondData: {} as never },
+      { ...deed, worldDeedData: undefined, tags: ['template', 'document'] }
+    ];
+    for (const paper of papers) expect(SalvageSystem.components(paper, 'k')).toBeNull();
+  });
+
+  it('a deed sold over a counter is still a deed on the shelf after the keeper looks it over', () => {
+    const deed = WorldDeed.free('someone');
+    const tools = { recipes: [], salvage: SalvageSystem.components, make: () => [] };
+    const held = VendorSystem.receive(VendorSystem.fresh('npc_weapon_vendor', 'GENERAL', 100), deed, 100);
+    const after = VendorSystem.work(held, 102, 0, tools).record;
+    expect(after.listed.map(i => i.id)).toEqual([deed.id]);
+    expect(after.parts).toHaveLength(0);
+  });
+
+  it('what two hubs make on one day shares no id, because what went into it differs', () => {
+    const plank = (id: string) => ({ id, universalDefinitionId: 'in', isIdentified: true, value: 1 } as unknown as IItem);
+    const keys: string[] = [];
+    const tools = {
+      recipes: [{ id: 'r', name: 'R', output: 'out', inputs: [{ itemId: 'in', quantity: 1 }] }],
+      salvage: () => null,
+      make: (_r: unknown, _c: unknown, key: string) => { keys.push(key); return [plank(key)]; }
+    };
+    for (const part of ['a', 'b']) {
+      const start = { ...VendorSystem.fresh('npc_alchemist', 'GENERAL', 100), parts: [plank(part)], seen: ['in'], known: ['r'] };
+      VendorSystem.work(start, 101, 0, tools);
+    }
+    expect(new Set(keys).size).toBe(2);
   });
 });
 
