@@ -46,6 +46,11 @@ export const IntelligenceClient = {
   setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
   writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),
 
+  // D113, D114, D116: a person waits on each of these. The id is what the door's spend limit counts against.
+  npcTalk: <T>(talkId: string, ask: unknown) => post<T>('/npc/talk', { talkId, ask }),
+  npcGoal: <T>(talkId: string, ask: unknown) => post<T>('/npc/goal', { talkId, ask }),
+  bargain: <T>(talkId: string, ask: unknown) => post<T>('/npc/bargain', { talkId, ask }),
+
   /** A conversation as it is written. Every end is an outcome, and a stream that just stops did not finish. */
   async talkKami(messages: IDoorMessage[], onText: (text: string) => void, signal?: AbortSignal, persona?: string): Promise<IDoorOutcome> {
     let ended: IDoorOutcome | null = null;

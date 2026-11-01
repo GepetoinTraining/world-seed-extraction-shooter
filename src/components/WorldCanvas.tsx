@@ -45,6 +45,11 @@ import { Bar, Busy, Button, CardView, Chip, Kbd, Panel, RankMark } from './ui/ki
 import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet, useWaits } from './ui/stores';
 import { BodyClocks } from './WaitStrip';
 import { ReconView } from './ReconView';
+import { TalkWindow } from './TalkWindow';
+import { useTalk } from '../entities/interaction/talkStore';
+import { MonsterMind } from '../logic/systems/MonsterMind';
+import { drawSpeech } from '../render/atoms/speech';
+import { installGibberishFace } from '../render/atoms/gibberishFace';
 import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
@@ -186,6 +191,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Store Hooks
   const { currentMap, reconMode, confirmDrop } = useWorldStore();
   const { performInteraction, processAction, player } = usePlayerStore();
+
+  useEffect(() => { void installGibberishFace(); }, []);
 
   // Local State
   const [playerPatterns, setPlayerPatterns] = useState<any[]>([]);
@@ -616,7 +623,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // 2. Input Handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (useWorldStore.getState().reconMode || isTypingTarget(e.target)) return;
+      if (useWorldStore.getState().reconMode || isTypingTarget(e.target) || useTalk.getState().subject) return;
       if (RestSystem.isResting(usePlayerStore.getState().player)) return; // D79: a character at rest does nothing
       const onControl = (e.target as HTMLElement)?.tagName === 'BUTTON';
       if (useHands.getState().held || e.key === 'Tab') return; // the hands and the sheet own these
@@ -1173,6 +1180,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range }))
         };
         rendererRef.current.renderer.draw(ctx, canvas.width, canvas.height, scene);
+        // D114: what can talk is seen talking
+        drawSpeech(ctx, sceneChunks, scene.camera, canvas.width, canvas.height, now);
         rendererRef.current.renderer.prewarm(playerPos.x, playerPos.z, Math.max(canvas.width, canvas.height) / 2 + 320);
       }
 
@@ -1292,8 +1301,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const { targets, near } = targetsNear(clickX, clickZ, 60);
     const hit = hitTest(targets, clickX, clickZ);
     const entity = hit ? near.find(n => n.id === hit) : undefined;
-    if (!entity || entity.type === EntityType.MOB) return;
+    if (!entity) return;
     const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_SIZE;
+    // D114: a monster answers only if it has reached speech. Only this click reaches it, and it offers only the bargain.
+    if (entity.type === EntityType.MOB) {
+      const bargain = InteractionEngine.getAvailableInteractions(st.player, entity, dist).filter(o => o.id.startsWith('int_bargain_'));
+      if (bargain.length > 0) openMenu(entity, bargain, e.clientX, e.clientY);
+      else if (MonsterMind.speaks(MOB_DEFINITIONS[entity.definitionId])) feed('It cannot hear you from there. Walk closer.', 'plain');
+      return;
+    }
     const options = InteractionEngine.getAvailableInteractions(st.player, entity, dist);
     if (options.length > 0) openMenu(entity, options, e.clientX, e.clientY);
     else explainNothing(entity.position.x, entity.position.y);
@@ -1527,6 +1543,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       <CartWindow />
       <RankMomentView />
+      <TalkWindow />
     </div>
   );
 };

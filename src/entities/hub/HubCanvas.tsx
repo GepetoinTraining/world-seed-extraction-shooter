@@ -21,6 +21,8 @@ import { CityPlan } from '../../components/CityPlan';
 import { GuildHall } from '../../components/GuildHall';
 import { TavernRoom } from '../../components/TavernRoom';
 import { RankMomentView } from '../../components/WorldCanvas';
+import { TalkWindow } from '../../components/TalkWindow';
+import { useTalk } from '../interaction/talkStore';
 import { ApprenticeWindow } from '../../components/ApprenticeWindow';
 import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
@@ -149,7 +151,8 @@ export const HubCanvas: React.FC = () => {
     []
   );
   nearbyRef.current = nearbyPOI;
-  busyRef.current = !!(activeNPC || panel || stationPanel);
+  const talking = useTalk(s => !!s.subject);
+  busyRef.current = !!(activeNPC || panel || stationPanel || talking);
 
   // =========================================================================
   // MOVEMENT: held keys, per-axis sliding against the navmesh
@@ -853,6 +856,10 @@ export const HubCanvas: React.FC = () => {
               </div>
             </div>
             <div className="ws-dialogue__options">
+              {/* D116: a keeper is a person too. Business stays below, and this is everything else. */}
+              <Button tone="signal" onClick={() => { const npcId = activeNPC.id; setActiveNPC(null); setNpcReply(null); void useTalk.getState().open({ kind: 'CITY', npcId }); }}>
+                Talk with them
+              </Button>
               {activeNPC.dialogue.options.map((opt, i) => (
                 <Button
                   key={i}
@@ -886,6 +893,7 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'tavern' && <TavernRoom onClose={() => setPanel(null)} />}
       {panel?.kind === 'guild' && <GuildHall onClose={() => setPanel(null)} />}
       <RankMomentView />
+      <TalkWindow />
       {panel?.kind === 'apprentices' && <ApprenticeWindow npcId={panel.npcId} onClose={() => setPanel(null)} />}
     </div>
   );

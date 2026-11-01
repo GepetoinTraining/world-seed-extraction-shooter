@@ -11,10 +11,18 @@
  * as the player's, so WebSystem.hasVerb and openStations take them as they are.
  *
  * Wave 11 places residents. This file reads a person; it builds no resident.
+ *
+ * THE SURFACE (D113): Pedro wants sheets "generated correctly in the generation loop" so Haiku has
+ * a surface. The law above already is that loop's half: everything a model needs is dealt from the
+ * same keys every time, so the sheet is as fixed as if it were stored. Storing it would move
+ * `GOLDEN_VECTORS` and line 66's bar on a person's stored bytes, for no fact a read cannot give.
+ * Alignment joins under its own stream, so stats and skills deal exactly what they always did.
  */
 
-import { IAttributes, IItem, ISkillState, IWebPack, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../../types';
+import { IAttributes, IItem, ISkillState, IWebPack, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, UniversalRank } from '../../../types';
 import { INpcSheet, IWorldEntity } from '../../entities/world/types';
+import { Alignment } from './Alignment';
+import { ITalkSurface } from './TalkTypes';
 import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
 import { Rng } from '../rng/DeterministicRNG';
 import { TagLaw } from '../content/TagLaw';
@@ -26,6 +34,14 @@ const STAT_DEAL: readonly number[] = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 
 const ALL_ATTRIBUTES = [...PHYSICAL_ATTRIBUTES, ...MENTAL_ATTRIBUTES] as (keyof IAttributes)[];
 
 type NpcEntity = Pick<IWorldEntity, 'id' | 'rank'> & { npc?: INpcSheet };
+
+const TEMPERAMENTS: INpcSheet['temperament'][] = ['AGGRESSIVE', 'COWARD', 'TERRITORIAL', 'PASSIVE', 'OPPORTUNIST'];
+const OBJECTIVES: INpcSheet['objective'][] = ['SURVIVE', 'HOARD', 'WITNESS', 'PROTECT_ASSET'];
+const WANTS: INpcSheet['want'][] = ['GOLD', 'GIFT', 'RESPECT'];
+/** Guesses until Wave 12. Where a keeper's regard starts, and how far over the rank's floor reads as what. */
+const KEEPER_REGARD = 40;
+const MIND_FAIR = 1;
+const MIND_HIGH = 3;
 
 export class NpcSheet {
 
@@ -45,7 +61,31 @@ export class NpcSheet {
     return {
       ...(entity.npc as INpcSheet),
       stats: this.dealStats(key, rank),
-      skills: this.dealSkills(key, rank, pack)
+      skills: this.dealSkills(key, rank, pack),
+      alignment: Alignment.deal(key)
+    };
+  }
+
+  /** The city's keepers were written, not rolled. The rest of who they are is dealt the same way. */
+  static keeper(hubSeed: string, npcId: string, rank: UniversalRank, name: string): INpcSheet {
+    const rng = Rng.fromKey(`${hubSeed}:npc:${npcId}:nature`);
+    return this.read(hubSeed, {
+      id: npcId, rank,
+      npc: { name, temperament: rng.pick(TEMPERAMENTS), objective: rng.pick(OBJECTIVES), want: rng.pick(WANTS), disposition: KEEPER_REGARD, attempts: 0 }
+    }, undefined);
+  }
+
+  /** A person in words, for a model. It holds no raw stat: a mind is low, fair or high for their rank. */
+  static surface(sheet: INpcSheet, rankOf: UniversalRank): ITalkSurface {
+    const floor = 1 + ProgressionSystem.rankIndex(rankOf);
+    const mind = Object.fromEntries(MENTAL_ATTRIBUTES.map(attr => {
+      const over = (sheet.stats?.[attr] ?? floor) - floor;
+      return [attr, over >= MIND_HIGH ? 'high' : over >= MIND_FAIR ? 'fair' : 'low'];
+    })) as ITalkSurface['mind'];
+    return {
+      name: sheet.name, rank: String(rankOf), temperament: sheet.temperament, objective: sheet.objective, want: sheet.want,
+      alignment: sheet.alignment ?? 'true neutral', mind,
+      hands: Object.keys(sheet.skills ?? {}).map(id => WebSystem.nameOf(id))
     };
   }
 

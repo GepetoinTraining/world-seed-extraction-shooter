@@ -23,11 +23,15 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   kami_talk: 'claude-sonnet-5-5',
   kami_set: 'claude-sonnet-5-5',
   // Pedro: "you send that seed to a random ass haiku and ask for a personality based on vibes"
-  kami_persona: 'claude-haiku-5-5'
+  kami_persona: 'claude-haiku-5-5',
+  // Pedro: "what we do is load up haiku and talk to it", and "ask haiku to give this npc it's goal"
+  npc_talk: 'claude-haiku-5-5',
+  npc_goal: 'claude-haiku-5-5',
+  bargain: 'claude-haiku-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {
@@ -39,8 +43,8 @@ const RATES: Record<string, { input: number; output: number; cacheRead: number }
 const CHARS_PER_TOKEN = 3;
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
-/** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead. */
-const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona'];
+/** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead, and a declined round still rolls. */
+const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona', 'npc_talk', 'npc_goal', 'bargain'];
 
 const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boolean): IDoorUsage | undefined => {
   if (!usage) return undefined;

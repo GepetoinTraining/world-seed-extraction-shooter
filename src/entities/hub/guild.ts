@@ -70,7 +70,9 @@ export interface IResident {
 
 export interface IResidentQuest {
   id: string;
+  /** Who wants it. A keeper's id here means no resident stands behind it, and `askerName` says who. */
   residentId: string;
+  askerName?: string;
   /** Which of this person's wants this is. */
   n: number;
   tag: string;
@@ -89,6 +91,25 @@ export interface IHandedMap {
   at: number;
 }
 
+/**
+ * D116: a person asks for the building their goal needs. C5 reads `openBuildingAsks` from the hub's
+ * store and answers with `meetBuildingAsk`: nothing here raises anything.
+ */
+export interface IBuildingAsk {
+  id: string;
+  askerId: string;
+  askerName: string;
+  /** A word from `buildingWords`: a station on the hub's web, or a house. */
+  building: string;
+  /** The goal it is for, in their words, and the rung that goal answers. */
+  goal: string;
+  need: string;
+  day: number;
+  state: 'OPEN' | 'MET';
+  /** What answered it: a lot, or whatever C5 says. */
+  metBy?: string;
+}
+
 export interface IGuildState {
   /** Gold's worth of land and permits taken against the treasury. */
   spent: number;
@@ -97,6 +118,8 @@ export interface IGuildState {
   maps: IHandedMap[];
   /** What was handed over to pass a trial. It stays on the hall's record, and no item is lost. */
   trophies: IItem[];
+  /** D116. Absent on a hub saved before people could ask. */
+  asks?: IBuildingAsk[];
 }
 
 export const emptyGuild = (): IGuildState => ({ spent: 0, residents: [], quests: [], maps: [], trophies: [] });
@@ -195,7 +218,7 @@ export function benchFactor(residents: Pick<IResident, 'bond' | 'homeAt'>[], pai
 // ---------------------------------------------------------------------------
 
 /** A guess until Wave 12. Below what a shelf marks a thing up to, above what its counter pays. */
-const PAY_SHARE: Record<INpcSheet['want'], number> = { GOLD: 1, RESPECT: 1.2, GIFT: 1.4 };
+export const PAY_SHARE: Record<INpcSheet['want'], number> = { GOLD: 1, RESPECT: 1.2, GIFT: 1.4 };
 
 const EDIBLE = ['berry', 'fruit', 'grain'];
 

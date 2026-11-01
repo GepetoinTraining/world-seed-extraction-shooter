@@ -1,3 +1,4 @@
+import { MonsterMind } from '../../../logic/systems/MonsterMind';
 import { GenreType } from '../../../../types';
 import { IChunk, IMap, EntityType, IWorldEntity } from '../../world/types';
 import { PatternType, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../combat/projectileSystem';
@@ -169,6 +170,11 @@ export class MobAI {
     return this.mobMemory[entityId]?.state === MobState.ACTIVE;
   }
 
+  /** D114: has it been hurt? It stops talking then. */
+  static isProvoked(entityId: string): boolean {
+    return !!this.mobMemory[entityId]?.provoked;
+  }
+
   /**
    * N6: a hit is always felt, from any distance. It wakes what would otherwise ignore
    * you, it stays awake, and it answers by its own behaviour. How it answers can evolve;
@@ -240,8 +246,10 @@ export class MobAI {
 
         const mem = this.mobMemory[entity.id];
         const def = MOB_DEFINITIONS[entity.definitionId];
-        const behavior = def?.behavior ?? MobBehavior.AGGRESSIVE;
+        // D114: talked round, it leaves you be, and while someone is talking to it, it waits.
+        const behavior = MonsterMind.behaviorOf(entity, def?.behavior ?? MobBehavior.AGGRESSIVE, mem.provoked);
         if (mem.provoked) awake.set(entity.id, chunkKey);
+        if (entity.bargain?.holding && !mem.provoked) { mem.moving = false; return entity; }
 
         // 1. Build Context (2D Math)
         // Note: entity.position.y matches playerPos.y (which is World Z)

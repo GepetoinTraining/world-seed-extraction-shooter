@@ -68,6 +68,8 @@ export interface INpcSheet {
   // never stored at generation: a stored field would move the golden vectors.
   stats?: import('../../../types').IAttributes;
   skills?: Record<string, import('../../../types').ISkillState>;
+  // D116: dealt the same way, under its own stream, so nothing above moves.
+  alignment?: string;
 }
 
 /** Something working on an entity right now, on the clock. */
@@ -125,6 +127,9 @@ export interface IWorldEntity {
 
   // Wave 2.4: social extraction
   npc?: INpcSheet;
+
+  // D114: a monster someone has talked to. The meter is on `npc`, this is where that leaves it.
+  bargain?: { stance: 'AGGRESSIVE' | 'NEUTRAL' | 'FRIENDLY'; holding?: boolean; wants?: string };
 
   // Wave 10C (D16): the cart's whole state rides on its entity
   cart?: ICartState;
