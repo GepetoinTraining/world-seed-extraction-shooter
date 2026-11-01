@@ -7,7 +7,7 @@
 
 import { CHUNK_TILES } from '../world/grid';
 import { IHubLayout, IHubZone, IPOI, IPlacedChunk, POIType, ZoneType } from './layoutTypes';
-import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, SPAWN_MARK, firstPlan } from './hubManifest';
+import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, SPAWN_MARK, doorTile, firstPlan, lotPrice } from './hubManifest';
 
 export { POIType, ZoneType };
 export type { IHubLayout, IHubZone, IPOI, IPlacedChunk };
@@ -189,6 +189,7 @@ export class HubGenerator {
     const zonesRaised = new Map<string, number>();
     const seriesCount = new Map<string, number>();
     let spawnPoint = { x: chunks[0].x, y: chunks[0].y };
+    const centre = { x: chunks[0].x + CHUNK_TILES / 2, y: chunks[0].y + CHUNK_TILES / 2 };
 
     chunks.forEach((placed, order) => {
       const chunk = manifest.chunks[placed.kind];
@@ -217,8 +218,15 @@ export class HubGenerator {
           position,
           size: { ...def.size },
           interactable: def.interactable,
-          metadata: { ...def.metadata, ...(def.type === POIType.PLAYER_LOT ? { lotIndex: n } : {}) }
+          metadata: { ...def.metadata }
         };
+        if (def.type === POIType.PLAYER_LOT) {
+          const door = doorTile(poi);
+          const fromCentre = Math.abs(door.x - centre.x) + Math.abs(door.y - centre.y);
+          poi.metadata.lotIndex = n;
+          poi.metadata.fromCentre = fromCentre;
+          poi.metadata.price = lotPrice(manifest, def.size, fromCentre);
+        }
         if (def.npcId) poi.npcId = def.npcId;
         const zone = byLetter.get(chunk.floor[cy][cx]);
         if (!zone) throw new Error(`${poi.id} has no floor under it.`);

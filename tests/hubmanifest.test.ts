@@ -34,15 +34,16 @@ import { CHUNK_TILES, QUADRANT_TILES } from '../src/entities/world/grid';
 import { HubGenerator, IHubLayout, IPOI, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
 import {
   CELL_TILES, CHUNK_CELLS, EMPTY_MARK, HUB_SIDES, HubSide, IHubManifest, IHubPlan, NEW_CARLEON, SPAWN_MARK,
-  firstPlan, openSides, raiseChunk, validateManifest
+  firstPlan, lotPrice, openSides, raiseChunk, validateManifest
 } from '../src/entities/hub/hubManifest';
-import { HUB_TILE, composeHub, doorOf, hubGround } from '../src/render/atoms/hub';
+import { HUB_TILE, LOT_STATES, composeHub, doorOf, hubGround, lotArt } from '../src/render/atoms/hub';
 import { cityMinimap } from '../src/render/atoms/minimap';
-import { hashBytes } from '../src/render/atoms/atoms';
+import { Role, STEPS, hashBytes, px } from '../src/render/atoms/atoms';
 import { fnv1a } from '../src/logic/rng/DeterministicRNG';
 import { useHubStore } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { emptyRoom } from '../src/entities/hub/room';
+import { emptyRoom, fullyWalkable } from '../src/entities/hub/room';
+import { sizeNeedsVerdict } from '../src/entities/hub/template';
 import { usePlayerStore } from '../src/entities/player/store';
 import { ItemFactory } from '../src/entities/item/ItemFactory';
 import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
@@ -104,8 +105,8 @@ const LOTS_STANDING = 6;
 const LAMPS_STANDING = 7;
 
 // The whole layout, by hash: the same inputs give the same city on every machine.
-const STORED_LAYOUT_HASH = 2196396429;
-const STORED_SECOND_CHUNK_HASH = 2997385742;
+const STORED_LAYOUT_HASH = 1744216641;
+const STORED_SECOND_CHUNK_HASH = 1463331517;
 
 beforeEach(() => {
   db.clear();
@@ -381,11 +382,20 @@ describe('a lot someone owns stays theirs (placement migrates, ownership never)'
     await useHubStore.getState().loadHub(id);
   };
 
-  it('an old save loads with every record untouched, on the first chunk', async () => {
+  // Moved on Pedro's word: a lot's price follows where it stands, so an old save's
+  // free lots take the new price. A record someone holds is still not touched.
+  it('an old save loads on the first chunk with every owner untouched, and only free lots repriced', async () => {
     seedOldHub('hub_old');
     await load('hub_old');
     const hub = useHubStore.getState();
-    expect(hub.lots).toEqual(storedLots);
+    expect(hub.lots.find(l => l.id === 'poi_lot_2')).toEqual(ownedLot);
+    const layout = HubGenerator.generate({ chunks: hub.chunks });
+    hub.lots.filter(l => !l.ownerId).forEach(l => {
+      const { price, ...rest } = l;
+      const { price: _old, ...storedRest } = storedLots.find(s => s.id === l.id)!;
+      expect(rest, l.id).toEqual(storedRest);
+      expect(price, l.id).toBe(poiOf(layout, l.id).metadata.price);
+    });
     expect(hub.chunks).toEqual(firstPlan().chunks);
     expect(hub.rooms.poi_lot_2.lotId ?? 'poi_lot_2').toBe('poi_lot_2');
   });
@@ -459,7 +469,7 @@ describe('a lot someone owns stays theirs (placement migrates, ownership never)'
 
     const planks = Array.from({ length: 8 }, (_, i) => ItemFactory.createResourceItem(CRAFTED_DEFINITIONS.crf_plank as any, Rng.fromKey(`a1_plank_${i}`)));
     usePlayerStore.setState(s => ({
-      player: { ...s.player, id: 'uid_bars', username: 'TESTER', bank: { ...s.player.bank, gold: 6000, stashTabs: [{ ...s.player.bank.stashTabs[0], items: planks }] } }
+      player: { ...s.player, id: 'uid_bars', username: 'TESTER', bank: { ...s.player.bank, gold: 20000, stashTabs: [{ ...s.player.bank.stashTabs[0], items: planks }] } }
     }));
     expect(await useHubStore.getState().buyLot(far.id)).toBe(true);
     expect(await useHubStore.getState().buildStructure(far.id, 'HOUSE', 'crf_plank')).toBe(true);
@@ -738,6 +748,147 @@ describe('the city minimap reads the plan', () => {
     const one = cityMinimap(HubGenerator.generate(), {}, { x: 10, y: 10 });
     expect(west.w).toBeLessThanOrEqual(one.w);
     expect(Buffer.from(west.data).equals(Buffer.from(east.data))).toBe(false);
+  });
+});
+
+// Pedro: "a lot's price should be a function of proximity to main road/hub center + size".
+describe('a lot asks a price for where it stands and how big it is', () => {
+  const grown = HubGenerator.generate(planOf('EAST'));
+  const lots = lotPois(grown);
+  const fromCentre = (l: IHubLayout, p: IPOI) => {
+    const d = doorOf(p), cx = l.origin.x + CHUNK_TILES / 2, cy = l.origin.y + CHUNK_TILES / 2;
+    return Math.abs(d.x - cx) + Math.abs(d.y - cy);
+  };
+  const fresh = async (id: string) => {
+    useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], chunks: firstPlan().chunks } as any);
+    await useHubStore.getState().loadHub(id);
+  };
+
+  it('the same size costs more nearer the centre', () => {
+    const size = { width: 4, height: 4 };
+    for (let d = 0; d < 400; d += 7) expect(lotPrice(NEW_CARLEON, size, d), `${d}`).toBeGreaterThanOrEqual(lotPrice(NEW_CARLEON, size, d + 7));
+    expect(lotPrice(NEW_CARLEON, size, 0)).toBeGreaterThan(lotPrice(NEW_CARLEON, size, 64));
+  });
+
+  it('at the same distance a bigger lot costs more', () => {
+    [0, 26, 64, 300].forEach(d => {
+      const small = lotPrice(NEW_CARLEON, { width: 3, height: 3 }, d);
+      const mid = lotPrice(NEW_CARLEON, { width: 4, height: 4 }, d);
+      const big = lotPrice(NEW_CARLEON, { width: 6, height: 5 }, d);
+      expect(small).toBeLessThan(mid);
+      expect(mid).toBeLessThan(big);
+    });
+  });
+
+  it('is always whole gold and never nothing, however far out', () => {
+    [0, 1, 26, 64, 1000, 100000].forEach(d => {
+      const p = lotPrice(NEW_CARLEON, { width: 4, height: 4 }, d);
+      expect(Number.isInteger(p), `${d}`).toBe(true);
+      expect(p, `${d}`).toBeGreaterThan(0);
+    });
+  });
+
+  it('every lot in the layout asks exactly that, by its own door and size', () => {
+    lots.forEach(p => expect(p.metadata.price, p.id).toBe(lotPrice(NEW_CARLEON, p.size, fromCentre(grown, p))));
+  });
+
+  it('the first chunk stays near the price the economy has been read at, and is no longer flat', () => {
+    const prices = lotPois(HubGenerator.generate()).map(p => p.metadata.price);
+    prices.forEach(p => {
+      expect(p).toBeGreaterThan(4000);
+      expect(p).toBeLessThan(6000);
+    });
+    expect(new Set(prices).size).toBeGreaterThan(1);
+  });
+
+  it('raising a chunk on any side moves no price', () => {
+    const before = lotPois(HubGenerator.generate());
+    (Object.keys(HUB_SIDES) as HubSide[]).forEach(side => {
+      const l = HubGenerator.generate(planOf(side));
+      before.forEach(p => expect(poiOf(l, p.id).metadata.price, `${side} ${p.id}`).toBe(p.metadata.price));
+    });
+  });
+
+  it('no price is written as a number, only the manifest\'s one rate', () => {
+    expect(SRC('src/entities/hub/store.ts')).not.toMatch(/price:\s*5000/);
+    expect(SRC('src/entities/hub/hubManifest.ts')).not.toMatch(/price:\s*\d/);
+    expect(NEW_CARLEON.lotGoldPerTile).toBeGreaterThan(0);
+  });
+
+  it('buying charges what the lot asks', async () => {
+    await fresh('hub_price');
+    await useHubStore.getState().raiseChunk('EAST');
+    const lot = useHubStore.getState().lots.find(l => l.lotIndex === 6)!;
+    const want = poiOf(HubGenerator.generate({ chunks: useHubStore.getState().chunks }), lot.id).metadata.price;
+    expect(lot.price).toBe(want);
+    usePlayerStore.setState(s => ({ player: { ...s.player, id: 'uid_bars', username: 'TESTER', bank: { ...s.player.bank, gold: want + 123 } } }));
+    expect(await useHubStore.getState().buyLot(lot.id)).toBe(true);
+    expect(usePlayerStore.getState().player.bank.gold).toBe(123);
+  });
+
+  it('what someone paid stays on their record, whatever a free lot now asks', async () => {
+    const paid = { id: 'poi_lot_0', lotIndex: 0, ownerId: 'uid_owner', ownerName: 'OLD HAND', purchaseDate: 1, structureType: 'EMPTY', inventory: [], price: 1234 };
+    db.set('hub_state_hub_paid', { id: 'hub_state_hub_paid', namespace: 'territories', data: { lots: [paid], craftingJobs: [], rooms: {}, buildJobs: [], web: { nodes: {} } }, metadata: { createdAt: 0, updatedAt: 0, ownerCertUid: 'SYSTEM', version: 1 } });
+    await fresh('hub_paid');
+    expect(useHubStore.getState().lots.find(l => l.id === 'poi_lot_0')).toEqual(paid);
+  });
+});
+
+describe('lots come in sizes, and a size can refuse', () => {
+  const grown = HubGenerator.generate(planOf('SOUTH'));
+  const raised = lotPois(grown).filter(p => inChunk(grown, p, grown.chunks[1]));
+  const byArea = [...raised].sort((a, b) => a.size.width * a.size.height - b.size.width * b.size.height);
+  const small = byArea[0], big = byArea[byArea.length - 1];
+
+  it('a raised chunk holds more than one size, read from the manifest', () => {
+    expect(new Set(raised.map(p => p.size.width * p.size.height)).size).toBeGreaterThan(1);
+  });
+
+  it('the first chunk\'s lots stay the size their rooms were built at', () => {
+    lotPois(HubGenerator.generate()).forEach(p => expect(p.size, p.id).toEqual({ width: 4, height: 4 }));
+  });
+
+  it('a plan too big for a small lot is refused with the numbers, and fits a big one', () => {
+    const plan = { name: 'Long Hall', footprint: { width: big.size.width, height: big.size.height } } as any;
+    expect(sizeNeedsVerdict(plan, big.size).ok).toBe(true);
+    const refused = sizeNeedsVerdict(plan, small.size);
+    expect(refused.ok).toBe(false);
+    expect(refused.reason).toContain(`${small.size.width}×${small.size.height}`);
+  });
+
+  it('a room can stand on every size, and its floor can be walked from its door', () => {
+    raised.forEach(p => expect(fullyWalkable(emptyRoom(p.id, p.size, 'crf_plank')), p.id).toBe(true));
+  });
+
+  it('every size draws every state inside its own footprint', () => {
+    raised.forEach(p => {
+      const w = p.size.width * HUB_TILE, h = p.size.height * HUB_TILE;
+      LOT_STATES.forEach(state => {
+        const art = lotArt(state, w, h, p.metadata.lotIndex, 0.5);
+        expect(art.w, `${p.id} ${state}`).toBeLessThanOrEqual(w);
+        expect(art.h, `${p.id} ${state}`).toBeLessThanOrEqual(h);
+      });
+    });
+  });
+
+  it('a lot wider than its art stands in the middle of its ground, not jammed left', () => {
+    const wide = raised.find(p => p.size.width !== p.size.height)!;
+    expect(wide).toBeTruthy();
+    const g = hubGround(grown), W = g.w;
+    const w = wide.size.width * HUB_TILE, h = wide.size.height * HUB_TILE;
+    const ax = wide.position.x * HUB_TILE, ay = wide.position.y * HUB_TILE;
+    const bare = hubGround(HubGenerator.generate(firstPlan())); void bare;
+    const isGround = (v: number) => v >= px(Role.GROUND, 0) && v <= px(Role.GROUND, STEPS - 1);
+    let left = w, right = w;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) if (!isGround(g.data[(ay + y) * W + ax + x])) { left = Math.min(left, x); break; }
+      for (let x = w - 1; x >= 0; x--) if (!isGround(g.data[(ay + y) * W + ax + x])) { right = Math.min(right, w - 1 - x); break; }
+    }
+    expect(Math.abs(left - right)).toBeLessThanOrEqual(3);
+  });
+
+  it('the deeds screen says how big a lot is and how far out it stands', () => {
+    expect(SRC('src/components/HoldingsPanel.tsx')).toMatch(/from the centre/);
   });
 });
 

@@ -4,9 +4,10 @@
  */
 
 import { RestDoor } from '../logic/systems/RestDoor';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../types';
 import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
+import { HubGenerator, IPOI } from '../entities/hub/HubGenerator';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
@@ -21,7 +22,7 @@ const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
 const DAY_MS = 86_400_000;
 const countOf = (items: IItem[], defId: string) => items.filter(i => i.universalDefinitionId === defId).length;
 
-const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
+const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; now: number }> = ({ lot, poi, now }) => {
   const { player } = usePlayerStore();
   const hub = useHubStore();
   const stash = player.bank.stashTabs[0]?.items || [];
@@ -50,6 +51,11 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 
   return (
     <Panel title={`LOT ${lot.lotIndex}`} right={stateChip} tone={mine ? 'signal' : 'none'} data-testid={`lot-${lot.lotIndex}`}>
+      {poi && (
+        <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>
+          {poi.size.width}×{poi.size.height}, {poi.metadata.fromCentre} tiles from the centre
+        </div>
+      )}
       {!lot.ownerId && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <Button disabled={player.bank.gold < lot.price} onClick={() => hub.buyLot(lot.id)}>
@@ -200,7 +206,8 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 };
 
 export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
-  const { lots } = useHubStore();
+  const { lots, chunks } = useHubStore();
+  const layout = useMemo(() => HubGenerator.generate({ chunks }), [chunks]);
   const playerId = usePlayerStore(s => s.player.id);
   const [now, setNow] = useState(Date.now());
   // D12: dev mode opens the builder view free, for testing. The real door is the scribe's table.
@@ -246,7 +253,7 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
       </div>
       {scribeOpen && <TemplateStudio onClose={() => setScribeOpen(false)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-        {lots.map(lot => <LotCard key={lot.id} lot={lot} now={now} />)}
+        {lots.map(lot => <LotCard key={lot.id} lot={lot} poi={HubGenerator.findPOI(layout, lot.id)} now={now} />)}
       </div>
     </div>
   );

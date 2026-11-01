@@ -9,7 +9,7 @@ import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStat
 import { ItemFactory } from '../item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace, IVectorDocument } from '../data/VectorStore';
-import { HubGenerator, IPOI } from './HubGenerator';
+import { HubGenerator, IHubLayout, IPOI } from './HubGenerator';
 import { HubSide, IRaisedChunk, firstPlan, raiseChunk } from './hubManifest';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
@@ -139,6 +139,17 @@ const freshLot = (poi: IPOI): IPlayerLot => ({
   inventory: [],
   price: poi.metadata.price
 });
+
+/**
+ * A hub's lots against its layout. Whatever someone holds is handed back as it is,
+ * what they paid included. A lot nobody holds asks what its place asks today.
+ */
+const lotsFor = (stored: IPlayerLot[], layout: IHubLayout): IPlayerLot[] =>
+  HubGenerator.lotRecords(stored, layout, freshLot).map(lot => {
+    if (lot.ownerId) return lot;
+    const asks = HubGenerator.findPOI(layout, lot.id)?.metadata.price;
+    return asks === undefined || asks === lot.price ? lot : { ...lot, price: asks };
+  });
 
 const dominantDefId = (defIds: string[]): string => {
   const counts = new Map<string, number>();
@@ -318,7 +329,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         const chunks = hubStateDoc.data.chunks ?? firstPlan().chunks;
         set({
           chunks,
-          lots: HubGenerator.lotRecords(hubStateDoc.data.lots, HubGenerator.generate({ chunks }), freshLot),
+          lots: lotsFor(hubStateDoc.data.lots, HubGenerator.generate({ chunks })),
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
@@ -330,7 +341,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, lots: HubGenerator.lotRecords([], HubGenerator.generate({ chunks }), freshLot), web: { nodes: {} } });
+        set({ chunks, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} } });
         // Save immediately
         await get().saveHubState();
       }
@@ -387,7 +398,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!raised.ok) return raised;
     const { chunks } = raised.plan;
     const added = chunks[chunks.length - 1];
-    set({ chunks, lots: HubGenerator.lotRecords(get().lots, HubGenerator.generate(raised.plan), freshLot) });
+    set({ chunks, lots: lotsFor(get().lots, HubGenerator.generate(raised.plan)) });
     await Ledger.append('BUILD', { kind: 'CHUNK_RAISED', cx: added.cx, cy: added.cy, chunk: added.kind, side });
     await get().saveHubState();
     return { ok: true };

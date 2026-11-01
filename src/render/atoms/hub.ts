@@ -473,7 +473,9 @@ export function hubGround(layout: IHubLayout, frame = 0, lots: Partial<Record<nu
       construction[p.metadata.lotIndex] ?? 0,
       facades[p.metadata.lotIndex]
     );
-    blit(data, W, art, p.position.x * HUB_TILE, p.position.y * HUB_TILE);
+    // A lot's mark is square. On a lot that is not, it stands in the middle of its ground.
+    const inset = (room: number, used: number) => Math.max(0, (room - used - 2) >> 1);
+    blit(data, W, art, p.position.x * HUB_TILE + inset(p.size.width * HUB_TILE, art.w), p.position.y * HUB_TILE + inset(p.size.height * HUB_TILE, art.h));
   });
   pois.filter(p => p.type === POIType.PORTAL).forEach(p => {
     blit(data, W, emblem(p.type, p.size.width * HUB_TILE - 2), p.position.x * HUB_TILE, p.position.y * HUB_TILE);

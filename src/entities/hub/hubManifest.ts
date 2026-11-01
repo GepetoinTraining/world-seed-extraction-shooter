@@ -63,12 +63,16 @@ export interface IHubManifest {
   first: string;
   /** The chunk that rises when nobody names another. */
   growth: string;
+  /** What one tile of lot asks at the very centre of the hub. See `lotPrice`. */
+  lotGoldPerTile: number;
 }
 
 export const NEW_CARLEON: IHubManifest = {
   id: 'hub_carleon',
   name: 'New Carleon',
   version: '2.0.0',
+  // A guess until Wave 12: this makes a 4 by 4 lot on Homestead Row ask about what the flat 5,000 did.
+  lotGoldPerTile: 440,
   floors: {
     P: { id: 'zone_plaza', name: 'Central Plaza', type: ZoneType.PLAZA, ambientColor: '#1a1a2e', floorTexture: 'cobblestone' },
     M: { id: 'zone_market', name: 'Market District', type: ZoneType.MARKET, ambientColor: '#2d1b1b', floorTexture: 'wooden_planks' },
@@ -88,7 +92,9 @@ export const NEW_CARLEON: IHubManifest = {
     X: { id: 'poi_auction', type: POIType.AUCTION_HOUSE, name: 'The Exchange', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_auctioneer', metadata: {} },
     T: { id: 'poi_tavern', type: POIType.TAVERN, name: 'The Rusty Anchor', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_bartender', metadata: {} },
     l: { series: 'poi_lamp', type: POIType.LAMP_POST, name: 'Street Lamp', size: { width: 1, height: 1 }, interactable: false, solid: true, metadata: { lightRadius: 3 } },
-    L: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 4, height: 4 }, interactable: true, solid: false, metadata: { price: 5000 } }
+    L: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 4, height: 4 }, interactable: true, solid: false, metadata: {} },
+    s: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 3, height: 3 }, interactable: true, solid: false, metadata: {} },
+    D: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 6, height: 5 }, interactable: true, solid: false, metadata: {} }
   },
   chunks: {
     // What has always stood here, with the tavern west, the market south, the lots east.
@@ -154,15 +160,15 @@ export const NEW_CARLEON: IHubManifest = {
         '................',
         '................',
         '................',
-        '...L..L..L..L...',
+        '...D..L..L..D...',
         '................',
         '.....l.....l....',
         '................',
-        '...L..L..L..L...',
+        '...L..s..s..L...',
         '................',
         '.....l.....l....',
         '................',
-        '...L..L..L..L...',
+        '...D..L..L..D...',
         '................',
         '................',
         '................',
@@ -248,6 +254,18 @@ export function openSides(plan: IHubPlan): IOpenSide[] {
   return open;
 }
 
+/**
+ * What a free lot asks (Pedro: "a function of proximity to main road/hub center +
+ * size"). It rises with the lot's tiles and falls with how far its door stands from
+ * the middle of the first chunk, walked along the grid. Half price is one chunk out,
+ * and it keeps falling past that without ever reaching nothing. The first chunk is
+ * the centre for good, so raising a chunk moves no price.
+ */
+export function lotPrice(manifest: IHubManifest, size: { width: number; height: number }, tilesFromCentre: number): number {
+  const nearness = CHUNK_TILES / (CHUNK_TILES + tilesFromCentre);
+  return Math.max(1, Math.round((manifest.lotGoldPerTile * size.width * size.height * nearness) / 50) * 50);
+}
+
 /** The tile you stand on to reach a thing: below its middle. */
 export const doorTile = (p: { position: { x: number; y: number }; size: { width: number; height: number } }) => ({
   x: p.position.x + (p.size.width >> 1),
@@ -263,6 +281,7 @@ export function validateManifest(m: IHubManifest): string[] {
   const out: string[] = [];
   if (!m.chunks[m.first]) out.push(`The first chunk, ${m.first}, is not in the manifest.`);
   if (!m.chunks[m.growth]) out.push(`The growth chunk, ${m.growth}, is not in the manifest.`);
+  if (!(m.lotGoldPerTile > 0)) out.push('A lot has to ask something: lotGoldPerTile must be above nothing.');
 
   for (const [kind, chunk] of Object.entries(m.chunks)) {
     const shaped = (rows: string[], what: string) => {
