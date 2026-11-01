@@ -18,6 +18,8 @@ import {
 import { lotConstruction } from './template';
 import { TemplateStudio } from '../../components/TemplateStudio';
 import { CityPlan } from '../../components/CityPlan';
+import { ApprenticeWindow } from '../../components/ApprenticeWindow';
+import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
@@ -83,7 +85,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' };
+  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'apprentices'; npcId: string };
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
@@ -411,6 +413,7 @@ export const HubCanvas: React.FC = () => {
       case 'open':
         setActiveNPC(null); setNpcReply(null);
         if (effect.panel === 'shop') setPanel({ kind: 'shop', category: effect.category });
+        else if (effect.panel === 'apprentices') setPanel({ kind: 'apprentices', npcId: effect.npcId });
         else if (effect.panel === 'ledger') setView('BANK', 'ledger');
         else if (effect.panel === 'missions') setView('MISSIONS');
         else setPanel({ kind: effect.panel });
@@ -824,7 +827,12 @@ export const HubCanvas: React.FC = () => {
           <div className="ws-dialogue">
             <div className="ws-dialogue__head">
               <CastPortrait npcId={activeNPC.id} />
-              <div className="ws-dialogue__speech">"{npcReply ?? activeNPC.dialogue.greeting}"</div>
+              <div className="ws-dialogue__speech">
+                "{npcReply ?? activeNPC.dialogue.greeting}"
+                {!npcReply && useHubStore.getState().vendors[activeNPC.id] && (
+                  <div className="ws-dim ws-small" style={{ marginTop: 4 }}>"{VendorSystem.say(useHubStore.getState().vendors[activeNPC.id])}"</div>
+                )}
+              </div>
             </div>
             <div className="ws-dialogue__options">
               {activeNPC.dialogue.options.map((opt, i) => (
@@ -857,6 +865,7 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
+      {panel?.kind === 'apprentices' && <ApprenticeWindow npcId={panel.npcId} onClose={() => setPanel(null)} />}
     </div>
   );
 };
