@@ -242,7 +242,13 @@ The record, including what was not built, is in `PLAN.md` ("The world clock — 
 
 The record is in `PLAN.md` ("Wave A — the record"). **For B1:** `DirectorStore.catchUp` takes the world now, `CreatureLines` stops at the seam where a model is called, and `exitWorld` saves the store's live record over the database, so words installed during a session would be erased unless the store's record is updated too. **For B2:** `Director.kindOf` is a stand-in for population, and N7 and N8 in the ledger are yours. **For B4:** `grantRank` has no caller yet, the guild buys nothing yet, and a hub can reach three chunks with nothing happening there. **Pedro reviews streams directly and answers bigger:** before recording a stream as done, read its session and its notes in the shared folder, and carry his words into the plan. His word to a stream can change its scope after its first report.
 
-## Your pass: a stream in the fan-out (Wave B, once Pedro approves Wave A)
+## What fan-out Wave B built
+
+The record is in `PLAN.md` ("Wave B — the record"). **For C1:** food is what the land could yield and harvesting does not lower it, `GENDERS` is open by breeding word, and capture has no door yet. **For C2:** `NpcAgenda` is the shared code, `wantFor` is pure, and `IResident` holds no schedule. **For C3:** leaders record `settledAt`, a seen goal stays true, `chainFromMap` returns `seat: null, posted: false`, and goal rolls fold inside `Population.step`, not in `COMPUTE_STEPS`. **For C4 and C5:** a raised master has no counter of their own, and `benchFactor` reads who is home. **For C6:** junk has a sheet and no screen. **Pinned ids and theme:** the first theme is `theme_4599bfea360d75a7`.
+
+- **Tests:** 1,881: 1,757 plus 124 in the database's own run.
+
+## Your pass: a stream in the fan-out (Wave C, once Pedro approves Wave B)
 
 Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The fan-out", "The living worlds program", and D60–D85 first. Build only your stream's lines and files, and report to the coordinator rather than editing this file or the plan. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
 
@@ -279,6 +285,8 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 ## Traps that cost me time
 
 - **Another session may be working in your checkout.** Stage files by name, never `git add -A`, and read `git status` before committing. Merging by switching to `main` here also fails or disturbs them, because their uncommitted files come along.
+- **`preview_start` runs from the session's first folder, whatever the shell's directory is.** A coordinator on the main checkout played the old branch for a minute and saw the old creation screen. Check what is served: fetch one changed source file from the port and look for a new word in it. A worktree can be served with `npm --prefix <worktree> run dev`.
+- **A new worktree can be cut from a stale `origin/main`.** All five Wave B worktrees started 122 commits behind local `main`, and the sync tool only looks at origin, so it said up to date. Each stream fast-forwarded before reading. Until `main` is pushed, a stream's first step is to check its base against the brief.
 - **`VectorStore.query` takes an options object.** Passing a namespace string sends `undefined` to the database, and it retries with 500s until the page reloads.
 - **A hidden Browser pane can produce no frames at all after a navigation,** so the game looks frozen and keys do nothing. Take a screenshot first to force one.
 - **To play a later phase, move the page's clock.** In the browser pane: keep the real `Date.now`, then replace it with one that adds an offset. Nothing else needs changing, and a reload puts it back. A rest's end saved under a moved clock stays that far ahead after the reload.
