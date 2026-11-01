@@ -26,6 +26,7 @@ import { RestDoor } from './src/logic/systems/RestDoor';
 
 // Debug Console
 import { SystemConsole } from './src/components/debug/SystemConsole';
+import { TuningPanel } from './src/components/debug/TuningPanel';
 import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
 
 installConsoleInterceptor();
@@ -72,6 +73,7 @@ const DEV_TABS: { id: AppView; label: string }[] = [
   { id: 'MISSIONS', label: 'ZONES' },
   { id: 'BANK', label: 'BANK' },
   { id: 'HOLDINGS', label: 'HOLDINGS' },
+  { id: 'TUNING', label: 'TUNING' },
 ];
 
 /** D79: how long this character is down. Their rest is their own loop, and SYSTEM switches to another. */
@@ -286,11 +288,12 @@ const App: React.FC = () => {
   return (
     <div className="ws-ui" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--ws-void-1)' }}>
       <TerminalBar devMode={devMode} onDevMode={setDevMode} />
-      <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' ? 'hidden' : 'auto' }}>
-        {view === 'HUB' && <HubCanvas />}
+      <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' || (view === 'TUNING' && !devMode) ? 'hidden' : 'auto' }}>
+        {(view === 'HUB' || (view === 'TUNING' && !devMode)) && <HubCanvas />}
         {view === 'MISSIONS' && <MissionControl />}
         {view === 'BANK' && <PlayerHub />}
         {view === 'HOLDINGS' && <HoldingsPanel devMode={devMode} />}
+        {view === 'TUNING' && devMode && <TuningPanel />}
       </div>
       <SystemConsole />
       <FeedView />
