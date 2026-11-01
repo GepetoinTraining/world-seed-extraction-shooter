@@ -17,7 +17,7 @@ import { Rng } from '../rng/DeterministicRNG';
 import { TagLaw } from '../content/TagLaw';
 import { affixRange } from '../theme/ThemeFormula';
 import { COST_BANDS, DELIVERIES, EFFECTS, PASSIVE_STATS, STAT_BANDS } from '../theme/ThemeTypes';
-import { IEffectAbility } from './EffectSystem';
+import { EffectSystem, IEffectAbility } from './EffectSystem';
 import { WebSystem } from './WebSystem';
 
 export const CIRCLES_PER_LEVEL = 1;
@@ -99,6 +99,8 @@ export class CircleSystem {
       if (!has(DELIVERIES, gift.delivery)) return no(`${gift.name}: "${gift.delivery}" is not a delivery.`);
       if (!has(EFFECTS, gift.effect)) return no(`${gift.name}: "${gift.effect}" is not an effect.`);
       if (!has(COST_BANDS, gift.cost)) return no(`${gift.name}: "${gift.cost}" is not a cost band.`);
+      const exit = EffectSystem.exitRefusal(gift);
+      if (exit) return no(`${gift.name} ${exit}`);
       if (!Array.isArray(gift.elements) || gift.elements.length === 0) return no(`${gift.name} draws on nothing.`);
       const stray = gift.elements.find(e => !TagLaw.isCanonicalSpelling(e) || (elements && !elements.includes(e)));
       if (stray) return no(`${gift.name} draws on "${stray}", which this world does not hold.`);
@@ -179,6 +181,6 @@ export class CircleSystem {
   /** What the sheet says about a gift. */
   static say(gift: ISkillGift): string {
     if (gift.kind === 'passive') return `${gift.name}: ${gift.stat?.replace(/_/g, ' ')} ${(gift.value ?? 0) >= 0 ? '+' : ''}${gift.value}`;
-    return `${gift.name}: ${gift.effect}, by ${gift.delivery}`;
+    return `${gift.name}: ${gift.effect?.replace(/_/g, ' ')}, by ${gift.delivery}`;
   }
 }

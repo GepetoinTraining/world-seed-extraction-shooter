@@ -188,6 +188,8 @@ export interface IReceiptView {
   kept?: { item: IItem; by: string }[];
   // D77: the gate closed on them, which the receipt says plainly
   cause?: 'GATE';
+  // D77: it left by a way out it paid to force, not by a beacon
+  forced?: boolean;
   // D30: what settled at this rest. Names only; the rest is on the Agent tab.
   settled?: string[];
   // Line 124: the record is still being signed, so its numbers are not in yet

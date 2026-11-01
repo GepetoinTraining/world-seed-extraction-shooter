@@ -8,7 +8,7 @@
  */
 
 import { Rng } from '../rng/DeterministicRNG';
-import { abilityNumbers } from '../theme/ThemeFormula';
+import { abilityNumbers, FORCED_EXIT_COST } from '../theme/ThemeFormula';
 import { COST_BANDS, DELIVERIES, EFFECTS, ThemeRank } from '../theme/ThemeTypes';
 
 export interface IEffectAbility {
@@ -43,6 +43,8 @@ export interface IEffectReceipt {
   reachPx: number;
   /** The clock it leaves on what it hit, if any. */
   status?: IStatusPlan;
+  /** The way out it opens where the caster stands, if it is a forced exit (D77). */
+  exit?: IExitPlan;
 }
 
 export interface IStatusPlan {
@@ -50,6 +52,11 @@ export interface IStatusPlan {
   magnitude: number;
   durationMs: number;
   tickMs?: number;
+}
+
+/** The channel a forced way out asks, before the stat that shortens a beacon's reads it. */
+export interface IExitPlan {
+  channelMs: number;
 }
 
 const REACH_PX: Record<IEffectAbility['delivery'], number> = {
@@ -79,6 +86,7 @@ export class EffectSystem {
       reachPx: REACH_PX[ability.delivery]
     };
     const status = this.statusOf(ability.effect, magnitude, numbers.durationMs);
+    if (ability.effect === 'forced_exit') return { ...receipt, exit: { channelMs: numbers.durationMs + numbers.telegraphMs } };
     return status ? { ...receipt, status } : receipt;
   }
 
@@ -98,7 +106,23 @@ export class EffectSystem {
 
   /** Does this effect land on what it was aimed at, or on the one casting it? */
   static landsOnCaster(effect: IEffectAbility['effect'], delivery: IEffectAbility['delivery']): boolean {
-    return delivery === 'self' || effect === 'heal' || effect === 'ward' || effect === 'buff' || effect === 'rest';
+    return delivery === 'self' || effect === 'heal' || effect === 'ward' || effect === 'buff' || effect === 'rest' || effect === 'forced_exit';
+  }
+
+  /**
+   * The law over the word, for a pack and a gift alike (D77): what opens a way out opens
+   * it where you stand, at the top of the bands. Null if it may stand.
+   */
+  static exitRefusal(ability: { effect: string; delivery: string; cost: string }): string | null {
+    if (ability.effect !== 'forced_exit') return null;
+    if (ability.delivery !== 'self') return 'opens a way out where its caster stands, so its delivery is self.';
+    if (ability.cost !== FORCED_EXIT_COST) return `opens a way out, and that is never cheaper than ${FORCED_EXIT_COST}.`;
+    return null;
+  }
+
+  /** Does a gate in this phase take a run? Not one with a forced way out already open: that door is not the gate's. */
+  static gateTakes(phase: string, forcedOpen: boolean): boolean {
+    return phase !== 'UP' && !forcedOpen;
   }
 }
 

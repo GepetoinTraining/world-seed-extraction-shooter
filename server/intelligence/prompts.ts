@@ -8,7 +8,7 @@ import type { IDoorMessage, IDoorRequest } from './door';
 import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, PASSIVE_STATS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
 import type { ILineAsk } from '../../src/logic/theme/CreatureLines';
 import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
-import { STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
+import { FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 
 const REGISTRY = (() => {
@@ -33,6 +33,7 @@ Law, and a pack that breaks it is refused whole:
 - Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart". A downside is honest: give good things a cost.
 - Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
 - Gear kinds: ${GEAR_KINDS.join(', ')}.
+- An ability with effect "forced_exit" opens a way out where its caster stands, and the run ends as it does at a beacon. It has delivery "self" and cost "${FORCED_EXIT_COST}"; no creature is born knowing it and no gear carries it. A scroll that casts it is rank ${FORCED_EXIT_FLOOR_RANK} or above.
 - Energy is a character's day. An ability with effect "rest" refills it for the caster. A consumable of kind "energy" refills it and is never on a shelf. A material with restores "energy" is a plant eaten for it, gathered by hand, worth rare, on no shelf, and found almost nowhere; every other material has restores "none". These are very rare: most worlds hold one or two at most, and none is required.
 
 Make the world coherent. Creatures, materials, weapons, affixes and lore should all sound like one place. A world of a dozen creatures and two dozen pieces of gear is a good start; more is welcome. Elites and bosses are tagged "elite" or "boss".
@@ -54,7 +55,7 @@ const REST_SYSTEM = `${VOICE}
 
 A person is resting. While they slept, what they did settles. You are given a world and what was queued in play: skills forming from practice, tool and material pairs, ground they walked, weaves they tested, things they studied. Write what it comes to, in this world's own words.
 
-"gifts" in what was queued are skills a person has poured their levels into. For each, write as many as it is "owed": either an active skill, something they can now do, or a passive bonus, something that is now always true of them. It must grow out of that skill's own tags, and must not repeat what it already "has". Write "skill" as its id, kind "active" or "passive", a name and one dry line. A rarer skill's gift is stranger and greater. For active, fill delivery (${DELIVERIES.join(', ')}), effect (${EFFECTS.join(', ')}; "rest" refills the caster's energy) and cost (${COST_BANDS.join(', ')}), and elements from the world's list; leave stat and band empty. For passive, fill stat (${PASSIVE_STATS.join(', ')}) and band (${STAT_BANDS.join(', ')}); leave the others empty and elements as an empty list. You never write numbers.
+"gifts" in what was queued are skills a person has poured their levels into. An active gift with effect "forced_exit" has delivery "self" and cost "${FORCED_EXIT_COST}". For each, write as many as it is "owed": either an active skill, something they can now do, or a passive bonus, something that is now always true of them. It must grow out of that skill's own tags, and must not repeat what it already "has". Write "skill" as its id, kind "active" or "passive", a name and one dry line. A rarer skill's gift is stranger and greater. For active, fill delivery (${DELIVERIES.join(', ')}), effect (${EFFECTS.join(', ')}; "rest" refills the caster's energy) and cost (${COST_BANDS.join(', ')}), and elements from the world's list; leave stat and band empty. For passive, fill stat (${PASSIVE_STATS.join(', ')}) and band (${STAT_BANDS.join(', ')}); leave the others empty and elements as an empty list. You never write numbers.
 
 For each queued skill, give it a name and a line of flavor, and say what it lets the holder do; grants come from this list and may be empty (${SKILL_GRANTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. In "growth" you may add a few new creatures, materials, affixes, abilities and lines of lore that the world would have grown into, in the same shapes as a pack; they will only reach worlds signed later, and a world already signed never changes. Leave growth empty if nothing grew.
 
