@@ -16,13 +16,13 @@ import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { ISector, ScanLevel } from '../entities/world/types';
 import { WorldClock } from '../entities/world/WorldClock';
-import { sectorOf } from '../entities/world/grid';
+import { SECTOR_CHUNKS, sectorOf } from '../entities/world/grid';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { Sprite } from '../render/atoms/atoms';
 import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
-import { SurveySystem } from '../logic/systems/SurveySystem';
+import { ISurveyEntry, SurveySystem } from '../logic/systems/SurveySystem';
 import { ScanPass } from '../logic/systems/ScanPass';
 import { MapSystem, isMapItem } from '../logic/systems/MapSystem';
 import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
@@ -55,6 +55,20 @@ export function closeRecon(): void {
 }
 
 /** With onDrop it is the field's first step inside a session. Without it, it stands alone, from a card. */
+/** D93: what a character holds of a sector's holding, in chunks across that sector. */
+const holdingCell = (entry: ISurveyEntry | undefined, sx: number, sy: number) => {
+  const held = entry?.holding;
+  if (!held) return undefined;
+  const local = (ground: string): [number, number] => {
+    const [cx, cy] = ground.split(',').map(Number);
+    return [cx - sx * SECTOR_CHUNKS, cy - sy * SECTOR_CHUNKS];
+  };
+  return {
+    chunks: held.chunks.map(local), seat: local(held.seat),
+    marks: held.marks.map(m => ({ at: local(m.ground), fn: m.fn, built: m.built }))
+  };
+};
+
 export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = ({ onDrop }) => {
   const free = !onDrop;
   const { currentMap, scanSector, selectSector, selectedDropZone, generation, activeWorldId, availableWorlds } = useWorldStore();
@@ -104,7 +118,8 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
         scanLevel: sector.scanLevel,
         hasExit: sector.scanLevel > ScanLevel.UNKNOWN && sector.hasExtraction,
         hostiles: sector.scanLevel >= ScanLevel.DETAILED && sector.entities.some(e => e.isHostile),
-        seed: currentMap.seed, sx, sy
+        seed: currentMap.seed, sx, sy,
+        holding: holdingCell(survey?.[`${sx},${sy}`], sx, sy)
       });
       for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
         buffer[(sy * s + y) * w + sx * s + x] = cell.data[y * s + x];
@@ -119,7 +134,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
       img.data[j + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-  }, [currentMap, currentMap?.sectors]);
+  }, [currentMap, currentMap?.sectors, survey]);
 
   // Recon has its keys: walk a cursor, scan, drop, read, or leave.
   const reconKeys = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -385,6 +400,20 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                   <span className="ws-dim">CHESTS YOU KNOW</span>
                   <span>{marks.length}{empty > 0 ? ` · ${empty} last seen empty` : ''}</span>
                 </div>
+              );
+            })()}
+            {/* D93: ground someone holds, as it was read, however old that is */}
+            {(() => {
+              const holding = survey?.[`${selected.x},${selected.y}`]?.holding;
+              if (!holding) return null;
+              const old = Math.max(0, generation - holding.generation);
+              return (
+                <>
+                  <div className="ws-row"><span className="ws-dim">HELD GROUND</span><span>{holding.named ?? 'UNKNOWN HOLDING'}</span></div>
+                  <div className="ws-row"><span>Chunks · anchors</span><span>{holding.chunks.length} · {holding.anchors}</span></div>
+                  <div className="ws-row ws-dim"><span>{old === 0 ? 'Read this regeneration' : `Read ${old} regeneration(s) ago`}</span><span>{old > 0 ? 'STALE' : 'FRESH'}</span></div>
+                  {old > 0 && <div className="ws-dim ws-small">It has had time to grow. Its border may be anywhere past this.</div>}
+                </>
               );
             })()}
             {/* D68: what was read last time, plainly old, and never the truth of now */}

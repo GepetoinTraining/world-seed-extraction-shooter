@@ -121,6 +121,12 @@ export class SqlStore {
     return { ok: true, service: 'worldseed-db', dialect: this.database.dialect };
   }
 
+  /** Maintenance (D103): compacts what weeks of writes left behind. Nothing here reads a row's meaning. */
+  async maintain(): Promise<{ ok: true }> {
+    await this.database.compact();
+    return { ok: true };
+  }
+
   // ---------------------------------------------------------------------------
   // READS
   // ---------------------------------------------------------------------------

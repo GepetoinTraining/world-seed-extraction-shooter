@@ -24,6 +24,8 @@ import { Archetype, Facing, WALK_PHASES, armorClass, weaponClass } from '../rend
 import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
+import { TollPrompt } from './TollPrompt';
+import { SurveySystem } from '../logic/systems/SurveySystem';
 import { CartSystem } from '../entities/world/CartSystem';
 import { CartOverlay } from '../entities/world/CartOverlay';
 import { ItemFactory } from '../entities/item/ItemFactory';
@@ -59,6 +61,8 @@ const LOAD_RADIUS_PX = 1000; // Chunks exist this far out, so nothing is built i
 const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't teleport the player
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
+/** How often the feed says a blow landed on nothing. */
+const WARDED_SAID_MS = 6000;
 
 // =============================================================================
 // THE CART WINDOW (Wave 10C, D16): the bed's grid, the seal, the theft log
@@ -204,6 +208,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const inspectedIdRef = useRef<string | null>(null);
   inspectedIdRef.current = inspected?.id ?? null;
   const lastInspectAt = useRef(0);
+  const wardedSaidRef = useRef(0);
   // Line 72: what the interact key would do right now, said above the hotbar
   const [prompt, setPrompt] = useState<string | null>(null);
   const promptRef = useRef<string | null>(null);
@@ -910,7 +915,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
       const liveEquipment = usePlayerStore.getState().player.equipment;
       const liveAttributes = usePlayerStore.getState().player.attributes;
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current });
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes) });
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach(p => {
@@ -980,6 +985,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId, event.entityId ? { id: event.entityId, rank: ProgressionSystem.rankOf(usePlayerStore.getState().player) } : undefined);
             if (event.entityId) useWorldStore.getState().reportFell(event.entityId, event.definitionId);
           }
+        } else if (event.type === 'BROKE' && event.entityId) {
+          // D93: its ward's clock starts. One person cannot be at the next before it relights
+          useWorldStore.getState().reportBroke(event.entityId);
+          feed('A post goes down.', 'signal');
+        } else if (event.type === 'WARDED' && now - wardedSaidRef.current > WARDED_SAID_MS) {
+          wardedSaidRef.current = now;
+          feed('Nothing lands. Something on this ground is holding it up.', 'loss');
         }
       });
       // Layer 3: what worn pieces fire. The trigger is a word from a pack, and it acts unstudied (D19).
@@ -1329,6 +1341,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         things.push({ x: e.position.x, y: e.position.y, kind: e.isHostile ? 'HOSTILE' : 'THING' });
         // D93: a leader in sight has been seen, and what it was doing is decided by what happens now
         if (Leaders.isLeader(e.id)) useWorldStore.getState().reportSeen([e.id]);
+        // D93: ground someone holds, once seen, is on this person's map
+        if (worldId && e.holding) {
+          const walker = usePlayerStore.getState().player;
+          const marked = SurveySystem.sawHolding(walker, worldId, `${sectorOf(e.position.x)},${sectorOf(e.position.y)}`, e, useWorldStore.getState().generation);
+          if (marked !== walker) usePlayerStore.setState({ player: marked });
+        }
         // A chest in sight is known from now on, and how it looks is how it is remembered
         if (worldId && e.container && ChestSystem.isChest(e.id)) {
           const seen = usePlayerStore.getState().player;
@@ -1394,6 +1412,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }}
       onMouseLeave={() => { mouseRef.current = null; }}
     >
+      <TollPrompt />
       {/* The whole field, drawn each frame by the game loop */}
       <canvas ref={fieldRef} style={{ position: 'absolute', top: 0, left: 0, imageRendering: 'pixelated' }} />
 

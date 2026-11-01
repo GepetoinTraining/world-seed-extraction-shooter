@@ -6,6 +6,7 @@ import { WorldCanvas } from './src/components/WorldCanvas';
 import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
 import { ReconView, closeRecon } from './src/components/ReconView';
+import { MaintenanceNotice } from './src/components/MaintenanceNotice';
 import { PlayerHub } from './src/components/PlayerHub';
 import { IdentityGate } from './src/components/IdentityGate';
 import { HubSelector } from './src/components/HubSelector';
@@ -307,6 +308,7 @@ const App: React.FC = () => {
   return (
     <div className="ws-ui" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--ws-void-1)' }}>
       <TerminalBar devMode={devMode} onDevMode={setDevMode} />
+      <MaintenanceNotice />
       <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' || view === 'RECON' || (view === 'TUNING' && !devMode) ? 'hidden' : 'auto' }}>
         {(view === 'HUB' || (view === 'TUNING' && !devMode)) && <HubCanvas />}
         {(view === 'MISSIONS' || (view === 'RECON' && !currentMap)) && <MissionControl />}

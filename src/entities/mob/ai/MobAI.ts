@@ -4,6 +4,9 @@ import { PatternType, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../combat/pr
 import { MOB_DEFINITIONS } from '../data/mobDefinitions';
 import { WorldClock } from '../../world/WorldClock';
 import { Leaders } from '../../world/Leaders';
+import { Wards } from '../../world/Wards';
+import { NpcSheet } from '../../../logic/systems/NpcSheet';
+import { Toll, useTollPrompt } from '../../../logic/systems/Toll';
 import { chunkOf } from '../../world/grid';
 import { WIDEST_VIEW_TILES } from '../../../logic/theme/ThemeFormula';
 import { MobBehavior } from '../types';
@@ -30,6 +33,9 @@ const GRAZE_PERIOD_MS = 9000;
 const GRAZE_RANGE_TILES = 7;
 const GRAZE_SLOT_TILES = 2.5;
 const HURRY_TILES = 4;
+/** D93: how far a watch post sees a person, and how far a body told to hold will go from its ground. Guesses until Wave 12. */
+const WATCH_TILES = 18;
+const HOLD_TILES = 16;
 /** How far the darkest night lets the widest sight reach. */
 const WIDEST_SIGHT_PX = WIDEST_VIEW_TILES * WorldClock.noticeFactor(0) * PX;
 
@@ -139,10 +145,19 @@ export class MobAI {
   }> = {};
   /** N7: where each body that was hit stood at the last tick. They stay simulated wherever they get to. */
   private static awake = new Map<string, string>();
+  /** D93: territories with the alarm up. It stays up, once raised, for as long as the world stands open. */
+  private static alarms = new Set<string>();
 
   static reset() {
     this.mobMemory = {};
     this.awake = new Map();
+    this.alarms = new Set();
+    Wards.reset();
+    Toll.reset();
+  }
+
+  static alarmUp(heldBy: string): boolean {
+    return this.alarms.has(heldBy);
   }
 
   /**
@@ -196,7 +211,7 @@ export class MobAI {
     playerPos: { x: number; y: number },
     deltaTime: number,
     map?: IMap,
-    senses: { noiseReduction?: number; light?: number } = {}
+    senses: { noiseReduction?: number; light?: number; walk?: number } = {}
   ): {
     updatedChunks: Record<string, IChunk>;
     spawnedPatterns: any[]
@@ -207,22 +222,35 @@ export class MobAI {
     const now = Date.now();
     if (map && map.generatedAt !== this.memoryOf) {
       this.memoryOf = map.generatedAt;
-      this.mobMemory = {};
-      this.awake = new Map();
+      this.reset();
     }
+    if (senses.walk !== undefined) Wards.paced(Wards.live(), senses.walk);
     const herds = this.gatherHerds(visibleChunks);
     const crossings: { from: string; to: string; id: string }[] = [];
     const awake = new Map<string, string>();
     // Quieter gear shortens how far a thing notices you; loud gear lengthens it.
     // D71: and the dark lets it notice you from further away.
     const heard = NOISE_SCALE / Math.max(1, NOISE_SCALE + (senses.noiseReduction ?? 0)) * WorldClock.noticeFactor(senses.light ?? 1);
+    this.watchPosts(visibleChunks, playerPos, heard);
 
     Object.entries(visibleChunks).forEach(([chunkKey, chunk]) => {
       let chunkWasModified = false;
 
-      const newEntities = chunk.entities.map(entity => {
+      const newEntities = chunk.entities.map(standing => {
+        // D93: a post comes back on its ward's clock, whole, and can be broken again
+        if (standing.structure?.brokenAt !== undefined && standing.ward && Wards.read(standing.ward, Wards.live(), now).relit.includes(standing.id)) {
+          Wards.restored(Wards.live(), standing.id);
+          chunkWasModified = true;
+          return { ...standing, health: standing.structure.maxHealth, structure: { ...standing.structure, brokenAt: undefined } };
+        }
         // Validation
-        if (entity.type !== EntityType.MOB || (entity.health || 0) <= 0) return entity;
+        if (standing.type !== EntityType.MOB || (standing.health || 0) <= 0) return standing;
+        // D93: a boss is warded while its anchors stand, wherever they are and whoever is near them
+        let entity = standing;
+        if (entity.ward) {
+          const warded = Wards.read(entity.ward, Wards.live(), now).warded;
+          if (warded !== !!entity.warded) { entity = { ...entity, warded }; chunkWasModified = true; }
+        }
 
         // Memory Init
         if (!this.mobMemory[entity.id]) {
@@ -248,6 +276,17 @@ export class MobAI {
         const dx = playerPos.x - entity.position.x;
         const dy = playerPos.y - entity.position.y;
         const dist = Math.hypot(dx, dy);
+
+        // D93: a solitary elite asks first. It stands, it waits, and it will not chase anyone who turns back
+        if (Toll.asks(def) && !mem.provoked) {
+          const owed = Toll.owed(entity.rank, map ? NpcSheet.statsOf(map.seed, entity).bartering : 0);
+          const status = Toll.meet(Toll.live(), entity.id, dist / PX, owed, now);
+          const shown = useTollPrompt.getState().asking?.entityId === entity.id;
+          if (status === 'ASKING' && !shown) useTollPrompt.setState({ asking: { entityId: entity.id, owed, until: Toll.live().askedAt[entity.id] + Toll.GRACE_MS } });
+          else if (status !== 'ASKING' && shown) useTollPrompt.setState({ asking: null });
+          if (status === 'FIGHT') this.provoke(entity.id);
+          else { mem.moving = false; return entity; }
+        }
 
         // 2. Activation by the definition's own senses. Neutral things stir only
         // when touched or provoked; passive things only when provoked.
@@ -383,6 +422,20 @@ export class MobAI {
             if (now - mem.felt!.bestAt > NO_PROGRESS_MS) { moveX = 0; moveY = 0; }
           }
 
+          // D93: standing orders. Told to fall back, hurt, it heads for its seat. Told to hold, it stays on its ground
+          if (entity.orders) {
+            const whole = (def?.baseHealth ?? 100) + (entity.bonusHealth ?? 0);
+            const home = mem.home ?? (mem.home = { x: entity.position.x, y: entity.position.y });
+            if (entity.orders.posture === 'fall_back' && entity.orders.seat && (entity.health ?? whole) * 2 < whole) {
+              const toSeat = Math.atan2(entity.orders.seat.y - entity.position.y, entity.orders.seat.x - entity.position.x);
+              moveX = Math.cos(toSeat) * moveSpeed;
+              moveY = Math.sin(toSeat) * moveSpeed;
+            } else if (entity.orders.posture === 'hold' && Math.hypot(entity.position.x + moveX - home.x, entity.position.y + moveY - home.y) > HOLD_TILES * PX) {
+              moveX = 0;
+              moveY = 0;
+            }
+          }
+
           // The ground has a say: water, rock and trunks refuse the step, mud slows it
           let next = { x: entity.position.x + moveX, z: entity.position.y + moveY };
           if (map && (moveX !== 0 || moveY !== 0)) {
@@ -475,6 +528,27 @@ export class MobAI {
     if (to === from || !map.chunks[to]) return;
     crossings.push({ from, to, id });
     if (awake.has(id)) awake.set(id, to);
+  }
+
+  /**
+   * D93: what a territory's alarm does. A watch post that sees a person raises it, and so does a hit
+   * on anyone whose orders say it calls for help. Once it is up, what answers to that seat comes.
+   */
+  private static watchPosts(visibleChunks: Record<string, IChunk>, playerPos: { x: number; y: number }, heard: number) {
+    for (const chunk of Object.values(visibleChunks)) {
+      for (const e of chunk.entities) {
+        const post = e.structure;
+        if (post?.fn === 'watch' && post.built && post.alarm && post.brokenAt === undefined
+          && Math.hypot(playerPos.x - e.position.x, playerPos.y - e.position.y) < WATCH_TILES * heard * PX) this.alarms.add(post.heldBy);
+        if (e.type === EntityType.MOB && e.heldBy && e.orders?.alarmCalls && this.mobMemory[e.id]?.feltNew) this.alarms.add(e.heldBy);
+      }
+    }
+    if (this.alarms.size === 0) return;
+    for (const chunk of Object.values(visibleChunks)) {
+      for (const e of chunk.entities) {
+        if (e.type === EntityType.MOB && e.heldBy && this.alarms.has(e.heldBy) && !this.mobMemory[e.id]?.provoked) this.provoke(e.id);
+      }
+    }
   }
 
   /**

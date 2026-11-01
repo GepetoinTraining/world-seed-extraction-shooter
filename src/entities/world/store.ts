@@ -12,6 +12,8 @@ import { Director, IDirectorRecord } from './Director';
 import { DirectorStore } from './DirectorStore';
 import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from './Population';
 import { Leaders } from './Leaders';
+import { Territory } from './Territory';
+import { Wards } from './Wards';
 import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from './ChestSystem';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
@@ -46,6 +48,9 @@ export interface IWorldCard extends IClockedWorld {
   /** D53: the theme it is made of. No theme, while themes exist, means it stood on the old tables: retired. */
   themeId?: string;
   magicUnlocked?: boolean;
+  /** Who minted it, whole, and the deed they spent. A toll's gold reads these (`Toll.ownerOf`). */
+  creatorUid?: string;
+  mintedWithDeed?: string;
 }
 
 interface WorldState {
@@ -64,6 +69,10 @@ interface WorldState {
   chestRecord: IChestRecord | null;
   reportChestLooted: (chestId: string) => void;
   reportFell: (entityId: string, definitionId?: string) => void;
+  /** D93: something a leader raised went down. Its ward's clock runs in `Wards`, and what stays down is written on closing. */
+  reportBroke: (structureId: string) => void;
+  /** D93: what a person carried out of a leader's store. */
+  reportStoreTaken: (structureId: string, count: number) => void;
   availableWorlds: IWorldCard[];
   activeWorldId: string | null; 
   currentMap: IMap | null;
@@ -133,9 +142,20 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ chestRecord: next });
     void ChestStore.save(activeWorldId, next);
   },
+  reportBroke: (structureId) => {
+    Wards.broke(Wards.live(), structureId, Date.now());
+  },
+  reportStoreTaken: (structureId, count) => {
+    const { populationRecord, activeWorldId, generation } = get();
+    if (!populationRecord || !activeWorldId || !Territory.isStructure(structureId)) return;
+    const next = Population.robbed(populationRecord, structureId, count, generation);
+    set({ populationRecord: next });
+    void PopulationStore.save(activeWorldId, next);
+  },
   reportFell: (entityId, definitionId) => {
     const { chestRecord, populationRecord, activeWorldId, generation } = get();
     if (!activeWorldId) return;
+    Wards.broke(Wards.live(), entityId, Date.now());
     if (chestRecord && ChestSystem.chestOfGuard(entityId)) {
       const next = ChestSystem.fell(chestRecord, entityId, generation);
       set({ chestRecord: next });
@@ -161,7 +181,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ directorRecord: told });
     const card = get().availableWorlds.find(w => w.id === worldId);
     if (generationContext && card) {
-      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), webVersion: generationContext.webVersion, lay: generationContext.lay };
+      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), webVersion: generationContext.webVersion, cycleMs: generationContext.cycleMs, lay: generationContext.lay };
     }
   },
   settled: async () => { await landing; },
@@ -204,6 +224,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           name: cert.data.worldName,
           difficulty: cert.data.rules.difficulty,
           creator: cert.data.creatorCertUid.substring(0, 8),
+          creatorUid: cert.data.creatorCertUid,
+          mintedWithDeed: cert.data.rules.mintedWithDeed,
           isDebug: false,
           extractionTaxRate: cert.data.rules.extractionTaxRate ?? 0.05,
           deathPenalty: cert.data.rules.deathPenalty ?? 'INVENTORY_LOSS',
@@ -262,7 +284,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         const chestRecord = worldCard.isDebug ? null : await ChestStore.load(worldCard.id).catch(() => emptyChestRecord());
         const populationRecord = worldCard.isDebug ? null : await PopulationStore.load(worldCard.id).catch(() => emptyPopulationRecord());
         set({ chestRecord, populationRecord });
-        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion };
+        const cadence = worldCard.cadence ?? WorldClock.cadenceFor(worldCard.size);
+        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs };
         generationContext = {
           ...context,
           lay: chunk => {
@@ -351,8 +374,11 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     const worldId = get().activeWorldId;
     if (worldId) landReports(worldId);
     // What was folded is kept, so the next opening starts from it
-    const living = get().populationRecord;
+    let living = get().populationRecord;
+    // D93: what was broken in this opening and has not relit stays down
+    if (living) for (const id of Object.keys(Wards.live().downAt)) if (Territory.isStructure(id)) living = Population.broke(living, id, get().generation);
     if (living && worldId) void PopulationStore.save(worldId, living);
+    Wards.reset();
     generationContext = null;
     DreamingSystem.deactivate();
     set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null });

@@ -13,7 +13,7 @@ import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
 import {
   ATOM_PX, CreatureFacing, GenreLook, KNOWN, TILE_ATOMS, Genre, Ink, Material, Role, Sprite, TRI, chest, creature, exitBeacon, grain, hash2, material,
-  npcFigure, px, rankMark, ruin, spent, stamp, worldForm
+  npcFigure, px, rankMark, ruin, spent, stamp, structureForm, worldForm
 } from './atoms';
 import { figure } from './people';
 
@@ -226,7 +226,7 @@ const cartSprite = (loaded: boolean) => {
 
 export interface EntityPose { facing?: CreatureFacing; frame?: number }
 
-type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart'>;
+type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart' | 'structure'>;
 
 export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = {}): Sprite | null {
   switch (e.type) {
@@ -243,7 +243,12 @@ export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = 
       const uses = e.usesRemaining ?? def.uses ?? 1;
       return cached(`${e.definitionId}:${uses}:${level}`, () => worldForm(def, { uses, level }));
     }
-    case EntityType.STRUCTURE: return cached('ruin', ruin);
+    case EntityType.STRUCTURE: {
+      const raised = e.structure;
+      if (!raised) return cached('ruin', ruin);
+      if (raised.brokenAt !== undefined) return cached(`raised:${raised.fn}:down`, () => spent(structureForm(raised.fn, raised.built), false));
+      return cached(`raised:${raised.fn}:${raised.built}`, () => structureForm(raised.fn, raised.built));
+    }
     case EntityType.CONTAINER:
       if (e.definitionId === 'ground_cache') return cached('cache', groundCache);
       return e.container?.looted ? cached('chest:looted', () => spent(chest(), false)) : cached('chest', chest);

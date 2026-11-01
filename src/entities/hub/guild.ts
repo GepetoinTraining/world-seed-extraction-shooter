@@ -258,10 +258,28 @@ export const trialTakes = (item: IItem, rank: UniversalRank | string): boolean =
   item.isIdentified !== false && ProgressionSystem.rankIndex(item.rank) > ProgressionSystem.rankIndex(rank as UniversalRank);
 
 // ---------------------------------------------------------------------------
-// THE MAP'S DOOR (D93): a chain needs a boss, and bosses are C3's
+// THE MAP'S DOOR (D93): known means a map showing it reached the Hall
 // ---------------------------------------------------------------------------
 
+/** One step of a chain, drawn from the holding. How many it takes is the place's own number. */
+export interface IChainStep {
+  text: string;
+  people: number;
+}
+
+/** What the chain says it knows, from what the map says. Levels and counts, never a name (D60). */
+export interface IChainSeat {
+  sector: string;
+  ground: string;
+  chunks: number;
+  anchors: number;
+  /** The regeneration it was read in. */
+  read: number;
+  named?: string;
+}
+
 export interface IChainDraft {
+  worldId?: string;
   worldName: string;
   sectors: number;
   /** Bodies counted, across what the map holds. */
@@ -272,10 +290,59 @@ export interface IChainDraft {
   /** What the map's scan regenerations run across. */
   oldest: number;
   newest: number;
-  /** The leader a chain would name. No map can show one until C3. */
-  seat: null;
-  posted: false;
-  steps: string[];
+  /** Who it is about. Null until a map shows someone holding ground, and only then does it post. */
+  seat: IChainSeat | null;
+  posted: boolean;
+  steps: IChainStep[];
+  /** How many regenerations old the reading is, when the Hall knows what regeneration it is. */
+  staleBy?: number;
+}
+
+type SectorEntry = NonNullable<IItem['mapData']>['sectors'][string];
+type HoldingEntry = NonNullable<SectorEntry['holding']>;
+
+const chainSteps = (sector: string, h: HoldingEntry): IChainStep[] => {
+  const unfinished = h.marks.filter(m => !m.built).length;
+  const outer = h.marks.filter(m => m.built && m.fn !== 'seat' && m.fn !== 'anchor').length;
+  const works = outer > 0 ? `${outer} of its outer works` : 'the ground around it';
+  return [
+    { text: `Read sector ${sector} again, as it stands now. What holds ${h.chunks.length} chunk${h.chunks.length === 1 ? '' : 's'} will not have stood still.`, people: 1 },
+    { text: `Take ${works}${unfinished > 0 ? `, and what is still going up` : ''}, and come back with what you learned of its bands.`, people: 1 },
+    { text: `Put someone at each of its ${h.anchors} anchors at one moment. One person cannot be in ${h.anchors} places.`, people: Math.max(2, h.anchors) },
+    { text: 'Bring down who sits there, and carry its stores out through everything still standing.', people: Math.max(2, h.anchors) }
+  ];
+};
+
+const seatFrom = (sector: string, h: HoldingEntry): IChainSeat => ({
+  sector, ground: h.seat, chunks: h.chunks.length, anchors: h.anchors, read: h.generation, ...(h.named ? { named: h.named } : {})
+});
+
+/**
+ * What the Hall holds, from every map handed to it: the newest reading of each sector, whichever came
+ * in first (D93). A newer map updates it, one that shows the ground empty closes it, and an older
+ * map never reopens it. Nothing else posts: seeing is not enough, and neither is saying so.
+ */
+export function chainFromMaps(maps: NonNullable<IItem['mapData']>[], generationNow: number): IChainDraft[] {
+  const newest = new Map<string, { entry: SectorEntry; map: NonNullable<IItem['mapData']> }>();
+  for (const map of maps) {
+    for (const [sector, entry] of Object.entries(map.sectors)) {
+      const key = `${map.worldId}:${sector}`;
+      const had = newest.get(key);
+      const readAt = (e: SectorEntry) => Math.max(e.generation, e.holding?.generation ?? -1);
+      if (!had || readAt(entry) > readAt(had.entry)) newest.set(key, { entry, map });
+    }
+  }
+  const chains: IChainDraft[] = [];
+  for (const [key, { entry, map }] of [...newest.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (!entry.holding) continue;
+    const sector = key.slice(map.worldId.length + 1);
+    chains.push({
+      ...chainFromMap({ ...map, sectors: { [sector]: entry } }),
+      worldId: map.worldId,
+      staleBy: Math.max(0, generationNow - entry.holding.generation)
+    });
+  }
+  return chains;
 }
 
 /** What this map would post, read from what it holds: levels and counts, never a name (D60). */
@@ -284,6 +351,7 @@ export function chainFromMap(map: NonNullable<IItem['mapData']>): IChainDraft {
   const mobsIn = (e: typeof entries[number][1]) => e.contacts?.MOB ?? 0;
   const hottest = [...entries].sort((a, b) => mobsIn(b[1]) - mobsIn(a[1]) || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
   const generations = entries.map(([, e]) => e.generation);
+  const held = entries.filter(([, e]) => e.holding).sort((a, b) => b[1].holding!.chunks.length - a[1].holding!.chunks.length || a[0].localeCompare(b[0]))[0];
   return {
     worldName: map.worldName,
     sectors: entries.length,
@@ -292,10 +360,8 @@ export function chainFromMap(map: NonNullable<IItem['mapData']>): IChainDraft {
     hottest,
     oldest: generations.length > 0 ? Math.min(...generations) : 0,
     newest: generations.length > 0 ? Math.max(...generations) : 0,
-    seat: null,
-    posted: false,
-    steps: hottest
-      ? [`Scan sector ${hottest} again, as it stands now.`, `Walk sector ${hottest} and come back with what holds it.`, 'Bring a party against whoever sits there.']
-      : []
+    seat: held ? seatFrom(held[0], held[1].holding!) : null,
+    posted: !!held,
+    steps: held ? chainSteps(held[0], held[1].holding!) : []
   };
 }

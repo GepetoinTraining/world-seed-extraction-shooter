@@ -8,10 +8,25 @@
 
 import { IPlayer } from '../../../types';
 import { IWorldEntity, EntityType, ScanLevel } from '../../entities/world/types';
+import { chunkOf } from '../../entities/world/grid';
 
 export type ISurveyEntry = NonNullable<IPlayer['survey']>[string][string];
 /** One world's sectors, on a character or on paper (D85). */
 export type ISurveySheet = Record<string, ISurveyEntry>;
+
+/** D93: what a reading shows of a territory: the ground, what stood on it, and when. No creature's name (D60). */
+const holdingFrom = (entities: IWorldEntity[], generation: number): ISurveyEntry['holding'] => {
+  const reader = entities.find(e => e.holding);
+  if (!reader?.holding) return undefined;
+  const marks = entities
+    .filter(e => e.structure && e.heldBy === reader.heldBy)
+    .map(e => ({ fn: e.structure!.fn, ground: `${chunkOf(e.position.x)},${chunkOf(e.position.y)}`, built: e.structure!.built }));
+  const seen = new Set<string>();
+  return {
+    generation, seat: reader.holding.seat, chunks: [...reader.holding.chunks], anchors: reader.holding.anchors,
+    marks: marks.filter(m => { const k = `${m.fn}:${m.ground}:${m.built}`; if (seen.has(k)) return false; seen.add(k); return true; })
+  };
+};
 
 const contactsOf = (entities: IWorldEntity[]) => {
   const contacts: Record<string, number> = {};
@@ -41,12 +56,30 @@ export const SurveySystem = {
     const prior = before && before.generation < generation
       ? { contacts: before.contacts, changed: before.changed, generation: before.generation }
       : before?.prior;
+    // A shallow scan says nothing of who holds what, so what was read before stands, as old as it was
+    const holding = level >= ScanLevel.DETAILED ? holdingFrom(entities, generation) : before?.holding;
     return {
       level, generation,
       contacts: contactsOf(entities),
       changed: entities.filter(e => (e.learned?.length ?? 0) > 0).length,
-      ...(prior ? { prior } : {})
+      ...(prior ? { prior } : {}),
+      ...(holding ? { holding } : {})
     };
+  },
+
+  /**
+   * D93: a walk reads what is in sight. It adds to the record of that sector and leaves what a scan
+   * said about the rest alone. Nothing changes if this has already been read this cycle.
+   */
+  sawHolding(player: IPlayer, worldId: string, sectorKey: string, entity: IWorldEntity, generation: number): IPlayer {
+    if (!entity.holding) return player;
+    const before = player.survey?.[worldId]?.[sectorKey];
+    const read = holdingFrom([entity], generation)!;
+    const had = before?.holding?.generation === generation ? before.holding : undefined;
+    const fresh = read.marks.filter(m => !had?.marks.some(o => o.fn === m.fn && o.ground === m.ground && o.built === m.built));
+    if (had && fresh.length === 0) return player;
+    const holding = had ? { ...had, marks: [...had.marks, ...fresh] } : read;
+    return this.record(player, worldId, sectorKey, { ...(before ?? { level: ScanLevel.UNKNOWN, generation, contacts: {}, changed: 0 }), holding });
   },
 
   levelNow(entry: ISurveyEntry | undefined, generation: number): number {
@@ -66,10 +99,17 @@ export const SurveySystem = {
   /** D85: what goes on paper. Named field by field, so nothing an entry later comes to hold can ride along (D60). */
   mapSheet(sectors: ISurveySheet): ISurveySheet {
     const sheet: ISurveySheet = {};
-    for (const [key, { level, generation, contacts, changed, prior }] of Object.entries(sectors)) {
+    for (const [key, { level, generation, contacts, changed, prior, holding }] of Object.entries(sectors)) {
       sheet[key] = {
         level, generation, changed, contacts: { ...contacts },
-        ...(prior ? { prior: { contacts: { ...prior.contacts }, changed: prior.changed, generation: prior.generation } } : {})
+        ...(prior ? { prior: { contacts: { ...prior.contacts }, changed: prior.changed, generation: prior.generation } } : {}),
+        ...(holding ? {
+          holding: {
+            generation: holding.generation, seat: holding.seat, chunks: [...holding.chunks], anchors: holding.anchors,
+            marks: holding.marks.map(({ fn, ground, built }) => ({ fn, ground, built })),
+            ...(holding.named ? { named: holding.named } : {})
+          }
+        } : {})
       };
     }
     return sheet;

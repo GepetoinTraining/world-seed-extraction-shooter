@@ -1888,6 +1888,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           if (left.length === 0) world.removeEntity(entity.id);
           else world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
           SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
+          // D93: a leader's store is that much poorer when its cycle closes
+          if (entity.structure) world.reportStoreTaken(entity.id, taken.length);
           feed(`Recovered ${taken.length === 1 ? shown(taken[0]) : `${taken.length} items`}.`, 'proof');
         }
         if (rejected.length > 0) feed(`The pack refuses ${rejected.length}; ${rejected.length === 1 ? 'it stays' : 'they stay'} in the cache.`, 'loss');

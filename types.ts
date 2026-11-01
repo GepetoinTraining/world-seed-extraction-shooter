@@ -884,6 +884,8 @@ export interface IPlayer {
     contacts: Record<string, number>;
     changed: number;
     prior?: { contacts: Record<string, number>; changed: number; generation: number };
+    /** D93: a territory read here, by a scan or on foot. It goes stale like the rest (D68). */
+    holding?: { generation: number; seat: string; chunks: string[]; anchors: number; marks: { fn: string; ground: string; built: boolean }[]; named?: string };
   }>>;
   /** D58: what a rest's model said of a skill, and what it lets the holder do. */
   skillWords?: Record<string, { name: string; flavor: string; grants: string[] }>;
