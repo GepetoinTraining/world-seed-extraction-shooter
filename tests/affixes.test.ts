@@ -450,7 +450,8 @@ describe('the knowledge law: blind sheets, real study, scoped identify', () => {
     expect(negative[1]).toBeLessThan(0); // the downside is on the record, not sanded off
   });
 
-  it('identify is SCOPED by item type: a weapon-schooled eye refuses an armor piece, in voice', () => {
+  // Amended by Pedro's D32, 2026-10-31: the field no longer refuses an unschooled eye; it rolls, at worse odds.
+  it('identify is SCOPED by item type: a weapon-schooled eye reads a weapon better than an armor piece', () => {
     const weapon = ItemFactory.createItem(UniversalRank.F, false, Rng.fromKey('scope:w'), 'weapon');
     const armor = ItemFactory.createItem(UniversalRank.F, false, Rng.fromKey('scope:a'), 'armor');
     expect(StudySystem.identifyScopeOf(weapon)).toBe('weapon');
@@ -460,10 +461,9 @@ describe('the knowledge law: blind sheets, real study, scoped identify', () => {
     usePlayerStore.getState().gainSkillXp(StudySystem.scopeSkillId('weapon'), 1, ['study']);
     player = usePlayerStore.getState().player;
     expect(StudySystem.canFieldIdentify(player, weapon).ok).toBe(true);
-    const refused = StudySystem.canFieldIdentify(player, armor);
-    expect(refused.ok).toBe(false);
-    expect(refused.reason).toMatch(/armor/i);
-    expect(refused.reason).toMatch(/study|workstation|bench/i);
+    expect(StudySystem.canFieldIdentify(player, armor).ok).toBe(true);
+    const plain = { rank: UniversalRank.F, rarity: Rarity.COMMON };
+    expect(StudySystem.identifyChance(player, { ...weapon, ...plain })).toBeGreaterThan(StudySystem.identifyChance(player, { ...armor, ...plain }));
   });
 
   it('identify is ALWAYS timed, and faster with skill — never free', () => {
@@ -476,18 +476,17 @@ describe('the knowledge law: blind sheets, real study, scoped identify', () => {
     expect(StudySystem.identifySeconds(99)).toBeGreaterThanOrEqual(IDENTIFY_FLOOR_SECONDS);
   });
 
-  it('training is work at a workstation, by use (D6): study raises the scoped skill, and the skill must exist before the field obeys', () => {
-    const weapon = ItemFactory.createItem(UniversalRank.F, false, Rng.fromKey('train:w'), 'weapon');
+  it('training is work at a workstation, by use (D6): study raises the scoped skill, and the skill betters the field\'s odds', () => {
+    const weapon = { ...ItemFactory.createItem(UniversalRank.F, false, Rng.fromKey('train:w'), 'weapon'), rank: UniversalRank.F, rarity: Rarity.COMMON };
     const fresh = usePlayerStore.getState().player;
-    const refused = StudySystem.canFieldIdentify(fresh, weapon);
-    expect(refused.ok).toBe(false);
+    const untrained = StudySystem.identifyChance(fresh, weapon);
     // study at the station: the store action trains and reveals
     grantStash([weapon]);
     const verdict = usePlayerStore.getState().studyItemAtStation(weapon.id);
     expect(verdict.ok).toBe(true);
     const trained = usePlayerStore.getState().player;
     expect(StudySystem.identifyLevel(trained, weapon)).toBeGreaterThanOrEqual(1);
-    expect(StudySystem.canFieldIdentify(trained, weapon).ok).toBe(true);
+    expect(StudySystem.identifyChance(trained, weapon)).toBeGreaterThan(untrained);
   });
 
   it('the field identify reveals the item through the one door: isIdentified set, affixes studied, record exact', () => {
@@ -498,10 +497,15 @@ describe('the knowledge law: blind sheets, real study, scoped identify', () => {
     usePlayerStore.getState().gainSkillXp(StudySystem.scopeSkillId('weapon'), 1, ['study']);
     usePlayerStore.getState().diveIntoLayer('w_test');
     usePlayerStore.getState().tryAddItems([item]);
-    const ask = usePlayerStore.getState().fieldIdentify(item.id);
-    expect(ask.ok).toBe(true);
-    expect(ask.seconds!).toBeGreaterThanOrEqual(IDENTIFY_FLOOR_SECONDS);
-    const done = usePlayerStore.getState().completeFieldIdentify(item.id);
+    // D32: a roll, so as many keyed attempts as it takes. The reveal is what this bar holds.
+    let done = { ok: false };
+    for (let i = 0; i < 400 && !done.ok; i++) {
+      usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 1000 } } }));
+      const ask = usePlayerStore.getState().fieldIdentify(item.id);
+      expect(ask.ok).toBe(true);
+      expect(ask.seconds!).toBeGreaterThanOrEqual(IDENTIFY_FLOOR_SECONDS);
+      done = usePlayerStore.getState().completeFieldIdentify(item.id);
+    }
     expect(done.ok).toBe(true);
     const after = usePlayerStore.getState().player;
     const held = after.currentSession!.inventory.find(i => i.id === item.id)!;
