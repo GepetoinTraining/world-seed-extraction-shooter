@@ -125,7 +125,10 @@ export class SqlStore {
 
   /** Maintenance (D103): compacts what weeks of writes left behind. Nothing here reads a row's meaning. */
   async maintain(): Promise<{ ok: true }> {
-    await this.database.compact();
+    // It takes its turn with the writes, so no transaction of ours is open when it runs.
+    const run = this.writes.then(() => this.database.compact());
+    this.writes = run.catch(() => undefined);
+    await run;
     return { ok: true };
   }
 

@@ -358,6 +358,35 @@ describe('line 71: a gold change is one commit', () => {
     expect((await VectorStore.get<any>(VectorNamespace.CHARACTERS, cert.metadata.uid))!.data.payload.bank.gold).toBe(880);
   });
 
+  it('maintenance while saves are going does not take the server down, and loses nothing', async () => {
+    const cert = await becomeAvatar('COMPACT', 5000);
+    const hub = `hub_compact_${cert.metadata.uid}`;
+    const padding = 'x'.repeat(300 * 1024);
+    let writing = true;
+    const maintained: number[] = [];
+    const maintenance = (async () => {
+      while (writing) {
+        const res = await fetch(`http://127.0.0.1:${port}/api/db/maintain`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        maintained.push(res.status);
+        await new Promise(r => setTimeout(r, 50));
+      }
+    })();
+    for (let i = 0; i < 40; i++) {
+      spend(10);
+      await GoldCommit.commit({
+        rows: [{ type: 'GOLD_DELTA', data: { reason: 'WHILE_COMPACTING', amount: -10, treasuryId: hub, treasuryDelta: 10, padding } }],
+        treasury: { worldUid: hub, delta: 10 }
+      });
+    }
+    writing = false;
+    await maintenance;
+    expect(child?.exitCode).toBeNull();
+    expect(maintained.length).toBeGreaterThan(0);
+    expect(maintained.every(status => status === 200 || status === 500)).toBe(true);
+    expect((await Ledger.audit(cert.metadata.uid)).ok).toBe(true);
+    expect(await Treasury.balance(hub)).toBe(400);
+  }, 120_000);
+
   it('a save taken between two gold changes can never get ahead of the ledger', async () => {
     const cert = await becomeAvatar('ORDER', 1000);
     const hub = `hub_order_${cert.metadata.uid}`;
