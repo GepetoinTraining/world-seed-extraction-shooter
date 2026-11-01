@@ -61,6 +61,15 @@ export const TRIGGERS = ['on_hit', 'on_defeat', 'on_hurt', 'on_low_health'] as c
 /** What a minted skill can let its holder do. Rest is the one with a reader (D58). */
 export const SKILL_GRANTS = ['rest'] as const;
 export const COST_BANDS = ['trivial', 'low', 'medium', 'high', 'extreme'] as const;
+/**
+ * What a passive gift from a skill's circles can add: the stats whose readers go through
+ * StatSystem.total, so the bonus really acts. A stat with another reader is not here.
+ */
+export const PASSIVE_STATS = [
+  'damage', 'defense', 'max_health', 'max_energy', 'accuracy_rating', 'evasion_rating', 'attack_speed',
+  'crit_chance', 'crit_multiplier', 'block_chance', 'poison_damage', 'light_radius', 'pickup_radius',
+  'carry_capacity', 'noise_reduction', 'luck_find_rarity', 'field_analysis_speed'
+] as const;
 
 /** D63: the trees no pack may lack. A tree is any plain word, and more are welcome. */
 export const REQUIRED_TREES = ['animal', 'monster'] as const;

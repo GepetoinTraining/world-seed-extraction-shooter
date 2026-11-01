@@ -5,7 +5,7 @@
  * Nothing here is trusted on the way back. Whatever returns stands before the law.
  */
 import type { IDoorMessage, IDoorRequest } from './door';
-import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, REQUIRED_TREES, SKILL_GRANTS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
+import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, PASSIVE_STATS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
 import type { ILineAsk } from '../../src/logic/theme/CreatureLines';
 import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
 import { STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
@@ -54,6 +54,8 @@ const REST_SYSTEM = `${VOICE}
 
 A person is resting. While they slept, what they did settles. You are given a world and what was queued in play: skills forming from practice, tool and material pairs, ground they walked, weaves they tested, things they studied. Write what it comes to, in this world's own words.
 
+"gifts" in what was queued are skills a person has poured their levels into. For each, write as many as it is "owed": either an active skill, something they can now do, or a passive bonus, something that is now always true of them. It must grow out of that skill's own tags, and must not repeat what it already "has". Write "skill" as its id, kind "active" or "passive", a name and one dry line. A rarer skill's gift is stranger and greater. For active, fill delivery (${DELIVERIES.join(', ')}), effect (${EFFECTS.join(', ')}; "rest" refills the caster's energy) and cost (${COST_BANDS.join(', ')}), and elements from the world's list; leave stat and band empty. For passive, fill stat (${PASSIVE_STATS.join(', ')}) and band (${STAT_BANDS.join(', ')}); leave the others empty and elements as an empty list. You never write numbers.
+
 For each queued skill, give it a name and a line of flavor, and say what it lets the holder do; grants come from this list and may be empty (${SKILL_GRANTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. In "growth" you may add a few new creatures, materials, affixes, abilities and lines of lore that the world would have grown into, in the same shapes as a pack; they will only reach worlds signed later, and a world already signed never changes. Leave growth empty if nothing grew.
 
 ${GRAMMAR}`;
@@ -76,8 +78,24 @@ const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
 export const REST_SCHEMA: Record<string, unknown> = {
-  type: 'object', additionalProperties: false, required: ['skills', 'weaves', 'growth'],
+  type: 'object', additionalProperties: false, required: ['skills', 'weaves', 'gifts', 'growth'],
   properties: {
+    gifts: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['skill', 'kind', 'name', 'blurb', 'elements', 'delivery', 'effect', 'cost', 'stat', 'band'],
+        properties: {
+          skill: str, kind: { type: 'string', enum: ['active', 'passive'] }, name: str, blurb: str,
+          elements: { type: 'array', items: { type: 'string' } },
+          delivery: { type: 'string', enum: ['', ...DELIVERIES] },
+          effect: { type: 'string', enum: ['', ...EFFECTS] },
+          cost: { type: 'string', enum: ['', ...COST_BANDS] },
+          stat: { type: 'string', enum: ['', ...PASSIVE_STATS] },
+          band: { type: 'string', enum: ['', ...STAT_BANDS] }
+        }
+      }
+    },
     skills: {
       type: 'array',
       items: {

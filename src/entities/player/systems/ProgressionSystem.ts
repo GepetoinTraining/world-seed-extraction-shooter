@@ -78,7 +78,7 @@ export const POINTS_PER_LEVEL = 1;
 export const LEVEL_KILLS = 5;
 export const LEVEL_GROWTH = 1.5;
 
-type HasLevels = Pick<IPlayer, 'rank' | 'rankXp' | 'levelXp'>;
+type HasLevels = Pick<IPlayer, 'rank' | 'rankXp' | 'levelXp' | 'levelsBanked'>;
 
 export class ProgressionSystem {
 
@@ -125,6 +125,11 @@ export class ProgressionSystem {
     return this.levelProgress(player).level;
   }
 
+  /** Every level climbed, at any rank. A reset does not lower this, and circles read from it. */
+  static levelsEarned(player: HasLevels): number {
+    return (player.levelsBanked ?? 0) + this.levelOf(player) - 1;
+  }
+
   /** Experience lands: lifetime and level both, and each level crossed pays its points. */
   static gainXp(player: IPlayer, amount: number): { player: IPlayer; from: number; to: number; points: number } {
     const settled = this.migrate(player);
@@ -138,8 +143,8 @@ export class ProgressionSystem {
 
   /**
    * D83's seam: the guild grants a rank for hard quests. The level resets and
-   * nothing else moves: attributes and unspent points stay. With no rank named it is
-   * the next one. A rank never falls this way.
+   * the levels climbed are banked: attributes, unspent points and circles all stay. With
+   * no rank named it is the next one. A rank never falls this way.
    */
   static grantRank(player: IPlayer, to?: UniversalRank): { player: IPlayer; granted: boolean; from: UniversalRank; to: UniversalRank } {
     const settled = this.migrate(player);
@@ -147,7 +152,7 @@ export class ProgressionSystem {
     const target = to ?? RANK_ORDER[this.rankIndex(from) + 1];
     if (!target || this.rankIndex(target) <= this.rankIndex(from)) return { player: settled, granted: false, from, to: from };
     return {
-      player: { ...settled, rank: target, levelXp: 0 },
+      player: { ...settled, rank: target, levelXp: 0, levelsBanked: this.levelsEarned(settled) },
       granted: true,
       from,
       to: target
@@ -160,6 +165,8 @@ export class ProgressionSystem {
    * - The rank its experience earned is stored, and experience never moves it again.
    * - What stands past that rank's floor becomes levels, paid in points as a level
    *   is, since no rank-up ever paid for that stretch.
+   * - The ranks it walked count as levels climbed, so it has the circles a new character
+   *   would. Their points were paid by the old rank-ups.
    * - Skills keep their level and rung, and half-done work keeps its fill, against
    *   costs that are now SKILL_TIME_FACTOR higher, and higher again by the skill's rank.
    */
@@ -169,6 +176,8 @@ export class ProgressionSystem {
     const rank = this.rankFromXp(lifetime);
     const levelXp = lifetime - RANK_XP_THRESHOLDS[rank];
     const level = this.levelFromXp(rank, levelXp).level;
+    const levelsBanked = RANK_ORDER.slice(0, this.rankIndex(rank)).reduce((sum, walked, i) =>
+      sum + this.levelFromXp(walked, RANK_XP_THRESHOLDS[RANK_ORDER[i + 1]] - RANK_XP_THRESHOLDS[walked]).level - 1, 0);
     const scaleSkill = (s: ISkillState): ISkillState => ({ ...s, bornRank: this.skillRarity(s), currentXp: Math.round(s.currentXp * SKILL_TIME_FACTOR * this.skillTimeFactor(this.skillRarity(s))) });
     const scaleWork = (p: ISkillProgress): ISkillProgress => ({ ...p, weight: p.weight * SKILL_TIME_FACTOR });
     const mapValues = <T,>(rows: Record<string, T>, fn: (row: T) => T) =>
@@ -177,6 +186,7 @@ export class ProgressionSystem {
       ...player,
       rank,
       levelXp,
+      levelsBanked,
       attributePoints: (player.attributePoints ?? 0) + (level - 1) * POINTS_PER_LEVEL,
       bank: player.bank && { ...player.bank, universalSkills: mapValues(player.bank.universalSkills ?? {}, scaleSkill) },
       skillProgress: player.skillProgress && mapValues(player.skillProgress, scaleWork)

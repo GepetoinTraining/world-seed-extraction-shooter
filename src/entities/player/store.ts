@@ -21,6 +21,7 @@ import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { RestSystem } from '../../logic/systems/RestSystem';
+import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
@@ -78,6 +79,8 @@ interface PlayerState {
   // D83: a fight feeds the level; the guild grants the rank
   applyKillXp: (amount: number) => { leveledUp: boolean; from: number; to: number; pointsGranted: number };
   grantRank: (to?: UniversalRank) => { granted: boolean; from: UniversalRank; to: UniversalRank };
+  /** A level poured into a skill. The third one earns something at the next rest. */
+  fillCircle: (skillId: string) => boolean;
   spendAttributePoint: (attribute: keyof IAttributes) => boolean;
   setView: (view: 'BANK' | 'SESSION') => void;
   diveIntoLayer: (layerId?: string) => void;
@@ -234,6 +237,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         attributePoints: 0,
         rank: UniversalRank.F,
         levelXp: 0,
+        levelsBanked: 0,
         materialMastery: {},
         floatMemory: [null, null, null]
       }
@@ -257,6 +261,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { player, granted, from, to: landed } = ProgressionSystem.grantRank(get().player, to);
     set({ player });
     return { granted, from, to: landed };
+  },
+
+  fillCircle: (skillId) => {
+    const res = CircleSystem.fill(get().player, skillId);
+    if (!res.ok) { feed(res.reason!, 'loss'); return false; }
+    set({ player: res.player });
+    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at your next rest.`, 'proof');
+    return true;
   },
 
   spendAttributePoint: (attribute) => {
@@ -343,7 +355,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const mirror = [worn[0] ?? null, worn[1] ?? null, worn[2] ?? null] as [ICognitiveFrame | null, ICognitiveFrame | null, ICognitiveFrame | null];
 
       return {
-        player: { ...state.player, attributes: newAttributes, floatMemory: mirror }
+        player: CircleSystem.withPassives({ ...state.player, attributes: newAttributes, floatMemory: mirror })
       };
     });
   },

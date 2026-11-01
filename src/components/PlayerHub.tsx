@@ -9,6 +9,7 @@ import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { POINTS_PER_LEVEL, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { StatSystem } from '../logic/systems/StatSystem';
+import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../logic/systems/CircleSystem';
 import { InventorySystem } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
@@ -57,12 +58,33 @@ const FormingFill: React.FC<{ fill: number }> = ({ fill }) => (
   </span>
 );
 
+/**
+ * A skill's circles, in threes. Filled and hollow are told apart by shape, and each
+ * group of three has a gap, so it reads in grayscale. There is always a next group: no top.
+ */
+const Circles: React.FC<{ filled: number }> = ({ filled }) => {
+  const slots = (Math.floor(filled / CIRCLES_FOR_A_GIFT) + 1) * CIRCLES_FOR_A_GIFT;
+  return (
+    <span role="img" aria-label={`${filled} circles`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+      {Array.from({ length: slots }, (_, i) => (
+        <span key={i} style={{
+          width: 7, height: 7, borderRadius: '50%', boxSizing: 'border-box',
+          border: '1px solid var(--ws-text-body)',
+          background: i < filled ? 'var(--ws-text-body)' : 'transparent',
+          marginLeft: i > 0 && i % CIRCLES_FOR_A_GIFT === 0 ? 4 : 0
+        }} />
+      ))}
+    </span>
+  );
+};
+
 export const HandsPanel: React.FC = () => {
-  const { player } = usePlayerStore();
+  const { player, fillCircle } = usePlayerStore();
+  const freeCircles = CircleSystem.free(player);
   const { web } = useHubStore();
   const sheet = useMemo(() => WebSystem.earnedSheet(player, WebBank.current(), web), [player, web]);
   return (
-    <Panel title="WHAT THE HANDS KNOW" right={<span className="ws-dim ws-small">{sheet.earned.length} held</span>}>
+    <Panel title="WHAT THE HANDS KNOW" right={<span className="ws-dim ws-small">{sheet.earned.length} held{freeCircles > 0 ? ` · ${freeCircles} to fill` : ''}</span>}>
       {sheet.earned.length === 0 && sheet.forming.length === 0 && (
         <div className="ws-dim ws-small">Nothing yet. Work a material with a tool, and rest.</div>
       )}
@@ -79,6 +101,15 @@ export const HandsPanel: React.FC = () => {
                 <RungNotches rung={row.rung} into={row.into} />
               </span>
             </div>
+            <div className="ws-row" style={{ padding: '2px 0' }}>
+              <Circles filled={row.circles} />
+              {freeCircles > 0 && (
+                <Button tone="signal" aria-label={`Fill a circle in ${row.name}`} style={{ padding: '0 4px' }} onClick={() => fillCircle(row.id)}>+</Button>
+              )}
+            </div>
+            {CircleSystem.giftsOf(player, row.id).map(g => (
+              <div key={g.id} className="ws-small" title={g.blurb}>{CircleSystem.say(g)}</div>
+            ))}
             {row.flavor && <div className="ws-dim ws-small">{row.flavor}</div>}
             {row.verbs.length > 0 && <div className="ws-small">can {row.verbs.join(', ')}</div>}
             {row.opens.length > 0 && <div className="ws-small">opens {row.opens.join(', ')}</div>}

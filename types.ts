@@ -143,6 +143,8 @@ export interface IEquipmentState {
   items: IItem[];                                        // what the body wears
   frames: Partial<Record<HeadPositionId, string>>;       // D22: cognitive frame ids by position
   protected: ISlotProtection[];                          // D21: session marks
+  /** What skills gave that is always true of this body. StatSystem.total reads it beside what is worn. */
+  passives?: Record<string, number>;
 }
 
 // ==========================================================================
@@ -688,6 +690,20 @@ export interface ILoreEntry {
   dateDiscovered: number;
 }
 
+/** What a skill's circles earned: something to cast, or something always true. */
+export interface ISkillGift {
+  id: string;
+  kind: 'active' | 'passive';
+  name: string;
+  blurb: string;
+  elements?: string[];
+  delivery?: string;
+  effect?: string;
+  cost?: string;
+  stat?: string;
+  value?: number;
+}
+
 export interface ISkillState {
   id: string;
   level: number;
@@ -698,6 +714,8 @@ export interface ISkillState {
   rank?: number;
   /** How rare the skill is: the rank it settled at. It sets the skill's pace and weight, and deeper work does not move it. */
   bornRank?: number;
+  /** Levels poured into this skill. Each third one earns an active skill or a passive bonus at a rest. */
+  circles?: number;
   /** D28: a track from an old save the law cannot read. Kept whole, off the web. */
   legacy?: boolean;
   origin?: {
@@ -820,6 +838,10 @@ export interface IPlayer {
   rank?: UniversalRank;
   /** D83: experience since the last rank. A grant sets it back to zero; the level reads from it. */
   levelXp?: number;
+  /** D83: levels climbed at earlier ranks. They stay yours through a reset, and each is a circle to fill. */
+  levelsBanked?: number;
+  /** What each skill's circles have earned, by skill id. Its numbers were rolled here, never by a model. */
+  skillGifts?: Record<string, ISkillGift[]>;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
   energyToday?: number;
   dayCount?: number;
@@ -844,7 +866,7 @@ export interface IPlayer {
   weaveNames?: Record<string, string>;
   knownAbilities?: string[];
   /** What the focus casts right now. Absent: the plain burst. */
-  activeCast?: { kind: 'weave'; elements: string[] } | { kind: 'ability'; id: string };
+  activeCast?: { kind: 'weave'; elements: string[] } | { kind: 'ability'; id: string } | { kind: 'gift'; id: string };
   bank: IBank;
   currentSession?: IActiveSession;
   guildId?: string;

@@ -84,6 +84,8 @@ export interface IPlacement {
 export interface IEarnedRow {
   /** A rarer skill climbs slowly, and each level counts for more. */
   rank: UniversalRank;
+  /** Levels poured in. Each third one earns a gift. */
+  circles: number;
   id: string;
   name: string;
   flavor?: string;
@@ -593,6 +595,7 @@ export class WebSystem {
         return {
           id: skill.id,
           rank: ProgressionSystem.skillRankOf(skill),
+          circles: skill.circles ?? 0,
           name: node.name,
           flavor: this.flavorOf(skill.id, pack),
           rung: mastery.rung,

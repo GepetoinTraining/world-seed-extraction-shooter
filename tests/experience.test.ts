@@ -54,6 +54,9 @@ import { repairCost } from '../src/entities/hub/dialogue';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
 import { EffectSystem, IEffectAbility } from '../src/logic/systems/EffectSystem';
 import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { CIRCLES_FOR_A_GIFT, CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
+import { PASSIVE_STATS } from '../src/logic/theme/ThemeTypes';
+import { STAT_SCALE } from '../src/logic/theme/ThemeFormula';
 import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
 import { compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
 import { BIOMES, IThemeBody } from '../src/logic/theme/ThemeTypes';
@@ -190,6 +193,7 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
     expect(after.attributes).toEqual(before.attributes);
     expect(after.attributePoints).toBe(before.attributePoints);
     expect(after.rankXp).toBe(before.rankXp);
+    expect(ProgressionSystem.levelsEarned(after)).toBe(ProgressionSystem.levelsEarned(before));
     expect(StatSystem.maxEnergyOf(after)).toBe(energy);
     expect(StatSystem.maxHealth(after.attributes, after.equipment)).toBe(health);
   });
@@ -214,7 +218,7 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
 
 describe('line 128: an existing character keeps what its old experience earned, once', () => {
   const old = (rankXp: number, more: Partial<IPlayer> = {}): IPlayer => ({
-    ...player(), rank: undefined, levelXp: undefined, rankXp, attributePoints: 2, ...more
+    ...player(), rank: undefined, levelXp: undefined, levelsBanked: undefined, rankXp, attributePoints: 2, ...more
   });
 
   it('the rank its experience earned becomes a stored rank', () => {
@@ -258,6 +262,14 @@ describe('line 128: an existing character keeps what its old experience earned, 
     expect(WebSystem.masteryOf(moved.bank.universalSkills.skill_y).rung).toBe(1);
     expect(moved.skillProgress!.skill_z.weight).toBe(8 * SKILL_TIME_FACTOR);
     expect(WebSystem.emergenceFill(moved.skillProgress!.skill_z)).toBeCloseTo(8 / 10);
+  });
+
+  it('the ranks it walked count as levels climbed, as a new character\'s would', () => {
+    const start = ProgressionSystem.migrate(old(0));
+    const veteran = ProgressionSystem.migrate(old(RANK_XP_THRESHOLDS[UniversalRank.C]));
+    expect(ProgressionSystem.levelsEarned(start)).toBe(0);
+    expect(ProgressionSystem.levelsEarned(veteran)).toBeGreaterThan(0);
+    expect(CircleSystem.free(veteran)).toBeGreaterThan(CircleSystem.free(start));
   });
 
   it('a rare skill keeps its level and rung too, against its own higher costs', () => {
@@ -846,6 +858,218 @@ describe('line 94: two characters of different spreads play differently', () => 
     expect(operator.craft).toBeLessThan(samurai.craft);
   });
 });
+
+// =============================================================================
+// The circles: levels are banked and poured into skills, and three earn a call
+// =============================================================================
+
+describe('banked levels are circles to fill', () => {
+  const pair = () => WebSystem.mint(['axe'], ['wood']);
+  const hold = (...ids: string[]) => {
+    const skills = Object.fromEntries(ids.map(id => [id, WebSystem.freshSkill(id, id.replace(/^skill_/, '').split('+'), 0)]));
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, ...skills } } } }));
+  };
+  const levels = (n: number) => usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: n } }));
+
+  it('a new character has none, and each level climbed is one', () => {
+    expect(CircleSystem.free(player())).toBe(0);
+    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1));
+    expect(CircleSystem.free(player())).toBe(1);
+  });
+
+  it('a rank\'s reset takes none: what was free stays free, and what was filled stays filled', () => {
+    hold(pair().id);
+    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1) + ProgressionSystem.levelCost(UniversalRank.F, 2));
+    store().fillCircle(pair().id);
+    const free = CircleSystem.free(player());
+    store().grantRank();
+    expect(ProgressionSystem.levelOf(player())).toBe(1);
+    expect(ProgressionSystem.levelsEarned(player())).toBe(2);
+    expect(CircleSystem.free(player())).toBe(free);
+    expect(player().bank.universalSkills[pair().id].circles).toBe(1);
+  });
+
+  it('levels still pay attribute points beside the circle', () => {
+    const res = store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1));
+    expect(res.pointsGranted).toBe(POINTS_PER_LEVEL);
+    expect(CircleSystem.free(player())).toBe(1);
+  });
+
+  it('filling spends one, and without one free the door refuses', () => {
+    hold(pair().id);
+    expect(store().fillCircle(pair().id)).toBe(false);
+    levels(1);
+    expect(store().fillCircle(pair().id)).toBe(true);
+    expect(CircleSystem.free(player())).toBe(0);
+    expect(store().fillCircle(pair().id)).toBe(false);
+    expect(player().bank.universalSkills[pair().id].circles).toBe(1);
+  });
+
+  it('only a skill the web can read takes a circle', () => {
+    levels(3);
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { old_track: { ...WebSystem.freshSkill('old_track', [], 0), legacy: true } } } } }));
+    expect(store().fillCircle('old_track')).toBe(false);
+    expect(store().fillCircle('skill_never_held')).toBe(false);
+    expect(CircleSystem.free(player())).toBe(3);
+  });
+
+  it('no skill has a top, and each further three is owed another', () => {
+    hold(pair().id);
+    levels(9);
+    for (let i = 0; i < 9; i++) expect(store().fillCircle(pair().id)).toBe(true);
+    expect(CircleSystem.asks(player())[0].owed).toBe(3);
+  });
+});
+
+describe('three circles ask the rest door for an active skill or a passive bonus', () => {
+  const pair = () => WebSystem.mint(['axe'], ['wood']);
+  const ready = (circles: number, rank = 0) => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: circles, bank: { ...s.player.bank, universalSkills: { [pair().id]: { ...WebSystem.freshSkill(pair().id, pair().tags, rank), circles } } } } }));
+  };
+  const asked = () => ({ skills: [], weaves: [], gifts: [pair().id] });
+  const active = (over: Partial<IGiftWords> = {}): IGiftWords => ({ skill: pair().id, kind: 'active', name: 'Felling Word', blurb: 'It falls before you ask.', elements: ['debt'], delivery: 'melee', effect: 'damage', cost: 'low', stat: '', band: '', ...over });
+  const passive = (over: Partial<IGiftWords> = {}): IGiftWords => ({ skill: pair().id, kind: 'passive', name: 'Long Grain', blurb: 'You read the wood.', elements: [], delivery: '', effect: '', cost: '', stat: 'carry_capacity', band: 'moderate', ...over });
+  const result = (gifts: IGiftWords[]) => ({ skills: [], weaves: [], gifts });
+
+  it('three is the number', () => {
+    expect(CIRCLES_FOR_A_GIFT).toBe(3);
+  });
+
+  it('two circles ask nothing, and the third is owed', () => {
+    ready(2);
+    expect(CircleSystem.asks(player())).toEqual([]);
+    ready(3);
+    expect(CircleSystem.asks(player()).map(a => a.id)).toEqual([pair().id]);
+  });
+
+  it('the call goes in what the rest files: it says what the skill is, and no more', () => {
+    ready(3);
+    const q = RestSystem.dreamQueue(player(), []) as { gifts: { id: string; tags: string[]; circles: number; owed: number }[] };
+    expect(q.gifts).toHaveLength(1);
+    expect(q.gifts[0]).toMatchObject({ id: pair().id, tags: pair().tags, circles: 3, owed: 1, rank: UniversalRank.F });
+    expect(JSON.stringify(q)).not.toContain(player().username);
+  });
+
+  it('what the door files goes out when only a gift is owed', () => {
+    const src = readFileSync('src/logic/systems/RestDoor.ts', 'utf8');
+    expect(src).toMatch(/skills\.length === 0 && weaves\.length === 0 && gifts\.length === 0/);
+    expect(src).toMatch(/gifts: gifts\.map\(q => q\.id\)/);
+  });
+
+  it('the schema and the system prompt carry the ask', () => {
+    const src = readFileSync('server/intelligence/prompts.ts', 'utf8');
+    expect(src).toMatch(/required: \['skills', 'weaves', 'gifts', 'growth'\]/);
+    expect(src).toMatch(/passive bonus/);
+  });
+
+  it('it never asks during play: only a rest files it', () => {
+    const circles = readFileSync('src/logic/systems/CircleSystem.ts', 'utf8');
+    expect(circles).not.toMatch(/IntelligenceClient/);
+  });
+
+  it('a gift nobody asked for, or outside the words, refuses the whole answer', () => {
+    ready(3);
+    expect(RestSystem.judgeDream(result([active()]), asked(), player()).ok).toBe(true);
+    expect(RestSystem.judgeDream(result([passive()]), asked(), player()).ok).toBe(true);
+    expect(RestSystem.judgeDream(result([active({ skill: 'skill_other' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ name: ' ' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ effect: 'summon' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ delivery: 'psychic' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ cost: 'free' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ elements: [] })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([passive({ stat: 'charisma' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([passive({ band: 'huge' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ kind: 'nothing' as never })]), asked(), player()).ok).toBe(false);
+  });
+
+  it('a skill takes only what it is owed', () => {
+    ready(3);
+    expect(RestSystem.judgeDream(result([active(), passive()]), asked(), player()).ok).toBe(false);
+  });
+
+  it('a working drawn on an element this world does not hold is refused', () => {
+    ready(3);
+    expect(RestSystem.judgeDream(result([active()]), asked(), player(), ['interest']).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active()]), asked(), player(), ['debt']).ok).toBe(true);
+  });
+
+  it('an old answer with no gifts still stands', () => {
+    expect(RestSystem.judgeDream({ skills: [], weaves: [] }, { skills: [], weaves: [] }).ok).toBe(true);
+    expect(RestSystem.applyDream(player(), { skills: [], weaves: [] }).skillGifts).toBeUndefined();
+  });
+
+  it('an active gift can be cast through the one door, and a rest effect refills', () => {
+    ready(3);
+    const after = RestSystem.applyDream(player(), result([active({ effect: 'rest', delivery: 'self' })]));
+    const gift = after.skillGifts![pair().id][0];
+    const ability = CircleSystem.abilityOf(after, gift.id)!;
+    expect(ability.effect).toBe('rest');
+    const receipt = EffectSystem.resolve(ability, { rank: UniversalRank.F }, 'k');
+    expect(EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)).toBe(true);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/cast\.kind === 'gift' \? CircleSystem\.abilityOf\(player, cast\.id\)/);
+    expect(readFileSync('src/components/TheWorking.tsx', 'utf8')).toMatch(/kind: 'gift', id: g\.id/);
+  });
+
+  it('a passive gift acts wherever the stat is read, with a number no model wrote', () => {
+    ready(3);
+    const before = LoadoutSystem.carryLimit(player().attributes.strength, player().equipment);
+    const after = RestSystem.applyDream(player(), result([passive()]));
+    const gift = after.skillGifts![pair().id][0];
+    expect(gift.value).toBeGreaterThan(0);
+    expect(after.equipment!.passives).toEqual({ carry_capacity: gift.value });
+    expect(LoadoutSystem.carryLimit(after.attributes.strength, after.equipment)).toBe(before + gift.value!);
+    // The same person and skill roll the same number
+    expect(RestSystem.applyDream(player(), result([passive()])).skillGifts![pair().id][0].value).toBe(gift.value);
+  });
+
+  it('a rarer skill\'s passive is worth more', () => {
+    ready(3, 0);
+    const common = RestSystem.applyDream(player(), result([passive()])).skillGifts![pair().id][0].value!;
+    ready(3, RANK_ORDER.indexOf(UniversalRank.SS));
+    const rare = RestSystem.applyDream(player(), result([passive()])).skillGifts![pair().id][0].value!;
+    expect(rare).toBeGreaterThan(common);
+  });
+
+  it('every passive word has a typical size and a reader through the one door', () => {
+    for (const stat of PASSIVE_STATS) {
+      expect(STAT_SCALE[stat], stat).toBeGreaterThan(0);
+      expect(StatSystem.total({ slots: {}, items: [], frames: {}, protected: [], passives: { [stat]: 2 } } as IEquipmentState, stat)).toBe(2);
+    }
+  });
+
+  it('what is owed is paid: asking stops after the gift lands, and the next three ask again', () => {
+    ready(3);
+    const after = RestSystem.applyDream(player(), result([passive()]));
+    expect(CircleSystem.asks(after)).toEqual([]);
+    const more = { ...after, bank: { ...after.bank, universalSkills: { [pair().id]: { ...after.bank.universalSkills[pair().id], circles: 6 } } } };
+    const next = CircleSystem.asks(more);
+    expect(next[0].owed).toBe(1);
+    expect(next[0].has).toEqual(['Long Grain']);
+  });
+
+  it('a batch that fails asks again: what is owed is read from the skill, not from a queue', () => {
+    ready(3);
+    const failed = { ...player(), pendingDream: undefined };
+    expect(CircleSystem.asks(failed)).toHaveLength(1);
+  });
+
+  it('the passives come back with the attributes after a load', () => {
+    ready(3);
+    usePlayerStore.setState({ player: RestSystem.applyDream(player(), result([passive()])) });
+    usePlayerStore.setState(s => ({ player: { ...s.player, equipment: { ...s.player.equipment!, passives: undefined } } }));
+    store().recalcAttributes();
+    expect(player().equipment!.passives!.carry_capacity).toBeGreaterThan(0);
+  });
+
+  it('the sheet shows circles by shape, in threes, with a way to fill them', () => {
+    const src = readFileSync('src/components/PlayerHub.tsx', 'utf8');
+    expect(src).toMatch(/<Circles filled=\{row\.circles\} \/>/);
+    expect(src).toMatch(/background: i < filled \?/);
+    expect(src).toMatch(/Fill a circle in/);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/TO FILL/);
+  });
+});
+
 
 // =============================================================================
 // The screens: levels and rank apart, in shapes that read without colour

@@ -329,6 +329,8 @@ describe("line 120: a character's rest takes real time, scaled by what that char
     expect(RestSystem.restMs(hardy)).toBe(0);
     expect(spent(3)).toBeLessThan(M);
     expect(spent(20)).toBeLessThan(5 * M);
+    expect(spent(50)).toBeGreaterThanOrEqual(3 * M);
+    expect(spent(50)).toBeLessThanOrEqual(4 * M);
     expect(spent(500)).toBe(8 * H);
     // Each further point costs more than the one before it
     expect(spent(20) - spent(10)).toBeGreaterThan(spent(10) - spent(0));

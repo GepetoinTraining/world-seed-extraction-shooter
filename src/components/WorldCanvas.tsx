@@ -28,6 +28,7 @@ import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { BASE_CHANNEL_MS, StatSystem } from '../logic/systems/StatSystem';
+import { CircleSystem } from '../logic/systems/CircleSystem';
 import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
@@ -297,7 +298,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const castFromFocus = (cast: NonNullable<IPlayerShape['activeCast']>, now: number, origin: { x: number; z: number }, angle: number) => {
     const player = usePlayerStore.getState().player;
     const rank = ProgressionSystem.rankOf(player);
-    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements) : ContentRegistry.ability(cast.id);
+    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements)
+      : cast.kind === 'gift' ? CircleSystem.abilityOf(player, cast.id) : ContentRegistry.ability(cast.id);
     if (!ability) return;
     const can = WeaveSystem.canCast(player, ability, rank);
     if (!can.ok) {
@@ -975,7 +977,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events);
       if (rewards.levelUp) {
-        feed(`LEVEL ${rewards.levelUp.to}. +${rewards.levelUp.points} attribute point${rewards.levelUp.points === 1 ? '' : 's'}. Spend on the sheet.`, 'proof');
+        feed(`LEVEL ${rewards.levelUp.to}. +${rewards.levelUp.points} attribute point${rewards.levelUp.points === 1 ? '' : 's'}, and a circle to fill. On the sheet.`, 'proof');
       }
       if (effectsRef.current.length > 0) {
         effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);
@@ -1399,7 +1401,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
-          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}</Chip>
+          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}{CircleSystem.free(player) > 0 ? ` · ${CircleSystem.free(player)} TO FILL` : ''}</Chip>
           <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>

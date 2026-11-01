@@ -148,9 +148,9 @@ export class StatSystem {
     });
   }
 
-  /** What everything worn adds up to, for one stat. */
+  /** What everything worn adds up to for one stat, and what a skill's circles made always true. */
   static total(equipment: IEquipmentState | undefined, stat: string): number {
-    return this.worn(equipment).reduce((sum, i) => sum + ((i.stats as Record<string, number> | undefined)?.[stat] ?? 0), 0);
+    return this.worn(equipment).reduce((sum, i) => sum + ((i.stats as Record<string, number> | undefined)?.[stat] ?? 0), equipment?.passives?.[stat] ?? 0);
   }
 
   static maxHealth(attributes: IAttributes, equipment?: IEquipmentState): number {

@@ -20,6 +20,7 @@ import { WebSystem } from './WebSystem';
 import { StudySystem } from './StudySystem';
 import { StatSystem } from './StatSystem';
 import { WeaveSystem } from './WeaveSystem';
+import { CircleSystem, IGiftWords } from './CircleSystem';
 
 export type RestPlace = 'INN' | 'BED' | 'FIELD';
 
@@ -28,13 +29,14 @@ export const INN_FEE = 20;
 
 /**
  * D79: a rest takes real time, on a curve that starts quick and steepens: someone trained
- * for a long shift has a truly long rest, like a rig worker's rotation. Pedro's mark is
- * 500 energy, about 8 hours. 20 spent is about 4 minutes, 55 about 17, 200 about 2 hours.
- * The power is a guess until Wave 12.
+ * for a long shift has a truly long rest, like a rig worker's rotation. Pedro's marks are
+ * 500 energy, about 8 hours, and a new character's 50 at 3 to 4 minutes: "enough time to
+ * send the LLM call for the very start". That power gives 20 about half a minute and 200
+ * about an hour.
  */
 export const REST_MARK_ENERGY = 500;
 export const REST_MARK_MS = 8 * 60 * 60_000;
-const REST_CURVE_POWER = 1.5;
+export const REST_CURVE_POWER = 2.14;
 
 export interface IRestQueue {
   /** Items studied, waiting to be known. */
@@ -67,6 +69,8 @@ export interface IThemeGrowth {
 export interface IDreamResult {
   skills: { id: string; name: string; flavor: string; grants: string[] }[];
   weaves: { id: string; name: string }[];
+  /** What a skill's third circle earned. */
+  gifts?: IGiftWords[];
   growth?: IThemeGrowth;
 }
 
@@ -232,6 +236,7 @@ export class RestSystem {
       skills: emerged.map(s => ({ id: s.id, tags: s.id.replace(/^skill_/, '').split('+') })),
       forming: Object.values(player.skillProgress ?? {}).slice(0, 40).map(p => ({ id: p.id, tags: p.tags, attempts: p.attempts })),
       weaves: q.weaves.map(elements => ({ id: WeaveSystem.idOf(elements), elements })),
+      gifts: CircleSystem.asks(player),
       ground: q.ground
     };
   }
@@ -240,7 +245,7 @@ export class RestSystem {
    * The law over what came back from a rest (D43). Refused whole when broken: a skill
    * it never asked about, or a grant outside the vocabulary, and nothing changes.
    */
-  static judgeDream(result: IDreamResult, asked: { skills: string[]; weaves: string[] }): { ok: boolean; reason?: string } {
+  static judgeDream(result: IDreamResult, asked: { skills: string[]; weaves: string[]; gifts?: string[] }, player?: IPlayer, elements?: string[]): { ok: boolean; reason?: string } {
     if (!result || !Array.isArray(result.skills) || !Array.isArray(result.weaves)) return { ok: false, reason: 'That is not what a rest returns.' };
     for (const s of result.skills) {
       if (!asked.skills.includes(s.id)) return { ok: false, reason: `Nobody asked about ${s.id}.` };
@@ -251,6 +256,13 @@ export class RestSystem {
     for (const w of result.weaves) {
       if (!asked.weaves.includes(w.id)) return { ok: false, reason: `Nobody tested ${w.id}.` };
       if (!w.name?.trim()) return { ok: false, reason: `${w.id} came back with no name.` };
+    }
+    const gifts = result.gifts ?? [];
+    if (player) {
+      const verdict = CircleSystem.judgeAll(gifts, player, asked.gifts ?? [], elements);
+      if (!verdict.ok) return verdict;
+    } else if (gifts.length > 0) {
+      return { ok: false, reason: 'Nobody can say who these gifts are for.' };
     }
     return { ok: true };
   }
@@ -282,10 +294,10 @@ export class RestSystem {
     for (const w of result.weaves) weaveNames[w.id] = w.name;
     const named = new Set(result.weaves.map(w => w.id));
     const q = this.queueOf(player);
-    return {
+    return CircleSystem.apply({
       ...player, skillWords, weaveNames,
       pendingDream: undefined,
       restQueue: { ...q, weaves: q.weaves.filter(e => !named.has(WeaveSystem.idOf(e))), ground: [] }
-    };
+    }, result.gifts ?? []);
   }
 }

@@ -98,12 +98,13 @@ export const RestDoor = {
     const queue = RestSystem.dreamQueue(player, emerged);
     const skills = queue.skills as unknown[];
     const weaves = queue.weaves as unknown[];
-    if (skills.length === 0 && weaves.length === 0) return;
+    const gifts = queue.gifts as { id: string }[];
+    if (skills.length === 0 && weaves.length === 0 && gifts.length === 0) return;
 
     const world = useWorldStore.getState();
     const card = world.availableWorlds.find(w => w.id === world.activeWorldId) ?? world.availableWorlds.find(w => !w.retired);
     const theme = ContentRegistry.get(card?.themeId) ?? ContentRegistry.list()[0];
-    const summary = theme ? { name: theme.name, premise: theme.premise, regions: theme.regions.map(r => r.name) } : {};
+    const summary = theme ? { name: theme.name, premise: theme.premise, regions: theme.regions.map(r => r.name), elements: [...new Set(theme.abilities.flatMap(a => a.elements))] } : {};
 
     const id = `rest_${player.id}_${player.dayCount ?? 0}`;
     const out = await IntelligenceClient.fileRest(id, queue, summary);
@@ -117,7 +118,8 @@ export const RestDoor = {
             themeId: theme?.themeId,
             asked: {
               skills: (skills as { id: string }[]).map(q => q.id),
-              weaves: (weaves as { id: string }[]).map(q => q.id)
+              weaves: (weaves as { id: string }[]).map(q => q.id),
+              gifts: gifts.map(q => q.id)
             }
           }
         }
@@ -137,7 +139,9 @@ export const RestDoor = {
       usePlayerStore.setState(s => ({ player: { ...s.player, pendingDream: undefined } }));
       return;
     }
-    const verdict = RestSystem.judgeDream(out.data, pending.asked);
+    const asker = usePlayerStore.getState().player;
+    const held = ContentRegistry.get(pending.themeId);
+    const verdict = RestSystem.judgeDream(out.data, pending.asked, asker, held ? [...new Set(held.abilities.flatMap(a => a.elements))] : undefined);
     if (!verdict.ok) {
       console.warn(`[REST] What came back was refused whole: ${verdict.reason}`);
       usePlayerStore.setState(s => ({ player: { ...s.player, pendingDream: undefined } }));
@@ -155,6 +159,7 @@ export const RestDoor = {
       }
     }
     for (const s of out.data.skills) feed(`${s.name}: ${s.flavor}`, 'signal');
+    for (const g of out.data.gifts ?? []) feed(`${WebSystem.nameOf(g.skill)} gave you ${g.name}. ${g.blurb}`, 'proof');
 
     // D43: what the world grew becomes a signed pack, or nothing. Refused whole, and the rest stands.
     const theme = ContentRegistry.get(pending.themeId);
