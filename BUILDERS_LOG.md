@@ -246,7 +246,7 @@ The record is in `PLAN.md` ("Wave A — the record"). **For B1:** `DirectorStore
 
 The record is in `PLAN.md` ("Wave B — the record"). **For C1:** food is what the land could yield and harvesting does not lower it, `GENDERS` is open by breeding word, and capture has no door yet. **For C2:** `NpcAgenda` is the shared code, `wantFor` is pure, and `IResident` holds no schedule. **For C3:** leaders record `settledAt`, a seen goal stays true, `chainFromMap` returns `seat: null, posted: false`, and goal rolls fold inside `Population.step`, not in `COMPUTE_STEPS`. **For C4 and C5:** a raised master has no counter of their own, and `benchFactor` reads who is home. **For C6:** junk has a sheet and no screen. **Pinned ids and theme:** the first theme is `theme_4599bfea360d75a7`.
 
-- **Tests:** 2,000: 1,876 plus 124 in the database's own run. The timing bars read load: with other sessions running they went red, and on a quiet machine all 31 passed.
+- **Tests:** 2,003: 1,879 plus 124 in the database's own run. With other sessions running, the grid timing bars went red, on this branch and on `6c7766a` alike. On a quiet machine the file passed 7 runs of 7 on the join. B4 saw a red alone with `-t` at about 35 ms, a form not compared on the base, so measure before calling a red load.
 
 ## Your pass: a stream in the fan-out (Wave C, once Pedro approves Wave B)
 
@@ -286,6 +286,7 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 - **Another session may be working in your checkout.** Stage files by name, never `git add -A`, and read `git status` before committing. Merging by switching to `main` here also fails or disturbs them, because their uncommitted files come along.
 - **`preview_start` runs from the session's first folder, whatever the shell's directory is.** A coordinator on the main checkout played the old branch for a minute and saw the old creation screen. Check what is served: fetch one changed source file from the port and look for a new word in it. A worktree can be served with `npm --prefix <worktree> run dev`.
+- **A click in the city no longer reaches across the map.** A play script has to walk to a person or a door first, which is slow in a hidden pane.
 - **A new worktree can be cut from a stale `origin/main`.** All five Wave B worktrees started 122 commits behind local `main`, and the sync tool only looks at origin, so it said up to date. Each stream fast-forwarded before reading. Until `main` is pushed, a stream's first step is to check its base against the brief.
 - **`VectorStore.query` takes an options object.** Passing a namespace string sends `undefined` to the database, and it retries with 500s until the page reloads.
 - **A hidden Browser pane can produce no frames at all after a navigation,** so the game looks frozen and keys do nothing. Take a screenshot first to force one.
