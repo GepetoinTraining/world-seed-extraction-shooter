@@ -246,8 +246,19 @@ describe('line 89: one door', () => {
   });
 
   it('a rest uses the model Pedro chose, one constant per kind (D44)', () => {
-    expect(MODEL_FOR.rest).toBe('claude-opus-5-5');
-    expect(Object.keys(MODEL_FOR).sort()).toEqual(['creation', 'kami_persona', 'kami_set', 'kami_talk', 'rest', 'talk', 'theme', 'window']);
+    expect(MODEL_FOR.rest).toBe('claude-sonnet-5-5');
+    expect(Object.keys(MODEL_FOR).sort()).toEqual(['creation', 'kami_persona', 'kami_set', 'kami_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
+  });
+
+  it('only a large world\'s theme is written on Opus (D118)', () => {
+    for (const kind of ['talk', 'theme', 'rest', 'window'] as const) expect(MODEL_FOR[kind], kind).toBe('claude-sonnet-5-5');
+    expect(MODEL_FOR.theme_large).toBe('claude-opus-5-5');
+    expect(buildThemeRequest([], {}).kind).toBe('theme');
+    expect(buildThemeRequest([], { size: 16 }).kind).toBe('theme');
+    expect(buildThemeRequest([], { size: 32 }).kind).toBe('theme');
+    expect(buildThemeRequest([], { size: 64 }).kind).toBe('theme_large');
+    expect(buildThemeRequest([], { size: 128 }).kind).toBe('theme_large');
+    expect(readFileSync('src/components/ThemeTalk.tsx', 'utf8')).toMatch(/difficulty: draft\.difficulty, size \}/);
   });
 
   it('a request carries a frozen system prompt: nothing volatile before the cache line', () => {
@@ -298,13 +309,13 @@ describe('the Claude provider, driven by a fake client', () => {
     const out = await provider.ask(buildThemeRequest([], {}));
     expect(out.status).toBe('OK');
     expect(out.data).toEqual({ ok: true });
-    expect(params.model).toBe('claude-opus-5-5');
+    expect(params.model).toBe('claude-sonnet-5-5');
     expect((params.output_config as { format: { type: string } }).format.type).toBe('json_schema');
     expect((params.output_config as { effort: string }).effort).toBe('high');
     expect((params.system as { cache_control: unknown }[])[0].cache_control).toEqual({ type: 'ephemeral' });
     expect(params.fallbacks).toBe('default');
-    expect(out.usage).toMatchObject({ model: 'claude-opus-5-5', inputTokens: 1000, outputTokens: 500 });
-    expect(out.usage!.usd).toBeCloseTo((1000 * 4 + 500 * 20 + 100 * 0.2) / 1_000_000);
+    expect(out.usage).toMatchObject({ model: 'claude-sonnet-5-5', inputTokens: 1000, outputTokens: 500 });
+    expect(out.usage!.usd).toBeCloseTo((1000 * 2 + 500 * 10 + 100 * 0.2) / 1_000_000);
   });
 
   it('a refusal is an outcome', async () => {

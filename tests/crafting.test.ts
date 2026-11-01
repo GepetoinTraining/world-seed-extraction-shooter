@@ -289,7 +289,10 @@ describe('salvage: the real thing', () => {
     expect(made.length).toBeGreaterThan(0);
     expect(made[0].composition!.depth).toBeGreaterThan(0);
     expect(made[0].value).toBe(CompositionSystem.priceOf(made[0].composition!));
-    expect(workTools().make(recipe, consumed, 'k')).toEqual(made);
+    // The same key makes the same thing. When it was dropped is the clock's, and two calls can fall a millisecond apart
+    const made2 = workTools().make(recipe, consumed, 'k');
+    const sansDate = (items: typeof made) => items.map(({ history, ...rest }) => rest);
+    expect(sansDate(made2)).toEqual(sansDate(made));
   });
 });
 

@@ -11,6 +11,8 @@ import { IntelligenceClient, IDoorMessage, IDoorUsage } from '../logic/intellige
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { IThemeBody } from '../logic/theme/ThemeTypes';
 import { useWorldDraft } from './ui/stores';
+import { usePlayerStore } from '../entities/player/store';
+import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
 import { Busy, Button, Panel } from './ui/kit';
 
 const SAID_WHEN_CLOSED: Record<string, string> = {
@@ -59,7 +61,9 @@ export const ThemeTalk: React.FC = () => {
 
   useEffect(() => { logRef.current?.scrollTo?.(0, logRef.current.scrollHeight); }, [messages.length]);
 
-  const shown = { worldName: draft.worldName, worldDescription: draft.worldDescription, difficulty: draft.difficulty };
+  const deeds = WorldDeed.held(usePlayerStore(s => s.player));
+  const size = (deeds.find(d => d.id === draft.deedId) ?? deeds[0])?.worldDeedData?.size ?? FREE_DEED_SIZE;
+  const shown = { worldName: draft.worldName, worldDescription: draft.worldDescription, difficulty: draft.difficulty, size };
 
   const say = async () => {
     const text = saying.trim();

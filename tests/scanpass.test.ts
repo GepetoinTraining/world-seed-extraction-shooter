@@ -735,7 +735,7 @@ describe('the door: one more road, the same rules', () => {
     expect(out.status).toBe('PENDING');
     expect((out as { ceiling?: number }).ceiling).toBeGreaterThan(0);
     expect(sent.requests[0].custom_id).toBe('line_1_2_abc');
-    expect(sent.requests[0].params.model).toBe('claude-opus-5-5');
+    expect(sent.requests[0].params.model).toBe('claude-sonnet-5-5');
     expect(sent.requests[0].params.output_config.format.type).toBe('json_schema');
     expect(sent.requests[0].params.fallbacks).toBeUndefined();
     expect(sent.requests[0].params.thinking).toBeUndefined();

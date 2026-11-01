@@ -11,10 +11,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { DoorKind, DoorStatus, IDoorOutcome, IDoorRequest, IDoorUsage, IIntelligenceProvider, IProviderStatus } from './door';
 
 export const MODEL_FOR: Record<DoorKind, string> = {
-  talk: 'claude-opus-5-5',
-  theme: 'claude-opus-5-5',
-  rest: 'claude-opus-5-5',
-  window: 'claude-opus-5-5',
+  // Pedro: "hook up the rest to sonnet", "except for the large world generation, the medium one also doesn't need Opus"
+  talk: 'claude-sonnet-5-5',
+  theme: 'claude-sonnet-5-5',
+  theme_large: 'claude-opus-5-5',
+  rest: 'claude-sonnet-5-5',
+  window: 'claude-sonnet-5-5',
   // Pedro's June design: skills "derived by haiku at the end of the character creation screen"
   creation: 'claude-haiku-5-5',
   // Pedro: fate gambler "calls up a stream style conversation with sonnet and you talk with kami itself"
@@ -25,7 +27,7 @@ export const MODEL_FOR: Record<DoorKind, string> = {
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {

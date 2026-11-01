@@ -201,10 +201,13 @@ export function buildTalkRequest(messages: IDoorMessage[], draft: Record<string,
   };
 }
 
+/** Where a world counts as large: the deed the bank calls Large, and anything bigger. Its theme is written on the stronger model. */
+export const LARGE_WORLD_SECTORS = 64;
+
 export function buildThemeRequest(messages: IDoorMessage[], draft: Record<string, unknown>): IDoorRequest {
   const conversation = messages.map(m => `${m.role === 'user' ? 'THEM' : 'YOU'}: ${m.content}`).join('\n');
   return {
-    kind: 'theme', system: THEME_SYSTEM, schema: THEME_SCHEMA, maxTokens: 32000,
+    kind: Number(draft.size) >= LARGE_WORLD_SECTORS ? 'theme_large' : 'theme', system: THEME_SYSTEM, schema: THEME_SCHEMA, maxTokens: 32000,
     messages: [{ role: 'user', content: `${draftLine(draft)}\n\nWhat was said:\n${conversation || '(nothing was said; work from the draft)'}\n\nWrite the world.` }]
   };
 }
