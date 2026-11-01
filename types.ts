@@ -689,9 +689,54 @@ export interface IAttributes {
 
 export interface ILoreEntry {
   topic: string;
+  /** D118: all the lore ever gained under this topic. Spending never lowers it: it is what a person knows. */
   xp: number;
   level: number;
   dateDiscovered: number;
+  /** D118: the highest rank studied under this topic. What lore teaches from it is born at this rank. */
+  peak?: number;
+}
+
+/** D118: what a study can be aimed at. Anything: Pedro, "You can study anything and everything". */
+export type StudyTargetKind = 'item' | 'person' | 'creature' | 'building' | 'place' | 'thing';
+
+/** Pedro: "roll based, failure damages it, major failure loses it, major win doubles the amount gained". */
+export type StudyOutcome = 'major_win' | 'success' | 'failure' | 'major_failure';
+
+/** What was looked at, as the person could see it. Only what the screen showed is ever said. */
+export interface IStudyTarget {
+  kind: StudyTargetKind;
+  /** Its id, for the key and the count. It never goes to the door. */
+  ref: string;
+  name: string;
+  tags: string[];
+  /** Its rank, if it has one. Otherwise it stands at the rank of whoever is looking. */
+  rank?: UniversalRank;
+  /** An unread piece: its name and tags were kept from the person, so they are kept from the door. */
+  hidden?: boolean;
+  /** D99, for C8: a piece of junk. What studying one opens is not read here. */
+  junk?: boolean;
+}
+
+/** One sitting, logged when it landed and answered at a dream. */
+export interface IStudySitting {
+  id: string;
+  target: IStudyTarget;
+  outcome: StudyOutcome;
+  /** The rank it was rolled against, as an index. It sets what the sitting pays. */
+  rankIndex: number;
+  energy: number;
+  at: number;
+  /** Sittings on this thing before this one. */
+  before: number;
+}
+
+/** A person's record of a thing they have sat with. Harm is what a failure leaves on what cannot be taken away. */
+export interface IStudyMark {
+  sittings: number;
+  harm: number;
+  /** Lost: it will not sit for this person until this day. */
+  lostUntilDay?: number;
 }
 
 /** What a skill's circles earned: something to cast, or something always true. */
@@ -706,6 +751,8 @@ export interface ISkillGift {
   cost?: string;
   stat?: string;
   value?: number;
+  /** D118: how many times a dream has spent lore to raise this passive. */
+  raises?: number;
 }
 
 export interface ISkillState {
@@ -741,6 +788,10 @@ export interface IBank {
   }[];
   universalSkills: Record<string, ISkillState>;
   lore: Record<string, ILoreEntry>;
+  /** D118: lore as a resource, what study gives and a dream spends. Absent only on a save from before it. */
+  loreHeld?: number;
+  /** What the purse held when a dream last had the chance to spend it. A dream is asked again only for more. */
+  loreOffered?: number;
 }
 
 // Wave 3.1: where an item sits in the session grid (contract upgrade: additive)
@@ -872,9 +923,13 @@ export interface IPlayer {
   energyToday?: number;
   dayCount?: number;
   /** D43, D50: what play queued, for the next rest. */
-  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
+  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[]; sittings?: IStudySitting[] };
   /** What was filed at the door and has not come back. */
-  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] }; filedAt?: number };
+  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }; filedAt?: number };
+  /** D118: every sitting this character has taken. It keys the next roll, so a reload rolls nothing new. */
+  studyCount?: number;
+  /** D118: what this character has sat with, by `StudySystem.keyOf`. */
+  studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */
   rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */

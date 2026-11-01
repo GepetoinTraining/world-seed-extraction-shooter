@@ -17,6 +17,8 @@ import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem'
 import { STASH_COLS } from '../entities/player/systems/StashGrid';
 import { GEAR_RECIPES } from '../entities/economy/data/recipeDefinitions';
 import { StudySystem } from '../logic/systems/StudySystem';
+import { StudyDoor } from '../logic/systems/StudyDoor';
+import { StudyPanel } from './StudyPanel';
 import { WebSystem } from '../logic/systems/WebSystem';
 import { WebBank } from '../logic/content/WebBank';
 import { isTypingTarget } from '../logic/systems/FieldInput';
@@ -143,8 +145,9 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
         <GroundPanel session={session} />
       </Panel>
       <Panel title="THIS PIECE" style={{ width: PACK_ACTIONS_W, height: PACK_BODY_H, overflowY: 'auto', flexShrink: 0 }}>
+        {!selectedItem && <StudyPanel />}
         {!selectedItem && (
-          <div className="ws-dim ws-small">
+          <div className="ws-dim ws-small" style={{ marginTop: 8 }}>
             Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand.
           </div>
         )}
@@ -201,6 +204,10 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 </Button>
               )
             )}
+            {/* D118: anything can be studied, for energy, and it can go badly. It offers the same on what has not been read. */}
+            <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem))}>
+              STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).seconds}s
+            </Button>
             {read && selectedItem.type === ItemType.LORE && selectedItem.description && (
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
             )}
@@ -261,6 +268,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
 const VaultPanels: React.FC = () => {
   const { player, toggleCarry, trashItem } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
+  const waits = useWaits(s => s.waits);
   const stash = player.bank.stashTabs[0]?.items ?? [];
   const piece = stash.find(i => i.id === selected);
   const tool = !!piece?.tags?.includes('tool');
@@ -272,8 +280,9 @@ const VaultPanels: React.FC = () => {
         </div>
       </Panel>
       <Panel title="THIS PIECE" style={{ width: PACK_ACTIONS_W, height: PACK_BODY_H, overflowY: 'auto', flexShrink: 0 }}>
+        {!piece && <StudyPanel />}
         {!piece && (
-          <div className="ws-dim ws-small">
+          <div className="ws-dim ws-small" style={{ marginTop: 8 }}>
             Hover to read. Drag onto the body, or right-click to wear. Click to choose a piece. The Vault Keeper sorts the vault; a counter buys from it.
           </div>
         )}
@@ -285,6 +294,9 @@ const VaultPanels: React.FC = () => {
             {(piece.slot !== SlotType.NONE || tool) && (
               <Button tone="proof" onClick={() => { if (usePlayerStore.getState().equipSwap(piece.id).ok) setSelected(null); }}>EQUIP</Button>
             )}
+            <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(piece))}>
+              STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).seconds}s
+            </Button>
             <Button
               tone={tool || player.bank.carryItemIds?.includes(piece.id) ? 'signal' : 'quiet'}
               disabled={tool}

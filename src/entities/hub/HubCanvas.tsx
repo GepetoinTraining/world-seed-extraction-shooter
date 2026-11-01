@@ -36,6 +36,7 @@ import { MinimapView } from '../../components/ui/MinimapView';
 import { cityMinimap } from '../../render/atoms/minimap';
 import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
+import { useStudyReach } from '../../components/StudyPanel'; // D118
 import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
@@ -76,6 +77,14 @@ function spriteToCanvas(s: Sprite, table: Uint8Array): HTMLCanvasElement {
 }
 
 /** Cast portraits keep the city's warm ramp — the hub is the only warm place. */
+/** D118: anyone in town can be asked to sit for it, before the way out. */
+const withStudy = (npc: INPCDefinition) => {
+  const options = npc.dialogue.options;
+  const study = { label: 'Study them', action: 'STUDY_PERSON', payload: { id: npc.id, name: npc.name, title: npc.title } };
+  const leave = options.findIndex(o => o.action === 'CLOSE');
+  return leave < 0 ? [...options, study] : [...options.slice(0, leave), study, ...options.slice(leave)];
+};
+
 const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
   const sprite = useMemo(() => castPortrait(npcId), [npcId]);
   const palette = useMemo(() => buildPalette(HUB_GENRE), []);
@@ -272,6 +281,18 @@ export const HubCanvas: React.FC = () => {
     }
     setNearbyPOI(closest);
   }, [playerTile, layout, insideLotId]);
+
+  // D118: what the sheet can offer to study is whatever is in front of you.
+  useEffect(() => {
+    const npc = nearbyPOI?.npcId ? HUB_NPCS[nearbyPOI.npcId] : undefined;
+    const lot = insideLotId ? layout.zones.flatMap(z => z.pois).find(p => p.id === insideLotId) : undefined;
+    useStudyReach.getState().set([
+      ...(lot ? [StudySystem.targetOfBuilding({ id: lot.id, name: lot.name })] : []),
+      ...(npc ? [StudySystem.targetOfPerson({ id: npc.id, name: npc.name, title: npc.title })] : []),
+      ...(nearbyPOI && !npc ? [StudySystem.targetOfBuilding({ id: nearbyPOI.id, name: nearbyPOI.name })] : [])
+    ]);
+    return () => useStudyReach.getState().set([]);
+  }, [nearbyPOI, insideLotId, layout]);
 
   // Inside: the nearest placed thing you could work, within reach.
   const nearPlacement = useMemo(() => {
@@ -853,7 +874,7 @@ export const HubCanvas: React.FC = () => {
               </div>
             </div>
             <div className="ws-dialogue__options">
-              {activeNPC.dialogue.options.map((opt, i) => (
+              {withStudy(activeNPC).map((opt, i) => (
                 <Button
                   key={i}
                   tone={opt.action === 'CLOSE' ? 'quiet' : 'signal'}
