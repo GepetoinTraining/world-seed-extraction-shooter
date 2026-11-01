@@ -1901,6 +1901,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       addToInventory(loot);
       world.updateEntity(entity.id, { container: { ...entity.container, looted: true } });
+      world.reportChestLooted(entity.id);
       SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id) });
       get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });
       feed(`Chest opened: ${loot.length} item${loot.length === 1 ? '' : 's'}${entity.container.hasLore ? ', one of them a fragment' : ''}. +${payForRisk({ rank: entity.container.lootRank }, XP_SHARE_CHEST)} XP`, 'proof');

@@ -840,6 +840,8 @@ export interface IPlayer {
   levelXp?: number;
   /** D83: levels climbed at earlier ranks. They stay yours through a reset, and each is a circle to fill. */
   levelsBanked?: number;
+  /** Chests this character has seen, by world and id: where, and how they were last seen. Knowledge, never the truth of now. */
+  chestMarks?: Record<string, Record<string, { x: number; y: number; empty: boolean }>>;
   /** What each skill's circles have earned, by skill id. Its numbers were rolled here, never by a model. */
   skillGifts?: Record<string, ISkillGift[]>;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */

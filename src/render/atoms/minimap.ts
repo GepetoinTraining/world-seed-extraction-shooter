@@ -80,6 +80,17 @@ export interface FieldMinimapInput {
   seen: Set<string>;
   things: { x: number; y: number; kind: 'HOSTILE' | 'THING' }[];
   exits: { x: number; y: number }[];
+  /** Chests this character has found, drawn wherever they are: knowledge, as last seen. */
+  marks?: { x: number; y: number; empty: boolean }[];
+}
+
+/** A found chest: a solid block, or only its corners if it was last seen empty. Told apart by shape. */
+function stampChest(data: Uint8Array, size: number, sx: number, sy: number, empty: boolean) {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (empty && (dx === 0 || dy === 0)) continue;
+    const ax = sx + dx, ay = sy + dy;
+    if (ax >= 0 && ay >= 0 && ax < size && ay < size) data[ay * size + ax] = px(Role.MATTER, 4);
+  }
 }
 
 export function fieldMinimap(input: FieldMinimapInput): Sprite {
@@ -141,6 +152,10 @@ export function fieldMinimap(input: FieldMinimapInput): Sprite {
     if (!inSeen(exit.x, exit.y) && !scannedExit(exit.x, exit.y)) continue;
     const { sx, sy } = toScreen(exit.x, exit.y);
     stamp(data, size, size, sx, sy, 'EXIT');
+  }
+  for (const mark of input.marks ?? []) {
+    const { sx, sy } = toScreen(mark.x, mark.y);
+    stampChest(data, size, sx, sy, mark.empty);
   }
   stamp(data, size, size, half, half, 'PLAYER');
   return { w: size, h: size, data };

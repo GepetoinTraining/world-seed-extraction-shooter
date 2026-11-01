@@ -29,6 +29,7 @@ import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { BASE_CHANNEL_MS, StatSystem } from '../logic/systems/StatSystem';
 import { CircleSystem } from '../logic/systems/CircleSystem';
+import { ChestSystem } from '../entities/world/ChestSystem';
 import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
@@ -958,6 +959,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             const innate = (def as { innate?: string[] } | undefined)?.innate ?? [];
             if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));
             if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId);
+            if (event.entityId) useWorldStore.getState().reportFell(event.entityId);
           }
         }
       });
@@ -1279,11 +1281,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // Only what is in sight right now is marked: the window is the sight.
     const things: { x: number; y: number; kind: 'HOSTILE' | 'THING' }[] = [];
+    const worldId = useWorldStore.getState().activeWorldId;
     for (const key of WorldGenerator.chunkKeysInBox(pos.x, pos.z, Math.max(halfW, halfH))) {
       for (const e of map.chunks[key]?.entities ?? []) {
         if (Math.abs(e.position.x - pos.x) > halfW || Math.abs(e.position.y - pos.z) > halfH) continue;
         if (e.type === EntityType.EXTRACTION) continue;
         things.push({ x: e.position.x, y: e.position.y, kind: e.isHostile ? 'HOSTILE' : 'THING' });
+        // A chest in sight is known from now on, and how it looks is how it is remembered
+        if (worldId && e.container && ChestSystem.isChest(e.id)) {
+          const seen = usePlayerStore.getState().player;
+          const marked = ChestSystem.mark(seen, worldId, e);
+          if (marked !== seen) usePlayerStore.setState({ player: marked });
+        }
       }
     }
     const exits: { x: number; y: number }[] = [];
@@ -1298,7 +1307,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
       exits.push(...found);
     }
-    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits });
+    const marks = worldId ? Object.values(usePlayerStore.getState().player.chestMarks?.[worldId] ?? {}) : [];
+    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits, marks });
   };
 
   // 5. Render

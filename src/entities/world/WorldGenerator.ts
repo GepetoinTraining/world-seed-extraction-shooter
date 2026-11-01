@@ -21,6 +21,8 @@ export interface IGenerationContext {
   /** D48: how this world's monsters have come along, and what they may become. */
   director?: IDirectorRecord;
   directorPool?: IDirectorPool;
+  /** What a world's record lays over a chunk once it is built. The build itself stays pure. */
+  lay?: (chunk: IChunk) => void;
 }
 
 /** Timber: what makes a forest, and what a trunk is. Read from what it is, never by a name. */
@@ -507,6 +509,7 @@ export class WorldGenerator {
     const sx = Math.floor(cx / SECTOR_CHUNKS), sy = Math.floor(cy / SECTOR_CHUNKS);
     if (!map.sectors[`${sx},${sy}`]) return null;
     const chunk = this.buildChunk(map.seed, this.exitsInSector(map, sx, sy), cx, cy, context);
+    context.lay?.(chunk);
     map.chunks[key] = chunk;
     return chunk;
   }
@@ -518,7 +521,11 @@ export class WorldGenerator {
     const exits = this.exitsInSector(map, sx, sy);
     for (let y = 0; y < SECTOR_CHUNKS; y++) for (let x = 0; x < SECTOR_CHUNKS; x++) {
       const cx = sx * SECTOR_CHUNKS + x, cy = sy * SECTOR_CHUNKS + y;
-      const chunk = map.chunks[`${cx},${cy}`] ?? this.buildChunk(map.seed, exits, cx, cy, context);
+      let chunk = map.chunks[`${cx},${cy}`];
+      if (!chunk) {
+        chunk = this.buildChunk(map.seed, exits, cx, cy, context);
+        context.lay?.(chunk);
+      }
       out.push(...chunk.entities);
     }
     return out;

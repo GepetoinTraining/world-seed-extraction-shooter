@@ -16,6 +16,7 @@ import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { ISector, ScanLevel } from '../entities/world/types';
 import { WorldClock } from '../entities/world/WorldClock';
+import { sectorOf } from '../entities/world/grid';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { Sprite } from '../render/atoms/atoms';
@@ -359,6 +360,19 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                 {selected.hasExtraction && <div className="ws-row"><span className="ws-dim">EXIT</span><span className="ws-signal">BEACON PRESENT</span></div>}
               </>
             )}
+            {/* A chest found is known wherever you stand; whether it has filled again is not */}
+            {(() => {
+              const marks = Object.values((activeWorldId && player.chestMarks?.[activeWorldId]) || {})
+                .filter(m => sectorOf(m.x) === selected.x && sectorOf(m.y) === selected.y);
+              if (marks.length === 0) return null;
+              const empty = marks.filter(m => m.empty).length;
+              return (
+                <div className="ws-row">
+                  <span className="ws-dim">CHESTS YOU KNOW</span>
+                  <span>{marks.length}{empty > 0 ? ` · ${empty} last seen empty` : ''}</span>
+                </div>
+              );
+            })()}
             {/* D68: what was read last time, plainly old, and never the truth of now */}
             {selected.scanLevel < ScanLevel.DETAILED && (() => {
               const entry = survey?.[`${selected.x},${selected.y}`];

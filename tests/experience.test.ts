@@ -64,6 +64,8 @@ import { BIOMES, IThemeBody } from '../src/logic/theme/ThemeTypes';
 import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
 import { useWorldStore } from '../src/entities/world/store';
+import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../src/entities/world/ChestSystem';
+import { fieldMinimap } from '../src/render/atoms/minimap';
 import { EntityType, IWorldEntity } from '../src/entities/world/types';
 import { RARE_FIND_CHANCE, WorldGenerator } from '../src/entities/world/WorldGenerator';
 
@@ -1189,6 +1191,209 @@ describe('experience pays in the world, by the risk', () => {
     expect(taken.split('payForRisk(').length - 1).toBe(2);
     const combat = readFileSync('src/entities/combat/killRewards.ts', 'utf8');
     expect(combat).toMatch(/applyKillXp/);
+  });
+});
+
+
+// =============================================================================
+// Chests restock when a cycle builds the world, by rank, rarity and their guards
+// =============================================================================
+
+describe('a chest stays taken through its cycle, and restocks by rank, rarity and a roll', () => {
+  const SEED = 'chest_world';
+  const rareInF = { id: 'ent_1_1_chest', rank: UniversalRank.F, rarity: Rarity.RARE };
+  const commonInF = { id: 'ent_2_2_chest', rank: UniversalRank.F, rarity: Rarity.COMMON };
+  const guardsD = [{ id: 'ent_1_1_guard0', rank: UniversalRank.D }, { id: 'ent_1_1_guard1', rank: UniversalRank.D }];
+  const looted = (id: string, at: number): IChestRecord => ChestSystem.looted(emptyChestRecord(), id, at);
+
+  it('nothing taken, nothing empty', () => {
+    expect(ChestSystem.standsEmpty(SEED, emptyChestRecord(), rareInF, guardsD, 5)).toBe(false);
+  });
+
+  it('within the cycle it was emptied in, it never restocks', () => {
+    for (let i = 0; i < 500; i++) {
+      const chest = { ...commonInF, id: `ent_${i}_0_chest` };
+      expect(ChestSystem.standsEmpty(SEED, looted(chest.id, 3), chest, [], 3)).toBe(true);
+    }
+  });
+
+  it('the wait grows with rank and with rarity', () => {
+    expect(ChestSystem.waitCycles(UniversalRank.F, Rarity.COMMON)).toBeGreaterThanOrEqual(1);
+    expect(ChestSystem.waitCycles(UniversalRank.F, Rarity.RARE)).toBeGreaterThan(ChestSystem.waitCycles(UniversalRank.F, Rarity.COMMON));
+    expect(ChestSystem.waitCycles(UniversalRank.B, Rarity.COMMON)).toBeGreaterThan(ChestSystem.waitCycles(UniversalRank.F, Rarity.COMMON));
+  });
+
+  it('before its wait is up no chest restocks, whatever the dice', () => {
+    const wait = ChestSystem.waitCycles(rareInF.rank, rareInF.rarity);
+    for (let i = 0; i < 500; i++) {
+      const chest = { ...rareInF, id: `ent_${i}_1_chest` };
+      expect(ChestSystem.standsEmpty(SEED, looted(chest.id, 0), chest, [], wait - 1)).toBe(true);
+    }
+  });
+
+  /** How often a chest stands full, one roll after its wait. */
+  const restockRate = (rank: UniversalRank, rarity: Rarity) => {
+    let full = 0;
+    const n = 4000;
+    const wait = ChestSystem.waitCycles(rank, rarity);
+    for (let i = 0; i < n; i++) {
+      const chest = { id: `ent_${i}_9_chest`, rank, rarity };
+      if (!ChestSystem.standsEmpty(SEED, looted(chest.id, 0), chest, [], wait)) full++;
+    }
+    return full / n;
+  };
+
+  it('a rarer chest has less chance on each cycle, and so does a higher rank', () => {
+    const common = restockRate(UniversalRank.F, Rarity.COMMON);
+    const rare = restockRate(UniversalRank.F, Rarity.RARE);
+    const legendary = restockRate(UniversalRank.F, Rarity.LEGENDARY);
+    expect(common).toBeGreaterThan(rare);
+    expect(rare).toBeGreaterThan(legendary);
+    expect(restockRate(UniversalRank.A, Rarity.RARE)).toBeLessThan(rare);
+    // The rolls are the d20 they say they are
+    expect(common).toBeCloseTo((21 - ChestSystem.restockDC(UniversalRank.F, Rarity.COMMON)) / 20, 1);
+    expect(rare).toBeCloseTo((21 - ChestSystem.restockDC(UniversalRank.F, Rarity.RARE)) / 20, 1);
+  });
+
+  it('even the rarest can still come back: a natural 20 always restocks', () => {
+    expect(ChestSystem.restockDC(UniversalRank.SSS, Rarity.ARTIFACT)).toBe(20);
+    expect(restockRate(UniversalRank.SSS, Rarity.ARTIFACT)).toBeGreaterThan(0);
+  });
+
+  it('the roll is keyed: the same chest and cycle answer the same, for anyone, in any order', () => {
+    const record = looted(rareInF.id, 0);
+    const a = [8, 3, 5, 12, 4].map(c => ChestSystem.standsEmpty(SEED, record, rareInF, [], c));
+    const b = [8, 3, 5, 12, 4].map(c => ChestSystem.standsEmpty(SEED, record, rareInF, [], c));
+    expect(a).toEqual(b);
+    expect(ChestSystem.rolled(SEED, rareInF.id, 4)).toBe(ChestSystem.rolled(SEED, rareInF.id, 4));
+  });
+
+  it('once it has restocked it stays full until somebody takes it again', () => {
+    const record = looted(rareInF.id, 0);
+    let first = -1;
+    for (let c = 0; c < 200 && first < 0; c++) if (!ChestSystem.standsEmpty(SEED, record, rareInF, [], c)) first = c;
+    expect(first).toBeGreaterThan(0);
+    for (let c = first; c < first + 50; c++) expect(ChestSystem.standsEmpty(SEED, record, rareInF, [], c)).toBe(false);
+    const again = ChestSystem.looted(record, rareInF.id, first + 50);
+    expect(ChestSystem.standsEmpty(SEED, again, rareInF, [], first + 50)).toBe(true);
+  });
+
+  it('guards must be back before the chest can roll: Pedro\'s rare chest with two rank D guards', () => {
+    // The guards fell where the chest was taken
+    let record = looted(rareInF.id, 0);
+    for (const g of guardsD) record = ChestSystem.fell(record, g.id, 0);
+    const down = ChestSystem.guardCycles(UniversalRank.D);
+    expect(down).toBeGreaterThan(ChestSystem.guardCycles(UniversalRank.F));
+    for (let c = 0; c < down; c++) expect(ChestSystem.guardDown(record, guardsD[0], c)).toBe(true);
+    expect(ChestSystem.guardDown(record, guardsD[0], down)).toBe(false);
+    // A guard that falls late holds its chest from rolling until it is back
+    const late = ChestSystem.fell(looted(rareInF.id, 0), guardsD[0].id, 6);
+    for (let i = 0; i < 300; i++) {
+      const chest = { ...rareInF, id: `ent_${i}_3_chest` };
+      const held = { ...late, chests: { [chest.id]: { lootedAt: 6 } } };
+      for (let c = 6; c < 6 + down; c++) expect(ChestSystem.standsEmpty(SEED, held, chest, guardsD, c)).toBe(true);
+    }
+  });
+
+  it('a guard that falls after a chest has restocked cannot empty it again', () => {
+    const record = looted(rareInF.id, 0);
+    let first = -1;
+    for (let c = 0; c < 200 && first < 0; c++) if (!ChestSystem.standsEmpty(SEED, record, rareInF, [], c)) first = c;
+    const after = ChestSystem.fell(record, guardsD[0].id, first + 1);
+    expect(ChestSystem.standsEmpty(SEED, after, rareInF, guardsD, first + 1)).toBe(false);
+  });
+
+  it('only a chest and its guards are written down', () => {
+    expect(ChestSystem.isChest('ent_1_1_chest')).toBe(true);
+    expect(ChestSystem.isChest('cache_ovf_x')).toBe(false);
+    expect(ChestSystem.chestOfGuard('ent_1_1_guard1')).toBe('ent_1_1_chest');
+    expect(ChestSystem.chestOfGuard('ent_1_1_m0')).toBeNull();
+  });
+
+  const body = (id: string, over: Record<string, unknown> = {}) => ({ id, type: EntityType.MOB, rank: UniversalRank.D, rarity: Rarity.COMMON, position: { x: 0, y: 0 }, isHostile: true, health: 10, definitionId: 'mob_x', ...over }) as unknown as IWorldEntity;
+  const box = (id: string, over: Record<string, unknown> = {}) => ({ id, type: EntityType.CONTAINER, rank: UniversalRank.F, rarity: Rarity.RARE, position: { x: 0, y: 0 }, isHostile: false, definitionId: 'chest_ruin', container: { lootRank: UniversalRank.F, looted: false, hasLore: true }, ...over }) as unknown as IWorldEntity;
+
+  it('the record lies over a built chunk: fallen guards are gone and an emptied chest reads empty', () => {
+    const chunk = { id: 'c', x: 0, y: 0, entities: [box('ent_1_1_chest'), body('ent_1_1_guard0'), body('ent_1_1_guard1'), body('ent_1_1_m0')] } as any;
+    let record = ChestSystem.looted(emptyChestRecord(), 'ent_1_1_chest', 2);
+    record = ChestSystem.fell(record, 'ent_1_1_guard0', 2);
+    ChestSystem.layOver(SEED, chunk, record, 2);
+    const ids = chunk.entities.map((e: IWorldEntity) => e.id);
+    expect(ids).toEqual(['ent_1_1_chest', 'ent_1_1_guard1', 'ent_1_1_m0']);
+    expect(chunk.entities[0].container.looted).toBe(true);
+  });
+
+  it('with nothing taken the chunk comes out exactly as it went in, so no world moves', () => {
+    const entities = [box('ent_1_1_chest'), body('ent_1_1_guard0')];
+    const chunk = { id: 'c', x: 0, y: 0, entities: [...entities] } as any;
+    ChestSystem.layOver(SEED, chunk, emptyChestRecord(), 7);
+    expect(chunk.entities).toEqual(entities);
+  });
+
+  it('a chunk reached through the world reads the record; a build alone stays pure', () => {
+    const context = { mobDefinitions: [], resourceDefinitions: [] } as any;
+    const map = WorldGenerator.generate('lay_world', 1, context);
+    const plain = WorldGenerator.buildChunk('lay_world', [], 0, 0, context);
+    const seen: string[] = [];
+    const chunk = WorldGenerator.chunkAt(map, 0, 0, { ...context, lay: (c: any) => seen.push(c.id) });
+    expect(seen).toEqual([chunk!.id]);
+    expect(WorldGenerator.buildChunk('lay_world', [], 0, 0, context)).toEqual(plain);
+  });
+
+  it('opening a chest writes it down at the world\'s cycle, and a guard falling writes it down', () => {
+    useWorldStore.setState({ chestRecord: emptyChestRecord(), activeWorldId: 'w1', generation: 4 } as never);
+    useWorldStore.getState().reportChestLooted('ent_1_1_chest');
+    useWorldStore.getState().reportFell('ent_1_1_guard0');
+    useWorldStore.getState().reportFell('ent_1_1_m0');
+    useWorldStore.getState().reportChestLooted('cache_ovf_1');
+    const record = useWorldStore.getState().chestRecord!;
+    expect(record.chests).toEqual({ ent_1_1_chest: { lootedAt: 4 } });
+    expect(record.guards).toEqual({ ent_1_1_guard0: { fellAt: 4 } });
+  });
+
+  it('the record survives leaving the world', async () => {
+    const record = ChestSystem.fell(looted('ent_1_1_chest', 2), 'ent_1_1_guard0', 2);
+    await ChestStore.save('w2', record);
+    expect(await ChestStore.load('w2')).toEqual(record);
+    expect(await ChestStore.load('never_opened')).toEqual(emptyChestRecord());
+  });
+
+  it('a world outside the clock keeps no record', () => {
+    useWorldStore.setState({ chestRecord: null, activeWorldId: 'dev', generation: 0 } as never);
+    useWorldStore.getState().reportChestLooted('ent_1_1_chest');
+    expect(useWorldStore.getState().chestRecord).toBeNull();
+    expect(readFileSync('src/entities/world/store.ts', 'utf8')).toMatch(/worldCard\.isDebug \? null : await ChestStore\.load/);
+  });
+
+  it('a chest seen is marked for that character, as it was seen, and only a change writes', () => {
+    const chest = box('ent_1_1_chest', { position: { x: 100, y: 200 } });
+    const seen = ChestSystem.mark(player(), 'w1', chest);
+    expect(seen.chestMarks!.w1.ent_1_1_chest).toEqual({ x: 100, y: 200, empty: false });
+    expect(ChestSystem.mark(seen, 'w1', chest)).toBe(seen);
+    const emptied = ChestSystem.mark(seen, 'w1', box('ent_1_1_chest', { position: { x: 100, y: 200 }, container: { looted: true } }));
+    expect(emptied.chestMarks!.w1.ent_1_1_chest.empty).toBe(true);
+    // Coming back to find it full is learned too
+    expect(ChestSystem.mark(emptied, 'w1', chest).chestMarks!.w1.ent_1_1_chest.empty).toBe(false);
+  });
+
+  it('the mark shows beyond sight, and full and empty differ in shape', () => {
+    const map = { seed: 's', sectors: {} } as any;
+    const center = { x: 1000, z: 1000 };
+    const draw = (marks: { x: number; y: number; empty: boolean }[]) => fieldMinimap({ map, center, seen: new Set(), things: [], exits: [], marks }).data;
+    const none = draw([]);
+    const full = draw([{ x: 1100, y: 1000, empty: false }]);
+    const empty = draw([{ x: 1100, y: 1000, empty: true }]);
+    const changed = (a: Uint8Array, b: Uint8Array) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
+    expect(changed(none, full)).toBeGreaterThan(changed(none, empty));
+    expect(changed(none, empty)).toBeGreaterThan(0);
+  });
+
+  it('the field writes it, and recon says what you know', () => {
+    const field = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
+    expect(field).toMatch(/ChestSystem\.mark\(seen, worldId, e\)/);
+    expect(field).toMatch(/reportFell\(event\.entityId\)/);
+    expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/world\.reportChestLooted\(entity\.id\)/);
+    expect(readFileSync('src/components/ReconView.tsx', 'utf8')).toMatch(/CHESTS YOU KNOW/);
   });
 });
 
