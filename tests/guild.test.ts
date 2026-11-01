@@ -511,16 +511,16 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect((await hub().fulfilQuest('no_such_quest', [])).ok).toBe(false);
   });
 
-  // Moved on purpose (D108, D115): this held "the hub's treasury cannot pay, and the quest waits".
-  it('the hub\'s treasury cannot pay, so the hub prints, and the want is met', async () => {
+  // Moved on purpose (D115): this held "the hub's treasury cannot pay". It is their wallet now, and it waits on them.
+  it('they cannot pay it, and the want waits: nobody prints for them', async () => {
     await house();
     const quest = hub().guild.quests[0];
     const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 1_000_000 }));
     give(items);
-    expect(await hub().fulfilQuest(quest.id, items.map(i => i.id))).toEqual({ ok: true });
-    expect(stash().length).toBe(0);
-    expect(hub().guild.quests[0].state).toBe('DONE');
-    expect(hub().guild.printed.count).toBeGreaterThan(0);
+    expect((await hub().fulfilQuest(quest.id, items.map(i => i.id))).ok).toBe(false);
+    expect(stash().length).toBe(quest.count);
+    expect(hub().guild.quests[0].state).toBe('OPEN');
+    expect(hub().guild.printed.count).toBe(0);
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 

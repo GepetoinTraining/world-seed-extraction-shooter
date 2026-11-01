@@ -205,14 +205,50 @@ describe('"they circulate money"', () => {
     expect(row.data.treasuryDelta === 0).toBe(true);
   });
 
-  it('a want past their wallet takes all they have, the Hall pays the rest, and it prints if it must', async () => {
+  // Pedro: "that's the LITERAL MECHANISM OF MASLOW". What a person cannot afford, they go without.
+  it('a want past their wallet waits: nobody covers it, and nothing moves', async () => {
     const resident = await lodge();
     const held = hub().wallets[resident.id];
-    await meetWant(resident.id, 1_000_000);
-    expect(hub().wallets[resident.id]).toBe(0);
-    expect(player().bank.gold).toBeGreaterThan(held);
-    expect((await rowsOf('PRINT')).length).toBeGreaterThan(0);
+    const treasury = await Treasury.balance(HUB);
+    const quest = hub().guild.quests.find(q => q.residentId === resident.id && q.state === 'OPEN')!;
+    const ids = answer(quest, 1_000_000);
+    const res = await hub().fulfilQuest(quest.id, ids);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toMatch(/pay|afford|holds/i);
+    expect(hub().wallets[resident.id]).toBe(held);
+    expect(await Treasury.balance(HUB)).toBe(treasury);
+    expect(player().bank.gold).toBe(0);
+    expect(await rowsOf('PRINT')).toHaveLength(0);
+    expect(hub().guild.quests.find(q => q.id === quest.id)!.state).toBe('OPEN');
+    for (const id of ids) expect(stash().some(i => i.id === id)).toBe(true);
     expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('so they stay at the tavern with no ground, until someone brings what they can afford', async () => {
+    const resident = await lodge();
+    const quest = hub().guild.quests.find(q => q.residentId === resident.id && q.state === 'OPEN')!;
+    await hub().fulfilQuest(quest.id, answer(quest, 1_000_000));
+    expect((await hub().guildBuyLot(resident.id, freeLot().id)).ok).toBe(false);
+    expect(await hub().fulfilQuest(quest.id, answer(quest, 1))).toEqual({ ok: true });
+    expect(await hub().guildBuyLot(resident.id, freeLot().id)).toEqual({ ok: true });
+  });
+
+  it('exactly all they hold is enough, and leaves them with nothing', async () => {
+    const resident = await lodge();
+    const quest = hub().guild.quests.find(q => q.residentId === resident.id && q.state === 'OPEN')!;
+    const held = hub().wallets[resident.id];
+    useHubStore.setState(s => ({ guild: { ...s.guild, quests: s.guild.quests.map(q => q.id === quest.id ? { ...q, count: 1, payShare: 1 } : q) } }));
+    const item = thing({ tags: [quest.tag], value: held });
+    give([item]);
+    expect(await hub().fulfilQuest(quest.id, [item.id])).toEqual({ ok: true });
+    expect(hub().wallets[resident.id]).toBe(0);
+    expect(player().bank.gold).toBe(held);
+  });
+
+  it('a want is no road to a print: the Hall does not read the treasury for it', () => {
+    const src = readFileSync('src/entities/hub/store.ts', 'utf8');
+    const door = src.slice(src.indexOf('fulfilQuest: async'), src.indexOf('passTrial: async'));
+    expect(door).not.toMatch(/printsNeeded|printRows|Treasury\.|treasury:/);
   });
 
   it('the wallet on the books and in the store agree', async () => {
@@ -227,6 +263,12 @@ describe('what the windows say', () => {
     const hall = readFileSync('src/components/GuildHall.tsx', 'utf8');
     expect(hall).not.toMatch(/The hub pays/);
     expect(hall).toMatch(/mayHaveGround/);
+  });
+
+  it('the board says in words when they cannot afford it, and the button will not press', () => {
+    const hall = readFileSync('src/components/GuildHall.tsx', 'utf8');
+    expect(hall).toMatch(/affordable/);
+    expect(hall).toMatch(/It waits/);
   });
 
   it('Vex no longer says the Hall buys on the treasury\'s word alone', () => {

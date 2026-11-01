@@ -35,7 +35,7 @@ const useStash = () => usePlayerStore(s => s.player).bank.stashTabs[0]?.items ??
 
 /** Wants on the board, each with what in your stash answers it. */
 const Board: React.FC = () => {
-  const { guild, fulfilQuest } = useHubStore();
+  const { guild, fulfilQuest, wallets } = useHubStore();
   const stash = useStash();
   const pushFeed = useFeed(s => s.push);
   const open = guild.quests.filter(q => q.state === 'OPEN');
@@ -54,15 +54,24 @@ const Board: React.FC = () => {
         const answers = stash.filter(i => i.isIdentified !== false && answersTag(i, quest.tag) && wantMayTake(i)).sort((a, b) => (a.value || 0) - (b.value || 0));
         const given = answers.slice(0, quest.count);
         const ready = given.length >= quest.count;
+        const pay = questPay(given, quest.payShare);
+        const holds = wallets[quest.residentId] ?? 0;
+        const affordable = pay <= holds;
         return (
           <Panel key={quest.id} title={resident.name.toUpperCase()} right={<Chip tone={ready ? 'proof' : 'none'}>{Math.min(answers.length, quest.count)} of {quest.count}</Chip>}>
             <div className="ws-small" style={{ marginBottom: 4 }}>{quest.text}</div>
             {ready && <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>Goes: {given.map(i => LoadoutSystem.shownName(i)).join(', ')}.</div>}
             <div className="ws-row">
-              <span className="ws-dim ws-small">{ready ? `${resident.name} pays ${questPay(given, quest.payShare).toLocaleString()} G for these.` : `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`}</span>
+              <span className="ws-dim ws-small">
+                {!ready
+                  ? `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`
+                  : affordable
+                    ? `${resident.name} pays ${pay.toLocaleString()} G for these.`
+                    : `These come to ${pay.toLocaleString()} G, and ${resident.name} holds ${holds.toLocaleString()} G. It waits.`}
+              </span>
               <ArmedButton
                 tone="quiet"
-                disabled={!ready}
+                disabled={!ready || !affordable}
                 confirmLabel={`GIVE ${quest.count}: SURE?`}
                 onConfirm={async () => {
                   const res = await fulfilQuest(quest.id, given.map(i => i.id));

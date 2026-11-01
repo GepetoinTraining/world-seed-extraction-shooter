@@ -11,8 +11,8 @@
  * THE GUILD'S MONEY (D108, D115): it spends the hub's treasury, and when that falls short it
  * prints (`money.ts`). The seller of a free lot is that same treasury, so buying moves no gold,
  * and what limits it is how much ground there is, and who has been seen to. A want is paid out
- * of the person's own wallet: "they circulate money". Past what they hold, the treasury pays
- * the rest.
+ * of the person's own wallet: "they circulate money". What they cannot afford, they go without,
+ * and nobody covers it: "that's the LITERAL MECHANISM OF MASLOW".
  */
 
 import { IAffix, IItem, ISkillState, IWebPack, UniversalRank } from '../../../types';

@@ -1197,44 +1197,36 @@ export const useHubStore = create<HubState>((set, get) => ({
   fulfilQuest: async (questId, itemIds) => {
     const { activeHubId } = get();
     if (!activeHubId) return { ok: false, reason: 'The Hall is shut.' };
-    const check = () => {
-      const quest = get().guild.quests.find(q => q.id === questId);
-      if (!quest || quest.state !== 'OPEN') return { reason: 'That want is not on the board.' };
-      const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
-      const items = itemIds.map(id => stash.find(i => i.id === id));
-      if (items.some(i => !i)) return { reason: 'That is not in your stash.' };
-      if ((items as IItem[]).some(i => i.isIdentified === false)) return { reason: 'Read it first. Nobody takes a thing nobody has read.' };
-      const wrong = (items as IItem[]).find(i => !answersTag(i, quest.tag) || !wantMayTake(i));
-      if (wrong) return { reason: `${LoadoutSystem.shownName(wrong)} is not what was asked for.` };
-      if (items.length < quest.count) return { reason: `The want is for ${quest.count}. That is ${items.length}.` };
-      return { quest, given: (items as IItem[]).slice(0, quest.count) };
-    };
-    const first = check();
-    if (!first.quest) return { ok: false, reason: first.reason! };
-    const pay = questPay(first.given, first.quest.payShare);
-    const perDay = runningPerDay(cityOf(get()));
-    // Their own coin first: "they circulate money". Past what they hold, the Hall pays the rest.
-    const purse = first.quest.residentId;
-    const fromPurse = Math.min(pay, get().wallets[purse] ?? 0);
-    const fromHall = pay - fromPurse;
-    const prints = printsNeeded(await Treasury.balance(activeHubId), fromHall, perDay);
-    const made = prints * printAmount(perDay);
-
-    // The treasury's read was the only wait. From here to the commit there is none.
-    const { quest, given, reason } = check();
-    if (!quest) return { ok: false, reason: reason! };
+    const quest = get().guild.quests.find(q => q.id === questId);
+    if (!quest || quest.state !== 'OPEN') return { ok: false, reason: 'That want is not on the board.' };
+    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const items = itemIds.map(id => stash.find(i => i.id === id));
+    if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
+    if ((items as IItem[]).some(i => i.isIdentified === false)) return { ok: false, reason: 'Read it first. Nobody takes a thing nobody has read.' };
+    const wrong = (items as IItem[]).find(i => !answersTag(i, quest.tag) || !wantMayTake(i));
+    if (wrong) return { ok: false, reason: `${LoadoutSystem.shownName(wrong)} is not what was asked for.` };
+    if (items.length < quest.count) return { ok: false, reason: `The want is for ${quest.count}. That is ${items.length}.` };
+    const given = (items as IItem[]).slice(0, quest.count);
     const { guild, lots } = get();
     const resident = guild.residents.find(r => r.id === quest.residentId)!;
+
+    // Pedro: "that's the LITERAL MECHANISM OF MASLOW". It is their own coin, and nobody covers it.
+    // What they cannot afford they go without, and it waits until they have earned it.
+    const pay = questPay(given, quest.payShare);
+    const purse = quest.residentId;
+    const held = get().wallets[purse] ?? 0;
+    if (pay > held) return { ok: false, reason: `That comes to ${pay.toLocaleString()} G, and ${resident.name} holds ${held.toLocaleString()} G. They cannot pay it. It waits.` };
+
+    // From here to the commit there is no wait.
     const ids = given.map(i => i.id);
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + pay } } }));
     removeFromStash(ids);
-    const deltas = fromPurse > 0 ? { [purse]: -fromPurse } : {};
+    const deltas = { [purse]: -pay };
     set({
-      wallets: { ...get().wallets, [purse]: (get().wallets[purse] ?? 0) - fromPurse },
+      wallets: { ...get().wallets, [purse]: held - pay },
       lots: lots.map(l => l.id === resident.lotId ? { ...l, inventory: [...l.inventory, ...given] } : l),
       guild: {
         ...guild,
-        printed: printedPlus(guild, prints, made),
         quests: guild.quests.map(q => q.id === questId ? { ...q, state: 'DONE' as const } : q),
         residents: guild.residents.map(r => r.id === resident.id
           ? { ...r, wantsMet: r.wantsMet + 1, nextWantDay: worldDay() + 1, ...(r.lotId ? {} : { belongings: [...(r.belongings ?? []), ...given] }) }
@@ -1242,15 +1234,10 @@ export const useHubStore = create<HubState>((set, get) => ({
       }
     });
     await GoldCommit.commit({
-      rows: [
-        ...printRows(activeHubId, perDay, prints, 'QUEST_PAID'),
-        { type: 'GOLD_DELTA', data: { reason: 'QUEST_PAID', questId, residentId: resident.id, consumedIds: ids, amount: pay, treasuryId: activeHubId, treasuryDelta: -fromHall, wallets: deltas } }
-      ],
-      treasury: { worldUid: activeHubId, delta: made - fromHall },
+      rows: [{ type: 'GOLD_DELTA', data: { reason: 'QUEST_PAID', questId, residentId: resident.id, consumedIds: ids, amount: pay, treasuryDelta: 0, wallets: deltas } }],
       wallets: { hubId: activeHubId, deltas },
       hubDoc: get().hubDoc() ?? undefined
     });
-    if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
     await (await provenance()).recordMany(given, 'TRANSFER', { via: 'QUEST', questId, lotId: resident.lotId });
     useFeed.getState().push(`${resident.name} has what they wanted, and pays ${pay.toLocaleString()} G.`, 'proof');
     return { ok: true };
