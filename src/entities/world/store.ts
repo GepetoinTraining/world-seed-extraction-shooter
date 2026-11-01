@@ -10,6 +10,8 @@ import { AffixBank } from '../../logic/content/AffixBank';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from './Director';
 import { DirectorStore } from './DirectorStore';
+import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from './Population';
+import { Leaders } from './Leaders';
 import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from './ChestSystem';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
@@ -46,11 +48,15 @@ export interface IWorldCard extends IClockedWorld {
 interface WorldState {
   /** D48: how this world's monsters have come along, fed by this session's fights. */
   directorRecord: IDirectorRecord | null;
-  reportToDirector: (kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string) => void;
+  reportToDirector: (kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string, body?: { id: string; rank?: UniversalRank }) => void;
+  /** D64: who stands on the land after alpha. Null where a world has no cycles for it to move on. */
+  populationRecord: IPopulationRecord | null;
+  /** D93: leaders someone has seen, in the field or by a scan. */
+  reportSeen: (entityIds: string[]) => void;
   /** What has been taken from the open world, kept beside it. Null where a world has no cycles to refill on. */
   chestRecord: IChestRecord | null;
   reportChestLooted: (chestId: string) => void;
-  reportFell: (entityId: string) => void;
+  reportFell: (entityId: string, definitionId?: string) => void;
   availableWorlds: IWorldCard[];
   activeWorldId: string | null; 
   currentMap: IMap | null;
@@ -85,6 +91,15 @@ let generationContext: IGenerationContext | null = null;
 
 export const useWorldStore = create<WorldState>((set, get) => ({
   directorRecord: null,
+  populationRecord: null,
+  reportSeen: (entityIds) => {
+    const { populationRecord, activeWorldId, generation } = get();
+    if (!populationRecord || !activeWorldId) return;
+    const next = Population.saw(populationRecord, entityIds, generation);
+    if (next === populationRecord) return;
+    set({ populationRecord: next });
+    void PopulationStore.save(activeWorldId, next);
+  },
   chestRecord: null,
   reportChestLooted: (chestId) => {
     const { chestRecord, activeWorldId, generation } = get();
@@ -93,16 +108,24 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ chestRecord: next });
     void ChestStore.save(activeWorldId, next);
   },
-  reportFell: (entityId) => {
-    const { chestRecord, activeWorldId, generation } = get();
-    if (!chestRecord || !activeWorldId || !ChestSystem.chestOfGuard(entityId)) return;
-    const next = ChestSystem.fell(chestRecord, entityId, generation);
-    set({ chestRecord: next });
-    void ChestStore.save(activeWorldId, next);
+  reportFell: (entityId, definitionId) => {
+    const { chestRecord, populationRecord, activeWorldId, generation } = get();
+    if (!activeWorldId) return;
+    if (chestRecord && ChestSystem.chestOfGuard(entityId)) {
+      const next = ChestSystem.fell(chestRecord, entityId, generation);
+      set({ chestRecord: next });
+      void ChestStore.save(activeWorldId, next);
+    } else if (populationRecord && definitionId) {
+      const next = Population.fell(populationRecord, entityId, definitionId, generation);
+      if (next === populationRecord) return;
+      set({ populationRecord: next });
+      void PopulationStore.save(activeWorldId, next);
+    }
   },
-  reportToDirector: (kind, definitionId) => {
+  reportToDirector: (kind, definitionId, body) => {
     const record = get().directorRecord;
-    if (record) set({ directorRecord: Director.report(record, kind, definitionId) });
+    // A kind stays a kind: the ledger names a body only where the record holds one (D93)
+    if (record) set({ directorRecord: Director.report(record, kind, definitionId, body && Leaders.isLeader(body.id) ? body : undefined) });
   },
   availableWorlds: [],
   activeWorldId: null,
@@ -192,10 +215,15 @@ export const useWorldStore = create<WorldState>((set, get) => ({
 
         // A world outside the clock has no cycle to refill on, so it keeps no record
         const chestRecord = worldCard.isDebug ? null : await ChestStore.load(worldCard.id).catch(() => emptyChestRecord());
-        set({ chestRecord });
+        const populationRecord = worldCard.isDebug ? null : await PopulationStore.load(worldCard.id).catch(() => emptyPopulationRecord());
+        set({ chestRecord, populationRecord });
+        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion };
         generationContext = {
-          ...instance.context,
+          ...context,
           lay: chunk => {
+            // Who stands first, then what a chest's guards and contents say
+            const living = get().populationRecord;
+            if (living) Population.layOver(worldCard.seed, chunk, living, moment.generation, context);
             const held = get().chestRecord;
             if (held) ChestSystem.layOver(worldCard.seed, chunk, held, moment.generation);
           }
@@ -254,6 +282,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     };
 
     set({ currentMap: { ...currentMap, sectors: { ...currentMap.sectors, [key]: revealed } } });
+    // D93: what a scan reads has been seen, and its goal is decided by what happens now
+    if (newLevel >= ScanLevel.DETAILED) get().reportSeen(revealed.entities.filter(e => Leaders.isLeader(e.id)).map(e => e.id));
   },
 
   selectSector: (x, y) => set({ selectedDropZone: { x, y } }),
@@ -276,6 +306,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     const record = get().directorRecord;
     const worldId = get().activeWorldId;
     if (record && worldId) void DirectorStore.save(worldId, record);
+    // What was folded is kept, so the next opening starts from it
+    const living = get().populationRecord;
+    if (living && worldId) void PopulationStore.save(worldId, living);
     generationContext = null;
     DreamingSystem.deactivate();
     set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null });

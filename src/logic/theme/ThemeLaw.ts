@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -31,6 +31,9 @@ const SCOPE_WORDS = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scrol
  * model's word for itself.
  */
 const INHERITED_ONLY = new Set(['elite', 'boss', 'titan', 'god']);
+/** What a plain elite is not (Pedro, 2026-11-01): one of a kind stands alone, and leads nothing. */
+const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
+const isPlainElite = (c: { tags: string[] }) => c.tags.includes('elite') && !c.tags.some(t => ONE_OF_A_KIND.includes(t));
 
 const has = (values: readonly string[], v: string) => values.includes(v);
 
@@ -103,6 +106,23 @@ export class ThemeLaw {
         if (!pack.creatures.some(c => c.tree === tree)) return no(`it has no ${tree} tree. Every world holds its animals and its monsters (D63).`);
       }
     }
+    if (formula >= LEADERS_FROM_FORMULA) {
+      const creatureKeys = new Map(pack.creatures.map(c => [c.key, c]));
+      for (const c of pack.creatures) {
+        if (typeof c.social !== 'boolean' || typeof c.builds !== 'boolean') return no(`${c.key} must say whether it is social and whether it builds.`);
+        if (c.builds && c.tree === 'animal') return no(`${c.key} is an animal, and an animal builds nothing (D93).`);
+        // A titan is earned by what it has brought down (D93)
+        if (c.tags.includes('titan')) return no(`${c.key} claims "titan". A titan is earned, never written.`);
+        if (c.leads && !isPlainElite(c)) return no(`${c.key} leads a pack, and only a plain elite does.`);
+        if (isPlainElite(c) && c.social) {
+          const led = creatureKeys.get(c.leads ?? '');
+          if (!led) return no(`${c.key} is a social elite and names no kind in this pack that it leads.`);
+          if (!led.social) return no(`${c.key} leads ${led.key}, which is not social. A pride needs lions (D93).`);
+        }
+        if (isPlainElite(c) && !c.social && c.leads) return no(`${c.key} is solitary and leads a pack. Only a social species leads (D93).`);
+      }
+      if (!pack.creatures.some(c => isPlainElite(c) && c.social)) return no('nothing there leads a pack. Elites are what a world rolls at its mint (D93).');
+    }
 
     const materialKeys = new Set(pack.materials.map(m => m.key));
     for (const m of pack.materials) {
@@ -152,6 +172,21 @@ export class ThemeLaw {
       if (g.craftAt !== 'none' && g.from.length === 0) return no(`${g.key} can be made, from nothing.`);
       const orphan = g.from.find(f => !materialKeys.has(f.key) && !goodKeys.has(f.key));
       if (orphan) return no(`${g.key} is made from "${orphan.key}", which this pack never defines.`);
+    }
+
+    if (formula >= LEADERS_FROM_FORMULA) {
+      if (!Array.isArray(pack.junk)) return no('junk is missing.');
+      for (const j of pack.junk) {
+        if (!claim(j.key)) return no(`junk "${j.key}" needs its own plain key.`);
+        if (!j.name?.trim()) return no(`junk ${j.key} has no name.`);
+        if (!has(RANKS, j.rank)) return no(`${j.key}: "${j.rank}" is not a rank.`);
+        if (!has(WEIGHTS, j.weight) || !has(WORTHS, j.worth)) return no(`${j.key} is outside the bands.`);
+        if (!Array.isArray(j.from) || j.from.length === 0) return no(`${j.key} comes from nothing.`);
+        const t = unknownTag([...j.tags, ...j.from]);
+        if (t) return no(`${j.key} names "${t}", which is not registered.`);
+      }
+      const bare = pack.creatures.find(c => !pack.junk!.some(j => j.from.some(tag => c.tags.includes(tag))));
+      if (bare) return no(`${bare.key} leaves nothing behind. Every creature has some junk (D99).`);
     }
 
     for (const c of pack.consumables) {

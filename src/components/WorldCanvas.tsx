@@ -4,7 +4,9 @@ import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { WebSystem } from '../logic/systems/WebSystem';
-import { ProjectileSystem, PatternType, IProjectile, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../entities/combat/projectileSystem';
+import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/projectileSystem';
+import { LootTable } from '../entities/world/LootTable';
+import { Leaders } from '../entities/world/Leaders';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { applyKillRewards } from '../entities/combat/killRewards';
 import { MobAI } from '../entities/mob/ai/MobAI';
@@ -673,7 +675,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Line 90: what brought a person down grows more common, after the next regeneration
       if (cause === 'HURT' && lastHurtByRef.current) {
         const killer = Object.values(w.currentMap?.chunks ?? {}).flatMap(c => c.entities).find(e => e.id === lastHurtByRef.current);
-        if (killer) w.reportToDirector('FELLED_A_PERSON', killer.definitionId);
+        if (killer) w.reportToDirector('FELLED_A_PERSON', killer.definitionId, { id: killer.id, rank: ProgressionSystem.rankOf(usePlayerStore.getState().player) });
       }
 
       // Wave 10C (D16): the cart stays in the world, standing where it was
@@ -851,7 +853,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // Simulate every chunk a projectile fired from here can reach
       const visibleChunks: Record<string, IChunk> = {};
-      WorldGenerator.chunkKeysInBox(playerPos.x, playerPos.z, PROJECTILE_RANGE_PX + SIM_MARGIN_PX).forEach(key => {
+      // N7: and every chunk a body that was hit stands in, wherever it has got to
+      MobAI.simulatedKeys(liveMap, playerPos.x, playerPos.z).forEach(key => {
         if (liveMap.chunks[key]) visibleChunks[key] = liveMap.chunks[key];
       });
 
@@ -958,8 +961,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             // Line 80: defeating a thing teaches what it casts, at the next rest. Line 90: the Director hears.
             const innate = (def as { innate?: string[] } | undefined)?.innate ?? [];
             if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));
-            if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId);
-            if (event.entityId) useWorldStore.getState().reportFell(event.entityId);
+            if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId, event.entityId ? { id: event.entityId, rank: ProgressionSystem.rankOf(usePlayerStore.getState().player) } : undefined);
+            if (event.entityId) useWorldStore.getState().reportFell(event.entityId, event.definitionId);
           }
         }
       });
@@ -996,7 +999,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Loot: spawn new drops, then auto-pickup anything within reach
       let drops = lootDrops;
       if (combatResult.spawnedLoot.length > 0) {
-          drops = [...drops, ...combatResult.spawnedLoot.map(l => ({ id: crypto.randomUUID(), position: l.position, items: l.items }))];
+          // D99: junk stays where it fell until someone wants it. Everything else the hands collect
+          const collected = combatResult.spawnedLoot.map(l => {
+            const { collect, leave } = LootTable.sortDrop(l.items);
+            if (leave.length > 0) useWorldStore.getState().addEntity(LootTable.junkCache(leave, l.position, leave[0].id));
+            return { id: crypto.randomUUID(), position: l.position, items: collect };
+          }).filter(l => l.items.length > 0);
+          drops = [...drops, ...collected];
       }
       if (drops.length > 0) {
         // Wave 3.2: pickup passes through the caps; what doesn't fit stays on
@@ -1287,6 +1296,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (Math.abs(e.position.x - pos.x) > halfW || Math.abs(e.position.y - pos.z) > halfH) continue;
         if (e.type === EntityType.EXTRACTION) continue;
         things.push({ x: e.position.x, y: e.position.y, kind: e.isHostile ? 'HOSTILE' : 'THING' });
+        // D93: a leader in sight has been seen, and what it was doing is decided by what happens now
+        if (Leaders.isLeader(e.id)) useWorldStore.getState().reportSeen([e.id]);
         // A chest in sight is known from now on, and how it looks is how it is remembered
         if (worldId && e.container && ChestSystem.isChest(e.id)) {
           const seen = usePlayerStore.getState().player;

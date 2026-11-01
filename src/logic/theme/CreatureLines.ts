@@ -20,7 +20,7 @@ import { WebBank } from '../content/WebBank';
 import { sha256Hex } from '../journal/SessionJournal';
 import { Rng } from '../rng/DeterministicRNG';
 import { ContentRegistry } from './ContentRegistry';
-import { canonical, compileTheme, creatureIdOf } from './ThemeCompiler';
+import { canonical, compileTheme, creatureIdOf, junkIdsFor } from './ThemeCompiler';
 import { descendantNumbers } from './ThemeFormula';
 import { ThemeLaw } from './ThemeLaw';
 import { BUILDS, ILineBands, ILineChange, ILineWords, IThemePack, PACES, THREATS } from './ThemeTypes';
@@ -90,6 +90,7 @@ interface IKindState {
   bands: Required<ILineBands>;
   rank: string; size: string; behavior: string; colorHex: string; tree?: string;
   tags: string[]; habitat: string[]; innate: string[];
+  social?: boolean; builds?: boolean;
   name: string; blurb: string; generation: number;
   root: string; rootTags: string[]; features: string[]; lineage: string[];
 }
@@ -107,7 +108,7 @@ export class CreatureLines {
     return `mob_line_${await sha256Hex(`line:v1:${canonical({ parents, change })}`)}`;
   }
 
-  /** The first generation and all that came after it. Nothing here dies yet (B2 brings population). */
+  /** The first generation and all that came after it. A count is read sector by sector, so no machine knows a kind has gone from a whole world: every line counts as living. */
   static living(pack: IThemePack, lines: ILineRecord): string[] {
     return [...pack.creatures.map(c => creatureIdOf(pack.themeId, c.key)), ...Object.keys(lines.nodes)].sort();
   }
@@ -147,6 +148,7 @@ export class CreatureLines {
         bands: { build: c.build, threat: c.threat, pace: c.pace },
         rank: c.rank, size: c.size, behavior: c.behavior, colorHex: compiled.mobs[id].colorHex, tree: c.tree,
         tags: c.tags, habitat: c.habitat, innate: c.innate,
+        social: c.social, builds: c.builds,
         name: c.name, blurb: c.blurb, generation: 1,
         root: id, rootTags: c.tags, features: [], lineage: [c.name]
       });
@@ -295,6 +297,10 @@ export class CreatureLines {
         generation: s.generation,
         line: { root: s.root, rootTags: s.rootTags, features: s.features },
         ...(s.tree ? { tree: s.tree } : {}),
+        // D93, D99: what it was, it still is: a herd stays a herd, and it leaves what its tags leave
+        ...(s.social !== undefined ? { social: s.social } : {}),
+        ...(s.builds !== undefined ? { builds: s.builds } : {}),
+        ...(pack.junk ? { junk: junkIdsFor(pack, s.tags) } : {}),
         ...descendantNumbers({ rank: s.rank, size: s.size, ...s.bands } as Parameters<typeof descendantNumbers>[0], s.generation)
       };
     }

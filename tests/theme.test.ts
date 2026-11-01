@@ -193,7 +193,7 @@ describe('R4: the formula, and what generation reads', () => {
     expect(top).toBeGreaterThanOrEqual(order.indexOf(UniversalRank.E));
   });
 
-  it('an elite is scarce and alone, however rich the chunk', () => {
+  it('what leads stays scarce among its people, however rich the chunk (alone only if one of a kind, D93)', () => {
     const context = ContentRegistry.contextFor(themeId, UniversalRank.A);
     const map = WorldGenerator.generate('elite-bar', 32, context);
     const elite = (id: string) => (MOB_DEFINITIONS[id].tags ?? []).includes('elite');

@@ -1,7 +1,7 @@
 /**
  * THE FORMULA (D57): every number a theme's bands turn into, in one versioned file.
  *
- * Version 2. All of it is a guess until Wave 12, which tunes this file and nothing
+ * Version 3. All of it is a guess until Wave 12, which tunes this file and nothing
  * else. A pinned world reads the version it was minted under, so a later version
  * never moves a standing world. Nothing here is a ceiling on content.
  */
@@ -46,6 +46,88 @@ export const descendantNumbers = (c: Parameters<typeof creatureNumbers>[0], gene
   return { ...n, baseHealth: Math.round(n.baseHealth * grown), baseDamage: Math.max(1, Math.round(n.baseDamage * grown)) };
 };
 
+/** The largest sight a size gives: how far the field must look for something that could notice a person. */
+export const WIDEST_VIEW_TILES = Math.max(...Object.values(VIEW_TILES));
+
+// -------------------------------------------------------------------------
+// BODIES ON THE LAND (D64). What keeps a count down is the land's food, never a ceiling.
+// -------------------------------------------------------------------------
+
+/** What one body eats in a cycle, by how much of it there is. */
+const APPETITE = { TINY: 0.5, MEDIUM: 1, LARGE: 2, GIGANTIC: 8, COLOSSAL: 20 };
+/** The chance a pair brings a birth in a cycle, fed. Smaller things breed faster. */
+const BIRTH_RATE = { TINY: 0.3, MEDIUM: 0.16, LARGE: 0.07, GIGANTIC: 0.03, COLOSSAL: 0.01 };
+/** The chance a fed group walks on in a cycle. */
+const ROAM = { slow: 0.1, steady: 0.25, swift: 0.4 };
+
+export const bodyNumbers = (c: { size?: string; speed?: number }) => ({
+  appetite: APPETITE[c.size as keyof typeof APPETITE] ?? APPETITE.MEDIUM,
+  birthRate: BIRTH_RATE[c.size as keyof typeof BIRTH_RATE] ?? BIRTH_RATE.MEDIUM,
+  // A definition keeps its speed, not its band: the band is read back from the speed
+  roam: (c.speed ?? PACE.steady) <= PACE.slow ? ROAM.slow : (c.speed ?? PACE.steady) >= PACE.swift ? ROAM.swift : ROAM.steady
+});
+
+/** Scattered things a chunk holds, on average: `fillQuadrant` draws one to four in each of sixteen quadrants. */
+const NODES_PER_CHUNK = 40;
+/** What a material feeds, by what it is. Food feeds best, and even bare ground feeds something. */
+const NUTRITION = { food: 1, flora: 0.5, other: 0.25 };
+const FOOD_SCALE = 0.2;
+
+/** What one kind of material in a biome's table gives a chunk in a cycle, when the table holds this many kinds. */
+export const foodFrom = (m: { tags?: string[]; uses?: number; yieldPerUse?: [number, number] }, tableSize: number): number => {
+  const tags = m.tags ?? [];
+  const nutrition = tags.includes('food') ? NUTRITION.food : tags.includes('flora') ? NUTRITION.flora : NUTRITION.other;
+  const yielded = m.yieldPerUse ? (m.yieldPerUse[0] + m.yieldPerUse[1]) / 2 : 1;
+  return (NODES_PER_CHUNK / Math.max(1, tableSize)) * (m.uses ?? 1) * yielded * nutrition * FOOD_SCALE;
+};
+
+export const LAND_NUMBERS = {
+  /** How far a chunk's food strays either way from what its biome gives, by the land's own noise. */
+  fertility: 0.3,
+  /** What a body of what hunts takes from the prey beside it, as a share of what it eats. */
+  huntShare: 0.25,
+  /** How many bodies of a kind make it half as easy to find as it can be. Scarce prey is hard to find. */
+  preyFound: 8,
+  /** What one body of prey feeds what hunts it, as a share of what it would have eaten itself. */
+  preyYield: 3,
+  /** Of the mouths a ground cannot feed, how many fall in a cycle. The rest of the shortage walks. */
+  starve: 0.3,
+  /** Of the bodies of a kind that has changed, how many stand as what it became, per cycle. */
+  changeShare: 0.15,
+  /** The chance a kind the land stood at alpha, gone from that ground, walks back in. A floor under a count, never a ceiling. */
+  returns: 0.02,
+  /** What gives way to a leader taking its ground, as a share of each rival kind there. */
+  takeShare: 0.25
+};
+
+// -------------------------------------------------------------------------
+// LEADERS (D93). An elite is tougher, and one person can bring it down.
+// -------------------------------------------------------------------------
+
+/** What leaders a land holds: the chance per chunk, and how many walk behind one. */
+export const ROSTER_NUMBERS = { perChunk: 0.06, packLow: 2, packHigh: 5, solitaryShare: 0.15 };
+
+/**
+ * What a sheet makes of a body: what its constitution and strength hold above what its
+ * rank starts with (`NpcSheet` deals 0 to 4 above). Half as much again at the least, and
+ * never more than two and a half times what it is, so it can always be brought down.
+ */
+export const leaderNumbers = (c: { baseHealth: number; baseDamage: number; rank: ThemeRank | UniversalRank }, stats: { constitution: number; strength: number }) => {
+  const above = (stat: number) => Math.max(0, stat - (1 + rankStep(c.rank)));
+  return {
+    bonusHealth: Math.max(1, Math.round(c.baseHealth * (0.5 + 0.25 * above(stats.constitution)))),
+    bonusDamage: Math.round(c.baseDamage * 0.1 * above(stats.strength))
+  };
+};
+
+/** What a goal asks on a d20, and which stat on the sheet helps. A goal is a word with a reader. */
+export const GOAL_BANDS = {
+  grow: { dc: 11, stat: 'leadership' }, hunt: { dc: 10, stat: 'perception' }, take: { dc: 13, stat: 'intimidation' },
+  settle: { dc: 14, stat: 'engineering' }, waylay: { dc: 9, stat: 'intimidation' }
+} as const;
+/** How far past its band a roll must land to be graded great. */
+export const GOAL_GREAT_BY = 6;
+
 const WEIGHT_KG = { light: 0.5, medium: 2, heavy: 5 };
 const FOOTPRINT = { light: { width: 1, height: 1 }, medium: { width: 1, height: 2 }, heavy: { width: 1, height: 3 } };
 /** Density is what the weight law reads; hardness grows with rank and form. */
@@ -64,6 +146,15 @@ export const materialNumbers = (m: { rank: ThemeRank; form: string; weight: keyo
   yieldPerUse: [1, m.form === 'pebble' ? 1 : 2] as [number, number],
   value: Math.max(1, Math.round(geometric(2, 2.2, rankStep(m.rank)) * WORTH[m.worth]))
 });
+
+/** D99: what junk is. It sells by the same law as a raw material: what it weighs and how hard it is to replace. */
+export const junkNumbers = (j: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG; worth: keyof typeof WORTH }) => {
+  const density = WEIGHT_KG[j.weight] * 2;
+  const hardness = Math.round(geometric(1, 2.2, rankStep(j.rank)) * WORTH[j.worth]);
+  return { weight: WEIGHT_KG[j.weight], dimensions: FOOTPRINT[j.weight], density, hardness, value: Math.max(1, Math.round(WEIGHT_KG[j.weight] * 4 + hardness)) };
+};
+/** The chance a body that falls leaves junk. Its own roll, so no other drop moves. */
+export const JUNK_CHANCE = 0.55;
 
 /** What the ground asks of the hands: energy and seconds for one taking, and the tool's power. */
 export const harvestNumbers = (verb: string, rank: ThemeRank) => ({
