@@ -33,7 +33,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | N13 | Tax Evasion's first attempt says "Winging it: ... It costs more without the skill", and it costs nothing more | the skill's first-use line |
 | N14 | Reading a scroll feeds "Writ of Breach: +0 health." Every scroll has since Layer 3 | `store.consumeItem` |
 | N15 | Glass panes answer `building`, so a window's panes can go into a wall's line | `resourceDefinitions`, `answersTag` |
-| N16 | The database pass can exit 139, a crash at teardown, after every bar has passed. Counted 2026-11-01, 12 runs each, taking turns: the join 1 at 139, a tree without B2's population code 2 at 139 and 1 at exit 1. So it is not B2's, and the cause is not found. `npm test` reports it as a failure, so read the bar count | the database pass at teardown |
+| N16 | The database pass can exit 139, a crash at teardown, after every bar has passed. Counted 2026-11-01, 12 runs each, taking turns: the join 1 at 139, a tree without B2's population code 2 at 139 and 1 at exit 1. So it is not B2's. It comes from `tests/database.store.test.ts` alone (1 of 4 runs of that file; the other two files 0 of 4) and the cause is not found. It reached 2 of 3 on a quiet machine, so `npm test` often reports a failure with every bar green: read the bar count | `tests/database.store.test.ts` at teardown |
 
 ### Found while building the timer, 2026-11-01
 

@@ -246,7 +246,7 @@ The record is in `PLAN.md` ("Wave A — the record"). **For B1:** `DirectorStore
 
 The record is in `PLAN.md` ("Wave B — the record"). **For C1:** food is what the land could yield and harvesting does not lower it, `GENDERS` is open by breeding word, and capture has no door yet. **For C2:** `NpcAgenda` is the shared code, `wantFor` is pure, and `IResident` holds no schedule. **For C3:** leaders record `settledAt`, a seen goal stays true, `chainFromMap` returns `seat: null, posted: false`, and goal rolls fold inside `Population.step`, not in `COMPUTE_STEPS`. **For C4 and C5:** a raised master has no counter of their own, and `benchFactor` reads who is home. **For C6:** junk has a sheet and no screen. **Pinned ids and theme:** the first theme is `theme_4599bfea360d75a7`.
 
-- **Tests:** 1,881: 1,757 plus 124 in the database's own run.
+- **Tests:** 2,000: 1,876 plus 124 in the database's own run. The timing bars read load: with other sessions running they went red, and on a quiet machine all 31 passed.
 
 ## Your pass: a stream in the fan-out (Wave C, once Pedro approves Wave B)
 
