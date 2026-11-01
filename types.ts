@@ -325,6 +325,8 @@ export interface IWebStation {
   weight: number;
   width: number;
   height: number;
+  /** D91: stations that must stand first, though no recipe says so. Read by `hubTech`. */
+  after?: string[];
 }
 
 export interface IWebRecipe {
@@ -423,8 +425,19 @@ export interface IWebNodeRecord {
   rungRecord: IWebCredit & { rung: number };
 }
 
+/** A skill the hub holds and nobody knows of: it opens nothing until the web reaches it. */
+export interface IWebSilentRecord {
+  id: string;
+  tags: string[];
+  rank: number;
+  by: IWebCredit;
+  rung: number;
+}
+
 export interface IHubWeb {
   nodes: Record<string, IWebNodeRecord>;
+  /** D119: "added to the hub silently, the players cannot know, they need to make the web reach it." */
+  silent?: Record<string, IWebSilentRecord>;
 }
 
 // ==========================================================================
@@ -517,6 +530,8 @@ export interface IItem {
     worldSeed: string;
     entityId: string;
     webVersion?: number;
+    /** D119: the theme they came from, whose pool their profession is dealt from. */
+    themeId?: string;
     rank: UniversalRank;
     rarity: Rarity;
     sheet: {

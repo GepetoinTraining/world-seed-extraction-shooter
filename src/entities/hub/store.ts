@@ -60,6 +60,8 @@ import { workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../logic/systems/TalkTypes';
+import { IHubTech, emptyTech, normalTech, openedChainStations } from './hubTech';
+import { ITechDoors, settleSilently, techDoors } from './techDoors';
 
 const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
 
@@ -189,6 +191,8 @@ export interface IBuildJob {
   signature?: string;
   /** Wave 10B: jobs raised together from one template share its item id. */
   batch?: string;
+  /** D91: raised for a person, so nothing is minted into whoever paid for it. */
+  workshopId?: string;
   /** Wave 10B: a template shell carries the plan, the sheet and the architect. */
   template?: {
     itemId: string;
@@ -300,7 +304,7 @@ export interface IAuctionListing {
 // STORE
 // =============================================================================
 
-interface HubState {
+interface HubState extends ITechDoors {
   activeHubId: string | null;
   /** D74: what has risen, in order. The first is the middle one. */
   chunks: IRaisedChunk[];
@@ -394,6 +398,8 @@ interface HubState {
   handMapToGuild: (itemId: string) => Promise<RoomVerdict>;
   /** The hub as a document, for a commit that changes it along with gold. */
   hubDoc: () => IVectorDocument | null;
+  /** D91, D119: the buildings people want and what the web has reached. The law is in hubTech.ts. */
+  tech: IHubTech;
 
   purchaseLot: (lotId: string, playerId: string, playerName: string) => Promise<boolean>;
   setLotStructure: (lotId: string, structureType: IPlayerLot['structureType']) => Promise<void>;
@@ -458,6 +464,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   web: { nodes: {} },
   guild: emptyGuild(),
   wallets: {},
+  tech: emptyTech(),
+  ...techDoors(set as never, get as never, { removeFromStash, dominantDefId, signRecord }),
   weaponShop: [],
   armorShop: [],
   consumableShop: [],
@@ -470,7 +478,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ vendors?: Record<string, IVendorRecord>; craftsmen?: ICraftsman[]; farmland?: IFarmland; chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb; guild?: IGuildState }>(
+      const hubStateDoc = await VectorStore.get<{ vendors?: Record<string, IVendorRecord>; craftsmen?: ICraftsman[]; farmland?: IFarmland; chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb; guild?: IGuildState; tech?: Partial<IHubTech> }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -493,7 +501,8 @@ export const useHubStore = create<HubState>((set, get) => ({
           buildJobs: hubStateDoc.data.buildJobs || [],
           web: hubStateDoc.data.web || { nodes: {} },
           guild: guildFrom(hubStateDoc.data.guild),
-          farmland: { ...emptyFarmland(), ...hubStateDoc.data.farmland }
+          farmland: { ...emptyFarmland(), ...hubStateDoc.data.farmland },
+          tech: normalTech(hubStateDoc.data.tech)
         });
       } else {
         // GENERATE FRESH (First time this Hub is visited)
@@ -501,7 +510,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} }, guild: emptyGuild(), vendors: {}, craftsmen: [], farmland: emptyFarmland() });
+        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} }, guild: emptyGuild(), tech: emptyTech(), vendors: {}, craftsmen: [], farmland: emptyFarmland() });
         // Save immediately
         await get().saveHubState();
       }
@@ -534,6 +543,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       // D27: whatever this person already holds enters this hub's web when the hub looks.
       await get().creditHeld();
       await get().resolveWants();
+      // What was already reached is known again, and a station raised while away counts.
+      await get().settleWorkshops();
+      void get().resolveChains();
 
     } catch (e) {
       console.error('[HUB] Failed to load hub:', e);
@@ -1009,7 +1021,6 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { guild, buildJobs } = get();
     const due = guild.residents.filter(r => r.lotId && r.house?.raised && !r.homeAt && !buildJobs.some(j => j.lotId === r.lotId && !j.applied));
     if (due.length === 0) return;
-    const hubId = get().activeHubId;
     const now = Date.now();
     set({ guild: { ...guild, residents: guild.residents.map(r => due.some(d => d.id === r.id) ? { ...r, homeAt: now, nextWantDay: worldDay() } : r) } });
     // A master's house is the shop they came back for, and whoever saw it through is remembered there
@@ -1021,15 +1032,13 @@ export const useHubStore = create<HubState>((set, get) => ({
       useFeed.getState().push(`${resident.name} has opened a shop of their own, and you will pay less in it.`, 'proof');
     }
     for (const resident of due) {
-      // Their skills extend the hub's web, by the same door a player's emergence uses. The exp stays theirs.
-      const { web, firsts, records } = WebSystem.admit(get().web, { uid: resident.id, name: resident.name }, readSheet(resident).skills ?? {}, now);
-      set({ web });
+      // D119: what they know goes into the web silently, and it opens nothing until the web reaches it.
+      set(settleSilently(get().web, get().tech, resident, now));
       await Ledger.append('GUILD', { kind: 'PERSON_HOME', residentId: resident.id, name: resident.name, lotId: resident.lotId });
-      for (const skillId of firsts) await Ledger.append('TECH', { kind: 'FIRST', skillId, name: WebSystem.nameOf(skillId), hubId, rung: 0, by: resident.name });
-      for (const { id, rung } of records) await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameOf(id), hubId, rung, by: resident.name });
       useFeed.getState().push(`${resident.name} has left the tavern. There is a door with their name on it now.`, 'proof');
     }
     await get().resolveWants();
+    void get().resolveChains();
   },
 
   resolveWants: async (simDay) => {
@@ -1191,12 +1200,12 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   hubDoc: () => {
-    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild, vendors, craftsmen, farmland } = get();
+    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild, tech, vendors, craftsmen, farmland } = get();
     if (!activeHubId) return null;
     return {
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild, vendors, craftsmen, farmland })),
+      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web, guild, tech, vendors, craftsmen, farmland })),
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1276,11 +1285,11 @@ export const useHubStore = create<HubState>((set, get) => ({
   shellBillNow: (type, stationId) => {
     const { lots, rooms, buildJobs } = get();
     const p = usePlayerStore.getState().player;
-    const fitting = stationId ? WebBank.current().stations.find(s => s.id === stationId) : undefined;
+    const fitting = stationId ? get().openStationsNow().find(s => s.id === stationId) ?? WebBank.current().stations.find(s => s.id === stationId) : undefined;
     return shellBillFor(type, ownerHasBench(p.id, { lots, rooms, jobs: buildJobs, stash: p.bank.stashTabs[0]?.items || [] }), fitting);
   },
 
-  openStationsNow: () => WebSystem.openStationsOf(get().web, usePlayerStore.getState().player.bank.universalSkills),
+  openStationsNow: () => [...WebSystem.openStationsOf(get().web, usePlayerStore.getState().player.bank.universalSkills), ...openedChainStations(get().tech)],
 
   stationRecipesOn: (lotId) => {
     const placed = new Set((get().rooms[lotId]?.placements ?? []).map(p => p.item.universalDefinitionId));
@@ -1603,7 +1612,7 @@ export const useHubStore = create<HubState>((set, get) => ({
           rooms: { ...get().rooms, [job.lotId]: room }
         });
         // The structure brings its station: an item like any other, into the stash.
-        const stationDefId = job.stationId ?? SHELL_STATION[job.structureType];
+        const stationDefId = job.workshopId ? undefined : job.stationId ?? SHELL_STATION[job.structureType];
         if (stationDefId) {
           // D26: a station inherits its shell. Raw walls hand on nothing: nothing was worked.
           const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION', affixes: ProcessSystem.inherit(job.inherited ?? []) });
@@ -1642,6 +1651,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     }
     set({ buildJobs: get().buildJobs.map(j => due.some(d => d.id === j.id) ? { ...j, applied: true } : j) });
     await get().settleHomes();
+    await get().settleWorkshops();
     await get().saveHubState();
     return applied;
   },
@@ -1770,6 +1780,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     await Ledger.append('BUILD', { kind: 'PLACED', lotId, placementId, itemId: item.id, defId: item.universalDefinitionId, x, y });
     const { Provenance } = await import('../../logic/sovereignty/Provenance');
     await Provenance.record(item, 'TRANSFER', { via: 'PLACED', lotId, x, y });
+    // A station standing anywhere counts toward what the web reaches, whoever raised it.
+    await get().settleWorkshops();
     await saveHubState();
     return { ok: true };
   },

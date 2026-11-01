@@ -45,6 +45,7 @@ export const IntelligenceClient = {
   grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
   setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
   writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),
+  resolveChain: <T>(ask: unknown) => post<T>('/chain', { ask }),
 
   // D113, D114, D116: a person waits on each of these. The id is what the door's spend limit counts against.
   npcTalk: <T>(talkId: string, ask: unknown) => post<T>('/npc/talk', { talkId, ask }),

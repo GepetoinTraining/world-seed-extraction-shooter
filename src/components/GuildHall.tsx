@@ -25,6 +25,7 @@ import { Treasury } from '../logic/economy/Treasury';
 import { ArmedButton, Button, Chip, Modal, Panel, Tabs } from './ui/kit';
 import { hoverProps, useFeed } from './ui/stores';
 import { ResidentFace, ResidentLines } from './TavernRoom';
+import { PopulationLine, WorkshopBlock } from './WorkshopPanel';
 
 type Tab = 'BOARD' | 'PEOPLE' | 'TRIAL' | 'MAPS';
 const TABS: { id: Tab; label: string }[] = [
@@ -230,6 +231,7 @@ const People: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <TheBooks />
+      <PopulationLine />
       {guild.residents.length === 0 && <span className="ws-dim ws-small">Nobody yet. An Escort Bond taken to Mags at the Rusty Anchor brings someone in.</span>}
       {guild.residents.map(r => {
         const stage = residentStage(r, { buildJobs });
@@ -254,6 +256,7 @@ const People: React.FC = () => {
             {stage === 'TAVERN' && <GroundFor resident={r} />}
             {stage === 'POOLING' && <HouseBill resident={r} />}
             {stage === 'RISING' && rising && <div className="ws-small">{rising.applied} of {rising.total} steps stand.</div>}
+            {stage === 'HOME' && <WorkshopBlock resident={r} />}
           </Panel>
         );
       })}

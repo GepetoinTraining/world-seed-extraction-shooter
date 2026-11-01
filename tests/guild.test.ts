@@ -399,11 +399,14 @@ describe('line 115: the house rises through the pooled bill (D8)', () => {
     expect(stash().length).toBe(0);
   });
 
-  it('a person home extends the hub\'s web, the same door a player\'s emergence uses', async () => {
+  it('a person home adds what they know to the web silently, and the web has to reach it (D119)', async () => {
     const resident = await house();
     const skills = Object.keys(readSheet(resident).skills ?? {});
     expect(skills.length).toBeGreaterThan(0);
-    for (const id of skills) expect(hub().web.nodes[id]).toBeTruthy();
+    for (const id of skills) {
+      expect(hub().web.silent?.[id]).toBeTruthy();
+      expect(hub().web.nodes[id]).toBeUndefined();
+    }
   });
 
   it('it all comes back after a reload, and a save from before reads as none', async () => {

@@ -250,10 +250,48 @@ export interface IThemeAbility {
   cost: typeof COST_BANDS[number];
 }
 
+/**
+ * D119: what a new thing looks like, in three words a model writes. The art composes the sprite
+ * from them (`worldForm`). A new word goes on the end, with its hue, ink or measure in the atoms,
+ * and a bar holds that every word has one. Shape tells things apart; colour never has to.
+ */
+export const LOOK_COLORS = ['ash', 'bone', 'ochre', 'rust', 'ember', 'moss', 'verdigris', 'slate', 'indigo', 'plum'] as const;
+export const LOOK_SHAPES = ['lump', 'shard', 'rod', 'coil', 'ring', 'plate', 'cluster', 'tuft', 'crystal', 'spike', 'pod', 'heap'] as const;
+export const LOOK_SIZES = ['tiny', 'small', 'medium', 'large'] as const;
+
+export interface IThemeLook {
+  color: typeof LOOK_COLORS[number];
+  shape: typeof LOOK_SHAPES[number];
+  size: typeof LOOK_SIZES[number];
+}
+
 export interface IThemeRegion {
   biome: ThemeBiome;
   name: string;
   blurb: string;
+}
+
+/**
+ * D119: a living people's trades, from the shared pool the theme carries. Pedro: "random
+ * hallucinated (literally) professions that are economical in the theme they came from,
+ * zombie apocalypse has mcgyver engineer". What it knows is a concept, never a means: how
+ * that comes about is resolved backwards from wherever the person ends up (`ChainWeb`).
+ */
+export interface IThemeProfession {
+  key: string;
+  name: string;
+  blurb: string;
+  /** Who can hold it: someone of this rank or above. */
+  rank: ThemeRank;
+  /** What they can bring about, as one lower_snake_case word. */
+  concept: string;
+  /** The same in plain words, for whoever has to resolve it. */
+  knows: string;
+  /** What they would call the place they need. */
+  workshop: string;
+  /** D25: the tool + material connection their hands work. Registry words. */
+  tool: string[];
+  material: string[];
 }
 
 /** What a model writes. Its id is computed from these bytes and nothing else. */
@@ -276,6 +314,8 @@ export interface IThemeBody {
   junk?: IThemeJunk[];
   /** D115. Left out of a pack written before there was such a thing. */
   anchors?: IThemeAnchor[];
+  /** D119. Left out of a pack written before there was such a thing. */
+  professions?: IThemeProfession[];
 }
 
 export interface IThemePack extends IThemeBody {
@@ -338,5 +378,6 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   abilities: list({ key: str, name: str, blurb: str, elements: strs, delivery: oneOf(DELIVERIES), effect: oneOf(EFFECTS), cost: oneOf(COST_BANDS) }),
   lore: strs,
   junk: list({ key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), from: strs }),
-  anchors: list({ key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), foundIn: manyOf(BIOMES) })
+  anchors: list({ key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), foundIn: manyOf(BIOMES) }),
+  professions: list({ key: str, name: str, blurb: str, rank: oneOf(RANKS), concept: str, knows: str, workshop: str, tool: strs, material: strs })
 });

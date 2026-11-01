@@ -27,11 +27,13 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   // Pedro: "what we do is load up haiku and talk to it", and "ask haiku to give this npc it's goal"
   npc_talk: 'claude-haiku-5-5',
   npc_goal: 'claude-haiku-5-5',
-  bargain: 'claude-haiku-5-5'
+  bargain: 'claude-haiku-5-5',
+  // Pedro: "the model writes the NPC, the web is resolved backwards"
+  chain: 'claude-haiku-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
 /** Writing to the cache costs a quarter more than plain input, for what it saves on every read after. */
@@ -47,7 +49,7 @@ const CHARS_PER_TOKEN = 3;
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 /** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead, and a declined round still rolls. */
-const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona', 'npc_talk', 'npc_goal', 'bargain'];
+const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona', 'npc_talk', 'npc_goal', 'bargain', 'chain'];
 
 const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boolean): IDoorUsage | undefined => {
   if (!usage) return undefined;
