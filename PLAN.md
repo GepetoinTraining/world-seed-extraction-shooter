@@ -808,6 +808,11 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 | D93 | Creatures | Leaders, and the ground they hold | ✅ DECIDED, not built (Pedro, 2026-11-01; approved as written in `DESIGN_ASK.md`, "Leaders and the ground they hold"): elite and boss "strategize (AI = LLM defined actions) and direct the flow in a given territory. parties should be necessary to kill one (think a goblin king... killing it is the easiest part of the raid)." An elite is a soloable pack leader with a goal and a sheet, only of a social species, and becomes a boss by people falling to it or by finishing a base. A solitary elite that keeps winning becomes a titan. A quest chain posts when a map showing it reaches the guild. This answers D62, gives D64 one exception (a leader is a single body the record holds), and changes R4 for elite only |
 | D94 | Served runtime | Client compute | ✅ DECIDED (Pedro, 2026-11-01): "we accept the compute that came from the client side, the game is arithmetic, so the values can be computed by the client and sent over to be merged"; on a conflict, "first who touches owns it, blame your internet connection and lag, that's life." "I stopped it" is a claim nothing can re-run, so it is decided together with D82 before anything crosses hubs |
 | D95 | Hub | The town hall, and splitting a free lot | ✅ DECIDED and built (Pedro, 2026-11-01, on A1's report; amends D73): "we need to make the guildhall be sorts of like a town hall, make a land manager be there, and that screen is connected through him, then what happens is the player has the options to develop everything through that one npc." So deposits and raising a chunk sit with the land manager (Aurelio Quint, the Land Office), and Vex keeps the guild. On splitting: "because you pay to split and then you can buy one of the small ones": anyone can split a free lot, which is how someone who cannot afford a big lot gets a small one. The person who pays gets no first claim on the pieces, which matters only online |
+| D96 | Technology | Technology and magic are one, and refilling energy is one skill | ✅ DECIDED (Pedro, 2026-11-01): asked whether the first theme gets a refill potion, plant and spell: "it's a skill, it's an SSSSSSS <- {joke} skill, but you never make multiple things, they all tie back to technology, that's what makes growing this cheap, technology and magic aren't different." Reading to confirm: no separate refill goods go into the first theme. Refilling is one very rare skill on the technology web, and a potion, plant or spell is what that one node comes out as. The law's vocabulary from A2 stays. No new rank above SSS: he marked the seven S's as a joke |
+| D97 | Magic | Whether a weave needs circles | DEFERRED by Pedro (2026-11-01): "depends, and that will be explained when we get to the actual meat of the magic system, we inserted it, we haven't made it operational yet." Nothing changes until then. So the magic system's real work is still to come, and has no stream yet |
+| D98 | Places | What a home dive station makes: a dungeon | ✅ DECIDED, not built (Pedro, 2026-11-01; answers D92's "drops"): "it creates a dungeon, we're going to generate it as smaller than any map, and it has a set sequence to it, rooms with encounters, skill checks to progress and energy as the resource to map. failing it knocks off a usage, and it can spawn with N-n>1 uses. the concept of it is simply giving something that can be skilled around, can be enscribed (although the materials list for one would be wild ...)." Keep the name apart from `ItemType.MAP`, and each theme has its own word for it |
+| D99 | Items | Junk, and what studying it opens | ✅ DECIDED, not built (Pedro, 2026-11-01): "we need to have junk from mobs (the things that provide gold and most people start not picking up, the studying of the junk is what inserts the whole black dungeon arc into this)." Junk comes from creatures and sells for gold. It is also among what inscribing a dungeon asks for. What the black dungeon arc is has not been told yet: ask before building it |
+| D100 | Economy | The levy can be dodged, on a roll | ✅ DECIDED, not built (Pedro, 2026-11-01): "roll, we keep it, it doesn't work 100% of the time, and it becomes a skill as well, tax evasion!" So subterfuge no longer simply lowers the levy, as A2 built it. Evading is a keyed roll that can fail, and practising it grows a skill through the technology web. Not yet said: what a failed attempt costs beyond paying in full |
 
 **The reshape (D53–D58, 2026-11-01), which replaces the order below where they differ:** R6 and Layer 0 → the door on Claude, with a provider seam → **the theme: pack, law, formula, one registry, the tables out of `src`, the mint's conversation** → Layer 1 → Layer 2 with the Director and R4 → rest, study and minted skills → Layer 4 with the per-hub unlock → Layer 3. R5's lens goes with the tables it lives in; its rule, that every definition has a slot that takes it, becomes pack law.
 
@@ -889,9 +894,9 @@ Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts`
 | Stream | Lines | Needs | Owns |
 |---|---|---|---|
 | B1 The scan pass (D69) | 108 | A4, A2 | `RestSystem`'s growth, `RestDoor`, `server/intelligence`, a new window pass, the gift's first real model call. Elites' goal rolls and leaders' plans join the window. Read `a4-trees-seam-for-b1.md`: `exitWorld` overwrites the record |
-| B2 Gender, population, movement, packs (D64, D66, D93) | 110–112, 134 | A4, A5 | `WorldGenerator`, a new population module, `MobAI` herding, N7, N8, elites at the head of packs with sheets and goals, the ledger naming a body and the rank that fell, who was seen. **This wave's sole owner of `firstTheme.ts`, `goldens.ts` and the vectors:** elites, `social` and `builds`, and a refill if Pedro says so, so the vectors move once. Read `B2-herd-and-predation-notes.md` |
+| B2 Gender, population, movement, packs (D64, D66, D93) | 110–112, 134 | A4, A5 | `WorldGenerator`, a new population module, `MobAI` herding, N7, N8, elites at the head of packs with sheets and goals, the ledger naming a body and the rank that fell, who was seen. **This wave's sole owner of `firstTheme.ts`, `goldens.ts` and the vectors:** elites, `social` and `builds`, and the first theme's junk (D99), so the vectors move once. No refill goods (D96). Read `B2-herd-and-predation-notes.md` |
 | B3 Character creation and the deed (D35–D37, D72, D80) | 113 | A2 | `IdentityGate`, `WorldCreator`, `DeedSystem` |
-| B4 Guildhall, tavern, houses (D73, D75, D83, D93's chain, D95) | 115, the rank half of 128 | A1, A2, A3 | `hub/store`, `dialogue`, the guild: `grantRank`, the guild buying lots and pieces, a map handed in posting a chain, the tavern's real work. It inherits the Land Office: `depositToPlan`, `planRaise`, `OPEN_DEEDS`, `OPEN_PLAN` |
+| B4 Guildhall, tavern, houses (D73, D75, D83, D93's chain, D95) | 115, the rank half of 128 | A1, A2, A3 | `hub/store`, `dialogue`, the guild: `grantRank`, the guild buying lots and pieces, a map handed in posting a chain, the tavern's real work, the levy's roll and the tax evasion skill (D100). It inherits the Land Office: `depositToPlan`, `planRaise`, `OPEN_DEEDS`, `OPEN_PLAN` |
 | B5 The forced exit (D77) | 119's last clause | A4's vocabulary | `EffectSystem`, the item type |
 
 **Wave C, once B is merged:**
@@ -899,7 +904,10 @@ Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts`
 - C2 NPC adventurers (D76, line 116; needs B2, B4). The first time a boss can be brought down.
 - C3 territory, buildings, anchors, standing orders, the toll, settling by trade (D62, D93; lines 135; needs B1, B2, A3).
 - C4 buildings inside the hub's tech (D91; line 136; needs B4).
-- C5 crafting, stations and smaller places (D92; lines 137, 138; needs B4, C4; crafting is about a tenth built, so this is the largest stream left and may split).
+- C5 crafting and stations (D92; line 137; needs B4, C4; crafting is about a tenth built, so this is the largest stream left and may split).
+- C6 dungeons and studying junk (D98, D99; lines 138–140; needs B2's junk, B1, C5's station). The black dungeon arc waits for Pedro to tell it.
+
+**No stream yet:** the real work of the magic system (D97). Pedro says it is inserted and not operational, and will explain it when it is reached. Refilling as one very rare skill on the web (D96) belongs with it or with C4.
 
 **Serial, on purpose:** Wave 12, the honest test, in one sitting. Then Wave 13, the served runtime (D65, D70, D82).
 
@@ -926,7 +934,7 @@ Each stream played what it built, on its own test avatars and port. The coordina
 
 **Found only when the streams met, and fixed in the integration commit:** the readout read the skill curve as if it were the level curve, and read energy without levels. The mint listed a theme's older printing beside the current one, now `ContentRegistry.offered`. `world-seed-dev-3103` was missing from `launch.json`, which was the coordinator's own error in the brief. `App.tsx` and `AppView` each needed both new views.
 
-**Open, for Pedro to rule on:** subterfuge lowers a world's signed levy rate by up to half, which A2 chose so the attribute has work to do. Whether a weave needs circles before it can be cast. Whether the first theme gets a refill. Whether "drops" (D92) means a person drops in. The simulation's card is visible to players. Rates for every attribute are guesses until Wave 12, and the numbers can now be read on the TUNING tab.
+**Pedro's answers since (D96–D100):** refilling is one very rare skill on the web, a weave's circles wait for the magic system, a home station creates a dungeon, and the levy becomes a roll and a skill. Until B4 builds that roll, subterfuge still simply lowers the levy, as A2 built it. **Open:** the simulation's card is visible to players. Rates for every attribute are guesses until Wave 12, and the numbers can now be read on the TUNING tab.
 
 ### THE WORLD CLOCK — THE RECORD (built 2026-11-01, merged into main on Pedro's word the same day)
 
@@ -1131,7 +1139,10 @@ For the living worlds program, proposed 2026-11-01, not yet agreed:
 135. A boss holds mapped ground that grows, and takes a party, by anchors one person cannot be in two places to break; its chain posts when a map showing it reaches the guild
 136. A building asks a minimum size, and the hub's tech opens it; a hub can go tall or spread wide with connecting industries
 137. Recon and diving happen at stations; a production skill earns its station, and a station can be made small enough to carry
-138. A smaller place, in the theme's own word, is reached from the Nexus for gold, or from a home dive station
+138. A dungeon, smaller than any map and named in the theme's own word, is reached from the Nexus for gold or from a home dive station: a set sequence of rooms with encounters, skill checks to progress, and energy spent to map it
+139. A failed run knocks a use off a dungeon, it spawns with more than one, and it can be skilled around and inscribed
+140. Creatures drop junk that sells for gold, and studying junk opens what comes next
+141. Dodging the levy is a keyed roll that can fail, and doing it grows a skill
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
