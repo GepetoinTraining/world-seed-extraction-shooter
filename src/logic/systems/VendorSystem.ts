@@ -19,9 +19,21 @@
 
 import { IItem } from '../../../types';
 import { INeedFill, INpcAgenda, NeedKind, NpcAgenda } from './NpcAgenda';
-import { CHOICE_PREMIUM, IShopBook, ShopWeek, emptyBook } from '../economy/ShopWeek';
+import { CHOICE_PREMIUM, DEAL_DAYS, IShopBook, ShopWeek, emptyBook } from '../economy/ShopWeek';
 
 export type VendorKind = 'GENERAL' | 'TRADER';
+
+/** A piece that did not sell, on a timed deal before it comes apart. */
+export interface IBinPiece {
+  item: IItem;
+  /** What it was expected to fetch. */
+  ask: number;
+  price: number;
+  /** What its components come to. */
+  worth: number;
+  /** The day the deal ends. */
+  until: number;
+}
 
 export interface IVendorRecord {
   npcId: string;
@@ -35,6 +47,8 @@ export interface IVendorRecord {
   listed: IItem[];
   /** Components: sold, and worked. */
   parts: IItem[];
+  /** The bargain bin: what did not sell, marked down for a while. */
+  bin: IBinPiece[];
   /** The day a piece reached where it is, by id. */
   since: Record<string, number>;
   /** The last day a kind sold here, by definition. This is what it sees selling. */
@@ -63,6 +77,8 @@ export interface IVendorListing {
   stock: number;
   /** The vendor's own pieces, not a line of the day's shelf. Buying takes `item` itself. */
   held?: boolean;
+  /** In the bargain bin: its price is the deal's, and this is the day it ends. */
+  deal?: { until: number };
 }
 
 export interface IVendorRecipe {
@@ -115,7 +131,7 @@ const MAKES_PER_DAY = 1;
 const defOf = (item: IItem) => item.universalDefinitionId;
 const isRead = (item: IItem) => item.isIdentified !== false;
 
-const FRESH_CONTAINER = { listed: [], parts: [], since: {}, demand: {}, seen: [], known: [], patrons: [], book: emptyBook(), soldLast: {}, weeks: 0 };
+const FRESH_CONTAINER = { listed: [], parts: [], bin: [], since: {}, demand: {}, seen: [], known: [], patrons: [], book: emptyBook(), soldLast: {}, weeks: 0 };
 
 export const VendorSystem = {
   fresh(npcId: string, kind: VendorKind, day: number): IVendorRecord {
@@ -166,6 +182,9 @@ export const VendorSystem = {
       ...[...kinds.entries()].map(([def, items]) => ({
         id: `listing_own_${def}`, item: items[0], price: Math.max(1, items[0].value * OWN_MARKUP * factor),
         vendorId: record.npcId, stock: items.length, held: true
+      })),
+      ...record.bin.filter(piece => isRead(piece.item) && piece.until >= today).map(piece => ({
+        id: `listing_bin_${piece.item.id}`, item: piece.item, price: piece.price, vendorId: record.npcId, stock: 1, held: true, deal: { until: piece.until }
       }))
     ];
   },
@@ -195,13 +214,13 @@ export const VendorSystem = {
   },
 
   /** The week is over: last week's sales are what next week stocks, and its book is closed. */
-  closeWeek(record: IVendorRecord, today: number, parts: IItem[] = []): IVendorRecord {
-    return { ...record, parts: [...record.parts, ...parts], book: emptyBook(), soldLast: record.sold.lines, sold: { day: today, lines: {} }, weeks: record.weeks + 1 };
+  closeWeek(record: IVendorRecord, today: number, unsold: IBinPiece[] = []): IVendorRecord {
+    return { ...record, bin: [...record.bin, ...unsold], book: emptyBook(), soldLast: record.sold.lines, sold: { day: today, lines: {} }, weeks: record.weeks + 1 };
   },
 
   /** One of its own pieces, gone to a buyer. */
   takeOwn(record: IVendorRecord, itemId: string): IVendorRecord {
-    return { ...record, listed: record.listed.filter(i => i.id !== itemId), parts: record.parts.filter(i => i.id !== itemId) };
+    return { ...record, listed: record.listed.filter(i => i.id !== itemId), parts: record.parts.filter(i => i.id !== itemId), bin: record.bin.filter(p => p.item.id !== itemId) };
   },
 
   /**
@@ -248,15 +267,21 @@ export const VendorSystem = {
       listed.push(item);
       since[item.id] = day;
     };
-    const takeApart = (item: IItem): boolean => {
+    const bin: IBinPiece[] = [];
+    const takeApart = (item: IItem, expected = (item.value || 0) * OWN_MARKUP): boolean => {
       const came = tools.salvage(item, `${start.npcId}:salvage:${item.id}`);
       if (came === null) return false;
       parts = [...parts, ...came];
-      loss += ShopWeek.lossOf((item.value || 0) * OWN_MARKUP, came.reduce((sum, part) => sum + (part.value || 0), 0));
+      loss += ShopWeek.lossOf(expected, came.reduce((sum, part) => sum + (part.value || 0), 0));
       events.push({ kind: 'SALVAGED', itemId: item.id, defId: defOf(item), parts: came.map(p => p.id), day });
       return true;
     };
 
+    // What was on a deal and is still here when the deal ends comes apart.
+    for (const piece of start.bin) {
+      if (day < piece.until) bin.push(piece);
+      else if (!takeApart(piece.item, piece.ask)) list(piece.item);
+    }
     // What it took in: does this kind sell here?
     for (const item of start.held) {
       if (day - (since[item.id] ?? start.worked) < SEE_DAYS) {
@@ -272,8 +297,17 @@ export const VendorSystem = {
     // What has been sitting on the shelf.
     for (const item of start.listed) {
       if (day - (since[item.id] ?? start.worked) < ShopWeek.stockDays(item.rank, item.rarity) || sells(item)) listed.push(item);
-      // It cannot be taken apart, so it gets another stretch on the shelf
-      else if (!takeApart(item)) list(item);
+      else {
+        // It did not sell: a timed deal, unless it cannot be taken apart, and then it gets another stretch on the shelf
+        const came = tools.salvage(item, `${start.npcId}:salvage:${item.id}`);
+        if (came === null) { list(item); continue; }
+        const worth = came.reduce((sum, part) => sum + (part.value || 0), 0);
+        const ask = (item.value || 0) * OWN_MARKUP;
+        const price = ShopWeek.binPrice(item.value, worth);
+        // Worth more apart than a deal could ask: there is no bargain in it
+        if (price >= ask) takeApart(item, ask);
+        else bin.push({ item, ask, worth, price, until: day + DEAL_DAYS });
+      }
     }
 
     // What has met in its hands.
@@ -302,6 +336,6 @@ export const VendorSystem = {
       events.push({ kind: 'CRAFTED', recipeId: recipe.id, name: recipe.name, consumed: consumed.map(c => c.id), made: made.map(m => m.id), day });
     }
 
-    return { record: { ...start, held, listed, parts, since, seen, known, worked: day, book: { ...start.book, loss: start.book.loss + loss } }, events };
+    return { record: { ...start, held, listed, parts, bin, since, seen, known, worked: day, book: { ...start.book, loss: start.book.loss + loss } }, events };
   }
 };

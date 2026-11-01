@@ -51,11 +51,11 @@ import {
   questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
 import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, taxBook, walletBrought } from './money';
-import { IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
+import { DEAL_DAYS, IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
 import { Wallets } from '../../logic/economy/Wallets';
 import { Anchors } from '../../logic/economy/Anchors';
 
-import { IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/systems/VendorSystem';
+import { IBinPiece, IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/systems/VendorSystem';
 import { ApprenticeRoad, ICraftsman, generalKeepers } from '../../logic/systems/ApprenticeRoad';
 import { SalvageSystem, workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
@@ -79,32 +79,37 @@ const marketItems = (s: Pick<HubState, 'lots' | 'rooms' | 'vendors' | 'guild'>):
   return [
     ...s.lots.flatMap(l => [...l.inventory, ...(l.shopListings ?? []).map(li => li.item), ...(l.heldInTrade ?? [])]),
     ...Object.values(s.rooms).flatMap(r => r.placements.map(p => p.item)),
-    ...Object.values(s.vendors).flatMap(v => [...(v.held ?? []), ...(v.listed ?? []), ...(v.parts ?? [])]),
+    // Parts and the bargain bin are salvage's, and it and the web's value are disconnected systems
+    ...Object.values(s.vendors).flatMap(v => [...(v.held ?? []), ...(v.listed ?? [])]),
     ...s.guild.trophies,
     ...bank.stashTabs.flatMap(t => t.items),
     ...(usePlayerStore.getState().player.equipment?.items ?? [])
   ];
 };
 
-/** D115: what each unit left on a line comes apart into. */
-const salvageLine = (line: IShopListing, key: string): { parts: IItem[]; loss: number } => {
-  const parts: IItem[] = [];
-  let loss = 0;
+/** D115: each unit left on a line, on a timed deal. What it would come apart into sets how low the deal may go. */
+const binLine = (line: IShopListing, npcId: string, week: number | string, until: number): IBinPiece[] => {
+  const pieces: IBinPiece[] = [];
   for (let i = 0; i < line.stock; i++) {
-    const came = SalvageSystem.components({ ...line.item, id: `${line.item.id}_${key}_${i}` }, `${key}:${line.id}:${i}`);
+    const item = { ...line.item, id: `${line.item.id}_${week}_${i}` };
+    const came = SalvageSystem.components(item, `${npcId}:salvage:${item.id}`);
     if (!came) continue;
-    parts.push(...came);
-    loss += ShopWeek.lossOf(line.price, came.reduce((sum, part) => sum + (part.value || 0), 0));
+    const worth = came.reduce((sum, part) => sum + (part.value || 0), 0);
+    const price = ShopWeek.binPrice(item.value, worth);
+    // Worth more apart than a deal could ask: no bargain, and this line's unit is simply not carried over
+    if (price < line.price) pieces.push({ item, ask: line.price, worth, price, until });
   }
-  return { parts, loss };
+  return pieces;
 };
+
+const binLoss = (pieces: IBinPiece[]) => pieces.reduce((sum, piece) => sum + ShopWeek.lossOf(piece.ask, piece.worth), 0);
 
 /** A shelf is rolled afresh only when its week or its stock moves, so reading the same one twice costs nothing. */
 const shelfLossSeen = new WeakMap<IShopListing[], number>();
 const shelfLoss = (lines: IShopListing[]): number => {
   const seen = shelfLossSeen.get(lines);
   if (seen !== undefined) return seen;
-  const loss = lines.filter(l => !l.held).reduce((sum, line) => sum + salvageLine(line, 'expected').loss, 0);
+  const loss = lines.filter(l => !l.held).reduce((sum, line) => sum + binLoss(binLine(line, 'expected', 'expected', 0)), 0);
   shelfLossSeen.set(lines, loss);
   return loss;
 };
@@ -121,8 +126,12 @@ const benchPay = (craftsmen: ICraftsman[], npcId: string): { deltas: Record<stri
 };
 
 /** What the shops' week comes to as they stand, if nobody comes: the shelves coming apart, and their people. */
-const weekCostOf = (s: Pick<HubState, 'weaponShop' | 'armorShop' | 'consumableShop' | 'craftsmen'>): number =>
-  Object.entries(SHELF_OF).reduce((sum, [npcId, shelf]) => sum + shelfLoss(s[shelf]) + benchPay(s.craftsmen, npcId).total, 0);
+const weekCostOf = (s: Pick<HubState, 'weaponShop' | 'armorShop' | 'consumableShop' | 'craftsmen' | 'vendors'>): number =>
+  Object.entries(SHELF_OF).reduce((sum, [npcId, shelf]) => sum + shelfLoss(s[shelf]) + binLoss(s.vendors[npcId]?.bin ?? []) + benchPay(s.craftsmen, npcId).total, 0);
+
+/** What a listing costs: a shelf's price by the buyer's attributes, a deal's as it stands, so no discount takes it under its components. */
+export const priceOfListing = (listing: Pick<IShopListing, 'price' | 'deal'>, attributes: Parameters<typeof StatSystem.shopPrice>[1]): number =>
+  listing.deal ? listing.price : Math.ceil(StatSystem.shopPrice(listing.price, attributes));
 
 /** What the running cost reads: the city as it stands, its web, what is in it, and its shops. */
 const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web' | 'rooms' | 'vendors' | 'guild' | 'weaponShop' | 'armorShop' | 'consumableShop' | 'craftsmen'>) =>
@@ -327,6 +336,8 @@ export interface IShopListing {
   stock: number;
   /** One of the vendor's own pieces, bought in, not a line of the day's shelf. */
   held?: boolean;
+  /** In the bargain bin: its price is the deal's, and this is the day it ends. */
+  deal?: { until: number };
 }
 
 export interface IAuctionListing {
@@ -392,7 +403,7 @@ interface HubState extends ITechDoors {
    */
   centerReach: () => { skills: string[]; stations: IWebStation[] };
   /** The vendors and the people at their benches, up to today. Time away counts. */
-  resolveVendors: () => Promise<void>;
+  resolveVendors: (simDay?: number) => Promise<void>;
   /** A general vendor takes on someone lodged at the tavern (D75's door), who has no ground yet. */
   takeApprentice: (npcId: string, residentId: string) => Promise<RoomVerdict>;
   /** A master's own shelf, as this person sees it. */
@@ -629,7 +640,9 @@ export const useHubStore = create<HubState>((set, get) => ({
 
   offerFor: (item, npcId = COUNTER_NPC) => {
     const offer = StatSystem.vendorOffer(item.value, usePlayerStore.getState().player.attributes);
-    return Math.ceil(offer * VendorSystem.choiceFactor(get().vendors[npcId], item.universalDefinitionId, worldDay()));
+    const asked = Math.ceil(offer * VendorSystem.choiceFactor(get().vendors[npcId], item.universalDefinitionId, worldDay()));
+    // Bought from a bargain bin: the counter pays no more than the deal did, or a bin and a counter would print coin for anyone standing between them
+    return item.binPrice !== undefined ? Math.min(asked, item.binPrice) : asked;
   },
 
   closeWeeks: async (day) => {
@@ -644,25 +657,28 @@ export const useHubStore = create<HubState>((set, get) => ({
       }
       if (guild.week >= target) return;
       const week = guild.week;
+      // The week's last day: what ran out on a deal has come apart, and is on its keeper's book.
+      const closeDay = (week + 1) * ShopWeek.WEEK_DAYS;
+      await get().resolveVendors(closeDay);
       const balance = await Treasury.balance(activeHubId);
 
       // The treasury's read was the only wait. From here to the commit there is none.
       const state = get();
       const { perDay } = runningBook(cityOf(state));
-      const vendors = vendorsToday(state.vendors, state.craftsmen, day);
+      const vendors = vendorsToday(state.vendors, state.craftsmen, closeDay);
       const deltas: Record<string, number> = {};
       const add = (who: string, amount: number) => { deltas[who] = (deltas[who] ?? 0) + amount; };
       const shops: IShopWeekLine[] = [];
       for (const [npcId, shelf] of Object.entries(SHELF_OF)) {
         const record = vendors[npcId];
-        const unsold = state[shelf].filter(l => !l.held).map(line => salvageLine(line, `${activeHubId}:${npcId}:${week}`));
-        const book = { ...record.book, loss: record.book.loss + unsold.reduce((sum, u) => sum + u.loss, 0) };
+        const unsold = state[shelf].filter(l => !l.held).flatMap(line => binLine(line, npcId, week, closeDay + DEAL_DAYS));
+        const book = record.book;
         const pay = benchPay(state.craftsmen, npcId);
         const settled = ShopWeek.settle(book, pay.total);
         for (const [who, amount] of Object.entries(pay.deltas)) add(who, amount);
         if (settled.toKeeper > 0) add(npcId, settled.toKeeper);
         shops.push({ npcId, ...book, pay: pay.total, ...settled });
-        vendors[npcId] = VendorSystem.closeWeek(record, day, unsold.flatMap(u => u.parts));
+        vendors[npcId] = VendorSystem.closeWeek(record, closeDay, unsold);
       }
       const paidOut = shops.reduce((sum, s) => sum + s.pay + s.toKeeper, 0);
 
@@ -780,11 +796,11 @@ export const useHubStore = create<HubState>((set, get) => ({
     await get().closeWeeks(day);
   },
 
-  resolveVendors: async () => {
+  resolveVendors: async (simDay) => {
     await get().settleWallets();
     const { activeHubId, craftsmen, web, guild } = get();
     if (!activeHubId) return;
-    const today = Math.floor(Date.now() / 86_400_000);
+    const today = simDay ?? Math.floor(Date.now() / 86_400_000);
     const vendors = vendorsToday(get().vendors, craftsmen, today);
     const keepers = generalKeepers();
     const out: ICraftsman[] = [];
@@ -912,12 +928,13 @@ export const useHubStore = create<HubState>((set, get) => ({
     const row = get().traderShelf(traderId).find(l => l.id === listingId);
     if (!activeHubId || !row || !vendors[traderId]) return null;
     const player = usePlayerStore.getState().player;
-    const price = Math.ceil(StatSystem.shopPrice(row.price, player.attributes));
+    const price = priceOfListing(row, player.attributes);
     if (player.bank.gold < price) return null;
     const today = Math.floor(Date.now() / 86_400_000);
     const taken = VendorSystem.takeOwn(VendorSystem.normal(vendors[traderId]), row.item.id);
+    const boughtItem = row.deal ? { ...row.item, binPrice: price } : row.item;
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - price, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: [...tab.items, row.item] } : tab
+      idx === 0 ? { ...tab, items: [...tab.items, boughtItem] } : tab
     ) } } }));
     // A master has a purse of their own (D115): what they take is theirs
     const master = get().craftsmen.find(c => c.id === traderId);
@@ -930,7 +947,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     set({ vendors: { ...vendors, [traderId]: VendorSystem.recordSale(taken, listingId, today, 1, row.item.universalDefinitionId, price) } });
     await get().saveHubState();
-    return row.item;
+    return boughtItem;
   },
 
   raiseChunk: async (side, beside, kind) => {
@@ -2565,7 +2582,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     // Wave 2 (Wave 5 plumbing, early): gold actually moves, item actually lands
     const playerStore = usePlayerStore.getState();
-    const price = Math.ceil(StatSystem.shopPrice(listing.price, playerStore.player.attributes));
+    const price = priceOfListing(listing, playerStore.player.attributes);
     if (playerStore.player.bank.gold < price) return null;
 
     // Wave 10D: each unit sold is its OWN mint, deterministically keyed by the
@@ -2585,7 +2602,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       composition: CompositionSystem.root({ id: listing.item.universalDefinitionId, name: listing.item.name }, 'PURCHASE')
     };
     // What the vendor bought in is the same piece going out: it keeps its id and its story
-    const purchasedItem = listing.held ? listing.item : unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
+    const purchasedItem = listing.deal
+      ? { ...listing.item, binPrice: price, composition: unit.composition }
+      : listing.held ? listing.item : unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
 
     usePlayerStore.setState(s => ({
       player: {

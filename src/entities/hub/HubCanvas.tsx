@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
-import { craftName, useHubStore } from './store';
+import { craftName, priceOfListing, useHubStore, worldDay } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
 import { HUB_GENRE, IPlotShow, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
@@ -1132,7 +1132,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
 
   return (
     <Modal title={titles[category]} onClose={onClose} width={640}>
-      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Your gold: <span className="ws-proof">{player.bank.gold.toLocaleString()} G</span> · stock turns at midnight</div>
+      <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Your gold: <span className="ws-proof">{player.bank.gold.toLocaleString()} G</span> · stock turns with the week</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 240px', gap: 10, alignItems: 'start' }}>
         <div className="ws-list">
           {listings.map(listing => (
@@ -1145,18 +1145,18 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
                 <ItemSprite item={listing.item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
-                  <span className="ws-dim ws-small">stock {listing.stock}</span>
+                  <span className="ws-dim ws-small">{listing.deal ? `BARGAIN BIN: ${Math.max(0, listing.deal.until - worldDay())} days left` : `stock ${listing.stock}`}</span>
                 </span>
               </button>
               <Button
                 tone="proof"
-                disabled={listing.stock <= 0 || player.bank.gold < Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}
+                disabled={listing.stock <= 0 || player.bank.gold < priceOfListing(listing, player.attributes)}
                 onClick={() => {
                   const item = purchaseFromShop(listing.id, category);
-                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))} G. It is in your stash.`, 'proof');
+                  if (item) pushFeed(`Bought ${item.name} for ${priceOfListing(listing, player.attributes)} G. It is in your stash.`, 'proof');
                 }}
               >
-                BUY {Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}G
+                BUY {priceOfListing(listing, player.attributes)}G
               </Button>
             </div>
           ))}

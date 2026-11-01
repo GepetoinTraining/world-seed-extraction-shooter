@@ -16,7 +16,7 @@ import { Farm } from '../entities/hub/farm';
 import { HUB_NPCS, HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag, materialLabel } from '../entities/hub/room';
 import { lotConstruction } from '../entities/hub/template';
-import { buildingLabel, useHubStore, worldDay } from '../entities/hub/store';
+import { buildingLabel, priceOfListing, useHubStore, worldDay } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
@@ -187,10 +187,10 @@ const MasterShop: React.FC<{ craftsmanId: string }> = ({ craftsmanId }) => {
       {shelf.length === 0 && <div className="ws-dim ws-small">The shelf is bare. They work from what the keepers take apart.</div>}
       <div className="ws-list">
         {shelf.map(row => {
-          const price = Math.ceil(StatSystem.shopPrice(row.price, player.attributes));
+          const price = priceOfListing(row, player.attributes);
           return (
             <div key={row.id} className="ws-row ws-small" {...hoverProps(row.item)}>
-              <span>{row.item.name} · stock {row.stock}</span>
+              <span>{row.item.name} · {row.deal ? `BARGAIN BIN: ${Math.max(0, row.deal.until - worldDay())} days left` : `stock ${row.stock}`}</span>
               <Button tone="proof" disabled={player.bank.gold < price} onClick={() => { void buyFromTrader(craftsmanId, row.id).then(item => { if (item) pushFeed(`Bought ${item.name} for ${price} G. It is in your stash.`, 'proof'); }); }}>BUY {price}G</Button>
             </div>
           );

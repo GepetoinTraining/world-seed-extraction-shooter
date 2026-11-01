@@ -596,6 +596,8 @@ export interface IItem {
   creatureData?: import('./src/logic/systems/Capture').ICaged;
   /** Line 37: the bed this came off, the seed it grew from, and how many plantings stand behind it. */
   farmLine?: { lotId: string; bed: number; seedItemId: string; seedName: string; plantings: number; firstOrigin: string; plantedAt: number; reapedAt: number };
+  /** D115: bought from a bargain bin at this price. A counter pays no more than this for it. */
+  binPrice?: number;
 
   mapData?: {
     worldId: string;

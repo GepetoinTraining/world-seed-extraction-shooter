@@ -26,6 +26,11 @@ const RARITY_ORDER = Object.values(Rarity) as string[];
 /** What a kind of thing a keeper has seen selling fetches at the counter. A guess until Wave 12, and under the shelf's 1.5. */
 export const CHOICE_PREMIUM = 1.25;
 
+/** What the bargain bin asks of what an item is worth. Pedro's number. */
+const BIN_SHARE = 0.4;
+/** How long a deal stands before the piece comes apart. A guess until Wave 12. */
+export const DEAL_DAYS = 3;
+
 export interface IShopBook {
   /** What the shop's shelf took this week. */
   earned: number;
@@ -69,6 +74,11 @@ export const ShopWeek = {
   /** How long it is kept in stock before anyone gives up on it. A week for each step of uniqueness: a guess until Wave 12. */
   stockDays(rank: UniversalRank | string | undefined, rarity: Rarity | string | undefined): number {
     return WEEK_DAYS * (1 + this.uniqueness(rank, rarity));
+  },
+
+  /** "a bargain bin at 40% the item but higher than the component": it is always worth buying over taking it apart. */
+  binPrice(value: number, components: number): number {
+    return Math.max(Math.ceil((value || 0) * BIN_SHARE), Math.floor(components) + 1);
   },
 
   /** In whole coin, rounded up: a shelf's price can be a fraction, and the treasury holds no fractions. */
