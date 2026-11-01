@@ -56,7 +56,8 @@ export enum ItemType {
   COMMODITY = 'COMMODITY',
   TOOL = 'TOOL',
   LORE = 'LORE', // Wave 2.3: lore fragments & social contracts (contract upgrade: additive)
-  TEMPLATE = 'TEMPLATE' // Wave 10B: a signed building plan, designed at the scribe's table (additive)
+  TEMPLATE = 'TEMPLATE', // Wave 10B: a signed building plan, designed at the scribe's table (additive)
+  MAP = 'MAP' // D85: what a character scanned of one world, written at the scribe's table (additive)
 }
 
 export enum SlotType {
@@ -569,6 +570,15 @@ export interface IItem {
     uses: number;
   };
   /** D21: a scroll's protection runs on a clock — slots held until the time is spent. */
+  /** D85: a world's sectors as a scribe held them. Levels and counts, never a name (D60). */
+  mapData?: {
+    worldId: string;
+    worldName: string;
+    scribeUid: string;
+    scribeName: string;
+    writtenAt: number;
+    sectors: NonNullable<IPlayer['survey']>[string];
+  };
   scrollData?: {
     slots: number;
     chosen: boolean;

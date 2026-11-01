@@ -114,7 +114,7 @@ export class WorldClock {
       const msLeft = upMs - into;
       const warnFor = upMs * WARNING_SHARE;
       const warning: GateWarning = msLeft > warnFor ? 'NONE' : msLeft > warnFor * FINAL_SHARE ? 'CLOSING' : 'FINAL';
-      return { phase: 'UP', generation: cycle, msLeft, next: 'OFF', warning, canDeploy: true, canSurvey: false };
+      return { phase: 'UP', generation: cycle, msLeft, next: 'OFF', warning, canDeploy: true, canSurvey: true };
     }
     if (into < upMs + offMs) {
       return { phase: 'OFF', generation: cycle, msLeft: upMs + offMs - into, next: 'SCAN', warning: 'NONE', canDeploy: false, canSurvey: false };

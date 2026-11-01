@@ -4,7 +4,8 @@
  * floor zones with a tile cursor, hear every refusal in voice as you draw,
  * preview through composeRoom itself in color and grayscale, and MINT the
  * plan into a signed, tradable item. Copies are minted here too (D14), each
- * paid in paper and ink, each carrying the author's hand forever.
+ * paid in paper and ink, each carrying the author's hand forever. A map is written
+ * here too (D85), for the same bill, from what the character has scanned.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +19,10 @@ import { ITemplateItem, TemplateSystem, isTemplateItem } from '../logic/systems/
 import { usePlayerStore } from '../entities/player/store';
 import { useFeed } from './ui/stores';
 import { InsuranceSystem, SCROLL_DEFINITIONS } from '../logic/systems/InsuranceSystem'; // Wave 10E (D21)
+import { MapSystem } from '../logic/systems/MapSystem';
+import { SurveySystem } from '../logic/systems/SurveySystem';
+import { useWorldStore } from '../entities/world/store';
+import { WorldClock } from '../entities/world/WorldClock';
 import { composeRoom } from '../render/atoms/room';
 import { buildPalette, grayscale } from '../render/atoms/atoms';
 import { HUB_GENRE } from '../render/atoms/hub';
@@ -32,7 +37,7 @@ const STRUCTURES = ['HOUSE', 'WORKSHOP', 'VENDOR'] as const;
 interface DraftZone { name: string; tiles: { x: number; y: number }[] }
 
 export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [tab, setTab] = useState<'DRAW' | 'COPY' | 'SCROLLS'>('DRAW');
+  const [tab, setTab] = useState<'DRAW' | 'COPY' | 'SCROLLS' | 'MAPS'>('DRAW');
   const [footIdx, setFootIdx] = useState(1); // 4x4 by default: the lots the city has
   const [structureType, setStructureType] = useState<typeof STRUCTURES[number]>('HOUSE');
   const [pieces, setPieces] = useState<{ kind: RoomPieceKind; x: number; y: number }[]>([]);
@@ -50,6 +55,10 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
   const stash = player.bank.stashTabs[0]?.items || [];
   const templatesHeld = stash.filter(i => i.type === ItemType.TEMPLATE && isTemplateItem(i)) as ITemplateItem[];
   const [copySel, setCopySel] = useState<string>('');
+  const worlds = useWorldStore(s => s.availableWorlds);
+  useEffect(() => {
+    if (tab === 'MAPS' && worlds.length === 0) void useWorldStore.getState().refreshWorlds();
+  }, [tab, worlds.length]);
 
   const footprint = SIZE_CLASSES[footIdx];
   const size = interiorSize(footprint);
@@ -230,10 +239,11 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
         tabs={[
           { id: 'DRAW' as const, label: 'DRAW A PLAN' },
           { id: 'COPY' as const, label: `COPY A PLAN (${templatesHeld.length})` },
-          { id: 'SCROLLS' as const, label: 'WRITE A SCROLL' }
+          { id: 'SCROLLS' as const, label: 'WRITE A SCROLL' },
+          { id: 'MAPS' as const, label: 'WRITE A MAP' }
         ]}
         active={tab}
-        onChange={id => setTab(id as 'DRAW' | 'COPY' | 'SCROLLS')}
+        onChange={id => setTab(id as 'DRAW' | 'COPY' | 'SCROLLS' | 'MAPS')}
       />
       {tab === 'DRAW' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 10, alignItems: 'start', marginTop: 8 }}>
@@ -364,6 +374,43 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
           ))}
           <span className="ws-dim ws-small">
             A death keeps exactly what the magic names, for exactly as long as the ink holds. The bank honors it.
+          </span>
+        </div>
+      )}
+
+      {/* D85: what this character holds of a world, written down whole */}
+      {tab === 'MAPS' && (
+        <div className="ws-list" style={{ marginTop: 8 }}>
+          {Object.entries(player.survey ?? {}).flatMap(([worldId, sectors]) => {
+            const world = worlds.find(w => w.id === worldId);
+            if (!world || Object.keys(sectors).length === 0) return [];
+            const spread = SurveySystem.mapSpread(sectors);
+            const behind = WorldClock.momentAt(world, Date.now()).generation - spread.newest;
+            return [(
+              <div key={worldId} className="ws-row">
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>{world.name}</span>
+                  <span className="ws-dim ws-small">
+                    {spread.sectors} sector{spread.sectors === 1 ? '' : 's'} scanned · {behind > 0 ? `the freshest is ${behind} regeneration(s) old` : 'the freshest is from this regeneration'}
+                  </span>
+                </span>
+                <Button
+                  tone="proof"
+                  disabled={paperHeld < 1 || inkHeld < 1}
+                  title={paperHeld < 1 || inkHeld < 1 ? `needs ${billText(TEMPLATE_MINT_BILL)}` : undefined}
+                  onClick={async () => {
+                    const result = await MapSystem.write(worldId);
+                    pushFeed(result.ok ? `${result.item!.name} written and signed. It is in your stash.` : result.reason!, result.ok ? 'proof' : 'loss');
+                  }}
+                >
+                  WRITE (1 PAPER, 1 INK)
+                </Button>
+              </div>
+            )];
+          })}
+          {Object.keys(player.survey ?? {}).length === 0 && <span className="ws-dim ws-small">Nothing scanned yet. A map is what you have read of a world, written down.</span>}
+          <span className="ws-dim ws-small">
+            It holds levels and counts, as old as they were when scanned. Whoever reads it knows what you knew, then.
           </span>
         </div>
       )}

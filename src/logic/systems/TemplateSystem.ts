@@ -25,15 +25,15 @@ export const isTemplateItem = (item: IItem): item is ITemplateItem =>
 
 export interface TemplateMintResult { ok: boolean; reason?: string; item?: ITemplateItem }
 
-const stashItems = () => usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+export const stashItems = () => usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
 
-const removeFromStash = (ids: string[]) => usePlayerStore.setState(s => ({
+export const removeFromStash = (ids: string[]) => usePlayerStore.setState(s => ({
   player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
     idx === 0 ? { ...tab, items: tab.items.filter(i => !ids.includes(i.id)) } : tab
   ) } }
 }));
 
-const addToStash = (items: IItem[]) => usePlayerStore.setState(s => ({
+export const addToStash = (items: IItem[]) => usePlayerStore.setState(s => ({
   player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
     idx === 0 ? { ...tab, items: [...tab.items, ...items] } : tab
   ) } }
@@ -73,7 +73,7 @@ export class TemplateSystem {
   }
 
   /** Pay paper and ink from the stash, exactly once. Refuses naming the shortfall. */
-  private static payBill(): { ok: boolean; reason?: string; ids: string[] } {
+  static payBill(): { ok: boolean; reason?: string; ids: string[] } {
     const bill = pickBill(TEMPLATE_MINT_BILL, stashItems());
     if (!bill.ok) return { ok: false, reason: `The scribe's bill is short: ${bill.missing}. Paper and ink, nothing else writes.`, ids: [] };
     return { ok: true, ids: bill.items.map(i => i.id) };

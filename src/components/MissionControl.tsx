@@ -1,19 +1,18 @@
 /**
  * MISSION CONTROL (Wave 9): a card per world, the state of its gate on the
  * world's own clock (D67), one deploy door shared with the Conduit's quick deploy,
- * and recon while a world boots.
+ * and the way into recon, its own view (D85), while a world boots or stands open.
  */
 
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import React, { useEffect, useState } from 'react';
 import { useWorldStore, IWorldCard } from '../entities/world/store';
-import { usePlayerStore } from '../entities/player/store';
 import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
-import { ReconOverlay } from './WorldCanvas';
+import { openRecon } from './ReconView';
 import { WorldCreator } from './WorldCreator';
-import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
+import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
-import { useFeed, whileWaiting } from './ui/stores';
+import { useFeed } from './ui/stores';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
   UP: 'GATE OPEN — IT CLOSES IN',
@@ -70,18 +69,29 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginTop: isDev ? 10 : 0 }}>
         <span className="ws-dim ws-small">AGENTS <span className="ws-bright">{world.playerCount}</span></span>
-        {moment.phase === 'SCAN' ? (
-          <Button tone="signal" primary onClick={onSurvey} disabled={world.retired}>RECON</Button>
-        ) : (
-          <Button
-            tone="signal" primary={!isDev && !dark}
-            onClick={onDeploy}
-            disabled={world.retired || dark}
-            title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : dark ? 'The gate is down.' : undefined}
-          >
-            DEPLOY
-          </Button>
-        )}
+        {/* D85: recon always stands to the left of the drop, and neither risks anything until the drop itself */}
+        <span style={{ display: 'flex', gap: 6 }}>
+          {!isDev && (
+            <Button
+              tone="signal" primary={moment.phase === 'SCAN'}
+              onClick={onSurvey}
+              disabled={world.retired || !moment.canSurvey}
+              title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : dark ? 'The gate is down. Nothing reads until it boots.' : undefined}
+            >
+              RECON
+            </Button>
+          )}
+          {moment.phase !== 'SCAN' && (
+            <Button
+              tone="signal" primary={!isDev && !dark}
+              onClick={onDeploy}
+              disabled={world.retired || dark}
+              title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : dark ? 'The gate is down.' : undefined}
+            >
+              DEPLOY
+            </Button>
+          )}
+        </span>
       </div>
       {world.retired && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>RETIRED — the record stands; the ground is gone.</div>}
     </Panel>
@@ -103,22 +113,6 @@ export const MissionControl = () => {
     if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
   };
 
-  // D67: while a world boots a person can read it, and nothing is risked.
-  const [surveying, setSurveying] = useState(false);
-  const handleSurvey = async (worldId: string) => {
-    await whileWaiting(OPENING_WORLD, 'READING THE WORLD', () => useWorldStore.getState().selectWorld(worldId));
-    useWorldStore.getState().applySurvey(usePlayerStore.getState().player.survey?.[worldId]);
-    setSurveying(true);
-  };
-
-  if (surveying) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 300 }}>
-        <ReconOverlay surveyOnly onDrop={() => {}} onLeave={() => setSurveying(false)} />
-      </div>
-    );
-  }
-
   return (
     <div className="ws-ui" style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -130,7 +124,7 @@ export const MissionControl = () => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
         {availableWorlds.map(w => (
-          <WorldCard key={w.id} world={w} onDeploy={() => handleDeploy(w.id)} onSurvey={() => handleSurvey(w.id)} />
+          <WorldCard key={w.id} world={w} onDeploy={() => handleDeploy(w.id)} onSurvey={() => void openRecon(w.id)} />
         ))}
       </div>
 
