@@ -696,6 +696,8 @@ export interface ISkillState {
   scalingAttribute: string;
   /** D28: the deepest rank this skill has worked. It rides beside the identity, never in it. */
   rank?: number;
+  /** How rare the skill is: the rank it settled at. It sets the skill's pace and weight, and deeper work does not move it. */
+  bornRank?: number;
   /** D28: a track from an old save the law cannot read. Kept whole, off the web. */
   legacy?: boolean;
   origin?: {

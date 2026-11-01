@@ -533,6 +533,26 @@ describe('a rarer skill levels slowly, and each level does more', () => {
     expect(WebSystem.withCumulativeXp(skill(SS), work).level).toBeLessThan(WebSystem.withCumulativeXp(skill(F), work).level);
   });
 
+  it('deeper work does not make a common skill rare: its pace and its weight stay what it settled at', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { [pair.id]: { ...WebSystem.freshSkill(pair.id, pair.tags, F), level: 5 } } } } }));
+    const held = () => player().bank.universalSkills[pair.id];
+    const power = WebSystem.skillPower(held());
+    store().workOn(pair, SS, 5);
+    expect(held().rank).toBe(SS);
+    expect(held().bornRank).toBe(F);
+    expect(WebSystem.skillPower(held())).toBe(power);
+    expect(ProgressionSystem.skillRankOf(held())).toBe(UniversalRank.F);
+    expect(WebSystem.freshSkill(pair.id, pair.tags, SS).bornRank).toBe(SS);
+  });
+
+  it('a skill from before this takes the rank it has as its rarity, once, and keeps it after', () => {
+    const old = { id: 'skill_o', name: 'o', level: 2, currentXp: 10, tags: [], rank: 3 } as any;
+    const bank = { ...player().bank, universalSkills: { skill_o: old } };
+    const moved = ProgressionSystem.migrate({ ...player(), rank: undefined, levelXp: undefined, rankXp: 0, bank });
+    expect(moved.bank.universalSkills.skill_o.bornRank).toBe(3);
+  });
+
   it('a first level does nothing yet, and each level after does more the rarer the skill', () => {
     expect(WebSystem.skillPower(skill(SS, 1))).toBe(0);
     expect(WebSystem.skillPower(skill(F, 2))).toBeCloseTo(SKILL_IMPACT_PER_LEVEL);

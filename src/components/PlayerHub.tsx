@@ -278,7 +278,7 @@ const SkillsTab: React.FC = () => {
       {filtered.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 10 }}>No matching engrams. Skills are born from actions, not menus.</div>}
       <div className="ws-list">
         {filtered.map(([key, skill]) => {
-          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level, skill.rank);
+          const xpNeeded = ProgressionSystem.getXpToNextLevel(skill.level, ProgressionSystem.skillRarity(skill));
           const rank = ProgressionSystem.skillRankOf(skill);
           return (
             <div key={key} className="ws-row">

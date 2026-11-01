@@ -1996,8 +1996,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // D84: the road is long; knowing how to learn is what shortens it
       skill.currentXp += Math.round(amount * StatSystem.learnRate(player.attributes));
       
-      while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level, skill.rank)) {
-        skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level, skill.rank);
+      while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level, ProgressionSystem.skillRarity(skill))) {
+        skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level, ProgressionSystem.skillRarity(skill));
         skill.level++;
       }
 
@@ -2019,7 +2019,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set(s => {
         const skill = s.player.bank.universalSkills[pair.id];
         if ((skill.rank ?? 0) >= rank) return s;
-        return { player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [pair.id]: { ...skill, rank } } } } };
+        return { player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, [pair.id]: { ...skill, bornRank: ProgressionSystem.skillRarity(skill), rank } } } } };
       });
       return;
     }

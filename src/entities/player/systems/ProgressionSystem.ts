@@ -33,7 +33,7 @@ export const SKILL_TIME_FACTOR = 2.5;
 /**
  * A rarer skill climbs slowly and each level counts for more: "a rarer skill (rank
  * SS for instance, think Kirito's dual wield) should level up slowly and have a large
- * impact per level." A skill's rank is the deepest it has worked, and each step up
+ * impact per level." A skill's rarity is the rank it settled at, and each step up
  * multiplies both. Rank SS asks about 27 times the work of rank F per level, and each
  * level does about 17 times as much. Guesses until Wave 12.
  */
@@ -169,7 +169,7 @@ export class ProgressionSystem {
     const rank = this.rankFromXp(lifetime);
     const levelXp = lifetime - RANK_XP_THRESHOLDS[rank];
     const level = this.levelFromXp(rank, levelXp).level;
-    const scaleSkill = (s: ISkillState): ISkillState => ({ ...s, currentXp: Math.round(s.currentXp * SKILL_TIME_FACTOR * this.skillTimeFactor(s.rank)) });
+    const scaleSkill = (s: ISkillState): ISkillState => ({ ...s, bornRank: this.skillRarity(s), currentXp: Math.round(s.currentXp * SKILL_TIME_FACTOR * this.skillTimeFactor(this.skillRarity(s))) });
     const scaleWork = (p: ISkillProgress): ISkillProgress => ({ ...p, weight: p.weight * SKILL_TIME_FACTOR });
     const mapValues = <T,>(rows: Record<string, T>, fn: (row: T) => T) =>
       Object.fromEntries(Object.entries(rows).map(([id, row]) => [id, fn(row)]));
@@ -221,9 +221,14 @@ export class ProgressionSystem {
     return Math.pow(SKILL_RANK_IMPACT_GROWTH, Math.max(0, skillRank));
   }
 
-  /** The rank a skill shows: the deepest it has worked. */
-  static skillRankOf(skill: Pick<ISkillState, 'rank'>): UniversalRank {
-    return RANK_ORDER[Math.max(0, skill.rank ?? 0)] ?? UniversalRank.SSS;
+  /** How rare a skill is. One from before this has no birth on record, and what it had worked stands in. */
+  static skillRarity(skill: Pick<ISkillState, 'rank' | 'bornRank'>): number {
+    return skill.bornRank ?? skill.rank ?? 0;
+  }
+
+  /** The rank a skill shows: how rare it is. */
+  static skillRankOf(skill: Pick<ISkillState, 'rank' | 'bornRank'>): UniversalRank {
+    return RANK_ORDER[Math.max(0, this.skillRarity(skill))] ?? UniversalRank.SSS;
   }
 
   /**
