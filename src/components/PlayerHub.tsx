@@ -317,7 +317,7 @@ const SkillsTab: React.FC = () => {
                 <RankMark rank={rank} scale={2} />
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span className="t" style={{ display: 'block', textTransform: 'uppercase' }}>
-                    {WebSystem.nameOf(skill.id)}
+                    {player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id)}
                   </span>
                   <span className="s">
                     base {skill.level}

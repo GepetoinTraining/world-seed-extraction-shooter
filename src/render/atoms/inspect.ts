@@ -18,6 +18,8 @@ import { IRoomState, roomAdditions } from '../../entities/hub/room';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { SurveySystem } from '../../logic/systems/SurveySystem';
+import { WorldDeed } from '../../logic/systems/WorldDeed';
+import { WorldClock } from '../../entities/world/WorldClock';
 
 export interface Card {
   title: string;
@@ -180,6 +182,19 @@ function inspectTemplate(item: IItem): Card {
   return { title: item.name, rows, needs: [], canAct: false, compact: compact(item.name, tpl.authorName) };
 }
 
+/** D72, D80: a world deed's card says what it mints and how that runs. The sky waits for the mint. */
+function inspectWorldDeed(item: IItem): Card {
+  const { size, source } = item.worldDeedData!;
+  const cadence = WorldClock.cadenceFor(size);
+  const rows: [string, string][] = [
+    ['Mints', WorldDeed.say(size)],
+    ['Gate', `Up ${WorldClock.say(cadence.upMs)}, off ${WorldClock.say(cadence.offMs)}, boots ${WorldClock.say(cadence.scanMs)}`],
+    ['From', source === 'FREE' ? 'Given to everyone, once' : 'Found'],
+    ['Spent', 'At the signing. The sky is chosen then.']
+  ];
+  return { title: item.name, rows, needs: [], canAct: false, compact: compact(item.name, WorldDeed.say(size)) };
+}
+
 /** D85: a map's card says where, how much, how old and whose hand. It holds no name, so it can say none. */
 function inspectMap(item: IItem): Card {
   const map = item.mapData!;
@@ -264,6 +279,7 @@ export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | nul
 export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
   if (item.mapData) return inspectMap(item);
+  if (item.worldDeedData) return inspectWorldDeed(item);
   if (item.isIdentified === false) {
     return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
   }

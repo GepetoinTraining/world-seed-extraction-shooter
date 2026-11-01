@@ -8,32 +8,29 @@
  * refuses to touch an identity the store already holds.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useIdentityStore, IdentityState } from '../entities/identity/store';
-import { usePlayerStore, ARCHETYPES } from '../entities/player/store';
+import { usePlayerStore } from '../entities/player/store';
 import { AvatarRoster, IRosterEntry } from '../entities/identity/roster';
 import { Archetype, figure } from '../render/atoms/people';
+import { HomeHub } from '../logic/persistence/HomeHub';
+import { CreationDoor } from '../logic/systems/CreationDoor';
+import { CreationSystem, ICreationSheet } from '../logic/systems/CreationSystem';
+import { WorldDeed } from '../logic/systems/WorldDeed';
+import { CreationFlow } from './CreationFlow';
+import { useCreationDraft } from './ui/creationDraft';
 import { Button, Input, Panel, PortraitView, SpriteView } from './ui/kit';
 
 const FORCE_SELECT = 'worldseed_force_select';
 
-const ARCHETYPE_LINES: Record<string, string> = {
-  OPERATOR: 'Reads the machine. Pack and antenna; the terminal answers faster.',
-  STREET_SAMURAI: 'Angular shoulders, a topknot, and no patience for locked doors.',
-  NOMAD: 'Hood and cloak. Walks out of places others are carried out of.',
-  ARCANIST: 'Robe and halo. Asks the Seed directly and sometimes it answers.'
-};
-
 export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   const { state, createIdentity, certificate, error, checkExistingIdentity } = useIdentityStore();
-  const { ensureCharacter } = usePlayerStore();
+  const { ensureCharacter, player } = usePlayerStore();
 
   const [mode, setMode] = useState<'select' | 'birth' | 'restore' | 'minted'>('select');
   const [roster, setRoster] = useState<IRosterEntry[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
 
-  const [name, setName] = useState('');
-  const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const [backupFile, setBackupFile] = useState<File | null>(null);
@@ -52,16 +49,20 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
     }
   }, []);
 
-  const handleMint = async () => {
-    if (!name || !selectedArchetype) return;
+  const handleMint = async (name: string, sheet: ICreationSheet) => {
+    if (creating) return;
     setCreating(true);
     const success = await createIdentity(name);
     if (success) {
       const cert = useIdentityStore.getState().certificate;
       if (cert) {
-        AvatarRoster.remember(cert, selectedArchetype);
+        AvatarRoster.remember(cert, sheet.silhouette);
         AvatarRoster.setActive(cert);
-        ensureCharacter(cert, selectedArchetype);
+        ensureCharacter(cert, sheet.silhouette, sheet);
+        CreationDoor.holdSheet(cert.metadata.uid, sheet);
+        // Where they chose to arrive is theirs. No choice means the hub this device's boot finds.
+        if (sheet.hubId) await HomeHub.pin(cert.metadata.uid, sheet.hubId);
+        useCreationDraft.getState().reset();
         setRoster(AvatarRoster.list());
         setMode('minted');
       }
@@ -75,7 +76,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
     const st = useIdentityStore.getState();
     if (st.state !== IdentityState.READY || !st.certificate) return; // key missing: the gate says so below
     // The fix: adopt, never reinitialize. The archetype rides along for genesis only.
-    ensureCharacter(st.certificate, entry.archetype || 'OPERATOR');
+    ensureCharacter(st.certificate, entry.archetype || 'OPERATOR', CreationDoor.heldSheet(st.certificate.metadata.uid));
     onComplete();
   };
 
@@ -92,6 +93,11 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
 
   // --- BIRTH MOMENT: the real avatar from the real certificate ---
   if (mode === 'minted' && certificate) {
+    const uid = certificate.metadata.uid;
+    const made = player.id === uid ? player.creation : undefined;
+    const focus = made ? CreationSystem.focusOf(made.origin, uid) : null;
+    const dealt = player.baseAttributes as unknown as Record<string, number>;
+    const deeds = player.id === uid ? WorldDeed.held(player) : [];
     return (
       <Gate>
         <Panel tone="proof" style={{ width: 460 }}>
@@ -108,6 +114,12 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           <div style={{ textAlign: 'center' }} className="ws-small">
             <div className="ws-bright">{certificate.metadata.displayName.toUpperCase()}</div>
             <div className="ws-dim" style={{ wordBreak: 'break-all' }}>{certificate.metadata.uid}</div>
+            {focus && (
+              <div style={{ marginTop: 6 }}>
+                MAIN FOCUS {focus.main.toUpperCase()} {dealt[focus.main]} · SUB FOCUS {focus.sub.toUpperCase()} {dealt[focus.sub]}
+              </div>
+            )}
+            {deeds.length > 0 && <div className="ws-dim" style={{ marginTop: 2 }}>IN THE VAULT: {deeds.map(d => d.name).join(', ')}</div>}
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 14 }}>
             <Button
@@ -132,67 +144,21 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
     );
   }
 
-  // --- BIRTH ---
+  // --- BIRTH: the flow, and its draft survives leaving this screen ---
   if (mode === 'birth') {
     return (
       <Gate>
-        <Panel title="GENESIS PROTOCOL" right={roster.length > 0 && <Button tone="quiet" onClick={() => setMode('select')}>BACK TO SELECT</Button>} style={{ width: 720 }}>
-          <div className="ws-dim ws-small" style={{ marginBottom: 10 }}>
-            Mint a sovereign identity. The certificate signs everything you ever bank.
-          </div>
-
-          <Input
-            label="1. DESIGNATION — CODENAME"
-            placeholder="KAEL / SERA / IO…"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            style={{ textTransform: 'uppercase' }}
-            autoFocus
-          />
-
-          <div className="ws-dim ws-small" style={{ margin: '12px 0 6px', letterSpacing: '0.08em' }}>2. NEURAL ARCHETYPE</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {Object.entries(ARCHETYPES).map(([key, stats]) => {
-              const active = selectedArchetype === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSelectedArchetype(key)}
-                  aria-pressed={active}
-                  className="ws-ui"
-                  style={{
-                    display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', cursor: 'pointer',
-                    background: active ? 'var(--ws-signal-0)' : 'var(--ws-void-2)',
-                    border: `1px solid ${active ? 'var(--ws-signal-2)' : 'var(--ws-void-4)'}`,
-                    padding: 8, color: 'inherit', fontFamily: 'var(--ws-mono)'
-                  }}
-                >
-                  <SpriteView sprite={figure({ uid: `preview:${name || 'unborn'}`, archetype: key as Archetype })} scale={3} />
-                  <span style={{ minWidth: 0 }}>
-                    <span className={active ? 'ws-signal' : 'ws-bright'} style={{ display: 'block', letterSpacing: '0.08em' }}>{key.replace('_', ' ')}</span>
-                    <span className="ws-dim ws-small" style={{ display: 'block' }}>{ARCHETYPE_LINES[key]}</span>
-                    <span className="ws-small" style={{ display: 'block', marginTop: 2 }}>
-                      {Object.entries(stats).map(([stat, val]) => `${stat.slice(0, 3).toUpperCase()} +${val}`).join(' · ')}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
-            The silhouette is the archetype's. The face comes from the certificate — you will meet it after the mint.
-          </div>
-
-          {error && <div className="ws-loss ws-small" style={{ marginTop: 8 }}>GENERATION FAILED: {error}</div>}
-
-          <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
-            <Button tone="proof" primary disabled={!name || !selectedArchetype || creating} onClick={handleMint} style={{ flex: 1, textAlign: 'center' }}>
-              {creating ? 'MINTING…' : 'MINT IDENTITY CERTIFICATE'}
-            </Button>
-            <Button tone="quiet" onClick={() => setMode('restore')}>RESTORE A BACKUP</Button>
-          </div>
-        </Panel>
+        <CreationFlow
+          onMint={handleMint}
+          creating={creating}
+          error={error}
+          aside={
+            <span style={{ display: 'flex', gap: 6 }}>
+              {roster.length > 0 && <Button tone="quiet" onClick={() => setMode('select')}>TO CHARACTER SELECT</Button>}
+              <Button tone="quiet" onClick={() => setMode('restore')}>RESTORE A BACKUP</Button>
+            </span>
+          }
+        />
       </Gate>
     );
   }
@@ -279,7 +245,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           })}
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <Button tone="proof" onClick={() => { setName(''); setSelectedArchetype(null); setMode('birth'); }}>MINT A NEW AVATAR</Button>
+          <Button tone="proof" onClick={() => setMode('birth')}>MINT A NEW AVATAR</Button>
           <Button tone="quiet" onClick={() => setMode('restore')}>RESTORE A BACKUP</Button>
         </div>
       </Panel>
