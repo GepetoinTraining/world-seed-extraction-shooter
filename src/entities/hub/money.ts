@@ -43,9 +43,18 @@ const BUILDING_PER_TILE = 1;
 /** Who keeps the hub's free ground, and is paid for it. */
 const GROUND_KEEPER = 'npc_land_manager';
 
-/** "every imigrant comes in with cash": a fortnight of their own living or more, keyed. How much more is a guess until Wave 12. */
-const WALLET_DAYS_MIN = PRINT_DAYS;
-const WALLET_DAYS_TOP = PRINT_DAYS * 4 + 1;
+/**
+ * Pedro: "these aren't normal immigrants, they're survivors in broken worlds carrying their riches ...
+ * they literally are skilled enough to survive past Extinction ... Think they're mostly all successful."
+ * One to four years of their own living, keyed. A guess until Wave 12.
+ */
+const SURVIVOR_DAYS_MIN = 365;
+const SURVIVOR_DAYS_TOP = 365 * 4 + 1;
+/** A keeper of the city is staff, not a survivor: a fortnight of their living or more, keyed. A guess until Wave 12. */
+const KEEPER_DAYS_MIN = PRINT_DAYS;
+const KEEPER_DAYS_TOP = PRINT_DAYS * 4 + 1;
+/** D104's "more money than they need", in days of their own living. A guess until Wave 12. */
+const MORE_THAN_NEEDED_DAYS = KEEPER_DAYS_TOP;
 
 export interface IRunningLine {
   /** Who is paid it. */
@@ -148,17 +157,19 @@ export function foldDays(balance: number, perDay: number, days: number, printPer
   return { prints, paid: Math.max(0, days) * perDay };
 }
 
-/** What a person comes with: days of their own living, the same on every machine. */
+/** What a survivor comes with: days of their own living, the same on every machine. */
 export function walletBrought(personId: string, rank: UniversalRank | string): number {
-  return residentUpkeepPerDay(rank) * Rng.fromKey(`wallet:${personId}`).int(WALLET_DAYS_MIN, WALLET_DAYS_TOP);
+  return residentUpkeepPerDay(rank) * Rng.fromKey(`wallet:${personId}`).int(SURVIVOR_DAYS_MIN, SURVIVOR_DAYS_TOP);
 }
 
-/**
- * D104's "more money than they need": more days of their own living than anyone brings. A guess
- * until Wave 12. It reads their coin as a count, and never what coin is worth.
- */
+/** What a keeper of the city comes with. */
+export function keeperBrought(personId: string, rank: UniversalRank | string): number {
+  return residentUpkeepPerDay(rank) * Rng.fromKey(`wallet:${personId}`).int(KEEPER_DAYS_MIN, KEEPER_DAYS_TOP);
+}
+
+/** It reads their coin as a count, and never what coin is worth. So a survivor arrives past this rung. */
 export const moreThanTheyNeed = (coin: number, rank: UniversalRank | string): boolean =>
-  coin >= residentUpkeepPerDay(rank) * WALLET_DAYS_TOP;
+  coin >= residentUpkeepPerDay(rank) * MORE_THAN_NEEDED_DAYS;
 
 /** A keeper's rank, for what they bring. */
 export const npcRank = (npcId: string): UniversalRank => rankOfNpc(HUB_NPCS[npcId] ?? {});

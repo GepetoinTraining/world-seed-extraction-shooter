@@ -56,6 +56,8 @@ Postgres is the one dialect. **Locally, PGlite on a folder, so nobody installs a
 
 **Stay as signed or content-addressed bodies, with columns beside them.** Signatures cover exact bytes, so these cannot be split without breaking every signature: the player document, `ledger_rows.data`, the session journal, provenance rows, world certificates, theme packs and content packs. They stay as exact text, as now, plus columns for what is queried.
 
+**The foundation is the tech web (D129).** Pedro: "make the foundation the tech web, atop it make the entities inherit characteristics". So tech nodes and edges are the first tables, and what an entity can do points at them. The order below is the order of moving data; the shape of every family starts from that table.
+
 **Become relational, in this order, the worst growth first:**
 
 | Family | Tables | From |
@@ -101,7 +103,7 @@ client -> server   { subscribe: 'hub:<id>', since: <seq> }
 
 ## 8. The order, and what Pedro decides
 
-Each phase leaves the game playable and changes no behaviour. **The golden vectors, the gold audit and the 2,620 bars are the safety net,** and a phase is done when they pass unchanged.
+Each phase leaves the game playable and changes no behaviour. **The golden vectors, the gold audit and the 2,621 bars are the safety net,** and a phase is done when they pass unchanged.
 
 | Phase | Work | Can fan out? |
 |---|---|---|
@@ -109,7 +111,7 @@ Each phase leaves the game playable and changes no behaviour. **The golden vecto
 | 1 | Move pure law to `src/utils/<domain>`, with the import bar | Yes, by domain, once the store is split into files |
 | 2 | Split `hub/store.ts` and `player/store.ts` into commands, data and view state. Events replace `useFeed` in law | One stream per store, in order |
 | 3 | Postgres as the one dialect, PGlite locally, a tool that carries a saved database over | One stream. Rehearse on a copy of Pedro's save before touching it |
-| 4 | Tables, in section 5's order, each with a migration | Yes, per family, once phase 2 stands |
+| 4 | Tables, tech web first (D129), then section 5's order, each with a migration. C13 meets this | Yes, per family, once phase 2 stands |
 | 5 | IndexedDB cache and outbox, hooks | One stream |
 | 6 | Certificate auth, then the socket | One stream, the door to Wave 13 |
 

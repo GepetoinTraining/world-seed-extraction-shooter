@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { UniversalRank } from '../types';
 import { WEB_BATCHES } from '../src/entities/generation/packs/webBatches';
 import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { moreThanTheyNeed, walletBrought } from '../src/entities/hub/money';
+import { keeperBrought, moreThanTheyNeed, walletBrought } from '../src/entities/hub/money';
 import { residentUpkeepPerDay } from '../src/entities/hub/guild';
 import { Koseki } from '../src/entities/world/Koseki';
 import { Population, emptyPopulationRecord } from '../src/entities/world/Population';
@@ -50,8 +50,11 @@ describe('C1 and C2: two batches cut the same day', () => {
 
 describe('C2 and C3: the ladder reads a person\'s own coin', () => {
   const living = residentUpkeepPerDay(UniversalRank.D);
-  it('nobody comes with more than they need, and more than anyone brings is more than they need', () => {
-    for (let i = 0; i < 200; i++) expect(moreThanTheyNeed(walletBrought(`p${i}`, UniversalRank.D), UniversalRank.D)).toBe(false);
+  it('a survivor arrives past the money rung, a keeper does not, and the line itself did not move', () => {
+    for (let i = 0; i < 200; i++) {
+      expect(moreThanTheyNeed(walletBrought(`p${i}`, UniversalRank.D), UniversalRank.D)).toBe(true);
+      expect(moreThanTheyNeed(keeperBrought(`p${i}`, UniversalRank.D), UniversalRank.D)).toBe(false);
+    }
     expect(moreThanTheyNeed(living * 57, UniversalRank.D)).toBe(true);
     expect(moreThanTheyNeed(living * 56, UniversalRank.D)).toBe(false);
   });

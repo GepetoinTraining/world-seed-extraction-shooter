@@ -50,7 +50,7 @@ import {
   GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   mayHaveGround, questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
-import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, taxBook, walletBrought } from './money';
+import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, keeperBrought, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, taxBook, walletBrought } from './money';
 import { DEAL_DAYS, IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
 import { Wallets } from '../../logic/economy/Wallets';
 import { Anchors } from '../../logic/economy/Anchors';
@@ -745,7 +745,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { activeHubId, guild, craftsmen } = get();
     if (!activeHubId) return;
     const people = new Map<string, { name: string; amount: number }>();
-    for (const npc of Object.values(HUB_NPCS)) people.set(npc.id, { name: npc.name, amount: walletBrought(`${activeHubId}:${npc.id}`, npcRank(npc.id)) });
+    for (const npc of Object.values(HUB_NPCS)) people.set(npc.id, { name: npc.name, amount: keeperBrought(`${activeHubId}:${npc.id}`, npcRank(npc.id)) });
     // Whoever they are on the books today, the wallet is the person's: a bond names them for life
     for (const { bond, name } of [...guild.residents, ...craftsmen]) {
       const id = residentIdOf(bond);

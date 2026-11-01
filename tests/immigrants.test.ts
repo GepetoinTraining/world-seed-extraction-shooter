@@ -40,7 +40,7 @@ import { Treasury } from '../src/logic/economy/Treasury';
 import { Ledger } from '../src/logic/ledger/Ledger';
 import { ShopWeek } from '../src/logic/economy/ShopWeek';
 import { Wallets } from '../src/logic/economy/Wallets';
-import { walletBrought } from '../src/entities/hub/money';
+import { keeperBrought, walletBrought } from '../src/entities/hub/money';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
 import { WebSystem } from '../src/logic/systems/WebSystem';
 import { StatSystem } from '../src/logic/systems/StatSystem';
@@ -115,9 +115,16 @@ const meetWant = async (residentId: string, value = 1) => {
 const allCoin = async () => await Treasury.balance(HUB) + player().bank.gold + Object.values(hub().wallets).reduce((s, n) => s + n, 0);
 
 describe('"every imigrant comes in with cash"', () => {
-  it('at least a fortnight of their own living, keyed to them, and more for someone of higher rank', () => {
-    const amounts = Array.from({ length: 200 }, (_, i) => walletBrought(`res_${i}`, UniversalRank.D));
+  it('a keeper of the city is not a survivor, and comes with weeks of living', () => {
+    const amounts = Array.from({ length: 200 }, (_, i) => keeperBrought(`npc_${i}`, UniversalRank.D));
     expect(Math.min(...amounts)).toBeGreaterThanOrEqual(14 * residentUpkeepPerDay(UniversalRank.D));
+    expect(Math.max(...amounts)).toBeLessThanOrEqual(56 * residentUpkeepPerDay(UniversalRank.D));
+  });
+
+  it('survivors carrying their riches: years of their own living, keyed to them, and more for someone of higher rank', () => {
+    const amounts = Array.from({ length: 200 }, (_, i) => walletBrought(`res_${i}`, UniversalRank.D));
+    expect(Math.min(...amounts)).toBeGreaterThanOrEqual(365 * residentUpkeepPerDay(UniversalRank.D));
+    expect(Math.max(...amounts)).toBeGreaterThan(2 * 365 * residentUpkeepPerDay(UniversalRank.D));
     expect(walletBrought('res_a', UniversalRank.D)).toBe(walletBrought('res_a', UniversalRank.D));
     expect(walletBrought('res_a', UniversalRank.A)).toBeGreaterThan(walletBrought('res_a', UniversalRank.F));
   });
