@@ -29,6 +29,8 @@ import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
+import { Capture } from '../../logic/systems/Capture';
+import { FieldCapture } from '../../logic/systems/FieldCapture';
 import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
@@ -1013,7 +1015,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const equipment = player.equipment;
     const pouch = equipment ? LoadoutSystem.itemIn(equipment, pouchSlot) : undefined;
     if (!pouch?.pouchData) return { ok: false, reason: `No pouch rides ${pouchSlot}.` };
-    const item = pouch.pouchData.contents.find(c => c.type === IT.CONSUMABLE);
+    // A cage is not something to bring out of a belt in a hurry (D65)
+    const item = pouch.pouchData.contents.find(c => c.type === IT.CONSUMABLE && !c.creatureData);
     if (!item) return { ok: false, reason: `${pouch.name} holds nothing quick to use.` };
     if (!session) return { ok: false, reason: 'Quick-use is for the field.' };
 
@@ -1640,6 +1643,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session || !item || item.type !== ItemType.CONSUMABLE) return;
     const unread = LoadoutSystem.unreadRefusal(item);
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
+    // D65: what is in a cage is tried, not eaten
+    if (item.creatureData) { FieldCapture.tame(item.id); return; }
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
@@ -1820,6 +1825,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     // HARVEST (Wave 2.2): keyed yield, node depletion, flora regrow
     // ------------------------------------------------------------------
+    // D65: a snare on a body in reach. The law and the record are in FieldCapture.
+    if (interactionId.startsWith('int_snare_')) {
+      if (!entity) return;
+      if (!spendEnergy(Capture.SNARE_ENERGY)) return;
+      FieldCapture.snare(entity);
+      return;
+    }
+
     if (interactionId.startsWith('int_harvest_')) {
       const def = RESOURCE_DEFINITIONS[entity.definitionId];
       if (!def?.harvestConfig) return;

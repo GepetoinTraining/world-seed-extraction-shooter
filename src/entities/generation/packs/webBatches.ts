@@ -300,5 +300,30 @@ export const WEB_BATCHES: IWebBatch[] = [
     names: [
       { tags: ['craftsmanship'], name: 'Crafting', flavor: 'Three benches, and none of them taught it by name.' }
     ]
+  },
+  {
+    runId: 'run_009_the_land',
+    model: 'claude-opus-5-5',
+    ranAt: 20261101,
+    tags: [
+      { tag: 'farming', kind: 'trade', meaning: 'Sowing a plot and taking what comes up.' },
+      { tag: 'grove_keeping', kind: 'trade', meaning: 'Keeping what stands and bears, year on year.' },
+      { tag: 'herding', kind: 'trade', meaning: 'Keeping living things at home, and getting them to stay.' },
+      { tag: 'cooking', kind: 'trade', meaning: 'Making a meal out of what can be eaten.' },
+      { tag: 'trapping', kind: 'trade', meaning: 'Taking something alive, without a fight.' },
+      { tag: 'taming', kind: 'trade', meaning: 'Getting something caught to answer to a hand.' },
+      { tag: 'snare', kind: 'class', meaning: 'Tied to hold something alive. It is spent when it is set.' },
+      { tag: 'cage', kind: 'class', meaning: 'Holds something alive, for carrying.' },
+      { tag: 'meal', kind: 'class', meaning: 'Food someone cooked.' },
+      { tag: 'meat', kind: 'descriptive', meaning: 'Came off an animal.' }
+    ],
+    names: [
+      { tags: ['farming'], name: 'Farming', flavor: 'The ground does most of it. Do not tell the ground.' },
+      { tags: ['grove_keeping'], name: 'Grove Keeping', flavor: 'For anyone in no hurry.' },
+      { tags: ['herding'], name: 'Herding', flavor: 'Counting them is the easy part.' },
+      { tags: ['cooking'], name: 'Cooking', flavor: 'Some of this was alive this morning.' },
+      { tags: ['trapping'], name: 'Trapping', flavor: 'Patience, and a good knot.' },
+      { tags: ['taming'], name: 'Taming', flavor: 'It has not forgiven you. It has only stopped mentioning it.' }
+    ]
   }
 ];

@@ -49,7 +49,7 @@ export const SalvageSystem = {
   /** What it comes apart into. Null if it cannot be taken apart at all. */
   components(item: IItem, key: string): IItem[] | null {
     // A deed, a map, a plan or a bond is a standing, not material. It stays whole, and the shelf can hold it.
-    if (item.worldDeedData || item.deedData || item.mapData || item.bondData || item.tags?.includes('template')) return null;
+    if (item.worldDeedData || item.deedData || item.mapData || item.bondData || item.creatureData || item.tags?.includes('template')) return null;
     // D115: what holds value is kept whole, or it holds nothing.
     if (Anchors.isAnchor(item)) return null;
     const full = `${key}:${item.id}`;

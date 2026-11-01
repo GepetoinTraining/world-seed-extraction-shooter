@@ -1137,10 +1137,8 @@ describe('line 45: every gameplay material can be sourced, refined and consumed'
     expect(pebbles.refined.length).toBeGreaterThan(0);
   });
 
-  it('a waiver names its wave: the sapling alone waits for the farms', () => {
-    const waived = rows().filter(r => r.waiver);
-    expect(waived.map(r => r.defId)).toEqual(['res_tree_sapling']);
-    expect(waived[0].waiver).toMatch(/Wave 11/);
+  it('nothing waits on a waiver: the sapling, the last of them, goes on a farm', () => {
+    expect(rows().filter(r => r.waiver)).toEqual([]);
   });
 
   it('every recipe stays value-positive, as the anatomy law demands', () => {

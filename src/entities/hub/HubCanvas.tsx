@@ -9,7 +9,7 @@ import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGene
 import { usePlayerStore } from '../player/store';
 import { craftName, useHubStore } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
-import { HUB_GENRE, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
+import { HUB_GENRE, IPlotShow, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
   IRoomState, RoomPieceKind, stationFunctionOf, PIECE_BILLS, PIECE_BUILD_SECONDS,
@@ -22,6 +22,9 @@ import { GuildHall } from '../../components/GuildHall';
 import { TavernRoom } from '../../components/TavernRoom';
 import { RankMomentView } from '../../components/WorldCanvas';
 import { ApprenticeWindow } from '../../components/ApprenticeWindow';
+import { FarmWindow } from '../../components/FarmWindow';
+import { Farm } from './farm';
+import { FarmDoors } from './farmDoors';
 import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
@@ -89,6 +92,7 @@ let streetPos: { x: number; y: number } | null = null;
 
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
+  | { kind: 'farm'; lotId: string }
   | { kind: 'sell'; npcId?: string } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'apprentices'; npcId: string };
 
 export const HubCanvas: React.FC = () => {
@@ -165,7 +169,8 @@ export const HubCanvas: React.FC = () => {
     for (const zone of layout.zones) for (const poi of zone.pois) {
       if (poi.type !== POIType.PLAYER_LOT) continue;
       const lot = lots.find(l => l.id === poi.id);
-      const built = !!lot && !!lot.ownerId && lot.structureType !== 'EMPTY';
+      // A plot is open ground: it has a door to work from, and nothing stands in anyone's way
+      const built = !!lot && !!lot.ownerId && lot.structureType !== 'EMPTY' && lot.structureType !== 'FARM';
       // Wave 10B: an under-construction lot blocks like a built one — the
       // scaffold blocks exactly what it draws.
       const rising = !!lot && lotConstruction(buildJobs, poi.id) !== null;
@@ -298,6 +303,7 @@ export const HubCanvas: React.FC = () => {
       setNow(Date.now());
       const due = useHubStore.getState().buildJobs.some(j => !j.applied && j.finishesAt <= Date.now());
       if (due) void useHubStore.getState().resolveBuilds();
+      if (FarmDoors.isDue()) void FarmDoors.resolve();
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -316,7 +322,8 @@ export const HubCanvas: React.FC = () => {
       // land manager: buying and raising go through him, and only him.
       const hub = useHubStore.getState();
       const lot = hub.lots.find(l => l.id === poi.id);
-      if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
+      if (lot && lot.ownerId && lot.structureType === 'FARM') { keysRef.current.clear(); setPanel({ kind: 'farm', lotId: lot.id }); }
+      else if (lot && lot.ownerId && lot.structureType !== 'EMPTY' && hub.rooms[poi.id]) enterRoom(poi);
       else pushFeed(`${poi.name} is on the sheet at the Land Office, beside the Hall of Banners.`, 'plain');
     }
   };
@@ -441,12 +448,24 @@ export const HubCanvas: React.FC = () => {
   // Wave 10B: a lot with pending construction shows the scaffold, its progress
   // read by shape. Progress only changes when a job applies, so the city only
   // recomposes when something really moved.
+  const farmland = useHubStore(s => s.farmland);
+  const nowMinute = Math.floor(now / 60_000);
   const lotStates = useMemo(() => {
     const states: Partial<Record<number, LotState>> = {};
     const construction: Partial<Record<number, number>> = {};
     // The raw materials leg: a raw-walled building reads as one from the street.
     const facades: Partial<Record<number, RawFacade>> = {};
+    // What stands on farmland, read from the time. It changes by the minute, so it is looked at by the minute.
+    const plots: Partial<Record<number, IPlotShow>> = {};
     lots.forEach(l => {
+      if (l.structureType === 'FARM') {
+        const size = HubGenerator.findPOI(layout, l.id)?.size;
+        const farm = farmland.farms[l.id];
+        if (size) plots[l.lotIndex] = {
+          cols: Farm.gridOf(size).cols,
+          beds: Object.entries(farm?.beds ?? {}).map(([at, p]) => ({ at: Number(at), growth: Farm.growth(p, nowMinute * 60_000), span: Farm.spanOf(p) }))
+        };
+      }
       const shell = rooms[l.id]?.shellMaterialDefId;
       const facade = shell ? rawWallKind(shell) : null;
       if (facade) facades[l.lotIndex] = facade;
@@ -458,12 +477,12 @@ export const HubCanvas: React.FC = () => {
         states[l.lotIndex] = !l.ownerId ? 'FOR_SALE' : l.structureType === 'EMPTY' ? 'OWNED_EMPTY' : l.structureType;
       }
     });
-    return { states, construction, facades };
-  }, [lots, buildJobs, rooms]);
+    return { states, construction, facades, plots };
+  }, [lots, buildJobs, rooms, farmland, nowMinute, layout]);
 
   const cityBitmaps = useMemo(() => {
     const palette = buildPalette(HUB_GENRE);
-    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades }), palette));
+    return [0, 1].map(frame => spriteToCanvas(composeHub(layout, { frame, lots: lotStates.states, construction: lotStates.construction, facades: lotStates.facades, plots: lotStates.plots }), palette));
   }, [layout, lotStates]);
 
   const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
@@ -741,7 +760,8 @@ export const HubCanvas: React.FC = () => {
           )}
           <Chip tone="signal"><b>{nearbyPOI.name}</b> <Kbd>E</Kbd> {
             nearbyPOI.type === POIType.PLAYER_LOT &&
-            lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType !== 'EMPTY') ? 'ENTER' : 'INTERACT'
+            lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType === 'FARM') ? 'WORK IT'
+              : lots.find(l => l.id === nearbyPOI.id && l.ownerId && l.structureType !== 'EMPTY') ? 'ENTER' : 'INTERACT'
           }</Chip>
         </div>
       )}
@@ -879,6 +899,7 @@ export const HubCanvas: React.FC = () => {
         <TemplateStudio onClose={() => setStationPanel(null)} />
       )}
 
+      {panel?.kind === 'farm' && <FarmWindow lotId={panel.lotId} onClose={() => setPanel(null)} />}
       {panel?.kind === 'shop' && <ShopModal category={panel.category} onClose={() => setPanel(null)} />}
       {panel?.kind === 'sell' && <SellModal npcId={panel.npcId} onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}

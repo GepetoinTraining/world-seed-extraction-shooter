@@ -61,10 +61,12 @@ export function absorbWebBatch(batch: IWebBatch): void {
 }
 
 /** Build costs in gold (paid to the hub treasury) and daily upkeep. */
-export const STRUCTURE_COSTS: Record<'HOUSE' | 'WORKSHOP' | 'VENDOR', { build: number; upkeepPerDay: number }> = {
+export const STRUCTURE_COSTS: Record<'HOUSE' | 'WORKSHOP' | 'VENDOR' | 'FARM', { build: number; upkeepPerDay: number }> = {
   HOUSE:    { build: 100, upkeepPerDay: 5 },
   WORKSHOP: { build: 150, upkeepPerDay: 10 },
-  VENDOR:   { build: 250, upkeepPerDay: 15 }
+  VENDOR:   { build: 250, upkeepPerDay: 15 },
+  // A guess until Wave 12: the same as empty ground. A plot is ploughed land, with nothing raised on it.
+  FARM:     { build: 0, upkeepPerDay: 5 }
 };
 
 /** The hub's cut of every player-shop sale. */

@@ -77,7 +77,8 @@ export interface InteractPick {
 export function pickInteract(player: IPlayer, entities: IWorldEntity[], pos: { x: number; z: number }): InteractPick | null {
   let best: InteractPick | null = null;
   for (const entity of entities) {
-    if (entity.type === EntityType.MOB) continue;
+    // A body in reach answers the key only for someone holding a snare (D65)
+    if (entity.type === EntityType.MOB && !player.currentSession?.inventory.some(i => i.tags?.includes('snare'))) continue;
     const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_PX;
     if (dist >= INTERACT_REACH_TILES || (best && dist >= best.dist)) continue;
     const options = InteractionEngine.getAvailableInteractions(player, entity, dist);

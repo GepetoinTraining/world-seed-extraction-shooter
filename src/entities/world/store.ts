@@ -11,6 +11,7 @@ import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from './Director';
 import { DirectorStore } from './DirectorStore';
 import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from './Population';
+import { IKoseki } from './Koseki';
 import { Leaders } from './Leaders';
 import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from './ChestSystem';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
@@ -64,6 +65,10 @@ interface WorldState {
   chestRecord: IChestRecord | null;
   reportChestLooted: (chestId: string) => void;
   reportFell: (entityId: string, definitionId?: string) => void;
+  /** D65: a body taken alive: off its count, and onto this register. It hands the register back. */
+  reportCaptured: (entityId: string, definitionId: string, to: IKoseki) => IKoseki;
+  /** D65: a body let go on this ground. It stands now, and is a count once the cycle closes. */
+  reportReleased: (ground: string, definitionId: string) => void;
   availableWorlds: IWorldCard[];
   activeWorldId: string | null; 
   currentMap: IMap | null;
@@ -146,6 +151,23 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       set({ populationRecord: next });
       void PopulationStore.save(activeWorldId, next);
     }
+  },
+  reportCaptured: (entityId, definitionId, to) => {
+    const { populationRecord, activeWorldId, generation } = get();
+    // A body with no count to come off, in a world with no cycles, still moves onto the register
+    const res = Population.captured(populationRecord ?? emptyPopulationRecord(), entityId, definitionId, generation, to);
+    if (populationRecord && activeWorldId) {
+      set({ populationRecord: res.record });
+      void PopulationStore.save(activeWorldId, res.record);
+    }
+    return res.to;
+  },
+  reportReleased: (ground, definitionId) => {
+    const { populationRecord, activeWorldId, generation } = get();
+    if (!populationRecord || !activeWorldId) return;
+    const next = Population.release(populationRecord, ground, definitionId, generation);
+    set({ populationRecord: next });
+    void PopulationStore.save(activeWorldId, next);
   },
   reportToDirector: (kind, definitionId, body) => {
     const record = get().directorRecord;

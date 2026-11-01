@@ -10,6 +10,7 @@ import {
   IResident, chainFromMap, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, questPay, residentStage,
   residentUpkeepPerDay, trialFor, trialTakes, wantMayTake
 } from '../entities/hub/guild';
+import { Farm } from '../entities/hub/farm';
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag, materialLabel } from '../entities/hub/room';
 import { lotConstruction } from '../entities/hub/template';
@@ -85,8 +86,7 @@ const GroundFor: React.FC<{ resident: IResident }> = ({ resident }) => {
   const { lots, chunks, dismembered, guildBuyLot } = useHubStore();
   const pushFeed = useFeed(s => s.push);
   const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
-  const offers = lots
-    .filter(l => !l.ownerId)
+  const offers = Farm.groundForHouses(lots)
     .map(lot => ({ lot, poi: HubGenerator.findPOI(layout, lot.id)! }))
     .filter(o => o.poi && houseTemplateFor({ width: o.poi.size.width, height: o.poi.size.height }))
     .sort((a, b) => a.lot.price - b.lot.price);

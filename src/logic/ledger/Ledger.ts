@@ -27,6 +27,7 @@ export type LedgerRowType =
   | 'GUILD'             // what the guild did: a person lodged, a rank granted, a map handed in. Moves no gold
   | 'PRINT'             // a hub printed coin into its treasury (D115). data: { hubId, amount, perDay, days, why }
   | 'WALLET'            // a person came with their own coin (D115). data: { kind, hubId, personId, amount }
+  | 'FARM'              // what happened on farmland: planted, reaped, penned, fed, cooked. Mints items, moves no gold
   | 'TOMBSTONE';        // marks an earlier row as superseded — never delete
 
 export interface ILedgerRow {

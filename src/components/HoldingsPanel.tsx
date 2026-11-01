@@ -199,6 +199,9 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
         </div>
       )}
 
+      {lot.structureType === 'FARM' && (
+        <span className="ws-dim ws-small">Farmland, portioned evenly. {mine ? 'Its work is done from its own door, out on the plot.' : 'Nothing but farming stands here.'}</span>
+      )}
       {lot.structureType === 'VENDOR' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {mine && (lot.proceeds || 0) > 0 && (
