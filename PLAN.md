@@ -2,8 +2,8 @@
 
 **Status:** the build plan and the record of each wave. Waves 1 through 10E are built and approved.
 The raw materials leg (D23) is built and approved. The technology web and auto skill (D27) is built and
-approved. The usability pass and the stable database are built, approved and merged; the suite stands at 793
-(680 + 113 in the database's own run), with one timing bar that reads load (see the technology web's record).
+approved. The usability pass and the stable database are built, approved and merged; the suite stands at 812
+(688 + 124 in the database's own run), with one timing bar that reads load (see the technology web's record).
 Next, in order: Pedro's full run, then Wave 11 and Wave 12.
 Open test lines
 and their status are in section 5.
@@ -313,6 +313,8 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 | D30 | Technology web | Where a skill emerges, since Wave 9 removed REST | ✅ DECIDED (Pedro, 2026-10-31): at the sealed session and the return to the hub. **ENACTED**: the seal, the death and the withdrawal. Reading on the record: a death is a return to the hub |
 | D31 | Stable database | How the SQL database is reached | ✅ ACCEPTED (Pedro, 2026-10-31) as recommended, BUILT and APPROVED: a SQLite file on a small local server, Postgres for deploy, through the existing `VectorStore` interface. The record is under "The stable database" below |
 | D32 | Usability pass | How identify works in the field | ✅ DECIDED (Pedro, 2026-10-31, "Yes, build it"): anyone may try. A keyed roll by the scoped eye against rank and rarity, paid in energy up front, always timed. The odds are never shown and the price is the person's, never the piece's. Unschooled tries wing it and settle at a rest. The bench still needs no roll. This amends line 55 and D19's "once earned". Numbers are guesses until Wave 12 |
+| D33 | Before the full run | Whose database | ✅ DECIDED (Pedro, 2026-10-31): two databases, `test-pedro` and `test-claude`. They share what was found, and `test-pedro` holds no character but Pedro's own. `npm run pedro` plays on it at port 3200; everything else uses `test-claude`. Shared: definitions, item histories, the registry of claims. Never shared: characters, ledgers, treasuries, hubs, sessions, world certificates. Bars in `tests/database.sync.test.ts` |
+| D34 | Before the full run | Movement speed | ✅ DECIDED (Pedro, 2026-10-31, "we need boots in this"): speed is a stat. The fixed 3 tiles/s is gone: `walkTilesPerSecond` is a base pace × (1 + `movement_speed` on worn gear), in the field and the city, with no ceiling. Reading of "too slow": the base rose to 4 tiles/s, the value the old stat table already declared, and Worn Boots are always on the armorer's shelf. The number is a guess until Wave 12. Bars in `tests/movement.test.ts` |
 
 ### WAVE 8B — Motion and Sprites ✅ DONE
 Start from `BUILDERS_LOG.md`.

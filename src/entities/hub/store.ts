@@ -1421,9 +1421,9 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...generateStock(UniversalRank.E, 2, 'armor'),
         // Wave 10C: the slot tree gets its wardrobe — one of each new branch,
         // always on the shelf, and the SHOULDER piece themed to this hub's genre
-        ...generateStock(UniversalRank.F, 9, 'armor', [
+        ...generateStock(UniversalRank.F, 10, 'armor', [
           'arm_legs_padded_t1', 'arm_shoulder_t1', 'eye_glasses_t1', 'acc_necklace_t1',
-          'acc_earring_t1', 'acc_ring_signet_t1', 'quiver_hide_t1', 'bag_satchel_t1', 'belt_canvas_t1'
+          'acc_earring_t1', 'acc_ring_signet_t1', 'quiver_hide_t1', 'bag_satchel_t1', 'belt_canvas_t1', 'arm_boots_generic_t1'
         ], 'tree').map(l => l.item.universalDefinitionId === 'arm_shoulder_t1'
           ? { ...l, item: { ...l.item, name: l.item.name.replace('Mantle', LoadoutSystem.themedShoulderName(genreForWorld(hubId).name)) } }
           : l)

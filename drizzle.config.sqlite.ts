@@ -4,5 +4,5 @@ export default defineConfig({
   schema: './server/schema.sqlite.ts',
   out: './drizzle/sqlite',
   dialect: 'turso',
-  dbCredentials: { url: process.env.WS_DATABASE_URL ?? 'file:data/worldseed.db' }
+  dbCredentials: { url: process.env.WS_DATABASE_URL ?? 'file:data/test-claude.db' }
 });

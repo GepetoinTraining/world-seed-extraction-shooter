@@ -5,7 +5,7 @@
  *   npm run build
  *   npm run serve
  *
- * WS_DATABASE_URL   file:… (default data/worldseed.db) or postgres://…
+ * WS_DATABASE_URL   file:… (default data/test-claude.db) or postgres://…
  * WS_PORT           default 3900
  * WS_HOST           default 127.0.0.1. There is no authentication: see http.ts.
  */
@@ -17,7 +17,7 @@ import { createDbHandler, lazyStore } from './http';
 import { openStore } from './SqlStore';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const url = process.env.WS_DATABASE_URL ?? `file:${join(root, 'data/worldseed.db').replace(/\\/g, '/')}`;
+const url = process.env.WS_DATABASE_URL ?? `file:${join(root, 'data/test-claude.db').replace(/\\/g, '/')}`;
 const port = Number(process.env.WS_PORT ?? 3900);
 const host = process.env.WS_HOST ?? '127.0.0.1';
 const dist = join(root, 'dist');

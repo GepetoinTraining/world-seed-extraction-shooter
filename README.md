@@ -12,7 +12,15 @@ npm run dev
 npm test
 ```
 
-`npm run dev` brings up the game and its database with one command: a SQLite file at `data/worldseed.db`, created on first run and never committed. The first load on a browser origin that holds old saves imports them, after verifying their signatures. If the database is not answering, the game refuses to open rather than guess.
+`npm run dev` brings up the game and its database with one command: a SQLite file at `data/test-claude.db`, created on first run and never committed. The first load on a browser origin that holds old saves imports them, after verifying their signatures. If the database is not answering, the game refuses to open rather than guess.
+
+Pedro's own game has its own database and its own port, so a test session can never touch it:
+
+```bash
+npm run pedro
+```
+
+That plays on `data/test-pedro.db` at `http://localhost:3200`. It first syncs the shared base with `test-claude`: the definitions, every item's history and the registry of claims, in both directions, and nothing that belongs to a character. `npm run db:sync` runs the sync alone.
 
 To run the built game standing alone, on SQLite or on Postgres:
 

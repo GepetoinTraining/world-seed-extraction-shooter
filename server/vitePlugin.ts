@@ -9,7 +9,7 @@ import { createDbHandler, lazyStore } from './http';
 import { openStore } from './SqlStore';
 
 export const databaseUrl = (root: string) =>
-  process.env.WS_DATABASE_URL ?? `file:${resolve(root, 'data/worldseed.db').replace(/\\/g, '/')}`;
+  process.env.WS_DATABASE_URL ?? `file:${resolve(root, 'data/test-claude.db').replace(/\\/g, '/')}`;
 
 export function worldSeedDatabase(root: string): Plugin {
   const mount = (server: ViteDevServer | PreviewServer) => {

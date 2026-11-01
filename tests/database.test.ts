@@ -800,7 +800,7 @@ describe('one command brings up everything the game needs', () => {
     // Ask git, not the file. The first version of this bar read .gitignore for "data/",
     // which also ignored src/entities/data/: the code passed here and was never committed.
     const git = (...args: string[]) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
-    for (const file of ['data/worldseed.db', 'data/worldseed.db-wal', 'data/worldseed.db-shm']) {
+    for (const file of ['data/test-claude.db', 'data/test-claude.db-wal', 'data/test-pedro.db', 'data/test-pedro.db-shm']) {
       expect(git('check-ignore', file).trim()).toBe(file);
     }
     expect(git('ls-files', '--others', '--ignored', '--exclude-standard', 'src', 'server', 'tests', 'drizzle').trim()).toBe('');

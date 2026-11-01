@@ -168,7 +168,7 @@ Do not change `universalDefinitionId` or the meaning of `UniversalRank`. Saved i
 
 ## 4. Data model
 
-Everything lives in a SQL database reached through a small server (D31): a SQLite file at `data/worldseed.db`, one per checkout and never committed, or Postgres at deploy. The private key stays in the browser's IndexedDB (`WorldSeedIdentity`) and the certificate in `localStorage`; neither reaches the server. A wiped browser restores from the avatar backup, then finds its saves in the database. The old RxDB collection (`worldseed_db`) is read once by the import and otherwise left alone.
+Everything lives in a SQL database reached through a small server (D31): a SQLite file at `data/test-claude.db` (Pedro plays on `data/test-pedro.db`, sharing the base through `server/syncBase.ts`), one per checkout and never committed, or Postgres at deploy. The private key stays in the browser's IndexedDB (`WorldSeedIdentity`) and the certificate in `localStorage`; neither reaches the server. A wiped browser restores from the avatar backup, then finds its saves in the database. The old RxDB collection (`worldseed_db`) is read once by the import and otherwise left alone.
 
 The namespaces below are the `VectorStore` interface. An id decides the table underneath: `ledger_{uid}_{seq}` goes to `ledger_rows`, `treasury_{world}` to `treasuries`, the head is derived from `MAX(seq)`, and everything else goes to `documents`, with its data as byte-identical text and columns for type, genre and owner beside it. `commits` records every commit that landed, so a retry applies once.
 
@@ -239,7 +239,7 @@ These are the current values, set by reasoning and very little play. Expect to c
 
 | Value | Current | Where |
 |---|---|---|
-| Player speed | 3 tiles/s (60px/s) | `WorldCanvas.tsx` |
+| Walking pace | `BASE_WALK_TILES_PER_S` 4 tiles/s (80px/s), × (1 + `movement_speed` on worn gear), then load, tow and ground. Field and city alike, no ceiling | `LoadoutSystem.ts` |
 | Enemy speed | The definition's own `speed`, default 2 tiles/s | `MobAI.ts` |
 | Enemy alert range | The definition's `viewRange`, default 8, capped at 16 tiles | `MobAI.ts` |
 | Enemy give-up range | The larger of 16 tiles and twice the alert range | `MobAI.ts` |

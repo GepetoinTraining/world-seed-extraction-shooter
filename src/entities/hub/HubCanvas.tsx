@@ -75,8 +75,6 @@ const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
   return <SpriteView sprite={sprite} palette={palette} scale={2} />;
 };
 
-const HUB_WALK_TILES_PER_S = 3.0; // one world, one pace: the same speed as the field
-
 // A keeper can lead to a screen of its own. Coming back, you stand where you stood.
 let streetPos: { x: number; y: number } | null = null;
 
@@ -520,7 +518,7 @@ export const HubCanvas: React.FC = () => {
         const p = roomPosRef.current;
         if (dx !== 0 || dy !== 0) {
           const len = Math.hypot(dx, dy);
-          const step = HUB_WALK_TILES_PER_S * TILE_SIZE * dt;
+          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * TILE_SIZE * dt;
           const mx = (dx / len) * step, my = (dy / len) * step;
           let nx = p.x + mx;
           if (roomBlocked(nx, p.y) && !roomBlocked(p.x, p.y)) nx = p.x;
@@ -592,7 +590,7 @@ export const HubCanvas: React.FC = () => {
       const p = posRef.current;
       if (dx !== 0 || dy !== 0) {
         const len = Math.hypot(dx, dy);
-        const step = HUB_WALK_TILES_PER_S * TILE_SIZE * dt;
+        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * TILE_SIZE * dt;
         const mx = (dx / len) * step, my = (dy / len) * step;
         let nx = p.x + mx;
         if (blockedAt(nx, p.y) && !blockedAt(p.x, p.y)) nx = p.x;

@@ -43,7 +43,30 @@ const RANK_ORDER: UniversalRank[] = [
 const isTool = (item: IItem): boolean =>
   item.slot === SlotType.TOOL || !!item.toolData || (item.tags || []).includes('tool');
 
+/** The pace in nothing at all, in tiles per second. Field and city walk alike. */
+export const BASE_WALK_TILES_PER_S = 4.0;
+/** However bad the gear, a person still walks. A floor, not a ceiling: nothing caps the top. */
+const MIN_WALK_SCALE = 0.1;
+
 export class LoadoutSystem {
+
+  /**
+   * The pace what you wear gives you. `movement_speed` on any worn piece adds up
+   * (0.10 is ten percent), an unstudied one acting like any other. Load, the tow
+   * bar and the ground scale this afterward.
+   */
+  static walkTilesPerSecond(equipment?: IEquipmentState): number {
+    if (!equipment) return BASE_WALK_TILES_PER_S;
+    const worn = new Set(Object.values(equipment.slots));
+    let bonus = 0;
+    for (const item of equipment.items) {
+      if (!worn.has(item.id)) continue;
+      const stats = item.stats ?? {};
+      if (stats.maxDurability && stats.durability === 0) continue; // broken gear does nothing
+      bonus += (stats.movement_speed ?? 0) + (stats.movement_speed_penalty ?? 0);
+    }
+    return BASE_WALK_TILES_PER_S * Math.max(MIN_WALK_SCALE, 1 + bonus);
+  }
 
   /** What a piece may be called aloud: until it is read, it has no name to say. */
   static shownName(item: IItem): string {

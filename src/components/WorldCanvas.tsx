@@ -44,7 +44,6 @@ import { Hotbar, activateHotbar } from './Hotbar';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
-const PLAYER_SPEED = 3.0; // Tiles per second (a quadrant takes about 5s to cross, a chunk about 21s)
 const LOAD_RADIUS_PX = 1000; // Chunks exist this far out, so nothing is built in view
 const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't teleport the player
 
@@ -892,7 +891,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (dx !== 0 || dz !== 0) {
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
-        const moveStep = PLAYER_SPEED * dt * TILE_SIZE;
+        const moveStep = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
 
