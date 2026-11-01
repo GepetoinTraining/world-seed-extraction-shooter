@@ -166,7 +166,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       try {
         // --- HOOKED UP: CALL SERVICE ---
         const moment = WorldClock.momentAt(worldCard, Date.now());
-        const director = await DirectorStore.catchUp(worldCard.id, moment.generation);
+        const director = await DirectorStore.catchUp(worldCard.id, moment.generation, { seed: worldCard.seed, themeId: worldCard.themeId });
         set({ directorRecord: director, generation: moment.generation });
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, worldCard.magicUnlocked);
 

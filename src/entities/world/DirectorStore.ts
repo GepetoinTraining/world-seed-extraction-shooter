@@ -5,6 +5,7 @@
 
 import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { Director, IDirectorRecord, emptyDirectorRecord } from './Director';
+import { CreatureLines, ILineWorld } from '../../logic/theme/CreatureLines';
 
 const keyOf = (worldUid: string) => `director_${worldUid}`;
 
@@ -21,11 +22,17 @@ export const DirectorStore = {
     });
   },
 
-  /** A world's clock says where it stands; on opening, its record comes up to that. */
-  async catchUp(worldUid: string, generation: number): Promise<IDirectorRecord> {
+  /**
+   * A world's clock says where it stands; on opening, its record comes up to that. A
+   * regeneration is when lines change and are signed, and the kinds it has already
+   * grown join the tables before any of its chunks is read.
+   */
+  async catchUp(worldUid: string, generation: number, world: ILineWorld): Promise<IDirectorRecord> {
     const record = await this.load(worldUid);
     const caught = Director.catchUp(record, generation);
-    if (caught !== record) await this.save(worldUid, caught);
-    return caught;
+    const regenerated = caught !== record ? await CreatureLines.regenerate(caught, world) : caught;
+    if (regenerated !== record) await this.save(worldUid, regenerated);
+    await CreatureLines.define(regenerated, world.themeId);
+    return regenerated;
   }
 };

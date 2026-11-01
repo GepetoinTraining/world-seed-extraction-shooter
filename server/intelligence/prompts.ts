@@ -5,7 +5,9 @@
  * Nothing here is trusted on the way back. Whatever returns stands before the law.
  */
 import type { IDoorMessage, IDoorRequest } from './door';
-import { THEME_SCHEMA, BIOMES, EFFECTS, DELIVERIES, GEAR_KINDS, SKILL_GRANTS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
+import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, REQUIRED_TREES, SKILL_GRANTS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
+import type { ILineAsk } from '../../src/logic/theme/CreatureLines';
+import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
 import { STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 
@@ -26,6 +28,7 @@ Law, and a pack that breaks it is refused whole:
 - Every tag is in the registry below or defined in this pack's "tags" (one meaning, one spelling; kinds: tool, family, material, trade, action, descriptive, element, verb). Elements are yours to invent, as many as the world wants.
 - Every kind of ground (${BIOMES.join(', ')}) gets a region name in this world's own words, at least one creature and at least one material.
 - There must be something rank F or E to start on; a rank F weapon, a rank F piece of armor; a chop_tool if anything is chopped, a mine_tool if anything is mined; a material tagged "building"; lore to find.
+- Every creature names its tree, a lower_snake_case word. A world holds at least these: ${REQUIRED_TREES.join(', ')}. Animals are its neutral creatures, wild and kept, mostly PASSIVE or NEUTRAL, each kind of ground with its own; monsters are what makes the place dangerous. More trees are welcome. Behaviour does not decide the tree: a bear that leaves you alone and a god that leaves you alone are both NEUTRAL, in different trees.
 - Goods are made from materials or other goods in this pack, never from themselves. A station key, or empty for any workshop bench. Goods tagged paper and ink let people draft plans, so give the world some.
 - Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart". A downside is honest: give good things a cost.
 - Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
@@ -53,6 +56,20 @@ A person is resting. While they slept, what they did settles. You are given a wo
 For each queued skill, give it a name and a line of flavor, and say what it lets the holder do; grants come from this list and may be empty (${SKILL_GRANTS.join(', ')}). A skill can grant "rest" if practice has earned that, and only then: nothing is pre-made, and a person who has slept rough for long enough may simply be able to. For each queued weave, name it. In "growth" you may add a few new creatures, materials, affixes, abilities and lines of lore that the world would have grown into, in the same shapes as a pack; they will only reach worlds signed later, and a world already signed never changes. Leave growth empty if nothing grew.
 
 ${GRAMMAR}`;
+
+const LINE_SYSTEM = `${VOICE}
+
+Kinds of creature in this world have changed. It has already been decided which, and how far: a kind that wore people down has grown more dangerous, and a kind that kept falling has grown harder to bring down. You are given each one as it stands, with the kinds it came from. Each has become a different creature, and you write only what changed. You never write numbers: health, damage and speed come from a formula.
+
+For each, answer under its "order":
+- name: its own name, plain and in this world's voice, used by nobody before it. Not the old name with a word added unless that is what people would really call it.
+- blurb: one dry line on what it has become.
+- tags: only what is new about it, from the registry. Leave this empty if nothing new is true. Never elite, boss, titan or god: those are inherited, not written.
+- features: at least one, and only what you would see on the body it already has: ${LINE_FEATURES.join(', ')}. It keeps its body plan and adds these, so choose what the change would really put on it.
+- innate: keys of this world's abilities that it now knows, and only if the change gave it them. Usually none.
+
+A world's words, its abilities and the kinds to write follow. Registry:
+${REGISTRY}`;
 
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
@@ -97,6 +114,18 @@ export function buildThemeRequest(messages: IDoorMessage[], draft: Record<string
   return {
     kind: 'theme', system: THEME_SYSTEM, schema: THEME_SCHEMA, maxTokens: 32000,
     messages: [{ role: 'user', content: `${draftLine(draft)}\n\nWhat was said:\n${conversation || '(nothing was said; work from the draft)'}\n\nWrite the world.` }]
+  };
+}
+
+/**
+ * A small batch of lines that changed (D69). It goes as a filed batch, the same road
+ * as a rest, so it carries that kind. What comes back stands before `ThemeLaw.validateLine`.
+ */
+export function buildLineRequest(asks: ILineAsk[], theme: Pick<IThemeBody, 'name' | 'premise' | 'abilities' | 'tags'>): IDoorRequest {
+  const world = { name: theme.name, premise: theme.premise, words: theme.tags, abilities: theme.abilities.map(a => ({ key: a.key, name: a.name, blurb: a.blurb })) };
+  return {
+    kind: 'rest', system: LINE_SYSTEM, schema: LINE_SCHEMA, maxTokens: Math.max(2000, asks.length * 800),
+    messages: [{ role: 'user', content: `The world:\n${JSON.stringify(world)}\n\nThe kinds that changed:\n${JSON.stringify(asks)}` }]
   };
 }
 

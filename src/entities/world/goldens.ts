@@ -31,11 +31,15 @@ export const GOLDEN_VECTORS: IGoldenVector[] = [
   { seed: 'dev-sandbox-v4', size: 32, hash: 432684866 }
 ];
 
-/** The shipped theme's own land. A change here means generation moved: say so, on purpose. */
+/**
+ * The shipped theme's own land. A change here means generation moved: say so, on purpose.
+ * Recaptured when the theme gained its animals (D63). Those bytes are a new theme: a world
+ * pinned to the older one reads the banked pack, and `tests/trees.test.ts` holds its land.
+ */
 export const FIRST_THEME_VECTORS: IGoldenVector[] = [
-  { seed: 'golden-alpha', size: 16, hash: 3036151310 },
-  { seed: 'golden-beta', size: 32, hash: 3482659051 },
-  { seed: 'dev-sandbox-v4', size: 32, hash: 772219746 }
+  { seed: 'golden-alpha', size: 16, hash: 1993605757 },
+  { seed: 'golden-beta', size: 32, hash: 2694817695 },
+  { seed: 'dev-sandbox-v4', size: 32, hash: 2155702627 }
 ];
 
 /** Static context: goldens pin the generator, not the DB's row order. */

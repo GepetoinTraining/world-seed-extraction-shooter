@@ -12,6 +12,8 @@
  */
 
 import { fnv1a, Rng } from '../../logic/rng/DeterministicRNG';
+import type { ILineRecord } from '../../logic/theme/CreatureLines';
+import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
 
 export interface IDirectorRecord {
   generation: number;
@@ -20,6 +22,8 @@ export interface IDirectorRecord {
   fell: Record<string, number>;
   /** Per creature: its trait chance, moved by fitness at each rest. */
   weights: Record<string, number>;
+  /** D61: the kinds this world has grown, and the root over them. Absent means none has changed. */
+  lines?: ILineRecord;
 }
 
 export const emptyDirectorRecord = (): IDirectorRecord => ({ generation: 0, felled: {}, fell: {}, weights: {} });
@@ -50,11 +54,14 @@ const LEARN_CHANCE = 0.15;
 /**
  * D60: a creature's name is masked until it has earned one: it must be magical (a trait
  * or magic it learned) or one of a kind, and of the second generation or later. A
- * generation here is a creature's own line: the second has become a different monster.
- * Nothing makes that change yet, so every line is its first and nobody is named.
+ * generation here is a creature's own line: the second has become a different monster
+ * (`CreatureLines`), and `generation` on its definition says so.
  */
 const NAMED_FROM_GENERATION = 2;
 const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
+
+/** Of the bodies of a kind that has changed, how many stand as what it became. B2's population replaces this. */
+const CHANGED_SHARE = 0.5;
 
 export interface IDirectorPool {
   affixes: { id: string; name: string; type: 'PREFIX' | 'SUFFIX'; statModifiers?: Record<string, [number, number]> }[];
@@ -85,7 +92,7 @@ export class Director {
       const fitness = 1 + (felled * 2 - fell * 0.1) / Math.max(1, felled + fell);
       weights[id] = Math.max(MIN_WEIGHT, Math.round((weights[id] ?? 1) * fitness * 1000) / 1000);
     }
-    return { generation: record.generation + 1, felled: {}, fell: {}, weights };
+    return { generation: record.generation + 1, felled: {}, fell: {}, weights, ...(record.lines ? { lines: record.lines } : {}) };
   }
 
   /**
@@ -100,6 +107,25 @@ export class Director {
   /** The chance one body of this kind carries a trait, this generation. Can pass 1 (D84: to be read, then tuned). */
   static traitChance(record: IDirectorRecord, definitionId: string): number {
     return (BASE_TRAIT_CHANCE + PER_GENERATION * record.generation) * (record.weights[definitionId] ?? 1);
+  }
+
+  /**
+   * Which kind this one body stands as, this generation: down the world's own lines
+   * from what the land put here. Keyed, so every machine agrees, and with no line a
+   * body is what it always was. Read at chunk build, so it hashes nothing.
+   */
+  static kindOf<T extends { id: string }>(seed: string, entityId: string, template: T, record: IDirectorRecord | undefined): T {
+    const nodes = Object.values(record?.lines?.nodes ?? {});
+    if (nodes.length === 0) return template;
+    const rng = Rng.fromKey(`line:${seed}:${record!.generation}:${entityId}`);
+    let kind = template;
+    for (;;) {
+      const children = nodes.filter(n => n.parents.includes(kind.id)).map(n => n.id).sort();
+      if (children.length === 0 || rng.next() >= CHANGED_SHARE) return kind;
+      const next = MOB_DEFINITIONS[children[rng.int(0, children.length)]] as unknown as T | undefined;
+      if (!next) return kind;
+      kind = next;
+    }
   }
 
   /**

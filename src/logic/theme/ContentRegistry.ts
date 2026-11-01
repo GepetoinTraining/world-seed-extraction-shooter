@@ -44,7 +44,7 @@ export class ContentRegistry {
   /** The law alone: nothing changes. What a mint's preview asks. */
   static judge(body: IThemeBody): IThemeVerdict {
     if (installed.has(themeIdOf(body))) return { ok: true };
-    const verdict = ThemeLaw.validate(bodyOf(body), tag => this.registered(tag));
+    const verdict = ThemeLaw.validate(bodyOf(body), tag => this.registered(tag), (body as Partial<IThemePack>).formula);
     if (!verdict.ok) return verdict;
     // The web's own law sits behind the theme's: the tag law, on what it adds
     const compiled = compileTheme({ ...bodyOf(body), themeId: themeIdOf(body), formula: 1, model: 'judging', writtenAt: 0 });
