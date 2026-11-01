@@ -21,6 +21,12 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 |---|---|---|
 | R2 | Pedro said a couple of things; only R1 has been named so far | |
 
+### Found while checking the magic + content layer, 2026-11-01
+
+| # | What happens | Where |
+|---|---|---|
+| N5 | `tests/database.store.test.ts`, two processes writing one new file: it failed about one run in three, because both tried to create the tables on first open. `migrateTakingTurns` fixes that cause, and 45 runs since gave 44 passes. The one failure was not captured, so it may be a second cause. Machine load is the likeliest, and that is a guess | `server/connection.ts` |
+
 ## Fixed
 
 | # | What was wrong | Commit | Checked |

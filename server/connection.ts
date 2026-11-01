@@ -13,6 +13,25 @@ import { fileURLToPath } from 'node:url';
 import * as sqliteSchema from './schema.sqlite';
 import * as pgSchema from './schema.pg';
 
+/**
+ * Two servers may open a new file at the same moment, and both find it empty. The
+ * loser of that race waits and looks again: by then the winner's migration is on
+ * the record, and there is nothing left to do. Any other error is a real one.
+ */
+const MIGRATE_ATTEMPTS = 10;
+async function migrateTakingTurns(run: () => Promise<unknown>): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await run();
+      return;
+    } catch (e) {
+      const said = `${e} ${(e as { cause?: unknown })?.cause ?? ''}`;
+      if (attempt >= MIGRATE_ATTEMPTS || !/already exists/.test(said)) throw e;
+      await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+    }
+  }
+}
+
 export type Dialect = 'sqlite' | 'postgres';
 
 export interface IDatabase {
@@ -62,7 +81,7 @@ async function openSqlite(url: string): Promise<IDatabase> {
   const client = createClient({ url, timeout: 30_000 });
   await client.execute('PRAGMA journal_mode=WAL');
   const db = drizzle(client, { schema: sqliteSchema });
-  await migrate(db, { migrationsFolder: MIGRATIONS('sqlite') });
+  await migrateTakingTurns(() => migrate(db, { migrationsFolder: MIGRATIONS('sqlite') }));
 
   return {
     dialect: 'sqlite',
