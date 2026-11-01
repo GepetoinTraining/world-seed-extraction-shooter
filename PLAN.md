@@ -860,7 +860,7 @@ Guardrail 4 said gates are serial because jumping ahead makes logic without syst
 - **`goldens.ts`, `firstTheme.ts` and `FIRST_THEME_VECTORS` belong to the trees stream alone.** Nobody else moves a vector.
 - **The coordinator checks every stream:** reads the whole diff against its lines and runs the full suite on it. A stream's report is a claim, not proof.
 - **Merging is serial and goes through Pedro.** After each merge the next stream is brought up to date and rechecked.
-- **One playtest, at the very end, from two views (Pedro, 2026-11-01):** "let's make the playtest once at the end of the fan out, then you test once and I play another round on my world so we can have two views of it." Streams and waves are held by bars until then, and nothing is played between them. When Wave C is merged, the coordinator plays the whole game once on a test avatar and writes down what it found. Then Pedro plays a round on his own world. The two are compared and what they found goes in the ledger before Wave 12. The cost, accepted: a fault only play can show stays hidden until then, and may have later streams built on top of it.
+- **One playtest, at the very end, from two views (Pedro, 2026-11-01):** "let's make the playtest once at the end of the fan out, then you test once and I play another round on my world so we can have two views of it." And: "feels wrong is only when I play it, because for you the slow crawl of the movement speed was okay, I had to play it to feel gamers wouldn't like it... better to do it at once in the end for the e2e playtest, of course you playtest what you implement each pass." So every stream still plays what it built, through the real interface, on a test avatar and its own port, and reports what it saw. What waits for the end is the whole game end to end. When Wave C is merged, the coordinator plays it once on a test avatar and writes down what it found, then Pedro plays a round on his own world, because whether something feels right is his to judge. The two are compared and what they found goes in the ledger before Wave 12.
 
 **Wave A, five streams, each needing only the clock:**
 
@@ -1077,6 +1077,7 @@ For the living worlds program, proposed 2026-11-01, not yet agreed:
 121. In the biggest world, a hub can be founded and a rest can happen there
 122. A character logs in to any hub as the same character, and nothing about them lives in one hub
 123. A hub never takes another hub's word for what was minted; goods and gold show where they came from
+124. No wait looks like a freeze: a known end fills a stepped bar and says the time left, an unknown end moves a block and counts what has passed, and a load that fails says so instead of counting forever
 125. Recon has its own view, reached without entering a world's field
 126. A scribe can write scan data into a map item, and reading one adds it to the reader's survey, as old as it was when scanned
 127. A tuning readout shows the chance of a body changing at each regeneration, and how long skills and levels take
