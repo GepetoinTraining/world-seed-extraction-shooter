@@ -1178,6 +1178,128 @@ describe('line 76: one key, one sheet, field and city alike', () => {
 });
 
 // -----------------------------------------------------------------------------
+// PEDRO'S RUN, 2026-10-31: "the cart could be used unidentified" (lines 52, 73, 74)
+// -----------------------------------------------------------------------------
+
+describe('what has not been read cannot be worked, and does not give itself away', () => {
+  const SECRET = 'Zzsecretname';
+  const kit = (over: Partial<IItem> = {}) => synth('sig_kit', SlotType.NONE, {
+    name: SECRET, isIdentified: false, cartData: { gridW: 10, gridH: 8 }, tags: ['cart', 'heavy'], dimensions: { width: 2, height: 3 }, ...over
+  });
+  const fed = () => useFeed.getState().lines.map(l => l.text).join(' | ');
+
+  it('a cart kit nobody has read does not unfold, and stays in the pack', async () => {
+    field([kit()]);
+    const verdict = await store().deployCart('sig_kit');
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/\S/);
+    expect(verdict.reason).not.toContain(SECRET);
+    expect(entities().filter(e => e.cart)).toEqual([]);
+    expect(session().inventory.map(i => i.id)).toEqual(['sig_kit']);
+    expect(fed()).not.toContain(SECRET);
+  });
+
+  it('read, the same kit unfolds', async () => {
+    field([kit({ isIdentified: true })]);
+    expect((await store().deployCart('sig_kit')).ok).toBe(true);
+    expect(entities().filter(e => e.cart).length).toBe(1);
+    expect(session().inventory).toEqual([]);
+  });
+
+  it('a charm nobody has read does not spend itself', () => {
+    const charm = synth('sig_charm', SlotType.NONE, { name: SECRET, isIdentified: false });
+    (charm as any).charmData = { slots: 1, chosen: false, uses: 1 };
+    field([charm]);
+    const verdict = store().useProtection('sig_charm');
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).not.toContain(SECRET);
+    expect(session().inventory.map(i => i.id)).toEqual(['sig_charm']);
+  });
+
+  it('the sheet offers one action for any signal, so the buttons tell nothing of what it is', async () => {
+    const React = (await import('react')).default;
+    const { createRoot } = await import('react-dom/client');
+    const { act } = await import('react-dom/test-utils');
+    const { CharacterSheet } = await import('../src/components/CharacterSheet');
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    const blade = synth('sig_blade', SlotType.MAIN_HAND, { name: SECRET, isIdentified: false, tags: ['melee'] });
+    field([kit(), blade]);
+    useSheet.setState({ open: true });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () => { root.render(React.createElement(CharacterSheet)); });
+    const actionsOf = async (id: string) => {
+      await act(async () => { (host.querySelector(`[data-item-id="${id}"]`) as HTMLButtonElement).click(); });
+      const words = [...host.querySelectorAll('[data-pack-window] .ws-btn')].map(b => b.textContent ?? '').filter(t => !/^\+$/.test(t));
+      await act(async () => { (host.querySelector(`[data-item-id="${id}"]`) as HTMLButtonElement).click(); });
+      return words;
+    };
+    const onKit = await actionsOf('sig_kit');
+    const onBlade = await actionsOf('sig_blade');
+    expect(onKit.join()).not.toMatch(/UNFOLD/);
+    expect(onKit).toContain('TRY IT');
+    expect(onKit).toEqual(onBlade);
+    expect(host.textContent).not.toContain(SECRET);
+    await act(async () => { root.unmount(); });
+    host.remove();
+  });
+
+  it('no door says the name of what has not been read, whatever is done with it', () => {
+    const blade = synth('sig_blade', SlotType.MAIN_HAND, { name: SECRET, isIdentified: false, tags: ['melee'] });
+    const worn = synth('sig_worn', SlotType.MAIN_HAND, { name: SECRET, isIdentified: false, tags: ['melee'] });
+    const r = kit();
+    const pouch = vialPouch('pch');
+    field([blade, worn, r, pouch, belt('blt')], [cartEntity('cart_1')]);
+    const heard: string[] = [];
+    const listen = (v: { reason?: string }) => { if (v.reason) heard.push(v.reason); };
+    store().equipSwap('blt');
+    store().equipSwap('pch', 'POUCH_1');
+    const places: Place[] = [
+      { kind: 'SLOT', slot: 'CHEST' }, { kind: 'SLOT', slot: 'POUCH_1' }, { kind: 'SLOT', slot: 'TOOL_1' },
+      { kind: 'PACK', x: 99, y: 99, rotated: false }, { kind: 'CART', entityId: 'cart_1', x: 99, y: 99, rotated: false }
+    ];
+    for (const item of [blade, r]) for (const to of places) {
+      listen(probeMove(player(), held(item, { kind: 'PACK' }), to));
+      listen(commitMove(held(item, { kind: 'PACK' }), to));
+    }
+    // and through a swap, a move off the body, the ground and the cart
+    listen(store().equipSwap('sig_blade', 'RIGHT_HAND'));
+    listen(store().equipSwap('sig_worn', 'RIGHT_HAND'));
+    listen(store().unequipFromSlot('RIGHT_HAND'));
+    const onePack = session().inventory.find(i => i.id === 'sig_blade');
+    if (onePack) {
+      listen(store().loadCart('cart_1', onePack.id));
+      listen(store().unloadCart('cart_1', onePack.id));
+      store().dropItem(onePack.id);
+      const cache = entities().find(e => e.container?.items?.some(i => i.id === onePack.id));
+      if (cache) listen(store().takeFromCache(cache.id, onePack.id));
+    }
+    expect(heard.join(' | ')).not.toContain(SECRET);
+    expect(fed()).not.toContain(SECRET);
+    expect(session().inventory.length + player().equipment!.items.length).toBeGreaterThan(0);
+  });
+
+  it('the hover says nothing either: no comparison, and no rank', () => {
+    const blade = synth('sig_blade', SlotType.MAIN_HAND, { name: SECRET, isIdentified: false, rank: UniversalRank.S });
+    const owned = synth('h', SlotType.MAIN_HAND, { stats: { attack_speed: 3 } });
+    usePlayerStore.setState(s => ({ player: { ...s.player, equipment: { ...s.player.equipment!, slots: { RIGHT_HAND: 'h' }, items: [owned] } } }));
+    expect(comparisonFor(blade, player())).toBeNull();
+    expect(JSON.stringify(inspectItem(blade, player()))).not.toContain(SECRET);
+    expect(SRC('src/components/ui/HoverLayer.tsx')).toMatch(/item\.isIdentified === false \? undefined : <RankMark/);
+  });
+
+  it('an eye not yet schooled refuses without naming the kind', () => {
+    field([kit()]);
+    const asked = store().fieldIdentify('sig_kit');
+    expect(asked.ok).toBe(false);
+    expect(asked.reason).not.toMatch(/\btool\b/);
+    expect(asked.reason).not.toContain(SECRET);
+    expect(asked.reason).toMatch(/not schooled/);
+  });
+});
+
+// -----------------------------------------------------------------------------
 // THE STANDING LAWS
 // -----------------------------------------------------------------------------
 
