@@ -43,7 +43,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | W2 | A fresh hub's load does not clear `rooms`, so moving to a new hub keeps the old one's rooms in memory | `hub/store.ts`'s `loadHub` |
 | W3 | The market a hub's cost reads includes the stash and body of the person present, so what someone carries into the city moves what it costs. A client knows no other player's bank, so this needs the server | `MarketCap`, Wave 13 |
 | W4 | A hidden pane stalls a beacon's channel until a screenshot forces frames, which looks like a stuck seal and is not | the pane, not the game |
-| W5 | A `.env` at the root of a checkout on `claude/world-clock` would not be ignored, because that branch's `.gitignore` predates it. `main`'s lists it. Staging by name is all that stands in the way until the checkout moves | `.gitignore` |
+| W5 | A `.env` at the root of a checkout on `claude/world-clock` would not be ignored, because that branch's `.gitignore` predates it. `main`'s lists it. Staging by name is all that stands in the way until the checkout moves. The only copy of Pedro's key is the `.env` in `.claude/worktrees/wave-b3-creation-deed-0bc7a1`, so removing that worktree removes it | `.gitignore`, B3's worktree |
 
 ### Found while building the timer, 2026-11-01
 
