@@ -324,6 +324,71 @@ This is the most valuable part of the job. These all happened in the game when t
 | Craft finished, lot foreclosed for unpaid upkeep | Log only, or a timer you must watch | Craft finished: built, a feed line and a bar in the strip (line 124). **Still open:** a foreclosed lot has only its mark in the hub's art |
 | Unidentified items | Blur and a `?`, with no explanation | Built: noise art and the blind sheet; study reveals (Waves 9.4, 10E) |
 
+## Leaders and the ground they hold
+
+**Status, 2026-11-01: a design by the builder, nothing built, awaiting Pedro's word.** His ruling: elite and boss "are leader types ... they strategize (AI = LLM defined actions) and direct the flow in a given territory. parties should be necessary to kill one (think a goblin king... killing it is the easiest part of the raid). Their territory once seen gets marked as the maps feature, and it evolves", and the industrious type builds its territory up over cycles.
+
+**What the donor does.** `D:\-ttrpg-engine\engine\monster-actor.ts` and `mm-monster-actor.ts`: one actor per camp, ticked monthly. A leader emerges after four weeks of a gate overflowing (`dungeon-gate.ts`). It picks one of six actions, survival first: raid, expand, fortify, recruit, hunt, migrate. A d20 plus its rating and tenure grades the month, and the grade moves population, food, gold and danger radius. A bad month opens it to a leadership challenge, and a loser who walks away seeds a new lair. Its danger feeds the guild's quests. `mm-faction.ts` and `intent.ts` add a leader whose drives bias what its people pursue.
+
+**What changes here.** No model runs in the donor: code picks from the list. Here a model writes the plan and the law judges it. The donor's camp is a number; here it stands on the land, and a person can walk in, scan it and map it. The donor's clear is one roll of party strength against a number; here the party is needed by the shape of the place.
+
+### Who leads
+
+- **Boss:** the seat of a territory, one to a territory. **Elite:** holds one post or band, under a boss or alone. Titan and god stay one of a kind and lead nothing by those words alone. This is a reading, for Pedro to confirm.
+- A kind stays a kind (D64). The leader is the one body the record holds by itself: its kind, its seat, its tenure, its stores.
+- Code decides who comes to lead, from pressure on a kind and ground (B2's population, and the Director's fitness) and a keyed roll. A model never writes its way there. A world is alpha as minted: no record, no territory, and the golden vectors do not move.
+- Names keep D60's rule. Until a leader has earned one, its ground reads as an unknown holding.
+
+### The cycle
+
+At each regeneration, compute first (D69):
+
+1. **Compute** reads what the territory holds and what happened to it, and rules what is possible.
+2. **The model** is asked only for leaders someone has seen or fought, in small batches across the scan window. It answers with a plan: `{ verb, target, name, why }`, plus standing orders. It names and aims its actions in this world's voice, and the numbers stay with the formula. A verb with no reader is refused (the law's rule), so the list grows only as readers are written: claim, raise, muster, hunt, raid, migrate to start.
+3. **No key, or no answer:** the donor's rule picks instead, keyed. The world keeps growing, on plain names, and nothing blocks.
+4. **Resolve:** a keyed roll plus rank and tenure grades the cycle. The formula turns the grade into what is gained. A bad cycle opens a challenge, and a loser who walks seeds a new territory on other ground.
+
+Cycles nobody watched are folded one at a time, as the donor's clockwork folds months. This differs from the Director, whose unwatched regenerations pass as one, because growth over time is the point here. Each step is pure and cheap, so every machine agrees. The territory joins the signed root beside the living lines.
+
+### Directing the flow
+
+No model is called during play (D46). A plan becomes standing orders that the bodies read: which ground each band holds, whether a post that raises the alarm calls bands in, and the leader's posture (hold, sortie, fall back to the seat). Sight and noise are A5's; herding and moving between chunks are B2's. Orders sit on top of those.
+
+### Why it takes a party
+
+Not health. A leader's health stays ordinary for its rank, because reaching it and leaving are the raid.
+
+- The seat is warded while its **anchors** stand: posts spread across the territory, whose function is `anchor`.
+- A broken anchor relights after a window, unless all of them are down. The formula sets that window **shorter than the walk between them**, from the real distance. One person cannot be in two places, so the requirement holds at any strength and needs no cap.
+- How many anchors comes from rank, and never fewer than two, so every leader asks for more than one person. Building more is a thing a leader can plan.
+- When the leader falls, the ground does not clear itself. The alarm is up, the bands are still there, and the challenge decides who takes the seat next cycle, or the territory splits. The payoff is its stores, which must be carried out through all of that.
+
+Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time anyone can stand at a second anchor, and the served runtime is the second. Until then a leader simply cannot be brought down, and nothing else waits on that.
+
+### On the map, once seen
+
+- A scan or a walk that reads a territory's ground records a `holding` on the survey entry: which chunks, what stood there, at which generation. Nothing marks it before someone has seen it.
+- The recon view draws it as hatching with a hard seam at its border, and structures as marks by shape, never hue.
+- It decays as D68 says: the land keeps, the holding goes stale, and a reading says how long ago. Territories grow, so a stale border is a real danger, and a fresh map of one is worth more (D85).
+- A written map carries the field through `mapSheet` (A3), by name, so a later field cannot ride along. The guild's quests read territories as the donor's read danger (B4).
+
+### What the industrious build
+
+- **Industrious** means a kind that carries a tag of kind `trade`. Others hold ground and build nothing. This answers D62: its seat picks ground holding the materials its trade works.
+- A structure is a function with a reader, plus words from the model: `watch` (sight and alarm), `wall` (blocks), `store`, `works` (makes what its bodies wear), `muster` (more bodies), `anchor`, `seat`. The formula sets the bill, by tag and rising with what already stands. Food and stores are the limit, not a count.
+- It builds on the hub's own contract: `ITemplate`, `templateBill`, a building under construction across cycles, walls drawn from the material that paid for them. Loggers raise log walls and miners stone. A scan shows scaffolding, and a raid can stop it mid-build.
+- Territories are a record over the land (D66), read by a chunk the way it reads the Director. The land stays a pure function of the seed.
+
+### Where it goes in the plan
+
+It grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; the land's vectors do not move.
+
+### For Pedro to rule
+
+1. Is the reading of boss as the seat and elite as a post right?
+2. Do animals get leaders, directing a herd and building nothing? The builder's default is yes, because a tree is not what makes a leader.
+3. Should the anchors' requirement bind every rank, as written, so the smallest leader still takes two people?
+
 ## The design system to deliver
 
 - **The atom sheet and the rules:** every family above, plus the composition rules written precisely enough that a developer can implement each as a pure function.
