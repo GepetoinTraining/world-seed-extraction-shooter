@@ -10,7 +10,7 @@ import { ItemFactory } from '../item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace, IVectorDocument } from '../data/VectorStore';
 import { HubGenerator, IHubLayout, IPOI } from './HubGenerator';
-import { HubSide, IRaisedChunk, firstPlan, raiseChunk } from './hubManifest';
+import { HubSide, IDismemberment, IRaisedChunk, dismemberPlan, firstPlan, raiseChunk } from './hubManifest';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
 import { Ledger } from '../../logic/ledger/Ledger';
@@ -231,6 +231,8 @@ interface HubState {
   activeHubId: string | null;
   /** D74: what has risen, in order. The first is the middle one. */
   chunks: IRaisedChunk[];
+  /** Lots split up, in order. With `chunks`, this is the plan the city is built from. */
+  dismembered: IDismemberment[];
   lots: IPlayerLot[];
   craftingJobs: ICraftJob[];
   // Wave 10: the rooms behind the doors, and the construction queue
@@ -249,6 +251,8 @@ interface HubState {
   saveHubState: () => Promise<void>;
   /** D74: one chunk more, on the given side of one standing (the first, unless named). It decides nothing about who pays. */
   raiseChunk: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
+  /** Split an empty lot of your own: a servidão to its centre, smaller lots around it, at a cost. */
+  dismemberLot: (lotId: string) => Promise<RoomVerdict>;
   /** The hub as a document, for a commit that changes it along with gold. */
   hubDoc: () => IVectorDocument | null;
 
@@ -300,6 +304,7 @@ interface HubState {
 export const useHubStore = create<HubState>((set, get) => ({
   activeHubId: null,
   chunks: firstPlan().chunks,
+  dismembered: [],
   lots: [],
   craftingJobs: [],
   rooms: {},
@@ -317,7 +322,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
+      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -327,9 +332,11 @@ export const useHubStore = create<HubState>((set, get) => ({
         console.log('[HUB] State loaded from persistence.');
         // A save from before the manifest has no chunks, and it stands on the first.
         const chunks = hubStateDoc.data.chunks ?? firstPlan().chunks;
+        const dismembered = hubStateDoc.data.dismembered ?? [];
         set({
           chunks,
-          lots: lotsFor(hubStateDoc.data.lots, HubGenerator.generate({ chunks })),
+          dismembered,
+          lots: lotsFor(hubStateDoc.data.lots, HubGenerator.generate({ chunks, dismembered })),
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
@@ -341,7 +348,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} } });
+        set({ chunks, dismembered: [], lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} } });
         // Save immediately
         await get().saveHubState();
       }
@@ -394,7 +401,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   raiseChunk: async (side, beside) => {
-    const raised = raiseChunk({ chunks: get().chunks }, side, { beside });
+    const raised = raiseChunk({ chunks: get().chunks, dismembered: get().dismembered }, side, { beside });
     if (!raised.ok) return raised;
     const { chunks } = raised.plan;
     const added = chunks[chunks.length - 1];
@@ -404,13 +411,45 @@ export const useHubStore = create<HubState>((set, get) => ({
     return { ok: true };
   },
 
+  dismemberLot: async (lotId) => {
+    const { chunks, dismembered, lots, rooms, buildJobs, activeHubId } = get();
+    const p = usePlayerStore.getState().player;
+    const lot = lots.find(l => l.id === lotId);
+    if (!lot || !activeHubId) return { ok: false, reason: 'There is no such lot.' };
+    if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this lot.' };
+    if (lot.structureType !== 'EMPTY' || rooms[lotId]) return { ok: false, reason: 'Something stands on it. A lot is split while it is empty ground.' };
+    if (buildJobs.some(j => j.lotId === lotId && !j.applied)) return { ok: false, reason: 'Something is being raised on it. A lot is split while it is empty ground.' };
+
+    const plan = { chunks, dismembered };
+    const verdict = HubGenerator.dismemberVerdict(HubGenerator.generate(plan), lotId);
+    if (!verdict.ok) return { ok: false, reason: verdict.reason ?? 'It cannot be split.' };
+    const cost = verdict.cost!;
+    if (p.bank.gold < cost) return { ok: false, reason: `Splitting it costs ${cost} G; you hold ${p.bank.gold} G.` };
+
+    const next = dismemberPlan(plan, lotId);
+    const layout = HubGenerator.generate(next);
+    const pieces = layout.zones.flatMap(z => z.pois)
+      .filter(poi => poi.metadata.dismemberedFrom === lotId)
+      .sort((a, b) => a.metadata.lotIndex - b.metadata.lotIndex)
+      .map(poi => ({ ...freshLot(poi), ownerId: lot.ownerId, ownerName: lot.ownerName, purchaseDate: lot.purchaseDate, upkeepPaidThroughDay: lot.upkeepPaidThroughDay }));
+
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+    set({ dismembered: next.dismembered ?? [], lots: lotsFor([...lots.filter(l => l.id !== lotId), ...pieces], layout) });
+    await GoldCommit.commit({
+      rows: [{ type: 'GOLD_DELTA', data: { reason: 'LOT_DISMEMBERED', lotId, pieces: pieces.map(l => l.id), amount: -cost, treasuryId: activeHubId, treasuryDelta: cost } }],
+      treasury: { worldUid: activeHubId, delta: cost },
+      hubDoc: get().hubDoc() ?? undefined
+    });
+    return { ok: true };
+  },
+
   hubDoc: () => {
-    const { activeHubId, chunks, lots, craftingJobs, rooms, buildJobs, web } = get();
+    const { activeHubId, chunks, dismembered, lots, craftingJobs, rooms, buildJobs, web } = get();
     if (!activeHubId) return null;
     return {
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: JSON.parse(JSON.stringify({ chunks, lots, craftingJobs, rooms, buildJobs, web })),
+      data: JSON.parse(JSON.stringify({ chunks, dismembered, lots, craftingJobs, rooms, buildJobs, web })),
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -664,7 +703,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!tpl) return { ok: false, reason: 'That plan is not in your stash.' };
 
     // Line 43: the size needs, with the numbers.
-    const layout = HubGenerator.generate({ chunks: get().chunks });
+    const layout = HubGenerator.generate({ chunks: get().chunks, dismembered: get().dismembered });
     const poi = HubGenerator.findPOI(layout, lotId);
     const lotFootprint = poi ? { width: poi.size.width, height: poi.size.height } : { width: 4, height: 4 };
     const sized = sizeNeedsVerdict(tpl, lotFootprint);
@@ -785,7 +824,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const due = get().buildJobs.filter(j => !j.applied && j.finishesAt <= now);
     if (due.length === 0) return 0;
 
-    const layout = HubGenerator.generate({ chunks: get().chunks });
+    const layout = HubGenerator.generate({ chunks: get().chunks, dismembered: get().dismembered });
     let applied = 0;
     for (const job of due) {
       if (job.kind === 'SHELL' && job.structureType) {

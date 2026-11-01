@@ -7,22 +7,24 @@ import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../types';
 import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
-import { HubGenerator, IPOI, IPassage } from '../entities/hub/HubGenerator';
+import { HubGenerator, IHubLayout, IPOI } from '../entities/hub/HubGenerator';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
 import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../entities/hub/room';
-import { Button, Chip, Input, ItemSprite, Panel, TimerBar } from './ui/kit';
+import { ArmedButton, Button, Chip, Input, ItemSprite, Panel, TimerBar } from './ui/kit';
 import { lotConstruction } from '../entities/hub/template';
 import { isTemplateItem } from '../logic/systems/TemplateSystem';
 import { TemplateApplyModal } from './TemplateApplyModal';
 import { TemplateStudio } from './TemplateStudio';
+import { useFeed } from './ui/stores';
 
 const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
 const DAY_MS = 86_400_000;
 const countOf = (items: IItem[], defId: string) => items.filter(i => i.universalDefinitionId === defId).length;
 
-const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; passages: IPassage[]; now: number }> = ({ lot, poi, passages, now }) => {
+const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout; now: number }> = ({ lot, poi, layout, now }) => {
+  const { passages } = layout;
   const { player } = usePlayerStore();
   const hub = useHubStore();
   const stash = player.bank.stashTabs[0]?.items || [];
@@ -42,6 +44,8 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; passages: IPassage[
   // Wave 10B: a rising template batch, counted step by step
   const construction = lotConstruction(hub.buildJobs, lot.id);
   const templatesHeld = stash.some(i => isTemplateItem(i));
+  const split: ReturnType<typeof HubGenerator.dismemberVerdict> = mine ? HubGenerator.dismemberVerdict(layout, lot.id) : { ok: false };
+  const pushFeed = useFeed(s => s.push);
 
   const stateChip = !lot.ownerId
     ? <Chip tone="proof">{lot.price.toLocaleString()} G</Chip>
@@ -93,6 +97,21 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; passages: IPassage[
       )}
       {mine && !shellJob && !construction && lot.structureType === 'EMPTY' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* A servidão to the centre, and smaller lots all around it. Every piece stays yours. */}
+          {split.ok && (
+            <ArmedButton
+              tone="quiet"
+              disabled={player.bank.gold < split.cost!}
+              title={`A servidão to its centre, with ${split.pieces} smaller lots around it. Each is yours, and each pays its own upkeep.`}
+              confirmLabel={`SPLIT INTO ${split.pieces} FOR ${split.cost!.toLocaleString()} G: SURE?`}
+              onConfirm={async () => {
+                const res = await hub.dismemberLot(lot.id);
+                pushFeed(res.ok ? `Lot ${lot.lotIndex} split into ${split.pieces}, by a servidão to its centre.` : res.reason ?? 'It would not split.', res.ok ? 'proof' : 'loss');
+              }}
+            >
+              DISMEMBER INTO {split.pieces} ({split.cost!.toLocaleString()} G)
+            </ArmedButton>
+          )}
           {templatesHeld && (
             <Button tone="signal" onClick={() => setApplyOpen(true)}>
               RAISE FROM A PLAN (template)
@@ -212,8 +231,8 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; passages: IPassage[
 };
 
 export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
-  const { lots, chunks } = useHubStore();
-  const layout = useMemo(() => HubGenerator.generate({ chunks }), [chunks]);
+  const { lots, chunks, dismembered } = useHubStore();
+  const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
   const playerId = usePlayerStore(s => s.player.id);
   const [now, setNow] = useState(Date.now());
   // D12: dev mode opens the builder view free, for testing. The real door is the scribe's table.
@@ -259,7 +278,7 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
       </div>
       {scribeOpen && <TemplateStudio onClose={() => setScribeOpen(false)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-        {lots.map(lot => <LotCard key={lot.id} lot={lot} poi={HubGenerator.findPOI(layout, lot.id)} passages={layout.passages} now={now} />)}
+        {lots.map(lot => <LotCard key={lot.id} lot={lot} poi={HubGenerator.findPOI(layout, lot.id)} layout={layout} now={now} />)}
       </div>
     </div>
   );

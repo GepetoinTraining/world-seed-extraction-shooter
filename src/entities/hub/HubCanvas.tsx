@@ -85,7 +85,8 @@ type HubPanel =
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
-  const layout = useMemo(() => HubGenerator.generate({ chunks }), [chunks]);
+  const dismembered = useHubStore(s => s.dismembered);
+  const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
 
   const posRef = useRef(streetPos
     ? { x: streetPos.x + layout.origin.x * TILE_SIZE, y: streetPos.y + layout.origin.y * TILE_SIZE }

@@ -76,6 +76,8 @@ export interface IHubManifest {
   gates: { col: number; row: number };
   /** What a lot locked out of the street asks, as a share of what it would. */
   lockedShare: number;
+  /** What dismembering a lot costs, as a share of what that lot asks. */
+  dismemberShare: number;
 }
 
 export const NEW_CARLEON: IHubManifest = {
@@ -86,6 +88,7 @@ export const NEW_CARLEON: IHubManifest = {
   lotGoldPerTile: 480,
   gates: { col: 11, row: 8 },
   lockedShare: 0.75,
+  dismemberShare: 0.25,
   floors: {
     P: { id: 'zone_plaza', name: 'Central Plaza', type: ZoneType.PLAZA, ambientColor: '#1a1a2e', floorTexture: 'cobblestone' },
     M: { id: 'zone_market', name: 'Market District', type: ZoneType.MARKET, ambientColor: '#2d1b1b', floorTexture: 'wooden_planks' },
@@ -251,9 +254,16 @@ export interface IRaisedChunk {
   kind: string;
 }
 
+/** A lot split up. `after` is how many chunks had risen, because numbers are handed out in the order things happened. */
+export interface IDismemberment {
+  lotId: string;
+  after: number;
+}
+
 /** The first chunk is the middle one. The order is kept, because lots are numbered by it. */
 export interface IHubPlan {
   chunks: IRaisedChunk[];
+  dismembered?: IDismemberment[];
 }
 
 export type RaiseVerdict = { ok: true; plan: IHubPlan } | { ok: false; reason: string };
@@ -281,8 +291,14 @@ export function raiseChunk(
   const step = HUB_SIDES[side];
   const cx = beside.cx + step.dx, cy = beside.cy + step.dy;
   if (standing(plan, cx, cy)) return { ok: false, reason: `The ground ${side.toLowerCase()} of there is already raised.` };
-  return { ok: true, plan: { chunks: [...plan.chunks, { cx, cy, kind }] } };
+  return { ok: true, plan: { ...plan, chunks: [...plan.chunks, { cx, cy, kind }] } };
 }
+
+/** This lot, split. Whether it may be is `HubGenerator.dismemberVerdict`'s to say. */
+export const dismemberPlan = (plan: IHubPlan, lotId: string): IHubPlan => ({
+  ...plan,
+  dismembered: [...(plan.dismembered ?? []), { lotId, after: plan.chunks.length }]
+});
 
 export interface IOpenSide {
   beside: { cx: number; cy: number };
@@ -324,6 +340,56 @@ export function lotPrice(
   const tiles = Math.max(1, size.width * size.height - (where.carries ?? 0));
   const share = where.locked ? manifest.lockedShare : 1;
   return Math.max(1, Math.round((manifest.lotGoldPerTile * tiles * nearCentre * nearRoad * share) / 50) * 50);
+}
+
+/** What dismembering a lot that asks this much costs, in the same round gold. */
+export const lotPriceShare = (manifest: IHubManifest, asks: number): number =>
+  Math.max(1, Math.round((asks * manifest.dismemberShare) / 50) * 50);
+
+/** No piece of a dismembered lot is narrower or shallower than this, in tiles. */
+export const DISMEMBER_PIECE_MIN = 3;
+/** How wide the pieces are cut, in tiles, the last taking what remains. */
+const DISMEMBER_PIECE_WIDTH = 4;
+
+export interface ILotRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Dismemberment: a servidão traced from the lot's door to its centre, and a crossbar
+ * through the centre, with smaller lots all around them. The pieces north of the
+ * crossbar have their doors on it. Those south of it stand either side of the way in,
+ * with their doors where the old lot's door was. Pure, in the tiles it was given.
+ */
+export function dismemberShape(lot: ILotRect): { pieces: ILotRect[]; way: { x: number; y: number }[] } {
+  const midX = lot.x + (lot.width >> 1), midY = lot.y + (lot.height >> 1);
+  const way: { x: number; y: number }[] = [];
+  for (let x = lot.x; x < lot.x + lot.width; x++) way.push({ x, y: midY });
+  for (let y = midY + 1; y < lot.y + lot.height; y++) way.push({ x: midX, y });
+
+  const cut = (x: number, width: number, y: number, height: number): ILotRect[] => {
+    if (width <= 0 || height <= 0) return [];
+    const n = Math.max(1, Math.floor(width / DISMEMBER_PIECE_WIDTH));
+    const each = Math.floor(width / n);
+    return Array.from({ length: n }, (_, i) => ({
+      x: x + i * each,
+      y,
+      width: i === n - 1 ? width - each * (n - 1) : each,
+      height
+    }));
+  };
+  const south = midY + 1, southH = lot.y + lot.height - south;
+  return {
+    way,
+    pieces: [
+      ...cut(lot.x, lot.width, lot.y, midY - lot.y),
+      ...cut(lot.x, midX - lot.x, south, southH),
+      ...cut(midX + 1, lot.x + lot.width - midX - 1, south, southH)
+    ]
+  };
 }
 
 /** Tiles along the grid from a tile to the nearest tile of a road cell. */
@@ -574,6 +640,7 @@ export function validateManifest(m: IHubManifest): string[] {
   if (!m.chunks[m.first]) out.push(`The first chunk, ${m.first}, is not in the manifest.`);
   if (!m.chunks[m.growth]) out.push(`The growth chunk, ${m.growth}, is not in the manifest.`);
   if (!(m.lotGoldPerTile > 0)) out.push('A lot has to ask something: lotGoldPerTile must be above nothing.');
+  if (!(m.dismemberShare > 0)) out.push('Dismembering has a cost: dismemberShare must be above nothing.');
 
   for (const [kind, chunk] of Object.entries(m.chunks)) {
     const shaped = (rows: string[], what: string) => {

@@ -34,13 +34,13 @@ import { CHUNK_TILES, QUADRANT_TILES } from '../src/entities/world/grid';
 import { HubGenerator, IHubLayout, IPOI, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
 import {
   CELL_TILES, CHUNK_CELLS, EMPTY_MARK, HUB_SIDES, HubSide, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN, ROAD_STREET, SPAWN_MARK,
-  firstPlan, lotPrice, openSides, raiseChunk, tilesToCell, validateManifest
+  DISMEMBER_PIECE_MIN, dismemberPlan, dismemberShape, doorTile, firstPlan, lotPrice, lotPriceShare, openSides, raiseChunk, tilesToCell, validateManifest
 } from '../src/entities/hub/hubManifest';
 import { HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, floorAtom, hubGround, lotArt, passageAtom, roadAtom } from '../src/render/atoms/hub';
 import { cityMinimap } from '../src/render/atoms/minimap';
 import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../src/render/atoms/atoms';
 import { fnv1a } from '../src/logic/rng/DeterministicRNG';
-import { useHubStore } from '../src/entities/hub/store';
+import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { emptyRoom, fullyWalkable } from '../src/entities/hub/room';
 import { sizeNeedsVerdict } from '../src/entities/hub/template';
@@ -1344,6 +1344,317 @@ describe('servidão: a lot with no street at its door gets a way through', () =>
   });
 });
 
+// Pedro: "instead of more smaller lots, make a dismemberment option at a cost that
+// traces a servidão to the center and makes smaller lots all around it".
+describe('dismemberment: the shape', () => {
+  const rects = [{ x: 48, y: 16, width: 8, height: 8 }, { x: 0, y: 0, width: 16, height: 16 }, { x: 8, y: 8, width: 16, height: 8 }, { x: 4, y: 4, width: 8, height: 16 }, { x: 0, y: 0, width: 12, height: 12 }];
+  const inRect = (r: { x: number; y: number; width: number; height: number }, x: number, y: number) => x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height;
+
+  it('the servidão runs from the door to the centre of the lot', () => {
+    rects.forEach(r => {
+      const s = dismemberShape(r);
+      const cx = r.x + (r.width >> 1), cy = r.y + (r.height >> 1);
+      const door = doorTile({ position: { x: r.x, y: r.y }, size: { width: r.width, height: r.height } });
+      expect(s.way.some(t => t.x === cx && t.y === cy), JSON.stringify(r)).toBe(true);
+      expect(s.way.some(t => t.x === door.x && t.y === door.y - 1), JSON.stringify(r)).toBe(true);
+    });
+  });
+
+  it('the pieces and the way between them are exactly the old lot, with nothing twice', () => {
+    rects.forEach(r => {
+      const seen = new Map<string, number>();
+      const mark = (x: number, y: number) => seen.set(`${x},${y}`, (seen.get(`${x},${y}`) ?? 0) + 1);
+      const s = dismemberShape(r);
+      s.way.forEach(t => mark(t.x, t.y));
+      s.pieces.forEach(p => { for (let y = p.y; y < p.y + p.height; y++) for (let x = p.x; x < p.x + p.width; x++) mark(x, y); });
+      expect(seen.size, JSON.stringify(r)).toBe(r.width * r.height);
+      [...seen.values()].forEach(n => expect(n).toBe(1));
+      s.pieces.forEach(p => {
+        expect(inRect(r, p.x, p.y)).toBe(true);
+        expect(inRect(r, p.x + p.width - 1, p.y + p.height - 1)).toBe(true);
+      });
+    });
+  });
+
+  it('makes smaller lots all around the centre, on every side but the way in', () => {
+    rects.forEach(r => {
+      const s = dismemberShape(r);
+      const cx = r.x + (r.width >> 1), cy = r.y + (r.height >> 1);
+      expect(s.pieces.length, JSON.stringify(r)).toBeGreaterThanOrEqual(3);
+      expect(s.pieces.some(p => p.y + p.height <= cy), 'north').toBe(true);
+      expect(s.pieces.some(p => p.y > cy && p.x + p.width <= cx), 'south-west').toBe(true);
+      expect(s.pieces.some(p => p.y > cy && p.x > cx), 'south-east').toBe(true);
+      s.pieces.forEach(p => {
+        expect(p.width, JSON.stringify(p)).toBeGreaterThanOrEqual(DISMEMBER_PIECE_MIN);
+        expect(p.height, JSON.stringify(p)).toBeGreaterThanOrEqual(DISMEMBER_PIECE_MIN);
+        expect(p.width * p.height).toBeLessThan(r.width * r.height);
+      });
+    });
+  });
+
+  it('every piece has its door on the way or below the old lot', () => {
+    rects.forEach(r => {
+      const s = dismemberShape(r);
+      const way = new Set(s.way.map(t => `${t.x},${t.y}`));
+      s.pieces.forEach(p => {
+        const d = doorTile({ position: { x: p.x, y: p.y }, size: { width: p.width, height: p.height } });
+        expect(way.has(`${d.x},${d.y}`) || d.y === r.y + r.height, JSON.stringify(p)).toBe(true);
+      });
+    });
+  });
+});
+
+describe('dismemberment: in the layout', () => {
+  const first = HubGenerator.generate();
+  const bigLot = lotPois(first).find(p => p.size.width >= 8 && p.size.height >= 8)!;
+  const planSplit = (id = bigLot.id): IHubPlan => {
+    const res = dismemberPlan(firstPlan(), id);
+    return res;
+  };
+  const split = () => HubGenerator.generate(planSplit());
+
+  it('asks a verdict first: too small, locked out, or carrying a passage is refused, with the reason', () => {
+    const small = lotPois(first).find(p => p.size.width < 8 || p.size.height < 8)!;
+    expect(HubGenerator.dismemberVerdict(first, small.id).ok).toBe(false);
+    expect(HubGenerator.dismemberVerdict(first, 'poi_lot_nowhere').ok).toBe(false);
+    const big = HubGenerator.dismemberVerdict(first, bigLot.id);
+    expect(big.ok).toBe(true);
+    expect(big.cost).toBe(lotPriceShare(NEW_CARLEON, bigLot.metadata.price));
+    expect(big.cost).toBeGreaterThan(0);
+    expect(big.pieces).toBeGreaterThanOrEqual(3);
+    const grown = HubGenerator.generate(planOf('EAST'));
+    const locked = lotPois(grown).find(p => p.metadata.locked)!;
+    const carrying = lotPois(grown).find(p => p.metadata.carries)!;
+    const lockedVerdict = HubGenerator.dismemberVerdict(grown, locked.id);
+    expect(lockedVerdict.ok).toBe(false);
+    expect(lockedVerdict.reason).toMatch(/street/i);
+    const carryingVerdict = HubGenerator.dismemberVerdict(grown, carrying.id);
+    expect(carryingVerdict.ok).toBe(false);
+    expect(carryingVerdict.reason).toMatch(/servidão/i);
+  });
+
+  it('replaces the old lot with its pieces, all in the same district, numbered on from what stands', () => {
+    const l = split();
+    expect(HubGenerator.findPOI(l, bigLot.id)).toBeNull();
+    const children = lotPois(l).filter(p => p.metadata.dismemberedFrom === bigLot.id);
+    expect(children.length).toBeGreaterThanOrEqual(3);
+    const zone = HubGenerator.getZoneAtPosition(first, bigLot.position.x, bigLot.position.y)!.id;
+    children.forEach(p => {
+      expect(HubGenerator.getZoneAtPosition(l, p.position.x, p.position.y)?.id, p.id).toBe(zone);
+      expect(p.id).toBe(`poi_lot_${p.metadata.lotIndex}`);
+      expect(p.metadata.lotIndex, p.id).toBeGreaterThanOrEqual(LOTS_STANDING);
+      expect(p.name).toBe(`Lot #${p.metadata.lotIndex + 1}`);
+    });
+    const ids = allPois(l).map(p => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('leaves everything else exactly where it stood', () => {
+    const l = split();
+    allPois(first).filter(p => p.id !== bigLot.id).forEach(p => {
+      const after = poiOf(l, p.id);
+      expect(after.position, p.id).toEqual(p.position);
+      expect(after.size, p.id).toEqual(p.size);
+      expect(after.metadata.price, p.id).toBe(p.metadata.price);
+    });
+    expect(l.navMesh).toEqual(first.navMesh);
+  });
+
+  it('every piece behind the centre has a passage, door first, down the way to the street', () => {
+    const l = split();
+    const children = lotPois(l).filter(p => p.metadata.dismemberedFrom === bigLot.id);
+    const behind = children.filter(p => p.metadata.locked);
+    expect(behind.length).toBeGreaterThan(0);
+    behind.forEach(p => {
+      const q = l.passages.find(x => x.lotId === p.id)!;
+      expect(q, p.id).toBeTruthy();
+      expect(q.tiles[0]).toEqual(doorOf(p));
+      for (let i = 1; i < q.tiles.length; i++) expect(Math.abs(q.tiles[i].x - q.tiles[i - 1].x) + Math.abs(q.tiles[i].y - q.tiles[i - 1].y), `${p.id} step ${i}`).toBe(1);
+      const last = q.tiles[q.tiles.length - 1];
+      expect(l.roads.some(r => tilesToCell(last, r) <= 1), p.id).toBe(true);
+      expect(q.through).toEqual([]);
+    });
+    children.filter(p => !p.metadata.locked).forEach(p => expect(l.roads.some(r => tilesToCell(doorOf(p), r) <= 1), p.id).toBe(true));
+  });
+
+  it('with every lot built on, every door still reaches the street', () => {
+    const l = split();
+    const lots = lotPois(l);
+    const open = new Set(l.passages.flatMap(q => q.tiles.map(t => `${t.x},${t.y}`)));
+    const blocked = (x: number, y: number) => {
+      if (x < 0 || y < 0 || x >= l.width || y >= l.height || !l.navMesh[y][x]) return true;
+      if (open.has(`${x},${y}`)) return false;
+      return lots.some(p => x >= p.position.x && x < p.position.x + p.size.width && y >= p.position.y && y < p.position.y + p.size.height);
+    };
+    const seen = new Set([`${l.spawnPoint.x},${l.spawnPoint.y}`]);
+    const queue = [l.spawnPoint];
+    while (queue.length) {
+      const { x, y } = queue.shift()!;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+        const k = `${x + dx},${y + dy}`;
+        if (seen.has(k) || blocked(x + dx, y + dy)) return;
+        seen.add(k);
+        queue.push({ x: x + dx, y: y + dy });
+      });
+    }
+    lots.forEach(p => expect(seen.has(`${doorOf(p).x},${doorOf(p).y}`), p.id).toBe(true));
+  });
+
+  it('every lot the manifest can dismember comes out with no piece stranded', () => {
+    const grown = HubGenerator.generate(planOf('EAST'));
+    lotPois(grown).filter(p => HubGenerator.dismemberVerdict(grown, p.id).ok).forEach(p => {
+      const l = HubGenerator.generate(dismemberPlan(planOf('EAST'), p.id));
+      lotPois(l).filter(c => c.metadata.dismemberedFrom === p.id).forEach(c => {
+        const onStreet = l.roads.some(r => tilesToCell(doorOf(c), r) <= 1);
+        expect(onStreet || l.passages.some(q => q.lotId === c.id), `${p.id} -> ${c.id}`).toBe(true);
+      });
+    });
+  });
+
+  it('the same plan is the same city, and what rises after moves no piece or number', () => {
+    expect(JSON.stringify(split())).toBe(JSON.stringify(HubGenerator.generate(JSON.parse(JSON.stringify(planSplit())))));
+    const before = lotPois(split()).filter(p => p.metadata.dismemberedFrom === bigLot.id);
+    (Object.keys(HUB_SIDES) as HubSide[]).forEach(side => {
+      const raised = raiseChunk(planSplit(), side);
+      if (raised.ok === false) throw new Error(raised.reason);
+      const l = HubGenerator.generate(raised.plan);
+      expect(raised.plan.dismembered, side).toEqual(planSplit().dismembered);
+      const ids = allPois(l).map(p => p.id);
+      expect(new Set(ids).size, side).toBe(ids.length);
+      before.forEach(p => {
+        const after = poiOf(l, p.id);
+        expect(after.metadata.lotIndex, `${side} ${p.id}`).toBe(p.metadata.lotIndex);
+        expect(after.position, `${side} ${p.id}`).toEqual({ x: p.position.x + l.origin.x, y: p.position.y + l.origin.y });
+      });
+    });
+  });
+
+  it('a chunk that rose first keeps its numbers when a lot is split after', () => {
+    const plan = planOf('EAST');
+    const before = HubGenerator.generate(plan);
+    const after = HubGenerator.generate(dismemberPlan(plan, bigLot.id));
+    lotPois(before).filter(p => p.id !== bigLot.id).forEach(p => expect(poiOf(after, p.id).metadata.lotIndex, p.id).toBe(p.metadata.lotIndex));
+  });
+
+  it('a piece big enough can be dismembered again', () => {
+    const grown = HubGenerator.generate(planOf('EAST'));
+    const biggest = lotPois(grown).filter(p => HubGenerator.dismemberVerdict(grown, p.id).ok).sort((a, b) => b.size.width * b.size.height - a.size.width * a.size.height)[0];
+    const once = dismemberPlan(planOf('EAST'), biggest.id);
+    const l = HubGenerator.generate(once);
+    const child = lotPois(l).find(p => p.metadata.dismemberedFrom === biggest.id && HubGenerator.dismemberVerdict(l, p.id).ok);
+    if (!child) return; // Whether one stays big enough depends on the shape; none is not a fault.
+    const twice = HubGenerator.generate(dismemberPlan(once, child.id));
+    expect(HubGenerator.findPOI(twice, child.id)).toBeNull();
+    expect(new Set(allPois(twice).map(p => p.id)).size).toBe(allPois(twice).length);
+  });
+
+  it('the law holds the shape to the manifest, and refuses a share that costs nothing', () => {
+    const m: IHubManifest = JSON.parse(JSON.stringify(NEW_CARLEON));
+    m.dismemberShare = 0;
+    expect(validateManifest(m).join()).toMatch(/dismember/i);
+  });
+});
+
+describe('dismemberment: at a cost, by the owner', () => {
+  const owner = 'uid_bars';
+  const seed = async (id: string, gold: number, patch: Record<string, unknown> = {}) => {
+    useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], chunks: firstPlan().chunks, dismembered: [] } as any);
+    await useHubStore.getState().loadHub(id);
+    useHubStore.setState(s => ({ lots: s.lots.map(l => l.id === 'poi_lot_0' ? { ...l, ownerId: owner, ownerName: 'TESTER', purchaseDate: 77, upkeepPaidThroughDay: 123, ...patch } as any : l) }));
+    usePlayerStore.setState(s => ({ player: { ...s.player, id: owner, username: 'TESTER', bank: { ...s.player.bank, gold } } }));
+  };
+  const askFor = () => HubGenerator.dismemberVerdict(HubGenerator.generate(), 'poi_lot_0').cost!;
+
+  it('charges the cost, and every piece is the owner\'s, in the old lot\'s place', async () => {
+    await seed('hub_split', askFor() + 7);
+    const res = await useHubStore.getState().dismemberLot('poi_lot_0');
+    expect(res.ok).toBe(true);
+    expect(usePlayerStore.getState().player.bank.gold).toBe(7);
+    const hub = useHubStore.getState();
+    expect(hub.lots.find(l => l.id === 'poi_lot_0')).toBeUndefined();
+    const layout = HubGenerator.generate({ chunks: hub.chunks, dismembered: hub.dismembered });
+    const children = lotPois(layout).filter(p => p.metadata.dismemberedFrom === 'poi_lot_0');
+    children.forEach(c => {
+      const rec = hub.lots.find(l => l.id === c.id)!;
+      expect(rec, c.id).toBeTruthy();
+      expect(rec.ownerId).toBe(owner);
+      expect(rec.ownerName).toBe('TESTER');
+      expect(rec.purchaseDate).toBe(77);
+      expect(rec.upkeepPaidThroughDay).toBe(123);
+      expect(rec.structureType).toBe('EMPTY');
+      expect(rec.lotIndex).toBe(c.metadata.lotIndex);
+      expect(rec.price).toBe(c.metadata.price);
+    });
+    expect(hub.lots.filter(l => l.ownerId === owner).length).toBe(children.length);
+  });
+
+  it('the gold goes through the one door, with a row of its own', () => {
+    const src = SRC('src/entities/hub/store.ts');
+    expect(src).toMatch(/reason: 'LOT_DISMEMBERED'/);
+    const body = src.slice(src.indexOf('dismemberLot: async'), src.indexOf('resolveBuilds: async'));
+    expect(body).toMatch(/GoldCommit\.commit/);
+    expect(body).not.toMatch(/Treasury\.credit/);
+  });
+
+  it('survives a reload: the plan and the pieces and their owner', async () => {
+    await seed('hub_split_keep', askFor(), { upkeepPaidThroughDay: worldDay() });
+    await useHubStore.getState().dismemberLot('poi_lot_0');
+    const saved = JSON.parse(JSON.stringify(useHubStore.getState()));
+    useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], chunks: firstPlan().chunks, dismembered: [] } as any);
+    await useHubStore.getState().loadHub('hub_split_keep');
+    expect(useHubStore.getState().dismembered).toEqual(saved.dismembered);
+    expect(useHubStore.getState().lots).toEqual(saved.lots);
+  });
+
+  it('a save from before this has no record of it, and loads as it was', async () => {
+    db.set('hub_state_hub_none', { id: 'hub_state_hub_none', namespace: 'territories', data: { chunks: firstPlan().chunks, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], web: { nodes: {} } }, metadata: { createdAt: 0, updatedAt: 0, ownerCertUid: 'SYSTEM', version: 1 } });
+    useHubStore.setState({ activeHubId: null, lots: [], chunks: firstPlan().chunks, dismembered: [{ lotId: 'x', after: 1 }] } as any);
+    await useHubStore.getState().loadHub('hub_none');
+    expect(useHubStore.getState().dismembered).toEqual([]);
+  });
+
+  it('refuses without moving anything: someone else\'s, too poor, or with a building on it', async () => {
+    await seed('hub_split_no', askFor() - 1);
+    const before = useHubStore.getState();
+    const poor = await useHubStore.getState().dismemberLot('poi_lot_0');
+    expect(poor.ok).toBe(false);
+    expect(poor.reason).toMatch(/\d/);
+    expect(useHubStore.getState().lots).toBe(before.lots);
+    expect(usePlayerStore.getState().player.bank.gold).toBe(askFor() - 1);
+
+    await seed('hub_split_theirs', askFor(), { ownerId: 'someone_else' });
+    expect((await useHubStore.getState().dismemberLot('poi_lot_0')).ok).toBe(false);
+
+    await seed('hub_split_built', askFor(), { structureType: 'HOUSE' });
+    const built = await useHubStore.getState().dismemberLot('poi_lot_0');
+    expect(built.ok).toBe(false);
+    expect(built.reason).toMatch(/empty|building|stands/i);
+
+    await seed('hub_split_small', askFor());
+    expect((await useHubStore.getState().dismemberLot('poi_lot_3')).ok).toBe(false);
+  });
+
+  it('refuses while something is being raised there', async () => {
+    await seed('hub_split_job', askFor());
+    useHubStore.setState({ buildJobs: [{ id: 'j', lotId: 'poi_lot_0', kind: 'SHELL', structureType: 'HOUSE', ownerCertUid: owner, queuedAt: 0, finishesAt: 0, applied: false, consumedIds: [], consumedDefIds: [] }] } as any);
+    expect((await useHubStore.getState().dismemberLot('poi_lot_0')).ok).toBe(false);
+  });
+
+  it('the deeds screen offers it as a deliberate step, saying the cost and the pieces', () => {
+    const src = SRC('src/components/HoldingsPanel.tsx');
+    expect(src).toMatch(/dismemberLot/);
+    expect(src).toMatch(/ArmedButton/);
+    expect(src).toMatch(/DISMEMBER/);
+  });
+
+  it('every reader passes the whole plan', () => {
+    ['src/entities/hub/HubCanvas.tsx', 'src/components/TemplateApplyModal.tsx', 'src/components/HoldingsPanel.tsx'].forEach(path => {
+      expect(SRC(path), path).toMatch(/dismembered/);
+    });
+    expect(SRC('src/entities/hub/store.ts')).not.toMatch(/generate\(\{ chunks: get\(\)\.chunks \}\)/);
+  });
+});
+
 describe('where the ground ends can be seen', () => {
   it('names every outer side of the hub and no side shared by two chunks', () => {
     expect(HubGenerator.edges(HubGenerator.generate()).length).toBe(4);
@@ -1370,8 +1681,8 @@ describe('the canvas reads the plan', () => {
   const src = SRC('src/entities/hub/HubCanvas.tsx');
 
   it('builds its layout from the hub\'s chunks, and again when they change', () => {
-    expect(src).toMatch(/HubGenerator\.generate\(\{\s*chunks\s*\}\)/);
-    expect(src).toMatch(/\[chunks\]/);
+    expect(src).toMatch(/HubGenerator\.generate\(\{\s*chunks,\s*dismembered\s*\}\)/);
+    expect(src).toMatch(/\[chunks,\s*dismembered\]/);
   });
 
   it('keeps you on your own ground when a chunk rises to the north or the west', () => {
