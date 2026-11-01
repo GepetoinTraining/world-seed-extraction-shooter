@@ -44,8 +44,25 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
   // Wave 10B: a rising template batch, counted step by step
   const construction = lotConstruction(hub.buildJobs, lot.id);
   const templatesHeld = stash.some(i => isTemplateItem(i));
-  const split: ReturnType<typeof HubGenerator.dismemberVerdict> = mine ? HubGenerator.dismemberVerdict(layout, lot.id) : { ok: false };
+  const split: ReturnType<typeof HubGenerator.dismemberVerdict> = !lot.ownerId || mine ? HubGenerator.dismemberVerdict(layout, lot.id) : { ok: false };
   const pushFeed = useFeed(s => s.push);
+  // A servidão to the centre, and smaller lots all around it. Your own stays yours; a free one goes on the market.
+  const splitButton = split.ok && (
+    <ArmedButton
+      tone="quiet"
+      disabled={player.bank.gold < split.cost!}
+      title={mine
+        ? `A servidão to its centre, with ${split.pieces} smaller lots around it. Each is yours, and each pays its own upkeep.`
+        : `A servidão to its centre, with ${split.pieces} smaller lots around it. Each goes on the market, and you can buy one.`}
+      confirmLabel={`SPLIT INTO ${split.pieces} FOR ${split.cost!.toLocaleString()} G: SURE?`}
+      onConfirm={async () => {
+        const res = await hub.dismemberLot(lot.id);
+        pushFeed(res.ok ? `Lot ${lot.lotIndex} split into ${split.pieces}, by a servidão to its centre.` : res.reason ?? 'It would not split.', res.ok ? 'proof' : 'loss');
+      }}
+    >
+      DISMEMBER INTO {split.pieces} ({split.cost!.toLocaleString()} G)
+    </ArmedButton>
+  );
 
   const stateChip = !lot.ownerId
     ? <Chip tone="proof">{lot.price.toLocaleString()} G</Chip>
@@ -71,6 +88,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
           <Button disabled={player.bank.gold < lot.price} onClick={() => hub.buyLot(lot.id)}>
             BUY LOT ({lot.price.toLocaleString()} G)
           </Button>
+          {splitButton}
           {deeds.map(deed => (
             <Button
               key={deed.id} tone="proof"
@@ -97,21 +115,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
       )}
       {mine && !shellJob && !construction && lot.structureType === 'EMPTY' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* A servidão to the centre, and smaller lots all around it. Every piece stays yours. */}
-          {split.ok && (
-            <ArmedButton
-              tone="quiet"
-              disabled={player.bank.gold < split.cost!}
-              title={`A servidão to its centre, with ${split.pieces} smaller lots around it. Each is yours, and each pays its own upkeep.`}
-              confirmLabel={`SPLIT INTO ${split.pieces} FOR ${split.cost!.toLocaleString()} G: SURE?`}
-              onConfirm={async () => {
-                const res = await hub.dismemberLot(lot.id);
-                pushFeed(res.ok ? `Lot ${lot.lotIndex} split into ${split.pieces}, by a servidão to its centre.` : res.reason ?? 'It would not split.', res.ok ? 'proof' : 'loss');
-              }}
-            >
-              DISMEMBER INTO {split.pieces} ({split.cost!.toLocaleString()} G)
-            </ArmedButton>
-          )}
+          {splitButton}
           {templatesHeld && (
             <Button tone="signal" onClick={() => setApplyOpen(true)}>
               RAISE FROM A PLAN (template)

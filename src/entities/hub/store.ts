@@ -257,7 +257,11 @@ interface HubState {
   depositToPlan: (tag: string, itemIds: string[]) => Promise<RoomVerdict>;
   /** D73: spend the deposit and raise the next chunk, where the plan chose. */
   planRaise: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
-  /** Split an empty lot of your own: a servidão to its centre, smaller lots around it, at a cost. */
+  /**
+   * Split an empty lot: a servidão to its centre, smaller lots around it, at a cost. Your
+   * own stays yours in pieces. A free one goes on the market in pieces, for anyone to buy
+   * one: it is how someone who cannot afford a big lot gets a small one.
+   */
   dismemberLot: (lotId: string) => Promise<RoomVerdict>;
   /** The hub as a document, for a commit that changes it along with gold. */
   hubDoc: () => IVectorDocument | null;
@@ -459,7 +463,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const p = usePlayerStore.getState().player;
     const lot = lots.find(l => l.id === lotId);
     if (!lot || !activeHubId) return { ok: false, reason: 'There is no such lot.' };
-    if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this lot.' };
+    if (lot.ownerId && lot.ownerId !== p.id) return { ok: false, reason: 'It is someone else\'s to split.' };
     if (lot.structureType !== 'EMPTY' || rooms[lotId]) return { ok: false, reason: 'Something stands on it. A lot is split while it is empty ground.' };
     if (buildJobs.some(j => j.lotId === lotId && !j.applied)) return { ok: false, reason: 'Something is being raised on it. A lot is split while it is empty ground.' };
 
@@ -474,7 +478,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     const pieces = layout.zones.flatMap(z => z.pois)
       .filter(poi => poi.metadata.dismemberedFrom === lotId)
       .sort((a, b) => a.metadata.lotIndex - b.metadata.lotIndex)
-      .map(poi => ({ ...freshLot(poi), ownerId: lot.ownerId, ownerName: lot.ownerName, purchaseDate: lot.purchaseDate, upkeepPaidThroughDay: lot.upkeepPaidThroughDay }));
+      .map(poi => lot.ownerId
+        ? { ...freshLot(poi), ownerId: lot.ownerId, ownerName: lot.ownerName, purchaseDate: lot.purchaseDate, upkeepPaidThroughDay: lot.upkeepPaidThroughDay }
+        : freshLot(poi));
 
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
     set({ dismembered: next.dismembered ?? [], lots: lotsFor([...lots.filter(l => l.id !== lotId), ...pieces], layout) });

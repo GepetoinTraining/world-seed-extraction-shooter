@@ -1635,6 +1635,75 @@ describe('dismemberment: at a cost, by the owner', () => {
     expect((await useHubStore.getState().dismemberLot('poi_lot_3')).ok).toBe(false);
   });
 
+  // Pedro: "you pay to split and then you can buy one of the small ones". It is how
+  // someone who cannot afford a big lot gets a small one.
+  describe('a free lot, split by anyone', () => {
+    const freeSeed = async (id: string, gold: number) => {
+      useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], chunks: firstPlan().chunks, dismembered: [], planDeposit: {} } as any);
+      await useHubStore.getState().loadHub(id);
+      usePlayerStore.setState(s => ({ player: { ...s.player, id: owner, username: 'TESTER', bank: { ...s.player.bank, gold } } }));
+    };
+    const pieces = () => {
+      const hub = useHubStore.getState();
+      const layout = HubGenerator.generate({ chunks: hub.chunks, dismembered: hub.dismembered });
+      return lotPois(layout).filter(p => p.metadata.dismemberedFrom === 'poi_lot_0');
+    };
+
+    it('charges the cost, and every piece goes on the market at what it asks', async () => {
+      await freeSeed('hub_free_split', askFor() + 7);
+      const res = await useHubStore.getState().dismemberLot('poi_lot_0');
+      expect(res.ok).toBe(true);
+      expect(usePlayerStore.getState().player.bank.gold).toBe(7);
+      const hub = useHubStore.getState();
+      expect(hub.lots.find(l => l.id === 'poi_lot_0')).toBeUndefined();
+      expect(pieces().length).toBeGreaterThanOrEqual(3);
+      pieces().forEach(c => {
+        const rec = hub.lots.find(l => l.id === c.id)!;
+        expect(rec.ownerId, c.id).toBeNull();
+        expect(rec.ownerName, c.id).toBeNull();
+        expect(rec.purchaseDate, c.id).toBeNull();
+        expect(rec.price, c.id).toBe(c.metadata.price);
+      });
+    });
+
+    it('then you can buy one of the small ones, for less than the whole would have asked', async () => {
+      const whole = poiOf(HubGenerator.generate(), 'poi_lot_0').metadata.price;
+      await freeSeed('hub_free_buy', askFor() + 50000);
+      await useHubStore.getState().dismemberLot('poi_lot_0');
+      const cheapest = useHubStore.getState().lots.filter(l => pieces().some(p => p.id === l.id)).sort((a, b) => a.price - b.price)[0];
+      expect(askFor() + cheapest.price).toBeLessThan(whole);
+      const before = usePlayerStore.getState().player.bank.gold;
+      expect(await useHubStore.getState().buyLot(cheapest.id)).toBe(true);
+      expect(usePlayerStore.getState().player.bank.gold).toBe(before - cheapest.price);
+      const hub = useHubStore.getState();
+      expect(hub.lots.find(l => l.id === cheapest.id)?.ownerId).toBe(owner);
+      expect(hub.lots.filter(l => pieces().some(p => p.id === l.id) && l.ownerId === null).length).toBe(pieces().length - 1);
+    });
+
+    it('a piece for sale survives a reload as for sale', async () => {
+      await freeSeed('hub_free_keep', askFor());
+      await useHubStore.getState().dismemberLot('poi_lot_0');
+      const want = JSON.parse(JSON.stringify(useHubStore.getState().lots));
+      useHubStore.setState({ activeHubId: null, lots: [], chunks: firstPlan().chunks, dismembered: [], planDeposit: {} } as any);
+      await useHubStore.getState().loadHub('hub_free_keep');
+      expect(useHubStore.getState().lots).toEqual(want);
+    });
+
+    it('a short purse moves nothing', async () => {
+      await freeSeed('hub_free_poor', askFor() - 1);
+      const before = useHubStore.getState().lots;
+      const res = await useHubStore.getState().dismemberLot('poi_lot_0');
+      expect(res.ok).toBe(false);
+      expect(useHubStore.getState().lots).toBe(before);
+    });
+
+    it('the deeds screen offers it on a lot for sale, and says where the pieces go', () => {
+      const src = SRC('src/components/HoldingsPanel.tsx');
+      expect(src).toMatch(/!lot\.ownerId \|\| mine/);
+      expect(src).toMatch(/on the market/);
+    });
+  });
+
   it('refuses while something is being raised there', async () => {
     await seed('hub_split_job', askFor());
     useHubStore.setState({ buildJobs: [{ id: 'j', lotId: 'poi_lot_0', kind: 'SHELL', structureType: 'HOUSE', ownerCertUid: owner, queuedAt: 0, finishesAt: 0, applied: false, consumedIds: [], consumedDefIds: [] }] } as any);
