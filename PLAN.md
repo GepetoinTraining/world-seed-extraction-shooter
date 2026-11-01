@@ -462,7 +462,7 @@ Pedro, 2026-10-31: "before I do run once, we need to have a stable database (sql
 - **Gate:** proposed lines 69–71.
 
 ### THE USABILITY PASS — before the full run, absorbing the playtest fixes
-Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 95 tests; suite 680). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
+Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403, with the character sheet added after at b924a1d (`tests/usability.test.ts`, 95 tests; suite 680). **Approved by Pedro, 2026-10-31: "for now approved", with the items in the ledger left open.** The list and its state are in `PLAYTEST_LEDGER.md`.
 
 Pedro, 2026-10-31: "take a look at the views and see if they're game like... the usability of the game, the controls, the actual hovers... we can do much better than them and are currently worse", after playing RotmG. The list is `PLAYTEST_LEDGER.md`, P1–P3 and U1–U21. Keep this quick: controls first, then hovers, then the views. The art and the voice are approved, so this changes how things are used, not how they look.
 
@@ -533,7 +533,7 @@ Pedro, 2026-10-31: "take a look at the views and see if they're game like... the
 - **Gate:** lines 57–59, proposed lines 72–76, and played through the real interface, within the carried items above.
 
 ### THE PLAYTEST FIXES — absorbed into the usability pass
-Three findings from Pedro's own play on 2026-10-31. All three are fixed at b5cd6ea, awaiting Pedro's approval with the pass. Lines 57–59 are proposed so that guardrail 1 is met.
+Three findings from Pedro's own play on 2026-10-31. All three are fixed at b5cd6ea, approved with the pass. Lines 57–59 were proposed so that guardrail 1 is met.
 
 - **Cache duplication:** opening a ground cache with a full pack copies its contents, one copy per press.
 - **Mint-world draft loss:** a stray backdrop click or Escape discards the four-step draft.
@@ -717,7 +717,7 @@ Proposed for the stable database, not yet agreed:
 70. The same store contract passes on the SQLite file and on Postgres
 71. A gold change and its ledger row commit together or not at all, across a killed process
 
-Proposed for the usability pass, registered as bars in `tests/usability.test.ts`, awaiting Pedro's approval with the leg:
+For the usability pass, registered as bars in `tests/usability.test.ts`, approved with the leg:
 
 72. Holding the button keeps firing at the weapon's own rate; one key interacts everywhere; firing never opens a menu
 73. Every item anywhere shows its card on hover at once, compared with what is worn or held, without moving the layout
@@ -725,7 +725,7 @@ Proposed for the usability pass, registered as bars in `tests/usability.test.ts`
 75. Hands and tools are on a hotbar the HUD shows, and the field and city have a minimap
 76. One key opens one character sheet, in the field and the city alike: the body, what you carry, attributes and skills together, through no other view
 
-Proposed for the playtest fixes, now part of the usability pass, registered in the same file, awaiting the same approval:
+For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 
 57. Opening a cache with a full pack creates no new entity and no new item, however often it is tried; a partial pickup leaves the rest only in the original cache
 58. A stray click or Escape cannot silently discard a mint-world draft
@@ -777,7 +777,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
 | Technology web and auto skill (D27) | 63–68 | Passed, by test and by play within its carried items; approved |
 | Stable database | 69–71 (proposed) | Not started; before the full run |
-| Usability pass, with the playtest fixes | 57–59, 72–76 (proposed) | Built, by test and by play within its carried items; awaiting approval |
+| Usability pass, with the playtest fixes | 57–59, 72–76 | Passed, by test and by play within its carried items; approved "for now" |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |

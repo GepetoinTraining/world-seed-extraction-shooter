@@ -226,7 +226,7 @@ Settled by the web pass (D27–D30), kept here as the record:
 - **Tags are law.** Every tag has one kind and one meaning in one registry, a variant spelling is refused, a retired spelling is never reused, and a batch that breaks any of it falls whole. Nothing caps what batches can add.
 - **People have hands.** Someone met in the field has stats and skills dealt from their own seed, the same forever, read through the same web as yours. You learn what they are good at by talking to them: the card says Hands after the first word. A bond carries the person home, and Wave 11 puts them to work.
 
-Settled by the usability pass, kept here as the record (awaiting Pedro's approval):
+Settled by the usability pass, kept here as the record:
 
 - **The art and the voice did not move.** This pass changed how things are used, and it added no new art family: the minimap and the body's silhouette are drawn from the atoms already approved.
 - **Firing and acting are two inputs.** The button on the ground fires, held or tapped, and opens nothing. E acts, here and in the city, and says above the hotbar what it would do.

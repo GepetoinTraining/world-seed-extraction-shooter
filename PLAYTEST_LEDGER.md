@@ -4,7 +4,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 
 ## Open
 
-### Left open by the usability pass, 2026-10-31
+### Left open by the usability pass, approved "for now" by Pedro, 2026-10-31
 
 | # | What happens | Where |
 |---|---|---|
