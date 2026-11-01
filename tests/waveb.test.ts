@@ -41,7 +41,8 @@ import { SECTOR_CHUNKS } from '../src/entities/world/grid';
 import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
-import { emptyGuild } from '../src/entities/hub/guild';
+import { emptyGuild, wantMayTake } from '../src/entities/hub/guild';
+import { WorldDeed } from '../src/logic/systems/WorldDeed';
 import { ApprenticeRoad } from '../src/logic/systems/ApprenticeRoad';
 import { WebBank } from '../src/logic/content/WebBank';
 
@@ -263,6 +264,21 @@ describe('B4 and the vendors: everyone comes through the tavern', () => {
     expect(v.ok).toBe(false);
     expect(hub().guild.residents).toHaveLength(1);
     expect(hub().craftsmen).toHaveLength(0);
+  });
+
+  it('a want for documents takes no world deed, land deed, map or plan, however cheap it reads', async () => {
+    const quest = { id: 'q', residentId: 'r', n: 0, tag: 'document', count: 1, payShare: 1, text: '', state: 'OPEN' as const, postedDay: 0 };
+    useHubStore.setState({ guild: { ...emptyGuild(), residents: [{ id: 'r', name: 'R', lotId: 'lot_x', wantsMet: 0 } as never], quests: [quest] } });
+    const deed = WorldDeed.free('someone');
+    const papers: IItem[] = [deed, { ...deed, id: 'a_map', worldDeedData: undefined, mapData: {} as never }, { ...deed, id: 'a_lot', worldDeedData: undefined, deedData: {} as never }];
+    for (const paper of papers) {
+      hold(paper);
+      const v = await hub().fulfilQuest('q', [paper.id]);
+      expect(v.ok, paper.id).toBe(false);
+      expect(stash().some(i => i.id === paper.id)).toBe(true);
+    }
+    expect(wantMayTake({ ...deed, worldDeedData: undefined })).toBe(true);
+    expect(readFileSync('src/components/GuildHall.tsx', 'utf8')).toContain('wantMayTake(i)');
   });
 
   it('the window reads the tavern, and asks for a second press', () => {

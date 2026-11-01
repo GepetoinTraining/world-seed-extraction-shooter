@@ -223,6 +223,12 @@ export function wantFor(
   return { tag, count, payShare: PAY_SHARE[sheet.want] ?? 1, text: (VOICE[sheet.temperament] ?? VOICE.PASSIVE)(resident.name, what) };
 }
 
+/**
+ * A want is for what gets used up. A deed, a map or a plan answers "document" and is a
+ * person's standing, so no want takes one, however cheap it reads.
+ */
+export const wantMayTake = (item: IItem): boolean => !(item.worldDeedData || item.deedData || item.mapData || item.tags?.includes('template'));
+
 /** What a want met pays: the worth of what was brought, by the person's own want. */
 export const questPay = (items: IItem[], payShare: number): number =>
   Math.ceil(items.reduce((sum, i) => sum + Math.max(0, i.value || 0), 0) * payShare);

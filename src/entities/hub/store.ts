@@ -46,7 +46,7 @@ import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import {
   GUILD_OWNER_ID, IGuildState, IResident, benchFactor, bondItemOf, emptyGuild, guildCover, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
-  questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor
+  questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
 } from './guild';
 
 import { IVendorRecord, VendorSystem } from '../../logic/systems/VendorSystem';
@@ -830,7 +830,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       const items = itemIds.map(id => stash.find(i => i.id === id));
       if (items.some(i => !i)) return { reason: 'That is not in your stash.' };
       if ((items as IItem[]).some(i => i.isIdentified === false)) return { reason: 'Read it first. Nobody takes a thing nobody has read.' };
-      const wrong = (items as IItem[]).find(i => !answersTag(i, quest.tag));
+      const wrong = (items as IItem[]).find(i => !answersTag(i, quest.tag) || !wantMayTake(i));
       if (wrong) return { reason: `${LoadoutSystem.shownName(wrong)} is not what was asked for.` };
       if (items.length < quest.count) return { reason: `The want is for ${quest.count}. That is ${items.length}.` };
       return { quest, given: (items as IItem[]).slice(0, quest.count) };

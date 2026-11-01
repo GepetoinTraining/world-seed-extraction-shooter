@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType } from '../../types';
 import {
   IResident, chainFromMap, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, questPay, residentStage,
-  residentUpkeepPerDay, trialFor, trialTakes
+  residentUpkeepPerDay, trialFor, trialTakes, wantMayTake
 } from '../entities/hub/guild';
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag, materialLabel } from '../entities/hub/room';
@@ -49,7 +49,7 @@ const Board: React.FC = () => {
       {open.map(quest => {
         const resident = guild.residents.find(r => r.id === quest.residentId)!;
         // The cheapest that answer go first, and the window names them, so nothing dear goes by accident.
-        const answers = stash.filter(i => i.isIdentified !== false && answersTag(i, quest.tag)).sort((a, b) => (a.value || 0) - (b.value || 0));
+        const answers = stash.filter(i => i.isIdentified !== false && answersTag(i, quest.tag) && wantMayTake(i)).sort((a, b) => (a.value || 0) - (b.value || 0));
         const given = answers.slice(0, quest.count);
         const ready = given.length >= quest.count;
         return (
