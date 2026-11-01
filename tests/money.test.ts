@@ -143,6 +143,11 @@ const lodge = async (entityId = 'person_1') => {
   const bond = bondOf(entityId);
   give([bond]);
   expect(await hub().redeemBond(bond.id)).toEqual({ ok: true });
+  // No ground until a human has seen to them (tests/immigrants.test.ts holds that). These bars start after it.
+  useHubStore.setState(s => {
+    const id = s.guild.residents.find(r => r.entityId === entityId)!.id;
+    return { guild: { ...s.guild, quests: s.guild.quests.filter(q => q.residentId !== id), residents: s.guild.residents.map(r => r.id === id ? { ...r, wantsMet: 1 } : r) } };
+  });
   return hub().guild.residents.find(r => r.entityId === entityId)!;
 };
 
@@ -456,36 +461,30 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
-  it('a want the treasury cannot pay is paid, and the print and the payment are one act', async () => {
-    const resident = await lodge();
-    useHubStore.setState(s => ({
-      guild: { ...s.guild, residents: s.guild.residents.map(r => r.id === resident.id ? { ...r, lotId: 'x', homeAt: 1 } : r),
-        quests: [{ id: 'q1', residentId: resident.id, n: 0, tag: 'wood', count: 1, payShare: 1, text: 't', state: 'OPEN', postedDay: 0 }] }
-    }));
+  // Moved on purpose: a want no longer reaches the treasury (Pedro: "that's the LITERAL MECHANISM OF MASLOW"). The counter does.
+  it('what the treasury cannot pay is paid, and the print and the payment are one act', async () => {
     await drainTreasury();
-    const item = thing({ value: 10 });
+    const item = thing({ value: 100 });
+    const offer = hub().offerFor(item);
     give([item]);
-    expect(await hub().fulfilQuest('q1', [item.id])).toEqual({ ok: true });
-    expect(player().bank.gold).toBe(10);
+    expect(await hub().sellToVendor(item.id)).toBe(offer);
+    expect(player().bank.gold).toBe(offer);
     const perDay = hub().runningNow();
-    expect(await Treasury.balance(HUB)).toBe(14 * perDay - 10);
+    expect(await Treasury.balance(HUB)).toBe(14 * perDay - offer);
     const prints = await rowsOf('PRINT');
     expect(prints).toHaveLength(1);
     expect(prints[0].data).toMatchObject({ hubId: HUB, amount: 14 * perDay, perDay, days: 14 });
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
-  it('a want worth more than one print prints as many as it takes', async () => {
-    const resident = await lodge();
-    useHubStore.setState(s => ({
-      guild: { ...s.guild, residents: s.guild.residents.map(r => r.id === resident.id ? { ...r, lotId: 'x', homeAt: 1 } : r),
-        quests: [{ id: 'q1', residentId: resident.id, n: 0, tag: 'wood', count: 1, payShare: 1, text: 't', state: 'OPEN', postedDay: 0 }] }
-    }));
+  it('a sale worth more than one print prints as many as it takes', async () => {
     await drainTreasury();
     const perDay = hub().runningNow();
-    const item = thing({ value: 14 * perDay * 3 + 1 });
+    // Worth just over three prints to the counter, at whatever share it pays
+    const share = hub().offerFor(thing({ value: 1_000_000 })) / 1_000_000;
+    const item = thing({ value: Math.ceil((14 * perDay * 3 + 1) / share) });
     give([item]);
-    expect(await hub().fulfilQuest('q1', [item.id])).toEqual({ ok: true });
+    expect(await hub().sellToVendor(item.id)).toBeGreaterThan(14 * perDay * 3);
     const prints = await rowsOf('PRINT');
     expect(prints).toHaveLength(4);
     for (const p of prints) expect(p.data.amount).toBe(14 * perDay);

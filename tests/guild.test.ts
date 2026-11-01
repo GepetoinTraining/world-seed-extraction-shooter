@@ -121,6 +121,11 @@ const lodge = async (entityId = 'person_1', over: Record<string, any> = {}): Pro
   give([bond]);
   const res = await hub().redeemBond(bond.id);
   expect(res).toEqual({ ok: true });
+  // D115: no ground until a human has seen to them (tests/immigrants.test.ts holds that). These bars start after it.
+  useHubStore.setState(s => {
+    const id = s.guild.residents.find(r => r.entityId === entityId)!.id;
+    return { guild: { ...s.guild, quests: s.guild.quests.filter(q => q.residentId !== id), residents: s.guild.residents.map(r => r.id === id ? { ...r, wantsMet: 1 } : r) } };
+  });
   return hub().guild.residents.find(r => r.entityId === entityId)!;
 };
 
@@ -223,10 +228,12 @@ describe('line 115: a person brought out stays at the tavern', () => {
     expect(stash().length).toBe(2);
   });
 
-  it('a lodger posts no quest: wants begin once they have a house', async () => {
-    await lodge();
-    await hub().resolveWants();
-    expect(hub().guild.quests.length).toBe(0);
+  // Moved on purpose (D115): this held "a lodger posts no quest: wants begin once they have a house".
+  it('a lodger posts a want at once: it is the way to their ground', async () => {
+    const bond = bondOf('person_arriving');
+    give([bond]);
+    await hub().redeemBond(bond.id);
+    expect(hub().guild.quests.length).toBe(1);
   });
 
   it('Mags keeps her rest, and has work at the tavern now', () => {
@@ -472,18 +479,21 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect(pay('GIFT')).toBeLessThan(1.5); // never above what the shelf marks a thing up to
   });
 
-  it('a want met: the things go to their house, and the hub\'s treasury pays', async () => {
+  // Moved on purpose (D115): this held "the hub's treasury pays". They pay it themselves now.
+  it('a want met: the things go to their house, and their own wallet pays', async () => {
     const resident = await house();
     const quest = hub().guild.quests[0];
-    const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 40 }));
+    const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 1 }));
     give(items);
     const before = await Treasury.balance(HUB);
+    const held = hub().wallets[resident.id];
 
     expect(await hub().fulfilQuest(quest.id, items.map(i => i.id))).toEqual({ ok: true });
 
     const paid = player().bank.gold;
     expect(paid).toBeGreaterThan(0);
-    expect(await Treasury.balance(HUB)).toBe(before - paid);
+    expect(hub().wallets[resident.id]).toBe(held - paid);
+    expect(await Treasury.balance(HUB)).toBe(before);
     expect(stash().length).toBe(0);
     const home = hub().lots.find(l => l.id === resident.lotId)!;
     expect(items.every(i => home.inventory.some(h => h.id === i.id))).toBe(true);
@@ -504,16 +514,16 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect((await hub().fulfilQuest('no_such_quest', [])).ok).toBe(false);
   });
 
-  // Moved on purpose (D108, D115): this held "the hub's treasury cannot pay, and the quest waits".
-  it('the hub\'s treasury cannot pay, so the hub prints, and the want is met', async () => {
+  // Moved on purpose (D115): this held "the hub's treasury cannot pay". It is their wallet now, and it waits on them.
+  it('they cannot pay it, and the want waits: nobody prints for them', async () => {
     await house();
     const quest = hub().guild.quests[0];
     const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 1_000_000 }));
     give(items);
-    expect(await hub().fulfilQuest(quest.id, items.map(i => i.id))).toEqual({ ok: true });
-    expect(stash().length).toBe(0);
-    expect(hub().guild.quests[0].state).toBe('DONE');
-    expect(hub().guild.printed.count).toBeGreaterThan(0);
+    expect((await hub().fulfilQuest(quest.id, items.map(i => i.id))).ok).toBe(false);
+    expect(stash().length).toBe(quest.count);
+    expect(hub().guild.quests[0].state).toBe('OPEN');
+    expect(hub().guild.printed.count).toBe(0);
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
@@ -531,7 +541,7 @@ describe('line 115: their wants become quests at the guildhall', () => {
     await hub().resolveWants(worldDay() + 1);
     const open = hub().guild.quests.filter(q => q.state === 'OPEN');
     expect(open.length).toBe(1);
-    expect(open[0].n).toBe(1);
+    expect(open[0].n).toBe(first.n + 1);
     expect(open[0].residentId).toBe(resident.id);
   });
 

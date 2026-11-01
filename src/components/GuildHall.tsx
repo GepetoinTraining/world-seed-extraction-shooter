@@ -9,7 +9,7 @@ import { WorldClock } from '../entities/world/WorldClock';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType } from '../../types';
 import {
-  IResident, chainFromMap, chainFromMaps, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, questPay, residentStage,
+  IResident, chainFromMap, chainFromMaps, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, mayHaveGround, questPay, residentStage,
   residentUpkeepPerDay, trialFor, trialTakes, wantMayTake
 } from '../entities/hub/guild';
 import { Farm } from '../entities/hub/farm';
@@ -39,7 +39,7 @@ const useStash = () => usePlayerStore(s => s.player).bank.stashTabs[0]?.items ??
 
 /** Wants on the board, each with what in your stash answers it. */
 const Board: React.FC = () => {
-  const { guild, fulfilQuest } = useHubStore();
+  const { guild, fulfilQuest, wallets } = useHubStore();
   const stash = useStash();
   const pushFeed = useFeed(s => s.push);
   const open = guild.quests.filter(q => q.state === 'OPEN');
@@ -51,7 +51,7 @@ const Board: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {open.length === 0 && (
         <span className="ws-dim ws-small">
-          Nothing on the board{guild.residents.length === 0 ? '. Nobody in this city wants anything from you yet: a person has to come through the gate, and have a door of their own, first.' : ' today. People with a door of their own post what they want, a day apart.'}
+          Nothing on the board{guild.residents.length === 0 ? '. Nobody in this city wants anything from you yet: a person has to come through the gate first.' : ' today. People post what they want, a day apart, and they pay for it themselves.'}
         </span>
       )}
       {asks.length > 0 && (
@@ -67,15 +67,24 @@ const Board: React.FC = () => {
         const answers = stash.filter(i => i.isIdentified !== false && answersTag(i, quest.tag) && wantMayTake(i)).sort((a, b) => (a.value || 0) - (b.value || 0));
         const given = answers.slice(0, quest.count);
         const ready = given.length >= quest.count;
+        const pay = questPay(given, quest.payShare);
+        const holds = wallets[quest.residentId] ?? 0;
+        const affordable = pay <= holds;
         return (
           <Panel key={quest.id} title={askerName.toUpperCase()} right={<Chip tone={ready ? 'proof' : 'none'}>{Math.min(answers.length, quest.count)} of {quest.count}</Chip>}>
             <div className="ws-small" style={{ marginBottom: 4 }}>{quest.text}</div>
             {ready && <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>Goes: {given.map(i => LoadoutSystem.shownName(i)).join(', ')}.</div>}
             <div className="ws-row">
-              <span className="ws-dim ws-small">{ready ? `The hub pays ${questPay(given, quest.payShare).toLocaleString()} G for these.` : `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`}</span>
+              <span className="ws-dim ws-small">
+                {!ready
+                  ? `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`
+                  : affordable
+                    ? `${resident.name} pays ${pay.toLocaleString()} G for these.`
+                    : `These come to ${pay.toLocaleString()} G, and ${resident.name} holds ${holds.toLocaleString()} G. It waits.`}
+              </span>
               <ArmedButton
                 tone="quiet"
-                disabled={!ready}
+                disabled={!ready || !affordable}
                 confirmLabel={`GIVE ${quest.count}: SURE?`}
                 onConfirm={async () => {
                   const res = await fulfilQuest(quest.id, given.map(i => i.id));
@@ -264,7 +273,9 @@ const People: React.FC = () => {
             </div>
             {r.craftsmanId && stage !== 'HOME' && <div className="ws-small" style={{ marginBottom: 4 }}>A master now, and in need of a shop of their own. Whoever sees it raised will pay less in it.</div>}
             {r.craftsmanId && stage === 'HOME' && <MasterShop craftsmanId={r.craftsmanId} />}
-            {stage === 'TAVERN' && <GroundFor resident={r} />}
+            {stage === 'TAVERN' && (mayHaveGround(r)
+              ? <GroundFor resident={r} />
+              : <div className="ws-small">No ground until someone has seen to them. What they want is on the board.</div>)}
             {stage === 'POOLING' && <HouseBill resident={r} />}
             {stage === 'RISING' && rising && <div className="ws-small">{rising.applied} of {rising.total} steps stand.</div>}
             {stage === 'HOME' && <WorkshopBlock resident={r} />}

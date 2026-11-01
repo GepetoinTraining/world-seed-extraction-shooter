@@ -10,8 +10,9 @@
  *
  * THE GUILD'S MONEY (D108, D115): it spends the hub's treasury, and when that falls short it
  * prints (`money.ts`). The seller of a free lot is that same treasury, so buying moves no gold,
- * and what limits it is how much ground there is. Quests pay out of the treasury through the
- * same path a vendor's buyback takes.
+ * and what limits it is how much ground there is, and who has been seen to. A want is paid out
+ * of the person's own wallet: "they circulate money". What they cannot afford, they go without,
+ * and nobody covers it: "that's the LITERAL MECHANISM OF MASLOW".
  */
 
 import { IAffix, IItem, ISkillState, IWebPack, UniversalRank } from '../../../types';
@@ -57,10 +58,12 @@ export interface IResident {
   arrivedAt: number;
   /** The lot the guild bought for them. Null: still at the tavern. */
   lotId: string | null;
+  /** What people brought them before they had ground. It moves in with them. */
+  belongings?: IItem[];
   house?: IHousePool;
   /** Someone the road made a master. Their house is the shop they came back for. */
   craftsmanId?: string;
-  /** When their house was finished. They want nothing before this (D75). */
+  /** When their house was finished. */
   homeAt?: number;
   /** How many wants they have had met. It keys the next. */
   wantsMet: number;
@@ -137,6 +140,16 @@ export function guildFrom(saved: Partial<IGuildState> | undefined): IGuildState 
 }
 
 export type ResidentStage = 'TAVERN' | 'POOLING' | 'RISING' | 'HOME';
+
+/** How many wants a human must meet before someone gets ground. A guess until Wave 12. */
+const WANTS_BEFORE_GROUND = 1;
+
+/**
+ * D115: "they only get a their plot of land by human questing, because we need to provide their
+ * needs". Someone the road made a master has been seen to already, and only needs their shop.
+ */
+export const mayHaveGround = (resident: Pick<IResident, 'wantsMet' | 'craftsmanId'>): boolean =>
+  !!resident.craftsmanId || resident.wantsMet >= WANTS_BEFORE_GROUND;
 
 export const residentIdOf = (bond: BondData) => `res_${bond.worldSeed}_${bond.entityId}`;
 

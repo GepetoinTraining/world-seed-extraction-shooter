@@ -204,7 +204,7 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   OPEN_HALL: () => ({ kind: 'open', panel: 'guild' }),
   GUILD_LORE: () => ({
     kind: 'reply',
-    text: 'People come out of the gate with nothing, and Mags can only give them a bed. We buy them ground on the treasury\'s word, and you bring what their house asks. Then they want things, and the board fills. As for you: the rank is ours to give. Bring out what stands above you, carry it yourself, and hand it over here.'
+    text: 'People come out of the gate with a little coin and no ground, and Mags can only give them a bed. They want things, the board fills, and they pay for what you bring. See to someone and we find them ground, and you bring what their house asks. As for you: the rank is ours to give. Bring out what stands above you, carry it yourself, and hand it over here.'
   }),
 
   // --- Honest closures: these halls are not open, and they say so ---

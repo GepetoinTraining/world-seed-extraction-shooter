@@ -43,9 +43,9 @@ const BUILDING_PER_TILE = 1;
 /** Who keeps the hub's free ground, and is paid for it. */
 const GROUND_KEEPER = 'npc_land_manager';
 
-/** A person brings this many days of their own living, keyed. A guess until Wave 12. */
-const WALLET_DAYS_MIN = 3;
-const WALLET_DAYS_TOP = 15;
+/** "every imigrant comes in with cash": a fortnight of their own living or more, keyed. How much more is a guess until Wave 12. */
+const WALLET_DAYS_MIN = PRINT_DAYS;
+const WALLET_DAYS_TOP = PRINT_DAYS * 4 + 1;
 
 export interface IRunningLine {
   /** Who is paid it. */
