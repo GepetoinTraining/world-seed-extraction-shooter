@@ -12,7 +12,7 @@
  * in a simulation instead of by feel (PLAN W4 gate).
  */
 
-import { IEquipmentState, IItem } from '../../../types';
+import { IAttributes, IEquipmentState, IItem } from '../../../types';
 import { IMobDefinition } from '../mob/types';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { Rng } from '../../logic/rng/DeterministicRNG';
@@ -47,16 +47,17 @@ export class CombatMath {
     return Math.max(1, base + StatSystem.total(equipment, 'damage'));
   }
 
-  /** One swing or shot, keyed: what it does, with what is worn. The same key answers the same. */
-  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string): IOutgoingHit {
+  /** One swing or shot, keyed: what it does, with what is worn and who holds it. The same key answers the same. */
+  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes): IOutgoingHit {
     const rng = Rng.fromKey(key);
-    const base = this.weaponDamage(weapon, equipment);
+    const bare = this.weaponDamage(weapon, equipment);
+    const base = this.isMelee(weapon) ? Math.round(bare * StatSystem.meleeScale(attributes)) : bare;
     const poison = StatSystem.total(equipment, 'poison_damage');
-    if (rng.next() < StatSystem.total(equipment, 'crit_chance')) {
+    if (rng.next() < StatSystem.critChance(equipment, attributes)) {
       const multiplier = BASE_CRIT_MULTIPLIER + StatSystem.total(equipment, 'crit_multiplier');
       return { damage: Math.round(base * multiplier), crit: true, glance: false, poison };
     }
-    const accuracy = Math.max(-99, StatSystem.total(equipment, 'accuracy_rating'));
+    const accuracy = Math.max(-99, StatSystem.accuracyRating(equipment, attributes));
     if (rng.next() < BASE_GLANCE * 100 / (100 + accuracy)) {
       return { damage: Math.max(1, Math.round(base * GLANCE_FACTOR)), crit: false, glance: true, poison };
     }
@@ -64,12 +65,12 @@ export class CombatMath {
   }
 
   /** Milliseconds between shots/swings. */
-  static fireCooldownMs(weapon: IItem | undefined, equipment?: IEquipmentState): number {
+  static fireCooldownMs(weapon: IItem | undefined, equipment?: IEquipmentState, attributes?: IAttributes): number {
     const own = this.isUsable(weapon) ? weapon!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
     // The hand's own rate, and what everything else on the body adds to it
     const onBody = StatSystem.worn(equipment).some(i => i.id === weapon?.id);
     const others = StatSystem.total(equipment, 'attack_speed') - (onBody ? weapon!.stats?.attack_speed ?? 0 : 0);
-    return Math.round(1000 / Math.max(0.1, own + others));
+    return Math.round(1000 / Math.max(0.1, (own + others) * StatSystem.fireRateScale(attributes)));
   }
 
   /** Melee weapons swing; everything else (and bare hands) fires. */
@@ -105,15 +106,15 @@ export class CombatMath {
     return Math.min(MAX_MITIGATION, reduction + fallback + curve(StatSystem.total(equipment, 'defense')));
   }
 
-  /** One blow arriving, keyed: dodged, blocked, or mitigated. */
-  static incoming(raw: number, equipment: IEquipmentState | undefined, key: string): IIncomingHit {
+  /** One blow arriving, keyed: dodged, blocked, or mitigated. Who it lands on counts too. */
+  static incoming(raw: number, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes): IIncomingHit {
     if (raw <= 0) return { damage: 0, dodged: false, blocked: false };
     const rng = Rng.fromKey(key);
-    if (rng.next() < Math.max(0, curve(StatSystem.total(equipment, 'evasion_rating')))) {
+    if (rng.next() < Math.max(0, curve(StatSystem.evasionRating(equipment, attributes)))) {
       return { damage: 0, dodged: true, blocked: false };
     }
     const blocked = rng.next() < StatSystem.total(equipment, 'block_chance');
-    const landed = blocked ? raw * BLOCK_FACTOR : raw;
+    const landed = (blocked ? raw * BLOCK_FACTOR : raw) * StatSystem.blowFactor(attributes);
     return { damage: Math.max(1, Math.round(landed * (1 - this.mitigationOf(equipment)))), dodged: false, blocked };
   }
 

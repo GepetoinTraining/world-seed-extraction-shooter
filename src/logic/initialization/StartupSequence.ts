@@ -130,7 +130,9 @@ console.log('[BOOT] Refreshing World List...');
            const { LoadoutSystem } = await import('../../entities/player/systems/LoadoutSystem');
            // D28: and old skill tracks land on lawful ids, once, without loss
            const { WebSystem } = await import('../systems/WebSystem');
-           usePlayerStore.setState({ player: WebSystem.migrate(LoadoutSystem.migrate(result.player)) });
+           // D83, D84: and a rank its experience earned is stored, once, with skills kept where they stood
+           const { ProgressionSystem } = await import('../../entities/player/systems/ProgressionSystem');
+           usePlayerStore.setState({ player: ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player))) });
            usePlayerStore.getState().recalcAttributes();
            usePlayerStore.getState().recalcWeight();
            // Wave 9.3: the select screen learns the real archetype from the save

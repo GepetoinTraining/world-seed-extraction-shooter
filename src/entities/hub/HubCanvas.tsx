@@ -32,6 +32,7 @@ import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
 import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
+import { StatSystem } from '../../logic/systems/StatSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../types';
 
@@ -518,7 +519,7 @@ export const HubCanvas: React.FC = () => {
         const p = roomPosRef.current;
         if (dx !== 0 || dy !== 0) {
           const len = Math.hypot(dx, dy);
-          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * TILE_SIZE * dt;
+          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes) * TILE_SIZE * dt;
           const mx = (dx / len) * step, my = (dy / len) * step;
           let nx = p.x + mx;
           if (roomBlocked(nx, p.y) && !roomBlocked(p.x, p.y)) nx = p.x;
@@ -590,7 +591,7 @@ export const HubCanvas: React.FC = () => {
       const p = posRef.current;
       if (dx !== 0 || dy !== 0) {
         const len = Math.hypot(dx, dy);
-        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment) * TILE_SIZE * dt;
+        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes) * TILE_SIZE * dt;
         const mx = (dx / len) * step, my = (dy / len) * step;
         let nx = p.x + mx;
         if (blockedAt(nx, p.y) && !blockedAt(p.x, p.y)) nx = p.x;
@@ -1040,13 +1041,13 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
               </button>
               <Button
                 tone="proof"
-                disabled={listing.stock <= 0 || player.bank.gold < listing.price}
+                disabled={listing.stock <= 0 || player.bank.gold < Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}
                 onClick={() => {
                   const item = purchaseFromShop(listing.id, category);
-                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(listing.price)} G. It is in your stash.`, 'proof');
+                  if (item) pushFeed(`Bought ${item.name} for ${Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))} G. It is in your stash.`, 'proof');
                 }}
               >
-                BUY {Math.ceil(listing.price)}G
+                BUY {Math.ceil(StatSystem.shopPrice(listing.price, player.attributes))}G
               </Button>
             </div>
           ))}
@@ -1068,12 +1069,12 @@ const SellModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <Modal title="SELL TO THE COUNTER" onClose={onClose} width={520}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
-        The counter pays 60% of value, from the hub treasury. A hub with no funds cannot buy.
+        The counter pays {StatSystem.vendorOffer(100, player.attributes)}% of value, from the hub treasury. A hub with no funds cannot buy.
       </div>
       {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
       <div className="ws-list">
         {stash.map(item => {
-          const offer = Math.max(1, Math.floor((item.value || 1) * 0.6));
+          const offer = StatSystem.vendorOffer(item.value, player.attributes);
           return (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>

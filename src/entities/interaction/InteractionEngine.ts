@@ -2,6 +2,7 @@ import { IPlayer, IItem, InteractionType, IInteractionOption } from '../../../ty
 import { EntityType, IWorldEntity } from '../world/types';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { WebSystem } from '../../logic/systems/WebSystem';
+import { StatSystem } from '../../logic/systems/StatSystem';
 
 export class InteractionEngine {
 
@@ -115,8 +116,8 @@ export class InteractionEngine {
         });
       }
 
-      // The payoff: disposition >= 70 makes them extractable
-      if (npc.disposition >= 70) {
+      // The payoff: enough disposition and they will follow, and leadership asks less of it
+      if (npc.disposition >= StatSystem.recruitDisposition(player.attributes)) {
         options.push({
           id: `int_recruit_${target.id}`,
           label: 'Secure for Extraction',

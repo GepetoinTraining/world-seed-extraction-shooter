@@ -799,11 +799,17 @@ export interface IPlayer {
   id: string;
   username: string;
   archetype?: string; // chosen at birth; an avatar's look is derived from it
-  // Wave 9.5 (contract upgrade: additive): kills feed the universal rank.
-  // rankXp is lifetime kill XP; attributePoints are granted on each rank-up
-  // and spent into baseAttributes. The rank itself is derived from rankXp.
+  // D83: rank and level are two things. rankXp is lifetime experience, and it no
+  // longer decides the rank; attributePoints are granted on each level and spent
+  // into baseAttributes.
   rankXp?: number;
   attributePoints?: number;
+  /** D83: set by the guild for hard quests. An old save takes the rank its experience earned, once. */
+  rank?: UniversalRank;
+  /** D83: experience since the last rank. A grant sets it back to zero; the level reads from it. */
+  levelXp?: number;
+  /** D83: levels held at earlier ranks. Whatever grows with level stays grown through a reset. */
+  levelsBanked?: number;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
   energyToday?: number;
   dayCount?: number;

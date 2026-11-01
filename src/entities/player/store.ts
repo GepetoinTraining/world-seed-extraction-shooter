@@ -4,7 +4,7 @@ import {
   EquipSlotId, HeadPositionId, HEAD_BUDGET_POSITIONS, IEquipmentState, ItemType as IT
 } from '../../../types';
 import { ItemFactory } from '../item/ItemFactory';
-import { POINTS_PER_RANK_UP, ProgressionSystem } from './systems/ProgressionSystem';
+import { ProgressionSystem } from './systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
@@ -75,8 +75,9 @@ interface PlayerState {
   // already hold this identity's character, so a returning player is never
   // reset (handleLogin used to rebuild everyone as an Operator).
   ensureCharacter: (certificate: IPlayerCertificate, archetypeId: string) => void;
-  // Wave 9.5: kills feed the universal rank
-  applyKillXp: (amount: number) => { rankedUp: boolean; from: UniversalRank; to: UniversalRank; pointsGranted: number };
+  // D83: a fight feeds the level; the guild grants the rank
+  applyKillXp: (amount: number) => { leveledUp: boolean; from: number; to: number; pointsGranted: number };
+  grantRank: (to?: UniversalRank) => { granted: boolean; from: UniversalRank; to: UniversalRank };
   spendAttributePoint: (attribute: keyof IAttributes) => boolean;
   setView: (view: 'BANK' | 'SESSION') => void;
   diveIntoLayer: (layerId?: string) => void;
@@ -231,6 +232,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         },
         rankXp: 0,
         attributePoints: 0,
+        rank: UniversalRank.F,
+        levelXp: 0,
+        levelsBanked: 0,
         materialMastery: {},
         floatMemory: [null, null, null]
       }
@@ -242,23 +246,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().initializeSession(certificate, archetypeId);
   },
 
-  // --- RANK (Wave 9.5): kills count, and a rank-up gives something real ---
+  // --- LEVELS AND RANK (D83): a fight counts, and a level gives something real ---
 
   applyKillXp: (amount) => {
-    const before = get().player.rankXp ?? 0;
-    const from = ProgressionSystem.rankFromXp(before);
-    const after = before + Math.max(0, amount);
-    const to = ProgressionSystem.rankFromXp(after);
-    const ranks = ProgressionSystem.rankIndex(to) - ProgressionSystem.rankIndex(from);
-    const pointsGranted = ranks > 0 ? ranks * POINTS_PER_RANK_UP : 0;
-    set(state => ({
-      player: {
-        ...state.player,
-        rankXp: after,
-        attributePoints: (state.player.attributePoints ?? 0) + pointsGranted
-      }
-    }));
-    return { rankedUp: ranks > 0, from, to, pointsGranted };
+    const { player, from, to, points } = ProgressionSystem.gainXp(get().player, amount);
+    set({ player });
+    return { leveledUp: to > from, from, to, pointsGranted: points };
+  },
+
+  grantRank: (to) => {
+    const { player, granted, from, to: landed } = ProgressionSystem.grantRank(get().player, to);
+    set({ player });
+    return { granted, from, to: landed };
   },
 
   spendAttributePoint: (attribute) => {
@@ -769,7 +768,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     // D50: a sitting costs the day's energy, and what it found is known only after a rest.
     const { cost } = StudySystem.identifyAsk(player, item);
-    const today = player.energyToday ?? StatSystem.maxEnergy(player.attributes, player.equipment);
+    const today = player.energyToday ?? StatSystem.maxEnergyOf(player);
     if (today < cost) {
       const v = { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(today)}. Rest first.` };
       feed(v.reason, 'loss');
@@ -1239,7 +1238,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           health: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
           maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
           // D51: a drop refills nothing. What is left of the day comes along.
-          energy: state.player.energyToday ?? StatSystem.maxEnergy(state.player.attributes, state.player.equipment),
+          energy: state.player.energyToday ?? StatSystem.maxEnergyOf(state.player),
           position: { x: 1500, y: 0, z: 1500 },
           statusEffects: []
         }
@@ -1888,10 +1887,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const attempt = entity.npc.attempts + 1;
       const rollKey = SessionJournal.rollKey('social', `${entity.id}:${attempt}`);
       const roll = Rng.fromKey(rollKey).next();
-      const charisma = get().player.attributes.charisma || 1;
-      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up
-      const threshold = entity.npc.want === 'RESPECT' ? 0.35 : 0.5;
-      const success = roll < threshold + charisma * 0.05;
+      // Attribute check: charisma shifts the odds; RESPECT-wanters are easier to talk up, and fear counts with them
+      const success = roll < StatSystem.talkOdds(entity.npc.want, get().player.attributes);
       const delta = success ? 15 : 5;
       const disposition = Math.min(100, entity.npc.disposition + delta);
 
@@ -1926,7 +1923,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     if (interactionId.startsWith('int_recruit_')) {
-      if (!entity.npc || entity.npc.disposition < 70) return;
+      if (!entity.npc || entity.npc.disposition < StatSystem.recruitDisposition(get().player.attributes)) return;
       if (!spendEnergy(5)) return;
 
       // The NPC becomes an extractable asset: a signed-for escort contract item.
@@ -1991,7 +1988,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       const skill = { ...skills[skillId] };
-      skill.currentXp += amount;
+      // D84: the road is long; knowing how to learn is what shortens it
+      skill.currentXp += Math.round(amount * StatSystem.learnRate(player.attributes));
       
       while (skill.currentXp >= ProgressionSystem.getXpToNextLevel(skill.level)) {
         skill.currentXp -= ProgressionSystem.getXpToNextLevel(skill.level);

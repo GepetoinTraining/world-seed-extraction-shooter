@@ -179,7 +179,7 @@ export class RestSystem {
 
   /** How long this rest will take, from the energy this character spent. */
   static restMs(player: IPlayer): number {
-    const full = StatSystem.maxEnergy(player.attributes, player.equipment);
+    const full = StatSystem.maxEnergyOf(player);
     const left = player.currentSession?.energy ?? player.energyToday ?? full;
     return Math.round(REST_MARK_MS * (Math.max(0, full - left) / REST_MARK_ENERGY) ** REST_CURVE_POWER);
   }
@@ -203,7 +203,7 @@ export class RestSystem {
   }
 
   static restoreEnergy(player: IPlayer): IPlayer {
-    const full = StatSystem.maxEnergy(player.attributes, player.equipment);
+    const full = StatSystem.maxEnergyOf(player);
     return {
       ...player,
       energyToday: undefined,
