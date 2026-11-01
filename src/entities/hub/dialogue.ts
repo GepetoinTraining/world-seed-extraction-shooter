@@ -29,7 +29,7 @@ export type DialogueEffect =
   | { kind: 'reply'; text: string }
   | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
   | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' }
+  | { kind: 'open'; panel: 'sell' | 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' }
   | { kind: 'deploy' }
   | { kind: 'close' };
 
@@ -180,6 +180,10 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
   },
   GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
+
+  // --- The Land Office (Aurelio Quint): everything that develops the city ---
+  OPEN_DEEDS: () => ({ kind: 'navigate', view: 'HOLDINGS' }),
+  OPEN_PLAN: () => ({ kind: 'open', panel: 'plan' }),
 
   // --- Honest closures: these halls are not open, and they say so ---
   GUILD_LORE: () => ({

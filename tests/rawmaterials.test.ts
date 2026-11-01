@@ -93,7 +93,7 @@ const STORED_TEMPLATE_HASHES: Record<string, number> = {
   'Market Stall': 2817067909
 };
 // Recaptured on purpose for D74: the city moved onto the real chunk, from its manifest, with roads and plots.
-const STORED_CITY_HASH = 3488137415;
+const STORED_CITY_HASH = 1310522481;
 const PINNED_PACK_HASHES: Record<number, string> = { 1: 'da2b84b8', 2: '3f842e24' };
 const PINNED_DREAM = ['Mire-Cured', 'Bank-Honored', 'Spore-Fed'];
 const LORE_FRAGMENT_COUNT = 8;       // a chest's rng.pick must keep landing on the same fragment

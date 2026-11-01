@@ -10,7 +10,7 @@ import { ItemFactory } from '../item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
 import { VectorStore, VectorNamespace, IVectorDocument } from '../data/VectorStore';
 import { HubGenerator, IHubLayout, IPOI } from './HubGenerator';
-import { HubSide, IDismemberment, IRaisedChunk, dismemberPlan, firstPlan, raiseChunk } from './hubManifest';
+import { HubSide, IDismemberment, IRaisedChunk, chunkBillFor, dismemberPlan, firstPlan, raiseChunk } from './hubManifest';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
 import { Ledger } from '../../logic/ledger/Ledger';
@@ -234,6 +234,8 @@ interface HubState {
   chunks: IRaisedChunk[];
   /** Lots split up, in order. With `chunks`, this is the plan the city is built from. */
   dismembered: IDismemberment[];
+  /** D73: materials held toward the next chunk, by the tag they were given for. */
+  planDeposit: Record<string, number>;
   lots: IPlayerLot[];
   craftingJobs: ICraftJob[];
   // Wave 10: the rooms behind the doors, and the construction queue
@@ -252,7 +254,15 @@ interface HubState {
   saveHubState: () => Promise<void>;
   /** D74: one chunk more, on the given side of one standing (the first, unless named). It decides nothing about who pays. */
   raiseChunk: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
-  /** Split an empty lot of your own: a servidão to its centre, smaller lots around it, at a cost. */
+  /** D73: give what you hold toward the next chunk, at the Land Office. Items are gone once given. */
+  depositToPlan: (tag: string, itemIds: string[]) => Promise<RoomVerdict>;
+  /** D73: spend the deposit and raise the next chunk, where the plan chose. */
+  planRaise: (side: HubSide, beside?: { cx: number; cy: number }) => Promise<RoomVerdict>;
+  /**
+   * Split an empty lot: a servidão to its centre, smaller lots around it, at a cost. Your
+   * own stays yours in pieces. A free one goes on the market in pieces, for anyone to buy
+   * one: it is how someone who cannot afford a big lot gets a small one.
+   */
   dismemberLot: (lotId: string) => Promise<RoomVerdict>;
   /** The hub as a document, for a commit that changes it along with gold. */
   hubDoc: () => IVectorDocument | null;
@@ -306,6 +316,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   activeHubId: null,
   chunks: firstPlan().chunks,
   dismembered: [],
+  planDeposit: {},
   lots: [],
   craftingJobs: [],
   rooms: {},
@@ -323,7 +334,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     try {
       // 1. Try to fetch existing Hub State from DB
-      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
+      const hubStateDoc = await VectorStore.get<{ chunks?: IRaisedChunk[]; dismembered?: IDismemberment[]; planDeposit?: Record<string, number>; lots: IPlayerLot[]; craftingJobs?: ICraftJob[]; rooms?: Record<string, IRoomState>; buildJobs?: IBuildJob[]; web?: IHubWeb }>(
         VectorNamespace.TERRITORIES,
         `hub_state_${hubWorldUid}`
       );
@@ -337,6 +348,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         set({
           chunks,
           dismembered,
+          planDeposit: hubStateDoc.data.planDeposit ?? {},
           lots: lotsFor(hubStateDoc.data.lots, HubGenerator.generate({ chunks, dismembered })),
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
@@ -349,7 +361,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, dismembered: [], lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} } });
+        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} } });
         // Save immediately
         await get().saveHubState();
       }
@@ -412,12 +424,47 @@ export const useHubStore = create<HubState>((set, get) => ({
     return { ok: true };
   },
 
+  depositToPlan: async (tag, itemIds) => {
+    const { chunks, planDeposit, activeHubId } = get();
+    if (!activeHubId) return { ok: false, reason: 'There is no office open.' };
+    const line = chunkBillFor(chunks.length).find(l => l.tag === tag);
+    if (!line) return { ok: false, reason: `The next chunk does not ask for anything ${tag}.` };
+    const short = line.count - (planDeposit[tag] ?? 0);
+    if (short <= 0) return { ok: false, reason: 'The plan holds all it asks for.' };
+    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const items = itemIds.map(id => stash.find(i => i.id === id));
+    if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
+    const wrong = items.find(i => !answersTag(i!, tag));
+    if (wrong) return { ok: false, reason: `${wrong.name} is not ${tag}. The plan will not take it.` };
+    const given = items.slice(0, short) as IItem[];
+    if (given.length === 0) return { ok: false, reason: 'Nothing was given.' };
+
+    removeFromStash(given.map(i => i.id));
+    set({ planDeposit: { ...planDeposit, [tag]: (planDeposit[tag] ?? 0) + given.length } });
+    await Ledger.append('BUILD', { kind: 'PLAN_DEPOSIT', tag, consumedIds: given.map(i => i.id), consumedDefIds: given.map(i => i.universalDefinitionId) });
+    await get().saveHubState();
+    return { ok: true };
+  },
+
+  planRaise: async (side, beside) => {
+    const { chunks, dismembered, planDeposit } = get();
+    const bill = chunkBillFor(chunks.length);
+    const short = bill.find(line => (planDeposit[line.tag] ?? 0) < line.count);
+    if (short) return { ok: false, reason: `The next chunk asks ${short.count} ${short.tag}; the plan holds ${planDeposit[short.tag] ?? 0}.` };
+    const can = raiseChunk({ chunks, dismembered }, side, { beside });
+    if (!can.ok) return can;
+    const spent = { ...planDeposit };
+    bill.forEach(line => { spent[line.tag] -= line.count; });
+    set({ planDeposit: spent });
+    return get().raiseChunk(side, beside);
+  },
+
   dismemberLot: async (lotId) => {
     const { chunks, dismembered, lots, rooms, buildJobs, activeHubId } = get();
     const p = usePlayerStore.getState().player;
     const lot = lots.find(l => l.id === lotId);
     if (!lot || !activeHubId) return { ok: false, reason: 'There is no such lot.' };
-    if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this lot.' };
+    if (lot.ownerId && lot.ownerId !== p.id) return { ok: false, reason: 'It is someone else\'s to split.' };
     if (lot.structureType !== 'EMPTY' || rooms[lotId]) return { ok: false, reason: 'Something stands on it. A lot is split while it is empty ground.' };
     if (buildJobs.some(j => j.lotId === lotId && !j.applied)) return { ok: false, reason: 'Something is being raised on it. A lot is split while it is empty ground.' };
 
@@ -432,7 +479,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     const pieces = layout.zones.flatMap(z => z.pois)
       .filter(poi => poi.metadata.dismemberedFrom === lotId)
       .sort((a, b) => a.metadata.lotIndex - b.metadata.lotIndex)
-      .map(poi => ({ ...freshLot(poi), ownerId: lot.ownerId, ownerName: lot.ownerName, purchaseDate: lot.purchaseDate, upkeepPaidThroughDay: lot.upkeepPaidThroughDay }));
+      .map(poi => lot.ownerId
+        ? { ...freshLot(poi), ownerId: lot.ownerId, ownerName: lot.ownerName, purchaseDate: lot.purchaseDate, upkeepPaidThroughDay: lot.upkeepPaidThroughDay }
+        : freshLot(poi));
 
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
     set({ dismembered: next.dismembered ?? [], lots: lotsFor([...lots.filter(l => l.id !== lotId), ...pieces], layout) });
@@ -445,12 +494,12 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   hubDoc: () => {
-    const { activeHubId, chunks, dismembered, lots, craftingJobs, rooms, buildJobs, web } = get();
+    const { activeHubId, chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web } = get();
     if (!activeHubId) return null;
     return {
       id: `hub_state_${activeHubId}`,
       namespace: VectorNamespace.TERRITORIES,
-      data: JSON.parse(JSON.stringify({ chunks, dismembered, lots, craftingJobs, rooms, buildJobs, web })),
+      data: JSON.parse(JSON.stringify({ chunks, dismembered, planDeposit, lots, craftingJobs, rooms, buildJobs, web })),
       metadata: {
         createdAt: Date.now(),
         updatedAt: Date.now(),

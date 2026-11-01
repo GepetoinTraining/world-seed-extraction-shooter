@@ -1169,7 +1169,7 @@ describe('line 76: one key, one sheet, field and city alike', () => {
     expect(beforeDev).toMatch(/BACK TO THE CITY/);
     const city = SRC('src/entities/hub/HubCanvas.tsx');
     expect(city).toMatch(/effect\.panel === 'missions'\) setView\('MISSIONS'\)/); // the Conduit reaches the zones and the mint
-    expect(city).toMatch(/setView\('HOLDINGS'\)[\s\S]*THE DEEDS|THE DEEDS[\s\S]*setView\('HOLDINGS'\)/); // an owner reaches the deeds from a room
+    expect(city).toMatch(/setView\(effect\.view\)/); // the land manager reaches the deeds (moved on Pedro's word: everything through him)
   });
 
   it('DISCARD in the vault really discards, and only what was asked', () => {

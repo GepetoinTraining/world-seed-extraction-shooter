@@ -78,6 +78,8 @@ export interface IHubManifest {
   lockedShare: number;
   /** What dismembering a lot costs, as a share of what that lot asks. */
   dismemberShare: number;
+  /** What the second chunk asks, deposited at the Land Office. The next asks this times the chunks standing. */
+  chunkBill: { tag: string; count: number }[];
 }
 
 export const NEW_CARLEON: IHubManifest = {
@@ -89,6 +91,8 @@ export const NEW_CARLEON: IHubManifest = {
   gates: { col: 11, row: 8 },
   lockedShare: 0.75,
   dismemberShare: 0.25,
+  // A guess until Wave 12. A pack carries about six logs, so the first chunk is several runs.
+  chunkBill: [{ tag: 'building', count: 40 }],
   floors: {
     P: { id: 'zone_plaza', name: 'Central Plaza', type: ZoneType.PLAZA, ambientColor: '#1a1a2e', floorTexture: 'cobblestone' },
     M: { id: 'zone_market', name: 'Market District', type: ZoneType.MARKET, ambientColor: '#2d1b1b', floorTexture: 'wooden_planks' },
@@ -102,6 +106,7 @@ export const NEW_CARLEON: IHubManifest = {
     N: { id: 'poi_portal', type: POIType.PORTAL, name: 'The Nexus', size: { width: 3, height: 3 }, interactable: true, solid: false, npcId: 'npc_portal_master', metadata: { glowColor: '#06b6d4' } },
     I: { id: 'poi_identifier', type: POIType.IDENTIFIER, name: 'Truthsight Tower', size: { width: 3, height: 3 }, interactable: true, solid: true, npcId: 'npc_identifier', metadata: {} },
     G: { id: 'poi_guild', type: POIType.GUILD_HALL, name: 'Hall of Banners', size: { width: 4, height: 4 }, interactable: true, solid: true, npcId: 'npc_guild_master', metadata: {} },
+    O: { id: 'poi_land_office', type: POIType.LAND_OFFICE, name: 'Land Office', size: { width: 3, height: 3 }, interactable: true, solid: true, npcId: 'npc_land_manager', metadata: {} },
     W: { id: 'poi_weapons', type: POIType.VENDOR_WEAPONS, name: 'Ironfist Armory', size: { width: 4, height: 3 }, interactable: true, solid: true, npcId: 'npc_weapon_vendor', metadata: {} },
     A: { id: 'poi_armor', type: POIType.VENDOR_ARMOR, name: 'Steelweave Outfitters', size: { width: 4, height: 3 }, interactable: true, solid: true, npcId: 'npc_armor_vendor', metadata: {} },
     C: { id: 'poi_consumables', type: POIType.VENDOR_CONSUMABLES, name: "Alchemist's Corner", size: { width: 3, height: 3 }, interactable: true, solid: true, npcId: 'npc_alchemist', metadata: {} },
@@ -139,7 +144,7 @@ export const NEW_CARLEON: IHubManifest = {
         '................',
         '.....B.N.I..L.L.',
         '......l..l......',
-        '...T...F.G..L.L.',
+        '...T...FOG..L.L.',
         '.......@........',
         '......l..l..L.L.',
         '................',
@@ -396,6 +401,10 @@ export function dismemberShape(lot: ILotRect): { pieces: ILotRect[]; way: { x: n
 export const tilesToCell = (from: { x: number; y: number }, cell: { x: number; y: number }) =>
   Math.max(0, cell.x - from.x, from.x - (cell.x + CELL_TILES - 1)) + Math.max(0, cell.y - from.y, from.y - (cell.y + CELL_TILES - 1));
 
+/** What the next chunk asks, with this many standing. Each asks more than the last, and there is no last. */
+export const chunkBillFor = (standing: number, manifest: IHubManifest = NEW_CARLEON): { tag: string; count: number }[] =>
+  manifest.chunkBill.map(line => ({ tag: line.tag, count: line.count * standing }));
+
 /** The tile you stand on to reach a thing: below its middle. */
 export const doorTile = (p: { position: { x: number; y: number }; size: { width: number; height: number } }) => ({
   x: p.position.x + (p.size.width >> 1),
@@ -641,6 +650,7 @@ export function validateManifest(m: IHubManifest): string[] {
   if (!m.chunks[m.growth]) out.push(`The growth chunk, ${m.growth}, is not in the manifest.`);
   if (!(m.lotGoldPerTile > 0)) out.push('A lot has to ask something: lotGoldPerTile must be above nothing.');
   if (!(m.dismemberShare > 0)) out.push('Dismembering has a cost: dismemberShare must be above nothing.');
+  if (!m.chunkBill.length || m.chunkBill.some(line => !(line.count > 0))) out.push('A chunk has to ask for something: chunkBill cannot be empty.');
 
   for (const [kind, chunk] of Object.entries(m.chunks)) {
     const shaped = (rows: string[], what: string) => {
