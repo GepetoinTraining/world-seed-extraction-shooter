@@ -18,6 +18,7 @@ import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { StatSystem } from '../logic/systems/StatSystem';
+import { Treasury } from '../logic/economy/Treasury';
 import { ArmedButton, Button, Chip, Modal, Panel, Tabs } from './ui/kit';
 import { hoverProps, useFeed } from './ui/stores';
 import { ResidentFace, ResidentLines } from './TavernRoom';
@@ -80,7 +81,7 @@ const Board: React.FC = () => {
 };
 
 /** Someone at the tavern: the ground the Hall could buy them, cheapest first. */
-const GroundFor: React.FC<{ resident: IResident; cover: number; onBought: () => void }> = ({ resident, cover, onBought }) => {
+const GroundFor: React.FC<{ resident: IResident }> = ({ resident }) => {
   const { lots, chunks, dismembered, guildBuyLot } = useHubStore();
   const pushFeed = useFeed(s => s.push);
   const layout = useMemo(() => HubGenerator.generate({ chunks, dismembered }), [chunks, dismembered]);
@@ -103,13 +104,10 @@ const GroundFor: React.FC<{ resident: IResident; cover: number; onBought: () => 
             </span>
             <ArmedButton
               tone="quiet"
-              disabled={cost > cover}
-              title={cost > cover ? 'The treasury cannot cover it for the Hall.' : undefined}
               confirmLabel="ON THE TREASURY: SURE?"
               onConfirm={async () => {
                 const res = await guildBuyLot(resident.id, lot.id);
                 pushFeed(res.ok ? `The Hall bought ${poi.name} for ${resident.name}.` : res.reason ?? 'The Hall would not buy it.', res.ok ? 'proof' : 'loss');
-                onBought();
               }}
             >
               BUY
@@ -190,16 +188,26 @@ const MasterShop: React.FC<{ craftsmanId: string }> = ({ craftsmanId }) => {
   );
 };
 
+/** D115: the books as they stand. Figures only: what they mean is for whoever reads them. */
+const TheBooks: React.FC = () => {
+  const { activeHubId, guild, lots, wallets, runningNow } = useHubStore();
+  const [held, setHeld] = useState(0);
+  useEffect(() => { if (activeHubId) void Treasury.balance(activeHubId).then(setHeld); }, [activeHubId, guild.printed.total, guild.runningDay]);
+  const perDay = runningNow();
+  const among = Object.values(wallets).reduce((sum, n) => sum + n, 0);
+  return (
+    <div className="ws-dim ws-small">
+      The treasury holds {held.toLocaleString()} G. The city runs on {perDay.toLocaleString()} G a day, so that is {perDay > 0 ? Math.floor(held / perDay) : 0} days. Printed {guild.printed.count === 1 ? 'once' : `${guild.printed.count} times`}, {guild.printed.total.toLocaleString()} G in all. People here hold {among.toLocaleString()} G of their own.
+    </div>
+  );
+};
+
 const People: React.FC = () => {
-  const { guild, buildJobs, lots, guildCoverNow } = useHubStore();
-  const [cover, setCover] = useState(0);
-  const refresh = () => { void guildCoverNow().then(setCover); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(refresh, [guild.spent]);
+  const { guild, buildJobs, lots, wallets } = useHubStore();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div className="ws-dim ws-small">The Hall spends the hub's treasury. It can cover {Math.max(0, cover).toLocaleString()} G more of ground.</div>
+      <TheBooks />
       {guild.residents.length === 0 && <span className="ws-dim ws-small">Nobody yet. An Escort Bond taken to Mags at the Rusty Anchor brings someone in.</span>}
       {guild.residents.map(r => {
         const stage = residentStage(r, { buildJobs });
@@ -213,6 +221,7 @@ const People: React.FC = () => {
               <div style={{ minWidth: 0 }}>
                 <ResidentLines resident={r} />
                 <div className="ws-dim ws-small">Brought out by {r.sponsorName}, who answers for their upkeep: {residentUpkeepPerDay(r.bond.rank)} G a day{stage === 'HOME' ? '' : ' once they are in'}.</div>
+                <div className="ws-dim ws-small">Holds {(wallets[r.id] ?? 0).toLocaleString()} G of their own.</div>
                 {stage === 'HOME' && lot && (lot.upkeepPaidThroughDay ?? 0) < worldDay() && (
                   <div className="ws-loss ws-small">Upkeep is behind. They post nothing until it is paid.</div>
                 )}
@@ -220,7 +229,7 @@ const People: React.FC = () => {
             </div>
             {r.craftsmanId && stage !== 'HOME' && <div className="ws-small" style={{ marginBottom: 4 }}>A master now, and in need of a shop of their own. Whoever sees it raised will pay less in it.</div>}
             {r.craftsmanId && stage === 'HOME' && <MasterShop craftsmanId={r.craftsmanId} />}
-            {stage === 'TAVERN' && <GroundFor resident={r} cover={cover} onBought={refresh} />}
+            {stage === 'TAVERN' && <GroundFor resident={r} />}
             {stage === 'POOLING' && <HouseBill resident={r} />}
             {stage === 'RISING' && rising && <div className="ws-small">{rising.applied} of {rising.total} steps stand.</div>}
           </Panel>

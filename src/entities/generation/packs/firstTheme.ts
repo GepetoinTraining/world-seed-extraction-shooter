@@ -9,7 +9,7 @@
  * pinned to the older bytes stays pinned to the banked pack.
  *
  * So were its elites, its `social` and `builds` words and its junk (D93, D99), by hand, the
- * same way, with the same result.
+ * same way, with the same result. And its anchors (D115), by hand again.
  */
 
 import { IThemeBody } from '../../../logic/theme/ThemeTypes';
@@ -31,7 +31,10 @@ export const FIRST_THEME: IThemeBody = {
     { tag: 'interest', kind: 'element', meaning: 'What grows on its own while nobody looks.' },
     { tag: 'seal', kind: 'element', meaning: 'What has been signed and can no longer be argued with.' },
     { tag: 'livestock', kind: 'descriptive', meaning: 'An animal people keep, or once did.' },
-    { tag: 'junk', kind: 'descriptive', meaning: 'What a creature leaves that is only worth its sale.' }
+    { tag: 'junk', kind: 'descriptive', meaning: 'What a creature leaves that is only worth its sale.' },
+    { tag: 'gem', kind: 'descriptive', meaning: 'A cut or uncut stone, kept for what it will fetch.' },
+    { tag: 'art', kind: 'descriptive', meaning: 'A made thing kept for itself, and for what it will fetch.' },
+    { tag: 'valuable', kind: 'descriptive', meaning: 'Something kept for what it will fetch, in any town.' }
   ],
   abilities: [
     { key: 'small_print', name: 'Small Print', blurb: 'A line too fine to dodge, flung at whoever is reading.', elements: ['debt'], delivery: 'ranged', effect: 'damage', cost: 'low' },
@@ -172,5 +175,12 @@ export const FIRST_THEME: IThemeBody = {
     { key: 'lapsed_lanyard', name: 'Lapsed Lanyard', blurb: 'Grants access to a floor nobody has been able to find.', tags: ['junk'], rank: 'E', weight: 'light', worth: 'common', from: ['humanoid'] },
     { key: 'stripped_cog', name: 'Stripped Cog', blurb: 'It kept time for a machine that kept accounts. Now it keeps neither.', tags: ['junk'], rank: 'D', weight: 'medium', worth: 'common', from: ['mechanical'] },
     { key: 'unsigned_residue', name: 'Unsigned Residue', blurb: 'What is left of a thing that was mostly a claim. It smells of toner.', tags: ['junk'], rank: 'D', weight: 'light', worth: 'fine', from: ['horror'] }
+  ],
+  anchors: [
+    { key: 'gilt_passbook', name: 'Gilt Passbook', blurb: 'Worthless as an account. Worth a good deal as gilt.', tags: ['valuable'], rank: 'F', weight: 'light', worth: 'fine', foundIn: ALL },
+    { key: 'reserve_garnet', name: 'Reserve Garnet', blurb: 'Held against a currency nobody remembers. The garnet outlived it.', tags: ['gem'], rank: 'E', weight: 'light', worth: 'rare', foundIn: ['RUINS', 'INDUSTRIAL', 'WASTELAND'] },
+    { key: 'escrow_opal', name: 'Escrow Opal', blurb: 'Released to no one, and worth the same in every town that has heard of opals.', tags: ['gem'], rank: 'D', weight: 'light', worth: 'rare', foundIn: ['OVERGROWTH', 'WASTELAND', 'CYBER_CITY'] },
+    { key: 'founders_portrait', name: "Founder's Portrait", blurb: 'Oil on board, the eyes following the money. Nobody has ever talked a collector down.', tags: ['art'], rank: 'D', weight: 'medium', worth: 'rare', foundIn: ['RUINS', 'CYBER_CITY'] },
+    { key: 'first_depositor_bronze', name: 'Bronze of the First Depositor', blurb: 'Cast to honor a customer. It has been appraised more often than it has been dusted.', tags: ['art'], rank: 'C', weight: 'heavy', worth: 'rare', foundIn: ['RUINS', 'INDUSTRIAL'] }
   ]
 };

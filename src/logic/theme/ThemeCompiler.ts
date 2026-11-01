@@ -15,7 +15,7 @@ import { fnv1a } from '../rng/DeterministicRNG';
 import { IThemeBody, IThemePack, IThemeAbility, LEADER_FEATURES, THEME_FORMULA_VERSION } from './ThemeTypes';
 import {
   GEAR_SHAPES, affixRange, consumableNumbers, creatureNumbers, forcedExitWorth, gearBaseIp, goodNumbers,
-  harvestNumbers, junkNumbers, materialNumbers, rankStep, stationNumbers
+  anchorNumbers, harvestNumbers, junkNumbers, materialNumbers, rankStep, stationNumbers
 } from './ThemeFormula';
 
 export interface IAbility extends IThemeAbility {
@@ -49,8 +49,8 @@ export const canonical = (value: unknown): string => JSON.stringify(value, (_k, 
 
 /** What a model wrote, without the record kept about writing it. */
 export function bodyOf(pack: IThemeBody): IThemeBody {
-  const { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, junk } = pack;
-  return { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, ...(junk ? { junk } : {}) };
+  const { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, junk, anchors } = pack;
+  return { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, ...(junk ? { junk } : {}), ...(anchors ? { anchors } : {}) };
 }
 
 /** Computed from the bytes that matter and nothing else. Two hashes, so a collision is not a worry. */
@@ -181,6 +181,20 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
       icon: `${id}_icon`, visuals: { modelId: j.key, colorHex: lookOf(id) },
       materialProps: { [MaterialPropertyType.DENSITY]: n.density, [MaterialPropertyType.HARDNESS]: n.hardness },
       tags: unique(j.tags)
+    };
+  }
+
+  // D115: `foundIn`, not `habitat`, so nothing grows from the ground or joins a biome's table
+  for (const a of pack.anchors ?? []) {
+    const id = idOf('anc', a.key);
+    const n = anchorNumbers(a);
+    out.resources[id] = {
+      id, name: a.name, description: a.blurb, themeId: pack.themeId, anchor: true, foundIn: a.foundIn, worth: n.value,
+      type: ItemType.RESOURCE, rank: a.rank as UniversalRank, rarity: RARITY_OF[a.worth],
+      weight: n.weight, dimensions: n.dimensions, value: n.value,
+      icon: `${id}_icon`, visuals: { modelId: a.key, colorHex: lookOf(id) },
+      materialProps: { [MaterialPropertyType.DENSITY]: n.density, [MaterialPropertyType.HARDNESS]: n.hardness },
+      tags: unique(a.tags)
     };
   }
 

@@ -16,7 +16,7 @@ import { useIdentityStore } from '../../entities/identity/store';
 export type LedgerRowType =
   | 'CHARACTER_GENESIS' // identity minted a character
   | 'SESSION_RESULT'    // sealed session receipt summary
-  | 'GOLD_DELTA'        // any gold movement (data: { amount: player delta, treasuryId?, treasuryDelta? })
+  | 'GOLD_DELTA'        // any gold movement (data: { amount: player delta, treasuryId?, treasuryDelta?, wallets?: personId → delta })
   | 'TAX'               // session-exit levy (Wave 2.5)
   | 'TRADE'             // item changed owners (Wave 5/6)
   | 'CRAFT'             // a transformation job queued or collected (Wave 5.2)
@@ -25,6 +25,8 @@ export type LedgerRowType =
   | 'UPKEEP'            // lot upkeep charged (Wave 5.4)
   | 'TECH'              // first to reach a skill or a rung, in this hub (D27). Moves no gold
   | 'GUILD'             // what the guild did: a person lodged, a rank granted, a map handed in. Moves no gold
+  | 'PRINT'             // a hub printed coin into its treasury (D115). data: { hubId, amount, perDay, days, why }
+  | 'WALLET'            // a person came with their own coin (D115). data: { kind, hubId, personId, amount }
   | 'TOMBSTONE';        // marks an earlier row as superseded — never delete
 
 export interface ILedgerRow {

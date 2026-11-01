@@ -6,6 +6,7 @@
  *   ledger_{uid}_{seq}   a row in ledger_rows, append-only and chained
  *   ledger_head_{uid}    no row at all: the head IS the chain's MAX(seq)
  *   treasury_{world}     a number in treasuries, which the database adds to
+ *   wallet_{hub}__{who}  a person's own coin, the same kind of number in the same table (D115)
  *   anything else        a row in documents
  *
  * A commit is one SQL transaction, whole or not at all. That is line 71, and
@@ -45,6 +46,7 @@ const TREASURY_NS = 'territories';
 const HEAD_PREFIX = 'ledger_head_';
 const ROW_ID = /^ledger_(.+)_(\d+)$/;
 const TREASURY_PREFIX = 'treasury_';
+const WALLET_PREFIX = 'wallet_';
 
 type Route = { to: 'head'; uid: string } | { to: 'row'; uid: string; seq: number } | { to: 'treasury' } | { to: 'document' };
 
@@ -54,7 +56,7 @@ function route(id: string, namespace?: string): Route {
   }
   const row = ROW_ID.exec(id);
   if (row && (namespace === undefined || namespace === LEDGER_NS)) return { to: 'row', uid: row[1], seq: Number(row[2]) };
-  if (id.startsWith(TREASURY_PREFIX) && (namespace === undefined || namespace === TREASURY_NS)) return { to: 'treasury' };
+  if ((id.startsWith(TREASURY_PREFIX) || id.startsWith(WALLET_PREFIX)) && (namespace === undefined || namespace === TREASURY_NS)) return { to: 'treasury' };
   return { to: 'document' };
 }
 

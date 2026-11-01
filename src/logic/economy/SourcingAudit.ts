@@ -108,6 +108,8 @@ export class SourcingAudit {
     const row = (defId: string, def: any, raw: boolean): ISourcingRow => {
       // D99: it comes from what falls, and it leaves by being sold
       if (def.junk) return { defId, name: def.name, raw, sourced: ['a creature that falls'], refined: [], direct: 'sold', sinks: ['the vendor'], closed: true, problems: [] };
+      // D115: it comes from a chest, and it leaves by being kept or taken in place of coin
+      if (def.anchor) return { defId, name: def.name, raw, sourced: ['a chest'], refined: [], direct: 'sold', sinks: ['a counter', 'a shelf that asks for it'], closed: true, problems: [] };
       const sourced = raw
         ? Object.entries(BIOME_RESOURCES).filter(([, ids]) => ids.includes(defId)).map(([biome]) => biome)
         : [

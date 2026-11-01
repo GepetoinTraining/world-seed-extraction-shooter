@@ -33,6 +33,10 @@ export type ResourceDef = Partial<IItem> & {
   rareFind?: boolean;
   /** D99: what a creature leaves that is only worth its sale. It lies where it fell until someone takes it. */
   junk?: boolean;
+  /** D115: a gem, a work of art, a valuable. It holds its worth, and a person may take it in place of coin. */
+  anchor?: boolean;
+  /** D115: the kinds of ground whose chests can hold it. */
+  foundIn?: string[];
   /** D27: a station a web batch added: what it asks of a room, and what it opens. */
   stationMinArea?: number;
   stationFunction?: 'WORKSHOP' | 'VENDOR' | 'SCRIBE';

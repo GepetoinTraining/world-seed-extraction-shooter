@@ -153,6 +153,19 @@ export const junkNumbers = (j: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG
   const hardness = Math.round(geometric(1, 2.2, rankStep(j.rank)) * WORTH[j.worth]);
   return { weight: WEIGHT_KG[j.weight], dimensions: FOOTPRINT[j.weight], density, hardness, value: Math.max(1, Math.round(WEIGHT_KG[j.weight] * 4 + hardness)) };
 };
+/** D115: what holds value. A guess until Wave 12, set well above what lies about at its rank. */
+const ANCHOR_BASE_VALUE = 25;
+export const anchorNumbers = (a: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG; worth: keyof typeof WORTH }) => {
+  const density = WEIGHT_KG[a.weight] * 2;
+  return {
+    weight: WEIGHT_KG[a.weight], dimensions: FOOTPRINT[a.weight], density,
+    hardness: Math.round(geometric(1, 2.2, rankStep(a.rank)) * WORTH[a.worth]),
+    value: Math.round(geometric(ANCHOR_BASE_VALUE, 2.2, rankStep(a.rank)) * WORTH[a.worth])
+  };
+};
+/** The chance a chest holds one. Its own roll, so no other drop moves. A guess until Wave 12. */
+export const ANCHOR_CHANCE = 0.15;
+
 /** The chance a body that falls leaves junk. Its own roll, so no other drop moves. */
 export const JUNK_CHANCE = 0.55;
 

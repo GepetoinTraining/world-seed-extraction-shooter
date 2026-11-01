@@ -184,12 +184,23 @@ export const VendorSystem = {
     return { ...record, listed: record.listed.filter(i => i.id !== itemId), parts: record.parts.filter(i => i.id !== itemId) };
   },
 
-  /** A trader takes half of what its old keeper has lying about, the way a master buys from a teacher. */
-  share(from: IVendorRecord, to: IVendorRecord): { from: IVendorRecord; to: IVendorRecord } {
-    const given = from.parts.slice(0, Math.floor(from.parts.length / 2));
+  /**
+   * A trader buys up to half of what its old keeper has lying about, the way a master buys
+   * from a teacher, and only as far as its own money goes (D115). `paid` is what it came to.
+   */
+  share(from: IVendorRecord, to: IVendorRecord, money: number): { from: IVendorRecord; to: IVendorRecord; paid: number } {
+    const given: IItem[] = [];
+    let paid = 0;
+    for (const part of from.parts.slice(0, Math.floor(from.parts.length / 2))) {
+      const worth = Math.max(0, part.value || 0);
+      if (paid + worth > money) break;
+      paid += worth;
+      given.push(part);
+    }
     return {
       from: { ...from, parts: from.parts.slice(given.length) },
-      to: { ...to, parts: [...to.parts, ...given] }
+      to: { ...to, parts: [...to.parts, ...given] },
+      paid
     };
   },
 

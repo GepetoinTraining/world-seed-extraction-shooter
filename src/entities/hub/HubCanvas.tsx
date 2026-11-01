@@ -31,6 +31,7 @@ import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, 
 import { deployToWorld } from '../../logic/systems/Deploy';
 import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
+import { AskFor, BuyListing, CollectHeld } from '../../components/ShelfAsk';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
 import { MinimapView } from '../../components/ui/MinimapView';
 import { cityMinimap } from '../../render/atoms/minimap';
@@ -1011,6 +1012,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
   const mine = lot?.ownerId === player.id;
   const [listId, setListId] = useState('');
   const [listPrice, setListPrice] = useState('50');
+  const [askDefId, setAskDefId] = useState('');
   if (!lot) return null;
 
   return (
@@ -1029,18 +1031,20 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
             COLLECT {lot.proceeds}G
           </Button>
         )}
+        {mine && <CollectHeld lot={lot} />}
         {mine && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <select className="ws-input" style={{ flex: 1 }} value={listId} onChange={e => setListId(e.target.value)} aria-label="Item to list">
               <option value="">Item to list…</option>
               {stash.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
-            <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} aria-label="Price" />
+            <AskFor value={askDefId} onChange={setAskDefId} />
+            {!askDefId && <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} aria-label="Price" />}
             <Button
-              disabled={!listId || !Number(listPrice)}
+              disabled={!listId || (!askDefId && !Number(listPrice))}
               onClick={async () => {
                 if (!listId) return;
-                const ok = await hub.listItemForSale(lotId, listId, Number(listPrice));
+                const ok = await hub.listItemForSale(lotId, listId, askDefId ? 0 : Number(listPrice), askDefId || undefined);
                 if (ok) { pushFeed('Listed. The shelf shows it.', 'signal'); setListId(''); }
               }}
             >
@@ -1055,16 +1059,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
               <ItemSprite item={listing.item} cellPx={14} />
               <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
             </span>
-            <Button
-              tone="proof"
-              disabled={player.bank.gold < listing.price}
-              onClick={async () => {
-                const ok = await hub.buyFromLot(lotId, listing.item.id);
-                pushFeed(ok ? `Bought ${listing.item.name} for ${listing.price} G.` : 'The counter refused the coin.', ok ? 'proof' : 'loss');
-              }}
-            >
-              BUY {listing.price}G
-            </Button>
+            <BuyListing lotId={lotId} listing={listing} />
           </div>
         ))}
       </div>
@@ -1133,7 +1128,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
   return (
     <Modal title="SELL TO THE COUNTER" onClose={onClose} width={520}>
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
-        The counter pays {StatSystem.vendorOffer(100, player.attributes)}% of value, from the hub treasury. A hub with no funds cannot buy.
+        The counter pays {StatSystem.vendorOffer(100, player.attributes)}% of value, from the hub treasury.
       </div>
       {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
       <div className="ws-list">
@@ -1155,7 +1150,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
                 onConfirm={async () => {
                   const paid = await sellToVendor(item.id, npcId);
                   if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
-                  else pushFeed('The treasury cannot cover that. Nothing moves.', 'loss');
+                  else pushFeed('The counter would not take that. Nothing moves.', 'loss');
                 }}
               >
                 SELL {offer}G

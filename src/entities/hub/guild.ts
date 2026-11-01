@@ -8,11 +8,10 @@
  * after the choice is deterministic). A resident's day stays out of this record, so C2 can
  * give them one without anything here standing in the way.
  *
- * THE GUILD'S MONEY: it holds none of its own. It spends the hub's treasury, which is the
- * hub's endowment and everything people have paid the hub. The seller of a free lot is that
- * same treasury, so buying moves no gold. What it has spent is kept on its books and counts
- * against what it may spend next, so land is not free to it. Quests pay out of the treasury
- * through the same path a vendor's buyback takes.
+ * THE GUILD'S MONEY (D108, D115): it spends the hub's treasury, and when that falls short it
+ * prints (`money.ts`). The seller of a free lot is that same treasury, so buying moves no gold,
+ * and what limits it is how much ground there is. Quests pay out of the treasury through the
+ * same path a vendor's buyback takes.
  */
 
 import { IAffix, IItem, ISkillState, IWebPack, UniversalRank } from '../../../types';
@@ -90,8 +89,10 @@ export interface IHandedMap {
 }
 
 export interface IGuildState {
-  /** Gold's worth of land and permits taken against the treasury. */
-  spent: number;
+  /** How many times this hub has printed, and what it came to. The rows are the record; this is the book. */
+  printed: { count: number; total: number };
+  /** The world-day the hub has paid its running through. Unset: nothing owed from before this was kept. */
+  runningDay?: number;
   residents: IResident[];
   quests: IResidentQuest[];
   maps: IHandedMap[];
@@ -99,7 +100,13 @@ export interface IGuildState {
   trophies: IItem[];
 }
 
-export const emptyGuild = (): IGuildState => ({ spent: 0, residents: [], quests: [], maps: [], trophies: [] });
+export const emptyGuild = (): IGuildState => ({ printed: { count: 0, total: 0 }, residents: [], quests: [], maps: [], trophies: [] });
+
+/** A saved guild, as it reads today. An older save's book of what it had taken against the treasury is dropped. */
+export function guildFrom(saved: Partial<IGuildState> | undefined): IGuildState {
+  const { spent: _retired, ...kept } = (saved ?? {}) as Partial<IGuildState> & { spent?: number };
+  return { ...emptyGuild(), ...kept };
+}
 
 export type ResidentStage = 'TAVERN' | 'POOLING' | 'RISING' | 'HOME';
 
@@ -143,10 +150,8 @@ export function houseBill(tpl: ITemplate): { tag: string; count: number }[] {
   return [...lines.entries()].map(([tag, count]) => ({ tag, count }));
 }
 
-/** What the lot and the house's permit take from what the guild may spend. */
+/** What the lot and the house's permit come to, for the row and the window. */
 export const guildHouseCost = (lotPrice: number) => lotPrice + STRUCTURE_COSTS.HOUSE.build;
-
-export const guildCover = (treasury: number, guild: Pick<IGuildState, 'spent'>) => treasury - guild.spent;
 
 // ---------------------------------------------------------------------------
 // D10: UPKEEP
