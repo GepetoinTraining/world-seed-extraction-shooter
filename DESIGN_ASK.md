@@ -324,6 +324,129 @@ This is the most valuable part of the job. These all happened in the game when t
 | Craft finished, lot foreclosed for unpaid upkeep | Log only, or a timer you must watch | Craft finished: built, a feed line and a bar in the strip (line 124). **Still open:** a foreclosed lot has only its mark in the hub's art |
 | Unidentified items | Blur and a `?`, with no explanation | Built: noise art and the blind sheet; study reveals (Waves 9.4, 10E) |
 
+## Leaders and the ground they hold
+
+**Status, 2026-11-01: approved by Pedro as written, nothing built.** The builder wrote it from his rulings and he answered each question it raised. His first ruling: elite and boss "are leader types ... they strategize (AI = LLM defined actions) and direct the flow in a given territory. parties should be necessary to kill one (think a goblin king... killing it is the easiest part of the raid). Their territory once seen gets marked as the maps feature, and it evolves", and the industrious type builds its territory up over cycles.
+
+**What the donor does.** `D:\-ttrpg-engine\engine\monster-actor.ts` and `mm-monster-actor.ts`: one actor per camp, ticked monthly. A leader emerges after four weeks of a gate overflowing (`dungeon-gate.ts`). It picks one of six actions, survival first: raid, expand, fortify, recruit, hunt, migrate. A d20 plus its rating and tenure grades the month, and the grade moves population, food, gold and danger radius. A bad month opens it to a leadership challenge, and a loser who walks away seeds a new lair. Its danger feeds the guild's quests. `mm-faction.ts` and `intent.ts` add a leader whose drives bias what its people pursue.
+
+**What changes here.** No model runs in the donor: code picks from the list. Here a model writes the plan and the law judges it. The donor's camp is a number; here it stands on the land, and a person can walk in, scan it and map it. The donor's clear is one roll of party strength against a number; here the party is needed by the shape of the place.
+
+### Who leads
+
+Pedro, 2026-11-01: "elite is a pack leader, MAY BE industrious prior to having set up a base, or simply a pack leader, Elites aren't AS RARE, they're a rare in PoE that has a pack. They're tougher, but aren't unsoloable. they eventually become bosses if you die on repeat to them, afterall when the world closes the ledger for what happened during it being opened levels up the mobs."
+
+- **Elite: a pack leader.** Tougher than its pack, and one person can bring it down, so everything under "Why it takes a party" is the boss's alone. It holds no ground and has no map mark, and it moves with its pack. An industrious one carries its trade with it and has no base yet.
+- **Not as rare, and not alone.** R4's rule in `WorldGenerator` (`ELITE_WEIGHT`, a count of one) stays for boss, titan and god and comes off elite, which stands at the head of a pack of its own kind. A world rolls its elites at the mint: a keyed roster by sector, so "this world has three" is known without building a chunk, and a regeneration can walk them without building the world. Adding them moves `GOLDEN_VECTORS` and `FIRST_THEME_VECTORS`, on purpose. The first theme holds no plain elite today, so it needs some written.
+- **Only a social species leads.** Pedro: animals get leaders, "but that requires the species to be social, think of a pride of lions." So a pack says `social` on each creature, in both trees, because a pack leader needs a pack. In the first theme a stag can lead its herd and the Compound Bear walks alone. A new field moves that theme's bytes again, on purpose, the same way the trees did.
+- **A solitary monster leads nothing, and can still stand in the way.** Pedro: "it may be aggressive towards them, think an ogre under a bridge asking for a toll." It holds one spot on a way through, and whoever passes, a person or a pack, pays or fights. An elite of a solitary species has a sheet and a goal like any other, and no pack. Its goal is `waylay`. A toll is a new interaction, with a reader to write and its gold going through `GoldCommit`. Packs meeting it needs B2's movement.
+- **A solitary elite that keeps winning becomes a titan.** Pedro: "now you see what a titan is... it becomes a titan, that would be it killing players all the way up to rank S... and if that happens, abandon the world probably."
+  - Where a social elite's repeated falls make a boss, a solitary one's make a titan. It climbs by whom it has brought down: the ledger keeps the highest rank that has fallen to it, and reaching S makes the titan.
+  - It is a change of form, so it goes through `CreatureLines`: a new node with one body, `titan` written by code and only its words by a model. That also meets D60: changed and one of a kind, so it shows its name.
+  - No roll, no anchors, no bands. The world is not closed or deleted: it goes on running.
+  - **A titan does not end a world.** Pedro: "or not porting near it... you can dive around it and gather npcs and buff yourself up to raid it with sheer numbers, you just won't receive the loot probably." So a person can drop away from it, keep working the rest of the world, and come back with a crowd. Its numbers stay high but finite, and nothing stops enough people from bringing it down.
+  - **Numbers bring it down, and the people who did the work take the loot.** What falls is shared by who did the work. What NPCs did is theirs, so a raid of mostly NPCs leaves the person who gathered them little. Friends count as people.
+  - **Help is a service, and the game does not stand in its way.** Pedro: "you can host and call friends, that's a legit service in PoE for a reason, magic culler, or literally paying for a carry." So no rule ties loot to the rank of who took it, nothing refuses a higher rank in a lower person's world, and a world's host can call anyone in (D81). Payment happens through ordinary trade. Whoever lands the last blow has their own `luck_find_rarity` read for what falls, so a culler is worth paying for. This holds for every leader, not only a titan.
+- **Boss: the seat of a territory**, one to a territory, with a base. Titan and god are one of a kind and lead nothing. A titan is earned, as above.
+- **Elite becomes boss when people keep falling to it.** The world's ledger settles when it closes, and what happened while it was open levels up its creatures. That is the Director's record, settled at the regeneration, and this is one more thing it decides. Repeated means the same elite brings people down across a formula's count (a guess until Wave 12), with no roll and no model. It stays where it stands, takes that ground as its seat, and its pack is its first band. An industrious one starts building, and any other holds the ground as it is.
+- The tally needs one change: `reportToDirector` hears only a kind today, and this has to name the body too, and the rank of who fell. A kind stays a kind (D64). A leader is the one body the record holds by itself: its kind, its tally, then its seat, tenure and stores.
+- A world is alpha as minted: no record, no territory. Land and alpha bind the vectors as they do now.
+- Names keep D60's rule: boss qualifies as one of a kind, elite does not. Until a leader has earned a name, its ground reads as an unknown holding.
+
+### Sheets and goals
+
+Pedro: "elite and higher mobs have goals, they get a cycle to complete it, if no player sees them we roll for the goal's completion, and we need them to have stat sheets, their villanous npc types. the goal is set up when we generate, so a world generated that rolls 3 elites at the start needs each to have their own goal, that comes from the skills that were assigned to it and the species behavior."
+
+- **A sheet, by the door people already use.** `NpcSheet` deals stats and skills from (seed, body, pinned web) at read time, and stores nothing. An elite or higher reads through the same door, so its sheet comes back byte for byte on every machine and no later batch can change it. Its toughness comes from that sheet, through the formula.
+- **Its villain's nature:** beside the stats it gets a temperament and a drive, keyed the same way. The donor's drives in `intent.ts` (power, wealth, safety, revenge, legacy and so on) are where to start. The drive says which goal it prefers, not which it may take.
+- **A goal, from the moment it exists.** It is dealt from the same seed, so a world that rolls three elites has three goals at alpha with nothing stored. Skills and species say what it may want, and its drive picks among those:
+  - `settle`: raise a base. Takes a working skill on the sheet and a species that builds.
+  - `grow`: more bodies in the pack. Any social species.
+  - `take`: hold more ground, or the ground of a rival.
+  - `hunt`: feed the pack. Reads B2's food.
+- A goal is a word with a reader, like an effect or a verb, so the list grows as readers are written. A model may name a goal and, in the scan window, propose the next one for a leader someone has seen. It chooses only from what the sheet allows. The first goal is dealt, never asked for, because generation calls no model.
+- **One cycle to do it.** At the close, for each one on the roster:
+  - **Nobody saw it:** a keyed roll, the d20 plus its sheet against the goal's band, graded as the donor grades a month.
+  - **Someone saw it:** no roll, because what a person saw must stay true. It finishes if it still stands with most of its pack, and fails if they stopped it. So a person can really prevent it. Seen means read by a scan or within sight in the field, and the ledger has to record that.
+  - **Who computes it:** Pedro: "we accept the compute that came from the client side, the game is arithmetic, so the values can be computed by the client and sent over to be merged." Each client works out the outcome and sends it with what it was worked from, and the world's record merges those. Two clients in one cycle: Pedro: "first who touches owns it, blame your internet connection and lag, that's life." The first to reach the record for that body owns its outcome this cycle, and a later report is refused and told why. So the order of arrival matters, on purpose.
+  - **The limit of that:** the arithmetic can be re-run by anyone, but "I stopped it" is a claim about what happened in play. This is D82's question on the world's side, and it should be decided with D82 before anything crosses hubs.
+  - **Next:** done, it takes the next goal from what it now is. Failed, it may try again, keyed.
+- **`settle` is the second road to boss.** A finished base is a seat, and a seat makes a boss with nobody having fallen to it. Repeated falls stay the other road, and both go through the same record.
+
+### The cycle
+
+At each regeneration, compute first (D69):
+
+1. **Compute** reads what the territory holds and what happened to it, and rules what is possible.
+2. **The model** is asked only for leaders someone has seen or fought, in small batches across the scan window. It answers with a plan: `{ verb, target, name, why }`, plus standing orders. It names and aims its actions in this world's voice, and the numbers stay with the formula. A verb with no reader is refused (the law's rule), so the list grows only as readers are written: claim, raise, muster, hunt, raid, migrate to start.
+3. **No key, or no answer:** the donor's rule picks instead, keyed. The world keeps growing, on plain names, and nothing blocks.
+4. **Resolve:** a keyed roll plus rank and tenure grades the cycle. The formula turns the grade into what is gained. A bad cycle opens a challenge, and a loser who walks seeds a new territory on other ground.
+
+Cycles nobody watched are folded one at a time, as the donor's clockwork folds months. This differs from the Director, whose unwatched regenerations pass as one, because growth over time is the point here. Each step is pure and cheap, so every machine agrees. The territory joins the signed root beside the living lines.
+
+### Directing the flow
+
+No model is called during play (D46). A plan becomes standing orders that the bodies read: which ground each band holds, whether a post that raises the alarm calls bands in, and the leader's posture (hold, sortie, fall back to the seat). Sight and noise are A5's; herding and moving between chunks are B2's. Orders sit on top of those. An animal leader builds nothing and directs its herd's movement: where it goes between cycles, and where it stands when someone comes.
+
+### Why it takes a party
+
+This is the boss's, never the elite's. Not health: a boss's health stays ordinary for its rank, because reaching it and leaving are the raid.
+
+- The seat is warded while its **anchors** stand: posts spread across the territory, whose function is `anchor`. A boss whose species builds nothing has no posts, so its anchors are bodies: the eldest of the pride, each holding its own ground. The rule is the same either way.
+- A broken anchor relights after a window, unless all of them are down. The formula sets that window **shorter than the walk between them**, from the real distance. One person cannot be in two places, so the requirement holds at any strength and needs no cap.
+- How many anchors comes from rank, and never fewer than two, so every boss asks for more than one person. Building more is a thing a boss can plan.
+- When the boss falls, the ground does not clear itself. The alarm is up, the bands are still there, and the challenge decides who takes the seat next cycle, or the territory splits. The payoff is its stores, which must be carried out through all of that.
+
+Parties do not exist yet. NPC adventurers (D76, stream C2) are the first time anyone can stand at a second anchor, and the served runtime is the second. Until then a boss simply cannot be brought down, though every elite can. So a person who keeps falling to an elite makes something they cannot yet remove: that is the ruling's own consequence, and it is worth watching in the playtest.
+
+### On the map, once seen
+
+- A scan or a walk that reads a territory's ground records a `holding` on the survey entry: which chunks, what stood there, at which generation. Nothing marks it before someone has seen it.
+- The recon view draws it as hatching with a hard seam at its border, and structures as marks by shape, never hue.
+- It decays as D68 says: the land keeps, the holding goes stale, and a reading says how long ago. Territories grow, so a stale border is a real danger, and a map of one written fresh is worth more (D85).
+- A written map carries the field through `mapSheet` (A3), by name, so a later field cannot ride along.
+
+### Once known: the quest chain
+
+Pedro: a finished base makes a boss, "and once known about sets up the quest chain to go get rid of it."
+
+- **Known** means a map that shows it has been shared with the guild. Pedro: "the map produced (if they are mapping and are a cartographer) needs to be shared with the guild." Seeing is not enough, and neither is saying so. Someone has to write the map (A3's item) and hand it in, so a person who keeps it, or never maps, leaves the boss growing unnoticed.
+- **The guild knows what the map knows.** It reads the map the way any character does, including how old it is, and a newer map updates what it holds. Whether handing one in pays anything is B4's to set.
+- **It comes through the guildhall**, which D73 says receives its quests from the NPCs (B4). The donor's generator turns a danger level into one bounty. Here it reads the holding, so the chain is about this place: read the ground, take its outer works or bands, bring enough people, bring it down.
+- **Each step is drawn from the record**, as arithmetic, with the model writing only its words in the scan window. Until those come it stands on plain words.
+- **The chain moves with the place.** A new anchor adds to it, a stale reading says so, and a boss that has moved on or fallen closes it. The first step needs one person, and the step that brings it down needs a party, which is where a person learns they need one.
+
+### What the industrious build
+
+- **Industrious** means a body, not a kind: its sheet holds a working skill and its species builds, which a pack says by a `builds` word beside `social`. Others hold ground and build nothing, and that includes every animal leader. Its pack works while it is an elite, and building begins at the base.
+- **D62's answer:** an elite on `settle` goes looking for ground holding what its skill works, and raises its base there. One made a boss by repeated falls has no such choice: its seat is where it stood, and its skill works what that ground holds.
+- A structure is a function with a reader, plus words from the model: `watch` (sight and alarm), `wall` (blocks), `store`, `works` (makes what its bodies wear), `muster` (more bodies), `anchor`, `seat`. The formula sets the bill, by tag and rising with what already stands. Food and stores are the limit, not a count.
+- It builds on the hub's own contract: `ITemplate`, `templateBill`, a building under construction across cycles, walls drawn from the material that paid for them. Loggers raise log walls and miners stone. A scan shows scaffolding, and a raid can stop it mid-build.
+- Territories are a record over the land (D66), read by a chunk the way it reads the Director. The land stays a pure function of the seed.
+
+### Where it goes in the plan
+
+Elites with packs belong with B2, which owns `WorldGenerator`; the vectors they move need the coordinator's word, since the trees stream held them in Wave A. The rest grows C3, settling by trade: needs B2 for population and movement, A3 for maps, B1 for the window. Anchors can be tested by script earlier, but only played once C2 is in. Bars to register first: an elite stands at the head of a pack, and one person can bring it down; only a social species leads, and a solitary one asks its toll; a solitary elite that has brought down rank S becomes a titan, and no lower rank does; a titan can be brought down by numbers; loot follows who did the work, and the last blow's luck sets what falls; a map handed to the guild posts a chain, and anything less posts nothing; the first to touch a body owns its outcome, and a later report is refused; a sheet and a first goal come back byte for byte from the seed, and nothing is stored for them; a goal never asks for what the sheet lacks; unseen rolls, seen does not, and a person can stop a goal they saw; `settle` and repeated felling both make a boss, on the record; territory is pure and keyed; two machines agree after folding; a plan's verb and bill stand before the law; no key still grows; one body cannot clear two anchors at any strength; a person reads only what was seen, and it goes stale; land and alpha stay what the vectors say.
+
+### What Pedro confirmed
+
+A goal someone saw is decided by what happened, with no roll, and the client's compute is merged, the first to touch owning it. Social binds monsters too. An animal leader builds nothing and directs its herd. A finished base makes a boss, and a map shared with the guild posts the chain. A solitary elite that keeps winning becomes a titan.
+
+### Readings by the builder, approved with the design
+
+1. A titan's mark is the highest rank fallen to it reaching S, rather than a count at each rank.
+2. A titan is earned, so a pack may no longer write one at the mint. The law would refuse the tag when this is built. The test fixture keeps its own.
+3. The guild posts a warning for a titan rather than a chain, so people know where not to drop. A raid on one is for people to raise themselves.
+4. Writing a map stays as A3 built it: anyone at a scribe's table with paper and ink. "Cartographer" adds no new gate.
+5. Loot is shared by the work done, and the last blow's `luck_find_rarity` sets what falls. Pedro said "probably" about the loot, so the shares are a reading, and their numbers are Wave 12's. Nobody's share is kept for them: as with any haul, it counts only if they carry it out.
+
+### No softening
+
+Pedro: "if you go in to fight it and die you're wasting your resources... and clearly if you got a titan inside your pocket world you've fucked up haven't you?"
+
+- Falling in a raid costs what any fall costs, and what was spent getting there stays spent. Each fall to a titan also goes on its ledger.
+- A titan in a pocket world gives no deed back (D72). It got there because its owner kept falling to it. The world stands, and the owner works around it or calls for help.
+
 ## The design system to deliver
 
 - **The atom sheet and the rules:** every family above, plus the composition rules written precisely enough that a developer can implement each as a pure function.

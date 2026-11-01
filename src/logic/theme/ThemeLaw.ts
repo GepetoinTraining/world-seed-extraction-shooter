@@ -25,7 +25,11 @@ const ARMOR_KINDS = new Set(['head', 'chest', 'legs', 'feet', 'shoulder']);
 /** Tags a pack may use that are grammar rather than registry words: what an affix may land on. */
 const SCOPE_WORDS = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scroll']);
 
-/** A line inherits these or it does not: no change of form can talk its way into being one of a kind. */
+/**
+ * A line inherits these or it does not. Titan and god are one of a kind; elite and boss
+ * are leaders (Pedro, 2026-11-01), and who comes to lead is decided by code, never by a
+ * model's word for itself.
+ */
 const INHERITED_ONLY = new Set(['elite', 'boss', 'titan', 'god']);
 
 const has = (values: readonly string[], v: string) => values.includes(v);
