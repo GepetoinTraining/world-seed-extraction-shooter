@@ -48,6 +48,7 @@ import { ProgressionSystem } from '../src/entities/player/systems/ProgressionSys
 import { HubGenerator } from '../src/entities/hub/HubGenerator';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { HANDLED_ACTIONS, runDialogueAction } from '../src/entities/hub/dialogue';
+import { doorOf, withinReach } from '../src/render/atoms/hub';
 import { answersTag } from '../src/entities/hub/room';
 import { SYSTEM_TEMPLATES, lotConstruction, sizeNeedsVerdict, templateMatchesRoom, validateTemplate } from '../src/entities/hub/template';
 import {
@@ -935,5 +936,28 @@ describe('D93: a map handed to the guild is a real act, and the door to a chain'
 
   it('a map holds counts and no name, and the chain adds none (D60)', () => {
     expect(JSON.stringify(chainFromMap(map().mapData!))).not.toMatch(/mob_|definitionId|displayName/);
+  });
+});
+
+describe('Pedro: "you can\'t talk across a distance"', () => {
+  const layout = HubGenerator.generate();
+  const hall = HubGenerator.findPOI(layout, 'poi_guild')!;
+  const door = doorOf(hall);
+  const canvas = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
+  const clickBody = canvas.slice(canvas.indexOf('const handleCityClick'), canvas.indexOf('// ====', canvas.indexOf('const handleCityClick')));
+
+  it('at the door you are near, and across the street you are not', () => {
+    expect(withinReach(hall, door)).toBe(true);
+    expect(withinReach(hall, { x: door.x + 2, y: door.y })).toBe(true);
+    expect(withinReach(hall, { x: door.x + 40, y: door.y })).toBe(false);
+  });
+
+  it('a click answers only within reach, by the same measure as the interact key', () => {
+    expect(clickBody).toMatch(/withinReach\(poi, playerTile\)/);
+    expect(canvas).toMatch(/if \(withinReach\(poi, playerTile\) && dist < closestDist\)/);
+  });
+
+  it('a click from too far says so, so it does not look broken', () => {
+    expect(clickBody).toMatch(/pushFeed\(/);
   });
 });

@@ -9,7 +9,7 @@ import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGene
 import { usePlayerStore } from '../player/store';
 import { craftName, useHubStore } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
-import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
+import { HUB_GENRE, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
   IRoomState, RoomPieceKind, stationFunctionOf, PIECE_BILLS, PIECE_BUILD_SECONDS,
@@ -261,13 +261,8 @@ export const HubCanvas: React.FC = () => {
     for (const zone of layout.zones) {
       for (const poi of zone.pois) {
         if (!poi.interactable) continue;
-        const poiCenterX = poi.position.x + poi.size.width / 2;
-        const poiCenterY = poi.position.y + poi.size.height / 2;
-        const fromMiddle = Math.hypot(playerTile.x + 0.5 - poiCenterX, playerTile.y + 0.5 - poiCenterY);
-        // A stretched lot is bigger than this reach, so its door counts too.
-        const door = doorOf(poi);
-        const dist = Math.min(fromMiddle, Math.hypot(playerTile.x - door.x, playerTile.y - door.y));
-        if (dist < 3 && dist < closestDist) {
+        const dist = distanceTo(poi, playerTile);
+        if (withinReach(poi, playerTile) && dist < closestDist) {
           closest = poi;
           closestDist = dist;
         }
@@ -693,7 +688,9 @@ export const HubCanvas: React.FC = () => {
     const tx = Math.floor((e.clientX - box.left + cam.x) / TILE_SIZE);
     const ty = Math.floor((e.clientY - box.top + cam.y) / TILE_SIZE);
     const poi = HubGenerator.getPOIAtPosition(layout, tx, ty);
-    if (poi?.interactable) handleInteract(poi);
+    if (!poi?.interactable) return;
+    if (withinReach(poi, playerTile)) handleInteract(poi);
+    else pushFeed(`${poi.name} is too far off. Walk over.`, 'plain');
   };
 
   // =========================================================================
