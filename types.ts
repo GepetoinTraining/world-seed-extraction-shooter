@@ -716,6 +716,8 @@ export interface IStudyTarget {
   hidden?: boolean;
   /** D99, for C8: a piece of junk. What studying one opens is not read here. */
   junk?: boolean;
+  /** Pedro: a finished product asks for a workstation for it. This is the work it asks for. */
+  station?: string;
 }
 
 /** One sitting, logged when it landed and answered at a dream. */

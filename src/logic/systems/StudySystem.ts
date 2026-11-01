@@ -63,6 +63,11 @@ export const STUDY_LOST_DAYS = 7;
 
 const OUTCOME_LADDER: StudyOutcome[] = ['major_failure', 'failure', 'success', 'major_win'];
 
+/** What is raw until someone works it: everything else was made by somebody. */
+const RAW_TYPES: ItemType[] = [ItemType.RESOURCE, ItemType.COMMODITY, ItemType.LORE, ItemType.DEED, ItemType.TEMPLATE];
+/** What a piece asks when nothing says what made it: the general bench, which reads anything. */
+const GENERAL_STATION = 'WORKSHOP';
+
 export interface IStudyRoll { d20: number; total: number; dc: number; outcome: StudyOutcome }
 
 export class StudySystem {
@@ -132,11 +137,29 @@ export class StudySystem {
   // STUDY FOR LORE (D118): what can be aimed at. Each says only what the screen shows.
   // -----------------------------------------------------------------------
 
+  /** Was this made by somebody? A plank is, and a log is not. */
+  static isFinished(item: IItem): boolean {
+    return (item.composition?.depth ?? 0) > 0 || !RAW_TYPES.includes(item.type);
+  }
+
+  /**
+   * Pedro: "Finished products should have the button to be studied IF you have a workstation
+   * for it". What made it says which; improvised work had none, so it asks for none. An unread
+   * piece asks the same whatever it is, so the button tells nothing (D32).
+   */
+  static stationAsked(item: IItem): string | null {
+    if (item.isIdentified === false) return GENERAL_STATION;
+    if (!this.isFinished(item)) return null;
+    const steps = item.composition?.steps ?? [];
+    return steps.length > 0 ? steps[steps.length - 1].facility : GENERAL_STATION;
+  }
+
   static targetOfItem(item: IItem): IStudyTarget {
     const hidden = item.isIdentified === false;
+    const station = this.stationAsked(item);
     return {
       kind: 'item', ref: item.id, name: LoadoutSystem.shownName(item), tags: hidden ? [] : [...(item.tags ?? [])],
-      rank: item.rank, hidden,
+      rank: item.rank, hidden, ...(station ? { station } : {}),
       // C8 reads this: what studying junk opens is the black dungeon arc's, and is not decided here.
       junk: !!RESOURCE_DEFINITIONS[item.universalDefinitionId]?.junk || (item.tags ?? []).includes('junk')
     };

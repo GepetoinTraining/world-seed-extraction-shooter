@@ -6,10 +6,11 @@
  * damage, the row on the ledger. What it comes to waits for a dream (RestDoor).
  */
 
-import { IStudyTarget, StudyOutcome } from '../../../types';
+import { IItem, IStudyTarget, StudyOutcome } from '../../../types';
 import { usePlayerStore } from '../../entities/player/store';
 import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
 import { useHubStore } from '../../entities/hub/store';
+import { ownerHasStationFor } from '../../entities/hub/room';
 import { useFeed, useWaits } from '../../components/ui/stores';
 import { Ledger } from '../ledger/Ledger';
 import { SessionJournal } from '../journal/SessionJournal';
@@ -39,13 +40,28 @@ const said = (outcome: StudyOutcome, target: IStudyTarget): string => {
   return kind === 'item' ? `${name} is lost to you. Whatever was in it went with it.` : `${name} has closed to you. It will not sit for you for some days.`;
 };
 
+/** What a target asks that this person does not have, or nothing. The bench is at home, so the field has none. */
+const missingStation = (target: IStudyTarget): string | null => {
+  if (!target.station) return null;
+  const player = usePlayerStore.getState().player;
+  if (player.currentSession) return `That wants a workstation, and yours is not out here. It can wait for home.`;
+  const { lots, rooms } = useHubStore.getState();
+  const stash = player.bank.stashTabs.flatMap(t => t.items);
+  return ownerHasStationFor(target.station, player.id, { lots, rooms, stash }) ? null : `You have no workstation for that. A bench of your own would do.`;
+};
+
 export const StudyDoor = {
   /** What is on the clock right now. */
   sitting: () => paid,
 
+  /** Should this piece show the button at all? */
+  offered: (item: IItem): boolean => missingStation(StudySystem.targetOfItem(item)) === null,
+
   /** Paid up front. Nothing has been decided yet. */
   begin(target: IStudyTarget): { ok: boolean; reason?: string; cost?: number; seconds?: number } {
     if (paid) return { ok: false, reason: `You are already sitting with ${paid.target.name}.` };
+    const missing = missingStation(target);
+    if (missing) return { ok: false, reason: missing };
     const player = usePlayerStore.getState().player;
     const verdict = StudySystem.canStudy(player, target);
     if (!verdict.ok) return verdict;

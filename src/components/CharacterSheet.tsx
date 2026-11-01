@@ -204,10 +204,12 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 </Button>
               )
             )}
-            {/* D118: anything can be studied, for energy, and it can go badly. It offers the same on what has not been read. */}
-            <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem))}>
-              STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).seconds}s
-            </Button>
+            {/* D118: for energy, and it can go badly. A finished product asks for a workstation for it, and so does anything unread, so it tells nothing. */}
+            {StudyDoor.offered(selectedItem) && (
+              <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem))}>
+                STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).seconds}s
+              </Button>
+            )}
             {read && selectedItem.type === ItemType.LORE && selectedItem.description && (
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
             )}
@@ -294,9 +296,11 @@ const VaultPanels: React.FC = () => {
             {(piece.slot !== SlotType.NONE || tool) && (
               <Button tone="proof" onClick={() => { if (usePlayerStore.getState().equipSwap(piece.id).ok) setSelected(null); }}>EQUIP</Button>
             )}
-            <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(piece))}>
-              STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).seconds}s
-            </Button>
+            {StudyDoor.offered(piece) && (
+              <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(piece))}>
+                STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).seconds}s
+              </Button>
+            )}
             <Button
               tone={tool || player.bank.carryItemIds?.includes(piece.id) ? 'signal' : 'quiet'}
               disabled={tool}

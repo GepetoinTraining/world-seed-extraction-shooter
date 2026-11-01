@@ -54,6 +54,7 @@ import { runDialogueAction } from '../src/entities/hub/dialogue';
 import { ProgressionSystem } from '../src/entities/player/systems/ProgressionSystem';
 import { ProcessSystem } from '../src/logic/systems/ProcessSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
+import { useHubStore } from '../src/entities/hub/store';
 
 const store = () => usePlayerStore.getState();
 const player = () => store().player;
@@ -99,11 +100,17 @@ const onLog = (id = 'sit_1', outcome: StudyOutcome = 'success', rank = 0, tags =
   return sitting;
 };
 
+/** Most bars are about something else, so this person has somewhere to study a finished piece. */
+const ownsWorkshop = () => useHubStore.setState({ rooms: {}, lots: [{ id: 'lot_w', ownerId: player().id, structureType: 'WORKSHOP' }] as never });
+const ownsNothing = () => useHubStore.setState({ rooms: {}, lots: [] as never });
+const raw = (id: string, over: Partial<IItem> = {}) => piece(id, { type: ItemType.RESOURCE, slot: SlotType.NONE, stats: {}, ...over });
+
 beforeEach(() => {
   db.clear();
   vi.restoreAllMocks();
   useFeed.setState({ lines: [] });
   useIdentityStore.setState({ certificate: { metadata: { uid: 'study_tester', displayName: 'TESTER', createdAt: 0 }, publicKey: {} } as never });
+  ownsWorkshop();
   set(p => ({
     ...p, currentSession: undefined, energyToday: undefined, rest: undefined, restQueue: undefined, pendingDream: undefined,
     skillGifts: undefined, skillWords: undefined, studyMarks: undefined, studyCount: 0, levelsBanked: 0,
@@ -172,7 +179,7 @@ describe('line 153: study is an action anyone can take on anything, and it costs
     StudyDoor.reset();
 
     set(p => ({ ...p, energyToday: undefined, currentSession: { energy: 40, inventory: [], inventoryLayout: {} } as never }));
-    const out = StudyDoor.begin(target);
+    const out = StudyDoor.begin(StudySystem.targetOfItem(raw('r')));
     expect(player().currentSession!.energy).toBe(40 - out.cost!);
     expect(player().energyToday).toBeUndefined();
   });
@@ -202,6 +209,93 @@ describe('line 153: study is an action anyone can take on anything, and it costs
     expect(panel).toMatch(/targetOfWords/);
     expect(panel).toMatch(/targetOfCreature/);
     expect(panel).toMatch(/targetOfPlace/);
+  });
+});
+
+// =============================================================================
+// Pedro: "Finished products should have the button to be studied IF you have a workstation for it"
+// =============================================================================
+
+describe('a finished product is studied only with a workstation for it', () => {
+  const gear = () => piece('g');
+  const made = (facility: string | null) => piece('m', { composition: { version: 1, materials: [], steps: [{ recipeId: 'r', name: 'R', laborSeconds: 1, facility }], depth: 1, laborSeconds: 1, batchYield: 1 } } as never);
+
+  it('gear, tools, goods and anything worked are finished; what is raw is not', () => {
+    expect(StudySystem.isFinished(gear())).toBe(true);
+    expect(StudySystem.isFinished(piece('t', { type: ItemType.TOOL }))).toBe(true);
+    expect(StudySystem.isFinished(piece('c', { type: ItemType.CONSUMABLE, slot: SlotType.NONE }))).toBe(true);
+    expect(StudySystem.isFinished(raw('plank', { composition: { version: 1, materials: [], steps: [], depth: 1, laborSeconds: 1, batchYield: 1 } } as never))).toBe(true);
+    expect(StudySystem.isFinished(raw('log'))).toBe(false);
+    expect(StudySystem.isFinished(raw('scrap', { tags: ['junk'] }))).toBe(false);
+    expect(StudySystem.isFinished(raw('note', { type: ItemType.LORE }))).toBe(false);
+  });
+
+  it('with no workstation the button is not offered and the door refuses', () => {
+    ownsNothing();
+    expect(StudyDoor.offered(gear())).toBe(false);
+    const before = StudySystem.energyLeft(player());
+    const out = StudyDoor.begin(StudySystem.targetOfItem(gear()));
+    expect(out.ok).toBe(false);
+    expect(out.reason).toMatch(/workstation|bench/i);
+    expect(StudySystem.energyLeft(player())).toBe(before);
+  });
+
+  it('with one it is', () => {
+    expect(StudyDoor.offered(gear())).toBe(true);
+    expect(StudyDoor.begin(StudySystem.targetOfItem(gear())).ok).toBe(true);
+  });
+
+  it('a station held or placed counts, whoever else owns a workshop does not', () => {
+    const bench = raw('b', { universalDefinitionId: 'stn_bench' });
+    useHubStore.setState({ rooms: {}, lots: [{ id: 'lot_x', ownerId: 'someone_else', structureType: 'WORKSHOP' }] as never });
+    expect(StudyDoor.offered(gear())).toBe(false);
+    inVault(bench);
+    expect(StudyDoor.offered(gear())).toBe(true);
+    inVault();
+    useHubStore.setState({ lots: [{ id: 'lot_h', ownerId: player().id, structureType: 'HOUSE' }] as never, rooms: { lot_h: { placements: [{ item: bench }], pieces: [] } } as never });
+    expect(StudyDoor.offered(gear())).toBe(true);
+  });
+
+  it('a workstation is for what it makes: a scribe\'s table does not read a sword', () => {
+    useHubStore.setState({ rooms: {}, lots: [] as never });
+    inVault(raw('s', { universalDefinitionId: 'stn_scribe' }));
+    expect(StudyDoor.offered(gear())).toBe(false);
+  });
+
+  it('what was made the improvised way needs no bench, because none made it', () => {
+    ownsNothing();
+    expect(StudyDoor.offered(made(null))).toBe(true);
+    expect(StudyDoor.offered(made('WORKSHOP'))).toBe(false);
+  });
+
+  it('it is not a thing to do out in the field: the bench is at home', () => {
+    set(p => ({ ...p, currentSession: { energy: 50, inventory: [gear()], inventoryLayout: {} } as never }));
+    expect(StudyDoor.offered(gear())).toBe(false);
+    expect(StudyDoor.begin(StudySystem.targetOfItem(gear())).ok).toBe(false);
+    expect(StudyDoor.offered(raw('r'))).toBe(true);
+  });
+
+  it('an unread piece asks the same, whatever it is, so the button tells nothing', () => {
+    ownsNothing();
+    expect(StudyDoor.offered(raw('r', { isIdentified: false }))).toBe(false);
+    expect(StudyDoor.offered(gear())).toBe(false);
+    ownsWorkshop();
+    expect(StudyDoor.offered(raw('r', { isIdentified: false }))).toBe(true);
+  });
+
+  it('everything else stays always available: what is raw, a person, a place, a thought', () => {
+    ownsNothing();
+    expect(StudyDoor.offered(raw('r'))).toBe(true);
+    for (const target of [StudySystem.targetOfItem(raw('r')), StudySystem.targetOfPerson({ id: 'n', name: 'N' }), StudySystem.targetOfPlace('P'), StudySystem.targetOfWords('w')]) {
+      expect(StudyDoor.begin(target).ok, target.kind).toBe(true);
+      StudyDoor.reset();
+      set(p => ({ ...p, energyToday: undefined }));
+    }
+  });
+
+  it('both of the sheet\'s buttons ask first', () => {
+    const sheet = readFileSync('src/components/CharacterSheet.tsx', 'utf8');
+    expect(sheet.match(/StudyDoor\.offered\(/g)).toHaveLength(2);
   });
 });
 
@@ -323,7 +417,7 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
   });
 
   it('major failure loses it from the pack', async () => {
-    const carried = piece('p');
+    const carried = raw('p');
     set(p => ({ ...p, currentSession: { energy: 50, inventory: [carried], inventoryLayout: { p: {} }, equipped: { mainHand: 'p' } } as never }));
     await sit('major_failure', StudySystem.targetOfItem(carried));
     expect(player().currentSession!.inventory).toEqual([]);
