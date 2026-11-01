@@ -6,11 +6,11 @@
  */
 
 import { CHUNK_TILES } from '../world/grid';
-import { IHubLayout, IHubZone, IPOI, IPlacedChunk, POIType, ZoneType } from './layoutTypes';
-import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, SPAWN_MARK, doorTile, firstPlan, lotPrice } from './hubManifest';
+import { IHubLayout, IHubZone, IPOI, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
+import { CELL_TILES, EMPTY_MARK, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN, SPAWN_MARK, doorTile, firstPlan, lotPrice, tilesToCell } from './hubManifest';
 
 export { POIType, ZoneType };
-export type { IHubLayout, IHubZone, IPOI, IPlacedChunk };
+export type { IHubLayout, IHubZone, IPOI, IPlacedChunk, IRoadCell };
 
 // =============================================================================
 // NPC DEFINITIONS
@@ -186,6 +186,7 @@ export class HubGenerator {
     }));
 
     const zones: IHubZone[] = [];
+    const roads: IRoadCell[] = [];
     const zonesRaised = new Map<string, number>();
     const seriesCount = new Map<string, number>();
     let spawnPoint = { x: chunks[0].x, y: chunks[0].y };
@@ -196,6 +197,14 @@ export class HubGenerator {
       if (!chunk) throw new Error(`The manifest holds no chunk called ${placed.kind}.`);
 
       for (let y = placed.y; y < placed.y + CHUNK_TILES; y++) navMesh[y].fill(true, placed.x, placed.x + CHUNK_TILES);
+
+      const mainHere: IRoadCell[] = [];
+      chunk.road.forEach((row, cy) => [...row].forEach((c, cx) => {
+        if (c === EMPTY_MARK) return;
+        const cell = { x: placed.x + cx * CELL_TILES, y: placed.y + cy * CELL_TILES, main: c === ROAD_MAIN };
+        roads.push(cell);
+        if (cell.main) mainHere.push(cell);
+      }));
 
       const byLetter = HubGenerator.zonesOf(chunk, placed, manifest, zonesRaised);
       byLetter.forEach(zone => zones.push(zone));
@@ -223,9 +232,11 @@ export class HubGenerator {
         if (def.type === POIType.PLAYER_LOT) {
           const door = doorTile(poi);
           const fromCentre = Math.abs(door.x - centre.x) + Math.abs(door.y - centre.y);
+          const fromRoad = Math.min(...mainHere.map(cell => tilesToCell(door, cell)));
           poi.metadata.lotIndex = n;
           poi.metadata.fromCentre = fromCentre;
-          poi.metadata.price = lotPrice(manifest, def.size, fromCentre);
+          poi.metadata.fromRoad = fromRoad;
+          poi.metadata.price = lotPrice(manifest, def.size, { fromCentre, fromRoad });
         }
         if (def.npcId) poi.npcId = def.npcId;
         const zone = byLetter.get(chunk.floor[cy][cx]);
@@ -248,6 +259,7 @@ export class HubGenerator {
       zones,
       spawnPoint,
       navMesh,
+      roads,
       chunks,
       origin: { x: chunks[0].x, y: chunks[0].y }
     };

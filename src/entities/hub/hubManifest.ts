@@ -20,6 +20,9 @@ export const CHUNK_CELLS = CHUNK_TILES / CELL_TILES;
 
 export const EMPTY_MARK = '.';
 export const SPAWN_MARK = '@';
+/** In the `road` matrix: the main road, which joins chunks, and the streets off it. */
+export const ROAD_MAIN = '=';
+export const ROAD_STREET = '-';
 
 /** What a mark in the `place` matrix stands for. Plain data: a manifest can arrive from anywhere. */
 export interface IManifestMark {
@@ -50,6 +53,8 @@ export interface IManifestFloor {
 export interface IChunkManifest {
   floor: string[];
   place: string[];
+  /** Where the roads run. Walkable, and nothing may stand on one. */
+  road: string[];
 }
 
 export interface IHubManifest {
@@ -63,8 +68,10 @@ export interface IHubManifest {
   first: string;
   /** The chunk that rises when nobody names another. */
   growth: string;
-  /** What one tile of lot asks at the very centre of the hub. See `lotPrice`. */
+  /** What one tile of lot asks at the very centre of the hub, on the main road. See `lotPrice`. */
   lotGoldPerTile: number;
+  /** The cells where every chunk's main road meets its edge, so any two chunks join. */
+  gates: { col: number; row: number };
 }
 
 export const NEW_CARLEON: IHubManifest = {
@@ -72,7 +79,8 @@ export const NEW_CARLEON: IHubManifest = {
   name: 'New Carleon',
   version: '2.0.0',
   // A guess until Wave 12: this makes a 4 by 4 lot on Homestead Row ask about what the flat 5,000 did.
-  lotGoldPerTile: 440,
+  lotGoldPerTile: 480,
+  gates: { col: 11, row: 8 },
   floors: {
     P: { id: 'zone_plaza', name: 'Central Plaza', type: ZoneType.PLAZA, ambientColor: '#1a1a2e', floorTexture: 'cobblestone' },
     M: { id: 'zone_market', name: 'Market District', type: ZoneType.MARKET, ambientColor: '#2d1b1b', floorTexture: 'wooden_planks' },
@@ -134,7 +142,27 @@ export const NEW_CARLEON: IHubManifest = {
         '................',
         '................',
         '................'
-      ]
+      ],
+      // The main road crosses at the lots and runs through the plaza. The streets
+      // are what the lots and the market front onto.
+      road: [
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=---.',
+        '...........=....',
+        '================',
+        '...........=....',
+        '...........=---.',
+        '...........=....',
+        '...--------=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+      ],
     },
     // What rises around it: lots, lamps, and a bare edge for the next chunk to join.
     homesteads: {
@@ -159,20 +187,39 @@ export const NEW_CARLEON: IHubManifest = {
       place: [
         '................',
         '................',
+        '..D..........D..',
+        '.....L..L.......',
         '................',
-        '...D..L..L..D...',
+        '....l.....l.....',
         '................',
-        '.....l.....l....',
+        '..L..s..s....L..',
         '................',
-        '...L..s..s..L...',
-        '................',
-        '.....l.....l....',
-        '................',
-        '...D..L..L..D...',
+        '....l.....l.....',
+        '..D..........D..',
+        '.....L..L.......',
         '................',
         '................',
         '................',
         '................'
+      ],
+      // The same main road, and a street above and below it for the lots to front.
+      road: [
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '..---------=--..',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '================',
+        '...........=....',
+        '...........=....',
+        '...........=....',
+        '..---------=--..',
+        '...........=....',
+        '...........=....',
+        '...........=....',
       ]
     }
   },
@@ -256,15 +303,25 @@ export function openSides(plan: IHubPlan): IOpenSide[] {
 
 /**
  * What a free lot asks (Pedro: "a function of proximity to main road/hub center +
- * size"). It rises with the lot's tiles and falls with how far its door stands from
- * the middle of the first chunk, walked along the grid. Half price is one chunk out,
- * and it keeps falling past that without ever reaching nothing. The first chunk is
- * the centre for good, so raising a chunk moves no price.
+ * size"). It rises with the lot's tiles and falls with how far its door stands, walked
+ * along the grid, from the middle of the first chunk and from the main road. It halves
+ * one chunk from the centre and half a chunk from the road, and keeps falling past that
+ * without ever reaching nothing. Both are read within what is already fixed, the first
+ * chunk's middle and the lot's own chunk, so raising a chunk moves no price.
  */
-export function lotPrice(manifest: IHubManifest, size: { width: number; height: number }, tilesFromCentre: number): number {
-  const nearness = CHUNK_TILES / (CHUNK_TILES + tilesFromCentre);
-  return Math.max(1, Math.round((manifest.lotGoldPerTile * size.width * size.height * nearness) / 50) * 50);
+export function lotPrice(
+  manifest: IHubManifest,
+  size: { width: number; height: number },
+  where: { fromCentre: number; fromRoad: number }
+): number {
+  const nearCentre = CHUNK_TILES / (CHUNK_TILES + where.fromCentre);
+  const nearRoad = (CHUNK_TILES / 2) / (CHUNK_TILES / 2 + where.fromRoad);
+  return Math.max(1, Math.round((manifest.lotGoldPerTile * size.width * size.height * nearCentre * nearRoad) / 50) * 50);
 }
+
+/** Tiles along the grid from a tile to the nearest tile of a road cell. */
+export const tilesToCell = (from: { x: number; y: number }, cell: { x: number; y: number }) =>
+  Math.max(0, cell.x - from.x, from.x - (cell.x + CELL_TILES - 1)) + Math.max(0, cell.y - from.y, from.y - (cell.y + CELL_TILES - 1));
 
 /** The tile you stand on to reach a thing: below its middle. */
 export const doorTile = (p: { position: { x: number; y: number }; size: { width: number; height: number } }) => ({
@@ -275,6 +332,60 @@ export const doorTile = (p: { position: { x: number; y: number }; size: { width:
 // =============================================================================
 // THE LAW: what a manifest must be, whoever wrote it
 // =============================================================================
+
+/** Roads: known marks, meeting the edge only at the gates, all one network, under nothing, at every lot. */
+function roadLaw(
+  m: IHubManifest,
+  kind: string,
+  chunk: IChunkManifest,
+  taken: Uint8Array,
+  placed: { mark: string; position: { x: number; y: number }; size: { width: number; height: number } }[]
+): string[] {
+  const out: string[] = [];
+  const last = CHUNK_CELLS - 1;
+  const cells: { cx: number; cy: number }[] = [];
+  chunk.road.forEach((row, cy) => [...row].forEach((c, cx) => {
+    if (c === EMPTY_MARK) return;
+    if (c !== ROAD_MAIN && c !== ROAD_STREET) { out.push(`${kind}: no road called ${c}.`); return; }
+    cells.push({ cx, cy });
+    for (let y = 0; y < CELL_TILES; y++) for (let x = 0; x < CELL_TILES; x++) {
+      if (taken[(cy * CELL_TILES + y) * CHUNK_TILES + cx * CELL_TILES + x]) { out.push(`${kind}: something stands on the road at ${cx},${cy}.`); return; }
+    }
+  }));
+
+  for (let i = 0; i <= last; i++) {
+    const edges: [number, number, boolean][] = [
+      [i, 0, i === m.gates.col], [i, last, i === m.gates.col],
+      [0, i, i === m.gates.row], [last, i, i === m.gates.row]
+    ];
+    for (const [cx, cy, isGate] of edges) {
+      const c = chunk.road[cy]?.[cx];
+      if (isGate && c !== ROAD_MAIN) out.push(`${kind}: the gate at ${cx},${cy} has no main road, so the next chunk cannot join.`);
+      if (!isGate && c !== EMPTY_MARK) out.push(`${kind}: a road reaches the edge at ${cx},${cy}, which is no gate.`);
+    }
+  }
+
+  const key = (cx: number, cy: number) => `${cx},${cy}`;
+  const known = new Set(cells.map(c => key(c.cx, c.cy)));
+  const seen = new Set<string>();
+  const stack = cells.slice(0, 1);
+  while (stack.length) {
+    const { cx, cy } = stack.pop()!;
+    if (seen.has(key(cx, cy))) continue;
+    seen.add(key(cx, cy));
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+      if (known.has(key(cx + dx, cy + dy))) stack.push({ cx: cx + dx, cy: cy + dy });
+    });
+  }
+  if (seen.size !== cells.length) out.push(`${kind}: its roads do not all connect.`);
+
+  placed.filter(p => m.marks[p.mark].type === POIType.PLAYER_LOT).forEach(p => {
+    const door = doorTile(p);
+    const near = cells.some(c => tilesToCell(door, { x: c.cx * CELL_TILES, y: c.cy * CELL_TILES }) <= CELL_TILES);
+    if (!near) out.push(`${kind}: the lot at ${p.position.x},${p.position.y} has no street at its door.`);
+  });
+  return out;
+}
 
 /** Why this manifest could not stand. Nothing back means it can. */
 export function validateManifest(m: IHubManifest): string[] {
@@ -289,7 +400,7 @@ export function validateManifest(m: IHubManifest): string[] {
       if (!ok) out.push(`${kind}: every ${what} row must be ${CHUNK_CELLS} cells, and there must be ${CHUNK_CELLS} of them.`);
       return ok;
     };
-    if (!shaped(chunk.floor, 'floor') || !shaped(chunk.place, 'place')) continue;
+    if (!shaped(chunk.floor, 'floor') || !shaped(chunk.place, 'place') || !shaped(chunk.road, 'road')) continue;
 
     // Floors: each letter known, and each district one rectangle.
     const spans = new Map<string, { x0: number; y0: number; x1: number; y1: number; cells: number }>();
@@ -332,6 +443,7 @@ export function validateManifest(m: IHubManifest): string[] {
       }
       placed.push({ mark, position, size: def.size, interactable: def.interactable });
     }));
+    out.push(...roadLaw(m, kind, chunk, taken, placed));
     const wantSpawns = kind === m.first ? 1 : 0;
     if (spawns !== wantSpawns) out.push(`${kind}: it must hold ${wantSpawns} place to arrive, and it holds ${spawns}.`);
 

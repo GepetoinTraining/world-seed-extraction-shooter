@@ -8,6 +8,7 @@
 import { BiomeType, IMap } from '../../entities/world/types';
 import { TerrainSystem } from '../../entities/world/TerrainSystem';
 import { CHUNK_TILES, QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../entities/world/grid';
+import { CELL_TILES } from '../../entities/hub/hubManifest';
 import { Role, Sprite, hash2, px } from './atoms';
 import { RECON_CELL_ATOMS, reconCell } from './recon';
 
@@ -156,7 +157,10 @@ export interface CityLayoutLike {
   navMesh: boolean[][];
   zones: { pois: { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; metadata?: Record<string, any> }[] }[];
   chunks: { x: number; y: number }[];
+  roads: { x: number; y: number; main: boolean }[];
 }
+
+const ROAD_INK = { main: px(Role.GROUND, 4), street: px(Role.GROUND, 3) };
 
 const LOT_INK = {
   outline: px(Role.MATTER, 4),
@@ -179,6 +183,10 @@ export function cityMinimap(layout: CityLayoutLike, lots: Partial<Record<number,
       const ink = layout.navMesh[ty]?.[tx] ? GROUND : BLOCKED;
       for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) data[(ty * s + dy) * w + tx * s + dx] = ink;
     }
+  }
+  for (const road of layout.roads) {
+    const ink = road.main ? ROAD_INK.main : ROAD_INK.street;
+    for (let y = 0; y < CELL_TILES * s; y++) for (let x = 0; x < CELL_TILES * s; x++) data[(road.y * s + y) * w + road.x * s + x] = ink;
   }
   for (const zone of layout.zones) for (const poi of zone.pois) {
     const px0 = poi.position.x * s, py0 = poi.position.y * s;

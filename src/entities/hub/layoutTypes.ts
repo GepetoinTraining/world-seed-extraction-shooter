@@ -68,6 +68,13 @@ export interface IPlacedChunk {
   y: number;
 }
 
+/** One road cell of the layout. The main road joins chunks; a street is what lots front onto. */
+export interface IRoadCell {
+  x: number;
+  y: number;
+  main: boolean;
+}
+
 export interface IHubLayout {
   id: string;
   name: string;
@@ -77,6 +84,7 @@ export interface IHubLayout {
   zones: IHubZone[];
   spawnPoint: { x: number; y: number };
   navMesh: boolean[][]; // true = walkable
+  roads: IRoadCell[];
   /** Every chunk raised, in the order they rose. The first is the middle one. */
   chunks: IPlacedChunk[];
   /** The tile the first chunk starts at. It moves when a chunk rises north or west. */

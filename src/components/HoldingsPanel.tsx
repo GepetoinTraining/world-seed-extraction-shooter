@@ -53,7 +53,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; now: number }> = ({
     <Panel title={`LOT ${lot.lotIndex}`} right={stateChip} tone={mine ? 'signal' : 'none'} data-testid={`lot-${lot.lotIndex}`}>
       {poi && (
         <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>
-          {poi.size.width}×{poi.size.height}, {poi.metadata.fromCentre} tiles from the centre
+          {poi.size.width}×{poi.size.height}, {poi.metadata.fromRoad} from the main road, {poi.metadata.fromCentre} from the centre
         </div>
       )}
       {!lot.ownerId && (
