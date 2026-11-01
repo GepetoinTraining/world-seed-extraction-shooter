@@ -27,7 +27,7 @@ import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState } from '../world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
-import { useFeed } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
+import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
@@ -698,7 +698,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set(s => {
       const eq = s.player.equipment ?? LoadoutSystem.emptyEquipment();
       const kept = (eq.protected ?? []).filter(p => p.slot !== slot);
-      return { player: { ...s.player, equipment: { ...eq, protected: [...kept, until ? { slot, by, until } : { slot, by }] } } };
+      return { player: { ...s.player, equipment: { ...eq, protected: [...kept, until ? { slot, by, until, startedAt: Date.now() } : { slot, by }] } } };
     });
     feed(until
       ? `${slot} stands under ${by} until the clock says otherwise.`
@@ -1077,7 +1077,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (isTheft && security && security.lockLevel > 0) {
       const seconds = CartSystem.towBreakSeconds(security.lockLevel);
       feed(`${entity.cart.ownerName}'s cart stands ${security.by}: ${security.lockLevel} lock${security.lockLevel === 1 ? '' : 's'}. Breaking them takes ${seconds}s.`, 'loss');
+      const waitId = `locks_${entityId}`;
+      const startedAt = Date.now();
+      useWaits.getState().begin({ id: waitId, label: 'BREAKING THE LOCKS', startedAt, until: startedAt + seconds * 1000 });
       await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+      useWaits.getState().end(waitId);
       const still = Object.values(useWorldStore.getState().currentMap?.chunks || {})
         .flatMap(c => c.entities).find(e => e.id === entityId);
       if (!still?.cart || still.cart.towedBy) return { ok: false, reason: 'The cart is gone, or another hand beat you to the bar.' };

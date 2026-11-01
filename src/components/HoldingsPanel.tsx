@@ -6,18 +6,19 @@
 import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../types';
-import { useHubStore, IPlayerLot } from '../entities/hub/store';
+import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
 import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../entities/hub/room';
-import { Button, Chip, Input, ItemSprite, Panel } from './ui/kit';
+import { Button, Chip, Input, ItemSprite, Panel, TimerBar } from './ui/kit';
 import { lotConstruction } from '../entities/hub/template';
 import { isTemplateItem } from '../logic/systems/TemplateSystem';
 import { TemplateApplyModal } from './TemplateApplyModal';
 import { TemplateStudio } from './TemplateStudio';
 
 const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
+const DAY_MS = 86_400_000;
 const countOf = (items: IItem[], defId: string) => items.filter(i => i.universalDefinitionId === defId).length;
 
 const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
@@ -68,9 +69,10 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
       {/* Wave 10 (D8): the permit is gold, the walls are materials, and the
           building finishes on the clock. The shell job shows its countdown. */}
       {mine && shellJob && (
-        <span className="ws-dim ws-small">
-          {shellJob.template ? shellJob.template.data.name : shellJob.structureType} under construction — {Math.max(0, Math.ceil((shellJob.finishesAt - now) / 1000))}s on the clock
-        </span>
+        <div className="ws-small">
+          <div className="ws-dim">{shellJob.template ? shellJob.template.data.name : shellJob.structureType} under construction</div>
+          <TimerBar startedAt={shellJob.queuedAt} until={shellJob.finishesAt} />
+        </div>
       )}
       {mine && !shellJob && construction && (
         <span className="ws-dim ws-small">
@@ -150,9 +152,9 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
             const left = Math.ceil((job.finishesAt - now) / 1000);
             return (
               <div key={job.id} className="ws-row">
-                <span className="ws-small">{(RECIPE_DEFINITIONS[job.recipeId] ?? GEAR_RECIPES[job.recipeId])?.name}</span>
+                <span className="ws-small">{craftName(job.recipeId)}</span>
                 {left > 0
-                  ? <span className="ws-dim ws-small">{left}s on the bench</span>
+                  ? <span style={{ flex: 1, maxWidth: 160 }}><TimerBar startedAt={job.queuedAt} until={job.finishesAt} /></span>
                   : <Button tone="signal" onClick={() => hub.resolveCrafts()}>COLLECT</Button>}
               </div>
             );
@@ -199,6 +201,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; now: number }> = ({ lot, now }) => {
 
 export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
   const { lots } = useHubStore();
+  const playerId = usePlayerStore(s => s.player.id);
   const [now, setNow] = useState(Date.now());
   // D12: dev mode opens the builder view free, for testing. The real door is the scribe's table.
   const [scribeOpen, setScribeOpen] = useState(false);
@@ -228,6 +231,11 @@ export const HoldingsPanel: React.FC<{ devMode: boolean }> = ({ devMode }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <span className="ws-dim ws-small">
           Six lots. Upkeep is charged by the world-day; an unpaid lot reverts to the market with its goods returned.
+          {lots.some(l => l.ownerId === playerId) && (
+            <span style={{ display: 'block', width: 320, marginTop: 4 }}>
+              <TimerBar label="THE DAY TURNS" startedAt={worldDay() * DAY_MS} until={(worldDay() + 1) * DAY_MS} />
+            </span>
+          )}
         </span>
         {devMode && (
           <span style={{ display: 'flex', gap: 4 }}>

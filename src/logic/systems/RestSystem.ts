@@ -189,7 +189,7 @@ export class RestSystem {
   }
 
   static beginRest(player: IPlayer, place: RestPlace, now: number): IPlayer {
-    return { ...player, rest: { until: now + this.restMs(player), place } };
+    return { ...player, rest: { until: now + this.restMs(player), place, startedAt: now } };
   }
 
   /** Energy comes back on waking, never on lying down. */

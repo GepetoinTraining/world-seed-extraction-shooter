@@ -11,9 +11,9 @@ import { usePlayerStore } from '../entities/player/store';
 import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
 import { ReconOverlay } from './WorldCanvas';
 import { WorldCreator } from './WorldCreator';
-import { deployToWorld } from '../logic/systems/Deploy';
-import { Button, Chip, Panel } from './ui/kit';
-import { useFeed } from './ui/stores';
+import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
+import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
+import { useFeed, whileWaiting } from './ui/stores';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
   UP: 'GATE OPEN — IT CLOSES IN',
@@ -35,6 +35,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
   const moment = WorldClock.momentAt(world.retired ? { ...world, isDebug: true } : world, now);
   const isClosing = moment.warning !== 'NONE';
   const dark = moment.phase === 'OFF';
+  const cycle = world.retired ? null : WorldClock.cycleAt(world, now);
 
   return (
     <Panel
@@ -60,6 +61,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
       <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em' }}>
         {isDev ? 'SIMULATION — OUTSIDE THE CLOCK' : world.retired ? 'NO GATE' : GATE_WORDS[moment.phase]}
       </div>
+      {cycle && <CycleRibbon cycle={cycle} />}
       {!isDev && !world.retired && (
         <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 10 }}>
           {moment.generation === 0 ? 'ALPHA, AS MINTED' : `REGENERATION ${moment.generation}`} · {SKY_WORDS[world.sky ?? 'TURNING']}
@@ -104,7 +106,7 @@ export const MissionControl = () => {
   // D67: while a world boots a person can read it, and nothing is risked.
   const [surveying, setSurveying] = useState(false);
   const handleSurvey = async (worldId: string) => {
-    await useWorldStore.getState().selectWorld(worldId);
+    await whileWaiting(OPENING_WORLD, 'READING THE WORLD', () => useWorldStore.getState().selectWorld(worldId));
     useWorldStore.getState().applySurvey(usePlayerStore.getState().player.survey?.[worldId]);
     setSurveying(true);
   };

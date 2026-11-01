@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
-import { useHubStore } from './store';
+import { craftName, useHubStore } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
 import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
@@ -23,7 +23,7 @@ import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../rend
 import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
-import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView } from '../../components/ui/kit';
+import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
 import { MinimapView } from '../../components/ui/MinimapView';
@@ -763,9 +763,9 @@ export const HubCanvas: React.FC = () => {
               {myPendingJobs.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {myPendingJobs.map(j => (
-                    <span key={j.id} className="ws-dim ws-small">
-                      {j.kind === 'SHELL' ? j.structureType : j.piece?.kind} — {Math.max(0, Math.ceil((j.finishesAt - now) / 1000))}s on the clock
-                    </span>
+                    <div key={j.id} className="ws-small">
+                      <TimerBar label={String(j.kind === 'SHELL' ? j.structureType : j.piece?.kind)} startedAt={j.queuedAt} until={j.finishesAt} />
+                    </div>
                   ))}
                 </div>
               )}
@@ -925,9 +925,9 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
           const left = Math.ceil((job.finishesAt - now) / 1000);
           return (
             <div key={job.id} className="ws-row">
-              <span className="ws-small">{(RECIPE_DEFINITIONS[job.recipeId] ?? GEAR_RECIPES[job.recipeId])?.name}</span>
+              <span className="ws-small">{craftName(job.recipeId)}</span>
               {left > 0
-                ? <span className="ws-dim ws-small">{left}s on the bench</span>
+                ? <span style={{ flex: 1, maxWidth: 200 }}><TimerBar startedAt={job.queuedAt} until={job.finishesAt} /></span>
                 : <Button tone="signal" onClick={() => void hub.resolveCrafts()}>COLLECT</Button>}
             </div>
           );

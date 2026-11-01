@@ -28,6 +28,13 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | N5 | `tests/database.store.test.ts`, two processes writing one new file: it failed about one run in three, because both tried to create the tables on first open. `migrateTakingTurns` fixes that cause, and 45 runs since gave 44 passes. The one failure was not captured, so it may be a second cause. Machine load is the likeliest, and that is a guess | `server/connection.ts` |
 | N6 | Found by Pedro in play: a creature can be defeated from beyond where it notices anything, and it never responds. From reading the code, not yet run: a hit calls `MobAI.provoke`, then the next tick sees the shooter past the leash (at least 16 tiles) and puts it back to dormant with `provoked` cleared. Sight is also capped at 16 tiles, and nothing has it look toward where a hit came from | `src/entities/mob/ai/MobAI.ts:197-213` |
 
+### Found while building the timer, 2026-11-01
+
+| # | What happens | Where |
+|---|---|---|
+| T1 | A harvest's menu and card promise seconds ("2.5s"), but a harvest is instant and nothing reads the number. Either the wait becomes real, with a bar, or the number goes. Pedro's call | `InteractionEngine.ts`, `inspect.ts:83` |
+| T2 | Any error while drawing blanks the whole game to black. There is no error boundary, so nothing says what happened and the only way back is a reload. Found by a bad test poke, not by play | `App.tsx` |
+
 ## Fixed
 
 | # | What was wrong | Commit | Checked |
@@ -69,4 +76,6 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | B1 | A worn bag's capacity could not be filled by pickups | this branch | Bar: one limit, `LoadoutSystem.carryLimit`, everywhere |
 | M1 | Most item stats did nothing | this branch | Bars: every stat has a reader or the batch falls. Felt in play only as far as reserves and the shelf; balance waits for Wave 12 |
 | M2 | Each new drop refilled energy | this branch | Bars; played: 37 kept through a return and a reload, restored by a night at the inn |
+| T3 | Pedro: many waits felt like the game froze | this branch | Bars (`tests/timer.test.ts`); played on a test avatar: world card ribbon, exit wait 40% to 100% to the receipt, lock and identify bars with the sheet shut and open, body effects, city bench job and its ready line, rest and batch chips, grayscale looked at. By bar only: reduced-motion block, the AI waits (no key here). The rest bar in the field was played with a set state, not a real field rest |
+| T4 | A boot that threw an error counted forever with nothing said | this branch | Played: a broken save stops the clock, says why, and offers another avatar |
 | N1 | Found by the conservation bar: two caches left in one millisecond shared an id, and taking one took both | b5cd6ea | Bar |

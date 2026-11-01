@@ -40,8 +40,9 @@ import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
-import { Bar, Button, CardView, Chip, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
-import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet } from './ui/stores';
+import { Bar, Busy, Button, CardView, Chip, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
+import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet, useWaits } from './ui/stores';
+import { BodyClocks } from './WaitStrip';
 import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, suggestStart } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
@@ -669,6 +670,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       return;
     }
     if (gate !== 'FIRE') return;
+    useHotbar.getState().fired(slot, now, CombatMath.fireCooldownMs(weapon, st.player.equipment));
 
     // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
     let angle: number;
@@ -722,6 +724,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const lastCartSync = useRef<number>(0);
 
   const CHANNEL_MS = 5000;
+  // Line 124: however the channel ends, its bar ends with it
+  useEffect(() => {
+    if (!channeling || !channelRef.current) return;
+    useWaits.getState().begin({ id: 'channel', label: 'CHANNEL', startedAt: channelRef.current, until: channelRef.current + CHANNEL_MS });
+    return () => useWaits.getState().end('channel');
+  }, [channeling]);
   const BEACON_RANGE = 60; // px
 
   // Completes the extraction: tax, journal seal, banking, save — and the SEAL moment
@@ -797,7 +805,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // The vault door starts closing now; the signature lands on it when sealed.
     useReceipt.getState().show({
-      outcome: 'EXTRACTED', haul, haulValue, tax,
+      outcome: 'EXTRACTED', haul, haulValue, tax, sealing: true,
       worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0
     });
 
@@ -1016,7 +1024,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       useWorldStore.getState().exitWorld();
       void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
       useReceipt.getState().show({
-        outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
+        outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept, sealing: true,
         worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...told
       });
       // Seal the journal and the bank (async; loop is already stopped)
@@ -1632,7 +1640,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   if (!currentMap) {
     return (
       <div className="ws-ui" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="ws-dim">Rendering the survey…</span>
+        <div style={{ width: 360 }}><Busy label="RENDERING THE SURVEY" /></div>
       </div>
     );
   }
@@ -1721,11 +1729,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       {gate.warning === 'FINAL' && (
         <div aria-hidden style={{ position: 'absolute', inset: 6, zIndex: 105, pointerEvents: 'none', border: '6px dashed var(--ws-text-bright)' }} />
       )}
-      {RestSystem.isResting(player) && (
-        <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translateX(-50%)', zIndex: 110, pointerEvents: 'none' }}>
-          <Chip tone="signal">AT REST FOR {WorldClock.say(player.rest!.until - Date.now())}. A HURT WILL BREAK IT.</Chip>
-        </div>
-      )}
 
       {/* Vitals HUD (Wave 9.2: bars, rank and load — the exposure is the point) */}
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1740,6 +1743,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
         <Bar label="ENERGY" value={session.energy} max={StatSystem.maxEnergy(player.attributes, player.equipment)} tone="proof" text={`${Math.floor(session.energy)}`} />
         <Bar label="LOAD" value={Math.round(loadRatio * 100)} max={100} tone={loadRatio > 0.8 ? 'loss' : 'signal'} text={loadRatio > 0.8 ? 'SLOWED' : `${Math.round(loadRatio * 100)}%`} />
+        <BodyClocks />
         {session.towingCartId && (
           <Chip tone="proof" title="The tow bar is in your hand; your pace pays for the load">TOWING</Chip>
         )}

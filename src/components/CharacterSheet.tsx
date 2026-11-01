@@ -27,7 +27,7 @@ import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid } from './PlayerHub
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, useHands, wholeZone } from './ui/hands';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
-import { useAppView, useFeed, useSheet } from './ui/stores';
+import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const TILE_SIZE = 20;
@@ -99,8 +99,8 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
 const PackPanels = ({ session }: { session: IActiveSession }) => {
   const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
-  // Wave 10E (D19): the field identify runs on a real clock
-  const [identifying, setIdentifying] = useState<{ id: string; until: number } | null>(null);
+  // Wave 10E (D19): the field identify runs on a real clock, and line 124 keeps it where the HUD can read it
+  const waits = useWaits(s => s.waits);
   // Wave 10E (D21): a chosen charm asks which slot it holds
   const [invoking, setInvoking] = useState<string | null>(null);
 
@@ -182,17 +182,18 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             {/* Wave 10E (D19): identify in the field — scoped, ALWAYS timed, faster with skill */}
             {StudySystem.identifyScopeOf(selectedItem) &&
               (selectedItem.isIdentified === false || selectedItem.affixes.some(a => !LoadoutSystem.isAffixStudied(player, a.id))) && (
-              identifying?.id === selectedItem.id ? (
+              waits.some(w => w.id === `identify_${selectedItem.id}`) ? (
                 <Button tone="quiet" disabled>LOOKING…</Button>
               ) : (
                 <Button tone="signal" onClick={() => {
                   const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
                   if (!ask.ok) return;
                   feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.cost} energy, ${ask.seconds}s. It may give nothing up.`, 'signal');
-                  setIdentifying({ id: selectedItem.id, until: Date.now() + ask.seconds! * 1000 });
+                  const startedAt = Date.now();
+                  useWaits.getState().begin({ id: `identify_${selectedItem.id}`, label: 'LOOKING', startedAt, until: startedAt + ask.seconds! * 1000 });
                   window.setTimeout(() => {
                     usePlayerStore.getState().completeFieldIdentify(selectedItem.id);
-                    setIdentifying(cur => (cur?.id === selectedItem.id ? null : cur));
+                    useWaits.getState().end(`identify_${selectedItem.id}`);
                   }, ask.seconds! * 1000);
                 }}>
                   IDENTIFY · {StudySystem.identifyAsk(player, selectedItem).cost} energy · {StudySystem.identifyAsk(player, selectedItem).seconds}s

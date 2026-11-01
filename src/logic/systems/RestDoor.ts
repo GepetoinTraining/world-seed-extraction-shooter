@@ -113,6 +113,7 @@ export const RestDoor = {
           ...s.player,
           pendingDream: {
             batchId: out.batchId!,
+            filedAt: Date.now(),
             themeId: theme?.themeId,
             asked: {
               skills: (skills as { id: string }[]).map(q => q.id),

@@ -129,6 +129,7 @@ export interface ISlotProtection {
   by: string; // the charm or scroll that holds the line
   /** 10E (scrolls): the magic holds until this clock, then lapses. Absent = until spent. */
   until?: number;
+  startedAt?: number;
 }
 
 /**
@@ -744,7 +745,7 @@ export interface IActiveSession {
   position: { x: number; y: number; z: number };
   statusEffects: string[];
   /** Layer 1: what is working on this body right now, on the clock. */
-  activeEffects?: { kind: string; magnitude: number; until: number; nextAt: number; tickMs?: number }[];
+  activeEffects?: { kind: string; magnitude: number; until: number; nextAt: number; tickMs?: number; startedAt?: number }[];
 }
 
 // NEW: Interaction Types for UI
@@ -809,9 +810,9 @@ export interface IPlayer {
   /** D43, D50: what play queued, for the next rest. */
   restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[] };
   /** What was filed at the door and has not come back. */
-  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] } };
+  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[] }; filedAt?: number };
   /** D79: a rest takes real time, and until then this character is down. */
-  rest?: { until: number; place: 'INN' | 'BED' | 'FIELD' };
+  rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */
   survey?: Record<string, Record<string, {
     level: number;

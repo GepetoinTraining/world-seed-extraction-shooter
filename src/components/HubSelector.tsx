@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { WorldCertificateSystem, IWorldCertificate, WorldType } from '../entities/world/WorldCertificate';
 import { useHubStore } from '../entities/hub/store';
 import { shouldSkipHubStop } from '../logic/systems/FieldInput';
-import { Button, Chip, Input, Panel } from './ui/kit';
+import { Busy, Button, Chip, Input, Panel } from './ui/kit';
 
 interface HubSelectorProps {
   onSelect: (hubWorldUid: string) => void;
@@ -47,7 +47,7 @@ export const HubSelector: React.FC<HubSelectorProps> = ({ onSelect }) => {
   if (loading) {
     return (
       <div className="ws-ui" style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ws-void-1)' }}>
-        <span className="ws-dim">Scanning sector frequencies…</span>
+        <div style={{ width: 400 }}><Busy label="SCANNING FREQUENCIES" /></div>
       </div>
     );
   }

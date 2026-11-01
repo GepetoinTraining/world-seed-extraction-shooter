@@ -18,7 +18,7 @@ import { useDropZone, wholeZone } from './ui/hands';
 import { hoverProps } from './ui/stores';
 import { Archetype } from '../render/atoms/people';
 import { inspectItem } from '../render/atoms/inspect';
-import { ArmedButton, Bar, Button, CardView, Chip, Input, ItemSprite, Kbd, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
+import { ArmedButton, Bar, Busy, Button, CardView, Chip, Input, ItemSprite, Kbd, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
 import { figure, weaponClass, armorClass } from '../render/atoms/people';
 import { useAppView } from './ui/stores';
 import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
@@ -501,7 +501,7 @@ const LedgerTab: React.FC = () => {
       <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>
         Append-only, signed, each row chained to the last. This is what the game is actually made of.
       </div>
-      {rows === null && <div className="ws-dim ws-small">Reading the chain…</div>}
+      {rows === null && <Busy label="READING THE CHAIN" quietForMs={250} />}
       {rows !== null && rows.length === 0 && <div className="ws-dim ws-small">No rows yet. Everything you do from here on becomes one.</div>}
       <div className="ws-list">
         {rows?.map(signed => {

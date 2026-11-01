@@ -226,6 +226,14 @@ Settled by the web pass (D27–D30), kept here as the record:
 - **Tags are law.** Every tag has one kind and one meaning in one registry, a variant spelling is refused, a retired spelling is never reused, and a batch that breaks any of it falls whole. Nothing caps what batches can add.
 - **People have hands.** Someone met in the field has stats and skills dealt from their own seed, the same forever, read through the same web as yours. You learn what they are good at by talking to them: the card says Hands after the first word. A bond carries the person home, and Wave 11 puts them to work.
 
+Settled by the timer pass (line 124), kept here as the record:
+
+- **A wait says it is a wait.** Pedro: "many of the waiting mechanics feels like the game froze." The game was never frozen: world generation takes 4 to 77ms. It was silent.
+- **Two shapes, because there are two kinds of wait.** A known end is the same stepped bar as vitals, filling toward it, with the time left. An unknown end is one block walking that track, with the time passed, and never a percentage nobody can know. They read apart in grayscale, by shape. Reduced motion holds the block still and the count still moves.
+- **One place in the field.** Waits stand in a strip above the hotbar and climb over the sheet when it opens, so none hides in a window that can close. What works on your own body stands beside the vitals. A busy hand is a hatch draining over its hotbar cell.
+- **A gate is a cycle, not a number.** The world card has a ribbon of the whole cycle: open is solid, down is empty, booting is hatched, with hard seams and a notch where it stands.
+- **A load that cannot finish says so.** A boot that fails stops counting, says why, and offers another avatar.
+
 Settled by the usability pass, kept here as the record:
 
 - **The art and the voice did not move.** This pass changed how things are used, and it added no new art family: the minimap and the body's silhouette are drawn from the atoms already approved.
@@ -313,7 +321,7 @@ This is the most valuable part of the job. These all happened in the game when t
 | An NPC reacting to you | A number in a button label | Built: a feed line |
 | Securing an NPC for escort | An item quietly appears | Not designed as a moment of its own |
 | Viewing your ledger, your receipts and an item's history | Not visible anywhere, though it's the core of the fantasy | Ledger tab with audit (Wave 9.6); the card shows MADE OF and CHAIN (Wave 10D). No view of a provenance chain or past receipts yet |
-| Craft finished, lot foreclosed for unpaid upkeep | Log only, or a timer you must watch | **Still open:** no feed line for either; a foreclosed lot has only its mark in the hub's art |
+| Craft finished, lot foreclosed for unpaid upkeep | Log only, or a timer you must watch | Craft finished: built, a feed line and a bar in the strip (line 124). **Still open:** a foreclosed lot has only its mark in the hub's art |
 | Unidentified items | Blur and a `?`, with no explanation | Built: noise art and the blind sheet; study reveals (Waves 9.4, 10E) |
 
 ## The design system to deliver

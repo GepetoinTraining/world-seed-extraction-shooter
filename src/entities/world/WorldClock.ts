@@ -43,6 +43,11 @@ export interface IWorldMoment {
   canSurvey: boolean;
 }
 
+export interface IWorldCycle {
+  bands: { phase: WorldPhase; share: number }[];
+  at: number;
+}
+
 const M = 60_000, H = 60 * M, D = 24 * H;
 
 /** Pedro's cadences (D67, D78, D80). The biggest world's scan is the builder's reading: 2 of its 7 days on. */
@@ -115,6 +120,21 @@ export class WorldClock {
       return { phase: 'OFF', generation: cycle, msLeft: upMs + offMs - into, next: 'SCAN', warning: 'NONE', canDeploy: false, canSurvey: false };
     }
     return { phase: 'SCAN', generation: cycle + 1, msLeft: upMs + offMs + scanMs - into, next: 'UP', warning: 'NONE', canDeploy: false, canSurvey: true };
+  }
+
+  /** The whole cycle in the order it runs, as shares, and where in it the world stands. A simulation has none. */
+  static cycleAt(world: IClockedWorld, now: number): IWorldCycle | null {
+    if (world.isDebug) return null;
+    const { cadence, into } = this.place(world, now);
+    const period = cadence.upMs + cadence.offMs + cadence.scanMs;
+    return {
+      bands: [
+        { phase: 'UP', share: cadence.upMs / period },
+        { phase: 'OFF', share: cadence.offMs / period },
+        { phase: 'SCAN', share: cadence.scanMs / period }
+      ],
+      at: into / period
+    };
   }
 
   /** @param across where along the world's width, 0 to 1. Only a world that does not spin asks. */

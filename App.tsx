@@ -11,8 +11,11 @@ import { HubSelector } from './src/components/HubSelector';
 import { HoldingsPanel } from './src/components/HoldingsPanel';
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
 import { ProgressionSystem } from './src/entities/player/systems/ProgressionSystem';
-import { Button, Chip, Kbd, Modal, RankMark } from './src/components/ui/kit';
-import { AppView, useAppView, useSheet } from './src/components/ui/stores';
+import { Busy, Button, Chip, Kbd, Modal, RankMark } from './src/components/ui/kit';
+import { AppView, useAppView, useFeed, useSheet } from './src/components/ui/stores';
+import { RestBar, WaitStrip } from './src/components/WaitStrip';
+import { WaitClock } from './src/logic/systems/WaitClock';
+import { craftName, useHubStore } from './src/entities/hub/store';
 import { CharacterSheet } from './src/components/CharacterSheet';
 import { HandsLayer } from './src/components/ui/hands';
 import { HoverLayer } from './src/components/ui/HoverLayer';
@@ -20,7 +23,6 @@ import { isTypingTarget } from './src/logic/systems/FieldInput';
 import { ReceiptScreen } from './src/components/ReceiptScreen';
 import { FeedView } from './src/components/FeedView';
 import { RestDoor } from './src/logic/systems/RestDoor';
-import { WorldClock } from './src/entities/world/WorldClock';
 
 // Debug Console
 import { SystemConsole } from './src/components/debug/SystemConsole';
@@ -73,15 +75,15 @@ const DEV_TABS: { id: AppView; label: string }[] = [
 ];
 
 /** D79: how long this character is down. Their rest is their own loop, and SYSTEM switches to another. */
-const RestChip: React.FC<{ until?: number }> = ({ until }) => {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!until) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [until]);
-  if (!until || now >= until) return null;
-  return <Chip tone="signal" title="This character cannot deploy until it wakes. Another can.">AT REST {WorldClock.say(until - now)}</Chip>;
+const RestChip: React.FC<{ rest?: { until: number; startedAt?: number } }> = ({ rest }) => {
+  if (!rest) return null;
+  return <Chip tone="signal" title="This character cannot deploy until it wakes. Another can."><RestBar rest={rest} /></Chip>;
+};
+
+/** D43: what a rest sent to the door is still out. Nothing waits on it, and nobody can say how long. */
+const DreamChip: React.FC<{ filedAt?: number; out: boolean }> = ({ filedAt, out }) => {
+  if (!out) return null;
+  return <Chip title="It comes back when it comes back. Nothing waits on it."><Busy label="THE SEED IS READING" startedAt={filedAt} /></Chip>;
 };
 
 /** D7: very little frame. One thin bar — who you are and what you hold. The walkable
@@ -113,7 +115,7 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
     <div
       className="ws-ui"
       style={{
-        display: 'flex', alignItems: 'center', gap: 10, height: 38, padding: '0 10px',
+        display: 'flex', alignItems: 'center', gap: 10, height: 38, padding: '0 10px', whiteSpace: 'nowrap',
         background: 'var(--ws-void-1)', borderBottom: '1px solid var(--ws-void-4)'
       }}
     >
@@ -122,7 +124,8 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
 
       <span style={{ flex: 1 }} />
 
-      <RestChip until={player.rest?.until} />
+      <RestChip rest={player.rest} />
+      <DreamChip out={!!player.pendingDream} filedAt={player.pendingDream?.filedAt} />
       <Chip title={`Rank ${rank} — kills feed it`}><RankMark rank={rank} scale={2} /> {rank}</Chip>
       <Chip tone="proof" title="Gold on the ledger">{player.bank.gold.toLocaleString()} G</Chip>
       <Chip title={player.id}>{player.username}</Chip>
@@ -158,6 +161,7 @@ const App: React.FC = () => {
 
   // Lifecycle State
   const [bootStatus, setBootStatus] = useState<'INIT' | 'BOOTING' | 'READY'>('INIT');
+  const [bootFailed, setBootFailed] = useState<string | null>(null);
   const [hubSelected, setHubSelected] = useState(false);
   const [gateDone, setGateDone] = useState(false);
 
@@ -168,11 +172,18 @@ const App: React.FC = () => {
     const boot = async () => {
       if (identityState === IdentityState.READY && gateDone && bootStatus === 'INIT') {
         setBootStatus('BOOTING');
-        const result = await StartupSequence.execute();
-        if (result.status === 'READY') {
-          setBootStatus('READY');
-        } else {
-          console.error('Boot failed or waiting for identity.');
+        // Line 124: a boot that cannot finish says so, and the clock does not count forever
+        try {
+          const result = await StartupSequence.execute();
+          if (result.status === 'READY') {
+            setBootStatus('READY');
+          } else {
+            console.error('Boot failed or waiting for identity.');
+            setBootFailed(result.status);
+          }
+        } catch (e) {
+          console.error('[BOOT] Failed:', e);
+          setBootFailed(e instanceof Error ? e.message : String(e));
         }
       }
     };
@@ -184,6 +195,19 @@ const App: React.FC = () => {
     if (bootStatus !== 'READY') return;
     void RestDoor.wakeIfDue();
     const interval = setInterval(() => void RestDoor.wakeIfDue(), 5000);
+    return () => clearInterval(interval);
+  }, [bootStatus]);
+
+  // A bench's job finishes whoever is looking, and it says so once (line 124)
+  useEffect(() => {
+    if (bootStatus !== 'READY') return;
+    const told = new Set<string>();
+    const tell = () => {
+      const ready = WaitClock.newlyReady(useHubStore.getState().craftingJobs, usePlayerStore.getState().player.id, told, Date.now());
+      for (const job of ready) useFeed.getState().push(`${craftName(job.recipeId)} is ready on the bench.`, 'signal');
+    };
+    tell();
+    const interval = setInterval(tell, 1000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 
@@ -207,9 +231,24 @@ const App: React.FC = () => {
           <div className="ws-proof" style={{ letterSpacing: '0.2em', fontSize: 'var(--ws-font-head)' }}>
             INITIALIZING GENESIS PROTOCOL...
           </div>
-          <div className="ws-dim ws-small" style={{ marginTop: 8 }}>
-            A save that fails its signature check is refused, not repaired. <Kbd>~</Kbd> watches it happen.
-          </div>
+          {bootFailed ? (
+            <div style={{ marginTop: 12 }}>
+              <div className="ws-loss ws-small">THIS AVATAR WOULD NOT LOAD: {bootFailed}</div>
+              <div style={{ marginTop: 10 }}>
+                <Button
+                  tone="signal" autoFocus
+                  onClick={() => {
+                    localStorage.setItem('worldseed_force_select', '1');
+                    window.location.reload();
+                  }}
+                >
+                  SWITCH AVATAR
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ width: 360, margin: '12px auto 0' }}><Busy /></div>
+          )}
         </div>
         <SystemConsole />
       </div>
@@ -234,6 +273,7 @@ const App: React.FC = () => {
         <WorldCanvas session={session} />
         <SystemConsole />
         <FeedView />
+        <WaitStrip />
         <ReceiptScreen />
         <CharacterSheet />
         <HoverLayer />
@@ -254,6 +294,7 @@ const App: React.FC = () => {
       </div>
       <SystemConsole />
       <FeedView />
+      <WaitStrip />
       <ReceiptScreen />
       <CharacterSheet />
       <HoverLayer />

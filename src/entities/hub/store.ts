@@ -87,6 +87,10 @@ export interface ICraftJob {
   processPack?: number;
 }
 
+/** What a bench job is called, whichever bank its recipe came from. */
+export const craftName = (recipeId: string): string =>
+  (RECIPE_DEFINITIONS[recipeId] ?? GEAR_RECIPES[recipeId] ?? WebBank.recipe(recipeId))?.name ?? recipeId;
+
 /** Logical world-day (observed time, never stored clocks). */
 export const worldDay = () => Math.floor(Date.now() / 86_400_000);
 
