@@ -284,6 +284,7 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 - **A read can hang, by design.** With the server down, `VectorStore.get` does not resolve. In a script, a tool call that never returns may mean the vault is closed: look at the page.
 - **`data/worldseed.db` is one file per checkout.** A worktree starts empty and imports again from the browser. Deleting it is safe while the browser still holds the old saves, and not after a browser wipe.
 - **Never clear browser storage on an origin with real saves.** The old RxDB copy is the only backup until that origin has imported. Use a fresh port: `world-seed-dev-3107` (CAIRN lives there) was added for this.
+- **A green suite in your checkout says nothing about what you committed.** This leg's `data/` ignore line swallowed `src/entities/data/`, and everything passed until a clean checkout could not start. Before you report a leg, run it from a fresh worktree of your branch (a junction to `node_modules` works; delete the junction with `.Delete()` or `rmdir` before removing the worktree, or the real folder goes with it).
 - **A new worktree may be cut from `origin/main`, far behind local `main`.** This leg's was 40 commits behind, and the app's sync only looks at `origin`. Compare `git rev-parse HEAD main` before reading anything.
 - **Same-millisecond jobs used to share ids** — two crafts queued in one ms on one lot minted outputs with IDENTICAL item ids (fixed in 10D with a queue-length tie-break). If you add any id built from `Date.now()`, break the tie yourself.
 
