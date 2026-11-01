@@ -26,7 +26,7 @@ import { ISignedPayload } from '../entities/identity/certificateSystem';
 import { MASTERY_RUNGS, WebSystem } from '../logic/systems/WebSystem';
 import { WebBank } from '../logic/content/WebBank';
 
-const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
+export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
   HARDWARE: ['strength', 'constitution', 'agility', 'dexterity', 'endurance'],
   SOFTWARE: ['intelligence', 'focus', 'engineering', 'hacking', 'perception'],
   WETWARE: ['charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership']
@@ -56,7 +56,7 @@ const FormingFill: React.FC<{ fill: number }> = ({ fill }) => (
   </span>
 );
 
-const HandsPanel: React.FC = () => {
+export const HandsPanel: React.FC = () => {
   const { player } = usePlayerStore();
   const { web } = useHubStore();
   const sheet = useMemo(() => WebSystem.earnedSheet(player, WebBank.current(), web), [player, web]);
@@ -309,7 +309,7 @@ const SkillsTab: React.FC = () => {
 // ---------------------------------------------------------------------------
 
 const STASH_CELL = 36;
-const VAULT_CELL = 24;
+export const VAULT_CELL = 24;
 
 const SORT_KEYS: StashSortKey[] = ['NAME', 'RANK', 'VALUE', 'WEIGHT', 'TYPE'];
 const KIND_WORDS: { id: StashKind; label: string }[] = [
@@ -323,7 +323,7 @@ const vaultPrimary = (item: IItem) => {
   if (item.slot !== SlotType.NONE || item.tags?.includes('tool')) st.equipSwap(item.id);
 };
 
-const VaultGrid: React.FC<{
+export const VaultGrid: React.FC<{
   zoneId: string; cellPx: number; selectedId?: string | null; onSelect?: (id: string | null) => void; filter?: StashFilter;
 }> = ({ zoneId, cellPx, selectedId, onSelect, filter }) => {
   const { player } = usePlayerStore();

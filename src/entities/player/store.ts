@@ -1376,6 +1376,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           }
         };
       }
+      // At home, what you hold is the vault. The button that says DISCARD discards.
+      if (source === 'INVENTORY') {
+        return {
+          player: {
+            ...state.player,
+            bank: {
+              ...state.player.bank,
+              stashTabs: state.player.bank.stashTabs.map((tab, idx) => idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== itemId) } : tab)
+            }
+          }
+        };
+      }
       return state;
     });
     get().recalcWeight();

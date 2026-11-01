@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../types';
-import { StudySystem } from '../logic/systems/StudySystem';
 import { DreamingSystem } from '../entities/world/Dreaming';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
@@ -31,18 +30,16 @@ import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
-import { GEAR_RECIPES } from '../entities/economy/data/recipeDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { Bar, Button, CardView, Chip, Kbd, Panel, RankMark, TERMINAL_PALETTE } from './ui/kit';
-import { useFeed, useHotbar, useRankMoment, useReceipt } from './ui/stores';
+import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet } from './ui/stores';
 import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, suggestStart } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
-import { useDropZone, useHands, wholeZone } from './ui/hands';
+import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
 import { MinimapView } from './ui/MinimapView';
 import { fieldMinimap } from '../render/atoms/minimap';
-import { PaperDoll } from './PaperDoll';
 import { Hotbar, activateHotbar } from './Hotbar';
 
 // --- CONSTANTS ---
@@ -52,218 +49,6 @@ const LOAD_RADIUS_PX = 1000; // Chunks exist this far out, so nothing is built i
 const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't teleport the player
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
-
-/**
- * THE PACK (Wave 9.4, the usability pass): the 8x6 spatial inventory beside the
- * body, in the items' real art at their real footprints. The grid never moves:
- * what can be done with the selected piece lives in a fixed column beside it, and
- * reading a piece is the card on hover. The ground is a place in the same hands.
- */
-const CELL = 36;
-const PACK_ACTIONS_W = 200;
-const PACK_BODY_H = 332;
-const GROUND_CELL = 24;
-const GROUND_ROWS = 2;
-
-/** What a piece most plainly wants: E, a double-click or a right-click (U6). */
-const packPrimary = (item: IItem) => {
-  const st = usePlayerStore.getState();
-  if (item.cartData) { void st.deployCart(item.id); return; }
-  if (item.type === ItemType.CONSUMABLE && !item.charmData && !item.scrollData) { st.consumeItem(item.id); return; }
-  if (item.slot !== SlotType.NONE || item.tags?.includes('tool')) { st.equipSwap(item.id); return; }
-  feed(`${item.name} has no slot and no use in the hand. It rides the pack.`, 'plain');
-};
-
-const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
-  const root = useRef<HTMLDivElement>(null);
-  useDropZone('ground', wholeZone(root, { kind: 'GROUND' }));
-  const map = useWorldStore(s => s.currentMap);
-  const reach = 3 * TILE_SIZE;
-  const caches = WorldGenerator.chunkKeysInBox(session.position.x, session.position.z, reach + 40)
-    .flatMap(k => map?.chunks[k]?.entities ?? [])
-    .filter(e => (e.container?.items?.length ?? 0) > 0 && !e.container!.looted &&
-      Math.hypot(e.position.x - session.position.x, e.position.y - session.position.z) < reach);
-  const cache = caches[0];
-  const items = cache?.container?.items ?? [];
-  const cols = Math.floor((GRID_W * CELL - 28) / GROUND_CELL);
-  const rows = Math.max(GROUND_ROWS, Math.ceil(items.reduce((n, i) => n + (i.dimensions?.width ?? 1) * (i.dimensions?.height ?? 1), 0) / cols) + 3);
-  const layout = useMemo(() => InventorySystem.placeAll(items, cols, rows), [items, cols, rows]);
-  return (
-    <div
-      ref={root}
-      data-drop-zone="ground"
-      style={{ marginTop: 6, border: '1px dashed var(--ws-void-4)', width: GRID_W * CELL, height: GROUND_ROWS * GROUND_CELL + 24, padding: '2px 4px', overflowY: 'scroll', overflowX: 'hidden' }}
-    >
-      <div className="ws-dim ws-small">GROUND · {cache ? 'a cache in reach' : 'set a thing here to leave it'}</div>
-      {cache && (
-        <ItemGrid
-          zoneId={`cache_${cache.id}`}
-          place={{ kind: 'CACHE', entityId: cache.id }}
-          items={items}
-          layout={layout}
-          gridW={cols}
-          gridH={rows}
-          cellPx={GROUND_CELL}
-          onPrimary={item => { usePlayerStore.getState().takeFromCache(cache.id, item.id); }}
-        />
-      )}
-    </div>
-  );
-};
-
-const PackWindow = ({ session }: { session: IActiveSession }) => {
-  const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
-  const [selected, setSelected] = useState<string | null>(null);
-  // Wave 10E (D19): the field identify runs on a real clock
-  const [identifying, setIdentifying] = useState<{ id: string; until: number } | null>(null);
-  // Wave 10E (D21): a chosen charm asks which slot it holds
-  const [invoking, setInvoking] = useState<string | null>(null);
-
-  const layout = session.inventoryLayout || {};
-  const items = session.inventory;
-  const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
-  const selectedItem = items.find(i => i.id === selected);
-  const pouchSlots = player.equipment
-    ? LoadoutSystem.availableSlots(player.equipment).filter(s => s.startsWith('POUCH_') && player.equipment!.slots[s])
-    : [];
-  const recipes = Object.values(GEAR_RECIPES).filter(r => r.requiredFacility === null &&
-    r.inputs.every(req => items.filter(i => i.universalDefinitionId === req.itemId).length >= req.quantity));
-
-  return (
-    <div data-pack-window style={{ display: 'flex', gap: 8, alignItems: 'stretch', pointerEvents: 'auto' }} onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
-      <PaperDoll unit={24} compact />
-      <Panel
-        title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS`}
-        right={
-          <span className={ratio > 0.8 ? 'ws-loss' : 'ws-dim'}>
-            {currentWeight.toFixed(1)}/{maxWeight}kg{ratio > 0.8 ? ' · SLOWED' : ''}
-          </span>
-        }
-      >
-        <ItemGrid
-          zoneId="pack"
-          place={{ kind: 'PACK' }}
-          items={items}
-          layout={layout}
-          gridW={GRID_W}
-          gridH={GRID_H}
-          cellPx={CELL}
-          selectedId={selected}
-          onSelect={setSelected}
-          onPrimary={packPrimary}
-          onRotate={item => rotateItem(item.id)}
-        />
-        <GroundPanel session={session} />
-      </Panel>
-      <Panel title="THIS PIECE" style={{ width: PACK_ACTIONS_W, height: PACK_BODY_H, overflowY: 'auto', flexShrink: 0 }}>
-        {!selectedItem && (
-          <div className="ws-dim ws-small">
-            Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand.
-          </div>
-        )}
-        {selectedItem && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div className="ws-bright ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {selectedItem.isIdentified === false ? 'Unidentified Signal' : selectedItem.name}
-            </div>
-            {selectedItem.type === ItemType.CONSUMABLE && !selectedItem.charmData && !selectedItem.scrollData && (
-              <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>USE</Button>
-            )}
-            {/* Wave 10E (D21): insurance is spent, not eaten — the magic names what it keeps */}
-            {(selectedItem.charmData || selectedItem.scrollData) && (
-              (selectedItem.charmData ?? selectedItem.scrollData)!.chosen ? (
-                invoking === selectedItem.id ? (
-                  Object.keys(player.equipment?.slots ?? {}).filter(s => player.equipment!.slots[s as EquipSlotId]).map(slot => (
-                    <Button key={slot} tone="proof" onClick={() => {
-                      const v = usePlayerStore.getState().useProtection(selectedItem.id, slot as EquipSlotId);
-                      setInvoking(null);
-                      if (v.ok) setSelected(null);
-                    }}>
-                      KEEP · {slot.replace('_', ' ')}
-                    </Button>
-                  ))
-                ) : (
-                  <Button tone="signal" onClick={() => setInvoking(selectedItem.id)}>INVOKE · CHOOSE A SLOT</Button>
-                )
-              ) : (
-                <Button tone="signal" onClick={() => {
-                  const v = usePlayerStore.getState().useProtection(selectedItem.id);
-                  if (v.ok) setSelected(null);
-                }}>INVOKE</Button>
-              )
-            )}
-            {/* Wave 10E (D19): identify in the field — scoped, ALWAYS timed, faster with skill */}
-            {StudySystem.identifyScopeOf(selectedItem) &&
-              (selectedItem.isIdentified === false || selectedItem.affixes.some(a => !LoadoutSystem.isAffixStudied(player, a.id))) && (
-              identifying?.id === selectedItem.id ? (
-                <Button tone="quiet" disabled>IDENTIFYING…</Button>
-              ) : (
-                <Button tone="signal" onClick={() => {
-                  const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
-                  if (!ask.ok) return;
-                  feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.seconds}s. The eye does the work.`, 'signal');
-                  setIdentifying({ id: selectedItem.id, until: Date.now() + ask.seconds! * 1000 });
-                  window.setTimeout(() => {
-                    usePlayerStore.getState().completeFieldIdentify(selectedItem.id);
-                    setIdentifying(cur => (cur?.id === selectedItem.id ? null : cur));
-                  }, ask.seconds! * 1000);
-                }}>
-                  IDENTIFY · {StudySystem.identifySeconds(StudySystem.identifyLevel(player, selectedItem))}s
-                </Button>
-              )
-            )}
-            {selectedItem.type === ItemType.LORE && selectedItem.description && (
-              <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
-            )}
-            {(selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool')) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
-              <Button tone="proof" onClick={() => {
-                const v = usePlayerStore.getState().equipSwap(selectedItem.id);
-                if (v.ok) setSelected(null);
-              }}>
-                EQUIP
-              </Button>
-            )}
-            {selectedItem.cartData && (
-              <Button tone="proof" onClick={() => { void usePlayerStore.getState().deployCart(selectedItem.id); setSelected(null); }}>
-                UNFOLD CART
-              </Button>
-            )}
-            {pouchSlots.map(slot => {
-              const pouch = LoadoutSystem.itemIn(player.equipment!, slot)!;
-              return (
-                <Button
-                  key={slot}
-                  tone="quiet"
-                  title={`${pouch.name}: stacks ${pouch.pouchData?.accepts.join(', ')}`}
-                  onClick={() => {
-                    const v = usePlayerStore.getState().stowInPouch(slot, selectedItem.id);
-                    if (v.ok) setSelected(null);
-                  }}
-                >
-                  STOW · {pouch.name.toUpperCase()}
-                </Button>
-              );
-            })}
-            <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE</Button>
-            <Button tone="loss" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>LEAVE BEHIND</Button>
-          </div>
-        )}
-        {/* Wave 10D (10D.2): the floor — improvised crafting, right here, no bench */}
-        {recipes.map(recipe => (
-          <div key={recipe.id} style={{ marginTop: 6 }}>
-            <Button
-              tone="quiet"
-              title={recipe.description}
-              onClick={() => { usePlayerStore.getState().improviseInField(recipe.id); setSelected(null); }}
-            >
-              IMPROVISE · {recipe.name.toUpperCase()}
-            </Button>
-          </div>
-        ))}
-      </Panel>
-    </div>
-  );
-};
 
 // =============================================================================
 // THE CART WINDOW (Wave 10C, D16): the bed's grid, the seal, the theft log
@@ -672,7 +457,7 @@ const promptFor = (pick: InteractPick | 'EXIT'): string => {
 
 const KeyHelp: React.FC = () => (
   <div className="ws-dim ws-small" style={{ position: 'absolute', bottom: 12, right: 16, zIndex: 100, pointerEvents: 'none', background: 'rgba(3,3,3,0.72)', padding: '2px 8px', maxWidth: '30vw', textAlign: 'right' }}>
-    <Kbd>WASD</Kbd> move · <Kbd>HOLD CLICK</Kbd> or <Kbd>SPACE</Kbd> fire · <Kbd>E</Kbd> act · <Kbd>TAB</Kbd> pack · <Kbd>Q</Kbd> read
+    <Kbd>WASD</Kbd> move · <Kbd>HOLD CLICK</Kbd> or <Kbd>SPACE</Kbd> fire · <Kbd>E</Kbd> act · <Kbd>TAB</Kbd> sheet · <Kbd>Q</Kbd> read
   </div>
 );
 
@@ -728,9 +513,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const reducedMotionRef = useRef(
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
-
-  // Wave 3.1: pack grid visibility
-  const [showPack, setShowPack] = useState(false);
 
   // Wave 4.1: fire-rate limiter
   const lastShotRef = useRef<number>(0);
@@ -1032,21 +814,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (useWorldStore.getState().reconMode || isTypingTarget(e.target)) return;
-      const inPack = !!(e.target as HTMLElement)?.closest?.('[data-pack-window]');
       const onControl = (e.target as HTMLElement)?.tagName === 'BUTTON';
-      if (useHands.getState().held) return; // the hands own the keys they use
-      if (e.key === 'Tab') {
-        if (inPack) return; // a focused piece walks the window natively
-        e.preventDefault();
-        setShowPack(prev => !prev);
-        return;
-      }
-      // With the window open, the arrows reach into it: the keyboard's way to the pieces
-      if (e.key.startsWith('Arrow') && document.querySelector('[data-pack-window]') && !inPack) {
-        e.preventDefault();
-        (document.querySelector('[data-pack-window] [data-item-id]') as HTMLElement | null)?.focus();
-        return;
-      }
+      if (useHands.getState().held || e.key === 'Tab') return; // the hands and the sheet own these
       // Q cycles the inspect card through what is near, nearest first (line 29)
       if (e.key.toLowerCase() === 'q') {
         const liveSession = usePlayerStore.getState().player.currentSession;
@@ -1576,9 +1345,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       feed('Channel closed. The beacon can wait.', 'plain');
       return;
     }
-    if (usePlayerStore.getState().cartWindowId) { usePlayerStore.getState().closeCartWindow(); return; }
-    setShowPack(false);
-    (document.activeElement as HTMLElement | null)?.blur?.();
+    if (usePlayerStore.getState().cartWindowId) usePlayerStore.getState().closeCartWindow();
   };
 
   /** A right-click on a thing in reach asks it directly, study included. */
@@ -1724,6 +1491,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}`}><RankMark rank={rank} scale={2} />{rank}</Chip>
+          <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
+            <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>
+          </span>
         </div>
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
         <Bar label="ENERGY" value={session.energy} max={50 + (player.attributes.endurance * 5)} tone="proof" text={`${Math.floor(session.energy)}`} />
@@ -1741,13 +1511,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       {/* The key help stands apart from the data (U21) */}
       <KeyHelp />
-
-      {/* The pack and the body (Wave 3.1 / 9.4), away from the hotbar and the feed */}
-      {showPack && (
-        <div style={{ position: 'absolute', bottom: 62, right: 16, zIndex: 150 }}>
-          <PackWindow session={session} />
-        </div>
-      )}
 
       {/* The one inspect card (line 29): hover, or Q to cycle */}
       {inspected && !menuPosition && (

@@ -4,10 +4,14 @@
  */
 
 import React, { useEffect } from 'react';
-import { FEED_LINE_MS, useFeed } from './ui/stores';
+import { FEED_LINE_MS, useFeed, useSheet } from './ui/stores';
+
+// With the character sheet open, the feed speaks from above it rather than over it.
+const ABOVE_THE_SHEET = 402;
 
 export const FeedView: React.FC = () => {
   const { lines, sweep } = useFeed();
+  const sheetOpen = useSheet(s => s.open);
 
   useEffect(() => {
     if (lines.length === 0) return;
@@ -17,7 +21,7 @@ export const FeedView: React.FC = () => {
 
   if (lines.length === 0) return null;
   return (
-    <div className="ws-ui ws-feed" style={{ position: 'fixed', left: 14, bottom: 14, zIndex: 400 }} aria-live="polite">
+    <div className="ws-ui ws-feed" style={{ position: 'fixed', left: 14, bottom: sheetOpen ? ABOVE_THE_SHEET : 14, zIndex: 400 }} aria-live="polite">
       {[...lines].reverse().map(l => (
         <div key={l.id} className={`ws-feed__line${l.tone !== 'plain' ? ` ws-feed__line--${l.tone}` : ''}`}>
           {l.text}

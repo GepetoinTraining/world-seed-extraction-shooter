@@ -70,6 +70,14 @@ export const useHotbar = create<{ active: EquipSlotId; setActive: (slot: EquipSl
   setActive: active => set({ active })
 }));
 
+// --- THE CHARACTER SHEET (line 76): open or not, wherever you are ---
+
+export const useSheet = create<{ open: boolean; toggle: () => void; close: () => void }>(set => ({
+  open: false,
+  toggle: () => set(s => ({ open: !s.open })),
+  close: () => set({ open: false })
+}));
+
 // --- THE MINT-WORLD DRAFT (line 58): it outlives the window it is written in ---
 
 export const WORLD_DRAFT_DEFAULTS = {

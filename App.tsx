@@ -13,7 +13,8 @@ import { HoldingsPanel } from './src/components/HoldingsPanel';
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
 import { ProgressionSystem } from './src/entities/player/systems/ProgressionSystem';
 import { Button, Chip, Kbd, Modal, RankMark } from './src/components/ui/kit';
-import { AppView, useAppView } from './src/components/ui/stores';
+import { AppView, useAppView, useSheet } from './src/components/ui/stores';
+import { CharacterSheet } from './src/components/CharacterSheet';
 import { HandsLayer } from './src/components/ui/hands';
 import { HoverLayer } from './src/components/ui/HoverLayer';
 import { isTypingTarget } from './src/logic/systems/FieldInput';
@@ -63,23 +64,24 @@ const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; 
   </Modal>
 );
 
-const VIEW_KEYS: Record<string, AppView> = { c: 'HUB', z: 'MISSIONS', b: 'BANK', h: 'HOLDINGS' };
+const DEV_TABS: { id: AppView; label: string }[] = [
+  { id: 'HUB', label: 'CITY' },
+  { id: 'MISSIONS', label: 'ZONES' },
+  { id: 'BANK', label: 'BANK' },
+  { id: 'HOLDINGS', label: 'HOLDINGS' },
+  { id: 'ADMIN', label: 'GENRES' }
+];
 
-/** D7: very little frame. One thin bar — where to go, who you are, what you hold —
- * and the walkable city is the navigation. Each place has its key. */
+/** D7: very little frame. One thin bar — who you are and what you hold. The walkable
+ * city is the navigation: its keepers lead to every other screen, and each has a way back. */
 const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void }> = ({ devMode, onDevMode }) => {
   const { player } = usePlayerStore();
   const { view, setView } = useAppView();
   const toggleConsole = useLogStore(s => s.toggle);
   const rank = ProgressionSystem.rankFromXp(player.rankXp ?? 0);
   const [systemOpen, setSystemOpen] = useState(false);
-
-  const tabs: { id: 'HUB' | 'MISSIONS' | 'BANK' | 'HOLDINGS'; label: string; key: string }[] = [
-    { id: 'HUB', label: 'CITY', key: 'C' },
-    { id: 'MISSIONS', label: 'ZONES', key: 'Z' },
-    { id: 'BANK', label: 'BANK', key: 'B' },
-    { id: 'HOLDINGS', label: 'HOLDINGS', key: 'H' }
-  ];
+  const sheetOpen = useSheet(s => s.open);
+  const toggleSheet = useSheet(s => s.toggle);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -88,9 +90,8 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
         onDevMode(!devMode);
         return;
       }
-      if (e.ctrlKey || e.altKey || e.metaKey || isTypingTarget(e.target) || document.querySelector('.ws-overlay')) return;
-      const to = VIEW_KEYS[e.key.toLowerCase()];
-      if (to) setView(to);
+      if (e.key !== 'Escape' || isTypingTarget(e.target) || document.querySelector('.ws-overlay')) return;
+      if (useAppView.getState().view !== 'HUB') setView('HUB');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -104,13 +105,8 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
         background: 'var(--ws-void-1)', borderBottom: '1px solid var(--ws-void-4)'
       }}
     >
-      <nav style={{ display: 'flex', gap: 2 }}>
-        {tabs.map(t => (
-          <Button key={t.id} tone={view === t.id ? 'signal' : 'quiet'} onClick={() => setView(t.id)} aria-current={view === t.id}>
-            <Kbd>{t.key}</Kbd> {t.label}
-          </Button>
-        ))}
-      </nav>
+      {view !== 'HUB' && <Button tone="signal" onClick={() => setView('HUB')}><Kbd>ESC</Kbd> BACK TO THE CITY</Button>}
+      <Button tone="quiet" aria-pressed={sheetOpen} onClick={toggleSheet}><Kbd>TAB</Kbd> CHARACTER</Button>
 
       <span style={{ flex: 1 }} />
 
@@ -121,7 +117,9 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
 
       {devMode && (
         <>
-          <Button tone={view === 'ADMIN' ? 'signal' : 'quiet'} onClick={() => setView('ADMIN')} aria-current={view === 'ADMIN'}>GENRES</Button>
+          {DEV_TABS.map(t => (
+            <Button key={t.id} tone={view === t.id ? 'signal' : 'quiet'} onClick={() => setView(t.id)} aria-current={view === t.id}>{t.label}</Button>
+          ))}
           <Button tone="quiet" onClick={toggleConsole} title="The machine talking to itself">CONSOLE <Kbd>~</Kbd></Button>
           <Chip title="Developer tools are on. Ctrl+Shift+D turns them off.">DEV</Chip>
         </>
@@ -216,6 +214,7 @@ const App: React.FC = () => {
         <SystemConsole />
         <FeedView />
         <ReceiptScreen />
+        <CharacterSheet />
         <HoverLayer />
         <HandsLayer />
       </div>
@@ -236,6 +235,7 @@ const App: React.FC = () => {
       <SystemConsole />
       <FeedView />
       <ReceiptScreen />
+      <CharacterSheet />
       <HoverLayer />
       <HandsLayer />
     </div>

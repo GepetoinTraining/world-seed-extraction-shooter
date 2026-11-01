@@ -48,7 +48,7 @@ import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '.
 import { usePlayerStore } from '../src/entities/player/store';
 import { useWorldStore } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { useFeed } from '../src/components/ui/stores';
+import { useAppView, useFeed, useSheet } from '../src/components/ui/stores';
 import { EntityType, IWorldEntity, ScanLevel, BiomeType } from '../src/entities/world/types';
 import { InventorySystem, GRID_H, GRID_W } from '../src/entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
@@ -148,6 +148,8 @@ beforeEach(() => {
   db.clear();
   localStorage.clear();
   useFeed.setState({ lines: [] });
+  useSheet.setState({ open: false });
+  useAppView.setState({ view: 'HUB' });
   useIdentityStore.setState({ certificate: CERT('uid_hands') } as any);
   store().initializeSession(CERT('uid_hands'), 'NOMAD');
   usePlayerStore.setState(s => ({
@@ -1086,7 +1088,7 @@ describe('line 76: one key, one sheet, field and city alike', () => {
         bank: {
           ...s.player.bank,
           stashTabs: [{ name: 'MAIN', items: [rock('at_home')] }],
-          universalSkills: { skill_felling_test: { id: 'skill_felling_test', level: 3, currentXp: 1 } as any }
+          universalSkills: { skill_identify_weapon: { id: 'skill_identify_weapon', level: 3, currentXp: 1, tags: ['study', 'intel'] } as any }
         }
       }
     }));

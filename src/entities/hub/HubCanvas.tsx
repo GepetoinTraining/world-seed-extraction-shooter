@@ -8,7 +8,6 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
-import { useWorldStore } from '../world/store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
 import { HUB_GENRE, composeHub, LotState, RawFacade, doorOf } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
@@ -78,15 +77,19 @@ const CastPortrait: React.FC<{ npcId: string }> = ({ npcId }) => {
 
 const HUB_WALK_TILES_PER_S = 3.0; // one world, one pace: the same speed as the field
 
+// A keeper can lead to a screen of its own. Coming back, you stand where you stood.
+let streetPos: { x: number; y: number } | null = null;
+
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'missions' };
+  | { kind: 'sell' } | { kind: 'repair' } | { kind: 'lore' };
 
 export const HubCanvas: React.FC = () => {
   const layout = useMemo(() => HubGenerator.generate(), []);
 
-  const posRef = useRef({ x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
-  const [playerTile, setPlayerTile] = useState(layout.spawnPoint);
+  const posRef = useRef(streetPos ?? { x: (layout.spawnPoint.x + 0.5) * TILE_SIZE, y: (layout.spawnPoint.y + 0.5) * TILE_SIZE });
+  const [playerTile, setPlayerTile] = useState({ x: Math.floor(posRef.current.x / TILE_SIZE), y: Math.floor(posRef.current.y / TILE_SIZE) });
+  useEffect(() => () => { streetPos = { ...posRef.current }; }, []);
   const [nearbyPOI, setNearbyPOI] = useState<IPOI | null>(null);
   const [activeNPC, setActiveNPC] = useState<INPCDefinition | null>(null);
   const [npcReply, setNpcReply] = useState<string | null>(null);
@@ -108,7 +111,6 @@ export const HubCanvas: React.FC = () => {
 
   const { player } = usePlayerStore();
   const { lots, rooms, buildJobs } = useHubStore();
-  const { refreshWorlds } = useWorldStore();
   const { setView } = useAppView();
   const pushFeed = useFeed(s => s.push);
 
@@ -390,7 +392,7 @@ export const HubCanvas: React.FC = () => {
         setActiveNPC(null); setNpcReply(null);
         if (effect.panel === 'shop') setPanel({ kind: 'shop', category: effect.category });
         else if (effect.panel === 'ledger') setView('BANK', 'ledger');
-        else if (effect.panel === 'missions') { refreshWorlds(); setPanel({ kind: 'missions' }); }
+        else if (effect.panel === 'missions') setView('MISSIONS');
         else setPanel({ kind: effect.panel });
         return;
       case 'deploy': {
@@ -711,8 +713,8 @@ export const HubCanvas: React.FC = () => {
       {/* Controls Hint */}
       <div style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100 }} className="ws-dim ws-small">
         {insideLot
-          ? <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> work · walk the doorway to leave</>
-          : <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact</>}
+          ? <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> work · <Kbd>TAB</Kbd> sheet · walk the doorway to leave</>
+          : <><Kbd>WASD</Kbd> move · <Kbd>E</Kbd> interact · <Kbd>TAB</Kbd> sheet</>}
       </div>
 
       {/* WAVE 10.3: THE WORKS — building and placing, in the room, by the owner */}
@@ -758,6 +760,7 @@ export const HubCanvas: React.FC = () => {
               <Button tone="quiet" disabled={!nearPlacement} onClick={() => void reclaimNear()}>
                 RECLAIM {nearPlacement ? nearPlacement.item.name.toUpperCase() : 'IN REACH'}
               </Button>
+              <Button tone="quiet" onClick={() => setView('HOLDINGS')}>THE DEEDS</Button>
 
               {myPendingJobs.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -821,7 +824,6 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'sell' && <SellModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'repair' && <RepairModal onClose={() => setPanel(null)} />}
       {panel?.kind === 'lore' && <LoreModal onClose={() => setPanel(null)} />}
-      {panel?.kind === 'missions' && <MissionsModal onClose={() => setPanel(null)} />}
     </div>
   );
 };
@@ -1184,38 +1186,6 @@ const LoreModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           ))}
         </div>
       )}
-    </Modal>
-  );
-};
-
-const MissionsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { availableWorlds } = useWorldStore();
-  const pushFeed = useFeed(s => s.push);
-
-  return (
-    <Modal title="EXTRACTION ZONES — THE CONDUIT" onClose={onClose} width={560}>
-      <div className="ws-list">
-        {availableWorlds.map(world => (
-          <div key={world.id} className="ws-row">
-            <span style={{ minWidth: 0 }}>
-              <span style={{ display: 'block' }} className="ws-bright">{world.name.toUpperCase()}</span>
-              <span className="ws-dim ws-small">{world.size}×{world.size} sectors · {world.playerCount} agents · difficulty {world.difficulty}</span>
-            </span>
-            <Button
-              tone={world.isDebug ? 'quiet' : 'signal'}
-              disabled={world.retired}
-              title={world.retired ? 'Surveyed on an older grid. Its record stands, but it can no longer be walked.' : undefined}
-              onClick={async () => {
-                const res = await deployToWorld(world.id);
-                if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
-                else onClose();
-              }}
-            >
-              DEPLOY
-            </Button>
-          </div>
-        ))}
-      </div>
     </Modal>
   );
 };
