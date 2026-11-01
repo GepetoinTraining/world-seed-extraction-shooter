@@ -238,9 +238,9 @@ The record, including what was not built, is in `PLAN.md` ("The magic + content 
 
 The record, including what was not built, is in `PLAN.md` ("The world clock — the record"). `WorldClock` reads a certificate and the time; `SurveySystem` holds what a character scanned; `RestSystem` and `RestDoor` make a rest take real time. Its bars are in `tests/worldclock.test.ts`.
 
-## Your pass: the trees and the scan pass (once Pedro approves the clock)
+## Your pass: a stream in the fan-out (once Pedro approves the clock)
 
-Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The living worlds program", and D60–D83 first. Lines 105–108. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
+Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The fan-out", "The living worlds program", and D60–D85 first. Build only your stream's lines and files, and report to the coordinator rather than editing this file or the plan. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
 
 ## Later: the attributes pass (after creatures that act)
 

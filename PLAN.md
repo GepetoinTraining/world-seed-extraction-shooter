@@ -267,7 +267,7 @@ Planned 2026-10-31, after checking each leg against the code. Each leg gets its 
 
 **Order:** done through the magic + content layer. Next, by "The living worlds program" below: the world clock → the trees and the scan pass → creatures that act → the attributes pass → character creation with the deed → 11 the hub remake → 11C NPC adventurers → 12 The Second True Test → 13 the served runtime. (11B is absorbed into 10D/10E.)
 
-**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. The magic + content layer (D48) is built and merged on Pedro's word, 2026-11-01. The world clock, the first leg of "The living worlds program", is built on `claude/world-clock` and awaits Pedro. Next: the trees and the scan pass.
+**Where it stands (2026-10-31):** 8 through 10E are built, committed and approved. The raw materials leg (D23, placed first by Pedro, 2026-10-31) is built, committed and approved. The technology web and auto skill (D27, moved ahead of the playtest fixes by Pedro, 2026-10-31) is built, committed and approved. The stable database and the usability pass are built, approved and merged. Pedro has played, and `PLAYTEST_LEDGER.md` holds what was found. The magic + content layer (D48) is built and merged on Pedro's word, 2026-11-01. The world clock, the first leg of "The living worlds program", is built on `claude/world-clock` and awaits Pedro. Next: "The fan-out", Wave A.
 
 **Why this order:**
 - Motion comes first because it changes the sprites the interface will show.
@@ -791,11 +791,13 @@ Today: a codename, one of four archetypes, a mint. Pedro's own design, 2026-06-1
 | D76 | 11C | NPCs become adventurers | ✅ DECIDED (Pedro, 2026-11-01): "When a hub gets to 3 chunks (2 expansions after the base), we need the actual npcs becoming adventurers and diving as AI with the player (setting up for the online before online)." Everything but the choice is deterministic: they have goals and set out to accomplish them. Pattern: `D:\-ttrpg-engine\engine\npc-agenda.ts` (`tickAgenda`: needs decay, work and belonging fulfil them, the most pressing need sets the goal; `deriveEconomicRole`) and `mm-npc-agenda.ts` (a daily fold). Pedro's "how they choose their daily energy commit" was not found under that name; ask where it lives |
 | D77 | World clock | A person still inside when the gate goes down | ✅ DECIDED (Pedro, 2026-11-01): "closing a gate needs a visual warning and time, if the player gets locked inside they die and lose that extraction, for that I'm planning to add an item type and magic that allows a player to spend a lot of resources to open a forced out." The warning is by shape and position, never hue alone. The forced exit is its own item type and magic, at a high cost: planned, built after the clock, and the law refuses its effect until something reads it. Note: `collapseTime` today is decoration; `store.ts` recomputes it from now on every load and nothing ends a session by it, so this has never been felt |
 | D78 | World clock | On and off | ✅ DECIDED (Pedro, 2026-11-01): "90 minutes and another 90 of off time, make it phased so a player needs to cycle between worlds, they can't keep farming the same world all the time, that's why the online server is important for players wanting to build their own, if theirs is off they need somewhere to find open worlds." Confirmed at the leg's start: up and scan together are the on time, and an equal off follows at every size. Small 1h + 30m, then 90m off. Medium 4h + 1h, then 5h off. Large 12h + 4h, then 16h off. The cycle runs up, off, scan: the gate opens at mint because alpha has nothing to generate, and a world regenerates when it starts to boot. A world's day is half its up time (Pedro's pick), so a full visit sees two days and every opening is at dawn. Worlds stagger by when they were minted |
-| D79 | World clock | What a person's rest keeps | ✅ DECIDED (Pedro, 2026-11-01): "yup, and rest, when wall clock happens, is the reason to have multiple characters, that's the characters own loop and downtime. just like a world, so we can batch call the LLMs for decisions and never overload the database once live." A rest keeps a character's energy (D51) and settling (D50). The Director, growth and what the door writes move to the world's window. A rest takes real time: a character is down while another plays, and each character's downtime is its own batch window. How long, Pedro at the leg's start: "energy is a resource that we're going to tie to levels and a stat ... a character can train up and focus on energy, have a LONG ASS RUNTIME and when they rest also a long rest. like oil rig workers in the real world." So a rest takes time for the energy that was spent (`REST_MS_PER_ENERGY`, 90 seconds each, a guess until Wave 12): 55 spent is about 82 minutes, and a character trained for energy rests longer |
+| D79 | World clock | What a person's rest keeps | ✅ DECIDED (Pedro, 2026-11-01): "yup, and rest, when wall clock happens, is the reason to have multiple characters, that's the characters own loop and downtime. just like a world, so we can batch call the LLMs for decisions and never overload the database once live." A rest keeps a character's energy (D51) and settling (D50). The Director, growth and what the door writes move to the world's window. A rest takes real time: a character is down while another plays, and each character's downtime is its own batch window. How long, Pedro at the leg's start: "energy is a resource that we're going to tie to levels and a stat ... a character can train up and focus on energy, have a LONG ASS RUNTIME and when they rest also a long rest. like oil rig workers in the real world." And after playing the first number, 30 minutes for 20 energy: "too long, we need it to be faster from the initial energy. probably a log scale." So a rest takes ln(1 + energy spent) squared, in minutes (`REST_CURVE_UNIT_MS`, a guess until Wave 12): 3 spent is about 2 minutes, 20 about 9, 55 about 16, 500 about 39, so a character trained for energy still rests longest |
 | D80 | Creation | What a deed fixes, and the biggest world | ✅ DECIDED (Pedro, 2026-11-01): a deed names a size, the free one is small, the sky is chosen at the mint, and a pocket world runs the same cadence as any other. "there's one size above large that we haven't set up yet, a world that's 7 days on and 7 days off, the biggest world, which allows for hubs to be founded in the world and rest to happen there (think of black zones in albion)." So the hub remake's manifest must place a hub in a world, not only in the Nexus's city. Open for that leg: its sector count, its scan time, and what happens to a hub and the people in it during the 7 days off |
 | D81 | Final shape | What the server is, and whose a character is | ✅ DECIDED (Pedro, 2026-11-01): "the hub is the always online server, and a player serving to their friends exposes their hub to be logged in, a character doesn't belong to a hub, they belong to a player, just like sword art online post kayaba giving kirito the seed, that's the whole concept and hence the name. the worlds then run on our compute for the ones we provide and player compute for theirs, and goods and services can be exchanged assync or sync using the main online hub or by setting up conversations between players." Against the code: Wave 6's `AvatarExport` already makes a character one file a person owns. Binding from now on: nothing about a character may be stored as if it lived in one hub |
 | D82 | Served runtime | What a hub honours from another | OPEN, raised by the builder. A character signs its own record with its own key, and a person can run their own hub, so someone can sign wealth no world ever produced and carry it to the main hub. `Treasury` and the gold audit hold inside one hub only. Recommendation: goods and gold carry their origin and proof, each hub decides what it honours, and the main hub never takes a self-served hub's word for what was minted. Decide before the market and before anything crosses hubs |
 | D83 | Attributes pass, hub remake | Rank and level are two things | ✅ DECIDED (Pedro, 2026-11-01): "right now you're having the character level it's rank, the rank is set by the guild and hard quests to be passed on, the levels reset by rank but there's no stat hit." Against the code: `ProgressionSystem.rankFromXp` makes rank a function of experience today. To build: levels from experience, rank granted by the guild for hard quests, levels reset at each rank, stats kept. Energy ties to levels and a stat. The guild half waits for the hub remake |
+| D84 | Attributes pass | Time is the real resource | ✅ DECIDED (Pedro, 2026-11-01): "the rate of XP for gaining skills ALSO needs to go down by 150% probably, we're levelling too fast for anything to even matter, and this is a 'you can trade your character away' type of game, so time investment IS the real human resource spent (of course game knowledge counts, that's what makes it faster)." Reading to confirm: skills take 2.5 times as long to gain (`RUNG_XP` today is 60, 180, 420). "Add this for us to check the chance of things changing": a tuning readout shows, for a world, the chance a body changes at each regeneration, and how long skills and levels take, so these numbers get looked at rather than guessed |
+| D85 | Recon | Recon has its own view, and a map is an item | ✅ DECIDED (Pedro, 2026-11-01): "the recon system needs it's own view, and the mapping data is literally itemizable, if a player becomes scribe and crafts (further along, we haven't finished crafting yet) a map they can share the scan data for a world." Working shape: a scribe writes what their character scanned into a map item, at the scribe's table (`TemplateSystem`'s paper-and-ink path). Reading it adds those sectors to the reader's own survey, at the regeneration they were scanned in, so a map goes stale exactly as a scan does, and a fresh map is worth more |
 
 **The reshape (D53–D58, 2026-11-01), which replaces the order below where they differ:** R6 and Layer 0 → the door on Claude, with a provider seam → **the theme: pack, law, formula, one registry, the tables out of `src`, the mint's conversation** → Layer 1 → Layer 2 with the Director and R4 → rest, study and minted skills → Layer 4 with the per-hub unlock → Layer 3. R5's lens goes with the tables it lives in; its rule, that every definition has a slot that takes it, becomes pack law.
 
@@ -846,6 +848,44 @@ The world stops being static. A world runs on its own clock, what lives in it ch
 
 **The name (D81).** The Seed is what Kayaba handed Kirito: a thing anyone can run a world from. The hub is the server, the world runs on whoever's compute provides it, and the character is the player's own.
 
+### THE FAN-OUT (planned 2026-11-01, replaces the serial order above where they differ; Pedro's word: "build what can be built in tandem, and you hold your context for checking")
+
+Guardrail 4 said gates are serial because jumping ahead makes logic without systems. That still holds between waves. Inside a wave, streams run together only because their files do not overlap and none needs another's result.
+
+**How it runs.** One coordinator session holds the whole plan. Each stream is its own session in its own worktree, on its own branch, cut from the same base, with its own database file and its own port (`launch.json` has 3100–3107).
+- **Bars first, as always.** Each stream adds its own test file, registered before its build.
+- **The coordinator answers the decisions before launch**, so a stream is not left guessing. A stream that hits a new one stops and says so.
+- **Streams do not edit `PLAN.md` or `BUILDERS_LOG.md`.** They report what was built, played and not built. The coordinator writes the record, so those files never conflict.
+- **`goldens.ts`, `firstTheme.ts` and `FIRST_THEME_VECTORS` belong to the trees stream alone.** Nobody else moves a vector.
+- **The coordinator checks every stream:** reads the whole diff against its lines, runs the full suite on it, and plays what it claims. A stream's report is a claim, not proof.
+- **Merging is serial and goes through Pedro.** After each merge the next stream is brought up to date and rechecked. The whole wave is played together before the next wave starts.
+
+**Wave A, five streams, each needing only the clock:**
+
+| Stream | Lines | Owns | Touches lightly |
+|---|---|---|---|
+| A1 Hub manifest (D74) | part of 114 | `HubGenerator`, the city's layout and lots, `HubCanvas` | city byte-hash bars, moved on purpose; lots already owned stay owned |
+| A2 Experience, levels, attributes (D52, D83, D84) | 94, the level half of 127 | `StatSystem`, `ProgressionSystem`, `WebSystem`'s rates, `killRewards`, `CharacterSheet` | the rank chip in `WorldCanvas`, `player/store` |
+| A3 Recon view and maps (D85) | 124, 125 | a new recon component moved out of `WorldCanvas`, `SurveySystem`, `MissionControl`, the map item at the scribe's table | `TemplateSystem` |
+| A4 The trees (D60, D61, D63) | 105–107 | `ThemeTypes`, `ThemeLaw`, `ThemeCompiler`, `firstTheme`, `goldens`, `Director`, a new lines module, `creature()` in the atoms, the pack half of `prompts` | one line in `WorldGenerator` |
+| A5 Senses and the readout (N6, D84) | 109, 126 | `MobAI`'s noticing, sight and response; the tuning readout, a new file | none |
+
+Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts` (additions only). So A3 merges first, then A2. `Director` is A4's, and A5 reads its chance through a function A4 keeps.
+
+**Wave B, once A is merged:**
+
+| Stream | Lines | Needs | Owns |
+|---|---|---|---|
+| B1 The scan pass (D69) | 108 | A4 | `RestSystem`'s growth, `RestDoor`, `server/intelligence`, a new window pass |
+| B2 Gender, population, movement (D64, D66) | 110–112 | A4, A5 | `WorldGenerator`, a new population module, `MobAI` herding |
+| B3 Character creation and the deed (D35–D37, D72, D80) | 113 | A2 | `IdentityGate`, `WorldCreator`, `DeedSystem` |
+| B4 Guildhall, tavern, houses (D73, D75, rank from the guild in D83) | 114, 115, the rank half of 127 | A1, A2 | `hub/store`, `dialogue`, the guild |
+| B5 The forced exit (D77) | 119's last clause | A4's vocabulary | `EffectSystem`, the item type |
+
+**Wave C, once B is merged:** C1 food and land (farms, grove keeping, herding at home, cooking; needs B2, B4). C2 NPC adventurers (D76, line 116; needs B2, B4). C3 settling by trade (D62; needs B2).
+
+**Serial, on purpose:** Wave 12, the honest test, in one sitting. Then Wave 13, the served runtime (D65, D70, D82).
+
 ### THE WORLD CLOCK — THE RECORD (built 2026-11-01, on `claude/world-clock`, awaiting Pedro)
 
 **Built and played (test avatar LEDGER, `localhost:3108`, with the page's clock moved forward by script to reach later phases):**
@@ -854,7 +894,7 @@ The world stops being static. A world runs on its own clock, what lives in it ch
 - **Recon during a boot.** Played: RECON replaces DEPLOY, there is no drop, and the time left stays on screen.
 - **Scanning decays (D68).** What a character scanned is now saved on the character, which it never was: scans used to vanish with the map. Played: after a regeneration the sector read land only, a first click showed "LAST READ 1 regeneration(s) ago" with the old counts, and rescanning showed "That have changed 0 → 22".
 - **The Director runs on the clock.** The 22 above are real: a world catches up on opening, and a rest no longer turns it.
-- **A real-time rest (D79).** Played: 20 energy spent took 30:00, the bar shows AT REST, deploy is refused with the reason, it survived a reload, and waking restored energy.
+- **A real-time rest (D79).** Played on the first, linear rate: 20 energy spent took 30:00, the bar shows AT REST, deploy is refused with the reason, it survived a reload, and waking restored energy.
 - **Night.** Played: the field darkens from the screen's edge at night, and a chip says the sky. Creatures notice from further away in the dark, by bar.
 - **Found and fixed:** a deep scan's manifest printed raw ids such as `mob_..._foreclosure_engine`, which broke D60. The HUD's energy bar used an old formula instead of `StatSystem`.
 
@@ -862,7 +902,7 @@ The world stops being static. A world runs on its own clock, what lives in it ch
 
 **Taken by the builder:**
 - The biggest world's anchor is 128 sectors, 5 days up, 2 of scan, 7 off. The mint does not offer it yet, because hubs cannot be founded in a world until the hub remake.
-- A closing warning starts at the last sixth of up time, and its last tenth is louder. Light, how far dark carries notice (half again), and 90 seconds per energy are guesses until Wave 12.
+- A closing warning starts at the last sixth of up time, and its last tenth is louder. Light, how far dark carries notice (half again), and the rest curve are guesses until Wave 12.
 - A character at rest can still walk the hub. It cannot deploy.
 - A person inside at close loses by the world's own death penalty, so a world signed with NONE costs nothing.
 
@@ -1035,6 +1075,10 @@ For the living worlds program, proposed 2026-11-01, not yet agreed:
 121. In the biggest world, a hub can be founded and a rest can happen there
 122. A character logs in to any hub as the same character, and nothing about them lives in one hub
 123. A hub never takes another hub's word for what was minted; goods and gold show where they came from
+124. Recon has its own view, reached without entering a world's field
+125. A scribe can write scan data into a map item, and reading one adds it to the reader's survey, as old as it was when scanned
+126. A tuning readout shows the chance of a body changing at each regeneration, and how long skills and levels take
+127. Gaining a skill takes about 2.5 times as long as it did, and levels and rank are separate: rank comes from the guild, levels reset at each rank, and stats stay
 
 For the playtest fixes, part of the usability pass, registered in the same file, approved with it:
 

@@ -320,17 +320,21 @@ describe("line 120: a character's rest takes real time, scaled by what that char
     return { ...p, currentSession: undefined, energyToday: undefined, rest: undefined, ...over } as IPlayer;
   };
 
-  it('a rest takes time for the energy that was spent', () => {
+  it('a rest takes time for the energy that was spent, on a log curve: quick from the start', () => {
     const full = StatSystem.maxEnergy(base().attributes, base().equipment);
+    const spent = (n: number) => RestSystem.restMs(base({ energyToday: full - n }));
     expect(RestSystem.restMs(base())).toBe(0);
-    expect(RestSystem.restMs(base({ energyToday: full / 2 }))).toBe(RestSystem.restMs(base({ energyToday: 0 })) / 2);
-    expect(RestSystem.restMs(base({ energyToday: 0 }))).toBeGreaterThan(0);
+    expect(spent(3)).toBeLessThan(2 * M);
+    expect(spent(20)).toBeLessThan(10 * M);
+    expect(spent(20)).toBeGreaterThan(spent(3));
+    // Each further point costs less than the one before it
+    expect(spent(20) - spent(10)).toBeLessThan(spent(10) - spent(0));
   });
 
   it('a character trained for a long shift has a long rest', () => {
     const p = base({ energyToday: 0 });
-    const hardy = { ...p, attributes: { ...p.attributes, endurance: p.attributes.endurance + 20 } };
-    expect(RestSystem.restMs(hardy)).toBeGreaterThan(RestSystem.restMs(p));
+    const hardy = { ...p, attributes: { ...p.attributes, endurance: p.attributes.endurance + 90 } };
+    expect(RestSystem.restMs(hardy)).toBeGreaterThan(RestSystem.restMs(p) * 1.5);
   });
 
   it('a rest begins, holds the character, and refuses a second', () => {
