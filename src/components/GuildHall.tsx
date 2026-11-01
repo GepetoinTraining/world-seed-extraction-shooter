@@ -79,8 +79,8 @@ const Board: React.FC = () => {
                 {!ready
                   ? `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`
                   : affordable
-                    ? `${resident.name} pays ${pay.toLocaleString()} G for these.`
-                    : `These come to ${pay.toLocaleString()} G, and ${resident.name} holds ${holds.toLocaleString()} G. It waits.`}
+                    ? `${askerName} pays ${pay.toLocaleString()} G for these.`
+                    : `These come to ${pay.toLocaleString()} G, and ${askerName} holds ${holds.toLocaleString()} G. It waits.`}
               </span>
               <ArmedButton
                 tone="quiet"

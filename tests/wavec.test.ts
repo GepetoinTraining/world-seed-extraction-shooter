@@ -52,7 +52,8 @@ describe('C2 and C3: the ladder reads a person\'s own coin', () => {
   const living = residentUpkeepPerDay(UniversalRank.D);
   it('nobody comes with more than they need, and more than anyone brings is more than they need', () => {
     for (let i = 0; i < 200; i++) expect(moreThanTheyNeed(walletBrought(`p${i}`, UniversalRank.D), UniversalRank.D)).toBe(false);
-    expect(moreThanTheyNeed(living * 15, UniversalRank.D)).toBe(true);
+    expect(moreThanTheyNeed(living * 57, UniversalRank.D)).toBe(true);
+    expect(moreThanTheyNeed(living * 56, UniversalRank.D)).toBe(false);
   });
   it('a person in the city is asked about by what is in their wallet', () => {
     const talk = source('src/entities/interaction/talkStore.ts');

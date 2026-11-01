@@ -1083,11 +1083,15 @@ describe("the city center's keepers are the tech web", () => {
 // LINE 150: QUESTS AND BUILDINGS
 // ---------------------------------------------------------------------------
 
+// C3: a lodger's own want goes up on arrival, and a want is paid from their wallet. These bars are about the one a talk posts.
+const onTheBoard = (id: string) => useHubStore.setState(st => ({ wallets: { ...st.wallets, [id]: 100000 }, guild: { ...st.guild, quests: st.guild.quests.filter(q => q.residentId !== id) } }));
+
 describe('line 150: a person posts a quest and asks for a building', () => {
   const quest = { tag: 'building', size: 'small', text: 'Could use some timber for the back room.' };
 
   it('the words post a quest on the Hall\'s board; the formula writes how many and what it pays', async () => {
     const resident = await residentNamed();
+    onTheBoard(resident.id);
     vi.spyOn(IntelligenceClient, 'npcGoal').mockImplementation(async (_id: string, ask: any) => ({ status: 'OK', data: goalWords({ need: ask.need, quest }) }) as any);
     answering(words());
     await talk().open({ kind: 'CITY', npcId: resident.id });
@@ -1118,8 +1122,23 @@ describe('line 150: a person posts a quest and asks for a building', () => {
     expect(hub().guild.quests.filter(q => q.residentId === resident.id && q.state === 'OPEN')).toHaveLength(1);
   });
 
+  it('a keeper\'s quest comes out of their own wallet, and waits past what it holds', async () => {
+    await hub().postTalkQuest('npc_armor_vendor', 'A Keeper', UniversalRank.F, 'GIFT', { ...quest, size: 'small' } as any);
+    const posted = hub().guild.quests.find(q => q.residentId === 'npc_armor_vendor')!;
+    const given = Array.from({ length: posted.count }, () => thing());
+    usePlayerStore.setState(st => ({ player: { ...st.player, bank: { ...st.player.bank, stashTabs: st.player.bank.stashTabs.map((t, n) => n === 0 ? { ...t, items: [...t.items, ...given] } : t) } } }));
+    useHubStore.setState(st => ({ wallets: { ...st.wallets, npc_armor_vendor: 0 } }));
+    const refused = await hub().fulfilQuest(posted.id, given.map(g => g.id));
+    expect(refused.ok).toBe(false);
+    expect(refused.reason).toContain('It waits');
+    useHubStore.setState(st => ({ wallets: { ...st.wallets, npc_armor_vendor: 100000 } }));
+    expect(await hub().fulfilQuest(posted.id, given.map(g => g.id))).toEqual({ ok: true });
+    expect(hub().wallets.npc_armor_vendor).toBeLessThan(100000);
+  });
+
   it('a resident\'s quest is met through the Hall\'s own door', async () => {
     const resident = await residentNamed();
+    onTheBoard(resident.id);
     await hub().postTalkQuest(resident.id, resident.name, UniversalRank.F, 'GIFT', { ...quest, size: 'small' } as any);
     const posted = hub().guild.quests.find(q => q.residentId === resident.id)!;
     const given = Array.from({ length: posted.count }, () => thing());

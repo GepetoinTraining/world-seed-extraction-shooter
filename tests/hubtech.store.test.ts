@@ -99,6 +99,8 @@ const home = async (entityId: string): Promise<IResident> => {
   give([bond]);
   expect(await hub().redeemBond(bond.id)).toEqual({ ok: true });
   const resident = hub().guild.residents.find(r => r.entityId === entityId)!;
+  // D115: no ground until a human has seen to them (tests/immigrants.test.ts holds that). These bars start after it.
+  useHubStore.setState(s => ({ guild: { ...s.guild, quests: s.guild.quests.filter(q => q.residentId !== resident.id), residents: s.guild.residents.map(r => r.id === resident.id ? { ...r, wantsMet: 1 } : r) } }));
   const lot = lots()[0];
   expect(await hub().guildBuyLot(resident.id, lot.id)).toEqual({ ok: true });
   const fresh = hub().guild.residents.find(r => r.id === resident.id)!;
