@@ -37,11 +37,11 @@ export const CreationDoor = {
   },
 
   /** He sets up the class. Whatever comes back, however late, this answers, and fate deals what he does not. */
-  async seekKami(messages: IDoorMessage[], patienceMs = DOOR_PATIENCE_MS): Promise<{ words: IKamiWords; by: 'DOOR' | 'FLOOR'; usage?: IDoorUsage; reason?: string }> {
+  async seekKami(messages: IDoorMessage[], patienceMs = DOOR_PATIENCE_MS, persona?: string): Promise<{ words: IKamiWords; by: 'DOOR' | 'FLOOR'; usage?: IDoorUsage; reason?: string }> {
     const floor = CreationSystem.fateFloor(messages);
     const ask = CreationSystem.kamiAsk();
     const out = await Promise.race([
-      IntelligenceClient.setKami<IKamiWords>(messages, ask),
+      IntelligenceClient.setKami<IKamiWords>(messages, ask, persona),
       new Promise<{ status: 'OUTAGE'; data?: undefined; usage?: undefined; reason: string }>(resolve => setTimeout(() => resolve({ status: 'OUTAGE', reason: 'He took too long.' }), patienceMs))
     ]);
     if (out.status !== 'OK' || !out.data) return { words: floor, by: 'FLOOR', reason: out.reason ?? out.status };

@@ -6,7 +6,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { IntelligenceDoor, type IDoorMessage } from './door';
-import { buildCreationRequest, buildKamiSetRequest, buildKamiTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest } from './prompts';
+import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest } from './prompts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -28,7 +28,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
 
-/** `path` is what follows the mount: /status, /talk, /theme, /creation, /kami/talk, /kami/set, /rest/file, /rest/collect. */
+/** `path` is what follows the mount: /status, /talk, /theme, /creation, /kami/persona, /kami/talk, /kami/set, /rest/file, /rest/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
@@ -59,14 +59,16 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
         res.setHeader('Cache-Control', 'no-store');
         const gone = new AbortController();
         res.on('close', () => gone.abort());
-        const out = await door.askStream(buildKamiTalkRequest(conversation), text => {
+        const out = await door.askStream(buildKamiTalkRequest(conversation, body.persona), text => {
           if (!gone.signal.aborted) res.write(`${JSON.stringify({ text })}\n`);
         }, gone.signal);
         res.end(`${JSON.stringify({ done: true, status: out.status, usage: out.usage, reason: out.reason })}\n`);
         return;
       }
       case '/kami/set':
-        return send(res, 200, await door.ask(buildKamiSetRequest(conversation, body.ask ?? {})));
+        return send(res, 200, await door.ask(buildKamiSetRequest(conversation, body.ask ?? {}, body.persona)));
+      case '/kami/persona':
+        return send(res, 200, await door.ask(buildKamiPersonaRequest(String(body.seed ?? ''))));
       case '/rest/file':
         return send(res, 200, await door.fileRest(String(body.id ?? 'rest'), buildRestRequest(body.queue ?? {}, body.theme ?? {})));
       case '/rest/collect':

@@ -18,11 +18,13 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   creation: 'claude-haiku-5-5',
   // Pedro: fate gambler "calls up a stream style conversation with sonnet and you talk with kami itself"
   kami_talk: 'claude-sonnet-5-5',
-  kami_set: 'claude-sonnet-5-5'
+  kami_set: 'claude-sonnet-5-5',
+  // Pedro: "you send that seed to a random ass haiku and ask for a personality based on vibes"
+  kami_persona: 'claude-haiku-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {
@@ -35,7 +37,7 @@ const CHARS_PER_TOKEN = 3;
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 /** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead. */
-const NO_FALLBACK: readonly DoorKind[] = ['creation'];
+const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona'];
 
 const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boolean): IDoorUsage | undefined => {
   if (!usage) return undefined;

@@ -105,6 +105,10 @@ You have talked with a person who chose fate, and you now set up who they are, f
 
 You never write numbers.`;
 
+const KAMI_PERSONA_SYSTEM = `You are given a string of characters, a hub's seed. It means nothing. Read it anyway, by vibes, the way someone reads tea leaves: its rhythm, what repeats, how it sits.
+
+There is one god behind every hub, and he is the same everywhere: an old gambler, amused, unhurried, who always pays what he owes. Seeds differ only by noise, so this one differs only slightly. Say how: a habit, a small superstition, what he is tired of, how he holds his dice. Do not rebuild him. Under fifty words, plain prose, third person, starting with "This one". No exclamation marks, no numbers, no name, and do not mention the string.`;
+
 const str = { type: 'string' };
 const themeProperty = (key: string) => (THEME_SCHEMA.properties as Record<string, unknown>)[key];
 
@@ -215,15 +219,24 @@ export function buildCreationRequest(ask: unknown): IDoorRequest {
 /** The person arriving always opens the conversation, so Kami can speak first. */
 const KAMI_ARRIVAL: IDoorMessage = { role: 'user', content: '(A person sits down across from you. They have not said anything yet.)' };
 
-export function buildKamiTalkRequest(messages: IDoorMessage[]): IDoorRequest {
-  return { kind: 'kami_talk', system: KAMI_TALK_SYSTEM, maxTokens: 2000, messages: [KAMI_ARRIVAL, ...messages] };
+/** Frozen for a hub, so a hub's conversations can share a cache. */
+const asThisHubsKami = (system: string, persona?: unknown) =>
+  (typeof persona === 'string' && persona.trim() ? `${system}\n\nEvery hub has its own seed, and you differ slightly in each. In this hub: ${persona.trim()}` : system);
+
+/** A hub's seed, read for vibes. What comes back stands before `KamiPersona.judge`. */
+export function buildKamiPersonaRequest(seed: string): IDoorRequest {
+  return { kind: 'kami_persona', system: KAMI_PERSONA_SYSTEM, maxTokens: 1000, messages: [{ role: 'user', content: seed }] };
+}
+
+export function buildKamiTalkRequest(messages: IDoorMessage[], persona?: unknown): IDoorRequest {
+  return { kind: 'kami_talk', system: asThisHubsKami(KAMI_TALK_SYSTEM, persona), maxTokens: 2000, messages: [KAMI_ARRIVAL, ...messages] };
 }
 
 /** He sets up the class. What comes back stands before `CreationSystem.judgeKami`, and a broken answer falls to fate. */
-export function buildKamiSetRequest(messages: IDoorMessage[], ask: unknown): IDoorRequest {
+export function buildKamiSetRequest(messages: IDoorMessage[], ask: unknown, persona?: unknown): IDoorRequest {
   const conversation = messages.map(m => `${m.role === 'user' ? 'THEM' : 'YOU'}: ${m.content}`).join('\n');
   return {
-    kind: 'kami_set', system: KAMI_SET_SYSTEM, schema: KAMI_SCHEMA, maxTokens: 4000,
+    kind: 'kami_set', system: asThisHubsKami(KAMI_SET_SYSTEM, persona), schema: KAMI_SCHEMA, maxTokens: 4000,
     messages: [{ role: 'user', content: `What was said:\n${conversation || '(nothing was said)'}\n\nWhat you choose from:\n${JSON.stringify(ask)}` }]
   };
 }

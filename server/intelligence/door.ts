@@ -10,7 +10,7 @@
  * the caller's work stays queued and the game goes on.
  */
 
-export type DoorKind = 'talk' | 'theme' | 'rest' | 'creation' | 'kami_talk' | 'kami_set';
+export type DoorKind = 'talk' | 'theme' | 'rest' | 'creation' | 'kami_talk' | 'kami_set' | 'kami_persona';
 
 export interface IDoorUsage {
   model: string;

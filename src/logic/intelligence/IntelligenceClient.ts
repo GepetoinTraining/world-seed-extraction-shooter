@@ -41,10 +41,11 @@ export const IntelligenceClient = {
   talk: (messages: IDoorMessage[], draft: Record<string, unknown>) => post('/talk', { messages, draft }),
   writeTheme: <T>(messages: IDoorMessage[], draft: Record<string, unknown>) => post<T>('/theme', { messages, draft }),
   grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
-  setKami: <T>(messages: IDoorMessage[], ask: unknown) => post<T>('/kami/set', { messages, ask }),
+  setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
+  writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),
 
   /** A conversation as it is written. Every end is an outcome, and a stream that just stops did not finish. */
-  async talkKami(messages: IDoorMessage[], onText: (text: string) => void, signal?: AbortSignal): Promise<IDoorOutcome> {
+  async talkKami(messages: IDoorMessage[], onText: (text: string) => void, signal?: AbortSignal, persona?: string): Promise<IDoorOutcome> {
     let ended: IDoorOutcome | null = null;
     const readLine = (line: string) => {
       if (!line.trim()) return;
@@ -53,7 +54,7 @@ export const IntelligenceClient = {
       else if (piece.text) onText(piece.text);
     };
     try {
-      const res = await fetch(`${MOUNT}/kami/talk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }), signal });
+      const res = await fetch(`${MOUNT}/kami/talk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, persona }), signal });
       const reader = res.body?.getReader();
       if (!reader) {
         (await res.text()).split('\n').forEach(readLine);

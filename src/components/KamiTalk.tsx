@@ -6,11 +6,15 @@
  * everything else (D36). What was said lives in the draft, so a stray click costs nothing
  * and nobody pays for the same turn twice. Nothing waits on him (D35): a person can press on
  * while he is mid-sentence, and with no key or no answer fate deals what he would have set.
+ *
+ * He is the Seed, and each hub has its own: before he speaks, the chosen hub's seed has been
+ * read for vibes (KamiPersona), so he differs slightly from one hub to the next.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import { CreationDoor } from '../logic/systems/CreationDoor';
 import { CreationSystem } from '../logic/systems/CreationSystem';
+import { KamiPersona } from '../logic/systems/KamiPersona';
 import { IDoorMessage, IDoorUsage, IntelligenceClient } from '../logic/intelligence/IntelligenceClient';
 import { useCreationDraft } from './ui/creationDraft';
 import { Busy, Button } from './ui/kit';
@@ -46,6 +50,7 @@ export const KamiTalk: React.FC = () => {
   const [note, setNote] = useState('');
   const talking = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const persona = useRef<string | undefined>(undefined);
 
   const speak = async (history: IDoorMessage[]) => {
     const controller = new AbortController();
@@ -57,7 +62,7 @@ export const KamiTalk: React.FC = () => {
     const out = await IntelligenceClient.talkKami(history, piece => {
       text += piece;
       if (!controller.signal.aborted) setPartial(text);
-    }, controller.signal);
+    }, controller.signal, persona.current);
     if (controller.signal.aborted) return;
     setSpeaking(false);
     setPartial('');
@@ -74,10 +79,16 @@ export const KamiTalk: React.FC = () => {
   // He speaks first. A conversation restored with a question unanswered picks up there.
   useEffect(() => {
     let live = true;
-    void IntelligenceClient.status().then(s => {
+    void IntelligenceClient.status().then(async s => {
       if (!live) return;
       setOpen(s.available);
       if (!s.available) { setNote(SAID_WHEN_CLOSED.NO_KEY); return; }
+      setSpeaking(true);
+      const read = await KamiPersona.ofHub(useCreationDraft.getState().draft.hubId);
+      if (!live) return;
+      setSpeaking(false);
+      persona.current = read?.text;
+      if (read?.usage) set({ kamiUsage: sumUsage(useCreationDraft.getState().draft.kamiUsage, read.usage) });
       const held = useCreationDraft.getState().draft.kami as IDoorMessage[];
       if (held.length === 0 || held[held.length - 1].role === 'user') void speak(held);
     });
@@ -107,7 +118,7 @@ export const KamiTalk: React.FC = () => {
     const typed = saying.trim();
     const final: IDoorMessage[] = typed ? [...messages, { role: 'user', content: typed }] : messages;
     setSaying('');
-    const out = await CreationDoor.seekKami(final);
+    const out = await CreationDoor.seekKami(final, undefined, persona.current);
     setSetting(false);
     // A person who stopped waiting has moved on, and what arrives late changes nothing
     if (useCreationDraft.getState().draft.step !== 3) return;
