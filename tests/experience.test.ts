@@ -5,6 +5,9 @@
  *       different spreads play differently
  *   128 (the level half) gaining a skill takes about 2.5 times as long as it did,
  *       levels and rank are separate, levels reset at each rank, and stats stay
+ * And Pedro on seeing the first build: energy is an initial value, a fifth of
+ * endurance and items, levels give none, and magic, potions and very rare plants
+ * refill it. A rarer skill levels slowly, with a large impact per level.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -30,9 +33,11 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, Rarity, UniversalRank } from '../types';
+import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, ItemType, Rarity, UniversalRank } from '../types';
 import {
-  LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, SKILL_TIME_FACTOR, XP_CONSTANTS
+  LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS,
+  SKILL_IMPACT_PER_LEVEL, SKILL_RANK_IMPACT_GROWTH, SKILL_RANK_TIME_GROWTH, SKILL_TIME_FACTOR, THREAT_RADIUS_TILES,
+  XP_CONSTANTS, XP_SHARE_CHEST, XP_SHARE_HARVEST, XP_SHARE_THREAT
 } from '../src/entities/player/systems/ProgressionSystem';
 import { DEFAULT_ATTRIBUTES } from '../src/entities/player/types';
 import { ARCHETYPES, usePlayerStore } from '../src/entities/player/store';
@@ -41,13 +46,28 @@ import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
 import { ICombatEvent } from '../src/entities/combat/CombatSystems';
 import { CombatMath } from '../src/entities/combat/CombatMath';
-import { ATTRIBUTE_READERS, StatSystem } from '../src/logic/systems/StatSystem';
+import { ATTRIBUTE_READERS, BASE_ENERGY, ENERGY_PER_ENDURANCE, StatSystem } from '../src/logic/systems/StatSystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
 import { MASTERY_RUNGS, RUNG_XP, WebSystem } from '../src/logic/systems/WebSystem';
 import { repairCost } from '../src/entities/hub/dialogue';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { EffectSystem, IEffectAbility } from '../src/logic/systems/EffectSystem';
+import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { CIRCLES_FOR_A_GIFT, CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
+import { PASSIVE_STATS } from '../src/logic/theme/ThemeTypes';
+import { STAT_SCALE } from '../src/logic/theme/ThemeFormula';
+import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
+import { compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
+import { BIOMES, IThemeBody } from '../src/logic/theme/ThemeTypes';
+import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
+import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { useWorldStore } from '../src/entities/world/store';
+import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../src/entities/world/ChestSystem';
+import { fieldMinimap } from '../src/render/atoms/minimap';
+import { EntityType, IWorldEntity } from '../src/entities/world/types';
+import { RARE_FIND_CHANCE, WorldGenerator } from '../src/entities/world/WorldGenerator';
 
 const CERT = (uid: string, name = 'TESTER') => ({
   metadata: { uid, displayName: name, createdAt: 0 },
@@ -81,7 +101,6 @@ describe('line 128: levels come from experience, rank does not', () => {
   it('a new character stands at rank F, level 1, with nothing banked', () => {
     expect(ProgressionSystem.rankOf(player())).toBe(UniversalRank.F);
     expect(ProgressionSystem.levelOf(player())).toBe(1);
-    expect(ProgressionSystem.levelsEarned(player())).toBe(0);
   });
 
   it('no amount of experience moves the rank', () => {
@@ -173,16 +192,15 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
     const before = player();
     const energy = StatSystem.maxEnergyOf(before);
     const health = StatSystem.maxHealth(before.attributes, before.equipment);
-    expect(energy).toBeGreaterThan(StatSystem.maxEnergy(before.attributes, before.equipment));
     store().grantRank();
     const after = player();
     expect(after.baseAttributes).toEqual(before.baseAttributes);
     expect(after.attributes).toEqual(before.attributes);
     expect(after.attributePoints).toBe(before.attributePoints);
     expect(after.rankXp).toBe(before.rankXp);
+    expect(ProgressionSystem.levelsEarned(after)).toBe(ProgressionSystem.levelsEarned(before));
     expect(StatSystem.maxEnergyOf(after)).toBe(energy);
     expect(StatSystem.maxHealth(after.attributes, after.equipment)).toBe(health);
-    expect(ProgressionSystem.levelsEarned(after)).toBe(ProgressionSystem.levelsEarned(before));
   });
 
   it('a grant can jump, never falls, and stops at the top', () => {
@@ -230,14 +248,6 @@ describe('line 128: an existing character keeps what its old experience earned, 
     expect(moved.rankXp).toBe(RANK_XP_THRESHOLDS[UniversalRank.E] + spare);
   });
 
-  it('the ranks it walked count toward energy, as a new character\'s would', () => {
-    const start = ProgressionSystem.migrate(old(0));
-    const veteran = ProgressionSystem.migrate(old(RANK_XP_THRESHOLDS[UniversalRank.C]));
-    expect(ProgressionSystem.levelsEarned(start)).toBe(0);
-    expect(ProgressionSystem.levelsEarned(veteran)).toBeGreaterThan(0);
-    expect(StatSystem.maxEnergyOf(veteran)).toBeGreaterThan(StatSystem.maxEnergyOf(start));
-  });
-
   it('an unmigrated character reading its rank gets what it earned, and feeding it fixes that rank first', () => {
     const raw = old(1_500);
     expect(ProgressionSystem.rankOf(raw)).toBe(UniversalRank.E);
@@ -257,6 +267,23 @@ describe('line 128: an existing character keeps what its old experience earned, 
     expect(WebSystem.masteryOf(moved.bank.universalSkills.skill_y).rung).toBe(1);
     expect(moved.skillProgress!.skill_z.weight).toBe(8 * SKILL_TIME_FACTOR);
     expect(WebSystem.emergenceFill(moved.skillProgress!.skill_z)).toBeCloseTo(8 / 10);
+  });
+
+  it('the ranks it walked count as levels climbed, as a new character\'s would', () => {
+    const start = ProgressionSystem.migrate(old(0));
+    const veteran = ProgressionSystem.migrate(old(RANK_XP_THRESHOLDS[UniversalRank.C]));
+    expect(ProgressionSystem.levelsEarned(start)).toBe(0);
+    expect(ProgressionSystem.levelsEarned(veteran)).toBeGreaterThan(0);
+    expect(CircleSystem.free(veteran)).toBeGreaterThan(CircleSystem.free(start));
+  });
+
+  it('a rare skill keeps its level and rung too, against its own higher costs', () => {
+    const rare = { id: 'skill_r', name: 'r', level: 3, currentXp: 40, tags: [], rank: 7 } as any;
+    const bank = { ...player().bank, universalSkills: { skill_r: rare } };
+    const moved = ProgressionSystem.migrate(old(0, { bank })).bank.universalSkills.skill_r;
+    expect(moved.level).toBe(3);
+    // Level 3 stood at the old top rung on the old table, whatever the rank
+    expect(WebSystem.masteryOf(moved).rung).toBe(3);
   });
 
   it('a character born after this is never scaled', () => {
@@ -343,46 +370,275 @@ describe('line 128: gaining a skill takes about 2.5 times as long', () => {
 // Energy: tied to levels and a stat, and rest reads it (the clock leg, D79)
 // =============================================================================
 
-describe('energy grows with level and a stat', () => {
-  it('a new character reads what the game read before', () => {
-    expect(StatSystem.maxEnergy(spread())).toBe(50 + 5);
-    expect(StatSystem.maxEnergy(spread({ endurance: 4 }))).toBe(50 + 20);
+describe('energy: an initial value, a fifth of endurance, and items', () => {
+  const worn = (stats: Record<string, number>): IEquipmentState =>
+    ({ slots: { CHEST: 'piece' }, frames: {}, items: [{ id: 'piece', stats }] }) as unknown as IEquipmentState;
+
+  it('it is the initial value and a fifth of endurance', () => {
+    expect(ENERGY_PER_ENDURANCE).toBe(0.2);
+    expect(StatSystem.maxEnergy(spread())).toBeCloseTo(BASE_ENERGY + 0.2);
+    expect(StatSystem.maxEnergy(spread({ endurance: 30 }))).toBeCloseTo(BASE_ENERGY + 6);
   });
 
-  it('levels alone raise it, endurance alone raises it, and together they raise it more than either', () => {
-    const base = StatSystem.maxEnergy(spread());
-    const leveled = StatSystem.maxEnergy(spread(), undefined, 30);
-    const trained = StatSystem.maxEnergy(spread({ endurance: 30 }));
-    const both = StatSystem.maxEnergy(spread({ endurance: 30 }), undefined, 30);
-    expect(leveled).toBeGreaterThan(base);
-    expect(trained).toBeGreaterThan(base);
-    expect(both - base).toBeGreaterThan((leveled - base) + (trained - base));
+  it('what is worn adds to it', () => {
+    expect(StatSystem.maxEnergy(spread(), worn({ max_energy: 100 }))).toBeCloseTo(BASE_ENERGY + 0.2 + 100);
   });
 
-  it('a character trained for energy holds a long run, and rests the long rest it spent', () => {
-    const trained = { ...player(), attributes: spread({ endurance: 30 }), levelsBanked: 30 };
-    const full = StatSystem.maxEnergyOf(trained);
-    expect(full).toBeGreaterThanOrEqual(500);
-    const spent = { ...trained, energyToday: full - 500 };
-    const hours = RestSystem.restMs(spent) / 3_600_000;
-    expect(hours).toBeGreaterThan(7.5);
-    expect(hours).toBeLessThan(8.5);
-    // The same level and no training is a short day: a different character
-    const unfocused = { ...trained, attributes: spread() };
-    expect(StatSystem.maxEnergyOf(unfocused)).toBeLessThan(full / 3);
+  it('levels give none of it, at any rank', () => {
+    const before = StatSystem.maxEnergyOf(player());
+    store().applyKillXp(5_000_000);
+    expect(ProgressionSystem.levelOf(player())).toBeGreaterThan(10);
+    expect(StatSystem.maxEnergyOf(player())).toBe(before);
+    store().grantRank();
+    expect(StatSystem.maxEnergyOf(player())).toBe(before);
   });
 
-  it('every reader of a character\'s energy goes through its levels', () => {
-    const walk = (dir: string, out: string[] = []): string[] => {
-      for (const name of readdirSync(dir)) {
-        const path = join(dir, name);
-        if (statSync(path).isDirectory()) walk(path, out);
-        else if (/\.tsx?$/.test(name)) out.push(path);
+  it('a long day is still a long rest: 500 spent from what is worn is about 8 hours', () => {
+    const long = { ...player(), equipment: worn({ max_energy: 600 }) };
+    const full = StatSystem.maxEnergyOf(long);
+    expect(full).toBeGreaterThan(500);
+    const hours = RestSystem.restMs({ ...long, energyToday: full - 500 }) / 3_600_000;
+    expect(hours).toBeCloseTo(8);
+  });
+});
+
+describe('energy: magic, potions and very rare plants refill it', () => {
+  const drop = () => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { sessionId: 's', layerId: 'l', inventory: [], inventoryLayout: {}, health: 50, maxHealth: 100, energy: 10, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } as any } }));
+  };
+  const tonic = (id: string, stats: Record<string, number>): IItem =>
+    ({ id, name: 'Day Moss', type: ItemType.CONSUMABLE, stats, tags: ['consumable'], isIdentified: true, weight: 0.2, dimensions: { width: 1, height: 1 }, affixes: [] }) as unknown as IItem;
+  const clone = (b: IThemeBody): IThemeBody => JSON.parse(JSON.stringify(b));
+  /** The first theme with a plant that refills energy on every kind of ground. */
+  const withPlant = (over: Record<string, unknown> = {}): IThemeBody => {
+    const b = clone(FIRST_THEME);
+    const habitat = [...new Set(b.materials.flatMap(m => m.habitat))];
+    b.materials.push({ ...b.materials[0], key: 'day_moss', name: 'Day Moss', habitat, verb: 'hands', worth: 'rare', onShelf: false, restores: 'energy', ...over } as never);
+    return b;
+  };
+
+  it('the door lifts what is left, in the field and at home, and stops at the top', () => {
+    drop();
+    const inField = RestSystem.refillEnergy(player(), 20);
+    expect(inField.currentSession!.energy).toBe(30);
+    expect(RestSystem.refillEnergy(player(), 1_000_000).currentSession!.energy).toBe(StatSystem.maxEnergyOf(player()));
+    const home = { ...player(), currentSession: undefined, energyToday: 5 };
+    expect(RestSystem.refillEnergy(home, 20).energyToday).toBe(25);
+  });
+
+  it('it is not a rest: the day does not turn', () => {
+    drop();
+    const before = player().dayCount;
+    expect(RestSystem.refillEnergy(player(), 20).dayCount).toBe(before);
+  });
+
+  it('what somebody already holds over the top is not taken', () => {
+    const over = { ...player(), currentSession: undefined, energyToday: 500 };
+    expect(RestSystem.refillEnergy(over, 20).energyToday).toBe(500);
+  });
+
+  it('a potion refills it from the pack, and the potion is gone', () => {
+    drop();
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, inventory: [tonic('moss', { energy_restore: 25 })] } } }));
+    store().consumeItem('moss');
+    const s = player().currentSession!;
+    expect(s.energy).toBe(35);
+    expect(s.health).toBe(50);
+    expect(s.inventory).toEqual([]);
+  });
+
+  it('energy_restore has a reader, so a batch may roll it', () => {
+    expect(StatSystem.isRead('energy_restore')).toBe(true);
+  });
+
+  it('a working with the rest effect lands on the caster and the field reads it as a refill', () => {
+    const ability = { id: 'ab', effect: 'rest', delivery: 'self', cost: 'low', elements: ['debt'] } as unknown as IEffectAbility;
+    const receipt = EffectSystem.resolve(ability, { rank: UniversalRank.F }, 'k');
+    expect(EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)).toBe(true);
+    expect(receipt.magnitude).toBeGreaterThan(0);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/receipt\.effect === 'rest' \? RestSystem\.refillEnergy\(/);
+  });
+
+  it('the law keeps a refill potion off every shelf', () => {
+    const b = clone(FIRST_THEME);
+    b.consumables.push({ ...b.consumables[0], key: 'long_draught', kind: 'energy', casts: '', onShelf: true });
+    expect(ContentRegistry.judge(b).ok).toBe(false);
+    b.consumables[b.consumables.length - 1].onShelf = false;
+    expect(ContentRegistry.judge(b).ok).toBe(true);
+  });
+
+  it('the law asks a refill plant to be gathered by hand, rare, and on no shelf', () => {
+    expect(ContentRegistry.judge(withPlant()).ok).toBe(true);
+    expect(ContentRegistry.judge(withPlant({ verb: 'chop' })).ok).toBe(false);
+    expect(ContentRegistry.judge(withPlant({ worth: 'common' })).ok).toBe(false);
+    expect(ContentRegistry.judge(withPlant({ onShelf: true })).ok).toBe(false);
+    expect(ContentRegistry.judge(withPlant({ restores: 'gold' })).ok).toBe(false);
+  });
+
+  it('a refill plant is something to eat, and it stands outside the biome table', () => {
+    const compiled = compileTheme(sealTheme(withPlant(), 'test', 0));
+    const def = Object.values(compiled.resources).find(r => r.name === 'Day Moss')!;
+    expect(def.type).toBe(ItemType.CONSUMABLE);
+    expect(def.stats!.energy_restore).toBeGreaterThan(0);
+    expect(def.rareFind).toBe(true);
+    expect(compiled.shelf.materials).not.toContain(def.id);
+    const pack = sealTheme(withPlant(), 'test', 0);
+    expect(ContentRegistry.install(pack)).toEqual({ ok: true });
+    expect(Object.values(BIOME_RESOURCES).flat()).not.toContain(def.id);
+  });
+
+  it('it is very, very rare: about one quadrant in two thousand', () => {
+    expect(RARE_FIND_CHANCE).toBeLessThanOrEqual(1 / 2000);
+    let found = 0;
+    const n = 200_000;
+    for (let i = 0; i < n; i++) if (WorldGenerator.rareFindAt('rarity', i % 500, Math.floor(i / 500))) found++;
+    expect(found / n).toBeGreaterThan(RARE_FIND_CHANCE / 2);
+    expect(found / n).toBeLessThan(RARE_FIND_CHANCE * 2);
+  });
+
+  it('it grows only where the roll says, and a pack without one builds the same chunk as before', () => {
+    const SEED = 'rarity';
+    let cell: { cx: number; cy: number } | null = null;
+    for (let cx = 0; cx < 400 && !cell; cx++) {
+      for (let cy = 0; cy < 400 && !cell; cy++) {
+        for (let q = 0; q < 16; q++) {
+          if (WorldGenerator.rareFindAt(SEED, cx * 4 + (q % 4), cy * 4 + Math.floor(q / 4))) { cell = { cx, cy }; break; }
+        }
       }
-      return out;
-    };
-    const bare = walk('src').filter(path => !path.replace(/\\/g, '/').endsWith('logic/systems/StatSystem.ts') && /maxEnergy\(/.test(readFileSync(path, 'utf8')));
-    expect(bare).toEqual([]);
+    }
+    expect(cell).not.toBeNull();
+    const plant = { id: 'res_day_moss', name: 'Day Moss', rareFind: true, habitat: [...BIOMES], uses: 1 };
+    const without = { mobDefinitions: [], resourceDefinitions: [] } as any;
+    const carrying = { mobDefinitions: [], resourceDefinitions: [plant] } as any;
+    const a = WorldGenerator.buildChunk(SEED, [], cell!.cx, cell!.cy, without);
+    const b = WorldGenerator.buildChunk(SEED, [], cell!.cx, cell!.cy, carrying);
+    expect(a.entities.some(e => e.definitionId === plant.id)).toBe(false);
+    expect(b.entities.filter(e => e.definitionId === plant.id).length).toBeGreaterThan(0);
+    expect(b.entities.filter(e => e.definitionId !== plant.id)).toEqual(a.entities);
+  });
+});
+
+describe('a rarer skill levels slowly, and each level does more', () => {
+  const F = 0;
+  const SS = RANK_ORDER.indexOf(UniversalRank.SS);
+  const skill = (rank: number, level = 1, currentXp = 0) =>
+    ({ id: 'skill_blade+melee', name: 'x', level, currentXp, tags: ['blade', 'melee'], rank, scalingAttribute: 'dexterity' }) as any;
+
+  it('a level at rank SS asks far more than one at rank F, in step with the rank', () => {
+    const ratio = ProgressionSystem.getXpToNextLevel(3, SS) / ProgressionSystem.getXpToNextLevel(3, F);
+    expect(ratio).toBeCloseTo(Math.pow(SKILL_RANK_TIME_GROWTH, SS), 1);
+    expect(ratio).toBeGreaterThan(10);
+    for (let rank = 1; rank < RANK_ORDER.length; rank++) {
+      expect(ProgressionSystem.getXpToNextLevel(1, rank)).toBeGreaterThan(ProgressionSystem.getXpToNextLevel(1, rank - 1));
+    }
+  });
+
+  it('rank F still reads the 2.5 times road and nothing more', () => {
+    expect(ProgressionSystem.getXpToNextLevel(4, F)).toBe(ProgressionSystem.getXpToNextLevel(4));
+    expect(WebSystem.rungXp(2, F)).toBe(RUNG_XP[2]);
+  });
+
+  it('rungs ask more of a rarer skill in the same step, so a rung means the same climb', () => {
+    expect(WebSystem.rungXp(1, SS)).toBeCloseTo(RUNG_XP[1] * Math.pow(SKILL_RANK_TIME_GROWTH, SS));
+    expect(WebSystem.masteryOf(skill(SS, 1, 0)).rung).toBe(0);
+    expect(WebSystem.masteryOf(WebSystem.withCumulativeXp(skill(SS), WebSystem.rungXp(1, SS))).rung).toBe(1);
+    expect(WebSystem.masteryOf(WebSystem.withCumulativeXp(skill(SS), WebSystem.rungXp(1, SS) - 1)).rung).toBe(0);
+  });
+
+  it('the same work takes a rare skill less far', () => {
+    const work = 5_000;
+    expect(WebSystem.withCumulativeXp(skill(SS), work).level).toBeLessThan(WebSystem.withCumulativeXp(skill(F), work).level);
+  });
+
+  it('deeper work does not make a common skill rare: its pace and its weight stay what it settled at', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { [pair.id]: { ...WebSystem.freshSkill(pair.id, pair.tags, F), level: 5 } } } } }));
+    const held = () => player().bank.universalSkills[pair.id];
+    const power = WebSystem.skillPower(held());
+    store().workOn(pair, SS, 5);
+    expect(held().rank).toBe(SS);
+    expect(held().bornRank).toBe(F);
+    expect(WebSystem.skillPower(held())).toBe(power);
+    expect(ProgressionSystem.skillRankOf(held())).toBe(UniversalRank.F);
+    expect(WebSystem.freshSkill(pair.id, pair.tags, SS).bornRank).toBe(SS);
+  });
+
+  it('a skill from before this takes the rank it has as its rarity, once, and keeps it after', () => {
+    const old = { id: 'skill_o', name: 'o', level: 2, currentXp: 10, tags: [], rank: 3 } as any;
+    const bank = { ...player().bank, universalSkills: { skill_o: old } };
+    const moved = ProgressionSystem.migrate({ ...player(), rank: undefined, levelXp: undefined, rankXp: 0, bank });
+    expect(moved.bank.universalSkills.skill_o.bornRank).toBe(3);
+  });
+
+  it('a first level does nothing yet, and each level after does more the rarer the skill', () => {
+    expect(WebSystem.skillPower(skill(SS, 1))).toBe(0);
+    expect(WebSystem.skillPower(skill(F, 2))).toBeCloseTo(SKILL_IMPACT_PER_LEVEL);
+    expect(WebSystem.skillPower(skill(SS, 2))).toBeCloseTo(SKILL_IMPACT_PER_LEVEL * Math.pow(SKILL_RANK_IMPACT_GROWTH, SS));
+    expect(WebSystem.skillPower(skill(SS, 2)) / WebSystem.skillPower(skill(F, 2))).toBeGreaterThan(10);
+  });
+
+  it('for the same work, the rare skill ends up stronger', () => {
+    const work = 20_000;
+    const rare = WebSystem.withCumulativeXp(skill(SS), work);
+    const common = WebSystem.withCumulativeXp(skill(F), work);
+    expect(rare.level).toBeGreaterThan(1);
+    expect(WebSystem.skillPower(rare)).toBeGreaterThan(WebSystem.skillPower(common));
+  });
+
+  it('a level makes the work cheaper and quicker', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    const holding = (s: any) => ({ ...player(), bank: { ...player().bank, universalSkills: { [pair.id]: { ...s, id: pair.id, tags: pair.tags } } } });
+    const fresh = holding(skill(SS, 1));
+    const risen = holding(skill(SS, 3));
+    expect(WebSystem.energyFor(risen, pair, 20).cost).toBeLessThan(WebSystem.energyFor(fresh, pair, 20).cost);
+    expect(WebSystem.clockFactor(risen, pair)).toBeLessThan(WebSystem.clockFactor(fresh, pair));
+    expect(WebSystem.energyFor(holding(skill(SS, 500)), pair, 20).cost).toBeGreaterThanOrEqual(1);
+    expect(WebSystem.clockFactor(holding(skill(SS, 500)), pair)).toBeGreaterThan(0);
+  });
+
+  it('a skill the weapon answers to lands harder, by its rank and level', () => {
+    const sword = { id: 'sword', stats: { attack_speed: 1 }, itemPower: 100, tags: ['blade', 'melee', 'one_hand'] } as unknown as IItem;
+    const holding = (s: any) => ({ ...player(), bank: { ...player().bank, universalSkills: { [s.id]: s } } });
+    expect(WebSystem.handPower(holding(skill(F, 1)), sword)).toBe(0);
+    const common = WebSystem.handPower(holding(skill(F, 3)), sword);
+    const rare = WebSystem.handPower(holding(skill(SS, 3)), sword);
+    expect(rare).toBeGreaterThan(common);
+    expect(common).toBeGreaterThan(0);
+    expect(WebSystem.handPower(holding(skill(SS, 3)), rifle)).toBe(0);
+    expect(WebSystem.handPower(holding(skill(SS, 3)), undefined)).toBe(0);
+    const key = 'swing';
+    expect(CombatMath.outgoing(sword, undefined, key, undefined, rare).damage).toBeGreaterThan(CombatMath.outgoing(sword, undefined, key).damage);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/WebSystem\.handPower\(st\.player, weapon\)/);
+  });
+
+  it('held work climbs by the skill\'s own rank', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    const give = (rank: number) => usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { [pair.id]: { ...WebSystem.freshSkill(pair.id, pair.tags, rank), currentXp: 0 } } } } }));
+    const need = ProgressionSystem.getXpToNextLevel(1, F);
+    give(F);
+    store().gainSkillXp(pair.id, need, pair.tags);
+    expect(player().bank.universalSkills[pair.id].level).toBe(2);
+    give(SS);
+    store().gainSkillXp(pair.id, need, pair.tags);
+    expect(player().bank.universalSkills[pair.id].level).toBe(1);
+  });
+
+  it('a person in a world keeps the rung their sheet rolled, whatever the rank', () => {
+    expect(readFileSync('src/logic/systems/NpcSheet.ts', 'utf8')).toMatch(/WebSystem\.rungXp\(rung, rank\)/);
+    expect(typeof NpcSheet).toBe('function');
+  });
+
+  it('the sheet of what the hands know says each skill\'s rank and level', () => {
+    const pair = WebSystem.mint(['axe'], ['wood']);
+    const sheet = WebSystem.earnedSheet({ ...player(), bank: { ...player().bank, universalSkills: { [pair.id]: { ...WebSystem.freshSkill(pair.id, pair.tags, SS), level: 3 } } } });
+    expect(sheet.earned[0].rank).toBe(UniversalRank.SS);
+    expect(sheet.earned[0].level).toBe(3);
+  });
+
+  it('the screens show a skill\'s own rank, not one worked out from its level', () => {
+    for (const path of ['src/components/CharacterSheet.tsx', 'src/components/PlayerHub.tsx']) {
+      expect(readFileSync(path, 'utf8'), path).toMatch(/ProgressionSystem\.skillRankOf\(skill\)/);
+    }
   });
 });
 
@@ -607,6 +863,540 @@ describe('line 94: two characters of different spreads play differently', () => 
     expect(operator.craft).toBeLessThan(samurai.craft);
   });
 });
+
+// =============================================================================
+// The circles: levels are banked and poured into skills, and three earn a call
+// =============================================================================
+
+describe('banked levels are circles to fill', () => {
+  const pair = () => WebSystem.mint(['axe'], ['wood']);
+  const hold = (...ids: string[]) => {
+    const skills = Object.fromEntries(ids.map(id => [id, WebSystem.freshSkill(id, id.replace(/^skill_/, '').split('+'), 0)]));
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { ...s.player.bank.universalSkills, ...skills } } } }));
+  };
+  const levels = (n: number) => usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: n } }));
+
+  it('a new character has none, and each level climbed is one', () => {
+    expect(CircleSystem.free(player())).toBe(0);
+    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1));
+    expect(CircleSystem.free(player())).toBe(1);
+  });
+
+  it('a rank\'s reset takes none: what was free stays free, and what was filled stays filled', () => {
+    hold(pair().id);
+    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1) + ProgressionSystem.levelCost(UniversalRank.F, 2));
+    store().fillCircle(pair().id);
+    const free = CircleSystem.free(player());
+    store().grantRank();
+    expect(ProgressionSystem.levelOf(player())).toBe(1);
+    expect(ProgressionSystem.levelsEarned(player())).toBe(2);
+    expect(CircleSystem.free(player())).toBe(free);
+    expect(player().bank.universalSkills[pair().id].circles).toBe(1);
+  });
+
+  it('levels still pay attribute points beside the circle', () => {
+    const res = store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1));
+    expect(res.pointsGranted).toBe(POINTS_PER_LEVEL);
+    expect(CircleSystem.free(player())).toBe(1);
+  });
+
+  it('filling spends one, and without one free the door refuses', () => {
+    hold(pair().id);
+    expect(store().fillCircle(pair().id)).toBe(false);
+    levels(1);
+    expect(store().fillCircle(pair().id)).toBe(true);
+    expect(CircleSystem.free(player())).toBe(0);
+    expect(store().fillCircle(pair().id)).toBe(false);
+    expect(player().bank.universalSkills[pair().id].circles).toBe(1);
+  });
+
+  it('only a skill the web can read takes a circle', () => {
+    levels(3);
+    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { old_track: { ...WebSystem.freshSkill('old_track', [], 0), legacy: true } } } } }));
+    expect(store().fillCircle('old_track')).toBe(false);
+    expect(store().fillCircle('skill_never_held')).toBe(false);
+    expect(CircleSystem.free(player())).toBe(3);
+  });
+
+  it('no skill has a top, and each further three is owed another', () => {
+    hold(pair().id);
+    levels(9);
+    for (let i = 0; i < 9; i++) expect(store().fillCircle(pair().id)).toBe(true);
+    expect(CircleSystem.asks(player())[0].owed).toBe(3);
+  });
+});
+
+describe('three circles ask the rest door for an active skill or a passive bonus', () => {
+  const pair = () => WebSystem.mint(['axe'], ['wood']);
+  const ready = (circles: number, rank = 0) => {
+    usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: circles, bank: { ...s.player.bank, universalSkills: { [pair().id]: { ...WebSystem.freshSkill(pair().id, pair().tags, rank), circles } } } } }));
+  };
+  const asked = () => ({ skills: [], weaves: [], gifts: [pair().id] });
+  const active = (over: Partial<IGiftWords> = {}): IGiftWords => ({ skill: pair().id, kind: 'active', name: 'Felling Word', blurb: 'It falls before you ask.', elements: ['debt'], delivery: 'melee', effect: 'damage', cost: 'low', stat: '', band: '', ...over });
+  const passive = (over: Partial<IGiftWords> = {}): IGiftWords => ({ skill: pair().id, kind: 'passive', name: 'Long Grain', blurb: 'You read the wood.', elements: [], delivery: '', effect: '', cost: '', stat: 'carry_capacity', band: 'moderate', ...over });
+  const result = (gifts: IGiftWords[]) => ({ skills: [], weaves: [], gifts });
+
+  it('three is the number', () => {
+    expect(CIRCLES_FOR_A_GIFT).toBe(3);
+  });
+
+  it('two circles ask nothing, and the third is owed', () => {
+    ready(2);
+    expect(CircleSystem.asks(player())).toEqual([]);
+    ready(3);
+    expect(CircleSystem.asks(player()).map(a => a.id)).toEqual([pair().id]);
+  });
+
+  it('the call goes in what the rest files: it says what the skill is, and no more', () => {
+    ready(3);
+    const q = RestSystem.dreamQueue(player(), []) as { gifts: { id: string; tags: string[]; circles: number; owed: number }[] };
+    expect(q.gifts).toHaveLength(1);
+    expect(q.gifts[0]).toMatchObject({ id: pair().id, tags: pair().tags, circles: 3, owed: 1, rank: UniversalRank.F });
+    expect(JSON.stringify(q)).not.toContain(player().username);
+  });
+
+  it('what the door files goes out when only a gift is owed', () => {
+    const src = readFileSync('src/logic/systems/RestDoor.ts', 'utf8');
+    expect(src).toMatch(/skills\.length === 0 && weaves\.length === 0 && gifts\.length === 0/);
+    expect(src).toMatch(/gifts: gifts\.map\(q => q\.id\)/);
+  });
+
+  it('the schema and the system prompt carry the ask', () => {
+    const src = readFileSync('server/intelligence/prompts.ts', 'utf8');
+    expect(src).toMatch(/required: \['skills', 'weaves', 'gifts', 'growth'\]/);
+    expect(src).toMatch(/passive bonus/);
+  });
+
+  it('it never asks during play: only a rest files it', () => {
+    const circles = readFileSync('src/logic/systems/CircleSystem.ts', 'utf8');
+    expect(circles).not.toMatch(/IntelligenceClient/);
+  });
+
+  it('a gift nobody asked for, or outside the words, refuses the whole answer', () => {
+    ready(3);
+    expect(RestSystem.judgeDream(result([active()]), asked(), player()).ok).toBe(true);
+    expect(RestSystem.judgeDream(result([passive()]), asked(), player()).ok).toBe(true);
+    expect(RestSystem.judgeDream(result([active({ skill: 'skill_other' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ name: ' ' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ effect: 'summon' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ delivery: 'psychic' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ cost: 'free' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ elements: [] })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([passive({ stat: 'charisma' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([passive({ band: 'huge' })]), asked(), player()).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active({ kind: 'nothing' as never })]), asked(), player()).ok).toBe(false);
+  });
+
+  it('a skill takes only what it is owed', () => {
+    ready(3);
+    expect(RestSystem.judgeDream(result([active(), passive()]), asked(), player()).ok).toBe(false);
+  });
+
+  it('a working drawn on an element this world does not hold is refused', () => {
+    ready(3);
+    expect(RestSystem.judgeDream(result([active()]), asked(), player(), ['interest']).ok).toBe(false);
+    expect(RestSystem.judgeDream(result([active()]), asked(), player(), ['debt']).ok).toBe(true);
+  });
+
+  it('an old answer with no gifts still stands', () => {
+    expect(RestSystem.judgeDream({ skills: [], weaves: [] }, { skills: [], weaves: [] }).ok).toBe(true);
+    expect(RestSystem.applyDream(player(), { skills: [], weaves: [] }).skillGifts).toBeUndefined();
+  });
+
+  it('an active gift can be cast through the one door, and a rest effect refills', () => {
+    ready(3);
+    const after = RestSystem.applyDream(player(), result([active({ effect: 'rest', delivery: 'self' })]));
+    const gift = after.skillGifts![pair().id][0];
+    const ability = CircleSystem.abilityOf(after, gift.id)!;
+    expect(ability.effect).toBe('rest');
+    const receipt = EffectSystem.resolve(ability, { rank: UniversalRank.F }, 'k');
+    expect(EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)).toBe(true);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/cast\.kind === 'gift' \? CircleSystem\.abilityOf\(player, cast\.id\)/);
+    expect(readFileSync('src/components/TheWorking.tsx', 'utf8')).toMatch(/kind: 'gift', id: g\.id/);
+  });
+
+  it('a passive gift acts wherever the stat is read, with a number no model wrote', () => {
+    ready(3);
+    const before = LoadoutSystem.carryLimit(player().attributes.strength, player().equipment);
+    const after = RestSystem.applyDream(player(), result([passive()]));
+    const gift = after.skillGifts![pair().id][0];
+    expect(gift.value).toBeGreaterThan(0);
+    expect(after.equipment!.passives).toEqual({ carry_capacity: gift.value });
+    expect(LoadoutSystem.carryLimit(after.attributes.strength, after.equipment)).toBe(before + gift.value!);
+    // The same person and skill roll the same number
+    expect(RestSystem.applyDream(player(), result([passive()])).skillGifts![pair().id][0].value).toBe(gift.value);
+  });
+
+  it('a rarer skill\'s passive is worth more', () => {
+    ready(3, 0);
+    const common = RestSystem.applyDream(player(), result([passive()])).skillGifts![pair().id][0].value!;
+    ready(3, RANK_ORDER.indexOf(UniversalRank.SS));
+    const rare = RestSystem.applyDream(player(), result([passive()])).skillGifts![pair().id][0].value!;
+    expect(rare).toBeGreaterThan(common);
+  });
+
+  it('every passive word has a typical size and a reader through the one door', () => {
+    for (const stat of PASSIVE_STATS) {
+      expect(STAT_SCALE[stat], stat).toBeGreaterThan(0);
+      expect(StatSystem.total({ slots: {}, items: [], frames: {}, protected: [], passives: { [stat]: 2 } } as IEquipmentState, stat)).toBe(2);
+    }
+  });
+
+  it('what is owed is paid: asking stops after the gift lands, and the next three ask again', () => {
+    ready(3);
+    const after = RestSystem.applyDream(player(), result([passive()]));
+    expect(CircleSystem.asks(after)).toEqual([]);
+    const more = { ...after, bank: { ...after.bank, universalSkills: { [pair().id]: { ...after.bank.universalSkills[pair().id], circles: 6 } } } };
+    const next = CircleSystem.asks(more);
+    expect(next[0].owed).toBe(1);
+    expect(next[0].has).toEqual(['Long Grain']);
+  });
+
+  it('a batch that fails asks again: what is owed is read from the skill, not from a queue', () => {
+    ready(3);
+    const failed = { ...player(), pendingDream: undefined };
+    expect(CircleSystem.asks(failed)).toHaveLength(1);
+  });
+
+  it('the passives come back with the attributes after a load', () => {
+    ready(3);
+    usePlayerStore.setState({ player: RestSystem.applyDream(player(), result([passive()])) });
+    usePlayerStore.setState(s => ({ player: { ...s.player, equipment: { ...s.player.equipment!, passives: undefined } } }));
+    store().recalcAttributes();
+    expect(player().equipment!.passives!.carry_capacity).toBeGreaterThan(0);
+  });
+
+  it('the sheet shows circles by shape, in threes, with a way to fill them', () => {
+    const src = readFileSync('src/components/PlayerHub.tsx', 'utf8');
+    expect(src).toMatch(/<Circles filled=\{row\.circles\} \/>/);
+    expect(src).toMatch(/background: i < filled \?/);
+    expect(src).toMatch(/Fill a circle in/);
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/TO FILL/);
+  });
+});
+
+
+// =============================================================================
+// Taking things pays experience in the world, by the risk, and only once
+// =============================================================================
+
+describe('experience pays in the world, by the risk', () => {
+  const F = { rank: UniversalRank.F, rarity: Rarity.COMMON };
+  const D = { rank: UniversalRank.D, rarity: Rarity.COMMON };
+
+  it('a chest pays far more than a pebble of the same rank', () => {
+    const pebble = ProgressionSystem.worldXp(F, XP_SHARE_HARVEST);
+    const chest = ProgressionSystem.worldXp(F, XP_SHARE_CHEST);
+    expect(pebble).toBeGreaterThan(0);
+    expect(chest).toBeGreaterThanOrEqual(pebble * 10);
+    // A pebble is a small thing beside a fight of its own rank
+    expect(pebble).toBeLessThan(ProgressionSystem.calculateKillXp(UniversalRank.F, Rarity.COMMON) / 10);
+  });
+
+  it('a higher rank and a rarer thing pay more', () => {
+    expect(ProgressionSystem.worldXp(D, XP_SHARE_HARVEST)).toBeGreaterThan(ProgressionSystem.worldXp(F, XP_SHARE_HARVEST));
+    expect(ProgressionSystem.worldXp({ ...F, rarity: Rarity.RARE }, XP_SHARE_HARVEST)).toBeGreaterThanOrEqual(ProgressionSystem.worldXp(F, XP_SHARE_HARVEST));
+  });
+
+  it('whatever still stands near it adds to it, by what it is', () => {
+    const alone = ProgressionSystem.worldXp(F, XP_SHARE_CHEST);
+    const guarded = ProgressionSystem.worldXp(F, XP_SHARE_CHEST, [F, F]);
+    expect(guarded).toBeGreaterThan(alone);
+    expect(guarded).toBe(Math.floor(50 * XP_SHARE_CHEST + 2 * 50 * XP_SHARE_THREAT));
+    expect(ProgressionSystem.worldXp(F, XP_SHARE_CHEST, [D, D])).toBeGreaterThan(guarded);
+  });
+
+  it('nothing is worth less than one', () => {
+    expect(ProgressionSystem.worldXp({ ...F, rarity: Rarity.SCRAP }, 0.0001)).toBe(1);
+  });
+
+  // A session standing in a one-chunk world
+  const stand = (extra: IWorldEntity[]) => {
+    useWorldStore.setState({ currentMap: { seed: 'risk_world', width: 1, height: 1, gridVersion: 2, sectors: {}, generatedAt: 0, chunks: { '0,0': { id: '0,0', x: 0, y: 0, entities: extra } } } } as never);
+    usePlayerStore.setState(s => ({ player: { ...s.player, attributes: { ...s.player.attributes, strength: 500 }, currentSession: { sessionId: 's', layerId: 'l', inventory: [], inventoryLayout: {}, health: 100, maxHealth: 100, energy: 1000, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } as never } }));
+    store().recalcWeight();
+  };
+  const xp = () => player().rankXp ?? 0;
+  const entity = (over: Record<string, unknown>) => ({ position: { x: 5, y: 0 }, rank: UniversalRank.F, rarity: Rarity.COMMON, isHostile: false, ...over }) as unknown as IWorldEntity;
+  const chest = (over: Record<string, unknown> = {}) => entity({ id: 'chest_1', type: EntityType.CONTAINER, definitionId: 'chest_ruin', container: { lootRank: UniversalRank.F, looted: false, hasLore: false }, ...over });
+  const mob = (id: string, x: number, over: Record<string, unknown> = {}) => entity({ id, type: EntityType.MOB, definitionId: 'mob_x', isHostile: true, health: 10, position: { x, y: 0 }, ...over });
+
+  it('opening a chest pays once, and opening it again pays nothing', () => {
+    stand([chest()]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    const paid = xp();
+    expect(paid).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST));
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(paid);
+  });
+
+  it('a chest pays more while its guards stand, and those near enough are the ones that count', () => {
+    stand([chest(), mob('g1', 30), mob('g2', 60), mob('far', 5 + (THREAT_RADIUS_TILES + 2) * 20)]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST, [
+      { rank: UniversalRank.F, rarity: Rarity.COMMON }, { rank: UniversalRank.F, rarity: Rarity.COMMON }
+    ]));
+  });
+
+  it('a richer chunk gives richer loot and no more experience: the risk is the same', () => {
+    stand([chest({ rarity: Rarity.LEGENDARY })]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST));
+  });
+
+  it('what lies dead, or means no harm, is no risk', () => {
+    stand([chest(), mob('dead', 30, { health: 0 }), mob('calm', 40, { isHostile: false })]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(xp()).toBe(ProgressionSystem.worldXp({ rank: UniversalRank.F, rarity: Rarity.COMMON }, XP_SHARE_CHEST));
+  });
+
+  it('gathering pays for each use of the node, and takes the thing\'s own rank', () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.harvestConfig && (d.uses ?? 1) > 1)!;
+    stand([entity({ id: 'node', type: EntityType.RESOURCE, definitionId: def.id, usesRemaining: 2 })]);
+    store().performInteraction('int_harvest_node', 'node');
+    const once = xp();
+    expect(once).toBe(ProgressionSystem.worldXp({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST));
+    store().performInteraction('int_harvest_node', 'node');
+    expect(xp()).toBe(once * 2);
+  });
+
+  it('a harvest refused for want of energy pays nothing', () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.harvestConfig && d.harvestConfig.energyCost > 0)!;
+    stand([entity({ id: 'node', type: EntityType.RESOURCE, definitionId: def.id, usesRemaining: 2 })]);
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 0 } } }));
+    store().performInteraction('int_harvest_node', 'node');
+    expect(xp()).toBe(0);
+  });
+
+  it('a level earned this way is said, and pays its point and its circle', () => {
+    stand([chest({ container: { lootRank: UniversalRank.A, looted: false, hasLore: false } })]);
+    store().performInteraction('int_open_chest_1', 'chest_1');
+    expect(ProgressionSystem.levelOf(player())).toBeGreaterThan(1);
+    expect(player().attributePoints).toBeGreaterThan(0);
+    expect(CircleSystem.free(player())).toBeGreaterThan(0);
+  });
+
+  it('no double dip: a cache of what was already yours pays nothing', () => {
+    const rock = { id: 'rock', name: 'rock', weight: 1, dimensions: { width: 1, height: 1 }, affixes: [], stats: {}, tags: [], isIdentified: true } as unknown as IItem;
+    stand([chest({ id: 'cache_1', definitionId: 'ground_cache', container: { lootRank: UniversalRank.A, looted: false, hasLore: false, items: [rock], cacheOwner: 'someone' } })]);
+    store().performInteraction('int_open_cache_1', 'cache_1');
+    expect(player().currentSession!.inventory.map(i => i.id)).toEqual(['rock']);
+    expect(xp()).toBe(0);
+  });
+
+  it('no double dip: only a fight and the taking itself pay; picking up a drop and the beacon do not', () => {
+    const world = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
+    expect(world).not.toMatch(/applyKillXp|worldXp/);
+    const taken = readFileSync('src/entities/player/store.ts', 'utf8');
+    expect(taken.split('payForRisk(').length - 1).toBe(2);
+    const combat = readFileSync('src/entities/combat/killRewards.ts', 'utf8');
+    expect(combat).toMatch(/applyKillXp/);
+  });
+});
+
+
+// =============================================================================
+// Chests restock when a cycle builds the world, by rank, rarity and their guards
+// =============================================================================
+
+describe('a chest stays taken through its cycle, and restocks by rank, rarity and a roll', () => {
+  const SEED = 'chest_world';
+  const rareInF = { id: 'ent_1_1_chest', rank: UniversalRank.F, rarity: Rarity.RARE };
+  const commonInF = { id: 'ent_2_2_chest', rank: UniversalRank.F, rarity: Rarity.COMMON };
+  const guardsD = [{ id: 'ent_1_1_guard0', rank: UniversalRank.D }, { id: 'ent_1_1_guard1', rank: UniversalRank.D }];
+  const looted = (id: string, at: number): IChestRecord => ChestSystem.looted(emptyChestRecord(), id, at);
+
+  it('nothing taken, nothing empty', () => {
+    expect(ChestSystem.standsEmpty(SEED, emptyChestRecord(), rareInF, guardsD, 5)).toBe(false);
+  });
+
+  it('within the cycle it was emptied in, it never restocks', () => {
+    for (let i = 0; i < 500; i++) {
+      const chest = { ...commonInF, id: `ent_${i}_0_chest` };
+      expect(ChestSystem.standsEmpty(SEED, looted(chest.id, 3), chest, [], 3)).toBe(true);
+    }
+  });
+
+  it('the wait grows with rank and with rarity', () => {
+    expect(ChestSystem.waitCycles(UniversalRank.F, Rarity.COMMON)).toBeGreaterThanOrEqual(1);
+    expect(ChestSystem.waitCycles(UniversalRank.F, Rarity.RARE)).toBeGreaterThan(ChestSystem.waitCycles(UniversalRank.F, Rarity.COMMON));
+    expect(ChestSystem.waitCycles(UniversalRank.B, Rarity.COMMON)).toBeGreaterThan(ChestSystem.waitCycles(UniversalRank.F, Rarity.COMMON));
+  });
+
+  it('before its wait is up no chest restocks, whatever the dice', () => {
+    const wait = ChestSystem.waitCycles(rareInF.rank, rareInF.rarity);
+    for (let i = 0; i < 500; i++) {
+      const chest = { ...rareInF, id: `ent_${i}_1_chest` };
+      expect(ChestSystem.standsEmpty(SEED, looted(chest.id, 0), chest, [], wait - 1)).toBe(true);
+    }
+  });
+
+  /** How often a chest stands full, one roll after its wait. */
+  const restockRate = (rank: UniversalRank, rarity: Rarity) => {
+    let full = 0;
+    const n = 4000;
+    const wait = ChestSystem.waitCycles(rank, rarity);
+    for (let i = 0; i < n; i++) {
+      const chest = { id: `ent_${i}_9_chest`, rank, rarity };
+      if (!ChestSystem.standsEmpty(SEED, looted(chest.id, 0), chest, [], wait)) full++;
+    }
+    return full / n;
+  };
+
+  it('a rarer chest has less chance on each cycle, and so does a higher rank', () => {
+    const common = restockRate(UniversalRank.F, Rarity.COMMON);
+    const rare = restockRate(UniversalRank.F, Rarity.RARE);
+    const legendary = restockRate(UniversalRank.F, Rarity.LEGENDARY);
+    expect(common).toBeGreaterThan(rare);
+    expect(rare).toBeGreaterThan(legendary);
+    expect(restockRate(UniversalRank.A, Rarity.RARE)).toBeLessThan(rare);
+    // The rolls are the d20 they say they are
+    expect(common).toBeCloseTo((21 - ChestSystem.restockDC(UniversalRank.F, Rarity.COMMON)) / 20, 1);
+    expect(rare).toBeCloseTo((21 - ChestSystem.restockDC(UniversalRank.F, Rarity.RARE)) / 20, 1);
+  });
+
+  it('even the rarest can still come back: a natural 20 always restocks', () => {
+    expect(ChestSystem.restockDC(UniversalRank.SSS, Rarity.ARTIFACT)).toBe(20);
+    expect(restockRate(UniversalRank.SSS, Rarity.ARTIFACT)).toBeGreaterThan(0);
+  });
+
+  it('the roll is keyed: the same chest and cycle answer the same, for anyone, in any order', () => {
+    const record = looted(rareInF.id, 0);
+    const a = [8, 3, 5, 12, 4].map(c => ChestSystem.standsEmpty(SEED, record, rareInF, [], c));
+    const b = [8, 3, 5, 12, 4].map(c => ChestSystem.standsEmpty(SEED, record, rareInF, [], c));
+    expect(a).toEqual(b);
+    expect(ChestSystem.rolled(SEED, rareInF.id, 4)).toBe(ChestSystem.rolled(SEED, rareInF.id, 4));
+  });
+
+  it('once it has restocked it stays full until somebody takes it again', () => {
+    const record = looted(rareInF.id, 0);
+    let first = -1;
+    for (let c = 0; c < 200 && first < 0; c++) if (!ChestSystem.standsEmpty(SEED, record, rareInF, [], c)) first = c;
+    expect(first).toBeGreaterThan(0);
+    for (let c = first; c < first + 50; c++) expect(ChestSystem.standsEmpty(SEED, record, rareInF, [], c)).toBe(false);
+    const again = ChestSystem.looted(record, rareInF.id, first + 50);
+    expect(ChestSystem.standsEmpty(SEED, again, rareInF, [], first + 50)).toBe(true);
+  });
+
+  it('guards must be back before the chest can roll: Pedro\'s rare chest with two rank D guards', () => {
+    // The guards fell where the chest was taken
+    let record = looted(rareInF.id, 0);
+    for (const g of guardsD) record = ChestSystem.fell(record, g.id, 0);
+    const down = ChestSystem.guardCycles(UniversalRank.D);
+    expect(down).toBeGreaterThan(ChestSystem.guardCycles(UniversalRank.F));
+    for (let c = 0; c < down; c++) expect(ChestSystem.guardDown(record, guardsD[0], c)).toBe(true);
+    expect(ChestSystem.guardDown(record, guardsD[0], down)).toBe(false);
+    // A guard that falls late holds its chest from rolling until it is back
+    const late = ChestSystem.fell(looted(rareInF.id, 0), guardsD[0].id, 6);
+    for (let i = 0; i < 300; i++) {
+      const chest = { ...rareInF, id: `ent_${i}_3_chest` };
+      const held = { ...late, chests: { [chest.id]: { lootedAt: 6 } } };
+      for (let c = 6; c < 6 + down; c++) expect(ChestSystem.standsEmpty(SEED, held, chest, guardsD, c)).toBe(true);
+    }
+  });
+
+  it('a guard that falls after a chest has restocked cannot empty it again', () => {
+    const record = looted(rareInF.id, 0);
+    let first = -1;
+    for (let c = 0; c < 200 && first < 0; c++) if (!ChestSystem.standsEmpty(SEED, record, rareInF, [], c)) first = c;
+    const after = ChestSystem.fell(record, guardsD[0].id, first + 1);
+    expect(ChestSystem.standsEmpty(SEED, after, rareInF, guardsD, first + 1)).toBe(false);
+  });
+
+  it('only a chest and its guards are written down', () => {
+    expect(ChestSystem.isChest('ent_1_1_chest')).toBe(true);
+    expect(ChestSystem.isChest('cache_ovf_x')).toBe(false);
+    expect(ChestSystem.chestOfGuard('ent_1_1_guard1')).toBe('ent_1_1_chest');
+    expect(ChestSystem.chestOfGuard('ent_1_1_m0')).toBeNull();
+  });
+
+  const body = (id: string, over: Record<string, unknown> = {}) => ({ id, type: EntityType.MOB, rank: UniversalRank.D, rarity: Rarity.COMMON, position: { x: 0, y: 0 }, isHostile: true, health: 10, definitionId: 'mob_x', ...over }) as unknown as IWorldEntity;
+  const box = (id: string, over: Record<string, unknown> = {}) => ({ id, type: EntityType.CONTAINER, rank: UniversalRank.F, rarity: Rarity.RARE, position: { x: 0, y: 0 }, isHostile: false, definitionId: 'chest_ruin', container: { lootRank: UniversalRank.F, looted: false, hasLore: true }, ...over }) as unknown as IWorldEntity;
+
+  it('the record lies over a built chunk: fallen guards are gone and an emptied chest reads empty', () => {
+    const chunk = { id: 'c', x: 0, y: 0, entities: [box('ent_1_1_chest'), body('ent_1_1_guard0'), body('ent_1_1_guard1'), body('ent_1_1_m0')] } as any;
+    let record = ChestSystem.looted(emptyChestRecord(), 'ent_1_1_chest', 2);
+    record = ChestSystem.fell(record, 'ent_1_1_guard0', 2);
+    ChestSystem.layOver(SEED, chunk, record, 2);
+    const ids = chunk.entities.map((e: IWorldEntity) => e.id);
+    expect(ids).toEqual(['ent_1_1_chest', 'ent_1_1_guard1', 'ent_1_1_m0']);
+    expect(chunk.entities[0].container.looted).toBe(true);
+  });
+
+  it('with nothing taken the chunk comes out exactly as it went in, so no world moves', () => {
+    const entities = [box('ent_1_1_chest'), body('ent_1_1_guard0')];
+    const chunk = { id: 'c', x: 0, y: 0, entities: [...entities] } as any;
+    ChestSystem.layOver(SEED, chunk, emptyChestRecord(), 7);
+    expect(chunk.entities).toEqual(entities);
+  });
+
+  it('a chunk reached through the world reads the record; a build alone stays pure', () => {
+    const context = { mobDefinitions: [], resourceDefinitions: [] } as any;
+    const map = WorldGenerator.generate('lay_world', 1, context);
+    const plain = WorldGenerator.buildChunk('lay_world', [], 0, 0, context);
+    const seen: string[] = [];
+    const chunk = WorldGenerator.chunkAt(map, 0, 0, { ...context, lay: (c: any) => seen.push(c.id) });
+    expect(seen).toEqual([chunk!.id]);
+    expect(WorldGenerator.buildChunk('lay_world', [], 0, 0, context)).toEqual(plain);
+  });
+
+  it('opening a chest writes it down at the world\'s cycle, and a guard falling writes it down', () => {
+    useWorldStore.setState({ chestRecord: emptyChestRecord(), activeWorldId: 'w1', generation: 4 } as never);
+    useWorldStore.getState().reportChestLooted('ent_1_1_chest');
+    useWorldStore.getState().reportFell('ent_1_1_guard0');
+    useWorldStore.getState().reportFell('ent_1_1_m0');
+    useWorldStore.getState().reportChestLooted('cache_ovf_1');
+    const record = useWorldStore.getState().chestRecord!;
+    expect(record.chests).toEqual({ ent_1_1_chest: { lootedAt: 4 } });
+    expect(record.guards).toEqual({ ent_1_1_guard0: { fellAt: 4 } });
+  });
+
+  it('the record survives leaving the world', async () => {
+    const record = ChestSystem.fell(looted('ent_1_1_chest', 2), 'ent_1_1_guard0', 2);
+    await ChestStore.save('w2', record);
+    expect(await ChestStore.load('w2')).toEqual(record);
+    expect(await ChestStore.load('never_opened')).toEqual(emptyChestRecord());
+  });
+
+  it('a world outside the clock keeps no record', () => {
+    useWorldStore.setState({ chestRecord: null, activeWorldId: 'dev', generation: 0 } as never);
+    useWorldStore.getState().reportChestLooted('ent_1_1_chest');
+    expect(useWorldStore.getState().chestRecord).toBeNull();
+    expect(readFileSync('src/entities/world/store.ts', 'utf8')).toMatch(/worldCard\.isDebug \? null : await ChestStore\.load/);
+  });
+
+  it('a chest seen is marked for that character, as it was seen, and only a change writes', () => {
+    const chest = box('ent_1_1_chest', { position: { x: 100, y: 200 } });
+    const seen = ChestSystem.mark(player(), 'w1', chest);
+    expect(seen.chestMarks!.w1.ent_1_1_chest).toEqual({ x: 100, y: 200, empty: false });
+    expect(ChestSystem.mark(seen, 'w1', chest)).toBe(seen);
+    const emptied = ChestSystem.mark(seen, 'w1', box('ent_1_1_chest', { position: { x: 100, y: 200 }, container: { looted: true } }));
+    expect(emptied.chestMarks!.w1.ent_1_1_chest.empty).toBe(true);
+    // Coming back to find it full is learned too
+    expect(ChestSystem.mark(emptied, 'w1', chest).chestMarks!.w1.ent_1_1_chest.empty).toBe(false);
+  });
+
+  it('the mark shows beyond sight, and full and empty differ in shape', () => {
+    const map = { seed: 's', sectors: {} } as any;
+    const center = { x: 1000, z: 1000 };
+    const draw = (marks: { x: number; y: number; empty: boolean }[]) => fieldMinimap({ map, center, seen: new Set(), things: [], exits: [], marks }).data;
+    const none = draw([]);
+    const full = draw([{ x: 1100, y: 1000, empty: false }]);
+    const empty = draw([{ x: 1100, y: 1000, empty: true }]);
+    const changed = (a: Uint8Array, b: Uint8Array) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
+    expect(changed(none, full)).toBeGreaterThan(changed(none, empty));
+    expect(changed(none, empty)).toBeGreaterThan(0);
+  });
+
+  it('the field writes it, and recon says what you know', () => {
+    const field = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
+    expect(field).toMatch(/ChestSystem\.mark\(seen, worldId, e\)/);
+    expect(field).toMatch(/reportFell\(event\.entityId\)/);
+    expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/world\.reportChestLooted\(entity\.id\)/);
+    expect(readFileSync('src/components/ReconView.tsx', 'utf8')).toMatch(/CHESTS YOU KNOW/);
+  });
+});
+
 
 // =============================================================================
 // The screens: levels and rank apart, in shapes that read without colour

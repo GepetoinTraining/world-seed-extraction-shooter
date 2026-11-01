@@ -16,7 +16,6 @@
  */
 
 import { IAttributes, IEquipmentState, IItem, IPlayer, MENTAL_ATTRIBUTES } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
 
 /** Tiles to pixels, as everywhere in the field. */
 const PX = 20;
@@ -49,6 +48,7 @@ export const STAT_READERS: Record<string, string> = {
   mining_power: 'InteractionEngine',
   chopping_power: 'InteractionEngine',
   health_restore: 'playerStore.useConsumable',
+  energy_restore: 'RestSystem.refillEnergy',
   durability: 'CombatMath.isUsable',
   maxDurability: 'repairCost',
   upkeep_discount_pct: 'room.roomBonuses',
@@ -58,13 +58,12 @@ export const STAT_READERS: Record<string, string> = {
 };
 
 /**
- * D79, D83: maximum energy is a stat and a level together. Each point of endurance
- * is worth more the more levels stand behind it, so a character can train for a long
- * day, and the same levels without the training stay a short one.
+ * Pedro: "ebergy should be 0.2 of endurance + inital value + items. levels shouldn't
+ * give you base energy at all." The long day comes from what is worn, and from what
+ * refills it: a rest, magic, and very rare potions and plants (RestSystem.refillEnergy).
  */
 export const BASE_ENERGY = 50;
-export const ENERGY_PER_ENDURANCE = 5;
-export const ENERGY_PER_ENDURANCE_PER_LEVEL = 0.5;
+export const ENERGY_PER_ENDURANCE = 0.2;
 
 const MELEE_PER_STRENGTH = 0.04;
 const PACE_PER_AGILITY = 0.015;
@@ -149,27 +148,23 @@ export class StatSystem {
     });
   }
 
-  /** What everything worn adds up to, for one stat. */
+  /** What everything worn adds up to for one stat, and what a skill's circles made always true. */
   static total(equipment: IEquipmentState | undefined, stat: string): number {
-    return this.worn(equipment).reduce((sum, i) => sum + ((i.stats as Record<string, number> | undefined)?.[stat] ?? 0), 0);
+    return this.worn(equipment).reduce((sum, i) => sum + ((i.stats as Record<string, number> | undefined)?.[stat] ?? 0), equipment?.passives?.[stat] ?? 0);
   }
 
   static maxHealth(attributes: IAttributes, equipment?: IEquipmentState): number {
     return Math.max(1, 100 + attributes.constitution * 10 + this.total(equipment, 'max_health'));
   }
 
-  /**
-   * One day's supply (D51). Levels climbed count at any rank, so a reset takes none
-   * of it (D83). Worn gear can widen it; nothing refills it but a rest.
-   */
-  static maxEnergy(attributes: IAttributes, equipment?: IEquipmentState, levels: number = 0): number {
-    const perEndurance = ENERGY_PER_ENDURANCE + levels * ENERGY_PER_ENDURANCE_PER_LEVEL;
-    return Math.max(0, Math.floor(BASE_ENERGY + attributes.endurance * perEndurance) + this.total(equipment, 'max_energy'));
+  /** One day's supply (D51): an initial value, a fifth of endurance, and what is worn. Levels give none. */
+  static maxEnergy(attributes: IAttributes, equipment?: IEquipmentState): number {
+    return Math.max(0, BASE_ENERGY + attributes.endurance * ENERGY_PER_ENDURANCE + this.total(equipment, 'max_energy'));
   }
 
-  /** A character's own day: the one way the game asks. */
+  /** A character's own day. */
   static maxEnergyOf(player: IPlayer): number {
-    return this.maxEnergy(player.attributes, player.equipment, ProgressionSystem.levelsEarned(player));
+    return this.maxEnergy(player.attributes, player.equipment);
   }
 
   static pickupRadiusPx(equipment?: IEquipmentState): number {
@@ -296,7 +291,7 @@ export class StatSystem {
       case 'constitution': return `Health ${this.maxHealth(attributes)}.`;
       case 'agility': return `Walk ${signedPct(this.paceBonus(attributes))}. Blows missed ${Math.round(100 * this.evasionRating(undefined, attributes) / (this.evasionRating(undefined, attributes) + 100))}%.`;
       case 'dexterity': return `Rate ${signedPct(this.fireRateScale(attributes) - 1)}. Accuracy +${this.accuracyRating(undefined, attributes)}.`;
-      case 'endurance': return `${ENERGY_PER_ENDURANCE} energy a point, and more with every level. ${attributes.endurance} held.`;
+      case 'endurance': return `Energy +${(attributes.endurance * ENERGY_PER_ENDURANCE).toFixed(1)}.`;
       case 'intelligence': return `Skills learned ${signedPct(this.learnRate(attributes) - 1)}. Deepens recon.`;
       case 'focus': return `Workings ${signedPct(this.castPower(attributes))}. Reserves and recon grow, ${attributes.focus} held.`;
       case 'engineering': return `Repairs ${signedPct(this.repairFactor(attributes) - 1)}. Bench time ${signedPct(this.craftClockFactor(attributes) - 1)}.`;

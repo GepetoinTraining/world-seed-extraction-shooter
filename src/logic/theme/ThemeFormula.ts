@@ -84,6 +84,7 @@ export const stationNumbers = (billCount: number) => ({ minArea: STATION_AREA(bi
 export const consumableNumbers = (kind: string, rank: ThemeRank) => {
   const power = geometric(10, 1.8, rankStep(rank));
   if (kind === 'heal') return { health_restore: Math.round(power * 3) };
+  if (kind === 'energy') return { energy_restore: Math.round(power) };
   return {};
 };
 

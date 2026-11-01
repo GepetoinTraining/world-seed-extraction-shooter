@@ -28,6 +28,8 @@ import { ItemFactory } from '../entities/item/ItemFactory';
 import { Rng } from '../logic/rng/DeterministicRNG';
 import { CombatMath } from '../entities/combat/CombatMath';
 import { BASE_CHANNEL_MS, StatSystem } from '../logic/systems/StatSystem';
+import { CircleSystem } from '../logic/systems/CircleSystem';
+import { ChestSystem } from '../entities/world/ChestSystem';
 import { EffectSystem, IEffectAbility, IEffectReceipt, IStatusPlan, StatusClock } from '../logic/systems/EffectSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock';
@@ -271,8 +273,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       usePlayerStore.setState(s => {
         const session = s.player.currentSession;
         if (!session) return s;
+        // Pedro: magic can refill the day's energy
+        const refilled = receipt.effect === 'rest' ? RestSystem.refillEnergy(s.player, receipt.magnitude).currentSession! : session;
         return { player: { ...s.player, currentSession: {
-          ...session,
+          ...refilled,
           health: receipt.effect === 'heal' ? Math.min(session.maxHealth, session.health + receipt.magnitude) : session.health,
           activeEffects: receipt.status ? StatusClock.add(session.activeEffects, receipt.status, now) : session.activeEffects
         } } };
@@ -295,7 +299,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const castFromFocus = (cast: NonNullable<IPlayerShape['activeCast']>, now: number, origin: { x: number; z: number }, angle: number) => {
     const player = usePlayerStore.getState().player;
     const rank = ProgressionSystem.rankOf(player);
-    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements) : ContentRegistry.ability(cast.id);
+    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements)
+      : cast.kind === 'gift' ? CircleSystem.abilityOf(player, cast.id) : ContentRegistry.ability(cast.id);
     if (!ability) return;
     const can = WeaveSystem.canCast(player, ability, rank);
     if (!can.ok) {
@@ -344,7 +349,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
     }
     // Line 77: keyed by the session's own count of shots, so a run replays the same
-    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes);
+    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon));
 
     if (mode === 'MELEE') {
       // Swing: a short arc resolved by CombatSystem
@@ -954,6 +959,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             const innate = (def as { innate?: string[] } | undefined)?.innate ?? [];
             if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));
             if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId);
+            if (event.entityId) useWorldStore.getState().reportFell(event.entityId);
           }
         }
       });
@@ -973,7 +979,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events);
       if (rewards.levelUp) {
-        feed(`LEVEL ${rewards.levelUp.to}. +${rewards.levelUp.points} attribute point${rewards.levelUp.points === 1 ? '' : 's'}. Spend on the sheet.`, 'proof');
+        feed(ProgressionSystem.levelUpLine(rewards.levelUp.to, rewards.levelUp.points), 'proof');
       }
       if (effectsRef.current.length > 0) {
         effectsRef.current = effectsRef.current.filter(f => now - f.at < DEATH_BURST_MS + 100);
@@ -1275,11 +1281,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // Only what is in sight right now is marked: the window is the sight.
     const things: { x: number; y: number; kind: 'HOSTILE' | 'THING' }[] = [];
+    const worldId = useWorldStore.getState().activeWorldId;
     for (const key of WorldGenerator.chunkKeysInBox(pos.x, pos.z, Math.max(halfW, halfH))) {
       for (const e of map.chunks[key]?.entities ?? []) {
         if (Math.abs(e.position.x - pos.x) > halfW || Math.abs(e.position.y - pos.z) > halfH) continue;
         if (e.type === EntityType.EXTRACTION) continue;
         things.push({ x: e.position.x, y: e.position.y, kind: e.isHostile ? 'HOSTILE' : 'THING' });
+        // A chest in sight is known from now on, and how it looks is how it is remembered
+        if (worldId && e.container && ChestSystem.isChest(e.id)) {
+          const seen = usePlayerStore.getState().player;
+          const marked = ChestSystem.mark(seen, worldId, e);
+          if (marked !== seen) usePlayerStore.setState({ player: marked });
+        }
       }
     }
     const exits: { x: number; y: number }[] = [];
@@ -1294,7 +1307,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }
       exits.push(...found);
     }
-    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits });
+    const marks = worldId ? Object.values(usePlayerStore.getState().player.chestMarks?.[worldId] ?? {}) : [];
+    return fieldMinimap({ map, center: { x: pos.x, z: pos.z }, seen: seenRef.current, things, exits, marks });
   };
 
   // 5. Render
@@ -1397,7 +1411,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
-          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}</Chip>
+          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}{CircleSystem.free(player) > 0 ? ` · ${CircleSystem.free(player)} TO FILL` : ''}</Chip>
           <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>

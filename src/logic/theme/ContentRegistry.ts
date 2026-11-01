@@ -72,6 +72,7 @@ export class ContentRegistry {
     CRAFTED_GEAR_BASES.push(...compiled.craftedGear);
     Object.assign(GEAR_RECIPES, compiled.gearRecipes);
     for (const def of Object.values(compiled.resources)) {
+      if (def.rareFind) continue;
       for (const biome of def.habitat ?? []) (BIOME_RESOURCES[biome] ??= []).push(def.id);
     }
     AFFIX_BATCHES.push(...compiled.affixBatches);

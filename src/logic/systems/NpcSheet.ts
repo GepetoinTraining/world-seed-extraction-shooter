@@ -82,7 +82,7 @@ export class NpcSheet {
     for (const id of pairs.slice(0, rank + 1)) {
       const tags = TagLaw.parseSkillId(id)!;
       const rung = Math.min(RUNG_XP.length - 1, Math.floor(rank / 2));
-      const xp = RUNG_XP[rung] + rng.int(0, 40);
+      const xp = WebSystem.rungXp(rung, rank) + rng.int(0, 40);
       out[id] = WebSystem.withCumulativeXp(WebSystem.freshSkill(id, tags, rank), xp);
     }
     return out;

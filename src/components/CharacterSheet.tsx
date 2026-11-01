@@ -357,7 +357,7 @@ const WhoPanel: React.FC = () => {
       {others.map(skill => (
         <div key={skill.id} className="ws-row ws-small" style={{ padding: '2px 0' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <RankMark rank={ProgressionSystem.getRankFromLevel(skill.level)} scale={1} />
+            <RankMark rank={ProgressionSystem.skillRankOf(skill)} scale={1} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WebSystem.nameOf(skill.id)}</span>
           </span>
           <span className="ws-dim" style={{ flexShrink: 0 }}>level {skill.level}</span>

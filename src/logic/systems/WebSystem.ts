@@ -23,7 +23,7 @@
 import {
   IHubWeb, IItem, IPlayer, ISkillProgress, ISkillState, IWebCredit, IWebPack, IWebStation, UniversalRank
 } from '../../../types';
-import { ProgressionSystem, SKILL_TIME_FACTOR } from '../../entities/player/systems/ProgressionSystem';
+import { ProgressionSystem, SKILL_IMPACT_PER_LEVEL, SKILL_TIME_FACTOR } from '../../entities/player/systems/ProgressionSystem';
 import { RESOURCE_DEFINITIONS, BIOME_RESOURCES, ResourceDef } from '../../entities/item/data/resourceDefinitions';
 import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
 import { AffixBank } from '../content/AffixBank';
@@ -82,6 +82,10 @@ export interface IPlacement {
 }
 
 export interface IEarnedRow {
+  /** A rarer skill climbs slowly, and each level counts for more. */
+  rank: UniversalRank;
+  /** Levels poured in. Each third one earns a gift. */
+  circles: number;
   id: string;
   name: string;
   flavor?: string;
@@ -203,7 +207,7 @@ export class WebSystem {
   // -------------------------------------------------------------------------
 
   static freshSkill(id: string, tags: string[], rank: number): ISkillState {
-    return { id, level: 1, currentXp: 0, tags, rank, scalingAttribute: this.scalingFor(tags) };
+    return { id, level: 1, currentXp: 0, tags, rank, bornRank: rank, scalingAttribute: this.scalingFor(tags) };
   }
 
   private static scalingFor(tags: string[], pack: IWebPack = current()): string {
@@ -214,14 +218,15 @@ export class WebSystem {
   }
 
   static cumulativeXp(skill: ISkillState): number {
-    return ProgressionSystem.getXpForLevel(skill.level) + skill.currentXp;
+    return ProgressionSystem.getXpForLevel(skill.level, ProgressionSystem.skillRarity(skill)) + skill.currentXp;
   }
 
   static withCumulativeXp(skill: ISkillState, xp: number): ISkillState {
     let level = 1;
     let left = Math.max(0, xp);
-    while (left >= ProgressionSystem.getXpToNextLevel(level)) {
-      left -= ProgressionSystem.getXpToNextLevel(level);
+    const rarity = ProgressionSystem.skillRarity(skill);
+    while (left >= ProgressionSystem.getXpToNextLevel(level, rarity)) {
+      left -= ProgressionSystem.getXpToNextLevel(level, rarity);
       level++;
     }
     return { ...skill, level, currentXp: left };
@@ -311,26 +316,44 @@ export class WebSystem {
     if (!pair || !player.bank) return { cost: base, winging: false };
     const skill = player.bank.universalSkills[pair.id];
     if (!skill) return { cost: Math.ceil(base * WINGING_ENERGY_FACTOR), winging: true };
-    return { cost: Math.max(1, Math.round(base * (1 - this.masteryOf(skill).rung * RUNG_ENERGY_DISCOUNT))), winging: false };
+    return { cost: Math.max(1, Math.round(base * (1 - this.masteryOf(skill).rung * RUNG_ENERGY_DISCOUNT) / (1 + this.skillPower(skill)))), winging: false };
   }
 
   static clockFactor(player: IPlayer, pair: ISkillPair | null): number {
     if (!pair) return 1;
     const skill = player.bank.universalSkills[pair.id];
     if (!skill) return WINGING_CLOCK_FACTOR;
-    return 1 - this.masteryOf(skill).rung * RUNG_CLOCK_DISCOUNT;
+    return (1 - this.masteryOf(skill).rung * RUNG_CLOCK_DISCOUNT) / (1 + this.skillPower(skill));
+  }
+
+  /** What a skill's levels add up to. A rare skill's level is worth far more than a common one's. */
+  static skillPower(skill: Pick<ISkillState, 'level' | 'rank' | 'bornRank'>): number {
+    return (skill.level - 1) * SKILL_IMPACT_PER_LEVEL * ProgressionSystem.skillImpactFactor(ProgressionSystem.skillRarity(skill));
+  }
+
+  /** The strongest held skill the weapon in the hand answers to: every tag of the skill is on the weapon. */
+  static handPower(player: IPlayer, weapon: IItem | undefined): number {
+    const tags = weapon?.tags ?? [];
+    return this.heldSkills(player.bank.universalSkills).reduce((best, skill) =>
+      skill.tags.length > 0 && skill.tags.every(t => tags.includes(t)) ? Math.max(best, this.skillPower(skill)) : best, 0);
   }
 
   // -------------------------------------------------------------------------
   // THE RUNGS, and the reveal they join
   // -------------------------------------------------------------------------
 
+  /** What a rung asks of a skill of this rank. */
+  static rungXp(rung: number, skillRank: number = 0): number {
+    return RUNG_XP[rung] * ProgressionSystem.skillTimeFactor(skillRank);
+  }
+
   static masteryOf(skill: ISkillState): { rung: number; rungName: MasteryRung; into: number; atMax: boolean } {
     const xp = this.cumulativeXp(skill);
     let rung = 0;
-    RUNG_XP.forEach((need, i) => { if (xp >= need) rung = i; });
+    const rarity = ProgressionSystem.skillRarity(skill);
+    RUNG_XP.forEach((_need, i) => { if (xp >= this.rungXp(i, rarity)) rung = i; });
     const atMax = rung >= RUNG_XP.length - 1;
-    const into = atMax ? 1 : Math.max(0, Math.min(1, (xp - RUNG_XP[rung]) / (RUNG_XP[rung + 1] - RUNG_XP[rung])));
+    const into = atMax ? 1 : Math.max(0, Math.min(1, (xp - this.rungXp(rung, rarity)) / (this.rungXp(rung + 1, rarity) - this.rungXp(rung, rarity))));
     return { rung, rungName: MASTERY_RUNGS[rung], into, atMax };
   }
 
@@ -571,6 +594,8 @@ export class WebSystem {
         const node = this.nodeOf(skill.id, pack);
         return {
           id: skill.id,
+          rank: ProgressionSystem.skillRankOf(skill),
+          circles: skill.circles ?? 0,
           name: node.name,
           flavor: this.flavorOf(skill.id, pack),
           rung: mastery.rung,
@@ -632,8 +657,9 @@ export class WebSystem {
 
   /** Two old tracks on one identity lose nothing: the work adds, the first origin stays. */
   private static merge(a: ISkillState, b: ISkillState): ISkillState {
-    const lifted = this.withCumulativeXp(a, this.cumulativeXp(a) + this.cumulativeXp(b));
-    return { ...lifted, rank: Math.max(a.rank ?? 0, b.rank ?? 0) };
+    const rank = Math.max(a.rank ?? 0, b.rank ?? 0);
+    const bornRank = Math.max(ProgressionSystem.skillRarity(a), ProgressionSystem.skillRarity(b));
+    return this.withCumulativeXp({ ...a, rank, bornRank }, this.cumulativeXp(a) + this.cumulativeXp(b));
   }
 
   private static legacyIdentity(oldId: string, skill: ISkillState, pack: IWebPack): string[] {

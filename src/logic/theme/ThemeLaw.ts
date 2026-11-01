@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -108,6 +108,8 @@ export class ThemeLaw {
       if (!has(MATERIAL_FORMS, m.form) || !has(HARVEST_VERBS, m.verb)) return no(`${m.key} is outside the forms.`);
       if (!has(WEIGHTS, m.weight) || !has(WORTHS, m.worth)) return no(`${m.key} is outside the bands.`);
       if (m.habitat.length === 0 || !m.habitat.every(b => has(BIOMES, b))) return no(`${m.key} lies nowhere the world has.`);
+      if (m.restores !== undefined && !has(MATERIAL_RESTORES, m.restores)) return no(`${m.key}: "${m.restores}" is not a thing a material restores.`);
+      if (m.restores === 'energy' && (m.verb !== 'hands' || m.worth !== 'rare' || m.onShelf)) return no(`${m.key} refills energy, so it is gathered by hand, rare, and on no shelf.`);
       const t = unknownTag(m.tags);
       if (t) return no(`${m.key} is tagged "${t}", which is not registered.`);
     }
@@ -151,6 +153,7 @@ export class ThemeLaw {
     for (const c of pack.consumables) {
       if (!claim(c.key)) return no(`consumable "${c.key}" needs its own plain key.`);
       if (!has(RANKS, c.rank) || !has(CONSUMABLE_KINDS, c.kind)) return no(`${c.key} is outside the bands.`);
+      if (c.kind === 'energy' && c.onShelf) return no(`${c.key} refills energy, and that is on no shelf.`);
       if (c.kind === 'scroll' && !abilityKeys.has(c.casts)) return no(`${c.key} is a scroll that casts nothing.`);
       const t = unknownTag(c.tags);
       if (t) return no(`${c.key} is tagged "${t}", which is not registered.`);
@@ -189,7 +192,7 @@ export class ThemeLaw {
     }
     if (!pack.materials.some(m => m.tags.includes('building'))) return no('nothing there can raise a wall.');
     for (const biome of BIOMES) {
-      if (!pack.materials.some(m => m.habitat.includes(biome))) return no(`nothing can be gathered on the ${biome} ground.`);
+      if (!pack.materials.some(m => m.habitat.includes(biome) && m.restores !== 'energy')) return no(`nothing can be gathered on the ${biome} ground.`);
       if (!pack.creatures.some(c => c.habitat.includes(biome))) return no(`nothing lives on the ${biome} ground.`);
     }
     if (pack.lore.length === 0) return no('it has no lore to find.');

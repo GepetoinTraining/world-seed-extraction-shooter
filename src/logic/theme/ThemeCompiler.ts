@@ -136,7 +136,8 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
     const h = harvestNumbers(m.verb, m.rank);
     out.resources[id] = {
       id, name: m.name, description: m.blurb, themeId: pack.themeId,
-      type: ItemType.RESOURCE, rank: m.rank as UniversalRank, rarity: RARITY_OF[m.worth],
+      type: m.restores === 'energy' ? ItemType.CONSUMABLE : ItemType.RESOURCE, rank: m.rank as UniversalRank, rarity: RARITY_OF[m.worth],
+      ...(m.restores === 'energy' ? { stats: consumableNumbers('energy', m.rank), rareFind: true } : {}),
       weight: n.weight, dimensions: n.dimensions, value: n.value,
       icon: `${id}_icon`, visuals: { modelId: m.form, colorHex: lookOf(id) },
       materialProps: { [MaterialPropertyType.DENSITY]: n.density, [MaterialPropertyType.HARDNESS]: n.hardness },

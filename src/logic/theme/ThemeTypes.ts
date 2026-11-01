@@ -42,8 +42,10 @@ export const GEAR_KINDS = [
 ] as const;
 export type GearKind = typeof GEAR_KINDS[number];
 
-/** Nothing here restores energy: only a rest does (D51). */
-export const CONSUMABLE_KINDS = ['heal', 'scroll'] as const;
+/** Pedro: a potion can refill energy, and the law keeps those off every shelf. */
+export const CONSUMABLE_KINDS = ['heal', 'scroll', 'energy'] as const;
+/** What a material does for whoever eats it. A plant that refills energy is very, very rare. */
+export const MATERIAL_RESTORES = ['none', 'energy'] as const;
 
 export const STAT_BANDS = ['minor', 'moderate', 'major'] as const;
 
@@ -59,6 +61,15 @@ export const TRIGGERS = ['on_hit', 'on_defeat', 'on_hurt', 'on_low_health'] as c
 /** What a minted skill can let its holder do. Rest is the one with a reader (D58). */
 export const SKILL_GRANTS = ['rest'] as const;
 export const COST_BANDS = ['trivial', 'low', 'medium', 'high', 'extreme'] as const;
+/**
+ * What a passive gift from a skill's circles can add: the stats whose readers go through
+ * StatSystem.total, so the bonus really acts. A stat with another reader is not here.
+ */
+export const PASSIVE_STATS = [
+  'damage', 'defense', 'max_health', 'max_energy', 'accuracy_rating', 'evasion_rating', 'attack_speed',
+  'crit_chance', 'crit_multiplier', 'block_chance', 'poison_damage', 'light_radius', 'pickup_radius',
+  'carry_capacity', 'noise_reduction', 'luck_find_rarity', 'field_analysis_speed'
+] as const;
 
 /** D63: the trees no pack may lack. A tree is any plain word, and more are welcome. */
 export const REQUIRED_TREES = ['animal', 'monster'] as const;
@@ -117,6 +128,8 @@ export interface IThemeMaterial {
   habitat: ThemeBiome[];
   /** Sold on the hub's shelf as well as found. */
   onShelf: boolean;
+  /** Eaten for this. Left out of a pack written before there was such a thing. */
+  restores?: typeof MATERIAL_RESTORES[number];
 }
 
 export interface IThemeStation {
@@ -262,7 +275,7 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   }),
   materials: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), form: oneOf(MATERIAL_FORMS), verb: oneOf(HARVEST_VERBS),
-    weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), habitat: manyOf(BIOMES), onShelf: { type: 'boolean' }
+    weight: oneOf(WEIGHTS), worth: oneOf(WORTHS), habitat: manyOf(BIOMES), onShelf: { type: 'boolean' }, restores: oneOf(MATERIAL_RESTORES)
   }),
   stations: list({ key: str, name: str, blurb: str, tool: strs, material: strs, bill: list({ tag: str, count }) }),
   goods: list({

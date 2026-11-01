@@ -30,6 +30,17 @@ const RARITY_MULTIPLIER: Record<Rarity, number> = {
  */
 export const SKILL_TIME_FACTOR = 2.5;
 
+/**
+ * A rarer skill climbs slowly and each level counts for more: "a rarer skill (rank
+ * SS for instance, think Kirito's dual wield) should level up slowly and have a large
+ * impact per level." A skill's rarity is the rank it settled at, and each step up
+ * multiplies both. Rank SS asks about 27 times the work of rank F per level, and each
+ * level does about 17 times as much. Guesses until Wave 12.
+ */
+export const SKILL_RANK_TIME_GROWTH = 1.6;
+export const SKILL_RANK_IMPACT_GROWTH = 1.5;
+export const SKILL_IMPACT_PER_LEVEL = 0.02;
+
 export const XP_CONSTANTS = {
   BASE_LEVEL_XP: 100 * SKILL_TIME_FACTOR,
   EXPONENT: 2.1,
@@ -66,6 +77,19 @@ export const RANK_XP_THRESHOLDS: Record<UniversalRank, number> = {
 export const POINTS_PER_LEVEL = 1;
 export const LEVEL_KILLS = 5;
 export const LEVEL_GROWTH = 1.5;
+
+// --- EXPERIENCE IN THE WORLD ---
+// Pedro: looting and extracting yield experience without a double dip, "in world, and
+// be tied to the risk, a chest has guards around it normally, so it should yield more
+// than grabbing a pebble." So it pays once, at the taking, and the beacon pays nothing.
+// The thing's own worth is a share of what defeating something of its rank pays, and
+// every hostile still standing near it adds its own share. Guesses until Wave 12.
+export const XP_SHARE_HARVEST = 0.04;
+export const XP_SHARE_CHEST = 0.5;
+export const XP_SHARE_THREAT = 0.25;
+export const THREAT_RADIUS_TILES = 12;
+
+type HasWorth = { rank: UniversalRank; rarity?: Rarity };
 
 type HasLevels = Pick<IPlayer, 'rank' | 'rankXp' | 'levelXp' | 'levelsBanked'>;
 
@@ -114,9 +138,20 @@ export class ProgressionSystem {
     return this.levelProgress(player).level;
   }
 
-  /** Every level climbed, at any rank. A reset does not lower this, so nothing that reads it takes a hit. */
+  /** Every level climbed, at any rank. A reset does not lower this, and circles read from it. */
   static levelsEarned(player: HasLevels): number {
     return (player.levelsBanked ?? 0) + this.levelOf(player) - 1;
+  }
+
+  /** What taking this thing pays: its own worth, and the risk of what still stands near it. At least one. */
+  static worldXp(target: HasWorth, share: number, threats: HasWorth[] = []): number {
+    const worth = (w: HasWorth) => this.calculateKillXp(w.rank, w.rarity ?? Rarity.COMMON);
+    return Math.max(1, Math.floor(worth(target) * share + threats.reduce((sum, t) => sum + worth(t) * XP_SHARE_THREAT, 0)));
+  }
+
+  /** The line a level gets, wherever the experience came from. */
+  static levelUpLine(to: number, points: number): string {
+    return `LEVEL ${to}. +${points} attribute point${points === 1 ? '' : 's'}, and a circle to fill. On the sheet.`;
   }
 
   /** Experience lands: lifetime and level both, and each level crossed pays its points. */
@@ -132,8 +167,8 @@ export class ProgressionSystem {
 
   /**
    * D83's seam: the guild grants a rank for hard quests. The level resets and
-   * nothing else moves: attributes, unspent points and whatever grows with level all
-   * stay. With no rank named it is the next one. A rank never falls this way.
+   * the levels climbed are banked: attributes, unspent points and circles all stay. With
+   * no rank named it is the next one. A rank never falls this way.
    */
   static grantRank(player: IPlayer, to?: UniversalRank): { player: IPlayer; granted: boolean; from: UniversalRank; to: UniversalRank } {
     const settled = this.migrate(player);
@@ -154,10 +189,10 @@ export class ProgressionSystem {
    * - The rank its experience earned is stored, and experience never moves it again.
    * - What stands past that rank's floor becomes levels, paid in points as a level
    *   is, since no rank-up ever paid for that stretch.
-   * - The ranks it walked count as levels climbed, so it holds the energy a new
-   *   character would. Their points were paid by the old rank-ups.
+   * - The ranks it walked count as levels climbed, so it has the circles a new character
+   *   would. Their points were paid by the old rank-ups.
    * - Skills keep their level and rung, and half-done work keeps its fill, against
-   *   costs that are now SKILL_TIME_FACTOR higher.
+   *   costs that are now SKILL_TIME_FACTOR higher, and higher again by the skill's rank.
    */
   static migrate(player: IPlayer): IPlayer {
     if (player.rank) return player;
@@ -167,7 +202,7 @@ export class ProgressionSystem {
     const level = this.levelFromXp(rank, levelXp).level;
     const levelsBanked = RANK_ORDER.slice(0, this.rankIndex(rank)).reduce((sum, walked, i) =>
       sum + this.levelFromXp(walked, RANK_XP_THRESHOLDS[RANK_ORDER[i + 1]] - RANK_XP_THRESHOLDS[walked]).level - 1, 0);
-    const scaleSkill = (s: ISkillState): ISkillState => ({ ...s, currentXp: Math.round(s.currentXp * SKILL_TIME_FACTOR) });
+    const scaleSkill = (s: ISkillState): ISkillState => ({ ...s, bornRank: this.skillRarity(s), currentXp: Math.round(s.currentXp * SKILL_TIME_FACTOR * this.skillTimeFactor(this.skillRarity(s))) });
     const scaleWork = (p: ISkillProgress): ISkillProgress => ({ ...p, weight: p.weight * SKILL_TIME_FACTOR });
     const mapValues = <T,>(rows: Record<string, T>, fn: (row: T) => T) =>
       Object.fromEntries(Object.entries(rows).map(([id, row]) => [id, fn(row)]));
@@ -210,34 +245,42 @@ export class ProgressionSystem {
     return Math.floor(totalXp / denominator);
   }
 
+  /** How much longer a skill of this rank takes than one of rank F. */
+  static skillTimeFactor(skillRank: number = 0): number {
+    return Math.pow(SKILL_RANK_TIME_GROWTH, Math.max(0, skillRank));
+  }
+
+  /** How much more a level of this rank does than one of rank F. */
+  static skillImpactFactor(skillRank: number = 0): number {
+    return Math.pow(SKILL_RANK_IMPACT_GROWTH, Math.max(0, skillRank));
+  }
+
+  /** How rare a skill is. One from before this has no birth on record, and what it had worked stands in. */
+  static skillRarity(skill: Pick<ISkillState, 'rank' | 'bornRank'>): number {
+    return skill.bornRank ?? skill.rank ?? 0;
+  }
+
+  /** The rank a skill shows: how rare it is. */
+  static skillRankOf(skill: Pick<ISkillState, 'rank' | 'bornRank'>): UniversalRank {
+    return RANK_ORDER[Math.max(0, this.skillRarity(skill))] ?? UniversalRank.SSS;
+  }
+
   /**
    * XP needed to go from current level to next.
    */
-  static getXpToNextLevel(currentLevel: number): number {
-    return Math.floor(XP_CONSTANTS.BASE_LEVEL_XP * Math.pow(currentLevel, XP_CONSTANTS.EXPONENT));
+  static getXpToNextLevel(currentLevel: number, skillRank: number = 0): number {
+    return Math.floor(XP_CONSTANTS.BASE_LEVEL_XP * Math.pow(currentLevel, XP_CONSTANTS.EXPONENT) * this.skillTimeFactor(skillRank));
   }
 
   /**
    * Total cumulative XP for a level.
    */
-  static getXpForLevel(level: number): number {
+  static getXpForLevel(level: number, skillRank: number = 0): number {
     let total = 0;
     for (let i = 1; i < level; i++) {
-      total += Math.floor(XP_CONSTANTS.BASE_LEVEL_XP * Math.pow(i, XP_CONSTANTS.EXPONENT));
+      total += this.getXpToNextLevel(i, skillRank);
     }
     return total;
-  }
-
-  static getRankFromLevel(level: number): UniversalRank {
-    if (level < 10) return UniversalRank.F;
-    if (level < 25) return UniversalRank.E;
-    if (level < 45) return UniversalRank.D;
-    if (level < 65) return UniversalRank.C;
-    if (level < 80) return UniversalRank.B;
-    if (level < 95) return UniversalRank.A;
-    if (level < 100) return UniversalRank.S;
-    if (level < 120) return UniversalRank.SS;
-    return UniversalRank.SSS;
   }
 
   static calculateLearningRate(

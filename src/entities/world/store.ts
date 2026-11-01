@@ -10,6 +10,7 @@ import { AffixBank } from '../../logic/content/AffixBank';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from './Director';
 import { DirectorStore } from './DirectorStore';
+import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from './ChestSystem';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
 
@@ -46,6 +47,10 @@ interface WorldState {
   /** D48: how this world's monsters have come along, fed by this session's fights. */
   directorRecord: IDirectorRecord | null;
   reportToDirector: (kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string) => void;
+  /** What has been taken from the open world, kept beside it. Null where a world has no cycles to refill on. */
+  chestRecord: IChestRecord | null;
+  reportChestLooted: (chestId: string) => void;
+  reportFell: (entityId: string) => void;
   availableWorlds: IWorldCard[];
   activeWorldId: string | null; 
   currentMap: IMap | null;
@@ -80,6 +85,21 @@ let generationContext: IGenerationContext | null = null;
 
 export const useWorldStore = create<WorldState>((set, get) => ({
   directorRecord: null,
+  chestRecord: null,
+  reportChestLooted: (chestId) => {
+    const { chestRecord, activeWorldId, generation } = get();
+    if (!chestRecord || !activeWorldId || !ChestSystem.isChest(chestId)) return;
+    const next = ChestSystem.looted(chestRecord, chestId, generation);
+    set({ chestRecord: next });
+    void ChestStore.save(activeWorldId, next);
+  },
+  reportFell: (entityId) => {
+    const { chestRecord, activeWorldId, generation } = get();
+    if (!chestRecord || !activeWorldId || !ChestSystem.chestOfGuard(entityId)) return;
+    const next = ChestSystem.fell(chestRecord, entityId, generation);
+    set({ chestRecord: next });
+    void ChestStore.save(activeWorldId, next);
+  },
   reportToDirector: (kind, definitionId) => {
     const record = get().directorRecord;
     if (record) set({ directorRecord: Director.report(record, kind, definitionId) });
@@ -170,7 +190,16 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         set({ directorRecord: director, generation: moment.generation });
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, worldCard.magicUnlocked);
 
-        generationContext = instance.context;
+        // A world outside the clock has no cycle to refill on, so it keeps no record
+        const chestRecord = worldCard.isDebug ? null : await ChestStore.load(worldCard.id).catch(() => emptyChestRecord());
+        set({ chestRecord });
+        generationContext = {
+          ...instance.context,
+          lay: chunk => {
+            const held = get().chestRecord;
+            if (held) ChestSystem.layOver(worldCard.seed, chunk, held, moment.generation);
+          }
+        };
         const map = instance.mapData;
 
         // Wave 10E (the Dreaming): the world dreams from the bank it was pinned
