@@ -10,6 +10,7 @@ import { Rng } from '../../logic/rng/DeterministicRNG';
 import { hash2, layerSeed, valueNoise } from '../../logic/rng/noise';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { Director, IDirectorPool, IDirectorRecord } from './Director';
+import { Leaders, isRosterElite } from './Leaders';
 
 export interface IGenerationContext {
   mobDefinitions: any[];
@@ -23,6 +24,16 @@ export interface IGenerationContext {
   directorPool?: IDirectorPool;
   /** What a world's record lays over a chunk once it is built. The build itself stays pure. */
   lay?: (chunk: IChunk) => void;
+  /** D27: the web a leader's sheet is read through. Absent means the first version. */
+  webVersion?: number;
+}
+
+/** One body to stand on a chunk, by its kind, with what its sheet adds if it has one. */
+export interface IBodyToStand {
+  id: string;
+  def: { id: string; name: string; rank: UniversalRank; baseHealth: number; tags?: string[]; generation?: number };
+  bonusHealth?: number;
+  bonusDamage?: number;
 }
 
 /** Timber: what makes a forest, and what a trunk is. Read from what it is, never by a name. */
@@ -31,7 +42,11 @@ export const isTimber = (def: any): boolean => {
   return tags.includes('flora') && tags.includes('wood') && !tags.includes('seed');
 };
 
-/** R4: an elite is rare, and alone. Read from its tags, so a theme's own elite counts. */
+/**
+ * R4: what is one of a kind is rare, and alone. Read from its tags, so a theme's own counts. A
+ * plain elite stands under this only in a pack written before elites led (D93); today's come
+ * from the roster (`Leaders`), at the head of a pack, and never from a chunk's own pool.
+ */
 const ELITE_TAGS = ['elite', 'boss', 'titan', 'god'];
 const isElite = (mob: any) => (mob.tags ?? []).some((t: string) => ELITE_TAGS.includes(t));
 const ELITE_WEIGHT = 0.04;
@@ -323,9 +338,10 @@ export class WorldGenerator {
   private static spawnPool(context: IGenerationContext, biome: BiomeType, rank: UniversalRank): any[] {
     const order = Object.values(UniversalRank);
     const rankOf = (m: any) => order.indexOf(m.rank);
+    const anyone = context.mobDefinitions.filter((m: any) => !isRosterElite(m));
     // Ground with nothing of its own borrows from everyone, or the region would stand empty.
-    const own = context.mobDefinitions.filter((m: any) => !m.habitat || m.habitat.includes(biome));
-    const living = own.length > 0 ? own : context.mobDefinitions;
+    const own = anyone.filter((m: any) => !m.habitat || m.habitat.includes(biome));
+    const living = own.length > 0 ? own : anyone;
     const eligible = living.filter((m: any) => rankOf(m) <= order.indexOf(rank));
     if (eligible.length > 0) return eligible;
 
@@ -339,7 +355,7 @@ export class WorldGenerator {
    * R4's second fault: the pool was flat, so a third of a rich chunk's packs were dragons.
    * A pick is weighted toward the chunk's own rank, and an elite is scarce.
    */
-  private static pickSpawn(rng: { next: () => number }, pool: any[], rank: UniversalRank): any {
+  static pickSpawn(rng: { next: () => number }, pool: any[], rank: UniversalRank): any {
     const order = Object.values(UniversalRank);
     const weight = (m: any) => Math.pow(RANK_FALLOFF, Math.abs(order.indexOf(rank) - order.indexOf(m.rank))) * (isElite(m) ? ELITE_WEIGHT : 1);
     const total = pool.reduce((sum, m) => sum + weight(m), 0);
@@ -354,6 +370,90 @@ export class WorldGenerator {
   /** A chunk from its place alone: same seed and place, same chunk, in any world and any order. */
   static buildChunk(seed: string, exits: { x: number; y: number }[], cx: number, cy: number, context: IGenerationContext): IChunk {
     const ctx = ordered(context);
+    const chunk = this.chunkFrom(seed, exits, cx, cy, ctx, false);
+    this.standLeaders(seed, chunk, context);
+    return chunk;
+  }
+
+  /**
+   * What the land's own packs count on this chunk at alpha, by kind. The same rolls as a build,
+   * stopped before what grows there, so a whole sector costs about as much as one chunk.
+   */
+  static censusChunk(seed: string, exits: { x: number; y: number }[], cx: number, cy: number, context: IGenerationContext): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const e of this.chunkFrom(seed, exits, cx, cy, ordered(context), true).entities) {
+      if (e.type === EntityType.MOB && !/_guard\d+$/.test(e.id)) counts[e.definitionId] = (counts[e.definitionId] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  /** The roster's own at alpha: each leader and its pack stand together on their own keyed rolls, so nothing else moves. */
+  private static standLeaders(seed: string, chunk: IChunk, context: IGenerationContext) {
+    const sx = Math.floor(chunk.x / SECTOR_CHUNKS), sy = Math.floor(chunk.y / SECTOR_CHUNKS);
+    const here = Leaders.rosterOf(seed, sx, sy, context).filter(l => l.cx === chunk.x && l.cy === chunk.y);
+    if (here.length === 0) return;
+    const kinds = new Map(context.mobDefinitions.map((m: any) => [m.id, m]));
+    this.standBodies(seed, chunk, here.map(l => {
+      const def = kinds.get(l.kind);
+      const led = def.leads ? kinds.get(def.leads) : undefined;
+      return [
+        { id: l.id, def, ...Leaders.numbers(seed, l, context) },
+        ...(led ? Array.from({ length: l.pack }, (_, i) => ({ id: `${l.id}_f${i}`, def: led })) : [])
+      ];
+    }), context);
+  }
+
+  /**
+   * Stands groups of bodies on a built chunk, each group close together on open ground, one to
+   * a tile, clear of a drop. A read of the record, so it hashes nothing and rolls on its own keys.
+   */
+  static standBodies(seed: string, chunk: IChunk, groups: IBodyToStand[][], context: IGenerationContext) {
+    const ctx = ordered(context);
+    const fields = new Map<string, TileField>();
+    const fieldAt = (tx: number, ty: number) => {
+      const qx = Math.floor(tx / QUADRANT_TILES), qy = Math.floor(ty / QUADRANT_TILES);
+      const key = `${qx},${qy}`;
+      let field = fields.get(key);
+      if (!field) {
+        field = new TileField(seed, qx * QUADRANT_TILES, qy * QUADRANT_TILES);
+        fields.set(key, field);
+      }
+      return field;
+    };
+    const x0 = chunk.x * CHUNK_QUADRANTS * QUADRANT_TILES, y0 = chunk.y * CHUNK_QUADRANTS * QUADRANT_TILES;
+    const span = CHUNK_QUADRANTS * QUADRANT_TILES;
+    for (const e of chunk.entities) fieldAt(tileOf(e.position.x), tileOf(e.position.y)).reserve(tileOf(e.position.x), tileOf(e.position.y));
+    const drop = this.dropTile(seed, Math.floor(chunk.x / SECTOR_CHUNKS), Math.floor(chunk.y / SECTOR_CHUNKS));
+    const nearDrop = (at: { x: number; y: number }) => !!drop && Math.hypot(tileOf(at.x) - drop.x, tileOf(at.y) - drop.y) < DROP_CLEAR_TILES;
+
+    for (const group of groups) {
+      if (group.length === 0) continue;
+      const rng = Rng.fromKey(`${seed}:stand:v1:${group[0].id}`);
+      let mx = x0 + rng.int(0, span), my = y0 + rng.int(0, span);
+      for (const body of group) {
+        let at: { x: number; y: number } | null = null;
+        // A lake or the ground around a drop refuses a tile: it tries the rest of its keyed places
+        for (let tries = 0; tries < 8 && !at; tries++) {
+          const tx = clampTile(mx + rng.int(-2, 3), x0, x0 + span - 1), ty = clampTile(my + rng.int(-2, 3), y0, y0 + span - 1);
+          const place = fieldAt(tx, ty).place(tx, ty);
+          if (place && !nearDrop(place)) at = place;
+          else { mx = x0 + rng.int(0, span); my = y0 + rng.int(0, span); }
+        }
+        if (!at) continue;
+        const variant = Director.variantOf(seed, body.id, body.def.id, body.def.name, ctx.director, ctx.directorPool, body.def.tags, body.def.generation);
+        const bonusHealth = (body.bonusHealth ?? 0) + variant.bonusHealth, bonusDamage = (body.bonusDamage ?? 0) + variant.bonusDamage;
+        chunk.entities.push({
+          id: body.id, type: EntityType.MOB, definitionId: body.def.id, position: at,
+          rank: body.def.rank, rarity: Rarity.COMMON, isHostile: true, health: body.def.baseHealth + bonusHealth,
+          ...(variant.displayName ? { displayName: variant.displayName } : {}),
+          ...(bonusHealth !== 0 || bonusDamage !== 0 ? { bonusHealth, bonusDamage } : {}),
+          ...(variant.learned.length > 0 ? { learned: variant.learned } : {})
+        });
+      }
+    }
+  }
+
+  private static chunkFrom(seed: string, exits: { x: number; y: number }[], cx: number, cy: number, ctx: IGenerationContext, countOnly: boolean): IChunk {
     const biome = this.biomeAt(seed, cx, cy);
     const [, rank, rarity] = this.rankBand(seed, cx, cy, ctx.difficulty);
 
@@ -372,7 +472,7 @@ export class WorldGenerator {
     });
 
     for (let qy = 0; qy < CHUNK_QUADRANTS; qy++) for (let qx = 0; qx < CHUNK_QUADRANTS; qx++) {
-      this.fillQuadrant(chunk, seed, cx * CHUNK_QUADRANTS + qx, cy * CHUNK_QUADRANTS + qy, biome, rank, rarity, ctx, inChunk);
+      this.fillQuadrant(chunk, seed, cx * CHUNK_QUADRANTS + qx, cy * CHUNK_QUADRANTS + qy, biome, rank, rarity, ctx, inChunk, countOnly);
     }
     return chunk;
   }
@@ -384,7 +484,7 @@ export class WorldGenerator {
 
   private static fillQuadrant(
     chunk: IChunk, seed: string, qx: number, qy: number, biome: BiomeType,
-    rank: UniversalRank, rarity: Rarity, ctx: IGenerationContext, exits: { x: number; y: number }[]
+    rank: UniversalRank, rarity: Rarity, ctx: IGenerationContext, exits: { x: number; y: number }[], countOnly = false
   ) {
     const rng = Rng.fromKey(`${seed}:quad:v2:${qx},${qy}`);
     const x0 = qx * QUADRANT_TILES, y0 = qy * QUADRANT_TILES;
@@ -402,8 +502,7 @@ export class WorldGenerator {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
       const body = id(suffix);
-      template = Director.kindOf(seed, body, template, ctx.director);
-      const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation);
+      const variant = countOnly ? { bonusHealth: 0, bonusDamage: 0, traits: [], learned: [] as string[], displayName: undefined } : Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation);
       push({
         id: body, type: EntityType.MOB, definitionId: template.id, position: at,
         rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth + variant.bonusHealth,
@@ -442,6 +541,7 @@ export class WorldGenerator {
         for (let i = 0; i < count; i++) mob(`m${i}`, template, px + rng.int(-2, 3), py + rng.int(-2, 3));
       }
     }
+    if (countOnly) return;
 
     // What grows or lies here, from the biome's own table.
     const allowed = BIOME_RESOURCES[biome] || [];

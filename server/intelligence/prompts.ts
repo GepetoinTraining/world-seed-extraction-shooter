@@ -29,13 +29,15 @@ Law, and a pack that breaks it is refused whole:
 - Every kind of ground (${BIOMES.join(', ')}) gets a region name in this world's own words, at least one creature and at least one material.
 - There must be something rank F or E to start on; a rank F weapon, a rank F piece of armor; a chop_tool if anything is chopped, a mine_tool if anything is mined; a material tagged "building"; lore to find.
 - Every creature names its tree, a lower_snake_case word. A world holds at least these: ${REQUIRED_TREES.join(', ')}. Animals are its neutral creatures, wild and kept, mostly PASSIVE or NEUTRAL, each kind of ground with its own; monsters are what makes the place dangerous. More trees are welcome. Behaviour does not decide the tree: a bear that leaves you alone and a god that leaves you alone are both NEUTRAL, in different trees.
+- Every creature says "social" (does it live in groups) and "builds" (can its leaders raise a base; an animal never does). Write plain elites, tagged "elite", as many as the world wants: a social one names in "leads" the key of the social kind of its own tree whose pack it heads, and a solitary one leaves "leads" empty and walks alone. Every other creature leaves "leads" empty. A world needs at least one social elite. Never write "titan": a titan is earned.
+- Every creature leaves junk: "junk" lists what falling bodies leave, only worth its sale, each naming in "from" the creature tags it comes from. Every creature must match at least one.
 - Goods are made from materials or other goods in this pack, never from themselves. A station key, or empty for any workshop bench. Goods tagged paper and ink let people draft plans, so give the world some.
 - Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart". A downside is honest: give good things a cost.
 - Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
 - Gear kinds: ${GEAR_KINDS.join(', ')}.
 - Energy is a character's day. An ability with effect "rest" refills it for the caster. A consumable of kind "energy" refills it and is never on a shelf. A material with restores "energy" is a plant eaten for it, gathered by hand, worth rare, on no shelf, and found almost nowhere; every other material has restores "none". These are very rare: most worlds hold one or two at most, and none is required.
 
-Make the world coherent. Creatures, materials, weapons, affixes and lore should all sound like one place. A world of a dozen creatures and two dozen pieces of gear is a good start; more is welcome. Elites and bosses are tagged "elite" or "boss".
+Make the world coherent. Creatures, materials, weapons, affixes and lore should all sound like one place. A world of a dozen creatures and two dozen pieces of gear is a good start; more is welcome. Elites are tagged "elite" and bosses "boss".
 
 Registry:
 ${REGISTRY}`;

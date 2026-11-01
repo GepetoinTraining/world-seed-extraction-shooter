@@ -3,6 +3,7 @@
  * No bar calls a model. Monsters and wind-ups run on a faked clock.
  */
 
+import { Leaders } from '../src/entities/world/Leaders';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IPlayer, Rarity, UniversalRank } from '../types';
 import { EffectSystem, IEffectAbility, StatusClock } from '../src/logic/systems/EffectSystem';
@@ -189,7 +190,8 @@ describe('line 90: the Director', () => {
     let record = emptyDirectorRecord();
     for (let i = 0; i < 6; i++) record = Director.evolve(record);
     const locked = land(ctx(record, false));
-    expect(locked.filter(m => m.bonusHealth || m.bonusDamage)).toEqual([]);
+    // A leader's own toughness comes from its sheet (D93), and no prefix gave it that
+    expect(locked.filter(m => !Leaders.isLeader(m.id) && (m.bonusHealth || m.bonusDamage))).toEqual([]);
   });
 });
 

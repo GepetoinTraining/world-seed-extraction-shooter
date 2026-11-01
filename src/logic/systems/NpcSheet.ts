@@ -49,6 +49,11 @@ export class NpcSheet {
     };
   }
 
+  /** The stats alone, under the same key as `read`: they ask nothing of any web. */
+  static statsOf(worldSeed: string, entity: Pick<IWorldEntity, 'id' | 'rank'>): IAttributes {
+    return this.dealStats(`${worldSeed}:npc:${entity.id}`, ProgressionSystem.rankIndex(entity.rank));
+  }
+
   /** Wave 11's seam: the bond names the person, and the sheet reads back from it. */
   static fromBond(bond: IItem): INpcSheet | null {
     const data = bond.bondData;

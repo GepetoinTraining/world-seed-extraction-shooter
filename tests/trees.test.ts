@@ -18,6 +18,7 @@ import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot'
 import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
 import { WebBank } from '../src/logic/content/WebBank';
 import { Director, IDirectorRecord, emptyDirectorRecord } from '../src/entities/world/Director';
+import { ISectorState, Population, emptyPopulationRecord } from '../src/entities/world/Population';
 import { WorldGenerator } from '../src/entities/world/WorldGenerator';
 import { EntityType, IWorldEntity } from '../src/entities/world/types';
 import { SECTOR_CHUNKS } from '../src/entities/world/grid';
@@ -157,7 +158,13 @@ describe('line 106: at least two trees in every pack (D63)', () => {
     const banked = clone(FIRST_THEME) as IThemeBody;
     banked.creatures = banked.creatures.filter(c => !OLD_KEYS_ABSENT(c.key));
     banked.tags = banked.tags.filter(t => t.kind === 'element');
-    for (const c of banked.creatures) delete (c as Partial<typeof c>).tree;
+    delete banked.junk;
+    for (const c of banked.creatures) {
+      delete (c as Partial<typeof c>).tree;
+      delete (c as Partial<typeof c>).social;
+      delete (c as Partial<typeof c>).builds;
+      delete (c as Partial<typeof c>).leads;
+    }
     expect(themeIdOf(banked)).toBe('theme_f74938c0f7149af9');
     expect(themeIdOf(FIRST_THEME)).not.toBe('theme_f74938c0f7149af9');
 
@@ -228,11 +235,14 @@ describe('line 105: a line is a hash graph (D61, D65)', () => {
     expect(standing(b)).toContain(result.id);
   });
 
+  /** What a chunk of a parent's own kind comes to stand as, once the record has folded a while. */
   const bodiesFor = (template: string, record: IDirectorRecord) => {
-    const def = MOB_DEFINITIONS[template];
-    const out = new Set<string>();
-    for (let i = 0; i < 200; i++) out.add(Director.kindOf('s', `b${i}`, def, record).id);
-    return out;
+    const context = ContentRegistry.contextFor(themeId, UniversalRank.A, record);
+    const ground = `${8 * SECTOR_CHUNKS + 2},${8 * SECTOR_CHUNKS + 2}`;
+    let state: ISectorState = { generation: record.generation, ground: { [ground]: { [template]: 40 } }, leaders: {} };
+    const ledger = { down: {}, seen: {} };
+    for (let i = 0; i < 6; i++) state = Population.step('s', 8, 8, state, ledger, context);
+    return new Set(Object.values(state.ground).flatMap(on => Object.keys(on)));
   };
 
   it('an elder never moves when a descendant appears', async () => {
@@ -315,9 +325,6 @@ describe('line 105: a line is a hash graph (D61, D65)', () => {
   });
 
   it('with no record a world generates exactly as it did: the hound stays a hound', () => {
-    const hound = MOB_DEFINITIONS[kindOf('dun_hound')];
-    expect(Director.kindOf('s', 'b', hound, undefined)).toBe(hound);
-    expect(Director.kindOf('s', 'b', hound, emptyDirectorRecord())).toBe(hound);
     expect(bodiesIn('quiet').map(b => b.definitionId)).toEqual(bodiesIn('quiet', emptyDirectorRecord()).map(b => b.definitionId));
   });
 });
@@ -492,20 +499,35 @@ describe('line 107: a creature becomes a different monster (D60)', () => {
       expect(bodiesIn('another-world').every(b => b.definitionId !== id)).toBe(true);
     });
 
-    it('where its parents stand some of it stands, and the land does not move', async () => {
+    it('where its parents stand some of it stands, by the count, and the land does not move', async () => {
+      // Moved on purpose by B2: Director.kindOf's stand-in sent half of a kind's bodies across at once.
+      // A change of form is a share of the count now, cycle by cycle, from the population's record.
       const hound = kindOf('dun_hound');
       const { record, id } = await descend(emptyDirectorRecord(), hound);
       await CreatureLines.define(record, themeId);
-      const before = bodiesIn('hound-world');
-      const after = bodiesIn('hound-world', record);
-      expect(before.length).toBeGreaterThan(0);
-      expect(after.map(b => b.id)).toEqual(before.map(b => b.id));
-      expect(after.map(b => b.position)).toEqual(before.map(b => b.position));
-      const changed = after.filter(b => b.definitionId === id);
-      expect(changed.length).toBeGreaterThan(0);
-      expect(after.filter(b => b.definitionId === hound).length).toBeGreaterThan(0);
-      // The same reads the same
-      expect(bodiesIn('hound-world', clone(record)).map(b => b.definitionId)).toEqual(after.map(b => b.definitionId));
+      const context = ContentRegistry.contextFor(themeId, UniversalRank.E, record, true);
+      const at = record.generation + 10;
+      const stood = () => {
+        const living = emptyPopulationRecord();
+        const bodies: IWorldEntity[] = [];
+        const land: IWorldEntity[] = [];
+        const mid = 8 * SECTOR_CHUNKS;
+        const exits = WorldGenerator.exitsInSector({ seed: 'hound-world' }, 8, 8);
+        for (let y = mid; y < mid + SECTOR_CHUNKS; y++) for (let x = mid; x < mid + SECTOR_CHUNKS; x++) {
+          const chunk = WorldGenerator.buildChunk('hound-world', exits, x, y, context);
+          land.push(...chunk.entities.filter(e => e.type !== EntityType.MOB));
+          Population.layOver('hound-world', chunk, living, at, context);
+          bodies.push(...chunk.entities.filter(e => e.type === EntityType.MOB));
+        }
+        return { bodies, land };
+      };
+      const after = stood();
+      expect(after.bodies.filter(b => b.definitionId === id).length).toBeGreaterThan(0);
+      expect(after.bodies.filter(b => b.definitionId === hound).length).toBeGreaterThan(0);
+      // The same reads the same, and the land under them never moved
+      const again = stood();
+      expect(again.bodies.map(b => b.definitionId)).toEqual(after.bodies.map(b => b.definitionId));
+      expect(again.land).toEqual(after.land);
     });
 
     it('a regeneration keeps the lines, and the trait chance reads as it did', async () => {

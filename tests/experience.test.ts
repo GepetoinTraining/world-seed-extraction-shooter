@@ -1391,7 +1391,7 @@ describe('a chest stays taken through its cycle, and restocks by rank, rarity an
   it('the field writes it, and recon says what you know', () => {
     const field = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
     expect(field).toMatch(/ChestSystem\.mark\(seen, worldId, e\)/);
-    expect(field).toMatch(/reportFell\(event\.entityId\)/);
+    expect(field).toMatch(/reportFell\(event\.entityId, event\.definitionId\)/);
     expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/world\.reportChestLooted\(entity\.id\)/);
     expect(readFileSync('src/components/ReconView.tsx', 'utf8')).toMatch(/CHESTS YOU KNOW/);
   });

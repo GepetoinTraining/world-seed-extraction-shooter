@@ -1,8 +1,11 @@
 import { GenreType } from '../../../../types';
-import { IChunk, IMap, EntityType } from '../../world/types';
-import { PatternType } from '../../combat/projectileSystem';
+import { IChunk, IMap, EntityType, IWorldEntity } from '../../world/types';
+import { PatternType, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../combat/projectileSystem';
 import { MOB_DEFINITIONS } from '../data/mobDefinitions';
 import { WorldClock } from '../../world/WorldClock';
+import { Leaders } from '../../world/Leaders';
+import { chunkOf } from '../../world/grid';
+import { WIDEST_VIEW_TILES } from '../../../logic/theme/ThemeFormula';
 import { MobBehavior } from '../types';
 import { CombatMath } from '../../combat/CombatMath';
 import { WorldGenerator } from '../../world/WorldGenerator';
@@ -21,6 +24,14 @@ const ATTACK_COOLDOWN_MS = 2000;
 /** How long it keeps at a line that gets it no nearer before it stands where it is. A guess until Wave 12. */
 const NO_PROGRESS_MS = 4000;
 const TURNS_ASIDE = [Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, -Math.PI / 4, -Math.PI / 2, -3 * Math.PI / 4];
+/** A herd at rest walks at a share of its pace, and hurries when it has fallen behind. Guesses until Wave 12. */
+const GRAZE_SHARE = 0.25;
+const GRAZE_PERIOD_MS = 9000;
+const GRAZE_RANGE_TILES = 7;
+const GRAZE_SLOT_TILES = 2.5;
+const HURRY_TILES = 4;
+/** How far the darkest night lets the widest sight reach. */
+const WIDEST_SIGHT_PX = WIDEST_VIEW_TILES * WorldClock.noticeFactor(0) * PX;
 
 // ==========================================
 // 1. ENUMS (Standard)
@@ -122,10 +133,26 @@ export class MobAI {
     windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean };
     readyAt: Record<string, number>;
     casts: number;
+    /** Where a herd at rest walks around, and where it is walking to now. */
+    home?: { x: number; y: number };
+    graze?: { period: number; x: number; y: number };
   }> = {};
+  /** N7: where each body that was hit stood at the last tick. They stay simulated wherever they get to. */
+  private static awake = new Map<string, string>();
 
   static reset() {
     this.mobMemory = {};
+    this.awake = new Map();
+  }
+
+  /**
+   * What the field should tick. N7: the box reaches as far as a shot or the widest sight there is,
+   * whichever is further, and N8: every chunk a body that was hit stands in, however far off.
+   */
+  static simulatedKeys(_map: IMap, px: number, py: number): string[] {
+    const keys = new Set(WorldGenerator.chunkKeysInBox(px, py, Math.max(PROJECTILE_RANGE_PX + SIM_MARGIN_PX, WIDEST_SIGHT_PX)));
+    for (const key of this.awake.values()) keys.add(key);
+    return [...keys];
   }
 
   static clearMob(entityId: string) {
@@ -181,7 +208,11 @@ export class MobAI {
     if (map && map.generatedAt !== this.memoryOf) {
       this.memoryOf = map.generatedAt;
       this.mobMemory = {};
+      this.awake = new Map();
     }
+    const herds = this.gatherHerds(visibleChunks);
+    const crossings: { from: string; to: string; id: string }[] = [];
+    const awake = new Map<string, string>();
     // Quieter gear shortens how far a thing notices you; loud gear lengthens it.
     // D71: and the dark lets it notice you from further away.
     const heard = NOISE_SCALE / Math.max(1, NOISE_SCALE + (senses.noiseReduction ?? 0)) * WorldClock.noticeFactor(senses.light ?? 1);
@@ -210,6 +241,7 @@ export class MobAI {
         const mem = this.mobMemory[entity.id];
         const def = MOB_DEFINITIONS[entity.definitionId];
         const behavior = def?.behavior ?? MobBehavior.AGGRESSIVE;
+        if (mem.provoked) awake.set(entity.id, chunkKey);
 
         // 1. Build Context (2D Math)
         // Note: entity.position.y matches playerPos.y (which is World Z)
@@ -373,6 +405,7 @@ export class MobAI {
           const movedX = next.x - entity.position.x;
           const movedY = next.z - entity.position.y;
           mem.moving = Math.abs(movedX) + Math.abs(movedY) > 0.1;
+          this.noteCrossing(crossings, awake, map, chunkKey, entity.id, next.x, next.z);
           if (mem.moving) {
             mem.facing = Math.abs(movedX) > Math.abs(movedY) ? (movedX > 0 ? 'right' : 'left') : (movedY > 0 ? 'down' : 'up');
           } else if (dist < 12 * PX) {
@@ -397,6 +430,14 @@ export class MobAI {
           };
         }
 
+        // A herd at rest walks together, around its home or behind its leader
+        const herdKey = (def as { social?: boolean } | undefined)?.social ? Leaders.herdOf(entity.id) : undefined;
+        const grazing = herdKey ? this.graze(entity, mem, herds.get(herdKey)!, herdKey, def?.speed ?? 2, deltaTime, now, map) : null;
+        if (grazing) {
+          chunkWasModified = true;
+          this.noteCrossing(crossings, awake, map, chunkKey, entity.id, grazing.x, grazing.y);
+          return { ...entity, position: grazing };
+        }
         mem.moving = false;
         return entity;
       });
@@ -410,7 +451,92 @@ export class MobAI {
       }
     });
 
+    // N8: a body lives in the chunk under its feet, so it is simulated where it stands
+    for (const { from, to, id } of crossings) {
+      const source = updatedChunks[from];
+      const moved = source?.entities.find(e => e.id === id);
+      const target = updatedChunks[to] ?? visibleChunks[to] ?? map?.chunks[to];
+      if (!moved || !target) continue;
+      updatedChunks[from] = { ...source, entities: source.entities.filter(e => e.id !== id) };
+      updatedChunks[to] = { ...target, entities: [...target.entities, moved] };
+    }
+    this.awake = awake;
+
     return { updatedChunks, spawnedPatterns };
+  }
+
+  /** A step took this body over a chunk line. It moves across with the rest of the tick, if that chunk is built. */
+  private static noteCrossing(
+    crossings: { from: string; to: string; id: string }[], awake: Map<string, string>, map: IMap | undefined,
+    from: string, id: string, x: number, y: number
+  ) {
+    if (!map) return;
+    const to = `${chunkOf(x)},${chunkOf(y)}`;
+    if (to === from || !map.chunks[to]) return;
+    crossings.push({ from, to, id });
+    if (awake.has(id)) awake.set(id, to);
+  }
+
+  /**
+   * Who walks with whom this tick. A hit on one of a herd is felt by the rest (N6's `felt`,
+   * shared), and each answers by its own behaviour. Only a social kind has a herd.
+   */
+  private static gatherHerds(visibleChunks: Record<string, IChunk>) {
+    const herds = new Map<string, { anchor: { id: string; x: number; y: number }; members: string[]; struck: boolean }>();
+    for (const chunk of Object.values(visibleChunks)) {
+      for (const e of chunk.entities) {
+        if (e.type !== EntityType.MOB || (e.health || 0) <= 0) continue;
+        if (!(MOB_DEFINITIONS[e.definitionId] as { social?: boolean } | undefined)?.social) continue;
+        const key = Leaders.herdOf(e.id);
+        if (!key) continue;
+        let herd = herds.get(key);
+        if (!herd) { herd = { anchor: { id: e.id, x: e.position.x, y: e.position.y }, members: [], struck: false }; herds.set(key, herd); }
+        herd.members.push(e.id);
+        // The first by id leads a herd: a leader's own id sorts before its pack's
+        if (e.id < herd.anchor.id) herd.anchor = { id: e.id, x: e.position.x, y: e.position.y };
+        if (this.mobMemory[e.id]?.feltNew) herd.struck = true;
+      }
+    }
+    for (const herd of herds.values()) {
+      if (!herd.struck) continue;
+      for (const id of herd.members) if (!this.mobMemory[id]?.provoked) this.provoke(id);
+    }
+    return herds;
+  }
+
+  /** One step of a herd at rest. Null when it stands. */
+  private static graze(
+    entity: IWorldEntity, mem: typeof MobAI.mobMemory[string], herd: { anchor: { id: string; x: number; y: number } },
+    herdKey: string, speed: number, deltaTime: number, now: number, map?: IMap
+  ): { x: number; y: number } | null {
+    const home = mem.home ?? (mem.home = { x: entity.position.x, y: entity.position.y });
+    let tx: number, ty: number;
+    if (herd.anchor.id === entity.id) {
+      // What leads walks to a keyed place near home, a new one each while
+      const period = Math.floor(now / GRAZE_PERIOD_MS) + (fnv1a(herdKey) % 7);
+      if (mem.graze?.period !== period) {
+        const a = fnv1a(`graze:${herdKey}:${period}`), b = fnv1a(`graze:${herdKey}:${period}:far`);
+        const theta = (a / 0x100000000) * Math.PI * 2, r = (b / 0x100000000) * GRAZE_RANGE_TILES * PX;
+        mem.graze = { period, x: home.x + Math.cos(theta) * r, y: home.y + Math.sin(theta) * r };
+      }
+      tx = mem.graze.x; ty = mem.graze.y;
+    } else {
+      // What follows keeps its own place beside what leads
+      const slot = this.swarmSlot(entity.id, { x: 0, y: 0 });
+      tx = herd.anchor.x + slot.x / 1.4 * GRAZE_SLOT_TILES; ty = herd.anchor.y + slot.y / 1.4 * GRAZE_SLOT_TILES;
+    }
+    const dx = tx - entity.position.x, dy = ty - entity.position.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < PX / 2) { mem.moving = false; return null; }
+    const share = dist > HURRY_TILES * PX ? 1 : GRAZE_SHARE;
+    const step = Math.min(dist, speed * PX * deltaTime * share);
+    const moveX = (dx / dist) * step, moveY = (dy / dist) * step;
+    const next = map ? WorldGenerator.resolveMove(map, entity.position.x, entity.position.y, moveX, moveY) : { x: entity.position.x + moveX, z: entity.position.y + moveY };
+    const movedX = next.x - entity.position.x, movedY = next.z - entity.position.y;
+    mem.moving = Math.abs(movedX) + Math.abs(movedY) > 0.1;
+    if (!mem.moving) return null;
+    mem.facing = Math.abs(movedX) > Math.abs(movedY) ? (movedX > 0 ? 'right' : 'left') : (movedY > 0 ? 'down' : 'up');
+    return { x: next.x, y: next.z };
   }
 
   // ---------------------------------------------------------

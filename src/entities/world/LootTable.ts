@@ -15,6 +15,9 @@ import { IMobDefinition } from '../mob/types';
 import { DeedSystem } from '../../logic/systems/DeedSystem';
 import { BiomeType } from './types';
 import { DreamingSystem, IAffixPool } from './Dreaming';
+import { EntityType, IWorldEntity } from './types';
+import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { JUNK_CHANCE } from '../../logic/theme/ThemeFormula';
 
 /** Wave 10E: the pool this drop rolls from — the pinned bank's biome pool in a
  * dreamed world, the purged legacy pool everywhere else (old worlds unchanged). */
@@ -184,7 +187,35 @@ export class LootTable {
     // This would be handled by the combat system adding to session gold
     // For now we could add a "gold shard" item if desired
 
+    // ========================================================================
+    // 7. JUNK (D99): on its own roll, so no other drop moves
+    // ========================================================================
+
+    const junk = (mobDef as { junk?: string[] }).junk ?? [];
+    if (junk.length > 0 && rollKey) {
+      const own = Rng.fromKey(`${rollKey}:junk`);
+      if (own.next() < JUNK_CHANCE) {
+        const def = RESOURCE_DEFINITIONS[junk[own.int(0, junk.length)]];
+        if (def) loot.push(ItemFactory.createResourceItem(def, own));
+      }
+    }
+
     return loot;
+  }
+
+  /** D99: what the hands collect on their own, and junk, which waits on the ground for someone who wants it. */
+  static sortDrop(items: IItem[]): { collect: IItem[]; leave: IItem[] } {
+    const isJunk = (item: IItem) => !!RESOURCE_DEFINITIONS[item.universalDefinitionId]?.junk;
+    return { collect: items.filter(i => !isJunk(i)), leave: items.filter(isJunk) };
+  }
+
+  /** What junk lies in where a body fell: an ordinary ground cache, taken the way any cache is. */
+  static junkCache(items: IItem[], position: { x: number; y: number }, bodyId: string): IWorldEntity {
+    return {
+      id: `cache_junk_${bodyId}`, type: EntityType.CONTAINER, definitionId: 'ground_cache', position: { ...position },
+      rank: items[0].rank, rarity: items[0].rarity, isHostile: false,
+      container: { lootRank: items[0].rank, looted: false, hasLore: false, items }
+    };
   }
 
   // ============================================================================

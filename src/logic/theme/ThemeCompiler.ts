@@ -12,10 +12,10 @@ import { ResourceDef } from '../../entities/item/data/resourceDefinitions';
 import { MaterialPropertyType, ITransformationRecipe } from '../../entities/economy/types';
 import type { IGearRecipe } from '../../entities/economy/data/recipeDefinitions';
 import { fnv1a } from '../rng/DeterministicRNG';
-import { IThemeBody, IThemePack, IThemeAbility, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, IThemePack, IThemeAbility, LEADER_FEATURES, THEME_FORMULA_VERSION } from './ThemeTypes';
 import {
   GEAR_SHAPES, affixRange, consumableNumbers, creatureNumbers, gearBaseIp, goodNumbers,
-  harvestNumbers, materialNumbers, rankStep, stationNumbers
+  harvestNumbers, junkNumbers, materialNumbers, rankStep, stationNumbers
 } from './ThemeFormula';
 
 export interface IAbility extends IThemeAbility {
@@ -25,7 +25,7 @@ export interface IAbility extends IThemeAbility {
 
 export interface ICompiledTheme {
   themeId: string;
-  mobs: Record<string, IMobDefinition & { themeId: string; habitat: string[]; innate: string[]; tree?: string }>;
+  mobs: Record<string, IMobDefinition & { themeId: string; habitat: string[]; innate: string[]; tree?: string; social?: boolean; builds?: boolean; leads?: string; junk?: string[] }>;
   resources: Record<string, ResourceDef & { themeId: string; habitat?: string[] }>;
   crafted: Record<string, ResourceDef>;
   recipes: Record<string, ITransformationRecipe>;
@@ -49,8 +49,8 @@ export const canonical = (value: unknown): string => JSON.stringify(value, (_k, 
 
 /** What a model wrote, without the record kept about writing it. */
 export function bodyOf(pack: IThemeBody): IThemeBody {
-  const { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore } = pack;
-  return { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore };
+  const { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, junk } = pack;
+  return { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, ...(junk ? { junk } : {}) };
 }
 
 /** Computed from the bytes that matter and nothing else. Two hashes, so a collision is not a worry. */
@@ -70,6 +70,10 @@ const shortIdOf = (themeId: string) => themeId.slice('theme_'.length, 'theme_'.l
 
 /** A first-generation kind's id. Its sprite is keyed by it, so it does not change. */
 export const creatureIdOf = (themeId: string, key: string) => `mob_${shortIdOf(themeId)}_${key}`;
+
+/** D99: the junk a body with these tags can leave. A kind that changed inherits its tags, so it inherits this. */
+export const junkIdsFor = (pack: Pick<IThemeBody, 'junk'> & { themeId: string }, tags: string[]): string[] =>
+  (pack.junk ?? []).filter(j => j.from.some(t => tags.includes(t))).map(j => `jnk_${shortIdOf(pack.themeId)}_${j.key}`);
 
 /** What the art reads to draw a thing's shape on the ground (`worldForm`, `resourceInk`). */
 const FORM_TAGS: Record<string, string[]> = {
@@ -116,6 +120,7 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
 
   for (const c of pack.creatures) {
     const id = creatureIdOf(pack.themeId, c.key);
+    const led = c.leads ? pack.creatures.find(other => other.key === c.leads) : undefined;
     out.mobs[id] = {
       id, name: c.name, themeId: pack.themeId, genre: undefined as never,
       tags: unique(c.tags),
@@ -126,8 +131,15 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
       habitat: c.habitat,
       innate: c.innate.map(k => ids.get(k)!),
       ...(c.tree ? { tree: c.tree } : {}),
+      // D93: only what was written, so a pack from before these words compiles to the same bytes
+      ...(c.social !== undefined ? { social: c.social } : {}),
+      ...(c.builds !== undefined ? { builds: c.builds } : {}),
+      ...(c.leads ? { leads: creatureIdOf(pack.themeId, c.leads) } : {}),
+      ...(pack.junk ? { junk: junkIdsFor(pack, c.tags) } : {}),
+      // A leader draws as what it leads, with more to it: told by shape, never hue
+      ...(led ? { line: { root: creatureIdOf(pack.themeId, led.key), rootTags: led.tags, features: LEADER_FEATURES } } : {}),
       ...creatureNumbers(c)
-    };
+    } as ICompiledTheme['mobs'][string];
   }
 
   for (const m of pack.materials) {
@@ -148,6 +160,19 @@ export function compileTheme(pack: IThemePack): ICompiledTheme {
       habitat: m.habitat
     };
     if (m.onShelf) out.shelf.materials.push(id);
+  }
+
+  for (const j of pack.junk ?? []) {
+    const id = idOf('jnk', j.key);
+    const n = junkNumbers(j);
+    out.resources[id] = {
+      id, name: j.name, description: j.blurb, themeId: pack.themeId, junk: true,
+      type: ItemType.RESOURCE, rank: j.rank as UniversalRank, rarity: RARITY_OF[j.worth],
+      weight: n.weight, dimensions: n.dimensions, value: n.value,
+      icon: `${id}_icon`, visuals: { modelId: j.key, colorHex: lookOf(id) },
+      materialProps: { [MaterialPropertyType.DENSITY]: n.density, [MaterialPropertyType.HARDNESS]: n.hardness },
+      tags: unique(j.tags)
+    };
   }
 
   for (const s of pack.stations) {
