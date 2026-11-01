@@ -10,7 +10,7 @@ World Seed is a browser extraction game: a signed identity, generated worlds, a 
 
 Pedro's verdict on the look, seeing it in the real game: *"literally absurdly good"*. **The look is approved, and the interface is now made of it.** Mantine survives only under the admin Genre Creator (with its provider in `index.tsx`, `src/theme.ts`, and the unused `src/components/Layout.tsx`); every player-facing screen is built from the kit in `src/components/ui/`.
 
-- **Tests:** 585 (`npm test`), including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
+- **Tests:** 654 (`npm test`), including one recorded known failure (bar 3, in the art), and one timing bar red on this machine (see the traps). The usability pass's bars live in `tests/usability.test.ts` (69, registered before the build). Wave 9's bars live in `tests/interface.test.ts`; Wave 10's in `tests/rooms.test.ts`; Wave 10B's in `tests/templates.test.ts`; Wave 10C's in `tests/loadout.test.ts` (41); Wave 10D's in `tests/anatomy.test.ts` (29); Wave 10E's in `tests/affixes.test.ts` (43, registered before the build); the raw materials leg's in `tests/rawmaterials.test.ts` (91, registered before the build); the web's in `tests/technologyweb.test.ts` (129, registered before the build). The chunk-generation timing bar in `tests/grid.test.ts` reads load, not code: see the traps.
 - **Commits:** Waves 8 through 10E, the raw materials leg and the web are each committed per the plan's order; check `git log` and `git status` before you start. Commit at the end of your own leg.
 - **Run it:** `npm run dev`, then `http://localhost:3000`. Proof pages: `/prototype/atoms/index.html`, `/prototype/atoms/hub.html` and `/prototype/atoms/room.html` (press Grayscale first). The game itself is now also a proof page: the gate, the city, the rooms behind the lot doors, the survey, the field, the receipts — and now the scribe's table and a house rising from a signed plan.
 
@@ -98,6 +98,16 @@ Defined in `src/entities/world/grid.ts`. Atom 2px → tile 10 atoms (20px) → q
 | `src/logic/systems/NpcSheet.ts` | NEW (line 66): stats and skills dealt at read time from (seed, entity, pinned web); `fromBond` is Wave 11's seam |
 | `src/entities/player/systems/SkillDiscovery.ts` | No table any more: a context's identity is what the registry says identifies |
 | `tests/technologyweb.test.ts` | The web's bars: lines 63–68, the seven clauses, source scans of the law's own files, the one-way door |
+| `src/logic/systems/FieldInput.ts` | NEW (usability pass): the laws behind the controls, pure: `fireGate`, `pickInteract`, `hotbarCells`, `cityCamera`, `suggestStart`, `draftDismissal` |
+| `src/logic/systems/ItemHands.ts` | NEW: any item from any place to any other. `probeMove` asks the laws, `commitMove` walks the store's doors, `Place` names where |
+| `src/components/ui/hands.tsx` | NEW: the one drag, the keyboard's hands, the one ghost; `useDropZone`, `slotZone`, `wholeZone`, `HandsLayer` |
+| `src/components/ui/ItemGrid.tsx` | NEW: the one grid: pack, stash, cart bed, cache |
+| `src/components/ui/HoverLayer.tsx` | NEW: the card on hover, in one fixed layer; `PlacedCard` for any card |
+| `src/components/Hotbar.tsx` | NEW: hands, tools, the belt, from the harness |
+| `src/components/ui/MinimapView.tsx` + `src/render/atoms/minimap.ts` | NEW: a composed buffer painted four times a second; `fieldMinimap` keeps the fog, `cityMinimap` draws whole |
+| `src/entities/player/systems/StashGrid.ts` | NEW: the vault as a grid: rows grow, places hold, sort and filter by what can be seen |
+| `src/render/atoms/inspect.ts` | Now also `compareItems`, `comparisonFor`, `placeCard` |
+| `src/components/ui/kit.tsx` | Now also `ArmedButton`, `CompareView`, a heavy `Modal`, and `ItemSprite` answering hover itself |
 
 A pixel byte is 0 for transparent, otherwise `1 + role * 5 + step`. Pure integer work over byte buffers, testable in Node.
 
@@ -189,13 +199,19 @@ Full detail in `PLAN.md` 3B (the technology web and auto skill) and the settled 
 - Lots still do not grow with the hub. `STATION_MIN_AREA` holds the four old stations; a batch's station brings its own number.
 - Readings on the record for Pedro: a bare hand's skill IS the material; a death is a return to the hub; the web is the hub's, the exp is the person's; a resident both extends the web and works inside it.
 
-## Your pass: the stable database and the usability pass
+## What the usability pass built
 
-Pedro wants both before the full run. Start from those sections in `PLAN.md`; the usability pass's list is `PLAYTEST_LEDGER.md`. During and after the run, add what is found to that ledger.
+Full detail in `PLAN.md` ("The usability pass"), and the list in `PLAYTEST_LEDGER.md`. In short: firing is a held button at the weapon's own rate and only ever fires; E acts everywhere; a hotbar for hands, tools and the belt; one pair of hands across pack, stash, body, belt, cart and ground, by mouse and keyboard, with a ghost that reads by its seam; the one card on hover everywhere, compared through the same blind sheet; the stash a grid; selling a second press; the body a figure; the city the window; a minimap that keeps the fog; recon that says where to start; no hub stop with one hub; developer controls off the player's bar. It changes how things are used, not how they look. Awaiting Pedro's approval.
+
+**Left open, honestly:** the rest of the Agent tab still reads as forms; the bar is still tabs, now with keys; the card has no damage line, so weapons compare on what the sheet shows; what rides a pouch has no drag; room placement is not the hands yet; the minimap forgets at the end of a run; the beacon chip does not keep the fog the minimap keeps; a worn bag's capacity cannot be filled by pickups.
+
+## Your pass: the stable database
+
+Pedro wants it before the full run. Start from that section in `PLAN.md`. During and after the run, add what is found to `PLAYTEST_LEDGER.md`.
 
 ## The playtest fixes, now part of the usability pass
 
-Pedro found these in play on 2026-10-31 and deferred them, and the plan runs them after the itemization program, which is now done, after D23 and after D27, both built. Each is self-contained. Register the bar first. The test lines are proposed in `PLAN.md` (57–59). None is fixed; all three were re-checked against the code at d75f541.
+Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the diagnoses stay here for the record.**
 
 1. **Cache duplication (line 57).** Opening a ground cache with a FULL pack duplicates its contents, one copy per E press, at 2 energy each. In `src/entities/player/store.ts`, the `int_open_` explicit-contents branch (:1504) hands the cache's items to `addToInventory`. The pack refuses them, so its overflow rule (:1405) mints a new `cache_ovf_*` entity holding them, correct for harvests and chests but wrong when the source is already a cache. The branch then keeps the same items in the original cache as `left`. The result is the same ids in two world entities, which can be banked as N copies with one provenance chain and sold for treasury gold. A partial pickup double-mints the refused items the same way. **Fix:** call `tryAddItems` directly in that branch, so refused items simply stay in the source cache; no overflow entity when the source is a container; feed line "The pack refuses N; they stay in the cache."
 2. **Mint-world draft loss (line 58).** `src/components/WorldCreator.tsx` holds the whole four-step draft as local state inside a kit `Modal`, which closes on a backdrop click or a window-level Escape (`src/components/ui/kit.tsx`). That unmounts the creator and the draft is gone. **Fix, either half is enough and both are better:** a heavy flow does not close on the backdrop, and a dirty draft asks in voice before discarding ("The draft is unsigned. Abandon it?"); or lift the draft into a small store so reopening restores it. The Escape listener also fires from nested inputs.
@@ -211,7 +227,7 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 
 **In the art:** near-twin certificates at 16 atoms; first wear bite easy to miss at 36px; recorded failure: Silica Sand's Conductivity and Rusted Plate's Hardness reach only 2 atoms (bar 3).
 
-**In the game:** balance unplayed at the new scale; a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape); the three playtest findings above; a finished craft or a foreclosed lot still has no feed line or other moment on screen (the foreclosed mark exists only in the hub's art). (The walk-through lots are fixed: a built lot blocks exactly what it draws, and its door is real — Wave 10.2.)
+**In the game:** balance unplayed at the new scale; a moved enemy still belongs to its origin chunk's entity list (leashed, but the wrong shape); a finished craft or a foreclosed lot still has no feed line or other moment on screen (the foreclosed mark exists only in the hub's art). (The walk-through lots are fixed: a built lot blocks exactly what it draws, and its door is real — Wave 10.2.)
 
 **Not up yet, on purpose (Pedro, 2026-10-31), so not faults:** `src/entities/magic/SpellEngine.ts` is not finished, and `src/entities/world/Director.ts` depends on the full game loop. Nothing imports them yet.
 
@@ -254,6 +270,12 @@ Pedro found these in play on 2026-10-31 and deferred them, and the plan runs the
 - **A skill will not appear in the field.** That is line 64. Look in `player.skillProgress`, and take a seal, a death or a withdrawal to settle it. A failed rest with no new attempts gets the same answer forever, by design.
 - **A new tag goes in a batch first.** A tag literal in `src` that is not registered fails a source scan, and a tag on a definition fails the harness. Identity kinds are forever: pick the kind with care, because it decides whether old skills split.
 - **Fresh origin at `localhost:3105`** (`world-seed-dev-3105`): TENON, Nomad, Felling at handled, the first in the hub; a raw log workshop and a Sawpit standing; the world THE LONG STANDS pinned at v4 and web v2, though it collapses on its clock.
+- **Two things in one millisecond can share an id.** The usability pass's conservation bar found two ground caches doing it, and taking one took both. A person cannot do this by hand, and a script can. Any id built from `Date.now()` takes a tie-break.
+- **`computer` coordinates are in the frame of the last screenshot, not the viewport's pixels.** At 1280×800 the screenshot is 800×500, so a hover at viewport numbers lands somewhere else and reads as a bug in your hover. Refs have no such problem.
+- **A drag from a script is real only as far as `elementFromPoint`.** `left_click_drag` goes through the page's own events. For anything mid-drag, like R or the ghost, dispatch `pointerdown` on the button, `pointermove` on `window`, then look, then `pointerup`. The hands release themselves on `pointerup`.
+- **A synthetic `mouseover` opens a hover card that nothing closes.** The card waits for a leave, or for its element to go. Don't read a stale card off a screenshot as a fault.
+- **A hand move saves on the ten-second autosave.** Reloading sooner brings back the older layout, not a bug in `layout`. Wait, or look at `AUTOSAVE_DEBOUNCE_MS`.
+- **Fresh origin at `localhost:3106`** (`world-seed-dev-3106`): MORTISE, Nomad, with test stones banked and the world THE GROUND TRUTH; not a clean avatar. Pedro's run should start on a new one.
 - **Same-millisecond jobs used to share ids** — two crafts queued in one ms on one lot minted outputs with IDENTICAL item ids (fixed in 10D with a queue-length tie-break). If you add any id built from `Date.now()`, break the tie yourself.
 
 ## After this pass

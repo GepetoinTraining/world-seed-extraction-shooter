@@ -461,6 +461,8 @@ Pedro, 2026-10-31: "before I do run once, we need to have a stable database (sql
 - **Gate:** proposed lines 69–71.
 
 ### THE USABILITY PASS — before the full run, absorbing the playtest fixes
+Built 2026-10-31 at b5cd6ea, bars registered first at 8a01403 (`tests/usability.test.ts`, 69 tests; suite 654). **Awaiting Pedro's approval.** The list and its state are in `PLAYTEST_LEDGER.md`.
+
 Pedro, 2026-10-31: "take a look at the views and see if they're game like... the usability of the game, the controls, the actual hovers... we can do much better than them and are currently worse", after playing RotmG. The list is `PLAYTEST_LEDGER.md`, P1–P3 and U1–U21. Keep this quick: controls first, then hovers, then the views. The art and the voice are approved, so this changes how things are used, not how they look.
 
 **Order of work:**
@@ -471,10 +473,39 @@ Pedro, 2026-10-31: "take a look at the views and see if they're game like... the
 
 **Standing laws:** colourblind coding, grayscale bars, native focus and full keyboard reach, nothing below the 12px floor.
 
-- **Gate:** lines 57–59, proposed lines 72–75, and played through the real interface.
+**What was built, in the order asked:**
+- **Controls:** ✅ `logic/systems/FieldInput.ts` holds the laws, pure. `fireGate` asks each frame whether a held button fires; a click is a very short hold, and melee, ranged and focus go through one door. A pointer press on the ground only ever fires. E (or Enter) acts on the nearest thing in reach through `pickInteract`, the same key the city uses, and it says above the hotbar what it would do. One answer acts at once; several open the menu by keyboard; a right-click asks a thing directly. Space fires too, at what Q holds or the way you face, so the keyboard reaches a fight. `components/Hotbar.tsx` reads hands, tools and the belt from the harness, with digits as far as digits go and nothing capped. E at the beacon channels and Esc aborts; recon has X and Enter.
+- **Hands on items:** ✅ `logic/systems/ItemHands.ts` decides nothing itself: `probeMove` asks the laws the doors ask, `commitMove` walks through the doors, and a move of two doors asks first. `components/ui/hands.tsx` is the one drag and the one ghost, whose seam is solid or broken in one ink. `components/ui/ItemGrid.tsx` is pack, stash, cart bed and cache. A held item has not moved, so there is no moment in which it could be lost. New store doors: `equipSwap`, `placeInPack`, `placeInStash`, `arrangeStash`, `takeFromCache`, `placeOnCart`, `wearSlot`. P1 fixed by the diagnosis, and a press that moves nothing costs nothing.
+- **Hovers:** ✅ `compareItems` reads both sides through `visibleItemStats`, so an unstudied affix on either side enters no number; a bar holds the blind comparison byte-equal to the comparison of the plain twins. `comparisonFor` finds what the piece would replace, or for a tool, the worn tool of its kind. `ItemSprite` carries the hover itself, so every item drawn anywhere answers by construction. `placeCard` never covers the thing or leaves the window. `HoverLayer` is one fixed layer, so nothing moves.
+- **The views:** ✅ `StashGrid` with rows that grow and never refuse; an additive `layout` on a stash tab; a filter that reads only the name the sheet may show. `ArmedButton` for selling and discarding. A silhouette of the avatar behind the slots. The city's canvas is the window, `cityCamera` centers a city narrower than it, and past the edge is ground. `render/atoms/minimap.ts`, whose unseen cells are static keyed on nothing but where they are. `suggestStart` reads only scanned sectors. One hub skips the stop. A SYSTEM window holds backup and switch; Ctrl+Shift+D or that window turns on developer tools. P2: a heavy `Modal` ignores its backdrop, and the draft lives in its own store.
+
+**Decided in the build, for Pedro to overrule:**
+- **A click selects and a drag grabs.** The diagnosis of P3 said click grabs. I kept click for choosing a piece, because the pack's other actions (identify, stow, invoke) need a chosen piece, and made Enter the keyboard's grab.
+- **Digits moved.** Hands and tools take the first digits and the belt follows: 1 right hand, 2 left, 3 tool, then pouches. They used to be pouches 1–4.
+- **A tool in the hand swings as melee,** at its own `itemPower`. Selecting it does not change harvesting, which still finds the best tool you hold. A shield refuses in voice.
+- **An empty cache press costs no energy.** It used to charge 2.
+- **The `~` console still opens from anywhere,** though no player-facing text mentions it.
+
+**Played through the real interface at 1280×800, as MORTISE, a fresh avatar on a fresh origin (`localhost:3106`, `world-seed-dev-3106`):** minted → the gate straight into the city, no hub stop → city full window, minimap → walked to Ironfist, E, Enter on BROWSE WEAPONS → hover on a listing: card beside it, "RIGHT HAND holds nothing." → bought a blade, bow, pouch and axe → B → blade dragged from the vault to the right hand → bow hovered: compared against the blade by sign → stash grid, a piece selected, SELL armed by one press and left alone → Z → the creator: a click on the backdrop did nothing, Escape asked, KEEP DRAFTING kept everything → minted THE GROUND TRUTH → recon full window, SCAN HERE → Space, arrows, Space: DROP HERE on threat F with a beacon → Enter → an honest death, standing still, in 45 seconds → receipt → bow worn by right-click, pouch dragged to the loadout → second drop → held fire at 4, 2 and 2 shots a second, rates kept, nothing after release, 40 energy spent by the focus → Tab: pack and body clear of the player → pack to ground by drag: one cache → pack filled: five presses of E, no new entity, no item, no energy, "The pack refuses 1" → cart kit unfolded by right-click into a real cart → E: a menu, walked by arrows, Enter → cart bed and pack grids side by side, a stone dragged to a chosen cell → a click on a grain plant fired and opened nothing → E harvested it, the prompt having said what it would do → 1 and 2 changed the hand → E at the beacon channeled, with the screen in grayscale → SEALED, the receipt reading IT SETTLED → stash sorted by value → a reload after the autosave: layout, 11 items, the worn bow and 105 G all kept → SYSTEM window, Ctrl+Shift+D.
+
+**Frame cost against line 25's budget (16.7 ms), at 1280×800 with the pane in front:** vsync-locked at 4.2 ms with the pack open and hold to fire on. With 282 things in view, walking, firing at 8 a second and the full pack window open: median 6.2 ms, p95 9.9, p99 11.5, worst 12.7.
+
+**Fixed because play found them:** a rotated piece lost its turn on being grabbed; the drop's Enter also pressed E in the field; the ground panel's scrollbar moved the pack window; the shop's list pushed its own card out of the window, an old fault that the hover made plain; the figure was first drawn in full and fought everything, so it became one quiet ink; the minimap covered a lot in the city, so the city's map is half the size.
+
+**Test practices on record:** raised in-memory health (50,000, then 5,000,000) and energy on every run after the honest death; weapon tags and attack speed rewritten in memory to time melee and focus with a bow in hand; 290 cloned mobs in memory to reach 282 things in view; hostiles removed by console while the channel ran; 48 stones and a cart kit minted by console, some of which were banked at the seal, so MORTISE is not a clean avatar; teleports to a grain plant and a beacon. Hold to fire, the ghost and the keyboard walk were driven by dispatched pointer and key events; the plain drags, right-clicks and keys were real input to the page.
+
+**Bars corrected before first green, none lowered:** the conservation fuzz was refused so often that it moved too little to meet its own floor, so half its moves now aim at a piece's real slot; the floor stayed at 200.
+
+**Carried, honestly:**
+- **`tests/grid.test.ts` still reads load.** "generates a chunk within a frame" read 18.6 ms against 16 run alone at the time of commit, with the database session's processes up. Three runs of the whole suite: one fully green at 654; one red on that bar alone (19.0 ms, 653 of 654); one red on that bar and the 60 ms world bar (63 ms). Not lowered, and this leg touched no generation. The trap in the log stands: check it on a quiet machine.
+- **Proven by bar, not by play:** a belt and pouches on the hotbar; a pouch reached by a digit; two hubs; X in recon; a body-slot grab by key; the shop's sale; bench and counter hovers; cart to slot; trading places on the body.
+- **Left open, in the ledger:** U15b, U20b, U22 to U26, and B1, a bag's capacity a pickup cannot use.
+- **Reload loses what the last ten seconds moved,** because a hand move only schedules the existing autosave. It flushes on the tab being hidden, and at every seal and death.
+
+- **Gate:** lines 57–59, proposed lines 72–75, and played through the real interface, within the carried items above.
 
 ### THE PLAYTEST FIXES — absorbed into the usability pass
-Three findings from Pedro's own play on 2026-10-31. Pedro deferred them "for now", and they run after the itemization program, which is now complete, after D23 and after D27. None is fixed. Register the bars first. Diagnoses are in `BUILDERS_LOG.md`, "Your pass". Lines 57–59 are proposed so that guardrail 1 is met.
+Three findings from Pedro's own play on 2026-10-31. All three are fixed at b5cd6ea, awaiting Pedro's approval with the pass. Lines 57–59 are proposed so that guardrail 1 is met.
 
 - **Cache duplication:** opening a ground cache with a full pack copies its contents, one copy per press.
 - **Mint-world draft loss:** a stray backdrop click or Escape discards the four-step draft.
@@ -658,14 +689,14 @@ Proposed for the stable database, not yet agreed:
 70. The same store contract passes on the SQLite file and on Postgres
 71. A gold change and its ledger row commit together or not at all, across a killed process
 
-Proposed for the usability pass, not yet agreed:
+Proposed for the usability pass, registered as bars in `tests/usability.test.ts`, awaiting Pedro's approval with the leg:
 
 72. Holding the button keeps firing at the weapon's own rate; one key interacts everywhere; firing never opens a menu
 73. Every item anywhere shows its card on hover at once, compared with what is worn or held, without moving the layout
 74. Items drag between every grid and slot with the same hands, by mouse and by keyboard, and no sequence loses or duplicates one
 75. Hands and tools are on a hotbar the HUD shows, and the field and city have a minimap
 
-Proposed for the playtest fixes, now part of the usability pass, not yet agreed:
+Proposed for the playtest fixes, now part of the usability pass, registered in the same file, awaiting the same approval:
 
 57. Opening a cache with a full pack creates no new entity and no new item, however often it is tried; a partial pickup leaves the rest only in the original cache
 58. A stray click or Escape cannot silently discard a mint-world draft
@@ -717,8 +748,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | 10E Affix Bank | 52, 53, 55, 56 | Passed; 53 was shown on one minted world |
 | Technology web and auto skill (D27) | 63–68 | Passed, by test and by play within its carried items; approved |
 | Stable database | 69–71 (proposed) | Not started; before the full run |
-| Usability pass, with the playtest fixes | 57–59, 72–75 (proposed) | Not started; before the full run |
-| Playtest fixes, absorbed | 57–59 (proposed) | Not started; next |
+| Usability pass, with the playtest fixes | 57–59, 72–75 (proposed) | Built, by test and by play within its carried items; awaiting approval |
 | Raw materials leg (D23) | 60–62, 45 | Passed, by test and by play within its carried items; approved |
 | 11 Bringing the Nexi Home | 35–38 | Not started |
 | 12 The Second True Test | 39–40 | Not started |

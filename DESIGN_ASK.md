@@ -2,7 +2,7 @@
 
 Design the atoms that every World Seed world is made of, then prove them across the whole game: the smallest pieces of pixel and the rules that compose them into any terrain, creature, item, avatar and screen. The game works. It has no character yet. Give it one, at the level of the pixel.
 
-**Status, 2026-10-31.** This began as a brief to a designer, and Waves 8 through 10E, the raw materials leg and the technology web have since answered most of it in the game itself, and Pedro approved the look in the real game. Read it as the design record. The "Settled by…" blocks say what was decided. Passages that say "today" or "currently" describe the game when the brief was written, unless a status note beside them says otherwise. Still open: the weak spots listed under "Still weak, by eye", the widening of the look family, invented genres reaching world generation, sound, and a chosen typeface.
+**Status, 2026-10-31.** This began as a brief to a designer, and Waves 8 through 10E, the raw materials leg, the technology web and the usability pass have since answered most of it in the game itself, and Pedro approved the look in the real game. Read it as the design record. The "Settled by…" blocks say what was decided. Passages that say "today" or "currently" describe the game when the brief was written, unless a status note beside them says otherwise. Still open: the weak spots listed under "Still weak, by eye", the widening of the look family, invented genres reaching world generation, sound, and a chosen typeface.
 
 ## What this game is
 
@@ -225,6 +225,15 @@ Settled by the web pass (D27–D30), kept here as the record:
 - **The web belongs to the hub, the exp to the person.** What anyone here has reached opens for everyone here, and someone is on record as first. The credit is a signed ledger row, and lore.
 - **Tags are law.** Every tag has one kind and one meaning in one registry, a variant spelling is refused, a retired spelling is never reused, and a batch that breaks any of it falls whole. Nothing caps what batches can add.
 - **People have hands.** Someone met in the field has stats and skills dealt from their own seed, the same forever, read through the same web as yours. You learn what they are good at by talking to them: the card says Hands after the first word. A bond carries the person home, and Wave 11 puts them to work.
+
+Settled by the usability pass, kept here as the record (awaiting Pedro's approval):
+
+- **The art and the voice did not move.** This pass changed how things are used, and it added no new art family: the minimap and the body's silhouette are drawn from the atoms already approved.
+- **Firing and acting are two inputs.** The button on the ground fires, held or tapped, and opens nothing. E acts, here and in the city, and says above the hotbar what it would do.
+- **Valid and invalid are a seam.** A ghost has a solid outline or a broken one, in the same ink, over a clean fill or a hatch. In-hand and empty read the same way: a solid frame and a mark, or a broken outline.
+- **A comparison reads by column and mark.** This piece, the worn piece, ▲ or ▼ and the difference. Up means more; nothing says better, and no hue does. What is unstudied stays out of both columns, so no difference can give it away.
+- **Marks on the minimap are shapes.** A cross for you, an X for what can hurt you, a hollow lozenge for an exit, a dot for anything else. What has not been seen is static that knows nothing of the world.
+- **A heavy step asks; a stray one does nothing.** A sale takes a second press, and the armed button changes shape. A draft ignores the backdrop, and asks in voice before Escape can lose it: "The draft is unsigned. Abandon it?"
 
 Strong, and worth keeping: body plans from tags, the seven property grains as a family, avatars from certificates and seals from signatures.
 

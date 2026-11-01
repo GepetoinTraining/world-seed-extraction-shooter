@@ -130,6 +130,10 @@ Added since Wave 7, and not all drawn on the diagram above:
 | Sourcing audit | `logic/economy/SourcingAudit.ts` | Line 45 over the live definitions |
 | Protection | `logic/systems/InsuranceSystem.ts` | Charms and scrolls that name what a death keeps |
 | Entry | `logic/systems/Deploy.ts`, `entities/identity/roster.ts` | One door into a world; several avatars per device |
+| Controls | `logic/systems/FieldInput.ts`, `components/Hotbar.tsx` | Hold to fire, the one interact key, the hotbar |
+| The hands | `logic/systems/ItemHands.ts`, `components/ui/hands.tsx`, `components/ui/ItemGrid.tsx`, `entities/player/systems/StashGrid.ts` | Any item from any place to any other, through the store's doors; the vault's grid |
+| The card on hover | `components/ui/HoverLayer.tsx`, `render/atoms/inspect.ts` | One layer, placed clear of its thing, compared through the blind sheet |
+| Minimap | `render/atoms/minimap.ts`, `components/ui/MinimapView.tsx` | Field and city, from the atoms; the field keeps the fog |
 
 Paths are under `src/`. Note that `WorldCanvas.tsx` still contains the game loop. It should move out of the component.
 
@@ -245,6 +249,7 @@ These are the current values, set by reasoning and very little play. Expect to c
 | Cart bed | 10 × 8 cells | `CartSystem.ts` |
 | Over-load slowdown | Above 80%: 0.5× speed | `InventorySystem.ts` |
 | Channel / exit range | 5s / 60px | `WorldCanvas.tsx` |
+| Interact reach | 4 tiles, nearest first | `logic/systems/FieldInput.ts` |
 | Exit fee | World rule, default 5% of what was gained | `ExitLevy.ts` |
 | Spawns per quadrant | Enemy pack 45%, ruin 10%, NPC 6%; resources by biome | `WorldGenerator.ts` |
 | Material dream on a harvest | 8% | `Dreaming.ts` |
