@@ -193,14 +193,14 @@ const TheBooks: React.FC = () => {
   const { activeHubId, guild, wallets, runningBook } = useHubStore();
   const [held, setHeld] = useState(0);
   useEffect(() => { if (activeHubId) void Treasury.balance(activeHubId).then(setHeld); }, [activeHubId, guild.printed.total, guild.runningDay]);
-  const { lines, perDay, webValue, tiles, techPerTile } = runningBook();
+  const { lines, perDay, marketCap, tiles, techPerTile } = runningBook();
   const among = Object.values(wallets).reduce((sum, n) => sum + n, 0);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div className="ws-dim ws-small">
         The treasury holds {held.toLocaleString()} G. The city runs on {perDay.toLocaleString()} G a day, so that is {perDay > 0 ? Math.floor(held / perDay) : 0} days. Printed {guild.printed.count === 1 ? 'once' : `${guild.printed.count} times`}, {guild.printed.total.toLocaleString()} G in all. People here hold {among.toLocaleString()} G of their own.
       </div>
-      <div className="ws-dim ws-small">The tech web is worth {webValue.toLocaleString()}, over {tiles.toLocaleString()} tiles: {techPerTile.toFixed(2)} a tile.</div>
+      <div className="ws-dim ws-small">What the tech web produces is worth {marketCap.toLocaleString()} G, over the centre's {tiles.toLocaleString()} tiles: {techPerTile.toFixed(2)} a tile.</div>
       <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 130, overflowY: 'auto' }}>
         {lines.map(line => (
           <div key={line.poiId ?? line.why} className="ws-row">

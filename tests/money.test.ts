@@ -65,7 +65,9 @@ import { ItemFactory } from '../src/entities/item/ItemFactory';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { emptyGuild, residentIdOf, residentUpkeepPerDay } from '../src/entities/hub/guild';
-import { PRINT_DAYS, foldDays, printAmount, printsNeeded, walletBrought, webValue } from '../src/entities/hub/money';
+import { PRINT_DAYS, foldDays, printAmount, printsNeeded, walletBrought } from '../src/entities/hub/money';
+import { MarketCap } from '../src/logic/economy/MarketCap';
+import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
 
 const UID = 'uid_money';
 const HUB = 'hub_money';
@@ -213,14 +215,24 @@ describe('D115: a hub starts with 14 days of what it runs on', () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUILDINGS, AND THE TECH WEB PER TILE
+// BUILDINGS, THE WEB BY MARKET CAP, PER TILE OF THE CENTRE
 // ---------------------------------------------------------------------------
 
 describe('Pedro: "each one of the buildings in the city center need to have an upkeep value"', () => {
-  const node = (id: string, rank = 0, rung = 0) => ({ id, tags: [], rank, firstBy: { uid: 'u', name: 'U', at: 0 }, rungRecord: { uid: 'u', name: 'U', at: 0, rung } });
-  const webOf = (...nodes: ReturnType<typeof node>[]) => ({ nodes: Object.fromEntries(nodes.map(n => [n.id, n])) });
-  const many = (count: number, rank = 0, rung = 0) => webOf(...Array.from({ length: count }, (_, i) => node(`skill_${i}`, rank, rung)));
+  beforeEach(() => installShippedThemes());
+
+  const skillOf = (tags: string[]) => {
+    const id = `skill_${tags.join('+')}`;
+    return { id, tags, rank: 0, firstBy: { uid: 'u', name: 'U', at: 0 }, rungRecord: { uid: 'u', name: 'U', at: 0, rung: 0 } };
+  };
+  const webOf = (...tagSets: string[][]) => ({ nodes: Object.fromEntries(tagSets.map(tags => { const s = skillOf(tags); return [s.id, s]; })) });
+  const defNamed = (name: string) => Object.values(RESOURCE_DEFINITIONS).find(d => d.themeId === FIRST_THEME_PACK.themeId && d.name === name)!;
+  const craftedNamed = (name: string) => Object.values(CRAFTED_DEFINITIONS).find(d => d.name === name)!;
+  const worked = (name: string) => WebSystem.materialIdentity(defNamed(name).tags ?? []);
+  const piece = (defId: string, value: number) => thing({ universalDefinitionId: defId, value });
+  const oak = () => defNamed('Compound Oak');
   const buildings = () => hub().runningBook().lines.filter(l => l.why === 'BUILDING');
+  const clearStash = () => usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => i === 0 ? { ...t, items: [] } : t) } } }));
 
   it('every building with a keeper has its own value, and it goes to its keeper', () => {
     const lines = buildings();
@@ -247,41 +259,140 @@ describe('Pedro: "each one of the buildings in the city center need to have an u
     expect(large.amount).toBeGreaterThan(small.amount);
   });
 
-  it('a web has a value: nothing is worth nothing, and more, higher or further along is worth more', () => {
-    expect(webValue({ nodes: {} })).toBe(0);
-    expect(webValue(webOf(node('a')))).toBeGreaterThan(0);
-    expect(webValue(webOf(node('a'), node('b')))).toBeGreaterThan(webValue(webOf(node('a'))));
-    expect(webValue(webOf(node('a', 3)))).toBeGreaterThan(webValue(webOf(node('a', 0))));
-    expect(webValue(webOf(node('a', 0, 2)))).toBeGreaterThan(webValue(webOf(node('a', 0, 0))));
+  // ------ 1: "You can know how much by market cap over the items the skill produces"
+
+  it('a skill produces what its hands bring in', () => {
+    const produced = MarketCap.producedBy(worked('Compound Oak'));
+    expect(produced.has(oak().id)).toBe(true);
+    expect(produced.has(defNamed('Vault Stone').id)).toBe(false);
   });
 
-  it('the web is taken per tile of the city: what its buildings and lots stand on', () => {
-    useHubStore.setState({ web: many(40) });
+  it('hands do not produce what a bench makes, though it shares their tag', () => {
+    expect(MarketCap.producedBy(worked('Compound Oak')).has(craftedNamed('Ruled Plank').id)).toBe(false);
+  });
+
+  it('a trade produces what its bench makes from what it works, and not the raw material', () => {
+    const tags = ['carpentry', ...worked('Compound Oak')];
+    const produced = MarketCap.producedBy(tags);
+    expect(produced.has(craftedNamed('Ruled Plank').id)).toBe(true);
+    expect(produced.has(oak().id)).toBe(false);
+    expect(produced.has(craftedNamed('Dressed Block').id)).toBe(false);
+  });
+
+  it('a skill\'s market cap is the value of what it produces, in the city, piece by piece', () => {
+    const tags = worked('Compound Oak');
+    const items = [piece(oak().id, 30), piece(oak().id, 12), piece(defNamed('Vault Stone').id, 500)];
+    expect(MarketCap.ofSkill(tags, items)).toBe(42);
+  });
+
+  it('a web with no skills is worth nothing, and so is a skill nothing here was made by', () => {
+    expect(MarketCap.ofWeb({ nodes: {} }, [piece(oak().id, 30)])).toBe(0);
+    expect(MarketCap.ofWeb(webOf(worked('Compound Oak')), [])).toBe(0);
+    expect(MarketCap.ofWeb(webOf(worked('Compound Oak')), [piece(defNamed('Vault Stone').id, 500)])).toBe(0);
+  });
+
+  it('two skills that bring in the same log do not make it two logs', () => {
+    const one = webOf(worked('Compound Oak'));
+    const two = webOf(worked('Compound Oak'), ['axe', ...worked('Compound Oak')]);
+    expect(MarketCap.ofWeb(two, [piece(oak().id, 30)])).toBe(MarketCap.ofWeb(one, [piece(oak().id, 30)]));
+  });
+
+  it('the old guess is gone: a skill\'s rank and rung do not price the web', () => {
+    const src = readFileSync('src/entities/hub/money.ts', 'utf8');
+    expect(src).not.toMatch(/rungRecord|node\.rank/);
+  });
+
+  it('the city\'s market is its shelves, stores, rooms, keepers and whoever is here', () => {
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    expect(hub().runningBook().marketCap).toBe(0);
+    give([piece(oak().id, 10)]);
+    expect(hub().runningBook().marketCap).toBe(10);
+    const lotId = smallestFreeLot().id;
+    useHubStore.setState(s => ({ lots: s.lots.map(l => l.id === lotId ? {
+      ...l, inventory: [piece(oak().id, 100)], shopListings: [{ item: piece(oak().id, 1_000), price: 1 }], heldInTrade: [piece(oak().id, 10_000)]
+    } : l) }));
+    expect(hub().runningBook().marketCap).toBe(11_110);
+    useHubStore.setState(s => ({
+      vendors: { ...s.vendors, keeper_x: { ...VendorSystem.fresh('keeper_x', 'GENERAL', 1), held: [piece(oak().id, 100_000)], listed: [piece(oak().id, 200_000)], parts: [piece(oak().id, 400_000)] } },
+      rooms: { ...s.rooms, [lotId]: { placements: [{ item: piece(oak().id, 1_000_000) }] } as never }
+    }));
+    expect(hub().runningBook().marketCap).toBe(1_711_110);
+    useHubStore.setState({ rooms: {} }); // a fresh hub's load does not clear them
+  });
+
+  // ------ 2: "Only the city center, not the full sprawl"
+
+  it('the tiles are the centre\'s: its buildings, and no lot', () => {
+    const lines = buildings();
+    expect(hub().runningBook().tiles).toBe(lines.reduce((s, l) => s + l.tiles!, 0));
+    expect(hub().runningBook().tiles).toBe(128);
+  });
+
+  it('tech per tile is the market cap over those tiles', () => {
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 256)]);
     const book = hub().runningBook();
-    expect(book.webValue).toBe(webValue(many(40)));
-    expect(book.tiles).toBeGreaterThan(buildings().reduce((s, l) => s + l.tiles!, 0));
-    expect(book.techPerTile).toBeCloseTo(book.webValue / book.tiles);
+    expect(book.marketCap).toBe(256);
+    expect(book.techPerTile).toBe(2);
   });
 
-  it('with no tech a building still costs something: the floor is not zero', () => {
+  it('raising a chunk spreads nothing: the sprawl does not thin the centre', async () => {
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 12_800)]);
+    const before = hub().runningBook();
+    expect((await hub().raiseChunk('NORTH')).ok).toBe(true);
+    const after = hub().runningBook();
+    expect(after.tiles).toBe(before.tiles);
+    expect(after.techPerTile).toBe(before.techPerTile);
+    for (const line of after.lines.filter(l => l.why === 'BUILDING')) {
+      expect(line.amount).toBe(before.lines.find(b => b.poiId === line.poiId)!.amount);
+    }
+  });
+
+  it('so a chunk raised always costs more, however rich the web: the value rises', async () => {
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 1_000_000)]);
+    const before = hub().runningNow();
+    expect((await hub().raiseChunk('NORTH')).ok).toBe(true);
+    expect(hub().runningNow()).toBeGreaterThan(before);
+  });
+
+  // ------ 3: "Good": tiles x 1 G x (1 + tech per tile), rounded up
+
+  it('with no tech a building pays the floor', () => {
     useHubStore.setState({ web: { nodes: {} } });
     expect(hub().runningBook().techPerTile).toBe(0);
-    for (const line of buildings()) expect(line.amount).toBeGreaterThan(0);
+    for (const line of buildings()) expect(line.amount).toBe(line.tiles);
   });
 
-  it('"people that live in the bay area don\'t want to live like Amish": more tech, every building costs more', () => {
+  it('with tech it pays its tiles at that density', () => {
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 256)]);
+    for (const line of buildings()) expect(line.amount).toBe(Math.ceil(line.tiles! * 3));
+  });
+
+  it('"people that live in the bay area don\'t want to live like Amish": richer, every building costs more', () => {
     useHubStore.setState({ web: { nodes: {} } });
     const amish = buildings();
-    useHubStore.setState({ web: many(600, 2, 2) });
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 12_800)]);
     const bay = buildings();
     for (const line of bay) expect(line.amount, line.who).toBeGreaterThan(amish.find(a => a.who === line.who)!.amount);
   });
 
   it('and so its print is larger, with nothing but the running cost saying so', async () => {
     await drainTreasury();
-    useHubStore.setState({ web: many(600, 2, 2) });
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 12_800)]);
     const perDay = hub().runningNow();
-    const item = thing({ value: 10 });
+    const item = thing({ universalDefinitionId: 'no_market', value: 10 });
     give([item]);
     await hub().sellToVendor(item.id);
     const [print] = await rowsOf('PRINT');
@@ -289,26 +400,22 @@ describe('Pedro: "each one of the buildings in the city center need to have an u
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
-  it('someone coming home with skills moves what the city costs, through the web\'s own door', () => {
+  it('a skill joining the web through its own door moves what the city costs', () => {
     useHubStore.setState({ web: { nodes: {} } });
-    const before = hub().runningBook().webValue;
-    const { web } = WebSystem.admit(hub().web, { uid: 'u', name: 'U' }, { skill_x: { id: 'skill_x', tags: [], xp: 0, level: 1, rank: 2 } as never }, 1);
+    clearStash();
+    give([piece(oak().id, 256)]);
+    expect(hub().runningBook().marketCap).toBe(0);
+    const tags = worked('Compound Oak');
+    const skill = WebSystem.freshSkill(`skill_${tags.join('+')}`, tags, 0);
+    const { web } = WebSystem.admit(hub().web, { uid: 'u', name: 'U' }, { [skill.id]: skill }, 1);
     useHubStore.setState({ web });
-    expect(hub().runningBook().webValue).toBeGreaterThan(before);
-  });
-
-  it('the same web over more ground is thinner: a chunk raised lowers the tech per tile', async () => {
-    useHubStore.setState({ web: many(600, 2, 2) });
-    const before = hub().runningBook();
-    expect((await hub().raiseChunk('NORTH')).ok).toBe(true);
-    const after = hub().runningBook();
-    expect(after.tiles).toBeGreaterThan(before.tiles);
-    expect(after.webValue).toBe(before.webValue);
-    expect(after.techPerTile).toBeLessThan(before.techPerTile);
+    expect(hub().runningBook().marketCap).toBe(256);
   });
 
   it('a day pays each keeper their own building\'s value', async () => {
-    useHubStore.setState({ web: many(600, 2, 2) });
+    useHubStore.setState({ web: webOf(worked('Compound Oak')) });
+    clearStash();
+    give([piece(oak().id, 12_800)]);
     await hub().saveHubState();
     const lines = hub().runningBook().lines;
     const before = { ...hub().wallets };
@@ -324,6 +431,7 @@ describe('Pedro: "each one of the buildings in the city center need to have an u
     const hall = readFileSync('src/components/GuildHall.tsx', 'utf8');
     expect(hall).toMatch(/runningBook/);
     expect(hall).toMatch(/techPerTile/);
+    expect(hall).toMatch(/marketCap/);
   });
 });
 

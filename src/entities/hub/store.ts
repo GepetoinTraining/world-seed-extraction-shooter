@@ -66,9 +66,22 @@ const COUNTER_NPC = SHOP_VENDOR.weapon;
 const VENDOR_BELONGING_PER_TAKEN = 10;
 const VENDOR_ESTEEM_PER_RAISED = 20;
 
-/** What the running cost reads: the city as it stands, and its web. */
-const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web'>) =>
-  ({ layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web });
+/** Every piece the city holds, and whoever stands in it: what the market cap is taken over. Only the person here is known to a client. */
+const marketItems = (s: Pick<HubState, 'lots' | 'rooms' | 'vendors' | 'guild'>): IItem[] => {
+  const bank = usePlayerStore.getState().player.bank;
+  return [
+    ...s.lots.flatMap(l => [...l.inventory, ...(l.shopListings ?? []).map(li => li.item), ...(l.heldInTrade ?? [])]),
+    ...Object.values(s.rooms).flatMap(r => r.placements.map(p => p.item)),
+    ...Object.values(s.vendors).flatMap(v => [...(v.held ?? []), ...(v.listed ?? []), ...(v.parts ?? [])]),
+    ...s.guild.trophies,
+    ...bank.stashTabs.flatMap(t => t.items),
+    ...(usePlayerStore.getState().player.equipment?.items ?? [])
+  ];
+};
+
+/** What the running cost reads: the city as it stands, its web, and what is in it. */
+const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web' | 'rooms' | 'vendors' | 'guild'>) =>
+  ({ layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web, items: marketItems(s) });
 
 /** D115: one signed row per print, each of them 14 days of what the hub runs on. */
 const printRows = (hubId: string, perDay: number, prints: number, why: string): { type: 'PRINT'; data: Record<string, any> }[] =>

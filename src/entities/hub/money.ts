@@ -6,9 +6,10 @@
  *
  * And what the cost is: "each one of the buildings in the city center need to have an upkeep
  * value, that requires you to make a value of the tech web and then make the tech web per
- * tile, people that live in the bay area don't want to live like Amish". So the web has a
- * value, that value is spread over the tiles the city stands on, and each building's upkeep is
- * its own tiles at that density. It goes to whoever keeps the building.
+ * tile, people that live in the bay area don't want to live like Amish". The web's value is
+ * the market cap of what its skills produce (MarketCap). The tiles are "only the city center,
+ * not the full sprawl", so a chunk raised never thins it. Each building's upkeep is its own
+ * tiles at that density, and goes to whoever keeps the building.
  *
  * A hub pays this day by day, into its keepers' wallets. With nobody paying it back, the 14 days
  * run out and it prints 14 more, and so on. A print is never the shortfall, and nothing here
@@ -18,11 +19,12 @@
  * Pure logic over plain data: no store, no clock, no gold moved. The doors are in the hub's store.
  */
 
-import { IHubWeb, UniversalRank } from '../../../types';
+import { IHubWeb, IItem, UniversalRank } from '../../../types';
+import { MarketCap } from '../../logic/economy/MarketCap';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { HUB_NPCS } from './HubGenerator';
 import { residentUpkeepPerDay } from './guild';
-import { IHubLayout, POIType } from './layoutTypes';
+import { IHubLayout } from './layoutTypes';
 
 export const PRINT_DAYS = 14;
 
@@ -54,34 +56,31 @@ export interface ICity {
   layout: Pick<IHubLayout, 'zones'>;
   lots: { ownerId: string | null }[];
   web: IHubWeb;
+  /** Everything the city holds, and the person standing in it. */
+  items: Pick<IItem, 'universalDefinitionId' | 'value'>[];
 }
 
 export interface IRunningBook {
   lines: IRunningLine[];
   perDay: number;
-  webValue: number;
-  /** The tiles the city stands on: its buildings and its lots. */
+  /** What the web is worth: the market cap of what its skills produce. */
+  marketCap: number;
+  /** The city centre's tiles: its buildings, and none of the sprawl. */
   tiles: number;
   techPerTile: number;
 }
 
 const rankOfNpc = (npc: { teaches?: { rank: UniversalRank } }) => npc.teaches?.rank ?? UniversalRank.F;
 
-/** What a hub's web is worth: every skill in it, by how high it stands and how far it has been taken. A guess until Wave 12. */
-export function webValue(web: IHubWeb): number {
-  return Object.values(web.nodes).reduce((sum, node) => sum + (node.rank + 1) * (node.rungRecord.rung + 1), 0);
-}
-
 const poisOf = (layout: ICity['layout']) => layout.zones.flatMap(zone => zone.pois);
 const tilesOf = (poi: { size: { width: number; height: number } }) => poi.size.width * poi.size.height;
 
 /** One day of what this city runs on, and the reading it comes from. */
 export function runningBook(city: ICity): IRunningBook {
-  const pois = poisOf(city.layout);
-  const buildings = pois.filter(poi => poi.npcId);
-  const tiles = pois.filter(poi => poi.npcId || poi.type === POIType.PLAYER_LOT).reduce((sum, poi) => sum + tilesOf(poi), 0);
-  const value = webValue(city.web);
-  const techPerTile = tiles > 0 ? value / tiles : 0;
+  const buildings = poisOf(city.layout).filter(poi => poi.npcId);
+  const tiles = buildings.reduce((sum, poi) => sum + tilesOf(poi), 0);
+  const marketCap = MarketCap.ofWeb(city.web, city.items);
+  const techPerTile = tiles > 0 ? marketCap / tiles : 0;
 
   const lines: IRunningLine[] = buildings.map(poi => ({
     who: poi.npcId!, why: 'BUILDING', name: poi.name, poiId: poi.id, tiles: tilesOf(poi),
@@ -90,7 +89,7 @@ export function runningBook(city: ICity): IRunningBook {
   const free = city.lots.filter(lot => !lot.ownerId).length;
   if (free > 0) lines.push({ who: GROUND_KEEPER, why: 'GROUND', name: 'Free ground', amount: free * EMPTY_LOT_PER_DAY });
 
-  return { lines, perDay: lines.reduce((sum, line) => sum + line.amount, 0), webValue: value, tiles, techPerTile };
+  return { lines, perDay: lines.reduce((sum, line) => sum + line.amount, 0), marketCap, tiles, techPerTile };
 }
 
 export const runningPerDay = (city: ICity): number => runningBook(city).perDay;
