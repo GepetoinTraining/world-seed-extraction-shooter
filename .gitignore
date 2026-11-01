@@ -9,7 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
-data/
+/data/
 dist-ssr
 *.local
 gemini-memory-layer

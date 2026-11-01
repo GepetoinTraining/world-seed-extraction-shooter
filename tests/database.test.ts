@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { spawn, ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -796,9 +796,19 @@ describe('one command brings up everything the game needs', () => {
     }
   }, 60_000);
 
-  it('the database file is never committed', () => {
-    const ignored = read('.gitignore').split(/\r?\n/);
-    expect(ignored).toContain('data/');
+  it('the database file is never committed, and no source file is ignored along with it', () => {
+    // Ask git, not the file. The first version of this bar read .gitignore for "data/",
+    // which also ignored src/entities/data/: the code passed here and was never committed.
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+    for (const file of ['data/worldseed.db', 'data/worldseed.db-wal', 'data/worldseed.db-shm']) {
+      expect(git('check-ignore', file).trim()).toBe(file);
+    }
+    expect(git('ls-files', '--others', '--ignored', '--exclude-standard', 'src', 'server', 'tests', 'drizzle').trim()).toBe('');
+    // And every file the game's store is built from is really in the repository.
+    const tracked = git('ls-files', 'src/entities/data', 'src/logic/persistence', 'server', 'drizzle').split(/\r?\n/);
+    for (const file of ['src/entities/data/StoreClient.ts', 'src/entities/data/StoreUnit.ts', 'src/entities/data/wire.ts', 'src/entities/data/similarity.ts', 'server/SqlStore.ts', 'src/logic/persistence/BrowserImport.ts']) {
+      expect(tracked, `${file} is not tracked`).toContain(file);
+    }
   });
 });
 
