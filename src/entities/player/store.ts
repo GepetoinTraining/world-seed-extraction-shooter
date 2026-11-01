@@ -1882,7 +1882,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       if (entity.container.hasLore) {
         const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
-        const worldLore = ContentRegistry.lore(worldCard?.themeId);
+        const worldLore = ContentRegistry.lore(worldCard?.themeId, useWorldStore.getState().directorRecord ?? undefined);
         const fragment = rng.pick(worldLore.length > 0 ? worldLore : LORE_FRAGMENTS);
         const piece = {
           ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),

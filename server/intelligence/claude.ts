@@ -2,8 +2,8 @@
  * CLAUDE, behind the door (D46). Credentials come from the server's environment
  * (ANTHROPIC_API_KEY, or an `ant auth login` profile) and never reach a browser.
  *
- * One model constant per kind of content (D44). A rest goes through Message Batches:
- * half the price, and literally sleeping on it. A live call has the server-side
+ * One model constant per kind of content (D44). A rest and a world's window go through
+ * Message Batches: half the price, and literally sleeping on it. A live call has the server-side
  * fallback on, so a classifier decline on one model does not end a person's mint;
  * batches do not accept that parameter, and a refused batch stays queued instead.
  */
@@ -13,11 +13,12 @@ import type { DoorKind, DoorStatus, IDoorOutcome, IDoorRequest, IDoorUsage, IInt
 export const MODEL_FOR: Record<DoorKind, string> = {
   talk: 'claude-opus-5-5',
   theme: 'claude-opus-5-5',
-  rest: 'claude-opus-5-5'
+  rest: 'claude-opus-5-5',
+  window: 'claude-opus-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', rest: 'medium', window: 'medium' };
 
 /** Dollars per million tokens. Batches are half. */
 const RATES: Record<string, { input: number; output: number; cacheRead: number }> = {
@@ -137,7 +138,7 @@ export class ClaudeProvider implements IIntelligenceProvider {
     try {
       const batch = await this.client.messages.batches.retrieve(batchId);
       if (batch.processing_status !== 'ended') return { status: 'PENDING' };
-      // Only a rest is filed, and a rest always has a schema, so nothing need be kept between
+      // Only a rest or a window is filed, each on one model and always with a schema, so nothing need be kept between
       const request: IDoorRequest = { kind: 'rest', system: '', messages: [], schema: {}, maxTokens: 0 };
       for await (const result of await this.client.messages.batches.results(batchId)) {
         if (result.result.type === 'succeeded') return this.read(result.result.message, request, true);

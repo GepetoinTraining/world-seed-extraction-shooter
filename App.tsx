@@ -24,6 +24,7 @@ import { isTypingTarget } from './src/logic/systems/FieldInput';
 import { ReceiptScreen } from './src/components/ReceiptScreen';
 import { FeedView } from './src/components/FeedView';
 import { RestDoor } from './src/logic/systems/RestDoor';
+import { ScanDoor } from './src/logic/systems/ScanDoor';
 
 // Debug Console
 import { SystemConsole } from './src/components/debug/SystemConsole';
@@ -207,6 +208,14 @@ const App: React.FC = () => {
     if (bootStatus !== 'READY') return;
     void RestDoor.wakeIfDue();
     const interval = setInterval(() => void RestDoor.wakeIfDue(), 5000);
+    return () => clearInterval(interval);
+  }, [bootStatus]);
+
+  // D69: a world's window runs on its own clock, from whichever client is here. Play never waits on it
+  useEffect(() => {
+    if (bootStatus !== 'READY') return;
+    void ScanDoor.tick();
+    const interval = setInterval(() => void ScanDoor.tick(), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 

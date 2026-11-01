@@ -6,7 +6,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { IntelligenceDoor, type IDoorMessage } from './door';
-import { buildRestRequest, buildTalkRequest, buildThemeRequest } from './prompts';
+import { buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -28,7 +28,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
 
-/** `path` is what follows the mount: /status, /talk, /theme, /rest/file, /rest/collect. */
+/** `path` is what follows the mount: /status, /talk, /theme, /rest/file, /rest/collect, /window/file, /window/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
@@ -53,6 +53,13 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
       case '/rest/file':
         return send(res, 200, await door.fileRest(String(body.id ?? 'rest'), buildRestRequest(body.queue ?? {}, body.theme ?? {})));
       case '/rest/collect':
+        return send(res, 200, await door.collectRest(String(body.batchId ?? '')));
+      case '/window/file': {
+        const build = WINDOW_REQUESTS[String(body.kind)];
+        if (!build) return send(res, 200, { status: 'REFUSED', reason: 'A window carries no such ask.' });
+        return send(res, 200, await door.fileWindow(String(body.id ?? 'window'), build(body.asks ?? [], body.theme ?? {}), Number(body.spent) || 0));
+      }
+      case '/window/collect':
         return send(res, 200, await door.collectRest(String(body.batchId ?? '')));
       default:
         return send(res, 404, { error: 'No such door.' });

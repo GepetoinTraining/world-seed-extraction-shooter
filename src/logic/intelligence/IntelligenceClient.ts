@@ -15,6 +15,8 @@ export interface IDoorOutcome<T = unknown> {
   usage?: IDoorUsage;
   reason?: string;
   batchId?: string;
+  /** What this batch could cost, in dollars, when it was filed. */
+  ceiling?: number;
 }
 
 export interface IDoorMessage { role: 'user' | 'assistant'; content: string }
@@ -41,5 +43,7 @@ export const IntelligenceClient = {
   talk: (messages: IDoorMessage[], draft: Record<string, unknown>) => post('/talk', { messages, draft }),
   writeTheme: <T>(messages: IDoorMessage[], draft: Record<string, unknown>) => post<T>('/theme', { messages, draft }),
   fileRest: (id: string, queue: unknown, theme: unknown) => post('/rest/file', { id, queue, theme }),
-  collectRest: <T>(batchId: string) => post<T>('/rest/collect', { batchId })
+  collectRest: <T>(batchId: string) => post<T>('/rest/collect', { batchId }),
+  fileWindow: (id: string, kind: string, asks: unknown[], theme: unknown, spent: number) => post('/window/file', { id, kind, asks, theme, spent }),
+  collectWindow: <T>(batchId: string) => post<T>('/window/collect', { batchId })
 };

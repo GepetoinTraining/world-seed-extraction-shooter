@@ -10,7 +10,7 @@
  * the caller's work stays queued and the game goes on.
  */
 
-export type DoorKind = 'talk' | 'theme' | 'rest';
+export type DoorKind = 'talk' | 'theme' | 'rest' | 'window';
 
 export interface IDoorUsage {
   model: string;
@@ -63,6 +63,9 @@ export interface IIntelligenceProvider {
 /** D44: what one rest may spend. It guards the bill and caps no content: what is over it waits. */
 export const REST_SPEND_LIMIT_USD = 0.5;
 
+/** The same guard over one world's window (D69): what is over it waits for the next window. */
+export const WINDOW_SPEND_LIMIT_USD = 0.5;
+
 /** A provider that is not there: no key, no model. The game must still go on. */
 export class AbsentProvider implements IIntelligenceProvider {
   name = 'none';
@@ -92,4 +95,13 @@ export class IntelligenceDoor {
   }
 
   collectRest(batchId: string): Promise<IDoorOutcome> { return this.provider.collect(batchId); }
+
+  /** One small batch of a world's window. It says what it could cost, so a window can add it up. */
+  async fileWindow(id: string, request: IDoorRequest, spent: number) {
+    const ceiling = this.provider.ceiling(request, true);
+    if (spent + ceiling > WINDOW_SPEND_LIMIT_USD) {
+      return { status: 'OVER_LIMIT' as DoorStatus, reason: `This window has spent up to $${spent.toFixed(2)}, and this batch could cost $${ceiling.toFixed(2)} more, over the $${WINDOW_SPEND_LIMIT_USD.toFixed(2)} a window may spend.` };
+    }
+    return { ...(await this.provider.file(id, request)), ceiling };
+  }
 }

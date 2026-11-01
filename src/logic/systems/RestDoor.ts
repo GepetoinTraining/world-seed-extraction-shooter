@@ -10,8 +10,6 @@ import { useFeed } from '../../components/ui/stores';
 import { GoldCommit } from '../economy/GoldCommit';
 import { Ledger } from '../ledger/Ledger';
 import { ContentRegistry } from '../theme/ContentRegistry';
-import { ThemeStore } from '../theme/ThemeStore';
-import { bodyOf, sealTheme } from '../theme/ThemeCompiler';
 import { IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { WebSystem } from './WebSystem';
 import { HubUnlock } from './HubUnlock';
@@ -160,14 +158,5 @@ export const RestDoor = {
     }
     for (const s of out.data.skills) feed(`${s.name}: ${s.flavor}`, 'signal');
     for (const g of out.data.gifts ?? []) feed(`${WebSystem.nameOf(g.skill)} gave you ${g.name}. ${g.blurb}`, 'proof');
-
-    // D43: what the world grew becomes a signed pack, or nothing. Refused whole, and the rest stands.
-    const theme = ContentRegistry.get(pending.themeId);
-    const grown = theme ? RestSystem.grownTheme(theme, out.data.growth) : null;
-    if (grown) {
-      const banked = await ThemeStore.bank(sealTheme(bodyOf(grown), out.usage?.model ?? 'unknown', Date.now()));
-      if (banked.ok) feed(`${theme!.name} has grown. Worlds signed from now on will know it.`, 'signal');
-      else console.warn(`[REST] What the world grew was refused whole: ${banked.reason}`);
-    }
   }
 };

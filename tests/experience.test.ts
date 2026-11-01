@@ -963,7 +963,7 @@ describe('three circles ask the rest door for an active skill or a passive bonus
 
   it('the schema and the system prompt carry the ask', () => {
     const src = readFileSync('server/intelligence/prompts.ts', 'utf8');
-    expect(src).toMatch(/required: \['skills', 'weaves', 'gifts', 'growth'\]/);
+    expect(src).toMatch(/required: \['skills', 'weaves', 'gifts'\]/);
     expect(src).toMatch(/passive bonus/);
   });
 
