@@ -28,7 +28,7 @@ export const ThemePreview: React.FC<{ theme: IThemeBody }> = ({ theme }) => (
     <div style={{ fontWeight: 700 }}>{theme.name}</div>
     <div className="ws-dim" style={{ marginBottom: 6 }}>{theme.premise}</div>
     <div>GROUND: {theme.regions.map(r => r.name).join(' · ')}</div>
-    <div>WHAT LIVES THERE: {theme.creatures.slice(0, 8).map(c => c.name).join(' · ')}{theme.creatures.length > 8 ? ` and ${theme.creatures.length - 8} more` : ''}</div>
+    <div>WHAT LIVES THERE: {theme.creatures.length} kinds. They do not give their names.</div>
     <div>WHAT LIES THERE: {theme.materials.slice(0, 8).map(m => m.name).join(' · ')}{theme.materials.length > 8 ? ` and ${theme.materials.length - 8} more` : ''}</div>
     <div>WHAT IT KNOWS: {theme.abilities.slice(0, 6).map(a => a.name).join(' · ') || 'nothing yet'}</div>
     {theme.lore[0] && <div className="ws-dim" style={{ marginTop: 6, fontStyle: 'italic' }}>"{theme.lore[0]}"</div>}

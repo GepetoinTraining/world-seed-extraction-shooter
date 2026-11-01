@@ -90,8 +90,9 @@ export interface ITelegraph {
 export interface IWorldEntity {
   statuses?: IEntityStatus[];
   telegraph?: ITelegraph;
-  /** D48: what the Director made of this body. Absent means it is as it was born. */
+  /** D60: the only name a person ever reads for this body. Absent means masked. */
   displayName?: string;
+  /** D48: what the Director made of this body. Absent means it is as it was born. */
   bonusHealth?: number;
   bonusDamage?: number;
   learned?: string[];

@@ -1149,7 +1149,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           });
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
           if (event.type === 'KILL' && event.xpReward) {
-            feed(`${def?.name ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
+            feed(`${event.displayName ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
             // Line 80: defeating a thing teaches what it casts, at the next rest. Line 90: the Director hears.
             const innate = (def as { innate?: string[] } | undefined)?.innate ?? [];
             if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));

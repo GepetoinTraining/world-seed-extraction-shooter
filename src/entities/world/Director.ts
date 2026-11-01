@@ -35,7 +35,8 @@ export interface IMobVariant {
   traits: IMobTrait[];
   /** Magic it has picked up beyond what it was born with. */
   learned: string[];
-  displayName: string;
+  /** D60: the name a person may read. Absent means it has not earned one. */
+  displayName?: string;
   bonusHealth: number;
   bonusDamage: number;
 }
@@ -46,12 +47,20 @@ const PER_GENERATION = 0.04;
 const MIN_WEIGHT = 0.1;
 const LEARN_CHANCE = 0.15;
 
+/**
+ * D60: a creature's name is masked until it has earned one: it must be magical (a trait
+ * or magic it learned) or one of a kind, and of the second generation or later. What
+ * a world opens with is its first generation, record 0, so the second is record 1.
+ */
+const NAMED_FROM_GENERATION = 1;
+const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
+
 export interface IDirectorPool {
   affixes: { id: string; name: string; type: 'PREFIX' | 'SUFFIX'; statModifiers?: Record<string, [number, number]> }[];
   abilities: string[];
 }
 
-const NONE = (name: string): IMobVariant => ({ traits: [], learned: [], displayName: name, bonusHealth: 0, bonusDamage: 0 });
+const NONE: IMobVariant = { traits: [], learned: [], bonusHealth: 0, bonusDamage: 0 };
 
 export class Director {
 
@@ -84,15 +93,15 @@ export class Director {
    */
   static variantOf(
     seed: string, entityId: string, definitionId: string, name: string,
-    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined
+    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined, tags: string[] = []
   ): IMobVariant {
-    if (!record || record.generation === 0 || !pool) return NONE(name);
+    if (!record || record.generation === 0) return NONE;
     const rng = Rng.fromKey(`director:${seed}:${record.generation}:${entityId}`);
     const weight = record.weights[definitionId] ?? 1;
     const chance = (BASE_TRAIT_CHANCE + PER_GENERATION * record.generation) * weight;
 
     const traits: IMobTrait[] = [];
-    const affixes = [...pool.affixes].sort((a, b) => fnv1a(a.id) - fnv1a(b.id));
+    const affixes = [...(pool?.affixes ?? [])].sort((a, b) => fnv1a(a.id) - fnv1a(b.id));
     if (affixes.length > 0 && rng.next() < chance) {
       const entry = affixes[rng.int(0, affixes.length)];
       const stats: Record<string, number> = {};
@@ -103,15 +112,18 @@ export class Director {
     }
 
     const learned: string[] = [];
-    if (pool.abilities.length > 0 && rng.next() < chance * LEARN_CHANCE) {
-      learned.push(pool.abilities[rng.int(0, pool.abilities.length)]);
+    const abilities = pool?.abilities ?? [];
+    if (abilities.length > 0 && rng.next() < chance * LEARN_CHANCE) {
+      learned.push(abilities[rng.int(0, abilities.length)]);
     }
 
     const prefix = traits.find(t => t.type === 'PREFIX')?.name;
     const suffix = traits.find(t => t.type === 'SUFFIX')?.name;
+    const earned = record.generation >= NAMED_FROM_GENERATION
+      && (traits.length > 0 || learned.length > 0 || tags.some(t => ONE_OF_A_KIND.includes(t)));
     return {
       traits, learned,
-      displayName: [prefix, name, suffix].filter(Boolean).join(' '),
+      ...(earned ? { displayName: [prefix, name, suffix].filter(Boolean).join(' ') } : {}),
       bonusHealth: traits.reduce((sum, t) => sum + (t.stats.max_health ?? 0), 0),
       bonusDamage: traits.reduce((sum, t) => sum + (t.stats.damage ?? 0), 0)
     };

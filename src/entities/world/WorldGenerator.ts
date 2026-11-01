@@ -392,12 +392,13 @@ export class WorldGenerator {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
       const body = id(suffix);
-      const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool);
+      const variant = Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags);
       push({
         id: body, type: EntityType.MOB, definitionId: template.id, position: at,
         rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth + variant.bonusHealth,
+        ...(variant.displayName ? { displayName: variant.displayName } : {}),
         ...(variant.traits.length > 0 || variant.learned.length > 0 ? {
-          displayName: variant.displayName, bonusHealth: variant.bonusHealth, bonusDamage: variant.bonusDamage, learned: variant.learned
+          bonusHealth: variant.bonusHealth, bonusDamage: variant.bonusDamage, learned: variant.learned
         } : {})
       });
     };

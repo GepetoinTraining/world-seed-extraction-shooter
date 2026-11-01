@@ -11,6 +11,7 @@ export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG';
   entityId?: string;
   definitionId?: string;
+  displayName?: string;
   damage?: number;
   position?: { x: number; y: number };
   loot?: IItem[];
@@ -83,6 +84,7 @@ export class CombatSystem {
         type: 'KILL',
         entityId: mob.id,
         definitionId: mob.definitionId,
+        displayName: mob.displayName,
         position: mob.position,
         xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity }
       });
@@ -98,7 +100,7 @@ export class CombatSystem {
           biome: origin.biome,
           magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
-        } : undefined, rollKey);
+        } : undefined, rollKey, mob.displayName);
         SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
         if (loot.length > 0) {
           spawnedLoot.push({ position: mob.position, items: loot });

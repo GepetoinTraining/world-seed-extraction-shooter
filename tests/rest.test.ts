@@ -23,6 +23,13 @@ import { StudySystem } from '../src/logic/systems/StudySystem';
 import { ItemFactory } from '../src/entities/item/ItemFactory';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
 import { StatSystem } from '../src/logic/systems/StatSystem';
+import { readFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { inspectEntity } from '../src/render/atoms/inspect';
+import { CombatSystem } from '../src/entities/combat/CombatSystems';
+import { LootTable } from '../src/entities/world/LootTable';
+import { ThemePreview } from '../src/components/ThemeTalk';
 
 installShippedThemes();
 const themeId = FIRST_THEME_PACK.themeId;
@@ -184,6 +191,79 @@ describe('line 90: the Director', () => {
     for (let i = 0; i < 6; i++) record = Director.evolve(record);
     const locked = land(ctx(record, false));
     expect(locked.filter(m => m.displayName && m.displayName !== MOB_DEFINITIONS[m.definitionId].name)).toEqual([]);
+  });
+});
+
+describe('D60: a creature gives its name only when it has earned it', () => {
+  const after = (rests: number, weight: number) => {
+    let record = emptyDirectorRecord();
+    for (let i = 0; i < rests; i++) record = Director.evolve(record);
+    return { ...record, weights: { kind: weight } };
+  };
+  const POOL = { affixes: [{ id: 'a', name: 'Honored', type: 'PREFIX' as const, statModifiers: { max_health: [1, 2] as [number, number] } }], abilities: [] };
+  const nameOf = (rests: number, weight: number, tags: string[], pool: typeof POOL | { affixes: never[]; abilities: string[] } = POOL) =>
+    Director.variantOf('seed', 'b', 'kind', 'Hound', after(rests, weight), pool, tags).displayName;
+
+  it('the first generation is nameless, one of a kind included', () => {
+    expect(nameOf(0, 100, [])).toBeUndefined();
+    expect(nameOf(0, 100, ['boss'])).toBeUndefined();
+  });
+
+  it('a magical body of the second generation or later is named', () => {
+    expect(nameOf(1, 100, [])).toBe('Honored Hound');
+    expect(nameOf(5, 100, [])).toBe('Honored Hound');
+  });
+
+  it('magic it learned counts as much as a trait', () => {
+    expect(nameOf(1, 100, [], { affixes: [], abilities: ['spell'] })).toBe('Hound');
+  });
+
+  it('one of a kind is named from the second generation, with no magic on it', () => {
+    expect(nameOf(1, 0, ['boss'])).toBe('Hound');
+  });
+
+  it('an ordinary body never is, however many rests have passed, and neither is an elite', () => {
+    expect(nameOf(8, 0, [])).toBeUndefined();
+    expect(nameOf(8, 0, ['elite'])).toBeUndefined();
+  });
+
+  it('the card shows the earned name and masks the rest', () => {
+    const def = Object.values(compiled.mobs)[0];
+    const read = (e: IWorldEntity) => inspectEntity(e, { player: { currentSession: { inventory: [] }, attributes: {} } as IPlayer, dist: 1, level: () => 2 });
+    const masked = read(body(def));
+    expect(masked.title).toBe('Unknown Contact');
+    expect(masked.compact).not.toContain(def.name);
+    expect(read({ ...body(def), displayName: `Honored ${def.name}` }).title).toBe(`Honored ${def.name}`);
+  });
+
+  it('the kill line only knows the name the body earned', () => {
+    const def = Object.values(compiled.mobs)[0];
+    const shot = { id: 's', x: 200, y: 0, angle: 0, speed: 200, spawnTime: 0, lifespan: 2, color: 'x', damage: 1e6 };
+    const kill = (e: IWorldEntity) => CombatSystem.tick([shot], chunkWith([e]), { x: 0, y: 0, z: 0 }, 100, []).events.find(ev => ev.type === 'KILL')!;
+    expect(kill(body(def, 'b1', 200)).displayName).toBeUndefined();
+    expect(kill({ ...body(def, 'b2', 200), displayName: 'Honored Thing' }).displayName).toBe('Honored Thing');
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).not.toMatch(/def\?\.name \?\? 'Contact'/);
+  });
+
+  it('what a boss drops does not give away a name it has not earned', () => {
+    const boss = { id: 'mob_t', name: 'Test Shambler', rank: UniversalRank.S, tags: ['boss', 'god'], baseHealth: 10 } as never;
+    const ctx = { chunkX: 0, chunkY: 0, layerId: 'w', biome: BiomeType.RUINS, magicFind: 1, quantityBonus: 1 } as never;
+    const words = (name?: string) => {
+      const out: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        for (const item of LootTable.generateLoot(boss, 1, ctx, `loot:name:${i}`, name)) out.push(item.name, item.description ?? '');
+      }
+      return out.join(' | ');
+    };
+    expect(words()).not.toContain('Test Shambler');
+    expect(words()).toMatch(/Relic of/);
+    expect(words('Honored Shambler')).toContain('Honored Shambler');
+  });
+
+  it('nor does the preview before signing', () => {
+    const html = renderToStaticMarkup(createElement(ThemePreview, { theme: FIRST_THEME }));
+    for (const creature of FIRST_THEME.creatures) expect(html, creature.name).not.toContain(creature.name);
+    expect(html).toContain(`${FIRST_THEME.creatures.length} kinds`);
   });
 });
 
