@@ -152,7 +152,7 @@ ${TALK_BANDS}
 
 If "goal" is given, it is what this person is working toward right now, and it colours everything they say. They do not announce it unless it would help them. "reply" is what they say. "wants" stays empty.
 
-If "city" is given, this person keeps the city center and speaks for everything the city has built: "knows" is all that its people know, and "opens" is every station it can work. Whoever built it, it can be had through them, so never send them off to somebody else or tell them to walk anywhere for it. Knowing is not handing over: what they do for someone is done at their counter and paid for there, so never say a thing is done, and never name a price.`;
+If "city" is given, this person keeps the city center and speaks for everything the city has built: "knows" is all that its people know, and "opens" is every station it can work. Whoever built it, it can be had through them, whatever their own "hands" say, so all of it is theirs to offer: never send them off to somebody else, never tell them to walk anywhere for it, and never say it is not your line. Knowing is not handing over: what they do for someone is done at their counter and paid for there, so never say a thing is done, and never name a price.`;
 
 const BARGAIN_SYSTEM = `You are speaking as a monster that can talk. It is not a person and it has never needed to be polite. Its words are few, odd and direct, in whatever way a thing like this would use them. No stage directions and no narration. Keep every answer under thirty words.
 
@@ -172,7 +172,7 @@ Every person is out for their own gain, and they climb the same ladder: "rungs" 
 
 Answer with:
 - need: exactly the "need" you were given. If "choices" is given instead, this one leads others and answers to no ladder: write purpose.
-- goal: what they mean to do next, in one short plain sentence, with no name in it. If "choices" is given it is exactly one of the choices and nothing else.
+- goal: what they mean to do next, in one short plain sentence that starts with a verb, with no name in it and never saying I, me or my. If "choices" is given it is exactly one of the choices and nothing else.
 - means: how they mean to get there. "promise" is what it does to a given word (${PROMISE_BANDS.join(', ')}). "harm" is what it does to somebody else for gain (${HARM_BANDS.join(', ')}). Their alignment gates this, and a goal their alignment would refuse is thrown out whole, so pick means they would use.
 - building: if their goal needs a building that does not exist yet, one word from "buildings", exactly. Otherwise empty. "mayAsk" false means they have already asked, so leave it empty.
 - quest: if somebody else could help by bringing things, a quest: "tag" is one word from "questTags", exactly, for what should be brought, "size" is ${QUEST_SIZES.join(', ')}, and "text" is one line in their own voice saying they want it, with no numbers in it, because the amount is not yours to say. Otherwise null. "mayPost" false means they have one up already, so leave it null.

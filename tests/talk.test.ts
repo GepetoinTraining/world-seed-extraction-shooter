@@ -549,6 +549,12 @@ describe('line 147: what guards a long talk\'s bill', () => {
     }
   });
 
+  it('what a call cost counts what it wrote to the cache, so the spend limit reads the real bill', async () => {
+    const client = { beta: { messages: { stream: () => ({ finalMessage: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(words()) }], usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 } }) }) } } };
+    const out = await new ClaudeProvider(client as any).ask(ask());
+    expect(out.usage!.usd).toBeCloseTo(0.125);
+  });
+
   it('the system text is frozen and long enough to be cached; everything volatile goes in the message', () => {
     const a = buildNpcTalkRequest({ who: { name: 'A' }, log: [], said: 'one', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
     const b = buildNpcTalkRequest({ who: { name: 'B' }, log: [], said: 'two', roll: 9, required: 9, bonuses: {}, meter: 9 } as any);
