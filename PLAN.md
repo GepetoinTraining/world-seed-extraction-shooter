@@ -901,7 +901,7 @@ Guardrail 4 said gates are serial because jumping ahead makes logic without syst
 
 Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts` (additions only). So A3 merges first, then A2. `Director` is A4's, and A5 reads its chance through a function A4 keeps.
 
-**Wave B, built, record below, re-cut 2026-11-01 after Pedro's reviews:**
+**Wave B, built and merged, record below, re-cut 2026-11-01 after Pedro's reviews:**
 
 | Stream | Lines | Needs | Owns |
 |---|---|---|---|
@@ -911,7 +911,7 @@ Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts`
 | B4 Guildhall, tavern, houses (D73, D75, D83, D93's chain, D95) | 115, the rank half of 128 | A1, A2, A3 | `hub/store`, `dialogue`, the guild: `grantRank`, the guild buying lots and pieces, a map handed in posting a chain, the tavern's real work, the levy's roll and the tax evasion skill (D100). It inherits the Land Office: `depositToPlan`, `planRaise`, `OPEN_DEEDS`, `OPEN_PLAN` |
 | B5 The forced exit (D77) | 119's last clause | A4's vocabulary | `EffectSystem`, the item type |
 
-**Wave C, once B is merged:**
+**Wave C, next, on Pedro's word:**
 - C1 food and land (farms, grove keeping, herding at home, cooking, capture from D65; needs B2, B4; read the herd notes).
 - C2 NPC adventurers (D76, line 116; needs B2, B4). The first time a boss can be brought down.
 - C3 territory, buildings, anchors, standing orders, the toll, settling by trade (D62, D93; lines 135; needs B1, B2, A3).
@@ -950,7 +950,7 @@ Each stream played what it built, on its own test avatars and port. The coordina
 
 **Pedro's answers since (D96–D100):** refilling is one very rare skill on the web, a weave's circles wait for the magic system, a home station creates a dungeon, and the levy becomes a roll and a skill. Until B4 builds that roll, subterfuge still simply lowers the levy, as A2 built it. **Open:** the simulation's card is visible to players. Rates for every attribute are guesses until Wave 12, and the numbers can now be read on the TUNING tab.
 
-### WAVE B — THE RECORD (built 2026-11-01 on six branches, joined on `claude/wave-b-integration`, awaiting Pedro)
+### WAVE B — THE RECORD (built 2026-11-01 on seven branches, joined on `claude/wave-b-integration`, merged into main on Pedro's word the same day, not pushed)
 
 Each stream played what it built, on its own test avatars and port. The coordinator read each report and the core of each diff, joined all six in the order B2, B1, B5, B3, B4, vendors, added B5's entries to the first theme once, ran the full suite, and played the seams on a fresh test avatar. **What has met a real model:** only Kami's talk and his setting of the class, on Pedro's own key from a `.env` in B3's worktree: "banger.... truly a banger". That run read a faked personality left in that worktree's database, so a real Haiku reading of a seed has not run. Everything else past the door (the scan pass, growth, gifts, the eight lives' grant, a theme) has only met a fake client or a faked network reply.
 
@@ -1251,7 +1251,7 @@ Waves from 8 onward, with status as recorded in each wave's gate:
 | The theme (D53–D57) | 95–99 | Built and merged. See the record |
 | The world clock | 100–104, 119–120 | Built and merged. By bar, and by play within the record |
 | Fan-out Wave A: hub manifest, levels and attributes, recon and maps, the trees, senses and the readout | 114, 94, part of 128, 125–127, 129–133, 105–107, 109 | **Built, awaiting Pedro.** By bar, by each stream's play, and by the coordinator's check |
-| Fan-out Wave B: scan pass, population and packs, creation and the deed, guild and tavern, forced exit, vendors and the road | 108, 110–113, 115, the rank half of 128, the last clause of 119, 134, the junk half of 140, 141–144, 146, and the vendor half of 145 | **Built, awaiting Pedro.** By bar, and by play within the record. Only Kami has met a real model |
+| Fan-out Wave B: scan pass, population and packs, creation and the deed, guild and tavern, forced exit, vendors and the road | 108, 110–113, 115, the rank half of 128, the last clause of 119, 134, the junk half of 140, 141–144, 146, and the vendor half of 145 | **Built and merged on Pedro's word.** By bar, and by play within the record. Only Kami has met a real model |
 | Attributes pass (D52) | 94 (proposed) | Planned, after creatures that act |
 | 11 The hub remake | 35–38, 114–115, 121 (proposed) | Planned |
 | 11C NPC adventurers | 116 (proposed) | Planned |

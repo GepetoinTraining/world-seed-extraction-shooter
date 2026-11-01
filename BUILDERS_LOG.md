@@ -248,7 +248,7 @@ The record is in `PLAN.md` ("Wave B — the record"). **For C1:** food is what t
 
 - **Tests:** 2,003: 1,879 plus 124 in the database's own run. With other sessions running, the grid timing bars went red, on this branch and on `6c7766a` alike. On a quiet machine the file passed 7 runs of 7 on the join. B4 saw a red alone with `-t` at about 35 ms, a form not compared on the base, so measure before calling a red load.
 
-## Your pass: a stream in the fan-out (Wave C, once Pedro approves Wave B)
+## Your pass: a stream in the fan-out (Wave C, cut from main, on Pedro's word)
 
 Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The fan-out", "The living worlds program", and D60–D85 first. Build only your stream's lines and files, and report to the coordinator rather than editing this file or the plan. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
 
