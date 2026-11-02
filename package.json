@@ -12,7 +12,7 @@
     "serve": "node --import tsx server/main.ts",
     "test": "vitest run --exclude \"tests/database*\" && vitest run tests/database",
     "db:generate": "drizzle-kit generate --config=drizzle.config.pg.ts",
-    "db:carry": "node --import tsx scripts/carry-save.ts"
+    "db:carry": "node --disable-warning=ExperimentalWarning --import tsx scripts/carry-save.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

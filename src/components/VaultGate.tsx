@@ -32,7 +32,10 @@ window.addEventListener('beforeunload', event => {
 const Refusal: React.FC<{ midPlay: boolean }> = ({ midPlay }) => {
   const reason = useVault(s => s.reason);
   const waiting = useVault(s => s.waiting);
+  const canCarry = useVault(s => s.canCarry);
   const [asked, setAsked] = useState(false);
+  const [carrying, setCarrying] = useState(false);
+  const [carried, setCarried] = useState<string[] | null>(null);
 
   return (
     <div
@@ -58,12 +61,29 @@ const Refusal: React.FC<{ midPlay: boolean }> = ({ midPlay }) => {
           </p>
         )}
         <p className="ws-dim ws-small" style={{ margin: '0 0 6px' }}>
-          To open the vault, start the server from the project folder: <span className="ws-bright">npm run dev</span>
+          {canCarry
+            ? 'To open the vault, carry this save over. It writes a new database here and leaves the old file as it is.'
+            : <>To open the vault, start the server from the project folder: <span className="ws-bright">npm run dev</span></>}
         </p>
         <p className="ws-dim ws-small" style={{ margin: '0 0 12px', wordBreak: 'break-word' }}>The machine says: {reason ?? 'no answer'}</p>
+        {carried && <pre className="ws-dim ws-small" style={{ margin: '0 0 12px', maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{carried.join('\n')}</pre>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {canCarry && (
+            <Button
+              tone="signal" primary disabled={carrying}
+              onClick={async () => {
+                setCarrying(true);
+                const result = await StoreClient.carryOldSave();
+                setCarried(result.lines);
+                setCarrying(false);
+                await StoreClient.checkVault();
+              }}
+            >
+              {carrying ? 'CARRYING…' : 'CARRY THIS SAVE OVER'}
+            </Button>
+          )}
           <Button
-            tone="signal" primary autoFocus
+            tone="signal" primary={!canCarry} autoFocus={!canCarry}
             onClick={async () => { setAsked(true); await StoreClient.checkVault(); setAsked(false); }}
           >
             {asked ? 'KNOCKING…' : 'KNOCK AGAIN'}

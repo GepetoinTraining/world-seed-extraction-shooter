@@ -61,7 +61,7 @@ export const localRoom: IMaintenanceRoom = {
   }
 };
 
-/** Compacting the database, through the door it already has. */
+/** The downtime's work on the server: the record first, then compacting the live store, through the door it already has. */
 export const STEPS: IMaintenanceStep[] = [
   {
     name: 'database',
