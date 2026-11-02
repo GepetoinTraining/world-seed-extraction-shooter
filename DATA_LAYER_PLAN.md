@@ -77,9 +77,13 @@ components  ->  hooks  ->  state (zustand, view only)
 - **State: zustand, for the view.** It holds what the screen shows, filled by events. Nothing in it writes to the database. `useFeed` stops being imported by law: a command emits an event and the feed listens.
 - **`src/hooks/`.** `useHub()`, `useLot(id)`, `useWallet(id)`, `useTalk(npcId)`. A component reads a hook and calls a command, and never imports a repository.
 
-## 4. The server: Postgres
+## 4. Two stores (D133)
 
-Postgres is the one dialect. **Locally, PGlite on a folder, so nobody installs a database to play.** Served, real Postgres. It is the same SQL and the same migrations, which fits "the hub is a server anyone can run" (D81). libSQL goes, and N16 goes with it if section 2's reading holds. `tests/database.store.test.ts` already runs the contract on PGlite and Postgres, so this is the cheapest phase to prove.
+Pedro, correcting this section: "one is cheap to store the other is the live service... You don't use the same thing for two jobs when they wildly differ in some performance. So postgress needs to run the client and love version, the downtimes are all done on sql". **So this is not one dialect.** Postgres is live, and a SQL file is the cheap store where downtime work runs. What moves between them, and what "client" means, is still to ask (D133).
+
+**The live half, built as leg 0.** Locally, PGlite on a folder, so nobody installs a database to play. Served, real Postgres. It is the same SQL and the same migrations, which fits "the hub is a server anyone can run" (D81). The libSQL driver leaves the live path, and N16 went with it.
+
+**The SQL half, not built.** The crash was the driver's and not SQLite's, so this tier needs another driver or a process of its own, which the carry tool's 10 clean runs in a child process suggest. `tests/database.store.test.ts` already runs the contract on PGlite and Postgres, so this is the cheapest phase to prove.
 
 ## 5. The tables
 
