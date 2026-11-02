@@ -29,6 +29,35 @@ Nothing here is built. It is read against `claude/wave-c-integration`. Line coun
 2. **The crash lives in the driver.** `@libsql/client` 0.17.4 with no game code exits 139 after finishing in 7 of 10 runs that used transactions (N16). The dev server also goes down under refused commits, on `main` too. **The same load on PGlite, the Postgres path, in memory: 0 crashes in 5 runs, about 1,800 refused commits a run, against 8 of 8 on libSQL, which went down at about 550 to 1,200. Valid commits ran at about the same speed: about 210 in 15 s against about 240.** That is strong evidence for Postgres and not a proof: it was in memory, not on a folder, and libSQL's mid-run cause is still not found.
 3. **Fan-out conflicts come from this shape.** Most of this wave's joins conflicted in `hub/store.ts`, and a name clash inside `IPopulationRecord` would have overwritten data if nobody had read it.
 
+## 2a. The donor: `D:\-ttrpg-engine`
+
+Pedro, 2026-11-01: "You do know we know how to postgres SQL, devoid the actual we sockets and all the good shit they have... We've actually built the data model of ttrpg to do exactly that." So this plan takes patterns from there and does not invent them. Read from its code, not run, and patterns only, as with earlier donors.
+
+| What this plan needs | What `ttrpg` has | Where |
+|---|---|---|
+| Law with no database in it | `engine/` imports no database, and `world-tpb.ts` and `world-state.ts` are the only bridge | `CLAUDE.md:146` |
+| What may be regenerated | "The database is `(seed, tpb_log)`. The cube is a function of that database." Seed-derived content gets no row, and caches can be rebuilt. **This game already works that way for land** | `README.md:12` |
+| A write with a law on it | `writeDomain`, validated, and `attachWriteLog`, which captures a write as an action | `engine/tp.ts:862`, `tp-write-capture.ts` |
+| Inheritance | `resolve` merges ancestors, child over parent, across 10 domains. Its ancestry is by place, not by type, so D129's tech web needs its own edge | `engine/tp.ts:403` |
+| A tech node | `TechBlob`: purpose, tier, slots, dependencies, stats. Its seeds are thin, and no table holds it | `engine/technology-web.ts:74` |
+| A catalogue of nouns | 179 tables, 206 references, 121 JSON columns, in SQLite's dialect. A reference for the shapes, not a schema to copy | `src/db/schema.ts` |
+| The client's stores | `idb.ts`: certificates, a local log, a pending slot, a session. That is the outbox of section 6, already written | `src/lib/idb.ts:8` |
+| The hook | `useWorld` hydrates from IndexedDB, fetches, and replays the log | `src/lib/use-world.ts:98` |
+| Resuming a stream | An envelope with `sinceId`, falling back to polling | `src/lib/spectrum-client.ts:49` |
+| Telling a client something changed | A `pg_notify` trigger, in the archive | `archive/bend/src/genesis/schema.sql:205` |
+
+**What it does not have, so this plan writes it:**
+- **Sockets.** There is no WebSocket anywhere in `ttrpg`. Its stream is one-way SSE over a one-second database poll.
+- **Postgres in its live code.** It runs on libSQL through Drizzle, and Postgres is in its plans and archive. This game's side is the one with `drizzle.config.pg.ts` and now a Postgres store.
+
+**What does not carry over:**
+- **Byte-exact signatures.** It treats a signature as forensic, and this game's signed text is what a player carries between hubs (D81).
+- **Its hourly drain.** The server there checks shape only and folds actions by cron. Here a commit is judged at once.
+- **`Math.random`.** It is banned there and still in 14 engine files, so nothing comes across without a read.
+- **5e sheet tables and Faerûn names**, which it is itself removing.
+
+**What this changes below:** section 3's boundary and hook take its shape, section 6's outbox starts from `idb.ts`, section 7's envelope from `spectrum-client.ts` with `pg_notify` behind it, and section 5 gains a rule: **what the seed and a log can rebuild gets no table.**
+
 ## 3. Three layers, and which way they may import
 
 ```
@@ -73,7 +102,7 @@ Postgres is the one dialect. **Locally, PGlite on a folder, so nobody installs a
 
 **Types come from the tables.** Drizzle's inferred types are the source, in `src/data/types`, and the wire and view types derive from them. The 28 declarations in store files go, and so does the inline hub type.
 
-**What the vectors do not touch.** A world's land is computed, and no table stores it. The golden vectors stand throughout.
+**What the seed and a log can rebuild gets no table,** as in the donor. A world's land is computed, and no table stores it. The golden vectors stand throughout. Tables are for what people did and own, and what cannot be computed back.
 
 **Foreign keys, and the audit stays.** `GoldAudit` still adds the ledger back up. Relational integrity does not replace it, because a signed row is what a player can carry to another hub (D81, D82).
 
@@ -87,7 +116,7 @@ Dexie is installed for the legacy import and `idb` is not. Either would do, and 
 
 ## 7. WebSockets
 
-**Commands stay HTTP, events come over a socket.** A commit is already an idempotent POST with refusals and conflicts as answers. A socket carries only what changed:
+**Commands stay HTTP, events come over a socket.** A commit is already an idempotent POST with refusals and conflicts as answers. A socket carries only what changed, told by `pg_notify` on a served Postgres and by the store itself on a folder:
 
 ```
 server -> client   { channel: 'hub:<id>', seq, table, op, id, row }

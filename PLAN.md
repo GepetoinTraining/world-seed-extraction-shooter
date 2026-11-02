@@ -962,7 +962,7 @@ Known overlap: `WorldCanvas` (A3 moves a large block out, A2 a chip), `types.ts`
 | 2 | Two playthroughs | Claude on a test avatar, then Pedro on his world, compared |
 | 3 | Design handover | Every screen, word, number marked a guess, sprite and feel question, with where it lives and what is open |
 | 4 | Exposition out (D127, D131) | One registry of earned terms, so a screen asks whether this person knows a word. A bar scans the interface for system words not behind it. Observation's half of C12 moves here |
-| 5 | The data layer (`DATA_LAYER_PLAN.md`) | Its other phases: pure law, split stores, tables with the tech web first, IndexedDB, sockets |
+| 5 | The data layer (`DATA_LAYER_PLAN.md`) | Its other phases: pure law, split stores, tables with the tech web first, IndexedDB, sockets. `D:\-ttrpg-engine` is the donor for its patterns, on Pedro's word |
 | 6 | Wave C's second pass | C6, C7, C8, C10, C11, the stat wall half of C12, C13 |
 | 7 | Integrate again | Then Wave 12 and Wave 13 |
 
