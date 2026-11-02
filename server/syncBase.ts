@@ -8,20 +8,23 @@
  *
  * Documents are copied as stored text, so a signature over them still verifies.
  * This is a sync you run, not a live link: `npm run pedro` runs it at every start,
- * and `npm run db:sync` runs it alone. SQLite files only, since deploy has one
- * database and nothing to sync.
+ * and `npm run db:sync` runs it alone. Folders only, since a served database is one
+ * database with nothing to sync.
+ *
+ * A folder has one opener at a time, so this holds both while it runs, and refuses
+ * with a plain message if a running server holds either. Nothing is half-synced by
+ * a refusal: neither side is written until both are open.
  */
-import { createClient, Client, InStatement } from '@libsql/client';
-import { openDatabase } from './connection';
+import { sql } from 'drizzle-orm';
+import { DatabaseUnavailable, IDatabase, openDatabase } from './connection';
+import { documents } from './schema.pg';
 
 const REGISTRY_ID = 'mint_registry_v1';
 
 /** Definitions and what was found. World certificates and carts belong to their worlds. */
-const SHARED = `(namespace = 'items' OR (namespace = 'content' AND id NOT LIKE 'world\\_%' ESCAPE '\\'))`;
+const SHARED = sql`(${documents.namespace} = 'items' OR (${documents.namespace} = 'content' AND ${documents.id} NOT LIKE 'world\\_%' ESCAPE '\\'))`;
 
-const COLUMNS = ['id', 'namespace', 'data', 'embedding', 'doc_type', 'genre', 'owner_cert_uid', 'signature', 'version', 'created_at', 'updated_at'] as const;
-
-type Row = Record<(typeof COLUMNS)[number], any>;
+type Row = typeof documents.$inferSelect;
 
 export interface ISyncReport {
   /** Documents written into the target, and back into the source. */
@@ -29,24 +32,26 @@ export interface ISyncReport {
   toSource: number;
 }
 
-async function sharedRows(client: Client): Promise<Map<string, Row>> {
-  const result = await client.execute(`SELECT ${COLUMNS.join(', ')} FROM documents WHERE ${SHARED}`);
-  return new Map(result.rows.map(r => [String(r.id), r as unknown as Row]));
+async function sharedRows(database: IDatabase): Promise<Map<string, Row>> {
+  const rows: Row[] = await database.db.select().from(documents).where(SHARED);
+  return new Map(rows.map(r => [r.id, r]));
 }
 
-const upsert = (row: Row): InStatement => ({
-  sql: `INSERT INTO documents (${COLUMNS.join(', ')}) VALUES (${COLUMNS.map(() => '?').join(', ')})
-        ON CONFLICT(id) DO UPDATE SET ${COLUMNS.filter(c => c !== 'id').map(c => `${c} = excluded.${c}`).join(', ')}`,
-  args: COLUMNS.map(c => row[c] ?? null)
-});
+async function writeAll(database: IDatabase, rows: Row[]): Promise<void> {
+  if (rows.length === 0) return;
+  await database.db.transaction(async (tx: any) => {
+    for (const row of rows) {
+      const { id, ...fields } = row;
+      await tx.insert(documents).values(row).onConflictDoUpdate({ target: documents.id, set: fields });
+    }
+  });
+}
 
 /** Every claim from both, and where they differ the source's stands: the first keeps its claim. */
-function mergedRegistry(source?: Row, target?: Row): string | null {
-  if (!source || !target) return null;
-  const parse = (row: Row) => JSON.parse(String(row.data));
-  const from = parse(source);
+function mergedRegistry(source: Row, target: Row): string {
+  const from = JSON.parse(source.data);
   const claims = new Map<string, string>(from.rows ?? []);
-  for (const [hash, id] of (parse(target).rows ?? []) as [string, string][]) {
+  for (const [hash, id] of (JSON.parse(target.data).rows ?? []) as [string, string][]) {
     if (!claims.has(hash)) claims.set(hash, id);
   }
   return JSON.stringify({ ...from, rows: [...claims.entries()] });
@@ -55,39 +60,54 @@ function mergedRegistry(source?: Row, target?: Row): string | null {
 export async function syncBase(sourceUrl: string, targetUrl: string): Promise<ISyncReport> {
   if (sourceUrl === targetUrl) throw new Error('A database cannot be synced with itself.');
   for (const url of [sourceUrl, targetUrl]) {
-    if (!url.startsWith('file:')) throw new Error(`The base syncs between SQLite files, and "${url}" is not one.`);
-    // Opening runs the migrations, so a database that does not exist yet comes up ready.
-    await (await openDatabase(url)).close();
+    if (!url.startsWith('pglite://') || url === 'pglite://memory') throw new DatabaseUnavailable(`The base syncs between database folders, and "${url}" is not one.`);
   }
 
-  const source = createClient({ url: sourceUrl, timeout: 30_000 });
-  const target = createClient({ url: targetUrl, timeout: 30_000 });
+  // Opening runs the migrations, so a database that does not exist yet comes up ready.
+  const source = await openDatabase(sourceUrl);
   try {
-    const here = await sharedRows(source);
-    const there = await sharedRows(target);
-    const toTarget: InStatement[] = [];
-    const toSource: InStatement[] = [];
+    const target = await openDatabase(targetUrl);
+    try {
+      const here = await sharedRows(source);
+      const there = await sharedRows(target);
+      const toTarget: Row[] = [];
+      const toSource: Row[] = [];
 
-    for (const id of new Set([...here.keys(), ...there.keys()])) {
-      const a = here.get(id);
-      const b = there.get(id);
-      if (id === REGISTRY_ID && a && b) {
-        const merged = mergedRegistry(a, b)!;
-        const at = Math.max(Number(a.updated_at), Number(b.updated_at));
-        if (String(a.data) !== merged) toSource.push(upsert({ ...a, data: merged, updated_at: at }));
-        if (String(b.data) !== merged) toTarget.push(upsert({ ...b, data: merged, updated_at: at }));
-      } else if (a && (!b || Number(a.updated_at) > Number(b.updated_at))) {
-        toTarget.push(upsert(a));
-      } else if (b && (!a || Number(b.updated_at) > Number(a.updated_at))) {
-        toSource.push(upsert(b));
+      for (const id of new Set([...here.keys(), ...there.keys()])) {
+        const a = here.get(id);
+        const b = there.get(id);
+        if (id === REGISTRY_ID && a && b) {
+          const merged = mergedRegistry(a, b);
+          const at = Math.max(a.updatedAt, b.updatedAt);
+          if (a.data !== merged) toSource.push({ ...a, data: merged, updatedAt: at });
+          if (b.data !== merged) toTarget.push({ ...b, data: merged, updatedAt: at });
+        } else if (a && (!b || a.updatedAt > b.updatedAt)) {
+          toTarget.push(a);
+        } else if (b && (!a || b.updatedAt > a.updatedAt)) {
+          toSource.push(b);
+        }
       }
-    }
 
-    if (toTarget.length) await target.batch(toTarget, 'write');
-    if (toSource.length) await source.batch(toSource, 'write');
-    return { toTarget: toTarget.length, toSource: toSource.length };
+      await writeAll(target, toTarget);
+      await writeAll(source, toSource);
+      return { toTarget: toTarget.length, toSource: toSource.length };
+    } finally {
+      await target.close();
+    }
   } finally {
-    source.close();
-    target.close();
+    await source.close();
+  }
+}
+
+/** What the game's start does with a sync it cannot run: says why, and plays on. A sync by itself reports it as a failure. */
+export async function syncAtStart(sourceUrl: string, targetUrl: string, say: (line: string) => void): Promise<boolean> {
+  try {
+    const report = await syncBase(sourceUrl, targetUrl);
+    say(`[DB] Shared base synced: ${report.toTarget} into test-pedro, ${report.toSource} into test-claude.`);
+    return true;
+  } catch (e) {
+    if (!(e instanceof DatabaseUnavailable)) throw e;
+    say(`[DB] The shared base was not synced this time: ${e.message}`);
+    return false;
   }
 }

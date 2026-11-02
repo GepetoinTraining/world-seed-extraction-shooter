@@ -2,27 +2,28 @@
 /**
  * THE STABLE DATABASE (D31), the store's half. Registered before the build.
  *
- * Line 70: the same store contract passes on the SQLite file and on Postgres.
- *   One suite, three doors: a SQLite file through libSQL, Postgres in process
- *   (PGlite), and Postgres over the real wire through the `pg` driver, which is
- *   the door a deploy uses. No Postgres server is installed on this machine, so
- *   the wire door talks to PGlite through its socket server. That proves the
- *   driver, the SQL and the protocol; it does not prove a real server's
- *   concurrency, and the record says so.
+ * Line 70: one store contract, every door Postgres comes through.
+ *   Three doors: PGlite on a folder (the local game), PGlite in memory, and
+ *   Postgres over the real wire through the `pg` driver, which is the door a
+ *   served hub uses. No Postgres server is installed on this machine, so the wire
+ *   door talks to PGlite through its socket server. That proves the driver, the
+ *   SQL and the protocol; it does not prove a real server's concurrency, and the
+ *   record says so.
  *
  * Line 71: a gold change and its ledger row commit together or not at all,
  *   across a killed process. The processes below are real and really killed.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { spawn, ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
-import { openStore, SqlStore, StoreConflict } from '../server/SqlStore';
+import { folderUrl, openDatabase } from '../server/connection';
+import { openStore, SqlStore, StoreConflict, StoreRefusal } from '../server/SqlStore';
 import { IWireDoc, ICommitRequest } from '../src/entities/data/wire';
 
 const NS = { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' };
@@ -67,15 +68,14 @@ const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'ws-db-')); dirs.pu
 
 const DOORS: IDoor[] = [
   {
-    name: 'SQLite file (libSQL)',
+    name: 'Postgres on a folder (PGlite)',
     open: async () => {
-      const dir = scratch();
-      const store = await openStore(`file:${join(dir, 'contract.db').replace(/\\/g, '/')}`);
+      const store = await openStore(folderUrl(join(scratch(), 'contract')));
       return { store, done: () => store.close() };
     }
   },
   {
-    name: 'Postgres in process (PGlite)',
+    name: 'Postgres in memory (PGlite)',
     open: async () => {
       const store = await openStore('pglite://memory');
       return { store, done: () => store.close() };
@@ -112,7 +112,7 @@ describe.each(DOORS)('line 70: the store contract on $name', ({ open }) => {
   it('reports its own health and dialect', async () => {
     const health = await store.health();
     expect(health.ok).toBe(true);
-    expect(['sqlite', 'postgres']).toContain(health.dialect);
+    expect(health.dialect).toBe('postgres');
   });
 
   it('returns null for what is not there, never an empty document', async () => {
@@ -288,6 +288,47 @@ describe.each(DOORS)('line 70: the store contract on $name', ({ open }) => {
     expect(JSON.parse((await store.get(id))!.dataText)).toEqual({ gold: 100 });
   });
 
+  it('holds a balance as the very number it was given, through a double and back', async () => {
+    for (const [i, gold] of [0.1 + 0.2, 1 / 3, 1e21, 123456789.12345678, 1.7976931348623157e308, 5e-324, -0.07].entries()) {
+      const id = `treasury_exact_${tag}_${i}`;
+      await commit(store, [{ kind: 'put', doc: wire(id, NS.TERRITORIES, { gold }) }]);
+      expect(JSON.parse((await store.get(id))!.dataText).gold).toBe(gold);
+    }
+    const id = `treasury_sum_${tag}`;
+    await commit(store, [{ kind: 'add', namespace: NS.TERRITORIES, id, amount: 0.1, at: 1 }]);
+    await commit(store, [{ kind: 'add', namespace: NS.TERRITORIES, id, amount: 0.2, at: 2 }]);
+    expect(JSON.parse((await store.get(id))!.dataText).gold).toBe(0.1 + 0.2);
+  });
+
+  it('takes a fractional timestamp as the old store did, rather than losing the commit', async () => {
+    const uid = `frac_${tag}`;
+    const fraction = { createdAt: 1730000000123.5, updatedAt: 1730000000123.75, ownerCertUid: 'o', version: 1 };
+    await commit(store, [{ kind: 'put', doc: { id: `frac_${tag}`, namespace: NS.CONTENT, dataText: '{"a":1}', metadata: fraction } }]);
+    expect((await store.get(`frac_${tag}`))!.metadata.updatedAt).toBe(1730000000123);
+    await commit(store, [{ kind: 'add', namespace: NS.TERRITORIES, id: `treasury_${uid}`, amount: 1, at: 1730000000123.5 }]);
+    const row = rowDoc(uid, 1);
+    const signed = JSON.parse(row.dataText);
+    signed.payload.ts = 1730000000123.5;
+    const text = JSON.stringify(signed);
+    await commit(store, [{ kind: 'put', doc: { ...row, dataText: text, metadata: { ...row.metadata, createdAt: 1730000000123.5 } } }]);
+    // The column loses the fraction. The signed text does not.
+    expect((await store.get(row.id))!.dataText).toBe(text);
+  });
+
+  it('refuses what Postgres cannot hold, which a client must not retry forever', async () => {
+    await expect(commit(store, [{ kind: 'put', doc: wire(`nul_${tag}`, NS.CONTENT, { type: 'has\u0000nul' }) }])).rejects.toBeInstanceOf(StoreRefusal);
+    await expect(commit(store, [{ kind: 'put', doc: { ...wire(`big_${tag}`, NS.CONTENT, {}), metadata: { createdAt: 1, updatedAt: 1, version: 2 ** 40 } } }])).rejects.toBeInstanceOf(StoreRefusal);
+    expect(await store.get(`nul_${tag}`)).toBeNull();
+    expect((await commit(store, [{ kind: 'put', doc: wire(`after_${tag}`, NS.CONTENT, {}) }])).applied).toBe(true);
+  });
+
+  it('runs maintenance between commits and keeps every row', async () => {
+    await put(store, wire(`kept_${tag}`, NS.CONTENT, { v: 1 }));
+    expect(await store.maintain()).toEqual({ ok: true });
+    expect(JSON.parse((await store.get(`kept_${tag}`))!.dataText)).toEqual({ v: 1 });
+    expect((await put(store, wire(`kept_${tag}`, NS.CONTENT, { v: 2 }))).applied).toBe(true);
+  });
+
   it('never overwrites through put-if-absent, on documents, rows and treasuries alike', async () => {
     const id = `abs_${tag}`, uid = `absent_${tag}`, tre = `treasury_abs_${tag}`;
     await commit(store, [{ kind: 'putIfAbsent', doc: wire(id, NS.CONTENT, { v: 'first' }) }]);
@@ -305,23 +346,27 @@ describe.each(DOORS)('line 70: the store contract on $name', ({ open }) => {
 });
 
 // ---------------------------------------------------------------------------
-// ONE CODE PATH: the two schemas must not drift apart
+// ONE CODE PATH: one dialect, one schema
 // ---------------------------------------------------------------------------
 
 describe('line 70: one code path, no deploy-only surprises', () => {
-  it('declares the same tables and columns for both dialects', async () => {
-    const { getTableConfig: sqliteConfig } = await import('drizzle-orm/sqlite-core');
-    const { getTableConfig: pgConfig } = await import('drizzle-orm/pg-core');
-    const sqlite = await import('../server/schema.sqlite');
-    const pg = await import('../server/schema.pg');
-    const names = ['documents', 'ledgerRows', 'treasuries', 'commits'] as const;
-    for (const name of names) {
-      const a = sqliteConfig((sqlite as any)[name]);
-      const b = pgConfig((pg as any)[name]);
-      expect(a.name).toBe(b.name);
-      expect(a.columns.map(c => c.name).sort()).toEqual(b.columns.map(c => c.name).sort());
-      expect(a.indexes.map(i => i.config.name).sort()).toEqual(b.indexes.map(i => i.config.name).sort());
-    }
+  it('nothing loads libSQL\'s file path: the record alone uses its network entry', () => {
+    const walk = (dir: string): string[] => readdirSync(join(ROOT, dir)).flatMap(name => {
+      const path = `${dir}/${name}`;
+      return statSync(join(ROOT, path)).isDirectory() ? walk(path) : [path];
+    });
+    // This file names what it looks for, so it is the one file left out.
+    const sources = [...walk('server'), ...walk('src'), ...walk('scripts'), ...walk('tests'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p) && p !== 'tests/database.store.test.ts');
+    const text = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+    const quote = (s: string) => new RegExp(`from '${s}'|import\\('${s}'\\)`);
+    expect(sources.filter(p => quote('@libsql/client').test(text(p)) || quote('libsql').test(text(p)) || /drizzle-orm\/libsql|sqlite-core/.test(text(p)))).toEqual([]);
+    expect(sources.filter(p => quote('@libsql/client/http').test(text(p)))).toEqual(['server/coldStore.ts']);
+  });
+
+  it('PGlite travels with the game, so nobody installs a database to play', () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    expect(pkg.dependencies['@electric-sql/pglite']).toBeTruthy();
+    expect(pkg.dependencies.pg).toBeTruthy();
   });
 
   it('stores signed text in a text column on Postgres, never jsonb, which would reorder it', () => {
@@ -329,30 +374,24 @@ describe('line 70: one code path, no deploy-only surprises', () => {
     expect(src).not.toMatch(/jsonb?\(/);
   });
 
-  it('has one store for both dialects: SQL is written once', () => {
+  it('has one store: SQL is written once, and no branch asks which database it is on', () => {
     const src = readFileSync(join(ROOT, 'server/SqlStore.ts'), 'utf8');
     const dialectBranches = src.match(/dialect\s*===/g) ?? [];
     expect(dialectBranches.length).toBe(0);
     expect(src).not.toMatch(/\bfs\b|readFileSync/);
   });
 
-  it('ships a migration for each dialect, and neither has drifted from its schema', async () => {
-    const { getTableConfig: sqliteConfig } = await import('drizzle-orm/sqlite-core');
-    const { getTableConfig: pgConfig } = await import('drizzle-orm/pg-core');
-    const sqlite = await import('../server/schema.sqlite');
+  it('ships a migration that has not drifted from its schema', async () => {
+    const { getTableConfig } = await import('drizzle-orm/pg-core');
     const pg = await import('../server/schema.pg');
-    for (const [folder, schema, config, tableKey] of [
-      ['sqlite', sqlite, sqliteConfig, (n: string) => n],
-      ['pg', pg, pgConfig, (n: string) => `public.${n}`]
-    ] as const) {
-      const journal = JSON.parse(readFileSync(join(ROOT, `drizzle/${folder}/meta/_journal.json`), 'utf8'));
-      const latest = journal.entries[journal.entries.length - 1].idx.toString().padStart(4, '0');
-      const snapshot = JSON.parse(readFileSync(join(ROOT, `drizzle/${folder}/meta/${latest}_snapshot.json`), 'utf8'));
-      for (const name of ['documents', 'ledgerRows', 'treasuries', 'commits']) {
-        const table = (config as any)((schema as any)[name]);
-        const inMigration = snapshot.tables[(tableKey as any)(table.name)];
-        expect(Object.keys(inMigration.columns).sort(), `${folder} ${table.name}`).toEqual(table.columns.map((c: any) => c.name).sort());
-      }
+    const journal = JSON.parse(readFileSync(join(ROOT, 'drizzle/pg/meta/_journal.json'), 'utf8'));
+    const latest = journal.entries[journal.entries.length - 1].idx.toString().padStart(4, '0');
+    const snapshot = JSON.parse(readFileSync(join(ROOT, `drizzle/pg/meta/${latest}_snapshot.json`), 'utf8'));
+    for (const name of ['documents', 'ledgerRows', 'treasuries', 'commits']) {
+      const table = getTableConfig((pg as any)[name]);
+      const inMigration = snapshot.tables[`public.${table.name}`];
+      expect(Object.keys(inMigration.columns).sort(), table.name).toEqual(table.columns.map((c: any) => c.name).sort());
+      expect(Object.keys(inMigration.indexes).sort(), table.name).toEqual(table.indexes.map((i: any) => i.config.name).sort());
     }
   });
 
@@ -389,8 +428,7 @@ describe('line 71: all or nothing across a killed process', () => {
   // Every op of the commit, plus the moment before COMMIT itself.
   for (const stage of ['op:0', 'op:1', 'op:2', 'op:3', 'before-commit']) {
     it(`a process killed at ${stage} leaves the last whole commit and nothing of the next`, async () => {
-      const file = join(scratch(), 'killed.db').replace(/\\/g, '/');
-      const url = `file:${file}`;
+      const url = folderUrl(join(scratch(), 'killed'));
       const run = await runFixture({ WS_KILL_URL: url, WS_KILL_AT: stage, WS_KILL_COMMITS: '3' });
       expect(run.code === 0).toBe(false); // it was killed, it did not finish
       expect(run.stdout).toContain('ACK 3');
@@ -411,9 +449,8 @@ describe('line 71: all or nothing across a killed process', () => {
     }, 60_000);
   }
 
-  it('commits made after a kill land normally on the same file, over and over', async () => {
-    const file = join(scratch(), 'again.db').replace(/\\/g, '/');
-    const url = `file:${file}`;
+  it('commits made after a kill land normally on the same folder, over and over', async () => {
+    const url = folderUrl(join(scratch(), 'again'));
     let acknowledged = 0;
     for (let round = 0; round < 4; round++) {
       const run = await runFixture({ WS_KILL_URL: url, WS_KILL_AT: 'op:2', WS_KILL_COMMITS: '2', WS_KILL_START: String(acknowledged) });
@@ -429,8 +466,7 @@ describe('line 71: all or nothing across a killed process', () => {
   }, 120_000);
 
   it('a real server, hammered over HTTP and killed at a moment nobody chose, never splits a commit', async () => {
-    const file = join(scratch(), 'hammered.db').replace(/\\/g, '/');
-    const url = `file:${file}`;
+    const url = folderUrl(join(scratch(), 'hammered'));
     const uid = 'hammered';
     let seq = 0;
     let acknowledged = 0;
@@ -492,24 +528,24 @@ describe('line 71: all or nothing across a killed process', () => {
     expect(acknowledged).toBeGreaterThan(0);
   }, 180_000);
 
-  it('two processes writing one file at once both land, and neither corrupts the other', async () => {
-    const file = join(scratch(), 'shared.db').replace(/\\/g, '/');
-    const url = `file:${file}`;
-    const runs = await Promise.all(['alpha', 'beta'].map(owner => new Promise<number | null>(resolve => {
-      const child = spawn(process.execPath, [...TSX, 'tests/fixtures/shared-writer.ts'], {
-        cwd: ROOT, env: { ...process.env, WS_SHARED_URL: url, WS_SHARED_OWNER: owner }, stdio: 'inherit'
+  it('a process stopped hard while a fresh folder is still being made leaves one that opens', async () => {
+    for (const after of [150, 400, 700, 1000, 1400]) {
+      const folder = join(scratch(), 'halfmade');
+      const url = folderUrl(folder);
+      const child = spawn(process.execPath, [...TSX, 'tests/fixtures/commit-killer.ts'], {
+        cwd: ROOT, env: { ...process.env, WS_KILL_URL: url, WS_KILL_AT: 'op:0', WS_KILL_COMMITS: '0' }, stdio: 'ignore'
       });
-      child.on('exit', code => resolve(code));
-    })));
-    expect(runs).toEqual([0, 0]);
-    const store = await openStore(url);
-    expect((await store.query({ namespace: NS.TRANSACTIONS, idPrefix: 'ledger_alpha_' })).length).toBe(50);
-    expect((await store.query({ namespace: NS.TRANSACTIONS, idPrefix: 'ledger_beta_' })).length).toBe(50);
-    expect(JSON.parse((await store.get('treasury_shared'))!.dataText)).toEqual({ gold: 100 });
-    await store.close();
+      const gone = new Promise<void>(resolve => { child.on('exit', () => resolve()); });
+      await new Promise(r => setTimeout(r, after));
+      child.kill('SIGKILL');
+      await gone;
+      const store = await openStore(url);
+      expect((await commit(store, [{ kind: 'put', doc: rowDoc('fresh', 1) }])).applied).toBe(true);
+      await store.close();
+    }
   }, 120_000);
 
-  it('on Postgres too, a thrown op rolls the whole commit back', async () => {
+  it('on Postgres in memory, a thrown op rolls the whole commit back', async () => {
     const faulted = await openStore('pglite://memory', { fault: stage => { if (stage === 'op:2') throw new Error('injected'); } });
     await expect(commit(faulted, [
       { kind: 'put', doc: wire('pg_char', NS.CHARACTERS, { gold: 1 }) },
@@ -523,3 +559,158 @@ describe('line 71: all or nothing across a killed process', () => {
   }, 60_000);
 });
 
+
+// ---------------------------------------------------------------------------
+// ONE OPENER AT A TIME: SQLite let several servers share a file, and a folder does not
+// ---------------------------------------------------------------------------
+
+describe('one process holds a database folder at a time', () => {
+  async function startServer(url: string, port: number): Promise<ChildProcess> {
+    const child = spawn(process.execPath, [...TSX, 'server/main.ts'], {
+      cwd: ROOT, env: { ...process.env, WS_DATABASE_URL: url, WS_PORT: String(port), WS_NO_STATIC: '1' }, stdio: 'ignore'
+    });
+    for (let i = 0; i < 200; i++) {
+      try { await fetch(`http://127.0.0.1:${port}/api/db/health`); return child; } catch { /* still rising */ }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    throw new Error('it never answered');
+  }
+  const health = async (port: number) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api/db/health`);
+    return { status: r.status, body: await r.json() as { ok: boolean; reason?: string } };
+  };
+  const killed = (child: ChildProcess) => new Promise<void>(resolve => { child.on('exit', () => resolve()); child.kill('SIGKILL'); });
+
+  it('a second server is refused in plain words, the first goes on, and when the first is gone the second opens', async () => {
+    const url = folderUrl(join(scratch(), 'one-opener'));
+    const a = 19000 + Math.floor(Math.random() * 1000);
+    const b = a + 1000;
+    const first = await startServer(url, a);
+    for (let i = 0; i < 100 && (await health(a)).status !== 200; i++) await new Promise(r => setTimeout(r, 100));
+    expect((await health(a)).status).toBe(200);
+
+    const second = await startServer(url, b);
+    try {
+      const refused = await health(b);
+      expect(refused.status).toBe(503);
+      expect(refused.body.reason).toMatch(/one process holds a folder at a time/);
+      expect(refused.body.reason).toContain(String(first.pid));
+
+      const post = (port: number, path: string, body: unknown) => fetch(`http://127.0.0.1:${port}/api/db${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const doc = wire('still_mine', NS.CONTENT, { v: 1 });
+      expect((await post(a, '/commit', { commitId: 'c1', ops: [{ kind: 'put', doc }] })).status).toBe(200);
+      expect((await post(b, '/commit', { commitId: 'c2', ops: [{ kind: 'put', doc: wire('not_yours', NS.CONTENT, {}) }] })).status).toBe(503);
+      expect((await health(a)).status).toBe(200);
+
+      // A killed server cannot release its lock. The next look finds its holder dead.
+      await killed(first);
+      let opened = await health(b);
+      for (let i = 0; i < 100 && opened.status !== 200; i++) { await new Promise(r => setTimeout(r, 100)); opened = await health(b); }
+      expect(opened.status).toBe(200);
+      const got = await (await post(b, '/get', { id: 'still_mine' })).json() as { doc: IWireDoc | null };
+      expect(got.doc!.dataText).toBe(doc.dataText);
+      const none = await (await post(b, '/get', { id: 'not_yours' })).json() as { doc: IWireDoc | null };
+      expect(none.doc).toBeNull();
+    } finally {
+      first.kill('SIGKILL');
+      await killed(second);
+    }
+  }, 120_000);
+
+  it('a second open in one process waits for the first to close, as a restarted dev server needs', async () => {
+    const url = folderUrl(join(scratch(), 'restart'));
+    const first = await openDatabase(url);
+    const second = openDatabase(url);
+    await new Promise(r => setTimeout(r, 200));
+    await first.close();
+    await (await second).close();
+  }, 60_000);
+
+  it('several waiting in one process go one at a time, and none is refused for it', async () => {
+    const url = folderUrl(join(scratch(), 'queue'));
+    const first = await openDatabase(url);
+    const waiting = [openDatabase(url), openDatabase(url), openDatabase(url)];
+    await new Promise(r => setTimeout(r, 100));
+    await first.close();
+    for (let left = waiting.length; left > 0; left--) {
+      const { held, at } = await Promise.race(waiting.map((p, at) => p.then(held => ({ held, at }))));
+      waiting[at] = new Promise(() => undefined); // answered: out of the race
+      await held.close();
+    }
+  }, 60_000);
+
+  it('a second copy of the module in one process still waits: Vite loads this file afresh at every restart', async () => {
+    const url = folderUrl(join(scratch(), 'twice'));
+    const first = await openDatabase(url);
+    vi.resetModules();
+    const again = await import('../server/connection');
+    expect(again.openDatabase).not.toBe(openDatabase);
+    let opened = false;
+    const second = again.openDatabase(url).then(d => { opened = true; return d; });
+    await new Promise(r => setTimeout(r, 500));
+    expect(opened).toBe(false);
+    await first.close();
+    await (await second).close();
+  }, 60_000);
+
+  it('a closed store stays closed: a request caught in a restart cannot open the folder again', async () => {
+    const { lazyStore } = await import('../server/http');
+    const url = folderUrl(join(scratch(), 'closed'));
+    const lazy = lazyStore(() => openStore(url));
+    await lazy.get();
+    await lazy.close();
+    await expect(lazy.get()).rejects.toThrow(/closing/);
+    // So the folder is free for whoever comes next.
+    await (await openDatabase(url)).close();
+  }, 60_000);
+
+  it('and refuses, in the end, if the first never does', async () => {
+    const url = folderUrl(join(scratch(), 'never'));
+    const first = await openDatabase(url);
+    await expect(openDatabase(url)).rejects.toThrow(/one process holds a folder at a time/);
+    await first.close();
+  }, 60_000);
+
+  it('a stale lock from a dead process does not stand in the way, and neither does a torn one', async () => {
+    const folder = join(scratch(), 'stale');
+    writeFileSync(`${folder}.lock`, JSON.stringify({ pid: 2 ** 22 + 13, at: 1 }));
+    await (await openDatabase(folderUrl(folder))).close();
+    writeFileSync(`${folder}.lock`, '{"pid":');
+    await (await openDatabase(folderUrl(folder))).close();
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+// WHAT SINGLE-USER POSTGRES DOES NOT DO ALONE
+// ---------------------------------------------------------------------------
+
+describe('a folder stays small: no checkpointer and no autovacuum run in single-user Postgres', () => {
+  const sizeOf = (p: string): number => {
+    const s = statSync(p);
+    return s.isDirectory() ? readdirSync(p).reduce((n, name) => n + sizeOf(join(p, name)), 0) : s.size;
+  };
+
+  it('tidies itself under repeated whole-document saves, and maintenance gives the space back', async () => {
+    const folder = join(scratch(), 'tidy');
+    const store = await openStore(folderUrl(folder));
+    const meg = 1024 * 1024;
+    // Random hex compresses about 2:1, harder than real hub JSON, so the bound below is the honest one.
+    const noise = createHash('sha256').update('seed').digest('hex');
+    const body = (i: number) => {
+      let text = '';
+      for (let n = 0; text.length < meg; n++) text += createHash('sha256').update(`${noise}${i}${n}`).digest('hex');
+      return text;
+    };
+    for (let i = 0; i < 300; i++) await put(store, wire('hub_state_tidy', NS.TERRITORIES, { i, body: body(i) }));
+    const after = sizeOf(folder) / meg;
+    // Unmeasured, this is about 650 MB: a megabyte of log and half a megabyte of dead row per save.
+    expect(after).toBeLessThan(300);
+
+    await store.maintain();
+    const compacted = sizeOf(folder) / meg;
+    expect(compacted).toBeLessThan(after);
+    expect(compacted).toBeLessThan(150);
+    expect(JSON.parse((await store.get('hub_state_tidy'))!.dataText).i).toBe(299);
+    await store.close();
+  }, 180_000);
+});
