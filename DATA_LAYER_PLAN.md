@@ -118,7 +118,7 @@ Pedro, correcting this section: "one is cheap to store the other is the live ser
 
 Dexie is installed for the legacy import and `idb` is not. Either would do, and `idb` is thinner. The existing test that enforces no second book gets rewritten to say what this says, so the rule changes on purpose.
 
-**Field play.** D94 has values computed by the client and merged, first touch owning. The session journal already works like that, so a dive keeps working on the journal, and the outbox is the same shape.
+**Field play.** D94 has values computed by the client and merged, first touch owning. The session journal already works like that, so a dive keeps working on the journal, and the outbox is the same shape. D134 adds what happens later: the server repeats the reading on its own time, and a mismatch overwrites the player's table and bans them. So a write that left the outbox can still be undone, and a commit needs to record which reading it made.
 
 ## 7. WebSockets
 
