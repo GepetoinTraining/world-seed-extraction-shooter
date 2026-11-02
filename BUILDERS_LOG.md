@@ -254,6 +254,12 @@ The record is in `PLAN.md` ("Wave C, first pass — the record"). **For C6:** `F
 
 - **Tests:** 2,621: 2,493 plus 128 in the database's own run, none red. The streams saw the grid timing bars and five usability bars go red under load, and clean runs pass them.
 
+## What leg 0 built
+
+Postgres is the one dialect (D132). **Where this file still says `data/test-claude.db` or `file:`, read `data/test-claude`, a folder, and `pglite://`.** One opener at a time: a second dev server in one checkout needs `WS_DATABASE_URL=pglite://<folder>`. A worktree holding an old `.db` refuses to open until carried or moved aside. Never load `@libsql/client` in a test process: `tests/fixtures/old-save.ts` shows the way. `db:studio` is gone. The report is `leg0-report.md` in the notes folder.
+
+- **Tests:** 2,665: 2,493 plus 172 in the database's own run, none red, and the database pass exits 0.
+
 ## Your pass: a stream in the fan-out (Wave C's second pass, cut from main, on Pedro's word)
 
 Pedro's rulings of 2026-11-01 rebuilt the road: read `PLAN.md`, "The fan-out", "The living worlds program", and D60–D85 first. Build only your stream's lines and files, and report to the coordinator rather than editing this file or the plan. Two rules changed under you. **A signed world is out of its minter's hands, and it still lives:** population, the Director and growth all move it. **Only land and alpha are fixed:** after alpha, who stands where is a record, so `Director.variantOf`'s comment about positions stops being true once creatures move. Names are masked (D60), and no creature carries one until the trees let a creature become another. Pedro's distant-hit report is N6 in the ledger.
@@ -290,6 +296,7 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 
 ## Traps that cost me time
 
+- **Stop your own processes by id, never by matching a command line.** Leg 0's cleanup matched `port 3103|pedro.ts` and stopped a dev server it had not started, and nobody knows whose. It could as easily have been Pedro's game.
 - **Two streams can pick one name for different things, and a clean text merge will not say so.** C1 and C4 both added `taken` to the population record, in places git could join, and only the types of the values differed. Read the additions on a shared interface at a join, not only the conflict markers.
 - **A hidden pane throttles timers as well as frames.** A script with a `setTimeout` can run past the tool's 45 seconds and still finish. Keep each step short, and check the page before running it again.
 - **A `cd` in the Bash tool moved this session's primary folder to the main checkout.** Use `git -C` and absolute paths, and `npx` from a subshell.

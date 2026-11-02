@@ -33,7 +33,6 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 | N13 | Tax Evasion's first attempt says "Winging it: ... It costs more without the skill", and it costs nothing more. Farming says the same, and charges no energy | the skill's first-use line, `workOn` |
 | N14 | Reading a scroll feeds "Writ of Breach: +0 health." Every scroll has since Layer 3 | `store.consumeItem` |
 | N15 | Glass panes answer `building`, so a window's panes can go into a wall's line | `resourceDefinitions`, `answersTag` |
-| N16 | The database pass can exit 139, a crash at teardown, after every bar has passed. Counted 2026-11-01, 12 runs each, taking turns: the join 1 at 139, a tree without B2's population code 2 at 139 and 1 at exit 1. So it is not B2's. It comes from `tests/database.store.test.ts` alone (1 of 4 runs of that file; the other two files 0 of 4) and the cause is not found. It reached 2 of 3 on a quiet machine, so `npm test` often reports a failure with every bar green: read the bar count. **Narrowed 2026-11-01: the bare driver, `@libsql/client` 0.17.4 with no game code, exits 139 after finishing in 7 of 10 runs that used transactions. It is not this game's code. The dev server's mid-run `0xC0000005` under refused commits, 3 of 3 on `main`, is related in kind and its cause is not found. The same load on PGlite in memory: 0 of 5** | `tests/database.store.test.ts` at teardown, the driver |
 
 ### Found while building and joining Wave C's first pass, 2026-11-01
 
@@ -58,6 +57,7 @@ Things to fix, found by playing. Add a row when something is found, with what ha
 
 | # | What was wrong | Commit | Checked |
 |---|---|---|---|
+| N16 | The database pass could exit 139 after every bar had passed, and the dev server could go down with `0xC0000005` under refused commits. The bare `@libsql/client` 0.17.4 did it with no game code. Its cause in the driver was not found: the driver left the server's path | `d6c743b` | 0 of 12 database passes at 139; 0 of 20 crashes on a folder by the stream, and 0 of 5 on a recount by the coordinator |
 | N6 | A creature could be defeated from beyond where it noticed anything, and never answered: a hit woke it, and the next tick put it back to sleep past the leash. A hit is now felt from any distance and answered by the creature's own behaviour, and sight has no cap in `MobAI` | 3f2c6bd | By 22 bars that failed first, and played at 15 to 19 tiles against passive, neutral, turret, swarm, siege and aggressive creatures |
 | N7 | A creature outside the simulated box could not wake or move, so sight was capped by the box | B2, `2beeba1` | The box reaches the widest sight in the dark, and any chunk a provoked body stands in stays simulated. By bars; played at 109 tiles |
 | N8 | A creature that followed froze when its home chunk left the box | B2, `2beeba1` | A body moves to the chunk under its feet as it crosses, and a chunk not yet built holds it at the line. By bars; played across a chunk line |
