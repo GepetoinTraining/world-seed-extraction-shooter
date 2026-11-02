@@ -90,8 +90,8 @@ afterAll(async () => {
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* left for the OS */ }
 });
 
-describe('a folder, a real server, and hard kills in the middle of writes', () => {
-  it('loses no acknowledged commit, and both audits read clean after every kill', async () => {
+describe('a folder, a real server, and hard stops in the middle of writes', () => {
+  it('loses no acknowledged commit, and both audits read clean after every stop', async () => {
     const cert = await mintCert('KILN');
     const uid = cert.metadata.uid;
     localStorage.setItem('worldseed_certificate', JSON.stringify(cert));
@@ -148,6 +148,6 @@ describe('a folder, a real server, and hard kills in the middle of writes', () =
       expect(sha(JSON.stringify(hub!.data))).toBe(lastHub);
     }
 
-    console.log(`[folder] ${ROUNDS} hard kills, ${acknowledged} commits acknowledged and found; reopening after a kill: ${reopenings.map(ms => ms.toFixed(0)).join(', ')} ms`);
+    console.log(`[folder] ${ROUNDS} hard stops, ${acknowledged} commits acknowledged and found; reopening after a stop: ${reopenings.map(ms => ms.toFixed(0)).join(', ')} ms`);
   }, 600_000);
 });

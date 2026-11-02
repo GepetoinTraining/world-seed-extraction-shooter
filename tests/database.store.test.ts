@@ -525,7 +525,7 @@ describe('line 71: all or nothing across a killed process', () => {
     expect(acknowledged).toBeGreaterThan(0);
   }, 180_000);
 
-  it('a process killed while a fresh folder is still being made leaves one that opens', async () => {
+  it('a process stopped hard while a fresh folder is still being made leaves one that opens', async () => {
     for (const after of [150, 400, 700, 1000, 1400]) {
       const folder = join(scratch(), 'halfmade');
       const url = folderUrl(folder);
