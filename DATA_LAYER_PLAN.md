@@ -85,7 +85,14 @@ Pedro, correcting this section: "one is cheap to store the other is the live ser
 
 **The SQL half, Turso ("Use turso"), being built.** It goes through `@libsql/client`'s network entry, never a `file:` URL, because the crash was the native binding's. The entry loaded no native code in 10 of 10 runs. A real Turso has not been met.
 
-**Postgres on Turso's own engine, checked 2026-11-01 on Pedro's word: not built on.** Its README lists Postgres under experimental features, and the project has not reached 1.0. Its `postgres/COMPAT.md` has no LISTEN/NOTIFY, no triggers, no functions, no authentication on the wire, and no VACUUM. Worth checking again at Wave 13, because one engine for both jobs would change this section. `tests/database.store.test.ts` already runs the contract on PGlite and Postgres, so this is the cheapest phase to prove.
+**Postgres on Turso's own engine, checked 2026-11-01 on Pedro's word: not built on.** Its README lists Postgres under experimental features, and the project has not reached 1.0. Its `postgres/COMPAT.md` has no LISTEN/NOTIFY, no triggers, no functions, no authentication on the wire, and no VACUUM. Worth checking again at Wave 13.
+
+**Measured 2026-11-01 on Pedro's word, built from source at `8ba16a6cb` and run against our store:**
+- It builds on Windows with workarounds: 687 s and 1.8 GB for the Postgres server, 252 s to rebuild after one `core` file changes. Its own 1,111 tests pass.
+- Our migrations ran with zero errors, a 1 MB document came back byte-exact, and 20 of 22 contract tests passed on the first run, 21 with a 13-line change that brought `VACUUM` through. No crash in 6 runs.
+- Not usable as it stands: about 4% of reads fail with `55P03 Database is busy` under ordinary write load, and about 2,680 in 15 s with maintenance running. A wrong password connects. There is no `LISTEN/NOTIFY` and no triggers. `integer` has no range check. Durability and kill recovery were not tested, and an integrity check could not be run.
+- `D:` holds no Rust database engine and no code that fills these gaps: the survey found one storage engine, `fractal_store`, and no query or transaction layer.
+- **So this plan does not fork it.** It would be one engine doing two jobs, which D133 rules against, and a fork of something moving at about 390 commits a month. Look again at Wave 13. `tests/database.store.test.ts` already runs the contract on PGlite and Postgres, so this is the cheapest phase to prove.
 
 ## 5. The tables
 
