@@ -83,7 +83,7 @@ Pedro, correcting this section: "one is cheap to store the other is the live ser
 
 **The live half, built as leg 0.** Locally, PGlite on a folder, so nobody installs a database to play. Served, real Postgres. It is the same SQL and the same migrations, which fits "the hub is a server anyone can run" (D81). The libSQL driver leaves the live path, and N16 went with it.
 
-**The SQL half, not built.** The crash was the driver's and not SQLite's, so this tier needs another driver or a process of its own, which the carry tool's 10 clean runs in a child process suggest. `tests/database.store.test.ts` already runs the contract on PGlite and Postgres, so this is the cheapest phase to prove.
+**The SQL half, Turso ("Use turso"), being built.** It goes through `@libsql/client`'s network entry, never a `file:` URL, because the crash was the native binding's. The entry loaded no native code in 10 of 10 runs. A real Turso has not been met. `tests/database.store.test.ts` already runs the contract on PGlite and Postgres, so this is the cheapest phase to prove.
 
 ## 5. The tables
 
