@@ -8,6 +8,8 @@
  *
  * Migrations run on open, so a fresh folder or a fresh database comes up ready.
  *
+ * This is the live store. Turso holds the record behind it: see `record.ts`.
+ *
  * ONE OPENER AT A TIME. SQLite let several dev servers share a file, one per port.
  * A PGlite folder is one Postgres in one process, and a second one opening it would
  * corrupt it: nothing in PGlite stops that, so the lock file beside the folder does.
@@ -51,6 +53,10 @@ export interface IDatabase {
 export interface IOpenOptions {
   /** The pool size for postgres:// (a socket onto PGlite takes one connection at a time). */
   poolSize?: number;
+  /** The record already holds this game, so a new folder comes up from it, whatever old file sits beside it. */
+  recordHoldsSave?: boolean;
+  /** A record answered, so an old save has somewhere else it may go. */
+  recordReachable?: boolean;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -76,7 +82,7 @@ export const isDataException = (e: unknown) => causeChain(e).some(c => typeof c?
 export async function openDatabase(url: string, options: IOpenOptions = {}): Promise<IDatabase> {
   if (url.startsWith('postgres://') || url.startsWith('postgresql://')) return openPostgres(url, options);
   if (url === 'pglite://memory') return openPglite();
-  if (url.startsWith('pglite://')) return openPglite(resolve(url.slice('pglite://'.length)));
+  if (url.startsWith('pglite://')) return openPglite(resolve(url.slice('pglite://'.length)), options);
   if (url.startsWith('file:')) {
     const file = resolve(url.slice('file:'.length));
     throw new DatabaseUnavailable(`"${url}" is an old SQLite save, and this server no longer opens those. Carry it over once by hand: npm run db:carry -- "${file}" "<new folder>". The old file stays as it is.`);
@@ -177,14 +183,26 @@ async function takeLock(folder: string): Promise<() => void> {
   };
 }
 
-/** A person's save never starts over because nobody carried it: an old file with no folder is said out loud. */
-function refuseUncarriedSave(folder: string) {
-  const oldFile = `${folder}.db`;
-  if (existsSync(join(folder, 'PG_VERSION')) || !existsSync(oldFile)) return;
-  throw new DatabaseUnavailable(`This save is still the old file ${oldFile}, and it has not been carried over. Nothing was changed and nothing was created. Stop the server and run this once: npm run db:carry -- "${oldFile}" "${folder}". The old file stays as it is.`);
+/** An old save sits where this game's database should. A person can carry it over from where they stand. */
+export class UncarriedSave extends DatabaseUnavailable {
+  constructor(readonly oldFile: string, readonly folder: string, recordReachable: boolean) {
+    super(`This save is still the old file ${oldFile}, and it has not been carried over. Nothing was changed and nothing was created. Carry it over here, which needs no account and takes a few seconds, or run this: npm run db:carry -- "${oldFile}" "${folder}"${recordReachable ? `. To send it straight to the record instead: npm run db:carry -- "${oldFile}" --to-record` : ''}. The old file stays as it is either way.`);
+  }
 }
 
-async function openPglite(folder?: string): Promise<IDatabase> {
+/**
+ * A person's save never starts over because nobody carried it. It would not stay harmless:
+ * this browser still holds that avatar's key, so an empty database would start a second
+ * chain under the same name as the one in the old file. So an old file with no folder holds
+ * the door, and the door is one press to open: nothing about it needs a record or an account.
+ */
+function refuseUncarriedSave(folder: string, options: IOpenOptions) {
+  const oldFile = `${folder}.db`;
+  if (options.recordHoldsSave || existsSync(join(folder, 'PG_VERSION')) || !existsSync(oldFile)) return;
+  throw new UncarriedSave(oldFile, folder, !!options.recordReachable);
+}
+
+async function openPglite(folder?: string, options: IOpenOptions = {}): Promise<IDatabase> {
   const { PGlite } = await import('@electric-sql/pglite');
   const { drizzle } = await import('drizzle-orm/pglite');
   const { migrate } = await import('drizzle-orm/pglite/migrator');
@@ -202,7 +220,7 @@ async function openPglite(folder?: string): Promise<IDatabase> {
     };
   }
 
-  refuseUncarriedSave(folder);
+  refuseUncarriedSave(folder, options);
 
   // Vite builds a restarted server before it closes the old one, in one process. Those
   // who wait go one at a time: nothing happens between the last look here and the set below.

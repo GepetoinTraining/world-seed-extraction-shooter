@@ -64,4 +64,28 @@ export interface IHealth {
   service?: 'worldseed-db';
   dialect?: 'postgres';
   reason?: string;
+  /** An old save with no database beside it: a person can carry it over from where they stand. */
+  canCarry?: boolean;
+  record?: IRecordStatus;
+}
+
+/** Where a game stands with the record (D133). Only a game that asked for one has this. */
+export interface IRecordStatus {
+  /** READY means it answered last time, and says nothing about what has gone up since: `behind` does. */
+  state: 'READY' | 'NONE' | 'WAITING' | 'MOVED' | 'FORK' | 'WRONG_URL';
+  /** Rows changed here that the record has not seen. */
+  behind: number;
+  /** The last write-down read back whole. */
+  last?: string;
+  /** What a person should be told, once. */
+  says?: string;
+}
+
+export interface IWriteDownReceipt {
+  status: 'WRITTEN' | 'NOTHING' | 'NO_RECORD' | 'WAITING' | 'MOVED' | 'FORK' | 'MISMATCH' | 'WRONG_URL';
+  id?: string;
+  rows?: number;
+  digest?: string;
+  says?: string;
+  audit?: { ok: boolean; report: unknown };
 }

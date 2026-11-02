@@ -3,10 +3,8 @@
  * CARRYING A SAVE OVER. Pedro: a tool that reads the old file and writes the new
  * one, and leaves the old file untouched.
  *
- * The tool and the fixture that makes old saves run as real processes, because the
- * old driver can exit 139 after finishing (N16). So these bars read what the tool
- * printed and wrote, as a person must, and never its exit code. libSQL stays out of
- * this test process, so it cannot take a test run down either.
+ * The tool and the fixture that makes old saves run as real processes, and these bars
+ * read what the tool printed and wrote, as a person must.
  */
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -15,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
-import { DatabaseUnavailable, folderUrl, openDatabase } from '../server/connection';
+import { DatabaseUnavailable, folderUrl, openDatabase, UncarriedSave } from '../server/connection';
 import { openStore } from '../server/SqlStore';
 
 const ROOT = process.cwd();
@@ -23,7 +21,7 @@ const dirs: string[] = [];
 const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'ws-carry-test-')); dirs.push(d); return d; };
 afterAll(() => { for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }); } catch { /* left for the OS */ } } });
 
-const TSX = ['--import', 'tsx'];
+const TSX = ['--disable-warning=ExperimentalWarning', '--import', 'tsx'];
 
 function makeOldSave(file: string, kind = 'plain') {
   const made = spawnSync(process.execPath, [...TSX, 'tests/fixtures/old-save.ts', file, kind], { cwd: ROOT, encoding: 'utf8' });
@@ -49,10 +47,10 @@ describe('the tool, on an old save with its log beside it', () => {
     printed = carry(oldFile, target);
   }, 120_000);
 
-  it('says CARRIED, and that this line and the receipt are the evidence, not the exit code', () => {
+  it('says CARRIED, and that this line and the receipt are the evidence', () => {
     expect(printed).toContain(`CARRIED: ${target}`);
     expect(printed).not.toContain('NOT CARRIED');
-    expect(printed).toMatch(/exit code alone does not/);
+    expect(printed).toMatch(/That line and the receipt/);
     expect(readFileSync(`${target}.carried.txt`, 'utf8')).toContain(`CARRIED: ${target}`);
   });
 
@@ -198,6 +196,7 @@ describe('nothing migrates by itself', () => {
     writeFileSync(`${folder}.db`, 'an old save');
     const opened = openDatabase(folderUrl(folder));
     await expect(opened).rejects.toBeInstanceOf(DatabaseUnavailable);
+    await expect(opened).rejects.toBeInstanceOf(UncarriedSave);
     await expect(opened).rejects.toThrow(/npm run db:carry/);
     expect(existsSync(folder)).toBe(false);
     expect(existsSync(`${folder}.lock`)).toBe(false);

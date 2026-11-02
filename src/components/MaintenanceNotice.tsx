@@ -31,10 +31,10 @@ export const MaintenanceNotice: React.FC = () => {
   const run = async () => {
     setRunning(true);
     const at = Date.now();
-    const { failed } = await Maintenance.run(localRoom, at);
+    const { line, tone } = Maintenance.say(await Maintenance.run(localRoom, at));
     setLastAt(at);
     setRunning(false);
-    useFeed.getState().push(failed.length === 0 ? 'Maintenance done.' : `Maintenance done, except ${failed.join(', ')}. It will try again next time.`, failed.length === 0 ? 'proof' : 'loss');
+    useFeed.getState().push(line, tone);
   };
 
   const state = lastAt === null ? null : Maintenance.stateAt(lastAt, now);

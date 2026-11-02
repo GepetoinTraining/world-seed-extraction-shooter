@@ -350,14 +350,17 @@ describe.each(DOORS)('line 70: the store contract on $name', ({ open }) => {
 // ---------------------------------------------------------------------------
 
 describe('line 70: one code path, no deploy-only surprises', () => {
-  it('libSQL has left the server: only the tool that carries an old save still loads it', () => {
+  it('nothing loads libSQL\'s file path: the record alone uses its network entry', () => {
     const walk = (dir: string): string[] => readdirSync(join(ROOT, dir)).flatMap(name => {
       const path = `${dir}/${name}`;
       return statSync(join(ROOT, path)).isDirectory() ? walk(path) : [path];
     });
-    const sources = [...walk('server'), ...walk('src'), ...walk('scripts'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p));
-    const loads = sources.filter(p => /@libsql|drizzle-orm\/libsql|sqlite-core|schema\.sqlite/.test(readFileSync(join(ROOT, p), 'utf8')));
-    expect(loads).toEqual(['scripts/carry-save.ts']);
+    // This file names what it looks for, so it is the one file left out.
+    const sources = [...walk('server'), ...walk('src'), ...walk('scripts'), ...walk('tests'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p) && p !== 'tests/database.store.test.ts');
+    const text = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+    const quote = (s: string) => new RegExp(`from '${s}'|import\\('${s}'\\)`);
+    expect(sources.filter(p => quote('@libsql/client').test(text(p)) || quote('libsql').test(text(p)) || /drizzle-orm\/libsql|sqlite-core/.test(text(p)))).toEqual([]);
+    expect(sources.filter(p => quote('@libsql/client/http').test(text(p)))).toEqual(['server/coldStore.ts']);
   });
 
   it('PGlite travels with the game, so nobody installs a database to play', () => {

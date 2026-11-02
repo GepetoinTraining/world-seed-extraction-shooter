@@ -18,7 +18,7 @@
  */
 import { and, asc, eq, max, sql } from 'drizzle-orm';
 import { cosineSimilarity } from '../src/entities/data/similarity';
-import { CommitOp, ICommitRequest, ICommitResult, IHealth, IWireDoc, IWireQuery, IWireSearch } from '../src/entities/data/wire';
+import { CommitOp, ICommitRequest, ICommitResult, IHealth, IRecordStatus, IWireDoc, IWireQuery, IWireSearch, IWriteDownReceipt } from '../src/entities/data/wire';
 import { IDatabase, IOpenOptions, isDataException, isUniqueViolation, openDatabase } from './connection';
 
 /** The commit disagrees with what is stored (a fork, a gap, a moved head). Nothing applied. */
@@ -35,6 +35,14 @@ export class StoreRefusal extends Error {
     super(message);
     this.name = 'StoreRefusal';
   }
+}
+
+/** What keeps the record for this store, if this game asked for one (server/record.ts). */
+export interface IStoreKeeper {
+  status(): Promise<IRecordStatus>;
+  writeDown(why: string): Promise<IWriteDownReceipt>;
+  downtime(): Promise<IWriteDownReceipt>;
+  stop(): Promise<void>;
 }
 
 export interface IStoreOptions extends IOpenOptions {
@@ -122,7 +130,7 @@ export class SqlStore {
   private writes: Promise<unknown> = Promise.resolve();
   private writtenSinceTidy = 0;
 
-  constructor(database: IDatabase, options: IStoreOptions = {}) {
+  constructor(database: IDatabase, options: IStoreOptions = {}, private readonly keeper?: IStoreKeeper) {
     this.database = database;
     this.fault = options.fault ?? (() => undefined);
   }
@@ -131,23 +139,31 @@ export class SqlStore {
   private get t() { return this.database.schema as any; }
 
   async close(): Promise<void> {
+    await this.keeper?.stop();
     await this.writes.catch(() => undefined);
     await this.database.close();
   }
 
   async health(): Promise<IHealth> {
     await this.db.select({ id: this.t.commits.id }).from(this.t.commits).limit(1);
-    return { ok: true, service: 'worldseed-db', dialect: this.database.dialect };
+    return { ok: true, service: 'worldseed-db', dialect: this.database.dialect, ...(this.keeper ? { record: await this.keeper.status() } : {}) };
+  }
+
+  /** A downtime other than maintenance: a world's gate going down. No record, no work, and that is an answer. */
+  async writeDown(why: string): Promise<IWriteDownReceipt> {
+    return this.keeper ? this.keeper.writeDown(why) : { status: 'NO_RECORD' };
   }
 
   /** Maintenance (D103): compacts what weeks of writes left behind. Nothing here reads a row's meaning. */
-  async maintain(): Promise<{ ok: true }> {
+  async maintain(): Promise<{ ok: true; record?: IWriteDownReceipt }> {
+    // The record first and outside the queue, so commits go on meanwhile. Whatever it says, the live store's own bytes are still tidied.
+    const record = await this.keeper?.downtime();
     // It takes its turn with the writes, so no transaction of ours is open when it runs.
     // On a folder that is VACUUM FULL and a checkpoint, which give the space back as SQLite's VACUUM did.
     const run = this.writes.then(() => this.database.compact());
     this.writes = run.catch(() => undefined);
     await run;
-    return { ok: true };
+    return { ok: true, ...(record ? { record } : {}) };
   }
 
   // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SqlStore } from './SqlStore';
 import { StoreConflict, StoreRefusal } from './SqlStore';
+import { UncarriedSave } from './connection';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -30,6 +31,8 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IHandlerOptions {
   allowRemote?: boolean;
+  /** Carries an old save over, when the store refused for that reason (server/carryDoor.ts). */
+  carry?: (oldFile: string, folder: string) => Promise<{ ok: boolean; lines: string[] }>;
 }
 
 /** `path` is what follows the mount point: /health, /get, /query, /search, /commit. */
@@ -43,7 +46,7 @@ export function createDbHandler(getStore: () => Promise<SqlStore>, options: IHan
       try {
         return send(res, 200, await (await getStore()).health());
       } catch (e) {
-        return send(res, 503, { ok: false, reason: e instanceof Error ? e.message : String(e) });
+        return send(res, 503, { ok: false, reason: e instanceof Error ? e.message : String(e), ...(e instanceof UncarriedSave && options.carry ? { canCarry: true } : {}) });
       }
     }
 
@@ -58,6 +61,8 @@ export function createDbHandler(getStore: () => Promise<SqlStore>, options: IHan
     try {
       store = await getStore();
     } catch (e) {
+      // The one thing that can be asked of a store that will not open, because of what it says it needs.
+      if (path === '/carry' && e instanceof UncarriedSave && options.carry) return send(res, 200, await options.carry(e.oldFile, e.folder));
       return send(res, 503, { error: e instanceof Error ? e.message : String(e) });
     }
 
@@ -68,6 +73,7 @@ export function createDbHandler(getStore: () => Promise<SqlStore>, options: IHan
       if (path === '/search') return send(res, 200, { docs: await store.search(body) });
       if (path === '/commit') return send(res, 200, await store.commit(body));
       if (path === '/maintain') return send(res, 200, await store.maintain());
+      if (path === '/record') return send(res, 200, await store.writeDown(String(body.why ?? 'asked')));
       return send(res, 404, { error: `No such door: ${path}` });
     } catch (e) {
       if (e instanceof StoreConflict) return send(res, 409, { conflict: true, error: e.message });

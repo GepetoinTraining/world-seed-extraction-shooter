@@ -1,12 +1,11 @@
 /**
- * An old save, made the way the old server made them: a SQLite file through libSQL,
- * with its log still open beside it. The carry tool's bars read it, and only this
- * process and that tool ever load the driver, so a crash at exit cannot reach a test
- * run. The caller looks at what was written, never at this exit code (N16).
+ * An old save, the shape the old server made: a SQLite file in WAL mode, with its log
+ * still open beside it. The carry tool's bars read it. Node's own SQLite makes it, so a
+ * test run loads nothing of the old driver.
  *
- *   node --import tsx tests/fixtures/old-save.ts <file> <plain|nul|fraction>
+ *   node --disable-warning=ExperimentalWarning --import tsx tests/fixtures/old-save.ts <file> <plain|nul|fraction>
  */
-import { createClient } from '@libsql/client';
+import { DatabaseSync } from 'node:sqlite';
 
 const [, , file, kind = 'plain'] = process.argv;
 
@@ -29,10 +28,14 @@ export const NASTY = JSON.stringify({
   timestamp: 1730000000123.5
 });
 
-const client = createClient({ url: `file:${file.replace(/\\/g, '/')}` });
-await client.execute('PRAGMA journal_mode=WAL');
-for (const statement of DDL) await client.execute(statement);
+const db = new DatabaseSync(file);
+db.exec('PRAGMA journal_mode=WAL');
+for (const statement of DDL) db.exec(statement);
+const client = {
+  async execute(s: { sql: string; args: any[] }) { db.prepare(s.sql).run(...s.args); }
+};
 
+db.exec('BEGIN');
 const insertDoc = `INSERT INTO documents (id, namespace, data, embedding, doc_type, genre, owner_cert_uid, signature, version, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
 await client.execute({ sql: insertDoc, args: ['ws_abc_character', 'characters', NASTY, null, null, null, 'ws_abc', 'sig-char', 3, 1730000000000, 1730000000999] });
 await client.execute({ sql: insertDoc, args: ['res_tree_log', 'content', '{ "type":"res",  "spacing":"kept" }', '[0.1,0.2]', 'res', 'wood', 'SYSTEM', null, 1, 1000, 2000] });
@@ -59,6 +62,8 @@ for (let i = 0; i < 900; i++) {
 
 if (kind === 'nul') await client.execute({ sql: insertDoc, args: ['has_nul', 'content', '{}', null, 'a\u0000b', null, null, null, 1, 1, 1] });
 if (kind === 'fraction') await client.execute({ sql: insertDoc, args: ['has_fraction', 'content', '{"kept":"exactly"}', null, null, null, null, null, 1, 1730000000123.5, 1730000000123.75] });
+
+db.exec('COMMIT');
 
 // Not closed: a real server's file keeps its log beside it, holding the newest play.
 await client.execute({ sql: insertDoc, args: ['only_in_the_log', 'content', '{"newest":true}', null, null, null, null, null, 1, 7, 7] });

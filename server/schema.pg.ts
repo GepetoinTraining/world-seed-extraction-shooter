@@ -11,7 +11,7 @@
  * the cosine operator. The offline embedding has 256 dimensions; a better one,
  * if search ever needs it, means choosing a model and embedding again (D46).
  */
-import { bigint, customType, doublePrecision, index, integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { bigint, customType, doublePrecision, index, integer, pgTable, primaryKey, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 const idText = customType<{ data: string }>({ dataType: () => 'text COLLATE "C"' });
 
@@ -64,4 +64,25 @@ export const treasuries = pgTable('treasuries', {
 export const commits = pgTable('commits', {
   id: text('id').primaryKey(),
   at: bigint('at', { mode: 'number' }).notNull()
+});
+
+/**
+ * What the record does not have yet. A trigger keeps this, in the same transaction as
+ * the write it marks, so a commit and its mark land together or not at all, and a hard
+ * stop cannot lose track of anything Postgres still holds. One row per row changed: a
+ * hub document saved a thousand times is one mark, carrying the newest number.
+ */
+export const coldChanges = pgTable('cold_changes', {
+  tbl: text('tbl').notNull(),
+  id: text('id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull()
+}, t => [
+  primaryKey({ columns: [t.tbl, t.id] }),
+  index('cold_changes_seq_idx').on(t.seq)
+]);
+
+/** Where this database stands with the record: the last write-down it knows landed, and one it may have sent. */
+export const coldState = pgTable('cold_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull()
 });

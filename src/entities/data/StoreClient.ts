@@ -22,6 +22,8 @@ interface IVaultState {
   status: VaultStatus;
   /** What the last failure said, for the refusal's small print. */
   reason: string | null;
+  /** The reason is an old save a person can carry over from the vault's own screen. */
+  canCarry?: boolean;
   /** Requests waiting for the server to come back. */
   waiting: number;
 }
@@ -43,10 +45,10 @@ const MAX_RETRY_MS = 4000;
 let base = '';
 let firstRetryMs = 400;
 
-const closeVault = (reason: string) => useVault.setState({ status: 'CLOSED', reason });
+const closeVault = (reason: string, canCarry = false) => useVault.setState({ status: 'CLOSED', reason, canCarry });
 const openVault = () => {
   if (useVault.getState().status !== 'OPEN') {
-    useVault.setState({ status: 'OPEN', reason: null });
+    useVault.setState({ status: 'OPEN', reason: null, canCarry: false });
   }
 };
 
@@ -108,17 +110,24 @@ export const StoreClient = {
       const res = await fetch(`${base}/api/db/health`, { cache: 'no-store' });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.ok === true && body?.service === 'worldseed-db') return body;
-      return { ok: false, reason: body?.reason ?? body?.error ?? `The server at this address is not the bank's (${res.status}).` };
+      return { ok: false, reason: body?.reason ?? body?.error ?? `The server at this address is not the bank's (${res.status}).`, ...(body?.canCarry ? { canCarry: true } : {}) };
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }
+  },
+
+  /** An old save holds the door: carry it over, as a person asked. The old file stays as it is. */
+  async carryOldSave(): Promise<{ ok: boolean; lines: string[] }> {
+    const res = await fetch(`${base}/api/db/carry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const body = await res.json().catch(() => null);
+    return { ok: !!body?.ok, lines: Array.isArray(body?.lines) ? body.lines : [body?.error ?? `The server answered ${res.status}.`] };
   },
 
   /** Ask once, and set the vault's status from the answer. */
   async checkVault(): Promise<IHealth> {
     const health = await this.health();
     if (health.ok) openVault();
-    else closeVault(health.reason ?? 'The server did not answer.');
+    else closeVault(health.reason ?? 'The server did not answer.', !!health.canCarry);
     return health;
   },
 

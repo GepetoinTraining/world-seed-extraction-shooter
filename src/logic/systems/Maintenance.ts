@@ -16,6 +16,7 @@ import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
 import { IAskKind } from './ScanPass';
 import { WEEK_MS } from './DecisionLayer';
 import { LEADER_ASK } from './LeaderPlan';
+import { IWriteDownReceipt } from '../../entities/data/wire';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -34,7 +35,13 @@ export interface IMaintenanceState {
 
 export interface IMaintenanceStep {
   name: string;
-  run(): Promise<void>;
+  /** A step that wrote to the record says how that went. */
+  run(): Promise<void | IWriteDownReceipt>;
+}
+
+export interface IMaintenanceRun {
+  failed: string[];
+  record?: IWriteDownReceipt;
 }
 
 export interface IMaintenanceRoom {
@@ -61,13 +68,14 @@ export const localRoom: IMaintenanceRoom = {
   }
 };
 
-/** Compacting the database, through the door it already has. */
+/** The downtime's work on the server: the record first, then compacting the live store, through the door it already has. */
 export const STEPS: IMaintenanceStep[] = [
   {
     name: 'database',
     async run() {
       const res = await fetch('/api/db/maintain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       if (!res.ok) throw new Error(`The database answered ${res.status}.`);
+      return ((await res.json()) as { record?: IWriteDownReceipt }).record;
     }
   },
   {
@@ -88,17 +96,28 @@ export class Maintenance {
   }
 
   /** Runs what is due. The clock restarts when it is done, whatever a step said. */
-  static async run(room: Pick<IMaintenanceRoom, 'mark'>, now: number, steps: IMaintenanceStep[] = STEPS): Promise<{ failed: string[] }> {
+  static async run(room: Pick<IMaintenanceRoom, 'mark'>, now: number, steps: IMaintenanceStep[] = STEPS): Promise<IMaintenanceRun> {
     const failed: string[] = [];
+    let record: IWriteDownReceipt | undefined;
     for (const step of steps) {
       try {
-        await step.run();
+        record = (await step.run()) || record;
       } catch (e) {
         console.error(`[MAINTENANCE] ${step.name} did not finish:`, e);
         failed.push(step.name);
       }
     }
     await room.mark(now);
-    return { failed };
+    return { failed, record };
+  }
+
+  /** What a person is told. Done is only said of what is done, so the record not having it is said here too. */
+  static say({ failed, record }: IMaintenanceRun): { line: string; tone: 'proof' | 'loss' } {
+    const reached = !record || record.status === 'WRITTEN' || record.status === 'NOTHING' || record.status === 'NO_RECORD';
+    const done = `Maintenance done${reached ? '' : ' on this machine'}`;
+    const line = failed.length === 0 ? `${done}.` : `${done}, except ${failed.join(', ')}. It will try again next time.`;
+    if (!reached) return { line: `${line} What you did has not gone up yet.`, tone: 'loss' };
+    const tone = failed.length === 0 ? 'proof' : 'loss';
+    return { line: record?.status === 'NO_RECORD' ? `${line} This game is kept on this machine only.` : line, tone };
   }
 }

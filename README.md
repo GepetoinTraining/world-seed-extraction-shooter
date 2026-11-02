@@ -16,13 +16,23 @@ npm test
 
 One process holds a database folder at a time. A second dev server in the same checkout is told so in the game and in its log; give it its own folder with `WS_DATABASE_URL=pglite://<folder>`. A killed server loses nothing it acknowledged. A folder does not survive a power cut as a served database does: PGlite never forces a write to the disk.
 
-A save from before the move is a SQLite file, and it is never opened or changed by itself. The game says what to run if it finds one with no folder. It takes the file with its log beside it, writes a new folder, checks every row, and leaves the old file as it is:
+A save from before the move is a SQLite file, and it is never opened or changed by itself. If the game finds one with no folder, its vault offers **CARRY THIS SAVE OVER**, which needs no account. It takes the file with its log beside it, writes a new folder, checks every row, and leaves the old file as it is. By hand, it is:
 
 ```bash
 npm run db:carry -- data/test-claude.db data/test-claude
 ```
 
-The `CARRIED` line and the `.carried.txt` receipt beside the folder are what say it worked, and not the exit code: the old driver can exit 139 after finishing.
+The `CARRIED` line and the `.carried.txt` receipt beside the folder are what say it worked, because they say what was checked.
+
+### The record
+
+Postgres runs the live game. **Turso holds the record** (D133): a commit lands on Postgres and never waits on the network, and at a downtime (a world's gate going down, maintenance, a clean stop) everything changed goes up as one write-down, whole, once, and read back before it counts. A new database for that game comes up from the record.
+
+Only `npm run pedro` keeps a record, so `npm run dev` and test servers never write into it. It reads `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` from the root `.env`. With neither, or with Turso not answering, the game plays on and says so once, and what has not gone up stays marked until it can. To send an old save straight up instead of to a folder:
+
+```bash
+npm run db:carry -- data/test-pedro.db --to-record
+```
 
 Pedro's own game has its own database and its own port, so a test session can never touch it:
 
@@ -41,7 +51,7 @@ npm run build
 npm run serve
 ```
 
-`npm run serve` listens on port 3900, and reads `WS_DATABASE_URL` (`pglite://<folder>` or `postgres://…`), `WS_PORT` and `WS_HOST`. **It has no authentication, so it answers this machine only. A real deploy needs a login in front of it first.**
+`npm run serve` listens on port 3900, and reads `WS_DATABASE_URL` (`pglite://<folder>` or `postgres://…`), `WS_RECORD=1` to keep a record, `WS_PORT` and `WS_HOST`. **It has no authentication, so it answers this machine only. A real deploy needs a login in front of it first.**
 
 The game runs on `http://localhost:3000`. The proof pages are under `/prototype/atoms/` (`index.html`, `hub.html`, `room.html`).
 

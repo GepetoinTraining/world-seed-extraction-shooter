@@ -26,6 +26,7 @@ import { ReceiptScreen } from './src/components/ReceiptScreen';
 import { FeedView } from './src/components/FeedView';
 import { RestDoor } from './src/logic/systems/RestDoor';
 import { ScanDoor } from './src/logic/systems/ScanDoor';
+import { RecordDoor } from './src/logic/systems/RecordDoor';
 
 // Debug Console
 import { SystemConsole } from './src/components/debug/SystemConsole';
@@ -217,6 +218,14 @@ const App: React.FC = () => {
     if (bootStatus !== 'READY') return;
     void ScanDoor.tick();
     const interval = setInterval(() => void ScanDoor.tick(), 5000);
+    return () => clearInterval(interval);
+  }, [bootStatus]);
+
+  // D133: a gate going down is a downtime, and the record is told. Play never waits on it
+  useEffect(() => {
+    if (bootStatus !== 'READY') return;
+    void RecordDoor.tick();
+    const interval = setInterval(() => void RecordDoor.tick(), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 
