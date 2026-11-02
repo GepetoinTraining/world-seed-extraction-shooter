@@ -355,7 +355,8 @@ describe('line 70: one code path, no deploy-only surprises', () => {
       const path = `${dir}/${name}`;
       return statSync(join(ROOT, path)).isDirectory() ? walk(path) : [path];
     });
-    const sources = [...walk('server'), ...walk('src'), ...walk('scripts'), ...walk('tests'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p));
+    // This file names what it looks for, so it is the one file left out.
+    const sources = [...walk('server'), ...walk('src'), ...walk('scripts'), ...walk('tests'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p) && p !== 'tests/database.store.test.ts');
     const text = (p: string) => readFileSync(join(ROOT, p), 'utf8');
     const quote = (s: string) => new RegExp(`from '${s}'|import\\('${s}'\\)`);
     expect(sources.filter(p => quote('@libsql/client').test(text(p)) || quote('libsql').test(text(p)) || /drizzle-orm\/libsql|sqlite-core/.test(text(p)))).toEqual([]);
