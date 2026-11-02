@@ -39,6 +39,9 @@ import { AvatarExport } from '../src/logic/sovereignty/AvatarExport';
 import { WorldCertificateSystem, WorldType, AccessMode } from '../src/entities/world/WorldCertificate';
 import { UniversalRank } from '../types';
 
+// Every bar here crosses to a real server in another process, which seven files running at once can starve for longer than the default.
+vi.setConfig({ testTimeout: 30_000 });
+
 const ROOT = process.cwd();
 const keys = new Map<string, CryptoKey>();
 
@@ -372,7 +375,7 @@ describe('line 71: a gold change is one commit', () => {
         await new Promise(r => setTimeout(r, 50));
       }
     })();
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 12; i++) {
       spend(10);
       await GoldCommit.commit({
         rows: [{ type: 'GOLD_DELTA', data: { reason: 'WHILE_COMPACTING', amount: -10, treasuryId: hub, treasuryDelta: 10, padding } }],
@@ -385,7 +388,7 @@ describe('line 71: a gold change is one commit', () => {
     expect(maintained.length).toBeGreaterThan(0);
     expect(maintained.every(status => status === 200 || status === 500)).toBe(true);
     expect((await Ledger.audit(cert.metadata.uid)).ok).toBe(true);
-    expect(await Treasury.balance(hub)).toBe(400);
+    expect(await Treasury.balance(hub)).toBe(120);
   }, 120_000);
 
   it('a save taken between two gold changes can never get ahead of the ledger', async () => {

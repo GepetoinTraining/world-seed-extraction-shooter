@@ -9,7 +9,8 @@
  * POST /__fault { mode } sets how it misbehaves, for bars and for play:
  *   none           answers
  *   refuse         answers every pipeline with a 503, and applies nothing
- *   lost-answer    applies the next pipeline holding an insert into cold_writedowns, then cuts the connection
+ *   lost-answer    applies the next pipeline holding an insert into cold_writedowns, cuts the connection, then goes to `then`
+ *   drop           cuts the connection of the next `times` pipelines, and applies nothing
  *   slow           waits `ms` before each answer
  */
 import { createServer } from 'node:http';
@@ -20,7 +21,7 @@ const port = Number(portText);
 const db = new DatabaseSync(file);
 db.exec('PRAGMA journal_mode=WAL');
 
-let fault: { mode: string; ms?: number } = { mode: 'none' };
+let fault: { mode: string; ms?: number; then?: string; times?: number } = { mode: 'none' };
 
 const toValue = (v: any): any => {
   if (v === null || v === undefined) return { type: 'null' };
@@ -125,6 +126,12 @@ const server = createServer((req, res) => {
     if (path !== '/v2/pipeline') return send(404, { error: `No ${path} here.` });
     if (fault.mode === 'refuse') return send(503, { error: 'The double is refusing, as it was told to.' });
     if (fault.mode === 'slow') await new Promise(r => setTimeout(r, fault.ms ?? 1000));
+    if (fault.mode === 'drop') {
+      const left = (fault.times ?? 1) - 1;
+      fault = left > 0 ? { mode: 'drop', times: left } : { mode: 'none' };
+      req.socket.destroy();
+      return;
+    }
 
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const text = JSON.stringify(body.requests);
@@ -136,7 +143,7 @@ const server = createServer((req, res) => {
       }
     });
     if (fault.mode === 'lost-answer' && text.includes('INSERT INTO cold_writedowns')) {
-      fault = { mode: 'none' };
+      fault = { mode: fault.then ?? 'none' };
       req.socket.destroy();
       return;
     }

@@ -31,7 +31,7 @@ afterAll(() => { for (const d of dirs) { try { rmSync(d, { recursive: true, forc
 
 // --- a stand-in for Turso, in its own process --------------------------------
 
-interface IDouble { url: string; file: string; child: ChildProcess; port: number; stop: () => Promise<void>; fault: (mode: string, ms?: number) => Promise<void>; sql: (text: string, args?: any[]) => Promise<any[]> }
+interface IDouble { url: string; file: string; child: ChildProcess; port: number; stop: () => Promise<void>; fault: (mode: string, more?: { ms?: number; then?: string; times?: number }) => Promise<void>; sql: (text: string, args?: any[]) => Promise<any[]> }
 
 const toArg = (v: any) => (v === null ? { type: 'null' } : typeof v === 'number' ? { type: 'float', value: v } : { type: 'text', value: v });
 const fromCell = (c: any) => (c.type === 'null' ? null : c.type === 'integer' ? Number(c.value) : c.value);
@@ -48,7 +48,7 @@ async function startDouble(file = join(scratch(), 'record.sqlite'), token?: stri
   return {
     url, file, child, port,
     stop: () => new Promise<void>(resolve => { if (child.exitCode !== null) return resolve(); child.on('exit', () => resolve()); child.kill('SIGKILL'); }),
-    fault: async (mode, ms) => { await fetch(`${url}/__fault`, { method: 'POST', body: JSON.stringify({ mode, ms }) }); },
+    fault: async (mode, more = {}) => { await fetch(`${url}/__fault`, { method: 'POST', body: JSON.stringify({ mode, ...more }) }); },
     sql: async (text, args = []) => {
       const res = await fetch(`${url}/__sql`, { method: 'POST', body: JSON.stringify({ sql: text, args: args.map(toArg) }) });
       return ((await res.json()) as any).rows.map((row: any[]) => row.map(fromCell));
@@ -197,19 +197,54 @@ describe('a commit and its mark, and no network in between', () => {
     const marksRead = new Promise<void>(r => { readTheMarks = r; });
     const h = await live(folder(), undefined, { fault: (stage: string) => { if (stage === 'pending') readTheMarks(); } });
     await put(h.store, doc('first', 'content', {}));
-    await double.fault('slow', 1500);
+    await double.fault('slow', { ms: 1500 });
     const going = h.keeper.writeDown('test');
     await marksRead;
     const began = performance.now();
     await put(h.store, doc('during', 'content', { v: 1 }));
     expect(performance.now() - began).toBeLessThan(800);
     await double.fault('none');
-    expect((await going).status).toBe('WRITTEN');
+    expect((await going).status, h.said.join(' ')).toBe('WRITTEN');
     // What landed during it was not covered, and stays marked.
     expect((await double.sql(`SELECT COUNT(*) FROM documents WHERE id = 'during'`))[0][0]).toBe(0);
     expect((await h.keeper.status()).behind).toBeGreaterThan(0);
     expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
     expect((await double.sql(`SELECT COUNT(*) FROM documents WHERE id = 'during'`))[0][0]).toBe(1);
+  }, 30_000);
+});
+
+describe('a dropped connection is not a record that stopped answering', () => {
+  it('an answer lost once: applied once, called saved once it is read back, and nobody is told of an outage', async () => {
+    const h = await live(folder());
+    await put(h.store, doc('a', 'content', { v: 1 }));
+    await double.fault('lost-answer');
+    expect((await h.keeper.writeDown('test')).status, h.said.join(' ')).toBe('WRITTEN');
+    expect((await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0]).toBe(1);
+    expect((await h.keeper.status())).toMatchObject({ state: 'READY', behind: 0 });
+    expect(h.said.filter(l => l.includes('not answering'))).toEqual([]);
+  }, 30_000);
+
+  it('a connection dropped while a new folder comes up: it still comes up whole', async () => {
+    const first = await live(folder());
+    for (let i = 0; i < 3; i++) await put(first.store, doc(`doc_${i}`, 'content', { i }));
+    expect((await first.keeper.writeDown('test')).status).toBe('WRITTEN');
+    await first.close();
+
+    await double.fault('drop', { times: 1 });
+    const second = await live(folder());
+    expect(second.said.filter(l => l.includes('not answering'))).toEqual([]);
+    expect((await second.keeper.status())).toMatchObject({ state: 'READY', behind: 0 });
+    for (let i = 0; i < 3; i++) expect(await second.store.get(`doc_${i}`), `doc_${i}`).not.toBeNull();
+  }, 60_000);
+
+  it('a connection that keeps dropping is an outage, and says so once', async () => {
+    const h = await live(folder(), undefined, { retryFirstMs: 60_000 });
+    await put(h.store, doc('a', 'content', { v: 1 }));
+    await double.fault('drop', { times: 1000 });
+    expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
+    expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
+    expect(h.said.filter(l => l.includes('not answering')).length).toBe(1);
+    expect((await h.keeper.status()).behind).toBeGreaterThan(0);
   }, 30_000);
 });
 
@@ -266,9 +301,10 @@ describe('a write-down: whole, once, and verifiable', () => {
   it('an answer lost on the way back: applied once, and the retry says so instead of sending it again', async () => {
     const h = await live(folder());
     await put(h.store, doc('a', 'content', { v: 1 }));
-    await double.fault('lost-answer');
+    await double.fault('lost-answer', { then: 'refuse' });
     expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
     // It did land. The keeper does not know, and has kept its marks.
+    await double.fault('none');
     expect((await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0]).toBe(1);
     expect((await h.keeper.status()).behind).toBeGreaterThan(0);
 

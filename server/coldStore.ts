@@ -16,6 +16,10 @@
  * cross in one batch with their manifest. The manifest's insert is the check: if the
  * record has moved on it inserts nothing, and every other statement asks for it. Sending
  * the same one twice finds its manifest and changes nothing.
+ *
+ * A DROPPED CONNECTION IS NOT AN OUTAGE. PGlite runs on this thread, so a few busy seconds
+ * can outlast a server's keep-alive, and the next ask meets a connection already closed.
+ * Everything here is safe to ask again, so it is, before anyone is told the record is gone.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -31,6 +35,9 @@ const READ_PAGE = 500;
 const IDS_PER_READ = 100;
 /** Nothing here has a deadline of its own, and a stuck request must not hold the next retry for ever. */
 const REQUEST_TIMEOUT_MS = 60_000;
+/** A guess, until this has met Turso: how often one ask goes out if its connection keeps dropping. */
+const TRIES = 3;
+const DROPPED = new Set(['ECONNRESET', 'ECONNABORTED', 'EPIPE', 'UND_ERR_SOCKET']);
 
 export interface IColdConfig {
   url: string;
@@ -100,6 +107,22 @@ export function assertNetworkUrl(url: string): void {
   }
 }
 
+function dropped(e: unknown): boolean {
+  for (let at: any = e; at; at = at.cause) if (DROPPED.has(at.code)) return true;
+  return false;
+}
+
+/** A refused connection or a server's error is an answer, and goes straight back. Only a dropped connection goes out again. */
+async function askAgainIfDropped<T>(ask: () => Promise<T>): Promise<T> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await ask();
+    } catch (e) {
+      if (tries >= TRIES || !dropped(e)) throw e;
+    }
+  }
+}
+
 type Client = import('@libsql/client/http').Client;
 type Statement = { sql: string; args: any[] };
 
@@ -155,17 +178,17 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
   };
 
   return {
-    async head() {
+    head: () => askAgainIfDropped(async () => {
       await ready();
       return headRow();
-    },
+    }),
 
-    async has(id) {
+    has: id => askAgainIfDropped(async () => {
       await ready();
       return has(id);
-    },
+    }),
 
-    async writeDown(down, fault = () => undefined) {
+    writeDown: (down, fault = () => undefined) => askAgainIfDropped(async (): Promise<WriteDownResult> => {
       await ready();
       if (await has(down.id)) return { status: 'ALREADY' };
       const head = await headRow();
@@ -219,21 +242,21 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
 
       if (results[0].rowsAffected === 0) return { status: 'MOVED', head: (await headRow())?.id ?? null };
       return { status: 'APPLIED' };
-    },
+    }),
 
-    async rows(table, after) {
+    rows: (table, after) => askAgainIfDropped(async () => {
       await ready();
       const shape = tableOf(table);
       const { rows } = await client.execute({ sql: `SELECT ${list(shape.columns)} FROM ${table} WHERE id > ? ORDER BY id LIMIT ${READ_PAGE}`, args: [after] });
       return rows.map(r => normalRow(shape, r as unknown as RecordRow));
-    },
+    }),
 
-    async read(table, ids) {
+    read: (table, ids) => askAgainIfDropped(async () => {
       await ready();
       return read(table, ids);
-    },
+    }),
 
-    async runDowntimeJob(job) {
+    runDowntimeJob: job => askAgainIfDropped(async () => {
       await ready();
       const sql: IColdSql = {
         all: async (text, args = []) => (await client.execute({ sql: text, args })).rows as unknown as RecordRow[]
@@ -241,7 +264,7 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
       const { ok, report } = await job.run(sql);
       await client.execute({ sql: 'INSERT INTO cold_jobs (name, at, ok, report) VALUES (?, ?, ?, ?)', args: [job.name, Date.now(), ok ? 1 : 0, JSON.stringify(report)] });
       return { ok, report };
-    },
+    }),
 
     close() {
       client.close();

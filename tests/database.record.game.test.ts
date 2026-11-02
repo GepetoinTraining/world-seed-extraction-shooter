@@ -136,7 +136,8 @@ describe('a real avatar, across both stores', () => {
 
     // A new folder, as on a new machine. Everything comes up from the record.
     await startServer('second');
-    expect((await StoreClient.health()).record).toMatchObject({ state: 'READY', behind: 0 });
+    const comeUp = (await StoreClient.health()).record;
+    expect(comeUp, JSON.stringify(comeUp)).toMatchObject({ state: 'READY', behind: 0 });
     const hydrated = await PlayerPersistence.hydrate(cert);
     expect(hydrated.status).toBe('OK');
     if (hydrated.status === 'OK') {
