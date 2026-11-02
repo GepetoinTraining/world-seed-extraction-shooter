@@ -147,7 +147,7 @@ Each phase leaves the game playable and changes no behaviour. **The golden vecto
 | 2 | Split `hub/store.ts` and `player/store.ts` into commands, data and view state. Events replace `useFeed` in law | One stream per store, in order |
 | 3 | Postgres as the one dialect, PGlite locally, a tool that carries a saved database over | One stream. Rehearse on a copy of Pedro's save before touching it |
 | 4 | Tables, tech web first (D129), then section 5's order, each with a migration. C13 meets this | Yes, per family, once phase 2 stands |
-| 5 | IndexedDB cache and outbox, hooks | One stream |
+| 5 | IndexedDB cache and outbox, hooks, and the clock's address as the time source (D135) | One stream |
 | 6 | Certificate auth, then the socket | One stream, the door to Wave 13 |
 
 **Decisions, recommendation first:**
