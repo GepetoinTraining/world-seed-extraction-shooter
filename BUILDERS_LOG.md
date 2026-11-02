@@ -256,9 +256,12 @@ The record is in `PLAN.md` ("Wave C, first pass — the record"). **For C6:** `F
 
 ## What leg 0 built
 
-Postgres is the one dialect (D132). **Where this file still says `data/test-claude.db` or `file:`, read `data/test-claude`, a folder, and `pglite://`.** One opener at a time: a second dev server in one checkout needs `WS_DATABASE_URL=pglite://<folder>`. A worktree holding an old `.db` refuses to open until carried or moved aside. Never load `@libsql/client` in a test process: `tests/fixtures/old-save.ts` shows the way. `db:studio` is gone. The report is `leg0-report.md` in the notes folder.
+Postgres is live (D132), and Turso holds the record (D133), which only `npm run pedro` turns on. **The record has not met Turso yet: its numbers are from a stand-in, `tests/fixtures/record-double.ts`.** **Where this file still says `data/test-claude.db` or `file:`, read `data/test-claude`, a folder, and `pglite://`.** One opener at a time: a second dev server in one checkout needs `WS_DATABASE_URL=pglite://<folder>`. A worktree holding an old `.db` refuses to open until carried or moved aside. Never load `@libsql/client` in a test process: `tests/fixtures/old-save.ts` shows the way. `db:studio` is gone. The report is `leg0-report.md` in the notes folder.
 
-- **Tests:** 2,665: 2,493 plus 172 in the database's own run, none red, and the database pass exits 0.
+- **Tests:** 2,731: 2,493 plus 238 in the database's own run. On the join at `c60e29d`, `tsc` was clean, the 2,493 passed, and three database runs each went 237 of 238, none exiting 139. The one red was a bar that read its fixture expecting `\n` where a Windows checkout gives `\r\n`, so it was green in the stream's worktree and red on the join. Fixed, and that file then ran 16 of 16; the whole database pass was not repeated after that one line.
+- **Trap: a stream's worktree can hide line endings.** Files it wrote stay LF until a merge checks them out as CRLF (`core.autocrlf=true`). Count on the join, not only on the branch.
+- **The read-back was found by reading, not by a bar.** A write-down whose rows came back different used to count as saved on its retry. Fixed in `50487c2`, with bars that went red first. A row that keeps coming back different waits for the next downtime and has no timer, so it cannot rack up writes.
+- **One bar was eased:** maintenance under saves now does 12 saves rather than 40.
 
 ## Your pass: a stream in the fan-out (Wave C's second pass, cut from main, on Pedro's word)
 

@@ -120,7 +120,7 @@ describe('the tool, on an old save with its log beside it', () => {
 // The fixture's own text, without loading it (it would open a database when imported).
 async function nastyText() {
   const source = readFileSync(join(ROOT, 'tests/fixtures/old-save.ts'), 'utf8');
-  const literal = /export const NASTY = JSON\.stringify\(([\s\S]*?)\);\n/.exec(source)![1];
+  const literal = /export const NASTY = JSON\.stringify\(([\s\S]*?)\);\r?\n/.exec(source)![1];
   // eslint-disable-next-line no-new-func
   return { NASTY: JSON.stringify(new Function(`return (${literal});`)()) };
 }

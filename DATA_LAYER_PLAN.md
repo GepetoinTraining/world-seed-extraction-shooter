@@ -83,7 +83,7 @@ Pedro, correcting this section: "one is cheap to store the other is the live ser
 
 **The live half, built as leg 0.** Locally, PGlite on a folder, so nobody installs a database to play. Served, real Postgres. It is the same SQL and the same migrations, which fits "the hub is a server anyone can run" (D81). The libSQL driver leaves the live path, and N16 went with it.
 
-**The SQL half, Turso ("Use turso"), being built.** It goes through `@libsql/client`'s network entry, never a `file:` URL, because the crash was the native binding's. The entry loaded no native code in 10 of 10 runs. A real Turso has not been met.
+**The SQL half, Turso ("Use turso"), built and not yet run against Turso.** It holds the same four tables as Postgres for now, so rows cross untranslated, until this plan's tables come. It goes through `@libsql/client`'s network entry, never a `file:` URL, because the crash was the native binding's. The entry loaded no native code in 10 of 10 runs. A real Turso has not been met.
 
 **Postgres on Turso's own engine, checked 2026-11-01 on Pedro's word: not built on.** Its README lists Postgres under experimental features, and the project has not reached 1.0. Its `postgres/COMPAT.md` has no LISTEN/NOTIFY, no triggers, no functions, no authentication on the wire, and no VACUUM. Worth checking again at Wave 13.
 
