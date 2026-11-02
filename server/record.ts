@@ -9,7 +9,15 @@
  * ONCE, AND NOTHING LOST. The marks leave Postgres only after the record has answered and
  * its rows have been read back and hashed. A stop at any moment leaves them there, and
  * what the next try sends covers them all. A send whose answer never came is remembered
- * before it goes, so the next try can ask whether it landed instead of guessing.
+ * before it goes, so the next try can ask whether it landed instead of guessing, and reads
+ * it back as the send itself would have.
+ *
+ * LANDED IS NOT SAVED. A write-down whose rows came back different is on the record, so this
+ * database follows it from there (`chain`), or the next try would take the record for
+ * another save. It is not `last`, which only ever names one that was read back whole, and
+ * its marks stay, so what differs goes up again. That waits for the next downtime and not a
+ * timer: if a row comes back in another form every time, a timer would write everything
+ * marked again and again, and nobody would be better off.
  *
  * THE GAME GOES ON (D35's spirit). No record set up, or none answering: play continues on
  * Postgres, the write-down waits and is retried whole, a person is told once in plain
@@ -54,7 +62,7 @@ const SAYS = {
   waiting: (reason: string) => `The record is not answering, so what you do is kept on this machine for now, and goes up when it can. It plays on. (${reason})`,
   moved: 'The record holds a save this database did not come from, so nothing was written to it and nothing was taken from it. It plays on here. Someone has to choose which one is the save.',
   fork: (id: string) => `The record holds a different ledger row at ${id}, and a chain only appends, so nothing was written to it. It plays on here. Someone has to look at this.`,
-  mismatch: (id: string) => `What was read back from the record differs at ${id}, so this write-down is not counted as saved. It plays on here, and it will be tried again.`,
+  mismatch: (id: string) => `What was read back from the record differs at ${id}, so this write-down is not counted as saved. It plays on here, and it will be tried again at the next downtime.`,
   wrongUrl: (reason: string) => `The record's address is wrong, and it will stay so until someone changes it. It plays on, on this machine only. ${reason}`,
   audit: (report: unknown) => `The downtime's audit on the record did not add up: ${JSON.stringify(report)}. Nothing was changed by it.`
 };
@@ -106,6 +114,11 @@ export class RecordKeeper implements IStoreKeeper {
     else await tx.execute(sql`INSERT INTO cold_state (key, value) VALUES (${key}, ${value}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`);
   }
 
+  /** The write-down on the record that this database carries on from. */
+  private async followed(): Promise<string | null> {
+    return (await this.getState('chain')) ?? (await this.getState('last'));
+  }
+
   private async markCount(): Promise<number> {
     const { rows } = await this.db.execute(sql`SELECT COUNT(*) n FROM cold_changes`);
     return Number(rows[0].n);
@@ -127,8 +140,10 @@ export class RecordKeeper implements IStoreKeeper {
       const door = await this.door();
       const top = head === undefined ? await door.head() : head;
       if (!top) return { loaded: 0 };
-      const last = await this.getState('last');
-      if (top.id === last) return { loaded: 0 };
+      if (top.id === await this.followed()) return { loaded: 0 };
+      // Its own send, which a stop cut off before the answer. The next try reads it back.
+      const pending = await this.getState('pending');
+      if (pending && (JSON.parse(pending) as { id: string }).id === top.id) return { loaded: 0 };
       if ((await this.markCount()) > 0) {
         // Its own play has not gone up, and the record has moved on without it.
         this.state = 'MOVED';
@@ -180,6 +195,7 @@ export class RecordKeeper implements IStoreKeeper {
       }
       await this.fault('loaded');
       await this.setState(tx, 'last', head.id);
+      await this.setState(tx, 'chain', null);
     });
     (this.options.say ?? console.log)(`[RECORD] Loaded ${loaded} rows from the record, as of ${head.why}.`);
     return loaded;
@@ -240,11 +256,14 @@ export class RecordKeeper implements IStoreKeeper {
     this.retryIn = Math.min(this.retryIn * 2, RETRY_MOST_MS);
   }
 
-  /** Under one snapshot, so what goes up stands at a commit's edge. No network in here: a commit is free to land. */
-  private async readMarked(): Promise<{ upTo: number; rows: Partial<Record<RecordTableName, RecordRow[]>>; total: number }> {
+  /**
+   * Under one snapshot, so what goes up stands at a commit's edge. No network in here: a commit is free to land.
+   * Given `upToGiven`, only the rows no commit has touched since then, which still stand as they were sent.
+   */
+  private async readMarked(upToGiven?: number): Promise<{ upTo: number; rows: Partial<Record<RecordTableName, RecordRow[]>>; total: number }> {
     return this.db.transaction(async (tx: any) => {
-      const top = await tx.execute(sql`SELECT MAX(seq) top FROM cold_changes`);
-      const upTo = top.rows[0].top === null ? 0 : Number(top.rows[0].top);
+      const top = upToGiven === undefined ? await tx.execute(sql`SELECT MAX(seq) top FROM cold_changes`) : null;
+      const upTo = upToGiven ?? (top!.rows[0].top === null ? 0 : Number(top!.rows[0].top));
       const rows: Partial<Record<RecordTableName, RecordRow[]>> = {};
       let total = 0;
       for (const shape of RECORD_TABLES) {
@@ -263,23 +282,54 @@ export class RecordKeeper implements IStoreKeeper {
     await this.db.transaction(async (tx: any) => {
       await tx.execute(sql`DELETE FROM cold_changes WHERE seq <= ${upTo}`);
       await this.setState(tx, 'last', id);
+      await this.setState(tx, 'chain', null);
       await this.setState(tx, 'pending', null);
     });
+  }
+
+  /** Where the record holds any of these rows differently from what was sent, or null if it holds them all as sent. */
+  private async whereItDiffers(door: IColdDoor, rows: Partial<Record<RecordTableName, RecordRow[]>>): Promise<string | null> {
+    for (const shape of RECORD_TABLES) {
+      const sent = rows[shape.name] ?? [];
+      const back = await door.read(shape.name, sent.map(r => String(r.id)));
+      const backPrints = new Map(back.map(r => [String(r.id), fingerprint(shape, r)]));
+      for (const row of sent) {
+        if (backPrints.get(String(row.id)) !== fingerprint(tableOf(shape.name), row)) return `${shape.name} ${row.id}`;
+      }
+    }
+    return null;
+  }
+
+  /** On the record, and not saved: see LANDED IS NOT SAVED above. */
+  private async itDiffers(id: string, where: string): Promise<IWriteDownReceipt> {
+    await this.db.transaction(async (tx: any) => {
+      await this.setState(tx, 'chain', id);
+      await this.setState(tx, 'pending', null);
+    });
+    this.state = 'WAITING';
+    this.tell(SAYS.mismatch(where));
+    return { status: 'MISMATCH', says: this.says };
   }
 
   private async send(why: string): Promise<IWriteDownReceipt> {
     const door = await this.door();
 
-    // A send that was never answered: did it land? Only the record can say.
+    // A send that was never answered: did it land? Only the record can say. And if it did, is it what was sent?
     const pendingText = await this.getState('pending');
     if (pendingText) {
       const pending = JSON.parse(pendingText) as { id: string; upTo: number };
-      if (await door.has(pending.id)) await this.settle(pending.id, pending.upTo);
-      else await this.db.transaction((tx: any) => this.setState(tx, 'pending', null));
+      if (await door.has(pending.id)) {
+        // A row changed since has a newer mark, so it is not here. It goes up with the next one.
+        const differs = await this.whereItDiffers(door, (await this.readMarked(pending.upTo)).rows);
+        if (differs) return this.itDiffers(pending.id, differs);
+        await this.settle(pending.id, pending.upTo);
+      } else {
+        await this.db.transaction((tx: any) => this.setState(tx, 'pending', null));
+      }
     }
 
     const head = await door.head();
-    const last = await this.getState('last');
+    const last = await this.followed();
     if ((head?.id ?? null) !== last) {
       this.state = 'MOVED';
       this.tell(SAYS.moved);
@@ -318,19 +368,8 @@ export class RecordKeeper implements IStoreKeeper {
     }
 
     // Read back and hashed before anything is called saved.
-    for (const shape of RECORD_TABLES) {
-      const sent = rows[shape.name] ?? [];
-      const back = await door.read(shape.name, sent.map(r => String(r.id)));
-      const backPrints = new Map(back.map(r => [String(r.id), fingerprint(shape, r)]));
-      for (const row of sent) {
-        if (backPrints.get(String(row.id)) !== fingerprint(tableOf(shape.name), row)) {
-          this.state = 'WAITING';
-          this.tell(SAYS.mismatch(`${shape.name} ${row.id}`));
-          this.scheduleRetry();
-          return { status: 'MISMATCH', says: this.says };
-        }
-      }
-    }
+    const differs = await this.whereItDiffers(door, rows);
+    if (differs) return this.itDiffers(id, differs);
     await this.fault('verified');
 
     await this.settle(id, upTo);

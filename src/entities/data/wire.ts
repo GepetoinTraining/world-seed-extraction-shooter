@@ -75,6 +75,7 @@ export interface IRecordStatus {
   state: 'READY' | 'NONE' | 'WAITING' | 'MOVED' | 'FORK' | 'WRONG_URL';
   /** Rows changed here that the record has not seen. */
   behind: number;
+  /** The last write-down read back whole. */
   last?: string;
   /** What a person should be told, once. */
   says?: string;

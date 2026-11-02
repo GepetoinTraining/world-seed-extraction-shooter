@@ -24,6 +24,8 @@ import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { GoldCommit } from '../src/logic/economy/GoldCommit';
 import { PlayerPersistence } from '../src/logic/persistence/PlayerPersistence';
 import { gatesGoneDown } from '../src/logic/systems/RecordDoor';
+import { Maintenance, STEPS } from '../src/logic/systems/Maintenance';
+import { IWriteDownReceipt } from '../src/entities/data/wire';
 
 const ROOT = process.cwd();
 const TSX = ['--disable-warning=ExperimentalWarning', '--import', 'tsx'];
@@ -162,6 +164,50 @@ describe('a real avatar, across both stores', () => {
     expect(job.record.audit.ok).toBe(true);
     expect(job.record.audit.report.treasury.held).toBe(audit.actualTreasuryTotal + 1);
   }, 300_000);
+});
+
+describe('what maintenance says about the record', () => {
+  const said = (record?: IWriteDownReceipt, failed: string[] = []) => Maintenance.say({ failed, record });
+
+  it('says done, plainly, only when the record has it or there is no record in this game', () => {
+    expect(said()).toEqual({ line: 'Maintenance done.', tone: 'proof' });
+    expect(said({ status: 'WRITTEN' })).toEqual({ line: 'Maintenance done.', tone: 'proof' });
+    expect(said({ status: 'NOTHING' })).toEqual({ line: 'Maintenance done.', tone: 'proof' });
+  });
+
+  it('with none set up, says this game is kept on this machine', () => {
+    expect(said({ status: 'NO_RECORD' })).toEqual({ line: 'Maintenance done. This game is kept on this machine only.', tone: 'proof' });
+  });
+
+  it('whenever it did not go up, does not read as if it did', () => {
+    for (const status of ['WAITING', 'MISMATCH', 'MOVED', 'FORK', 'WRONG_URL'] as const) {
+      expect(said({ status }), status).toEqual({ line: 'Maintenance done on this machine. What you did has not gone up yet.', tone: 'loss' });
+    }
+  });
+
+  it('a step that failed is still named', () => {
+    expect(said(undefined, ['leaders'])).toEqual({ line: 'Maintenance done, except leaders. It will try again next time.', tone: 'loss' });
+    expect(said({ status: 'WAITING' }, ['leaders'])).toEqual({ line: 'Maintenance done on this machine, except leaders. It will try again next time. What you did has not gone up yet.', tone: 'loss' });
+  });
+
+  it('reads the real server\'s answer: gone up, then not, once the record has stopped answering', async () => {
+    const database = STEPS.filter(s => s.name === 'database');
+    const room = { mark: async () => undefined };
+    const real = globalThis.fetch;
+    vi.stubGlobal('fetch', (input: any, init: any) => real(String(input).startsWith('/') ? `http://127.0.0.1:${port}${input}` : input, init));
+    try {
+      expect(Maintenance.say(await Maintenance.run(room, 1, database)).line).toBe('Maintenance done.');
+
+      const c = doubleChild!;
+      doubleChild = null;
+      await new Promise<void>(resolve => { c.on('exit', () => resolve()); c.kill('SIGKILL'); });
+      const out = await Maintenance.run(room, 2, database);
+      expect(out.record?.status).toBe('WAITING');
+      expect(Maintenance.say(out).line).toBe('Maintenance done on this machine. What you did has not gone up yet.');
+    } finally {
+      vi.stubGlobal('fetch', real);
+    }
+  }, 60_000);
 });
 
 describe('a gate going down is a downtime', () => {

@@ -655,6 +655,130 @@ async function recordAddsUp(d: IDouble, expectSeq?: number) {
   return top;
 }
 
+describe('a row the record holds differently is not saved, whichever try finds it', () => {
+  const otherThan = (id: string) => double.sql(`UPDATE documents SET data = '{"other":true}' WHERE id = ?`, [id]);
+  const manifests = async () => (await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0];
+  const heldBy = async (id: string) => (await double.sql('SELECT data FROM documents WHERE id = ?', [id]))[0][0];
+  const stoppedAtApplied = async () => {
+    const url = folderUrl(join(scratch(), 'stopped'));
+    const run = await runKiller({ WS_KILL_URL: url, WS_KILL_RECORD: double.url, WS_KILL_AT: 'applied', WS_KILL_COMMITS: '3' });
+    expect(run.stdout).toContain('ACK 3');
+    return url;
+  };
+
+  it('a read-back that differs: the marks stay, nothing is called saved, and the next try puts it right', async () => {
+    let once = true;
+    const h = await live(folder(), undefined, { fault: async (stage: string) => { if (stage === 'applied' && once) { once = false; await otherThan('a'); } } });
+    await put(h.store, doc('a', 'content', { v: 1 }));
+
+    expect((await h.keeper.writeDown('test')).status).toBe('MISMATCH');
+    const after = await h.keeper.status();
+    expect(after).toMatchObject({ state: 'WAITING' });
+    expect(after.behind).toBeGreaterThan(0);
+    expect(after.last, 'called saved').toBeUndefined();
+    expect(h.said.filter(l => l.includes('differs')).length).toBe(1);
+
+    expect((await h.keeper.writeDown('test')).status, h.said.join(' ')).toBe('WRITTEN');
+    expect(JSON.parse(await heldBy('a'))).toEqual({ v: 1 });
+    expect(await h.keeper.status()).toMatchObject({ state: 'READY', behind: 0 });
+    expect((await h.keeper.status()).says).toBeUndefined();
+    const heads = await double.sql('SELECT id, prev FROM cold_writedowns ORDER BY seq');
+    expect(heads.length).toBe(2);
+    expect(heads[1][1]).toBe(heads[0][0]);
+  }, 60_000);
+
+  it('a row that differs every time: never saved, never taken for another save, and told once', async () => {
+    const h = await live(folder(), undefined, { fault: async (stage: string) => { if (stage === 'applied') await otherThan('a'); } });
+    await put(h.store, doc('a', 'content', { v: 1 }));
+    for (let i = 0; i < 3; i++) {
+      expect((await h.keeper.writeDown('test')).status, h.said.join(' ')).toBe('MISMATCH');
+      const now = await h.keeper.status();
+      expect(now.behind).toBeGreaterThan(0);
+      expect(now.last, 'called saved').toBeUndefined();
+    }
+    expect(h.said.filter(l => l.includes('differs')).length).toBe(1);
+    expect(h.said.filter(l => l.includes('did not come from'))).toEqual([]);
+  }, 60_000);
+
+  it('a read-back that differs waits for the next downtime, because a timer would write it all again and again', async () => {
+    const h = await live(folder(), undefined, { retryFirstMs: 20, fault: async (stage: string) => { if (stage === 'applied') await otherThan('a'); } });
+    await put(h.store, doc('a', 'content', { v: 1 }));
+    expect((await h.keeper.writeDown('test')).status).toBe('MISMATCH');
+    await new Promise(r => setTimeout(r, 600));
+    expect(await manifests()).toBe(1);
+    expect((await h.keeper.status()).behind).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('a read-back that differs, then a restart: it follows the record it left, and is not told it holds another save', async () => {
+    const url = folder();
+    let once = true;
+    const first = await live(url, undefined, { fault: async (stage: string) => { if (stage === 'applied' && once) { once = false; await otherThan('a'); } } });
+    await put(first.store, doc('a', 'content', { v: 1 }));
+    expect((await first.keeper.writeDown('test')).status).toBe('MISMATCH');
+    await double.fault('refuse');
+    await closeOut();
+    await double.fault('none');
+
+    const second = await live(url);
+    expect(second.said.filter(l => l.includes('did not come from'))).toEqual([]);
+    expect((await second.keeper.writeDown('test')).status, second.said.join(' ')).toBe('WRITTEN');
+    expect(JSON.parse(await heldBy('a'))).toEqual({ v: 1 });
+  }, 60_000);
+
+  it('stopped at "applied" with a document the record holds differently: not saved, and the next try puts it right', async () => {
+    const url = await stoppedAtApplied();
+    await otherThan('stopped');
+
+    const h = await live(url);
+    expect(h.said.filter(l => l.includes('did not come from')), 'a stop is not another save').toEqual([]);
+    expect((await h.keeper.writeDown('retry')).status, h.said.join(' ')).toBe('MISMATCH');
+    const after = await h.keeper.status();
+    expect(after.state).toBe('WAITING');
+    expect(after.behind).toBeGreaterThan(0);
+    expect(after.last, 'called saved').toBeUndefined();
+
+    expect((await h.keeper.writeDown('retry')).status, h.said.join(' ')).toBe('WRITTEN');
+    expect(await recordAddsUp(double, 3)).toBe(3);
+    expect((await h.keeper.status())).toMatchObject({ state: 'READY', behind: 0 });
+  }, 120_000);
+
+  it('stopped at "applied" with a signed row the record holds differently: not saved, and it stops at the fork', async () => {
+    const url = await stoppedAtApplied();
+    await double.sql(`UPDATE ledger_rows SET data = '{"other":true}' WHERE id = 'ledger_stopped_00000001'`);
+
+    const h = await live(url);
+    expect((await h.keeper.writeDown('retry')).status, h.said.join(' ')).toBe('MISMATCH');
+    expect((await h.keeper.writeDown('retry')).status, h.said.join(' ')).toBe('FORK');
+    const after = await h.keeper.status();
+    expect(after.state).toBe('FORK');
+    expect(after.behind).toBeGreaterThan(0);
+    expect(after.last, 'called saved').toBeUndefined();
+    expect(JSON.parse((await double.sql(`SELECT data FROM ledger_rows WHERE id = 'ledger_stopped_00000001'`))[0][0])).toEqual({ other: true });
+  }, 120_000);
+
+  it('stopped at "applied", and the differing row changed since: its newer mark takes it out of the comparison', async () => {
+    const url = await stoppedAtApplied();
+    await otherThan('stopped');
+
+    const h = await live(url);
+    await put(h.store, doc('stopped', 'characters', { newer: true }));
+    expect((await h.keeper.writeDown('retry')).status, h.said.join(' ')).toBe('WRITTEN');
+    expect(JSON.parse(await heldBy('stopped'))).toEqual({ newer: true });
+    expect(await h.keeper.status()).toMatchObject({ state: 'READY', behind: 0 });
+    expect(await manifests()).toBe(2);
+  }, 120_000);
+
+  it('stopped at "applied" and the record holds it all as sent: read back, then saved', async () => {
+    const url = await stoppedAtApplied();
+    const h = await live(url);
+    expect(h.said.filter(l => l.includes('did not come from'))).toEqual([]);
+    expect((await h.keeper.writeDown('retry')).status, h.said.join(' ')).toBe('NOTHING');
+    const after = await h.keeper.status();
+    expect(after).toMatchObject({ state: 'READY', behind: 0 });
+    expect(after.last).toBe((await double.sql('SELECT id FROM cold_writedowns'))[0][0]);
+  }, 120_000);
+});
+
 describe('a process stopped hard during a write-down loses nothing Postgres holds', () => {
   for (const stage of ['pending', 'staged-part', 'staged', 'applied', 'verified']) {
     it(`stopped at "${stage}": the record is whole, and the next start finishes it exactly once`, async () => {
