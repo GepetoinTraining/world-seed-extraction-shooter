@@ -16,6 +16,7 @@ import { Farm } from '../entities/hub/farm';
 import { HUB_NPCS, HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag, materialLabel } from '../entities/hub/room';
 import { lotConstruction } from '../entities/hub/template';
+import { dayLines } from '../entities/hub/money';
 import { buildingLabel, priceOfListing, useHubStore, worldDay } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
@@ -214,7 +215,8 @@ const TheBooks: React.FC = () => {
   const { activeHubId, guild, wallets, runningBook } = useHubStore();
   const [held, setHeld] = useState(0);
   useEffect(() => { if (activeHubId) void Treasury.balance(activeHubId).then(setHeld); }, [activeHubId, guild.printed.total, guild.runningDay]);
-  const { lines, perDay, marketCap, tiles, techPerTile } = runningBook();
+  const book = runningBook();
+  const { perDay, marketCap, tiles, techPerTile } = book;
   const among = Object.values(wallets).reduce((sum, n) => sum + n, 0);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -223,8 +225,8 @@ const TheBooks: React.FC = () => {
       </div>
       <div className="ws-dim ws-small">What the tech web produces is worth {marketCap.toLocaleString()} G, over the centre's {tiles.toLocaleString()} tiles: {techPerTile.toFixed(2)} a tile.</div>
       <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 130, overflowY: 'auto' }}>
-        {lines.map(line => (
-          <div key={line.poiId ?? line.why} className="ws-row">
+        {dayLines(book).map(line => (
+          <div key={line.key} className="ws-row">
             <span className="ws-small" style={{ minWidth: 0 }}>{line.name}{line.tiles ? `, ${line.tiles} tiles` : ''}</span>
             <span className="ws-small">{line.amount.toLocaleString()} G a day</span>
           </div>

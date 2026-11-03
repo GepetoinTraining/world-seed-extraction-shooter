@@ -225,6 +225,18 @@ describe('"then the guild balances the shops budget out for the cost"', () => {
     expect((await GoldAudit.run()).ok).toBe(true);
   });
 
+  it('found by playing: two folds at once pay the days and the week once', async () => {
+    const before = await Treasury.balance(HUB);
+    await Promise.all([hub().resolveRunning(nextWeek()), hub().resolveRunning(nextWeek())]);
+    const rows = await rowsOf('GOLD_DELTA');
+    expect(rows.filter(r => r.data.reason === 'HUB_RUNNING')).toHaveLength(1);
+    expect(rows.filter(r => r.data.reason === 'SHOP_WEEK')).toHaveLength(1);
+    const paid = rows.filter(r => r.data.reason === 'HUB_RUNNING' || r.data.reason === 'SHOP_WEEK').reduce((sum, r) => sum + r.data.treasuryDelta, 0);
+    const printed = (await rowsOf('PRINT')).reduce((sum, r) => sum + r.data.amount, 0);
+    expect(await Treasury.balance(HUB)).toBe(before + paid + printed);
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
   it('a hub saved before this starts its week now and owes nothing behind it', async () => {
     const doc = hub().hubDoc()!;
     const { week: _gone, ...guild } = doc.data.guild;
