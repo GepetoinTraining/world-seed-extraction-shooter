@@ -81,7 +81,7 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
     if (!selected) return;
     const res = await hub.applyTemplate(lot.id, selected.id, liveSheet);
     if (res.ok) {
-      pushFeed(`${selected.name} rising on LOT ${lot.lotIndex}. The street shows the scaffold; walk in once the shell stands.`, 'proof');
+      pushFeed(`${selected.name} rising on ${HubGenerator.lotName(layout, lot.id)}. The street shows the scaffold; walk in once the shell stands.`, 'proof');
       onClose();
     } else {
       pushFeed(res.reason, 'loss');
@@ -102,7 +102,7 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
   };
 
   return (
-    <Modal title={`RAISE FROM A PLAN — LOT ${lot.lotIndex}`} onClose={onClose} width={680}>
+    <Modal title={`RAISE FROM A PLAN — ${HubGenerator.lotName(layout, lot.id).toUpperCase()}`} onClose={onClose} width={680}>
       {templates.length === 0 && (
         <span className="ws-dim ws-small">No plans in the stash. They are drawn at a scribe's table, or bought where someone sells them.</span>
       )}

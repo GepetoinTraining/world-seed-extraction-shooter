@@ -225,7 +225,7 @@ export const HubCanvas: React.FC = () => {
     keysRef.current.clear();
     facingRef.current = 'up';
     setInsideLotId(poi.id);
-    pushFeed(`Through the door. LOT ${lot.lotIndex} ${lot.structureType}, on record.`, 'signal');
+    pushFeed(`Through the door. ${poi.name.toUpperCase()} ${lot.structureType}, on record.`, 'signal');
   }, [pushFeed]);
 
   const exitRoom = useCallback(() => {
@@ -765,7 +765,7 @@ export const HubCanvas: React.FC = () => {
           <Chip tone="signal">{player.username}</Chip>
         </div>
         {insideLot
-          ? <span className="ws-dim ws-small">LOT {insideLot.lotIndex} — {insideLot.structureType}{mineInside ? '' : ` · ${insideLot.ownerName}'s`}</span>
+          ? <span className="ws-dim ws-small">{HubGenerator.lotName(layout, insideLot.id).toUpperCase()} — {insideLot.structureType}{mineInside ? '' : ` · ${insideLot.ownerName}'s`}</span>
           : currentZone && <span className="ws-dim ws-small">{currentZone.name}</span>}
       </div>
 

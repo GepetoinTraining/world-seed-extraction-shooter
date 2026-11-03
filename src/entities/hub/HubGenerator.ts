@@ -502,6 +502,11 @@ export class HubGenerator {
     }
     return null;
   }
+
+  /** N9: a lot is called what its sign says. Its index and id count from zero, the sign from one. */
+  static lotName(layout: IHubLayout, lotId: string): string {
+    return HubGenerator.findPOI(layout, lotId)?.name ?? lotId;
+  }
   
   /**
    * Find POI at a given position

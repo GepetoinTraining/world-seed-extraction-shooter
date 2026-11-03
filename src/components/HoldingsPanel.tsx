@@ -59,7 +59,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
       confirmLabel={`SPLIT INTO ${split.pieces} FOR ${split.cost!.toLocaleString()} G: SURE?`}
       onConfirm={async () => {
         const res = await hub.dismemberLot(lot.id);
-        pushFeed(res.ok ? `Lot ${lot.lotIndex} split into ${split.pieces}, by a servidão to its centre.` : res.reason ?? 'It would not split.', res.ok ? 'proof' : 'loss');
+        pushFeed(res.ok ? `${HubGenerator.lotName(layout, lot.id)} split into ${split.pieces}, by a servidão to its centre.` : res.reason ?? 'It would not split.', res.ok ? 'proof' : 'loss');
       }}
     >
       DISMEMBER INTO {split.pieces} ({split.cost!.toLocaleString()} G)
@@ -73,15 +73,15 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
       : <Chip>{lot.ownerName}</Chip>;
 
   return (
-    <Panel title={`LOT ${lot.lotIndex}`} right={stateChip} tone={mine ? 'signal' : 'none'} data-testid={`lot-${lot.lotIndex}`}>
+    <Panel title={HubGenerator.lotName(layout, lot.id).toUpperCase()} right={stateChip} tone={mine ? 'signal' : 'none'} data-testid={`lot-${lot.lotIndex}`}>
       {poi && (
         <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>
           {poi.size.width}×{poi.size.height}, {poi.metadata.fromRoad} from the main road, {poi.metadata.fromCentre} from the centre
           {passages.filter(q => q.lotId === lot.id).map(q => (
-            <div key={q.lotId}>Servidão: no street at its door. Its way out crosses {q.through.length > 0 ? q.through.map(id => id.replace('poi_lot_', 'lot ')).join(', ') : 'open ground'}.</div>
+            <div key={q.lotId}>Servidão: no street at its door. Its way out crosses {q.through.length > 0 ? q.through.map(id => HubGenerator.lotName(layout, id)).join(', ') : 'open ground'}.</div>
           ))}
           {passages.filter(q => q.through.includes(lot.id)).map(q => (
-            <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {q.lotId.replace('poi_lot_', 'lot ')}.</div>
+            <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {HubGenerator.lotName(layout, q.lotId)}.</div>
           ))}
         </div>
       )}
