@@ -502,6 +502,11 @@ export class HubGenerator {
     }
     return null;
   }
+
+  /** What a lot is called on every screen: the name on its sign, counted from one (N9). */
+  static lotName(layout: IHubLayout, lot: { id: string; lotIndex: number }): string {
+    return HubGenerator.findPOI(layout, lot.id)?.name ?? `Lot #${lot.lotIndex + 1}`;
+  }
   
   /**
    * Find POI at a given position
