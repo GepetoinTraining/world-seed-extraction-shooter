@@ -503,8 +503,12 @@ export class HubGenerator {
     return null;
   }
 
-  /** What a lot is called on every screen: the name on its sign, counted from one (N9). */
-  static lotName(layout: IHubLayout, lot: { id: string; lotIndex: number }): string {
+  /**
+   * What a lot is called on every screen: the name on its sign, counted from one (N9).
+   * A servidão knows a lot only by its id, so an id alone is taken too.
+   */
+  static lotName(layout: IHubLayout, lot: string | { id: string; lotIndex: number }): string {
+    if (typeof lot === 'string') return HubGenerator.findPOI(layout, lot)?.name ?? lot;
     return HubGenerator.findPOI(layout, lot.id)?.name ?? `Lot #${lot.lotIndex + 1}`;
   }
   

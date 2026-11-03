@@ -264,7 +264,7 @@ const AgentTab: React.FC = () => {
         ))}
         <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
           THE HEAD BUDGET — HEAD, EYES, EARRING, NECKLACE each hold gear OR a frame; three frames at most.
-          Mental stats come only from frames, and they drive the recon survey too.
+          Gear never adds to the mental stats; a frame does, beside what you were dealt, and they drive the recon survey too.
         </div>
         {HEAD_BUDGET_POSITIONS.map(position => {
           const frame = LoadoutSystem.frameAt(equipment, position);

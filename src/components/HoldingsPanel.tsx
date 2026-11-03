@@ -78,10 +78,10 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
         <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>
           {poi.size.width}×{poi.size.height}, {poi.metadata.fromRoad} from the main road, {poi.metadata.fromCentre} from the centre
           {passages.filter(q => q.lotId === lot.id).map(q => (
-            <div key={q.lotId}>Servidão: no street at its door. Its way out crosses {q.through.length > 0 ? q.through.map(id => id.replace('poi_lot_', 'lot ')).join(', ') : 'open ground'}.</div>
+            <div key={q.lotId}>Servidão: no street at its door. Its way out crosses {q.through.length > 0 ? q.through.map(id => HubGenerator.lotName(layout, id)).join(', ') : 'open ground'}.</div>
           ))}
           {passages.filter(q => q.through.includes(lot.id)).map(q => (
-            <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {q.lotId.replace('poi_lot_', 'lot ')}.</div>
+            <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {HubGenerator.lotName(layout, q.lotId)}.</div>
           ))}
         </div>
       )}
