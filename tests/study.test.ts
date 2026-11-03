@@ -776,6 +776,18 @@ describe('"Gifts also cost lore"', () => {
     const feed = useFeed.getState().lines.map(i => i.text).join(' ');
     expect(feed).toMatch(/lore/i);
   });
+
+  it('found by playing: a gift the log could pay for is still named when no dream can be reached', async () => {
+    holding();
+    onLog('sit_1', 'success');
+    onLog('sit_2', 'success');
+    expect(LoreSystem.giftsToAsk(player()).map(g => g.id)).toEqual([axeWood().id]);
+    vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
+    await RestDoor.file([]);
+    const feed = useFeed.getState().lines.map(i => i.text).join(' ');
+    expect(feed).toContain(WebSystem.nameOf(axeWood().id));
+    expect(feed).toMatch(/gift/i);
+  });
 });
 
 // =============================================================================
