@@ -28,6 +28,7 @@ import {
 import { COGNITIVE_FRAMES } from '../data/cognitiveFrames';
 import { InventorySystem } from './InventorySystem';
 import { StatSystem } from '../../../logic/systems/StatSystem';
+import { QUALITY_NAMES } from '../../../render/atoms/atoms';
 
 export interface Verdict {
   ok: boolean;
@@ -69,9 +70,12 @@ export class LoadoutSystem {
     return BASE_WALK_TILES_PER_S * Math.max(MIN_WALK_SCALE, 1 + bonus);
   }
 
-  /** What a piece may be called aloud: until it is read, it has no name to say. */
+  /**
+   * What a piece may be called aloud: until it is read, it has no name to say.
+   * `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word.
+   */
   static shownName(item: IItem): string {
-    return item.isIdentified === false ? 'Unidentified Signal' : item.name;
+    return item.isIdentified === false ? 'Unidentified Signal' : item.name.replace(/\bBroken\b/, QUALITY_NAMES[0]);
   }
 
   /** The refusal for working what has not been read. It says nothing of what the thing is. */
