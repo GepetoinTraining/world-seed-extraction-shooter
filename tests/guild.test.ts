@@ -495,7 +495,7 @@ describe('line 115: their wants become quests at the guildhall', () => {
   it('found by playing: a want for one thing says one thing', async () => {
     const resident = await lodge();
     const sheet = readSheet(resident);
-    const asks = Array.from({ length: 40 }, (_, n) => wantFor({ ...resident, bond: { ...resident.bond, rank: 'F' } }, sheet, HUB, n));
+    const asks = Array.from({ length: 40 }, (_, n) => wantFor({ ...resident, bond: { ...resident.bond, rank: UniversalRank.F } }, sheet, HUB, n));
     const one = asks.find(w => w.count === 1);
     expect(one, 'a rank F want for a single thing').toBeTruthy();
     expect(one!.text).not.toMatch(/\b1 things\b/);
