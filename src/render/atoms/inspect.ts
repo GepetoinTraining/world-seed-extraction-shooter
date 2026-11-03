@@ -287,7 +287,7 @@ export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | nul
   return { title, rows, needs: [], canAct: false, compact: planned?.compact ?? compact(title, raw ? 'raw' : 'worked') };
 }
 
-/** `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word. */
+/** The title is the name said aloud (`LoadoutSystem.shownName`), so a card and a counter agree. */
 export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
   if (item.mapData) return inspectMap(item);
@@ -295,7 +295,7 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   if (item.isIdentified === false) {
     return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
   }
-  const title = item.name.replace(/\bBroken\b/, QUALITY_NAMES[0]);
+  const title = LoadoutSystem.shownName(item);
   const rows: [string, string][] = [['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
   const q = (item as any).quality as number | undefined;
   // Wave 10D (one quality law): everything sits on the gear scale now. Gear

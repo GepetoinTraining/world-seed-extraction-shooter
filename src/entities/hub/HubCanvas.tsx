@@ -1144,7 +1144,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
               >
                 <ItemSprite item={listing.item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(listing.item)}</span>
                   <span className="ws-dim ws-small">{listing.deal ? `BARGAIN BIN: ${Math.max(0, listing.deal.until - worldDay())} days left` : `stock ${listing.stock}`}</span>
                 </span>
               </button>
@@ -1153,7 +1153,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
                 disabled={listing.stock <= 0 || player.bank.gold < priceOfListing(listing, player.attributes)}
                 onClick={() => {
                   const item = purchaseFromShop(listing.id, category);
-                  if (item) pushFeed(`Bought ${item.name} for ${priceOfListing(listing, player.attributes)} G. It is in your stash.`, 'proof');
+                  if (item) pushFeed(`Bought ${LoadoutSystem.shownName(item)} for ${priceOfListing(listing, player.attributes)} G. It is in your stash.`, 'proof');
                 }}
               >
                 BUY {priceOfListing(listing, player.attributes)}G
@@ -1189,7 +1189,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(item)}</span>
                   <span className="ws-dim ws-small">{item.value}G listed value</span>
                 </span>
               </span>
@@ -1199,7 +1199,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
                 confirmLabel={`SELL FOR ${offer}G: SURE?`}
                 onConfirm={async () => {
                   const paid = await sellToVendor(item.id, npcId);
-                  if (paid) pushFeed(`Sold ${item.name} for ${paid} G.`, 'proof');
+                  if (paid) pushFeed(`Sold ${LoadoutSystem.shownName(item)} for ${paid} G.`, 'proof');
                   else pushFeed('The counter would not take that. Nothing moves.', 'loss');
                 }}
               >

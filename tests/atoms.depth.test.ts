@@ -14,6 +14,8 @@ import {
 } from '../src/render/atoms/atoms';
 import { GENRES, proofView } from '../src/render/atoms/world';
 import { cycleTarget, hitTest, inspectEntity, inspectItem, targetsFrom } from '../src/render/atoms/inspect';
+import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
+import { readFileSync } from 'node:fs';
 
 // Bars registered before any of this art existed. Do not lower them to get a pass.
 const TREE_MIN_AREA_RATIO = 3;
@@ -379,6 +381,21 @@ describe('inspect card', () => {
     expect(snapped.rows.flat().join(' ')).toMatch(/Broken/);
     const ore = inspectItem(ItemFactory.createResourceItem(res('res_iron_vein'), Rng.fromKey('o')));
     expect(ore.rows.flat().join(' ')).not.toMatch(/Quality|100%/);
+  });
+
+  // Leg 1, the field: a counter's row said "Broken The Repossessor" beside a card that said Crude, at 100 of 100.
+  it('names a piece aloud as its card does, at the counter and on the shelf', () => {
+    const worst = { ...mint('z', 'tool_axe_field_t1'), name: 'Broken Field Axe', quality: -0.2, stats: { durability: 100, maxDurability: 100 } } as any;
+    expect(LoadoutSystem.shownName(worst)).toBe(inspectItem(worst).title);
+    expect(LoadoutSystem.shownName(worst)).not.toMatch(/Broken/);
+    expect(LoadoutSystem.shownName({ ...worst, isIdentified: false })).toBe('Unidentified Signal');
+    const src = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
+    for (const modal of ['const SellModal', 'const ShopModal']) {
+      const start = src.indexOf(modal);
+      expect(start).toBeGreaterThan(-1);
+      const block = src.slice(start, src.indexOf('\nconst ', start + 1));
+      expect(block).not.toMatch(/\bitem\.name\b/);
+    }
   });
 
   it('hits what is under the cursor, threats first, and holds on while things move', () => {
