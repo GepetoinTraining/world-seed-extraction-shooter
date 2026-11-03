@@ -133,6 +133,8 @@ export const RestDoor = {
       console.log(`[REST] The batch waits for the next rest: ${out.status}. ${out.reason ?? ''}`);
     }
     if (out.status !== 'PENDING' && studied.length > 0) feed('What you studied waits. Nothing is lost; it comes to something at a rest the dream can reach.', 'plain');
+    // A gift the log could pay for went into the batch, so the line above it never named it.
+    if (out.status !== 'PENDING') for (const g of gifts) feed(`${WebSystem.nameOf(g.id)} is owed a gift. It waits for a rest the dream can reach.`, 'plain');
   },
 
   /** Bring back what was filed, if it is ready: judged by the law, signed, and applied. */
