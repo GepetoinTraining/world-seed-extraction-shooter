@@ -211,6 +211,25 @@ describe('the tree stands upright', () => {
     expect(WorldGenerator.trunkAt(map, found.position.x, found.position.y)).toBe(false);
     found.usesRemaining = uses;
   });
+
+  it('found by playing: a body standing on a trunk tile can still walk off it', () => {
+    // A drop's spot reads the ground only, so a person can land on a tree's own tile.
+    const { map } = proofView();
+    let found: any = null;
+    search: for (let cy = 120; cy < 140; cy++) for (let cx = 120; cx < 140; cx++) {
+      const chunk = WorldGenerator.chunkAt(map, cx, cy, STATIC_CONTEXT);
+      const t = chunk?.entities.find(e => e.definitionId === 'res_tree_log' && (e.usesRemaining ?? 3) > 0);
+      if (t) { found = t; break search; }
+    }
+    expect(found, 'a standing tree exists').toBeTruthy();
+    const x = found.position.x, z = found.position.y;
+    const ways = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([sx, sz]) => {
+      let at = { x, z };
+      for (let i = 0; i < 20; i++) at = WorldGenerator.resolveMove(map, at.x, at.z, sx * 4, sz * 4);
+      return tileOf(at.x) !== tileOf(x) || tileOf(at.z) !== tileOf(z);
+    });
+    expect(ways.some(Boolean), 'some way off the trunk tile').toBe(true);
+  });
 });
 
 describe('enemies against the world', () => {
