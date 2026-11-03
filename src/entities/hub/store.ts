@@ -1199,7 +1199,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     const due = guild.residents.filter(r => r.lotId && r.house?.raised && !r.homeAt && !buildJobs.some(j => j.lotId === r.lotId && !j.applied));
     if (due.length === 0) return;
     const now = Date.now();
-    set({ guild: { ...guild, residents: guild.residents.map(r => due.some(d => d.id === r.id) ? { ...r, homeAt: now, nextWantDay: worldDay() } : r) } });
+    // Home, they want things again, but no sooner than the day apart a want already met set.
+    set({ guild: { ...guild, residents: guild.residents.map(r => due.some(d => d.id === r.id) ? { ...r, homeAt: now, nextWantDay: Math.max(r.nextWantDay ?? worldDay(), worldDay()) } : r) } });
     // A master's house is the shop they came back for, and whoever saw it through is remembered there
     for (const resident of due) {
       if (!resident.craftsmanId || get().vendors[resident.craftsmanId]) continue;
