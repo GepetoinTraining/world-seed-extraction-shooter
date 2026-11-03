@@ -117,6 +117,12 @@ export function runningBook(city: ICity): IRunningBook {
 
 export const runningPerDay = (city: ICity): number => runningBook(city).perDay;
 
+/** What the books show a day, line by line: what is paid out each day and a day of the shops' week, adding up to `perDay`. */
+export const dayLines = (book: IRunningBook): { key: string; name: string; tiles?: number; amount: number }[] => [
+  ...book.lines.map(line => ({ key: line.poiId ?? line.why, name: line.name, tiles: line.tiles, amount: line.amount })),
+  ...(book.perDay > book.floorPerDay ? [{ key: 'WEEK', name: "The shops' week, as stocked", amount: book.perDay - book.floorPerDay }] : [])
+];
+
 export interface ITaxLine {
   lotId: string;
   ownerId: string;
