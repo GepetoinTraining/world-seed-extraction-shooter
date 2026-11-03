@@ -293,8 +293,11 @@ export class WorldGenerator {
   }
 
   static resolveMove(map: IMap, x: number, z: number, dx: number, dz: number) {
+    // A drop reads the ground only, so a body can stand on a trunk's tile: it may walk off, as on blocked ground.
+    const tx = tileOf(x), tz = tileOf(z);
     return TerrainSystem.resolveMove(map.seed, x, z, dx, dz, undefined,
-      (nx, nz) => this.isInWorld(map, nx, nz) && !this.trunkAt(map, nx, nz) && !this.structureBlocks(map, nx, nz));
+      (nx, nz) => this.isInWorld(map, nx, nz)
+        && ((tileOf(nx) === tx && tileOf(nz) === tz) || (!this.trunkAt(map, nx, nz) && !this.structureBlocks(map, nx, nz))));
   }
 
   /** D93: a wall that stands blocks its tile. One brought down, or still scaffolding, does not. */

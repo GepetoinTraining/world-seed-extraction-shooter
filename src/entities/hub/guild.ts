@@ -267,7 +267,7 @@ export function wantFor(
   const tags = n === 0 ? [byObjective] : [byObjective, ...worked.filter(t => t !== byObjective)];
   const tag = tags[rng.int(0, tags.length)];
   const count = 1 + ProgressionSystem.rankIndex(resident.bond.rank) + rng.int(0, 2);
-  const what = `${count} things marked ${tag.replace(/_/g, ' ')}`;
+  const what = `${count} ${count === 1 ? 'thing' : 'things'} marked ${tag.replace(/_/g, ' ')}`;
   return { tag, count, payShare: PAY_SHARE[sheet.want] ?? 1, text: (VOICE[sheet.temperament] ?? VOICE.PASSIVE)(resident.name, what) };
 }
 

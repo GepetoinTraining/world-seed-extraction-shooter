@@ -470,6 +470,39 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect(tagFor('SURVIVE')).not.toBe('building');
   });
 
+  it('found by playing: coming home keeps the day apart after a want met today', async () => {
+    const resident = await lodge();
+    // Their first want was met today, so the next waits for tomorrow (fulfilQuest's own rule).
+    useHubStore.setState(s => ({ guild: { ...s.guild, residents: s.guild.residents.map(r => r.id === resident.id ? { ...r, nextWantDay: worldDay() + 1 } : r) } }));
+    expect(await hub().guildBuyLot(resident.id, smallestFreeLot().id)).toEqual({ ok: true });
+    const bought = hub().guild.residents.find(r => r.id === resident.id)!;
+    for (const line of houseBill(houseTemplateFor(footprintOf(bought.lotId!))!)) {
+      const items = line.tag === 'glass' ? panes(line.count) : logs(line.count);
+      give(items);
+      await hub().poolToHouse(resident.id, line.tag, items.map(i => i.id));
+    }
+    await finishBuilds();
+    const home = hub().guild.residents.find(r => r.id === resident.id)!;
+    expect(home.homeAt).toBeTruthy();
+    expect(hub().guild.quests.filter(q => q.residentId === resident.id && q.state === 'OPEN')).toHaveLength(0);
+    setGold(player().bank.gold + 1000);
+    await Ledger.append('GOLD_DELTA', { reason: 'TEST_GRANT', amount: 1000 });
+    await hub().resolveUpkeep(worldDay() + 1);
+    await hub().resolveWants(worldDay() + 1);
+    expect(hub().guild.quests.filter(q => q.residentId === resident.id && q.state === 'OPEN')).toHaveLength(1);
+  });
+
+  it('found by playing: a want for one thing says one thing', async () => {
+    const resident = await lodge();
+    const sheet = readSheet(resident);
+    const asks = Array.from({ length: 40 }, (_, n) => wantFor({ ...resident, bond: { ...resident.bond, rank: UniversalRank.F } }, sheet, HUB, n));
+    const one = asks.find(w => w.count === 1);
+    expect(one, 'a rank F want for a single thing').toBeTruthy();
+    expect(one!.text).not.toMatch(/\b1 things\b/);
+    expect(one!.text).toMatch(/\b1 thing\b/);
+    expect(asks.find(w => w.count > 1)!.text).toMatch(/\b\d+ things\b/);
+  });
+
   it('what a person wants pays by their want: a thing, then a name, then coin', async () => {
     const resident = await lodge();
     const base = readSheet(resident);
