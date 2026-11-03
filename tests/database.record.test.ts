@@ -31,7 +31,7 @@ afterAll(() => { for (const d of dirs) { try { rmSync(d, { recursive: true, forc
 
 // --- a stand-in for Turso, in its own process --------------------------------
 
-interface IDouble { url: string; file: string; child: ChildProcess; port: number; stop: () => Promise<void>; fault: (mode: string, more?: { ms?: number; then?: string; times?: number }) => Promise<void>; sql: (text: string, args?: any[]) => Promise<any[]>; limit: (bytes: number) => Promise<void>; seen: () => Promise<{ pipelines: number; staged: number; crossings: number }> }
+interface IDouble { url: string; file: string; child: ChildProcess; port: number; stop: () => Promise<void>; fault: (mode: string, more?: { ms?: number; then?: string; times?: number }) => Promise<void>; sql: (text: string, args?: any[]) => Promise<any[]>; limit: (bytes: number) => Promise<void>; refuse: (limits: { variables?: number; answerBytes?: number }) => Promise<void>; seen: () => Promise<{ pipelines: number; staged: number; crossings: number; statements: string[] }> }
 
 const toArg = (v: any) => (v === null ? { type: 'null' } : typeof v === 'number' ? { type: 'float', value: v } : { type: 'text', value: v });
 const fromCell = (c: any) => (c.type === 'null' ? null : c.type === 'integer' ? Number(c.value) : c.value);
@@ -50,6 +50,7 @@ async function startDouble(file = join(scratch(), 'record.sqlite'), token?: stri
     stop: () => new Promise<void>(resolve => { if (child.exitCode !== null) return resolve(); child.on('exit', () => resolve()); child.kill('SIGKILL'); }),
     fault: async (mode, more = {}) => { await fetch(`${url}/__fault`, { method: 'POST', body: JSON.stringify({ mode, ...more }) }); },
     limit: async bytes => { await fetch(`${url}/__limit`, { method: 'POST', body: JSON.stringify({ bytes }) }); },
+    refuse: async limits => { await fetch(`${url}/__limit`, { method: 'POST', body: JSON.stringify(limits) }); },
     seen: async () => (await (await fetch(`${url}/__seen`, { method: 'POST', body: '{}' })).json()) as any,
     sql: async (text, args = []) => {
       const res = await fetch(`${url}/__sql`, { method: 'POST', body: JSON.stringify({ sql: text, args: args.map(toArg) }) });
@@ -307,6 +308,49 @@ describe('a write-down goes up in as few requests as the record takes', () => {
     expect((await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0]).toBe(0);
     expect((await h.keeper.status()).behind).toBeGreaterThan(0);
   }, 60_000);
+
+  it('a read-back asks each table once, however many rows it holds', async () => {
+    const h = await live(folder());
+    await h.store.commit({ commitId: randomUUID(), ops: Array.from({ length: 250 }, (_, i) => ({ kind: 'put' as const, doc: rowDoc('a', i + 1) })) });
+    await double.seen();
+    expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
+    // The ledger's check for a changed signed row, then the read-back of the two tables written to: the ledger and the commits.
+    expect((await double.seen()).statements.filter(s => s.includes('WHERE id IN')).length).toBe(1 + 2);
+  }, 60_000);
+
+  it('a load-up asks each table for all its rows at once', async () => {
+    const h = await live(folder());
+    await h.store.commit({ commitId: randomUUID(), ops: Array.from({ length: 1_200 }, (_, i) => ({ kind: 'put' as const, doc: doc(`doc_${String(i).padStart(5, '0')}`, 'content', { i }) })) });
+    expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
+    await closeOut();
+    await double.seen();
+    const again = await live(folderUrl(join(scratch(), 'again')));
+    expect(again.go.loaded).toBe(1_200 + 1);
+    // One answer with every row, and one that says there are no more.
+    expect((await double.seen()).statements.filter(s => s.includes('FROM documents WHERE id >')).length).toBe(2);
+  }, 120_000);
+
+  it('a read with more values than the record takes in one statement is halved until it is taken', async () => {
+    const h = await live(folder());
+    await double.refuse({ variables: 50 });
+    await h.store.commit({ commitId: randomUUID(), ops: Array.from({ length: 120 }, (_, i) => ({ kind: 'put' as const, doc: rowDoc('a', i + 1) })) });
+    expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
+    await closeOut();
+    const again = await live(folderUrl(join(scratch(), 'again')));
+    expect(again.go.loaded).toBe(120 + 1);
+    expect((await again.keeper.status()).behind).toBe(0);
+  }, 120_000);
+
+  it('an answer larger than the record gives in one go is halved until it is given', async () => {
+    const h = await live(folder());
+    await double.refuse({ answerBytes: 20_000 });
+    await h.store.commit({ commitId: randomUUID(), ops: Array.from({ length: 30 }, (_, i) => ({ kind: 'put' as const, doc: doc(`doc_${i}`, 'content', { body: 'b'.repeat(2_000) }) })) });
+    expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
+    await closeOut();
+    const again = await live(folderUrl(join(scratch(), 'again')));
+    expect(again.go.loaded).toBe(30 + 1);
+    expect(JSON.parse((await again.store.get('doc_29'))!.dataText).body).toHaveLength(2_000);
+  }, 120_000);
 
   it('a request has longer to answer the more it carries, from what Turso took', () => {
     const MB = 1024 * 1024;

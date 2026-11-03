@@ -10,12 +10,14 @@
  *
  *   node --disable-warning=ExperimentalWarning --import tsx tests/fixtures/record-double.ts <file> <port> [token]
  *
- * POST /__limit { bytes } refuses any request larger than that with a 413, until the next one.
- * Turso refused nothing up to 64 MB, so there is no limit unless a bar sets one, and how Turso
- * would say it is a guess: a 413, the usual answer for a body too large.
+ * POST /__limit { bytes, variables, answerBytes } refuses, until the next one, any request larger
+ * than `bytes` with a 413, any statement with more bound values than `variables` as SQLite
+ * does, and any statement whose answer is larger than `answerBytes`. Turso refused none of
+ * these in what it was given, so there is no limit unless a bar sets one, and how Turso would
+ * say it is a guess.
  *
  * POST /__seen answers what it has been sent since the last time it was asked: pipelines,
- * statements into staging, and requests carrying a manifest.
+ * statements into staging, requests carrying a manifest, and the start of every statement.
  *
  * POST /__fault { mode } sets how it misbehaves, for bars and for play:
  *   none           answers
@@ -37,8 +39,9 @@ db.exec('PRAGMA journal_mode=WAL');
 
 let fault: { mode: string; ms?: number; then?: string; times?: number } = { mode: 'none' };
 let kept: any[] | null = null;
-let limit = 0;
-let seen = { pipelines: 0, staged: 0, crossings: 0 };
+let limits: { bytes?: number; variables?: number; answerBytes?: number } = {};
+const nothingSeen = () => ({ pipelines: 0, staged: 0, crossings: 0, statements: [] as string[] });
+let seen = nothingSeen();
 const landKept = () => { for (const request of kept ?? []) runRequest(request); kept = null; };
 
 const toValue = (v: any): any => {
@@ -82,14 +85,17 @@ const fromValue = (v: any): any => {
 
 const stored = new Map<number, string>();
 
-function runStmt(stmt: any) {
+function runStmt(stmt: any, own = false) {
   const text: string = stmt.sql ?? stored.get(stmt.sql_id);
+  if (!own) seen.statements.push(text.replace(/\s+/g, ' ').slice(0, 400));
   const prepared = db.prepare(text);
   prepared.setReadBigInts(true);
   const args = (stmt.args ?? []).map(fromValue);
   const named = Object.fromEntries((stmt.named_args ?? []).map((a: any) => [a.name, fromValue(a.value)]));
   const hasNamed = Object.keys(named).length > 0;
+  if (!own && limits.variables && args.length + Object.keys(named).length > limits.variables) throw new Error('too many SQL variables');
   const rows: any[] = hasNamed ? prepared.all(named, ...args) : prepared.all(...args);
+  if (!own && limits.answerBytes && JSON.stringify(rows, (_, v) => (typeof v === 'bigint' ? String(v) : v)).length > limits.answerBytes) throw new Error('Response is too large');
   const columns = rows[0] ? Object.keys(rows[0]) : [];
   const done: any = db.prepare('SELECT changes() c, last_insert_rowid() r').get();
   return {
@@ -162,17 +168,17 @@ const server = createServer((req, res) => {
       return send(200, { fault });
     }
     if (path === '/__limit') {
-      limit = JSON.parse(Buffer.concat(chunks).toString('utf8')).bytes ?? 0;
-      return send(200, { limit });
+      limits = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      return send(200, { limits });
     }
     if (path === '/__seen') {
       const was = seen;
-      seen = { pipelines: 0, staged: 0, crossings: 0 };
+      seen = nothingSeen();
       return send(200, was);
     }
     if (path === '/__sql') {
       // A bar's own look at what is stored, past the door under test.
-      return send(200, { rows: runStmt(JSON.parse(Buffer.concat(chunks).toString('utf8'))).rows });
+      return send(200, { rows: runStmt(JSON.parse(Buffer.concat(chunks).toString('utf8')), true).rows });
     }
     if (token && !req.headers.authorization) return send(401, { error: 'Unauthorized' });
     if (token && req.headers.authorization !== `Bearer ${token}`) return send(400, { error: 'Invalid token' });
@@ -187,7 +193,7 @@ const server = createServer((req, res) => {
     }
 
     const raw = Buffer.concat(chunks);
-    if (limit > 0 && raw.length > limit) return send(413, { error: `The request is ${raw.length} bytes, over the ${limit} this double was told to take.` });
+    if (limits.bytes && raw.length > limits.bytes) return send(413, { error: `The request is ${raw.length} bytes, over the ${limits.bytes} this double was told to take.` });
     const body = JSON.parse(raw.toString('utf8'));
     const text = JSON.stringify(body.requests);
     seen.pipelines++;

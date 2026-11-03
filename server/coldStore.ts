@@ -17,10 +17,11 @@
  * nothing, and nothing else lands. Sending the same one twice finds its manifest and
  * changes nothing. A batch is whole or nothing on Turso, which was stopped against it.
  *
- * AS FEW REQUESTS AS THE RECORD TAKES. There is no size of our own: Turso took a 64 MB row
- * and a 41.6 MB batch. Only if the record refuses a write-down as too large does it split:
- * its rows go to staging in halves until each half is taken, then cross in one batch with
- * the manifest. A single row the record will not take is not written at all.
+ * AS FEW REQUESTS AS THE RECORD TAKES. There is no size of our own: Turso took a 64 MB row,
+ * a 41.6 MB batch and a 64 MB answer. Only if the record refuses a write-down as too much does
+ * it split: its rows go to staging in halves until each half is taken, then cross in one
+ * batch with the manifest. A single row the record will not take is not written at all. A
+ * read is the same: every row asked for at once, and halved only when the record refuses.
  *
  * A BATCH CAN OUTLIVE ITS SENDER. On Turso a batch on the wire when its sender was stopped
  * still landed, 1 to 5 seconds later or more, which is longer than a restart takes. Split,
@@ -46,8 +47,6 @@ import { RECORD_TABLES, RecordRow, RecordTableName, normalRow, tableOf } from '.
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'cold');
 
-const READ_PAGE = 500;
-const IDS_PER_READ = 100;
 /**
  * A stuck request must not hold the next retry for ever, and a large one must have time to
  * go up. On Turso, 16 MB once took 25 s, the slowest it went, and 64 MB took 11.5 s. A request
@@ -136,11 +135,12 @@ function dropped(e: unknown): boolean {
 }
 
 /**
- * The record will not take a request this large. Turso never refused one up to 64 MB, so how
- * it would say so is not known: a 413, or a message saying it is too large.
+ * The record will not take this much in one go: a request too large, too many bound values in
+ * one statement, or an answer too large. Turso refused none of these in what it was given, so
+ * how it would say so is not known: a 413, or a message saying it is too large or too many.
  */
-function tooLarge(e: unknown): boolean {
-  for (let at: any = e; at; at = at.cause) if (at.status === 413 || /too large|toobig/i.test(String(at.message))) return true;
+function tooMuch(e: unknown): boolean {
+  for (let at: any = e; at; at = at.cause) if (at.status === 413 || /too large|toobig|too many/i.test(String(at.message))) return true;
   return false;
 }
 
@@ -218,14 +218,30 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
   const has = async (id: string) => (await client.execute({ sql: 'SELECT 1 FROM cold_writedowns WHERE id = ?', args: [id] })).rows.length > 0;
 
   const read = async (table: RecordTableName, ids: string[]): Promise<RecordRow[]> => {
+    if (ids.length === 0) return [];
     const shape = tableOf(table);
-    const out: RecordRow[] = [];
-    for (let at = 0; at < ids.length; at += IDS_PER_READ) {
-      const some = ids.slice(at, at + IDS_PER_READ);
-      const { rows } = await client.execute({ sql: `SELECT ${list(shape.columns)} FROM ${table} WHERE id IN (${marks(some.length)})`, args: some });
-      for (const row of rows) out.push(normalRow(shape, row as unknown as RecordRow));
+    try {
+      const { rows } = await client.execute({ sql: `SELECT ${list(shape.columns)} FROM ${table} WHERE id IN (${marks(ids.length)})`, args: ids });
+      return rows.map(row => normalRow(shape, row as unknown as RecordRow));
+    } catch (e) {
+      if (!tooMuch(e) || ids.length === 1) throw e;
+      const half = Math.ceil(ids.length / 2);
+      return [...await read(table, ids.slice(0, half)), ...await read(table, ids.slice(half))];
     }
-    return out;
+  };
+
+  /** Every row after `after`, or as many as the record gives in one answer: halved from all of them until it gives them. */
+  const page = async (table: RecordTableName, after: string, limit?: number): Promise<RecordRow[]> => {
+    const shape = tableOf(table);
+    try {
+      const { rows } = await client.execute({ sql: `SELECT ${list(shape.columns)} FROM ${table} WHERE id > ? ORDER BY id${limit ? ` LIMIT ${limit}` : ''}`, args: [after] });
+      return rows.map(r => normalRow(shape, r as unknown as RecordRow));
+    } catch (e) {
+      if (!tooMuch(e) || limit === 1) throw e;
+      const left = limit ?? Number((await client.execute({ sql: `SELECT COUNT(*) n FROM ${table} WHERE id > ?`, args: [after] })).rows[0].n);
+      if (left <= 1) throw e;
+      return page(table, after, Math.ceil(left / 2));
+    }
   };
 
   return {
@@ -283,7 +299,7 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
         await fault('applied');
         return landed(results[0].rowsAffected);
       } catch (e) {
-        if (!tooLarge(e)) throw e;
+        if (!tooMuch(e)) throw e;
       }
 
       // Too large for one request: staged in halves until each is taken, then across in one batch.
@@ -293,7 +309,7 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
           await client.batch(part, 'write');
           await fault('staged-part');
         } catch (e) {
-          if (!tooLarge(e)) throw e;
+          if (!tooMuch(e)) throw e;
           if (part.length === 1) throw new Error('One row is larger than the record takes in one request, so nothing was written.');
           await stageIn(part.slice(0, Math.ceil(part.length / 2)));
           await stageIn(part.slice(Math.ceil(part.length / 2)));
@@ -320,9 +336,7 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
 
     rows: (table, after) => askAgainIfDropped(async () => {
       await ready();
-      const shape = tableOf(table);
-      const { rows } = await client.execute({ sql: `SELECT ${list(shape.columns)} FROM ${table} WHERE id > ? ORDER BY id LIMIT ${READ_PAGE}`, args: [after] });
-      return rows.map(r => normalRow(shape, r as unknown as RecordRow));
+      return page(table, after);
     }),
 
     read: (table, ids) => askAgainIfDropped(async () => {
