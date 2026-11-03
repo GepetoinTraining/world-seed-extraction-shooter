@@ -145,6 +145,14 @@ const printRows = (hubId: string, perDay: number, prints: number, why: string): 
 const printedPlus = (guild: IGuildState, prints: number, made: number): IGuildState['printed'] =>
   ({ count: guild.printed.count + prints, total: guild.printed.total + made });
 
+/**
+ * Days and weeks fold one at a time. Found by playing: the city opened twice at once (a dev
+ * render runs the hub's door twice) and paid the same week's close twice. A second fold waits
+ * on the first and then finds nothing left to fold.
+ */
+let folding: Promise<void> = Promise.resolve();
+const foldInTurn = (fold: () => Promise<void>): Promise<void> => (folding = folding.then(fold, fold));
+
 /** Every general vendor, standing and folded up to today. Pure: a person's day is not moved here. */
 const vendorsToday = (vendors: Record<string, IVendorRecord>, craftsmen: ICraftsman[], today: number): Record<string, IVendorRecord> => {
   const out: Record<string, IVendorRecord> = {};
@@ -758,7 +766,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     set({ wallets: await Wallets.allOf(activeHubId) });
   },
 
-  resolveRunning: async (simDay) => {
+  resolveRunning: (simDay) => foldInTurn(async () => {
     const day = simDay ?? worldDay();
     const { activeHubId, guild } = get();
     if (!activeHubId) return;
@@ -795,7 +803,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     set({ wallets: await Wallets.allOf(activeHubId) });
     if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
     await get().closeWeeks(day);
-  },
+  }),
 
   resolveVendors: async (simDay) => {
     await get().settleWallets();
