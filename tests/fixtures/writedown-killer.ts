@@ -5,7 +5,8 @@
  *   WS_KILL_URL      the live database
  *   WS_KILL_RECORD   the record's URL
  *   WS_KILL_TOKEN    the record's token, if it asks for one
- *   WS_KILL_AT       pending | staged-part | staged | applied | verified | none
+ *   WS_KILL_AT       pending | sending | staged-part | staged | applied | verified | none
+ *                    (sending is the one-request path; staged-part and staged need a record that refused it as too large)
  *                    or in-flight:<ms> | in-flight-stage:<ms>, that long after the crossing batch, or a staging one, starts on its way
  *   WS_KILL_FROM     the first seq to commit (a later round goes on from where the last stopped)
  *   WS_KILL_COMMITS  how many whole commits come first, each acknowledged on stdout

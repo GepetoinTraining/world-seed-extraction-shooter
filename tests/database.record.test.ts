@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getTableConfig } from 'drizzle-orm/pg-core';
-import { ColdDoorRefused, assertNetworkUrl, openColdDoor } from '../server/coldStore';
+import { ColdDoorRefused, assertNetworkUrl, openColdDoor, requestDeadlineMs } from '../server/coldStore';
 import { DatabaseUnavailable, folderUrl, openDatabase } from '../server/connection';
 import { RecordKeeper, openLiveStore, recordConfig } from '../server/record';
 import { RECORD_TABLES } from '../server/recordRows';
@@ -31,7 +31,7 @@ afterAll(() => { for (const d of dirs) { try { rmSync(d, { recursive: true, forc
 
 // --- a stand-in for Turso, in its own process --------------------------------
 
-interface IDouble { url: string; file: string; child: ChildProcess; port: number; stop: () => Promise<void>; fault: (mode: string, more?: { ms?: number; then?: string; times?: number }) => Promise<void>; sql: (text: string, args?: any[]) => Promise<any[]> }
+interface IDouble { url: string; file: string; child: ChildProcess; port: number; stop: () => Promise<void>; fault: (mode: string, more?: { ms?: number; then?: string; times?: number }) => Promise<void>; sql: (text: string, args?: any[]) => Promise<any[]>; limit: (bytes: number) => Promise<void>; seen: () => Promise<{ pipelines: number; staged: number; crossings: number }> }
 
 const toArg = (v: any) => (v === null ? { type: 'null' } : typeof v === 'number' ? { type: 'float', value: v } : { type: 'text', value: v });
 const fromCell = (c: any) => (c.type === 'null' ? null : c.type === 'integer' ? Number(c.value) : c.value);
@@ -49,6 +49,8 @@ async function startDouble(file = join(scratch(), 'record.sqlite'), token?: stri
     url, file, child, port,
     stop: () => new Promise<void>(resolve => { if (child.exitCode !== null) return resolve(); child.on('exit', () => resolve()); child.kill('SIGKILL'); }),
     fault: async (mode, more = {}) => { await fetch(`${url}/__fault`, { method: 'POST', body: JSON.stringify({ mode, ...more }) }); },
+    limit: async bytes => { await fetch(`${url}/__limit`, { method: 'POST', body: JSON.stringify({ bytes }) }); },
+    seen: async () => (await (await fetch(`${url}/__seen`, { method: 'POST', body: '{}' })).json()) as any,
     sql: async (text, args = []) => {
       const res = await fetch(`${url}/__sql`, { method: 'POST', body: JSON.stringify({ sql: text, args: args.map(toArg) }) });
       return ((await res.json()) as any).rows.map((row: any[]) => row.map(fromCell));
@@ -261,6 +263,60 @@ describe('a dropped connection is not a record that stopped answering', () => {
   }, 30_000);
 });
 
+describe('a write-down goes up in as few requests as the record takes', () => {
+  it('one that fits goes up in one request, with nothing staged', async () => {
+    const h = await live(folder());
+    await h.store.commit({ commitId: randomUUID(), ops: [
+      { kind: 'put', doc: doc('hub_state_big', 'territories', { body: 'h'.repeat(1_300_000) }) },
+      ...Array.from({ length: 40 }, (_, i) => ({ kind: 'put' as const, doc: rowDoc('a', i + 1) })),
+      { kind: 'add', namespace: 'territories', id: 'treasury_hub', amount: 40, at: 1 }
+    ] });
+    await double.seen();
+    expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
+    const seen = await double.seen();
+    expect(seen.staged).toBe(0);
+    expect(seen.crossings).toBe(1);
+    expect((await double.sql('SELECT COUNT(*) FROM ledger_rows'))[0][0]).toBe(40);
+  }, 60_000);
+
+  it('one the record refuses as too large is halved until it is taken, and still lands whole and once', async () => {
+    const h = await live(folder());
+    await double.limit(8_000);
+    await h.store.commit({ commitId: randomUUID(), ops: [
+      ...Array.from({ length: 6 }, (_, i) => ({ kind: 'put' as const, doc: doc(`hub_part_${i}`, 'territories', { body: 'p'.repeat(3_000) }) })),
+      ...Array.from({ length: 12 }, (_, i) => ({ kind: 'put' as const, doc: rowDoc('a', i + 1) }))
+    ] });
+    await double.seen();
+    const receipt = await h.keeper.writeDown('test');
+    expect(receipt.status).toBe('WRITTEN');
+    const seen = await double.seen();
+    expect(seen.staged).toBeGreaterThan(0);
+    expect((await double.sql('SELECT COUNT(*) FROM documents'))[0][0]).toBe(6);
+    expect((await double.sql('SELECT COUNT(*) FROM ledger_rows'))[0][0]).toBe(12);
+    expect((await double.sql('SELECT id FROM cold_writedowns')).flat()).toEqual([receipt.id]);
+    expect((await double.sql('SELECT COUNT(*) FROM cold_stage_documents'))[0][0]).toBe(0);
+    expect((await h.keeper.status()).behind).toBe(0);
+  }, 60_000);
+
+  it('one row larger than any request the record takes: nothing is written, and it waits', async () => {
+    // Set once the record is migrated: its migration goes up in one request of its own.
+    const h = await live(folder());
+    await double.limit(5_000);
+    await put(h.store, doc('hub_state_big', 'territories', { body: 'h'.repeat(8_000) }));
+    expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
+    expect((await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0]).toBe(0);
+    expect((await h.keeper.status()).behind).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('a request has longer to answer the more it carries, from what Turso took', () => {
+    const MB = 1024 * 1024;
+    expect(requestDeadlineMs(0)).toBeGreaterThanOrEqual(10_000);
+    // Measured: 16 MB once took 25 s to go up, and 64 MB took 11.5 s.
+    expect(requestDeadlineMs(16 * MB)).toBeGreaterThan(2 * 25_000);
+    expect(requestDeadlineMs(64 * MB)).toBeGreaterThan(requestDeadlineMs(16 * MB));
+  });
+});
+
 describe('a write-down: whole, once, and verifiable', () => {
   // Met on Turso: about one fractional balance in five is read one step off when it goes up as a float.
   const FRACTIONS = [114.10000000000001, 110.80000000000003, 103.00000000000001, 91.99999999999999, 36.300000000000004, 96.00000000000001, 1000000 / 3, 7654321 * 0.07, 123456789012345680000];
@@ -297,7 +353,7 @@ describe('a write-down: whole, once, and verifiable', () => {
     const second = await openColdDoor({ url: double.url });
     const down = { id: 'wd_same', prev: null, why: 'test', at: 1, digest: 'd', rows: { commits: [{ id: 'c', at: 1 }] } };
     const result = await first.writeDown(down, async stage => {
-      if (stage === 'staged') expect((await second.writeDown(down)).status).toBe('APPLIED');
+      if (stage === 'sending') expect((await second.writeDown(down)).status).toBe('APPLIED');
     });
     expect(result.status).toBe('ALREADY');
     expect((await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0]).toBe(1);
@@ -836,9 +892,12 @@ describe('a row the record holds differently is not saved, whichever try finds i
 });
 
 describe('a process stopped hard during a write-down loses nothing Postgres holds', () => {
-  for (const stage of ['pending', 'staged-part', 'staged', 'applied', 'verified']) {
-    it(`stopped at "${stage}": the record is whole, and the next start finishes it exactly once`, async () => {
+  // The stopped process's 1.5 MB documents make a 3 MB write-down: one request, or several where the record takes 2 MB.
+  const PATHS: [string, number][] = [['pending', 0], ['sending', 0], ['applied', 0], ['verified', 0], ['staged-part', 2_000_000], ['staged', 2_000_000], ['applied', 2_000_000]];
+  for (const [stage, limit] of PATHS) {
+    it(`stopped at "${stage}"${limit ? ', split' : ', one request'}: the record is whole, and the next start finishes it exactly once`, async () => {
       const url = folderUrl(join(scratch(), 'stopped'));
+      if (limit) await double.limit(limit);
       const run = await runKiller({ WS_KILL_URL: url, WS_KILL_RECORD: double.url, WS_KILL_AT: stage, WS_KILL_COMMITS: '3' });
       expect(run.stdout).toContain('ACK 3');
       expect(run.stdout).not.toContain('DOWN');
@@ -864,8 +923,9 @@ describe('a process stopped hard during a write-down loses nothing Postgres hold
   }
 
   for (const at of ['in-flight:0', 'in-flight-stage:0']) {
-    it(`stopped with a batch on the wire (${at}): the record holds it whole or not at all, and the next start finishes it`, async () => {
+    it(`stopped with a batch on the wire (${at === 'in-flight:0' ? 'the one request' : 'a staging part'}): the record holds it whole or not at all, and the next start finishes it`, async () => {
       const url = folderUrl(join(scratch(), 'stopped'));
+      if (at === 'in-flight-stage:0') await double.limit(2_000_000);
       const run = await runKiller({ WS_KILL_URL: url, WS_KILL_RECORD: double.url, WS_KILL_AT: at, WS_KILL_COMMITS: '3' });
       expect(run.stdout).toContain('ACK 3');
       expect(run.stdout).not.toContain('DOWN');
@@ -885,7 +945,8 @@ describe('a process stopped hard during a write-down loses nothing Postgres hold
   it('over and over on one folder and one record: nothing lost, and each commit on the record once', async () => {
     const url = folderUrl(join(scratch(), 'again'));
     let from = 1;
-    for (const stage of ['staged', 'applied', 'pending', 'verified', 'staged-part', 'none']) {
+    for (const [stage, limit] of [['staged', 2_000_000], ['applied', 0], ['sending', 0], ['pending', 0], ['verified', 2_000_000], ['staged-part', 2_000_000], ['none', 0]] as const) {
+      await double.limit(limit);
       const run = await runKiller({ WS_KILL_URL: url, WS_KILL_RECORD: double.url, WS_KILL_AT: stage, WS_KILL_FROM: String(from), WS_KILL_COMMITS: '2' });
       expect(run.stdout).toContain(`ACK ${from + 1}`);
       from += 2;
@@ -897,11 +958,14 @@ describe('a process stopped hard during a write-down loses nothing Postgres hold
     heads.forEach(([, prev], i) => expect(prev).toBe(i === 0 ? null : heads[i - 1][0]));
   }, 300_000);
 
-  it('the record itself stopped hard in the middle of a write-down: it comes back whole, and the next one lands', async () => {
+  // Split, the crossing itself must still fit, so the documents are padded past a limit it fits under.
+  for (const [at, limit] of [['sending', 0], ['staged', 5_000]] as const) {
+  it(`the record itself stopped hard in the middle of a write-down (${at}): it comes back whole, and the next one lands`, async () => {
     const url = folder();
-    const h = await live(url, undefined, { retryFirstMs: 60_000, fault: async (stage: string) => { if (stage === 'staged') await double.stop(); } });
+    const h = await live(url, undefined, { retryFirstMs: 60_000, fault: async (stage: string) => { if (stage === at) await double.stop(); } });
+    if (limit) await double.limit(limit);
     const file = double.file;
-    await h.store.commit({ commitId: randomUUID(), ops: [{ kind: 'put', doc: doc('a', 'content', {}) }, { kind: 'put', doc: rowDoc('a', 1) }] });
+    await h.store.commit({ commitId: randomUUID(), ops: [{ kind: 'put', doc: doc('a', 'content', {}) }, { kind: 'put', doc: rowDoc('a', 1) }, ...[0, 1].map(i => ({ kind: 'put' as const, doc: doc(`a_pad_${i}`, 'content', { pad: 'p'.repeat(3_000) }) }))] });
     expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
     await closeOut();
 
@@ -912,18 +976,24 @@ describe('a process stopped hard during a write-down loses nothing Postgres hold
 
     const again = await live(url);
     expect((await again.keeper.writeDown('retry')).status).toBe('WRITTEN');
-    expect((await double.sql('SELECT COUNT(*) FROM documents'))[0][0]).toBe(1);
+    expect((await double.sql('SELECT COUNT(*) FROM documents'))[0][0]).toBe(3);
     expect((await double.sql('SELECT COUNT(*) FROM cold_stage_documents'))[0][0]).toBe(0);
   }, 120_000);
+  }
 });
 
 describe('a send that lands after its sender gave up on it', () => {
-  const someRows = async (h: Awaited<ReturnType<typeof live>>, id: string) => h.store.commit({ commitId: randomUUID(), ops: [{ kind: 'put', doc: doc(id, 'content', { id }) }, { kind: 'add', namespace: 'territories', id: 'treasury_hub', amount: 10, at: 1 }] });
+  /** With `pad`, two documents over half of an 8,000-byte limit ride along, so the write-down is split. */
+  const someRows = async (h: Awaited<ReturnType<typeof live>>, id: string, pad = false) => h.store.commit({ commitId: randomUUID(), ops: [
+    { kind: 'put', doc: doc(id, 'content', { id }) },
+    { kind: 'add', namespace: 'territories', id: 'treasury_hub', amount: 10, at: 1 },
+    ...(pad ? [0, 1].map(i => ({ kind: 'put' as const, doc: doc(`${id}_pad_${i}`, 'content', { pad: 'p'.repeat(4_500) }) })) : [])
+  ] });
   const heads = () => double.sql('SELECT id, prev FROM cold_writedowns ORDER BY seq');
 
   /** A write-down goes out, its connection is cut, and the record has it in hand and has not applied it. */
-  async function goneOut(h: Awaited<ReturnType<typeof live>>) {
-    await someRows(h, 'first');
+  async function goneOut(h: Awaited<ReturnType<typeof live>>, pad = false) {
+    await someRows(h, 'first', pad);
     await double.fault('late-answer', { then: 'refuse' });
     expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
     expect(await heads()).toEqual([]);
@@ -932,7 +1002,9 @@ describe('a send that lands after its sender gave up on it', () => {
 
   it('its rows gone from staging, it writes no manifest: the record never says it holds what it does not', async () => {
     const door = await openColdDoor({ url: double.url });
-    const down = { id: 'wd_empty', prev: null, why: 'test', at: 1, digest: 'd', rows: { commits: [{ id: 'c', at: 1 }] } };
+    await door.head();
+    await double.limit(5_000);
+    const down = { id: 'wd_empty', prev: null, why: 'test', at: 1, digest: 'd', rows: { commits: [{ id: 'c'.repeat(3_000), at: 1 }, { id: 'd'.repeat(3_000), at: 1 }] } };
     await expect(door.writeDown(down, async stage => {
       if (stage === 'staged') await double.sql('DELETE FROM cold_stage_commits');
     })).rejects.toThrow(/gone/);
@@ -955,11 +1027,27 @@ describe('a send that lands after its sender gave up on it', () => {
     expect((await h.keeper.status()).behind).toBe(0);
   }, 60_000);
 
+  it('landing as the next try sends its one request: that try takes it as its own and goes on', async () => {
+    let armed = false;
+    const h = await live(folder(), undefined, { fault: async (stage: string) => { if (armed && stage === 'sending') { armed = false; await double.fault('land'); } } });
+    await goneOut(h);
+    await someRows(h, 'second');
+    armed = true;
+    const receipt = await h.keeper.writeDown('retry');
+    expect(receipt.status).toBe('WRITTEN');
+    const [first, second] = await heads();
+    expect(second).toEqual([receipt.id, first[0]]);
+    expect((await double.sql(`SELECT id FROM documents WHERE id IN ('first', 'second') ORDER BY id`)).flat()).toEqual(['first', 'second']);
+    expect((await double.sql(`SELECT gold FROM treasuries WHERE id = 'treasury_hub'`))[0][0]).toBe(20);
+    expect((await h.keeper.status()).behind).toBe(0);
+  }, 60_000);
+
   it('landing while the next try is staged: it lands nothing, and the next try is the one that crosses', async () => {
     let armed = false;
     const h = await live(folder(), undefined, { fault: async (stage: string) => { if (armed && stage === 'staged') { armed = false; await double.fault('land'); } } });
-    await goneOut(h);
-    await someRows(h, 'second');
+    await double.limit(8_000);
+    await goneOut(h, true);
+    await someRows(h, 'second', true);
     armed = true;
     const receipt = await h.keeper.writeDown('retry');
     expect(receipt.status).toBe('WRITTEN');

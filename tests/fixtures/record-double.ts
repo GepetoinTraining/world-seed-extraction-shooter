@@ -10,6 +10,13 @@
  *
  *   node --disable-warning=ExperimentalWarning --import tsx tests/fixtures/record-double.ts <file> <port> [token]
  *
+ * POST /__limit { bytes } refuses any request larger than that with a 413, until the next one.
+ * Turso refused nothing up to 64 MB, so there is no limit unless a bar sets one, and how Turso
+ * would say it is a guess: a 413, the usual answer for a body too large.
+ *
+ * POST /__seen answers what it has been sent since the last time it was asked: pipelines,
+ * statements into staging, and requests carrying a manifest.
+ *
  * POST /__fault { mode } sets how it misbehaves, for bars and for play:
  *   none           answers
  *   refuse         answers every pipeline with a 503, and applies nothing
@@ -30,6 +37,8 @@ db.exec('PRAGMA journal_mode=WAL');
 
 let fault: { mode: string; ms?: number; then?: string; times?: number } = { mode: 'none' };
 let kept: any[] | null = null;
+let limit = 0;
+let seen = { pipelines: 0, staged: 0, crossings: 0 };
 const landKept = () => { for (const request of kept ?? []) runRequest(request); kept = null; };
 
 const toValue = (v: any): any => {
@@ -152,6 +161,15 @@ const server = createServer((req, res) => {
       if (fault.mode === 'land') { landKept(); fault = { mode: 'none' }; }
       return send(200, { fault });
     }
+    if (path === '/__limit') {
+      limit = JSON.parse(Buffer.concat(chunks).toString('utf8')).bytes ?? 0;
+      return send(200, { limit });
+    }
+    if (path === '/__seen') {
+      const was = seen;
+      seen = { pipelines: 0, staged: 0, crossings: 0 };
+      return send(200, was);
+    }
     if (path === '/__sql') {
       // A bar's own look at what is stored, past the door under test.
       return send(200, { rows: runStmt(JSON.parse(Buffer.concat(chunks).toString('utf8'))).rows });
@@ -168,8 +186,13 @@ const server = createServer((req, res) => {
       return;
     }
 
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const raw = Buffer.concat(chunks);
+    if (limit > 0 && raw.length > limit) return send(413, { error: `The request is ${raw.length} bytes, over the ${limit} this double was told to take.` });
+    const body = JSON.parse(raw.toString('utf8'));
     const text = JSON.stringify(body.requests);
+    seen.pipelines++;
+    seen.staged += (text.match(/INSERT INTO cold_stage_/g) ?? []).length;
+    if (text.includes('INSERT INTO cold_writedowns')) seen.crossings++;
     if (fault.mode === 'late-answer' && text.includes('INSERT INTO cold_writedowns')) {
       kept = body.requests;
       fault = { mode: fault.then ?? 'none' };

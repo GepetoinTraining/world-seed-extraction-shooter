@@ -12,15 +12,20 @@
  * refused here before the driver sees it. This is the only file that imports it.
  *
  * WHOLE AND ONCE. A write-down names the one before it and carries a hash of everything
- * it covers. Its rows land in staging tables, in as many requests as they need, then
- * cross in one batch with their manifest. The manifest's insert is the check: if the
- * record has moved on it inserts nothing, and every other statement asks for it. Sending
- * the same one twice finds its manifest and changes nothing.
+ * it covers. It goes up as one batch: its manifest, then every row, each asking for the
+ * manifest. The manifest's insert is the check: if the record has moved on it inserts
+ * nothing, and nothing else lands. Sending the same one twice finds its manifest and
+ * changes nothing. A batch is whole or nothing on Turso, which was stopped against it.
+ *
+ * AS FEW REQUESTS AS THE RECORD TAKES. There is no size of our own: Turso took a 64 MB row
+ * and a 41.6 MB batch. Only if the record refuses a write-down as too large does it split:
+ * its rows go to staging in halves until each half is taken, then cross in one batch with
+ * the manifest. A single row the record will not take is not written at all.
  *
  * A BATCH CAN OUTLIVE ITS SENDER. On Turso a batch on the wire when its sender was stopped
- * still landed, 1 to 5 seconds later or more, which is longer than a restart takes. So the
- * next try can clear staging under it, and the manifest also asks that every staged row is
- * still there: late and without its rows, it lands nothing.
+ * still landed, 1 to 5 seconds later or more, which is longer than a restart takes. Split,
+ * the next try can clear staging under it, so the manifest also asks that every staged
+ * row is still there: late and without its rows, it lands nothing.
  *
  * A DROPPED CONNECTION IS NOT AN OUTAGE. PGlite runs on this thread, so a few busy seconds
  * can outlast a server's keep-alive, and the next ask meets a connection already closed.
@@ -41,15 +46,21 @@ import { RECORD_TABLES, RecordRow, RecordTableName, normalRow, tableOf } from '.
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'cold');
 
-/** One request's worth of staged text. A larger single row still goes alone. Turso took a 64 MB row and a 41.6 MB batch, so this is ours to choose: a stopped send loses less. */
-const STAGE_BYTES = 2 * 1024 * 1024;
 const READ_PAGE = 500;
 const IDS_PER_READ = 100;
-/** Nothing here has a deadline of its own, and a stuck request must not hold the next retry for ever. */
-const REQUEST_TIMEOUT_MS = 60_000;
+/**
+ * A stuck request must not hold the next retry for ever, and a large one must have time to
+ * go up. On Turso, 16 MB once took 25 s, the slowest it went, and 64 MB took 11.5 s. A request
+ * gets 4 s for each MB it carries, over twice that slowest rate, on top of 30 s for anything
+ * at all: a connect alone took over 10 s once.
+ */
+const BASE_DEADLINE_MS = 30_000;
+const MS_PER_MB = 4_000;
 /** How often one ask goes out if its connection keeps dropping. On Turso the second try was always enough. */
 const TRIES = 3;
 const DROPPED = new Set(['ECONNRESET', 'ECONNABORTED', 'EPIPE', 'UND_ERR_SOCKET']);
+
+export const requestDeadlineMs = (bytes: number) => BASE_DEADLINE_MS + Math.ceil((bytes / (1024 * 1024)) * MS_PER_MB);
 
 export interface IColdConfig {
   url: string;
@@ -124,6 +135,15 @@ function dropped(e: unknown): boolean {
   return false;
 }
 
+/**
+ * The record will not take a request this large. Turso never refused one up to 64 MB, so how
+ * it would say so is not known: a 413, or a message saying it is too large.
+ */
+function tooLarge(e: unknown): boolean {
+  for (let at: any = e; at; at = at.cause) if (at.status === 413 || /too large|toobig/i.test(String(at.message))) return true;
+  return false;
+}
+
 /** A refused connection or a server's error is an answer, and goes straight back. Only a dropped connection goes out again. */
 async function askAgainIfDropped<T>(ask: () => Promise<T>): Promise<T> {
   for (let tries = 1; ; tries++) {
@@ -144,14 +164,28 @@ const marks = (n: number) => Array.from({ length: n }, () => '?').join(', ');
 /** See GOLD GOES UP AS TEXT. What is not a number at all still reaches the driver, which refuses it. */
 const sendable = (table: RecordTableName, column: string, value: unknown) => (table === 'treasuries' && column === 'gold' && Number.isFinite(value) ? String(value) : value ?? null);
 
-/** How each table crosses from staging. A ledger row or a commit never changes once it is there. */
-function applyStatement(table: RecordTableName, id: string): Statement {
+/** A ledger row or a commit never changes once it is there. */
+function onConflict(table: RecordTableName): string {
   const { columns } = tableOf(table);
-  const onConflict = table === 'ledger_rows' || table === 'commits'
+  return table === 'ledger_rows' || table === 'commits'
     ? 'DO NOTHING'
     : `DO UPDATE SET ${columns.filter(c => c !== 'id').map(c => `${c} = excluded.${c}`).join(', ')}`;
+}
+
+/** One row, straight in, if its write-down's manifest went in before it. */
+function rowStatement(table: RecordTableName, id: string, row: RecordRow): Statement {
+  const { columns } = tableOf(table);
   return {
-    sql: `INSERT INTO ${table} (${list(columns)}) SELECT ${list(columns)} FROM ${stage(table)} WHERE writedown = ? AND EXISTS (SELECT 1 FROM cold_writedowns WHERE id = ?) ON CONFLICT (id) ${onConflict}`,
+    sql: `INSERT INTO ${table} (${list(columns)}) SELECT ${marks(columns.length)} WHERE EXISTS (SELECT 1 FROM cold_writedowns WHERE id = ?) ON CONFLICT (id) ${onConflict(table)}`,
+    args: [...columns.map(c => sendable(table, c, row[c])), id]
+  };
+}
+
+/** How each table crosses from staging, when a write-down had to be split. */
+function applyStatement(table: RecordTableName, id: string): Statement {
+  const { columns } = tableOf(table);
+  return {
+    sql: `INSERT INTO ${table} (${list(columns)}) SELECT ${list(columns)} FROM ${stage(table)} WHERE writedown = ? AND EXISTS (SELECT 1 FROM cold_writedowns WHERE id = ?) ON CONFLICT (id) ${onConflict(table)}`,
     args: [id, id]
   };
 }
@@ -162,7 +196,10 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
   const client: Client = createClient({
     url: config.url,
     authToken: config.authToken,
-    fetch: (input: any, init?: any) => fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+    fetch: async (input: any, init?: any) => {
+      const bytes = input instanceof Request ? (await input.clone().arrayBuffer()).byteLength : typeof init?.body === 'string' ? Buffer.byteLength(init.body) : 0;
+      return fetch(input, { ...init, signal: AbortSignal.timeout(requestDeadlineMs(bytes)) });
+    }
   });
 
   // Applied on first need, and asked again after a failure: an outage at the start is not the end of it.
@@ -218,51 +255,67 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
         }
       }
 
-      // What an earlier stopped try left behind is not this one's.
-      await client.batch(RECORD_TABLES.map(t => ({ sql: `DELETE FROM ${stage(t.name)}`, args: [] })), 'write');
-
-      for (const shape of RECORD_TABLES) {
-        const insert = `INSERT INTO ${stage(shape.name)} (writedown, ${list(shape.columns)}) VALUES (?, ${marks(shape.columns.length)})`;
-        let part: Statement[] = [];
-        let bytes = 0;
-        for (const row of down.rows[shape.name] ?? []) {
-          const args = [down.id, ...shape.columns.map(c => sendable(shape.name, c, row[c]))];
-          const size = args.reduce<number>((n, a) => n + (typeof a === 'string' ? Buffer.byteLength(a) : 8), 0);
-          if (part.length > 0 && bytes + size > STAGE_BYTES) {
-            await client.batch(part, 'write');
-            await fault('staged-part');
-            part = [];
-            bytes = 0;
-          }
-          part.push({ sql: insert, args });
-          bytes += size;
-        }
-        if (part.length > 0) await client.batch(part, 'write');
-      }
-      await fault('staged');
-
       const total = RECORD_TABLES.reduce((n, t) => n + (down.rows[t.name]?.length ?? 0), 0);
-      const allStaged = RECORD_TABLES.map(t => `(SELECT COUNT(*) FROM ${stage(t.name)} WHERE writedown = ?) = ?`).join(' AND ');
-      const results = await client.batch([
-        {
-          // Inserted only if the record still stands where this one was built. Everything below asks for this row.
-          sql: `INSERT INTO cold_writedowns (id, prev, why, at, rows, digest)
-                SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT id FROM cold_writedowns ORDER BY seq DESC LIMIT 1) IS ? AND ${allStaged}`,
-          args: [down.id, down.prev, down.why, down.at, total, down.digest, down.prev, ...RECORD_TABLES.flatMap(t => [down.id, down.rows[t.name]?.length ?? 0])]
-        },
-        ...RECORD_TABLES.map(t => applyStatement(t.name, down.id)),
-        ...RECORD_TABLES.map(t => ({ sql: `DELETE FROM ${stage(t.name)} WHERE writedown = ?`, args: [down.id] }))
-      ], 'write');
-      await fault('applied');
-
-      if (results[0].rowsAffected === 0) {
+      const manifest = (asks: string, args: unknown[]): Statement => ({
+        // Inserted only if the record still stands where this one was built. Everything after it asks for this row.
+        sql: `INSERT INTO cold_writedowns (id, prev, why, at, rows, digest)
+              SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT id FROM cold_writedowns ORDER BY seq DESC LIMIT 1) IS ?${asks}`,
+        args: [down.id, down.prev, down.why, down.at, total, down.digest, down.prev, ...args]
+      });
+      // What a stopped split send left in staging is not this one's.
+      const clearStaging = RECORD_TABLES.map(t => ({ sql: `DELETE FROM ${stage(t.name)}`, args: [] }));
+      const landed = async (affected: number): Promise<WriteDownResult> => {
+        if (affected > 0) return { status: 'APPLIED' };
         // Its own earlier send can land after this one started. Nothing moved at all means what it staged was cleared.
         const moved = (await headRow())?.id ?? null;
         if (moved === down.id) return { status: 'ALREADY' };
         if (moved === down.prev) throw new Error('What this write-down staged was gone before it crossed, so nothing was written.');
         return { status: 'MOVED', head: moved };
+      };
+
+      await fault('sending');
+      try {
+        const results = await client.batch([
+          manifest('', []),
+          ...RECORD_TABLES.flatMap(t => (down.rows[t.name] ?? []).map(row => rowStatement(t.name, down.id, row))),
+          ...clearStaging
+        ], 'write');
+        await fault('applied');
+        return landed(results[0].rowsAffected);
+      } catch (e) {
+        if (!tooLarge(e)) throw e;
       }
-      return { status: 'APPLIED' };
+
+      // Too large for one request: staged in halves until each is taken, then across in one batch.
+      await client.batch(clearStaging, 'write');
+      const stageIn = async (part: Statement[]): Promise<void> => {
+        try {
+          await client.batch(part, 'write');
+          await fault('staged-part');
+        } catch (e) {
+          if (!tooLarge(e)) throw e;
+          if (part.length === 1) throw new Error('One row is larger than the record takes in one request, so nothing was written.');
+          await stageIn(part.slice(0, Math.ceil(part.length / 2)));
+          await stageIn(part.slice(Math.ceil(part.length / 2)));
+        }
+      };
+      const staged = RECORD_TABLES.flatMap(shape => (down.rows[shape.name] ?? []).map(row => ({
+        sql: `INSERT INTO ${stage(shape.name)} (writedown, ${list(shape.columns)}) VALUES (?, ${marks(shape.columns.length)})`,
+        args: [down.id, ...shape.columns.map(c => sendable(shape.name, c, row[c]))]
+      })));
+      const half = Math.ceil(staged.length / 2);
+      await stageIn(staged.slice(0, half));
+      if (half < staged.length) await stageIn(staged.slice(half));
+      await fault('staged');
+
+      const allStaged = RECORD_TABLES.map(t => ` AND (SELECT COUNT(*) FROM ${stage(t.name)} WHERE writedown = ?) = ?`).join('');
+      const results = await client.batch([
+        manifest(allStaged, RECORD_TABLES.flatMap(t => [down.id, down.rows[t.name]?.length ?? 0])),
+        ...RECORD_TABLES.map(t => applyStatement(t.name, down.id)),
+        ...RECORD_TABLES.map(t => ({ sql: `DELETE FROM ${stage(t.name)} WHERE writedown = ?`, args: [down.id] }))
+      ], 'write');
+      await fault('applied');
+      return landed(results[0].rowsAffected);
     }),
 
     rows: (table, after) => askAgainIfDropped(async () => {
