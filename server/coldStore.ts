@@ -17,9 +17,21 @@
  * record has moved on it inserts nothing, and every other statement asks for it. Sending
  * the same one twice finds its manifest and changes nothing.
  *
+ * A BATCH CAN OUTLIVE ITS SENDER. On Turso a batch on the wire when its sender was stopped
+ * still landed, 1 to 5 seconds later or more, which is longer than a restart takes. So the
+ * next try can clear staging under it, and the manifest also asks that every staged row is
+ * still there: late and without its rows, it lands nothing.
+ *
  * A DROPPED CONNECTION IS NOT AN OUTAGE. PGlite runs on this thread, so a few busy seconds
  * can outlast a server's keep-alive, and the next ask meets a connection already closed.
  * Everything here is safe to ask again, so it is, before anyone is told the record is gone.
+ *
+ * GOLD GOES UP AS TEXT. Turso reads a float off the JSON with one plain divide, which is not
+ * always the nearest number: of ordinary fractional balances, about one in five landed a
+ * step away from what was sent, and every such save came back as a mismatch. Text it reads
+ * itself, and the column's REAL type makes that the very number, as measured on 82,000
+ * values from 1e-40 to 1e40. The read-back still has the last word. Whole numbers up to
+ * 2^53 cross as they are, and the way back down is exact.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -29,13 +41,13 @@ import { RECORD_TABLES, RecordRow, RecordTableName, normalRow, tableOf } from '.
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'cold');
 
-/** A guess, until this has met Turso: one request's worth of staged text. A larger single row still goes alone. */
+/** One request's worth of staged text. A larger single row still goes alone. Turso took a 64 MB row and a 41.6 MB batch, so this is ours to choose: a stopped send loses less. */
 const STAGE_BYTES = 2 * 1024 * 1024;
 const READ_PAGE = 500;
 const IDS_PER_READ = 100;
 /** Nothing here has a deadline of its own, and a stuck request must not hold the next retry for ever. */
 const REQUEST_TIMEOUT_MS = 60_000;
-/** A guess, until this has met Turso: how often one ask goes out if its connection keeps dropping. */
+/** How often one ask goes out if its connection keeps dropping. On Turso the second try was always enough. */
 const TRIES = 3;
 const DROPPED = new Set(['ECONNRESET', 'ECONNABORTED', 'EPIPE', 'UND_ERR_SOCKET']);
 
@@ -129,6 +141,8 @@ type Statement = { sql: string; args: any[] };
 const stage = (table: RecordTableName) => `cold_stage_${table}`;
 const list = (columns: string[]) => columns.join(', ');
 const marks = (n: number) => Array.from({ length: n }, () => '?').join(', ');
+/** See GOLD GOES UP AS TEXT. What is not a number at all still reaches the driver, which refuses it. */
+const sendable = (table: RecordTableName, column: string, value: unknown) => (table === 'treasuries' && column === 'gold' && Number.isFinite(value) ? String(value) : value ?? null);
 
 /** How each table crosses from staging. A ledger row or a commit never changes once it is there. */
 function applyStatement(table: RecordTableName, id: string): Statement {
@@ -212,7 +226,7 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
         let part: Statement[] = [];
         let bytes = 0;
         for (const row of down.rows[shape.name] ?? []) {
-          const args = [down.id, ...shape.columns.map(c => row[c] ?? null)];
+          const args = [down.id, ...shape.columns.map(c => sendable(shape.name, c, row[c]))];
           const size = args.reduce<number>((n, a) => n + (typeof a === 'string' ? Buffer.byteLength(a) : 8), 0);
           if (part.length > 0 && bytes + size > STAGE_BYTES) {
             await client.batch(part, 'write');
@@ -228,19 +242,26 @@ export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
       await fault('staged');
 
       const total = RECORD_TABLES.reduce((n, t) => n + (down.rows[t.name]?.length ?? 0), 0);
+      const allStaged = RECORD_TABLES.map(t => `(SELECT COUNT(*) FROM ${stage(t.name)} WHERE writedown = ?) = ?`).join(' AND ');
       const results = await client.batch([
         {
           // Inserted only if the record still stands where this one was built. Everything below asks for this row.
           sql: `INSERT INTO cold_writedowns (id, prev, why, at, rows, digest)
-                SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT id FROM cold_writedowns ORDER BY seq DESC LIMIT 1) IS ?`,
-          args: [down.id, down.prev, down.why, down.at, total, down.digest, down.prev]
+                SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT id FROM cold_writedowns ORDER BY seq DESC LIMIT 1) IS ? AND ${allStaged}`,
+          args: [down.id, down.prev, down.why, down.at, total, down.digest, down.prev, ...RECORD_TABLES.flatMap(t => [down.id, down.rows[t.name]?.length ?? 0])]
         },
         ...RECORD_TABLES.map(t => applyStatement(t.name, down.id)),
         ...RECORD_TABLES.map(t => ({ sql: `DELETE FROM ${stage(t.name)} WHERE writedown = ?`, args: [down.id] }))
       ], 'write');
       await fault('applied');
 
-      if (results[0].rowsAffected === 0) return { status: 'MOVED', head: (await headRow())?.id ?? null };
+      if (results[0].rowsAffected === 0) {
+        // Its own earlier send can land after this one started. Nothing moved at all means what it staged was cleared.
+        const moved = (await headRow())?.id ?? null;
+        if (moved === down.id) return { status: 'ALREADY' };
+        if (moved === down.prev) throw new Error('What this write-down staged was gone before it crossed, so nothing was written.');
+        return { status: 'MOVED', head: moved };
+      }
       return { status: 'APPLIED' };
     }),
 

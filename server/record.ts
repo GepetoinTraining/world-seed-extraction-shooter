@@ -19,6 +19,13 @@
  * timer: if a row comes back in another form every time, a timer would write everything
  * marked again and again, and nobody would be better off.
  *
+ * A SEND IS NOT LOST UNTIL ANOTHER HAS LANDED. One never answered and not on the record yet
+ * can still land, seconds after its sender stopped (see coldStore). If it does, it is built
+ * on what this database follows, so the next one cannot cross, and it would look like
+ * another save and ask a person to choose. So it is remembered (`lost`), and taken as our
+ * own if it turns up. Once another has landed it never can: its manifest asks for the head
+ * it was built on.
+ *
  * THE GAME GOES ON (D35's spirit). No record set up, or none answering: play continues on
  * Postgres, the write-down waits and is retried whole, a person is told once in plain
  * words, and nothing here ever says a thing is saved that has not been read back.
@@ -66,6 +73,12 @@ const SAYS = {
   wrongUrl: (reason: string) => `The record's address is wrong, and it will stay so until someone changes it. It plays on, on this machine only. ${reason}`,
   audit: (report: unknown) => `The downtime's audit on the record did not add up: ${JSON.stringify(report)}. Nothing was changed by it.`
 };
+
+/** A send, and the newest mark it covered. */
+interface ISent {
+  id: string;
+  upTo: number;
+}
 
 export class RecordKeeper implements IStoreKeeper {
   private doorOpening: Promise<IColdDoor> | null = null;
@@ -119,6 +132,10 @@ export class RecordKeeper implements IStoreKeeper {
     return (await this.getState('chain')) ?? (await this.getState('last'));
   }
 
+  private async lostSends(): Promise<ISent[]> {
+    return JSON.parse((await this.getState('lost')) ?? '[]');
+  }
+
   private async markCount(): Promise<number> {
     const { rows } = await this.db.execute(sql`SELECT COUNT(*) n FROM cold_changes`);
     return Number(rows[0].n);
@@ -143,7 +160,8 @@ export class RecordKeeper implements IStoreKeeper {
       if (top.id === await this.followed()) return { loaded: 0 };
       // Its own send, which a stop cut off before the answer. The next try reads it back.
       const pending = await this.getState('pending');
-      if (pending && (JSON.parse(pending) as { id: string }).id === top.id) return { loaded: 0 };
+      if (pending && (JSON.parse(pending) as ISent).id === top.id) return { loaded: 0 };
+      if ((await this.lostSends()).some(s => s.id === top.id)) return { loaded: 0 };
       if ((await this.markCount()) > 0) {
         // Its own play has not gone up, and the record has moved on without it.
         this.state = 'MOVED';
@@ -284,7 +302,16 @@ export class RecordKeeper implements IStoreKeeper {
       await this.setState(tx, 'last', id);
       await this.setState(tx, 'chain', null);
       await this.setState(tx, 'pending', null);
+      await this.setState(tx, 'lost', null);
     });
+  }
+
+  /** A send of ours is on the record: is it what was sent? Null means saved. A row changed since has a newer mark, so it is not here, and goes up with the next one. */
+  private async takeOwn(door: IColdDoor, sent: ISent): Promise<IWriteDownReceipt | null> {
+    const differs = await this.whereItDiffers(door, (await this.readMarked(sent.upTo)).rows);
+    if (differs) return this.itDiffers(sent.id, differs);
+    await this.settle(sent.id, sent.upTo);
+    return null;
   }
 
   /** Where the record holds any of these rows differently from what was sent, or null if it holds them all as sent. */
@@ -305,6 +332,7 @@ export class RecordKeeper implements IStoreKeeper {
     await this.db.transaction(async (tx: any) => {
       await this.setState(tx, 'chain', id);
       await this.setState(tx, 'pending', null);
+      await this.setState(tx, 'lost', null);
     });
     this.state = 'WAITING';
     this.tell(SAYS.mismatch(where));
@@ -317,18 +345,25 @@ export class RecordKeeper implements IStoreKeeper {
     // A send that was never answered: did it land? Only the record can say. And if it did, is it what was sent?
     const pendingText = await this.getState('pending');
     if (pendingText) {
-      const pending = JSON.parse(pendingText) as { id: string; upTo: number };
+      const pending = JSON.parse(pendingText) as ISent;
       if (await door.has(pending.id)) {
-        // A row changed since has a newer mark, so it is not here. It goes up with the next one.
-        const differs = await this.whereItDiffers(door, (await this.readMarked(pending.upTo)).rows);
-        if (differs) return this.itDiffers(pending.id, differs);
-        await this.settle(pending.id, pending.upTo);
+        const refused = await this.takeOwn(door, pending);
+        if (refused) return refused;
       } else {
-        await this.db.transaction((tx: any) => this.setState(tx, 'pending', null));
+        const lost = [...await this.lostSends(), pending];
+        await this.db.transaction(async (tx: any) => {
+          await this.setState(tx, 'lost', JSON.stringify(lost));
+          await this.setState(tx, 'pending', null);
+        });
       }
     }
 
     const head = await door.head();
+    const own = (await this.lostSends()).find(s => s.id === head?.id);
+    if (own) {
+      const refused = await this.takeOwn(door, own);
+      if (refused) return refused;
+    }
     const last = await this.followed();
     if ((head?.id ?? null) !== last) {
       this.state = 'MOVED';
@@ -355,6 +390,8 @@ export class RecordKeeper implements IStoreKeeper {
 
     const result = await door.writeDown({ id, prev: last, why, at: Date.now(), digest, rows }, stage => this.fault(stage));
     if (result.status === 'MOVED') {
+      // One of ours landed while this one was on its way. This try starts again from there.
+      if ((await this.lostSends()).some(s => s.id === result.head)) return this.send(why);
       await this.db.transaction((tx: any) => this.setState(tx, 'pending', null));
       this.state = 'MOVED';
       this.tell(SAYS.moved);

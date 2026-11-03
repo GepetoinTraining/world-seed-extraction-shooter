@@ -4,7 +4,9 @@
  *
  *   WS_KILL_URL      the live database
  *   WS_KILL_RECORD   the record's URL
+ *   WS_KILL_TOKEN    the record's token, if it asks for one
  *   WS_KILL_AT       pending | staged-part | staged | applied | verified | none
+ *                    or in-flight:<ms> | in-flight-stage:<ms>, that long after the crossing batch, or a staging one, starts on its way
  *   WS_KILL_FROM     the first seq to commit (a later round goes on from where the last stopped)
  *   WS_KILL_COMMITS  how many whole commits come first, each acknowledged on stdout
  */
@@ -17,8 +19,20 @@ const killAt = process.env.WS_KILL_AT!;
 const from = Number(process.env.WS_KILL_FROM ?? 1);
 const commits = Number(process.env.WS_KILL_COMMITS ?? 3);
 
+// With the request on the wire, where no stage of the keeper's can reach: the answer may or may not ever have been made.
+const [inFlight, afterMs] = killAt.split(':');
+if (inFlight === 'in-flight' || inFlight === 'in-flight-stage') {
+  const looksFor = inFlight === 'in-flight' ? 'INSERT INTO cold_writedowns' : 'INSERT INTO cold_stage_documents';
+  const sendIt = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const body = input instanceof Request ? await input.clone().text() : String(init?.body ?? '');
+    if (body.includes(looksFor)) setTimeout(() => process.kill(process.pid, 'SIGKILL'), Number(afterMs));
+    return sendIt(input, init);
+  }) as typeof fetch;
+}
+
 const database = await openDatabase(process.env.WS_KILL_URL!);
-const keeper = new RecordKeeper(database, { on: true, url: process.env.WS_KILL_RECORD! }, {
+const keeper = new RecordKeeper(database, { on: true, url: process.env.WS_KILL_RECORD!, authToken: process.env.WS_KILL_TOKEN }, {
   say: () => undefined,
   fault: stage => { if (stage === killAt) process.kill(process.pid, 'SIGKILL'); }
 });

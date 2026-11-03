@@ -4,12 +4,19 @@
  * It proves the driver path, the SQL and every failure this door has to survive. It proves
  * nothing about Turso's own limits, timing or rules, and passing here is not meeting Turso.
  *
+ * What has been checked against the real one is kept the same here: the driver does ask
+ * for /v2/pipeline, a float is read as readFloat below, and a missing token is a 401 where
+ * a wrong one is a 400.
+ *
  *   node --disable-warning=ExperimentalWarning --import tsx tests/fixtures/record-double.ts <file> <port> [token]
  *
  * POST /__fault { mode } sets how it misbehaves, for bars and for play:
  *   none           answers
  *   refuse         answers every pipeline with a 503, and applies nothing
  *   lost-answer    applies the next pipeline holding an insert into cold_writedowns, cuts the connection, then goes to `then`
+ *   late-answer    cuts the connection of the next pipeline holding an insert into cold_writedowns and keeps it for later, then goes to `then`
+ *   land           applies what late-answer kept, now. On Turso a stopped sender's batch landed 1 to 5 seconds or more after the stop
+ *   land-after-has applies it just after answering the next look for one manifest
  *   drop           cuts the connection of the next `times` pipelines, and applies nothing
  *   slow           waits `ms` before each answer
  */
@@ -22,6 +29,8 @@ const db = new DatabaseSync(file);
 db.exec('PRAGMA journal_mode=WAL');
 
 let fault: { mode: string; ms?: number; then?: string; times?: number } = { mode: 'none' };
+let kept: any[] | null = null;
+const landKept = () => { for (const request of kept ?? []) runRequest(request); kept = null; };
 
 const toValue = (v: any): any => {
   if (v === null || v === undefined) return { type: 'null' };
@@ -30,10 +39,34 @@ const toValue = (v: any): any => {
   if (typeof v === 'string') return { type: 'text', value: v };
   return { type: 'blob', base64: Buffer.from(v).toString('base64') };
 };
+/**
+ * How the real server reads a float off the JSON: its digits as one whole number, then one
+ * divide or multiply by a power of ten. That is not always the nearest double, so a value
+ * with many digits can land one step away from what was sent. Against Turso this gave the
+ * same answer on 14,000 values out of 14,000, of which it changed 2,746.
+ */
+function readFloat(value: number): number {
+  const text = String(value);
+  const negative = text.startsWith('-');
+  const [mantissa, power = '0'] = (negative ? text.slice(1) : text).split('e');
+  const [whole, fraction = ''] = mantissa.split('.');
+  let exponent = Number(power) - fraction.length;
+  let digits = 0n;
+  for (const digit of whole + fraction) {
+    const next = digits * 10n + BigInt(digit);
+    if (next >= 2n ** 64n) exponent++;
+    else digits = next;
+  }
+  let read = Number(digits);
+  while (exponent < -308) { read /= 1e308; exponent += 308; }
+  read = exponent >= 0 ? read * Number(`1e${exponent}`) : read / Number(`1e${-exponent}`);
+  return negative ? -read : read;
+}
+
 const fromValue = (v: any): any => {
   if (!v || v.type === 'null') return null;
   if (v.type === 'integer') return BigInt(v.value);
-  if (v.type === 'float') return v.value;
+  if (v.type === 'float') return readFloat(v.value);
   if (v.type === 'text') return v.value;
   return Buffer.from(v.base64, 'base64');
 };
@@ -57,7 +90,7 @@ function runStmt(stmt: any) {
       // A REAL column holding a whole number is a float on the wire, as sqld sends it.
       return typeof value === 'number' ? { type: 'float', value } : toValue(value);
     })),
-    affected_row_count: /^s*(insert|update|delete)/i.test(text) ? Number(done.c) : 0,
+    affected_row_count: /^\s*(insert|update|delete)/i.test(text) ? Number(done.c) : 0,
     last_insert_rowid: String(done.r)
   };
 }
@@ -116,13 +149,15 @@ const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0];
     if (path === '/__fault') {
       fault = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (fault.mode === 'land') { landKept(); fault = { mode: 'none' }; }
       return send(200, { fault });
     }
     if (path === '/__sql') {
       // A bar's own look at what is stored, past the door under test.
       return send(200, { rows: runStmt(JSON.parse(Buffer.concat(chunks).toString('utf8'))).rows });
     }
-    if (token && req.headers.authorization !== `Bearer ${token}`) return send(401, { error: 'Unauthorized' });
+    if (token && !req.headers.authorization) return send(401, { error: 'Unauthorized' });
+    if (token && req.headers.authorization !== `Bearer ${token}`) return send(400, { error: 'Invalid token' });
     if (path !== '/v2/pipeline') return send(404, { error: `No ${path} here.` });
     if (fault.mode === 'refuse') return send(503, { error: 'The double is refusing, as it was told to.' });
     if (fault.mode === 'slow') await new Promise(r => setTimeout(r, fault.ms ?? 1000));
@@ -135,6 +170,12 @@ const server = createServer((req, res) => {
 
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const text = JSON.stringify(body.requests);
+    if (fault.mode === 'late-answer' && text.includes('INSERT INTO cold_writedowns')) {
+      kept = body.requests;
+      fault = { mode: fault.then ?? 'none' };
+      req.socket.destroy();
+      return;
+    }
     const results = body.requests.map((request: any) => {
       try {
         return { type: 'ok', response: runRequest(request) };
@@ -146,6 +187,10 @@ const server = createServer((req, res) => {
       fault = { mode: fault.then ?? 'none' };
       req.socket.destroy();
       return;
+    }
+    if (fault.mode === 'land-after-has' && text.includes('SELECT 1 FROM cold_writedowns')) {
+      landKept();
+      fault = { mode: 'none' };
     }
     const closes = body.requests.some((r: any) => r.type === 'close');
     send(200, { baton: closes ? null : 'baton', base_url: null, results });

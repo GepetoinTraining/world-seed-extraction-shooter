@@ -125,6 +125,19 @@ describe('the door takes the network and nothing else', () => {
     expect(existsSync(join(ROOT, 'drizzle/sqlite'))).toBe(false);
   }, 30_000);
 
+  it('a wrong token is a refusal of its own, and is said as an outage too', async () => {
+    const guarded = await startDouble(join(scratch(), 'guarded.sqlite'), 'the-token');
+    try {
+      const wrong = await live(folder(), { on: true, url: guarded.url, authToken: 'not-the-token' });
+      await put(wrong.store, doc('a', 'content', {}));
+      expect((await wrong.keeper.writeDown('test')).status).toBe('WAITING');
+      expect((await wrong.keeper.status()).says).toContain('400');
+    } finally {
+      await closeOut();
+      await guarded.stop();
+    }
+  }, 60_000);
+
   it('migrates once, however many doors open on it', async () => {
     for (let i = 0; i < 3; i++) { const door = await openColdDoor({ url: double.url }); await door.head(); door.close(); }
     expect((await double.sql('SELECT COUNT(*) FROM cold_migrations'))[0][0]).toBe(readdirSync(join(ROOT, 'drizzle/cold')).filter(n => n.endsWith('.sql')).length);
@@ -249,6 +262,49 @@ describe('a dropped connection is not a record that stopped answering', () => {
 });
 
 describe('a write-down: whole, once, and verifiable', () => {
+  // Met on Turso: about one fractional balance in five is read one step off when it goes up as a float.
+  const FRACTIONS = [114.10000000000001, 110.80000000000003, 103.00000000000001, 91.99999999999999, 36.300000000000004, 96.00000000000001, 1000000 / 3, 7654321 * 0.07, 123456789012345680000];
+
+  it('the stand-in reads a float as the real server does, so the next bar can fail', async () => {
+    const [[echo]] = await double.sql('SELECT ?', [FRACTIONS[0]]);
+    expect(echo).not.toBe(FRACTIONS[0]);
+    expect(echo).toBeCloseTo(FRACTIONS[0], 9);
+  }, 30_000);
+
+  it('a balance with many digits goes up and comes back the same number', async () => {
+    const h = await live(folder());
+    await h.store.commit({ commitId: randomUUID(), ops: [
+      ...FRACTIONS.map((gold, i) => ({ kind: 'put' as const, doc: doc(`treasury_fraction_${i}`, 'territories', { gold }) })),
+      { kind: 'add', namespace: 'territories', id: 'wallet_a__b', amount: FRACTIONS[1], at: 7 }
+    ] });
+    expect((await h.keeper.writeDown('test')).status).toBe('WRITTEN');
+    for (const [i, gold] of FRACTIONS.entries()) {
+      expect((await double.sql(`SELECT gold FROM treasuries WHERE id = 'treasury_fraction_${i}'`))[0][0]).toBe(gold);
+    }
+    expect((await double.sql(`SELECT typeof(gold) FROM treasuries GROUP BY 1`)).flat()).toEqual(['real']);
+    await closeOut();
+
+    const again = await live(folderUrl(join(scratch(), 'again')));
+    expect(again.go.loaded).toBeGreaterThan(0);
+    for (const [i, gold] of FRACTIONS.entries()) {
+      expect(JSON.parse((await again.store.get(`treasury_fraction_${i}`))!.dataText).gold).toBe(gold);
+    }
+  }, 60_000);
+
+  // On Turso a batch whose sender was stopped still lands, some time after the sender is gone.
+  it('a send that lands while its own second try is on the way is the same write-down, not another save', async () => {
+    const first = await openColdDoor({ url: double.url });
+    const second = await openColdDoor({ url: double.url });
+    const down = { id: 'wd_same', prev: null, why: 'test', at: 1, digest: 'd', rows: { commits: [{ id: 'c', at: 1 }] } };
+    const result = await first.writeDown(down, async stage => {
+      if (stage === 'staged') expect((await second.writeDown(down)).status).toBe('APPLIED');
+    });
+    expect(result.status).toBe('ALREADY');
+    expect((await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0]).toBe(1);
+    first.close();
+    second.close();
+  }, 30_000);
+
   it('carries all four tables, signed text byte for byte, numbers exact', async () => {
     const h = await live(folder());
     await h.store.commit({ commitId: 'the_one', ops: [
@@ -807,6 +863,25 @@ describe('a process stopped hard during a write-down loses nothing Postgres hold
     }, 120_000);
   }
 
+  for (const at of ['in-flight:0', 'in-flight-stage:0']) {
+    it(`stopped with a batch on the wire (${at}): the record holds it whole or not at all, and the next start finishes it`, async () => {
+      const url = folderUrl(join(scratch(), 'stopped'));
+      const run = await runKiller({ WS_KILL_URL: url, WS_KILL_RECORD: double.url, WS_KILL_AT: at, WS_KILL_COMMITS: '3' });
+      expect(run.stdout).toContain('ACK 3');
+      expect(run.stdout).not.toContain('DOWN');
+
+      const landed = (await double.sql('SELECT COUNT(*) FROM cold_writedowns'))[0][0];
+      expect(await recordAddsUp(double, landed === 1 ? 3 : 0)).toBe(landed === 1 ? 3 : 0);
+
+      const h = await live(url);
+      await h.store.commit({ commitId: randomUUID(), ops: [{ kind: 'put', doc: doc('after', 'content', {}) }] });
+      expect((await h.keeper.writeDown('retry')).status).toBe('WRITTEN');
+      expect(await recordAddsUp(double, 3)).toBe(3);
+      expect((await double.sql('SELECT COUNT(*) FROM cold_stage_documents'))[0][0]).toBe(0);
+      expect((await h.keeper.status()).behind).toBe(0);
+    }, 120_000);
+  }
+
   it('over and over on one folder and one record: nothing lost, and each commit on the record once', async () => {
     const url = folderUrl(join(scratch(), 'again'));
     let from = 1;
@@ -840,6 +915,100 @@ describe('a process stopped hard during a write-down loses nothing Postgres hold
     expect((await double.sql('SELECT COUNT(*) FROM documents'))[0][0]).toBe(1);
     expect((await double.sql('SELECT COUNT(*) FROM cold_stage_documents'))[0][0]).toBe(0);
   }, 120_000);
+});
+
+describe('a send that lands after its sender gave up on it', () => {
+  const someRows = async (h: Awaited<ReturnType<typeof live>>, id: string) => h.store.commit({ commitId: randomUUID(), ops: [{ kind: 'put', doc: doc(id, 'content', { id }) }, { kind: 'add', namespace: 'territories', id: 'treasury_hub', amount: 10, at: 1 }] });
+  const heads = () => double.sql('SELECT id, prev FROM cold_writedowns ORDER BY seq');
+
+  /** A write-down goes out, its connection is cut, and the record has it in hand and has not applied it. */
+  async function goneOut(h: Awaited<ReturnType<typeof live>>) {
+    await someRows(h, 'first');
+    await double.fault('late-answer', { then: 'refuse' });
+    expect((await h.keeper.writeDown('test')).status).toBe('WAITING');
+    expect(await heads()).toEqual([]);
+    await double.fault('none');
+  }
+
+  it('its rows gone from staging, it writes no manifest: the record never says it holds what it does not', async () => {
+    const door = await openColdDoor({ url: double.url });
+    const down = { id: 'wd_empty', prev: null, why: 'test', at: 1, digest: 'd', rows: { commits: [{ id: 'c', at: 1 }] } };
+    await expect(door.writeDown(down, async stage => {
+      if (stage === 'staged') await double.sql('DELETE FROM cold_stage_commits');
+    })).rejects.toThrow(/gone/);
+    expect(await heads()).toEqual([]);
+    door.close();
+  }, 30_000);
+
+  it('landing just after the next try looked for it: that try takes it as its own and goes on', async () => {
+    const h = await live(folder());
+    await goneOut(h);
+    await someRows(h, 'second');
+    await double.fault('land-after-has');
+    const receipt = await h.keeper.writeDown('retry');
+    expect(receipt.status).toBe('WRITTEN');
+    const [first, second] = await heads();
+    expect(first[1]).toBe(null);
+    expect(second).toEqual([receipt.id, first[0]]);
+    expect((await double.sql(`SELECT id FROM documents WHERE id IN ('first', 'second') ORDER BY id`)).flat()).toEqual(['first', 'second']);
+    expect((await double.sql(`SELECT gold FROM treasuries WHERE id = 'treasury_hub'`))[0][0]).toBe(20);
+    expect((await h.keeper.status()).behind).toBe(0);
+  }, 60_000);
+
+  it('landing while the next try is staged: it lands nothing, and the next try is the one that crosses', async () => {
+    let armed = false;
+    const h = await live(folder(), undefined, { fault: async (stage: string) => { if (armed && stage === 'staged') { armed = false; await double.fault('land'); } } });
+    await goneOut(h);
+    await someRows(h, 'second');
+    armed = true;
+    const receipt = await h.keeper.writeDown('retry');
+    expect(receipt.status).toBe('WRITTEN');
+    expect(await heads()).toEqual([[receipt.id, null]]);
+    expect((await double.sql(`SELECT id FROM documents WHERE id IN ('first', 'second') ORDER BY id`)).flat()).toEqual(['first', 'second']);
+    expect((await double.sql(`SELECT gold FROM treasuries WHERE id = 'treasury_hub'`))[0][0]).toBe(20);
+    expect((await h.keeper.status()).behind).toBe(0);
+  }, 60_000);
+
+  it('landing while this process is down: the next start does not take its own send for another save', async () => {
+    const url = folder();
+    let armed = false;
+    const h = await live(url, undefined, { fault: (stage: string) => { if (stage === 'pending' && armed) throw new Error('stopped'); } });
+    await goneOut(h);
+    await someRows(h, 'second');
+    armed = true;
+    expect((await h.keeper.writeDown('retry')).status).toBe('WAITING');
+    await closeOut();
+    await double.fault('land');
+    expect((await heads()).length).toBe(1);
+
+    const again = await live(url);
+    expect(again.go.loaded).toBe(0);
+    expect((await again.keeper.status()).state).not.toBe('MOVED');
+    const receipt = await again.keeper.writeDown('retry');
+    expect(receipt.status).toBe('WRITTEN');
+    expect((await double.sql(`SELECT id FROM documents WHERE id IN ('first', 'second') ORDER BY id`)).flat()).toEqual(['first', 'second']);
+    expect((await again.keeper.status()).behind).toBe(0);
+  }, 60_000);
+
+  it('a send that landed differently, found this way, is still not called saved', async () => {
+    let armed = false;
+    const h = await live(folder(), undefined, { fault: (stage: string) => { if (armed && stage === 'pending') { armed = false; throw new Error('stopped'); } } });
+    await goneOut(h);
+    await someRows(h, 'second');
+    armed = true;
+    expect((await h.keeper.writeDown('retry')).status).toBe('WAITING');
+    await double.fault('land');
+    await double.sql('UPDATE documents SET data = \'{"other":true}\' WHERE id = \'first\'');
+
+    expect((await h.keeper.writeDown('again')).status).toBe('MISMATCH');
+    expect((await h.keeper.status()).last).toBeUndefined();
+    expect((await h.keeper.status()).behind).toBeGreaterThan(0);
+
+    const receipt = await h.keeper.writeDown('and again');
+    expect(receipt.status).toBe('WRITTEN');
+    expect(JSON.parse((await double.sql('SELECT data FROM documents WHERE id = \'first\''))[0][0])).toEqual({ id: 'first' });
+    expect((await h.keeper.status()).behind).toBe(0);
+  }, 60_000);
 });
 
 describe('downtime work runs on SQL', () => {
