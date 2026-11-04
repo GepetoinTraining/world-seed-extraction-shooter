@@ -36,6 +36,14 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
   - New words come from the theme's own lists, so they are registered by construction. That may answer the law's refusal.
   - The database door exists: `VectorStore`'s `semanticSearch`. But `EmbeddingService` is a hashed bag of words (D46), so it only finds shared words. "an airless moon" would not find "vacuum" or "regolith". The first step needs a real embedding to work as ruled.
   - Terrain as two roles dressed by the theme is not how terrain is built today. `TerrainSystem` has four fixed kinds, all hardcoded and none themed: water (blocked), rock (blocked), mud (half speed) and ground. No kind is passable with a skill.
+- **Pedro, 2026-11-04, on each cycle after (in his words):** "then each cycle we call the LLM up simply to check the director and upgrade a the monsters, or, to add things that have been collected, change a loot table for certain places, request the isnertion of a special quest zone (not done yet), that's the idea"
+- **The reading:** once the world is generated, each cycle calls the model only to do these things:
+  - check the director;
+  - upgrade the monsters;
+  - add things that have been collected;
+  - change a loot table for certain places;
+  - ask for a special quest zone to be inserted. This one is not designed yet.
+- **Where it stands:** the scan window does not call the model yet (PLAN.md, leg 2). `DirectorStore` exists. There are no quest zones.
 - **Call:** ruled, 2026-11-04. Not built.
 
 ---
