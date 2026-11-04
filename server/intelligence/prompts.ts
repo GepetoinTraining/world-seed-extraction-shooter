@@ -13,6 +13,7 @@ import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 import { MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../types';
 import { HARM_BANDS, IGoalAsk, ILogLine, IRoundAsk, JUDGE_BANDS, PROMISE_BANDS, QUEST_SIZES } from '../../src/logic/systems/TalkTypes';
 import { LORE_DEPTHS } from '../../src/logic/systems/LoreConstants';
+import { PASS_SCHEMAS, WORLD_PASSES, WORD_KINDS, type WorldPassId } from '../../src/logic/theme/writing/WorldPasses';
 
 const REGISTRY = (() => {
   const byKind = new Map<string, string[]>();
@@ -228,6 +229,10 @@ const chainList = (key: string, extra: Record<string, unknown>) => {
   return { type: 'array', items: { ...items, required: [...items.required, ...Object.keys(extra)], properties: { ...items.properties, ...extra } } };
 };
 
+/**
+ * The whole round's shape, as `ChainWeb` reads it. It is never sent whole: the API refuses its
+ * grammar as too large (Q1), so a round is asked in two parts that each compile (`CHAIN_PARTS`).
+ */
 export const CHAIN_SCHEMA: Record<string, unknown> = {
   type: 'object', additionalProperties: false, required: ['tags', 'materials', 'stations', 'goods', 'gear'],
   properties: {
@@ -238,12 +243,71 @@ export const CHAIN_SCHEMA: Record<string, unknown> = {
   }
 };
 
-/** One round of a chain, written backwards. What comes back stands before `ChainWeb.judge`. */
-export function buildChainRequest(ask: { person: unknown; ground: unknown; written: unknown; open: unknown; refused?: unknown }): IDoorRequest {
+const chainPart = (keys: string[]): Record<string, unknown> => ({
+  type: 'object', additionalProperties: false, required: keys,
+  properties: Object.fromEntries(keys.map(k => [k, (CHAIN_SCHEMA.properties as Record<string, unknown>)[k]]))
+});
+
+/** Q1: a round of a chain in two parts, each compiling: what is found and where it is worked, then what is made there. */
+export const CHAIN_PARTS = [
+  { schema: chainPart(['tags', 'materials', 'stations']), says: 'This part: only "tags", "materials" and "stations". The goods and gear come in the next part, which is given this one.' },
+  { schema: chainPart(['tags', 'goods', 'gear']), says: 'This part: only "tags", "goods" and "gear", standing on the first part of this round, which is given above. Register no tag again that it registered.' }
+] as const;
+
+export type IChainAsk = { person: unknown; ground: unknown; written: unknown; open: unknown; refused?: unknown };
+
+/** One part of a round of a chain, written backwards. The joined round stands before `ChainWeb.judge`. */
+export function buildChainRequest(ask: IChainAsk, part = 0, first?: unknown): IDoorRequest {
   const again = ask.refused ? `\n\nThe last answer was refused and nothing of it stands. ${String(ask.refused)} Write it again without that.` : '';
+  const before = part > 0 ? `\n\nThe first part of this round:\n${JSON.stringify(first ?? {})}` : '';
   return {
-    kind: 'chain', system: CHAIN_SYSTEM, schema: CHAIN_SCHEMA, maxTokens: 16000,
-    messages: [{ role: 'user', content: `Who has come:\n${JSON.stringify(ask.person)}\n\nThe ground this place stands on:\n${JSON.stringify(ask.ground)}\n\nWritten so far:\n${JSON.stringify(ask.written)}\n\nStill open:\n${JSON.stringify(ask.open)}${again}\n\nWrite the round.` }]
+    kind: 'chain', system: CHAIN_SYSTEM, schema: CHAIN_PARTS[part].schema, maxTokens: 16000,
+    messages: [{ role: 'user', content: `Who has come:\n${JSON.stringify(ask.person)}\n\nThe ground this place stands on:\n${JSON.stringify(ask.ground)}\n\nWritten so far:\n${JSON.stringify(ask.written)}\n\nStill open:\n${JSON.stringify(ask.open)}${again}${before}\n\n${CHAIN_PARTS[part].says}\n\nWrite the round.` }]
+  };
+}
+
+// -------------------------------------------------------------------------
+// Q1: a world, written in passes, in the order a world comes to be
+// -------------------------------------------------------------------------
+
+/** One system text for every pass, so the passes of one world share a cache. Each pass's own ask is in its message. */
+const WORLD_SYSTEM = `${VOICE}
+
+You are writing a world for the person, in passes, in the order a world comes to be: the lay of the land; its water and heights; what grows and what lives there, and where; who works there; what lies in the ground; what is made and worn; what it knows. Each message is one pass. It gives what the person said ("said"), what the earlier passes made ("world"), and what other worlds already hold that is near this one ("offered", by id).
+
+Every pass works the same way:
+- Select first. Pick what fits this world from "offered", by its id, and never an id you were not given. A thing that exists is never written again under a new name: an oak is an oak, so a world with oaks picks the oak.
+- Only then add what the world still lacks, and only what fits it. Say what each new thing is, in plain words, in "is". You never name a thing: its name is made from this world's own prefixes and suffixes, which the first pass writes.
+- The world rules things out. What it cannot hold is never picked or added: a moon without air has no trees.
+- You never write numbers, ranks, strengths, sizes, prices or what a thing does. Those are rolled, or found by study.
+- Every tag is a word in the registry below or a word registered in this pass's "words": one meaning, one spelling, lower_snake_case. Kinds: ${WORD_KINDS.join(', ')}. A word already in the registry is used, never registered again.
+- The kinds of ground are ${BIOMES.join(', ')}. Every one gets a name in this world's own words, and "regions" are always some of these.
+
+Keep it one place: what grows, what lives, what is made and what is said should all sound like the same world.
+
+Registry:
+${REGISTRY}`;
+
+/** What each pass asks, in its own message. */
+const PASS_ASKS: Record<WorldPassId, string> = {
+  ground: `This pass: the lay of the land. Write the world's name and premise, and for every kind of ground what it is called here and one line on it. "without" lists, in plain words, what this world cannot hold (trees, rain, air to breathe), or is empty. "prefixes" and "suffixes" are the pieces this world's names are made of, in its own sound, as many as it wants; a name is one of each joined. Register in "words" any word the world will need.`,
+  terrain: `This pass: water and heights. Ground plays two roles. One is impassable: nobody crosses it (water; tunnels on an airless moon). One is passable with a skill (mountains; a crater on the dark side), and "crossing" is the one registry word a person's skill must carry to cross it, such as climb. For each role, pick a dressing from "offered" by its id in "pick", or leave "pick" empty and say what it is in "ground" and "blurb". The impassable one leaves "crossing" empty.`,
+  life: `This pass: what grows and what lives there, and where. In "picked", the plants and creatures from "offered" that live here, by id, each with the kinds of ground it lives on. Then "flora" and "fauna": what the world still lacks, each with what it is, its words, and where it lives. A plant's "form" is how it grows. Fauna is everything that lives there, wild and kept, harmless and dangerous alike: you never say which is dangerous, as that is rolled. "social" says whether it lives in groups, and "builds" whether its leaders could raise a base. Never tag elite, boss, titan or god: who leads is decided elsewhere. A creature tagged humanoid or intelligent thinks; tag it so only if that is true.`,
+  people: `This pass: who works there. In "picked", by id, the trades from "offered" that this world's people would live by. "professions" are the trades it still lacks, however strange, each one what its economy would really pay for: a zombie apocalypse has its mcgyver engineer. "is" says what they can bring about, "concept" is that as one lower_snake_case word, never how; "workshop" is what they would call their place; "tool" and "material" are registry words for what their hands work.`,
+  holds: `This pass: what lies in the ground. In "picked", what "offered" holds that lies here, by id, with where. "minerals" are what lies in the ground that the world still lacks, and "form" is how it lies. "junk" is what falling bodies leave, worth only its sale, and "from" lists the creature words it comes from, so that every creature leaves something. "anchors" are gems, works of art and valuables, found and never made, with where they are found.`,
+  made: `This pass: what is made and worn. In "picked", by id, what this world's people would make, wear and carry from "offered": weapons, armor, tools, goods, the stations they are made at, consumables. Pick only. What the world's own people learn to make is written later, from what they know.`,
+  known: `This pass: what it knows, and its lore. In "picked", by id, the abilities and the marks of power from "offered" that fit this world. "lore" is lines a person could find there, in its own voice, as many as it wants, with no numbers.`
+};
+
+export const isWorldPass = (pass: unknown): pass is WorldPassId => (WORLD_PASSES as readonly string[]).includes(String(pass));
+
+/** One pass of a world. What comes back stands before the writer's fold, and the whole world before the law. */
+export function buildWorldPassRequest(pass: WorldPassId, ask: Record<string, unknown>, draft: Record<string, unknown>): IDoorRequest {
+  const { refused, ...rest } = ask;
+  const again = refused ? `\n\nThe last answer to this pass was refused and nothing of it stands. ${String(refused)} Write it again without that.` : '';
+  return {
+    kind: Number(draft.size) >= LARGE_WORLD_SECTORS ? 'theme_large' : 'theme', system: WORLD_SYSTEM, schema: PASS_SCHEMAS[pass], maxTokens: 16000,
+    messages: [{ role: 'user', content: `${PASS_ASKS[pass]}\n\n${JSON.stringify(rest)}${again}` }]
   };
 }
 

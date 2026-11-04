@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TERRAIN_ROLES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -250,6 +250,23 @@ export class ThemeLaw {
       if (p.tool.length === 0 || p.material.length === 0) return no(`${p.key} connects no tool or no material (D25).`);
       const t = unknownTag([...p.tool, ...p.material]);
       if (t) return no(`${p.key} names "${t}", which is not registered.`);
+    }
+
+    // Q1: optional, so a pack written before there was such a thing stands as it was.
+    if (pack.terrain !== undefined) {
+      if (!Array.isArray(pack.terrain)) return no('terrain is not a list.');
+      for (const role of TERRAIN_ROLES) {
+        const dressed = pack.terrain.filter(t => t.role === role);
+        if (dressed.length !== 1) return no(`the ${role} ground must be dressed exactly once.`);
+      }
+      for (const t of pack.terrain) {
+        if (!has(TERRAIN_ROLES, t.role)) return no(`"${t.role}" is not a role ground plays.`);
+        if (!t.ground?.trim()) return no(`the ${t.role} ground is not called anything.`);
+        if (t.role === 'impassable' && t.crossing) return no('the impassable ground is crossed by nobody, so it names no skill.');
+        if (t.role === 'skilled' && !(t.crossing && TagLaw.isCanonicalSpelling(t.crossing) && known(t.crossing))) {
+          return no(`the ${t.ground} is crossed with a skill, and "${t.crossing}" is not a registered word.`);
+        }
+      }
     }
 
     // CAN IT BE PLAYED? Line 45's question, asked of a world before it exists.

@@ -41,6 +41,7 @@ import { GateWarning, SkyState, WorldClock } from '../entities/world/WorldClock'
 import type { IPlayer as IPlayerShape } from '../../types';
 import { WeaveSystem } from '../logic/systems/WeaveSystem';
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
+import { TerrainCrossing } from '../logic/theme/TerrainCrossing';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
@@ -792,12 +793,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
 
         // The ground has a say (water and rock block, mud slows), and the world has an edge
-        const map = useWorldStore.getState().currentMap;
+        const { currentMap: map, availableWorlds, activeWorldId } = useWorldStore.getState();
+        // Q1: the skilled ground lets over whoever holds this world's crossing skill
+        const themeId = availableWorlds.find(w => w.id === activeWorldId)?.themeId;
         usePlayerStore.setState(state => {
           if (!state.player.currentSession) return state;
           const pos = state.player.currentSession.position;
+          const crosses = TerrainCrossing.crossesSkilled(state.player, ContentRegistry.get(themeId));
           const next = map
-            ? WorldGenerator.resolveMove(map, pos.x, pos.z, dx, dz)
+            ? WorldGenerator.resolveMove(map, pos.x, pos.z, dx, dz, crosses)
             : { x: pos.x + dx, z: pos.z + dz };
           return {
             player: {

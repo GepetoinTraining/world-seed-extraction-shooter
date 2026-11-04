@@ -138,6 +138,8 @@ export const WORLD_DRAFT_DEFAULTS = {
   talk: [] as { role: 'user' | 'assistant'; content: string }[],
   writtenTheme: null as unknown,
   writtenUsage: null as unknown,
+  /** Q1: the pass being written right now, or empty. The write outlives the window, as the draft does. */
+  writing: '',
   themeId: ''
 };
 export type WorldDraft = typeof WORLD_DRAFT_DEFAULTS;

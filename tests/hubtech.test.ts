@@ -17,7 +17,7 @@ import { Profession } from '../src/logic/systems/Profession';
 import { WebSystem } from '../src/logic/systems/WebSystem';
 import { WebBank } from '../src/logic/content/WebBank';
 import { TagLaw } from '../src/logic/content/TagLaw';
-import { buildChainRequest, CHAIN_SCHEMA } from '../server/intelligence/prompts';
+import { buildChainRequest, CHAIN_PARTS, CHAIN_SCHEMA } from '../server/intelligence/prompts';
 import { MODEL_FOR } from '../server/intelligence/claude';
 import {
   IHubTech, admitSilently, areaFor, billFor, emptyTech, foldReach, groundOf, hubPopulation, hubStations, nextLink, normalTech,
@@ -92,7 +92,9 @@ describe('the door writes a chain, and the law judges it', () => {
   it('it goes through the one door, on Haiku', () => {
     const request = buildChainRequest({ person: { name: 'x' }, ground: {}, written: {}, open: [] });
     expect(request.kind).toBe('chain');
-    expect(request.schema).toBe(CHAIN_SCHEMA);
+    // Q1: the whole round's grammar is refused as too large, so it is asked in parts that each compile
+    expect(CHAIN_PARTS.map(part => part.schema)).toContain(request.schema);
+    expect(Object.keys(CHAIN_SCHEMA.properties as object).every(k => CHAIN_PARTS.some(part => k in (part.schema.properties as object)))).toBe(true);
     expect(MODEL_FOR.chain).toContain('haiku');
     expect(request.system).toContain('concept');
   });
