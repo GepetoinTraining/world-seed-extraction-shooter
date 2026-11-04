@@ -11,15 +11,20 @@ import type { AddressInfo } from 'node:net';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore, SqlStore } from '../server/SqlStore';
+import { SqlStore } from '../server/SqlStore';
+import { openStore } from '../server/openStore';
 import { Hub } from '../server/hub/Hub';
 import { makeHubKey, verifyStatement } from '../server/hub/keys';
 import { createHubHandler } from '../server/hub/http';
 import { createHubListener } from '../server/hub/server';
 import { createHubBridge } from '../server/runner';
+import { createHubFunction, hubConfigFrom, hubPathOf } from '../server/hub/function';
+import { generateKeyPairSync } from 'node:crypto';
 import { signedText } from '../src/entities/identity/signedText';
 import { addressOf, dayIndexOf } from '../src/logic/time/RadixClock';
 import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
+import { FIRST_THEME_PACK } from '../src/logic/theme/boot';
+import { bodyOf, compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
 
 const ALGORITHM = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
 const b64 = (bytes: ArrayBuffer) => Buffer.from(bytes).toString('base64');
@@ -270,6 +275,112 @@ describe('the hub', () => {
     });
   });
 
+  describe('stateless: every call could be a different function instance over one store', () => {
+    it('a text one instance gave for a proof is honoured by another, and only once', async () => {
+      const token = await signedIn();
+      const other = new Hub(store, key, { publicUrl: 'https://hub.test', now: () => clock });
+      const character = await makeCharacter('ws_99999999_x1_88888888');
+      const nonce = await hub.nonce(token);
+      if (!nonce.ok) throw new Error(nonce.reason);
+      const proof = await character.sign({ claim: 'hub-character', hub: key.id, nonce: nonce.nonce });
+      expect((await other.registerCharacter(token, character.certificate, proof)).ok).toBe(true);
+      const second = await makeCharacter('ws_77777777_x1_66666666');
+      expect(await hub.registerCharacter(token, second.certificate, await second.sign({ claim: 'hub-character', hub: key.id, nonce: nonce.nonce }))).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it('a text past its time is refused, wherever it was given', async () => {
+      const token = await signedIn();
+      const character = await makeCharacter('ws_99999999_x1_88888888');
+      const nonce = await hub.nonce(token);
+      if (!nonce.ok) throw new Error(nonce.reason);
+      clock += 11 * 60_000;
+      const later = new Hub(store, key, { publicUrl: 'https://hub.test', now: () => clock });
+      const proof = await character.sign({ claim: 'hub-character', hub: key.id, nonce: nonce.nonce });
+      expect(await later.registerCharacter(token, character.certificate, proof)).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it('wrong passwords counted by one instance hold on another', async () => {
+      await hub.createAccount('tester', 'correct horse battery');
+      for (let i = 0; i < 5; i++) await new Hub(store, key, { publicUrl: 'https://hub.test', now: () => clock }).signIn('tester', `wrong ${i} attempt`);
+      expect(await new Hub(store, key, { publicUrl: 'https://hub.test', now: () => clock }).signIn('tester', 'correct horse battery')).toMatchObject({ ok: false, status: 429 });
+    });
+  });
+
+  describe('the world manifest check (Pedro, 2026-11-04)', () => {
+    const shipped = () => FIRST_THEME_PACK;
+    const variant = (name: string) => sealTheme({ ...bodyOf(FIRST_THEME_PACK), name }, 'test', 1);
+    const firstKind = () => {
+      const compiled = compileTheme(FIRST_THEME_PACK);
+      const kind = Object.keys(compiled.mobs)[0];
+      return { kind, worldSeed: 'seed_test', themeId: FIRST_THEME_PACK.themeId, nodes: [], roots: [kind], def: JSON.parse(JSON.stringify(compiled.mobs[kind])) };
+    };
+    const worldOf = (uid: string, themeId = FIRST_THEME_PACK.themeId, worldUid = 'world_check_1') => ({ worldUid, creatorCertUid: uid, themeId });
+
+    it('what already exists passes, and the answer is signed by the hub', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], kinds: [firstKind()] });
+      expect(out).toMatchObject({ ok: true, themes: { known: [FIRST_THEME_PACK.themeId], accepted: [], refused: [] }, diff: [] });
+      if (!out.ok) return;
+      expect(verifyStatement(key.publicKeyPem, out.ack.text, out.ack.signature)).toBe(true);
+      expect(JSON.parse(out.ack.text)).toMatchObject({ kind: 'worldseed-hub-world', hub: key.id, world: 'world_check_1', themeId: FIRST_THEME_PACK.themeId, at: clock });
+    });
+
+    it('a new theme that keeps the law is accepted, and is known from then on, to every instance', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const second = variant('A Second World, for the check');
+      expect(await hub.checkWorld(token, { world: worldOf(character.uid, second.themeId), themes: [shipped(), second] })).toMatchObject({ ok: true, themes: { accepted: [second.themeId] } });
+      const other = new Hub(store, key, { publicUrl: 'https://hub.test', now: () => clock });
+      expect(await other.checkWorld(token, { world: worldOf(character.uid, second.themeId), themes: [second] })).toMatchObject({ ok: true, themes: { known: [second.themeId], accepted: [] } });
+    });
+
+    it('a theme whose id does not match its words, or that breaks the law, is refused with the reason', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const forged = { ...variant('A Forged World'), name: 'Not what was sealed' };
+      const lawless = sealTheme({ ...bodyOf(FIRST_THEME_PACK), name: 'A Lawless World', lore: [...FIRST_THEME_PACK.lore, 42 as any] }, 'test', 1);
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped(), forged, lawless] });
+      expect(out).toMatchObject({ ok: false, status: 200 });
+      const refused = (out as any).themes.refused;
+      expect(refused.map((r: any) => r.themeId)).toEqual([forged.themeId, lawless.themeId]);
+      expect(refused[0].reason).toMatch(/id does not match/);
+      expect(refused[1].reason).toMatch(/number/);
+    });
+
+    it('a kind whose numbers are not what its line makes them comes back corrected, as a diff, never the whole load', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const honest = firstKind();
+      const inflated = { ...honest, def: { ...honest.def, baseHealth: (honest.def.baseHealth as number) * 10, baseDamage: (honest.def.baseDamage as number) + 99 } };
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], kinds: [inflated] });
+      expect(out).toMatchObject({ ok: true });
+      expect((out as any).diff).toEqual([
+        { op: 'replace', path: '/kinds/0/def/baseHealth', value: honest.def.baseHealth },
+        { op: 'replace', path: '/kinds/0/def/baseDamage', value: honest.def.baseDamage }
+      ]);
+      expect((out as any).kinds.corrected).toEqual([{ kind: honest.kind, def: honest.def }]);
+    });
+
+    it('a kind whose line does not prove itself cannot be corrected, and is refused', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const gap = { ...firstKind(), roots: [] };
+      expect(await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], kinds: [gap] })).toMatchObject({ ok: false, kinds: { refused: [{ kind: gap.kind }] } });
+    });
+
+    it('a world belongs to a character of this account, and keeps the theme it was first checked with', async () => {
+      const first = await signedIn('first');
+      const { character } = await registered(first);
+      const second = await signedIn('second');
+      expect(await hub.checkWorld(second, { world: worldOf(character.uid), themes: [shipped()] })).toMatchObject({ ok: false, status: 403 });
+
+      expect((await hub.checkWorld(first, { world: worldOf(character.uid), themes: [shipped()] })).ok).toBe(true);
+      const moved = variant('A World Moved Under Its Feet');
+      expect(await hub.checkWorld(first, { world: worldOf(character.uid, moved.themeId), themes: [shipped(), moved] })).toMatchObject({ ok: false, world: { reason: expect.stringMatching(/theme/) } });
+    });
+  });
+
   describe('time (D135)', () => {
     it('the hub states its own time as the clock\'s address, signed', () => {
       const said = hub.clock();
@@ -336,6 +447,26 @@ describe('the hub', () => {
     const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
       fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
+    it('the function a host runs answers as the hub from its environment alone, and says what is missing when it cannot', async () => {
+      const pem = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      const config = hubConfigFrom({ WS_HUB_DATABASE_URL: 'pglite://memory', WS_HUB_KEY: pem, WS_PUBLIC_URL: 'https://hub.test/' });
+      const fn = createHubFunction(config);
+      server = createServer((req, res) => void fn(req, res, hubPathOf(req.url)));
+      await new Promise<void>(r => server!.listen(0, '127.0.0.1', () => r()));
+      const base = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+      const health = await (await fetch(`${base}/api/hub/health`)).json();
+      expect(health).toMatchObject({ ok: true, service: 'worldseed-hub', hub: { id: makeHubKey(pem).id, url: 'https://hub.test' } });
+      expect((await post(`${base}/api/hub/accounts`, { handle: 'fn_made', password: 'correct horse battery' })).status).toBe(200);
+
+      expect(hubConfigFrom({ WS_HUB_KEY: pem, WS_PUBLIC_URL: 'https://hub.test' })).toMatchObject({ problem: expect.stringMatching(/WS_HUB_DATABASE_URL/) });
+      expect(hubConfigFrom({ WS_HUB_DATABASE_URL: 'pglite://memory', WS_PUBLIC_URL: 'https://hub.test' })).toMatchObject({ problem: expect.stringMatching(/WS_HUB_KEY/) });
+      const broken = createHubFunction(hubConfigFrom({}));
+      const res = { statusCode: 0, setHeader() {}, end(b: string) { (this as any).body = b; } } as any;
+      await broken({} as any, res, '/health');
+      expect(res.statusCode).toBe(503);
+      expect(JSON.parse(res.body).reason).toMatch(/WS_HUB_DATABASE_URL/);
+    });
+
     it('the hub says what it is and whose key it signs with', async () => {
       const base = await listen();
       const health = await (await fetch(`${base}/api/hub/health`)).json();
@@ -370,6 +501,27 @@ describe('the hub', () => {
 
       expect((await post(`${base}/api/hub/session/end`, {}, auth)).status).toBe(200);
       expect((await fetch(`${base}/api/hub/session`, { headers: auth })).status).toBe(401);
+    });
+
+    it('a page on the hub\'s own domain signs in with a cookie its scripts cannot read, and never sees the token', async () => {
+      const base = await listen();
+      await post(`${base}/api/hub/accounts`, { handle: 'cookied', password: 'correct horse battery' });
+      expect(await (await fetch(`${base}/api/hub/where`)).json()).toMatchObject({ configured: true, url: 'https://hub.test', signedIn: null });
+
+      const signIn = await post(`${base}/api/hub/sessions`, { handle: 'cookied', password: 'correct horse battery', keep: 'cookie' });
+      const said = await signIn.json();
+      expect(said).toMatchObject({ ok: true, account: { handle: 'cookied' } });
+      expect(said.token).toBeUndefined();
+      const cookie = signIn.headers.get('set-cookie') ?? '';
+      expect(cookie).toMatch(/^ws_hub=[^;]+;/);
+      for (const flag of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/api/hub']) expect(cookie).toContain(flag);
+
+      const jar = { Cookie: cookie.split(';')[0] };
+      expect(await (await fetch(`${base}/api/hub/where`, { headers: jar })).json()).toMatchObject({ signedIn: 'cookied' });
+      expect(await (await fetch(`${base}/api/hub/session`, { headers: jar })).json()).toMatchObject({ ok: true, account: { handle: 'cookied' } });
+      const out = await post(`${base}/api/hub/session/end`, {}, jar);
+      expect(out.headers.get('set-cookie')).toMatch(/ws_hub=;.*Max-Age=0/);
+      expect((await fetch(`${base}/api/hub/session`, { headers: jar })).status).toBe(401);
     });
 
     it('the deployed server serves the landing page and the hub, and nothing of play', async () => {

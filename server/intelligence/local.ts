@@ -379,6 +379,8 @@ export class OllamaRuntime implements ILocalRuntime {
 
 /** Is Ollama on this machine, running or not? Its usual places, then the PATH. */
 async function ollamaOnDisk(): Promise<boolean> {
+  // A page cannot look at the disk: there, the runtime is known only by answering
+  if (typeof process === 'undefined' || !process.versions?.node) return false;
   const { access } = await import('node:fs/promises');
   const { join, delimiter } = await import('node:path');
   const exe = process.platform === 'win32' ? 'ollama.exe' : 'ollama';

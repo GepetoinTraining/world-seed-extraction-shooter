@@ -5,7 +5,7 @@
  * rollback handler, no finally and no driver cleanup gets to run.
  */
 import { randomUUID } from 'node:crypto';
-import { openStore } from '../../server/SqlStore';
+import { openStore } from '../../server/openStore';
 
 const url = process.env.WS_KILL_URL!;
 const killAt = process.env.WS_KILL_AT!;

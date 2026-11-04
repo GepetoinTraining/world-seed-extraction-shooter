@@ -2,94 +2,107 @@
 
 Pedro, 2026-11-04: "develop out the API connections so we can test this deployed (I haven't yet decided the domain we'll use, it also needs a static landing page, account creation such and such... it's abrowser based game, should run on the person's own machine we simply check the receipts, the model itself needs a way to communicate with the game for the local test)".
 
-This file is the split, written before it was built. The domain is configuration everywhere: nothing in the code names one.
+Then, ruling on hosting: "If we need ACTIVE compute outside the player viewing the game, we built it wrong. We don't compute anything, we check receipts, this is math, vercel and players are computing view workers, the DB layer needs to be local (idb) or postgress for online play, we serve a postgress we socket to join them and keep it live speaking to the Turso DB, which they can't access, and they run the code locally on the browser, they send to us the world manifest, we simply check if everything is pre existing, what's not pre existing needs to pass a function to be checked if it doesn't break any rules. If it doesn't we accept, they continually play, what happens if it does break a rule is that we serve the corrected atom, and the item, or the loot table, or the world manifest gets the diff, never the full load."
 
-## Two programs
+The domain is configuration everywhere: nothing in the code names one.
 
-**The runner, on the person's machine.** `npm run play` builds the game and starts `server/main.ts` on `127.0.0.1`. It is what the person's browser opens. It:
+## The split
 
-- serves the built game to that browser;
-- holds the person's live store (Postgres on a folder, `data/…`), which is where their play is kept;
-- holds the door to the model: Gemma or any other model through Ollama on the same machine, or a key the person inserts, kept in the runner's memory and nowhere else;
-- holds the bridge to a hub (`/api/hub/…`), forwarding to the address in `WS_HUB_URL`. The hub's session token stays in the runner's memory, so the browser never holds it;
-- tells the browser what time the game is (`/api/clock`): the hub's, read from its signed clock and counted forward on a steady counter the machine's clock does not move, or with no hub, this machine's own;
-- answers this machine only, as every door here has since D31.
+**The game, in the player's browser.** A static site: the landing page at `/`, and the game at `/play/` (`npm run build:site` writes both to `dist-site/`). The game runs entirely in the page:
 
-**The hub, deployed.** `npm run hub` starts `server/hub/main.ts`. It:
+- its save is the game's own store (`SqlStore`, with all its law) on PGlite, which keeps its files in the browser's IndexedDB (`src/entities/data/BrowserStore.ts`). One tab holds it, by a Web Lock; a second tab is told so;
+- its time is the hub's, read from the hub's signed clock and counted on the browser's steady counter (`GameClock`);
+- its session with the hub rides in a cookie the page's scripts cannot read.
 
-- serves the landing page (`landing/`), a static page apart from the game;
+**The hub, as stateless functions.** One request handler (`server/hub/function.ts`), which a host such as Vercel runs per request (`api/hub/[...path].ts`, `vercel.json`). Nothing outlives a call but the store: a proof's one-time text is signed by the hub and carries its own account and expiry, and wrong passwords are counted in the store, so any instance answers the same. It computes nothing of play. It:
+
 - holds accounts and sessions;
-- registers a person's characters (the certificate the browser made, its public key) under their account, and answers with a statement it signs with its own key and its own time. That is D134's anchor: the character's certificate chained to the hub that issued it, with a time;
-- checks receipts: a character's signed ledger rows, each signature against the registered key, each row onto the last. It keeps the rows it accepted, so it holds that character's head. A row that differs from one it already holds is a challenge (D134), kept beside the character, and the chain it held first stands. It answers each check with an acknowledgement it signs (the hub id, the character, the seq, the head row's hash, its time), which is the checkpoint "held by someone else" that D135's measurement asked for;
-- keeps its own store on Postgres (a `postgres://` URL when served) and its record on Turso through the same keeper the game uses (`WS_RECORD=1`).
+- registers a player's characters, answering with a statement it signs with its key and its time (D134's anchor);
+- checks receipts: signed ledger rows, each signature against the registered key, each row linked to the one before, each moment its own and none from a day the hub has not reached (D135). A row that differs from one it holds, or links to a different one, is a challenge;
+- checks worlds (below);
+- keeps its store on a served Postgres (`WS_HUB_DATABASE_URL`), and its record on Turso through the game's own keeper (`WS_RECORD=1`). Players reach neither.
 
-It does **not** run anyone's play, hold anyone's game store, hold a door to a model, or hold a model key. Nothing it serves reaches `/api/db` or `/api/intelligence`.
+`npm run hub` runs the same function locally behind a plain Node server, serving `dist-site/` (or the landing page alone, before a build): the stand-in for the host.
 
-## Time (D135)
+## The world check
 
-The game's time is Pedro's radix-chain clock (`lettersacrosssubstrate.dev/en/clock`). A moment's address is the day index N, counted from machine zero (JDN 2451911, a Monday in 2001), as its residues mod 2⁶, 3³, 5², 7², 11², 13², with the day's inner count beside it (3 blocks × 8 hours, 3 segments × 20 minutes, 10 turns × 6 seconds). The arithmetic is `src/logic/time/RadixClock.ts`, integer only. The game's own day number stays the Unix day (N + 11,323), so nothing stored as a day moves.
+`POST /api/hub/worlds/check` with `{ manifest }`:
 
-Every day the game reads comes from `GameClock` (`src/logic/time/GameClock.ts`), which takes its time from the runner and counts on the browser's steady counter between readings. Moving the computer's clock no longer moves the game's day. With no server read yet, as in the tests, it reads the browser's clock, as before.
+```
+{ world: { worldUid, creatorCertUid, themeId }, themes: [theme packs], kinds: [line proofs] }
+```
 
-Every ledger row now carries, inside what is signed: `v: 2`, `prev` (the SHA-256 of the row before's signature) and `clock` (the moment's address, and whose clock read it: the hub's id, `machine` or `browser`). One law checks it on every side (`src/logic/ledger/chainLaw.ts`): each row links to the one before, its address names its own time, and no day runs backward. Older rows stand as they were, and once a chain has a newer row every later row is newer. The hub adds two checks of its own: nothing from a day it has not reached, and a row whose link names a different row than the one the hub holds under it is a challenge. Because each row links to the whole history under it, the hub's head now certifies all of it, which closes D135's measured gap where a drop below a checkpoint went uncaught.
+- The world's maker must be a character of the signed-in account. A world keeps the theme it was first checked with, and its maker.
+- A theme the hub holds (shipped, or judged before by any instance) passes. A new one must carry an id that matches its words (`themeIdOf`) and keep the law (`ContentRegistry.install`, the browser's own law); then it is held as known. One that breaks the law is refused, with the law's reason.
+- A creature kind the hub holds with the same definition passes. A new one goes through `CreatureLines.correctProof`, the browser's own line check. A line that does not prove itself is refused. Numbers that are not what its line makes are put right: the answer carries the corrected kind and JSON Patch operations on the manifest (`{ op: 'replace', path: '/kinds/0/def/baseHealth', value }`), never the whole load.
+- The answer is signed by the hub.
 
-## Why the runner serves the game, and not the hub
-
-The game's store and the model's door have to be on the person's machine (their play, their compute, their key). A page served from a public domain that reaches a server on `127.0.0.1` runs into the browsers' local-network gates: a permission prompt in current Chrome, and plain `http` from an `https` page in others. A page served by the runner itself has none of that: the store, the door and the bridge are on its own address. So the hub's domain serves the landing page and the accounts, and the game is opened from the runner.
-
-## The model's channel, for a local test
-
-The browser asks the runner's door (`/api/intelligence/…`), the same address the page came from. The door asks Ollama on `127.0.0.1:11434` (`WS_LOCAL_URL` to point it elsewhere, such as another machine on the person's network), or the free option the person picked with their own key. The machine check and the free options (`server/intelligence/machine.ts`, `door-options.json`) are read in the game's VOICE panel, under SYSTEM. Nothing about this goes through the hub.
+**Not yet in the check:** items and their numbers, loot (which is code, not data: there is no table to diff), and the hub manifest. An item does not carry its definition today, and its numbers come from several formulas; that is the next atom to check.
 
 ## The routes
 
-On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site cannot post here through a visitor's browser (a JSON body forces a preflight, and the hub answers none). A signed-in route takes `Authorization: Bearer <token>`.
+On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site cannot post here through a visitor's browser (a JSON body forces a preflight, and the hub answers none). A signed-in route takes the session cookie or `Authorization: Bearer <token>`.
 
 | Route | Who | What |
 |---|---|---|
-| `GET /health` | anyone | `service: worldseed-hub`, the hub's id, its public key, its time |
+| `GET /health` | anyone | `service: worldseed-hub`, the hub's id, its public key, its address, its time |
 | `GET /clock` | anyone | the hub's time as the clock's address, signed |
+| `GET /where` | anyone | this hub's address, and who is signed in here |
 | `POST /accounts` | anyone | `{ handle, password }`: a new account |
-| `POST /sessions` | anyone | `{ handle, password }`: signs in, answers a token |
+| `POST /sessions` | anyone | `{ handle, password, keep? }`: signs in; with `keep: 'cookie'` the token goes into an HttpOnly, Secure, SameSite=Strict cookie and is left out of the answer |
 | `GET /session` | signed in | who this is |
-| `POST /session/end` | signed in | signs out |
+| `POST /session/end` | signed in | signs out, and clears the cookie |
 | `POST /characters/nonce` | signed in | a one-time text for the character's key to sign |
 | `POST /characters` | signed in | `{ certificate, proof }`: registers a character, answers the hub's signed statement |
 | `GET /characters` | signed in | this account's characters, each with its held seq and standing |
 | `POST /receipts` | signed in | `{ uid, rows }`: signed ledger rows, checked and held; answers the acknowledgement or the challenge |
 | `GET /record/<uid>` | signed in | what the hub holds for a character: its seq, head hash, standing |
+| `POST /worlds/check` | signed in | `{ manifest }`: the world check above |
 
-On the runner, `/api/hub/…` forwards these, holding the token, plus `GET /api/hub/where` (which hub, and who is signed in). With no `WS_HUB_URL` it answers that no hub is set, and the game plays on alone. It refuses a hub address in plain `http` unless that address is on this machine, so a token never crosses a network unencrypted.
+## Time (D135)
 
-## Accounts
+The game's time is Pedro's radix-chain clock (`lettersacrosssubstrate.dev/en/clock`). A moment's address is the day index N, counted from machine zero (JDN 2451911, a Monday in 2001), as its residues mod 2⁶, 3³, 5², 7², 11², 13², with the day's inner count beside it (3 blocks × 8 hours, 3 segments × 20 minutes, 10 turns × 6 seconds). The arithmetic is `src/logic/time/RadixClock.ts`, integer only. The game's own day number stays the Unix day (N + 11,323), so nothing stored as a day moves.
 
-Built here, with nothing outside: a hub anyone runs cannot depend on an account service someone else holds. A handle and a password; the password is kept as a salted scrypt hash and compared in constant time; a token is 32 random bytes, kept only as its hash. Repeated wrong passwords for one handle wait before they are tried again. No email is asked for, because no mail service is chosen, so there is no recovery yet.
+Every day the game reads comes from `GameClock`, which takes its time from the hub and counts on the browser's steady counter between readings. Moving the computer's clock no longer moves the game's day.
+
+Every ledger row carries, inside what is signed: `v: 2`, `prev` (the SHA-256 of the row before's signature) and `clock` (the moment's address, and whose clock read it). One law checks it on every side (`src/logic/ledger/chainLaw.ts`). Its SHA-256 is written out and synchronous (`sha256.ts`), so the browser and the hub reach the same digits. Because each row links to the whole history under it, the hub's head certifies all of it, which closes D135's measured gap where a drop below a checkpoint went uncaught.
 
 ## Configuration
 
-| Name | Program | What |
+| Name | Where | What |
 |---|---|---|
-| `WS_HUB_URL` | runner | the hub's address, for example `https://<domain>`; unset, no hub |
-| `WS_HUB_DATABASE_URL` | hub | `postgres://…` when served; default a folder at `data/hub-test` |
-| `WS_PUBLIC_URL` | hub | its own address, named in what it signs; default its listening address |
-| `WS_HUB_KEY` / `WS_HUB_KEY_FILE` | hub | its signing key (PKCS#8 PEM, Ed25519), from the host's secret store; with neither, one is made into `data/hub-key.pem` for a local test |
-| `WS_HOST`, `WS_PORT` | both | where it listens; the hub defaults to `127.0.0.1:3950`, and a host sets `0.0.0.0` |
-| `WS_RECORD`, `TURSO_*` | both | the record, as before |
+| `WS_HUB_DATABASE_URL` | hub | the served Postgres (`postgres://…`); `npm run hub` defaults to a folder at `data/hub-test` |
+| `WS_HUB_KEY` | hub | its signing key (PKCS#8 PEM, Ed25519), from the host's secret store. `npm run hub` makes one into `data/hub-key.pem` when none is named |
+| `WS_PUBLIC_URL` | hub | its own address, named in what it signs |
+| `WS_RECORD`, `TURSO_*` | hub | the record, as before |
+| `VITE_WS_STORE=browser` | game build | set by `npm run build:site`: the save lives in the browser |
 
 ## A local test of the whole thing
 
 ```bash
+npm run build:site
 npm run hub
-WS_HUB_URL=http://127.0.0.1:3950 npm run play
 ```
 
-Open `http://127.0.0.1:3950` for the landing page and make an account. Open `http://127.0.0.1:3900` for the game, sign in under SYSTEM, THE HUB, register the character and send its receipts.
+Open `http://127.0.0.1:3950` for the landing page and make an account, then PLAY IN THIS BROWSER (`/play/`). Under SYSTEM, THE HUB, sign in, register the character and send its receipts.
+
+## The model, from the browser: not built yet
+
+The game's voice is the door in `server/intelligence/`, which today runs on a server: in development, or under `npm run play` (`server/main.ts`, the runner), which still works and is now only needed for the voice. Played from the domain, the game plays on without one.
+
+What reaching a local model from a page on the domain takes, checked 2026-11-04:
+
+- **Ollama's allowed origins.** Ollama answers a browser only from local origins unless told otherwise, so the player sets `OLLAMA_ORIGINS=https://<domain>` once and restarts Ollama.
+- **Chrome's Local Network Access.** A public page reaching `127.0.0.1` needs the player's permission, asked once. Since Chrome 145 it is its own permission, for loopback. A player who refuses is not asked again until they change it in the site's settings.
+- **The door itself moves into the page.** The prompts, the law over what comes back and the local runtime are already free of Node. The machine check is not: a page cannot read the machine's memory or graphics card, only what Ollama reports (`/api/tags`, `/api/ps`) and the little a browser says.
+- **A key the player inserts** would be called from the page straight to its provider. Whether each free option answers a browser (its CORS) is not checked; Anthropic's needs a header marking direct browser access.
 
 ## Not built, on purpose
 
-- Rerunning a character's arithmetic on the hub, so a challenge can come from numbers that do not fit and not only from a rewritten row (D134). It waits on integer-only reruns.
-- Timers inside a day: rests, crafting jobs and the like still count milliseconds on `Date.now()` in the browser. They move to `GameClock.now()` in their own pass.
-- A hub that refuses a row signed while the game followed only its own machine. Today such a row is accepted if it is not from the future and fits the chain.
-- Goods carried between hubs (the bag and the threading).
-- Charging for model use, the market and its currency.
-- A runner a person can start without Node and a copy of this repository.
+- Online play: a served Postgres that players join over a socket and that stays live, speaking to Turso (the data layer's sockets phase, leg 5).
+- Rerunning a character's arithmetic on the hub (D134). It waits on integer-only reruns.
+- Items, loot and the hub manifest in the world check.
+- A world certificate the hub can verify: the certificate keeps its signature but not the moment signed, and its stats change after signing, so nothing can check it today. The check ties a world to a character registered under the account instead.
+- Timers inside a day (rests, crafting jobs) still count milliseconds on `Date.now()` in the browser; they move to `GameClock.now()` in their own pass.
+- A Turso write-down for the hub on a schedule: a function host has no clean stop, so the marks wait in Postgres until a scheduled call writes them down.
+- Goods carried between hubs, charging for model use, the market and its currency.

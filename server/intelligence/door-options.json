@@ -20,6 +20,23 @@
   },
   "keyed": [
     {
+      "id": "anthropic",
+      "name": "Anthropic, your own key",
+      "protocol": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "model": "claude-sonnet-5-5",
+      "keyPage": "https://platform.claude.com",
+      "free": "Not free: the player's own key pays Anthropic per token, at Anthropic's rates. Nothing passes through our servers.",
+      "card": "yes, for API credit",
+      "data": "Sent from the player's browser straight to Anthropic. An organization with zero data retention or the Compliance API on is refused browser calls.",
+      "browser": "Allowed with the anthropic-dangerous-direct-browser-access header, which the door sets (platform.claude.com docs, read 2026-11-04).",
+      "checked": "2026-11-04",
+      "sources": [
+        "https://platform.claude.com/docs/en/manage-claude/authentication#browser-based-applications",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ]
+    },
+    {
       "id": "gemini",
       "name": "Google Gemini API",
       "protocol": "openai",
@@ -33,7 +50,8 @@
       "sources": [
         "https://aistudio.google.com/docs/pricing",
         "https://aistudio.google.com/docs/terms"
-      ]
+      ],
+      "browser": "A browser preflight from another origin passed on 2026-11-04; the provider's docs do not say whether a page may call it."
     },
     {
       "id": "groq",
@@ -49,7 +67,8 @@
       "sources": [
         "https://console.groq.com/docs/rate-limits",
         "https://console.groq.com/docs/your-data"
-      ]
+      ],
+      "browser": "A browser preflight from another origin passed on 2026-11-04; the provider's docs do not say whether a page may call it."
     },
     {
       "id": "openrouter",
@@ -65,7 +84,8 @@
       "sources": [
         "https://openrouter.ai/docs/api-reference/limits",
         "https://openrouter.ai/docs/guides/privacy/logging"
-      ]
+      ],
+      "browser": "A browser preflight from another origin passed on 2026-11-04; the provider's docs do not say whether a page may call it."
     },
     {
       "id": "mistral",
@@ -80,7 +100,8 @@
       "checked": "2026-11-04",
       "sources": [
         "https://docs.mistral.ai"
-      ]
+      ],
+      "browser": "A browser preflight from another origin passed on 2026-11-04; the provider's docs do not say whether a page may call it."
     }
   ]
 }

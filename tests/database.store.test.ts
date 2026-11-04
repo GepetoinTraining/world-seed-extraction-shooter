@@ -23,7 +23,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { folderUrl, openDatabase } from '../server/connection';
-import { openStore, SqlStore, StoreConflict, StoreRefusal } from '../server/SqlStore';
+import { SqlStore, StoreConflict, StoreRefusal } from '../server/SqlStore';
+import { openStore } from '../server/openStore';
 import { IWireDoc, ICommitRequest } from '../src/entities/data/wire';
 
 const NS = { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' };

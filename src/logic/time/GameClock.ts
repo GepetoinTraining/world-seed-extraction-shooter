@@ -52,6 +52,17 @@ export const GameClock = {
     if (options.read) read = options.read;
   },
 
+  /** A hub's signed clock (server/hub), read straight from the hub, for a page served beside it. */
+  async readHub(url: string): Promise<IClockReading | null> {
+    try {
+      const said = await (await fetch(url, { cache: 'no-store' })).json();
+      const stated = JSON.parse(said?.statement?.text ?? 'null');
+      return said?.ok && Number.isFinite(stated?.at) ? { ok: true, now: stated.at, source: 'hub', hub: String(stated.hub ?? '') } : null;
+    } catch {
+      return null;
+    }
+  },
+
   /** Back to never having been read. */
   reset() {
     monotonic = defaultMonotonic;

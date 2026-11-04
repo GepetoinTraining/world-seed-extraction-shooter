@@ -5,6 +5,11 @@
  * every POST takes JSON only (a JSON body forces a browser's preflight, which this answers none of,
  * so another site cannot post here through a visitor's browser), a signed-in route takes a bearer
  * token in a header (which a cross-site form cannot set), and a body has a ceiling.
+ *
+ * A PAGE ON THE HUB'S OWN DOMAIN (the game, served beside it) signs in with `keep: 'cookie'`: the
+ * token then goes into an HttpOnly, Secure, SameSite=Strict cookie scoped to /api/hub, which the
+ * page's scripts cannot read, and is left out of the answer. A runner's bridge, which holds the
+ * token itself, asks without it.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Hub } from './Hub';
@@ -36,10 +41,22 @@ function readBody(req: IncomingMessage, limit = HUB_BODY_BYTES): Promise<string>
   });
 }
 
-const bearer = (req: IncomingMessage) => {
+const COOKIE = 'ws_hub';
+const COOKIE_DAYS = 30;
+
+/** The caller's token: a bearer header first, else this hub's cookie. */
+const tokenOf = (req: IncomingMessage) => {
   const header = req.headers.authorization ?? '';
-  return header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+  if (header.startsWith('Bearer ')) return header.slice('Bearer '.length).trim();
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const [name, ...value] = part.trim().split('=');
+    if (name === COOKIE) return decodeURIComponent(value.join('='));
+  }
+  return '';
 };
+
+const cookie = (value: string, maxAge: number) =>
+  `${COOKIE}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/api/hub; Max-Age=${maxAge}`;
 
 /** An answer from the hub, sent with its own status. */
 const answer = (res: ServerResponse, out: { ok: boolean; status?: number }) => {
@@ -51,10 +68,14 @@ const answer = (res: ServerResponse, out: { ok: boolean; status?: number }) => {
 export function createHubHandler(hub: Hub) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     try {
-      const token = bearer(req);
+      const token = tokenOf(req);
 
       if (req.method === 'GET') {
         if (path === '/health') return send(res, 200, { ok: true, service: 'worldseed-hub', hub: { id: hub.id, publicKeyPem: hub.key.publicKeyPem, url: hub.publicUrl }, time: Date.now() });
+        if (path === '/where') {
+          const account = await hub.session(token);
+          return send(res, 200, { configured: true, url: hub.publicUrl, signedIn: account?.handle ?? null });
+        }
         if (path === '/clock') return send(res, 200, { ok: true, statement: hub.clock() });
         if (path === '/session') {
           const account = await hub.session(token);
@@ -78,14 +99,23 @@ export function createHubHandler(hub: Hub) {
 
       switch (path) {
         case '/accounts': return answer(res, await hub.createAccount(body.handle, body.password));
-        case '/sessions': return answer(res, await hub.signIn(body.handle, body.password));
+        case '/sessions': {
+          const out = await hub.signIn(body.handle, body.password);
+          if (out.ok && body.keep === 'cookie') {
+            res.setHeader('Set-Cookie', cookie(encodeURIComponent(out.token), COOKIE_DAYS * 24 * 60 * 60));
+            return send(res, 200, { ok: true, account: out.account });
+          }
+          return answer(res, out);
+        }
         case '/session/end':
+          res.setHeader('Set-Cookie', cookie('', 0));
           if (!(await hub.session(token))) return send(res, 401, { ok: false, status: 401, reason: 'Sign in first.' });
           await hub.signOut(token);
           return send(res, 200, { ok: true });
         case '/characters/nonce': return answer(res, await hub.nonce(token));
         case '/characters': return answer(res, await hub.registerCharacter(token, body.certificate, body.proof));
         case '/receipts': return answer(res, await hub.checkReceipts(token, body.uid, body.rows));
+        case '/worlds/check': return answer(res, await hub.checkWorld(token, body.manifest));
         default: return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
       }
     } catch (e) {

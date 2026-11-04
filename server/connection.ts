@@ -27,37 +27,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.pg';
 
-/** The database cannot be opened, for a reason a person can act on. The game shows this text. */
-export class DatabaseUnavailable extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'DatabaseUnavailable';
-  }
-}
-
-export interface IDatabase {
-  dialect: 'postgres';
-  db: any;
-  schema: typeof schema;
-  /** Maintenance (D103): gives back what weeks of writes left behind. */
-  compact: () => Promise<void>;
-  /**
-   * What a database with no background workers needs between maintenances. Single-user
-   * Postgres has no checkpointer and no autovacuum, so the log and the dead rows only
-   * grow until someone asks. A served Postgres has both, and leaves this out.
-   */
-  tidy?: { everyBytes: number; run: () => Promise<void> };
-  close: () => Promise<void>;
-}
-
-export interface IOpenOptions {
-  /** The pool size for postgres:// (a socket onto PGlite takes one connection at a time). */
-  poolSize?: number;
-  /** The record already holds this game, so a new folder comes up from it, whatever old file sits beside it. */
-  recordHoldsSave?: boolean;
-  /** A record answered, so an old save has somewhere else it may go. */
-  recordReachable?: boolean;
-}
+export { DatabaseUnavailable, isDataException, isUniqueViolation } from './dbShared';
+export type { IDatabase, IOpenOptions } from './dbShared';
+import { DatabaseUnavailable, type IDatabase, type IOpenOptions } from './dbShared';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'pg');
@@ -67,17 +39,6 @@ export const folderUrl = (folder: string) => `pglite://${resolve(folder).replace
 
 /** Where a checkout's game lives unless told otherwise. */
 export const defaultDatabaseUrl = (root: string) => folderUrl(resolve(root, 'data/test-claude'));
-
-function causeChain(e: unknown): any[] {
-  const chain: any[] = [];
-  for (let at: any = e; at && chain.length < 8; at = at.cause) chain.push(at);
-  return chain;
-}
-
-export const isUniqueViolation = (e: unknown) => causeChain(e).some(c => c?.code === '23505');
-
-/** Class 22: this text or this number cannot be stored at all, and trying again will not change that. */
-export const isDataException = (e: unknown) => causeChain(e).some(c => typeof c?.code === 'string' && c.code.startsWith('22'));
 
 export async function openDatabase(url: string, options: IOpenOptions = {}): Promise<IDatabase> {
   if (url.startsWith('postgres://') || url.startsWith('postgresql://')) return openPostgres(url, options);

@@ -12,12 +12,6 @@
     el.append(m, ' ', text);
   };
 
-  const command = $('play-command');
-  if (command) {
-    const unix = `WS_HUB_URL=${location.origin} npm run play`;
-    const windows = `$env:WS_HUB_URL="${location.origin}"; npm run play`;
-    command.textContent = `${unix}\n# Windows PowerShell:\n${windows}`;
-  }
 
   fetch('/api/hub/health', { cache: 'no-store' })
     .then(r => r.json())
@@ -40,7 +34,7 @@
       if (res.ok && out.ok) {
         form.password.value = '';
         form.again.value = '';
-        say(said, '[■]', `The account ${out.account.handle} is made. Sign in with it from inside the game.`);
+        say(said, '[■]', `The account ${out.account.handle} is made. Sign in with it from inside the game, under SYSTEM, THE HUB.`);
       } else {
         say(said, '[!]', out.reason || `The hub answered ${res.status}.`);
       }

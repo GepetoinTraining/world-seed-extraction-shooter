@@ -53,7 +53,9 @@ const Refusal: React.FC<{ midPlay: boolean }> = ({ midPlay }) => {
             : 'The bank will not open without its books.'}
         </p>
         <p className="ws-dim ws-small" style={{ margin: '0 0 6px' }}>
-          It keeps no second set in this browser, so it refuses rather than guess. Nothing has been changed, and nothing has been written anywhere else.
+          {StoreClient.isLocal()
+            ? 'Its books are kept in this browser, and it refuses rather than guess. Nothing has been changed, and nothing has been written anywhere else.'
+            : 'It keeps no second set in this browser, so it refuses rather than guess. Nothing has been changed, and nothing has been written anywhere else.'}
         </p>
         {midPlay && waiting > 0 && (
           <p className="ws-loss ws-small" style={{ margin: '0 0 6px' }}>
@@ -63,7 +65,9 @@ const Refusal: React.FC<{ midPlay: boolean }> = ({ midPlay }) => {
         <p className="ws-dim ws-small" style={{ margin: '0 0 6px' }}>
           {canCarry
             ? 'To open the vault, carry this save over. It writes a new database here and leaves the old file as it is.'
-            : <>To open the vault, start the server from the project folder: <span className="ws-bright">npm run dev</span></>}
+            : StoreClient.isLocal()
+              ? 'To open the vault, do what the machine says below, then reload this page.'
+              : <>To open the vault, start the server from the project folder: <span className="ws-bright">npm run dev</span></>}
         </p>
         <p className="ws-dim ws-small" style={{ margin: '0 0 12px', wordBreak: 'break-word' }}>The machine says: {reason ?? 'no answer'}</p>
         {carried && <pre className="ws-dim ws-small" style={{ margin: '0 0 12px', maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{carried.join('\n')}</pre>}

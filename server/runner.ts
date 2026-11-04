@@ -85,6 +85,9 @@ export function createHubBridge(options: IBridgeOptions): Door {
       try { body = (await readBody(req)) || '{}'; } catch { return send(res, 413, { ok: false, reason: 'That is more than one request carries.' }); }
     }
     if (problem || !hubUrl) return send(res, 200, { ok: false, status: 'NO_HUB', reason: problem });
+    if (path === '/sessions' && body) {
+      try { const asked = JSON.parse(body); delete asked.keep; body = JSON.stringify(asked); } catch { /* the hub says what is wrong with it */ }
+    }
 
     let answer: Response;
     try {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:site": "node --import tsx scripts/build-site.ts",
     "preview": "vite preview",
     "pedro": "node --import tsx scripts/pedro.ts",
     "db:sync": "node --import tsx scripts/pedro.ts --sync-only",

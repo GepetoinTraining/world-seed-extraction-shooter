@@ -18,8 +18,8 @@
     <section aria-labelledby="split">
       <h2 id="split">What runs where</h2>
       <ul class="marks">
-        <li><span class="mark" aria-hidden="true">[■]</span> <b>On your machine:</b> the game, your play, your save, and the model that writes for it.</li>
-        <li><span class="mark" aria-hidden="true">[◆]</span> <b>On this hub:</b> your account, and a check of your character's receipts: each signed, each following the last.</li>
+        <li><span class="mark" aria-hidden="true">[■]</span> <b>In your browser:</b> the game, your play, and your save.</li>
+        <li><span class="mark" aria-hidden="true">[◆]</span> <b>On this hub:</b> your account, and checks: your character's receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</li>
         <li><span class="mark" aria-hidden="true">[ ]</span> <b>Never here:</b> your play, your save, or a model key.</li>
       </ul>
     </section>
@@ -45,19 +45,14 @@
 
     <section aria-labelledby="play">
       <h2 id="play">Play</h2>
-      <ol>
-        <li>Get the game, and Node 22 or later.</li>
-        <li>In the game's folder: <code>npm install</code></li>
-        <li>Then start it, pointed at this hub:
-          <pre><code id="play-command">WS_HUB_URL=… npm run play</code></pre>
-        </li>
-        <li>Open <code>http://127.0.0.1:3900</code>. Under SYSTEM, THE HUB, sign in with the account above, register your character and send its receipts.</li>
-      </ol>
+      <p><a class="play" href="/play/">PLAY IN THIS BROWSER</a></p>
+      <p>Your save stays in this browser, on this machine. Under SYSTEM, THE HUB, sign in with the account above, register your character and send its receipts.</p>
+      <p class="hint">One tab holds the save at a time. Clearing this site's data clears the save, so back your avatar up from SYSTEM first.</p>
     </section>
 
     <section aria-labelledby="voice">
       <h2 id="voice">The model</h2>
-      <p>The game checks your machine and says plainly whether it can run a model there. If it can, it uses Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any model you choose. If it cannot, you can paste a key for one of the free options it lists. A key stays in the game's server on your machine, in memory, and is never sent here.</p>
+      <p>Played here, the game has no voice yet: it plays on without one. A model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose) reaching this page is the next piece to be built. Until then it speaks only when started from its own folder with <code>npm run play</code>, which checks your machine and offers free options if it cannot run one. No key is ever sent here.</p>
     </section>
 
     <footer>

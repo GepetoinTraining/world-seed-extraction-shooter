@@ -12,7 +12,7 @@
 import type { DoorStatus, IDoorOutcome, IDoorRequest, IIntelligenceDoorLike, IIntelligenceProvider, IProviderStatus } from './door';
 import { LocalProvider } from './local';
 import { MachineCheck, type IHost } from './machine';
-import { IDoorOptions, OpenAICompatibleProvider, providerFor } from './options';
+import { IDoorOptions, KeyedProvider, OpenAICompatibleProvider, providerFor } from './options';
 
 export type DoorMode = 'auto' | 'local' | 'keyed' | 'off';
 
@@ -28,7 +28,7 @@ export interface IDoorSettingStatus extends IProviderStatus {
 export class DoorSetting implements IIntelligenceProvider {
   readonly check: MachineCheck;
   private mode: DoorMode;
-  private keyed?: OpenAICompatibleProvider;
+  private keyed?: KeyedProvider;
 
   /** Until the person picks, the local model is the one suggested for this machine. */
   private picked: Promise<void>;
@@ -63,7 +63,7 @@ export class DoorSetting implements IIntelligenceProvider {
     if (!option) return { ok: false, reason: 'No such option is offered.' };
     if (!key.trim()) return { ok: false, reason: 'That key is empty.' };
     const made = providerFor(option, key.trim());
-    if (!(made instanceof OpenAICompatibleProvider)) return { ok: false, reason: made.reason };
+    if ('reason' in made) return { ok: false, reason: made.reason };
     const status = await made.status();
     if (!status.available) return { ok: false, reason: status.reason };
     this.keyed = made;
@@ -113,6 +113,8 @@ export class DoorSetting implements IIntelligenceProvider {
   collect(batchId: string): Promise<IDoorOutcome> {
     if (LocalProvider.owns(batchId)) return this.local.collect(batchId);
     if (OpenAICompatibleProvider.owns(batchId)) return this.keyed?.collect(batchId) ?? Promise.resolve({ status: 'OUTAGE', reason: 'That key is no longer held. It stays queued.' });
+    // A batch filed on a person's Anthropic key is collected on that key
+    if (this.keyed?.option.protocol === 'anthropic') return this.keyed.collect(batchId);
     return this.auto.collect(batchId);
   }
 }

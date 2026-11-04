@@ -19,7 +19,8 @@ import { ColdDoorRefused, assertNetworkUrl, openColdDoor, requestDeadlineMs } fr
 import { DatabaseUnavailable, folderUrl, openDatabase } from '../server/connection';
 import { RecordKeeper, openLiveStore, recordConfig } from '../server/record';
 import { RECORD_TABLES } from '../server/recordRows';
-import { SqlStore, openStore } from '../server/SqlStore';
+import { SqlStore } from '../server/SqlStore';
+import { openStore } from '../server/openStore';
 import * as schema from '../server/schema.pg';
 
 const ROOT = process.cwd();

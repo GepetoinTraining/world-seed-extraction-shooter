@@ -5,10 +5,9 @@
  * authentication in front of it (D45): a public route here spends someone's money.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
-import { SETTINGS, type DoorSetting } from './setting';
-import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildNpcGoalRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
-import { askChainInParts } from './parts';
+import type { IntelligenceDoor } from './door';
+import type { DoorSetting } from './setting';
+import { routeDoor } from './routes';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -40,95 +39,21 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
       return send(res, 403, { status: 'REFUSED', reason: 'This door answers this machine only. It has no authentication yet.' });
     }
-    if (path === '/status') return send(res, 200, await door.status());
-    const setting = options.setting ?? SETTINGS.get(door);
-    // The check on this machine and the free options: read here, answered to this machine only
-    if (path === '/machine' && req.method === 'GET') return setting ? send(res, 200, await setting.check.read()) : send(res, 200, { status: 'REFUSED', reason: 'This server has no setting to read.' });
-    if (path === '/options' && req.method === 'GET') return send(res, 200, setting ? { keyed: setting.options.keyed, local: setting.options.local ?? null } : { keyed: [], local: null });
-    if (req.method !== 'POST') return send(res, 405, { error: 'POST only.' });
-
-    let body: any;
-    try {
-      body = JSON.parse((await readBody(req)) || '{}');
-    } catch {
-      return send(res, 400, { status: 'REFUSED', reason: 'That was not JSON.' });
+    let body: any = {};
+    if (req.method === 'POST') {
+      try {
+        body = JSON.parse((await readBody(req)) || '{}');
+      } catch {
+        return send(res, 400, { status: 'REFUSED', reason: 'That was not JSON.' });
+      }
     }
-
-    const conversation = (body.messages ?? []) as IDoorMessage[];
-    const unsettable = () => send(res, 200, { status: 'REFUSED', reason: 'The voice cannot be changed on this server.' });
-    switch (path) {
-      case '/machine/try':
-        if (!setting) return unsettable();
-        return send(res, 200, await setting.check.tryModel(String(body.model ?? setting.local.runtime.model)));
-      case '/local/choose':
-        if (!setting) return unsettable();
-        setting.useLocal(String(body.model ?? ''));
-        return send(res, 200, { status: await setting.status(), machine: await setting.check.read() });
-      case '/local/pull': {
-        if (!setting) return unsettable();
-        const model = String(body.model ?? '').trim();
-        if (!model || !setting.local.runtime.pull) return send(res, 200, { ok: false, reason: 'Nothing to pull.' });
-        return send(res, 200, await setting.local.runtime.pull(model));
-      }
-      case '/key': {
-        if (!setting) return unsettable();
-        // The key stops here. What goes back says only whether it worked.
-        const out = await setting.useKey(String(body.optionId ?? ''), String(body.key ?? ''));
-        return send(res, 200, out);
-      }
-      case '/auto':
-        if (!setting) return unsettable();
-        setting.useAuto();
-        return send(res, 200, await setting.status());
-      case '/talk':
-        return send(res, 200, await door.ask(buildTalkRequest(conversation, body.draft ?? {})));
-      case '/theme':
-        return send(res, 200, await door.ask(buildThemeRequest(conversation, body.draft ?? {})));
-      case '/creation':
-        return send(res, 200, await door.ask(buildCreationRequest(body.ask ?? {})));
-      case '/chain':
-        return send(res, 200, await askChainInParts(door, body.ask ?? {}));
-      case '/world/pass':
-        if (!isWorldPass(body.pass)) return send(res, 200, { status: 'REFUSED', reason: 'A world is written in no such pass.' });
-        return send(res, 200, await door.ask(buildWorldPassRequest(body.pass, body.ask ?? {}, body.draft ?? {})));
-      case '/kami/talk': {
-        // One JSON line for each piece as it is written, then one saying how it ended. A closed tab stops the bill.
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/x-ndjson');
-        res.setHeader('Cache-Control', 'no-store');
-        const gone = new AbortController();
-        res.on('close', () => gone.abort());
-        const out = await door.askStream(buildKamiTalkRequest(conversation, body.persona), text => {
-          if (!gone.signal.aborted) res.write(`${JSON.stringify({ text })}\n`);
-        }, gone.signal);
-        res.end(`${JSON.stringify({ done: true, status: out.status, usage: out.usage, reason: out.reason })}\n`);
-        return;
-      }
-      case '/kami/set':
-        return send(res, 200, await door.ask(buildKamiSetRequest(conversation, body.ask ?? {}, body.persona)));
-      case '/kami/persona':
-        return send(res, 200, await door.ask(buildKamiPersonaRequest(String(body.seed ?? ''))));
-      case '/npc/talk':
-      case '/npc/bargain': {
-        if (String(body.ask?.said ?? '').length > TALK_MESSAGE_LIMIT) return send(res, 200, { status: 'REFUSED', reason: `That is more than one person can say at once: ${TALK_MESSAGE_LIMIT} characters.` });
-        const build = path === '/npc/talk' ? buildNpcTalkRequest : buildBargainRequest;
-        return send(res, 200, await door.askTalk(String(body.talkId ?? 'talk'), build(body.ask ?? {})));
-      }
-      case '/npc/goal':
-        return send(res, 200, await door.askTalk(String(body.talkId ?? 'talk'), buildNpcGoalRequest(body.ask ?? {})));
-      case '/rest/file':
-        return send(res, 200, await door.fileRest(String(body.id ?? 'rest'), buildRestRequest(body.queue ?? {}, body.theme ?? {})));
-      case '/rest/collect':
-        return send(res, 200, await door.collectRest(String(body.batchId ?? '')));
-      case '/window/file': {
-        const build = WINDOW_REQUESTS[String(body.kind)];
-        if (!build) return send(res, 200, { status: 'REFUSED', reason: 'A window carries no such ask.' });
-        return send(res, 200, await door.fileWindow(String(body.id ?? 'window'), build(body.asks ?? [], body.theme ?? {}), Number(body.spent) || 0));
-      }
-      case '/window/collect':
-        return send(res, 200, await door.collectRest(String(body.batchId ?? '')));
-      default:
-        return send(res, 404, { error: 'No such door.' });
-    }
+    const answer = await routeDoor(door, req.method ?? 'GET', path, body, options.setting);
+    if (!answer.stream) return send(res, answer.status, answer.json);
+    res.statusCode = answer.status;
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Cache-Control', 'no-store');
+    const gone = new AbortController();
+    res.on('close', () => gone.abort());
+    res.end(await answer.stream(line => res.write(line), gone.signal));
   };
 }

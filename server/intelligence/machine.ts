@@ -10,8 +10,6 @@
  * It says, never blocks (Pedro: "the choice should be the players"). Any model the runtime serves
  * can be chosen, however large; the check says how it would sit and how it fared.
  */
-import { execFile } from 'node:child_process';
-import { freemem, platform, totalmem, arch } from 'node:os';
 import type { ILocalRuntime, IServedModel } from './local';
 import type { ISuggestion } from './options';
 import { LocalProvider } from './local';
@@ -61,31 +59,10 @@ export interface IMachineReading {
 const size = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 const hardware = (bytes: number) => `${(bytes / 2 ** 30).toFixed(1)} GB`;
 
-const run = (file: string, args: string[]) => new Promise<string>(resolve => {
-  execFile(file, args, { timeout: 4000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout)));
-});
-
-/** The machine itself, read the ways each system allows. Whatever cannot be read stays unknown. */
-export const HOST: IHost = {
-  async cards() {
-    // NVIDIA says exactly, on every system that has its tool
-    const nvidia = await run('nvidia-smi', ['--query-gpu=name,memory.total', '--format=csv,noheader,nounits']);
-    const exact = nvidia.split(/\r?\n/).map(l => l.split(',').map(p => p.trim())).filter(p => p[0] && Number(p[1]) > 0)
-      .map(([name, mib]) => ({ name, bytes: Number(mib) * 1024 * 1024, measure: 'exact' as const }));
-    if (exact.length > 0) return exact;
-    if (platform() === 'darwin' && arch() === 'arm64') {
-      // Apple's chips share one memory between the card and everything else
-      return [{ name: 'Apple silicon', bytes: totalmem(), measure: 'shared' }];
-    }
-    if (platform() === 'win32') {
-      const out = await run('powershell', ['-NoProfile', '-Command', 'Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name)|$($_.AdapterRAM)" }']);
-      // Windows reports at most 4 GB here, whatever the card holds
-      return out.split(/\r?\n/).map(l => l.trim().split('|')).filter(p => p[0])
-        .map(([name, ram]) => (Number(ram) > 0 ? { name, bytes: Number(ram), measure: 'at least' as const } : { name, measure: 'at least' as const }));
-    }
-    return [];
-  },
-  memory: () => ({ total: totalmem(), free: freemem() })
+/** A machine that says nothing about itself: a page, which cannot read the card or the memory. Everything stays unknown. */
+export const NO_HOST: IHost = {
+  async cards() { return []; },
+  memory() { return { total: 0, free: 0 }; }
 };
 
 /** Where a model of `bytes` would sit, on what was read. A reading it cannot make is UNKNOWN, never a guess. */
@@ -116,7 +93,7 @@ const TRY_SCHEMA = { type: 'object', properties: { word: { type: 'string' }, cou
 export class MachineCheck {
   private tries = new Map<string, ITried>();
 
-  constructor(private local: LocalProvider, private host: IHost = HOST, private suggestions: ISuggestion[] = [], private page?: string) {}
+  constructor(private local: LocalProvider, private host: IHost = NO_HOST, private suggestions: ISuggestion[] = [], private page?: string) {}
 
   /** The suggestion for this machine: the largest that fits on its card; off a card, the smallest, which answers fastest. */
   static pick(suggestions: ISuggestion[], cards: ICard[], memory: { total: number; free: number }): ISuggestion | undefined {

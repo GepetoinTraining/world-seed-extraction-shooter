@@ -8,7 +8,8 @@ import { resolve } from 'node:path';
 import { AbsentProvider, IntelligenceDoor, type IIntelligenceProvider } from './door';
 import { ClaudeProvider } from './claude';
 import { KeyOrLocalProvider, LocalProvider, localRuntimeFrom } from './local';
-import { readDoorOptions } from './options';
+import { readDoorOptions } from './optionsFile';
+import { HOST } from './machineHost';
 import { DoorSetting, SETTINGS } from './setting';
 
 export function chooseProvider(env: NodeJS.ProcessEnv = process.env, local = new LocalProvider(localRuntimeFrom(env))): IIntelligenceProvider {
@@ -41,7 +42,7 @@ export const openDoor = (env: NodeJS.ProcessEnv = process.env) => {
   const options = readDoorOptions();
   // The model is the person's; until they pick, the setting takes the one suggested for this machine
   const local = new LocalProvider(localRuntimeFrom(env, { url: options.local?.url }));
-  const setting = new DoorSetting(chooseProvider(env, local), local, options, undefined, env.WS_LLM_PROVIDER === 'none');
+  const setting = new DoorSetting(chooseProvider(env, local), local, options, HOST, env.WS_LLM_PROVIDER === 'none');
   if (env.WS_LLM_PROVIDER === 'local') setting.useLocal();
   const door = new IntelligenceDoor(setting);
   SETTINGS.set(door, setting);

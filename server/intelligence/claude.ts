@@ -64,7 +64,7 @@ const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boo
 };
 
 export class ClaudeProvider implements IIntelligenceProvider {
-  name = 'claude';
+  name: string = 'claude';
   private client: Anthropic;
 
   constructor(client?: Anthropic) {
@@ -189,5 +189,22 @@ export class ClaudeProvider implements IIntelligenceProvider {
     } catch (e) {
       return this.failure(e);
     }
+  }
+}
+
+/**
+ * Claude on a player's own key (Pedro, 2026-11-04: "their IDB makes the call"). Played from the
+ * domain, the page calls Anthropic itself, marked as a browser's call, and the key goes nowhere but
+ * to Anthropic. The same class serves a server door given a key by the person beside it.
+ */
+export class KeyedClaudeProvider extends ClaudeProvider {
+  constructor(readonly option: { id: string; name: string; baseUrl: string }, key: string) {
+    super(new Anthropic({
+      apiKey: key,
+      ...(option.baseUrl && !/^https:\/\/api\.anthropic\.com\/?$/.test(option.baseUrl) ? { baseURL: option.baseUrl } : {}),
+      dangerouslyAllowBrowser: true,
+      defaultHeaders: { 'anthropic-dangerous-direct-browser-access': 'true' }
+    }));
+    this.name = option.id;
   }
 }

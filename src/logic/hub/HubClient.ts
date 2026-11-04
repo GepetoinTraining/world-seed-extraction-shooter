@@ -1,6 +1,7 @@
 /**
- * The browser's side of a hub (DEPLOY.md). It asks this machine's runner at /api/hub, and the runner
- * asks the hub, holding the session token itself: nothing here ever sees the token. A password goes
+ * The browser's side of a hub (DEPLOY.md). On the hub's own domain it asks the hub at /api/hub, and
+ * the session rides in a cookie this page's scripts cannot read. Under a runner it asks the runner at
+ * the same path, which holds the token itself. Either way nothing here ever sees the token. A password goes
  * to the runner once and is not kept. Every answer is an outcome, never a thrown error, so a hub that
  * is down or not set leaves the game standing.
  */
@@ -36,7 +37,7 @@ export const HubClient = {
 
   hub: () => call<IHubOutcome & { hub?: { id: string; url: string } }>('/health'),
   createAccount: (handle: string, password: string) => call('/accounts', { handle, password }),
-  signIn: (handle: string, password: string) => call<IHubOutcome & { account?: { handle: string } }>('/sessions', { handle, password }),
+  signIn: (handle: string, password: string) => call<IHubOutcome & { account?: { handle: string } }>('/sessions', { handle, password, keep: 'cookie' }),
   signOut: () => call('/session/end', {}),
   characters: () => call<IHubOutcome & { characters?: IHubCharacter[] }>('/characters'),
   record: (uid: string) => call<IHubOutcome & { held?: number; head?: string | null; standing?: string }>(`/record/${encodeURIComponent(uid)}`),

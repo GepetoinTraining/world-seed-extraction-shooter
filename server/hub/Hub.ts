@@ -7,6 +7,11 @@
  *   hub_session_{sha256}    a session, under the hash of its token and never the token
  *   hub_character_{uid}     a character's public key, the account that holds it, what the hub
  *                           stated when it registered it, and its standing here
+ *   hub_failures_{handle}   wrong passwords for a handle, and until when it waits
+ *   hub_nonce_{sha256}      a proof's one-time text, once it has been used
+ *   hub_theme_{themeId}     a theme this hub has judged and holds as known
+ *   hub_kind_{kind}         a creature kind this hub has checked, with the numbers its line makes
+ *   hub_world_{worldUid}    a world this hub has checked: its maker, the theme it is pinned to
  *   ledger_{uid}_{seq}      the rows of that character's ledger this hub checked and holds. The
  *                           store's own law (rows only append, each onto the last, and never
  *                           change) is the chain law here too
@@ -15,6 +20,21 @@
  * the same key, means the person's history was written over. The chain the hub held first stands,
  * nothing from that batch is held, and the character's standing on this hub says CHALLENGED. How much
  * a challenge costs a character, and what a challenge asks, are not settled; nothing here decides them.
+ *
+ * STATELESS (Pedro, 2026-11-04: "we don't compute anything, we check receipts"). Every call may
+ * land on a different function instance, so nothing is kept in this process: what must outlive a
+ * call is in the store, and a proof's one-time text is signed by the hub and carries its own
+ * account and expiry, so any instance can read it.
+ *
+ * THE WORLD CHECK (Pedro, 2026-11-04: "they send to us the world manifest, we simply check if
+ * everything is pre existing, what's not pre existing needs to pass a function to be checked if it
+ * doesn't break any rules. If it doesn't we accept... if it does... we serve the corrected atom,
+ * and... the world manifest gets the diff, never the full load"). `checkWorld` takes a world, the
+ * themes it stands on and the creature kinds grown in it. What this hub holds passes. What it does
+ * not goes through the game's own law, the same functions the browser runs (ContentRegistry for a
+ * theme, CreatureLines for a kind). A kind whose numbers are not what its line makes comes back put
+ * right, as JSON Patch operations on the manifest, with the corrected kind beside them. What cannot
+ * be put right (a theme that breaks the law, a line that does not prove itself) is refused, by name.
  *
  * TIME (D135). What the hub signs carries its own clock, the server's and never the browser's, and
  * it states that clock as the radix-chain address (`clock()`), which a runner follows. A receipt in
@@ -27,9 +47,14 @@ import type { SqlStore } from '../SqlStore';
 import { StoreConflict } from '../SqlStore';
 import type { CommitOp, IWireDoc } from '../../src/entities/data/wire';
 import { signedText } from '../../src/entities/identity/signedText';
-import { IHubKey, ISignedStatement, statementOf } from './keys';
+import { IHubKey, ISignedStatement, statementOf, verifyStatement } from './keys';
 import { addressOf, dayIndexOf } from '../../src/logic/time/RadixClock';
 import { chainProblem, type IChainStart } from '../../src/logic/ledger/chainLaw';
+import { ContentRegistry } from '../../src/logic/theme/ContentRegistry';
+import { CreatureLines, type ILineProof } from '../../src/logic/theme/CreatureLines';
+import { canonical, themeIdOf } from '../../src/logic/theme/ThemeCompiler';
+import type { IThemePack } from '../../src/logic/theme/ThemeTypes';
+import { installShippedThemes, FIRST_THEME_PACK } from '../../src/logic/theme/boot';
 
 export interface IHubOptions {
   /** Its own address, named in what it signs. */
@@ -51,6 +76,28 @@ export interface ISignedRow {
 }
 
 export type Standing = 'GOOD' | 'CHALLENGED';
+
+/** What a player sends to be checked (DEPLOY.md). */
+export interface IWorldManifest {
+  world: { worldUid: string; creatorCertUid: string; themeId: string };
+  themes: IThemePack[];
+  kinds?: ILineProof[];
+}
+
+/** One change to the manifest, as JSON Patch (RFC 6902) names it. */
+export interface IPatchOp { op: 'replace'; path: string; value: unknown }
+
+export interface IWorldCheck {
+  themes: { known: string[]; accepted: string[]; refused: { themeId: string; reason: string }[] };
+  kinds: { known: string[]; accepted: string[]; corrected: { kind: string; def: Record<string, unknown> }[]; refused: { kind: string; reason: string }[] };
+  world: { worldUid: string; themeId: string; reason?: string };
+  diff: IPatchOp[];
+  ack: ISignedStatement;
+}
+
+/** The themes every hub holds as known: the ones the game ships with. */
+const SHIPPED_THEMES = () => [FIRST_THEME_PACK.themeId];
+let shippedInstalled = false;
 
 const NS = 'hub';
 const LEDGER_NS = 'transactions';
@@ -88,8 +135,6 @@ function rowShapeProblem(row: any, uid: string): string | null {
 
 export class Hub {
   private readonly now: () => number;
-  private readonly failures = new Map<string, { fails: number; until: number }>();
-  private readonly nonces = new Map<string, { account: string; until: number }>();
   /** Measured against when the handle does not exist, so a wrong handle takes as long as a wrong password. */
   private readonly decoy = randomBytes(16);
 
@@ -141,7 +186,8 @@ export class Hub {
 
   async signIn(handle: unknown, password: unknown): Promise<Answer<{ token: string; account: { handle: string } }>> {
     const key = handleKey(String(handle ?? '').trim());
-    const held = this.failures.get(key);
+    const failuresId = `hub_failures_${key}`;
+    const held = (await this.read<{ fails: number; until: number }>(failuresId))?.data;
     if (held && held.fails >= FAILS_BEFORE_WAIT && this.now() < held.until) {
       return refuse(429, 'Too many wrong passwords for this handle. Try again later.', { waitMs: held.until - this.now() });
     }
@@ -152,10 +198,10 @@ export class Hub {
     const right = !!account && timingSafeEqual(tried, Buffer.from(account.data.hash, 'base64'));
     if (!right) {
       const fails = (held?.fails ?? 0) + 1;
-      this.failures.set(key, { fails, until: fails >= FAILS_BEFORE_WAIT ? this.now() + WAIT_MS : 0 });
+      await this.commit([{ kind: 'put', doc: this.doc(failuresId, { type: 'hub_failures', fails, until: fails >= FAILS_BEFORE_WAIT ? this.now() + WAIT_MS : 0 }) }]);
       return refuse(401, 'That handle and password do not match an account here.');
     }
-    this.failures.delete(key);
+    if (held?.fails) await this.commit([{ kind: 'put', doc: this.doc(failuresId, { type: 'hub_failures', fails: 0, until: 0 }) }]);
 
     const token = randomBytes(32).toString('base64url');
     const at = this.now();
@@ -192,11 +238,21 @@ export class Hub {
   async nonce(token: unknown): Promise<Answer<{ nonce: string }>> {
     const account = await this.who(token);
     if ('ok' in account) return account;
-    const now = this.now();
-    for (const [n, held] of this.nonces) if (held.until <= now) this.nonces.delete(n);
-    const nonce = randomBytes(24).toString('base64url');
-    this.nonces.set(nonce, { account: account.key, until: now + NONCE_MS });
-    return { ok: true, nonce };
+    const text = Buffer.from(JSON.stringify({ a: account.key, until: this.now() + NONCE_MS, r: randomBytes(18).toString('base64url') })).toString('base64url');
+    return { ok: true, nonce: `${text}.${Buffer.from(this.key.sign(text), 'base64').toString('base64url')}` };
+  }
+
+  /** What a one-time text says, if this hub signed it: whose it is and until when. */
+  private readNonce(nonce: unknown): { a: string; until: number } | null {
+    if (typeof nonce !== 'string') return null;
+    const [text, signature] = nonce.split('.');
+    if (!text || !signature || !verifyStatement(this.key.publicKeyPem, text, Buffer.from(signature, 'base64url').toString('base64'))) return null;
+    try {
+      const said = JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
+      return typeof said?.a === 'string' && isNumber(said?.until) ? said : null;
+    } catch {
+      return null;
+    }
   }
 
   private async publicKey(jwk: any): Promise<CryptoKey | null> {
@@ -227,9 +283,11 @@ export class Hub {
     if (!key) return refuse(400, 'That certificate carries no key this hub can read.');
 
     const nonce = proof?.payload?.nonce;
-    const given = typeof nonce === 'string' ? this.nonces.get(nonce) : undefined;
-    if (!given || given.account !== account.key || given.until <= this.now()) return refuse(400, 'That proof was not made over a text this hub gave you. Ask for a new one.');
-    this.nonces.delete(nonce);
+    const given = this.readNonce(nonce);
+    if (!given || given.a !== account.key || given.until <= this.now()) return refuse(400, 'That proof was not made over a text this hub gave you. Ask for a new one.');
+    const used = `hub_nonce_${sha256(nonce)}`;
+    const spent = await this.commit([{ kind: 'putIfAbsent', doc: this.doc(used, { type: 'hub_nonce', until: given.until }) }], used);
+    if (!spent.applied) return refuse(400, 'That text has been used already. Ask for a new one.');
     if (proof.payload.claim !== 'hub-character' || proof.payload.hub !== this.id || proof.certUid !== uid || !isNumber(proof.timestamp) || typeof proof.signature !== 'string') {
       return refuse(400, 'That proof does not say what it is for.');
     }
@@ -380,6 +438,80 @@ export class Hub {
     const head = await this.headHash(own.uid, held);
     const ack = statementOf(this.key, { kind: 'worldseed-hub-receipt', hub: this.id, issuer: this.publicUrl, uid: own.uid, seq: held, head, at: this.now() });
     return { ok: true, held, head, standing: character.data.standing, ack };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE WORLD CHECK
+  // ---------------------------------------------------------------------------
+
+  /** A theme this hub holds: one it ships with, or one in its store, put in the registry if it is not yet. */
+  private async knownTheme(themeId: string): Promise<boolean> {
+    if (!shippedInstalled) { installShippedThemes(); shippedInstalled = true; }
+    if (SHIPPED_THEMES().includes(themeId)) return true;
+    const held = await this.read<{ pack: IThemePack }>(`hub_theme_${themeId}`);
+    if (!held) return false;
+    // Another instance judged it: this one takes the store's word, as the store is the hub
+    ContentRegistry.install(held.data.pack);
+    return true;
+  }
+
+  async checkWorld(token: unknown, manifest: any): Promise<({ ok: boolean; status?: number } & IWorldCheck) | IRefusal> {
+    const account = await this.who(token);
+    if ('ok' in account) return account;
+    const world = manifest?.world;
+    if (typeof world?.worldUid !== 'string' || typeof world?.creatorCertUid !== 'string' || typeof world?.themeId !== 'string' || !Array.isArray(manifest?.themes)) {
+      return refuse(400, 'A world manifest names its world, its maker and its theme, and carries the themes it stands on.');
+    }
+    const maker = await this.read<{ account: string }>(`hub_character_${world.creatorCertUid}`);
+    if (!maker || maker.data.account !== account.key) return refuse(403, 'That world\'s maker is not a character of this account on this hub.');
+
+    const out: Omit<IWorldCheck, 'ack' | 'world'> = { themes: { known: [], accepted: [], refused: [] }, kinds: { known: [], accepted: [], corrected: [], refused: [] }, diff: [] };
+
+    for (const pack of manifest.themes as IThemePack[]) {
+      const claimed = String(pack?.themeId ?? '');
+      if (!pack || typeof pack !== 'object' || themeIdOf(pack) !== claimed) {
+        out.themes.refused.push({ themeId: claimed, reason: 'Its id does not match its words.' });
+        continue;
+      }
+      if (await this.knownTheme(claimed)) { out.themes.known.push(claimed); continue; }
+      const verdict = ContentRegistry.install(pack);
+      if (!verdict.ok) { out.themes.refused.push({ themeId: claimed, reason: verdict.reason ?? 'The law refused it.' }); continue; }
+      await this.commit([{ kind: 'putIfAbsent', doc: this.doc(`hub_theme_${claimed}`, { type: 'hub_theme', themeId: claimed, pack, by: account.key, at: this.now() }) }]);
+      out.themes.accepted.push(claimed);
+    }
+    const standing = new Set([...out.themes.known, ...out.themes.accepted]);
+
+    const kinds = Array.isArray(manifest.kinds) ? manifest.kinds as ILineProof[] : [];
+    for (let i = 0; i < kinds.length; i++) {
+      const proof = kinds[i];
+      const kind = String(proof?.kind ?? '');
+      if (!proof || typeof proof.def !== 'object' || !Array.isArray(proof.nodes) || !Array.isArray(proof.roots)) { out.kinds.refused.push({ kind, reason: 'That is not a kind\'s proof.' }); continue; }
+      if (!standing.has(proof.themeId)) { out.kinds.refused.push({ kind, reason: 'Its theme is not one this world stands on here.' }); continue; }
+      const held = await this.read<{ def: Record<string, unknown> }>(`hub_kind_${kind}`);
+      if (held && canonical(held.data.def) === canonical(proof.def)) { out.kinds.known.push(kind); continue; }
+      const put = await CreatureLines.correctProof(proof);
+      if (!put.ok) { out.kinds.refused.push({ kind, reason: put.reason }); continue; }
+      for (const c of put.changes) out.diff.push({ op: 'replace', path: `/kinds/${i}/def/${c.field}`, value: c.value });
+      if (put.changes.length > 0) out.kinds.corrected.push({ kind, def: put.def });
+      else out.kinds.accepted.push(kind);
+      await this.commit([{ kind: 'put', doc: this.doc(`hub_kind_${kind}`, { type: 'hub_kind', kind, themeId: proof.themeId, def: put.def, at: this.now() }) }]);
+    }
+
+    // A standing world reads only its own theme, by the id it was pinned to (ContentRegistry)
+    let reason: string | undefined;
+    const heldWorld = await this.read<{ themeId: string; creator: string }>(`hub_world_${world.worldUid}`);
+    if (!standing.has(world.themeId)) reason = 'Its theme is not among the themes this hub holds or accepted.';
+    else if (heldWorld && heldWorld.data.themeId !== world.themeId) reason = `This world was first checked on theme ${heldWorld.data.themeId}, and a standing world keeps its theme.`;
+    else if (heldWorld && heldWorld.data.creator !== world.creatorCertUid) reason = 'This world was first checked with another maker.';
+    else await this.commit([{ kind: 'put', doc: this.doc(`hub_world_${world.worldUid}`, { type: 'hub_world', worldUid: world.worldUid, creator: world.creatorCertUid, themeId: world.themeId, kinds: [...out.kinds.known, ...out.kinds.accepted, ...out.kinds.corrected.map(c => c.kind)], at: this.now() }, heldWorld?.doc.metadata.createdAt) }]);
+
+    const ack = statementOf(this.key, {
+      kind: 'worldseed-hub-world', hub: this.id, issuer: this.publicUrl, world: world.worldUid, themeId: world.themeId,
+      themes: [...out.themes.known, ...out.themes.accepted], kinds: out.kinds.known.length + out.kinds.accepted.length + out.kinds.corrected.length,
+      corrections: out.diff.length, refused: out.themes.refused.length + out.kinds.refused.length + (reason ? 1 : 0), at: this.now()
+    });
+    const ok = out.themes.refused.length === 0 && out.kinds.refused.length === 0 && !reason;
+    return { ok, ...(ok ? {} : { status: 200 }), ...out, world: { worldUid: world.worldUid, themeId: world.themeId, ...(reason ? { reason } : {}) }, ack };
   }
 
   private async challenge(uid: string, character: { doc: IWireDoc; data: any }, seq: number, keptText: string, offeredText: string, held: number): Promise<IRefusal> {

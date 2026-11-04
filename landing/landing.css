@@ -97,4 +97,14 @@ code { font-family: var(--mono); }
 
 a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 
+a.play {
+  display: inline-block;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  color: var(--void);
+  background: var(--ink);
+  border: 2px solid var(--ink);
+  padding: 0.6rem 1rem;
+}
+
 footer { margin-top: 3rem; color: var(--dim); font-size: 0.85rem; border-top: 1px dashed var(--line); padding-top: 1rem; }
