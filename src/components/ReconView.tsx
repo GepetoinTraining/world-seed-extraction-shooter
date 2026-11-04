@@ -22,7 +22,7 @@ import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { Sprite } from '../render/atoms/atoms';
 import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
-import { ISurveyEntry, SurveySystem } from '../logic/systems/SurveySystem';
+import { IManifestLine, ISurveyEntry, SurveySystem } from '../logic/systems/SurveySystem';
 import { ScanPass } from '../logic/systems/ScanPass';
 import { MapSystem, isMapItem } from '../logic/systems/MapSystem';
 import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
@@ -66,6 +66,17 @@ const holdingCells = (entry: ISurveyEntry | undefined, sx: number, sy: number) =
     chunks: held.chunks.map(local), seat: local(held.seat),
     marks: held.marks.map(m => ({ at: local(m.ground), fn: m.fn, built: m.built }))
   }));
+};
+
+/**
+ * Q44: one manifest line, said so it reads without colour. A leader leads with a triangle and the
+ * pack behind it, a pack with its bars, and danger with a bang ahead of the count.
+ */
+const manifestText = (line: IManifestLine): string => {
+  const danger = line.hostile ? '! ' : '';
+  if (line.mark === 'leader') return `${danger}▲ LEADER [${line.rank}] ${line.label}${line.pack ? `, ${line.pack} behind it` : ''}`;
+  if (line.mark === 'pack') return `${danger}≡ PACK OF ${line.count} [${line.rank}] ${line.label}`;
+  return `${danger}${line.count}× [${line.rank}] ${line.label}`;
 };
 
 export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = ({ onDrop }) => {
@@ -475,6 +486,17 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                   <div key={type} className="ws-row"><span>{count}× {type}</span><span /></div>
                 ))}
                 {selected.entities.length === 0 && <div className="ws-row"><span className="ws-dim">Sector clear.</span><span /></div>}
+                {/* Q44: this depth marks a leader seen (D93), so what it saw shows here, by shape */}
+                {SurveySystem.packs(selected.entities).length > 0 && (
+                  <>
+                    <div className="ws-row"><span className="ws-dim">LEADERS AND PACKS</span><span /></div>
+                    {SurveySystem.packs(selected.entities).map(line => (
+                      <div key={line.key} className="ws-row">
+                        <span className={line.hostile ? 'ws-loss' : undefined}>{manifestText(line)}</span><span />
+                      </div>
+                    ))}
+                  </>
+                )}
               </>
             )}
             {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
@@ -482,7 +504,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                 <div className="ws-row"><span className="ws-dim">MANIFEST</span><span /></div>
                 {SurveySystem.manifest(selected.entities).map(line => (
                   <div key={line.key} className="ws-row">
-                    <span className={line.hostile ? 'ws-loss' : undefined}>{line.count}× [{line.rank}] {line.label}</span><span />
+                    <span className={line.hostile ? 'ws-loss' : undefined}>{manifestText(line)}</span><span />
                   </div>
                 ))}
               </>

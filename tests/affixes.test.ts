@@ -488,23 +488,20 @@ describe('the knowledge law: blind sheets, real study, scoped identify', () => {
     expect(StudySystem.identifyLevel(trained, weapon)).toBeGreaterThan(untrained);
   });
 
+  // Q27 (2026-11-04): the field identify is gone. The same reveal now happens at home, through the eye.
   it('a rest reveals what was looked at through the one door: isIdentified set, affixes studied, record exact', () => {
     const pack = AffixBank.current();
     const pool = DreamingSystem.poolFor(pack, BiomeType.RUINS);
     const item = rollAffixed(pool, 'field:ident');
     // train the scope first
     usePlayerStore.getState().gainSkillXp(StudySystem.scopeSkillId('weapon'), 1, ['study']);
-    usePlayerStore.getState().diveIntoLayer('w_test');
-    usePlayerStore.getState().tryAddItems([item]);
-    // D50: there is no roll. It costs, it takes the clock, and a rest is what reveals.
-    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 1000 } } }));
-    const ask = usePlayerStore.getState().fieldIdentify(item.id);
-    expect(ask.ok).toBe(true);
-    expect(ask.seconds!).toBeGreaterThanOrEqual(IDENTIFY_FLOOR_SECONDS);
-    expect(usePlayerStore.getState().completeFieldIdentify(item.id).ok).toBe(true);
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: undefined, energyToday: 1000 } }));
+    grantStash([item]);
+    // D50: there is no roll. It costs, and a rest is what reveals.
+    expect(usePlayerStore.getState().studyItemAtStation(item.id).ok).toBe(true);
     usePlayerStore.setState(s => ({ player: RestSystem.settle(s.player).player }));
     const after = usePlayerStore.getState().player;
-    const held = after.currentSession!.inventory.find(i => i.id === item.id)!;
+    const held = after.bank.stashTabs.flatMap(t => t.items).find(i => i.id === item.id)!;
     expect(held.isIdentified).toBe(true);
     for (const a of item.affixes) {
       expect(LoadoutSystem.isAffixStudied(after, a.id)).toBe(true);

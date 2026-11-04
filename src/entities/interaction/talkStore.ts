@@ -392,7 +392,9 @@ export const useTalk = create<ITalkState>((set, get) => {
       const { subject } = get();
       if (subject?.kind !== 'FIELD_PERSON') return;
       usePlayerStore.getState().performInteraction(`int_recruit_${subject.entityId}`, subject.entityId);
-      if (!liveEntity(subject.entityId)) set({ ...EMPTY });
+      // Q16: they stay in the world now, walking beside you, so the talk closes once they come
+      const after = liveEntity(subject.entityId);
+      if (!after || after.escort) set({ ...EMPTY });
     }
   };
 });

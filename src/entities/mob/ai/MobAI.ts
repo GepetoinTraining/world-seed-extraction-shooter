@@ -278,7 +278,9 @@ export class MobAI {
           return { ...standing, health: standing.structure.maxHealth, structure: { ...standing.structure, brokenAt: undefined } };
         }
         // Validation
-        if (standing.type !== EntityType.MOB || (standing.health || 0) <= 0) return standing;
+        // Q16: a person brought out walks through the follower door too, and nothing else here touches them
+        const walksBeside = standing.type === EntityType.NPC && this.followers.has(standing.id);
+        if ((standing.type !== EntityType.MOB && !walksBeside) || (standing.health || 0) <= 0) return standing;
         // D93: a boss is warded while its anchors stand, wherever they are and whoever is near them
         let entity = standing;
         if (entity.ward) {
@@ -316,7 +318,8 @@ export class MobAI {
             awake.set(entity.id, chunkKey);
             const fx = playerPos.x - entity.position.x, fy = playerPos.y - entity.position.y;
             const away = Math.hypot(fx, fy);
-            const step = (def?.speed ?? 2) * PX * deltaTime;
+            // A person keeps the pace of whoever they walk beside
+            const step = (walksBeside ? senses.walk ?? def?.speed ?? 2 : def?.speed ?? 2) * PX * deltaTime;
             const heel = away > FOLLOW_HEEL_PX ? Math.min(step, away - FOLLOW_HEEL_PX) : 0;
             const wantX = away > 0 ? (fx / away) * heel : 0, wantY = away > 0 ? (fy / away) * heel : 0;
             const walked = map && heel > 0 ? WorldGenerator.resolveMove(map, entity.position.x, entity.position.y, wantX, wantY) : { x: entity.position.x + wantX, z: entity.position.y + wantY };

@@ -108,6 +108,20 @@ export class InteractionEngine {
       }
     }
 
+    // Q16: a person brought out who fell is carried, and that is all. Nothing of theirs comes open.
+    if (target.type === EntityType.NPC && target.escort?.fallen && dist < TALK_REACH_TILES) {
+      return [{
+        id: `int_carry_${target.id}`,
+        label: `Carry (${target.npc?.name ?? 'them'})`,
+        type: InteractionType.COMMUNE,
+        icon: '',
+        energyCost: 0,
+        timeCostSeconds: 0,
+        requirements: {},
+        consequence: { xpTags: ['rescue'] }
+      }];
+    }
+
     // 2c. NPCs (D113): you talk to a person now. The menu opens the talk, and a gift is offered inside it.
     if (target.type === EntityType.NPC && target.npc && dist < TALK_REACH_TILES) {
       const npc = target.npc;
@@ -124,7 +138,7 @@ export class InteractionEngine {
       });
 
       // The payoff: enough disposition and they will follow, and leadership asks less of it
-      if (npc.disposition >= StatSystem.recruitDisposition(player.attributes)) {
+      if (!target.escort && npc.disposition >= StatSystem.recruitDisposition(player.attributes)) {
         options.push({
           id: `int_recruit_${target.id}`,
           label: 'Secure for Extraction',

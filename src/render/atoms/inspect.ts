@@ -11,6 +11,7 @@ import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitio
 import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
 import { EntityType, IWorldEntity } from '../../entities/world/types';
 import { QUALITY_NAMES, qualityBand } from './atoms';
+import { Escort } from '../../logic/systems/Escort';
 import { LAYER } from './world';
 import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
 import { setBonusText } from '../../entities/hub/template';
@@ -117,6 +118,10 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     case EntityType.NPC: {
       const npc = e.npc;
       const title = npc?.name || 'Unknown Figure';
+      // Q16: fallen on the way out. Nothing of theirs is anyone's to read.
+      if (e.escort?.fallen) {
+        return { title, rows: [['Down', 'carried out, they come back on the other side']], needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'carry' : 'too far') };
+      }
       const rows: [string, string][] = npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] : [];
       // D27: you learn what someone is good at by talking to them
       if (npc && npc.attempts > 0 && ctx.worldSeed) {
@@ -294,6 +299,10 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   if (item.worldDeedData) return inspectWorldDeed(item);
   if (item.isIdentified === false) {
     return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
+  }
+  // Q16: a person carried out. Their weight is all there is to read; what they carry is their own.
+  if (Escort.isCorpse(item)) {
+    return { title: item.name, rows: [['Weight', `${item.weight} kg`], ['Carried', 'they come back on the other side']], needs: [], canAct: false, compact: compact(item.name, `${item.weight} kg`) };
   }
   const title = LoadoutSystem.shownName(item);
   const rows: [string, string][] = [['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];

@@ -17,6 +17,7 @@ import { SessionJournal } from '../journal/SessionJournal';
 import { LoreSystem } from './LoreSystem';
 import { RestSystem } from './RestSystem';
 import { StudySystem } from './StudySystem';
+import { Escort } from './Escort';
 import { WebSystem, rankIndexOf } from './WebSystem';
 
 const WAIT_ID = 'study_sitting';
@@ -55,11 +56,13 @@ export const StudyDoor = {
   sitting: () => paid,
 
   /** Should this piece show the button at all? */
-  offered: (item: IItem): boolean => missingStation(StudySystem.targetOfItem(item)) === null,
+  offered: (item: IItem): boolean => !Escort.isCorpse(item) && missingStation(StudySystem.targetOfItem(item)) === null,
 
   /** Paid up front. Nothing has been decided yet. */
   begin(target: IStudyTarget): { ok: boolean; reason?: string; cost?: number; seconds?: number } {
     if (paid) return { ok: false, reason: `You are already sitting with ${paid.target.name}.` };
+    const held = target.kind === 'item' ? StudySystem.heldItem(usePlayerStore.getState().player, target.ref) : undefined;
+    if (held && Escort.isCorpse(held)) return { ok: false, reason: `${held.name} is not yours to look through.` };
     const missing = missingStation(target);
     if (missing) return { ok: false, reason: missing };
     const player = usePlayerStore.getState().player;
@@ -102,8 +105,10 @@ export const StudyDoor = {
     let next = player;
     if (LoreSystem.pays(sitting.outcome)) next = RestSystem.queueSitting(next, sitting);
     if (piece && sitting.outcome !== 'major_failure') {
-      // D50 still holds: looking gets there. What is still unread here is read at the rest.
-      if (piece.isIdentified === false || piece.affixes.some(a => !LoadoutSystem.isAffixStudied(next, a.id))) next = RestSystem.queueStudy(next, piece.id);
+      // D50 still holds: looking gets there. Q27: an unread piece gets there only through the eye for its kind.
+      const reads = StudySystem.canRead(before, piece);
+      if (reads && (piece.isIdentified === false || piece.affixes.some(a => !LoadoutSystem.isAffixStudied(next, a.id)))) next = RestSystem.queueStudy(next, piece.id);
+      if (!reads) feed('You could not make out what it is. Your eye for this kind of thing is learning.', 'plain');
       // D27: loot teaches. What the piece implies accrues, and settles only at a rest.
       if (!target.hidden && LoreSystem.pays(sitting.outcome)) {
         for (const d of WebSystem.reverseEngineer(piece).designs) {

@@ -226,7 +226,14 @@ const cartSprite = (loaded: boolean) => {
 
 export interface EntityPose { facing?: CreatureFacing; frame?: number }
 
-type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart' | 'structure'>;
+type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart' | 'structure'> & Partial<Pick<IWorldEntity, 'escort'>>;
+
+/** Q16: a person who fell lies on their side: the same figure, turned, so it reads by shape. */
+const lying = (s: Sprite): Sprite => {
+  const data = new Uint8Array(s.w * s.h);
+  for (let y = 0; y < s.w; y++) for (let x = 0; x < s.h; x++) data[y * s.h + x] = s.data[(s.h - 1 - x) * s.w + y];
+  return { w: s.h, h: s.w, data };
+};
 
 export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = {}): Sprite | null {
   switch (e.type) {
@@ -252,7 +259,7 @@ export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = 
     case EntityType.CONTAINER:
       if (e.definitionId === 'ground_cache') return cached('cache', groundCache);
       return e.container?.looted ? cached('chest:looted', () => spent(chest(), false)) : cached('chest', chest);
-    case EntityType.NPC: return cached('npc', () => npcFigure('npc'));
+    case EntityType.NPC: return e.escort?.fallen ? cached('npc:fallen', () => lying(npcFigure('npc'))) : cached('npc', () => npcFigure('npc'));
     case EntityType.EXTRACTION: return cached('exit', exitBeacon);
     case EntityType.CART: {
       const loaded = (e.cart?.items.length ?? 0) > 0;
@@ -278,7 +285,7 @@ export const isStandingTree = (e: SpriteEntity): boolean => {
 
 /** D1: anything with a height stands upright, sorts by its feet, and can be walked behind. */
 export const standsUpright = (e: SpriteEntity): boolean =>
-  e.type === EntityType.MOB || e.type === EntityType.NPC || isStandingTree(e);
+  e.type === EntityType.MOB || (e.type === EntityType.NPC && !e.escort?.fallen) || isStandingTree(e);
 
 /**
  * Where a sprite's feet land, in px below the entity's position. Centered things

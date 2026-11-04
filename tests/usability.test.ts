@@ -129,6 +129,13 @@ function field(items: IItem[], extra: IWorldEntity[] = [], energy = 1000) {
   store().recalcWeight();
 }
 
+/** Q27: at home, with these things in the vault and the day's energy to spend. */
+function home(items: IItem[], energy = 1000) {
+  usePlayerStore.setState(s => ({
+    player: { ...s.player, currentSession: undefined, energyToday: energy, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, i) => (i === 0 ? { ...t, items: [...items] } : t)) } }
+  }));
+}
+
 const groundCache = (id: string, items: IItem[]): IWorldEntity => ({
   id, type: EntityType.CONTAINER, definitionId: 'ground_cache', position: { x: 10, y: 0 },
   rank: UniversalRank.F, rarity: Rarity.COMMON, isHostile: false,
@@ -1291,10 +1298,10 @@ describe('what has not been read cannot be worked, and does not give itself away
     expect(SRC('src/components/ui/HoverLayer.tsx')).toMatch(/item\.isIdentified === false \? undefined : <RankMark/);
   });
 
+  // Q27 (2026-11-04): the field identify is gone; the same law holds at the bench, where the eye is learned.
   it('D50: an eye not yet schooled may still look, so nothing it says can name the kind', () => {
-    field([kit()]);
-    const asked = store().fieldIdentify('sig_kit');
-    expect(asked.ok).toBe(true);
+    home([kit()]);
+    expect(store().studyItemAtStation('sig_kit').ok).toBe(true);
     expect(fed()).not.toMatch(/\btool\b/);
     expect(fed()).not.toContain(SECRET);
   });
@@ -1321,29 +1328,23 @@ describe('D50: a study asks of the person, and says nothing of the piece', () =>
     expect(StudySystem.identifyAsk(p, a)).toEqual(StudySystem.identifyAsk(p, b));
   });
 
+  // Q27 (2026-11-04): asked of the bench now, where the field identify's law moved. The paid-twice bar went with the field door.
   it('paid up front, and refused plainly when the day is spent', () => {
-    field([signal('s1')]);
-    usePlayerStore.setState(st => ({ player: { ...st.player, currentSession: { ...st.player.currentSession!, energy: 1 } } }));
-    const refused = store().fieldIdentify('s1');
+    home([signal('s1')]);
+    usePlayerStore.setState(st => ({ player: { ...st.player, energyToday: 1 } }));
+    const refused = store().studyItemAtStation('s1');
     expect(refused.ok).toBe(false);
     expect(refused.reason).toMatch(/energy/);
     expect(refused.reason).not.toContain('Zzsecretname');
   });
 
-  it('nothing it says names the piece', () => {
-    field([signal('s2')]);
-    usePlayerStore.setState(st => ({ player: { ...st.player, currentSession: { ...st.player.currentSession!, energy: 100 } } }));
-    expect(store().fieldIdentify('s2').ok).toBe(true);
-    expect(store().completeFieldIdentify('s2').ok).toBe(true);
+  it('nothing it says names the piece, with the eye or without it', () => {
+    home([signal('s2')]);
+    usePlayerStore.setState(st => ({ player: { ...st.player, energyToday: 1000 } }));
+    expect(store().studyItemAtStation('s2').ok).toBe(true);
+    expect(store().studyItemAtStation('s2').ok).toBe(true);
     expect(fed()).not.toContain('Zzsecretname');
-  });
-
-  it('a second completion with nothing paid gives nothing', () => {
-    field([signal('s3')]);
-    usePlayerStore.setState(st => ({ player: { ...st.player, currentSession: { ...st.player.currentSession!, energy: 100 } } }));
-    store().fieldIdentify('s3');
-    expect(store().completeFieldIdentify('s3').ok).toBe(true);
-    expect(store().completeFieldIdentify('s3').ok).toBe(false);
+    expect(fed()).not.toMatch(/\bweapon\b/);
   });
 });
 

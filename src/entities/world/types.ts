@@ -163,6 +163,8 @@ export interface IWorldEntity {
 
   // Wave 2.4: social extraction
   npc?: INpcSheet;
+  /** Q16: this person walks beside someone to the beacon. Fallen, they lie where they fell until carried. */
+  escort?: { by: string; fallen?: boolean };
 
   // D114: a monster someone has talked to. The meter is on `npc`, this is where that leaves it.
   bargain?: { stance: 'AGGRESSIVE' | 'NEUTRAL' | 'FRIENDLY'; holding?: boolean; wants?: string; wantsHeard?: boolean };

@@ -472,7 +472,9 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
     expect(StudySystem.canStudy(player(), person).ok).toBe(true);
   });
 
+  // Q27 (2026-11-04): an unread piece is read only through the eye for its kind, so the eye is had first here
   it('D50 still holds: looking gets there. A sitting reads a piece at the rest unless it was lost', async () => {
+    usePlayerStore.getState().gainSkillXp(StudySystem.scopeSkillId('weapon'), 1, ['study']);
     inVault(piece('a', { isIdentified: false }), piece('b', { isIdentified: false }));
     await sit('failure', StudySystem.targetOfItem(vault()[0]));
     expect(RestSystem.isStudied(player(), 'a')).toBe(true);
@@ -481,6 +483,14 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
     expect(RestSystem.isStudied(player(), 'b')).toBe(false);
     const { player: after } = RestSystem.settle(player());
     expect(after.bank.stashTabs[0].items.find(i => i.id === 'a')!.isIdentified).toBe(true);
+  });
+
+  it('Q27: without the eye, a sitting on an unread piece teaches the eye and reads nothing', async () => {
+    inVault(piece('a', { isIdentified: false }));
+    await sit('success', StudySystem.targetOfItem(vault()[0]));
+    expect(RestSystem.isStudied(player(), 'a')).toBe(false);
+    const eye = StudySystem.scopeSkillId('weapon');
+    expect(!!player().bank.universalSkills[eye] || !!player().skillProgress?.[eye]).toBe(true);
   });
 
   it('a piece already read has nothing to read: no line at the rest says it was just learned', async () => {
