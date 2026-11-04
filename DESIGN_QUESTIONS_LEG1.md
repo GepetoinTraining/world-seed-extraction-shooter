@@ -5,18 +5,10 @@ Collated 2026-11-04 from the seven streams of leg 1 (arrival, the field, a perso
 Each entry: the question; where it was met; what the game does today; whose call. A stream's own reading is kept where it gave one, marked as that stream's. No entry is answered in code.
 
 **Sorted, 2026-11-04, after Pedro asked how many of these were questions at all.**
-- Answered by him: Q1, Q2, Q11, Q14 and Q21.
+- Answered by him: Q1, Q2, Q11, Q14 and Q21, then the eight below.
 - Decided as common sense or by a ruling he had already given: 29. Each says so on its own line, and he may overrule any of them.
 - Words, for leg 4, and not his to answer: Q7, Q10, Q15, Q23, Q30, Q36, Q42 and Q51.
-- Real design calls, left to him: eight, with Q24 and Q37 merged into one.
-  - Q16: a person walks beside you, or rides as a bond?
-  - Q17: does the levy read a person?
-  - Q24: is the game with no key ever a player's mode?
-  - Q27: one study act, or three?
-  - Q43: what retires a world?
-  - Q45: the pace of camps and bosses.
-  - Q46: how to find a boss.
-  - Q50: what a talk shows it cost.
+- Real design calls: eight, with Q24 and Q37 merged into one. He answered all eight the same day (Q16, Q17, Q24, Q27, Q43, Q45, Q46, Q50). Nothing is left open on this list.
 
 Leg 1's play was on test avatars with the pane hidden (no window), so frames ran throttled. Nothing here judges feel. The integrated game (JOINER, on the joined tree, 2026-11-04) met Q11, Q21 and Q22 again, and added Q51.
 
@@ -150,12 +142,12 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 **Q16. Who walks beside you after "they will come"?**
 - **Met:** a person's road, in the field with Sera Basalt (rank F, ROADSIDE).
 - **Today:** the feed says "Sera Basalt walks beside you now. Reach the beacon together." The person leaves the world at once and becomes an Escort Bond in the pack (weight 0); nobody is drawn beside you and nothing can harm them on the way.
-- **Pedro's, a real design call.** Is a person brought out a bond in the pack, as built, or a body that walks beside you and can be hurt on the way? Whichever it is, the feed line must say what happens.
+- **Answered by Pedro, 2026-11-04:** "they should walk alongside, and try to fight their way out if an enemy engages, yes. if they die you grab them as a corpse (needs to weight a lot) and they revive on the other side of the dive (like we do) but you can't inspect the items and loot the corpse". The person walks beside you as a body and fights back when engaged. If they die, you carry them out as a corpse, which weighs a lot. They revive on the other side, as a player does. Their corpse cannot be inspected or looted. Not built.
 
 **Q17. Is a person brought out a haul the levy reads?**
 - **Met:** a person's road, SEALED after the bond.
 - **Today:** HAUL VALUE 200 G (the bond's value) and HUB LEVY · CAUGHT: PAID IN FULL 10 G, taken from the player's own gold. The bond's card says "Worth more than gold, redeemable for some anyway". Related: Q12.
-- **Pedro's, a real design call.** Does the levy read a person brought out?
+- **Answered by Pedro, 2026-11-04:** "no claude". The levy does not count a person brought out.
 
 **Q18. Once a person is home, where do you talk to them?**
 - **Met:** a person's road, the Rusty Anchor, then Sera's own door on Lot #6.
@@ -200,7 +192,7 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 - **Met:** rest and growth, DORMER: two sittings that succeeded (a typed thought, the city), then three rests at the inn with no key. With a key the door's rest paid lore 5 under "social" for one shallow sitting.
 - **Today:** lore is written only by the dream (D126), so with no key every sitting waits and lore stays 0. Three circles in a skill owe a gift that costs lore, so the gift waits for ever, and the circles give nothing. The rest otherwise restores, as D35 asks, and since `9b0db17` it names the waiting gift.
 - **Rest and growth's reading, to overrule:** a sitting could pay its middle depth by the formula when no dream can be reached, the dream then only naming topics.
-- **Pedro's, a real design call.** Merged with Q37. Is the game with no key a mode a player ever gets, or only a stand-in for building? If only a stand-in, nothing about it needs designing.
+- **Answered by Pedro, 2026-11-04:** "local model". With no key, the door runs on a local model. It is a mode a player can have, with the same voice, dream and lore, not a game with the voice taken out. Not built.
 
 **Q25. Should a rest with nothing spent be offered, and what does it cost?**
 - **Met:** rest and growth, the Rusty Anchor, REST THE NIGHT at full energy; the door met the same 20 G.
@@ -215,7 +207,7 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 **Q27. Three buttons read a thing, two of them called STUDY. Should they merge?**
 - **Met:** rest and growth: the sheet (IDENTIFY, and STUDY, the sitting for lore, D126) and a workstation's panel ("STUDY (weapon)", Wave 10E's identify eye trained by the piece, `studyItemAtStation`).
 - **Today:** the same word, a different roll, cost and result. C9 left IDENTIFY beside STUDY for Pedro.
-- **Pedro's, a real design call.** Merge IDENTIFY and the two STUDY buttons into one act, or keep them as three acts and give them three names? The names are leg 4's.
+- **Answered by Pedro, 2026-11-04:** "identify is a SKILL, we allowed it initially to check if it would work, now things CANNOT be ided until town, study is what gives you the ability, study unided items and you start to figure out how to identify". Identifying is a skill. The IDENTIFY button was there to test the system, and it goes. Nothing can be identified before town. Studying unidentified pieces is how a person starts to learn to identify. Not built.
 
 **Q28. Should the city's bar say what waits after a level?**
 - **Met:** rest and growth, after level 4 was reached.
@@ -270,7 +262,7 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 **Q37. What should a keeper say with no key?**
 - **Met:** the city's week, TALK WITH THEM at the Land Office, asking about a workshop and the weekly charge.
 - **Today:** the round rolled (regard 40 → 53) and no words came ("No voice on this server"). D122's keeper working for a charge is not built. With a key, see Q48.
-- **Pedro's, a real design call.** Merged into Q24.
+- **Answered by Pedro, 2026-11-04:** merged into Q24: with no key, a keeper speaks through the local model.
 
 **Q38. Should a bin list each piece as its own row?**
 - **Met:** the city's week, the Alchemist's shelf after the first close.
@@ -304,7 +296,7 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 **Q43. Is there a road in play that retires a world, and what happens to what it held?**
 - **Met:** worlds over time, by flagging a card in memory (scripted).
 - **Today:** a world retires only when the grid version or its theme leaves the registry, which only a code change does. The card reads "RETIRED · NO GATE · RETIRED — the record stands; the ground is gone", RECON and DEPLOY disabled with the reason on hover. Open: its minter, its age, a theme withdrawn; and its bosses, holdings on maps handed to the Hall, a minter's toll treasury.
-- **Pedro's, a real design call.** What retires a world in play, and where do its bosses, its holdings and its toll's treasury go?
+- **Answered by Pedro, 2026-11-04:** "nothing, why would a world retire? it becomes tougher and tougher, specially as the npcs you brought strat going in". A world never retires. It grows tougher, more so once the people you brought out start going in. So today's retirement, which happens when a grid version or a theme leaves the registry, is a path to remove: a code change must keep old worlds alive. Not built.
 
 **Q44. Is a sighting by scan meant to be invisible to the person, and to count as seeing?**
 - **Met:** worlds over time, recon, sector 8·8 at alpha.
@@ -314,12 +306,12 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 **Q45. Is this the pace: five camps, then two bosses, in one sector of a rank F world in under three weeks?**
 - **Met:** worlds over time, SLOW CLOCK (rank F by hand), sector 7·10.
 - **Today:** five builders settled by regeneration 62 and two were bosses at 159 (about 20 days of a small world's clock), with one anchor rising about every 28 cycles. 8·8's packs grew from 2–5 to 5–12. Nothing brings a boss down until C6, so a world keeps filling. C4 named this pace as the number to watch.
-- **Pedro's, a real design call.** Is this the pace: five camps, then two bosses, in one sector of a rank F world in under three weeks? Only play can say.
+- **Answered by Pedro, 2026-11-04:** "wow.... very good asctually". The pace stands.
 
 **Q46. How does a person find a boss?**
 - **Met:** worlds over time (report, "what the integrated game must know").
 - **Today:** to see a boss the drone must be aimed at a builder's sector. Nothing on the zones card or in recon points at one, and the Hall shows nothing until a map is handed in. The stream found the sector from the roster by script.
-- **Pedro's, a real design call.** How does a person find a boss? The recon map's own view (Q14) may be the start of the answer.
+- **Answered by Pedro, 2026-11-04:** "luck, or lack of luck". Nothing points at a boss.
 
 ---
 
@@ -343,4 +335,4 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 **Q50. Is the person meant to see real money for a talk?**
 - **Met:** the door, the TALK and BARGAIN windows: "This talk has cost $0.0012."
 - **Today:** the cost is shown in dollars. D55's charged use is undecided.
-- **Pedro's, a real design call.** Charged use is undecided (D55): does a person see what a talk costs, and in what money?
+- **Answered by Pedro, 2026-11-04:** "nope, you can ask if they want something, that rolls the mental stats to try and grab info". A talk shows no cost. Instead the person can ask whether the other wants something, and that rolls their mental stats to draw information out. Not built.
