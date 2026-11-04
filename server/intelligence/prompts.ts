@@ -410,10 +410,42 @@ export const WINDOW_REQUESTS: Record<string, (asks: never[], theme: IWorldSummar
   growth: buildGrowthRequest as never
 };
 
+/**
+ * The schema tightened to this ask: exactly its count of skills, each one of the ids it offers, and
+ * for Kami one of its kits. A model held to the grammar (a local one) then gives only what the law
+ * can take. The frozen schema beside it is what a provider that caches reads.
+ */
+export function tightSkills(schema: Record<string, unknown>, ask: unknown): Record<string, unknown> | undefined {
+  const a = (ask ?? {}) as { count?: unknown; candidates?: { id?: unknown }[]; kits?: { id?: unknown }[] };
+  const ids = (a.candidates ?? []).map(c => c?.id).filter((id): id is string => typeof id === 'string');
+  const kits = (a.kits ?? []).map(k => k?.id).filter((id): id is string => typeof id === 'string');
+  const count = typeof a.count === 'number' && Number.isInteger(a.count) && a.count >= 0 ? a.count : undefined;
+  if (count === undefined && ids.length === 0 && kits.length === 0) return undefined;
+  const properties = schema.properties as Record<string, Record<string, unknown>>;
+  const items = properties.skills.items as Record<string, unknown> & { properties: Record<string, unknown> };
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      ...(kits.length > 0 && properties.kit ? { kit: { type: 'string', enum: kits } } : {}),
+      skills: {
+        ...properties.skills,
+        ...(count !== undefined ? { minItems: count, maxItems: count } : {}),
+        items: ids.length > 0 ? { ...items, properties: { ...items.properties, id: { type: 'string', enum: ids } } } : items
+      }
+    }
+  };
+}
+
+const withTight = (schema: Record<string, unknown>, ask: unknown) => {
+  const tight = tightSkills(schema, ask);
+  return tight ? { tight } : {};
+};
+
 /** The end of creation (D35). What comes back stands before `CreationSystem.judge`, and a broken answer falls to the floor. */
 export function buildCreationRequest(ask: unknown): IDoorRequest {
   return {
-    kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, maxTokens: 4000,
+    kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, ...withTight(CREATION_SCHEMA, ask), maxTokens: 4000,
     messages: [{ role: 'user', content: `Who is arriving:\n${JSON.stringify(ask)}` }]
   };
 }
@@ -438,7 +470,7 @@ export function buildKamiTalkRequest(messages: IDoorMessage[], persona?: unknown
 export function buildKamiSetRequest(messages: IDoorMessage[], ask: unknown, persona?: unknown): IDoorRequest {
   const conversation = messages.map(m => `${m.role === 'user' ? 'THEM' : 'YOU'}: ${m.content}`).join('\n');
   return {
-    kind: 'kami_set', system: asThisHubsKami(KAMI_SET_SYSTEM, persona), schema: KAMI_SCHEMA, maxTokens: 4000,
+    kind: 'kami_set', system: asThisHubsKami(KAMI_SET_SYSTEM, persona), schema: KAMI_SCHEMA, ...withTight(KAMI_SCHEMA, ask), maxTokens: 4000,
     messages: [{ role: 'user', content: `What was said:\n${conversation || '(nothing was said)'}\n\nWhat you choose from:\n${JSON.stringify(ask)}` }]
   };
 }

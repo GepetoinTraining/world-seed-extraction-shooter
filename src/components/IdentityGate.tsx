@@ -20,6 +20,7 @@ import { WorldDeed } from '../logic/systems/WorldDeed';
 import { CreationFlow } from './CreationFlow';
 import { useCreationDraft } from './ui/creationDraft';
 import { Button, Input, Panel, PortraitView, SpriteView } from './ui/kit';
+import { VoiceChip, VoicePanel } from './VoicePanel';
 
 const FORCE_SELECT = 'worldseed_force_select';
 
@@ -155,6 +156,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           error={error}
           aside={
             <span style={{ display: 'flex', gap: 6 }}>
+              <VoiceChip />
               {roster.length > 0 && <Button tone="quiet" onClick={() => setMode('select')}>TO CHARACTER SELECT</Button>}
               <Button tone="quiet" onClick={() => setMode('restore')}>RESTORE A BACKUP</Button>
             </span>
@@ -194,6 +196,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   // --- CHARACTER SELECT (D5) ---
   return (
     <Gate>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: '100vh', overflowY: 'auto', padding: '12px 0' }}>
       <Panel title="CHARACTER SELECT" right={<span className="ws-dim ws-small">{roster.length} avatar{roster.length === 1 ? '' : 's'} on this device</span>} style={{ width: 640 }}>
         {keyMissing && (
           <div className="ws-loss ws-small" style={{ marginBottom: 8 }}>
@@ -250,6 +253,9 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           <Button tone="quiet" onClick={() => setMode('restore')}>RESTORE A BACKUP</Button>
         </div>
       </Panel>
+      {/* Before the door picks a voice, the person sees what this machine can run (Q24) */}
+      <VoicePanel style={{ width: 640 }} />
+      </div>
     </Gate>
   );
 };

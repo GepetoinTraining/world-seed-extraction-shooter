@@ -6,6 +6,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
+import { SETTINGS, type DoorSetting } from './setting';
 import { buildBargainRequest, buildChainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildNpcGoalRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
@@ -26,7 +27,11 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
+export interface IIntelligenceHandlerOptions {
+  allowRemote?: boolean;
+  /** The person's choice of voice. Without it, the routes that change it answer that nothing can be changed here. */
+  setting?: DoorSetting;
+}
 
 /** `path` is what follows the mount: /status, /talk, /theme, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /rest/file, /rest/collect, /window/file, /window/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
@@ -35,6 +40,10 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
       return send(res, 403, { status: 'REFUSED', reason: 'This door answers this machine only. It has no authentication yet.' });
     }
     if (path === '/status') return send(res, 200, await door.status());
+    const setting = options.setting ?? SETTINGS.get(door);
+    // The check on this machine and the free options: read here, answered to this machine only
+    if (path === '/machine' && req.method === 'GET') return setting ? send(res, 200, await setting.check.read()) : send(res, 200, { status: 'REFUSED', reason: 'This server has no setting to read.' });
+    if (path === '/options' && req.method === 'GET') return send(res, 200, setting ? { keyed: setting.options.keyed, local: setting.options.local ?? null } : { keyed: [], local: null });
     if (req.method !== 'POST') return send(res, 405, { error: 'POST only.' });
 
     let body: any;
@@ -45,7 +54,31 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
     }
 
     const conversation = (body.messages ?? []) as IDoorMessage[];
+    const unsettable = () => send(res, 200, { status: 'REFUSED', reason: 'The voice cannot be changed on this server.' });
     switch (path) {
+      case '/machine/try':
+        if (!setting) return unsettable();
+        return send(res, 200, await setting.check.tryModel(String(body.model ?? setting.local.runtime.model)));
+      case '/local/choose':
+        if (!setting) return unsettable();
+        setting.useLocal(String(body.model ?? ''));
+        return send(res, 200, { status: await setting.status(), machine: await setting.check.read() });
+      case '/local/pull': {
+        if (!setting) return unsettable();
+        const model = String(body.model ?? '').trim();
+        if (!model || !setting.local.runtime.pull) return send(res, 200, { ok: false, reason: 'Nothing to pull.' });
+        return send(res, 200, await setting.local.runtime.pull(model));
+      }
+      case '/key': {
+        if (!setting) return unsettable();
+        // The key stops here. What goes back says only whether it worked.
+        const out = await setting.useKey(String(body.optionId ?? ''), String(body.key ?? ''));
+        return send(res, 200, out);
+      }
+      case '/auto':
+        if (!setting) return unsettable();
+        setting.useAuto();
+        return send(res, 200, await setting.status());
       case '/talk':
         return send(res, 200, await door.ask(buildTalkRequest(conversation, body.draft ?? {})));
       case '/theme':

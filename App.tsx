@@ -32,12 +32,15 @@ import { RecordDoor } from './src/logic/systems/RecordDoor';
 import { SystemConsole } from './src/components/debug/SystemConsole';
 import { TuningPanel } from './src/components/debug/TuningPanel';
 import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
+import { VoicePanel } from './src/components/VoicePanel';
 
 installConsoleInterceptor();
 
 /** The player's own housekeeping, one step in: the backup, the other avatars, and the dev switch. */
-const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; onClose: () => void }> = ({ devMode, onDevMode, onClose }) => (
-  <Modal title="SYSTEM" onClose={onClose} width={420}>
+const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; onClose: () => void }> = ({ devMode, onDevMode, onClose }) => {
+  const [voiceOpen, setVoiceOpen] = React.useState(false);
+  return (
+  <Modal title="SYSTEM" onClose={onClose} width={voiceOpen ? 660 : 420}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <Button
         autoFocus
@@ -65,12 +68,17 @@ const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; 
       >
         SWITCH AVATAR
       </Button>
+      <Button tone="quiet" aria-pressed={voiceOpen} onClick={() => setVoiceOpen(!voiceOpen)} title="What this machine can run, and the choice of voice">
+        THE VOICE
+      </Button>
+      {voiceOpen && <VoicePanel titled={false} />}
       <Button tone="quiet" aria-pressed={devMode} onClick={() => onDevMode(!devMode)} title="Developer tools, also on Ctrl+Shift+D">
         DEVELOPER TOOLS: {devMode ? 'ON' : 'OFF'}
       </Button>
     </div>
   </Modal>
-);
+  );
+};
 
 const DEV_TABS: { id: AppView; label: string }[] = [
   { id: 'HUB', label: 'CITY' },

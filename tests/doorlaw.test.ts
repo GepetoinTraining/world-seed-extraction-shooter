@@ -8,7 +8,7 @@ import { KamiPersona } from '../src/logic/systems/KamiPersona';
 import { WebSystem } from '../src/logic/systems/WebSystem';
 import { WebBank } from '../src/logic/content/WebBank';
 import { TagLaw } from '../src/logic/content/TagLaw';
-import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildNpcTalkRequest } from '../server/intelligence/prompts';
+import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildNpcTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
 
 const SRC = (path: string) => readFileSync(path, 'utf8');
 
@@ -88,5 +88,24 @@ describe('Kami\'s persona law (Q49)', () => {
   it('the persona ask tells the model so, so a reading is not wasted', () => {
     expect(buildKamiPersonaRequest('abc').system).toMatch(/"player"/);
     expect(buildKamiPersonaRequest('abc').system).toMatch(/"game"/);
+  });
+});
+
+describe('a schema tightened to the ask, for a model held to every word of it', () => {
+  const skillsOf = (schema: unknown) => (schema as { properties: { skills: Record<string, any> } }).properties.skills;
+  const ask = { count: 3, candidates: [{ id: 'skill_a' }, { id: 'skill_b' }, { id: 'skill_c' }, { id: 'skill_d' }], kits: [{ id: 'kit_x' }] };
+
+  it("a creation and Kami's set carry exactly the count and only the offered ids, and Kami's kit from his kits", () => {
+    for (const request of [buildCreationRequest(ask), buildKamiSetRequest([], ask)]) {
+      expect(skillsOf(request.tight)).toMatchObject({ minItems: 3, maxItems: 3 });
+      expect(skillsOf(request.tight).items.properties.id.enum).toEqual(['skill_a', 'skill_b', 'skill_c', 'skill_d']);
+    }
+    expect((buildKamiSetRequest([], ask).tight as any).properties.kit.enum).toEqual(['kit_x']);
+  });
+
+  it('the frozen schema stays as it was, for a provider that caches it', () => {
+    expect(buildCreationRequest(ask).schema).toBe(CREATION_SCHEMA);
+    expect(buildKamiSetRequest([], ask).schema).toBe(KAMI_SCHEMA);
+    expect(buildCreationRequest({}).tight).toBeUndefined();
   });
 });

@@ -225,6 +225,14 @@ describe('Ollama, as the first runtime, against a stub of its HTTP API', () => {
     expect(seen[0].messages.slice(1)).toEqual(SHAPED.messages);
   });
 
+  it('a schema tightened to the ask is what the local grammar is given', async () => {
+    const seen: any[] = [];
+    const url = await stub(['qwen3:8b'], seen);
+    const tight = { type: 'object', properties: { studied: { type: 'string', enum: ['tide'] } } };
+    await new LocalProvider(new OllamaRuntime(url, 'qwen3:8b')).ask({ ...SHAPED, tight });
+    expect(seen[0].format).toEqual(tight);
+  });
+
   it('prose has no format, and a stream comes in pieces', async () => {
     const seen: any[] = [];
     const url = await stub(['qwen3:8b'], seen);

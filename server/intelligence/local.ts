@@ -21,15 +21,38 @@ export interface ILocalAnswer {
   outputTokens?: number;
 }
 
-/** The seam a runtime plugs into. */
+/** A model the runtime serves, as it describes it. */
+export interface IServedModel {
+  name: string;
+  bytes: number;
+  /** The runtime's own words for it, when it gives them: "4.7B", "Q4_0". */
+  parameters?: string;
+  quantization?: string;
+}
+
+/** A model in memory now, and how much of it sits on the graphics card. */
+export interface ILoadedModel { name: string; bytes: number; cardBytes: number }
+
+/** The seam a runtime plugs into. Ollama is the one built; any other plugs in beside it. */
 export interface ILocalRuntime {
   /** Short and generic, for the status line: "ollama". */
   name: string;
+  /** The person's choice, and changed by them (Pedro: "the choice should be the players"). */
   model: string;
+  /** Where it answers, for the check to say. */
+  url?: string;
+  /** Every model it serves, so the person can pick. */
+  list?(): Promise<IServedModel[]>;
+  /** What is in memory now. */
+  loaded?(): Promise<ILoadedModel[]>;
+  /** Is it on this machine at all, running or not? */
+  installed?(): Promise<boolean>;
+  /** Fetch a model. Only when the person asks for it. */
+  pull?(model: string): Promise<{ ok: boolean; reason?: string }>;
   /** Is it running, and does it hold the model? */
   probe(): Promise<{ ok: boolean; reason?: string }>;
   /** One answer. With a schema the text is that JSON. Throws `LocalUnreachable` when it is not there. */
-  chat(request: IDoorRequest, onText?: (text: string) => void, signal?: AbortSignal): Promise<ILocalAnswer>;
+  chat(request: IDoorRequest, onText?: (text: string) => void, signal?: AbortSignal, model?: string): Promise<ILocalAnswer>;
 }
 
 /** The runtime is not there to ask: not running, or without the model. */
@@ -46,7 +69,7 @@ export class LocalProvider implements IIntelligenceProvider {
   private filed = new Map<string, { outcome?: IDoorOutcome }>();
   private count = 0;
 
-  constructor(private runtime: ILocalRuntime) {}
+  constructor(readonly runtime: ILocalRuntime) {}
 
   static owns(batchId: string): boolean {
     return batchId.startsWith(LOCAL_BATCH);
@@ -86,9 +109,10 @@ export class LocalProvider implements IIntelligenceProvider {
     return { status: 'OUTAGE', reason: e instanceof Error ? e.message : String(e) };
   }
 
-  async ask(request: IDoorRequest): Promise<IDoorOutcome> {
+  /** `model` asks another served model this once, as the check's try does. */
+  async ask(request: IDoorRequest, model?: string): Promise<IDoorOutcome> {
     try {
-      return this.read(await this.runtime.chat(request), request);
+      return this.read(await this.runtime.chat(request, undefined, undefined, model), request);
     } catch (e) {
       return this.failure(e);
     }
@@ -225,9 +249,47 @@ export class KeyOrLocalProvider implements IIntelligenceProvider {
  */
 export class OllamaRuntime implements ILocalRuntime {
   name = 'ollama';
+  private baseUrl: string;
 
-  constructor(private baseUrl: string, public model: string) {
+  constructor(baseUrl: string, public model: string, private findInstalled: () => Promise<boolean> = ollamaOnDisk) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
+  }
+
+  get url(): string {
+    return this.baseUrl;
+  }
+
+  installed(): Promise<boolean> {
+    return this.findInstalled();
+  }
+
+  async list(): Promise<IServedModel[]> {
+    const res = await this.reach('/api/tags');
+    if (!res.ok) throw new Error(`The local model answered ${res.status}.`);
+    const body = await res.json() as { models?: { name?: string; model?: string; size?: number; details?: { parameter_size?: string; quantization_level?: string } }[] };
+    return (body.models ?? []).map(m => ({
+      name: m.name ?? m.model ?? '', bytes: m.size ?? 0,
+      ...(m.details?.parameter_size ? { parameters: m.details.parameter_size } : {}),
+      ...(m.details?.quantization_level ? { quantization: m.details.quantization_level } : {})
+    })).filter(m => m.name);
+  }
+
+  async loaded(): Promise<ILoadedModel[]> {
+    const res = await this.reach('/api/ps');
+    if (!res.ok) return [];
+    const body = await res.json() as { models?: { name?: string; model?: string; size?: number; size_vram?: number }[] };
+    return (body.models ?? []).map(m => ({ name: m.name ?? m.model ?? '', bytes: m.size ?? 0, cardBytes: m.size_vram ?? 0 }));
+  }
+
+  async pull(model: string): Promise<{ ok: boolean; reason?: string }> {
+    let res: Response;
+    try {
+      res = await this.reach('/api/pull', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: false }) });
+    } catch (e) {
+      return { ok: false, reason: (e as Error).message };
+    }
+    const body = await res.json().catch(() => ({})) as { status?: string; error?: string };
+    return res.ok && body.status === 'success' ? { ok: true } : { ok: false, reason: body.error ?? `The local model answered ${res.status}.` };
   }
 
   private notRunning(): LocalUnreachable {
@@ -258,25 +320,27 @@ export class OllamaRuntime implements ILocalRuntime {
     if (!res.ok) return { ok: false, reason: `The local model answered ${res.status}.` };
     const body = await res.json() as { models?: { name?: string; model?: string }[] };
     const names = (body.models ?? []).flatMap(m => [m.name, m.model].filter((n): n is string => !!n));
+    if (!this.model) return { ok: false, reason: 'No local model is chosen yet.' };
     return this.holds(names) ? { ok: true } : { ok: false, reason: `The local runtime holds no model named ${this.model}.` };
   }
 
-  async chat(request: IDoorRequest, onText?: (text: string) => void, signal?: AbortSignal): Promise<ILocalAnswer> {
+  async chat(request: IDoorRequest, onText?: (text: string) => void, signal?: AbortSignal, model = this.model): Promise<ILocalAnswer> {
     const res = await this.reach('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       signal,
       body: JSON.stringify({
-        model: this.model,
+        model,
         // The frozen part first, as the door asks of every provider
         messages: [{ role: 'system', content: request.system }, ...request.messages],
         stream: !!onText,
         think: false,
-        ...(request.schema ? { format: request.schema } : {}),
+        // A local grammar holds every word of a schema, so it takes the one tightened to this ask
+        ...(request.schema ? { format: request.tight ?? request.schema } : {}),
         options: { num_predict: request.maxTokens }
       })
     });
-    if (res.status === 404) throw new LocalUnreachable(`The local runtime holds no model named ${this.model}.`);
+    if (res.status === 404) throw new LocalUnreachable(`The local runtime holds no model named ${model}.`);
     if (!res.ok) throw new Error(`The local model answered ${res.status}.`);
 
     type Chunk = { message?: { content?: string }; done?: boolean; done_reason?: string; prompt_eval_count?: number; eval_count?: number; error?: string };
@@ -313,8 +377,26 @@ export class OllamaRuntime implements ILocalRuntime {
   }
 }
 
-/** Where the local model is and which one, from the server's environment. */
-export function localRuntimeFrom(env: NodeJS.ProcessEnv = process.env): ILocalRuntime {
-  // The model is the recommendation brought to Pedro; WS_LOCAL_MODEL overrides it
-  return new OllamaRuntime(env.WS_LOCAL_URL?.trim() || 'http://127.0.0.1:11434', env.WS_LOCAL_MODEL?.trim() || 'qwen3:8b');
+/** Is Ollama on this machine, running or not? Its usual places, then the PATH. */
+async function ollamaOnDisk(): Promise<boolean> {
+  const { access } = await import('node:fs/promises');
+  const { join, delimiter } = await import('node:path');
+  const exe = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
+  const places = [
+    ...(process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'Programs', 'Ollama', exe)] : []),
+    ...(process.platform === 'darwin' ? ['/Applications/Ollama.app'] : []),
+    ...(process.env.PATH ?? '').split(delimiter).filter(Boolean).map(dir => join(dir, exe))
+  ];
+  for (const place of places) {
+    try { await access(place); return true; } catch { /* not here */ }
+  }
+  return false;
+}
+
+/**
+ * Where the local model is and which one. The model is the person's setting; until they pick,
+ * it is the suggestion in the door's options (data, not code), or WS_LOCAL_MODEL.
+ */
+export function localRuntimeFrom(env: NodeJS.ProcessEnv = process.env, from?: { url?: string }): ILocalRuntime {
+  return new OllamaRuntime(env.WS_LOCAL_URL?.trim() || from?.url || 'http://127.0.0.1:11434', env.WS_LOCAL_MODEL?.trim() || '');
 }

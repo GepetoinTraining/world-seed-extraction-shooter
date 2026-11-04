@@ -40,8 +40,13 @@ export interface IDoorRequest {
   /** Frozen across calls, so a provider can cache it. Nothing volatile goes here. */
   system: string;
   messages: IDoorMessage[];
-  /** JSON schema of what must come back. Absent means prose. */
+  /** JSON schema of what must come back. Absent means prose. Frozen, so a provider can cache it. */
   schema?: Record<string, unknown>;
+  /**
+   * The same schema, tightened to this one ask: its count, the ids it offers. For a provider whose
+   * grammar holds a model to every word of a schema (a local one); the others read `schema`.
+   */
+  tight?: Record<string, unknown>;
   maxTokens: number;
 }
 
@@ -90,6 +95,9 @@ export class AbsentProvider implements IIntelligenceProvider {
   async collect(): Promise<IDoorOutcome> { return { status: 'NO_KEY', reason: this.reason }; }
   ceiling(): number { return 0; }
 }
+
+/** Any door, as a key for what is kept beside it. */
+export type IIntelligenceDoorLike = object;
 
 export class IntelligenceDoor {
   constructor(private provider: IIntelligenceProvider) {}

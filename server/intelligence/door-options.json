@@ -1,0 +1,86 @@
+{
+  "about": "What the door offers a person who has no key. Read at runtime, never compiled in: edit this file, or point WS_DOOR_OPTIONS at another, and the offer changes. Which keyed options stay is Pedro's pick; these are the candidates whose free terms were read on the providers' own pages on 2026-11-04.",
+  "local": {
+    "runtime": "ollama",
+    "url": "http://127.0.0.1:11434",
+    "runtimePage": "https://ollama.com/download",
+    "suggestions": [
+      {
+        "model": "gemma4:e4b-it-qat",
+        "bytes": 6146501801,
+        "why": "Measured 2026-11-04 on an 8 GB card: the law took 20 of 20 of the door's shaped asks, 1 to 3 s an answer."
+      },
+      {
+        "model": "gemma4:e2b-it-qat",
+        "bytes": 4336358185,
+        "why": "For smaller cards, or memory alone: the law took 19 of 20, under 2 s an answer on a card."
+      }
+    ],
+    "about": "Suggestions only: the check suggests the largest that fits on this machine's card, else the smallest. The person may choose any model the runtime serves."
+  },
+  "keyed": [
+    {
+      "id": "gemini",
+      "name": "Google Gemini API",
+      "protocol": "openai",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "model": "gemini-3.8-flash",
+      "keyPage": "https://aistudio.google.com/apikey",
+      "free": "Flash, Flash-Lite and Gemma models free of charge, within daily limits shown in AI Studio.",
+      "card": "unconfirmed",
+      "data": "Free-tier content is used to improve Google products and may be read by people. Not free in the EEA, Switzerland or the UK. 18 and over.",
+      "checked": "2026-11-04",
+      "sources": [
+        "https://aistudio.google.com/docs/pricing",
+        "https://aistudio.google.com/docs/terms"
+      ]
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "protocol": "openai",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "model": "openai/gpt-oss-120b",
+      "keyPage": "https://console.groq.com/keys",
+      "free": "A free plan with per-minute and per-day limits.",
+      "card": "no",
+      "data": "Not kept by default; may be logged up to 30 days for abuse checks. Held in the US.",
+      "checked": "2026-11-04",
+      "sources": [
+        "https://console.groq.com/docs/rate-limits",
+        "https://console.groq.com/docs/your-data"
+      ]
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter (free models)",
+      "protocol": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "openrouter/free",
+      "keyPage": "https://openrouter.ai/keys",
+      "free": "Free models at 20 requests a minute and 50 a day.",
+      "card": "unconfirmed",
+      "data": "Each model's own provider may train on what is sent, under its own policy.",
+      "checked": "2026-11-04",
+      "sources": [
+        "https://openrouter.ai/docs/api-reference/limits",
+        "https://openrouter.ai/docs/guides/privacy/logging"
+      ]
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "protocol": "openai",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "model": "mistral-small-latest",
+      "keyPage": "https://console.mistral.ai/api-keys",
+      "free": "A free mode with monthly usage included.",
+      "card": "no",
+      "data": "Whether free-mode requests are used for training is not stated on the current pages.",
+      "checked": "2026-11-04",
+      "sources": [
+        "https://docs.mistral.ai"
+      ]
+    }
+  ]
+}
