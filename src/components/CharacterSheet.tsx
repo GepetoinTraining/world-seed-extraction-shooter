@@ -11,6 +11,7 @@ import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { useWorldStore } from '../entities/world/store';
 import { FieldCapture } from '../logic/systems/FieldCapture';
+import { Escort } from '../logic/systems/Escort';
 import { WorldGenerator } from '../entities/world/WorldGenerator';
 import { InventorySystem, GRID_H, GRID_W } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
@@ -103,7 +104,7 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
 const PackPanels = ({ session }: { session: IActiveSession }) => {
   const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
-  // Wave 10E (D19): the field identify runs on a real clock, and line 124 keeps it where the HUD can read it
+  // Line 124: a study's clock, where the HUD can read it
   const waits = useWaits(s => s.waits);
   // Wave 10E (D21): a chosen charm asks which slot it holds
   const [invoking, setInvoking] = useState<string | null>(null);
@@ -152,7 +153,16 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand.
           </div>
         )}
-        {selectedItem && (
+        {/* Q16: someone you are carrying out. Nothing of theirs is yours to open. */}
+        {selectedItem && Escort.isCorpse(selectedItem) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="ws-bright ws-small">{selectedItem.name}</div>
+            <div className="ws-dim ws-small">{selectedItem.weight} kg. Carry them to the beacon and they come back on the other side.</div>
+            <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE</Button>
+            <Button tone="loss" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>SET THEM DOWN</Button>
+          </div>
+        )}
+        {selectedItem && !Escort.isCorpse(selectedItem) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div className="ws-bright ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {selectedItem.isIdentified === false ? 'Unidentified Signal' : selectedItem.name}
@@ -187,27 +197,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 }}>INVOKE</Button>
               )
             )}
-            {/* Wave 10E (D19): identify in the field — scoped, ALWAYS timed, faster with skill */}
-            {StudySystem.identifyScopeOf(selectedItem) &&
-              (selectedItem.isIdentified === false || selectedItem.affixes.some(a => !LoadoutSystem.isAffixStudied(player, a.id))) && (
-              waits.some(w => w.id === `identify_${selectedItem.id}`) ? (
-                <Button tone="quiet" disabled>LOOKING…</Button>
-              ) : (
-                <Button tone="signal" onClick={() => {
-                  const ask = usePlayerStore.getState().fieldIdentify(selectedItem.id);
-                  if (!ask.ok) return;
-                  feed(`Identifying ${selectedItem.isIdentified === false ? 'the signal' : selectedItem.name} — ${ask.cost} energy, ${ask.seconds}s. It may give nothing up.`, 'signal');
-                  const startedAt = Date.now();
-                  useWaits.getState().begin({ id: `identify_${selectedItem.id}`, label: 'LOOKING', startedAt, until: startedAt + ask.seconds! * 1000 });
-                  window.setTimeout(() => {
-                    usePlayerStore.getState().completeFieldIdentify(selectedItem.id);
-                    useWaits.getState().end(`identify_${selectedItem.id}`);
-                  }, ask.seconds! * 1000);
-                }}>
-                  IDENTIFY · {StudySystem.identifyAsk(player, selectedItem).cost} energy · {StudySystem.identifyAsk(player, selectedItem).seconds}s
-                </Button>
-              )
-            )}
+            {/* Q27: identifying is a learned skill, and nothing is read before town. Study at home teaches it. */}
             {/* D118: for energy, and it can go badly. A finished product asks for a workstation for it, and so does anything unread, so it tells nothing. */}
             {StudyDoor.offered(selectedItem) && (
               <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem))}>

@@ -88,7 +88,7 @@ export class ItemFactory {
     const finalIP = Math.floor(template.base_ip * rankMult * rarityMult * (1 + quality));
 
     // 8. Name
-    const fullName = this.constructName(template.universal_name, affixes, quality);
+    const fullName = this.nameOf(template.universal_name, affixes);
 
     // 9. Physicality (Inventory Tetris + Weight)
     const dimensions = this.getDimensions(template);
@@ -193,7 +193,7 @@ export class ItemFactory {
       });
     });
 
-    const constructed = this.constructName(template.universal_name, affixes, quality);
+    const constructed = this.nameOf(template.universal_name, affixes);
     const makersName = opts?.customName?.trim();
     const name = makersName && this.canCarryMakersName(template.rank) ? makersName : constructed;
 
@@ -255,7 +255,7 @@ export class ItemFactory {
     const item: IItem = {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: def.id,
-      name: worked.length > 0 ? this.constructName(def.name, worked, 0)
+      name: worked.length > 0 ? this.nameOf(def.name, worked)
         : dreamAffix && dreamAffix.type === 'PREFIX' ? `${dreamAffix.name} ${def.name}`
         : dreamAffix ? `${def.name} ${dreamAffix.name}` : def.name,
       description: def.description || 'Harvested material. Can be refined.',
@@ -323,7 +323,7 @@ export class ItemFactory {
     return parseFloat((area * density).toFixed(1));
   }
 
-  // ... (Keep private helpers: rollRarity, generateBaseStats, generateAffixes, constructName, generateDescription, getColorForRarity same as before)
+  // ... (Keep private helpers: rollRarity, generateBaseStats, generateAffixes, nameOf, generateDescription, getColorForRarity same as before)
   private static rollRarity(rng: SeededRNG): Rarity {
     const rand = rng.next();
     if (rand > 0.99) return Rarity.LEGENDARY;
@@ -405,16 +405,16 @@ export class ItemFactory {
     return affixes;
   }
 
-  private static constructName(baseName: string, affixes: IAffix[], quality: number): string {
-    const prefixes = affixes.filter(a => a.type === 'PREFIX').map(a => a.name);
-    const suffixes = affixes.filter(a => a.type === 'SUFFIX').map(a => a.name);
+  /**
+   * Q13: one quality scale. The card's five bands say a piece's quality, so the name carries no
+   * quality word at all. A prefix on a name that begins "The" goes after it: "The Heavy Repossessor".
+   */
+  static nameOf(baseName: string, affixes: IAffix[]): string {
+    const prefix = affixes.find(a => a.type === 'PREFIX')?.name;
+    const suffix = affixes.find(a => a.type === 'SUFFIX')?.name;
     let name = baseName;
-
-    if (quality < -0.15) name = `Broken ${name}`;
-    else if (quality > 0.15) name = `Superior ${name}`;
-
-    if (prefixes.length > 0) name = `${prefixes[0]} ${name}`;
-    if (suffixes.length > 0) name = `${name} ${suffixes[0]}`;
+    if (prefix) name = /^The\s/.test(name) ? `The ${prefix} ${name.slice(4)}` : `${prefix} ${name}`;
+    if (suffix) name = `${name} ${suffix}`;
     return name;
   }
 

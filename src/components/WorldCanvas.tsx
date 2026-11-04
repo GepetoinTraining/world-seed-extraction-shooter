@@ -10,6 +10,8 @@ import { Leaders } from '../entities/world/Leaders';
 import { CombatSystem } from '../entities/combat/CombatSystems';
 import { applyKillRewards } from '../entities/combat/killRewards';
 import { FieldCapture } from '../logic/systems/FieldCapture';
+import { FieldEscort } from '../logic/systems/FieldEscort';
+import { Escort } from '../logic/systems/Escort';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
 import { EntityType, IChunk, IWorldEntity } from '../entities/world/types';
@@ -43,6 +45,7 @@ import { WeaveSystem } from '../logic/systems/WeaveSystem';
 import { ContentRegistry } from '../logic/theme/ContentRegistry';
 import { RESOURCE_DEFINITIONS } from '../entities/item/data/resourceDefinitions';
 import { ExitLevy } from '../logic/economy/ExitLevy';
+import { HaulReading } from '../logic/economy/HaulReading';
 import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { Bar, Busy, Button, CardView, Chip, Kbd, Panel, RankMark } from './ui/kit';
 import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet, useWaits } from './ui/stores';
@@ -425,6 +428,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const completeExtraction = useCallback(() => {
     // D65: what is still following comes home with the haul, and it never had to fit the pack
     FieldCapture.walkOut();
+    // Q16: whoever walked beside you goes home as their bond, and whoever you carried comes back
+    FieldEscort.walkOut();
     const st = usePlayerStore.getState();
     const session = st.player.currentSession;
     if (!session) return;
@@ -470,15 +475,19 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const wornNewcomers = (equipment?.items ?? []).filter(i => !session.kitItemIds?.includes(i.id));
     haul = [...haul, ...cartHaul, ...wornNewcomers];
 
-    const haulValue = haul.reduce((s, i) => s + (i.value || 0), 0);
+    // Q17: a person is not a haul. Q12: what nobody has read is levied unseen, and the receipt shows only what was read.
+    const reading = HaulReading.read(haul);
+    const leviable = reading.leviable;
+    const haulValue = reading.shownWorth;
+    const shownOf = { unread: reading.unread, persons: reading.persons };
     // D100: the levy can be dodged, on a roll that can fail, and trying is practice.
-    const levy = ExitLevy.attemptNow(worldCertUid || 'unknown', session.sessionId, haulValue, card?.extractionTaxRate ?? 0.05);
+    const levy = ExitLevy.attemptNow(worldCertUid || 'unknown', session.sessionId, leviable, card?.extractionTaxRate ?? 0.05);
     const rate = levy.ratePaid;
     const tax = levy.owed;
     const startedAt = Date.now();
     const forced = forcedMsRef.current !== null ? { forced: true } : {};
 
-    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue, rate, rateAsked: levy.rateAsked, dodged: levy.dodged, tax, cartItemIds: cartHaul.map(i => i.id), ...forced });
+    SessionJournal.record('EXTRACT', { loot: haul.map(i => i.id), haulValue: leviable, rate, rateAsked: levy.rateAsked, dodged: levy.dodged, tax, cartItemIds: cartHaul.map(i => i.id), ...forced });
     // the cart's bed banks straight into the stash (it never fit a pack — that is its point)
     if (cartHaul.length > 0) {
       usePlayerStore.setState(s => ({
@@ -487,7 +496,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           bank: {
             ...s.player.bank,
             stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-              idx === 0 ? { ...tab, items: [...tab.items, ...cartHaul.map(i => ({ ...i, isIdentified: true }))] } : tab)
+              idx === 0 ? { ...tab, items: [...tab.items, ...cartHaul] } : tab)
           }
         }
       }));
@@ -499,15 +508,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // The vault door starts closing now; the signature lands on it when sealed.
     useReceipt.getState().show({
-      outcome: 'EXTRACTED', haul, haulValue, tax, levy, sealing: true,
+      outcome: 'EXTRACTED', haul, haulValue, ...shownOf, tax, levy, sealing: true,
       worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...forced
     });
 
     void (async () => {
       // D30: the sealed session is the rest. What was worked at may settle, and the receipt says so.
       const settled = await useHubStore.getState().restAndCredit('SEALED');
-      const charged = await ExitLevy.charge(worldCertUid || 'unknown', haulValue, rate, levy);
-      if (charged > 0) console.log(`[TAX] Hub levied ${charged}G (${(rate * 100).toFixed(0)}% of ${haulValue}G haul).`);
+      const charged = await ExitLevy.charge(worldCertUid || 'unknown', leviable, rate, levy);
+      if (charged > 0) console.log(`[TAX] Hub levied ${charged}G (${(rate * 100).toFixed(0)}% of the haul).`);
       // Wave 6.2: everything that made it home gets its story signed
       const { Provenance } = await import('../logic/sovereignty/Provenance');
       await Provenance.recordMany(haul, 'MINT', { origin: 'EXTRACTION', sessionId: session.sessionId, worldCertUid });
@@ -517,7 +526,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       await PlayerPersistence.flush('extract');
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
-          outcome: 'EXTRACTED', haul, haulValue, tax, levy,
+          outcome: 'EXTRACTED', haul, haulValue, ...shownOf, tax, levy,
           settled: settled.map(s => WebSystem.nameOf(s.id)),
           worldName: card?.name ?? 'UNKNOWN',
           durationMs: signed?.payload.durationMs ?? (Date.now() - startedAt),
@@ -713,13 +722,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // death keeps EXACTLY the slots the magic named, said on the receipt
       const outcome = usePlayerStore.getState().emergencyJackOut(penalty);
       const lost = outcome.lost;
-      const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
+      // Q12: what nobody had read is lost unpriced
+      const lostReading = HaulReading.read(lost);
+      const lostValue = lostReading.shownWorth;
       const told = { cause: cause === 'GATE' ? 'GATE' as const : undefined };
 
       useWorldStore.getState().exitWorld();
       void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
       useReceipt.getState().show({
-        outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept, sealing: true,
+        outcome: 'DIED', haul: lost, haulValue: lostValue, unread: lostReading.unread, persons: lostReading.persons, tax: 0, kept: outcome.kept, sealing: true,
         worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...told
       });
       // Seal the journal and the bank (async; loop is already stopped)
@@ -727,7 +738,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       void SessionJournal.finish('DIED', after).then(signed => {
         if (useReceipt.getState().receipt?.outcome === 'DIED') {
           useReceipt.getState().show({
-            outcome: 'DIED', haul: lost, haulValue: lostValue, tax: 0, kept: outcome.kept,
+            outcome: 'DIED', haul: lost, haulValue: lostValue, unread: lostReading.unread, persons: lostReading.persons, tax: 0, kept: outcome.kept,
             worldName: card?.name ?? 'UNKNOWN',
             durationMs: signed?.payload.durationMs ?? 0,
             actionCount: signed?.payload.actionCount ?? 0,
@@ -926,9 +937,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const liveEquipment = usePlayerStore.getState().player.equipment;
       const liveAttributes = usePlayerStore.getState().player.attributes;
       const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes) });
+      // Q16: who walks beside you, where they stand now
+      const escortsStanding = FieldEscort.standing();
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
-        aiResult.spawnedPatterns.forEach(p => {
+        aiResult.spawnedPatterns.forEach((p, n) => {
           if (p.type === 'MELEE' || p.type === 'AREA') {
             // A wind-up can be walked away from: what lands is measured when it lands
             const d = Math.hypot(p.origin.x - playerPos.x, p.origin.y - playerPos.z);
@@ -936,6 +949,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
               lastHurtByRef.current = p.shooterId ?? lastHurtByRef.current;
               incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
               if (p.status) landedStatuses.push(p.status);
+            } else {
+              // Q16: a blow aimed at someone beside you lands on them
+              const struck = Escort.hitBy(p.origin, p.reachPx ?? 50, escortsStanding);
+              if (struck) FieldEscort.hurt(struck, p.damage ?? 10, `escort_hit:${struck}:${now}:${n}`);
             }
           }
         });
@@ -957,6 +974,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           .map(b => ({ ...b, color: '#ef4444' })));
 
       const survivingEnemyBullets = enemyBullets.filter(b => {
+        // Q16: a shot that reaches someone beside you first is theirs to take
+        const escortStruck = escortsStanding.find(e => ProjectileSystem.sweptDistance(b, e.x, e.y) < 15);
+        if (escortStruck && ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) >= 15) {
+          FieldEscort.hurt(escortStruck.entityId, b.damage ?? 8, `escort_shot:${b.id}`);
+          spentShots.current.set(b.id, now);
+          return false;
+        }
         if (ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) < 15) {
           incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
           const firedBy = enemyPatterns.find(p => b.id.startsWith(`e_${p.shooterId}_${p.startTime}_`));
@@ -969,7 +993,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       });
 
       // Collision-check ALL visible chunks (AI only returns the modified ones)
-      const combatResult = CombatSystem.tick(playerBullets, { ...visibleChunks, ...aiResult.updatedChunks }, playerPos, liveSession.health, activeSwings);
+      // Q16: and they fight back, at whatever has engaged within their reach
+      const simulated = { ...visibleChunks, ...aiResult.updatedChunks };
+      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities)) : [];
+      // Drawn like your own swing; the same arc, so it lands once however many frames it is drawn
+      if (escortSwings.length > 0) setActiveSwings(prev => [...prev.filter(sw => now - sw.startTime < 300), ...escortSwings]);
+      const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings);
       const survivingIds = new Set(combatResult.survivingBullets.map(b => b.id));
       playerBullets.forEach(b => {
         if (!survivingIds.has(b.id)) spentShots.current.set(b.id, now);

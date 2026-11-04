@@ -179,7 +179,12 @@ export interface IReceiptView {
   outcome: 'EXTRACTED' | 'DIED';
   signature?: string;        // the seal is computed from this
   haul: IItem[];             // what was banked (EXTRACTED) or lost (DIED)
+  /** Q12: what the receipt may say the haul is worth: only what someone has read. */
   haulValue: number;
+  /** Q12: how many pieces nobody has read. Their worth is not shown. */
+  unread?: number;
+  /** Q17: who came out with you. A person is not priced. */
+  persons?: string[];
   tax: number;
   /** D100: what the gate's roll came to. */
   levy?: { attempted: boolean; dodged: boolean };

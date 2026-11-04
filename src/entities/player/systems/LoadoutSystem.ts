@@ -28,7 +28,6 @@ import {
 import { COGNITIVE_FRAMES } from '../data/cognitiveFrames';
 import { InventorySystem } from './InventorySystem';
 import { StatSystem } from '../../../logic/systems/StatSystem';
-import { QUALITY_NAMES } from '../../../render/atoms/atoms';
 
 export interface Verdict {
   ok: boolean;
@@ -51,6 +50,9 @@ export const BASE_WALK_TILES_PER_S = 4.0;
 /** However bad the gear, a person still walks. A floor, not a ceiling: nothing caps the top. */
 const MIN_WALK_SCALE = 0.1;
 
+/** Q13: the two words the item factory once wrote into a name, before the card's bands were the one scale. */
+const LEGACY_QUALITY_WORD = /\b(?:Broken|Superior)\s+/g;
+
 export class LoadoutSystem {
 
   /**
@@ -72,10 +74,11 @@ export class LoadoutSystem {
 
   /**
    * What a piece may be called aloud: until it is read, it has no name to say.
-   * `Broken` names low quality in the factory and zero durability in the pack; only the second keeps the word.
+   * Q13: quality is the card's to say, on its five bands. A name stored before that rule may still carry
+   * the factory's old word, so it is read without it. Zero durability says "Broken" on the card's own row.
    */
   static shownName(item: IItem): string {
-    return item.isIdentified === false ? 'Unidentified Signal' : item.name.replace(/\bBroken\b/, QUALITY_NAMES[0]);
+    return item.isIdentified === false ? 'Unidentified Signal' : item.name.replace(LEGACY_QUALITY_WORD, '').trim();
   }
 
   /** The refusal for working what has not been read. It says nothing of what the thing is. */

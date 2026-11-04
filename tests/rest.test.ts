@@ -283,19 +283,15 @@ describe('line 92: a thing can be studied, and known only after a rest (D50)', (
 
   beforeEach(reset);
 
-  it('in the field: paid, timed, and it tells you nothing yet', () => {
+  // Q27 (2026-11-04): replaced. The field identify was a test of the system; nothing is read before town.
+  it('in the field there is nothing to identify with, and coming home reads nothing', () => {
     const item = unread('a');
     store().diveIntoLayer('layer-test');
     store().tryAddItems([item]);
-    const energy = store().player.currentSession!.energy;
-    const ask = store().fieldIdentify(item.id);
-    expect(ask.ok).toBe(true);
-    expect(store().player.currentSession!.energy).toBe(energy - ask.cost!);
-    expect(store().completeFieldIdentify(item.id).ok).toBe(true);
-    const held = () => store().player.currentSession!.inventory.find(i => i.id === item.id)!;
-    expect(held().isIdentified).toBe(false);
-    expect(RestSystem.isStudied(store().player, item.id)).toBe(true);
+    expect((store() as unknown as Record<string, unknown>).fieldIdentify).toBeUndefined();
     store().emergencyJackOut('NONE');
+    expect(store().player.bank.stashTabs[0].items.find(i => i.id === item.id)!.isIdentified).toBe(false);
+    expect(RestSystem.isStudied(store().player, item.id)).toBe(false);
   });
 
   it('there is no roll: looking always gets there', () => {
@@ -312,6 +308,8 @@ describe('line 92: a thing can be studied, and known only after a rest (D50)', (
 
   it('at a bench too: it costs the day, and waits for the rest', () => {
     const item = unread('bench');
+    // Q27: an unread piece is read through the eye for its kind, so the eye is had first
+    store().gainSkillXp(StudySystem.scopeSkillId('weapon'), 1, ['study']);
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: [{ ...s.player.bank.stashTabs[0], items: [item] }] } } }));
     expect(store().studyItemAtStation(item.id).ok).toBe(true);
     expect(store().player.bank.stashTabs[0].items[0].isIdentified).toBe(false);

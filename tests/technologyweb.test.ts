@@ -17,6 +17,7 @@
  * generated NPC's stored bytes stay exactly what they were.
  */
 
+import { FieldEscort } from '../src/logic/systems/FieldEscort';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1468,6 +1469,8 @@ describe('line 66: an NPC carries stats and skills derived from its seed', () =>
     useWorldStore.setState({ currentMap: { seed: 'bond_world', width: 1, height: 1, gridVersion: 2, sectors: {}, generatedAt: 0, chunks: { '0,0': { id: '0,0', x: 0, y: 0, entities: [entity] } } } } as any);
     usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { sessionId: 'sess_bond', layerId: 'l', inventory: [], kitItemIds: [], health: 100, maxHealth: 100, energy: 100, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } } }));
     store().performInteraction(`int_recruit_${entity.id}`, entity.id);
+    // Q16: they walk beside you now, and the bond is written at the beacon
+    FieldEscort.walkOut();
     const bond = player().currentSession!.inventory.find(i => i.tags.includes('npc_contract'))!;
     expect(bond.bondData?.worldSeed).toBe('bond_world');
     expect(bond.bondData?.entityId).toBe('ent_bond');

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Busy, Button, ItemSprite, Panel, SealView } from './ui/kit';
-import { useReceipt } from './ui/stores';
+import { IReceiptView, useReceipt } from './ui/stores';
 
 const fmtMs = (ms: number) => {
   const s = Math.floor(ms / 1000);
@@ -16,8 +16,14 @@ const fmtMs = (ms: number) => {
 export const ReceiptScreen: React.FC = () => {
   const { receipt, clear } = useReceipt();
   if (!receipt) return null;
+  return <ReceiptView receipt={receipt} clear={clear} />;
+};
+
+/** The receipt itself, given what it shows. */
+export const ReceiptView: React.FC<{ receipt: IReceiptView; clear: () => void }> = ({ receipt, clear }) => {
 
   const died = receipt.outcome === 'DIED';
+  const unread = receipt.unread ?? 0;
   const tone = died ? 'loss' : 'proof';
 
   return (
@@ -43,12 +49,27 @@ export const ReceiptScreen: React.FC = () => {
           <div className="ws-row"><span className="ws-dim">ACTIONS ON RECORD</span><span>{receipt.sealing ? '…' : receipt.actionCount}</span></div>
           <div className="ws-row">
             <span className="ws-dim">{died ? 'LOST TO THE WORLD' : 'HAUL VALUE'}</span>
-            <span className={died ? 'ws-loss' : 'ws-proof'}>{receipt.haulValue.toLocaleString()} G</span>
+            <span className={died ? 'ws-loss' : 'ws-proof'}>{receipt.haulValue.toLocaleString()} G{unread > 0 ? ' READ' : ''}</span>
           </div>
+          {/* Q12: what nobody has read is counted, and never priced */}
+          {unread > 0 && (
+            <div className="ws-row">
+              <span className="ws-dim">UNREAD</span>
+              <span>{unread} piece{unread === 1 ? '' : 's'} · worth unknown</span>
+            </div>
+          )}
+          {/* Q17: a person brought out is named, and never priced */}
+          {(receipt.persons ?? []).map(name => (
+            <div key={name} className="ws-row">
+              <span className="ws-dim">{died ? 'LEFT BEHIND' : 'BROUGHT OUT'}</span>
+              <span>{name}</span>
+            </div>
+          ))}
           {!died && (
             <div className="ws-row">
               <span className="ws-dim">HUB LEVY{receipt.levy?.attempted ? (receipt.levy.dodged ? ' · DODGED' : ' · CAUGHT: PAID IN FULL') : ''}</span>
-              <span>{receipt.tax.toLocaleString()} G</span>
+              {/* Q12: a levy on what nobody has read would tell its worth, so it says only that it was taken */}
+              <span>{unread > 0 && receipt.tax > 0 ? 'TAKEN' : `${receipt.tax.toLocaleString()} G`}</span>
             </div>
           )}
         </div>
@@ -56,7 +77,7 @@ export const ReceiptScreen: React.FC = () => {
         {receipt.haul.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0', alignItems: 'flex-end' }}>
             {receipt.haul.slice(0, 24).map(item => (
-              <ItemSprite key={item.id} item={died ? item : { ...item, isIdentified: true }} cellPx={22} title={died && item.isIdentified === false ? 'Unidentified Signal' : item.name} />
+              <ItemSprite key={item.id} item={item} cellPx={22} title={item.isIdentified === false ? 'Unidentified Signal' : item.name} />
             ))}
             {receipt.haul.length > 24 && <span className="ws-dim ws-small">+{receipt.haul.length - 24} more</span>}
           </div>

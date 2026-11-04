@@ -4,9 +4,9 @@
  * Equipping shows no visible change for what you have not studied — knowledge
  * gain IS the mechanic, and the unstudied affix acts regardless: equip at your
  * own peril. Identify is an acquirable SKILL, scoped by item type: study that
- * type at a workstation, time and again, to earn it. In the field anyone may try
- * (D32): always timed, faster with skill, paid in energy, on a keyed roll by the
- * eye against rank and rarity. The bench needs no roll.
+ * type, time and again, to earn it. Q27 (2026-11-04): the field try is gone, and
+ * nothing is read before town. An unread piece is read only through the eye for
+ * its kind (`canRead`); without it, studying the piece teaches the eye.
  *
  * This file ties into the machinery that already exists, never beside it:
  *  - the scoped skill is an ISkillState in bank.universalSkills (D6's track)
@@ -94,6 +94,15 @@ export class StudySystem {
     const scope = this.identifyScopeOf(item);
     if (!scope) return 0;
     return player.bank.universalSkills[this.scopeSkillId(scope)]?.level ?? 0;
+  }
+
+  /**
+   * Q27 (Pedro, 2026-11-04): "identify is a SKILL ... things CANNOT be ided until town, study is what
+   * gives you the ability, study unided items and you start to figure out how to identify". A piece
+   * nobody has read can be read only by someone holding the eye for its kind. Studying is how the eye is had.
+   */
+  static canRead(player: IPlayer, item: IItem): boolean {
+    return item.isIdentified !== false || this.identifyLevel(player, item) >= 1;
   }
 
   /** ALWAYS timed: the clock falls with skill and stops at the floor, never zero. */

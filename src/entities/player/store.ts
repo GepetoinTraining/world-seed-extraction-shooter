@@ -32,6 +32,8 @@ import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
 import { Capture } from '../../logic/systems/Capture';
 import { FieldCapture } from '../../logic/systems/FieldCapture';
+import { FieldEscort } from '../../logic/systems/FieldEscort';
+import { Escort } from '../../logic/systems/Escort';
 import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
@@ -128,10 +130,6 @@ interface PlayerState {
   readLore: (itemId: string) => Verdict;
   /** D6, D26: a finished job is practice. The trade's skill grows, and hands learn. */
   practiceTrade: (family: ProcessFamily) => void;
-  /** 10E (D19): ask the field identify — scoped and ALWAYS timed; the caller runs the clock. */
-  fieldIdentify: (itemId: string) => { ok: boolean; reason?: string; seconds?: number; cost?: number };
-  /** 10E (D19): the clock ran honestly — reveal the record through the one door. */
-  completeFieldIdentify: (itemId: string) => Verdict;
   /** D17: pouches — stow through the pouch's own rule; quick-use without pack-opening. */
   stowInPouch: (pouchSlot: EquipSlotId, itemId: string) => Verdict;
   takeFromPouch: (pouchSlot: EquipSlotId) => Verdict;
@@ -212,8 +210,6 @@ const quietEquip = (get: () => PlayerState, itemId: string) => {
 };
 
 let cacheSeq = 0;
-/** D32: an attempt is paid for before the clock runs, and one payment buys one roll. */
-const paidIdentifies = new Set<string>();
 const shown = LoadoutSystem.shownName.bind(LoadoutSystem);
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -813,11 +809,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       feed(v.reason, 'loss');
       return v;
     }
+    // Q27: identifying is a skill. Without the eye an unread piece only teaches it; with it, the piece is read at the rest.
+    const reads = StudySystem.canRead(player, item);
     // The sitting: the scoped skill grows by use (D6).
     get().gainSkillXp(StudySystem.scopeSkillId(scope), 60, ['study', 'intel'], { tags: ['study'], magnitude: 10 } as any);
-    set(s => ({ player: { ...RestSystem.queueStudy(s.player, itemId), energyToday: today - cost } }));
+    set(s => ({ player: { ...(reads ? RestSystem.queueStudy(s.player, itemId) : s.player), energyToday: today - cost } }));
     const level = StudySystem.identifyLevel(get().player, item);
-    feed(`You sat with it. The ${scope} eye stands at ${level}. You will know after you rest.`, 'proof');
+    // D32: what has not been read is never named, not even by its kind
+    feed(!reads
+      ? `You sat with it and could not make it out. Your eye for this kind of thing is learning.`
+      : item.isIdentified === false
+        ? `You sat with it. You will know what it is after you rest.`
+        : `You sat with it. The ${scope} eye stands at ${level}. You will know after you rest.`, 'proof');
     // D27: loot teaches. What the piece implies accrues, and settles only at a rest.
     const teaches = WebSystem.reverseEngineer(item).designs.filter(d => !get().player.bank.universalSkills[d.skillId]);
     if (teaches.length > 0) {
@@ -874,49 +877,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  fieldIdentify: (itemId) => {
-    const player = get().player;
-    const item = player.currentSession?.inventory.find(i => i.id === itemId);
-    if (!item) return { ok: false, reason: 'No such item in the pack.' };
-    const verdict = StudySystem.canFieldIdentify(player, item);
-    if (!verdict.ok) {
-      feed(verdict.reason!, 'loss');
-      return verdict;
-    }
-    // D32: paid up front, by the person's eye and never by the piece
-    const { cost, seconds } = StudySystem.identifyAsk(player, item);
-    const energy = player.currentSession!.energy;
-    if (energy < cost) {
-      const v = { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(energy)}.` };
-      feed(v.reason, 'loss');
-      return v;
-    }
-    set(s => s.player.currentSession ? ({
-      player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - cost } }
-    }) : s);
-    paidIdentifies.add(itemId);
-    return { ok: true, seconds, cost };
-  },
-
-  completeFieldIdentify: (itemId) => {
-    const player = get().player;
-    const item = player.currentSession?.inventory.find(i => i.id === itemId);
-    if (!item) return { ok: false, reason: 'No such item in the pack.' };
-    const verdict = StudySystem.canFieldIdentify(player, item);
-    if (!verdict.ok) return verdict;
-    if (!paidIdentifies.delete(itemId)) return { ok: false, reason: 'Nothing was paid for. The eye has not looked.' };
-
-    // D50: there is no roll. The looking is done; what it found is known after a rest.
-    SessionJournal.record('INTERACT', { kind: 'STUDY', itemId });
-    // The eye grows. Unschooled, it is winging it, and it settles at a rest.
-    const scope = StudySystem.identifyScopeOf(item)!;
-    const eyeId = StudySystem.scopeSkillId(scope);
-    if (player.bank.universalSkills[eyeId]) get().gainSkillXp(eyeId, 15, ['study', 'intel']);
-    else set(s => ({ player: WebSystem.accrue(s.player, { id: eyeId, tags: [`identify_${scope}`] }, 0) }));
-    set(s => ({ player: RestSystem.queueStudy(s.player, itemId) }));
-    feed(`You looked at ${shown(item)} for as long as it took. You will know after you rest.`, 'plain');
-    return { ok: true };
-  },
+  // Q27 (Pedro, 2026-11-04): the field identify was a test of the system, and it is gone. Nothing is read before town.
 
   // --- D17: POUCHES — the rule names what stacks; quick-use opens no pack ---
 
@@ -1302,8 +1263,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Wave 10C (D21): the body falls with the pack, EXCEPT the slots a magic
     // protects. The death keeps exactly what the magic named; nothing more.
     const banksLoot = penalty === 'NONE';
+    // Q27: coming home reads nothing. What nobody has read is banked unread, for the eye to learn on.
     const sessionLoot = banksLoot
-      ? (player.currentSession?.inventory.map(i => ({ ...i, isIdentified: true })) || [])
+      ? (player.currentSession?.inventory || [])
       : [];
 
     let lost: IItem[] = [];
@@ -1543,6 +1505,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session) return;
     const item = session.inventory.find(i => i.id === itemId);
     if (!item) return;
+    // Q16: a body set down lies on the ground again. It is never a cache anyone could open.
+    if (Escort.isCorpse(item)) { FieldEscort.setDown(item); return; }
 
     const layout = { ...(session.inventoryLayout || {}) };
     delete layout[itemId];
@@ -1997,37 +1961,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     if (interactionId.startsWith('int_recruit_')) {
-      if (!entity.npc || entity.npc.disposition < StatSystem.recruitDisposition(get().player.attributes)) return;
+      if (!entity.npc || entity.escort || entity.npc.disposition < StatSystem.recruitDisposition(get().player.attributes)) return;
       if (!spendEnergy(5)) return;
 
-      // The NPC becomes an extractable asset: a signed-for escort contract item.
-      // Extracting it banks the social work exactly like any other haul.
-      const rng = Rng.fromKey(SessionJournal.rollKey('recruit', entity.id));
-      const contract: IItem = {
-        ...ItemFactory.createResourceItem({ id: 'npc_contract', name: `Escort Bond: ${entity.npc.name}`, icon: '🤝', weight: 0, dimensions: { width: 1, height: 1 } } as any, rng),
-        type: ItemType.LORE,
-        description: `${entity.npc.name} (${entity.npc.temperament.toLowerCase()}) walks beside you to the beacon. Worth more than gold, redeemable for some anyway.`,
-        rank: entity.rank,
-        value: 200,
-        rarity: Rarity.RARE,
-        tags: ['npc_contract', 'social'],
-        // D27, Wave 11's seam: the bond names the person, so their sheet reads back the same
-        bondData: {
-          worldSeed: useWorldStore.getState().currentMap?.seed ?? '',
-          entityId: entity.id,
-          webVersion: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion,
-          themeId: useWorldStore.getState().availableWorlds?.find(w => w.id === useWorldStore.getState().activeWorldId)?.themeId,
-          rank: entity.rank,
-          rarity: entity.rarity,
-          sheet: { ...entity.npc }
-        }
-      };
-
-      addToInventory([contract]);
-      useWorldStore.getState().removeEntity(entity.id);
-      SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name, contractId: contract.id });
+      // Q16: they walk beside you to the beacon, in the world, and fight back when engaged.
+      // The bond the hub reads is written at the beacon, from the same facts (D27, Wave 11's seam).
+      const escort = FieldEscort.join(entity);
+      if (!escort) return;
+      SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name });
       get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
       feed(`${entity.npc.name} walks beside you now. Reach the beacon together.`, 'signal');
+      return;
+    }
+
+    // Q16: a person brought out who fell, taken up to be carried home
+    if (interactionId.startsWith('int_carry_')) {
+      if (!entity.escort?.fallen) return;
+      if (FieldEscort.carry(entity.id)) SessionJournal.record('INTERACT', { kind: 'CARRY', targetId: entity.id });
       return;
     }
   },

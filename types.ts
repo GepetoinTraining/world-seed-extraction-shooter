@@ -833,6 +833,26 @@ export interface IEquippedSlots {
   accessory?: string;
 }
 
+/**
+ * Q16 (Pedro, 2026-11-04): a person brought out walks beside you and fights back when engaged.
+ * If they fall, they are carried out as a heavy body nobody may open, and they come back on the
+ * other side, as a player does. Their health is their own, from their own sheet.
+ */
+export interface IEscort {
+  entityId: string;
+  name: string;
+  /** Their own sheet's stats: what their health, their blow and their body's weight are read from. */
+  stats: IAttributes;
+  health: number;
+  maxHealth: number;
+  lastStrikeAt: number;
+  /** How many blows they have thrown, so each one rolls on its own key. */
+  strikes: number;
+  /** What Mags reads when they reach the city: the same bond the field always wrote. */
+  bond: NonNullable<IItem['bondData']>;
+  fallen?: boolean;
+}
+
 export interface IActiveSession {
   sessionId: string;
   layerId: string;
@@ -844,6 +864,8 @@ export interface IActiveSession {
   kitItemIds?: string[];
   /** D65: what walks beside this person for a while, and the cage it goes home in. */
   tamed?: { entityId: string; item: IItem; until: number }[];
+  /** Q16: the people brought out, walking beside this person to the beacon, or carried. */
+  escorts?: IEscort[];
   // Wave 4.1: equipped gear (additive contract change)
   // Wave 10C: LEGACY — the three buckets migrate into IPlayer.equipment's slot
   // tree on load (LoadoutSystem.migrate). Kept so old session snapshots parse.

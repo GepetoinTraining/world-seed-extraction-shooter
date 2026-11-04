@@ -9,6 +9,7 @@
 import { IPlayer } from '../../../types';
 import { IWorldEntity, EntityType, ScanLevel } from '../../entities/world/types';
 import { chunkOf } from '../../entities/world/grid';
+import { Leaders } from '../../entities/world/Leaders';
 
 export type ISurveyEntry = NonNullable<IPlayer['survey']>[string][string];
 /** One world's sectors, on a character or on paper (D85). */
@@ -42,8 +43,23 @@ export interface IManifestLine {
   label: string;
   rank: string;
   hostile: boolean;
+  /** How many bodies the line stands for. A leader's line is the leader alone. */
   count: number;
+  /** Q44: a leader, a pack that walks together, or bodies on their own. */
+  mark: 'leader' | 'pack' | 'single';
+  /** A leader's: how many walk behind it. */
+  pack?: number;
 }
+
+const MARK_ORDER: IManifestLine['mark'][] = ['leader', 'pack', 'single'];
+/** D60: a creature gives only the name it has earned. */
+const labelOf = (e: IWorldEntity) => (e.type === EntityType.MOB ? (e.displayName ?? 'Unknown contact') : e.definitionId);
+const highest = (bodies: IWorldEntity[]) => bodies.reduce((top, e) => (RANK_ORDER.indexOf(String(e.rank)) > RANK_ORDER.indexOf(top) ? String(e.rank) : top), String(bodies[0].rank));
+const commonest = (labels: string[]) => {
+  const n = new Map<string, number>();
+  for (const l of labels) n.set(l, (n.get(l) ?? 0) + 1);
+  return [...n.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
+};
 
 const RANK_ORDER = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
 
@@ -150,18 +166,43 @@ export const SurveySystem = {
     return { player: next, taken, kept };
   },
 
-  /** A deep scan's list, led by the danger. D60: a creature gives only the name it has earned. */
+  /**
+   * A deep scan's list, led by the danger. D60: a creature gives only the name it has earned.
+   * Q44: what a scan sees shows, all of it. A leader is marked with the pack behind it, and a pack
+   * that walks together is one line; nothing is cut off the end.
+   */
   manifest(entities: IWorldEntity[]): IManifestLine[] {
-    const lines = new Map<string, IManifestLine>();
+    const herds = new Map<string, IWorldEntity[]>();
+    const singles: IWorldEntity[] = [];
     for (const e of entities) {
-      const label = e.type === EntityType.MOB ? (e.displayName ?? 'Unknown contact') : e.definitionId;
-      const key = `${label}:${e.rank}`;
-      const line = lines.get(key);
-      if (line) line.count++;
-      else lines.set(key, { key, label, rank: String(e.rank), hostile: !!e.isHostile, count: 1 });
+      const herd = e.type === EntityType.MOB ? Leaders.herdOf(e.id) : undefined;
+      if (!herd) { singles.push(e); continue; }
+      herds.set(herd, [...(herds.get(herd) ?? []), e]);
     }
-    return [...lines.values()]
-      .sort((a, b) => Number(b.hostile) - Number(a.hostile) || RANK_ORDER.indexOf(b.rank) - RANK_ORDER.indexOf(a.rank) || b.count - a.count)
-      .slice(0, 10);
+    const lines: IManifestLine[] = [];
+    for (const [herd, members] of herds) {
+      const leader = members.find(m => Leaders.isLeader(m.id));
+      if (leader) {
+        lines.push({ key: `leader:${herd}`, label: labelOf(leader), rank: String(leader.rank), hostile: !!leader.isHostile, count: 1, mark: 'leader', pack: members.length - 1 });
+      } else if (members.length >= 2) {
+        lines.push({ key: `pack:${herd}`, label: commonest(members.map(labelOf)), rank: highest(members), hostile: members.some(m => !!m.isHostile), count: members.length, mark: 'pack' });
+      } else singles.push(...members);
+    }
+    const byLabel = new Map<string, IManifestLine>();
+    for (const e of singles) {
+      const label = labelOf(e);
+      const key = `${label}:${e.rank}`;
+      const line = byLabel.get(key);
+      if (line) line.count++;
+      else byLabel.set(key, { key, label, rank: String(e.rank), hostile: !!e.isHostile, count: 1, mark: 'single' });
+    }
+    return [...lines, ...byLabel.values()].sort((a, b) =>
+      Number(b.hostile) - Number(a.hostile) || MARK_ORDER.indexOf(a.mark) - MARK_ORDER.indexOf(b.mark)
+      || RANK_ORDER.indexOf(b.rank) - RANK_ORDER.indexOf(a.rank) || b.count - a.count || (a.key < b.key ? -1 : 1));
+  },
+
+  /** Q44: the leaders and packs a scan saw, from the depth that sees them (D93's `seen`). */
+  packs(entities: IWorldEntity[]): IManifestLine[] {
+    return this.manifest(entities).filter(l => l.mark !== 'single');
   }
 };
