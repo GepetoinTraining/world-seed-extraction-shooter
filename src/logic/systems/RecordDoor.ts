@@ -32,7 +32,7 @@ export const RecordDoor = {
     ticking = true;
     try {
       const worlds = useWorldStore.getState().availableWorlds
-        .filter(w => !w.isDebug && !w.retired)
+        .filter(w => !w.isDebug)
         .map(w => ({ id: w.id, phase: WorldClock.momentAt(w, now).phase as string }));
       if (gatesGoneDown(worlds, lastPhase).length > 0) {
         await fetch('/api/db/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ why: 'gate' }) });

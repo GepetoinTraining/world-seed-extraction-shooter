@@ -186,7 +186,6 @@ describe("line 125: recon has its own view, reached without entering a world's f
     expect(read('SCAN')).not.toMatch(/DEPLOY/);
     expect(enabled(read('OFF'), 'RECON')).toBe(false);
     expect(enabled(read('OFF'), 'DEPLOY')).toBe(false);
-    expect(enabled(read('UP', { retired: true }), 'RECON')).toBe(false);
     // The simulation stands outside the clock and still skips recon
     expect(read('UP', { isDebug: true })).not.toMatch(/RECON/);
   });

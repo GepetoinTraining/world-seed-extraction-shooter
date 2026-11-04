@@ -6,8 +6,9 @@
  *   chunk    64 tiles      1280px   what is generated on demand and simulated
  *   sector   512 tiles     10240px  what you scan and drop into
  *
- * A world's size is counted in sectors. GRID_VERSION is stamped on every new world,
- * because a world built on an older grid cannot be walked on this one.
+ * A world's size is counted in sectors. GRID_VERSION is stamped on every new world as a record
+ * of what it was made on. Pedro (Q43): a world never retires, so one made on an older grid is
+ * walked on this one, from the same seed.
  */
 
 export const GRID_VERSION = 2;

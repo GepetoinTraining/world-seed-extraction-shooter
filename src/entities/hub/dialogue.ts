@@ -230,7 +230,7 @@ export function runDialogueAction(action: string, payload?: any): DialogueEffect
 /** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest. */
 export function quickDeployTargetId(): string | null {
   const now = Date.now();
-  const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.retired && WorldClock.momentAt(w, now).canDeploy);
+  const worlds = useWorldStore.getState().availableWorlds.filter(w => WorldClock.momentAt(w, now).canDeploy);
   const tutorial = worlds.find(w => Tutorial.isTutorial(w));
   if (tutorial && Tutorial.firstOrderOpen(usePlayerStore.getState().player)) return tutorial.id;
   return (worlds.find(w => !Tutorial.isTutorial(w)) ?? tutorial)?.id ?? null;

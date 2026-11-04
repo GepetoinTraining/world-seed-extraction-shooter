@@ -112,6 +112,16 @@ export class ContentRegistry {
     return this.list().filter(p => !current || p.themeId === current.themeId || p.name !== current.name);
   }
 
+  /**
+   * The theme a standing world reads. Pedro (Q43): "why would a world retire?" A world keeps
+   * the theme pinned on its certificate while this hub holds it. One minted before themes, or
+   * pinned to one this hub does not hold, reads the hub's own instead, so it can always be walked.
+   * Once its own theme arrives here, it reads that again.
+   */
+  static standing(themeId: string | undefined): string | undefined {
+    return this.get(themeId) ? themeId : firstThemeId;
+  }
+
   /** The theme a world with no talk behind it pins: the first the hub holds. */
   static defaultThemeId(): string | undefined {
     return firstThemeId;

@@ -288,6 +288,20 @@ export class WorldCertificateSystem {
     };
   }
 
+  /**
+   * Q41: AGENTS counts drops into a world. Written at the door, once per drop, whoever minted it.
+   * The count sits in the certificate's stats beside the signature and is not signed again: it
+   * is the world's tally, not its maker's word.
+   */
+  static async recordDrop(worldUid: string): Promise<void> {
+    const worlds = await VectorStore.searchContent<IWorldCertificate>('world_certificate');
+    const worldCert = worlds.find(w => w.data.worldUid === worldUid);
+    if (!worldCert) return;
+    worldCert.data.stats.totalVisitors++;
+    await VectorStore.saveContent(worldUid, 'world_certificate', worldCert, worldCert.data.worldType);
+  }
+
+  /** A session's end. The drop that began it was already counted (`recordDrop`). */
   static async recordSession(
     worldUid: string,
     sessionData: {
@@ -302,13 +316,13 @@ export class WorldCertificateSystem {
     if (!worldCert) return;
 
     const stats = worldCert.data.stats;
-    stats.totalVisitors++;
     stats.totalGoldGenerated += sessionData.goldGenerated;
     if (sessionData.playerDied) stats.totalDeaths++;
     if (sessionData.extracted) stats.totalExtractions++;
     
-    const totalMinutes = stats.averageSessionMinutes * (stats.totalVisitors - 1) + sessionData.sessionMinutes;
-    stats.averageSessionMinutes = totalMinutes / stats.totalVisitors;
+    const sessions = stats.totalExtractions + stats.totalDeaths;
+    const totalMinutes = stats.averageSessionMinutes * Math.max(0, sessions - 1) + sessionData.sessionMinutes;
+    stats.averageSessionMinutes = sessions > 0 ? totalMinutes / sessions : sessionData.sessionMinutes;
 
     await VectorStore.saveContent(worldUid, 'world_certificate', worldCert, worldCert.data.worldType);
   }

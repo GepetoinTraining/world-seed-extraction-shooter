@@ -106,7 +106,7 @@ export const RestDoor = {
     if (skills.length === 0 && weaves.length === 0 && gifts.length === 0 && studied.length === 0 && !LoreSystem.worthFiling(player)) return;
 
     const world = useWorldStore.getState();
-    const card = world.availableWorlds.find(w => w.id === world.activeWorldId) ?? world.availableWorlds.find(w => !w.retired);
+    const card = world.availableWorlds.find(w => w.id === world.activeWorldId) ?? world.availableWorlds[0];
     const theme = ContentRegistry.get(card?.themeId) ?? ContentRegistry.list()[0];
     const summary = theme ? { name: theme.name, premise: theme.premise, regions: theme.regions.map(r => r.name), elements: [...new Set(theme.abilities.flatMap(a => a.elements))] } : {};
 

@@ -15,7 +15,8 @@ import { IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClie
 
 /** A person is waiting on the first word. Longer than this and he speaks as he always is. */
 const READING_PATIENCE_MS = 6_000;
-const HIDDEN = /archetype|trope|isekai/i;
+/** Q49: what stays unsaid, and the words the talk prompts already keep out ("player", "game"). */
+const HIDDEN = /archetype|trope|isekai|\bplayers?\b|\bgames?\b/i;
 
 export interface IKamiReading { text: string; usage?: IDoorUsage }
 

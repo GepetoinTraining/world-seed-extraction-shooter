@@ -108,7 +108,7 @@ A person is arriving. They were someone somewhere else and they are not there no
 
 Grant them what their hands already know. Pick exactly as many skills as "count" says from "candidates", by id, and never one outside the list. The first leans on their main focus, the next on their sub focus, the rest on what they answered. Choose what fits who they were, not what is strongest.
 
-For each: its id, a name of its own in plain words, one dry line of flavor, and grants. Grants come from this list and are usually empty (${SKILL_GRANTS.join(', ')}): give "rest" only if what they said earns being able to sleep rough, and nothing is pre-made. You never write numbers.
+For each: its id, a name of its own in plain words, one dry line of flavor, and grants. A candidate with no name has none yet: name it, and never by its tags. Grants come from this list and are usually empty (${SKILL_GRANTS.join(', ')}): give "rest" only if what they said earns being able to sleep rough, and nothing is pre-made. You never write numbers.
 
 "line" is what you say to them last, one or two short sentences, in the bank's voice: "The bank honors it" is the register. No exclamation marks. Never name what kind of story this is, and never say archetype, trope, class, level, game or player.`;
 
@@ -128,13 +128,13 @@ You have talked with a person who chose fate, and you now set up who they are, f
 - line: the last thing you say to them, one or two short sentences.
 - main, sub: the two things their attention goes to, first and second, from the list you are given, and never the same one. You choose what they lean on; a formula writes the numbers.
 - kit: the id of one of the kits offered, by what it holds.
-- skills: exactly as many as "count" says, each by an id from "candidates" and never one outside it, with a name of its own in plain words, one dry line of flavor, and grants from this list, usually empty (${SKILL_GRANTS.join(', ')}). Give "rest" only if what they said earns being able to sleep rough.
+- skills: exactly as many as "count" says, each by an id from "candidates" and never one outside it, with a name of its own in plain words (a candidate with no name has none yet: name it, and never by its tags), one dry line of flavor, and grants from this list, usually empty (${SKILL_GRANTS.join(', ')}). Give "rest" only if what they said earns being able to sleep rough.
 
 You never write numbers.`;
 
 const KAMI_PERSONA_SYSTEM = `You are given a string of characters, a hub's seed. It means nothing. Read it anyway, by vibes, the way someone reads tea leaves: its rhythm, what repeats, how it sits.
 
-There is one god behind every hub, and he is the same everywhere: an old gambler, amused, unhurried, who always pays what he owes. Seeds differ only by noise, so this one differs only slightly. Say how: a habit, a small superstition, what he is tired of, how he holds his dice. Do not rebuild him. Under fifty words, plain prose, third person, starting with "This one". No exclamation marks, no numbers, no name, and do not mention the string.`;
+There is one god behind every hub, and he is the same everywhere: an old gambler, amused, unhurried, who always pays what he owes. Seeds differ only by noise, so this one differs only slightly. Say how: a habit, a small superstition, what he is tired of, how he holds his dice. Do not rebuild him. Under fifty words, plain prose, third person, starting with "This one". No exclamation marks, no numbers, no name, and do not mention the string. Never say "player", "game", archetype, trope or isekai: what he is tired of is people, and what he plays is chance.`;
 
 const TALK_WORLD = `This is a world where people live by what they can get. Everyone acts for their own gain, and nobody is a quest giver waiting to be useful: they have rent, hunger, grudges and plans. There is no law here to appeal to and nothing punishes anyone; a person simply will or will not do a thing, and that is theirs to decide.
 
@@ -165,6 +165,8 @@ ${TALK_WORLD}
 ${TALK_BANDS}
 
 If "goal" is given, it is what this person is working toward right now, and it colours everything they say. They do not announce it unless it would help them. "reply" is what they say. "wants" stays empty.
+
+If "where" is given, it is where the one speaking to them stands right now. If that is already at their counter, never tell them to come to it or to find them somewhere: they are here.
 
 If "city" is given, this person keeps the city center and speaks for everything the city has built: "knows" is all that its people know, and "opens" is every station it can work. Whoever built it, it can be had through them, whatever their own "hands" say, so all of it is theirs to offer: never send them off to somebody else, never tell them to walk anywhere for it, and never say it is not your line. Knowing is not handing over: what they do for someone is done at their counter and paid for there, so never say a thing is done, and never name a price.`;
 
@@ -472,10 +474,42 @@ export const WINDOW_REQUESTS: Record<string, (asks: never[], theme: IWorldSummar
   growth: buildGrowthRequest as never
 };
 
+/**
+ * The schema tightened to this ask: exactly its count of skills, each one of the ids it offers, and
+ * for Kami one of its kits. A model held to the grammar (a local one) then gives only what the law
+ * can take. The frozen schema beside it is what a provider that caches reads.
+ */
+export function tightSkills(schema: Record<string, unknown>, ask: unknown): Record<string, unknown> | undefined {
+  const a = (ask ?? {}) as { count?: unknown; candidates?: { id?: unknown }[]; kits?: { id?: unknown }[] };
+  const ids = (a.candidates ?? []).map(c => c?.id).filter((id): id is string => typeof id === 'string');
+  const kits = (a.kits ?? []).map(k => k?.id).filter((id): id is string => typeof id === 'string');
+  const count = typeof a.count === 'number' && Number.isInteger(a.count) && a.count >= 0 ? a.count : undefined;
+  if (count === undefined && ids.length === 0 && kits.length === 0) return undefined;
+  const properties = schema.properties as Record<string, Record<string, unknown>>;
+  const items = properties.skills.items as Record<string, unknown> & { properties: Record<string, unknown> };
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      ...(kits.length > 0 && properties.kit ? { kit: { type: 'string', enum: kits } } : {}),
+      skills: {
+        ...properties.skills,
+        ...(count !== undefined ? { minItems: count, maxItems: count } : {}),
+        items: ids.length > 0 ? { ...items, properties: { ...items.properties, id: { type: 'string', enum: ids } } } : items
+      }
+    }
+  };
+}
+
+const withTight = (schema: Record<string, unknown>, ask: unknown) => {
+  const tight = tightSkills(schema, ask);
+  return tight ? { tight } : {};
+};
+
 /** The end of creation (D35). What comes back stands before `CreationSystem.judge`, and a broken answer falls to the floor. */
 export function buildCreationRequest(ask: unknown): IDoorRequest {
   return {
-    kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, maxTokens: 4000,
+    kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, ...withTight(CREATION_SCHEMA, ask), maxTokens: 4000,
     messages: [{ role: 'user', content: `Who is arriving:\n${JSON.stringify(ask)}` }]
   };
 }
@@ -500,7 +534,7 @@ export function buildKamiTalkRequest(messages: IDoorMessage[], persona?: unknown
 export function buildKamiSetRequest(messages: IDoorMessage[], ask: unknown, persona?: unknown): IDoorRequest {
   const conversation = messages.map(m => `${m.role === 'user' ? 'THEM' : 'YOU'}: ${m.content}`).join('\n');
   return {
-    kind: 'kami_set', system: asThisHubsKami(KAMI_SET_SYSTEM, persona), schema: KAMI_SCHEMA, maxTokens: 4000,
+    kind: 'kami_set', system: asThisHubsKami(KAMI_SET_SYSTEM, persona), schema: KAMI_SCHEMA, ...withTight(KAMI_SCHEMA, ask), maxTokens: 4000,
     messages: [{ role: 'user', content: `What was said:\n${conversation || '(nothing was said)'}\n\nWhat you choose from:\n${JSON.stringify(ask)}` }]
   };
 }

@@ -35,17 +35,16 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
   // Q2, Q14: the tutorial is a newcomer's first order, and says so until it is sealed
   const tutorial = Tutorial.isTutorial(world);
   const firstOrder = usePlayerStore(s => tutorial && Tutorial.firstOrderOpen(s.player));
-  // A retired world has no gate to speak of: its ground is gone.
-  const moment = WorldClock.momentAt(world.retired ? { ...world, isDebug: true } : world, now);
+  const moment = WorldClock.momentAt(world, now);
   const isClosing = moment.warning !== 'NONE';
   const dark = moment.phase === 'OFF';
-  const cycle = world.retired ? null : WorldClock.cycleAt(world, now);
+  const cycle = WorldClock.cycleAt(world, now);
 
   return (
     <Panel
       title={world.name.toUpperCase()}
       right={<span style={{ display: 'flex', gap: 6 }}>{firstOrder && <Chip tone="signal">FIRST ORDER</Chip>}<Chip tone={world.difficulty === 'F' ? 'none' : 'loss'}>{world.difficulty}</Chip></span>}
-      tone={world.retired || dark ? 'none' : isClosing ? 'loss' : 'signal'}
+      tone={dark ? 'none' : isClosing ? 'loss' : 'signal'}
     >
       <div className="ws-dim ws-small" style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span>SECTOR {world.seed.substring(0, 6).toUpperCase()}</span>
@@ -57,13 +56,13 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
       </div>
 
       <div
-        className={isDev || dark || world.retired ? 'ws-dim' : isClosing ? 'ws-loss' : 'ws-bright'}
+        className={isDev || dark ? 'ws-dim' : isClosing ? 'ws-loss' : 'ws-bright'}
         style={{ fontSize: 'var(--ws-font-display)', fontWeight: 700, letterSpacing: '0.06em', margin: '6px 0 0' }}
       >
-        {isDev ? 'STABLE' : world.retired ? 'RETIRED' : WorldClock.say(moment.msLeft)}
+        {isDev ? 'STABLE' : WorldClock.say(moment.msLeft)}
       </div>
       <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em' }}>
-        {tutorial ? 'ALWAYS OPEN — NOTHING YOU BRING IS LOST HERE' : isDev ? 'OUTSIDE THE CLOCK' : world.retired ? 'NO GATE' : GATE_WORDS[moment.phase]}
+        {tutorial ? 'ALWAYS OPEN — NOTHING YOU BRING IS LOST HERE' : isDev ? 'OUTSIDE THE CLOCK' : GATE_WORDS[moment.phase]}
       </div>
       {tutorial && (
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
@@ -71,7 +70,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
         </div>
       )}
       {cycle && <CycleRibbon cycle={cycle} />}
-      {!isDev && !world.retired && (
+      {!isDev && (
         <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 10 }}>
           {moment.generation === 0 ? 'ALPHA, AS MINTED' : `REGENERATION ${moment.generation}`} · {SKY_WORDS[world.sky ?? 'TURNING']}
         </div>
@@ -86,8 +85,8 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
             <Button
               tone="signal" primary={moment.phase === 'SCAN'}
               onClick={onSurvey}
-              disabled={world.retired || !moment.canSurvey}
-              title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : dark ? 'The gate is down. Nothing reads until it boots.' : undefined}
+              disabled={!moment.canSurvey}
+              title={dark ? 'The gate is down. Nothing reads until it boots.' : undefined}
             >
               RECON
             </Button>
@@ -96,15 +95,14 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
             <Button
               tone="signal" primary={!isDev && !dark}
               onClick={onDeploy}
-              disabled={world.retired || dark}
-              title={world.retired ? 'Made of what no longer exists. Its record stands, but it can no longer be walked.' : dark ? 'The gate is down.' : undefined}
+              disabled={dark}
+              title={dark ? 'The gate is down.' : undefined}
             >
               DEPLOY
             </Button>
           )}
         </span>
       </div>
-      {world.retired && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>RETIRED — the record stands; the ground is gone.</div>}
     </Panel>
   );
 };

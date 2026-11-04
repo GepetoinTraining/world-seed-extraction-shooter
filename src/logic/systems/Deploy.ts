@@ -8,6 +8,7 @@ import { usePlayerStore } from '../../entities/player/store';
 import { SessionJournal } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { WorldClock } from '../../entities/world/WorldClock';
+import { WorldCertificateSystem } from '../../entities/world/WorldCertificate';
 import { RestDoor } from './RestDoor';
 import { RestSystem } from './RestSystem';
 import { useWaits, whileWaiting } from '../../components/ui/stores';
@@ -24,7 +25,6 @@ export async function deployToWorld(worldId: string): Promise<{ ok: boolean; rea
 async function enterWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
   const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
-  if (card.retired) return { ok: false, reason: 'Made of what no longer exists. Its record stands, but it can no longer be walked.' };
 
   // D79: a character at rest is down, and another can play
   const now = Date.now();
@@ -60,6 +60,11 @@ async function enterWorld(worldId: string): Promise<{ ok: boolean; reason?: stri
   }
 
   await useWorldStore.getState().selectWorld(worldId);
+  // Q41: AGENTS counts drops into the world. The simulation stands outside the count.
+  if (!card.isDebug) {
+    await WorldCertificateSystem.recordDrop(worldId);
+    useWorldStore.setState(s => ({ availableWorlds: s.availableWorlds.map(w => (w.id === worldId ? { ...w, playerCount: w.playerCount + 1 } : w)) }));
+  }
   useWorldStore.getState().applySurvey(usePlayerStore.getState().player.survey?.[worldId]);
   usePlayerStore.getState().diveIntoLayer(card.seed);
 

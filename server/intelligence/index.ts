@@ -1,17 +1,23 @@
 /**
- * Which provider stands behind the door on this server. `WS_LLM_PROVIDER=none`
- * turns intelligence off; every door still answers, and the game goes on.
+ * Which provider stands behind the door on this server. `WS_LLM_PROVIDER=none` turns intelligence
+ * off; every door still answers, and the game goes on. `WS_LLM_PROVIDER=local` asks for the local
+ * mode outright. Otherwise Claude answers while there is a key, and with none, a model on this
+ * machine does (Pedro, Q24: "local model"). `WS_LOCAL_URL` and `WS_LOCAL_MODEL` say which.
  */
 import { resolve } from 'node:path';
 import { AbsentProvider, IntelligenceDoor, type IIntelligenceProvider } from './door';
 import { ClaudeProvider } from './claude';
+import { KeyOrLocalProvider, LocalProvider, localRuntimeFrom } from './local';
+import { readDoorOptions } from './options';
+import { DoorSetting, SETTINGS } from './setting';
 
-export function chooseProvider(env: NodeJS.ProcessEnv = process.env): IIntelligenceProvider {
+export function chooseProvider(env: NodeJS.ProcessEnv = process.env, local = new LocalProvider(localRuntimeFrom(env))): IIntelligenceProvider {
   if (env.WS_LLM_PROVIDER === 'none') return new AbsentProvider('Intelligence is turned off on this server.');
+  if (env.WS_LLM_PROVIDER === 'local') return local;
   try {
-    return new ClaudeProvider();
-  } catch (e) {
-    return new AbsentProvider(e instanceof Error ? e.message : 'The provider did not start.');
+    return new KeyOrLocalProvider(new ClaudeProvider(), local);
+  } catch {
+    return local;
   }
 }
 
@@ -30,9 +36,16 @@ export function loadLocalEnv(path = resolve(process.cwd(), '.env'), env: NodeJS.
   if (!env.ANTHROPIC_API_KEY?.trim()) delete env.ANTHROPIC_API_KEY;
 }
 
-export const openDoor = () => {
-  loadLocalEnv();
-  return new IntelligenceDoor(chooseProvider());
+export const openDoor = (env: NodeJS.ProcessEnv = process.env) => {
+  if (env === process.env) loadLocalEnv();
+  const options = readDoorOptions();
+  // The model is the person's; until they pick, the setting takes the one suggested for this machine
+  const local = new LocalProvider(localRuntimeFrom(env, { url: options.local?.url }));
+  const setting = new DoorSetting(chooseProvider(env, local), local, options, undefined, env.WS_LLM_PROVIDER === 'none');
+  if (env.WS_LLM_PROVIDER === 'local') setting.useLocal();
+  const door = new IntelligenceDoor(setting);
+  SETTINGS.set(door, setting);
+  return door;
 };
 
 export { createIntelligenceHandler } from './http';
