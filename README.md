@@ -53,7 +53,20 @@ npm run serve
 
 `npm run serve` listens on port 3900, and reads `WS_DATABASE_URL` (`pglite://<folder>` or `postgres://…`), `WS_RECORD=1` to keep a record, `WS_PORT` and `WS_HOST`. **It has no authentication, so it answers this machine only. A real deploy needs a login in front of it first.**
 
-The game runs on `http://localhost:3000`. The proof pages are under `/prototype/atoms/` (`index.html`, `hub.html`, `room.html`).
+The game runs on `http://localhost:3000`. The proof pages are under `/prototype/atoms/` (`index.html`, `hub.html`, `room.html`). A newcomer's first order is the tutorial world, which stays open while their own world is written.
+
+### The voice
+
+Everything the game asks a model goes through one door on the server (`server/intelligence/`), never from the browser. A person picks how it answers, under SYSTEM:
+
+- **auto:** the server's own key while there is one, the local model while there is none.
+- **local:** a model on the person's own machine, through Ollama (`WS_LOCAL_URL`, default `http://127.0.0.1:11434`; `WS_LOCAL_MODEL`). Any served model may be picked. Gemma 4 (`gemma4:e4b-it-qat`, or `e2b` on a smaller card) is only the suggestion.
+- **keyed:** a free option on the person's own key, read from `server/intelligence/door-options.json` (`WS_DOOR_OPTIONS` names another file). The key stays in the server's memory and is never sent back.
+- **off:** every door still answers, and the game goes on with no voice.
+
+Before it offers local, the game checks the machine: whether a runtime is there and running, the card and its memory, RAM, and the models served. It then says plainly **RUNS HERE**, **CAN RUN HERE** or **NEEDS A KEY**. **TRY** times one question on a chosen model. The check never blocks a choice.
+
+A world is written in passes, in a world's own order: geography, then water and mountains, then where flora and fauna live, then creatures and professions. Each pass picks from what the database already holds, found by counting with no embedding model, and adds only what is missing.
 
 ## Where to read
 
@@ -63,6 +76,8 @@ The game runs on `http://localhost:3000`. The proof pages are under `/prototype/
 | `PLAN.md` | The test list, the decisions table, and the record of each wave |
 | `DESIGN_ASK.md` | The one design document, with its settled record and measurements |
 | `PLAYTEST_LEDGER.md` | What to fix, found by playing |
+| `DESIGN_QUESTIONS_LEG1.md` | Every design question from the integration pass, with Pedro's answers |
+| `DATA_LAYER_PLAN.md` | The plan for the rest of the data layer, not yet built |
 | `HANDOVER.md` | Systems, data model, signing, determinism, tuning and debt, with the Wave 7 test run |
 | `types.ts` | The contract |
 | `agent.md` | The founding vision, in its original words. Its prime directive stands; its stack, file layout and roadmap describe 2025 and were kept as written |
