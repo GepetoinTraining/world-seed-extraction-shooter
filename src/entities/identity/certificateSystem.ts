@@ -3,6 +3,8 @@
  * Self-Sovereign Identity via X.509 Certificates
  */
 
+import { signedText } from './signedText';
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -306,7 +308,7 @@ export class CertificateSystem {
     }
 
     const timestamp = Date.now();
-    const dataToSign = JSON.stringify({ payload, timestamp });
+    const dataToSign = signedText(payload, timestamp);
     const encoder = new TextEncoder();
     
     const signature = await crypto.subtle.sign(
@@ -336,10 +338,7 @@ export class CertificateSystem {
         ['verify']
       );
 
-      const dataToVerify = JSON.stringify({ 
-        payload: signedPayload.payload, 
-        timestamp: signedPayload.timestamp 
-      });
+      const dataToVerify = signedText(signedPayload.payload, signedPayload.timestamp);
       const encoder = new TextEncoder();
 
       const signatureBytes = Uint8Array.from(

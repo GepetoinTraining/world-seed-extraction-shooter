@@ -30,6 +30,8 @@ import { PlayerPersistence } from '../src/logic/persistence/PlayerPersistence';
 import { BrowserImport, ILegacyDoc } from '../src/logic/persistence/BrowserImport';
 import { HomeHub } from '../src/logic/persistence/HomeHub';
 import { Ledger } from '../src/logic/ledger/Ledger';
+import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
+import { addressOf } from '../src/logic/time/RadixClock';
 import { Treasury } from '../src/logic/economy/Treasury';
 import { Wallets } from '../src/logic/economy/Wallets';
 import { ExitLevy } from '../src/logic/economy/ExitLevy';
@@ -296,6 +298,19 @@ describe('line 69: saves live in the SQL database', () => {
     expect(rows[1].payload.data.reason).toBe('REAL');
   });
 
+  it('a row carries its moment\'s address and the link to the row before it, in what is signed (D135)', async () => {
+    const cert = await becomeAvatar('CLOCKED');
+    const uid = cert.metadata.uid;
+    await Ledger.append('GOLD_DELTA', { amount: 3 });
+    await Ledger.append('GOLD_DELTA', { amount: -1 });
+    const rows = await Ledger.list(uid);
+    expect(rows.length).toBe(3);
+    expect(rows[0].payload).toMatchObject({ v: ROW_VERSION, prev: null });
+    for (let i = 1; i < rows.length; i++) expect(rows[i].payload.prev).toBe(await linkOf(rows[i - 1].signature));
+    for (const r of rows) expect(r.payload.clock).toMatchObject({ ...addressOf(r.payload.ts), by: 'browser' });
+    expect((await Ledger.audit(uid)).ok).toBe(true);
+  });
+
   it('a wiped browser finds its home hub again', async () => {
     const cert = await becomeAvatar('HOMING');
     await HomeHub.pin(cert.metadata.uid, 'hub_homing');
@@ -303,7 +318,14 @@ describe('line 69: saves live in the SQL database', () => {
   });
 
   it('the private key never reaches the server: no commit carries it', () => {
+    // The hub's own signing key (DEPLOY.md) is made on the server and is the server's: that one file
+    // may name a private key, and may never touch a character's (a JWK, a certificate, an export).
+    const HUB_KEY = /^server\/hub\/keys\.ts$/;
     for (const file of walk('server')) {
+      if (HUB_KEY.test(file)) {
+        expect(read(file)).not.toMatch(/encryptedPrivateKey|privateKeyJWK|jwk|certificate|exportIdentity/i);
+        continue;
+      }
       expect(read(file)).not.toMatch(/privateKey|encryptedPrivateKey/);
     }
     const persistence = read('src/logic/persistence/PlayerPersistence.ts') + read('src/logic/ledger/Ledger.ts') + read('src/logic/economy/GoldCommit.ts');
@@ -407,8 +429,10 @@ describe('line 71: a gold change is one commit', () => {
   it('two tabs on one avatar cannot fork the chain: the loser re-reads and takes the next seq', async () => {
     const cert = await becomeAvatar('TWOTABS');
     const uid = cert.metadata.uid;
-    // Another tab appended behind this one's back.
-    const other = await CertificateSystem.signPayload(uid, { seq: 2, prevSeq: 1, ts: 2, type: 'CRAFT', data: { tab: 'other' } });
+    // Another tab of this build appended behind this one's back, in the form this build writes (D135).
+    const [first] = await Ledger.list(uid);
+    const ts = Date.now();
+    const other = await CertificateSystem.signPayload(uid, { seq: 2, prevSeq: 1, ts, type: 'CRAFT', data: { tab: 'other' }, v: ROW_VERSION, prev: await linkOf(first.signature), clock: { ...addressOf(ts), by: 'browser' } });
     await VectorStore.put({ id: `ledger_${uid}_00000002`, namespace: VectorNamespace.TRANSACTIONS, data: other, metadata: { createdAt: 2, updatedAt: 2, ownerCertUid: uid, signature: other.signature, version: 1 } });
     expect(await Ledger.append('CRAFT', { tab: 'this' })).toBe(3);
     expect((await Ledger.audit(uid)).ok).toBe(true);

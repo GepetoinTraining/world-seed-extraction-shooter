@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { DatabaseUnavailable, folderUrl, openDatabase, UncarriedSave } from '../server/connection';
-import { openStore } from '../server/SqlStore';
+import { openStore } from '../server/openStore';
 
 const ROOT = process.cwd();
 const dirs: string[] = [];

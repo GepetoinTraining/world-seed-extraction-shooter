@@ -19,7 +19,7 @@
 import { and, asc, eq, max, sql } from 'drizzle-orm';
 import { cosineSimilarity } from '../src/entities/data/similarity';
 import { CommitOp, ICommitRequest, ICommitResult, IHealth, IRecordStatus, IWireDoc, IWireQuery, IWireSearch, IWriteDownReceipt } from '../src/entities/data/wire';
-import { IDatabase, IOpenOptions, isDataException, isUniqueViolation, openDatabase } from './connection';
+import { IDatabase, IOpenOptions, isDataException, isUniqueViolation } from './dbShared';
 
 /** The commit disagrees with what is stored (a fork, a gap, a moved head). Nothing applied. */
 export class StoreConflict extends Error {
@@ -455,6 +455,5 @@ export class SqlStore {
   }
 }
 
-export async function openStore(url: string, options: IStoreOptions = {}): Promise<SqlStore> {
-  return new SqlStore(await openDatabase(url, options), options);
-}
+// Opening one on a machine is openStore.ts's, so a browser that builds its own database never bundles Node's opener.
+

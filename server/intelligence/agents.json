@@ -1,0 +1,19 @@
+{
+  "about": "Coding agents a player could ask to set up a model on their own machine (src/logic/intelligence/LocalSetup.ts writes the prompt). Read on each vendor's own page on 2026-11-04; terms change often, so each row says when. Free and needing no account first. Which to show is Pedro's pick.",
+  "checked": "2026-11-04",
+  "agents": [
+    { "id": "goose", "name": "Goose", "free": "yes, open source (Apache-2.0)", "account": "none for local models", "local": "yes, through OLLAMA_HOST", "source": "https://goose-docs.ai/docs/getting-started/providers" },
+    { "id": "opencode", "name": "OpenCode", "free": "yes, open source (MIT)", "account": "none for local models", "local": "yes, documented", "source": "https://opencode.ai/docs/providers/" },
+    { "id": "aider", "name": "Aider", "free": "yes, open source (Apache-2.0); last commit 2026-05-22", "account": "none", "local": "yes; raise num_ctx past Ollama's small default", "source": "https://aider.chat/docs/llms/ollama.html" },
+    { "id": "cline", "name": "Cline", "free": "yes, open source (Apache-2.0)", "account": "not stated for local", "local": "yes, at http://localhost:11434", "source": "https://docs.cline.bot/provider-config/ollama" },
+    { "id": "continue", "name": "Continue", "free": "yes, open source (Apache-2.0)", "account": "not stated", "local": "yes; agent mode needs a model with tool support", "source": "https://docs.continue.dev/guides/ollama-guide" },
+    { "id": "copilot", "name": "GitHub Copilot Free", "free": "yes: agent mode, the CLI, 2,000 completions a month", "account": "a GitHub account", "local": "bring-your-own-key, including locally hosted models (Ollama not named)", "source": "https://docs.github.com/en/copilot/get-started/plans" },
+    { "id": "codex", "name": "OpenAI Codex CLI", "free": "Codex is listed on ChatGPT's Free plan; its limits are not published, and the CLI is not named for Free", "account": "a ChatGPT account for the plan", "local": "yes, codex --oss with the ollama provider", "source": "https://learn.chatgpt.com/docs/pricing" },
+    { "id": "antigravity", "name": "Antigravity CLI", "free": "an Individuals plan at $0 with basic weekly limits; it replaced Gemini CLI's free tier on 2026-06-18", "account": "not stated", "local": "not stated", "source": "https://antigravity.google/pricing" },
+    { "id": "claude-code", "name": "Claude Code", "free": "no: not on Claude's Free plan", "account": "a Claude account for the plans", "local": "Ollama documents running it on a local model; Anthropic's pages do not", "source": "https://docs.ollama.com/integrations/claude-code" }
+  ],
+  "gone": [
+    { "name": "Gemini CLI, free for individuals", "note": "moved to Antigravity CLI on 2026-06-18", "source": "https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/" },
+    { "name": "Qwen Code's free sign-in tier", "note": "discontinued on 2026-04-15", "source": "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/auth/" }
+  ]
+}

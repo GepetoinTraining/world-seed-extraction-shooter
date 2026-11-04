@@ -13,6 +13,8 @@ export default defineConfig(() => {
       },
       // The database comes up with the dev server: one command, one port (D31).
       plugins: [react(), worldSeedDatabase(__dirname)],
+      // PGlite brings its own WebAssembly and data files, which the dependency optimizer must leave whole
+      optimizeDeps: { exclude: ['@electric-sql/pglite'] },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

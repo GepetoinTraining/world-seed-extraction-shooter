@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World Seed</title>
+  <meta name="description" content="World Seed: a browser game that runs on your own machine. This hub keeps your account and checks your character's receipts.">
+  <link rel="stylesheet" href="/landing.css">
+  <script src="/landing.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>WORLD SEED</h1>
+      <p class="lede">A browser game that runs on your own machine. Your character is yours: it is made in your browser, signed with a key that never leaves it, and kept on your machine.</p>
+    </header>
+
+    <section aria-labelledby="split">
+      <h2 id="split">What runs where</h2>
+      <ul class="marks">
+        <li><span class="mark" aria-hidden="true">[■]</span> <b>In your browser:</b> the game, your play, and your save.</li>
+        <li><span class="mark" aria-hidden="true">[◆]</span> <b>On this hub:</b> your account, and checks: your character's receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</li>
+        <li><span class="mark" aria-hidden="true">[ ]</span> <b>Never here:</b> your play, your save, or a model key.</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="account">
+      <h2 id="account">Make an account</h2>
+      <form id="account-form" autocomplete="on" novalidate>
+        <label>Handle
+          <input name="handle" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false">
+        </label>
+        <p class="hint">3 to 32 letters, digits, dots, dashes or underscores.</p>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" required minlength="10">
+        </label>
+        <label>Password again
+          <input name="again" type="password" autocomplete="new-password" required minlength="10">
+        </label>
+        <p class="hint">At least 10 characters. There is no email and no recovery yet, so keep it somewhere safe.</p>
+        <button type="submit">MAKE THE ACCOUNT</button>
+        <p id="account-said" class="said" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section aria-labelledby="play">
+      <h2 id="play">Play</h2>
+      <p><a class="play" href="/play/">PLAY IN THIS BROWSER</a></p>
+      <p>Your save stays in this browser, on this machine. Under SYSTEM, THE HUB, sign in with the account above, register your character and send its receipts.</p>
+      <p class="hint">One tab holds the save at a time. Clearing this site's data clears the save, so back your avatar up from SYSTEM first.</p>
+    </section>
+
+    <section aria-labelledby="voice">
+      <h2 id="voice">The model</h2>
+      <p>Played here, the game has no voice yet: it plays on without one. A model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose) reaching this page is the next piece to be built. Until then it speaks only when started from its own folder with <code>npm run play</code>, which checks your machine and offers free options if it cannot run one. No key is ever sent here.</p>
+    </section>
+
+    <footer>
+      <p id="hub-said" class="said">Reading this hub…</p>
+    </footer>
+  </main>
+</body>
+</html>

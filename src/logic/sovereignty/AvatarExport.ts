@@ -19,6 +19,7 @@ import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../ent
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
 import { StoreUnit } from '../../entities/data/StoreUnit';
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
+import { chainProblem } from '../ledger/chainLaw';
 import { sha256Hex } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 
@@ -156,6 +157,8 @@ export class AvatarExport {
       }
       expectedSeq++;
     }
+    const broken = chainProblem(ledger);
+    if (broken) return { ok: false, reason: `ledger chain broken at seq ${broken.seq}: ${broken.why}` };
 
     // 5. The database may know more than this file: play goes on after a backup
     // is taken. Same rows, or more rows, are fine. A different row at a seq the

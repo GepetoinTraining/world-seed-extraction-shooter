@@ -29,6 +29,7 @@ export class StoreUnit {
   private readonly ops: CommitOp[] = [];
   private guard?: string;
   private readonly seqs = new Map<string, number>();
+  private readonly signatures = new Map<string, string>();
 
   /** Take a turn in the one write queue. Never enqueue from inside a turn. */
   static enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -54,6 +55,15 @@ export class StoreUnit {
 
   seqOf(uid: string): number {
     return this.seqs.get(uid) ?? 0;
+  }
+
+  /** The signature of the last row this unit holds for an identity, so the next one links to it (D135). */
+  noteSignature(uid: string, signature: string) {
+    this.signatures.set(uid, signature);
+  }
+
+  signatureOf(uid: string): string | undefined {
+    return this.signatures.get(uid);
   }
 
   get size() {

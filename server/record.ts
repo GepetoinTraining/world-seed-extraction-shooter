@@ -38,7 +38,8 @@ import { sql } from 'drizzle-orm';
 import { ColdDoorRefused, IColdDoor, IDowntimeJob, IWriteDownHead, openColdDoor } from './coldStore';
 import { IDatabase, openDatabase } from './connection';
 import { RECORD_TABLES, RecordRow, RecordTableName, digestOf, fingerprint, normalRow, printKey, sha256, tableOf } from './recordRows';
-import { openStore, SqlStore, IStoreKeeper, IStoreOptions } from './SqlStore';
+import { SqlStore, IStoreKeeper, IStoreOptions } from './SqlStore';
+import { openStore } from './openStore';
 import { IRecordStatus, IWriteDownReceipt } from '../src/entities/data/wire';
 
 const RETRY_FIRST_MS = 30_000;

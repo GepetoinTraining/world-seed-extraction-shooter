@@ -10,6 +10,7 @@ import { useWorldStore, IWorldCard } from '../entities/world/store';
 import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
 import { openRecon } from './ReconView';
 import { WorldCreator } from './WorldCreator';
+import { ConnectWorld } from './ConnectWorld';
 import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
@@ -111,6 +112,8 @@ export const MissionControl = () => {
   const { availableWorlds, refreshWorlds } = useWorldStore();
   const [creatorOpen, setCreatorOpen] = useState(false);
   const pushFeed = useFeed(s => s.push);
+  // The online world opens once the tutorial's first order is sealed (Pedro, 2026-11-04)
+  const tutorialDone = usePlayerStore(s => !Tutorial.firstOrderOpen(s.player));
 
   useEffect(() => {
     refreshWorlds();
@@ -128,7 +131,10 @@ export const MissionControl = () => {
         <span className="ws-signal" style={{ fontSize: 'var(--ws-font-title)', letterSpacing: '0.25em', fontWeight: 700 }}>
           EXTRACTION ZONES
         </span>
-        <Button tone="proof" onClick={() => setCreatorOpen(true)}>+ MINT NEW WORLD</Button>
+        <span style={{ display: 'flex', gap: 8 }}>
+          {tutorialDone && <ConnectWorld onConnected={() => refreshWorlds()} />}
+          <Button tone="proof" onClick={() => setCreatorOpen(true)}>+ MINT NEW WORLD</Button>
+        </span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>

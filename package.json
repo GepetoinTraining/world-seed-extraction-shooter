@@ -6,10 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:site": "node --import tsx scripts/build-site.ts",
     "preview": "vite preview",
     "pedro": "node --import tsx scripts/pedro.ts",
     "db:sync": "node --import tsx scripts/pedro.ts --sync-only",
     "serve": "node --import tsx server/main.ts",
+    "play": "vite build && node --import tsx server/main.ts",
+    "hub": "node --import tsx server/hub/main.ts",
+    "hosted": "node --import tsx server/hosted/main.ts",
+    "hosted:publish": "node --import tsx scripts/publish-hosted-world.ts",
     "test": "vitest run --exclude \"tests/database*\" && vitest run tests/database",
     "db:generate": "drizzle-kit generate --config=drizzle.config.pg.ts",
     "db:carry": "node --disable-warning=ExperimentalWarning --import tsx scripts/carry-save.ts"

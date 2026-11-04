@@ -1,8 +1,9 @@
 /**
- * The browser's side of the one door (D46). It holds no key and knows no model: it
- * asks the server, and every answer is an outcome, never a thrown error, so a closed
- * door or a dropped network leaves the game standing.
+ * The browser's side of the one door (D46). It knows no model: it asks the door, on a server or
+ * in this page (DoorTransport.ts), and every answer is an outcome, never a thrown error, so a
+ * closed door or a dropped network leaves the game standing.
  */
+import { DoorTransport } from './DoorTransport';
 
 export type DoorStatus = 'OK' | 'NO_KEY' | 'REFUSED' | 'BUSY' | 'OFFLINE' | 'OUTAGE' | 'CUT_OFF' | 'PENDING' | 'OVER_LIMIT';
 
@@ -21,12 +22,9 @@ export interface IDoorOutcome<T = unknown> {
 
 export interface IDoorMessage { role: 'user' | 'assistant'; content: string }
 
-const MOUNT = '/api/intelligence';
-
 async function post<T>(path: string, body: unknown): Promise<IDoorOutcome<T>> {
   try {
-    const res = await fetch(`${MOUNT}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    return await res.json() as IDoorOutcome<T>;
+    return await DoorTransport.json<IDoorOutcome<T>>(path, body);
   } catch {
     return { status: 'OFFLINE', reason: 'The door cannot be reached.' };
   }
@@ -35,7 +33,7 @@ async function post<T>(path: string, body: unknown): Promise<IDoorOutcome<T>> {
 export const IntelligenceClient = {
   async status(): Promise<{ available: boolean; provider?: string; model?: string; reason?: string }> {
     try {
-      return await (await fetch(`${MOUNT}/status`)).json();
+      return await DoorTransport.json('/status');
     } catch {
       return { available: false, reason: 'The door cannot be reached.' };
     }
@@ -64,23 +62,7 @@ export const IntelligenceClient = {
       else if (piece.text) onText(piece.text);
     };
     try {
-      const res = await fetch(`${MOUNT}/kami/talk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, persona }), signal });
-      const reader = res.body?.getReader();
-      if (!reader) {
-        (await res.text()).split('\n').forEach(readLine);
-      } else {
-        const decoder = new TextDecoder();
-        let held = '';
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          held += decoder.decode(value, { stream: true });
-          const lines = held.split('\n');
-          held = lines.pop() ?? '';
-          lines.forEach(readLine);
-        }
-        readLine(held);
-      }
+      await DoorTransport.lines('/kami/talk', { messages, persona }, line => line.split('\n').forEach(readLine), signal);
     } catch {
       return { status: 'OFFLINE', reason: 'The door cannot be reached.' };
     }

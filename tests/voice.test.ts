@@ -12,7 +12,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { IDoorRequest, IntelligenceDoor, AbsentProvider } from '../server/intelligence/door';
 import { ILocalRuntime, IServedModel, LocalProvider } from '../server/intelligence/local';
 import { IHost, ICard, MachineCheck, seatOf } from '../server/intelligence/machine';
-import { IKeyedOption, OpenAICompatibleProvider, readDoorOptions } from '../server/intelligence/options';
+import { IKeyedOption, OpenAICompatibleProvider } from '../server/intelligence/options';
+import { readDoorOptions } from '../server/intelligence/optionsFile';
 import { DoorSetting, SETTINGS } from '../server/intelligence/setting';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 

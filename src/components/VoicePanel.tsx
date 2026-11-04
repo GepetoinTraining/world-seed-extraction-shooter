@@ -9,6 +9,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Modal, Panel } from './ui/kit';
 import { IDoorSettingStatus, IKeyedOption, IMachineReading, VoiceClient } from '../logic/intelligence/VoiceClient';
+import { DoorTransport } from '../logic/intelligence/DoorTransport';
+import { LocalSetupPanel } from './LocalSetupPanel';
 
 const GB = 1_000_000_000;
 const size = (bytes: number) => `${(bytes / GB).toFixed(1)} GB`;
@@ -111,6 +113,10 @@ export const VoicePanel: React.FC<{ style?: React.CSSProperties; titled?: boolea
         </>
       )}
 
+      {/* Played from the domain, a model on this machine answers only once it lets this page in */}
+      {DoorTransport.isPage() && reading && reading.runtime.state !== 'RUNNING' && reading.suggested && <LocalSetupPanel model={reading.suggested.model} />}
+      {DoorTransport.isPage() && reading && reading.runtime.state === 'RUNNING' && reading.served.length === 0 && reading.suggested && <LocalSetupPanel model={reading.suggested.model} />}
+
       {busy && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{busy}…</div>}
       {note && <div className="ws-small" style={{ marginTop: 6 }}>! {note}</div>}
 
@@ -125,7 +131,11 @@ export const VoicePanel: React.FC<{ style?: React.CSSProperties; titled?: boolea
       {(needsKey || showKeys) && (
         <div style={{ marginTop: 10, borderTop: '1px dashed var(--ws-void-3)', paddingTop: 8 }}>
           <div className="ws-small">
-            {keyed.length === 0 ? 'This server offers no keyed options.' : 'Free options. A key goes to this machine\'s server and stays there; it is never kept in this browser, and a restart forgets it.'}
+            {keyed.length === 0
+              ? 'This server offers no keyed options.'
+              : DoorTransport.isPage()
+                ? 'Options on your own key. The key stays in this browser, sealed, and goes only to its provider, never to our servers. THE SERVER\'S OWN WAY forgets it.'
+                : 'Free options. A key goes to this machine\'s server and stays there; it is never kept in this browser, and a restart forgets it.'}
           </div>
           <div className="ws-list" style={{ marginTop: 6 }}>
             {keyed.map(option => (

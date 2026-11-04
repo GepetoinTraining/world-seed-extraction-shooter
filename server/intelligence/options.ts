@@ -7,15 +7,13 @@
  * A person's key comes to this server door and stays in its memory. It never goes back to a
  * browser, never into a file, a log or the database. A restart forgets it, and the person enters it again.
  */
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { DoorStatus, IDoorOutcome, IDoorRequest, IIntelligenceProvider, IProviderStatus } from './door';
+import { KeyedClaudeProvider } from './claude';
 
 export interface IKeyedOption {
   id: string;
   name: string;
-  /** Which provider behind the seam speaks to it. Only `openai` (the OpenAI-style chat API) is built. */
+  /** Which provider behind the seam speaks to it: `openai` (the OpenAI-style chat API) or `anthropic`. */
   protocol: string;
   baseUrl: string;
   model: string;
@@ -36,19 +34,11 @@ export interface IDoorOptions {
   keyed: IKeyedOption[];
 }
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** Read at each start. A broken file offers nothing rather than stopping the server. */
-export function readDoorOptions(path = process.env.WS_DOOR_OPTIONS?.trim() || resolve(HERE, 'door-options.json')): IDoorOptions {
-  try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<IDoorOptions>;
-    const keyed = (Array.isArray(raw.keyed) ? raw.keyed : []).filter((o): o is IKeyedOption =>
-      !!o && typeof o.id === 'string' && typeof o.name === 'string' && typeof o.protocol === 'string' && typeof o.baseUrl === 'string' && typeof o.model === 'string');
-    return { ...(raw.local ? { local: raw.local } : {}), keyed };
-  } catch (e) {
-    console.warn(`[DOOR] The door's options could not be read from ${path}: ${(e as Error).message}`);
-    return { keyed: [] };
-  }
+/** The options as data, whatever read them: a file on a machine, a bundled copy in a page. A broken file offers nothing. */
+export function parseDoorOptions(raw: Partial<IDoorOptions> | null | undefined): IDoorOptions {
+  const keyed = (Array.isArray(raw?.keyed) ? raw!.keyed : []).filter((o): o is IKeyedOption =>
+    !!o && typeof o.id === 'string' && typeof o.name === 'string' && typeof o.protocol === 'string' && typeof o.baseUrl === 'string' && typeof o.model === 'string');
+  return { ...(raw?.local ? { local: raw.local } : {}), keyed };
 }
 
 /** Filed work is named so the door can tell whose it is on the way back. */
@@ -186,7 +176,11 @@ export class OpenAICompatibleProvider implements IIntelligenceProvider {
 }
 
 /** The provider an option's protocol calls for, or why there is none. */
-export function providerFor(option: IKeyedOption, key: string): OpenAICompatibleProvider | { reason: string } {
+/** A provider on a person's key, which knows the option it was made from. */
+export type KeyedProvider = IIntelligenceProvider & { option: IKeyedOption };
+
+export function providerFor(option: IKeyedOption, key: string): KeyedProvider | { reason: string } {
   if (option.protocol === 'openai') return new OpenAICompatibleProvider(option, key);
+  if (option.protocol === 'anthropic') return new KeyedClaudeProvider(option, key) as unknown as KeyedProvider;
   return { reason: `${option.name} speaks "${option.protocol}", which this door does not speak yet.` };
 }

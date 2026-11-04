@@ -511,27 +511,58 @@ export class CreatureLines {
     return { ...proof, digest: await sha256Hex(`def:v1:${canonical(proof.def)}`) };
   }
 
-  /** Whether a proof proves what it claims. */
-  static async verifyProof(proof: ILineProof): Promise<{ ok: boolean; reason?: string }> {
+  /** The numbers a proof's line makes, where this machine holds its theme; undefined where it does not. */
+  private static lineNumbers(proof: ILineProof): Record<string, unknown> | undefined {
+    const pack = ContentRegistry.get(proof.themeId);
+    if (!pack) return undefined;
+    const nodes = Object.fromEntries(proof.nodes.map(n => [n.id, n]));
+    const compiled = ContentRegistry.compiled(pack.themeId) ?? compileTheme(pack);
+    const lines = { ...this.empty(), nodes };
+    return (compiled.mobs[proof.kind] ?? this.compile(pack, lines)[proof.kind]) as Record<string, unknown> | undefined;
+  }
+
+  /** The fields the formula writes on a kind, which a proof can only carry, never choose. */
+  static readonly FORMULA_FIELDS = ['baseHealth', 'baseDamage'] as const;
+
+  /** Whether a proof's line, its definition and its digest hold, before its numbers are looked at. */
+  private static async lineProblem(proof: ILineProof): Promise<string | null> {
     const known = new Set(proof.roots);
     for (const node of proof.nodes) {
-      if (node.parents.some(p => !known.has(p))) return { ok: false, reason: 'Its line has a gap in it.' };
-      if ((await this.childId(node.parents, node.change)) !== node.id) return { ok: false, reason: 'Its line does not prove itself.' };
+      if (node.parents.some(p => !known.has(p))) return 'Its line has a gap in it.';
+      if ((await this.childId(node.parents, node.change)) !== node.id) return 'Its line does not prove itself.';
       known.add(node.id);
     }
-    if (!known.has(proof.kind) || proof.roots.length === 0) return { ok: false, reason: 'Its line does not reach what it claims to be.' };
-    if (proof.def.id !== proof.kind) return { ok: false, reason: 'Its definition is of something else.' };
-    if (proof.digest && proof.digest !== await sha256Hex(`def:v1:${canonical(proof.def)}`)) return { ok: false, reason: 'Its definition has been changed.' };
+    if (!known.has(proof.kind) || proof.roots.length === 0) return 'Its line does not reach what it claims to be.';
+    if (proof.def.id !== proof.kind) return 'Its definition is of something else.';
+    if (proof.digest && proof.digest !== await sha256Hex(`def:v1:${canonical(proof.def)}`)) return 'Its definition has been changed.';
+    return null;
+  }
+
+  /** Whether a proof proves what it claims. */
+  static async verifyProof(proof: ILineProof): Promise<{ ok: boolean; reason?: string }> {
+    const problem = await this.lineProblem(proof);
+    if (problem) return { ok: false, reason: problem };
     // Where this machine holds the theme, the numbers come from the formula and nothing else
-    const pack = ContentRegistry.get(proof.themeId);
-    if (pack) {
-      const nodes = Object.fromEntries(proof.nodes.map(n => [n.id, n]));
-      const compiled = ContentRegistry.compiled(pack.themeId) ?? compileTheme(pack);
-      const lines = { ...this.empty(), nodes };
-      const own = (compiled.mobs[proof.kind] ?? this.compile(pack, lines)[proof.kind]) as Record<string, unknown> | undefined;
-      if (own && (own.baseHealth !== proof.def.baseHealth || own.baseDamage !== proof.def.baseDamage)) return { ok: false, reason: 'Its numbers are not what its line makes them.' };
-    }
+    const own = this.lineNumbers(proof);
+    if (own && this.FORMULA_FIELDS.some(f => own[f] !== proof.def[f])) return { ok: false, reason: 'Its numbers are not what its line makes them.' };
     return { ok: true };
+  }
+
+  /**
+   * A proof put right where it can be (Pedro, 2026-11-04: "we serve the corrected atom... the diff,
+   * never the full load"). A line that does not prove itself cannot be put right and is refused;
+   * numbers that are not what the line makes are replaced with the formula's, and each change is
+   * named. A proof whose theme this machine does not hold is taken as it stands.
+   */
+  static async correctProof(proof: ILineProof): Promise<
+    { ok: true; reason?: undefined; def: Record<string, unknown>; changes: { field: string; had: unknown; value: unknown }[] } | { ok: false; reason: string; def?: undefined; changes?: undefined }
+  > {
+    const problem = await this.lineProblem(proof);
+    if (problem) return { ok: false, reason: problem };
+    const own = this.lineNumbers(proof);
+    const changes = own ? this.FORMULA_FIELDS.filter(f => own[f] !== proof.def[f]).map(f => ({ field: f as string, had: proof.def[f], value: own[f] })) : [];
+    const def = changes.reduce<Record<string, unknown>>((d, c) => ({ ...d, [c.field]: c.value }), { ...proof.def });
+    return { ok: true, def, changes };
   }
 
   /**

@@ -10,6 +10,8 @@ import { openLiveStore } from './record';
 import { carryOldSave } from './carryDoor';
 import { defaultDatabaseUrl } from './connection';
 import { createIntelligenceHandler, openDoor } from './intelligence';
+import { createHubBridge } from './runner';
+import { createClockDoor } from './clock';
 
 export const databaseUrl = (root: string) => process.env.WS_DATABASE_URL ?? defaultDatabaseUrl(root);
 
@@ -25,6 +27,14 @@ export function worldSeedDatabase(root: string): Plugin {
     server.middlewares.use('/api/intelligence', (req, res) => {
       void door(req, res, (req.url ?? '/').split('?')[0]);
     });
+    // The bridge to a hub, holding its session here and not in the browser (DEPLOY.md)
+    const hub = createHubBridge({ hubUrl: process.env.WS_HUB_URL });
+    server.middlewares.use('/api/hub', (req, res) => {
+      void hub(req, res, (req.url ?? '/').split('?')[0]);
+    });
+    // The game's clock: the hub's when there is one (D135)
+    const clock = createClockDoor({ hubUrl: process.env.WS_HUB_URL });
+    server.middlewares.use('/api/clock', (req, res) => { void clock(req, res); });
     server.httpServer?.on('close', () => { void store.close(); });
     // A dev server stopped from its terminal never reaches that close: this is its clean stop, with the write-down in it.
     const stopping = () => { void store.close().finally(() => process.exit(0)); };

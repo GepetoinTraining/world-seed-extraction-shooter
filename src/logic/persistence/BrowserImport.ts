@@ -16,6 +16,7 @@
  * move as they are, and a treasury that does not balance goes on the report.
  */
 
+import { chainProblem } from '../ledger/chainLaw';
 import { CertificateSystem, IPlayerCertificate } from '../../entities/identity/certificateSystem';
 import { IVectorDocument, VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
 import { StoreUnit } from '../../entities/data/StoreUnit';
@@ -168,7 +169,8 @@ export class BrowserImport {
       if (!(await CertificateSystem.verifyPayload(row.data, cert))) return `Ledger row ${expected} fails its signature.`;
       expected++;
     }
-    return null;
+    const broken = chainProblem(ordered.map(r => r.data));
+    return broken ? broken.why : null;
   }
 
   private static async verifySession(doc: ILegacyDoc, certOf: Map<string, IPlayerCertificate>): Promise<string | null> {
