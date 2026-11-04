@@ -23,6 +23,7 @@ import { Rng } from '../../logic/rng/DeterministicRNG';
 import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { WebBank } from '../../logic/content/WebBank';
 import { WebSystem } from '../../logic/systems/WebSystem';
+import { ILadderFacts, INpcAgenda, INeedFill, NeedKind, NpcAgenda } from '../../logic/systems/NpcAgenda';
 import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet, sizeNeedsVerdict, templateBill } from './template';
 import type { IClosedWeek } from '../../logic/economy/ShopWeek';
 
@@ -69,6 +70,12 @@ export interface IResident {
   wantsMet: number;
   /** The world-day their next want can post. */
   nextWantDay?: number;
+  /** Q19, Q20: where they stand on the needs ladder, folded by the days they have lived here. Unset: fresh from the day they came. */
+  agenda?: INpcAgenda;
+  /** The world-day their living is paid through. Unset: nothing owed from before this was kept. */
+  livedDay?: number;
+  /** Q19: the goal their last talk set. The board reads the rung it answers. */
+  goal?: { need: string; text: string; setAt: number };
 }
 
 export interface IResidentQuest {
@@ -85,6 +92,8 @@ export interface IResidentQuest {
   text: string;
   state: 'OPEN' | 'DONE';
   postedDay: number;
+  /** Q19: the rung of their ladder this want answers. Absent on a want posted before the board read it. */
+  need?: string;
 }
 
 export interface IHandedMap {
@@ -207,6 +216,42 @@ export const residentUpkeepPerDay = (rank: UniversalRank | string): number =>
   STRUCTURE_COSTS.HOUSE.upkeepPerDay + RESIDENT_UPKEEP_PER_RANK * (ProgressionSystem.rankIndex(rank as UniversalRank) + 1);
 
 // ---------------------------------------------------------------------------
+// Q20: THEIR LIVING AND THEIR WORK. Pedro: the next rung after the house, walked to by goals,
+// and "their wallet is paid for their work and pays for their living", through the economy chain.
+// ---------------------------------------------------------------------------
+
+/**
+ * A day of their own living: what they eat, out of their own wallet, to whoever feeds them. It is
+ * the person's part of what a person adds to a house; the house's own part stays the sponsor's (D10).
+ */
+export const livingPerDay = (rank: UniversalRank | string): number =>
+  residentUpkeepPerDay(rank) - STRUCTURE_COSTS.HOUSE.upkeepPerDay;
+
+/**
+ * A day of their trade, paid into their wallet by the Hall on its daily books. The same law as an
+ * apprentice's week at a bench (ShopWeek.apprenticePay), a day at a time.
+ */
+export const residentWagePerDay = (rank: UniversalRank | string): number => residentUpkeepPerDay(rank);
+
+/** Someone with a trade, home in their own house, works it there and is paid for it. */
+export const residentWorks = (resident: Pick<IResident, 'bond' | 'homeAt' | 'craftsmanId'>): boolean =>
+  !!resident.homeAt && !resident.craftsmanId && !!jobOf(readSheet(resident));
+
+const DAY_MS = 86_400_000;
+export const arrivalDay = (resident: Pick<IResident, 'arrivedAt'>): number => Math.floor(resident.arrivedAt / DAY_MS);
+
+/** Their ladder as it stands today. A day not yet paid for is a day they went without. */
+export const agendaOf = (resident: Pick<IResident, 'agenda' | 'arrivedAt'>, today: number): INpcAgenda =>
+  NpcAgenda.fold(resident.agenda ?? NpcAgenda.fresh(arrivalDay(resident)), today);
+
+/** The rung they stand on: the one rung both the talk and the board read (Q19). */
+export const residentRung = (resident: Pick<IResident, 'agenda' | 'arrivedAt'>, facts: ILadderFacts, today: number) =>
+  NpcAgenda.rung(agendaOf(resident, today), facts);
+
+/** A day whose living was paid: they were fed. */
+export const FED: INeedFill = NpcAgenda.fed();
+
+// ---------------------------------------------------------------------------
 // THE JOB (line 35): what their hands know, and what the hub gets from it
 // ---------------------------------------------------------------------------
 
@@ -247,6 +292,28 @@ export const PAY_SHARE: Record<INpcSheet['want'], number> = { GOLD: 1, RESPECT: 
 
 const EDIBLE = ['berry', 'fruit', 'grain'];
 
+/** What every house the guild can raise is made of, by tag: what "a house of their own" asks for. */
+export function houseTags(): string[] {
+  const tags = new Set<string>();
+  for (const tpl of SYSTEM_TEMPLATES.filter(t => t.structureType === 'HOUSE')) for (const line of houseBill(tpl)) tags.add(line.tag);
+  return [...tags].sort();
+}
+
+/**
+ * Q19: what answers each rung. Fed is something to eat; a house is what houses are made of; more
+ * money than they need is the material their hands work, to sell; a spouse and children, and a goal
+ * of their own, are what their sheet says they care for. A guess until Wave 12; Pedro may overrule.
+ */
+function rungTags(need: NeedKind, worked: string[], byObjective: string): string[] {
+  switch (need) {
+    case 'survival': return EDIBLE;
+    case 'safety': return houseTags();
+    case 'esteem': return worked.length > 0 ? worked : [byObjective];
+    case 'belonging': return [byObjective];
+    case 'purpose': return [byObjective, ...worked.filter(t => t !== byObjective)];
+  }
+}
+
 const VOICE: Record<INpcSheet['temperament'], (name: string, what: string) => string> = {
   AGGRESSIVE: (name, what) => `${name} wants ${what}, and is not asking twice.`,
   COWARD: (name, what) => `${name} wants ${what}, and would rather not go and get it.`,
@@ -255,10 +322,14 @@ const VOICE: Record<INpcSheet['temperament'], (name: string, what: string) => st
   OPPORTUNIST: (name, what) => `${name} wants ${what}, and has heard what it fetches.`
 };
 
-/** What this person wants: the objective on their sheet first, then what their own hands work. */
+/**
+ * What this person wants. Q19: with the rung they stand on, it answers that rung, so the board and
+ * the talk name one want. Without one, as before: the objective on their sheet first, then what
+ * their own hands work.
+ */
 export function wantFor(
-  resident: Pick<IResident, 'id' | 'name' | 'bond'>, sheet: INpcSheet, hubId: string, n: number
-): { tag: string; count: number; payShare: number; text: string } {
+  resident: Pick<IResident, 'id' | 'name' | 'bond'>, sheet: INpcSheet, hubId: string, n: number, need?: NeedKind
+): { tag: string; count: number; payShare: number; text: string; need?: NeedKind } {
   const rng = Rng.fromKey(`${hubId}:${resident.id}:want:${n}`);
   const worked = jobOf(sheet)?.worked ?? [];
   const byObjective = sheet.objective === 'PROTECT_ASSET' ? 'building'
@@ -266,11 +337,11 @@ export function wantFor(
     : sheet.objective === 'SURVIVE' ? EDIBLE[rng.int(0, EDIBLE.length)]
     : worked[0] ?? 'building';
   // The first is the sheet's own. After that their hands' work comes into it too.
-  const tags = n === 0 ? [byObjective] : [byObjective, ...worked.filter(t => t !== byObjective)];
+  const tags = need ? rungTags(need, worked, byObjective) : n === 0 ? [byObjective] : [byObjective, ...worked.filter(t => t !== byObjective)];
   const tag = tags[rng.int(0, tags.length)];
   const count = 1 + ProgressionSystem.rankIndex(resident.bond.rank) + rng.int(0, 2);
   const what = `${count} ${count === 1 ? 'thing' : 'things'} marked ${tag.replace(/_/g, ' ')}`;
-  return { tag, count, payShare: PAY_SHARE[sheet.want] ?? 1, text: (VOICE[sheet.temperament] ?? VOICE.PASSIVE)(resident.name, what) };
+  return { tag, count, payShare: PAY_SHARE[sheet.want] ?? 1, text: (VOICE[sheet.temperament] ?? VOICE.PASSIVE)(resident.name, what), ...(need ? { need } : {}) };
 }
 
 /**

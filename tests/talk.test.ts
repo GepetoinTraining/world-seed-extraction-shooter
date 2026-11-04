@@ -71,6 +71,15 @@ import { IntelligenceDoor, IDoorRequest, TALK_SPEND_LIMIT_USD, TALK_MESSAGE_LIMI
 import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
 import { buildBargainRequest, buildNpcGoalRequest, buildNpcTalkRequest, TALK_LOG_SENT } from '../server/intelligence/prompts';
 import { createIntelligenceHandler } from '../server/intelligence/http';
+import { worldDay } from '../src/entities/hub/store';
+import { HubGenerator, POIType } from '../src/entities/hub/HubGenerator';
+import { houseTags, livingPerDay, residentRung, residentWagePerDay, wantFor } from '../src/entities/hub/guild';
+import { residentFacts } from '../src/entities/hub/money';
+import { ResidentDay } from '../src/entities/hub/residentDay';
+import { doorOf } from '../src/render/atoms/hub';
+import { GoldAudit } from '../src/logic/economy/GoldAudit';
+import { GoldCommit } from '../src/logic/economy/GoldCommit';
+import { TALK_ENERGY } from '../src/logic/systems/TalkLaw';
 
 const UID = 'uid_talk';
 const HUB = 'hub_talk';
@@ -1206,5 +1215,281 @@ describe('line 150: a person posts a quest and asks for a building', () => {
     await hub().loadHub(HUB);
     expect(hub().openBuildingAsks()).toHaveLength(1);
     expect(hub().guild.quests.some(q => q.residentId === 'npc_banker')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A PERSON'S ROAD, after leg 1 (Q18, Q19, Q20, Q50). Registered before the build.
+// ---------------------------------------------------------------------------
+
+const openWant = (residentId: string) => hub().guild.quests.find(q => q.residentId === residentId && q.state === 'OPEN');
+const residentOf = (id: string) => hub().guild.residents.find(r => r.id === id)!;
+
+/** Home on free ground, with what was owed of them cleared, as the house rising would leave them. */
+const homeAt = (id: string) => {
+  const lot = hub().lots.find(l => !l.ownerId)!;
+  useHubStore.setState(s => ({
+    guild: {
+      ...s.guild,
+      quests: s.guild.quests.filter(q => q.residentId !== id),
+      residents: s.guild.residents.map(r => r.id === id ? { ...r, lotId: lot.id, homeAt: Date.now(), wantsMet: 1 } : r)
+    }
+  }));
+  return lot;
+};
+
+describe('Q19: one want, and it is the one the talk set', () => {
+  it('a lodger\'s want on the board answers the rung their talk names', async () => {
+    const resident = await residentNamed();
+    const quest = openWant(resident.id)!;
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    await talk().say('What would help?');
+    expect(talk().goal!.need).toBe('safety');
+    expect(quest.need).toBe(talk().goal!.need);
+    expect(houseTags()).toContain(quest.tag);
+    // The board reads the goal from the person, not only from the talk's own record.
+    expect(residentOf(resident.id).goal).toMatchObject({ need: 'safety', text: talk().goal!.text });
+  });
+
+  it('home, the next want follows the rung they stand on', async () => {
+    const resident = await residentNamed();
+    homeAt(resident.id);
+    const later = worldDay() + 2;
+    await hub().resolveWants(later);
+    const quest = openWant(resident.id)!;
+    const rung = residentRung(residentOf(resident.id), residentFacts(residentOf(resident.id), hub().wallets[resident.id] ?? 0), later);
+    expect(rung.need).not.toBe('safety');
+    expect(quest.need).toBe(rung.need);
+  });
+
+  it('every rung asks for something the hub has a word for', async () => {
+    const resident = await residentNamed();
+    const sheet = NpcSheet.fromBond(bondOf())!;
+    const known = new Set(WebBank.current().tags.map(t => t.tag));
+    for (const rung of LADDER) {
+      const want = wantFor(resident, sheet, HUB, 0, rung.need);
+      expect(want.count, rung.need).toBeGreaterThan(0);
+      expect(known.has(want.tag), `${rung.need}: ${want.tag}`).toBe(true);
+    }
+  });
+
+  it('the window shows the want the board holds beside their goal', () => {
+    const src = readFileSync('src/components/TalkWindow.tsx', 'utf8');
+    expect(src).toMatch(/ON THE BOARD/);
+  });
+});
+
+describe('Q20: after the house, their wallet is paid for work and pays for living', () => {
+  it('home with a trade, the Hall pays them a day of their work, on its books', async () => {
+    const resident = await residentNamed();
+    homeAt(resident.id);
+    const line = hub().runningBook().lines.find(l => l.who === resident.id);
+    expect(line, 'a line for their work').toBeTruthy();
+    expect(line!.why).toBe('WORK');
+    expect(line!.amount).toBe(residentWagePerDay(resident.bond.rank));
+    const before = hub().wallets[resident.id];
+    await hub().resolveRunning(worldDay() + 1);
+    expect(hub().wallets[resident.id]).toBe(before + line!.amount);
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('a lodger has no trade to be paid for yet', async () => {
+    const resident = await residentNamed();
+    expect(hub().runningBook().lines.some(l => l.who === resident.id)).toBe(false);
+  });
+
+  it('they pay for their living out of their own wallet, to whoever feeds them, and stay fed', async () => {
+    const resident = await residentNamed();
+    const wallet = hub().wallets[resident.id];
+    const mags = hub().wallets.npc_bartender;
+    await hub().resolveLiving(worldDay() + 3);
+    const cost = 3 * livingPerDay(resident.bond.rank);
+    expect(hub().wallets[resident.id]).toBe(wallet - cost);
+    expect(hub().wallets.npc_bartender).toBe(mags + cost);
+    expect(residentRung(residentOf(resident.id), residentFacts(residentOf(resident.id), wallet - cost), worldDay() + 3).need).toBe('safety');
+    expect((await GoldAudit.run()).ok).toBe(true);
+
+    homeAt(resident.id);
+    const seller = hub().wallets.npc_alchemist;
+    await hub().resolveLiving(worldDay() + 4);
+    expect(hub().wallets.npc_alchemist).toBe(seller + livingPerDay(resident.bond.rank));
+    expect((await GoldAudit.run()).ok).toBe(true);
+  });
+
+  it('what they cannot pay they go without, nobody covers it, and hunger is the rung', async () => {
+    const resident = await residentNamed();
+    homeAt(resident.id);
+    // Their coin spent elsewhere, on the record: the fold reads wallets from the database, not the screen.
+    const all = hub().wallets[resident.id];
+    await GoldCommit.commit({
+      rows: [{ type: 'TRADE', data: { kind: 'TEST_SPENT', playerDelta: 0, treasuryDelta: 0, wallets: { [resident.id]: -all } } }],
+      wallets: { hubId: HUB, deltas: { [resident.id]: -all } }
+    });
+    await hub().settleWallets();
+    expect(hub().wallets[resident.id]).toBe(0);
+    const seller = hub().wallets.npc_alchemist;
+    const later = worldDay() + 6;
+    await hub().resolveLiving(later);
+    expect(hub().wallets.npc_alchemist).toBe(seller);
+    expect(residentRung(residentOf(resident.id), residentFacts(residentOf(resident.id), 0), later).need).toBe('survival');
+    await hub().resolveWants(later);
+    expect(openWant(resident.id)!.need).toBe('survival');
+  });
+
+  it('it is folded once: the same days are not paid twice, and it comes back after a reload', async () => {
+    const resident = await residentNamed();
+    await hub().resolveLiving(worldDay() + 2);
+    const after = hub().wallets[resident.id];
+    await hub().resolveLiving(worldDay() + 2);
+    expect(hub().wallets[resident.id]).toBe(after);
+    await hub().loadHub(HUB);
+    expect(residentOf(resident.id).livedDay).toBe(worldDay() + 2);
+  });
+});
+
+describe('Q20: walked to by goals', () => {
+  const layout = HubGenerator.generate();
+  const walkable = (x: number, y: number) => !!layout.navMesh[y]?.[x];
+  const lot = layout.zones.flatMap(z => z.pois).find(p => p.type === POIType.PLAYER_LOT)!;
+  const poiOf = (type: POIType) => layout.zones.flatMap(z => z.pois).find(p => p.type === type)!;
+  const step = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+
+  const beside = (stop: { x: number; y: number }, door: { x: number; y: number }) => step(stop, door) >= 2 && step(stop, door) <= 4;
+
+  it('from their door to whoever feeds them, to where their rung sends them, and home again', () => {
+    const route = ResidentDay.route(layout, walkable, { homeLotId: lot.id, need: 'belonging' });
+    expect(beside(route.tiles[0], doorOf(lot))).toBe(true);
+    expect(route.tiles[route.tiles.length - 1]).toEqual(route.tiles[0]);
+    expect(route.tiles).toContainEqual(doorOf(lot));
+    const stops = route.stops.map(i => route.tiles[i]);
+    expect(stops.some(t => beside(t, doorOf(poiOf(POIType.VENDOR_CONSUMABLES))))).toBe(true);
+    expect(stops.some(t => beside(t, doorOf(poiOf(POIType.TAVERN))))).toBe(true);
+    for (let i = 1; i < route.tiles.length; i++) expect(step(route.tiles[i - 1], route.tiles[i])).toBeLessThanOrEqual(1);
+    for (const t of route.tiles) expect(walkable(t.x, t.y), `${t.x},${t.y}`).toBe(true);
+  });
+
+  it('found by playing: someone waiting at a door leaves it free, so the door still answers the interact key', () => {
+    for (const need of ['survival', 'esteem', 'belonging', 'purpose'] as const) {
+      const route = ResidentDay.route(layout, walkable, { homeLotId: lot.id, need });
+      const doors = [lot, ...layout.zones.flatMap(z => z.pois).filter(p => p.npcId)].map(doorOf);
+      for (const i of route.stops) {
+        const at = { x: route.tiles[i].x + 0.5, y: route.tiles[i].y + 0.5 };
+        for (const door of doors) expect(ResidentDay.personInReach([{ id: 'r', at }], door), `${need} waits in reach of ${door.x},${door.y}`).toBeNull();
+      }
+    }
+  });
+
+  it('the rung chooses the place: a different rung, a different door', () => {
+    const places = LADDER.map(r => ResidentDay.placeOf(r.need));
+    expect(new Set(places).size).toBe(places.length);
+  });
+
+  it('where they are is the clock\'s: the same on every machine, on the route, and moving', () => {
+    const route = ResidentDay.route(layout, walkable, { homeLotId: lot.id, need: 'esteem' });
+    const t0 = 1_800_000_000_000;
+    expect(ResidentDay.whereAt(route, t0, 'res_a')).toEqual(ResidentDay.whereAt(route, t0, 'res_a'));
+    const seen = new Set<string>();
+    for (let t = t0; t < t0 + ResidentDay.ERRAND_MS; t += 30_000) {
+      const at = ResidentDay.whereAt(route, t, 'res_a');
+      const tile = { x: Math.floor(at.x), y: Math.floor(at.y) };
+      expect(route.tiles.some(r => step(r, tile) <= 1)).toBe(true);
+      seen.add(`${tile.x},${tile.y}`);
+    }
+    expect(seen.size).toBeGreaterThan(3);
+  });
+
+  it('a lodger stands by the tavern', () => {
+    const route = ResidentDay.route(layout, walkable, { homeLotId: null, need: 'safety' });
+    expect(route.tiles).toHaveLength(1);
+    expect(step(route.tiles[0], doorOf(poiOf(POIType.TAVERN)))).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('Q18: a person at home is talked to where they are', () => {
+  it('found by playing: a talk opened after their rung has moved reads the rung they stand on now, before a word is said', async () => {
+    const resident = await residentNamed();
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    await talk().say('What would help?');
+    expect(talk().goal!.need).toBe('safety');
+    talk().close();
+    homeAt(resident.id);
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    const rung = residentRung(residentOf(resident.id), residentFacts(residentOf(resident.id), hub().wallets[resident.id] ?? 0), worldDay());
+    expect(talk().goal!.need).toBe(rung.need);
+    // Nothing was asked of a model for it: the next round still asks, in case one can answer.
+    expect(talk().goal!.unanswered).toBe(true);
+  });
+
+  it('within reach of their body you can talk, and across the street you cannot', () => {
+    const people = [{ id: 'res_a', at: { x: 10.5, y: 10.5 } }, { id: 'res_b', at: { x: 30.5, y: 10.5 } }];
+    expect(ResidentDay.personInReach(people, { x: 11, y: 10 })).toBe('res_a');
+    expect(ResidentDay.personInReach(people, { x: 20, y: 10 })).toBeNull();
+  });
+
+  it('the city opens the talk at their body, by the interact key', () => {
+    const src = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
+    expect(src).toMatch(/personInReach/);
+    expect(src).toMatch(/nearPersonRef\.current[\s\S]{0,200}kind: 'CITY'/);
+  });
+});
+
+describe('Q50: a talk shows no cost, and asking draws out what they want', () => {
+  it('the window says nothing of money, and offers the ask', () => {
+    const src = readFileSync('src/components/TalkWindow.tsx', 'utf8');
+    expect(src).not.toMatch(/has cost|\$\$\{/);
+    expect(src).toMatch(/ASK IF THEY WANT SOMETHING/);
+  });
+
+  it('the odds are the mental stats, yours against theirs, and never sure', () => {
+    const plain = TalkLaw.askRequired(spread(), spread());
+    expect(TalkLaw.askRequired(spread({ intelligence: 9, perception: 9 }), spread())).toBeLessThan(plain);
+    expect(TalkLaw.askRequired(spread(), spread({ intelligence: 9, focus: 9 }))).toBeGreaterThan(plain);
+    // Physical stats are not what draws anyone out.
+    expect(TalkLaw.askRequired(spread({ strength: 9 }), spread())).toBe(plain);
+    const sharp = spread(Object.fromEntries(MENTAL_ATTRIBUTES.map(a => [a, 99])) as any);
+    expect(TalkLaw.askRequired(sharp, spread())).toBeGreaterThan(1);
+    expect(TalkLaw.askRequired(spread(), sharp)).toBeLessThanOrEqual(100);
+  });
+
+  it('a landed ask in the city says the want the board holds, and costs nothing', async () => {
+    const resident = await residentNamed();
+    const quest = openWant(resident.id)!;
+    vi.spyOn(TalkLaw, 'rollOf').mockReturnValue(100);
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    const meter = talk().meter;
+    await talk().ask();
+    const said = talk().log.filter(l => l.who === 'NOTE').map(l => l.text).join(' ');
+    expect(said).toContain(quest.tag.replace(/_/g, ' '));
+    expect(talk().meter).toBe(meter);
+  });
+
+  it('a missed ask gives nothing away and wears on them a little', async () => {
+    const resident = await residentNamed();
+    vi.spyOn(TalkLaw, 'rollOf').mockReturnValue(1);
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    const meter = talk().meter;
+    await talk().ask();
+    expect(talk().meter).toBe(meter - 1);
+    expect(talk().log[talk().log.length - 1].text).toMatch(/nothing away/i);
+  });
+
+  it('in the field an ask costs what a round costs, and says what they would take kindly', async () => {
+    const entity = person();
+    stage(entity);
+    vi.spyOn(TalkLaw, 'rollOf').mockReturnValue(100);
+    await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+    await talk().ask();
+    expect(player().currentSession!.energy).toBe(100 - TALK_ENERGY);
+    expect(talk().log[talk().log.length - 1].text).toMatch(/gift/i);
+  });
+
+  it('a monster drawn out tells what it wants before it is friendly', async () => {
+    const entity = monster(humanoidDef());
+    stage(entity);
+    vi.spyOn(TalkLaw, 'rollOf').mockReturnValue(100);
+    await talk().open({ kind: 'MONSTER', entityId: entity.id });
+    expect(talk().stance).not.toBe('FRIENDLY');
+    await talk().ask();
+    expect(talk().wants).toBeTruthy();
   });
 });

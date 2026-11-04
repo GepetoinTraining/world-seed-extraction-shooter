@@ -85,6 +85,11 @@ export const NpcAgenda = {
     return LADDER.find(rung => !this.met(agenda, rung, facts)) ?? LADDER[LADDER.length - 1];
   },
 
+  /** Q20: a day fed holds survival where it stood. What a day eaten gives back is what a day takes. */
+  fed(): INeedFill {
+    return { survival: DECAY.survival };
+  },
+
   /** D104: a goal of their own comes only once everything under it stands. */
   mayChase(agenda: INpcAgenda, facts: ILadderFacts = {}): boolean {
     return this.rung(agenda, facts).need === 'purpose';

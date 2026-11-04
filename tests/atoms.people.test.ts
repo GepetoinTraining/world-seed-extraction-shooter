@@ -7,6 +7,8 @@ import {
 } from '../src/render/atoms/atoms';
 import { GENRES, composeView, proofView } from '../src/render/atoms/world';
 import { ARCHETYPE_IDS, castFigure, castPortrait, figure, portrait, weaponClass } from '../src/render/atoms/people';
+import { residentFigure } from '../src/render/atoms/people';
+import { readFileSync } from 'node:fs';
 import {
   HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, emblem, floorAtom, glyph, hubGround, hubSigns, keeperSpot, lightAt, lotArt
 } from '../src/render/atoms/hub';
@@ -420,5 +422,39 @@ describe('the hub', () => {
   it('fits a person at the real scale', () => {
     expect(HUB_TILE * ATOM_PX).toBe(20);
     expect(filled(figure({ uid: 'x', archetype: 'NOMAD' }))).toBeGreaterThan(0);
+  });
+});
+
+describe('Q22: a resident is drawn apart from you by shape, not colour', () => {
+  const uid = 'res_seed_person_1';
+  const isSignal = (v: number) => v >= px(Role.SIGNAL, 0) && v <= px(Role.SIGNAL, STEPS - 1);
+
+  it('no corner brackets and no signal: those are yours alone', () => {
+    (['down', 'up', 'left', 'right'] as const).forEach(facing => {
+      expect(residentFigure({ uid, facing }).data.some(isSignal), facing).toBe(false);
+    });
+    expect(figure({ uid, archetype: 'NOMAD' }).data.some(isSignal)).toBe(true);
+  });
+
+  it('a roof over the head: the same body without your marks is still another shape', () => {
+    const you = figure({ uid, archetype: 'NOMAD' });
+    const bare = figure({ uid, archetype: 'NOMAD', you: false });
+    const them = residentFigure({ uid });
+    const d = maskDifference(maskOf(you), maskOf(them));
+    console.log(`RESIDENT differs from you by ${(d * 100).toFixed(0)}% of the silhouette`);
+    expect(d).toBeGreaterThanOrEqual(YOU_MIN_DIFFERENCE);
+    expect(maskDifference(maskOf(bare), maskOf(them))).toBeGreaterThanOrEqual(YOU_MIN_DIFFERENCE);
+  });
+
+  it('walks like anyone, at a person\'s size', () => {
+    const still = residentFigure({ uid });
+    const stepping = residentFigure({ uid, step: 1, moving: true });
+    expect(still.w).toBe(figure({ uid, archetype: 'NOMAD' }).w);
+    expect(hashBytes(still.data)).not.toBe(hashBytes(stepping.data));
+  });
+
+  it('the city draws residents with it', () => {
+    const src = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
+    expect(src).toMatch(/residentFigure\(/);
   });
 });

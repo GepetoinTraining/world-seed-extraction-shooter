@@ -9,7 +9,7 @@
  * Wave 12.
  */
 
-import { IAttributes, UniversalRank } from '../../../types';
+import { IAttributes, MENTAL_ATTRIBUTES, UniversalRank } from '../../../types';
 import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
 import { Rng } from '../rng/DeterministicRNG';
 import { Alignment } from './Alignment';
@@ -40,6 +40,27 @@ function bonusOf(band: JudgeBand): number {
   return Math.sign(steps) * (Math.abs(steps) === 2 ? BONUS_FAR : Math.abs(steps) * BONUS_NEAR);
 }
 
+/** Q50: how far below a sure thing the best ask stays, and how far above nothing the worst one. A guess until Wave 12. */
+const ASK_FLOOR = 2;
+const ASK_CEILING = 98;
+
+/** What a mind adds up to: the mental stats, each at least the floor of 1. */
+const mindOf = (attributes: IAttributes | undefined): number =>
+  MENTAL_ATTRIBUTES.reduce((sum, a) => sum + Math.max(1, attributes?.[a] ?? 1), 0);
+
+/** What a sheet says outright, in words a person would let slip. */
+const SHEET_TELLS: Record<string, string> = {
+  GOLD: 'Coin is what moves them.',
+  GIFT: 'A gift would go a long way with them.',
+  RESPECT: 'They want to be taken seriously.'
+};
+const AIM_TELLS: Record<string, string> = {
+  SURVIVE: 'They are out to stay alive.',
+  HOARD: 'They are putting things by.',
+  WITNESS: 'They want to see what happens here.',
+  PROTECT_ASSET: 'They are guarding something of theirs.'
+};
+
 const inBand = (list: readonly string[], value: unknown) => typeof value === 'string' && list.includes(value);
 const saysAny = (text: string, names: string[]) => names.some(name => name && text.toLowerCase().includes(name.toLowerCase()));
 const validMeans = (means: IMeans | undefined) => !!means && inBand(PROMISE_BANDS, means.promise) && inBand(HARM_BANDS, means.harm);
@@ -59,6 +80,26 @@ export const TalkLaw = {
 
   bonuses(): Record<JudgeBand, number> {
     return Object.fromEntries(JUDGE_BANDS.map(band => [band, bonusOf(band)])) as Record<JudgeBand, number>;
+  },
+
+  /**
+   * Q50, Pedro: "you can ask if they want something, that rolls the mental stats to try and grab
+   * info". What a roll must reach: your mind against theirs, a share that climbs with yours and never
+   * arrives, so no ask is ever sure or hopeless. Physical stats play no part.
+   */
+  askRequired(yours: IAttributes | undefined, theirs: IAttributes | undefined): number {
+    const mine = mindOf(yours), other = mindOf(theirs);
+    const odds = mine / (mine + other);
+    return Math.round(ASK_FLOOR + (ASK_CEILING - ASK_FLOOR) * (1 - odds));
+  },
+
+  /** What an ask that landed draws out of a sheet: what moves them, and what they are about. */
+  sheetTells(sheet: { want?: string; objective?: string }): string {
+    return [SHEET_TELLS[sheet.want ?? ''], AIM_TELLS[sheet.objective ?? '']].filter(Boolean).join(' ');
+  },
+
+  askMissed(name?: string): string {
+    return `${name || 'It'} gives nothing away, and likes being asked a little less.`;
   },
 
   /** 1 to 100, on the key alone, so a round replays the same. */
