@@ -59,7 +59,7 @@ const MORE_THAN_NEEDED_DAYS = KEEPER_DAYS_TOP;
 export interface IRunningLine {
   /** Who is paid it. */
   who: string;
-  why: 'BUILDING' | 'GROUND';
+  why: 'BUILDING' | 'GROUND' | 'WORK';
   name: string;
   amount: number;
   /** For a building. */
@@ -75,6 +75,8 @@ export interface ICity {
   items: Pick<IItem, 'universalDefinitionId' | 'value'>[];
   /** What the shops' week is expected to cost as they stand: what is on their shelves coming apart, and their people. */
   weekCost: number;
+  /** Q20: who lives here and works a trade at home, paid a day of it. Absent: nobody yet. */
+  workers?: { who: string; name: string; perDay: number }[];
 }
 
 export interface IRunningBook {
@@ -110,6 +112,8 @@ export function runningBook(city: ICity): IRunningBook {
   }));
   const free = city.lots.filter(lot => !lot.ownerId).length;
   if (free > 0) lines.push({ who: GROUND_KEEPER, why: 'GROUND', name: 'Free ground', amount: free * EMPTY_LOT_PER_DAY });
+  // Q20: their wallet is paid for their work. The Hall pays it with the rest of its day, and prints for it the same.
+  for (const worker of city.workers ?? []) lines.push({ who: worker.who, why: 'WORK', name: worker.name, amount: worker.perDay });
 
   const floorPerDay = lines.reduce((sum, line) => sum + line.amount, 0);
   return { lines, floorPerDay, weekCost: city.weekCost, perDay: floorPerDay + Math.ceil(city.weekCost / WEEK_DAYS), marketCap, tiles, techPerTile };
@@ -119,7 +123,7 @@ export const runningPerDay = (city: ICity): number => runningBook(city).perDay;
 
 /** What the books show a day, line by line: what is paid out each day and a day of the shops' week, adding up to `perDay`. */
 export const dayLines = (book: IRunningBook): { key: string; name: string; tiles?: number; amount: number }[] => [
-  ...book.lines.map(line => ({ key: line.poiId ?? line.why, name: line.name, tiles: line.tiles, amount: line.amount })),
+  ...book.lines.map(line => ({ key: line.poiId ?? (line.why === 'WORK' ? `WORK:${line.who}` : line.why), name: line.name, tiles: line.tiles, amount: line.amount })),
   ...(book.perDay > book.floorPerDay ? [{ key: 'WEEK', name: "The shops' week, as stocked", amount: book.perDay - book.floorPerDay }] : [])
 ];
 
@@ -176,6 +180,10 @@ export function keeperBrought(personId: string, rank: UniversalRank | string): n
 /** It reads their coin as a count, and never what coin is worth. So a survivor arrives past this rung. */
 export const moreThanTheyNeed = (coin: number, rank: UniversalRank | string): boolean =>
   coin >= residentUpkeepPerDay(rank) * MORE_THAN_NEEDED_DAYS;
+
+/** Q19: what can be known of a resident outright, for the ladder: their house, and their coin as a count. */
+export const residentFacts = (resident: { homeAt?: number; bond: { rank: UniversalRank | string } }, coin: number): { house: boolean; money: boolean } =>
+  ({ house: !!resident.homeAt, money: moreThanTheyNeed(coin, resident.bond.rank) });
 
 /** A keeper's rank, for what they bring. */
 export const npcRank = (npcId: string): UniversalRank => rankOfNpc(HUB_NPCS[npcId] ?? {});

@@ -4,8 +4,11 @@
  * round says plainly what it rolled, what it needed and what it moved, because the roll is on the
  * record and nobody should have to take it on trust.
  *
- * In the city the person's goal stands above the log once it is set. A monster's meter is cut into
- * its three stances, and once it is friendly what it wants stands in the same place.
+ * In the city the person's goal stands above the log once it is set, with the one want the board
+ * holds for them under it (Q19). A monster's meter is cut into its three stances, and once it is
+ * friendly, or once asked well, what it wants stands in the same place.
+ *
+ * Q50: a talk shows no cost. What a person can do besides talk is ask if they want something.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -13,6 +16,7 @@ import { useTalk, meterOpensFollowing } from '../entities/interaction/talkStore'
 import { TALK_ENERGY } from '../logic/systems/TalkLaw';
 import { TALK_MESSAGE_LIMIT } from '../logic/systems/TalkTypes';
 import { usePlayerStore } from '../entities/player/store';
+import { useHubStore } from '../entities/hub/store';
 import { StatSystem } from '../logic/systems/StatSystem';
 import { Busy, Button, Chip, Modal, Panel } from './ui/kit';
 
@@ -31,7 +35,9 @@ const MeterTrack: React.FC<{ value: number; lines: { at: number; label: string }
 );
 
 export const TalkWindow: React.FC = () => {
-  const { subject, title, ready, busy, log, rounds, meter, note, spentUsd, goal, stance, wants, say, give, bring, close } = useTalk();
+  const { subject, title, ready, busy, log, rounds, meter, note, goal, stance, wants, say, give, bring, ask, close } = useTalk();
+  const cityId = subject?.kind === 'CITY' ? subject.npcId : null;
+  const onTheBoard = useHubStore(s => cityId ? s.guild.quests.find(q => q.residentId === cityId && q.state === 'OPEN')?.text ?? null : null);
   const attributes = usePlayerStore(s => s.player.attributes);
   const session = usePlayerStore(s => s.player.currentSession);
   const [saying, setSaying] = useState('');
@@ -73,6 +79,7 @@ export const TalkWindow: React.FC = () => {
         {goal && (
           <Panel title="WHAT THEY ARE AFTER" right={<Chip title="The rung of the needs ladder they stand on">{goal.need}</Chip>}>
             <span className="ws-small">{goal.text}</span>
+            {onTheBoard && <div className="ws-small" style={{ marginTop: 4 }}><b>ON THE BOARD: </b>{onTheBoard}</div>}
           </Panel>
         )}
         {isMonster && wants && (
@@ -115,7 +122,10 @@ export const TalkWindow: React.FC = () => {
         </div>
 
         <div className="ws-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-          <span className="ws-dim ws-small">{spentUsd > 0 ? `This talk has cost $${spentUsd.toFixed(4)}.` : ''}</span>
+          <Button tone="quiet" disabled={busy || !ready} onClick={() => void ask()}
+            title={inTheField ? `Your mind against theirs. It takes ${TALK_ENERGY} energy, as a round does.` : 'Your mind against theirs.'}>
+            ASK IF THEY WANT SOMETHING
+          </Button>
           <div style={{ display: 'flex', gap: 6 }}>
             {inTheField && (session?.inventory.length ?? 0) > 0 && (
               <Button tone="quiet" disabled={busy} onClick={give} title="The least of what you carry goes">OFFER SOMETHING</Button>

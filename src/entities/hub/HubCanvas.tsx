@@ -30,7 +30,10 @@ import { FarmDoors } from './farmDoors';
 import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
-import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../render/atoms/people';
+import { Archetype, Facing, WALK_PHASES, castPortrait, figure, residentFigure } from '../../render/atoms/people';
+import { ResidentDay } from './residentDay';
+import { residentRung } from './guild';
+import { residentFacts } from './money';
 import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
@@ -165,6 +168,9 @@ export const HubCanvas: React.FC = () => {
     []
   );
   nearbyRef.current = nearbyPOI;
+  // Q18: someone who lives here, near enough to talk to where they stand. The walk loop sets it.
+  const [nearPerson, setNearPerson] = useState<string | null>(null);
+  const nearPersonRef = useRef<string | null>(null);
   const talking = useTalk(s => !!s.subject);
   busyRef.current = !!(activeNPC || panel || stationPanel || talking);
 
@@ -255,6 +261,12 @@ export const HubCanvas: React.FC = () => {
       if (e.key === 'Enter' && (e.target as HTMLElement)?.tagName === 'BUTTON') return;
       if (insideLotIdRef.current && interiorKeyRef.current(key)) return;
       if (isInteractKey(key)) {
+        // A person is nearer than a building's door: their body takes the key first, on the street.
+        if (!insideLotIdRef.current && nearPersonRef.current) {
+          keysRef.current.clear();
+          void useTalk.getState().open({ kind: 'CITY', npcId: nearPersonRef.current });
+          return;
+        }
         if (nearbyRef.current?.interactable) handleInteract(nearbyRef.current);
         return;
       }
@@ -511,18 +523,21 @@ export const HubCanvas: React.FC = () => {
 
   const groundEdges = useMemo(() => HubGenerator.edges(layout), [layout]);
 
-  // D75: the people the gate brought out, drawn where they are: by the tavern's door, then their own.
+  // D75, Q20: the people the gate brought out, where their day has them. A lodger stands by the
+  // tavern's door; someone home walks their round, out to whoever feeds them and on to where their
+  // rung sends them, and home again (residentDay.ts). Where is the clock's, the same on every machine.
   const residents = useHubStore(s => s.guild.residents);
-  const residentBodies = useMemo(() => {
-    const palette = buildPalette(HUB_GENRE);
-    const tavern = HubGenerator.findPOI(layout, 'poi_tavern');
+  const wallets = useHubStore(s => s.wallets);
+  const residentRoutes = useMemo(() => {
+    const walkable = (x: number, y: number) => !!layout.navMesh[y]?.[x] && !blockedLotTiles.has(y * layout.width + x);
+    const day = worldDay();
     let lodging = 0;
-    return residents.flatMap(r => {
-      const home = r.homeAt && r.lotId ? HubGenerator.findPOI(layout, r.lotId) : null;
-      const at = home ? doorOf(home) : tavern ? { x: doorOf(tavern).x + 2 + 2 * lodging++, y: doorOf(tavern).y + 1 } : null;
-      return at ? [{ at, body: spriteToCanvas(figure({ uid: r.entityId, archetype: 'NOMAD', facing: 'down', step: 0, moving: false }), palette) }] : [];
+    return residents.map(r => {
+      const home = r.homeAt && r.lotId ? r.lotId : null;
+      const need = residentRung(r, residentFacts(r, wallets[r.id] ?? 0), day).need;
+      return { id: r.id, uid: r.entityId, route: ResidentDay.route(layout, walkable, { homeLotId: home, need, lodging: home ? 0 : lodging++ }) };
     });
-  }, [residents, layout]);
+  }, [residents, wallets, layout, blockedLotTiles]);
 
   // U16: the city fills the window. The canvas is the window; the camera does the rest.
   const shellRef = useRef<HTMLDivElement>(null);
@@ -562,6 +577,17 @@ export const HubCanvas: React.FC = () => {
     const palette = buildPalette(HUB_GENRE);
     const outskirts = ctx.createPattern(outskirtsCanvas(palette), 'repeat');
     const bodies = new Map<string, HTMLCanvasElement>();
+    // Q22: a resident by shape, never by colour: no corner brackets, and a roof over the head.
+    const people = new Map<string, HTMLCanvasElement>();
+    const personFor = (uid: string, facing: Facing, step: number, moving: boolean) => {
+      const key = `${uid}:${facing}:${moving ? step : 'stand'}`;
+      let c = people.get(key);
+      if (!c) {
+        c = spriteToCanvas(residentFigure({ uid, facing, step, moving }), palette);
+        people.set(key, c);
+      }
+      return c;
+    };
     const bodyFor = (facing: Facing, step: number, moving: boolean) => {
       const key = `${facing}:${moving ? step : 'stand'}`;
       let c = bodies.get(key);
@@ -711,10 +737,18 @@ export const HubCanvas: React.FC = () => {
       }
       ctx.stroke();
       ctx.setLineDash([]);
-      for (const { at, body: person } of residentBodies) {
+      const standing: { id: string; at: { x: number; y: number } }[] = [];
+      const clock = Date.now();
+      for (const r of residentRoutes) {
+        const at = ResidentDay.whereAt(r.route, clock, r.id);
+        standing.push({ id: r.id, at });
+        const person = personFor(r.uid, at.facing, at.step % WALK_PHASES, at.moving);
         const pw = person.width * ATOM_PX, ph = person.height * ATOM_PX;
-        ctx.drawImage(person, Math.round(((at.x + 0.5) * TILE_SIZE - pw / 2 - ox) / 2) * 2, Math.round(((at.y + 0.5) * TILE_SIZE - ph / 2 - oy) / 2) * 2, pw, ph);
+        ctx.drawImage(person, Math.round((at.x * TILE_SIZE - pw / 2 - ox) / 2) * 2, Math.round((at.y * TILE_SIZE - ph / 2 - oy) / 2) * 2, pw, ph);
       }
+      // Q18: whoever is within reach of you is who the interact key talks to.
+      const near = ResidentDay.personInReach(standing, { x: Math.floor(p.x / TILE_SIZE), y: Math.floor(p.y / TILE_SIZE) });
+      if (near !== nearPersonRef.current) { nearPersonRef.current = near; setNearPerson(near); }
       const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
       ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
@@ -728,7 +762,7 @@ export const HubCanvas: React.FC = () => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cityBitmaps, groundEdges, residentBodies, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
+  }, [cityBitmaps, groundEdges, residentRoutes, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -777,7 +811,12 @@ export const HubCanvas: React.FC = () => {
       )}
 
       {/* Interaction Prompt */}
-      {nearbyPOI && !activeNPC && !panel && !insideLot && (
+      {nearPerson && !activeNPC && !panel && !insideLot && !talking && (
+        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
+          <Chip tone="signal"><b>{residents.find(r => r.id === nearPerson)?.name ?? 'Someone'}</b> <Kbd>E</Kbd> TALK</Chip>
+        </div>
+      )}
+      {nearbyPOI && !nearPerson && !activeNPC && !panel && !insideLot && (
         <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           {nearbyConstruction && (
             <Chip tone="proof">UNDER CONSTRUCTION — {nearbyConstruction.applied} of {nearbyConstruction.total} steps stand</Chip>

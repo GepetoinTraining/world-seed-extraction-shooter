@@ -242,6 +242,32 @@ export function figure(o: FigureInput): Sprite {
 }
 
 /**
+ * Q22: SOMEONE WHO LIVES HERE. Pedro is colourblind, and a resident drawn like you reads as two of
+ * you, so they are told apart by shape: no corner brackets (those mark you alone), and a roof over
+ * the head, the house the guild raised for them. They walk the same body you do, in the cast's
+ * life ramp, so the ramp only agrees with what the shape already says.
+ */
+export function residentFigure(o: { uid: string; archetype?: Archetype; facing?: Facing; step?: number; moving?: boolean }): Sprite {
+  const facing = o.facing ?? 'down';
+  const input: FigureInput = { uid: o.uid, archetype: o.archetype ?? 'NOMAD', facing, step: o.step, moving: o.moving, you: false };
+  const seed = fnv1a(`figure:v1:${o.uid}`);
+  const m = material({ density: 30 + seed % 50, resonance: (seed >>> 8) % 40, elasticity: (seed >>> 12) % 30 });
+  const side = facing === 'left' || facing === 'right';
+  const ink = figureInk(input, side, facing === 'up');
+  // The roof: a gable from a point over the head out to its eaves, with the head showing under it.
+  const cx = 22, eaves = 9, reach = 21;
+  for (let y = 0; y <= eaves; y++) {
+    const half = Math.round((reach * y) / eaves);
+    ink.rect(cx - half, y, cx + half, y);
+  }
+  ink.rect(cx - reach, eaves, cx + reach, eaves + 3);
+  // Daylight under the eaves, either side of the neck, so the overhang reads as a roof and not a big head.
+  ink.rect(cx - reach, eaves + 4, cx - 8, eaves + 7, 0).rect(cx + 8, eaves + 4, cx + reach, eaves + 7, 0);
+  const sprite = stamp(ink, FIGURE_ATOMS, m, seed, CAST_STYLE);
+  return facing === 'left' ? mirror(sprite) : sprite;
+}
+
+/**
  * The bust used in dialogue and on the identity card. The face is the ownership
  * fantasy made visible, so it carries the most variation of anything drawn:
  * hair, brows, eyes, nose, mouth, jaw, marks and collar all come from the id.

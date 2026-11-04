@@ -48,9 +48,10 @@ import { NpcSheet } from '../../logic/systems/NpcSheet';
 import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import {
   GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
-  mayHaveGround, questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake
+  mayHaveGround, questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake,
+  FED, livingPerDay, residentRung, residentWagePerDay, residentWorks
 } from './guild';
-import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, keeperBrought, npcRank, printAmount, printsNeeded, runningBook, runningPerDay, taxBook, walletBrought } from './money';
+import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, keeperBrought, npcRank, printAmount, printsNeeded, residentFacts, runningBook, runningPerDay, taxBook, walletBrought } from './money';
 import { DEAL_DAYS, IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
 import { Wallets } from '../../logic/economy/Wallets';
 import { Anchors } from '../../logic/economy/Anchors';
@@ -68,6 +69,9 @@ const provenance = async () => (await import('../../logic/sovereignty/Provenance
 
 /** Whose shelf each shop window is, and whose counter buys. */
 const SHOP_VENDOR = { weapon: 'npc_weapon_vendor', armor: 'npc_armor_vendor', consumable: 'npc_alchemist' } as const;
+/** Q20: who feeds a person. At the tavern its keeper does; home, the keeper whose shelf sells what is eaten. */
+const TAVERN_KEEPER = 'npc_bartender';
+const feederOf = (resident: Pick<IResident, 'homeAt'>): string => resident.homeAt ? SHOP_VENDOR.consumable : TAVERN_KEEPER;
 const COUNTER_NPC = SHOP_VENDOR.weapon;
 /** What taking someone on and seeing them through give a vendor. Guesses until Wave 12. */
 const VENDOR_BELONGING_PER_TAKEN = 10;
@@ -136,7 +140,10 @@ export const priceOfListing = (listing: Pick<IShopListing, 'price' | 'deal'>, at
 
 /** What the running cost reads: the city as it stands, its web, what is in it, and its shops. */
 const cityOf = (s: Pick<HubState, 'chunks' | 'dismembered' | 'lots' | 'web' | 'rooms' | 'vendors' | 'guild' | 'weaponShop' | 'armorShop' | 'consumableShop' | 'craftsmen'>) =>
-  ({ layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web, items: marketItems(s), weekCost: weekCostOf(s) });
+  ({
+    layout: HubGenerator.generate({ chunks: s.chunks, dismembered: s.dismembered }), lots: s.lots, web: s.web, items: marketItems(s), weekCost: weekCostOf(s),
+    workers: s.guild.residents.filter(residentWorks).map(r => ({ who: r.id, name: `${r.name}'s work`, perDay: residentWagePerDay(r.bond.rank) }))
+  });
 
 /** D115: one signed row per print, each of them 14 days of what the hub runs on. */
 const printRows = (hubId: string, perDay: number, prints: number, why: string): { type: 'PRINT'; data: Record<string, any> }[] =>
@@ -455,8 +462,12 @@ interface HubState extends ITechDoors {
   poolToHouse: (residentId: string, tag: string, itemIds: string[]) => Promise<RoomVerdict>;
   /** A house finished: the person is home, and their skills join the hub's web. */
   settleHomes: () => Promise<void>;
-  /** D73: what the people at home want today goes on the board. */
+  /** D73: what the people at home want today goes on the board. Q19: it answers the rung they stand on. */
   resolveWants: (simDay?: number) => Promise<void>;
+  /** Q20: each day a person lives here, their own wallet pays for it, to whoever feeds them. What it cannot pay, they go without. */
+  resolveLiving: (simDay?: number) => Promise<void>;
+  /** Q19: the goal a talk set, kept on the person, for the board and the city to read. */
+  noteResidentGoal: (residentId: string, goal: { need: string; text: string; setAt: number }) => Promise<void>;
   /** A want met: the things go to their house, and the hub's treasury pays. */
   fulfilQuest: (questId: string, itemIds: string[]) => Promise<RoomVerdict>;
   /** D83: the hard quest. The one door a rank comes through. */
@@ -601,6 +612,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       await Treasury.endow(hubWorldUid, printAmount(runningPerDay(cityOf(get()))));
       await get().settleWallets();
       await get().resolveRunning();
+      await get().resolveLiving();
 
       // 3. Wave 5 / Wave 10: resolve what time finished while nobody watched
       await get().resolveVendors();
@@ -1067,7 +1079,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     // From the check to the bond leaving there is no await: one press, one person.
     const resident: IResident = {
       id, bondItemId: bond.id, bond: bond.bondData, worldSeed: bond.bondData.worldSeed, entityId: bond.bondData.entityId,
-      name: sheet.name, sponsorId: p.id, sponsorName: p.username, arrivedAt: Date.now(), lotId: null, wantsMet: 0
+      name: sheet.name, sponsorId: p.id, sponsorName: p.username, arrivedAt: Date.now(), lotId: null, wantsMet: 0,
+      agenda: NpcAgenda.fresh(worldDay()), livedDay: worldDay()
     };
     removeFromStash([bond.id]);
     set({ guild: { ...guild, residents: [...guild.residents, resident] } });
@@ -1239,9 +1252,10 @@ export const useHubStore = create<HubState>((set, get) => ({
       return (lots.find(l => l.id === r.lotId)?.upkeepPaidThroughDay ?? day) >= day;
     });
     if (posted.length === 0) return;
+    // Q19: one want. It answers the rung they stand on, which is the rung their talk's goal answers.
     const quests = posted.map(r => ({
       id: `q_${r.id}_${r.wantsMet}`, residentId: r.id, n: r.wantsMet, state: 'OPEN' as const, postedDay: day,
-      ...wantFor(r, readSheet(r), activeHubId, r.wantsMet)
+      ...wantFor(r, readSheet(r), activeHubId, r.wantsMet, residentRung(r, residentFacts(r, get().wallets[r.id] ?? 0), day).need)
     }));
     set({ guild: { ...get().guild, quests: [...get().guild.quests, ...quests] } });
     for (const q of quests) useFeed.getState().push(`On the board at the Hall: ${q.text}`, 'signal');
@@ -1258,6 +1272,59 @@ export const useHubStore = create<HubState>((set, get) => ({
     };
     set({ guild: { ...guild, quests: [...guild.quests, quest] } });
     useFeed.getState().push(`On the board at the Hall: ${quest.text}`, 'signal');
+    await get().saveHubState();
+  },
+
+  resolveLiving: (simDay) => foldInTurn(async () => {
+    const day = simDay ?? worldDay();
+    const { activeHubId } = get();
+    if (!activeHubId) return;
+    await get().settleWallets();
+    const held = { ...get().wallets };
+    const deltas: Record<string, number> = {};
+    const paid: { residentId: string; to: string; days: number; amount: number; without: number }[] = [];
+    let changed = false;
+    const residents = get().guild.residents.map(r => {
+      // A person from before this was kept owes nothing for those days, and stands fed.
+      if (r.livedDay === undefined) { changed = true; return { ...r, livedDay: day, agenda: r.agenda ?? NpcAgenda.fresh(day) }; }
+      if (r.livedDay >= day) return r;
+      changed = true;
+      const cost = livingPerDay(r.bond.rank);
+      const to = feederOf(r);
+      let agenda = r.agenda ?? NpcAgenda.fresh(r.livedDay);
+      let days = 0, without = 0;
+      for (let d = r.livedDay; d < day; d++) {
+        // Pedro: "that's the LITERAL MECHANISM OF MASLOW". What their coin cannot pay for, they go without.
+        if ((held[r.id] ?? 0) >= cost) {
+          held[r.id] -= cost;
+          held[to] = (held[to] ?? 0) + cost;
+          deltas[r.id] = (deltas[r.id] ?? 0) - cost;
+          deltas[to] = (deltas[to] ?? 0) + cost;
+          agenda = NpcAgenda.fold(agenda, d + 1, FED);
+          days++;
+        } else {
+          agenda = NpcAgenda.fold(agenda, d + 1);
+          without++;
+        }
+      }
+      paid.push({ residentId: r.id, to, days, amount: days * cost, without });
+      return { ...r, agenda, livedDay: day };
+    });
+    if (!changed) return;
+    set({ guild: { ...get().guild, residents } });
+    if (Object.keys(deltas).length === 0) { await get().saveHubState(); return; }
+    await GoldCommit.commit({
+      rows: [{ type: 'TRADE', data: { kind: 'RESIDENT_LIVING', day, paid, playerDelta: 0, treasuryDelta: 0, wallets: deltas } }],
+      wallets: { hubId: activeHubId, deltas },
+      hubDoc: get().hubDoc() ?? undefined
+    });
+    set({ wallets: await Wallets.allOf(activeHubId) });
+  }),
+
+  noteResidentGoal: async (residentId, goal) => {
+    const { guild } = get();
+    if (!guild.residents.some(r => r.id === residentId)) return;
+    set({ guild: { ...guild, residents: guild.residents.map(r => r.id === residentId ? { ...r, goal } : r) } });
     await get().saveHubState();
   },
 

@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import { IAttributes, UniversalRank } from '../../../types';
 import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { HUB_NPCS } from '../hub/HubGenerator';
-import { readSheet, residentIdOf } from '../hub/guild';
+import { agendaOf, readSheet, residentIdOf, residentRung, wantFor } from '../hub/guild';
 import { moreThanTheyNeed } from '../hub/money';
 import { useHubStore, worldDay } from '../hub/store';
 import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
@@ -76,6 +76,8 @@ interface ICityTalkRecord {
   agenda: INpcAgenda;
   goal: ITalkGoal | null;
   log: ILogLine[];
+  /** Q50: how many times they have been asked what they want. It keys the next ask's roll. */
+  asks?: number;
 }
 
 interface ITalkState {
@@ -102,6 +104,11 @@ interface ITalkState {
   give: () => void;
   /** The meter reached the line, and they come. */
   bring: () => void;
+  /**
+   * Q50: ask if they want something. Your mental stats against theirs, keyed; landed, it draws out
+   * what they want, and missed, they give nothing away and like being asked a little less.
+   */
+  ask: () => Promise<void>;
 }
 
 const EMPTY = {
@@ -168,10 +175,11 @@ function monsterSurface(seed: string, entity: IWorldEntity, webVersion: number |
 }
 
 /** Who a city person is, wherever they come from. */
-function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda; keeper?: boolean } | null {
+function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda; keeper?: boolean; resident?: boolean } | null {
   const hub = useHubStore.getState();
   const resident = hub.guild.residents.find(r => r.id === npcId);
-  if (resident) return { sheet: readSheet(resident), rank: resident.bond.rank as UniversalRank, facts: { house: !!resident.homeAt, money: moreThanTheyNeed(hub.wallets[residentIdOf(resident.bond)] ?? 0, resident.bond.rank) } };
+  // Q19: their ladder is the one on their own record, the one the board reads.
+  if (resident) return { sheet: readSheet(resident), rank: resident.bond.rank as UniversalRank, facts: { house: !!resident.homeAt, money: moreThanTheyNeed(hub.wallets[residentIdOf(resident.bond)] ?? 0, resident.bond.rank) }, agenda: agendaOf(resident, worldDay()), resident: true };
   const keeper = HUB_NPCS[npcId];
   if (!keeper) return null;
   const rank = keeper.teaches?.rank ?? UniversalRank.D;
@@ -191,11 +199,12 @@ function citySurface(person: NonNullable<ReturnType<typeof cityPerson>>): ITalkS
 
 export const useTalk = create<ITalkState>((set, get) => {
   /** What a city person keeps, between one reload and the next. */
-  const saveCity = async (npcId: string, agenda: INpcAgenda, attempts: number) => {
+  const saveCity = async (npcId: string, agenda: INpcAgenda, attempts: number, asks?: number) => {
     const hubId = useHubStore.getState().activeHubId ?? 'hub_unknown';
     const { meter, goal, log } = get();
     const now = Date.now();
-    const data: ICityTalkRecord = { npcId, disposition: meter, attempts, agenda, goal, log };
+    const asked = asks ?? (await VectorStore.get<ICityTalkRecord>(VectorNamespace.TERRITORIES, cityRecordId(hubId, npcId)))?.data?.asks;
+    const data: ICityTalkRecord = { npcId, disposition: meter, attempts, agenda, goal, log, ...(asked ? { asks: asked } : {}) };
     await VectorStore.put({ id: cityRecordId(hubId, npcId), namespace: VectorNamespace.TERRITORIES, data, metadata: { createdAt: now, updatedAt: now, ownerCertUid: hubId, version: 1 } });
   };
 
@@ -226,6 +235,8 @@ export const useTalk = create<ITalkState>((set, get) => {
     };
     const answer = await TalkDoor.goal(talkId, ask);
     set(s => ({ goal: { need: answer.words.need, text: answer.words.goal, by: answer.by, setAt: worldDay(), unanswered: answer.by === 'FLOOR' && !answer.usage }, spentUsd: addUsage(s.spentUsd, answer.usage) }));
+    // Q19: the goal is the person's, and the board reads it from them.
+    if (person.resident) await hub.noteResidentGoal(npcId, { need: answer.words.need, text: answer.words.goal, setAt: worldDay() });
     if (answer.words.quest) await hub.postTalkQuest(npcId, person.sheet.name, person.rank, person.sheet.want, answer.words.quest);
     if (answer.words.building) await hub.askForBuilding(npcId, person.sheet.name, answer.words.building, answer.words.goal, answer.words.need);
   };
@@ -386,6 +397,71 @@ export const useTalk = create<ITalkState>((set, get) => {
       const stance = subject.kind === 'MONSTER' ? MonsterMind.stance(entity.npc.disposition, playerAttributes()) : null;
       if (stance) useWorldStore.getState().updateEntity(entity.id, { bargain: { ...entity.bargain, stance, holding: true } });
       set({ log, meter: entity.npc.disposition, stance });
+    },
+
+    ask: async () => {
+      const { subject, busy, ready } = get();
+      if (!subject || busy || !ready) return;
+      const stillHere = () => get().subject === subject;
+      const attrs = playerAttributes();
+      const note = (text: string): ILogLine => ({ who: 'NOTE', text });
+
+      if (subject.kind !== 'CITY') {
+        const entity = liveEntity(subject.entityId);
+        if (!entity?.npc) { set({ note: 'There is nobody there now.' }); return; }
+        if (subject.kind === 'MONSTER' && MobAI.isProvoked(subject.entityId)) { set({ note: 'It is done talking. You hurt it.' }); return; }
+        // In the field an ask is a round of the talk, and costs what a round does.
+        if (!spendEnergy(TALK_ENERGY)) { set({ note: `Asking takes ${TALK_ENERGY} energy, as a round does. You are out of it.` }); return; }
+        const isMonster = subject.kind === 'MONSTER';
+        const { seed, webVersion } = worldFacts();
+        const kind = isMonster ? monsterKind(entity) : undefined;
+        const theirs = kind ? MonsterMind.read(seed, entity, kind, webVersion).stats : NpcSheet.statsOf(seed, entity);
+        const n = (entity.npc.asks ?? 0) + 1;
+        const rollKey = SessionJournal.rollKey('ask', `${entity.id}:${n}`);
+        const roll = TalkLaw.rollOf(rollKey);
+        const required = TalkLaw.askRequired(attrs, theirs);
+        const landed = roll >= required;
+        const disposition = landed ? entity.npc.disposition : Math.max(0, entity.npc.disposition - 1);
+        const itWants = isMonster ? (entity.bargain?.wants ?? MonsterMind.floorWant(entity.npc)) : null;
+        const said = landed
+          ? (isMonster ? `It lets it out: it wants ${itWants}.` : TalkLaw.sheetTells(entity.npc))
+          : TalkLaw.askMissed(get().title);
+        const wants = isMonster && landed ? itWants : get().wants;
+        useWorldStore.getState().updateEntity(entity.id, {
+          npc: { ...entity.npc, disposition, asks: n },
+          ...(isMonster && landed ? { bargain: { ...entity.bargain, stance: entity.bargain?.stance ?? MonsterMind.stance(disposition, attrs), holding: stillHere(), wants: itWants! } } : {})
+        });
+        SessionJournal.record('INTERACT', { kind: 'ASK', targetId: entity.id, rollKey, roll, required, landed, disposition });
+        const log: ILogLine[] = [...get().log, note(`You ask if they want something. Rolled ${roll} against ${required}.`), note(said)];
+        fieldLogs.set(`${seed}:${entity.id}`, log);
+        if (!stillHere()) return;
+        set({ log, meter: disposition, wants, note: '' });
+        return;
+      }
+
+      const person = cityPerson(subject.npcId);
+      if (!person) return;
+      const hub = useHubStore.getState();
+      const hubId = hub.activeHubId ?? 'hub_unknown';
+      set({ busy: true, note: '' });
+      const kept = await loadCity(subject.npcId, person);
+      if (!stillHere()) return;
+      const n = (kept.asks ?? 0) + 1;
+      const roll = TalkLaw.rollOf(`${hubId}:ask:${subject.npcId}:${n}`);
+      const required = TalkLaw.askRequired(attrs, person.sheet.stats);
+      const landed = roll >= required;
+      const agenda = person.agenda ?? NpcAgenda.fold(kept.agenda, worldDay());
+      const rung = NpcAgenda.rung(agenda, person.facts);
+      // What they let slip is the one want: what the board holds for them, or what it would post.
+      const posted = hub.guild.quests.find(q => q.residentId === subject.npcId && q.state === 'OPEN');
+      const resident = hub.guild.residents.find(r => r.id === subject.npcId);
+      const want = posted?.text ?? (resident ? wantFor(resident, person.sheet, hubId, resident.wantsMet, residentRung(resident, person.facts, worldDay()).need).text : null);
+      const said = landed
+        ? [`They are after ${rung.says}.`, want ?? '', TalkLaw.sheetTells(person.sheet)].filter(Boolean).join(' ')
+        : TalkLaw.askMissed(person.sheet.name);
+      const meter = landed ? get().meter : Math.max(0, get().meter - 1);
+      set(s => ({ busy: false, meter, log: [...s.log, note(`You ask if they want something. Rolled ${roll} against ${required}.`), note(said)] }));
+      await saveCity(subject.npcId, agenda, kept.attempts, n);
     },
 
     bring: () => {

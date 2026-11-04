@@ -64,6 +64,7 @@ export interface INpcSheet {
   want: 'GOLD' | 'GIFT' | 'RESPECT';      // what moves their disposition
   disposition: number;                     // 0-100; >= 70 unlocks RECRUIT
   attempts: number;                        // social rolls made (keys the RNG)
+  asks?: number;                           // Q50: times asked what they want (keys that roll); set by talking, never by generation
   // D27: DERIVED at read time from (world seed, entity id, pinned web version),
   // never stored at generation: a stored field would move the golden vectors.
   stats?: import('../../../types').IAttributes;
