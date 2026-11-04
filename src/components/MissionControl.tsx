@@ -13,6 +13,8 @@ import { WorldCreator } from './WorldCreator';
 import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
+import { usePlayerStore } from '../entities/player/store';
+import { Tutorial } from '../logic/systems/Tutorial';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
   UP: 'GATE OPEN — IT CLOSES IN',
@@ -30,6 +32,9 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
   }, []);
 
   const isDev = world.isDebug;
+  // Q2, Q14: the tutorial is a newcomer's first order, and says so until it is sealed
+  const tutorial = Tutorial.isTutorial(world);
+  const firstOrder = usePlayerStore(s => tutorial && Tutorial.firstOrderOpen(s.player));
   // A retired world has no gate to speak of: its ground is gone.
   const moment = WorldClock.momentAt(world.retired ? { ...world, isDebug: true } : world, now);
   const isClosing = moment.warning !== 'NONE';
@@ -39,7 +44,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
   return (
     <Panel
       title={world.name.toUpperCase()}
-      right={<Chip tone={world.difficulty === 'F' ? 'none' : 'loss'}>{world.difficulty}</Chip>}
+      right={<span style={{ display: 'flex', gap: 6 }}>{firstOrder && <Chip tone="signal">FIRST ORDER</Chip>}<Chip tone={world.difficulty === 'F' ? 'none' : 'loss'}>{world.difficulty}</Chip></span>}
       tone={world.retired || dark ? 'none' : isClosing ? 'loss' : 'signal'}
     >
       <div className="ws-dim ws-small" style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -58,8 +63,13 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
         {isDev ? 'STABLE' : world.retired ? 'RETIRED' : WorldClock.say(moment.msLeft)}
       </div>
       <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em' }}>
-        {isDev ? 'SIMULATION — OUTSIDE THE CLOCK' : world.retired ? 'NO GATE' : GATE_WORDS[moment.phase]}
+        {tutorial ? 'ALWAYS OPEN — NOTHING YOU BRING IS LOST HERE' : isDev ? 'OUTSIDE THE CLOCK' : world.retired ? 'NO GATE' : GATE_WORDS[moment.phase]}
       </div>
+      {tutorial && (
+        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
+          {firstOrder ? 'Your first order: scan the marked block, drop on it, meet what lives there, and walk out by the beacon.' : 'Sealed once. It stays open while your own world is written.'}
+        </div>
+      )}
       {cycle && <CycleRibbon cycle={cycle} />}
       {!isDev && !world.retired && (
         <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 10 }}>
@@ -68,7 +78,8 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginTop: isDev ? 10 : 0 }}>
-        <span className="ws-dim ws-small">AGENTS <span className="ws-bright">{world.playerCount}</span></span>
+        {/* Q41: the tutorial has no certificate to count visits in, so it shows no count */}
+        {tutorial ? <span /> : <span className="ws-dim ws-small">AGENTS <span className="ws-bright">{world.playerCount}</span></span>}
         {/* D85: recon always stands to the left of the drop, and neither risks anything until the drop itself */}
         <span style={{ display: 'flex', gap: 6 }}>
           {!isDev && (

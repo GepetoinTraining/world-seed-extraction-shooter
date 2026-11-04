@@ -6,6 +6,10 @@
  * ramp: each biome brings a STRUCTURE and a VALUE KEY, so the survey reads as
  * instrument output in color and in grayscale alike. The exit is a SIGNAL mark
  * (shape, position), scan depth is brightness, and the unknown is void static.
+ *
+ * Q14: the land shows from above before any scan, so a person can choose where to scan.
+ * An unscanned cell draws its ground's structure in the faintest ink over the static, with
+ * no ground fill: the shape of the land, and nothing of who or what stands on it.
  */
 
 import { BiomeType } from '../../entities/world/types';
@@ -48,15 +52,20 @@ export function reconCell(o: ReconCellInput): Sprite {
   const data = new Uint8Array(s * s);
   const sig = fnv1a(`recon:v1:${o.seed ?? ''}:${o.sx ?? 0},${o.sy ?? 0}`);
 
+  const look = BIOME_LOOKS[o.biome] ?? BIOME_LOOKS[BiomeType.WASTELAND];
+
   if (o.scanLevel <= 0) {
-    // Not yet recorded: void static, unmistakable against any scanned ground.
+    // Not yet recorded: void static, unmistakable against any scanned ground, with the
+    // land's shape seen through it. No fill, no marks: a scan reads those.
     for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
-      data[y * s + x] = hash2(sig, x, y) % 7 === 0 ? px(Role.VOID, 2) : px(Role.VOID, hash2(sig, y, x) % 2);
+      const gx = x + (o.sx ?? 0) * s, gy = y + (o.sy ?? 0) * s;
+      data[y * s + x] = look.structure(gx, gy, sig) > 0
+        ? px(Role.MATTER, 0)
+        : hash2(sig, x, y) % 7 === 0 ? px(Role.VOID, 2) : px(Role.VOID, hash2(sig, y, x) % 2);
     }
     return { w: s, h: s, data };
   }
 
-  const look = BIOME_LOOKS[o.biome] ?? BIOME_LOOKS[BiomeType.WASTELAND];
   // The eye's correction: the ground ramp alone is too dark to survey by.
   // Fills stay in GROUND (the biome's value key), but the STRUCTURE is drawn
   // in MATTER — instrument ink over dark paper — and a deeper scan inks it up.

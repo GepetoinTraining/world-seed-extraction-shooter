@@ -33,7 +33,7 @@ export const ReceiptScreen: React.FC = () => {
             {died ? 'DIED' : 'SEALED'}
           </div>
           <div className="ws-dim ws-small" style={{ letterSpacing: '0.12em', marginTop: 2 }}>
-            {receipt.cause === 'GATE' ? 'THE GATE CLOSED WITH YOU INSIDE — THE WORLD KEEPS WHAT FELL' : died ? 'SESSION RECEIPT — THE WORLD KEEPS WHAT FELL' : receipt.forced ? 'SESSION RECEIPT — A WAY OUT FORCED, BANKED AND SIGNED' : 'SESSION RECEIPT — BANKED AND SIGNED'}
+            {receipt.spared ? 'SESSION RECEIPT — THIS WORLD TAKES NOTHING' : receipt.cause === 'GATE' ? 'THE GATE CLOSED WITH YOU INSIDE — THE WORLD KEEPS WHAT FELL' : died ? 'SESSION RECEIPT — THE WORLD KEEPS WHAT FELL' : receipt.forced ? 'SESSION RECEIPT — A WAY OUT FORCED, BANKED AND SIGNED' : 'SESSION RECEIPT — BANKED AND SIGNED'}
           </div>
         </div>
 
@@ -63,7 +63,7 @@ export const ReceiptScreen: React.FC = () => {
         )}
         {receipt.haul.length === 0 && (
           <div className="ws-dim ws-small" style={{ margin: '10px 0' }}>
-            {died ? 'Nothing was carried. Nothing was lost.' : 'Came home empty-handed. The record is kept anyway.'}
+            {receipt.spared ? 'Nothing you brought was lost: this world keeps nothing of yours. Anywhere else, what you carry falls with you.' : died ? 'Nothing was carried. Nothing was lost.' : 'Came home empty-handed. The record is kept anyway.'}
           </div>
         )}
 
@@ -108,7 +108,7 @@ export const ReceiptScreen: React.FC = () => {
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
           <Button tone={tone} primary onClick={clear} autoFocus>
-            {died ? 'ACKNOWLEDGE THE LOSS' : 'CLOSE THE VAULT'}
+            {receipt.spared ? 'BACK TO THE CITY' : died ? 'ACKNOWLEDGE THE LOSS' : 'CLOSE THE VAULT'}
           </Button>
         </div>
       </Panel>

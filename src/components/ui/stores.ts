@@ -132,7 +132,8 @@ export const WORLD_DRAFT_DEFAULTS = {
   extractionTax: 5,
   creatorShare: 3,
   pvpEnabled: false,
-  difficulty: 'D',
+  // Q4: empty means the person's own rank, read when the draft is (`draftDanger`); a hand sets it
+  difficulty: '' as string,
   sky: 'TURNING',
   // D56: what was said, what it wrote, or the world already written that was picked
   talk: [] as { role: 'user' | 'assistant'; content: string }[],
@@ -141,6 +142,9 @@ export const WORLD_DRAFT_DEFAULTS = {
   themeId: ''
 };
 export type WorldDraft = typeof WORLD_DRAFT_DEFAULTS;
+
+/** Q4: a draft's danger. Until a hand sets it, it is the rank of the person writing it. */
+export const draftDanger = (draft: Pick<WorldDraft, 'difficulty'>, rank: string): string => draft.difficulty || rank;
 
 export const useWorldDraft = create<{ draft: WorldDraft; set: (patch: Partial<WorldDraft>) => void; reset: () => void }>(set => ({
   draft: { ...WORLD_DRAFT_DEFAULTS },
@@ -192,6 +196,8 @@ export interface IReceiptView {
   kept?: { item: IItem; by: string }[];
   // D77: the gate closed on them, which the receipt says plainly
   cause?: 'GATE';
+  // Q14: a death in a world whose law takes nothing (the tutorial), said as such
+  spared?: boolean;
   // D77: it left by a way out it paid to force, not by a beacon
   forced?: boolean;
   // D30: what settled at this rest. Names only; the rest is on the Agent tab.

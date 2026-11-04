@@ -27,6 +27,7 @@ import { ScanPass } from '../logic/systems/ScanPass';
 import { MapSystem, isMapItem } from '../logic/systems/MapSystem';
 import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
 import { isTypingTarget, suggestStart } from '../logic/systems/FieldInput';
+import { LESSONS, Tutorial } from '../logic/systems/Tutorial';
 import { Button, Chip, Kbd, Panel, RankMark, TERMINAL_PALETTE, useNow } from './ui/kit';
 import { useAppView, useFeed, useSheet, whileWaiting } from './ui/stores';
 
@@ -77,6 +78,8 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
   const moment = card ? WorldClock.momentAt(card, now) : undefined;
   const canDrop = !free || !!moment?.canDeploy;
   const canScan = !free || !!moment?.canSurvey;
+  // Q14: the tutorial's recon reads one known block, and the drop goes there
+  const tutorial = Tutorial.isTutorial(availableWorlds.find(w => w.id === activeWorldId));
   const player = usePlayerStore(s => s.player);
   // D67, D69: how the world changed since it last stood open. How many, never who (D60)
   const since = ScanPass.readout(useWorldStore(s => s.directorRecord));
@@ -86,9 +89,11 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
 
   const cellPx = RECON_CELL_ATOMS * RECON_SCALE;
   const [cursor, setCursor] = useState(() => {
-    const at = currentMap ? suggestStart(currentMap) : { x: 0, y: 0 };
+    // Q14: the tutorial's cursor starts on its marked block, so the first SPACE reads it
+    const at = currentMap ? (tutorial ? Tutorial.knownBlock(currentMap) : suggestStart(currentMap)) : { x: 0, y: 0 };
     return { x: at.x, y: at.y };
   });
+  const firstOrder = usePlayerStore(s => Tutorial.firstOrderOpen(s.player));
   const dragged = useRef(false);
 
   // The survey keeps its true cell size and the desk pans; it opens centered.
@@ -152,6 +157,14 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     onDrop(at.x, at.y);
   }, [order, onDrop]);
 
+  // Q14: in the tutorial the marked block comes selected, so ENTER drops once it is read
+  useEffect(() => {
+    if (!tutorial || !currentMap || useWorldStore.getState().selectedDropZone) return;
+    const at = Tutorial.knownBlock(currentMap);
+    selectSector(at.x, at.y);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorial, currentMap?.seed]);
+
   // A regeneration under an open view: nothing read now may be saved against the world it was.
   const generationNow = moment?.generation;
   useEffect(() => {
@@ -174,6 +187,10 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     selectSector(sx, sy);
     setCursor({ x: sx, y: sy });
     if (!canScan) { feed('The gate is down. Nothing reads until it boots.', 'loss'); return; }
+    if (tutorial) {
+      const may = Tutorial.mayScan(currentMap, sx, sy);
+      if (!may.ok) { feed(may.reason!, 'signal'); return; }
+    }
     if (known && SurveySystem.staleBy(known, generation) > 0 && !held) return;
     // Wave 10C (D22): mental stats drive the recon phase — intelligence,
     // perception and focus (framed or raw) deepen each scan. The analyst
@@ -224,6 +241,10 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
 
   // D85: from a card the drop goes through the one door, and refusing leaves the view open.
   const drop = async (x: number, y: number) => {
+    if (tutorial) {
+      const may = Tutorial.mayDrop(currentMap, x, y);
+      if (!may.ok) { feed(may.reason!, 'signal'); return; }
+    }
     if (onDrop) { onDrop(x, y); return; }
     if (!activeWorldId) return;
     const res = await deployToWorld(activeWorldId);
@@ -284,7 +305,13 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     return counts;
   };
 
-  const advice = suggestStart(currentMap);
+  const known = tutorial ? Tutorial.knownBlock(currentMap) : null;
+  const knownRead = !!known && (currentMap.sectors[`${known.x},${known.y}`]?.scanLevel ?? 0) >= ScanLevel.DETAILED;
+  const step = Tutorial.step({ scanned: knownRead, inField: false, metContact: false, sealed: false });
+  const lesson = tutorial ? { title: Tutorial.titleOf(step, firstOrder), body: LESSONS[step].body } : null;
+  const advice = known
+    ? { kind: knownRead ? 'DROP' as const : 'SCAN' as const, x: known.x, y: known.y, why: lesson!.body }
+    : suggestStart(currentMap);
   const bracket = (x: number, y: number, label: string, dashed: boolean, shown: boolean) => shown ? (
     <div style={{
       position: 'absolute', left: x * cellPx - 3, top: y * cellPx - 3,
@@ -329,7 +356,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
             : moment?.phase === 'UP' ? `GATE OPEN — IT CLOSES IN ${WorldClock.say(moment.msLeft)} — CHOOSE WHERE TO DROP`
             : `THE GATE IS DOWN — IT BOOTS IN ${WorldClock.say(moment?.msLeft ?? 0)}`}
         </Chip>
-        <Panel title="WHERE TO START" style={{ width: 320 }}>
+        <Panel title={lesson ? lesson.title : 'WHERE TO START'} tone={lesson ? 'signal' : undefined} style={{ width: 320 }}>
           <span className="ws-small">{advice.why}</span>
         </Panel>
         {free && (moment?.phase === 'SCAN' || since.plain + since.writing > 0) && (
@@ -373,13 +400,15 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
       {/* Intel Panel */}
       <div style={{ position: 'absolute', top: 12, right: 12, width: 290, maxHeight: 'calc(100% - 60px)', overflowY: 'auto' }}>
       <Panel title="SECTOR INTEL">
-        {!selected && <span className="ws-dim ws-small">No sector selected. The survey renders only what the drone has recorded. Static is unscanned; the lozenge is an exit; ticks along an edge are contacts.</span>}
+        {!selected && <span className="ws-dim ws-small">No sector selected. The land shows from above: each kind of ground has its own pattern, faint through the static until scanned. A scan reads the rest: the threat, the way out (the lozenge), and who stands there (ticks along the top edge).</span>}
         {selected && (
           <div className="ws-list ws-small">
             <div className="ws-row"><span className="ws-dim">SECTOR</span><span>{selected.x}·{selected.y}</span></div>
+            {/* Q14: the ground shows from above, before any scan */}
+            <div className="ws-row"><span className="ws-dim">BIOME</span><span>{selected.biome}</span></div>
+            {selected.scanLevel < ScanLevel.BASIC && <div className="ws-row ws-dim"><span>Not scanned: threat, exit and contacts unknown</span><span /></div>}
             {selected.scanLevel >= ScanLevel.BASIC && (
               <>
-                <div className="ws-row"><span className="ws-dim">BIOME</span><span>{selected.biome}</span></div>
                 <div className="ws-row">
                   <span className="ws-dim">THREAT</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={String(selected.difficulty)} scale={2} />{selected.difficulty}</span>
@@ -475,7 +504,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                 </>
               );
             })()}
-            {canDrop && (
+            {canDrop && (!tutorial || Tutorial.mayDrop(currentMap, selected.x, selected.y).ok) && (
               <div style={{ marginTop: 10 }}>
                 <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => void drop(selected.x, selected.y)}>
                   <Kbd>ENTER</Kbd> CONFIRM DROP

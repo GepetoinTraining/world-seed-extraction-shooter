@@ -958,6 +958,8 @@ export interface IPlayer {
   studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */
   rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
+  /** Q2, Q14: when this character sealed a run out of the tutorial, its first order. Unset, the order stands. */
+  tutorialSealedAt?: number;
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */
   survey?: Record<string, Record<string, {
     level: number;

@@ -25,6 +25,7 @@ import { StatSystem } from '../logic/systems/StatSystem';
 import { Treasury } from '../logic/economy/Treasury';
 import { ArmedButton, Button, Chip, Modal, Panel, Tabs } from './ui/kit';
 import { hoverProps, useFeed } from './ui/stores';
+import { Tutorial } from '../logic/systems/Tutorial';
 import { ResidentFace, ResidentLines } from './TavernRoom';
 import { PopulationLine, WorkshopBlock } from './WorkshopPanel';
 
@@ -47,9 +48,16 @@ const Board: React.FC = () => {
   // D116: what people have asked to have built. C5's buildings are what answers these.
   const asks = (guild.asks ?? []).filter(a => a.state === 'OPEN');
   const done = guild.quests.filter(q => q.state === 'DONE').length;
+  // Q2: a newcomer's first order is the tutorial, and the board says where it stands
+  const firstOrder = usePlayerStore(s => Tutorial.firstOrderOpen(s.player));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {firstOrder && (
+        <Panel title="YOUR FIRST ORDER" tone="signal">
+          <span className="ws-small">Before anyone here can use you, go through THE TUTORIAL at the Nexus: scan the block it marks, drop on it, meet what lives there, and walk out by the beacon. Nothing you bring is lost there. Everywhere else, what you carry falls with you.</span>
+        </Panel>
+      )}
       {open.length === 0 && (
         <span className="ws-dim ws-small">
           Nothing on the board{guild.residents.length === 0 ? '. Nobody in this city wants anything from you yet: a person has to come through the gate first.' : ' today. People post what they want, a day apart, and they pay for it themselves.'}
