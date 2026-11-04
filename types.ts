@@ -423,6 +423,9 @@ export interface IWebNodeRecord {
   rank: number;
   firstBy: IWebCredit;
   rungRecord: IWebCredit & { rung: number };
+  /** Q9: the name the first to reach it gave it (creation's or the dream's, signed), so the hub calls one skill one thing. Absent: the bank's words. */
+  name?: string;
+  flavor?: string;
 }
 
 /** A skill the hub holds and nobody knows of: it opens nothing until the web reaches it. */

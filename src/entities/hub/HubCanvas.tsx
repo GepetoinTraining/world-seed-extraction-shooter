@@ -34,7 +34,7 @@ import { Archetype, Facing, WALK_PHASES, castPortrait, figure } from '../../rend
 import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
-import { ArmedButton, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
+import { ArmedButton, Bar, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
 import { AskFor, BuyListing, CollectHeld } from '../../components/ShelfAsk';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
@@ -46,6 +46,7 @@ import { useStudyReach } from '../../components/StudyPanel'; // D118
 import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { StatSystem } from '../../logic/systems/StatSystem';
+import { RestSystem } from '../../logic/systems/RestSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../types';
 
@@ -897,6 +898,12 @@ export const HubCanvas: React.FC = () => {
                 )}
               </div>
             </div>
+            {/* Q26: a bed's length follows what was spent, so the inn shows what is held */}
+            {activeNPC.dialogue.options.some(o => o.action === 'REST') && (
+              <div style={{ margin: '6px 0' }}>
+                <Bar label="ENERGY" value={RestSystem.energyHeld(usePlayerStore.getState().player)} max={StatSystem.maxEnergyOf(usePlayerStore.getState().player)} tone="proof" text={`${Math.floor(RestSystem.energyHeld(usePlayerStore.getState().player))} / ${Math.floor(StatSystem.maxEnergyOf(usePlayerStore.getState().player))}`} />
+              </div>
+            )}
             <div className="ws-dialogue__options">
               {/* D116: a keeper is a person too. Business stays below, and this is everything else. */}
               <Button tone="signal" onClick={() => { const npcId = activeNPC.id; setActiveNPC(null); setNpcReply(null); void useTalk.getState().open({ kind: 'CITY', npcId }); }}>
@@ -1145,7 +1152,7 @@ const ShopModal: React.FC<{ category: 'weapon' | 'armor' | 'consumable'; onClose
                 <ItemSprite item={listing.item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(listing.item)}</span>
-                  <span className="ws-dim ws-small">{listing.deal ? `BARGAIN BIN: ${Math.max(0, listing.deal.until - worldDay())} days left` : `stock ${listing.stock}`}</span>
+                  <span className="ws-dim ws-small">{listing.deal ? `BARGAIN BIN: ${Math.max(0, listing.deal.until - worldDay())} days left${listing.stock > 1 ? ` · ${listing.stock} alike` : ''}` : `stock ${listing.stock}`}</span>
                 </span>
               </button>
               <Button

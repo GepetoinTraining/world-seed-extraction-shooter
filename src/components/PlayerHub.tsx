@@ -148,7 +148,7 @@ export const HandsPanel: React.FC = () => {
 // ---------------------------------------------------------------------------
 
 const AgentTab: React.FC = () => {
-  const { player, spendAttributePoint, toggleCarry, currentWeight, maxWeight, recalcWeight } = usePlayerStore();
+  const { player, spendAttributePoint, toggleCarry, recalcWeight } = usePlayerStore();
   useEffect(() => { recalcWeight(); }, [recalcWeight]);
 
   const rank = ProgressionSystem.rankOf(player);
@@ -204,7 +204,7 @@ const AgentTab: React.FC = () => {
             <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%`} />
           </div>
           <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
-            Session weight above 80% reads SLOWED in the field. Current bank weight: {currentWeight.toFixed(1)} / {maxWeight} kg.
+            Session weight above 80% reads SLOWED in the field.
             {equipment.items.length > 0 && <> The harness carries {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg more, and none of it counts: the limit is the haul, not the harness.</>}
           </div>
         </Panel>

@@ -17,7 +17,8 @@ import { LoreSystem } from '../logic/systems/LoreSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { StudySystem } from '../logic/systems/StudySystem';
 import { StudyDoor } from '../logic/systems/StudyDoor';
-import { Button, Input } from './ui/kit';
+import { StatSystem } from '../logic/systems/StatSystem';
+import { Bar, Button, Input } from './ui/kit';
 import { useWaits } from './ui/stores';
 
 /** How far the eye reaches in the field: the inspect card's own reach. */
@@ -84,6 +85,8 @@ export const StudyPanel: React.FC = () => {
       {topics.length > 0 && (
         <div className="ws-dim ws-small" style={{ padding: '2px 0' }}>Known: {topics.map(t => t.topic.replace(/_/g, ' ')).join(', ')}</div>
       )}
+      {/* Q26: what a sitting spends, beside what is held */}
+      <Bar label="ENERGY" value={RestSystem.energyHeld(player)} max={StatSystem.maxEnergyOf(player)} tone="proof" text={`${Math.floor(RestSystem.energyHeld(player))} / ${Math.floor(StatSystem.maxEnergyOf(player))}`} />
       <div className="ws-dim ws-small" style={{ padding: '2px 0' }}>A sitting takes {ask.cost} energy and {ask.seconds}s. It can go badly.</div>
       <form
         style={{ display: 'flex', gap: 4, margin: '2px 0 4px' }}

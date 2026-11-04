@@ -562,7 +562,12 @@ export class WebSystem {
    * for Wave 11's person coming home: their skills extend the web, and their exp
    * stays theirs. The first keeps the claim; a higher rung is a new record.
    */
-  static admit(web: IHubWeb, who: { uid: string; name: string }, skills: Skills, at: number): { web: IHubWeb; firsts: string[]; records: { id: string; rung: number }[] } {
+  /** Q9: one skill, one name in this hub: the first one's, where they named it, and the bank's words otherwise. */
+  static nameIn(id: string, web: IHubWeb | undefined, pack: IWebPack = current()): string {
+    return web?.nodes[id]?.name ?? this.nameOf(id, pack);
+  }
+
+  static admit(web: IHubWeb, who: { uid: string; name: string }, skills: Skills, at: number, words?: Record<string, { name: string; flavor?: string; grants?: string[] }>): { web: IHubWeb; firsts: string[]; records: { id: string; rung: number }[] } {
     const nodes = { ...web.nodes };
     const firsts: string[] = [];
     const records: { id: string; rung: number }[] = [];
@@ -571,7 +576,11 @@ export class WebSystem {
       const prior = nodes[skill.id];
       const credit: IWebCredit = { uid: who.uid, name: who.name, at };
       if (!prior) {
-        nodes[skill.id] = { id: skill.id, tags: skill.tags, rank: skill.rank ?? 0, firstBy: credit, rungRecord: { ...credit, rung } };
+        const named = words?.[skill.id];
+        nodes[skill.id] = {
+          id: skill.id, tags: skill.tags, rank: skill.rank ?? 0, firstBy: credit, rungRecord: { ...credit, rung },
+          ...(named?.name?.trim() ? { name: named.name, ...(named.flavor ? { flavor: named.flavor } : {}) } : {})
+        };
         firsts.push(skill.id);
         if (rung > 0) records.push({ id: skill.id, rung });
       } else if (rung > prior.rungRecord.rung) {
@@ -597,8 +606,8 @@ export class WebSystem {
           rank: ProgressionSystem.skillRankOf(skill),
           circles: skill.circles ?? 0,
           // What a rest's model called it, if one has (D58, D118): the sheet says the same name the feed did
-          name: player.skillWords?.[skill.id]?.name ?? node.name,
-          flavor: player.skillWords?.[skill.id]?.flavor ?? this.flavorOf(skill.id, pack),
+          name: player.skillWords?.[skill.id]?.name ?? web.nodes[skill.id]?.name ?? node.name,
+          flavor: player.skillWords?.[skill.id]?.flavor ?? web.nodes[skill.id]?.flavor ?? this.flavorOf(skill.id, pack),
           rung: mastery.rung,
           rungName: mastery.rungName,
           into: mastery.into,

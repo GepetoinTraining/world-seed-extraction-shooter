@@ -1072,7 +1072,9 @@ describe('three circles ask the rest door for an active skill or a passive bonus
     expect(src).toMatch(/<Circles filled=\{row\.circles\} \/>/);
     expect(src).toMatch(/background: i < filled \?/);
     expect(src).toMatch(/Fill a circle in/);
-    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/TO FILL/);
+    // Q28: the field's chip and the city's bar read one line, which says what waits
+    expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/levelLine\(player\)/);
+    expect(readFileSync('src/components/ui/levelLine.ts', 'utf8')).toMatch(/TO FILL/);
   });
 });
 
@@ -1416,8 +1418,9 @@ describe('line 128: the sheet and the HUD show level and rank as two things', ()
     for (const path of ['src/components/CharacterSheet.tsx', 'src/components/PlayerHub.tsx', 'src/components/WorldCanvas.tsx', 'App.tsx']) {
       const src = read(path);
       expect(src, path).toMatch(/RankMark/);
-      expect(src, path).toMatch(/ProgressionSystem\.(levelOf|levelProgress)\(/);
-      expect(src, path).toMatch(/LV /);
+      // Q28: the field HUD and the top bar say it through one line, levelLine
+      expect(src, path).toMatch(/ProgressionSystem\.(levelOf|levelProgress)\(|levelLine\(player\)/);
+      expect(src, path).toMatch(/LV |levelLine\(player\)/);
     }
   });
 

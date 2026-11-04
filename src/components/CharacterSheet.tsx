@@ -37,6 +37,7 @@ import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const TILE_SIZE = 20;
 const SHEET_BOTTOM = 62; // clear of the hotbar
+const SHEET_TOP = 46; // clear of the city's bar
 
 /**
  * THE PACK (Wave 9.4, the usability pass): the 8x6 spatial inventory beside the
@@ -388,7 +389,8 @@ const SheetBody: React.FC = () => {
       className="ws-ui"
       style={{ position: 'fixed', left: 16, right: 16, bottom: SHEET_BOTTOM, zIndex: 150, pointerEvents: 'none', display: 'flex', justifyContent: 'flex-end' }}
     >
-      <div data-pack-window style={{ display: 'flex', gap: 8, alignItems: 'stretch', pointerEvents: 'auto', width: '100%', maxWidth: 1500, justifyContent: 'flex-end' }}>
+      {/* Q8: in a narrow window the panels wrap onto a second row instead of running off the left edge, and the sheet scrolls rather than leave the top of the window */}
+      <div data-pack-window style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch', pointerEvents: 'auto', width: '100%', maxWidth: 1500, justifyContent: 'flex-end', maxHeight: `calc(100vh - ${SHEET_BOTTOM + SHEET_TOP}px)`, overflowY: 'auto' }}>
         <WhoPanel />
         <PaperDoll unit={24} compact />
         {session ? <PackPanels session={session} /> : <VaultPanels />}
