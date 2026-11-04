@@ -1,7 +1,7 @@
 /**
  * THE RUNNER, on the person's own machine (DEPLOY.md). One listener serves their browser everything
  * at one address: the built game, their store (/api/db), the door to their model (/api/intelligence),
- * and the bridge to a hub (/api/hub). `server/main.ts` runs it; the dev server mounts the same doors.
+ * the bridge to a hub (/api/hub), and the game's clock (/api/clock, server/clock.ts). `server/main.ts` runs it; the dev server mounts the same doors.
  *
  * THE BRIDGE. The hub is somewhere else, at `WS_HUB_URL`. The browser asks the runner, and the runner
  * asks the hub, holding the hub's session token itself, in memory: the token never reaches the
@@ -110,6 +110,7 @@ export function createHubBridge(options: IBridgeOptions): Door {
 }
 
 export interface IRunnerParts {
+  clock: Door;
   db: Door;
   intelligence: Door;
   hub: Door;
@@ -123,7 +124,7 @@ export function createRunnerListener(parts: IRunnerParts) {
   const dist = parts.dist ? resolve(parts.dist) : undefined;
   return (req: IncomingMessage, res: ServerResponse) => {
     const path = (req.url ?? '/').split('?')[0];
-    for (const [mount, door] of [['/api/intelligence', parts.intelligence], ['/api/db', parts.db], ['/api/hub', parts.hub]] as const) {
+    for (const [mount, door] of [['/api/intelligence', parts.intelligence], ['/api/db', parts.db], ['/api/hub', parts.hub], ['/api/clock', parts.clock]] as const) {
       if (path === mount || path.startsWith(`${mount}/`)) return void door(req, res, path.slice(mount.length) || '/');
     }
     if (parts.noStatic || !dist) {

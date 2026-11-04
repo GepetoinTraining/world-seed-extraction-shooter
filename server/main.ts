@@ -21,6 +21,7 @@ import { carryOldSave } from './carryDoor';
 import { defaultDatabaseUrl } from './connection';
 import { createIntelligenceHandler, openDoor } from './intelligence';
 import { createHubBridge, createRunnerListener, hubUrlProblem } from './runner';
+import { createClockDoor } from './clock';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.env.WS_DATABASE_URL ?? defaultDatabaseUrl(root);
@@ -34,6 +35,7 @@ const handle = createDbHandler(store.get, { allowRemote: process.env.WS_DB_ALLOW
 
 const hubUrl = process.env.WS_HUB_URL?.trim() || undefined;
 const server = createServer(createRunnerListener({
+  clock: createClockDoor({ hubUrl }),
   db: handle,
   intelligence,
   hub: createHubBridge({ hubUrl }),

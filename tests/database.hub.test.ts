@@ -18,6 +18,8 @@ import { createHubHandler } from '../server/hub/http';
 import { createHubListener } from '../server/hub/server';
 import { createHubBridge } from '../server/runner';
 import { signedText } from '../src/entities/identity/signedText';
+import { addressOf, dayIndexOf } from '../src/logic/time/RadixClock';
+import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
 
 const ALGORITHM = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
 const b64 = (bytes: ArrayBuffer) => Buffer.from(bytes).toString('base64');
@@ -38,7 +40,16 @@ async function makeCharacter(uid: string) {
     seq++;
     return sign({ seq, prevSeq: seq - 1, ts: 1_000 + seq, type, data });
   };
-  return { uid, certificate, sign, row };
+  /** A row in the newer form (D135): its moment's address, and the link to the row before it. */
+  let lastSignature: string | null = null;
+  const linked = async (ts: number, data: Record<string, unknown> = { amount: 5 }) => {
+    seq++;
+    const prev = lastSignature ? await linkOf(lastSignature) : null;
+    const signed = await sign({ seq, prevSeq: seq - 1, ts, type: 'GOLD_DELTA', data, v: ROW_VERSION, prev, clock: { ...addressOf(ts), by: 'machine' } }, ts);
+    lastSignature = signed.signature;
+    return signed;
+  };
+  return { uid, certificate, sign, row, linked };
 }
 
 describe('the hub', () => {
@@ -259,6 +270,51 @@ describe('the hub', () => {
     });
   });
 
+  describe('time (D135)', () => {
+    it('the hub states its own time as the clock\'s address, signed', () => {
+      const said = hub.clock();
+      expect(verifyStatement(key.publicKeyPem, said.text, said.signature)).toBe(true);
+      expect(JSON.parse(said.text)).toEqual({ kind: 'worldseed-hub-clock', hub: key.id, issuer: 'https://hub.test', at: clock, day: dayIndexOf(clock), address: addressOf(clock) });
+    });
+
+    it('rows in the newer form go on from the row the hub holds, each linked to the last', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const first = [await character.linked(clock - 3 * 86_400_000), await character.linked(clock - 2 * 86_400_000)];
+      expect(await hub.checkReceipts(token, character.uid, first)).toMatchObject({ ok: true, held: 2 });
+      expect(await hub.checkReceipts(token, character.uid, [first[1], await character.linked(clock - 60_000)])).toMatchObject({ ok: true, held: 3 });
+    });
+
+    it('a row from a day the hub has not reached is refused, and nothing in its batch is held', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const today = await character.linked(clock - 60_000);
+      const tomorrow = await character.linked(clock + 86_400_000);
+      const out = await hub.checkReceipts(token, character.uid, [today, tomorrow]);
+      expect(out).toMatchObject({ ok: false, status: 400 });
+      expect(out.reason).toMatch(/day/);
+      expect(await hub.record(token, character.uid)).toMatchObject({ ok: true, held: 0 });
+    });
+
+    it('a row whose moment does not match its own time is refused', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const ts = clock - 86_400_000;
+      const lying = await character.sign({ seq: 1, prevSeq: 0, ts, type: 'GOLD_DELTA', data: {}, v: ROW_VERSION, prev: null, clock: { ...addressOf(clock - 9 * 86_400_000), by: 'machine' } }, ts);
+      expect(await hub.checkReceipts(token, character.uid, [lying])).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it('a row that names another row before it than the one the hub holds is a challenge: the history under the head was written over', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const one = await character.linked(clock - 5 * 60_000);
+      await hub.checkReceipts(token, character.uid, [one]);
+      const strayTwo = await character.sign({ seq: 2, prevSeq: 1, ts: clock - 60_000, type: 'GOLD_DELTA', data: {}, v: ROW_VERSION, prev: await linkOf('another row one'), clock: { ...addressOf(clock - 60_000), by: 'machine' } }, clock - 60_000);
+      expect(await hub.checkReceipts(token, character.uid, [strayTwo])).toMatchObject({ ok: false, status: 409, standing: 'CHALLENGED', challenge: { seq: 2 } });
+      expect(await hub.record(token, character.uid)).toMatchObject({ held: 1, standing: 'CHALLENGED' });
+    });
+  });
+
   describe('over HTTP', () => {
     let server: Server | undefined;
     let landing: string | undefined;
@@ -284,6 +340,9 @@ describe('the hub', () => {
       const base = await listen();
       const health = await (await fetch(`${base}/api/hub/health`)).json();
       expect(health).toMatchObject({ ok: true, service: 'worldseed-hub', hub: { id: key.id, publicKeyPem: key.publicKeyPem } });
+      const time = await (await fetch(`${base}/api/hub/clock`)).json();
+      expect(time.ok).toBe(true);
+      expect(verifyStatement(key.publicKeyPem, time.statement.text, time.statement.signature)).toBe(true);
     });
 
     it('a POST that is not JSON is refused, and a signed-in route without a token is 401', async () => {

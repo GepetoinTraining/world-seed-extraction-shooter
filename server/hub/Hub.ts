@@ -16,8 +16,11 @@
  * nothing from that batch is held, and the character's standing on this hub says CHALLENGED. How much
  * a challenge costs a character, and what a challenge asks, are not settled; nothing here decides them.
  *
- * TIME. What the hub signs carries its own clock, the server's and never the browser's. The
- * radix-chain address (D135) is not built.
+ * TIME (D135). What the hub signs carries its own clock, the server's and never the browser's, and
+ * it states that clock as the radix-chain address (`clock()`), which a runner follows. A receipt in
+ * the newer form must name its own moment, never a day earlier than the row under it nor a day this
+ * hub has not reached, and must link to the row this hub holds under it: a row that links to a
+ * different one says the history under the head was written over, which is a challenge.
  */
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import type { SqlStore } from '../SqlStore';
@@ -25,6 +28,8 @@ import { StoreConflict } from '../SqlStore';
 import type { CommitOp, IWireDoc } from '../../src/entities/data/wire';
 import { signedText } from '../../src/entities/identity/signedText';
 import { IHubKey, ISignedStatement, statementOf } from './keys';
+import { addressOf, dayIndexOf } from '../../src/logic/time/RadixClock';
+import { chainProblem, type IChainStart } from '../../src/logic/ledger/chainLaw';
 
 export interface IHubOptions {
   /** Its own address, named in what it signs. */
@@ -39,7 +44,7 @@ export type Answer<T> = ({ ok: true; reason?: undefined } & T) | IRefusal;
 export interface IAccount { key: string; handle: string }
 
 export interface ISignedRow {
-  payload: { seq: number; prevSeq: number; ts: number; type: string; data: unknown };
+  payload: { seq: number; prevSeq: number; ts: number; type: string; data: unknown; v?: number; prev?: string | null; clock?: any };
   signature: string;
   certUid: string;
   timestamp: number;
@@ -93,6 +98,12 @@ export class Hub {
   }
 
   get id(): string { return this.key.id; }
+
+  /** This hub's time, as the clock's address, signed: what a runner sets the game's clock by. */
+  clock(): ISignedStatement {
+    const at = this.now();
+    return statementOf(this.key, { kind: 'worldseed-hub-clock', hub: this.id, issuer: this.publicUrl, at, day: dayIndexOf(at), address: addressOf(at) });
+  }
   get publicUrl(): string { return this.options.publicUrl; }
 
   private doc(id: string, data: Record<string, unknown>, createdAt = this.now(), namespace = NS): IWireDoc {
@@ -334,6 +345,22 @@ export class Hub {
       if (fresh[i].row.payload.seq !== held + 1 + i) {
         return refuse(409, `This hub holds this character to seq ${held}. Send from seq ${held + 1}, in order.`, { held });
       }
+    }
+
+    // Time: nothing from a day this hub has not reached, each moment its own, each row on the one under it
+    const today = dayIndexOf(this.now());
+    for (const { row } of fresh) {
+      if (dayIndexOf(row.payload.ts) > today) return refuse(400, `Row ${row.payload.seq} is dated a day this hub has not reached. Nothing in this batch was held.`);
+    }
+    if (fresh.length > 0) {
+      const underText = held > 0 ? (await this.store.get(rowId(own.uid, held)))?.dataText : undefined;
+      const under = underText ? JSON.parse(underText) : null;
+      const before: IChainStart | null = under ? { seq: held, signature: under.signature, ts: under.payload.ts, v: under.payload.v } : null;
+      const problem = chainProblem(fresh.map(f => f.row), before);
+      if (problem?.kind === 'link' && before && problem.seq === held + 1) {
+        return this.challenge(own.uid, character, problem.seq, underText!, fresh[0].text, held);
+      }
+      if (problem) return refuse(400, `${problem.why} Nothing in this batch was held.`);
     }
 
     if (fresh.length > 0) {

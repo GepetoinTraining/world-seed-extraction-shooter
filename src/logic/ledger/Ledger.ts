@@ -12,6 +12,8 @@ import { CertificateSystem, ISignedPayload } from '../../entities/identity/certi
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
 import { StoreUnit } from '../../entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
+import { GameClock, IClockStamp } from '../time/GameClock';
+import { chainProblem, linkOf, ROW_VERSION } from './chainLaw';
 
 export type LedgerRowType =
   | 'CHARACTER_GENESIS' // identity minted a character
@@ -33,9 +35,16 @@ export type LedgerRowType =
 export interface ILedgerRow {
   seq: number;
   prevSeq: number;
+  /** From the game's clock, not the browser's (D135). */
   ts: number;
   type: LedgerRowType;
   data: Record<string, any>;
+  /** The form: 2 carries `prev` and `clock`. Older rows have none of the three. */
+  v?: number;
+  /** SHA-256 of the previous row's signature (chainLaw.ts); null on the first row. */
+  prev?: string | null;
+  /** The moment's radix-chain address, and whose clock read it. */
+  clock?: IClockStamp;
 }
 
 export class Ledger {
@@ -76,7 +85,15 @@ export class Ledger {
     const prevSeq = Math.max(head?.data?.seq ?? 0, unit.seqOf(uid));
     const seq = prevSeq + 1;
 
-    const row: ILedgerRow = { seq, prevSeq, ts: Date.now(), type, data };
+    // The row before, by its signature: in this unit if it was written here, else in the store
+    let before = unit.signatureOf(uid);
+    if (!before && prevSeq > 0) {
+      const held = await VectorStore.get<ISignedPayload<ILedgerRow>>(VectorNamespace.TRANSACTIONS, this.rowId(uid, prevSeq));
+      before = held?.data?.signature;
+      if (!before) throw new Error(`Ledger ${uid} has no row ${prevSeq} to link row ${seq} to.`);
+    }
+    const ts = GameClock.now();
+    const row: ILedgerRow = { seq, prevSeq, ts, type, data, v: ROW_VERSION, prev: before ? linkOf(before) : null, clock: GameClock.stamp(ts) };
     const signed = await CertificateSystem.signPayload(uid, row);
 
     await VectorStore.put({
@@ -100,6 +117,7 @@ export class Ledger {
     }, false, { unit });
 
     unit.noteSeq(uid, seq);
+    unit.noteSignature(uid, signed.signature);
     return seq;
   }
 
@@ -135,6 +153,9 @@ export class Ledger {
       }
       expected++;
     }
+    // Each row on the one before it, and each moment its own (D135)
+    const problem = chainProblem(rows);
+    if (problem) return { ok: false, rows: rows.length, firstBadSeq: problem.seq };
     return { ok: true, rows: rows.length };
   }
 }

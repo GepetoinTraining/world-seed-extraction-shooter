@@ -5,6 +5,10 @@ import { MantineProvider } from '@mantine/core';
 import App from './App';
 import { VaultGate } from './src/components/VaultGate';
 import { theme } from './src/theme';
+import { GameClock } from './src/logic/time/GameClock';
+
+// The game's time comes from its own server, and through it from its hub (D135)
+void GameClock.keepInStep();
 
 // 1. Core Mantine Styles
 import '@mantine/core/styles.css';

@@ -55,6 +55,7 @@ export function createHubHandler(hub: Hub) {
 
       if (req.method === 'GET') {
         if (path === '/health') return send(res, 200, { ok: true, service: 'worldseed-hub', hub: { id: hub.id, publicKeyPem: hub.key.publicKeyPem, url: hub.publicUrl }, time: Date.now() });
+        if (path === '/clock') return send(res, 200, { ok: true, statement: hub.clock() });
         if (path === '/session') {
           const account = await hub.session(token);
           return account ? send(res, 200, { ok: true, account: { handle: account.handle } }) : send(res, 401, { ok: false, status: 401, reason: 'Sign in first.' });

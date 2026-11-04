@@ -12,6 +12,7 @@ This file is the split, written before it was built. The domain is configuration
 - holds the person's live store (Postgres on a folder, `data/…`), which is where their play is kept;
 - holds the door to the model: Gemma or any other model through Ollama on the same machine, or a key the person inserts, kept in the runner's memory and nowhere else;
 - holds the bridge to a hub (`/api/hub/…`), forwarding to the address in `WS_HUB_URL`. The hub's session token stays in the runner's memory, so the browser never holds it;
+- tells the browser what time the game is (`/api/clock`): the hub's, read from its signed clock and counted forward on a steady counter the machine's clock does not move, or with no hub, this machine's own;
 - answers this machine only, as every door here has since D31.
 
 **The hub, deployed.** `npm run hub` starts `server/hub/main.ts`. It:
@@ -23,6 +24,14 @@ This file is the split, written before it was built. The domain is configuration
 - keeps its own store on Postgres (a `postgres://` URL when served) and its record on Turso through the same keeper the game uses (`WS_RECORD=1`).
 
 It does **not** run anyone's play, hold anyone's game store, hold a door to a model, or hold a model key. Nothing it serves reaches `/api/db` or `/api/intelligence`.
+
+## Time (D135)
+
+The game's time is Pedro's radix-chain clock (`lettersacrosssubstrate.dev/en/clock`). A moment's address is the day index N, counted from machine zero (JDN 2451911, a Monday in 2001), as its residues mod 2⁶, 3³, 5², 7², 11², 13², with the day's inner count beside it (3 blocks × 8 hours, 3 segments × 20 minutes, 10 turns × 6 seconds). The arithmetic is `src/logic/time/RadixClock.ts`, integer only. The game's own day number stays the Unix day (N + 11,323), so nothing stored as a day moves.
+
+Every day the game reads comes from `GameClock` (`src/logic/time/GameClock.ts`), which takes its time from the runner and counts on the browser's steady counter between readings. Moving the computer's clock no longer moves the game's day. With no server read yet, as in the tests, it reads the browser's clock, as before.
+
+Every ledger row now carries, inside what is signed: `v: 2`, `prev` (the SHA-256 of the row before's signature) and `clock` (the moment's address, and whose clock read it: the hub's id, `machine` or `browser`). One law checks it on every side (`src/logic/ledger/chainLaw.ts`): each row links to the one before, its address names its own time, and no day runs backward. Older rows stand as they were, and once a chain has a newer row every later row is newer. The hub adds two checks of its own: nothing from a day it has not reached, and a row whose link names a different row than the one the hub holds under it is a challenge. Because each row links to the whole history under it, the hub's head now certifies all of it, which closes D135's measured gap where a drop below a checkpoint went uncaught.
 
 ## Why the runner serves the game, and not the hub
 
@@ -39,6 +48,7 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 | Route | Who | What |
 |---|---|---|
 | `GET /health` | anyone | `service: worldseed-hub`, the hub's id, its public key, its time |
+| `GET /clock` | anyone | the hub's time as the clock's address, signed |
 | `POST /accounts` | anyone | `{ handle, password }`: a new account |
 | `POST /sessions` | anyone | `{ handle, password }`: signs in, answers a token |
 | `GET /session` | signed in | who this is |
@@ -78,7 +88,8 @@ Open `http://127.0.0.1:3950` for the landing page and make an account. Open `htt
 ## Not built, on purpose
 
 - Rerunning a character's arithmetic on the hub, so a challenge can come from numbers that do not fit and not only from a rewritten row (D134). It waits on integer-only reruns.
-- The radix-chain clock's address in the signed text (D135). The hub's time today is its own `Date.now()`, the server's and not the browser's.
+- Timers inside a day: rests, crafting jobs and the like still count milliseconds on `Date.now()` in the browser. They move to `GameClock.now()` in their own pass.
+- A hub that refuses a row signed while the game followed only its own machine. Today such a row is accepted if it is not from the future and fits the chain.
 - Goods carried between hubs (the bag and the threading).
 - Charging for model use, the market and its currency.
 - A runner a person can start without Node and a copy of this repository.

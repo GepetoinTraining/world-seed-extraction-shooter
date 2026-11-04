@@ -3,6 +3,7 @@
  * REFACTORED: Removes mock data, loads from Vector/DB State
  */
 
+import { GameClock } from '../../logic/time/GameClock';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { create } from 'zustand';
 import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStation, ItemType, Rarity, UniversalRank } from '../../../types';
@@ -225,7 +226,8 @@ export const craftName = (recipeId: string): string =>
   (RECIPE_DEFINITIONS[recipeId] ?? GEAR_RECIPES[recipeId] ?? WebBank.recipe(recipeId))?.name ?? recipeId;
 
 /** Logical world-day (observed time, never stored clocks). */
-export const worldDay = () => Math.floor(Date.now() / 86_400_000);
+/** The game's day (D135): the Unix day, read from the game's clock and not the browser's. */
+export const worldDay = () => GameClock.day();
 
 /** The one thing anyone can ask to have raised that is not a station on the web. */
 const BUILDING_HOUSE = 'house';
@@ -844,7 +846,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     await get().settleWallets();
     const { activeHubId, craftsmen, web, guild } = get();
     if (!activeHubId) return;
-    const today = simDay ?? Math.floor(Date.now() / 86_400_000);
+    const today = simDay ?? worldDay();
     const vendors = vendorsToday(get().vendors, craftsmen, today);
     const keepers = generalKeepers();
     const out: ICraftsman[] = [];
@@ -941,7 +943,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const resident = guild.residents.find(r => r.id === residentId);
     if (!resident) return { ok: false, reason: 'Nobody by that name is lodged at the tavern.' };
     if (resident.lotId) return { ok: false, reason: `${resident.name} has ground of their own to look to.` };
-    const today = Math.floor(Date.now() / 86_400_000);
+    const today = worldDay();
     const keeper = NpcSheet.read(activeHubId, { id: npcId, rank: teaches.rank }, undefined);
     const begun = ApprenticeRoad.begin(bondItemOf(resident), {
       id: npcId, room: ApprenticeRoad.roomFor(keeper.stats!),
@@ -969,7 +971,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   traderShelf: (traderId) => {
     const record = get().vendors[traderId];
     if (!record) return [];
-    return VendorSystem.shelf(VendorSystem.normal(record), [], Math.floor(Date.now() / 86_400_000), 0, usePlayerStore.getState().player.id);
+    return VendorSystem.shelf(VendorSystem.normal(record), [], worldDay(), 0, usePlayerStore.getState().player.id);
   },
 
   buyFromTrader: async (traderId, listingId) => {
@@ -979,7 +981,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const player = usePlayerStore.getState().player;
     const price = priceOfListing(row, player.attributes);
     if (player.bank.gold < price) return null;
-    const today = Math.floor(Date.now() / 86_400_000);
+    const today = worldDay();
     const taken = VendorSystem.takeOwn(VendorSystem.normal(vendors[traderId]), row.item.id);
     const boughtItem = row.deal ? { ...row.item, binPrice: price } : row.item;
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - price, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
@@ -2336,7 +2338,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
     // What the counter bought is in its container now. Whether it ever goes on sale is the vendor's call.
-    const today = Math.floor(Date.now() / 86_400_000);
+    const today = worldDay();
     const all = vendorsToday(get().vendors, get().craftsmen, today);
     set({ vendors: { ...all, [npcId]: VendorSystem.receive(all[npcId], item, today, offer) } });
     await get().saveHubState();
@@ -2566,7 +2568,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     // the same for every client of this hub, and rolls over when the week closes. What each
     // line then holds is the vendor's: what sold, and a new attempt (VendorSystem.shelf).
     const hubId = get().activeHubId || 'hub_unknown';
-    const dayIndex = Math.floor(Date.now() / 86_400_000);
+    const dayIndex = worldDay();
     const week = get().guild.week ?? ShopWeek.weekOf(dayIndex);
 
     // Wave 10C fix: `batch` keeps listing ids unique when the same type+rank
@@ -2698,7 +2700,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     // the bank's registry (D18): the shelf shows the pattern; every unit stands
     // on its own rung, the display item keeping the first claim.
     const npcId = SHOP_VENDOR[shop];
-    const today = Math.floor(Date.now() / 86_400_000);
+    const today = worldDay();
     const seller = vendorsToday(state.vendors, state.craftsmen, today)[npcId];
     const soldToday = seller.sold.lines[listingId] ?? 0;
     // Keyed by the day and what has gone from this line, so no two units ever share an id

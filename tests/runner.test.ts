@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHubBridge, createRunnerListener, hubUrlProblem } from '../server/runner';
 import { createIntelligenceHandler, openDoor } from '../server/intelligence';
+import { createClockDoor } from '../server/clock';
 
 const open: Server[] = [];
 const folders: string[] = [];
@@ -55,7 +56,7 @@ describe('the runner', () => {
     const seen: any[] = [];
     const ollama = await ollamaStub(['gemma3:4b'], seen);
     const door = openDoor({ WS_LLM_PROVIDER: 'local', WS_LOCAL_URL: ollama, WS_LOCAL_MODEL: 'gemma3:4b' });
-    const base = await listen(createRunnerListener({ db: nothing, intelligence: createIntelligenceHandler(door), hub: createHubBridge({}), noStatic: true }));
+    const base = await listen(createRunnerListener({ clock: nothing, db: nothing, intelligence: createIntelligenceHandler(door), hub: createHubBridge({}), noStatic: true }));
 
     expect(await (await fetch(`${base}/api/intelligence/status`)).json()).toMatchObject({ available: true, provider: 'local', model: 'ollama:gemma3:4b', mode: 'local' });
 
@@ -70,7 +71,7 @@ describe('the runner', () => {
   it('the check on this machine is read through the same address', async () => {
     const ollama = await ollamaStub(['gemma3:4b'], []);
     const door = openDoor({ WS_LLM_PROVIDER: 'local', WS_LOCAL_URL: ollama, WS_LOCAL_MODEL: 'gemma3:4b' });
-    const base = await listen(createRunnerListener({ db: nothing, intelligence: createIntelligenceHandler(door), hub: createHubBridge({}), noStatic: true }));
+    const base = await listen(createRunnerListener({ clock: nothing, db: nothing, intelligence: createIntelligenceHandler(door), hub: createHubBridge({}), noStatic: true }));
     const reading = await (await fetch(`${base}/api/intelligence/machine`)).json();
     expect(reading.served.map((m: { name: string }) => m.name)).toContain('gemma3:4b');
     expect(['READY', 'CAN_RUN', 'NEEDS_KEY']).toContain(reading.verdict);
@@ -81,14 +82,36 @@ describe('the runner', () => {
     folders.push(dist);
     writeFileSync(join(dist, 'index.html'), '<!DOCTYPE html><title>World Seed</title><div id="root"></div>');
     writeFileSync(join(dist, 'app.js'), 'console.log(1)');
-    const base = await listen(createRunnerListener({ db: nothing, intelligence: nothing, hub: createHubBridge({}), dist }));
+    const base = await listen(createRunnerListener({ clock: nothing, db: nothing, intelligence: nothing, hub: createHubBridge({}), dist }));
     expect(await (await fetch(`${base}/`)).text()).toContain('id="root"');
     expect((await fetch(`${base}/app.js`)).headers.get('content-type')).toMatch(/javascript/);
     expect(await (await fetch(`${base}/somewhere/else`)).text()).toContain('id="root"');
   });
 
+  it('the clock is the hub\'s when there is one, followed by this machine\'s steady count, and this machine\'s when there is none', async () => {
+    let mono = 1_000;
+    const hubAt = 1_900_000_000_000;
+    const hubUrl = await listen((req, res) => {
+      if (req.url !== '/api/hub/clock') { res.statusCode = 404; return res.end(); }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ok: true, statement: { text: JSON.stringify({ kind: 'worldseed-hub-clock', hub: 'hub_stub', at: hubAt }), signature: 'x' } }));
+    });
+    const withHub = await listen(createRunnerListener({ clock: createClockDoor({ hubUrl, monotonic: () => mono }), db: nothing, intelligence: nothing, hub: nothing, noStatic: true }));
+    expect(await (await fetch(`${withHub}/api/clock`)).json()).toMatchObject({ ok: true, now: hubAt, source: 'hub', hub: 'hub_stub' });
+    mono += 2_500;
+    expect(await (await fetch(`${withHub}/api/clock`)).json()).toMatchObject({ ok: true, now: hubAt + 2_500, source: 'hub' });
+
+    const alone = await listen(createRunnerListener({ clock: createClockDoor({}), db: nothing, intelligence: nothing, hub: nothing, noStatic: true }));
+    const said = await (await fetch(`${alone}/api/clock`)).json();
+    expect(said).toMatchObject({ ok: true, source: 'machine' });
+    expect(Math.abs(said.now - Date.now())).toBeLessThan(5_000);
+
+    const gone = await listen(createRunnerListener({ clock: createClockDoor({ hubUrl: 'http://127.0.0.1:1' }), db: nothing, intelligence: nothing, hub: nothing, noStatic: true }));
+    expect(await (await fetch(`${gone}/api/clock`)).json()).toMatchObject({ ok: true, source: 'machine' });
+  });
+
   it('with no hub set, the bridge says so, and the game plays on alone', async () => {
-    const base = await listen(createRunnerListener({ db: nothing, intelligence: nothing, hub: createHubBridge({}), noStatic: true }));
+    const base = await listen(createRunnerListener({ clock: nothing, db: nothing, intelligence: nothing, hub: createHubBridge({}), noStatic: true }));
     expect(await (await fetch(`${base}/api/hub/where`)).json()).toMatchObject({ configured: false, signedIn: null });
     const res = await fetch(`${base}/api/hub/sessions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     expect(await res.json()).toMatchObject({ ok: false, status: 'NO_HUB' });

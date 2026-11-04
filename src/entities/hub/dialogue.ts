@@ -11,6 +11,7 @@
  *   close     — the conversation ends
  */
 
+import { GameClock } from '../../logic/time/GameClock';
 import { IItem, ItemType, Rarity, UniversalRank } from '../../../types';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
@@ -101,7 +102,7 @@ export const allLore = (): string[] => [...LORE_FRAGMENTS, ...ContentRegistry.li
 /** The day's rumor: deterministic per hub and day, so the whole bar hears the same one. */
 export function rumorOfTheDay(): string {
   const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
-  const day = Math.floor(Date.now() / 86_400_000);
+  const day = GameClock.day();
   const rng = Rng.fromKey(`${hubId}:rumor:${day}`);
   const lore = allLore();
   return lore.length > 0 ? lore[rng.int(0, lore.length)] : 'Nobody is saying anything today.';
