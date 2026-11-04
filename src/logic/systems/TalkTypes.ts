@@ -70,6 +70,8 @@ export interface IRoundAsk {
   meter: number;
   /** A person in a city: the goal set before this answer. */
   goal?: string;
+  /** Q48: where the one speaking stands, so nobody is told to come to the counter they stand at. */
+  where?: string;
   /** A monster: where it stands now, and whether what it wants may be said. */
   stance?: string;
   mayTellWant?: boolean;

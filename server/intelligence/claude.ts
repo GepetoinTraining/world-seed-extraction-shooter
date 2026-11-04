@@ -76,7 +76,8 @@ export class ClaudeProvider implements IIntelligenceProvider {
       await this.client.models.retrieve(MODEL_FOR.rest);
       return { available: true, provider: this.name, model: MODEL_FOR.rest };
     } catch (e) {
-      return { available: false, provider: this.name, reason: this.failure(e).reason };
+      const failure = this.failure(e);
+      return { available: false, provider: this.name, reason: failure.reason, outcome: failure.status };
     }
   }
 

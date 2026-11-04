@@ -1,17 +1,22 @@
 /**
- * Which provider stands behind the door on this server. `WS_LLM_PROVIDER=none`
- * turns intelligence off; every door still answers, and the game goes on.
+ * Which provider stands behind the door on this server. `WS_LLM_PROVIDER=none` turns intelligence
+ * off; every door still answers, and the game goes on. `WS_LLM_PROVIDER=local` asks for the local
+ * mode outright. Otherwise Claude answers while there is a key, and with none, a model on this
+ * machine does (Pedro, Q24: "local model"). `WS_LOCAL_URL` and `WS_LOCAL_MODEL` say which.
  */
 import { resolve } from 'node:path';
 import { AbsentProvider, IntelligenceDoor, type IIntelligenceProvider } from './door';
 import { ClaudeProvider } from './claude';
+import { KeyOrLocalProvider, LocalProvider, localRuntimeFrom } from './local';
 
 export function chooseProvider(env: NodeJS.ProcessEnv = process.env): IIntelligenceProvider {
   if (env.WS_LLM_PROVIDER === 'none') return new AbsentProvider('Intelligence is turned off on this server.');
+  const local = new LocalProvider(localRuntimeFrom(env));
+  if (env.WS_LLM_PROVIDER === 'local') return local;
   try {
-    return new ClaudeProvider();
-  } catch (e) {
-    return new AbsentProvider(e instanceof Error ? e.message : 'The provider did not start.');
+    return new KeyOrLocalProvider(new ClaudeProvider(), local);
+  } catch {
+    return local;
   }
 }
 

@@ -465,13 +465,42 @@ export class WebSystem {
 
   /** Clause 6: the word attaches to the id. An unnamed pair reads as what it is. */
   static nameOf(id: string, pack: IWebPack = current()): string {
+    return this.bankNameOf(id, pack) ?? this.tagListNameOf(id, pack);
+  }
+
+  /** The name the bank holds for this skill, if anyone has named it. */
+  static bankNameOf(id: string, pack: IWebPack = current()): string | undefined {
     const tags = TagLaw.parseSkillId(id);
-    if (!tags) return id.replace(/^skill_/, '').replace(/_/g, ' ');
-    const named = [...pack.names].reverse().find(n => {
+    if (!tags) return undefined;
+    return [...pack.names].reverse().find(n => {
       const set = TagLaw.canonical(n.tags);
       return set.length === tags.length && set.every((t, i) => t === tags[i]);
-    });
-    if (named) return named.name;
+    })?.name;
+  }
+
+  /** The skill's tags, as words. */
+  static tagWordsOf(id: string): string[] {
+    return words(TagLaw.parseSkillId(id) ?? []);
+  }
+
+  /**
+   * Q47: is this name only the skill's tag list, in any order, case or joining? The composed
+   * stand-in ("Blunt on mineral, stone") counts as the tag list too. The bank's own name never does.
+   */
+  static isTagListName(id: string, name: string, pack: IWebPack = current()): boolean {
+    if (this.bankNameOf(id, pack)?.trim().toLowerCase() === name.trim().toLowerCase()) return false;
+    // The joins the composed name and a list use: only the words between them count
+    const wordsIn = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w && w !== 'on' && w !== 'and');
+    const said = new Set(wordsIn(name));
+    if (said.size === 0) return false;
+    const same = (other: Set<string>) => other.size === said.size && [...other].every(w => said.has(w));
+    return same(new Set(wordsIn(this.tagWordsOf(id).join(' ')))) || same(new Set(wordsIn(this.tagListNameOf(id, pack))));
+  }
+
+  /** What a skill nobody has named reads as: its tags, joined. */
+  private static tagListNameOf(id: string, pack: IWebPack): string {
+    const tags = TagLaw.parseSkillId(id);
+    if (!tags) return id.replace(/^skill_/, '').replace(/_/g, ' ');
     const working = tags.filter(t => WebBank.hasKind(pack, t, ['tool', 'trade', 'action']));
     const worked = this.materialIdentity(tags, pack);
     if (working.length > 0 && worked.length > 0) return `${words(working).map(title).join(', ')} on ${words(worked).join(', ')}`;

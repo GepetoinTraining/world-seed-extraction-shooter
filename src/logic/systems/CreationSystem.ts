@@ -67,7 +67,8 @@ export interface ICreationAsk {
   said: { asked: string; answered: string }[];
   alsoSaid: string;
   count: number;
-  candidates: { id: string; name: string; tags: string[] }[];
+  /** `name` is the bank's, and absent when nobody has named the skill yet (Q47). */
+  candidates: { id: string; name?: string; tags: string[] }[];
 }
 
 /** What Kami chooses from. Only the bank's kits and the web's skills: he sets a class, he does not mint things. */
@@ -75,7 +76,8 @@ export interface IKamiAsk {
   attributes: string[];
   kits: { id: string; says: string; line: string; carries: string[] }[];
   count: number;
-  candidates: { id: string; name: string; tags: string[] }[];
+  /** `name` is the bank's, and absent when nobody has named the skill yet (Q47). */
+  candidates: { id: string; name?: string; tags: string[] }[];
 }
 
 /** What he sets up. */
@@ -232,6 +234,15 @@ export class CreationSystem {
     return keyedShuffle(all, key).sort((a, b) => score(b) - score(a));
   }
 
+  /**
+   * Q47: the floor has no voice to name a skill, and a tag list is no name, so it grants what the
+   * bank has named first, in the order the leans gave. Only a bank with no names at all falls back.
+   */
+  private static namedFirst<T extends { id: string }>(list: T[]): T[] {
+    const named = list.filter(c => WebSystem.bankNameOf(c.id));
+    return [...named, ...list.filter(c => !WebSystem.bankNameOf(c.id))];
+  }
+
   private static answerLeans(draft: Pick<ICreationDraftChoices, 'answers'>): string[] {
     return OriginBank.questions().flatMap(q => {
       const picked = q.answers.find(a => a.id === draft.answers[q.id]);
@@ -253,7 +264,8 @@ export class CreationSystem {
       }),
       alsoSaid: draft.said.trim(),
       count: GRANTED_SKILLS,
-      candidates: ask.map(c => ({ id: c.id, name: WebSystem.nameOf(c.id), tags: c.tags }))
+      // Q47: a skill nobody has named goes nameless, for the model to name
+      candidates: ask.map(c => ({ id: c.id, name: WebSystem.bankNameOf(c.id), tags: c.tags }))
     };
   }
 
@@ -266,7 +278,7 @@ export class CreationSystem {
     const key = `creation:floor:${draft.originId}:${answersKey(draft)}`;
     const picked: string[] = [];
     const take = (leans: readonly string[], part: string) => {
-      const best = this.ranked(leans, `${key}:${part}`, picked)[0];
+      const best = this.namedFirst(this.ranked(leans, `${key}:${part}`, picked))[0];
       if (best) picked.push(best.id);
     };
     take(origin?.leans.main ?? [], 'main');
@@ -301,6 +313,8 @@ export class CreationSystem {
       if (seen.has(s.id)) return no(`${s.id} came back twice.`);
       seen.add(s.id);
       if (!s.name?.trim()) return no(`${s.id} came back with no name.`);
+      // Q47: a name is the model's to write. Its tag list is not a name.
+      if (WebSystem.isTagListName(s.id, s.name)) return no(`${s.id} came back named by its tag list, "${s.name}".`);
       if (HIDDEN.test(s.name) || HIDDEN.test(s.flavor ?? '')) return no(`${s.id} says what stays unsaid.`);
       const stray = (s.grants ?? []).find(g => !(SKILL_GRANTS as readonly string[]).includes(g));
       if (stray) return no(`${s.id} grants "${stray}", and the game has no such thing.`);
@@ -317,7 +331,7 @@ export class CreationSystem {
       attributes: ALL_ATTRIBUTES.map(String),
       kits: OriginBank.kits().map(k => ({ id: k.id, says: k.says, line: k.line, carries: this.kitPreview(k.id).map(p => p.name) })),
       count: GRANTED_SKILLS,
-      candidates: WebBank.connections(WebBank.current()).map(c => ({ id: c.skillId, name: WebSystem.nameOf(c.skillId), tags: TagLaw.parseSkillId(c.skillId) ?? [] }))
+      candidates: WebBank.connections(WebBank.current()).map(c => ({ id: c.skillId, name: WebSystem.bankNameOf(c.skillId), tags: TagLaw.parseSkillId(c.skillId) ?? [] }))
     };
   }
 
@@ -346,7 +360,7 @@ export class CreationSystem {
       line: lines.length > 0 ? rng.pick(lines) : 'The bank honors it.',
       main, sub,
       kit: keyedShuffle(OriginBank.kits().map(k => k.id), `${key}:kit`)[0],
-      skills: this.ranked([], `${key}:skills`).slice(0, GRANTED_SKILLS).map(c => ({
+      skills: this.namedFirst(this.ranked([], `${key}:skills`)).slice(0, GRANTED_SKILLS).map(c => ({
         id: c.id, name: WebSystem.nameOf(c.id), flavor: flavors.length > 0 ? rng.pick(flavors) : '', grants: []
       }))
     };

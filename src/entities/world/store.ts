@@ -4,7 +4,7 @@ import { UniversalRank } from '../../../types';
 import { WorldCertificateSystem } from './WorldCertificate';
 import { WorldGenerationService } from './services/WorldGenerationService';
 import { IGenerationContext, WorldGenerator } from './WorldGenerator';
-import { GRID_VERSION, chunkOf } from './grid';
+import { chunkOf } from './grid';
 import { DreamingSystem } from './Dreaming';
 import { AffixBank } from '../../logic/content/AffixBank';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
@@ -39,14 +39,15 @@ export interface IWorldCard extends IClockedWorld {
   deathPenalty: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH';
   ipCap?: UniversalRank;
   ipFloor?: UniversalRank;
-  // Built on an older grid: its record stands, but it cannot be walked any more
-  retired?: boolean;
   // Wave 10E (D20): the content-pack version pinned at mint. Absent = minted
   // before the banks; the world keeps the purged legacy pool, forever.
   packVersion?: number;
   // D27: the web this world's people are read through. Absent = the first version.
   webVersion?: number;
-  /** D53: the theme it is made of. No theme, while themes exist, means it stood on the old tables: retired. */
+  /**
+   * D53: the theme it reads. Pedro (Q43): a world never retires, so a world minted before themes,
+   * or pinned to one this hub does not hold, reads the hub's own theme (`ContentRegistry.standing`).
+   */
   themeId?: string;
   magicUnlocked?: boolean;
   /** Who minted it, whole, and the deed they spent. A toll's gold reads these (`Toll.ownerOf`). */
@@ -253,12 +254,10 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           deathPenalty: cert.data.rules.deathPenalty ?? 'INVENTORY_LOSS',
           ipCap: cert.data.rules.ipCap,
           ipFloor: cert.data.rules.ipFloor,
-          // D54: a world on the retired tables keeps its record and can no longer be walked
-          retired: (cert.data.gridVersion ?? 1) < GRID_VERSION
-            || (ContentRegistry.list().length > 0 && !ContentRegistry.get(cert.data.rules.themeId)),
           packVersion: cert.data.rules.contentPackVersion,
           webVersion: cert.data.rules.webVersion,
-          themeId: cert.data.rules.themeId,
+          // Q43: a world never retires. An older grid is walked on this one, and a theme it cannot read here gives way to the hub's own.
+          themeId: ContentRegistry.standing(cert.data.rules.themeId),
           magicUnlocked: cert.data.rules.magicUnlocked
       }));
 

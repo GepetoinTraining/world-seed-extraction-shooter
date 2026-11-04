@@ -229,6 +229,6 @@ export function runDialogueAction(action: string, payload?: any): DialogueEffect
 /** Quick deploy target: the standing simulation, else the first walkable world. */
 export function quickDeployTargetId(): string | null {
   const now = Date.now();
-  const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.retired && WorldClock.momentAt(w, now).canDeploy);
+  const worlds = useWorldStore.getState().availableWorlds.filter(w => WorldClock.momentAt(w, now).canDeploy);
   return (worlds.find(w => w.isDebug) ?? worlds[0])?.id ?? null;
 }

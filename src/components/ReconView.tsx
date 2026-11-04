@@ -406,7 +406,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
               return (
                 <React.Fragment key={holding.seat}>
                   <div className="ws-row"><span className="ws-dim">HELD GROUND</span><span>{holding.named ?? 'UNKNOWN HOLDING'}</span></div>
-                  <div className="ws-row"><span>Chunks · anchors</span><span>{holding.chunks.length} · {holding.anchors}</span></div>
+                  <div className="ws-row"><span>Chunks · anchors in its ward</span><span>{holding.chunks.length} · {holding.anchors}</span></div>
                   <div className="ws-row ws-dim"><span>{old === 0 ? 'Read this regeneration' : `Read ${old} regeneration(s) ago`}</span><span>{old > 0 ? 'STALE' : 'FRESH'}</span></div>
                   {old > 0 && <div className="ws-dim ws-small">It has had time to grow. Its border may be anywhere past this.</div>}
                 </React.Fragment>

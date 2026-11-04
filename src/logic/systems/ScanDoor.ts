@@ -61,7 +61,7 @@ export const ScanDoor = {
     if (ticking) return;
     ticking = true;
     try {
-      const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.isDebug && !w.retired);
+      const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.isDebug);
       for (const card of worlds) {
         await ScanDoor.defineOnce(card);
         const moment = WorldClock.momentAt(card, now);

@@ -181,6 +181,9 @@ function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; fac
 
 const addUsage = (spent: number, usage?: IDoorUsage) => spent + (usage?.usd ?? 0);
 
+/** Q48: a keeper is talked to across their own counter. */
+const AT_THE_COUNTER = 'at their counter, face to face';
+
 /** A person as a model reads them. A keeper of the center speaks for the hub's whole web, read fresh each time. */
 function citySurface(person: NonNullable<ReturnType<typeof cityPerson>>): ITalkSurface {
   const surface = NpcSheet.surface(person.sheet, person.rank);
@@ -356,7 +359,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const roll = TalkLaw.rollOf(rollKey);
       const required = TalkLaw.required(person.sheet.want, attrs, person.rank, person.sheet.stats);
       const who = citySurface(person);
-      const ask: IRoundAsk = { who, log: prior, said, roll, required, bonuses: TalkLaw.bonuses(), meter: get().meter, goal: get().goal?.text };
+      const ask: IRoundAsk = { who, log: prior, said, roll, required, bonuses: TalkLaw.bonuses(), meter: get().meter, goal: get().goal?.text, ...(person.keeper ? { where: AT_THE_COUNTER } : {}) };
       const answer = await TalkDoor.round(talkId, ask, { alignment: who.alignment, hidden: [] });
       // Gone mid-round in the city: it never happened. Nothing is on the record, and the same roll waits for the next try.
       if (!stillHere()) return;

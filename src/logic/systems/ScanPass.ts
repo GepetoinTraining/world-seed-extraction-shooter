@@ -36,7 +36,6 @@ import { WorldGrowth } from '../theme/WorldGrowth';
 
 export interface IScanWorld extends IClockedWorld, ILineWorld {
   id: string;
-  retired?: boolean;
 }
 
 export type WindowOutcome = 'OK' | 'NO_KEY' | 'REFUSED' | 'BUSY' | 'OFFLINE' | 'OUTAGE' | 'CUT_OFF' | 'PENDING' | 'OVER_LIMIT';
@@ -298,7 +297,7 @@ export class ScanPass {
   static async step(world: IScanWorld, now: number, room: IScanRoom, door: IScanDoor, kinds: IAskKind[] = ASK_KINDS): Promise<IScanReport> {
     const moment = WorldClock.momentAt(world, now);
     const idle: IScanReport = { phase: moment.phase, generation: moment.generation, installed: [], refused: [], used: [] };
-    if (world.isDebug || world.retired || moment.phase !== 'SCAN' || !ContentRegistry.get(world.themeId ?? ContentRegistry.defaultThemeId())) return idle;
+    if (world.isDebug || moment.phase !== 'SCAN' || !ContentRegistry.get(world.themeId ?? ContentRegistry.defaultThemeId())) return idle;
 
     const lineWorld: ILineWorld = { seed: world.seed, themeId: world.themeId };
     const before = await room.load(world.id);

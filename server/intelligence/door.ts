@@ -45,9 +45,10 @@ export interface IDoorRequest {
   maxTokens: number;
 }
 
-export interface IProviderStatus { available: boolean; provider: string; model?: string; reason?: string }
+/** `outcome` says why it is not available, the way a call would: NO_KEY is what sends the door to a local model. */
+export interface IProviderStatus { available: boolean; provider: string; model?: string; reason?: string; outcome?: DoorStatus }
 
-/** The seam. Claude is the one shipped; a person's own key or a local model plugs in here. */
+/** The seam. Claude, and a model on this machine for when there is no key (`local.ts`); a person's own key plugs in here too. */
 export interface IIntelligenceProvider {
   name: string;
   status(): Promise<IProviderStatus>;
@@ -60,6 +61,8 @@ export interface IIntelligenceProvider {
   collect(batchId: string): Promise<IDoorOutcome>;
   /** The most this request could cost, in dollars, before it is sent. */
   ceiling(request: IDoorRequest, batched: boolean): number;
+  /** A provider that must learn something before its ceiling can be read (whether there is a key) says so here. */
+  ready?(): Promise<void>;
 }
 
 /** D44: what one rest may spend. It guards the bill and caps no content: what is over it waits. */
@@ -108,6 +111,7 @@ export class IntelligenceDoor {
 
   /** A live call inside one talk. Over the talk's limit nothing is sent. */
   async askTalk(talkId: string, request: IDoorRequest): Promise<IDoorOutcome> {
+    await this.provider.ready?.();
     const spent = this.talkSpent.get(talkId) ?? 0;
     if (spent + this.provider.ceiling(request, false) > TALK_SPEND_LIMIT_USD) {
       return { status: 'OVER_LIMIT', reason: `This talk has spent $${spent.toFixed(4)} of the $${TALK_SPEND_LIMIT_USD.toFixed(2)} a talk may spend.` };
@@ -119,6 +123,7 @@ export class IntelligenceDoor {
 
   /** A rest's batch, filed. Over the limit, it does not go: it waits for the next rest (D44). */
   async fileRest(id: string, request: IDoorRequest) {
+    await this.provider.ready?.();
     const ceiling = this.provider.ceiling(request, true);
     if (ceiling > REST_SPEND_LIMIT_USD) {
       return { status: 'OVER_LIMIT' as DoorStatus, reason: `This batch could cost $${ceiling.toFixed(2)}, over the $${REST_SPEND_LIMIT_USD.toFixed(2)} a rest may spend.` };
@@ -130,6 +135,7 @@ export class IntelligenceDoor {
 
   /** One small batch of a world's window. It says what it could cost, so a window can add it up. */
   async fileWindow(id: string, request: IDoorRequest, spent: number) {
+    await this.provider.ready?.();
     const ceiling = this.provider.ceiling(request, true);
     if (spent + ceiling > WINDOW_SPEND_LIMIT_USD) {
       return { status: 'OVER_LIMIT' as DoorStatus, reason: `This window has spent up to $${spent.toFixed(2)}, and this batch could cost $${ceiling.toFixed(2)} more, over the $${WINDOW_SPEND_LIMIT_USD.toFixed(2)} a window may spend.` };
