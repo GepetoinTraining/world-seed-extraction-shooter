@@ -49,6 +49,26 @@ const PLACE: Record<NeedKind, POIType | 'HOME'> = {
 const FEEDER = POIType.VENDOR_CONSUMABLES;
 
 const allPois = (layout: IHubLayout): IPOI[] => layout.zones.flatMap(z => z.pois);
+
+/** How near a body is near enough to talk to, in tiles. */
+const PERSON_REACH = 1.5;
+
+/** Where someone waits at a door: a step or two to the side, close enough to be seen at it. */
+const WAIT_OFFSETS: readonly [number, number][] = [[2, 0], [-2, 0], [0, 2], [2, 1], [-2, 1], [1, 2], [-1, 2], [2, 2], [-2, 2], [3, 0], [-3, 0], [0, 3]];
+
+/**
+ * Found by playing: a person waiting on a door's own tile takes the interact key from the door, so the
+ * tavern would not open while they stood there. They wait beside it, out of reach of every door.
+ */
+function waitingSpot(layout: IHubLayout, walkable: (x: number, y: number) => boolean, door: ITile): ITile {
+  const doors = allPois(layout).filter(p => p.interactable).map(doorTile);
+  const clear = (t: ITile) => doors.every(d => Math.hypot(d.x - t.x, d.y - t.y) > PERSON_REACH);
+  for (const [dx, dy] of WAIT_OFFSETS) {
+    const spot = { x: door.x + dx, y: door.y + dy };
+    if (walkable(spot.x, spot.y) && clear(spot) && walkBetween(walkable, door, spot, layout.width, layout.height)) return spot;
+  }
+  return door;
+}
 const firstOf = (layout: IHubLayout, type: POIType) => allPois(layout).find(p => p.type === type) ?? null;
 const same = (a: ITile, b: ITile) => a.x === b.x && a.y === b.y;
 
@@ -97,7 +117,8 @@ export const ResidentDay = {
       const n = who.lodging ?? 0;
       return { tiles: [{ x: door.x + 2 + 2 * (n % 2), y: door.y + 1 + Math.floor(n / 2) }], stops: [0] };
     }
-    const start = doorTile(home);
+    const homeDoor = doorTile(home);
+    const start = waitingSpot(layout, walkable, homeDoor);
     const place = PLACE[who.need];
     const doors = [FEEDER, ...(place === 'HOME' || place === FEEDER ? [] : [place])]
       .map(type => firstOf(layout, type))
@@ -106,14 +127,17 @@ export const ResidentDay = {
     const tiles: ITile[] = [start];
     const stops: number[] = [0];
     let here = start;
-    for (const door of [...doors, start]) {
-      const leg = walkBetween(walkable, here, door, layout.width, layout.height);
-      if (!leg) continue;
-      tiles.push(...leg.slice(1));
+    // Each door on the round, walked up to, then the spot beside it where they wait; and home the same way.
+    for (const door of [...doors, homeDoor]) {
+      const spot = same(door, homeDoor) ? start : waitingSpot(layout, walkable, door);
+      const toDoor = walkBetween(walkable, here, door, layout.width, layout.height);
+      const toSpot = toDoor && walkBetween(walkable, door, spot, layout.width, layout.height);
+      if (!toDoor || !toSpot) continue;
+      tiles.push(...toDoor.slice(1), ...toSpot.slice(1));
       stops.push(tiles.length - 1);
-      here = door;
+      here = spot;
     }
-    // The last stop is home again, the same door as the first: one wait there, not two.
+    // The last stop is home again, the same spot as the first: one wait there, not two.
     if (stops.length > 1 && same(tiles[stops[stops.length - 1]], start)) stops.pop();
     return { tiles, stops };
   },
@@ -150,7 +174,7 @@ export const ResidentDay = {
   },
 
   /** Who is near enough to talk to: the nearest person within a step and a half of where you stand. */
-  personInReach(people: { id: string; at: { x: number; y: number } }[], tile: ITile, reach = 1.5): string | null {
+  personInReach(people: { id: string; at: { x: number; y: number } }[], tile: ITile, reach = PERSON_REACH): string | null {
     let best: string | null = null, bestD = Infinity;
     for (const p of people) {
       const d = Math.hypot(p.at.x - (tile.x + 0.5), p.at.y - (tile.y + 0.5));

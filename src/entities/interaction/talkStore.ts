@@ -250,7 +250,13 @@ export const useTalk = create<ITalkState>((set, get) => {
         if (!person) return;
         set({ ...EMPTY, subject, title: person.sheet.name, busy: true });
         const record = await loadCity(subject.npcId, person);
-        set({ meter: record.disposition, goal: record.goal, log: record.log, busy: false, ready: true });
+        // Found by playing: a goal kept from before answers the rung they stood on then. Until a round asks
+        // again, the window reads the rung they stand on now, in its plain words, and asks nobody for it.
+        const rung = NpcAgenda.rung(person.agenda ?? NpcAgenda.fold(record.agenda, worldDay()), person.facts);
+        const goal = record.goal && record.goal.need !== rung.need
+          ? { need: rung.need, text: `Working toward ${rung.says}.`, by: 'FLOOR' as const, setAt: worldDay(), unanswered: true }
+          : record.goal;
+        set({ meter: record.disposition, goal, log: record.log, busy: false, ready: true });
         return;
       }
       const entity = liveEntity(subject.entityId);

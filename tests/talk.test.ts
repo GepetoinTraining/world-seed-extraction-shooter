@@ -1354,15 +1354,29 @@ describe('Q20: walked to by goals', () => {
   const poiOf = (type: POIType) => layout.zones.flatMap(z => z.pois).find(p => p.type === type)!;
   const step = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
+  const beside = (stop: { x: number; y: number }, door: { x: number; y: number }) => step(stop, door) >= 2 && step(stop, door) <= 4;
+
   it('from their door to whoever feeds them, to where their rung sends them, and home again', () => {
     const route = ResidentDay.route(layout, walkable, { homeLotId: lot.id, need: 'belonging' });
-    expect(route.tiles[0]).toEqual(doorOf(lot));
-    expect(route.tiles[route.tiles.length - 1]).toEqual(doorOf(lot));
+    expect(beside(route.tiles[0], doorOf(lot))).toBe(true);
+    expect(route.tiles[route.tiles.length - 1]).toEqual(route.tiles[0]);
+    expect(route.tiles).toContainEqual(doorOf(lot));
     const stops = route.stops.map(i => route.tiles[i]);
-    expect(stops).toContainEqual(doorOf(poiOf(POIType.VENDOR_CONSUMABLES)));
-    expect(stops).toContainEqual(doorOf(poiOf(POIType.TAVERN)));
+    expect(stops.some(t => beside(t, doorOf(poiOf(POIType.VENDOR_CONSUMABLES))))).toBe(true);
+    expect(stops.some(t => beside(t, doorOf(poiOf(POIType.TAVERN))))).toBe(true);
     for (let i = 1; i < route.tiles.length; i++) expect(step(route.tiles[i - 1], route.tiles[i])).toBeLessThanOrEqual(1);
     for (const t of route.tiles) expect(walkable(t.x, t.y), `${t.x},${t.y}`).toBe(true);
+  });
+
+  it('found by playing: someone waiting at a door leaves it free, so the door still answers the interact key', () => {
+    for (const need of ['survival', 'esteem', 'belonging', 'purpose'] as const) {
+      const route = ResidentDay.route(layout, walkable, { homeLotId: lot.id, need });
+      const doors = [lot, ...layout.zones.flatMap(z => z.pois).filter(p => p.npcId)].map(doorOf);
+      for (const i of route.stops) {
+        const at = { x: route.tiles[i].x + 0.5, y: route.tiles[i].y + 0.5 };
+        for (const door of doors) expect(ResidentDay.personInReach([{ id: 'r', at }], door), `${need} waits in reach of ${door.x},${door.y}`).toBeNull();
+      }
+    }
   });
 
   it('the rung chooses the place: a different rung, a different door', () => {
@@ -1392,6 +1406,20 @@ describe('Q20: walked to by goals', () => {
 });
 
 describe('Q18: a person at home is talked to where they are', () => {
+  it('found by playing: a talk opened after their rung has moved reads the rung they stand on now, before a word is said', async () => {
+    const resident = await residentNamed();
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    await talk().say('What would help?');
+    expect(talk().goal!.need).toBe('safety');
+    talk().close();
+    homeAt(resident.id);
+    await talk().open({ kind: 'CITY', npcId: resident.id });
+    const rung = residentRung(residentOf(resident.id), residentFacts(residentOf(resident.id), hub().wallets[resident.id] ?? 0), worldDay());
+    expect(talk().goal!.need).toBe(rung.need);
+    // Nothing was asked of a model for it: the next round still asks, in case one can answer.
+    expect(talk().goal!.unanswered).toBe(true);
+  });
+
   it('within reach of their body you can talk, and across the street you cannot', () => {
     const people = [{ id: 'res_a', at: { x: 10.5, y: 10.5 } }, { id: 'res_b', at: { x: 30.5, y: 10.5 } }];
     expect(ResidentDay.personInReach(people, { x: 11, y: 10 })).toBe('res_a');
