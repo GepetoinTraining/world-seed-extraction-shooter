@@ -23,6 +23,7 @@ import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
 import { RestDoor } from '../../logic/systems/RestDoor';
+import { Tutorial } from '../../logic/systems/Tutorial';
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { StudySystem } from '../../logic/systems/StudySystem';
 import { StudyDoor } from '../../logic/systems/StudyDoor';
@@ -226,9 +227,11 @@ export function runDialogueAction(action: string, payload?: any): DialogueEffect
   return handler(payload);
 }
 
-/** Quick deploy target: the standing simulation, else the first walkable world. */
+/** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest. */
 export function quickDeployTargetId(): string | null {
   const now = Date.now();
   const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.retired && WorldClock.momentAt(w, now).canDeploy);
-  return (worlds.find(w => w.isDebug) ?? worlds[0])?.id ?? null;
+  const tutorial = worlds.find(w => Tutorial.isTutorial(w));
+  if (tutorial && Tutorial.firstOrderOpen(usePlayerStore.getState().player)) return tutorial.id;
+  return (worlds.find(w => !Tutorial.isTutorial(w)) ?? tutorial)?.id ?? null;
 }

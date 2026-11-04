@@ -7,7 +7,8 @@
 import React, { useEffect, useState } from 'react';
 import { useIdentityStore } from '../entities/identity/store';
 import { draftDismissal } from '../logic/systems/FieldInput';
-import { WORLD_DRAFT_DEFAULTS, WorldDraft, useWorldDraft } from './ui/stores';
+import { WORLD_DRAFT_DEFAULTS, WorldDraft, draftDanger, useWorldDraft } from './ui/stores';
+import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
 import { WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
 import { usePlayerStore } from '../entities/player/store';
 import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
@@ -51,7 +52,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
   const spokenOf = player.creation?.themeId;
   const worldType = draft.worldType as WorldType;
   const accessMode = draft.accessMode as AccessMode;
-  const difficulty = draft.difficulty as UniversalRank;
+  const difficulty = draftDanger(draft, ProgressionSystem.rankOf(player)) as UniversalRank;
   const setStep = (v: number) => set({ step: v });
   const setWorldName = (v: string) => set({ worldName: v });
   const setWorldDescription = (v: string) => set({ worldDescription: v });

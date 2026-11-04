@@ -49,6 +49,8 @@ import { Bar, Busy, Button, CardView, Chip, Kbd, Panel, RankMark } from './ui/ki
 import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet, useWaits } from './ui/stores';
 import { BodyClocks } from './WaitStrip';
 import { ReconView } from './ReconView';
+import { TutorialGuide } from './TutorialGuide';
+import { Tutorial } from '../logic/systems/Tutorial';
 import { TalkWindow } from './TalkWindow';
 import { useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
@@ -495,6 +497,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
     // every OTHER cart stays in the world, on record
     void usePlayerStore.getState().persistCarts();
+    // Q2: a run sealed out of the tutorial is the first order done
+    if (Tutorial.isTutorial(card) && !st.player.tutorialSealedAt) {
+      usePlayerStore.setState(s => ({ player: { ...s.player, tutorialSealedAt: Date.now() } }));
+      feed('First order sealed. Every other world keeps what falls with you.', 'proof');
+    }
     st.emergencyJackOut();
     world.exitWorld();
 
@@ -715,7 +722,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const outcome = usePlayerStore.getState().emergencyJackOut(penalty);
       const lost = outcome.lost;
       const lostValue = lost.reduce((s, i) => s + (i.value || 0), 0);
-      const told = { cause: cause === 'GATE' ? 'GATE' as const : undefined };
+      // Q14: a world whose law takes nothing (the tutorial) says so on the receipt
+      const told = { cause: cause === 'GATE' ? 'GATE' as const : undefined, spared: penalty === 'NONE' || undefined };
 
       useWorldStore.getState().exitWorld();
       void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
@@ -1474,6 +1482,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           </Chip>
         )}
       </div>
+
+      {/* Q14: in the tutorial, the lesson and an arrow to the way out */}
+      <TutorialGuide at={{ x: playerPos.x, z: playerPos.z }} exit={exit} />
 
       {/* D77: a forced way out stands where you do, as a dashed diamond at your feet */}
       {channeling === 'FORCED' && (

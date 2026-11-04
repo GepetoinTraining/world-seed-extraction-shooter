@@ -21,6 +21,7 @@ import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
 import { StoreUnit } from '../data/StoreUnit';
 import { ScanPass } from '../../logic/systems/ScanPass';
 import { scanRoom } from '../../logic/systems/ScanRoom';
+import { Tutorial } from '../../logic/systems/Tutorial';
 
 export interface IWorldCard extends IClockedWorld {
   id: string;
@@ -31,6 +32,8 @@ export interface IWorldCard extends IClockedWorld {
   sky?: SkyKind;
   playerCount: number;
   isDebug?: boolean;
+  /** Q14: the tutorial world, a newcomer's first order. It stands outside the clock (`isDebug`). */
+  isTutorial?: boolean;
   name: string;
   difficulty: string;
   creator: string;
@@ -262,23 +265,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           magicUnlocked: cert.data.rules.magicUnlocked
       }));
 
-      // Dev World - Using the Service!
-      const devWorld: IWorldCard = { 
-          themeId: ContentRegistry.defaultThemeId(),
-          id: 'dev-01', 
-          seed: 'dev-sandbox-v4',
-          size: 32, 
-          createdAt: now,
-          playerCount: 1,
-          isDebug: true,
-          name: "SIMULATION_DEBUG",
-          difficulty: "D",
-          creator: "SYSTEM",
-          extractionTaxRate: 0.05,
-          deathPenalty: 'INVENTORY_LOSS' // even the simulation charges for dying
-      };
-
-      set({ availableWorlds: [devWorld, ...realWorlds] });
+      // Q14: the debug world became the tutorial, a newcomer's first order. It stands first.
+      set({ availableWorlds: [Tutorial.card(now), ...realWorlds] });
   },
 
   selectWorld: async (worldId: string) => {
@@ -328,14 +316,12 @@ export const useWorldStore = create<WorldState>((set, get) => ({
             ? (worldCard.magicUnlocked ? ContentRegistry.dreamPack(worldCard.themeId, director) : null)
             : worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
 
-        const isDev = !!worldCard.isDebug;
-
+        // Q14: every world opens on recon, the tutorial too: its first lesson is the scan
         set({
             activeWorldId: worldId,
             currentMap: map,
-            reconMode: !isDev,
-            // Dev worlds skip recon and start at the center
-            selectedDropZone: isDev ? { x: Math.floor(worldCard.size / 2), y: Math.floor(worldCard.size / 2) } : null
+            reconMode: true,
+            selectedDropZone: null
         });
 
       } catch (e) {
