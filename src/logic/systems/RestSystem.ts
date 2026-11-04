@@ -188,10 +188,15 @@ export class RestSystem {
   // SLEEPING: chosen. The day turns over (D51).
   // -----------------------------------------------------------------------
 
+  /** What this character holds now: the session's in the field, the day's in the city, and all of it when nothing was spent. */
+  static energyHeld(player: IPlayer): number {
+    return player.currentSession?.energy ?? player.energyToday ?? StatSystem.maxEnergyOf(player);
+  }
+
   /** How long this rest will take, from the energy this character spent. */
   static restMs(player: IPlayer): number {
     const full = StatSystem.maxEnergyOf(player);
-    const left = player.currentSession?.energy ?? player.energyToday ?? full;
+    const left = this.energyHeld(player);
     return Math.round(REST_MARK_MS * (Math.max(0, full - left) / REST_MARK_ENERGY) ** REST_CURVE_POWER);
   }
 

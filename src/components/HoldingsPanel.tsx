@@ -48,6 +48,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
   const templatesHeld = stash.some(i => isTemplateItem(i));
   const split: ReturnType<typeof HubGenerator.dismemberVerdict> = !lot.ownerId || mine ? HubGenerator.dismemberVerdict(layout, lot.id) : { ok: false };
   const pushFeed = useFeed(s => s.push);
+  const tax = lot.ownerId ? hub.taxBook().lots.find(l => l.lotId === lot.id) : undefined;
   // A servidão to the centre, and smaller lots all around it. Your own stays yours; a free one goes on the market.
   const splitButton = split.ok && (
     <ArmedButton
@@ -83,6 +84,12 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
           {passages.filter(q => q.through.includes(lot.id)).map(q => (
             <div key={q.lotId}>Servidão: {poi.metadata.carries} of its tiles stay open, for {HubGenerator.lotName(layout, q.lotId)}.</div>
           ))}
+        </div>
+      )}
+      {/* Q34: a holder reads their lot's weekly tax here. Nothing the city makes is worth anything yet, so a new city's is 0 */}
+      {tax && (
+        <div className="ws-small" data-testid={`lot-tax-${lot.lotIndex}`} style={{ marginBottom: 4 }}>
+          CITY TAX <span className="ws-bright">{tax.perWeek.toLocaleString()} G</span> a week · {tax.tiles} tiles{tax.perWeek === 0 ? ', and the city makes nothing taxable yet' : ''}
         </div>
       )}
       {!lot.ownerId && (

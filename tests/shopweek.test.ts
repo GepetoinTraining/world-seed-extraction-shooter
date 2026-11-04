@@ -75,6 +75,12 @@ const rowsOf = async (type: string) => (await Ledger.listAll()).map(r => r.paylo
 const nextWeek = () => worldDay() + ShopWeek.WEEK_DAYS;
 
 beforeEach(async () => {
+  // These bars are about the bin, not a hub opened mid-week (citybuild's Q33 holds that): each hub
+  // here opens on the first day of its week, so its opening shelf has sat its seven days at the first close.
+  vi.restoreAllMocks();
+  const real = Date.now;
+  const opening = ShopWeek.weekOf(Math.floor(real() / 86_400_000)) * ShopWeek.WEEK_DAYS;
+  vi.spyOn(Date, 'now').mockImplementation(() => opening * 86_400_000 + (real() % 86_400_000));
   db.clear();
   minted = 0;
   installShippedThemes();
@@ -268,14 +274,21 @@ describe('"restocking is based on items sold and what stock is needed ... + new 
     expect(VendorSystem.shelf(VendorSystem.fold(sold, 3), [line], 3, 0)[0].stock).toBe(4);
   });
 
-  it('with nobody coming the shelf falls to its attempts, so the next loss is smaller', async () => {
-    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 2);
-    const first = hub().guild.lastWeek!.shops.reduce((s, x) => s + x.loss, 0);
-    expect(shelves().filter(l => !l.held).every(l => l.stock <= 2)).toBe(true);
-    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 3);
-    const second = hub().guild.lastWeek!.shops.reduce((s, x) => s + x.loss, 0);
-    expect(second).toBeLessThan(first);
-    expect(second).toBeGreaterThan(0);
+  it('with nobody coming the shelf falls to its attempts, so a later week loses less than the opening shelf did', async () => {
+    // Q32: the opening shelf comes apart over its pieces' stock days, the rarest last, so its loss lands over several weeks
+    const longest = Math.max(...shelves().filter(l => !l.held).map(l => ShopWeek.stockDays(l.item.rank, l.item.rarity)));
+    const settled = Math.ceil(longest / ShopWeek.WEEK_DAYS) + 3;
+    let opening = 0;
+    for (let w = 2; w <= settled; w++) {
+      await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * w);
+      opening = Math.max(opening, hub().guild.lastWeek!.shops.reduce((s, x) => s + x.loss, 0));
+    }
+    // The week's rolled lines; a line kept over a close holds its own stock until its days run
+    expect(shelves().filter(l => !l.held && !l.id.startsWith('listing_kept_')).every(l => l.stock <= 2)).toBe(true);
+    await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * (settled + 1));
+    const later = hub().guild.lastWeek!.shops.reduce((s, x) => s + x.loss, 0);
+    expect(later).toBeLessThan(opening);
+    expect(later).toBeGreaterThan(0);
   });
 
   it('"choice items sold by adventurers at a premium": the counter pays more for a kind that has been selling', async () => {

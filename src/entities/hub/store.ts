@@ -347,6 +347,10 @@ export interface IShopListing {
   held?: boolean;
   /** In the bargain bin: its price is the deal's, and this is the day it ends. */
   deal?: { until: number };
+  /** Q32: a line kept over a close, and the day it went on the shelf. */
+  stocked?: number;
+  /** What the line asks before the keeper's factor. */
+  ask?: number;
 }
 
 export interface IAuctionListing {
@@ -449,6 +453,8 @@ interface HubState extends ITechDoors {
   taxBook: () => { techPerTile: number; lots: ITaxLine[] };
   /** D115: the weeks gone by: each shop's book settled with the guild, wages paid, the general tax collected. */
   closeWeeks: (day: number) => Promise<void>;
+  /** Q39: midnight while the person stays in the city. Each fold finds what is left to do, so a second call does nothing. */
+  turnTheDay: () => Promise<void>;
   /** What this counter pays for this piece: more for a kind it has seen selling. */
   offerFor: (item: IItem, npcId?: string) => number;
   /** D8: give what you hold toward someone's house. When the bill is met, the clock starts. */
@@ -660,7 +666,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       const { activeHubId, guild } = get();
       if (!activeHubId) return;
       if (guild.week === undefined) {
-        set({ guild: { ...guild, week: target } });
+        // Q33: the opening shelf counts its stock days from the day the hub opened
+        set({ guild: { ...guild, week: target, weekFrom: day } });
         await get().saveHubState();
         return;
       }
@@ -673,21 +680,28 @@ export const useHubStore = create<HubState>((set, get) => ({
 
       // The treasury's read was the only wait. From here to the commit there is none.
       const state = get();
-      const { perDay } = runningBook(cityOf(state));
       const vendors = vendorsToday(state.vendors, state.craftsmen, closeDay);
+      // Q32: a line goes on a deal only once it has sat its stock days, by its rank and rarity, from the day it went up
+      const stockedFrom = state.guild.weekFrom ?? week * ShopWeek.WEEK_DAYS;
+      const due = (line: IShopListing) => closeDay - (line.stocked ?? stockedFrom) >= ShopWeek.stockDays(line.item.rank, line.item.rarity);
       const deltas: Record<string, number> = {};
       const add = (who: string, amount: number) => { deltas[who] = (deltas[who] ?? 0) + amount; };
       const shops: IShopWeekLine[] = [];
       for (const [npcId, shelf] of Object.entries(SHELF_OF)) {
         const record = vendors[npcId];
-        const unsold = state[shelf].filter(l => !l.held).flatMap(line => binLine(line, npcId, week, closeDay + DEAL_DAYS));
+        const left = state[shelf].filter(l => !l.held && l.stock > 0);
+        const unsold = left.filter(due).flatMap(line => binLine(line, npcId, week, closeDay + DEAL_DAYS));
+        const kept: IShopListing[] = left.filter(l => !due(l)).map(l => ({
+          id: l.id.startsWith('listing_kept_') ? l.id : `listing_kept_w${week}_${l.id}`,
+          item: l.item, price: l.ask ?? l.price, vendorId: npcId, stock: l.stock, stocked: l.stocked ?? stockedFrom
+        }));
         const book = record.book;
         const pay = benchPay(state.craftsmen, npcId);
         const settled = ShopWeek.settle(book, pay.total);
         for (const [who, amount] of Object.entries(pay.deltas)) add(who, amount);
         if (settled.toKeeper > 0) add(npcId, settled.toKeeper);
         shops.push({ npcId, ...book, pay: pay.total, ...settled });
-        vendors[npcId] = VendorSystem.closeWeek(record, closeDay, unsold);
+        vendors[npcId] = VendorSystem.closeWeek(record, closeDay, unsold, kept);
       }
       const paidOut = shops.reduce((sum, s) => sum + s.pay + s.toKeeper, 0);
 
@@ -719,17 +733,18 @@ export const useHubStore = create<HubState>((set, get) => ({
         lots = lots.map(l => l.id === lot.id ? { ...l, taxPaidWeek: week } : l);
       }
 
-      const prints = printsNeeded(balance + taxIn, paidOut, perDay);
-      const made = prints * printAmount(perDay);
       const shopDeltas = Object.fromEntries(shops.flatMap(s => [
         ...(s.toKeeper > 0 ? [[s.npcId, s.toKeeper]] : []),
         ...Object.entries(benchPay(state.craftsmen, s.npcId).deltas)
       ]));
       if (gold !== me.bank.gold) usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold } } }));
-      set({
-        vendors, lots,
-        guild: { ...state.guild, week: week + 1, printed: printedPlus(state.guild, prints, made), lastWeek: { week, shops, tax: taxIn } }
-      });
+      set({ vendors, lots, guild: { ...state.guild, week: week + 1, weekFrom: closeDay, lastWeek: { week, shops, tax: taxIn } } });
+      // Q31: a print covers the week ahead, so it reads the shelf just stocked
+      get().generateDailyStock();
+      const { perDay } = runningBook(cityOf(get()));
+      const prints = printsNeeded(balance + taxIn, paidOut, perDay);
+      const made = prints * printAmount(perDay);
+      set({ guild: { ...get().guild, printed: printedPlus(get().guild, prints, made) } });
       await GoldCommit.commit({
         rows: [
           ...taxRows,
@@ -744,9 +759,17 @@ export const useHubStore = create<HubState>((set, get) => ({
         hubDoc: get().hubDoc() ?? undefined
       });
       set({ wallets: await Wallets.allOf(activeHubId) });
-      get().generateDailyStock();
       if (prints > 0) useFeed.getState().push(`The Hall has printed ${made.toLocaleString()} G.`, 'signal');
     }
+  },
+
+  turnTheDay: async () => {
+    if (!get().activeHubId) return;
+    await get().resolveRunning();
+    await get().resolveVendors();
+    await get().resolveUpkeep();
+    await get().resolveWants();
+    get().generateDailyStock();
   },
 
   settleWallets: async () => {
@@ -1525,20 +1548,21 @@ export const useHubStore = create<HubState>((set, get) => ({
   creditHeld: async () => {
     const p = usePlayerStore.getState().player;
     if (!p.id || p.id === 'temp_id') return;
-    const { web, firsts, records } = WebSystem.admit(get().web, { uid: p.id, name: p.username }, p.bank.universalSkills, Date.now());
+    // Q9: creation's words are signed (D35), so the first to reach a skill names it for the hub
+    const { web, firsts, records } = WebSystem.admit(get().web, { uid: p.id, name: p.username }, p.bank.universalSkills, Date.now(), p.skillWords);
     if (firsts.length === 0 && records.length === 0) return;
     set({ web });
     const hubId = get().activeHubId;
     const lore = { ...usePlayerStore.getState().player.bank.lore };
     for (const skillId of firsts) {
-      const name = WebSystem.nameOf(skillId);
+      const name = WebSystem.nameIn(skillId, web);
       await Ledger.append('TECH', { kind: 'FIRST', skillId, name, hubId, rung: 0 });
       const topic = `First in this hub: ${name}`;
       lore[topic] = lore[topic] ?? { topic, xp: 0, level: 1, dateDiscovered: Date.now() };
       useFeed.getState().push(`First in this hub to reach ${name}. The bank has it signed.`, 'proof');
     }
     for (const { id, rung } of records) {
-      await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameOf(id), hubId, rung });
+      await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameIn(id, web), hubId, rung });
     }
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore } } }));
     await get().saveHubState();

@@ -67,6 +67,8 @@ export interface IVendorRecord {
   soldLast: Record<string, number>;
   /** Weeks closed. A shelf with none behind it opens as it always has. */
   weeks: number;
+  /** Q32: shelf lines a close found unsold and still inside their stock days. They stay up at their own stock until their time runs. */
+  kept: IVendorListing[];
 }
 
 export interface IVendorListing {
@@ -79,6 +81,10 @@ export interface IVendorListing {
   held?: boolean;
   /** In the bargain bin: its price is the deal's, and this is the day it ends. */
   deal?: { until: number };
+  /** A kept line: the day it went on the shelf, which its stock days count from. */
+  stocked?: number;
+  /** What the line asks before this keeper's mood or a patron's price, so carrying it over a close does not take the factor twice. */
+  ask?: number;
 }
 
 export interface IVendorRecipe {
@@ -131,7 +137,10 @@ const MAKES_PER_DAY = 1;
 const defOf = (item: IItem) => item.universalDefinitionId;
 const isRead = (item: IItem) => item.isIdentified !== false;
 
-const FRESH_CONTAINER = { listed: [], parts: [], bin: [], since: {}, demand: {}, seen: [], known: [], patrons: [], book: emptyBook(), soldLast: {}, weeks: 0 };
+const FRESH_CONTAINER = { listed: [], parts: [], bin: [], since: {}, demand: {}, seen: [], known: [], patrons: [], book: emptyBook(), soldLast: {}, weeks: 0, kept: [] as IVendorListing[] };
+
+/** Q38: two bin pieces are one row when nothing but their id tells them apart, at one price, on one deal. */
+const binKey = (piece: IBinPiece) => `${piece.price}|${piece.until}|${JSON.stringify({ ...piece.item, id: undefined })}`;
 
 export const VendorSystem = {
   fresh(npcId: string, kind: VendorKind, day: number): IVendorRecord {
@@ -174,17 +183,23 @@ export const VendorSystem = {
     const lines = record.sold.lines;
     const kinds = new Map<string, IItem[]>();
     for (const item of [...record.listed, ...record.parts].filter(isRead)) kinds.set(defOf(item), [...(kinds.get(defOf(item)) ?? []), item]);
+    const bins = new Map<string, IBinPiece[]>();
+    for (const piece of record.bin.filter(p => isRead(p.item) && p.until >= today)) bins.set(binKey(piece), [...(bins.get(binKey(piece)) ?? []), piece]);
     return [
       ...rolled.map(line => ({
-        ...line, vendorId: record.npcId, price: line.price * factor,
+        ...line, vendorId: record.npcId, ask: line.price, price: line.price * factor,
         stock: Math.max(0, (record.weeks > 0 ? (record.soldLast[line.id] ?? 0) + NEW_ATTEMPTS : line.stock) + restock - (lines[line.id] ?? 0))
       })),
+      ...(record.kept ?? []).map(line => ({
+        ...line, vendorId: record.npcId, ask: line.price, price: line.price * factor,
+        stock: Math.max(0, line.stock - (lines[line.id] ?? 0))
+      })).filter(line => line.stock > 0),
       ...[...kinds.entries()].map(([def, items]) => ({
         id: `listing_own_${def}`, item: items[0], price: Math.max(1, items[0].value * OWN_MARKUP * factor),
         vendorId: record.npcId, stock: items.length, held: true
       })),
-      ...record.bin.filter(piece => isRead(piece.item) && piece.until >= today).map(piece => ({
-        id: `listing_bin_${piece.item.id}`, item: piece.item, price: piece.price, vendorId: record.npcId, stock: 1, held: true, deal: { until: piece.until }
+      ...[...bins.values()].map(([piece, ...rest]) => ({
+        id: `listing_bin_${piece.item.id}`, item: piece.item, price: piece.price, vendorId: record.npcId, stock: 1 + rest.length, held: true, deal: { until: piece.until }
       }))
     ];
   },
@@ -213,9 +228,9 @@ export const VendorSystem = {
     return last !== undefined && today - last <= DEMAND_DAYS ? CHOICE_PREMIUM : 1;
   },
 
-  /** The week is over: last week's sales are what next week stocks, and its book is closed. */
-  closeWeek(record: IVendorRecord, today: number, unsold: IBinPiece[] = []): IVendorRecord {
-    return { ...record, bin: [...record.bin, ...unsold], book: emptyBook(), soldLast: record.sold.lines, sold: { day: today, lines: {} }, weeks: record.weeks + 1 };
+  /** The week is over: last week's sales are what next week stocks, and its book is closed. What is still inside its stock days stays up (Q32). */
+  closeWeek(record: IVendorRecord, today: number, unsold: IBinPiece[] = [], kept: IVendorListing[] = []): IVendorRecord {
+    return { ...record, bin: [...record.bin, ...unsold], kept, book: emptyBook(), soldLast: record.sold.lines, sold: { day: today, lines: {} }, weeks: record.weeks + 1 };
   },
 
   /** One of its own pieces, gone to a buyer. */

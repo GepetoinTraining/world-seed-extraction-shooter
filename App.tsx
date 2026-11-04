@@ -13,6 +13,8 @@ import { HubSelector } from './src/components/HubSelector';
 import { HoldingsPanel } from './src/components/HoldingsPanel';
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
 import { ProgressionSystem } from './src/entities/player/systems/ProgressionSystem';
+import { levelLine } from './src/components/ui/levelLine';
+import { useCityDay } from './src/components/ui/useCityDay';
 import { Busy, Button, Chip, Kbd, Modal, RankMark } from './src/components/ui/kit';
 import { AppView, useAppView, useFeed, useSheet } from './src/components/ui/stores';
 import { RestBar, WaitStrip } from './src/components/WaitStrip';
@@ -134,7 +136,7 @@ const TerminalBar: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void 
 
       <RestChip rest={player.rest} />
       <DreamChip out={!!player.pendingDream} filedAt={player.pendingDream?.filedAt} />
-      <Chip title={`Rank ${rank}, from the guild. Level ${ProgressionSystem.levelOf(player)}, from experience; it begins again at each rank.`}><RankMark rank={rank} scale={2} /> {rank} · LV {ProgressionSystem.levelOf(player)}</Chip>
+      <Chip title={`Rank ${rank}, from the guild. Level ${ProgressionSystem.levelOf(player)}, from experience; it begins again at each rank.`}><RankMark rank={rank} scale={2} /> {rank} · {levelLine(player)}</Chip>
       <Chip tone="proof" title="Gold on the ledger">{player.bank.gold.toLocaleString()} G</Chip>
       <Chip title={player.id}>{player.username}</Chip>
       <Button tone="quiet" onClick={() => setSystemOpen(true)}>SYSTEM</Button>
@@ -204,6 +206,9 @@ const App: React.FC = () => {
     };
     boot();
   }, [identityState, bootStatus, gateDone]);
+
+  // Q39: midnight turns the city's day while the person stays in it, not only when it is opened
+  useCityDay(bootStatus === 'READY' && hubSelected && !session);
 
   // D79: a rest ends when its time is up, and this character wakes whoever is watching
   useEffect(() => {

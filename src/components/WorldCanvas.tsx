@@ -60,6 +60,7 @@ import { PlacedCard } from './ui/HoverLayer';
 import { MinimapView } from './ui/MinimapView';
 import { fieldMinimap } from '../render/atoms/minimap';
 import { Hotbar, activateHotbar } from './Hotbar';
+import { levelLine } from './ui/levelLine';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -1418,7 +1419,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const exitOctant = exit ? OCTANTS[((Math.round(exitAngle / (Math.PI / 4)) % 8) + 8) % 8] : '';
 
   const rank = ProgressionSystem.rankOf(usePlayerStore.getState().player);
-  const level = ProgressionSystem.levelOf(usePlayerStore.getState().player);
   const loadRatio = usePlayerStore.getState().maxWeight > 0
     ? usePlayerStore.getState().currentWeight / usePlayerStore.getState().maxWeight : 0;
 
@@ -1500,7 +1500,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
-          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">LV {level}{(player.attributePoints ?? 0) > 0 ? ` · ${player.attributePoints} TO SPEND` : ''}{CircleSystem.free(player) > 0 ? ` · ${CircleSystem.free(player)} TO FILL` : ''}</Chip>
+          <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">{levelLine(player)}</Chip>
           <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>

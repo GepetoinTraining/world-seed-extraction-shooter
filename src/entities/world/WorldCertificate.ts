@@ -72,6 +72,8 @@ export interface IWorldCertificateData {
   worldDescription: string;
   worldType: WorldType;
   creatorCertUid: string;
+  /** Q5: the maker's name, signed with the world, so a card can say who made it on anyone's machine. Absent on worlds minted before. */
+  creatorName?: string;
   currentOwnerCertUid: string;
   createdAt: number;
   seedHash: string;
@@ -99,6 +101,13 @@ export interface IWorldCertificate {
 }
 
 export class WorldCertificateSystem {
+
+  /** Q5: who a world card names. The signed name; for a world from before it, the person's own name when it is theirs, and the id's start otherwise. */
+  static makerName(data: Pick<IWorldCertificateData, 'creatorCertUid' | 'creatorName'>, me?: { uid: string; name: string }): string {
+    if (data.creatorName) return data.creatorName;
+    if (me && data.creatorCertUid === me.uid && me.name) return me.name;
+    return data.creatorCertUid.substring(0, 8);
+  }
   
   static async mintWorld(
     creatorCertificate: IPlayerCertificate,
@@ -153,6 +162,7 @@ export class WorldCertificateSystem {
       worldDescription,
       worldType,
       creatorCertUid: creatorUid,
+      ...(creatorCertificate.metadata.displayName ? { creatorName: creatorCertificate.metadata.displayName } : {}),
       currentOwnerCertUid: creatorUid,
       createdAt: timestamp,
       seedHash,

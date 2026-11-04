@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { IMap, ScanLevel, ISector } from './types';
 import { UniversalRank } from '../../../types';
 import { WorldCertificateSystem } from './WorldCertificate';
+import { useIdentityStore } from '../identity/store';
 import { WorldGenerationService } from './services/WorldGenerationService';
 import { IGenerationContext, WorldGenerator } from './WorldGenerator';
 import { GRID_VERSION, chunkOf } from './grid';
@@ -233,6 +234,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   refreshWorlds: async () => {
       const certs = await WorldCertificateSystem.getPublicWorlds();
       const now = Date.now();
+      const meta = useIdentityStore.getState().certificate?.metadata;
+      const me = meta ? { uid: meta.uid, name: meta.displayName } : undefined;
 
       // Wave 9.7: hubs are homes, not extraction zones — they never get a DEPLOY card
       const realWorlds: IWorldCard[] = certs.filter(cert => cert.data.worldType !== 'HUB').map(cert => ({
@@ -245,7 +248,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           playerCount: cert.data.stats.totalVisitors,
           name: cert.data.worldName,
           difficulty: cert.data.rules.difficulty,
-          creator: cert.data.creatorCertUid.substring(0, 8),
+          creator: WorldCertificateSystem.makerName(cert.data, me),
           creatorUid: cert.data.creatorCertUid,
           mintedWithDeed: cert.data.rules.mintedWithDeed,
           isDebug: false,

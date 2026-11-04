@@ -120,6 +120,8 @@ export interface IGuildState {
   runningDay?: number;
   /** D115: the week its shelves are open on. Unset: nothing owed from before this was kept. */
   week?: number;
+  /** Q33: the day this week's shelf went up: the day the hub opened, then each close. Unset on a hub from before: the week's first day. */
+  weekFrom?: number;
   /** How the last week closed, for the Hall's books. */
   lastWeek?: IClosedWeek;
   residents: IResident[];
