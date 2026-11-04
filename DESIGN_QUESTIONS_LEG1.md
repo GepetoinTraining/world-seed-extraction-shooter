@@ -17,16 +17,26 @@ Leg 1's play was on test avatars with the pane hidden (no window), so frames ran
 - **The split trial (the door's, not built):** the door's own theme prompt and the SALT ARREARS talk, sent as four parts in turn on Sonnet at high effort, each part given the earlier parts in its message. The four parts each compile: (1) world, creatures, materials; (2) stations, goods, gear; (3) consumables, affixes, abilities, lore, junk; (4) anchors, professions. All four came back whole, in 91 s, 70 s, 67 s and 52 s (about four minutes): 16 creatures, 18 materials, 6 stations, 13 goods, 27 gear, 8 consumables, 19 affixes, 16 abilities, 8 lore, 16 junk, 14 anchors, 23 professions. Output 40,435 tokens, **$0.53**. The system text did not cache across parts (the schema differs each time), about 17,600 tokens of cache writes for one world. **The law (`ContentRegistry.judge`, as the mint calls it) refused it whole:** first `tideline_receipts` tagged "receipt", a word not registered (inside part one); with that word registered by hand, a station naming the tool "blow_pipe" (part two). So a split write reaches the law, and the law then refuses on words the model used without registering them, which a single ask would also risk. Nothing was saved or installed. The door's whole spend in leg 1 was $0.62 of the $10 limit.
 - **The door's framing of the choice:** in parts, each told what the earlier parts wrote; a smaller schema with more left to the law; or no schema, the law judging parsed text.
 - **Pedro, 2026-11-04 (in his words):** "we gated the first simulation to content from the tech web, and only the second one gets the pass initially, it was a decision to not make the player wait, if we leave a tutorial world on until the player can have his, I think it works to allow the theme itself and everything to be generated. Also, it needs to be inside the theme, and only the suffix and preffix list for the names, they get "what" they do from studying. Claude doesn't decide anything that's rollable, we first ML and then LLM"
-- **The reading taken from it:**
-  - What stands today (D129, PLAN.md bar 164): a world's first deploy uses only tech the tech web already fits, rerolling what has no fit, and the model is called only from the second cycle. That was chosen so the player never waits.
-  - What he proposes now: keep a tutorial world open until the player's own world is ready. With that in place, the whole theme and everything in it can be generated before the first deploy, so a write that takes minutes is acceptable.
-  - What the model writes lives inside the theme. For names it writes only the prefix and suffix lists. What a thing does is not written up front: it is found by studying (D118).
-  - The model decides nothing that is rolled. The numbers are rolled first, and the model writes words over the result.
-- **What follows, not checked:** a theme with no numbers and no functions is a much smaller template, so one ask may compile where today's is refused. Names built from the theme's own prefix and suffix lists are registered by construction, which may answer the law's refusal on unregistered words.
-- **Still open, for Pedro:**
-  - "it needs to be inside the theme": is "it" the chain, so the tech web is written inside the theme rather than as its own ask?
-  - "first ML": does ML mean a trained model, or the rolls and the law that come before the words?
-- **Call:** ruled in part, 2026-11-04; the two readings above wait on him.
+- **Pedro, 2026-11-04, the second answer (in his words):** "theme is what that dive is about, zombie, fantasy, fantasy space opera, dungeons, a moiuntain setting. The main thing that needs to be generated is the tiles, the creature types, the possible professions inside, the flora and fauna... that's why we give time, an initial pull comes from the DB of things that are semantically near the tyhemes decrsiption and then the LLM starts selecting from them and making the world richer, it first SELECTS then adds, we don't EVER want to recreate the same basic thing, an oak tree is an oak tree, so oak -> mountain oak with difficutly 1 and 2 don't happen... that's why we use the two systems. also, a space scenarion on a moon without oxygen doesn't get trees, and the "water" or "mountains" (imapassle and passable but with skill) terrains might be tunnels <-> water and dark side crater <-> mountasin"
+- **The reading taken from both answers:**
+  - **What a theme is:** what a dive is about, in a few words: zombie, fantasy, fantasy space opera, dungeons, a mountain setting. It is not the content pack.
+  - **What is generated for a world:** its tiles, creature types, the professions it can hold, its flora and fauna.
+  - **The wait:** today a world's first deploy uses only tech the tech web already fits, and the model is called from the second cycle (D129, PLAN.md bar 164), so the player never waits. With a tutorial world open until the player's own world is ready, all of the above can be generated before the first deploy.
+  - **How, in two steps ("first ML and then LLM"):**
+    1. A pull from the database of everything near the theme's description, by meaning.
+    2. The model selects from that pull, and only then adds what the world still lacks.
+  - **No copies:** a thing that exists is never written again under a new name. An oak is an oak: no "mountain oak" at difficulty 1 and another at 2. That is why there are two steps.
+  - **The theme rules out what cannot be there:** a moon without air gets no trees.
+  - **Terrain is two roles, each dressed by the theme:** an impassable one ("water") and one passable with a skill ("mountains"). On an airless moon, tunnels can take water's role and a crater on the dark side can take the mountain's.
+  - **Names:** for names, the model writes only prefix and suffix lists, inside the theme.
+  - **What a thing does:** found by studying (D118), not written up front.
+  - **Numbers:** the model decides nothing that is rolled.
+- **What follows, not checked:**
+  - Selecting is answering with ids from a given list, and adding is only for what is missing. Both are far smaller asks than today's template, which writes every entry whole.
+  - New words come from the theme's own lists, so they are registered by construction. That may answer the law's refusal.
+  - The database door exists: `VectorStore`'s `semanticSearch`. But `EmbeddingService` is a hashed bag of words (D46), so it only finds shared words. "an airless moon" would not find "vacuum" or "regolith". The first step needs a real embedding to work as ruled.
+  - Terrain as two roles dressed by the theme is not how terrain is built today. `TerrainSystem` has four fixed kinds, all hardcoded and none themed: water (blocked), rock (blocked), mud (half speed) and ground. No kind is passable with a skill.
+- **Call:** ruled, 2026-11-04. Not built.
 
 ---
 
