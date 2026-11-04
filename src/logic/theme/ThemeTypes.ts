@@ -294,6 +294,25 @@ export interface IThemeProfession {
   material: string[];
 }
 
+/**
+ * Q1: terrain is two roles, each dressed by the world (Pedro, 2026-11-04). One is never
+ * crossed ("water"; tunnels on an airless moon), and one is crossed by someone who holds
+ * the skill its "crossing" word names ("mountains"; a crater on the dark side). The ground
+ * under them is the same noise everywhere (`TerrainSystem`); only what it is called, and
+ * what skill crosses it, belongs to a world.
+ */
+export const TERRAIN_ROLES = ['impassable', 'skilled'] as const;
+export type TerrainRole = typeof TERRAIN_ROLES[number];
+
+export interface IThemeTerrain {
+  role: TerrainRole;
+  /** What it is, in the world's plain words: "water", "tunnels", "a dark-side crater". */
+  ground: string;
+  blurb: string;
+  /** For the skilled role, the registry word a held skill must carry to cross it. Empty for the impassable one. */
+  crossing: string;
+}
+
 /** What a model writes. Its id is computed from these bytes and nothing else. */
 export interface IThemeBody {
   name: string;
@@ -316,6 +335,8 @@ export interface IThemeBody {
   anchors?: IThemeAnchor[];
   /** D119. Left out of a pack written before there was such a thing. */
   professions?: IThemeProfession[];
+  /** Q1: the two terrain roles, dressed. Left out of a pack written before there was such a thing. */
+  terrain?: IThemeTerrain[];
 }
 
 export interface IThemePack extends IThemeBody {

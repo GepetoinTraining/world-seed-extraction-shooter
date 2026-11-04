@@ -292,12 +292,14 @@ export class WorldGenerator {
     return this.isInWorld(map, tileCenter(tx), tileCenter(ty)) && !TerrainSystem.isBlockedTile(map.seed, tx, ty);
   }
 
-  static resolveMove(map: IMap, x: number, z: number, dx: number, dz: number) {
+  /** @param crossesSkilled Q1: this walker holds the world's crossing skill (`TerrainCrossing`), so the skilled ground lets them over. */
+  static resolveMove(map: IMap, x: number, z: number, dx: number, dz: number, crossesSkilled = false) {
     // A drop reads the ground only, so a body can stand on a trunk's tile: it may walk off, as on blocked ground.
     const tx = tileOf(x), tz = tileOf(z);
     return TerrainSystem.resolveMove(map.seed, x, z, dx, dz, undefined,
       (nx, nz) => this.isInWorld(map, nx, nz)
-        && ((tileOf(nx) === tx && tileOf(nz) === tz) || (!this.trunkAt(map, nx, nz) && !this.structureBlocks(map, nx, nz))));
+        && ((tileOf(nx) === tx && tileOf(nz) === tz) || (!this.trunkAt(map, nx, nz) && !this.structureBlocks(map, nx, nz))),
+      crossesSkilled);
   }
 
   /** D93: a wall that stands blocks its tile. One brought down, or still scaffolding, does not. */

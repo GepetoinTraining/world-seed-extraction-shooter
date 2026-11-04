@@ -4,6 +4,9 @@
  * With no key or no network, nothing blocks: a person may pin a world already written,
  * and what they said stays in the draft. What comes back from the model stands before
  * the law here, and again when it is banked.
+ *
+ * Q1: WRITE IT writes the world in passes, in a world's own order, and the draft says
+ * which pass is out, so the person can leave and come back.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +17,8 @@ import { useWorldDraft } from './ui/stores';
 import { usePlayerStore } from '../entities/player/store';
 import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
 import { Busy, Button, Panel } from './ui/kit';
+import { saidOf, writeForMint } from '../logic/theme/writing/mintWriting';
+import { PASS_SAID, WORLD_PASSES, WorldPassId } from '../logic/theme/writing/WorldPasses';
 
 const SAID_WHEN_CLOSED: Record<string, string> = {
   NO_KEY: 'The Seed is not answering on this server. No key is held here.',
@@ -44,7 +49,9 @@ export const ThemeTalk: React.FC = () => {
   const [open, setOpen] = useState<boolean | null>(null);
   const [closedWhy, setClosedWhy] = useState('');
   const [saying, setSaying] = useState('');
-  const [busy, setBusy] = useState<'' | 'talk' | 'write'>('');
+  const [talking, setTalking] = useState(false);
+  const writing = draft.writing as WorldPassId | '';
+  const busy: '' | 'talk' | 'write' = writing ? 'write' : talking ? 'talk' : '';
   const [refusal, setRefusal] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
   const banked = useMemo(() => ContentRegistry.offered(), []);
@@ -71,9 +78,9 @@ export const ThemeTalk: React.FC = () => {
     const next: IDoorMessage[] = [...messages, { role: 'user', content: text }];
     set({ talk: next });
     setSaying('');
-    setBusy('talk');
+    setTalking(true);
     const out = await IntelligenceClient.talk(next, shown);
-    setBusy('');
+    setTalking(false);
     if (out.status === 'OK' && out.text) set({ talk: [...next, { role: 'assistant', content: out.text }] });
     else {
       setOpen(out.status !== 'NO_KEY' && out.status !== 'OFFLINE' ? open : false);
@@ -83,21 +90,23 @@ export const ThemeTalk: React.FC = () => {
 
   const seal = async () => {
     if (busy) return;
-    setBusy('write');
     setRefusal('');
-    const out = await IntelligenceClient.writeTheme<IThemeBody>(messages, shown);
-    setBusy('');
-    if (out.status !== 'OK' || !out.data) {
-      setRefusal(SAID_WHEN_CLOSED[out.status] ?? out.reason ?? 'The Seed did not answer.');
+    const store = useWorldDraft.getState();
+    store.set({ writing: WORLD_PASSES[0] });
+    const out = await writeForMint(saidOf(messages, shown), shown, pass => useWorldDraft.getState().set({ writing: pass }));
+    useWorldDraft.getState().set({ writing: '' });
+    if (!out.ok || !out.body) {
+      setRefusal(out.status && out.status !== 'OK' ? (SAID_WHEN_CLOSED[out.status] ?? out.reason ?? '') : `What it wrote did not pass: ${out.reason}`);
       return;
     }
+    const written = out;
     // The law judges what came back. A broken world is refused whole, and the talk stays.
-    const verdict = ContentRegistry.judge(out.data);
+    const verdict = ContentRegistry.judge(written.body);
     if (!verdict.ok) {
       setRefusal(`What it wrote did not pass: ${verdict.reason}`);
       return;
     }
-    set({ writtenTheme: out.data, writtenUsage: out.usage ?? null, themeId: '' });
+    useWorldDraft.getState().set({ writtenTheme: written.body, writtenUsage: written.usage, themeId: '' });
   };
 
   return (
@@ -131,7 +140,11 @@ export const ThemeTalk: React.FC = () => {
         </>
       )}
 
-      {busy === 'write' && <div style={{ marginTop: 6 }}><Busy label="THE SEED IS WRITING" /></div>}
+      {writing && (
+        <div style={{ marginTop: 6 }}>
+          <Busy label={`THE SEED IS WRITING: ${PASS_SAID[writing]} (${WORLD_PASSES.indexOf(writing) + 1} OF ${WORLD_PASSES.length})`} />
+        </div>
+      )}
       {refusal && <div className="ws-loss ws-small" style={{ marginTop: 6 }}>{refusal}</div>}
 
       {written && (

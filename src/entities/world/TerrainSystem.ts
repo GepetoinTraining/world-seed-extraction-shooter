@@ -23,11 +23,25 @@ const MUD_BELOW = 0.3499;
 const ROCK_ABOVE = 0.7846;
 
 export enum TerrainType {
-  WATER = 'WATER',   // blocked
+  WATER = 'WATER',   // the impassable role: blocked to all
   MUD = 'MUD',       // slow (0.5x)
   GROUND = 'GROUND', // normal
-  ROCK = 'ROCK'      // blocked
+  ROCK = 'ROCK'      // the skilled role: blocked, unless the walker holds the world's crossing skill
 }
+
+/**
+ * Q1: the two roles the ground plays, whatever a world calls them (`IThemeTerrain`).
+ * Water's place is never crossed; rock's is crossed by whoever holds the skill.
+ */
+export const TERRAIN_ROLE_OF: Record<TerrainType, 'impassable' | 'skilled' | 'ground'> = {
+  [TerrainType.WATER]: 'impassable',
+  [TerrainType.ROCK]: 'skilled',
+  [TerrainType.MUD]: 'ground',
+  [TerrainType.GROUND]: 'ground'
+};
+
+/** How fast a person who holds the skill goes over the skilled ground: as through mud. Overrule freely. */
+export const SKILLED_CROSSING_SPEED = 0.5;
 
 export interface ITerrainTile {
   type: TerrainType;
@@ -77,14 +91,21 @@ export class TerrainSystem {
     return TerrainType.GROUND;
   }
 
-  static isBlockedTile(seed: string, tx: number, ty: number): boolean {
-    return TILE_RULES[this.typeAt(seed, tx, ty)].blocked;
+  /** Blocked to a walker without the skill: what a drop, a spawn and a monster read. */
+  static isBlockedTile(seed: string, tx: number, ty: number, crossesSkilled = false): boolean {
+    return this.rulesFor(this.typeAt(seed, tx, ty), crossesSkilled).blocked;
+  }
+
+  /** A tile's rules for this walker. Only the skilled role changes with who walks it. */
+  private static rulesFor(type: TerrainType, crossesSkilled: boolean): { blocked: boolean; speedMod: number } {
+    if (crossesSkilled && TERRAIN_ROLE_OF[type] === 'skilled') return { blocked: false, speedMod: SKILLED_CROSSING_SPEED };
+    return TILE_RULES[type];
   }
 
   /** The tile under a world pixel position. */
-  static tileAt(seed: string, px: number, pz: number, biome?: BiomeType): ITerrainTile {
+  static tileAt(seed: string, px: number, pz: number, biome?: BiomeType, crossesSkilled = false): ITerrainTile {
     const type = this.typeAt(seed, tileOf(px), tileOf(pz));
-    const rules = TILE_RULES[type];
+    const rules = this.rulesFor(type, crossesSkilled);
     const color = type === TerrainType.GROUND && biome
       ? BIOME_GROUND[biome]
       : COLORS[type];
@@ -98,15 +119,17 @@ export class TerrainSystem {
    * - If you're ALREADY on a blocked tile (bad spawn), movement is free —
    *   you can always walk out, never be trapped.
    * - Speed modifier comes from the tile you STAND on.
+   * - Q1: a walker who holds the world's crossing skill crosses the skilled ground, slowly.
    */
   static resolveMove(
     seed: string,
     fromX: number, fromZ: number,
     dx: number, dz: number,
     biome?: BiomeType,
-    inBounds: (x: number, z: number) => boolean = () => true
+    inBounds: (x: number, z: number) => boolean = () => true,
+    crossesSkilled = false
   ): { x: number; z: number; speedMod: number } {
-    const here = this.tileAt(seed, fromX, fromZ, biome);
+    const here = this.tileAt(seed, fromX, fromZ, biome, crossesSkilled);
     const speedMod = here.blocked ? 1.0 : here.speedMod;
 
     const stepX = dx * speedMod;
@@ -119,8 +142,8 @@ export class TerrainSystem {
 
     let x = fromX;
     let z = fromZ;
-    if (inBounds(fromX + stepX, fromZ) && !this.tileAt(seed, fromX + stepX, fromZ, biome).blocked) x = fromX + stepX;
-    if (inBounds(x, fromZ + stepZ) && !this.tileAt(seed, x, fromZ + stepZ, biome).blocked) z = fromZ + stepZ;
+    if (inBounds(fromX + stepX, fromZ) && !this.tileAt(seed, fromX + stepX, fromZ, biome, crossesSkilled).blocked) x = fromX + stepX;
+    if (inBounds(x, fromZ + stepZ) && !this.tileAt(seed, x, fromZ + stepZ, biome, crossesSkilled).blocked) z = fromZ + stepZ;
 
     return { x, z, speedMod };
   }

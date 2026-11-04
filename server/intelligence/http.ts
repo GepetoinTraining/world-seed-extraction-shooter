@@ -6,7 +6,8 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
-import { buildBargainRequest, buildChainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildNpcGoalRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, WINDOW_REQUESTS } from './prompts';
+import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildNpcGoalRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
+import { askChainInParts } from './parts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -28,7 +29,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 export interface IIntelligenceHandlerOptions { allowRemote?: boolean }
 
-/** `path` is what follows the mount: /status, /talk, /theme, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /rest/file, /rest/collect, /window/file, /window/collect. */
+/** `path` is what follows the mount: /status, /talk, /theme, /world/pass, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /rest/file, /rest/collect, /window/file, /window/collect. */
 export function createIntelligenceHandler(door: IntelligenceDoor, options: IIntelligenceHandlerOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     if (!options.allowRemote && !LOOPBACK.has(req.socket.remoteAddress ?? '')) {
@@ -53,7 +54,10 @@ export function createIntelligenceHandler(door: IntelligenceDoor, options: IInte
       case '/creation':
         return send(res, 200, await door.ask(buildCreationRequest(body.ask ?? {})));
       case '/chain':
-        return send(res, 200, await door.ask(buildChainRequest(body.ask ?? {})));
+        return send(res, 200, await askChainInParts(door, body.ask ?? {}));
+      case '/world/pass':
+        if (!isWorldPass(body.pass)) return send(res, 200, { status: 'REFUSED', reason: 'A world is written in no such pass.' });
+        return send(res, 200, await door.ask(buildWorldPassRequest(body.pass, body.ask ?? {}, body.draft ?? {})));
       case '/kami/talk': {
         // One JSON line for each piece as it is written, then one saying how it ended. A closed tab stops the bill.
         res.statusCode = 200;

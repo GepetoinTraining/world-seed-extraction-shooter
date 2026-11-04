@@ -42,6 +42,8 @@ export const IntelligenceClient = {
   },
   talk: (messages: IDoorMessage[], draft: Record<string, unknown>) => post('/talk', { messages, draft }),
   writeTheme: <T>(messages: IDoorMessage[], draft: Record<string, unknown>) => post<T>('/theme', { messages, draft }),
+  /** Q1: one pass of a world, in a world's own order. */
+  writePass: <T>(pass: string, ask: unknown, draft: Record<string, unknown>) => post<T>('/world/pass', { pass, ask, draft }),
   grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
   setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
   writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),

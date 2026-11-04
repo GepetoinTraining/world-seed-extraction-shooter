@@ -1,0 +1,34 @@
+/**
+ * Q1, at the mint: a world is written in full before its first deploy, pass by pass, from
+ * everything this hub's database already holds. The person can leave the mint while it
+ * writes (the tutorial world holds them); the draft keeps what comes back.
+ */
+
+import { IntelligenceClient } from '../../intelligence/IntelligenceClient';
+import { WebBank } from '../../content/WebBank';
+import { fnv1a } from '../../rng/DeterministicRNG';
+import { ContentRegistry } from '../ContentRegistry';
+import { MeaningPull, poolOf } from './WorldPool';
+import { IWriteResult, writeWorld } from './WorldWriter';
+import type { WorldPassId } from './WorldPasses';
+
+export interface IMintDraftLine { worldName: string; worldDescription: string; difficulty: string; size: number }
+
+/** What the person said, as one text: the talk, or the draft's description when nothing was said. */
+export function saidOf(talk: { role: string; content: string }[], draft: IMintDraftLine): string {
+  const spoken = talk.filter(m => m.role === 'user').map(m => m.content).join('\n');
+  return [draft.worldName, draft.worldDescription, spoken].filter(Boolean).join('\n');
+}
+
+export async function writeForMint(said: string, draft: IMintDraftLine, onPass?: (pass: WorldPassId, index: number) => void): Promise<IWriteResult> {
+  const packs = ContentRegistry.list();
+  const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
+  return writeWorld(said, {
+    door: (pass, ask) => IntelligenceClient.writePass(pass, ask, { ...draft }),
+    pull: new MeaningPull(poolOf(packs)),
+    packs, registered,
+    seed: `mint:${fnv1a(said).toString(16)}`,
+    difficulty: draft.difficulty,
+    onPass
+  });
+}
