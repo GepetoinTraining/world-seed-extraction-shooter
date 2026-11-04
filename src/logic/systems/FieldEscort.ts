@@ -95,6 +95,21 @@ export const FieldEscort = {
     feed(`${escort.name} is down. Carry them to the beacon and they come back on the other side.`, 'loss');
   },
 
+  /**
+   * Their own record is the truth of them. The field writes its copy of the chunks back after the
+   * blows of a frame have landed, so this puts each body right from the record afterwards.
+   */
+  settle(): void {
+    const by = usePlayerStore.getState().player.id;
+    for (const escort of this.escorts()) {
+      const body = bodyOf(escort.entityId);
+      if (!body) continue;
+      const fallen = !!escort.fallen;
+      if (body.health === escort.health && !!body.escort?.fallen === fallen && body.escort?.by === by) continue;
+      useWorldStore.getState().updateEntity(escort.entityId, { health: escort.health, escort: { by, ...(fallen ? { fallen: true } : {}) } });
+    }
+  },
+
   /** "you grab them as a corpse": onto your back, if the pack will bear it. */
   carry(entityId: string): boolean {
     const escort = this.escorts().find(e => e.entityId === entityId && e.fallen);

@@ -720,17 +720,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // The DIED receipt (Wave 9.6 + D21): what fell is lost — and the
       // death keeps EXACTLY the slots the magic named, said on the receipt
+      // Q16: whoever still walked beside you, or lay where they fell, stays in this world
+      const leftBehind = (usePlayerStore.getState().player.currentSession?.escorts ?? []).map(e => e.name);
       const outcome = usePlayerStore.getState().emergencyJackOut(penalty);
       const lost = outcome.lost;
       // Q12: what nobody had read is lost unpriced
       const lostReading = HaulReading.read(lost);
       const lostValue = lostReading.shownWorth;
+      const lostPersons = [...new Set([...lostReading.persons, ...leftBehind])];
       const told = { cause: cause === 'GATE' ? 'GATE' as const : undefined };
 
       useWorldStore.getState().exitWorld();
       void useHubStore.getState().restAndCredit('DIED'); // D30: the return to the hub
       useReceipt.getState().show({
-        outcome: 'DIED', haul: lost, haulValue: lostValue, unread: lostReading.unread, persons: lostReading.persons, tax: 0, kept: outcome.kept, sealing: true,
+        outcome: 'DIED', haul: lost, haulValue: lostValue, unread: lostReading.unread, persons: lostPersons, tax: 0, kept: outcome.kept, sealing: true,
         worldName: card?.name ?? 'UNKNOWN', durationMs: 0, actionCount: 0, ...told
       });
       // Seal the journal and the bank (async; loop is already stopped)
@@ -738,7 +741,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       void SessionJournal.finish('DIED', after).then(signed => {
         if (useReceipt.getState().receipt?.outcome === 'DIED') {
           useReceipt.getState().show({
-            outcome: 'DIED', haul: lost, haulValue: lostValue, unread: lostReading.unread, persons: lostReading.persons, tax: 0, kept: outcome.kept,
+            outcome: 'DIED', haul: lost, haulValue: lostValue, unread: lostReading.unread, persons: lostPersons, tax: 0, kept: outcome.kept,
             worldName: card?.name ?? 'UNKNOWN',
             durationMs: signed?.payload.durationMs ?? 0,
             actionCount: signed?.payload.actionCount ?? 0,
@@ -1065,6 +1068,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         useWorldStore.setState(state => state.currentMap
           ? { currentMap: { ...state.currentMap, chunks: { ...state.currentMap.chunks, ...chunkUpdates } } }
           : state);
+        // Q16: the copy written back predates this frame's blows on those beside you; their record is the truth
+        FieldEscort.settle();
       }
 
       // Loot: spawn new drops, then auto-pickup anything within reach

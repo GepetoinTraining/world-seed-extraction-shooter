@@ -242,6 +242,19 @@ describe('Q16: fallen, they are carried as a heavy body nobody may open', () => 
     expect(canvas).toMatch(/Escort\.hitBy\(/);
     expect(canvas).toMatch(/FieldEscort\.swings\(/);
   });
+
+  // Found in play: the frame writes its own copy of the chunks back after the blows land
+  it('what the frame writes back over them is put right from their own record', () => {
+    recruited();
+    const stale = JSON.parse(JSON.stringify(useWorldStore.getState().currentMap!.chunks));
+    FieldEscort.hurt('ent_person', 10_000, 'k_stale');
+    useWorldStore.setState(s => ({ currentMap: { ...s.currentMap!, chunks: stale } }));
+    expect(live('ent_person')!.escort?.fallen).toBeFalsy();
+    FieldEscort.settle();
+    expect(live('ent_person')!.escort?.fallen).toBe(true);
+    expect(live('ent_person')!.health).toBe(0);
+    expect(SRC('src/components/WorldCanvas.tsx')).toMatch(/chunks: \{ \.\.\.state\.currentMap\.chunks, \.\.\.chunkUpdates \} \} \}\s*: state\);\s*\/\/[^\n]*\n\s*FieldEscort\.settle\(\);/);
+  });
 });
 
 // ---------------------------------------------------------------------------
