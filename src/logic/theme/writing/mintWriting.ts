@@ -8,7 +8,8 @@ import { IntelligenceClient } from '../../intelligence/IntelligenceClient';
 import { WebBank } from '../../content/WebBank';
 import { fnv1a } from '../../rng/DeterministicRNG';
 import { ContentRegistry } from '../ContentRegistry';
-import { MeaningPull, poolOf } from './WorldPool';
+import { CountedPull, poolOf } from './WorldPool';
+import { CountedEmbedder } from './Counting';
 import { IWriteResult, writeWorld } from './WorldWriter';
 import type { WorldPassId } from './WorldPasses';
 
@@ -22,11 +23,14 @@ export function saidOf(talk: { role: string; content: string }[], draft: IMintDr
 
 export async function writeForMint(said: string, draft: IMintDraftLine, onPass?: (pass: WorldPassId, index: number) => void): Promise<IWriteResult> {
   const packs = ContentRegistry.list();
+  const pool = poolOf(packs);
+  // Counted from this hub's own worlds: no model, nothing installed (Pedro: "or none at all")
+  const embedder = CountedEmbedder.of(pool.map(e => e.text));
   const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
   return writeWorld(said, {
     door: (pass, ask) => IntelligenceClient.writePass(pass, ask, { ...draft }),
-    pull: new MeaningPull(poolOf(packs)),
-    packs, registered,
+    pull: new CountedPull(pool, embedder),
+    embedder, packs, registered,
     seed: `mint:${fnv1a(said).toString(16)}`,
     difficulty: draft.difficulty,
     onPass

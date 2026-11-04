@@ -1,7 +1,9 @@
 /**
  * THE PASSES (Q1): a world is written in the order a world comes to be (Pedro, 2026-11-04:
  * "geography, water and mountains, where fauna and flora are, it's multiple passes, don't
- * choke a model"). Each pass is one small ask, given what the earlier passes made.
+ * choke a model"). Each pass is one small ask, given what the earlier passes made. Fauna
+ * is one field, animals and monsters together ("fauna connects animal and monster"): the
+ * life pass places it all, and code rolls which of it is aggressive.
  *
  * Every schema here is small enough to compile on its own: every field required, no
  * unions, a handful of enums. Nothing in one is a number, a stat or what a thing does.
@@ -12,7 +14,7 @@
 import { BIOMES } from '../ThemeTypes';
 import { FLORA_FORMS, MINERAL_FORMS, PoolList } from './WorldPool';
 
-export const WORLD_PASSES = ['ground', 'terrain', 'life', 'beings', 'holds', 'made', 'known'] as const;
+export const WORLD_PASSES = ['ground', 'terrain', 'life', 'people', 'holds', 'made', 'known'] as const;
 export type WorldPassId = typeof WORLD_PASSES[number];
 
 /** What each pass pulls from the pool, in the order it asks. */
@@ -20,7 +22,7 @@ export const PASS_PULLS: Record<WorldPassId, PoolList[]> = {
   ground: [],
   terrain: ['terrain'],
   life: ['flora', 'fauna'],
-  beings: ['monsters', 'professions'],
+  people: ['professions'],
   holds: ['minerals', 'junk', 'anchors'],
   made: ['gear', 'goods', 'stations', 'consumables'],
   known: ['abilities', 'affixes']
@@ -30,8 +32,8 @@ export const PASS_PULLS: Record<WorldPassId, PoolList[]> = {
 export const PASS_SAID: Record<WorldPassId, string> = {
   ground: 'THE LAY OF THE LAND',
   terrain: 'WATER AND HEIGHTS',
-  life: 'WHAT GROWS AND GRAZES, AND WHERE',
-  beings: 'WHAT HUNTS THERE, AND WHO WORKS',
+  life: 'WHAT GROWS AND WHAT LIVES THERE, AND WHERE',
+  people: 'WHO WORKS THERE',
   holds: 'WHAT LIES IN THE GROUND',
   made: 'WHAT IS MADE AND WORN',
   known: 'WHAT IT KNOWS, AND ITS LORE'
@@ -62,12 +64,11 @@ export const PASS_SCHEMAS: Record<WorldPassId, Record<string, unknown>> = {
   life: obj({
     picked: PICKED_WITH_REGIONS,
     flora: list({ is: str, form: oneOf(FLORA_FORMS), tags: strs, regions: REGIONS }),
-    fauna: list({ is: str, tags: strs, social: bool, regions: REGIONS }),
+    fauna: list({ is: str, tags: strs, social: bool, builds: bool, regions: REGIONS }),
     words: WORDS
   }),
-  beings: obj({
-    picked: PICKED_WITH_REGIONS,
-    monsters: list({ is: str, tags: strs, social: bool, builds: bool, regions: REGIONS }),
+  people: obj({
+    picked: strs,
     professions: list({ is: str, concept: str, workshop: str, tool: strs, material: strs }),
     words: WORDS
   }),
@@ -100,12 +101,11 @@ export interface ITerrainAnswer { impassable: IDressingAnswer; skilled: IDressin
 export interface ILifeAnswer {
   picked: IPickedAt[];
   flora: { is: string; form: string; tags: string[]; regions: string[] }[];
-  fauna: { is: string; tags: string[]; social: boolean; regions: string[] }[];
+  fauna: { is: string; tags: string[]; social: boolean; builds: boolean; regions: string[] }[];
   words: IWord[];
 }
-export interface IBeingsAnswer {
-  picked: IPickedAt[];
-  monsters: { is: string; tags: string[]; social: boolean; builds: boolean; regions: string[] }[];
+export interface IPeopleAnswer {
+  picked: string[];
   professions: { is: string; concept: string; workshop: string; tool: string[]; material: string[] }[];
   words: IWord[];
 }
@@ -120,7 +120,7 @@ export interface IMadeAnswer { picked: string[] }
 export interface IKnownAnswer { picked: string[]; lore: string[] }
 
 export interface IPassAnswers {
-  ground: IGroundAnswer; terrain: ITerrainAnswer; life: ILifeAnswer; beings: IBeingsAnswer;
+  ground: IGroundAnswer; terrain: ITerrainAnswer; life: ILifeAnswer; people: IPeopleAnswer;
   holds: IHoldsAnswer; made: IMadeAnswer; known: IKnownAnswer;
 }
 

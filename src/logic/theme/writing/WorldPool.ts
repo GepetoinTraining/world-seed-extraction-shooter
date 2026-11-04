@@ -5,18 +5,25 @@
  * adds what is missing. An oak is an oak: a thing two worlds hold, word for word, is
  * one entry here, so picking it never makes a second oak.
  *
- * The pull goes through `IPull`, so what ranks by meaning is a seam: today's hashed
- * embedder, a real one when it is chosen, or a fake in a test.
+ * The pull counts (Pedro, 2026-11-04: no embedding model, "or none at all"; `Counting`).
+ * Every pack is a field. An entry is near a theme by PPMI over the pool's own words, and
+ * ranks higher where it is distinctive to the fields the theme resembles (log-odds z,
+ * concentration residual). What is offered is what scores above its list's own mean: no
+ * fixed count. The pull goes through `IPull`, so a fake can stand in for it in a test.
+ *
+ * Fauna is one field (Pedro, 2026-11-04: "fauna connects animal and monster"): animals and
+ * monsters are one list, and what makes one a monster is its aggression, which code rolls.
  */
 
 import { cosineSimilarity } from '../../../entities/data/similarity';
-import { EmbeddingService, IEmbedder } from '../../../services/EmbeddingService';
+import { IEmbedder } from '../../../services/EmbeddingService';
+import { concentrationResiduals, CountedEmbedder, fieldAffinity, fieldCounts, zScores } from './Counting';
 import { canonical } from '../ThemeCompiler';
 import type { IThemeBody, IThemePack, IThemeTerrain } from '../ThemeTypes';
 
 /** The lists a world is written from, in the order a world comes to be. */
 export const POOL_LISTS = [
-  'terrain', 'flora', 'fauna', 'monsters', 'professions', 'minerals', 'junk', 'anchors',
+  'terrain', 'flora', 'fauna', 'professions', 'minerals', 'junk', 'anchors',
   'gear', 'goods', 'stations', 'consumables', 'abilities', 'affixes'
 ] as const;
 export type PoolList = typeof POOL_LISTS[number];
@@ -38,6 +45,8 @@ export interface IPoolEntry {
   key: string;
   /** What the pull ranks by: its own words. */
   text: string;
+  /** Every pack that holds it word for word: the fields it has been written into. */
+  fields: string[];
   entry: Record<string, unknown>;
 }
 
@@ -64,7 +73,7 @@ function listsOf(pack: IThemeBody): { list: PoolList; packList: PackList; key: s
   const out: ReturnType<typeof listsOf> = [];
   const put = (list: PoolList, packList: PackList, key: string, entry: object) =>
     out.push({ list, packList, key, text: textOf(packList, entry as Record<string, unknown>), entry: entry as Record<string, unknown> });
-  for (const c of pack.creatures) put(c.tree === 'animal' ? 'fauna' : 'monsters', 'creatures', c.key, c);
+  for (const c of pack.creatures) put('fauna', 'creatures', c.key, c);
   for (const m of pack.materials) put((FLORA_FORMS as readonly string[]).includes(m.form) ? 'flora' : 'minerals', 'materials', m.key, m);
   for (const p of pack.professions ?? []) put('professions', 'professions', p.key, p);
   for (const j of pack.junk ?? []) put('junk', 'junk', j.key, j);
@@ -81,15 +90,20 @@ function listsOf(pack: IThemeBody): { list: PoolList; packList: PackList; key: s
 
 /** The pool of every pack given, oldest first; a thing held word for word by two packs is one entry. */
 export function poolOf(packs: IThemePack[]): IPoolEntry[] {
-  const seen = new Set<string>();
+  const seen = new Map<string, IPoolEntry>();
   const pool: IPoolEntry[] = [];
   const ordered = [...packs].sort((a, b) => a.writtenAt - b.writtenAt || (a.themeId < b.themeId ? -1 : 1));
   for (const pack of ordered) {
     for (const e of listsOf(pack)) {
       const bytes = `${e.list}:${canonical(e.entry)}`;
-      if (seen.has(bytes)) continue;
-      seen.add(bytes);
-      pool.push({ ...e, id: `${pack.themeId.slice('theme_'.length, 'theme_'.length + 8)}.${e.list}.${e.key}`, themeId: pack.themeId });
+      const held = seen.get(bytes);
+      if (held) {
+        if (!held.fields.includes(pack.themeId)) held.fields.push(pack.themeId);
+        continue;
+      }
+      const entry: IPoolEntry = { ...e, id: `${pack.themeId.slice('theme_'.length, 'theme_'.length + 8)}.${e.list}.${e.key}`, themeId: pack.themeId, fields: [pack.themeId] };
+      seen.set(bytes, entry);
+      pool.push(entry);
     }
   }
   return pool;
@@ -149,44 +163,76 @@ export function standsOnRuledOut(pack: IThemeBody, packList: string, key: string
   return null;
 }
 
-/** What ranks the pool by meaning. */
+/**
+ * What is offered of a list: what scores above the list's own mean (z > 0). No fixed count: the
+ * pool's own spread decides, and the add step and the floors reach whatever is not offered.
+ */
+export const PULL_Z = 0;
+
+/** What ranks the pool for a theme. */
 export interface IPull {
-  near(list: PoolList, query: string, size: number, without?: string[]): Promise<IPoolEntry[]>;
-  /** Is this new thing already in the pool? The nearest entry, when the meaning is the same thing. */
+  /** Every entry of the list the world can hold, nearest first. */
+  near(list: PoolList, query: string, without?: string[]): Promise<IPoolEntry[]>;
+  /** What one ask offers: the entries that score above their list's mean. */
+  offer(list: PoolList, query: string, without?: string[]): Promise<IPoolEntry[]>;
+  /** Is this new thing already in the pool? The entry it is, by its plain name or by nearness. */
   same(list: PoolList, text: string): Promise<IPoolEntry | null>;
 }
 
 /**
- * How near, by cosine, counts as the same thing, per embedder: each places meaning on its
- * own scale. The hashed embedder counts shared words, so only near-identical words are
- * the same thing there. A real embedder brings its own reading when it is chosen.
+ * How near, by cosine, counts as the same thing, per embedder: each places meaning on its own
+ * scale. Read by the id's family, so every counted space shares one reading.
  */
-export const SAME_THING_AT: Record<string, number> = { 'hashed-words:v1': 0.9 };
+export const SAME_THING_AT: Record<string, number> = { 'hashed-words': 0.9, 'counted-ppmi': 0.9, 'fake-meaning': 0.99 };
 const SAME_THING_DEFAULT = 0.92;
+const family = (id: string) => id.split(':')[0];
 
 /** The pull over a pool held in memory: every installed pack, as the database gave them (`ThemeStore.loadBanked`). */
-export class MeaningPull implements IPull {
+export class CountedPull implements IPull {
   private vectors: Promise<number[][]> | null = null;
+  private readonly embedder: IEmbedder;
+  /** How distinctive each entry is to the fields it lives in, beyond its count: the residual, never raw. */
+  private readonly residual: number[];
+  private readonly fields;
 
-  constructor(private readonly pool: IPoolEntry[], private readonly embedder: IEmbedder = EmbeddingService.current()) {}
+  constructor(private readonly pool: IPoolEntry[], embedder?: IEmbedder) {
+    this.embedder = embedder ?? CountedEmbedder.of(pool.map(e => e.text));
+    const fieldIds = [...new Set(pool.flatMap(e => e.fields))].sort();
+    this.residual = concentrationResiduals(pool.map(e => fieldIds.map(f => (e.fields.includes(f) ? 1 : 0))));
+    this.fields = fieldCounts(fieldIds.map(f => ({ field: f, texts: pool.filter(e => e.fields.includes(f)).map(e => e.text) })));
+  }
 
   private all(): Promise<number[][]> {
     this.vectors ??= this.embedder.embed(this.pool.map(e => e.text));
     return this.vectors;
   }
 
-  private async ranked(list: PoolList, query: string): Promise<{ e: IPoolEntry; score: number }[]> {
+  private async ranked(list: PoolList, query: string, without: string[]): Promise<{ e: IPoolEntry; score: number }[]> {
     const [q] = await this.embedder.embed([query]);
     const vectors = await this.all();
+    const affinity = fieldAffinity(query, this.fields);
     return this.pool
-      .map((e, i) => ({ e, score: cosineSimilarity(q ?? [], vectors[i] ?? []) }))
-      .filter(x => x.e.list === list)
+      .map((e, i) => {
+        const near = cosineSimilarity(q ?? [], vectors[i] ?? []);
+        // Distinctive to the fields this theme resembles: their share, times how locked to them it is
+        const fit = e.fields.reduce((s, f) => s + (affinity.get(f) ?? 0), 0) / e.fields.length * Math.max(0, this.residual[i]);
+        return { e, score: near + fit };
+      })
+      .filter(x => x.e.list === list && !ruledOut(x.e, without))
       // Nearest first; the pool's own order breaks a tie, so every machine offers the same
       .sort((a, b) => b.score - a.score);
   }
 
-  async near(list: PoolList, query: string, size: number, without: string[] = []): Promise<IPoolEntry[]> {
-    return (await this.ranked(list, query)).filter(x => !ruledOut(x.e, without)).slice(0, size).map(x => x.e);
+  async near(list: PoolList, query: string, without: string[] = []): Promise<IPoolEntry[]> {
+    return (await this.ranked(list, query, without)).map(x => x.e);
+  }
+
+  async offer(list: PoolList, query: string, without: string[] = []): Promise<IPoolEntry[]> {
+    const ranked = await this.ranked(list, query, without);
+    const z = zScores(ranked.map(x => x.score));
+    const above = ranked.filter((_, i) => z[i] > PULL_Z);
+    // A list whose scores do not spread at all says nothing apart: all of it is offered
+    return (above.length ? above : ranked).map(x => x.e);
   }
 
   async same(list: PoolList, text: string): Promise<IPoolEntry | null> {
@@ -194,9 +240,12 @@ export class MeaningPull implements IPull {
     const plain = text.trim().toLowerCase().replace(/^(an?|the)\s+/, '');
     const named = this.pool.find(e => e.list === list && String(e.entry.name ?? '').toLowerCase() === plain);
     if (named) return named;
-    const top = (await this.ranked(list, text))[0];
-    const at = SAME_THING_AT[this.embedder.id] ?? SAME_THING_DEFAULT;
-    return top && top.score >= at ? top.e : null;
+    const top = (await this.ranked(list, text, []))[0];
+    if (!top) return null;
+    const [q] = await this.embedder.embed([text]);
+    const near = cosineSimilarity(q ?? [], (await this.all())[this.pool.indexOf(top.e)] ?? []);
+    const at = SAME_THING_AT[family(this.embedder.id)] ?? SAME_THING_DEFAULT;
+    return near >= at ? top.e : null;
   }
 }
 

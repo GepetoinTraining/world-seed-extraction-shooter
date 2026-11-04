@@ -25,16 +25,10 @@ import {
 } from '../ThemeTypes';
 import { FLORA_FORMS, IPoolEntry, IPull, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from './WorldPool';
 import {
-  IBeingsAnswer, IDressingAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILifeAnswer, IMadeAnswer, IPassAnswers, ITerrainAnswer,
+  IDressingAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILifeAnswer, IMadeAnswer, IPassAnswers, IPeopleAnswer, ITerrainAnswer,
   IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
 } from './WorldPasses';
 
-/**
- * How much of the pull one ask carries, per list. A guard on the prompt, not on the world:
- * Pedro, "don't choke a model". What is not offered can still be added, and the floors
- * reach the whole pool. A guess until a real run reads how much a pass takes in.
- */
-export const PULL_OFFERED = 24;
 /** A pass refused once is asked once more, told why. A guard on the bill, like the chain's. */
 export const PASS_TRIES = 2;
 
@@ -88,6 +82,17 @@ const WEAPON_KINDS = ['blade', 'bludgeon', 'bow', 'focus'];
 const ARMOR_KINDS = ['head', 'chest', 'legs', 'feet', 'shoulder'];
 const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
 const isPlainElite = (c: IThemeCreature) => c.tags.includes('elite') && !c.tags.some(t => ONE_OF_A_KIND.includes(t));
+
+/**
+ * Fauna is one field (Pedro, 2026-11-04): a monster is fauna that is aggressive, and some animals
+ * are. Aggression is rolled, so it follows the rolled threat: a deadly creature attacks, a sharp
+ * one holds its ground, a meek one keeps away. Which tree it stands in follows from that (D63).
+ */
+export function temperOf(threat: typeof THREATS[number]): { behavior: IThemeCreature['behavior']; tree: 'animal' | 'monster' } {
+  if (threat === 'deadly') return { behavior: 'AGGRESSIVE', tree: 'monster' };
+  if (threat === 'sharp') return { behavior: 'NEUTRAL', tree: 'animal' };
+  return { behavior: 'PASSIVE', tree: 'animal' };
+}
 /** What the hands need, from what a thing is. A form is a shape; the verb follows from it. */
 const VERB_OF_FORM: Record<string, typeof HARVEST_VERBS[number]> = { tree: 'chop', vein: 'mine' };
 
@@ -454,31 +459,24 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         { const r = await fromPool('flora', f.is, f.regions); if (typeof r === 'object') return r; if (r) continue; }
         addMaterial(f.is, f.form, f.tags, f.regions, 'life');
       }
+      // Fauna is one field: what is dangerous is rolled, never written
       for (const f of a?.fauna ?? []) {
-        if (!f.is?.trim() || !regionsOk(f.regions)) return refuse('a new animal needs what it is and where it lives.');
-        if (!f.tags?.length) return refuse('a new animal carries at least one word, so it leaves something when it falls.');
+        if (!f.is?.trim() || !regionsOk(f.regions)) return refuse('a new creature needs what it is and where it lives.');
+        if (!f.tags?.length) return refuse('a new creature carries at least one word, so it leaves something when it falls.');
         const t = d.unknown(f.tags);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+        if (f.tags.some(x => ['elite', 'boss', 'titan', 'god'].includes(x))) return refuse('who leads, and who is one of a kind, is decided by code, never written.');
         { const r = await fromPool('fauna', f.is, f.regions); if (typeof r === 'object') return r; if (r) continue; }
-        addCreature(f.is, f.tags, 'animal', !!f.social, false, f.regions, 'life');
+        addCreature(f.is, f.tags, !!f.social, !!f.builds, f.regions, 'life');
       }
       return null;
     },
 
-    beings: async (a: IBeingsAnswer) => {
+    people: async (a: IPeopleAnswer) => {
       const w = d.addWords(a?.words ?? []);
       if (w) return w;
-      const p = pickAll(a?.picked ?? [], ['monsters', 'professions']);
+      const p = pickAll((a?.picked ?? []).map(id => ({ id })), ['professions']);
       if (p) return p;
-      for (const m of a?.monsters ?? []) {
-        if (!m.is?.trim() || !regionsOk(m.regions)) return refuse('a new creature needs what it is and where it lives.');
-        if (!m.tags?.length) return refuse('a new creature carries at least one word, so it leaves something when it falls.');
-        const t = d.unknown(m.tags);
-        if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
-        if (m.tags.some(x => ['elite', 'boss', 'titan', 'god'].includes(x))) return refuse('who leads, and who is one of a kind, is decided by code, never written.');
-        { const r = await fromPool('monsters', m.is, m.regions); if (typeof r === 'object') return r; if (r) continue; }
-        addCreature(m.is, m.tags, 'monster', !!m.social, !!m.builds, m.regions, 'beings');
-      }
       for (const pr of a?.professions ?? []) {
         if (!pr.is?.trim() || !pr.workshop?.trim() || !TagLaw.isCanonicalSpelling(pr.concept ?? '')) return refuse('a trade needs what it is, its concept as one lower_snake_case word, and its workshop.');
         if (!pr.tool?.length || !pr.material?.length) return refuse(`${pr.is} connects no tool or no material (D25).`);
@@ -546,13 +544,14 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     });
   };
 
-  const addCreature = (is: string, tags: string[], tree: string, social: boolean, builds: boolean, regions: string[], pass: string) => {
+  const addCreature = (is: string, tags: string[], social: boolean, builds: boolean, regions: string[], pass: string) => {
     const { name, key } = d.fresh('creature');
     const rng = d.rng(pass, d.added);
-    const behavior = tree === 'animal' ? rng.pick(['PASSIVE', 'NEUTRAL'] as const) : rng.pick(BEHAVIORS.filter(b => b !== 'PASSIVE'));
+    const threat = rng.pick([...THREATS]);
+    const { behavior, tree } = temperOf(threat);
     d.body.creatures.push({
       key, name, blurb: is.trim(), tags, rank: d.rank(rng), size: rng.pick([...SIZES]), behavior,
-      build: rng.pick([...BUILDS]), threat: rng.pick([...THREATS]), pace: rng.pick([...PACES]),
+      build: rng.pick([...BUILDS]), threat, pace: rng.pick([...PACES]),
       habitat: [...new Set(regions)] as IThemeCreature['habitat'], innate: [], tree, social, builds: tree === 'animal' ? false : builds, leads: ''
     });
   };
@@ -570,7 +569,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     o.onPass?.(pass, i);
     const offered: IPassAsk['offered'] = {};
     for (const list of PASS_PULLS[pass]) {
-      const near = await o.pull.near(list, query(), PULL_OFFERED, d.without);
+      const near = await o.pull.offer(list, query(), d.without);
       for (const e of near) offeredIds.set(e.id, e);
       offered[list] = near.map(e => ({ id: e.id, is: e.text }));
     }
@@ -618,7 +617,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
 async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbedder, addJunk: (is: string, tags: string[], from: string[], pass: string) => string): Promise<string | null> {
   const b = d.body;
   const nearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean) => {
-    const all = await o.pull.near(list, query, Number.MAX_SAFE_INTEGER, d.without);
+    const all = await o.pull.near(list, query, d.without);
     return all.find(e => ok(e) && !d.bringsRuledOut(e));
   };
   const bringNearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean, why: string): Promise<string | null> => {
@@ -628,6 +627,20 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
     return null;
   };
   const entry = <T>(e: IPoolEntry) => e.entry as unknown as T;
+
+  // D63: a world holds its animals and its monsters. Aggression is code's roll, so where one tree is
+  // empty the first new kind of the other is rolled again into it; with none new, the pool lends one
+  const added = (c: IThemeCreature) => c.innate.length === 0 && !c.leads && !poolNames.has(c.name);
+  const poolNames = new Set(o.packs.flatMap(p => p.creatures.map(c => c.name)));
+  for (const [tree, threat] of [['monster', 'deadly'], ['animal', 'meek']] as const) {
+    if (b.creatures.some(c => c.tree === tree)) continue;
+    const other = b.creatures.filter(c => added(c) && b.creatures.filter(x => x.tree === c.tree).length > 1)[0];
+    if (other) Object.assign(other, { threat, ...temperOf(threat), builds: tree === 'animal' ? false : other.builds });
+    else {
+      const why = await bringNearest('fauna', e => entry<IThemeCreature>(e).tree === tree, `give it ${tree === 'monster' ? 'something dangerous' : 'something harmless'}`);
+      if (why) return why;
+    }
+  }
 
   // Something small enough to start on: the roll is code's, so the gentlest new kind starts at F
   if (!b.creatures.some(c => c.rank === 'F' || c.rank === 'E')) {
@@ -647,7 +660,7 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
       const step = Math.min(RANKS.length - 1, RANKS.indexOf(led.rank) + 1);
       b.creatures.push({ ...led, key, name, blurb: `What leads the ${led.name}.`, tags: [...led.tags, 'elite'], rank: RANKS[step], leads: led.key, build: 'massive' });
     } else {
-      const why = await bringNearest('monsters', e => isPlainElite(entry<IThemeCreature>(e)) && !!entry<IThemeCreature>(e).social, 'lead a pack');
+      const why = await bringNearest('fauna', e => isPlainElite(entry<IThemeCreature>(e)) && !!entry<IThemeCreature>(e).social, 'lead a pack');
       if (why) return why;
     }
   }

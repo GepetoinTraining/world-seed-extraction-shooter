@@ -1,11 +1,15 @@
 /**
  * EMBEDDING SERVICE
  *
- * Text becomes a vector here, through one seam (`IEmbedder`). What fills the seam is a
- * choice (Q1): today it is a deterministic hashed bag of words, where only shared words
- * read as similar (D46). A real embedding, local or a service, plugs in with `use`, and
- * nothing that asks for a vector changes. Each embedder names itself and its version, so
- * vectors from two embedders are never compared: a different id is a different space.
+ * Text becomes a vector here, through one seam (`IEmbedder`). Each embedder names itself
+ * and its version, so vectors from two embedders are never compared: a different id is a
+ * different space.
+ *
+ * No model fills it (Pedro, 2026-11-04: "or none at all"). Where nearness is needed, a
+ * world's pull, it is counted from the pool (`CountedEmbedder`, theme/writing/Counting): PPMI
+ * over the entries' own words, with this hashed bag as its surface channel. What the store
+ * saves stays on the hashed bag alone (D46): a counted space moves with every world banked,
+ * and a stored vector has no column yet to say which space it was counted in.
  */
 
 import { cosineSimilarity } from '../entities/data/similarity';

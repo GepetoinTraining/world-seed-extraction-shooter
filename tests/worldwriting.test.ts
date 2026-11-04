@@ -11,9 +11,11 @@ import { BIOMES, IThemeBody, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes'
 import { sealTheme } from '../src/logic/theme/ThemeCompiler';
 import { WebBank } from '../src/logic/content/WebBank';
 import { HASHED_EMBEDDER, IEmbedder } from '../src/services/EmbeddingService';
-import { MeaningPull, poolOf, ruledOut } from '../src/logic/theme/writing/WorldPool';
+import { CountedPull, poolOf, ruledOut } from '../src/logic/theme/writing/WorldPool';
+import { concentration, concentrationResiduals, CountedEmbedder, fieldAffinity, fieldCounts, logOddsZ } from '../src/logic/theme/writing/Counting';
+import { cosineSimilarity } from '../src/entities/data/similarity';
 import { PASS_SCHEMAS, SCHEMA_LIMITS, WORLD_PASSES, WorldPassId, schemaShape } from '../src/logic/theme/writing/WorldPasses';
-import { IPassAsk, IPassOutcome, PassDoor, writeWorld } from '../src/logic/theme/writing/WorldWriter';
+import { IPassAsk, IPassOutcome, PassDoor, temperOf, writeWorld } from '../src/logic/theme/writing/WorldWriter';
 import { TerrainSystem, TerrainType } from '../src/entities/world/TerrainSystem';
 import { TerrainCrossing } from '../src/logic/theme/TerrainCrossing';
 import { TagLaw } from '../src/logic/content/TagLaw';
@@ -113,32 +115,49 @@ describe('the chain, joined from its parts', () => {
 });
 
 describe('the pool', () => {
-  it('holds every list a world is written from, and a thing two worlds hold word for word is one entry', () => {
+  it('holds every list a world is written from; a thing two worlds hold word for word is one entry, counted in both', () => {
     const copy = sealTheme({ ...FIRST_THEME_PACK, name: 'A later world' }, 'test', FIRST_THEME_PACK.writtenAt + 1);
     const once = poolOf([FIRST_THEME_PACK]);
     const twice = poolOf([FIRST_THEME_PACK, copy]);
     expect(twice.length).toBe(once.length);
+    expect(twice.every(e => e.fields.length === 2)).toBe(true);
     const lists = new Set(once.map(e => e.list));
-    for (const l of ['flora', 'fauna', 'monsters', 'professions', 'minerals', 'junk', 'anchors', 'gear', 'goods', 'stations', 'consumables', 'abilities', 'affixes']) {
+    for (const l of ['flora', 'fauna', 'professions', 'minerals', 'junk', 'anchors', 'gear', 'goods', 'stations', 'consumables', 'abilities', 'affixes']) {
       expect(lists.has(l as never), l).toBe(true);
     }
     expect(once.find(e => e.key === 'compound_oak')!.list).toBe('flora');
     expect(once.find(e => e.key === 'vault_stone')!.list).toBe('minerals');
-    expect(once.find(e => e.key === 'dividend_hen')!.list).toBe('fauna');
+  });
+
+  it('fauna is one field: animals and monsters are one list, and one search returns both', async () => {
+    const pool = poolOf([FIRST_THEME_PACK]);
+    expect(pool.find(e => e.key === 'dividend_hen')!.list).toBe('fauna');
+    expect(pool.find(e => e.key === 'tally_rat')!.list).toBe('fauna');
+    const found = await new CountedPull(pool).near('fauna', 'a bank gone wild');
+    const trees = new Set(found.map(e => (e.entry as { tree: string }).tree));
+    expect(trees.has('animal') && trees.has('monster')).toBe(true);
   });
 
   it('the world rules things out: a world without trees is never offered a tree', async () => {
-    const pull = new MeaningPull(poolOf([FIRST_THEME_PACK]), HASHED_EMBEDDER);
-    const all = await pull.near('flora', 'a field of grain and an old oak', 99);
-    const without = await pull.near('flora', 'a field of grain and an old oak', 99, ['trees']);
+    const pull = new CountedPull(poolOf([FIRST_THEME_PACK]));
+    const all = await pull.near('flora', 'a field of grain and an old oak');
+    const without = await pull.near('flora', 'a field of grain and an old oak', ['trees']);
     expect(all.some(e => e.key === 'compound_oak')).toBe(true);
     expect(without.some(e => e.key === 'compound_oak')).toBe(false);
     expect(ruledOut({ text: 'Compound Oak tree wood' }, ['trees'])).toBe(true);
   });
 
-  it('the pull ranks by whatever embedder fills the seam: by meaning, not only shared words', async () => {
-    // A fake that knows "airless" and "vacuum" mean the same; the hashed one only sees shared words
-    const sense: Record<string, number> = { airless: 0, vacuum: 0, moon: 0, regolith: 0, hen: 1, egg: 1, eggs: 1, lays: 1 };
+  it('what is offered is what scores above its list\'s own mean, never a fixed count', async () => {
+    const pull = new CountedPull(poolOf([FIRST_THEME_PACK]));
+    const all = await pull.near('gear', 'a clerk with a blade and a visor');
+    const offered = await pull.offer('gear', 'a clerk with a blade and a visor');
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.length).toBeLessThan(all.length);
+    expect(offered).toEqual(all.slice(0, offered.length));
+  });
+
+  it('the pull takes whatever embedder fills the seam', async () => {
+    const sense: Record<string, number> = { hen: 1, egg: 1, eggs: 1, lays: 1 };
     const fake: IEmbedder = {
       id: 'fake-meaning:v1', dims: 2,
       embed: async texts => texts.map(t => {
@@ -147,9 +166,61 @@ describe('the pool', () => {
         return v;
       })
     };
-    const pool = poolOf([FIRST_THEME_PACK]);
-    const byMeaning = await new MeaningPull(pool, fake).near('fauna', 'something that lays eggs', 1);
+    const byMeaning = await new CountedPull(poolOf([FIRST_THEME_PACK]), fake).near('fauna', 'something that lays eggs');
     expect(byMeaning[0].key).toBe('dividend_hen');
+  });
+});
+
+describe('counting, not a model', () => {
+  // The case Q1 named: "an airless moon" would not find "vacuum", because no word is shared
+  const corpus = ['vacuum regolith crater cold', 'airless regolith crater dark', 'hen egg barn straw', 'cow barn straw milk'];
+
+  it('two words that keep the same company are near, though they never meet; the bag of words reads them as strangers', async () => {
+    const counted = CountedEmbedder.of(corpus);
+    const [vacuum, airless, hen] = await counted.embed(['vacuum', 'airless', 'hen']);
+    const [hv, ha] = await HASHED_EMBEDDER.embed(['vacuum', 'airless']);
+    expect(cosineSimilarity(hv, ha)).toBe(0);
+    // The two channels weigh alike: no shared word, so all of this is the counted half
+    expect(cosineSimilarity(vacuum, airless)).toBeGreaterThan(0.1);
+    expect(cosineSimilarity(vacuum, hen)).toBe(0);
+  });
+
+  it('the same pool counts the same; a pool that grows is a new space, by its id', async () => {
+    const a = CountedEmbedder.of(corpus);
+    const b = CountedEmbedder.of(corpus);
+    const c = CountedEmbedder.of([...corpus, 'moth static dust']);
+    expect(b.id).toBe(a.id);
+    expect(await b.embed(['regolith crater'])).toEqual(await a.embed(['regolith crater']));
+    expect(c.id).not.toBe(a.id);
+  });
+
+  it('log-odds with the Dirichlet prior is the export\'s formula, and a word locked to a field is distinctive', () => {
+    // rig/export-data-v2.py, by hand: y1=8 of n1=100 in the field, y2=2 of n2=900 elsewhere, a0=0.01
+    const aw = 0.01 * 10, A = 0.01 * 1000;
+    const delta = Math.log((8 + aw) / (100 + A - 8 - aw)) - Math.log((2 + aw) / (900 + A - 2 - aw));
+    expect(logOddsZ(8, 100, 2, 900, 10, 1000)).toBeCloseTo(delta / Math.sqrt(1 / (8 + aw) + 1 / (2 + aw)), 10);
+    expect(logOddsZ(8, 100, 2, 900, 10, 1000)).toBeGreaterThan(0);
+    expect(logOddsZ(1, 100, 81, 900, 82, 1000)).toBeLessThan(0);
+  });
+
+  it('a theme leans to the fields whose distinctive words it uses; with one field, nothing leans', () => {
+    const fields = fieldCounts([
+      { field: 'moon', texts: ['vacuum regolith crater', 'regolith dust crater'] },
+      { field: 'farm', texts: ['hen egg barn', 'cow barn straw'] }
+    ]);
+    const lean = fieldAffinity('a crater full of regolith', fields);
+    expect(lean.get('moon')!).toBeGreaterThan(lean.get('farm')!);
+    expect(fieldAffinity('anything', fieldCounts([{ field: 'only', texts: ['a b'] }])).get('only')).toBe(1);
+  });
+
+  it('concentration is one where a thing is locked to one field, zero where it is everywhere, and read as its residual', () => {
+    expect(concentration([3, 0, 0])).toBeCloseTo(1);
+    expect(concentration([2, 2, 2])).toBeCloseTo(0);
+    // Seen once, it is concentrated by rarity alone: the residual says nothing of it
+    const r = concentrationResiduals([[1, 0, 0], [0, 1, 0], [2, 0, 0], [1, 1, 0]]);
+    expect(r[0]).toBeCloseTo(0);
+    expect(r[1]).toBeCloseTo(0);
+    expect(r[2]).toBeGreaterThan(r[3]);
   });
 });
 
@@ -158,9 +229,10 @@ describe('the pool', () => {
 // -------------------------------------------------------------------------
 
 const idOf = (ask: IPassAsk, list: string, key: string) => ask.offered[list]?.find(o => o.id.endsWith(`.${list}.${key}`))?.id;
+const first = (ask: IPassAsk, list: string, skip = 0) => ask.offered[list]?.[skip]?.id;
 const ALL = [...BIOMES];
 
-/** What a model might answer for an airless moon, pass by pass. Ids come from what was offered. */
+/** What a model might answer for an airless moon, pass by pass. It picks from what was offered. */
 function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: number) => unknown>> = {}): { door: PassDoor; asks: IPassAsk[] } {
   const asks: IPassAsk[] = [];
   const counts: Record<string, number> = {};
@@ -177,26 +249,30 @@ function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: 
       words: []
     }),
     life: ask => ({
-      picked: [{ id: idOf(ask, 'fauna', 'dividend_hen'), regions: ['RUINS'] }, { id: idOf(ask, 'flora', 'chaffwheat'), regions: ['WASTELAND'] }].filter(p => p.id),
+      picked: [{ id: first(ask, 'fauna'), regions: ['RUINS'] }, { id: first(ask, 'flora'), regions: ['WASTELAND'] }].filter(p => p.id),
       flora: [{ is: 'a gray lichen that eats starlight', form: 'shrub', tags: [], regions: ['WASTELAND', 'OVERGROWTH'] }],
       // A thing the pool holds, by its plain name: it is taken from the pool, never written again
-      fauna: [{ is: 'Pension Ox', tags: ['vacuum'], social: false, regions: ['INDUSTRIAL'] }, { is: 'a pale moth that drinks static', tags: ['vacuum'], social: true, regions: ['WASTELAND', 'RUINS'] }],
+      fauna: [
+        { is: 'Pension Ox', tags: ['vacuum'], social: false, builds: false, regions: ['INDUSTRIAL'] },
+        { is: 'a pale moth that drinks static', tags: ['vacuum'], social: true, builds: false, regions: ['WASTELAND', 'RUINS'] },
+        { is: 'a hollow crawler that hunts by the shake of the ground', tags: ['vacuum'], social: true, builds: true, regions: ['CYBER_CITY', 'RUINS'] },
+        { is: 'a glass hound that runs the rim', tags: ['vacuum'], social: true, builds: false, regions: ['INDUSTRIAL', 'OVERGROWTH'] }
+      ],
       words: []
     }),
-    beings: ask => ({
-      picked: [{ id: idOf(ask, 'monsters', 'tally_rat'), regions: ALL }, { id: idOf(ask, 'professions', 'lien_smith'), regions: [] }].filter(p => p.id).map(p => (p.regions.length ? p : { id: p.id, regions: ['RUINS'] })),
-      monsters: [{ is: 'a hollow crawler that hunts by the shake of the ground', tags: ['vacuum'], social: true, builds: false, regions: ['CYBER_CITY', 'RUINS'] }],
+    people: ask => ({
+      picked: [first(ask, 'professions')].filter(Boolean),
       professions: [{ is: 'can seal a breach in a suit before the air goes', concept: 'seal_breach', workshop: 'the patch bay', tool: ['blunt'], material: ['metal'] }],
       words: []
     }),
     holds: ask => ({
-      picked: [{ id: idOf(ask, 'minerals', 'vault_stone'), regions: ['RUINS'] }, { id: idOf(ask, 'anchors', 'reserve_garnet'), regions: ['RUINS'] }].filter(p => p.id),
+      picked: [{ id: first(ask, 'minerals'), regions: ['RUINS'] }, { id: first(ask, 'anchors'), regions: ['RUINS'] }].filter(p => p.id),
       minerals: [{ is: 'regolith that packs hard when wet with nothing', form: 'sand', tags: ['building'], regions: ['WASTELAND', 'CYBER_CITY'] }],
       junk: [{ is: 'a husk that crackles', tags: [], from: ['vacuum'] }],
       anchors: [],
       words: []
     }),
-    made: ask => ({ picked: [idOf(ask, 'gear', 'letter_opener'), idOf(ask, 'gear', 'visor')].filter(Boolean) }),
+    made: ask => ({ picked: [first(ask, 'gear'), first(ask, 'gear', 1)].filter(Boolean) }),
     known: () => ({ picked: [], lore: ['The moon kept the bank\'s hours long after the bank was gone.'] })
   };
   const door: PassDoor = async (pass, ask) => {
@@ -209,10 +285,11 @@ function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: 
 }
 
 const write = (door: PassDoor, seed = 'moon') => writeWorld('An airless moon. The bank never closed.', {
-  door, pull: new MeaningPull(poolOf([FIRST_THEME_PACK]), HASHED_EMBEDDER), packs: [FIRST_THEME_PACK], registered, seed, difficulty: 'D'
+  door, pull: new CountedPull(poolOf([FIRST_THEME_PACK])), packs: [FIRST_THEME_PACK], registered, seed, difficulty: 'D'
 });
 
 const sourceOf = (key: string) => [...FIRST_THEME_PACK.creatures, ...FIRST_THEME_PACK.materials].find(x => x.key === key)!;
+const pooled = (id: string) => poolOf([FIRST_THEME_PACK]).find(e => e.id === id)!;
 
 describe('a world, written in passes', () => {
   it('asks in a world\'s own order, each pass given what the earlier passes made', async () => {
@@ -234,14 +311,17 @@ describe('a world, written in passes', () => {
   });
 
   it('a picked thing is the same thing, word for word: an oak is an oak', async () => {
-    const out = await write(scriptedDoor().door);
+    const { door, asks } = scriptedDoor();
+    const out = await write(door);
     if (!out.ok) throw new Error(out.reason);
-    const hen = out.body.creatures.filter(c => c.name === 'Dividend Hen');
-    expect(hen.length).toBe(1);
-    const { habitat: _h, ...henWords } = hen[0];
-    const { habitat: _s, ...sourceWords } = sourceOf('dividend_hen') as typeof hen[0];
-    expect(henWords).toEqual(sourceWords);
-    expect(hen[0].habitat).toEqual(['RUINS']);
+    const pickedId = asks.find(a => a.pass === 'life')!.offered.fauna[0].id;
+    const source = pooled(pickedId).entry as unknown as IThemeBody['creatures'][number];
+    const held = out.body.creatures.filter(c => c.name === source.name);
+    expect(held.length).toBe(1);
+    const { habitat: _h, key: _k, ...heldWords } = held[0];
+    const { habitat: _s, key: _sk, ...sourceWords } = source;
+    expect(heldWords).toEqual(sourceWords);
+    expect(held[0].habitat).toEqual(['RUINS']);
   });
 
   it('a thing the model adds that the pool already holds is taken from the pool, not written again', async () => {
@@ -255,7 +335,7 @@ describe('a world, written in passes', () => {
   it('the world rules things out: no tree is offered, and adding one is refused, then asked again', async () => {
     const { door, asks } = scriptedDoor({
       life: (ask, n) => ({
-        picked: [], fauna: [{ is: 'a pale moth that drinks static', tags: ['vacuum'], social: true, regions: ALL }],
+        picked: [], fauna: [{ is: 'a pale moth that drinks static', tags: ['vacuum'], social: true, builds: false, regions: ALL }, { is: 'a glass hound that runs the rim', tags: ['vacuum'], social: true, builds: false, regions: ALL }],
         flora: n === 1 ? [{ is: 'a tall gray tree', form: 'tree', tags: [], regions: ALL }] : [{ is: 'a gray lichen that eats starlight', form: 'shrub', tags: [], regions: ALL }],
         words: []
       })
@@ -303,6 +383,17 @@ describe('a world, written in passes', () => {
     expect(TerrainCrossing.crossesSkilled(climber, FIRST_THEME_PACK)).toBe(false);
   });
 
+  it('fauna is one field: which new kind is a monster is its rolled aggression, never the model\'s word', async () => {
+    const out = await write(scriptedDoor().door);
+    if (!out.ok) throw new Error(out.reason);
+    const pool = new Set(FIRST_THEME_PACK.creatures.map(c => c.name));
+    const fresh = out.body.creatures.filter(c => !pool.has(c.name) && !c.leads);
+    expect(fresh.length).toBeGreaterThan(1);
+    for (const c of fresh) expect(c.tree, c.name).toBe(temperOf(c.threat).tree);
+    expect(out.body.creatures.some(c => c.tree === 'animal') && out.body.creatures.some(c => c.tree === 'monster')).toBe(true);
+    for (const c of out.body.creatures.filter(x => x.tree === 'animal')) expect(c.builds).toBe(false);
+  });
+
   it('code decides who leads, and fills what the law asks of any world from the pool', async () => {
     const out = await write(scriptedDoor().door);
     if (!out.ok) throw new Error(out.reason);
@@ -316,14 +407,15 @@ describe('a world, written in passes', () => {
 
   it('a pick by an id that was never offered is refused, asked again, and leaves nothing behind', async () => {
     const { door, asks } = scriptedDoor({
-      made: (ask, n) => ({ picked: n === 1 ? ['not.an.id', idOf(ask, 'gear', 'visor')!] : [idOf(ask, 'gear', 'visor')!] })
+      made: (ask, n) => ({ picked: n === 1 ? ['not.an.id', first(ask, 'gear')!] : [first(ask, 'gear')!] })
     });
     const out = await write(door);
     expect(out.ok).toBe(true);
     const made = asks.filter(a => a.pass === 'made');
     expect(made.length).toBe(2);
     expect(made[1].refused).toContain('not.an.id');
-    if (out.ok) expect(out.body.gear.filter(g => g.key.startsWith('visor')).length).toBe(1);
+    const once = String(pooled(made[1].offered.gear[0].id).entry.name);
+    if (out.ok) expect(out.body.gear.filter(g => g.name === once).length).toBe(1);
   });
 
   it('with no key nothing is written and nothing is spent: an outcome, never a throw', async () => {
