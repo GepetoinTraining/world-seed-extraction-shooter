@@ -35,14 +35,16 @@ import { SystemConsole } from './src/components/debug/SystemConsole';
 import { TuningPanel } from './src/components/debug/TuningPanel';
 import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
 import { VoicePanel } from './src/components/VoicePanel';
+import { HubPanel } from './src/components/HubPanel';
 
 installConsoleInterceptor();
 
 /** The player's own housekeeping, one step in: the backup, the other avatars, and the dev switch. */
 const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; onClose: () => void }> = ({ devMode, onDevMode, onClose }) => {
   const [voiceOpen, setVoiceOpen] = React.useState(false);
+  const [hubOpen, setHubOpen] = React.useState(false);
   return (
-  <Modal title="SYSTEM" onClose={onClose} width={voiceOpen ? 660 : 420}>
+  <Modal title="SYSTEM" onClose={onClose} width={voiceOpen || hubOpen ? 660 : 420}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <Button
         autoFocus
@@ -74,6 +76,10 @@ const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; 
         THE VOICE
       </Button>
       {voiceOpen && <VoicePanel titled={false} />}
+      <Button tone="quiet" aria-pressed={hubOpen} onClick={() => setHubOpen(!hubOpen)} title="Your account on a hub, and this character's receipts">
+        THE HUB
+      </Button>
+      {hubOpen && <HubPanel titled={false} />}
       <Button tone="quiet" aria-pressed={devMode} onClick={() => onDevMode(!devMode)} title="Developer tools, also on Ctrl+Shift+D">
         DEVELOPER TOOLS: {devMode ? 'ON' : 'OFF'}
       </Button>

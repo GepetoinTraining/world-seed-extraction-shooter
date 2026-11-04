@@ -303,7 +303,14 @@ describe('line 69: saves live in the SQL database', () => {
   });
 
   it('the private key never reaches the server: no commit carries it', () => {
+    // The hub's own signing key (DEPLOY.md) is made on the server and is the server's: that one file
+    // may name a private key, and may never touch a character's (a JWK, a certificate, an export).
+    const HUB_KEY = /^server\/hub\/keys\.ts$/;
     for (const file of walk('server')) {
+      if (HUB_KEY.test(file)) {
+        expect(read(file)).not.toMatch(/encryptedPrivateKey|privateKeyJWK|jwk|certificate|exportIdentity/i);
+        continue;
+      }
       expect(read(file)).not.toMatch(/privateKey|encryptedPrivateKey/);
     }
     const persistence = read('src/logic/persistence/PlayerPersistence.ts') + read('src/logic/ledger/Ledger.ts') + read('src/logic/economy/GoldCommit.ts');
