@@ -16,6 +16,8 @@ export interface IHubWhere { configured: boolean; url: string | null; signedIn: 
 export interface IHubStatement { text: string; signature: string }
 export interface IHubCharacter { uid: string; displayName: string; held: number; standing: 'GOOD' | 'CHALLENGED'; issued: IHubStatement }
 export interface IHubOutcome { ok: boolean; status?: number | string; reason?: string; [more: string]: any }
+export interface IPoolMember { handle: string; voice: 'keyed' | 'local'; jobsDone: number; spentUsd: number; online: boolean; since: number }
+export interface IPoolJob { id: string; kind: string; path: string; body: unknown }
 
 async function call<T extends IHubOutcome>(path: string, body?: unknown): Promise<T> {
   try {
@@ -57,6 +59,17 @@ export const HubClient = {
     const { metadata, publicKeyJWK } = certificate;
     return call('/characters', { certificate: { metadata: { uid: metadata.uid, displayName: metadata.displayName, createdAt: metadata.createdAt }, publicKeyJWK }, proof });
   },
+
+  // THE POOL (server/hub/pool.ts): shared work, in turns, on each member's own voice
+  joinPool: (voice: 'keyed' | 'local') => call('/pool/join', { voice }),
+  leavePool: () => call('/pool/leave', {}),
+  pool: () => call<IHubOutcome & { members?: IPoolMember[]; says?: string }>('/pool'),
+  takeJob: () => call<IHubOutcome & { job?: IPoolJob | null; turn?: string }>('/jobs/take', {}),
+  handIn: (jobId: string, outcome: unknown) => call<IHubOutcome & { state?: string; diff?: unknown[] }>('/jobs/done', { jobId, outcome }),
+
+  // THE WORLD WE HOST (server/hub/hosted.ts)
+  hosted: () => call<IHubOutcome & { world?: { worldUid: string; name: string; themeId: string } }>('/hosted'),
+  connectHosted: (uid: string) => call<IHubOutcome & { manifest?: { world: { worldUid: string; name: string }; certificate?: any; themes: any[] }; standing?: string }>('/hosted/connect', { uid }),
 
   /**
    * Sends the rows the hub does not hold yet, in order, with the last one it holds beside them, so a

@@ -58,6 +58,13 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 | `POST /receipts` | signed in | `{ uid, rows }`: signed ledger rows, checked and held; answers the acknowledgement or the challenge |
 | `GET /record/<uid>` | signed in | what the hub holds for a character: its seq, head hash, standing |
 | `POST /worlds/check` | signed in | `{ manifest }`: the world check above |
+| `POST /pool/join`, `/pool/leave`, `/pool/beat` | signed in | the pool: `{ voice: 'keyed' \| 'local' }` to join |
+| `GET /pool` | signed in | who is in the pool, with what, what each has done and spent |
+| `POST /jobs` | signed in | `{ kind, path, body }`: shared work, for a kind the hub has a law for |
+| `POST /jobs/take`, `/jobs/done` | signed in | a member's turn, and its answer handed in to be checked |
+| `GET /jobs/<id>` | signed in | a job's state, and its checked result |
+| `GET /hosted` | anyone | the world this hub hosts |
+| `POST /hosted/connect` | signed in | `{ uid }`: the account and the character's standing checked, the world served |
 
 ## Time (D135)
 
@@ -86,20 +93,36 @@ npm run hub
 
 Open `http://127.0.0.1:3950` for the landing page and make an account, then PLAY IN THIS BROWSER (`/play/`). Under SYSTEM, THE HUB, sign in, register the character and send its receipts.
 
-## The model, from the browser: not built yet
+## The model, from the browser
 
-The game's voice is the door in `server/intelligence/`, which today runs on a server: in development, or under `npm run play` (`server/main.ts`, the runner), which still works and is now only needed for the voice. Played from the domain, the game plays on without one.
+Pedro: "their IDB makes the call, not our Turso or postgress". Played from the domain, the game holds its own door (`src/logic/intelligence/PageDoor.ts`): the server's door, the same routes (`server/intelligence/routes.ts`), the same shapes and the same law, asking from the page. Our servers make no model call and carry none.
 
-What reaching a local model from a page on the domain takes, checked 2026-11-04:
+- **A model on the player's machine.** Ollama at `127.0.0.1:11434`, once the player allows this game's origin. Chrome, Edge and Firefox (153 and later) ask the player once before a public page may reach their machine; then it works. **Safari, and every browser on iPhone and iPad, block it** as mixed content and offer no prompt (WebKit bug 171934, open), so there a key is the only way. Ollama answers a browser only from local origins by default, so the player sets `OLLAMA_ORIGINS` to this game's origin and restarts it.
+- **Setting that up**, under SYSTEM, THE VOICE, SET UP A MODEL HERE (`LocalSetup.ts`): a prompt for whatever coding agent the player has, shown whole before it is copied; a plain script per system (PowerShell; shell for macOS and Linux), shown whole, also served at `/setup/`, run only by the player; and free agents for a player with none (`server/intelligence/agents.json`, read on each vendor's page 2026-11-04). Every way allows this origin only, never `*`.
+- **A player's own key.** Anthropic (with the `anthropic-dangerous-direct-browser-access` header), Gemini, Groq, OpenRouter and Mistral answer a page (their preflights passed on 2026-11-04, though none of the four documents it); Cloudflare's does not and is not offered in the page. The key lives with the player: sealed at rest with AES-GCM under a key made in the browser as not extractable, in IndexedDB (`KeyVault.ts`). No storage holds it as written, and it never reaches our servers; a script running in this page's own origin could still ask the browser to unseal it, which is as far as any browser lets a page go.
+- **An Anthropic vault** is not used for this. A vault's credential is usable only inside a Managed Agents session, which bills our workspace: $0.08 per session-hour while running, plus the tokens (platform.claude.com pricing, read 2026-11-04). No shape of it leaves our side without a standing cost, so the call stays the player's.
 
-- **Ollama's allowed origins.** Ollama answers a browser only from local origins unless told otherwise, so the player sets `OLLAMA_ORIGINS=https://<domain>` once and restarts Ollama.
-- **Chrome's Local Network Access.** A public page reaching `127.0.0.1` needs the player's permission, asked once. Since Chrome 145 it is its own permission, for loopback. A player who refuses is not asked again until they change it in the site's settings.
-- **The door itself moves into the page.** The prompts, the law over what comes back and the local runtime are already free of Node. The machine check is not: a page cannot read the machine's memory or graphics card, only what Ollama reports (`/api/tags`, `/api/ps`) and the little a browser says.
-- **A key the player inserts** would be called from the page straight to its provider. Whether each free option answers a browser (its CORS) is not checked; Anthropic's needs a header marking direct browser access.
+## The pool (shared work, in turns)
+
+Pedro: "the players in a server can rotate the one using their key... the more players in a hub the less it costs each one, distributed content generation". `server/hub/pool.ts`, behind `/api/hub/pool*` and `/api/hub/jobs*`:
+
+- A player opts in, with their own key or their own machine's model, under THE HUB, THE POOL. They see who is in it, with which voice, how many jobs each has done and what each has spent (as their own client reported it: the hub never sees a provider's bill), and can leave at any time.
+- A job is one door request (a route and its body). It goes to the online member who has done the fewest; that member's client asks its own door (`src/logic/hub/PoolWorker.ts`) and hands the answer in.
+- What comes back passes the same law as a world manifest: a theme through `ContentRegistry`, a creature kind through `CreatureLines.correctProof` with wrong numbers put right as a diff. What breaks the law and cannot be put right is refused, and the job goes back for another turn. A job of a kind the hub has no law for is refused when posted.
+- A local model costs its player nothing and takes its turns the same. That is safe as far as the law reaches, because the law judges what comes back, never who wrote it: a weaker model costs turns (more refusals), not the world's rules.
+- **Not yet:** the game's own producers of shared work (a world's passes, the chain) do not post jobs yet, and the pool's checks cover themes and kinds only.
+
+## The world we host
+
+Pedro: "The server still needs it for the world we'll host for everyone, that one is the solid deploy plan". The one live server (`npm run hosted`, `server/hosted/main.ts`): the hub's function always on, the site, and the door on our own key, answering its own machine only, the key read from the host's secret store. `npm run hosted:publish -- <game database url> <worldUid>` publishes a world from a game's store as the hosted one.
+
+**Reaching it:** after the tutorial's first order is sealed, the zones list shows CONNECT HUB TO ONLINE WORLD, the first thing in the game that asks for an account. Connecting checks that the account holds the character and that the character's standing on our world is good; then the world's certificate and theme join this hub's zones, to deploy into as into any. A character barred from our world (`HostedWorld.setStanding`, the operator's, not a route) is barred from that world only: its account, its own hub and every other world play on.
+
+**The smallest host for it:** one always-on Node process with a Postgres beside it. A single small machine on Fly.io or a starter instance on Render carries that; their current prices were not checked. Money is a later problem, and nothing for billing or limits is built.
 
 ## Not built, on purpose
 
-- Online play: a served Postgres that players join over a socket and that stays live, speaking to Turso (the data layer's sockets phase, leg 5).
+- Online play: a served Postgres that players join over a socket and that stays live, speaking to Turso (the data layer's sockets phase, leg 5). The hosted world is served to a hub and played there; its live shared state is this piece.
 - Rerunning a character's arithmetic on the hub (D134). It waits on integer-only reruns.
 - Items, loot and the hub manifest in the world check.
 - A world certificate the hub can verify: the certificate keeps its signature but not the moment signed, and its stats change after signing, so nothing can check it today. The check ties a world to a character registered under the account instead.

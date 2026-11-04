@@ -13,6 +13,8 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Hub } from './Hub';
+import { HubPool } from './pool';
+import { HostedWorld } from './hosted';
 
 /** A request body larger than this is refused unread. Receipts come in batches well under it. */
 export const HUB_BODY_BYTES = 4 * 1024 * 1024;
@@ -66,6 +68,8 @@ const answer = (res: ServerResponse, out: { ok: boolean; status?: number }) => {
 
 /** `path` is what follows the mount. */
 export function createHubHandler(hub: Hub) {
+  const pool = new HubPool(hub);
+  const hosted = new HostedWorld(hub);
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     try {
       const token = tokenOf(req);
@@ -83,6 +87,9 @@ export function createHubHandler(hub: Hub) {
         }
         if (path === '/characters') return answer(res, await hub.characters(token));
         if (path.startsWith('/record/')) return answer(res, await hub.record(token, decodeURIComponent(path.slice('/record/'.length))));
+        if (path === '/pool') return answer(res, await pool.members(token));
+        if (path.startsWith('/jobs/')) return answer(res, await pool.get(token, decodeURIComponent(path.slice('/jobs/'.length))));
+        if (path === '/hosted') return answer(res, await hosted.describe());
         return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
       }
 
@@ -116,6 +123,13 @@ export function createHubHandler(hub: Hub) {
         case '/characters': return answer(res, await hub.registerCharacter(token, body.certificate, body.proof));
         case '/receipts': return answer(res, await hub.checkReceipts(token, body.uid, body.rows));
         case '/worlds/check': return answer(res, await hub.checkWorld(token, body.manifest));
+        case '/pool/join': return answer(res, await pool.join(token, body.voice));
+        case '/pool/leave': return answer(res, await pool.leave(token));
+        case '/pool/beat': return answer(res, await pool.beat(token));
+        case '/jobs': return answer(res, await pool.post(token, { kind: body.kind, path: body.path, body: body.body }));
+        case '/jobs/take': return answer(res, await pool.take(token));
+        case '/jobs/done': return answer(res, await pool.done(token, body.jobId, body.outcome));
+        case '/hosted/connect': return answer(res, await hosted.connect(token, body.uid));
         default: return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
       }
     } catch (e) {

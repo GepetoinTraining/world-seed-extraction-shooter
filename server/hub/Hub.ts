@@ -113,7 +113,7 @@ const UID = /^[A-Za-z0-9_-]+$/;
 const RSA = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
-const refuse = (status: number, reason: string, more: Record<string, unknown> = {}): IRefusal => ({ ok: false, status, reason, ...more });
+export const refuse = (status: number, reason: string, more: Record<string, unknown> = {}): IRefusal => ({ ok: false, status, reason, ...more });
 const handleKey = (handle: string) => handle.normalize('NFKC').toLowerCase();
 const rowId = (uid: string, seq: number) => `ledger_${uid}_${seq.toString().padStart(8, '0')}`;
 
@@ -134,11 +134,12 @@ function rowShapeProblem(row: any, uid: string): string | null {
 }
 
 export class Hub {
-  private readonly now: () => number;
+  /** @internal The hub's own clock, shared with its parts (pool.ts, hosted.ts). */
+  readonly now: () => number;
   /** Measured against when the handle does not exist, so a wrong handle takes as long as a wrong password. */
   private readonly decoy = randomBytes(16);
 
-  constructor(private readonly store: SqlStore, readonly key: IHubKey, private readonly options: IHubOptions) {
+  constructor(/** @internal */ readonly store: SqlStore, readonly key: IHubKey, private readonly options: IHubOptions) {
     this.now = options.now ?? Date.now;
   }
 
@@ -151,17 +152,20 @@ export class Hub {
   }
   get publicUrl(): string { return this.options.publicUrl; }
 
-  private doc(id: string, data: Record<string, unknown>, createdAt = this.now(), namespace = NS): IWireDoc {
+  /** @internal */
+  doc(id: string, data: Record<string, unknown>, createdAt = this.now(), namespace = NS): IWireDoc {
     const at = this.now();
     return { id, namespace, dataText: JSON.stringify(data), metadata: { createdAt, updatedAt: at, version: 1 } };
   }
 
-  private async read<T>(id: string): Promise<{ doc: IWireDoc; data: T } | null> {
+  /** @internal */
+  async read<T>(id: string): Promise<{ doc: IWireDoc; data: T } | null> {
     const doc = await this.store.get(id);
     return doc ? { doc, data: JSON.parse(doc.dataText) as T } : null;
   }
 
-  private commit(ops: CommitOp[], guardAbsent?: string) {
+  /** @internal */
+  commit(ops: CommitOp[], guardAbsent?: string) {
     return this.store.commit({ commitId: randomUUID(), ops, ...(guardAbsent ? { guardAbsent } : {}) });
   }
 
@@ -226,7 +230,8 @@ export class Hub {
     await this.commit([{ kind: 'put', doc: this.doc(id, { ...session.data, endedAt: this.now() }, session.doc.metadata.createdAt) }]);
   }
 
-  private async who(token: unknown): Promise<IAccount | IRefusal> {
+  /** @internal */
+  async who(token: unknown): Promise<IAccount | IRefusal> {
     return (await this.session(token)) ?? refuse(401, 'Sign in first.');
   }
 
@@ -445,7 +450,8 @@ export class Hub {
   // ---------------------------------------------------------------------------
 
   /** A theme this hub holds: one it ships with, or one in its store, put in the registry if it is not yet. */
-  private async knownTheme(themeId: string): Promise<boolean> {
+  /** @internal Also the pool's (pool.ts). */
+  async knownTheme(themeId: string): Promise<boolean> {
     if (!shippedInstalled) { installShippedThemes(); shippedInstalled = true; }
     if (SHIPPED_THEMES().includes(themeId)) return true;
     const held = await this.read<{ pack: IThemePack }>(`hub_theme_${themeId}`);

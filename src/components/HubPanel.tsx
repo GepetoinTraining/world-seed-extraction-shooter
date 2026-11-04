@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Panel } from './ui/kit';
 import { HubClient, IHubCharacter, IHubWhere } from '../logic/hub/HubClient';
 import { useIdentityStore } from '../entities/identity/store';
+import { PoolSection } from './PoolSection';
 
 const STANDING: Record<IHubCharacter['standing'], string> = {
   GOOD: '[■] IN GOOD STANDING',
@@ -104,6 +105,8 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
           )}
         </div>
       )}
+
+      {where?.signedIn && <PoolSection me={where.signedIn} />}
 
       {busy && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{busy}…</div>}
       {note && <div className="ws-small" style={{ marginTop: 6 }}>! {note}</div>}
