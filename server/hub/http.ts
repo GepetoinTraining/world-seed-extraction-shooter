@@ -47,7 +47,7 @@ const COOKIE = 'ws_hub';
 const COOKIE_DAYS = 30;
 
 /** The caller's token: a bearer header first, else this hub's cookie. */
-const tokenOf = (req: IncomingMessage) => {
+export const tokenOf = (req: IncomingMessage) => {
   const header = req.headers.authorization ?? '';
   if (header.startsWith('Bearer ')) return header.slice('Bearer '.length).trim();
   for (const part of (req.headers.cookie ?? '').split(';')) {
@@ -121,7 +121,7 @@ export function createHubHandler(hub: Hub) {
           return send(res, 200, { ok: true });
         case '/characters/nonce': return answer(res, await hub.nonce(token));
         case '/characters': return answer(res, await hub.registerCharacter(token, body.certificate, body.proof));
-        case '/receipts': return answer(res, await hub.checkReceipts(token, body.uid, body.rows));
+        case '/receipts': return answer(res, await hub.checkReceipts(token, body.uid, body.rows, { reading: body.reading, sessions: body.sessions, tables: body.tables }));
         case '/worlds/check': return answer(res, await hub.checkWorld(token, body.manifest));
         case '/pool/join': return answer(res, await pool.join(token, body.voice));
         case '/pool/leave': return answer(res, await pool.leave(token));
@@ -129,6 +129,7 @@ export function createHubHandler(hub: Hub) {
         case '/jobs': return answer(res, await pool.post(token, { kind: body.kind, path: body.path, body: body.body }));
         case '/jobs/take': return answer(res, await pool.take(token));
         case '/jobs/done': return answer(res, await pool.done(token, body.jobId, body.outcome));
+        case '/jobs/withdraw': return answer(res, await pool.withdraw(token, body.jobId));
         case '/hosted/connect': return answer(res, await hosted.connect(token, body.uid));
         default: return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
       }

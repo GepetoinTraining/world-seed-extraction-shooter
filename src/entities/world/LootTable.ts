@@ -19,6 +19,12 @@ import { DreamingSystem, IAffixPool } from './Dreaming';
 import { EntityType, IWorldEntity } from './types';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { JUNK_CHANCE } from '../../logic/theme/ThemeFormula';
+import { LootBook } from '../../logic/theme/LootBook';
+import { IDropLine, LootLaw, lootItemsOf } from '../../logic/theme/LootLaw';
+import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+
+/** A drop rolled on a theme's table (LootLaw.ts): which table, at what rank, what it said. The journal keeps it, so a hub can roll it again (D134). */
+export interface ITableRoll { table: string; rank: string; lines: IDropLine[] }
 
 /** Wave 10E: the pool this drop rolls from — the pinned bank's biome pool in a
  * dreamed world, the purged legacy pool everywhere else (old worlds unchanged). */
@@ -40,6 +46,43 @@ export interface ILootContext {
 }
 
 export class LootTable {
+
+  /**
+   * The roll on a table, when this source's theme holds one that fits it; none means the old
+   * code's drop. Whole numbers only, so the hub lands where this did.
+   */
+  static rollOnTable(themeId: string | undefined, kind: 'creature' | 'chest', tags: string[], rank: string, rollKey: string | undefined): ITableRoll | null {
+    if (!rollKey || !themeId) return null;
+    const table = LootBook.tableFor(themeId, kind, tags);
+    const pack = table ? ContentRegistry.get(themeId) : undefined;
+    if (!table || !pack) return null;
+    return { table: table.id, rank, lines: LootLaw.roll(table, rank, rollKey, lootItemsOf(pack)) };
+  }
+
+  /** What a table's lines mint, each piece from its own keyed stream, so one never moves another. */
+  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool): IItem[] {
+    const out: IItem[] = [];
+    for (const d of roll.lines) {
+      for (let n = 0; n < d.count; n++) {
+        const own = Rng.fromKey(`${rollKey}:drop:${d.line}:${n}`);
+        if (d.what === 'gear') { out.push(ItemFactory.createItem(d.rank as UniversalRank, false, own, undefined, d.id, pool)); continue; }
+        const def = RESOURCE_DEFINITIONS[d.id];
+        if (def) out.push(ItemFactory.createResourceItem(def, own));
+      }
+    }
+    return out;
+  }
+
+  /** The table roll behind a creature's drop, for the journal. */
+  static creatureRoll(mobDef: IMobDefinition, rollKey?: string): ITableRoll | null {
+    return this.rollOnTable((mobDef as { themeId?: string }).themeId, 'creature', mobDef.tags, mobDef.rank, rollKey);
+  }
+
+  /** The table roll behind a chest, in the dreamed world's theme, for the journal. */
+  static chestRoll(chestRank: UniversalRank, rollKey?: string, biome?: BiomeType): ITableRoll | null {
+    return this.rollOnTable(LootBook.entered(), 'chest', biome ? [biome] : [], chestRank, rollKey);
+  }
+
   
   /**
    * Generate loot from a killed mob
@@ -61,6 +104,14 @@ export class LootTable {
     const loot: IItem[] = [];
     const effectiveMF = magicFind * (context?.quantityBonus || 1.0);
     const pool = dreamPool(context?.biome);
+
+    // A theme's own table, when it has one for this creature: the model's words, the law's numbers
+    const onTable = this.creatureRoll(mobDef, rollKey);
+    if (onTable && rollKey) {
+      loot.push(...this.mint(onTable, rollKey, pool));
+      loot.push(...this.deedsFor(mobDef, rng, effectiveMF, context, rollKey));
+      return loot;
+    }
 
     // ========================================================================
     // 1. GUARANTEED DROPS (By Tag)
@@ -154,6 +205,36 @@ export class LootTable {
     // 5. DEED DROPS (THE JACKPOT)
     // ========================================================================
     
+    loot.push(...this.deedsFor(mobDef, rng, effectiveMF, context, rollKey));
+
+
+    // ========================================================================
+    // 6. GOLD (Always)
+    // ========================================================================
+    
+    // Gold is represented as a virtual currency, not an item
+    // This would be handled by the combat system adding to session gold
+    // For now we could add a "gold shard" item if desired
+
+    // ========================================================================
+    // 7. JUNK (D99): on its own roll, so no other drop moves
+    // ========================================================================
+
+    const junk = (mobDef as { junk?: string[] }).junk ?? [];
+    if (junk.length > 0 && rollKey) {
+      const own = Rng.fromKey(`${rollKey}:junk`);
+      if (own.next() < JUNK_CHANCE) {
+        const def = RESOURCE_DEFINITIONS[junk[own.int(0, junk.length)]];
+        if (def) loot.push(ItemFactory.createResourceItem(def, own));
+      }
+    }
+
+    return loot;
+  }
+
+  /** A land deed: the game's own rule, not a table's, on the drop's own stream. */
+  private static deedsFor(mobDef: IMobDefinition, rng: { next(): number }, effectiveMF: number, context: ILootContext | undefined, rollKey: string | undefined): IItem[] {
+    const loot: IItem[] = [];
     if (context) {
       const deedChance = this.getDeedChance(mobDef);
       
@@ -181,28 +262,6 @@ export class LootTable {
     }
 
     loot.push(...WorldDeed.foundOn(mobDef, effectiveMF, rollKey)); // D72: a keyed stream of its own, so no roll above moves
-
-    // ========================================================================
-    // 6. GOLD (Always)
-    // ========================================================================
-    
-    // Gold is represented as a virtual currency, not an item
-    // This would be handled by the combat system adding to session gold
-    // For now we could add a "gold shard" item if desired
-
-    // ========================================================================
-    // 7. JUNK (D99): on its own roll, so no other drop moves
-    // ========================================================================
-
-    const junk = (mobDef as { junk?: string[] }).junk ?? [];
-    if (junk.length > 0 && rollKey) {
-      const own = Rng.fromKey(`${rollKey}:junk`);
-      if (own.next() < JUNK_CHANCE) {
-        const def = RESOURCE_DEFINITIONS[junk[own.int(0, junk.length)]];
-        if (def) loot.push(ItemFactory.createResourceItem(def, own));
-      }
-    }
-
     return loot;
   }
 
@@ -308,6 +367,10 @@ export class LootTable {
     const rng = Rng.fromKey(rollKey || `unkeyed:chest:${Date.now()}:${Math.random()}`);
     const loot: IItem[] = [];
     const pool = dreamPool(biome);
+
+    // A theme's own table for a chest in this land, when the dreamed world has one
+    const onTable = this.chestRoll(chestRank, rollKey, biome);
+    if (onTable && rollKey) return this.mint(onTable, rollKey, pool);
 
     // Chests always have 2-5 items
     const count = 2 + Math.floor(rng.next() * 4);

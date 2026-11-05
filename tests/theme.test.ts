@@ -247,7 +247,8 @@ describe('line 89: one door', () => {
 
   it('a rest uses the model Pedro chose, one constant per kind (D44)', () => {
     expect(MODEL_FOR.rest).toBe('claude-sonnet-5-5');
-    expect(Object.keys(MODEL_FOR).sort()).toEqual(['bargain', 'chain', 'creation', 'kami_persona', 'kami_set', 'kami_talk', 'npc_goal', 'npc_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
+    // 'loot' joined 2026-11-04: a theme's loot tables, written beside it (LootLaw.ts)
+    expect(Object.keys(MODEL_FOR).sort()).toEqual(['bargain', 'chain', 'creation', 'kami_persona', 'kami_set', 'kami_talk', 'loot', 'npc_goal', 'npc_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
   });
 
   it('only a large world\'s theme is written on Opus (D118)', () => {

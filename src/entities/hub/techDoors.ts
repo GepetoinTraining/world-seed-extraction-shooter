@@ -4,6 +4,7 @@
  */
 
 import { IHubWeb, IItem, IWebStation } from '../../../types';
+import { SharedWork } from '../../logic/hub/SharedWork';
 import { HubGenerator } from './HubGenerator';
 import { IChainStanding, ChainWeb, IChainRound } from '../../logic/theme/ChainWeb';
 import { Ledger } from '../../logic/ledger/Ledger';
@@ -260,7 +261,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
             const tech = get().tech;
             const open = ChainWeb.open(profession.concept, profession.rank, tech.chain, ground, resident.id);
             if (open.length === 0) { state = { ...state, closed: true, refused: undefined }; break; }
-            const out = await IntelligenceClient.resolveChain<IChainRound>({
+            const ask = {
               person: { name: profession.name, knows: profession.knows, concept: profession.concept, rank: profession.rank, workshop: profession.workshop, tool: profession.tool, material: profession.material },
               ground: groundLine,
               written: {
@@ -269,7 +270,10 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
                 stations: tech.chain.stations.map(s => s.key)
               },
               open, refused: state.refused
-            });
+            };
+            // Shared work: the pool's turn when someone is there, judged by the hub against this chain; this player's door when not
+            const check = { chain: tech.chain, ground, open, registered: WebBank.current().tags.filter(t => !t.retired).map(t => t.tag) };
+            const out = await SharedWork.ask('chain', '/chain', { ask, check }, () => IntelligenceClient.resolveChain<IChainRound>(ask)) as { status: string; data?: IChainRound };
             // No key, no network, a busy door: an outcome, and it waits for the next look.
             if (out.status !== 'OK' || !out.data) break;
             state = { ...state, calls: state.calls + 1 };

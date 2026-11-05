@@ -1,3 +1,4 @@
+import { LootBook } from '../theme/LootBook';
 import { ThemeStore } from '../theme/ThemeStore';
 import { WorldCertificateSystem, WorldType, AccessMode } from '../../entities/world/WorldCertificate';
 import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
@@ -81,6 +82,8 @@ export class StartupSequence {
     // A shipped theme is banked too, so a later build changing its bytes retires no world pinned to it
     await ThemeStore.bank(FIRST_THEME_PACK);
     await ThemeStore.loadBanked();
+    // Loot tables after the themes they stand on, each judged again (LootLaw.ts)
+    await LootBook.loadBanked();
 
     // 3. GENESIS HUB VERIFICATION
     const worlds = await WorldCertificateSystem.getPublicWorlds();
