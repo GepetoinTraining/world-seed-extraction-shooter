@@ -61,6 +61,9 @@ import { rerunDrops, type IRerunFinder } from './rerun';
 import { ItemLaw, type IItemDefinitions } from '../../src/logic/content/ItemLaw';
 import { CRAFTED_GEAR_BASES, ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../src/entities/economy/data/recipeDefinitions';
+import { WebBank } from '../../src/logic/content/WebBank';
+import { GAME_WAYS } from '../../src/logic/economy/gameWays';
 
 export interface IHubOptions {
   /** Its own address, named in what it signs. */
@@ -127,7 +130,14 @@ export interface IWorldCheck {
 /** What an item is checked against: every base and material the installed themes compiled. */
 const HUB_ITEM_DEFINITIONS: IItemDefinitions = {
   base: id => [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases, ...ITEM_DEFINITIONS.tool_bases, ...CRAFTED_GEAR_BASES].find(b => b.id === id),
-  resource: id => RESOURCE_DEFINITIONS[id]
+  resource: id => RESOURCE_DEFINITIONS[id] ?? CRAFTED_DEFINITIONS[id],
+  // The host's tech web: the recipes its themes compiled, its web's own, and the game's own ways (gameWays.ts)
+  step: id => {
+    const recipe = RECIPE_DEFINITIONS[id] ?? GEAR_RECIPES[id] ?? WebBank.recipe(id);
+    if (recipe) return { laborSeconds: recipe.laborTimeSeconds };
+    const way = GAME_WAYS.find(w => w.id === id);
+    return way ? { laborSeconds: way.laborSeconds } : undefined;
+  }
 };
 
 /** The themes every hub holds as known: the ones the game ships with. */

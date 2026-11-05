@@ -15,7 +15,6 @@ import { LiveRoom, type LiveAccess } from '../server/live/room';
 import { tokenOf } from '../server/hub/http';
 import { StoreClient } from '../src/entities/data/StoreClient';
 import { LiveClient, useLive, type ILiveEvent } from '../src/logic/live/LiveClient';
-import { ChestSystem } from '../src/entities/world/ChestSystem';
 
 const WORLD = 'world_live_1';
 const doc = (id: string, data: unknown, at = 1) => ({ id, namespace: 'territories', dataText: JSON.stringify(data), metadata: { createdAt: at, updatedAt: at, version: 1 } });
@@ -73,12 +72,14 @@ describe('online play: the world we host, live', () => {
   const socketUrl = (uid = 'ws_birch') => `${origin.replace('http', 'ws')}/api/hub/live/socket?uid=${uid}`;
 
   it('a commit on the world\'s own documents lands once, and is an event with the next number', async () => {
-    const res = await commit(`world_chests_${WORLD}`, { chests: { c1_chest: { lootedAt: 3 } }, guards: {} }, 'cm_1');
+    const res = await commit(`world_carts_${WORLD}`, { carts: ['c1'] }, 'cm_1');
     expect(await res.json()).toEqual({ applied: true });
-    expect(await (await commit(`world_chests_${WORLD}`, { chests: {}, guards: {} }, 'cm_1')).json()).toEqual({ applied: false });
+    expect(await (await commit(`world_carts_${WORLD}`, { carts: [] }, 'cm_1')).json()).toEqual({ applied: false });
     expect(await room.head(WORLD)).toBe(1);
-    const got = await (await post('/get', { id: `world_chests_${WORLD}` })).json();
-    expect(JSON.parse(got.doc.dataText)).toEqual({ chests: { c1_chest: { lootedAt: 3 } }, guards: {} });
+    const got = await (await post('/get', { id: `world_carts_${WORLD}` })).json();
+    expect(JSON.parse(got.doc.dataText)).toEqual({ carts: ['c1'] });
+    // A world's chests are never written whole: they are claimed (below)
+    expect((await commit(`world_chests_${WORLD}`, { chests: {}, guards: {} }, 'cm_whole')).status).toBe(400);
   });
 
   it('a commit that writes anything but the world\'s own documents is refused whole, and a character not let in is refused before its body is read', async () => {
@@ -86,7 +87,10 @@ describe('online play: the world we host, live', () => {
     expect(mixed.status).toBe(400);
     expect(await room.head(WORLD)).toBe(0);
     expect(await store.get(`world_carts_${WORLD}`)).toBeNull();
-    expect((await commit(`world_chests_${WORLD}`, {}, 'cm_3', 'ws_barred')).status).toBe(403);
+    expect((await commit(`world_carts_${WORLD}`, {}, 'cm_3', 'ws_barred')).status).toBe(403);
+    // Only the world's shared documents: its treasury, and anything in a house, are not the room's
+    expect((await commit(`treasury_${WORLD}`, { gold: 1 }, 'cm_4')).status).toBe(400);
+    expect((await commit(`home_chest_${WORLD}`, { items: [] }, 'cm_5')).status).toBe(400);
     expect((await post('/get', { id: 'player_ws_alder' })).status).toBe(400);
   });
 
@@ -96,10 +100,10 @@ describe('online play: the world we host, live', () => {
     a.ws.send(JSON.stringify({ subscribe: `world:${WORLD}`, since: 0 }));
     await until(() => a.heard.some(m => m.ready));
 
-    await commit(`world_chests_${WORLD}`, { n: 1 }, 'e1');
+    await commit(`world_population_${WORLD}`, { n: 1 }, 'e1');
     await commit(`world_carts_${WORLD}`, { n: 2 }, 'e2');
     await until(() => a.heard.filter(m => m.seq).length === 2);
-    expect(a.heard.filter(m => m.seq).map(m => [m.seq, m.docs[0].id])).toEqual([[1, `world_chests_${WORLD}`], [2, `world_carts_${WORLD}`]]);
+    expect(a.heard.filter(m => m.seq).map(m => [m.seq, m.docs[0].id])).toEqual([[1, `world_population_${WORLD}`], [2, `world_carts_${WORLD}`]]);
 
     // Late, from nothing: both, then ready at 2
     const b = listen(socketUrl());
@@ -110,7 +114,7 @@ describe('online play: the world we host, live', () => {
 
     // Back after a drop, from 2: only what came since
     b.ws.close();
-    await commit(`world_chests_${WORLD}`, { n: 3 }, 'e3');
+    await commit(`world_population_${WORLD}`, { n: 3 }, 'e3');
     const c = listen(socketUrl());
     await c.opened;
     c.ws.send(JSON.stringify({ subscribe: `world:${WORLD}`, since: 2 }));
@@ -118,6 +122,24 @@ describe('online play: the world we host, live', () => {
     expect(c.heard.map(m => m.seq ?? `ready ${m.ready.seq}`)).toEqual([3, 'ready 3']);
     a.ws.close();
     c.ws.close();
+  });
+
+  it('a chest is claimed in the order claims reach the room: the first gets it, the second is told someone reached it first, and the write is the room\'s, after (Pedro, 2026-11-04)', async () => {
+    const claim = (uid: string, saw: number | null, cycle = 4) => post('/chests', { op: 'loot', chestId: 'q7_chest', cycle, saw }, uid);
+    // Sent at once: the room takes them one at a time, in arrival order
+    const [first, second] = await Promise.all([claim('ws_alder', null), claim('ws_birch', null)]);
+    const answers = [await first.json(), await second.json()];
+    expect(answers.filter(a => a.ok)).toHaveLength(1);
+    const lost = answers.find(a => !a.ok)!;
+    expect(lost).toMatchObject({ ok: false, reason: 'Someone reached it first.', record: { chests: { q7_chest: { lootedAt: 4 } } } });
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    // Restocked by a later cycle: whoever saw it as it stands claims it, once
+    expect(await (await claim('ws_birch', 4, 9)).json()).toMatchObject({ ok: true, record: { chests: { q7_chest: { lootedAt: 9 } } } });
+    expect((await claim('ws_alder', 4, 9)).status).toBe(409);
+    // A guard's fall only moves forward, whoever reports it
+    await post('/chests', { op: 'fell', guardId: 'q7_guard1', cycle: 6 });
+    expect(await (await post('/chests', { op: 'fell', guardId: 'q7_guard1', cycle: 5 }, 'ws_birch')).json()).toMatchObject({ ok: true, record: { guards: { q7_guard1: { fellAt: 6 } } } });
+    expect(await room.head(WORLD)).toBe(4);
   });
 
   it('a socket for another world, or for a character not let in, is refused', async () => {
@@ -139,17 +161,18 @@ describe('online play: the world we host, live', () => {
     LiveClient.join({ worldUid: WORLD, uid: 'ws_birch', origin, socket: url => new WebSocket(url) as any });
     await until(() => useLive.getState().status === 'LIVE');
 
-    // birch's own commit: the world's part goes live, the rest stays in this game
-    expect(await StoreClient.commit({ commitId: 'g1', ops: [{ kind: 'put', doc: doc(`world_chests_${WORLD}`, { chests: { a_chest: { lootedAt: 1 } }, guards: {} }) as any }, { kind: 'put', doc: doc('player_ws_birch', { gold: 5 }) as any }] })).toEqual({ applied: true });
-    expect(local).toEqual(['player_ws_birch']);
+    // birch's own commit: the world's part goes live; the rest, a house's chest among it, stays in this game
+    expect(await StoreClient.commit({ commitId: 'g1', ops: [{ kind: 'put', doc: doc(`world_carts_${WORLD}`, { carts: ['a'] }) as any }, { kind: 'put', doc: doc('player_ws_birch', { gold: 5 }) as any }, { kind: 'put', doc: doc(`home_chest_${WORLD}`, { items: [] }) as any }] })).toEqual({ applied: true });
+    expect(local).toEqual(['player_ws_birch', `home_chest_${WORLD}`]);
     expect(await room.head(WORLD)).toBe(1);
 
-    // alder, elsewhere, empties another chest: birch hears it
-    await commit(`world_chests_${WORLD}`, { chests: { b_chest: { lootedAt: 2 } }, guards: {} }, 'g2');
-    await until(() => heard.length === 2);
-    const remote = JSON.parse(heard[1].docs[0].dataText);
-    expect(ChestSystem.merge({ chests: { a_chest: { lootedAt: 1 } }, guards: {} }, remote)).toEqual({ chests: { a_chest: { lootedAt: 1 }, b_chest: { lootedAt: 2 } }, guards: {} });
-    expect(useLive.getState().seq).toBe(2);
+    // birch claims a chest through the room's queue; alder, elsewhere, empties another: birch hears it
+    expect(await LiveClient.chests({ op: 'loot', chestId: 'a_chest', cycle: 1, saw: null })).toMatchObject({ ok: true, record: { chests: { a_chest: { lootedAt: 1 } } } });
+    await post('/chests', { op: 'loot', chestId: 'b_chest', cycle: 2, saw: null });
+    await until(() => heard.length === 3);
+    const remote = JSON.parse(heard[2].docs[0].dataText);
+    expect(remote).toEqual({ chests: { a_chest: { lootedAt: 1 }, b_chest: { lootedAt: 2 } }, guards: {} });
+    expect(useLive.getState().seq).toBe(3);
     stop();
     LiveClient.leave();
     StoreClient.useServer();

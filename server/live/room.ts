@@ -14,6 +14,9 @@
  * asks for what they missed by number and gets every event since, from the store: nothing is held in
  * memory that a restart would lose, and no window of events is dropped.
  *
+ * A WORLD'S CHESTS ARE CLAIMED, NEVER WRITTEN WHOLE (Pedro: "queue it, the first or best lag gets the
+ * first spot, the write happens AFTER"): /chests takes one claim at a time, in arrival order.
+ *
  *   server -> client   { channel: 'world:<uid>', seq, docs: [IWireDoc] } | { ready: { channel, seq } } | { refused }
  *   client -> server   { subscribe: 'world:<uid>', since: <seq> }
  *
@@ -27,6 +30,8 @@ import type { Duplex } from 'node:stream';
 import type { SqlStore } from '../SqlStore';
 import type { CommitOp, ICommitRequest, IWireDoc, IWireQuery } from '../../src/entities/data/wire';
 import { acceptSocket, type ISocket } from './socket';
+import { isShared, type ChestIntent } from '../../src/logic/live/shared';
+import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../src/entities/world/ChestSystem';
 
 /** One shape, ok or not: this project compiles without strict null checks, where a union on `ok` does not narrow. */
 export type LiveAccess = (token: string, uid: string) => Promise<{ ok: boolean; worldUid?: string; status?: number; reason?: string }>;
@@ -36,8 +41,9 @@ const channelOf = (worldUid: string) => `world:${worldUid}`;
 const headId = (worldUid: string) => `live_head_${worldUid}`;
 const eventId = (worldUid: string, seq: number) => `live_event_${worldUid}_${seq.toString().padStart(12, '0')}`;
 
-/** A world's own documents carry its uid in their id (world_chests_<uid>, world_carts_<uid>, world_population_<uid>). */
-export const ownedBy = (worldUid: string, id: unknown) => typeof id === 'string' && id.includes(worldUid);
+/** The world's shared documents only (shared.ts): a house's chests and everything else stay in the browser. */
+export const ownedBy = isShared;
+const chestsId = (worldUid: string) => `world_chests_${worldUid}`;
 
 export interface ILiveEvent { channel: string; seq: number; at: number; docs: IWireDoc[] }
 
@@ -74,28 +80,71 @@ export class LiveRoom {
     return { status: 200, body: { docs } };
   }
 
-  /** A commit on the world's documents, and its event, in one transaction; then told to everyone listening. */
+  /** One at a time, in the order they came: a channel's numbers, and a chest's first claim, are the order things reached the room. */
+  private queued<T>(run: () => Promise<T>): Promise<T> {
+    const next = this.line.then(run, run);
+    this.line = next.catch(() => undefined);
+    return next;
+  }
+
+  /** Documents and their event, in one transaction; then told to everyone listening. Inside the queue only. */
+  private async land(worldUid: string, commitId: string, ops: CommitOp[]): Promise<{ applied: boolean }> {
+    const seq = (await this.head(worldUid)) + 1;
+    const event: ILiveEvent = { channel: channelOf(worldUid), seq, at: this.now(), docs: ops.map(op => (op as { doc: IWireDoc }).doc) };
+    const result = await this.store.commit({ commitId, ops: [...ops, { kind: 'put', doc: this.doc(eventId(worldUid, seq), event) }, { kind: 'put', doc: this.doc(headId(worldUid), { seq }) }] });
+    if (result.applied) this.tell(worldUid, event);
+    return result;
+  }
+
+  /** A commit on the world's shared documents. A world's chests are claimed, never written whole (chests below). */
   commit(worldUid: string, request: ICommitRequest) {
-    const run = async () => {
+    return this.queued(async () => {
       if (!request || typeof request.commitId !== 'string' || !Array.isArray(request.ops)) return { status: 400, body: { error: 'That is not a commit.' } };
-      const stray = request.ops.find((op: CommitOp) => op.kind === 'add' || !ownedBy(worldUid, op.doc.id) || op.doc.namespace === LIVE_NS);
-      if (stray) return { status: 400, body: { error: 'Online play writes only this world\'s own documents. Nothing in this commit was applied.' } };
-      const seq = (await this.head(worldUid)) + 1;
-      const event: ILiveEvent = { channel: channelOf(worldUid), seq, at: this.now(), docs: request.ops.map(op => (op as { doc: IWireDoc }).doc) };
+      const stray = request.ops.find((op: CommitOp) => op.kind === 'add' || !ownedBy(worldUid, op.doc.id));
+      if (stray) return { status: 400, body: { error: 'Online play writes only this world\'s shared documents. Nothing in this commit was applied.' } };
+      if (request.ops.some(op => (op as { doc: IWireDoc }).doc.id === chestsId(worldUid))) return { status: 400, body: { error: 'A world\'s chests are claimed one at a time, at /chests. Nothing in this commit was applied.' } };
       try {
-        const result = await this.store.commit({ ...request, ops: [...request.ops, { kind: 'put', doc: this.doc(eventId(worldUid, seq), event) }, { kind: 'put', doc: this.doc(headId(worldUid), { seq }) }] });
-        if (result.applied) this.tell(worldUid, event);
-        return { status: 200, body: result };
+        return { status: 200, body: await this.land(worldUid, request.commitId, request.ops) };
       } catch (e) {
         const name = (e as Error)?.name;
         if (name === 'StoreConflict') return { status: 409, body: { conflict: true, error: (e as Error).message } };
         if (name === 'StoreRefusal') return { status: 400, body: { error: (e as Error).message } };
         throw e;
       }
-    };
-    const next = this.line.then(run, run);
-    this.line = next.catch(() => undefined);
-    return next;
+    });
+  }
+
+  /**
+   * A chest claimed, or a guard fallen (Pedro: "queue it, the first or best lag gets the first spot,
+   * the write happens AFTER"). Claims are taken in the order they reach the room. A claim names what
+   * its player saw of the chest; if that is no longer what stands, someone reached it first, and the
+   * claim is refused with the record as it stands. The write is the room's, after the claim is decided.
+   */
+  chests(worldUid: string, intent: ChestIntent) {
+    return this.queued(async () => {
+      const whole = (n: unknown) => Number.isInteger(n) && (n as number) >= 0;
+      if (!intent || !whole(intent.cycle)) return { status: 400, body: { ok: false, reason: 'A claim names its cycle.' } };
+      const held = await this.store.get(chestsId(worldUid));
+      const record: IChestRecord = held ? JSON.parse(held.dataText) : emptyChestRecord();
+      let next: IChestRecord;
+      if (intent.op === 'loot') {
+        if (!ChestSystem.isChest(intent.chestId)) return { status: 400, body: { ok: false, reason: 'That is not a chest.' } };
+        const stands = record.chests[intent.chestId]?.lootedAt ?? null;
+        if (stands !== intent.saw) return { status: 409, body: { ok: false, first: false, reason: 'Someone reached it first.', record } };
+        if (stands !== null && intent.cycle < stands) return { status: 400, body: { ok: false, reason: 'A claim cannot come from a cycle before the one that stands.' } };
+        next = ChestSystem.looted(record, intent.chestId, intent.cycle);
+      } else if (intent.op === 'fell') {
+        if (typeof intent.guardId !== 'string' || !ChestSystem.chestOfGuard(intent.guardId)) return { status: 400, body: { ok: false, reason: 'That is not a chest\'s guard.' } };
+        // A fall only moves forward: two players felling one guard leave the later cycle
+        next = ChestSystem.merge(record, { chests: {}, guards: { [intent.guardId]: { fellAt: intent.cycle } } });
+      } else {
+        return { status: 400, body: { ok: false, reason: 'A claim loots a chest or fells a guard.' } };
+      }
+      const at = this.now();
+      const doc: IWireDoc = { id: chestsId(worldUid), namespace: 'territories', dataText: JSON.stringify(next), metadata: { createdAt: held?.metadata.createdAt ?? at, updatedAt: at, ownerCertUid: 'SYSTEM', version: 1 } };
+      await this.land(worldUid, `chests_${worldUid}_${at}_${Math.random().toString(36).slice(2)}`, [{ kind: 'put', doc }]);
+      return { status: 200, body: { ok: true, record: next } };
+    });
   }
 
   private tell(worldUid: string, event: ILiveEvent) {
@@ -125,6 +174,7 @@ export class LiveRoom {
     const out = path === '/get' ? await this.get(worldUid, String(body.id ?? ''))
       : path === '/query' ? await this.query(worldUid, body)
       : path === '/commit' ? await this.commit(worldUid, body)
+      : path === '/chests' ? await this.chests(worldUid, body)
       : { status: 404, body: { error: `No such door: ${path}` } };
     send(out.status, out.body);
   }

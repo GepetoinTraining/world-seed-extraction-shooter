@@ -26,6 +26,7 @@ import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
 import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
 import { sealLoot, lootItemsOf, LootLaw } from '../src/logic/theme/LootLaw';
 import { ItemFactory } from '../src/entities/item/ItemFactory';
+import { CompositionSystem } from '../src/logic/economy/CompositionSystem';
 import { Rng } from '../src/logic/rng/DeterministicRNG';
 import { bodyOf, compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
 
@@ -385,7 +386,7 @@ describe('the hub', () => {
       expect(again).toMatchObject({ ok: true, loot: { known: [fair.id], accepted: [] } });
     });
 
-    it('an item is checked against what it was minted from: its power put right as a diff, one from nowhere refused, a made one said to be unchecked', async () => {
+    it('an item is checked against what it was minted from: its power put right as a diff, one from nowhere refused, a made one with a step nobody knows refused', async () => {
       const token = await signedIn();
       const { character } = await registered(token);
       installShippedThemes();
@@ -399,12 +400,31 @@ describe('the hub', () => {
       const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], items: [honest, inflated, nowhere, made] }) as any;
       expect(out.items.checked).toEqual([honest.id]);
       expect(out.items.corrected).toMatchObject([{ id: honest.id, item: { itemPower: honest.itemPower, value: honest.value } }]);
-      expect(out.items.refused).toMatchObject([{ id: 'itm_nowhere' }]);
-      expect(out.items.unchecked).toMatchObject([{ id: 'itm_made' }]);
+      expect(out.items.refused).toMatchObject([{ id: 'itm_nowhere' }, { id: 'itm_made', reason: expect.stringMatching(/cannot infer/) }]);
       expect(out.diff).toEqual([
         { op: 'replace', path: '/items/1/itemPower', value: honest.itemPower },
         { op: 'replace', path: '/items/1/value', value: honest.value }
       ]);
+    });
+
+    it('a thing made locally and brought online is checked by its chain, as the host\'s tech web infers it (Pedro, 2026-11-04)', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      installShippedThemes();
+      const compiled = compileTheme(FIRST_THEME_PACK);
+      const [recipeId, recipe] = Object.entries(compiled.gearRecipes)[0];
+      const roots = recipe.inputs.map(i => CompositionSystem.root({ id: i.itemId, name: i.itemId }, 'HARVEST'));
+      const chain = CompositionSystem.compose({ recipeId, name: recipe.name, laborSeconds: recipe.laborTimeSeconds, facility: recipe.requiredFacility }, roots, 1);
+      const made = ItemFactory.createComposedItem(recipe.outputBase, chain, Rng.fromKey('hub:made:1'))!;
+      const priced = { ...made, id: 'itm_priced', value: made.value * 40 };
+      const rushed = { ...made, id: 'itm_rushed', composition: { ...chain, steps: chain.steps.map(st => ({ ...st, laborSeconds: 1 })) } };
+      const fromNothing = { ...made, id: 'itm_from_nothing', composition: { ...chain, materials: [{ defId: 'res_nowhere', name: 'Nowhere', count: 1, origin: 'HARVEST' as const }] } };
+
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], items: [made, priced, rushed, fromNothing] }) as any;
+      expect(out.items.checked).toEqual([made.id]);
+      expect(out.items.corrected).toMatchObject([{ id: 'itm_priced', item: { value: made.value } }]);
+      expect(out.items.refused).toMatchObject([{ id: 'itm_rushed', reason: expect.stringMatching(/labor/) }, { id: 'itm_from_nothing', reason: expect.stringMatching(/does not hold/) }]);
+      expect(out.diff).toEqual([{ op: 'replace', path: '/items/1/value', value: made.value }]);
     });
 
     it('a kind whose line does not prove itself cannot be corrected, and is refused', async () => {

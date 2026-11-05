@@ -178,6 +178,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     if (!chestRecord || !activeWorldId || !ChestSystem.isChest(chestId)) return;
     const next = ChestSystem.looted(chestRecord, chestId, generation);
     set({ chestRecord: next });
+    // Played live, the claim made before the chest opened was the write: the room's, after (LiveClient.chests)
+    if (LiveClient.isLive(activeWorldId)) return;
     void ChestStore.save(activeWorldId, next);
   },
   reportBroke: (structureId) => {
@@ -197,6 +199,13 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     if (chestRecord && ChestSystem.chestOfGuard(entityId)) {
       const next = ChestSystem.fell(chestRecord, entityId, generation);
       set({ chestRecord: next });
+      // Played live, the fall goes in the room's queue, and the record comes back as it stands
+      if (LiveClient.isLive(activeWorldId)) {
+        void LiveClient.chests({ op: 'fell', guardId: entityId, cycle: generation }).then(out => {
+          if (out?.record && get().activeWorldId === activeWorldId) set({ chestRecord: ChestSystem.merge(get().chestRecord ?? out.record, out.record) });
+        });
+        return;
+      }
       void ChestStore.save(activeWorldId, next);
     } else if (populationRecord && definitionId) {
       const next = Population.fell(populationRecord, entityId, definitionId, generation);

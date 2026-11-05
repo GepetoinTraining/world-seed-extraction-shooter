@@ -8,6 +8,7 @@
  */
 
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
+import { COOK_WAY } from '../economy/gameWays';
 import { answersTag } from '../../entities/hub/room';
 import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
 import { CompositionSystem } from '../economy/CompositionSystem';
@@ -54,7 +55,7 @@ export class Cooking {
     const body = items.reduce((sum, i) => sum + RESTORE_BASE + (i.value ?? 0), 0);
     const restore = Math.round(body * (1 + VARIETY * (distinct - 1)) * (1 + SKILL_SHARE * skillLevel) * (1 + rng.next() * 0.1));
     const composition = CompositionSystem.compose(
-      { recipeId: 'cook_meal', name: 'Cooked', laborSeconds: this.cookMs(items) / 1000, facility: 'HEARTH' },
+      { recipeId: COOK_WAY.id, name: 'Cooked', laborSeconds: this.cookMs(items) / 1000, facility: 'HEARTH' },
       items.map(i => i.composition ?? CompositionSystem.root({ id: i.universalDefinitionId, name: i.name }, 'WORLD')),
       1
     );

@@ -17,6 +17,7 @@ import { IKoseki, Koseki } from '../../entities/world/Koseki';
 import { Population } from '../../entities/world/Population';
 import { answersTag } from '../../entities/hub/room';
 import { CompositionSystem } from '../economy/CompositionSystem';
+import { SNARE_WAY } from '../economy/gameWays';
 import { Rng, fnv1a } from '../rng/DeterministicRNG';
 import { bodyNumbers } from '../theme/ThemeFormula';
 import type { ILineProof } from '../theme/CreatureLines';
@@ -97,7 +98,7 @@ export class Capture {
     if (parts.length < SNARE_PARTS) return { ok: false, reason: `A snare takes ${SNARE_PARTS} of something fibrous.`, consumedIds: [] };
     const rng = Rng.fromKey(`snare:${key}`);
     const composition = CompositionSystem.compose(
-      { recipeId: 'tie_snare', name: 'Tied into a snare', laborSeconds: 30, facility: null },
+      { recipeId: SNARE_WAY.id, name: 'Tied into a snare', laborSeconds: SNARE_WAY.laborSeconds, facility: null },
       parts.map(i => i.composition ?? CompositionSystem.root({ id: i.universalDefinitionId, name: i.name }, 'IMPROVISATION')),
       1
     );

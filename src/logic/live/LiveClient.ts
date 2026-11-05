@@ -8,6 +8,8 @@
 import { create } from 'zustand';
 import { StoreClient, liveTransport } from '../../entities/data/StoreClient';
 import type { IWireDoc } from '../../entities/data/wire';
+import { isShared, type ChestIntent } from './shared';
+import type { IChestRecord } from '../../entities/world/ChestSystem';
 
 export interface ILiveEvent { channel: string; seq: number; at: number; docs: IWireDoc[] }
 export type LiveStatus = 'OFF' | 'JOINING' | 'LIVE' | 'DROPPED' | 'REFUSED';
@@ -30,7 +32,7 @@ const FIRST_RETRY_MS = 400;
 const MOST_RETRY_MS = 8_000;
 
 const listeners = new Set<(e: ILiveEvent) => void>();
-let current: { socket: SocketLike | null; stopRoute: () => void; left: boolean; retryMs: number; timer?: ReturnType<typeof setTimeout> } | null = null;
+let current: { worldUid: string; uid: string; origin: string; socket: SocketLike | null; stopRoute: () => void; left: boolean; retryMs: number; timer?: ReturnType<typeof setTimeout> } | null = null;
 
 export const LiveClient = {
   /** Every change another player commits to the world, in order. Returns how to stop listening. */
@@ -43,8 +45,9 @@ export const LiveClient = {
     LiveClient.leave();
     const origin = (o.origin ?? (typeof location !== 'undefined' ? location.origin : '')).replace(/\/+$/, '');
     const make = o.socket ?? ((url: string) => new WebSocket(url) as unknown as SocketLike);
-    const stopRoute = StoreClient.route(id => id.includes(o.worldUid), liveTransport(origin, o.uid));
-    const me = { socket: null as SocketLike | null, stopRoute, left: false, retryMs: FIRST_RETRY_MS, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+    // The world's shared documents only (shared.ts): a house's chests and everything else stay in this browser
+    const stopRoute = StoreClient.route(id => isShared(o.worldUid, id), liveTransport(origin, o.uid));
+    const me = { worldUid: o.worldUid, uid: o.uid, origin, socket: null as SocketLike | null, stopRoute, left: false, retryMs: FIRST_RETRY_MS, timer: undefined as ReturnType<typeof setTimeout> | undefined };
     current = me;
     useLive.setState({ status: 'JOINING', worldUid: o.worldUid, seq: 0, reason: null });
 
@@ -73,6 +76,25 @@ export const LiveClient = {
       };
     };
     connect();
+  },
+
+  /** Is this world the one played live right now? */
+  isLive: (worldUid: string | null | undefined): boolean => !!current && !current.left && current.worldUid === worldUid,
+
+  /**
+   * A chest claimed or a guard fallen, in the room's queue. The answer is the record as it stands
+   * after: on a claim refused, someone reached the chest first. Null when not playing live.
+   */
+  async chests(intent: ChestIntent): Promise<{ ok: boolean; record?: IChestRecord; reason?: string } | null> {
+    const me = current;
+    if (!me || me.left) return null;
+    try {
+      const res = await fetch(`${me.origin}/api/hub/live/chests?uid=${encodeURIComponent(me.uid)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intent), credentials: 'same-origin' });
+      const out = await res.json().catch(() => ({}));
+      return { ok: !!out.ok, ...(out.record ? { record: out.record } : {}), ...(out.reason ? { reason: String(out.reason) } : {}) };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
   },
 
   leave() {

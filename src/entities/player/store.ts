@@ -11,6 +11,8 @@ import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { useWorldStore } from '../world/store';
+import { ChestSystem } from '../world/ChestSystem';
+import { LiveClient } from '../../logic/live/LiveClient';
 import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { LootTable } from '../world/LootTable';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
@@ -48,6 +50,9 @@ import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../logic/s
 import { TagLaw } from '../../logic/content/TagLaw';
 import { CreationSystem, ICreationSheet } from '../../logic/systems/CreationSystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
+
+/** Chests whose live claim won, opening now (LiveClient.chests). */
+const claimedChests = new Set<string>();
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
@@ -1882,7 +1887,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         return;
       }
 
-      if (!spendEnergy(2)) return;
+      const claimedNow = claimedChests.delete(entity.id);
+      if (!claimedNow && !spendEnergy(2)) return;
+
+      // Played live, a chest is claimed first, in the room's queue; it opens only for the claim that
+      // won, and the write is the room's, after (Pedro: "the first or best lag gets the first spot")
+      const live = useWorldStore.getState();
+      if (!claimedNow && ChestSystem.isChest(entity.id) && LiveClient.isLive(live.activeWorldId)) {
+        const saw = live.chestRecord?.chests[entity.id]?.lootedAt ?? null;
+        void LiveClient.chests({ op: 'loot', chestId: entity.id, cycle: live.generation, saw }).then(out => {
+          if (out?.record) useWorldStore.setState({ chestRecord: out.record });
+          if (out?.ok) { claimedChests.add(entity.id); get().performInteraction(interactionId, targetId); return; }
+          useWorldStore.getState().updateEntity(entity.id, { container: { ...entity.container!, looted: true } });
+          feed(out?.reason ?? 'The chest could not be claimed.', 'loss');
+        });
+        return;
+      }
 
       const rollKey = SessionJournal.rollKey('chest', entity.id);
       const rng = Rng.fromKey(rollKey);
