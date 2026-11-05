@@ -24,6 +24,8 @@ import { genreForWorld, entitySprite, baselinePx } from '../render/atoms/world';
 import { ATOM_PX, SIZE_ATOMS } from '../render/atoms/atoms';
 import { hitTest, targetsFrom, cycleTarget, inspectEntity, inspectItem, Card } from '../render/atoms/inspect';
 import { Archetype, Facing, WALK_PHASES, armorClass, weaponClass } from '../render/atoms/people';
+import { LiveClient } from '../logic/live/LiveClient';
+import { presence } from '../logic/live/Presence';
 import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
@@ -1200,6 +1202,20 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
       }
 
+      // Online play: where this player is, said to the others here; most frames say nothing (Presence.ts)
+      const place = useWorldStore.getState().activeWorldId;
+      const live = LiveClient.isLive(place);
+      if (live && place) {
+        const sayer = usePlayerStore.getState().player;
+        const heldNow = activeWeapon().item, wornNow = getEquipped('armor');
+        LiveClient.say({
+          place, x: playerPos.x, z: playerPos.z, facing: facingRef.current, moving: movingRef.current, t: now,
+          name: sayer.username, archetype: (sayer.archetype || 'OPERATOR') as Archetype,
+          ...(heldNow ? { weapon: weaponClass(heldNow.tags || []) } : {}),
+          ...(wornNow ? { armor: armorClass(wornNow.tags || []) } : {})
+        }, now);
+      }
+
       const canvas = fieldRef.current;
       const ctx = canvas?.getContext('2d');
       if (canvas && ctx) {
@@ -1232,6 +1248,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             armor: worn ? armorClass(worn.tags || []) : undefined
           },
           chunks: sceneChunks,
+          // Everyone else in this place, drawn a little behind (Presence.ts)
+          others: place ? presence.at(place, now) : undefined,
           mobPoses,
           effects: effectsRef.current,
           hurtAt: hurtAtRef.current,

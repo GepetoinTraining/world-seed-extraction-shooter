@@ -15,6 +15,7 @@ import { LiveRoom, type LiveAccess } from '../server/live/room';
 import { tokenOf } from '../server/hub/http';
 import { StoreClient } from '../src/entities/data/StoreClient';
 import { LiveClient, useLive, type ILiveEvent } from '../src/logic/live/LiveClient';
+import { presence } from '../src/logic/live/Presence';
 
 const WORLD = 'world_live_1';
 const doc = (id: string, data: unknown, at = 1) => ({ id, namespace: 'territories', dataText: JSON.stringify(data), metadata: { createdAt: at, updatedAt: at, version: 1 } });
@@ -150,6 +151,74 @@ describe('online play: the world we host, live', () => {
     a.ws.close();
     const barred = listen(socketUrl('ws_barred'));
     await expect(barred.opened).rejects.toThrow();
+  });
+
+  it('where a player is goes to the others in the same place, under the socket\'s own uid, and is never kept; moving on or closing tells the place left they are gone (Pedro, 2026-11-05)', async () => {
+    const where = (place: string, x: number, o: object = {}) => ({ where: { place, x, z: 4, facing: 'down', moving: true, t: 1000 + x, name: 'Alder', archetype: 'NOMAD', ...o } });
+    const join = async (uid: string) => {
+      const s = listen(socketUrl(uid));
+      await s.opened;
+      s.ws.send(JSON.stringify({ subscribe: `world:${WORLD}`, since: 0 }));
+      await until(() => s.heard.some(m => m.ready));
+      return s;
+    };
+    const alder = await join('ws_alder'), birch = await join('ws_birch'), cedar = await join('ws_cedar');
+    birch.ws.send(JSON.stringify(where('field', 0)));
+    cedar.ws.send(JSON.stringify(where('cellar', 0)));
+    await new Promise(r => setTimeout(r, 50));
+    // alder says where they are, claiming to be someone else: the room puts on the socket's own uid
+    alder.ws.send(JSON.stringify(where('field', 12, { uid: 'ws_cedar', gold: 1e9 })));
+    await until(() => birch.heard.some(m => m.where));
+    expect(birch.heard.find(m => m.where).where).toEqual({ place: 'field', x: 12, z: 4, facing: 'down', moving: true, t: 1012, name: 'Alder', archetype: 'NOMAD', uid: 'ws_alder' });
+    // Only the same place hears it, and the one who said it is not told back
+    expect(cedar.heard.some(m => m.where)).toBe(false);
+    expect(alder.heard.filter(m => m.where && m.where.uid === 'ws_alder')).toEqual([]);
+    // Nothing of it is kept: no event, no document
+    expect(await room.head(WORLD)).toBe(0);
+    expect(await store.query({ namespace: 'live' })).toEqual([]);
+    // Anything not the shape of a place is dropped where it lands
+    alder.ws.send(JSON.stringify({ where: { place: 'field', x: 'everywhere' } }));
+    // alder walks into the cellar: the field is told they are gone, the cellar hears them
+    alder.ws.send(JSON.stringify(where('cellar', 20)));
+    await until(() => birch.heard.some(m => m.gone) && cedar.heard.some(m => m.where));
+    expect(birch.heard.filter(m => m.gone)).toEqual([{ gone: 'ws_alder' }]);
+    expect(birch.heard.filter(m => m.where)).toHaveLength(1);
+    // alder closes: the cellar is told
+    alder.ws.close();
+    await until(() => cedar.heard.some(m => m.gone));
+    expect(cedar.heard.filter(m => m.gone)).toEqual([{ gone: 'ws_alder' }]);
+    birch.ws.close();
+    cedar.ws.close();
+  });
+
+  it('in the game: this player says where they are, at most ten times a second, and the others are drawn from what they hear', async () => {
+    StoreClient.useLocal(Promise.resolve({ commit: async () => ({ applied: true }), get: async () => null }));
+    const other = listen(socketUrl('ws_alder'));
+    await other.opened;
+    other.ws.send(JSON.stringify({ subscribe: `world:${WORLD}`, since: 0 }));
+    await until(() => other.heard.some(m => m.ready));
+    other.ws.send(JSON.stringify({ where: { place: WORLD, x: 0, z: 0, facing: 'down', moving: false, t: 5, name: 'Alder', archetype: 'NOMAD' } }));
+
+    LiveClient.join({ worldUid: WORLD, uid: 'ws_birch', origin, socket: url => new WebSocket(url) as any });
+    await until(() => useLive.getState().status === 'LIVE');
+    const me = (x: number, t: number) => ({ place: WORLD, x, z: 0, facing: 'right' as const, moving: true, t, name: 'Birch', archetype: 'NOMAD' as const });
+    // Every 16 ms frame for a second: said on the first frame 100 ms or more after the last, every 112 ms, so nine
+    for (let t = 0; t < 1000; t += 16) LiveClient.say(me(t / 10, t), t);
+    await until(() => other.heard.filter(m => m.where).length >= 9);
+    await new Promise(r => setTimeout(r, 50));
+    const told = other.heard.filter(m => m.where);
+    expect(told.map(m => m.where.t)).toEqual([0, 112, 224, 336, 448, 560, 672, 784, 896]);
+    expect(told.every(m => m.where.uid === 'ws_birch')).toBe(true);
+    // alder said again (a still player, a second later): birch hears and draws them
+    other.ws.send(JSON.stringify({ where: { place: WORLD, x: 30, z: 0, facing: 'down', moving: false, t: 1005, name: 'Alder', archetype: 'NOMAD' } }));
+    await until(() => presence.at(WORLD, Date.now()).length === 1);
+    expect(presence.at(WORLD, Date.now())[0]).toMatchObject({ uid: 'ws_alder', name: 'Alder', x: 30, moving: false });
+    // Leaving the world: alder is told birch is gone, and birch draws no one
+    LiveClient.leave();
+    await until(() => other.heard.some(m => m.gone));
+    expect(presence.size()).toBe(0);
+    other.ws.close();
+    StoreClient.useServer();
   });
 
   it('in the game: joining routes the world\'s documents to the room, and another player\'s change comes in over the socket; this game\'s own documents stay its own', async () => {

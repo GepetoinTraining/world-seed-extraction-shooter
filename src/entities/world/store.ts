@@ -425,6 +425,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
 
   exitWorld: () => {
+    // Online play: the others here stop drawing this player
+    LiveClient.unsay();
     // What this session's fights said about the world's monsters, for its next regeneration
     const worldId = get().activeWorldId;
     if (worldId) landReports(worldId);

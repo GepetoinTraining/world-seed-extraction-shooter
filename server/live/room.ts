@@ -20,6 +20,10 @@
  *   server -> client   { channel: 'world:<uid>', seq, docs: [IWireDoc] } | { ready: { channel, seq } } | { refused }
  *   client -> server   { subscribe: 'world:<uid>', since: <seq> }
  *
+ * OTHER PLAYERS: where each is, passed on and never kept (src/logic/live/Presence.ts).
+ *   client -> server   { where: IWhere } | { gone: true }
+ *   server -> client   { where: IWhere & { uid } } | { gone: <uid> }   to those in the same place only
+ *
  * WHO MAY. Every request and every socket names a character, and the hub's own check decides
  * (HostedWorld.connect, asked over the hub's route so this file holds no account logic): the account
  * holds it, it is in good standing on our world and on the hub, and it owes the hub no receipts.
@@ -32,6 +36,7 @@ import type { CommitOp, ICommitRequest, IWireDoc, IWireQuery } from '../../src/e
 import { acceptSocket, type ISocket } from './socket';
 import { isShared, type ChestIntent } from '../../src/logic/live/shared';
 import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../src/entities/world/ChestSystem';
+import { isWhere, whereOf } from '../../src/logic/live/Presence';
 
 /** One shape, ok or not: this project compiles without strict null checks, where a union on `ok` does not narrow. */
 export type LiveAccess = (token: string, uid: string) => Promise<{ ok: boolean; worldUid?: string; status?: number; reason?: string }>;
@@ -51,6 +56,8 @@ export class LiveRoom {
   /** Commits land one at a time, so a channel's numbers are in the order they landed. */
   private line: Promise<unknown> = Promise.resolve();
   private readonly listening = new Map<string, Set<ISocket>>();
+  /** Where each socket's player last said they were: held only while the socket is open. */
+  private readonly places = new Map<ISocket, string>();
 
   constructor(private readonly store: SqlStore, private readonly access: LiveAccess, private readonly now: () => number = Date.now) {}
 
@@ -190,9 +197,13 @@ export class LiveRoom {
     const socket = acceptSocket(req, raw);
     if (!socket) return;
     const worldUid = may.worldUid;
+    const uid = url.searchParams.get('uid') ?? '';
     socket.onMessage(async text => {
-      let asked: { subscribe?: string; since?: number };
+      let asked: { subscribe?: string; since?: number; where?: unknown; gone?: unknown };
       try { asked = JSON.parse(text); } catch { return socket.send(JSON.stringify({ refused: 'That is not JSON.' })); }
+      // Where this player is, passed on and never kept (Presence.ts)
+      if (asked.where !== undefined) return this.where(worldUid, uid, socket, asked.where);
+      if (asked.gone !== undefined) return this.away(worldUid, uid, socket);
       if (asked.subscribe !== channelOf(worldUid)) return socket.send(JSON.stringify({ refused: `This socket is for ${channelOf(worldUid)}.` }));
       const listeners = this.listening.get(worldUid) ?? new Set<ISocket>();
       this.listening.set(worldUid, listeners);
@@ -202,7 +213,38 @@ export class LiveRoom {
       for (const e of await this.since(worldUid, since)) socket.send(JSON.stringify(e));
       socket.send(JSON.stringify({ ready: { channel: channelOf(worldUid), seq: await this.head(worldUid) } }));
     });
-    socket.onClose(() => this.listening.get(worldUid)?.delete(socket));
+    socket.onClose(() => {
+      this.away(worldUid, uid, socket);
+      this.listening.get(worldUid)?.delete(socket);
+    });
+  }
+
+  /**
+   * OTHER PLAYERS (Presence.ts). A player says where they are; the room puts on who said it and
+   * passes it to everyone listening in the same place, and keeps none of it: one lost in a restart
+   * is said again a moment later. The uid is the socket's own, checked as it opened, never the
+   * message's. Moving to another place, or closing, tells the place left that they are gone.
+   */
+  private where(worldUid: string, uid: string, socket: ISocket, told: unknown) {
+    if (!isWhere(told)) return;
+    const said = whereOf(told);
+    const was = this.places.get(socket);
+    if (was !== undefined && was !== said.place) this.tellPlace(worldUid, was, socket, { gone: uid });
+    this.places.set(socket, said.place);
+    this.tellPlace(worldUid, said.place, socket, { where: { ...said, uid } });
+  }
+
+  private away(worldUid: string, uid: string, socket: ISocket) {
+    const was = this.places.get(socket);
+    if (was === undefined) return;
+    this.places.delete(socket);
+    this.tellPlace(worldUid, was, socket, { gone: uid });
+  }
+
+  /** To everyone listening on the world and standing in `place`, but the one who said it. */
+  private tellPlace(worldUid: string, place: string, from: ISocket, message: object) {
+    const text = JSON.stringify(message);
+    for (const s of this.listening.get(worldUid) ?? []) if (s !== from && this.places.get(s) === place) s.send(text);
   }
 
   /** How many are listening on a world, for its operator. */
