@@ -69,8 +69,12 @@ export class HostedWorld {
     const manifest = await this.manifest();
     if (!manifest) return refuse(404, 'This hub hosts no world.');
     if (typeof uid !== 'string') return refuse(400, 'Name the character that is connecting.');
-    const held = await this.hub.read<{ account: string }>(`hub_character_${uid}`);
+    const held = await this.hub.read<{ account: string; standing?: string; owed?: unknown[] }>(`hub_character_${uid}`);
     if (!held || held.data.account !== account.key) return refuse(403, 'That character is not one this account holds here. Register it under THE HUB first.');
+    // D134: our world takes a character whose arithmetic this hub has rerun and found whole
+    if (held.data.standing === 'CHALLENGED') return refuse(403, `This hub's rerun of this character did not land where its own did, so ${manifest.world.name} is closed to it. Everything else plays on.`, { standing: 'CHALLENGED' });
+    const owed = held.data.owed?.length ?? 0;
+    if (owed > 0) return refuse(409, `This hub has not been sent ${owed} of this character's session receipt${owed === 1 ? '' : 's'} to rerun. Send its receipts under THE HUB first.`, { owed });
     const standing = await this.hub.read<{ standing: WorldStanding; why?: string }>(this.standingId(manifest.world.worldUid, uid));
     if (standing?.data.standing === 'BARRED') {
       return refuse(403, `This character's standing on ${manifest.world.name} is barred${standing.data.why ? `: ${standing.data.why}` : '.'} That is ${manifest.world.name} only: everything else, your own hub and every other world, plays on.`, { standing: 'BARRED' });

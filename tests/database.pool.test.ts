@@ -18,6 +18,8 @@ import { Hub } from '../server/hub/Hub';
 import { HubPool } from '../server/hub/pool';
 import { HostedWorld } from '../server/hub/hosted';
 import { takeTurn } from '../src/logic/hub/PoolWorker';
+import { SharedWork } from '../src/logic/hub/SharedWork';
+import { emptyChain } from '../src/logic/theme/ChainWeb';
 import { makeHubKey } from '../server/hub/keys';
 import { signedText } from '../src/entities/identity/signedText';
 import { FIRST_THEME_PACK } from '../src/logic/theme/boot';
@@ -165,6 +167,81 @@ describe('the hub\'s pool and the world it hosts', () => {
     });
   });
 
+  describe('the game\'s own shared work: a world\'s passes, the chain, loot tables', () => {
+    const passBody = { pass: 'made', ask: { pass: 'made', said: 'x', world: {}, offered: { gear: [{ id: 'g1', is: 'a hook' }], goods: [{ id: 'd1', is: 'a rope' }] }, words: [] }, draft: {} };
+    const lootWords = { name: 'Pockets', source: 'creature', fits: ['humanoid'], lines: [{ what: 'material', item: '', odds: 'often', count: 'few', rank: 'same' }] };
+    const turn = async (who: string, kind: any, path: string, body: unknown, answer: unknown) => {
+      const t = await player(who);
+      await pool.join(t, 'keyed');
+      const posted = await pool.post(t, { kind, path, body });
+      if (!posted.ok) throw new Error(posted.reason);
+      await pool.take(t);
+      const out = await pool.done(t, posted.jobId, { status: 'OK', data: answer }) as any;
+      // A refused job goes back for another turn: taken back here, so the next bar's turn is its own
+      if (!out.ok) await pool.withdraw(t, posted.jobId);
+      // and the player leaves, so the next bar's player has the turn
+      await pool.leave(t);
+      return { t, jobId: posted.jobId, out };
+    };
+
+    it('a pass\'s answer must fit its shape and pick only what it was offered', async () => {
+      const good = await turn('alder', 'pass', '/world/pass', passBody, { picked: ['g1', 'd1'] });
+      expect(good.out).toMatchObject({ ok: true, state: 'DONE' });
+      expect((await pool.get(good.t, good.jobId) as any).job).toMatchObject({ state: 'DONE', result: { picked: ['g1', 'd1'] } });
+      clock += 1;
+      expect((await turn('birch', 'pass', '/world/pass', passBody, { picked: ['g1', 'stolen'] })).out).toMatchObject({ ok: false, status: 422, reason: expect.stringMatching(/stolen/) });
+      clock += 1;
+      expect((await turn('cedar', 'pass', '/world/pass', passBody, { picked: 'g1' })).out).toMatchObject({ ok: false, status: 422 });
+    });
+
+    it('a chain round is judged against the chain the poster sent, and refused without one', async () => {
+      const check = { chain: emptyChain(), ground: { things: [], stations: [], tools: [] }, open: [], registered: [] };
+      const broken = await turn('alder', 'chain', '/chain', { ask: {}, check }, { tags: [], materials: [{ key: 'Not A Key' }], stations: [], goods: [], gear: [] });
+      expect(broken.out).toMatchObject({ ok: false, status: 422, reason: expect.stringMatching(/refused whole/i) });
+      clock += 1;
+      expect((await turn('birch', 'chain', '/chain', { ask: {} }, { tags: [], materials: [], stations: [], goods: [], gear: [] })).out).toMatchObject({ ok: false, status: 422, reason: expect.stringMatching(/chain it was asked from/) });
+    });
+
+    it('loot tables come back sealed with the formula\'s numbers, for a theme the hub holds; a theme it does not hold is refused at the post', async () => {
+      const { t, jobId, out } = await turn('alder', 'loot', '/loot', { ask: { themeId: FIRST_THEME_PACK.themeId } }, { tables: [lootWords] });
+      expect(out).toMatchObject({ ok: true, state: 'DONE' });
+      expect((await pool.get(t, jobId) as any).job.result.tables[0]).toMatchObject({ themeId: FIRST_THEME_PACK.themeId, lines: [{ chance: 600_000, low: 1, high: 3 }] });
+      expect(await pool.post(t, { kind: 'loot', path: '/loot', body: { ask: { themeId: 'theme_nowhere' } } })).toMatchObject({ ok: false, status: 400 });
+      clock += 1;
+      expect((await turn('birch', 'loot', '/loot', { ask: { themeId: FIRST_THEME_PACK.themeId } }, { tables: [{ ...lootWords, lines: [{ ...lootWords.lines[0], item: 'golden_ticket' }] }] })).out).toMatchObject({ ok: false, status: 422 });
+    });
+
+    it('a poster takes back a job it stopped waiting for; nobody takes it after, and only the poster can', async () => {
+      const a = await player('alder');
+      const b = await player('birch');
+      await pool.join(b, 'keyed');
+      const posted = await pool.post(a, { kind: 'pass', path: '/world/pass', body: passBody });
+      if (!posted.ok) throw new Error(posted.reason);
+      expect(await pool.withdraw(b, posted.jobId)).toMatchObject({ ok: false, status: 403 });
+      expect(await pool.withdraw(a, posted.jobId)).toMatchObject({ ok: true });
+      expect(await pool.take(b)).toMatchObject({ ok: true, job: null });
+    });
+
+    it('SharedWork: no hub or nobody online, the player\'s own door answers; someone online, the pool\'s checked result comes back; nobody takes it in time, it is taken back and the door answers', async () => {
+      const own = async () => ({ status: 'OK', data: 'own door' });
+      const fake = (over: Partial<Record<string, any>>) => ({
+        where: async () => ({ configured: true, url: 'x', signedIn: 'alder' }),
+        pool: async () => ({ ok: true, members: [{ handle: 'birch', online: true }] }),
+        postJob: async () => ({ ok: true, jobId: 'job_1' }),
+        job: async () => ({ ok: true, job: { id: 'job_1', kind: 'pass', state: 'DONE', result: 'pool' } }),
+        withdrawJob: async () => ({ ok: true }),
+        ...over
+      }) as any;
+      const quick = { everyMs: 1, waitMs: 3, sleep: async () => undefined };
+      expect(await SharedWork.ask('pass', '/world/pass', {}, own, { ...quick, client: fake({ where: async () => ({ configured: false, url: null, signedIn: null }) }) })).toEqual({ status: 'OK', data: 'own door' });
+      expect(await SharedWork.ask('pass', '/world/pass', {}, own, { ...quick, client: fake({ pool: async () => ({ ok: true, members: [{ handle: 'birch', online: false }] }) }) })).toEqual({ status: 'OK', data: 'own door' });
+      expect(await SharedWork.ask('pass', '/world/pass', {}, own, { ...quick, client: fake({}) })).toEqual({ status: 'OK', data: 'pool' });
+      let withdrawn = 0;
+      expect(await SharedWork.ask('pass', '/world/pass', {}, own, { ...quick, client: fake({ job: async () => ({ ok: true, job: { state: 'OPEN' } }), withdrawJob: async () => { withdrawn++; return { ok: true }; } }) })).toEqual({ status: 'OK', data: 'own door' });
+      expect(withdrawn).toBe(1);
+    });
+  });
+
   describe('the world we host', () => {
     const hostedManifest = { world: { worldUid: 'world_hosted_1', name: 'The Common World', creatorCertUid: 'operator', themeId: FIRST_THEME_PACK.themeId }, themes: [FIRST_THEME_PACK] };
 
@@ -184,6 +261,21 @@ describe('the hub\'s pool and the world it hosts', () => {
       const other = await player('birch');
       expect(await hosted.connect(other, me.uid)).toMatchObject({ ok: false, status: 403 });
       expect(await hosted.connect('not-a-token', me.uid)).toMatchObject({ ok: false, status: 401 });
+    });
+
+    it('our world waits for a character\'s owed session receipts, and closes to one the hub\'s rerun challenged (D134)', async () => {
+      const hosted = new HostedWorld(hub);
+      await hosted.publish(hostedManifest);
+      const token = await player('alder');
+      const me = await character('ws_eeee5555_x1_ffff6666');
+      const nonce = await hub.nonce(token);
+      if (!nonce.ok) throw new Error(nonce.reason);
+      await hub.registerCharacter(token, me.certificate, await me.sign({ claim: 'hub-character', hub: key.id, nonce: nonce.nonce }));
+      const held = (await hub.read<any>(`hub_character_${me.uid}`))!;
+      await hub.commit([{ kind: 'put', doc: hub.doc(`hub_character_${me.uid}`, { ...held.data, owed: [{ seq: 1, sessionId: 's', receiptHash: 'h', actionCount: 1 }] }, held.doc.metadata.createdAt) }]);
+      expect(await hosted.connect(token, me.uid)).toMatchObject({ ok: false, status: 409, owed: 1 });
+      await hub.commit([{ kind: 'put', doc: hub.doc(`hub_character_${me.uid}`, { ...held.data, owed: [], standing: 'CHALLENGED' }, held.doc.metadata.createdAt) }]);
+      expect(await hosted.connect(token, me.uid)).toMatchObject({ ok: false, status: 403, standing: 'CHALLENGED' });
     });
 
     it('a character barred from our world is barred from that world only, and is told the rest plays on', async () => {

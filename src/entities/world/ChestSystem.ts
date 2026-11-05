@@ -51,6 +51,18 @@ const CHEST_ID = /_chest$/;
 
 export class ChestSystem {
 
+  /**
+   * Two readings of one world's chests, made one (online play): a chest emptied in either is emptied,
+   * at the later cycle; a guard fallen in either has fallen, at the later cycle. Order does not matter.
+   */
+  static merge(a: IChestRecord, b: IChestRecord): IChestRecord {
+    const chests: IChestRecord['chests'] = { ...a.chests };
+    for (const [id, c] of Object.entries(b.chests)) chests[id] = { lootedAt: Math.max(c.lootedAt, chests[id]?.lootedAt ?? -Infinity) };
+    const guards: IChestRecord['guards'] = { ...a.guards };
+    for (const [id, g] of Object.entries(b.guards)) guards[id] = { fellAt: Math.max(g.fellAt, guards[id]?.fellAt ?? -Infinity) };
+    return { chests, guards };
+  }
+
   static isChest(entityId: string): boolean {
     return CHEST_ID.test(entityId);
   }

@@ -111,7 +111,8 @@ export class CombatSystem {
           magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
         } : undefined, rollKey, mob.displayName);
-        SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id) });
+        const onTable = LootTable.creatureRoll(def, rollKey);
+        SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id), ...(onTable ? { table: onTable } : {}) });
         if (loot.length > 0) {
           spawnedLoot.push({ position: mob.position, items: loot });
           events.push({ type: 'LOOT_SPAWN', position: mob.position, loot });

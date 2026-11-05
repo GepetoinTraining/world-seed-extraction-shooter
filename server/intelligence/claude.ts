@@ -29,11 +29,13 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   npc_goal: 'claude-haiku-5-5',
   bargain: 'claude-haiku-5-5',
   // Pedro: "the model writes the NPC, the web is resolved backwards"
-  chain: 'claude-haiku-5-5'
+  chain: 'claude-haiku-5-5',
+  // A theme's loot tables are content, written beside the theme, so they take the theme's model (decided; Pedro may overrule)
+  loot: 'claude-sonnet-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low', loot: 'medium' };
 
 /** Dollars per million tokens. Batches are half. */
 /** Writing to the cache costs a quarter more than plain input, for what it saves on every read after. */

@@ -55,6 +55,15 @@ import { CreatureLines, type ILineProof } from '../../src/logic/theme/CreatureLi
 import { canonical, themeIdOf } from '../../src/logic/theme/ThemeCompiler';
 import type { IThemePack } from '../../src/logic/theme/ThemeTypes';
 import { installShippedThemes, FIRST_THEME_PACK } from '../../src/logic/theme/boot';
+import { LootLaw, type ILootTable } from '../../src/logic/theme/LootLaw';
+import { goldOfRow, sameGold } from '../../src/logic/economy/goldOfRow';
+import { rerunDrops, type IRerunFinder } from './rerun';
+import { ItemLaw, type IItemDefinitions } from '../../src/logic/content/ItemLaw';
+import { CRAFTED_GEAR_BASES, ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../src/entities/economy/data/recipeDefinitions';
+import { WebBank } from '../../src/logic/content/WebBank';
+import { GAME_WAYS } from '../../src/logic/economy/gameWays';
 
 export interface IHubOptions {
   /** Its own address, named in what it signs. */
@@ -77,11 +86,31 @@ export interface ISignedRow {
 
 export type Standing = 'GOOD' | 'CHALLENGED';
 
+/** What may come with receipts for the hub to rerun (D134). */
+export interface IReceiptExtra {
+  /** The player's own reading at a head: its gold there. */
+  reading?: { seq: number; gold: number };
+  /** Signed session receipts that session rows named. */
+  sessions?: unknown[];
+  /** Loot tables those sessions rolled on. */
+  tables?: any[];
+}
+
+/** A session row whose receipt the hub has not been sent yet. */
+interface IOwed { seq: number; sessionId: string; receiptHash: string; actionCount: number }
+
+/** What the hub reran: its own reading of the gold, and the drops it rolled again. */
+export interface IRerun { gold: number; sessions: number; rolls: number; unchecked: number; owed: number }
+
 /** What a player sends to be checked (DEPLOY.md). */
 export interface IWorldManifest {
   world: { worldUid: string; creatorCertUid: string; themeId: string };
   themes: IThemePack[];
   kinds?: ILineProof[];
+  /** The world's loot tables (LootLaw.ts): a model's words, the formula's numbers. */
+  loot?: ILootTable[];
+  /** Items the world carries: in its chests, on its ground. */
+  items?: unknown[];
 }
 
 /** One change to the manifest, as JSON Patch (RFC 6902) names it. */
@@ -90,10 +119,26 @@ export interface IPatchOp { op: 'replace'; path: string; value: unknown }
 export interface IWorldCheck {
   themes: { known: string[]; accepted: string[]; refused: { themeId: string; reason: string }[] };
   kinds: { known: string[]; accepted: string[]; corrected: { kind: string; def: Record<string, unknown> }[]; refused: { kind: string; reason: string }[] };
+  loot: { known: string[]; accepted: string[]; corrected: { id: string; table: ILootTable }[]; refused: { id: string; reason: string }[] };
+  /** Checked against their definitions; a made thing's numbers are its chain's, and come back as not checked. */
+  items: { checked: string[]; corrected: { id: string; item: unknown }[]; unchecked: { id: string; reason: string }[]; refused: { id: string; reason: string }[] };
   world: { worldUid: string; themeId: string; reason?: string };
   diff: IPatchOp[];
   ack: ISignedStatement;
 }
+
+/** What an item is checked against: every base and material the installed themes compiled. */
+const HUB_ITEM_DEFINITIONS: IItemDefinitions = {
+  base: id => [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases, ...ITEM_DEFINITIONS.tool_bases, ...CRAFTED_GEAR_BASES].find(b => b.id === id),
+  resource: id => RESOURCE_DEFINITIONS[id] ?? CRAFTED_DEFINITIONS[id],
+  // The host's tech web: the recipes its themes compiled, its web's own, and the game's own ways (gameWays.ts)
+  step: id => {
+    const recipe = RECIPE_DEFINITIONS[id] ?? GEAR_RECIPES[id] ?? WebBank.recipe(id);
+    if (recipe) return { laborSeconds: recipe.laborTimeSeconds };
+    const way = GAME_WAYS.find(w => w.id === id);
+    return way ? { laborSeconds: way.laborSeconds } : undefined;
+  }
+};
 
 /** The themes every hub holds as known: the ones the game ships with. */
 const SHIPPED_THEMES = () => [FIRST_THEME_PACK.themeId];
@@ -372,7 +417,7 @@ export class Hub {
   // RECEIPTS
   // ---------------------------------------------------------------------------
 
-  async checkReceipts(token: unknown, uid: unknown, rows: unknown): Promise<Answer<{ held: number; head: string | null; standing: Standing; ack: ISignedStatement }>> {
+  async checkReceipts(token: unknown, uid: unknown, rows: unknown, extra: IReceiptExtra = {}): Promise<Answer<{ held: number; head: string | null; standing: Standing; ack: ISignedStatement; rerun: IRerun }>> {
     const own = await this.ownCharacter(token, uid);
     if ('ok' in own) return own;
     const { character } = own;
@@ -440,9 +485,102 @@ export class Hub {
       held = await this.heldSeq(own.uid);
     }
 
+    // D134: the rows are held; now the hub does the same arithmetic, on its own time
+    const done = await this.rerun(own.uid, fresh.map(f => f.row), held, extra, key);
+    if (done.challenge) {
+      return refuse(409, `The rows were held. This hub's own rerun did not land where this character's did: ${done.challenge.why} Its standing here is challenged.`, { challenge: done.challenge, standing: 'CHALLENGED', held, rerun: done.rerun });
+    }
+
     const head = await this.headHash(own.uid, held);
-    const ack = statementOf(this.key, { kind: 'worldseed-hub-receipt', hub: this.id, issuer: this.publicUrl, uid: own.uid, seq: held, head, at: this.now() });
-    return { ok: true, held, head, standing: character.data.standing, ack };
+    const ack = statementOf(this.key, { kind: 'worldseed-hub-receipt', hub: this.id, issuer: this.publicUrl, uid: own.uid, seq: held, head, gold: done.rerun.gold, at: this.now() });
+    return { ok: true, held, head, standing: done.standing, ack, rerun: done.rerun };
+  }
+
+  /**
+   * The hub's own reading of a character (rerun.ts): its gold from every held row, and the drops of
+   * every session it was sent, rolled again. A session row names its receipt; until that receipt
+   * comes, the session is owed. What does not land where the player's did is a challenge.
+   */
+  private async rerun(uid: string, fresh: ISignedRow[], held: number, extra: IReceiptExtra, key: CryptoKey): Promise<{ rerun: IRerun; standing: Standing; challenge?: { kind: 'arithmetic'; seq: number; why: string; at: number } }> {
+    const character = (await this.read<any>(`hub_character_${uid}`))!;
+    const data = character.data;
+
+    let reading: { seq: number; gold: number } = data.reading ?? { seq: 0, gold: 0 };
+    for (let seq = reading.seq + 1; seq <= held; seq++) {
+      const doc = await this.store.get(rowId(uid, seq));
+      if (!doc) break;
+      const row = JSON.parse(doc.dataText) as ISignedRow;
+      reading = { seq, gold: reading.gold + goldOfRow(row.payload.type, row.payload.data) };
+    }
+
+    const owed: IOwed[] = [...(data.owed ?? [])];
+    for (const row of fresh) {
+      const d: Record<string, any> = row.payload.data ?? {};
+      if (row.payload.type === 'SESSION_RESULT' && typeof d.receiptHash === 'string') owed.push({ seq: row.payload.seq, sessionId: String(d.sessionId), receiptHash: d.receiptHash, actionCount: Number(d.actionCount) });
+    }
+
+    // Tables sent with these receipts stand before the law; the law's numbers are what is rerun
+    const tables = new Map<string, ILootTable>();
+    for (const t of Array.isArray(extra.tables) ? extra.tables : []) {
+      if (typeof t?.themeId !== 'string' || !(await this.knownTheme(t.themeId))) continue;
+      const verdict = LootLaw.correct(t, ContentRegistry.get(t.themeId)!);
+      if (!verdict.ok) continue;
+      tables.set(verdict.table.id, verdict.table);
+      if (!(await this.read(`hub_loot_${verdict.table.id}`))) await this.commit([{ kind: 'putIfAbsent', doc: this.doc(`hub_loot_${verdict.table.id}`, { type: 'hub_loot', id: verdict.table.id, themeId: t.themeId, table: verdict.table, at: this.now() }) }]);
+    }
+
+    const sessions = (Array.isArray(extra.sessions) ? extra.sessions : []) as { payload: any; timestamp: number; signature: string }[];
+    // What the finder reads, gathered before it runs: it is pure
+    const kinds = new Map<string, { rank: string }>();
+    for (const s of sessions) {
+      for (const a of Array.isArray(s?.payload?.actions) ? s.payload.actions : []) {
+        const id = a?.data?.table?.table;
+        if (typeof id === 'string' && !tables.has(id)) {
+          const heldTable = await this.read<{ table: ILootTable }>(`hub_loot_${id}`);
+          if (heldTable && (await this.knownTheme(heldTable.data.table.themeId))) tables.set(id, heldTable.data.table);
+        }
+        const defId = a?.data?.defId;
+        if (a?.type === 'KILL' && typeof defId === 'string' && !kinds.has(defId)) {
+          const grown = await this.read<{ def: { rank: string } }>(`hub_kind_${defId}`);
+          if (grown) kinds.set(defId, grown.data.def);
+        }
+      }
+    }
+    const find: IRerunFinder = {
+      table: id => tables.get(id),
+      pack: themeId => ContentRegistry.get(themeId),
+      mob: (themeId, defId) => ContentRegistry.compiled(themeId)?.mobs[defId] ?? kinds.get(defId)
+    };
+
+    let challenge: { kind: 'arithmetic'; seq: number; why: string; at: number } | undefined;
+    const rerun: IRerun = { gold: reading.gold, sessions: 0, rolls: 0, unchecked: 0, owed: 0 };
+    for (const s of sessions) {
+      if (!s || typeof s.signature !== 'string' || !s.payload) continue;
+      const at = owed.findIndex(o => o.receiptHash === sha256(s.signature));
+      if (at < 0) continue;
+      const entry = owed[at];
+      const p = s.payload;
+      // The receipt the row named, signed by this character, for that session, with its actions whole
+      if (!(await this.verifies(key, s)) || p.claim?.certUid !== uid || p.claim?.sessionId !== entry.sessionId || !Array.isArray(p.actions) || p.actions.length !== entry.actionCount) continue;
+      const rolled = rerunDrops(p.actions, find);
+      rerun.rolls += rolled.rolls;
+      rerun.unchecked += rolled.unchecked;
+      if (rolled.wrong) { challenge = { kind: 'arithmetic', seq: entry.seq, why: rolled.wrong.why, at: this.now() }; break; }
+      owed.splice(at, 1);
+      rerun.sessions++;
+    }
+
+    // The player's reading of their gold, at the same head, set beside the hub's
+    const theirs = extra.reading;
+    if (!challenge && theirs && theirs.seq === held && typeof theirs.gold === 'number' && Number.isFinite(theirs.gold) && !sameGold(theirs.gold, reading.gold)) {
+      challenge = { kind: 'arithmetic', seq: held, why: `Its gold reads ${theirs.gold} where the rows it signed add up to ${reading.gold}.`, at: this.now() };
+    }
+    rerun.owed = owed.length;
+
+    const standing: Standing = challenge ? 'CHALLENGED' : data.standing;
+    const next = { ...data, reading, owed, standing, ...(challenge ? { challenges: [...(data.challenges ?? []), challenge] } : {}) };
+    await this.commit([{ kind: 'put', doc: this.doc(`hub_character_${uid}`, next, character.doc.metadata.createdAt) }]);
+    return { rerun, standing, ...(challenge ? { challenge } : {}) };
   }
 
   // ---------------------------------------------------------------------------
@@ -471,7 +609,10 @@ export class Hub {
     const maker = await this.read<{ account: string }>(`hub_character_${world.creatorCertUid}`);
     if (!maker || maker.data.account !== account.key) return refuse(403, 'That world\'s maker is not a character of this account on this hub.');
 
-    const out: Omit<IWorldCheck, 'ack' | 'world'> = { themes: { known: [], accepted: [], refused: [] }, kinds: { known: [], accepted: [], corrected: [], refused: [] }, diff: [] };
+    const out: Omit<IWorldCheck, 'ack' | 'world'> = {
+      themes: { known: [], accepted: [], refused: [] }, kinds: { known: [], accepted: [], corrected: [], refused: [] },
+      loot: { known: [], accepted: [], corrected: [], refused: [] }, items: { checked: [], corrected: [], unchecked: [], refused: [] }, diff: []
+    };
 
     for (const pack of manifest.themes as IThemePack[]) {
       const claimed = String(pack?.themeId ?? '');
@@ -503,6 +644,34 @@ export class Hub {
       await this.commit([{ kind: 'put', doc: this.doc(`hub_kind_${kind}`, { type: 'hub_kind', kind, themeId: proof.themeId, def: put.def, at: this.now() }) }]);
     }
 
+    // Loot: what the hub holds passes; a new table stands before the law, wrong numbers put right
+    const tables = Array.isArray(manifest.loot) ? manifest.loot as ILootTable[] : [];
+    for (let i = 0; i < tables.length; i++) {
+      const table = tables[i];
+      const id = String(table?.id ?? '');
+      if (!table || typeof table !== 'object' || !standing.has(table.themeId)) { out.loot.refused.push({ id, reason: 'Its theme is not one this world stands on here.' }); continue; }
+      const held = await this.read<{ table: ILootTable }>(`hub_loot_${id}`);
+      if (held && canonical(held.data.table) === canonical(table)) { out.loot.known.push(id); continue; }
+      const verdict = LootLaw.correct(table, ContentRegistry.get(table.themeId)!);
+      if (!verdict.ok) { out.loot.refused.push({ id, reason: verdict.reason }); continue; }
+      for (const c of verdict.changes) out.diff.push({ op: 'replace', path: `/loot/${i}/lines/${c.line}/${c.field}`, value: c.value });
+      if (verdict.changes.length > 0) out.loot.corrected.push({ id, table: verdict.table });
+      else out.loot.accepted.push(id);
+      await this.commit([{ kind: 'put', doc: this.doc(`hub_loot_${id}`, { type: 'hub_loot', id, themeId: table.themeId, table: verdict.table, at: this.now() }) }]);
+    }
+
+    // Items: each against the definition it was minted from, in the themes this world stands on
+    const items = Array.isArray(manifest.items) ? manifest.items : [];
+    for (let i = 0; i < items.length; i++) {
+      const id = String((items[i] as { id?: unknown })?.id ?? '');
+      const verdict = ItemLaw.correct(items[i], HUB_ITEM_DEFINITIONS);
+      if (!verdict.ok) { out.items.refused.push({ id, reason: verdict.reason }); continue; }
+      if (!verdict.checked) { out.items.unchecked.push({ id, reason: verdict.reason }); continue; }
+      for (const c of verdict.changes) out.diff.push({ op: 'replace', path: `/items/${i}/${c.field}`, value: c.value });
+      if (verdict.changes.length > 0) out.items.corrected.push({ id, item: verdict.item });
+      else out.items.checked.push(id);
+    }
+
     // A standing world reads only its own theme, by the id it was pinned to (ContentRegistry)
     let reason: string | undefined;
     const heldWorld = await this.read<{ themeId: string; creator: string }>(`hub_world_${world.worldUid}`);
@@ -514,9 +683,10 @@ export class Hub {
     const ack = statementOf(this.key, {
       kind: 'worldseed-hub-world', hub: this.id, issuer: this.publicUrl, world: world.worldUid, themeId: world.themeId,
       themes: [...out.themes.known, ...out.themes.accepted], kinds: out.kinds.known.length + out.kinds.accepted.length + out.kinds.corrected.length,
-      corrections: out.diff.length, refused: out.themes.refused.length + out.kinds.refused.length + (reason ? 1 : 0), at: this.now()
+      loot: out.loot.known.length + out.loot.accepted.length + out.loot.corrected.length, items: out.items.checked.length + out.items.corrected.length,
+      corrections: out.diff.length, refused: out.themes.refused.length + out.kinds.refused.length + out.loot.refused.length + out.items.refused.length + (reason ? 1 : 0), at: this.now()
     });
-    const ok = out.themes.refused.length === 0 && out.kinds.refused.length === 0 && !reason;
+    const ok = out.themes.refused.length === 0 && out.kinds.refused.length === 0 && out.loot.refused.length === 0 && out.items.refused.length === 0 && !reason;
     return { ok, ...(ok ? {} : { status: 200 }), ...out, world: { worldUid: world.worldUid, themeId: world.themeId, ...(reason ? { reason } : {}) }, ack };
   }
 

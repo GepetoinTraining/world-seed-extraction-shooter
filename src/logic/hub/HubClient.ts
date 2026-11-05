@@ -7,6 +7,32 @@
  */
 import { CertificateSystem, ISignedPayload, IPlayerCertificate } from '../../entities/identity/certificateSystem';
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
+import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
+import { LootBook } from '../theme/LootBook';
+
+/**
+ * What the hub reruns beside a batch (D134): the player's own reading of their gold at its head,
+ * the signed receipts the batch's session rows name, and the loot tables those sessions rolled on.
+ */
+export interface IReceiptReading { gold: number }
+
+async function rerunExtras(rows: ISignedPayload<ILedgerRow>[], reading?: IReceiptReading) {
+  const sessions: unknown[] = [];
+  const tables = new Map<string, unknown>();
+  for (const r of rows) {
+    if (r.payload.type !== 'SESSION_RESULT' || !r.payload.data?.receiptHash) continue;
+    const doc = await VectorStore.get<any>(VectorNamespace.TRANSACTIONS, `session_${r.payload.data.sessionId}`);
+    if (!doc) continue;
+    sessions.push(doc.data);
+    for (const a of doc.data?.payload?.actions ?? []) {
+      const id = a?.data?.table?.table;
+      const table = typeof id === 'string' ? LootBook.all().find(t => t.id === id) : undefined;
+      if (table) tables.set(table.id, table);
+    }
+  }
+  const head = rows[rows.length - 1]?.payload.seq;
+  return { sessions, tables: [...tables.values()], ...(reading && head !== undefined ? { reading: { seq: head, gold: reading.gold } } : {}) };
+}
 
 const MOUNT = '/api/hub';
 /** Rows per request, so a long chain goes up in parts the hub will read. Not a limit on the chain. */
@@ -66,6 +92,9 @@ export const HubClient = {
   pool: () => call<IHubOutcome & { members?: IPoolMember[]; says?: string }>('/pool'),
   takeJob: () => call<IHubOutcome & { job?: IPoolJob | null; turn?: string }>('/jobs/take', {}),
   handIn: (jobId: string, outcome: unknown) => call<IHubOutcome & { state?: string; diff?: unknown[] }>('/jobs/done', { jobId, outcome }),
+  postJob: (kind: string, path: string, body: unknown) => call<IHubOutcome & { jobId?: string }>('/jobs', { kind, path, body }),
+  job: (jobId: string) => call<IHubOutcome & { job?: { id: string; kind: string; state: string; result?: unknown } }>(`/jobs/${encodeURIComponent(jobId)}`),
+  withdrawJob: (jobId: string) => call('/jobs/withdraw', { jobId }),
 
   // THE WORLD WE HOST (server/hub/hosted.ts)
   hosted: () => call<IHubOutcome & { world?: { worldUid: string; name: string; themeId: string } }>('/hosted'),
@@ -76,14 +105,23 @@ export const HubClient = {
    * history written over under the hub's head shows there as a challenge. The last answer says where
    * the hub stands.
    */
-  async sendReceipts(uid: string): Promise<IHubOutcome & { held?: number; sent?: number; ack?: IHubStatement; challenge?: unknown }> {
+  /**
+   * @param readGold the character's gold as the game holds it, read before and after the rows are
+   * listed: a reading is sent only when the two agree, so it is the reading at the head sent.
+   */
+  async sendReceipts(uid: string, readGold?: () => number): Promise<IHubOutcome & { held?: number; sent?: number; ack?: IHubStatement; challenge?: unknown; rerun?: unknown }> {
     const record = await this.record(uid);
     if (!record.ok) return record;
+    const before = readGold?.();
     const rows: ISignedPayload<ILedgerRow>[] = (await Ledger.list(uid)).filter(r => r.payload.seq >= (record.held ?? 0));
+    const after = readGold?.();
+    const reading = before !== undefined && before === after ? { gold: before } : undefined;
     if (rows.length === 0) return { ...(await call('/receipts', { uid, rows: [] })), sent: 0 };
     let last: IHubOutcome = record;
     for (let i = 0; i < rows.length; i += ROWS_PER_SEND) {
-      last = await call('/receipts', { uid, rows: rows.slice(i, i + ROWS_PER_SEND) });
+      const part = rows.slice(i, i + ROWS_PER_SEND);
+      const lastPart = i + ROWS_PER_SEND >= rows.length;
+      last = await call('/receipts', { uid, rows: part, ...(await rerunExtras(part, lastPart ? reading : undefined)) });
       if (!last.ok) return { ...last, sent: i };
     }
     return { ...last, sent: rows.length };

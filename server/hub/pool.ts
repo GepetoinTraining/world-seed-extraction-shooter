@@ -24,20 +24,24 @@ import { ContentRegistry } from '../../src/logic/theme/ContentRegistry';
 import { CreatureLines, type ILineProof } from '../../src/logic/theme/CreatureLines';
 import { bodyOf } from '../../src/logic/theme/ThemeCompiler';
 import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
+import { judgeChain, judgeLoot, judgePass, themeOfLootJob } from './poolLaw';
 
 export type PoolVoice = 'keyed' | 'local';
-/** The kinds of shared work this hub has a law for. Another kind joins with its own law. */
-export type JobKind = 'theme' | 'kind';
+/**
+ * The kinds of shared work this hub has a law for. Another kind joins with its own law. A world's
+ * passes, the chain and loot tables are what the game's own producers post (poolLaw.ts).
+ */
+export type JobKind = 'theme' | 'kind' | 'pass' | 'chain' | 'loot';
 
 const VOICES: PoolVoice[] = ['keyed', 'local'];
-const KINDS: JobKind[] = ['theme', 'kind'];
+const KINDS: JobKind[] = ['theme', 'kind', 'pass', 'chain', 'loot'];
 /** A member is online while it has been heard from within this long. */
 const ONLINE_MS = 90_000;
 /** A taken job not handed in within this long goes back for another turn. */
 const LEASE_MS = 120_000;
 
 interface IMember { type: 'hub_pool'; account: string; handle: string; voice: PoolVoice; since: number; lastSeen: number; jobsDone: number; spentUsd: number; left?: number }
-interface IJob { type: 'hub_job'; id: string; kind: JobKind; path: string; body: unknown; postedBy: string; at: number; state: 'OPEN' | 'TAKEN' | 'DONE'; takenBy?: string; takenAt?: number; result?: unknown; doneBy?: string }
+interface IJob { type: 'hub_job'; id: string; kind: JobKind; path: string; body: unknown; postedBy: string; at: number; state: 'OPEN' | 'TAKEN' | 'DONE' | 'WITHDRAWN'; takenBy?: string; takenAt?: number; result?: unknown; doneBy?: string }
 
 const memberId = (account: string) => `hub_pool_${account}`;
 
@@ -107,6 +111,8 @@ export class HubPool {
     if ('ok' in account) return account;
     if (!KINDS.includes(job?.kind)) return refuse(400, `This hub has no law for that kind of work yet: it checks ${KINDS.join(' and ')}.`);
     if (typeof job.path !== 'string' || !job.path.startsWith('/')) return refuse(400, 'A job names the door it asks.');
+    // A table is judged against its theme, so the hub must hold that theme before anyone spends a turn
+    if (job.kind === 'loot' && !(await this.hub.knownTheme(themeOfLootJob(job.body) ?? ''))) return refuse(400, 'A loot job names a theme this hub holds.');
     const now = this.hub.now();
     const id = `hub_job_${String(now).padStart(15, '0')}_${randomBytes(6).toString('hex')}`;
     const data: IJob = { type: 'hub_job', id, kind: job.kind, path: job.path, body: job.body ?? {}, postedBy: account.key, at: now, state: 'OPEN' };
@@ -165,6 +171,12 @@ export class HubPool {
       await this.hub.knownTheme('');
       const verdict = ContentRegistry.judge(bodyOf(outcome.data as IThemeBody));
       if (!verdict.ok) return reopen(422, verdict.reason ?? 'The law refused it.');
+    } else if (job.data.kind === 'pass' || job.data.kind === 'chain' || job.data.kind === 'loot') {
+      const judged = job.data.kind === 'pass' ? judgePass(job.data.body, outcome.data)
+        : job.data.kind === 'chain' ? judgeChain(job.data.body, outcome.data)
+        : judgeLoot(job.data.body, outcome.data, (await this.hub.knownTheme(themeOfLootJob(job.data.body) ?? '')) ? ContentRegistry.get(themeOfLootJob(job.data.body)) : undefined);
+      if (!judged.ok) return reopen(422, judged.reason);
+      result = judged.result;
     } else {
       const proof = outcome.data as ILineProof;
       if (!proof || typeof proof !== 'object' || !Array.isArray(proof.nodes) || !Array.isArray(proof.roots) || typeof proof.def !== 'object') return reopen(422, 'That is not a kind\'s proof.');
@@ -179,6 +191,18 @@ export class HubPool {
     await this.put(job.data.id, { ...job.data, state: 'DONE', result, doneBy: account.key }, job.doc.metadata.createdAt);
     await counted(true);
     return { ok: true as const, state: 'DONE' as const, diff };
+  }
+
+  /** A poster that stopped waiting takes its job back, unless it is already done. */
+  async withdraw(token: unknown, jobId: string): Promise<{ ok: true; reason?: undefined } | IRefusal> {
+    const account = await this.hub.who(token);
+    if ('ok' in account) return account;
+    const job = await this.hub.read<IJob>(String(jobId ?? ''));
+    if (!job) return refuse(404, 'No such job.');
+    if (job.data.postedBy !== account.key) return refuse(403, 'Only the one who posted a job takes it back.');
+    if (job.data.state === 'DONE') return refuse(409, 'That job is done; its result stands.');
+    await this.put(job.data.id, { ...job.data, state: 'WITHDRAWN' }, job.doc.metadata.createdAt);
+    return { ok: true };
   }
 
   async get(token: unknown, jobId: string) {

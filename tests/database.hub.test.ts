@@ -19,11 +19,15 @@ import { createHubHandler } from '../server/hub/http';
 import { createHubListener } from '../server/hub/server';
 import { createHubBridge } from '../server/runner';
 import { createHubFunction, hubConfigFrom, hubPathOf } from '../server/hub/function';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { signedText } from '../src/entities/identity/signedText';
 import { addressOf, dayIndexOf } from '../src/logic/time/RadixClock';
 import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
-import { FIRST_THEME_PACK } from '../src/logic/theme/boot';
+import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
+import { sealLoot, lootItemsOf, LootLaw } from '../src/logic/theme/LootLaw';
+import { ItemFactory } from '../src/entities/item/ItemFactory';
+import { CompositionSystem } from '../src/logic/economy/CompositionSystem';
+import { Rng } from '../src/logic/rng/DeterministicRNG';
 import { bodyOf, compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
 
 const ALGORITHM = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
@@ -47,10 +51,10 @@ async function makeCharacter(uid: string) {
   };
   /** A row in the newer form (D135): its moment's address, and the link to the row before it. */
   let lastSignature: string | null = null;
-  const linked = async (ts: number, data: Record<string, unknown> = { amount: 5 }) => {
+  const linked = async (ts: number, data: Record<string, unknown> = { amount: 5 }, type = 'GOLD_DELTA') => {
     seq++;
     const prev = lastSignature ? await linkOf(lastSignature) : null;
-    const signed = await sign({ seq, prevSeq: seq - 1, ts, type: 'GOLD_DELTA', data, v: ROW_VERSION, prev, clock: { ...addressOf(ts), by: 'machine' } }, ts);
+    const signed = await sign({ seq, prevSeq: seq - 1, ts, type, data, v: ROW_VERSION, prev, clock: { ...addressOf(ts), by: 'machine' } }, ts);
     lastSignature = signed.signature;
     return signed;
   };
@@ -362,6 +366,67 @@ describe('the hub', () => {
       expect((out as any).kinds.corrected).toEqual([{ kind: honest.kind, def: honest.def }]);
     });
 
+    it('loot tables (Pedro: "deterministic and only updated by LLM, checked"): a fair one is accepted and known after, wrong numbers come back as a diff, a forged one is refused', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const fair = sealLoot(FIRST_THEME_PACK.themeId, { name: 'Pockets', source: 'creature', fits: ['humanoid'], lines: [{ what: 'material', item: '', odds: 'often', count: 'few', rank: 'same' }] });
+      const greedy = sealLoot(FIRST_THEME_PACK.themeId, { name: 'Greedy', source: 'creature', fits: [], lines: [{ what: 'gear', item: '', odds: 'rarely', count: 'one', rank: 'same' }] });
+      greedy.lines[0].chance = 1_000_000;
+      const forged = { ...sealLoot(FIRST_THEME_PACK.themeId, { name: 'Forged', source: 'chest', fits: [], lines: [{ what: 'gear', item: '', odds: 'rarely', count: 'one', rank: 'same' }] }) };
+      forged.lines = forged.lines.map(l => ({ ...l, odds: 'always' as const }));
+
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], loot: [fair, greedy, forged] }) as any;
+      expect(out.ok).toBe(false);
+      expect(out.loot.accepted).toEqual([fair.id]);
+      expect(out.loot.corrected).toMatchObject([{ id: greedy.id, table: { lines: [{ chance: 5_000 }] } }]);
+      expect(out.loot.refused).toEqual([{ id: forged.id, reason: 'Its id does not match its words.' }]);
+      expect(out.diff).toEqual([{ op: 'replace', path: '/loot/1/lines/0/chance', value: 5_000 }]);
+
+      const again = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], loot: [fair] }) as any;
+      expect(again).toMatchObject({ ok: true, loot: { known: [fair.id], accepted: [] } });
+    });
+
+    it('an item is checked against what it was minted from: its power put right as a diff, one from nowhere refused, a made one with a step nobody knows refused', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      installShippedThemes();
+      const found = FIRST_THEME_PACK.gear.find(g => g.craftAt === 'none')!;
+      const baseId = lootItemsOf(FIRST_THEME_PACK).gear.find(g => g.key === found.key)!.id;
+      const honest = ItemFactory.createItem(found.rank as any, false, Rng.fromKey('hub:item:1'), undefined, baseId);
+      const inflated = { ...honest, itemPower: honest.itemPower * 50, value: 1 };
+      const nowhere = { ...honest, id: 'itm_nowhere', universalDefinitionId: 'wpn_nothing_here' };
+      const made = { ...honest, id: 'itm_made', composition: { ...honest.composition!, steps: [{ recipeId: 'r', name: 'r', laborSeconds: 1, facility: null }] } };
+
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], items: [honest, inflated, nowhere, made] }) as any;
+      expect(out.items.checked).toEqual([honest.id]);
+      expect(out.items.corrected).toMatchObject([{ id: honest.id, item: { itemPower: honest.itemPower, value: honest.value } }]);
+      expect(out.items.refused).toMatchObject([{ id: 'itm_nowhere' }, { id: 'itm_made', reason: expect.stringMatching(/cannot infer/) }]);
+      expect(out.diff).toEqual([
+        { op: 'replace', path: '/items/1/itemPower', value: honest.itemPower },
+        { op: 'replace', path: '/items/1/value', value: honest.value }
+      ]);
+    });
+
+    it('a thing made locally and brought online is checked by its chain, as the host\'s tech web infers it (Pedro, 2026-11-04)', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      installShippedThemes();
+      const compiled = compileTheme(FIRST_THEME_PACK);
+      const [recipeId, recipe] = Object.entries(compiled.gearRecipes)[0];
+      const roots = recipe.inputs.map(i => CompositionSystem.root({ id: i.itemId, name: i.itemId }, 'HARVEST'));
+      const chain = CompositionSystem.compose({ recipeId, name: recipe.name, laborSeconds: recipe.laborTimeSeconds, facility: recipe.requiredFacility }, roots, 1);
+      const made = ItemFactory.createComposedItem(recipe.outputBase, chain, Rng.fromKey('hub:made:1'))!;
+      const priced = { ...made, id: 'itm_priced', value: made.value * 40 };
+      const rushed = { ...made, id: 'itm_rushed', composition: { ...chain, steps: chain.steps.map(st => ({ ...st, laborSeconds: 1 })) } };
+      const fromNothing = { ...made, id: 'itm_from_nothing', composition: { ...chain, materials: [{ defId: 'res_nowhere', name: 'Nowhere', count: 1, origin: 'HARVEST' as const }] } };
+
+      const out = await hub.checkWorld(token, { world: worldOf(character.uid), themes: [shipped()], items: [made, priced, rushed, fromNothing] }) as any;
+      expect(out.items.checked).toEqual([made.id]);
+      expect(out.items.corrected).toMatchObject([{ id: 'itm_priced', item: { value: made.value } }]);
+      expect(out.items.refused).toMatchObject([{ id: 'itm_rushed', reason: expect.stringMatching(/labor/) }, { id: 'itm_from_nothing', reason: expect.stringMatching(/does not hold/) }]);
+      expect(out.diff).toEqual([{ op: 'replace', path: '/items/1/value', value: made.value }]);
+    });
+
     it('a kind whose line does not prove itself cannot be corrected, and is refused', async () => {
       const token = await signedIn();
       const { character } = await registered(token);
@@ -378,6 +443,81 @@ describe('the hub', () => {
       expect((await hub.checkWorld(first, { world: worldOf(character.uid), themes: [shipped()] })).ok).toBe(true);
       const moved = variant('A World Moved Under Its Feet');
       expect(await hub.checkWorld(first, { world: worldOf(character.uid, moved.themeId), themes: [shipped(), moved] })).toMatchObject({ ok: false, world: { reason: expect.stringMatching(/theme/) } });
+    });
+  });
+
+  describe('the hub does the same arithmetic (D134)', () => {
+    const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+    const table = () => sealLoot(FIRST_THEME_PACK.themeId, { name: 'Pockets', source: 'creature', fits: ['humanoid'], lines: [{ what: 'material', item: '', odds: 'always', count: 'few', rank: 'same' }, { what: 'gear', item: '', odds: 'sometimes', count: 'one', rank: 'same' }] });
+    const humanoid = () => {
+      const mobs = compileTheme(FIRST_THEME_PACK).mobs;
+      const [defId, def] = Object.entries(mobs).find(([, m]) => m.tags.includes('humanoid'))!;
+      return { defId, rank: def.rank as string };
+    };
+    /** A session as the game seals one: its kills journaled with the table roll behind each drop. */
+    const session = async (character: Awaited<ReturnType<typeof makeCharacter>>, sessionId: string, kills: { rank?: string; tamper?: (lines: any[]) => any[] }[]) => {
+      const t = table();
+      const { defId, rank } = humanoid();
+      const items = lootItemsOf(FIRST_THEME_PACK);
+      const actions = kills.map((k, i) => {
+        const rollKey = `seed:${sessionId}:loot:mob_${i}`;
+        const lines = LootLaw.roll(t, k.rank ?? rank, rollKey, items);
+        return { seq: i + 1, t: i, type: 'KILL', data: { mobId: `mob_${i}`, defId, rollKey, drops: [], table: { table: t.id, rank: k.rank ?? rank, lines: k.tamper ? k.tamper(lines) : lines } } };
+      });
+      const receipt = await character.sign({ claim: { sessionId, worldCertUid: 'w', seed: 'seed', baseHash: 'b', certUid: character.uid, startedAt: 1 }, outcome: 'EXTRACTED', durationMs: 1, actionCount: actions.length, actions, endHash: 'e' }, clock - 120_000);
+      return { receipt, table: t, data: { sessionId, worldCertUid: 'w', outcome: 'EXTRACTED', actionCount: actions.length, endHash: 'e', receiptHash: sha(receipt.signature) } };
+    };
+
+    it('the hub reads the gold its rows add up to, signs that reading, and a player\'s reading that does not fit challenges the character', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const rows = [await character.linked(clock - 300_000, { gold: 500 }, 'CHARACTER_GENESIS'), await character.linked(clock - 200_000, { amount: 12.5 })];
+      const out = await hub.checkReceipts(token, character.uid, rows, { reading: { seq: 2, gold: 512.5 } }) as any;
+      expect(out).toMatchObject({ ok: true, held: 2, standing: 'GOOD', rerun: { gold: 512.5 } });
+      expect(JSON.parse(out.ack.text)).toMatchObject({ gold: 512.5, seq: 2 });
+
+      const third = await character.linked(clock - 100_000, { amount: -2.5 });
+      const lie = await hub.checkReceipts(token, character.uid, [third], { reading: { seq: 3, gold: 9999 } }) as any;
+      expect(lie).toMatchObject({ ok: false, status: 409, standing: 'CHALLENGED', held: 3, challenge: { kind: 'arithmetic', seq: 3 } });
+      expect(lie.reason).toMatch(/510/);
+      expect(await hub.record(token, character.uid)).toMatchObject({ ok: true, held: 3, standing: 'CHALLENGED' });
+    });
+
+    it('a session row is owed until its receipt comes; its drops are rolled again and pass when they land where the player\'s did', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const s = await session(character, 'sess_1', [{}, {}, {}]);
+      const first = await hub.checkReceipts(token, character.uid, [await character.linked(clock - 100_000, s.data, 'SESSION_RESULT')]) as any;
+      expect(first).toMatchObject({ ok: true, rerun: { owed: 1, sessions: 0 } });
+
+      const later = await hub.checkReceipts(token, character.uid, [], { sessions: [s.receipt], tables: [s.table] }) as any;
+      expect(later).toMatchObject({ ok: true, standing: 'GOOD', rerun: { owed: 0, sessions: 1, rolls: 3, unchecked: 0 } });
+    });
+
+    it('a drop that does not land where the hub\'s rerun does, or a kill rolled at a rank its kind is not, challenges the character; the rows stay held', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const forged = await session(character, 'sess_forged', [{}, { tamper: lines => [...lines, { ...lines[0] ?? { line: 0, what: 'material', key: 'x', id: 'x', rank: 'F' }, count: 99 }] }]);
+      await hub.checkReceipts(token, character.uid, [await character.linked(clock - 100_000, forged.data, 'SESSION_RESULT')]);
+      const out = await hub.checkReceipts(token, character.uid, [], { sessions: [forged.receipt], tables: [forged.table] }) as any;
+      expect(out).toMatchObject({ ok: false, status: 409, standing: 'CHALLENGED', challenge: { kind: 'arithmetic', seq: 1 } });
+      expect(out.reason).toMatch(/action 2/);
+
+      const other = await signedIn('other');
+      const { character: second } = await registered(other, 'ws_cccccccc_x1_dddddddd');
+      const higher = await session(second, 'sess_rank', [{ rank: 'SSS' }]);
+      await hub.checkReceipts(other, second.uid, [await second.linked(clock - 100_000, higher.data, 'SESSION_RESULT')]);
+      expect(await hub.checkReceipts(other, second.uid, [], { sessions: [higher.receipt], tables: [higher.table] })).toMatchObject({ ok: false, status: 409, challenge: { why: expect.stringMatching(/rank/) } });
+    });
+
+    it('a receipt that is not the one its row named, or not this character\'s, is not taken: the session stays owed', async () => {
+      const token = await signedIn();
+      const { character } = await registered(token);
+      const s = await session(character, 'sess_2', [{}]);
+      const stranger = await makeCharacter('ws_eeeeeeee_x1_ffffffff');
+      const strange = await session(stranger, 'sess_2', [{}]);
+      await hub.checkReceipts(token, character.uid, [await character.linked(clock - 100_000, s.data, 'SESSION_RESULT')]);
+      expect(await hub.checkReceipts(token, character.uid, [], { sessions: [strange.receipt] })).toMatchObject({ ok: true, rerun: { owed: 1, sessions: 0 } });
     });
   });
 

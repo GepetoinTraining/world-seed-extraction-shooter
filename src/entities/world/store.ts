@@ -7,6 +7,12 @@ import { WorldGenerationService } from './services/WorldGenerationService';
 import { IGenerationContext, WorldGenerator } from './WorldGenerator';
 import { chunkOf } from './grid';
 import { DreamingSystem } from './Dreaming';
+import { LootBook } from '../../logic/theme/LootBook';
+import { LiveClient } from '../../logic/live/LiveClient';
+import { HostedLink } from '../../logic/live/HostedLink';
+import { LootWriter } from '../../logic/theme/LootWriter';
+import { IntelligenceClient } from '../../logic/intelligence/IntelligenceClient';
+import { SharedWork } from '../../logic/hub/SharedWork';
 import { AffixBank } from '../../logic/content/AffixBank';
 import { ContentRegistry } from '../../logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from './Director';
@@ -133,6 +139,28 @@ function landReports(worldId: string): void {
   }).catch(e => console.error('[WORLD] What this session reported did not land:', e));
 }
 
+/**
+ * Another player's change to the world this person is in, live (LiveClient): a chest they emptied
+ * is emptied here too. Chests and guards merge by the later cycle, so the order changes arrive in
+ * does not matter, and the next save here carries both.
+ */
+LiveClient.on(event => {
+  const { activeWorldId, chestRecord } = useWorldStore.getState();
+  if (!activeWorldId || !chestRecord) return;
+  const doc = event.docs.find(d => d.id === `world_chests_${activeWorldId}`);
+  if (!doc) return;
+  let remote: IChestRecord;
+  try { remote = JSON.parse(doc.dataText) as IChestRecord; } catch { return; }
+  const merged = ChestSystem.merge(chestRecord, remote);
+  useWorldStore.setState({ chestRecord: merged });
+  for (const id of Object.keys(remote.chests ?? {})) {
+    if (chestRecord.chests[id]) continue;
+    const chunk = Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).find(c => c.entities.some(e => e.id === id));
+    const entity = chunk?.entities.find(e => e.id === id);
+    if (entity?.container) useWorldStore.getState().updateEntity(id, { container: { ...entity.container, looted: true } });
+  }
+});
+
 export const useWorldStore = create<WorldState>((set, get) => ({
   directorRecord: null,
   populationRecord: null,
@@ -150,6 +178,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     if (!chestRecord || !activeWorldId || !ChestSystem.isChest(chestId)) return;
     const next = ChestSystem.looted(chestRecord, chestId, generation);
     set({ chestRecord: next });
+    // Played live, the claim made before the chest opened was the write: the room's, after (LiveClient.chests)
+    if (LiveClient.isLive(activeWorldId)) return;
     void ChestStore.save(activeWorldId, next);
   },
   reportBroke: (structureId) => {
@@ -169,6 +199,13 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     if (chestRecord && ChestSystem.chestOfGuard(entityId)) {
       const next = ChestSystem.fell(chestRecord, entityId, generation);
       set({ chestRecord: next });
+      // Played live, the fall goes in the room's queue, and the record comes back as it stands
+      if (LiveClient.isLive(activeWorldId)) {
+        void LiveClient.chests({ op: 'fell', guardId: entityId, cycle: generation }).then(out => {
+          if (out?.record && get().activeWorldId === activeWorldId) set({ chestRecord: ChestSystem.merge(get().chestRecord ?? out.record, out.record) });
+        });
+        return;
+      }
       void ChestStore.save(activeWorldId, next);
     } else if (populationRecord && definitionId) {
       const next = Population.fell(populationRecord, entityId, definitionId, generation);
@@ -283,6 +320,10 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         const leaving = get().activeWorldId;
         if (leaving) landReports(leaving);
         await landing;
+        // Online play: our hosted world's shared documents are read and written in its room, before anything is read
+        const playing = useIdentityStore.getState().certificate?.metadata.uid;
+        if (HostedLink.is(worldCard.id) && playing) LiveClient.join({ worldUid: worldCard.id, uid: playing });
+        else LiveClient.leave();
         // --- HOOKED UP: CALL SERVICE ---
         const moment = WorldClock.momentAt(worldCard, Date.now());
         const lineWorld = { seed: worldCard.seed, themeId: worldCard.themeId };
@@ -317,6 +358,10 @@ export const useWorldStore = create<WorldState>((set, get) => ({
             // D49: only once magic was unlocked does a world dream at all
             ? (worldCard.magicUnlocked ? ContentRegistry.dreamPack(worldCard.themeId, director) : null)
             : worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
+        // A chest in this world rolls on its theme's tables, when the theme has any (LootLaw.ts)
+        LootBook.enter(worldCard.themeId);
+        // A theme with no tables yet has them written, by the pool or this player's door; until then it drops as it always did
+        void LootWriter.ensure(worldCard.themeId, ask => SharedWork.ask('loot', '/loot', { ask }, () => IntelligenceClient.writeLoot<unknown>(ask)));
 
         // Q14: every world opens on recon, the tutorial too: its first lesson is the scan
         set({
@@ -380,6 +425,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
 
   exitWorld: () => {
+    // Online play: the others here stop drawing this player
+    LiveClient.unsay();
     // What this session's fights said about the world's monsters, for its next regeneration
     const worldId = get().activeWorldId;
     if (worldId) landReports(worldId);

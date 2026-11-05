@@ -13,6 +13,7 @@ import { HubClient } from '../logic/hub/HubClient';
 import { useIdentityStore } from '../entities/identity/store';
 import { VectorStore } from '../entities/data/VectorStore';
 import { ThemeStore } from '../logic/theme/ThemeStore';
+import { HostedLink } from '../logic/live/HostedLink';
 
 export const ConnectWorld: React.FC<{ onConnected: () => void }> = ({ onConnected }) => {
   const [open, setOpen] = useState(false);
@@ -64,7 +65,9 @@ const ConnectFlow: React.FC<{ onConnected: () => void }> = ({ onConnected }) => 
             const cert = out.manifest.certificate;
             if (!cert?.data?.worldUid) { setNote('The hub sent no certificate for the world.'); return; }
             await VectorStore.saveContent(cert.data.worldUid, 'world_certificate', cert, cert.data.worldType);
-            setNote(`${world.name} is in your zones now. Deploy into it as into any world.`);
+            // Deploying into it plays it live: what its players share is kept on our server (LiveClient)
+            HostedLink.remember(cert.data.worldUid);
+            setNote(`${world.name} is in your zones now. Deploy into it as into any world; it is played live, with everyone in it.`);
             onConnected();
           } finally {
             setBusy(false);

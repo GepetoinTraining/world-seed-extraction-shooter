@@ -66,7 +66,7 @@ export function sealTheme(body: IThemeBody, model: string, writtenAt: number, us
   return { ...body, themeId: themeIdOf(body), formula: THEME_FORMULA_VERSION, model, writtenAt, ...(usage ? { usage } : {}) };
 }
 
-const shortIdOf = (themeId: string) => themeId.slice('theme_'.length, 'theme_'.length + 8);
+export const shortIdOf = (themeId: string) => themeId.slice('theme_'.length, 'theme_'.length + 8);
 
 /** A first-generation kind's id. Its sprite is keyed by it, so it does not change. */
 export const creatureIdOf = (themeId: string, key: string) => `mob_${shortIdOf(themeId)}_${key}`;

@@ -283,7 +283,7 @@ export class ItemFactory {
   }
 
   /** Maps rank to a nominal player level requirement */
-  private static getLevelForRank(rank: UniversalRank): number {
+  static getLevelForRank(rank: UniversalRank): number {
     const levels: Record<string, number> = {
       'F': 1, 'E': 10, 'D': 20, 'C': 30,
       'B': 40, 'A': 50, 'S': 60, 'SS': 70, 'SSS': 80

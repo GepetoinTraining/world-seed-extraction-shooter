@@ -10,6 +10,7 @@
  */
 
 import { Ledger } from '../ledger/Ledger';
+import { goldOfRow } from './goldOfRow';
 import { Treasury } from './Treasury';
 import { Wallets } from './Wallets';
 import { usePlayerStore } from '../../entities/player/store';
@@ -37,12 +38,7 @@ export class GoldAudit {
     const rows = await Ledger.list(cert.metadata.uid);
     let player = 0;
     for (const signed of rows) {
-      const { type, data } = signed.payload;
-      if (type === 'CHARACTER_GENESIS') player += data.gold ?? 500;
-      if (type === 'GOLD_DELTA') player += data.amount ?? 0;
-      if (type === 'TAX') player -= data.tax ?? 0;
-      if (type === 'UPKEEP') player -= data.amount ?? 0;
-      if (type === 'TRADE') player += data.playerDelta ?? 0;
+      player += goldOfRow(signed.payload.type, signed.payload.data);
     }
 
     // Treasuries and wallets are shared, so their expectation spans every identity's rows.

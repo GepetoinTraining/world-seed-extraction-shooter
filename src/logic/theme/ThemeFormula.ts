@@ -346,3 +346,27 @@ export const FORCED_EXIT_COST = 'extreme' as const;
 export const FORCED_EXIT_FLOOR_RANK: ThemeRank = 'C';
 /** What such a scroll is worth: its rank's shelf price, times what the band is worth. The shelf asks three times this. */
 export const forcedExitWorth = (rank: ThemeRank) => shelfPrice(rank, COST_POWER[FORCED_EXIT_COST]);
+
+// -------------------------------------------------------------------------
+// LOOT (LootLaw.ts). A model writes a table in bands; these turn the bands into numbers.
+// Whole numbers only (a chance in parts per million), so a drop rerun on another machine
+// lands exactly where it landed here (D134): no power, root or log is taken on the way.
+// -------------------------------------------------------------------------
+
+/** The version a loot table is checked under. A table keeps the one it was written under. */
+export const LOOT_FORMULA_VERSION = 1;
+
+/** One draw in this many: the chance of a line, as a whole number. */
+export const LOOT_PARTS = 1_000_000;
+
+/** How often a line drops, by its band, in parts per LOOT_PARTS. */
+export const LOOT_ODDS_PARTS = { always: LOOT_PARTS, often: 600_000, sometimes: 250_000, seldom: 50_000, rarely: 5_000 } as const;
+
+/** How many of a thing a line drops when it drops, lowest and highest. */
+export const LOOT_COUNT_SPAN = { one: [1, 1], few: [1, 3], several: [2, 5] } as const;
+
+export const lootNumbers = (l: { odds: keyof typeof LOOT_ODDS_PARTS; count: keyof typeof LOOT_COUNT_SPAN }) => ({
+  chance: LOOT_ODDS_PARTS[l.odds],
+  low: LOOT_COUNT_SPAN[l.count][0],
+  high: LOOT_COUNT_SPAN[l.count][1]
+});

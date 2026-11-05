@@ -5,6 +5,7 @@
  */
 
 import { IntelligenceClient } from '../../intelligence/IntelligenceClient';
+import { SharedWork } from '../../hub/SharedWork';
 import { WebBank } from '../../content/WebBank';
 import { fnv1a } from '../../rng/DeterministicRNG';
 import { ContentRegistry } from '../ContentRegistry';
@@ -28,7 +29,8 @@ export async function writeForMint(said: string, draft: IMintDraftLine, onPass?:
   const embedder = CountedEmbedder.of(pool.map(e => e.text));
   const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
   return writeWorld(said, {
-    door: (pass, ask) => IntelligenceClient.writePass(pass, ask, { ...draft }),
+    // Shared work: a hub's pool writes it in turns when someone is there, this player's door when not
+    door: (pass, ask) => SharedWork.ask('pass', '/world/pass', { pass, ask, draft: { ...draft } }, () => IntelligenceClient.writePass(pass, ask, { ...draft })),
     pull: new CountedPull(pool, embedder),
     embedder, packs, registered,
     seed: `mint:${fnv1a(said).toString(16)}`,

@@ -5,6 +5,7 @@
  * Nothing here is trusted on the way back. Whatever returns stands before the law.
  */
 import type { IDoorMessage, IDoorRequest } from './door';
+import { LOOT_SCHEMA } from '../../src/logic/theme/LootLaw';
 import type { IWorldSummary } from '../../src/logic/theme/WorldGrowth';
 import { THEME_SCHEMA, LINE_SCHEMA, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../../src/logic/theme/ThemeTypes';
 import type { IGrowthAsk, ILineAsk } from '../../src/logic/theme/CreatureLines';
@@ -511,6 +512,23 @@ export function buildCreationRequest(ask: unknown): IDoorRequest {
   return {
     kind: 'creation', system: CREATION_SYSTEM, schema: CREATION_SCHEMA, ...withTight(CREATION_SCHEMA, ask), maxTokens: 4000,
     messages: [{ role: 'user', content: `Who is arriving:\n${JSON.stringify(ask)}` }]
+  };
+}
+
+const LOOT_SYSTEM = [
+  'You write the loot tables of a game world: what a creature leaves when it falls, and what a chest in a land holds.',
+  'You write in bands only. Code turns every band into numbers, and a law judges the table whole.',
+  'A table drops from a creature or a chest. `fits` names what its source must carry: tags its creatures have, or, for a chest, lands from the list given. Empty fits every source of that kind.',
+  'Each line drops one kind of thing: gear, material, good, consumable or junk. `item` names one key from what the world offers of that kind, or is empty for any of that kind at its own rank.',
+  'Odds: always, often, sometimes, seldom, rarely. Count: one, few, several. Rank: same as the source, or below it.',
+  'Write a few tables that make the creatures and chests feel like themselves. A boss or an elite earns more than a grunt; junk is common and worth little. Name only keys you were given.'
+].join(' ');
+
+/** A theme's loot tables (LootLaw.ts). What comes back stands before `LootLaw.correct`, table by table. */
+export function buildLootRequest(ask: unknown): IDoorRequest {
+  return {
+    kind: 'loot', system: LOOT_SYSTEM, schema: LOOT_SCHEMA, maxTokens: 4000,
+    messages: [{ role: 'user', content: `The world, and what it offers: ${JSON.stringify(ask)}` }]
   };
 }
 

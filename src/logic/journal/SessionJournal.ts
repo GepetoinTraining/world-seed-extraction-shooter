@@ -15,6 +15,7 @@ import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
 import { StoreUnit } from '../../entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { Ledger } from '../ledger/Ledger';
+import { sha256Hex as sha256Sync } from '../ledger/sha256';
 
 export type JournalActionType =
   | 'DROP'        // drop zone confirmed
@@ -149,7 +150,9 @@ export class SessionJournal {
             worldCertUid: claim.worldCertUid,
             outcome,
             actionCount: receipt.actionCount,
-            endHash: receipt.endHash
+            endHash: receipt.endHash,
+            // D134: the hub asks for the receipt this names, and rolls its drops again
+            receiptHash: sha256Sync(signed.signature)
           });
           const result = await unit.commit();
           if (result.ok) return;

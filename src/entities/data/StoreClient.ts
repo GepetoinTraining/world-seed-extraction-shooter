@@ -91,6 +91,20 @@ function inThePage(opening: Promise<any>): Transport {
 let transport: Transport = overTheWire;
 let local = false;
 
+/**
+ * ONLINE PLAY (server/live/room.ts): the documents of a world played live go to its room, the rest
+ * stay where they are. A commit that touches both is two commits, the world's and this game's own,
+ * each applied once; the world's goes first, so a refused world write leaves this game's untouched.
+ */
+interface IRoute { owns: (id: string) => boolean; transport: Transport }
+let routes: IRoute[] = [];
+const routeOf = (id: string | undefined) => (id === undefined ? undefined : routes.find(r => r.owns(id)));
+
+/** The live room's doors, over the wire, naming the character that plays. */
+export function liveTransport(origin: string, uid: string): Transport {
+  return (path, body) => fetch(`${origin}/api/hub/live${path}?uid=${encodeURIComponent(uid)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ?? '{}', credentials: 'same-origin' });
+}
+
 const closeVault = (reason: string, canCarry = false) => useVault.setState({ status: 'CLOSED', reason, canCarry });
 const openVault = () => {
   if (useVault.getState().status !== 'OPEN') {
@@ -98,7 +112,7 @@ const openVault = () => {
   }
 };
 
-async function request<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(path: string, body: unknown, via: Transport = transport): Promise<T> {
   const payload = JSON.stringify(body);
   let delay = firstRetryMs;
   let counted = false;
@@ -107,7 +121,7 @@ async function request<T>(path: string, body: unknown): Promise<T> {
     for (;;) {
       let failure: string;
       try {
-        const res = await transport(path, payload);
+        const res = await via(path, payload);
         if (res.ok) {
           const answer = await res.json();
           openVault();
@@ -189,19 +203,42 @@ export const StoreClient = {
     return health;
   },
 
+  /** A world played live: documents `owns` claims go to `via`. Returns how to stop. */
+  route(owns: (id: string) => boolean, via: Transport): () => void {
+    const r = { owns, transport: via };
+    routes = [...routes, r];
+    return () => { routes = routes.filter(x => x !== r); };
+  },
+
   async get(id: string): Promise<IWireDoc | null> {
-    return (await request<{ doc: IWireDoc | null }>('/get', { id })).doc;
+    return (await request<{ doc: IWireDoc | null }>('/get', { id }, routeOf(id)?.transport)).doc;
   },
 
   async query(query: IWireQuery): Promise<IWireDoc[]> {
-    return (await request<{ docs: IWireDoc[] }>('/query', query)).docs;
+    return (await request<{ docs: IWireDoc[] }>('/query', query, routeOf(query.idPrefix)?.transport)).docs;
   },
 
   async search(search: IWireSearch): Promise<IWireDoc[]> {
     return (await request<{ docs: IWireDoc[] }>('/search', search)).docs;
   },
 
-  commit(commit: ICommitRequest): Promise<ICommitResult> {
-    return request<ICommitResult>('/commit', commit);
+  async commit(commit: ICommitRequest): Promise<ICommitResult> {
+    if (routes.length === 0) return request<ICommitResult>('/commit', commit);
+    const idOf = (op: ICommitRequest['ops'][number]) => ('doc' in op ? op.doc.id : undefined);
+    const groups = new Map<Transport, ICommitRequest['ops']>();
+    for (const op of commit.ops) {
+      const via = routeOf(idOf(op))?.transport ?? transport;
+      groups.set(via, [...(groups.get(via) ?? []), op]);
+    }
+    if (groups.size === 1) return request<ICommitResult>('/commit', commit, [...groups.keys()][0]);
+    let applied = true;
+    let n = 0;
+    // The world's parts first, each with its own id, so a retry of the whole is still applied once per part
+    for (const [via, ops] of [...groups.entries()].sort(([a], [b]) => (a === transport ? 1 : b === transport ? -1 : 0))) {
+      const part = via === transport ? commit.commitId : `${commit.commitId}:live${n++}`;
+      const out = await request<ICommitResult>('/commit', { ...commit, commitId: part, ops }, via);
+      applied = applied && out.applied;
+    }
+    return { applied };
   }
 };
