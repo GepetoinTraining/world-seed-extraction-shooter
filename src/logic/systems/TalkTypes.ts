@@ -55,9 +55,20 @@ export interface ITalkSurface {
   city?: { knows: string[]; opens: string[] };
 }
 
+/**
+ * One thing a person remembers, slot by slot, as it comes back to them (MemoryLaw.ts). A slot they
+ * have forgotten reads "?", and a role the memory never held is left out. `ledger` marks a debt,
+ * promise, threat or secret, open or settled.
+ */
+export type IMemoryLine = { day: number; ledger?: string } & Partial<Record<'who' | 'did' | 'what' | 'toWhom' | 'when' | 'where' | 'how' | 'why', string>>;
+
+/** What a person will remember of a round, in words only. Code fills who, to whom, when and where. */
+export interface IRememberWords { did: string; what: string; how: string; why: string }
+
 export interface IRoundAsk {
   who: ITalkSurface;
-  log: ILogLine[];
+  /** What comes to mind, oldest first: the strongest of what they remember and any open ledger entry this touches. */
+  memory: IMemoryLine[];
   /** What the person said this round. */
   said: string;
   /** The keyed roll, 1 to 100. */
@@ -84,6 +95,8 @@ export interface IRoundWords {
   reply: string;
   /** A monster's own want, in its words. Empty otherwise. */
   wants: string;
+  /** What this person will remember of the round. Optional to the law: without it, code writes what it knows. */
+  remember?: IRememberWords;
 }
 
 export interface IQuestWords { tag: string; size: QuestSize; text: string }
@@ -102,7 +115,10 @@ export interface IGoalAsk {
   /** LADDER: people, who climb (D104). FREE: a leader, who holds a goal of its own (D93, D103). */
   binding: 'LADDER' | 'FREE';
   who: Partial<ITalkSurface>;
-  log: ILogLine[];
+  /** What comes to mind, as a round's ask carries it. */
+  memory: IMemoryLine[];
+  /** What was just said to them, this round. */
+  said?: string;
   /** The rung this person stands on. Their goal must answer it. */
   need?: string;
   /** The ladder in order, each rung saying whether it is met. */

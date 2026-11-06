@@ -50,7 +50,7 @@ import { ProgressionSystem } from '../player/systems/ProgressionSystem';
 import {
   GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   mayHaveGround, questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake,
-  FED, livingPerDay, residentRung, residentWagePerDay, residentWorks
+  FED, agendaOf, livingPerDay, residentRung, residentWagePerDay, residentWorks
 } from './guild';
 import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, keeperBrought, npcRank, printAmount, printsNeeded, residentFacts, runningBook, runningPerDay, taxBook, walletBrought } from './money';
 import { DEAL_DAYS, IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
@@ -61,6 +61,9 @@ import { IBinPiece, IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/
 import { ApprenticeRoad, ICraftsman, generalKeepers } from '../../logic/systems/ApprenticeRoad';
 import { SalvageSystem, workTools } from '../../logic/systems/SalvageSystem';
 import { NpcAgenda } from '../../logic/systems/NpcAgenda';
+import { Deeds } from '../../logic/memory/Deeds';
+import { LadderWeight } from '../../logic/memory/MemoryLaw';
+import { bothRemember, IMemoryWrite, MemoryStore } from '../interaction/memoryStore';
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../logic/systems/TalkTypes';
 import { IHubTech, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
@@ -853,6 +856,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     let residents = guild.residents;
     let nextWeb = web;
     let changed = false;
+    // A person on the road is the same body they were at the tavern: their memory keeps that id
+    const met: IMemoryWrite[] = [];
     const hoursAt = (masterId: string) => vendors[masterId] ? VendorSystem.teachingHours(vendors[masterId]) : 1;
     for (const person of craftsmen) {
       const walked = ApprenticeRoad.resolve(person, today, hoursAt, keepers);
@@ -860,12 +865,14 @@ export const useHubStore = create<HubState>((set, get) => ({
       for (const event of walked.events) {
         changed = true;
         if (event.movedTo) {
+          if (person.masterId) met.push(...bothRemember(residentIdOf(person.bond), person.masterId, Deeds.movedOn({ day: today, from: person.masterId, craftsman: residentIdOf(person.bond) })));
           useFeed.getState().push(`${event.name} has finished at one bench and gone on to ${HUB_NPCS[event.movedTo]?.name ?? 'the next'}.`, 'signal');
           continue;
         }
         // Crafting is theirs now, and the hub's web can stand on them
         nextWeb = WebSystem.admit(nextWeb, { uid: person.id, name: person.name }, { [walked.craftsman.skill.id]: walked.craftsman.skill }, Date.now()).web;
         const teacher = walked.craftsman.masterId;
+        met.push(...bothRemember(residentIdOf(person.bond), teacher, Deeds.rose({ day: today, master: teacher, craftsman: residentIdOf(person.bond), to: event.to })));
         if (vendors[teacher]) vendors[teacher] = { ...vendors[teacher], agenda: NpcAgenda.fill(vendors[teacher].agenda, { esteem: VENDOR_ESTEEM_PER_RAISED }) };
         useFeed.getState().push(`${event.name} is a ${event.to.toLowerCase()} now.`, 'proof');
         await Ledger.append('TECH', { kind: 'ROAD', craftsmanId: person.id, name: person.name, to: event.to, masterId: teacher });
@@ -915,6 +922,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       const shared = VendorSystem.share(vendors[source], shop, (get().wallets[purse] ?? 0) + (partsDeltas[purse] ?? 0));
       if (shared.paid > 0) {
         changed = true;
+        met.push(...bothRemember(purse, source, Deeds.boughtParts({ day: today, buyer: purse, seller: source })));
         partsDeltas[purse] = (partsDeltas[purse] ?? 0) - shared.paid;
         partsDeltas[source] = (partsDeltas[source] ?? 0) + shared.paid;
       }
@@ -925,6 +933,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     }
 
     set({ vendors, craftsmen: out, web: nextWeb, guild: { ...get().guild, residents } });
+    await MemoryStore.write({ hubId: activeHubId }, met);
     get().generateDailyStock();
     if (Object.keys(partsDeltas).length > 0) {
       await GoldCommit.commit({
@@ -964,6 +973,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       vendors: { ...all, [npcId]: { ...all[npcId], agenda: NpcAgenda.fill(all[npcId].agenda, { belonging: VENDOR_BELONGING_PER_TAKEN }) } }
     });
     await Ledger.append('GUILD', { kind: 'PERSON_APPRENTICED', residentId, craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId });
+    await MemoryStore.write({ hubId: activeHubId }, bothRemember(npcId, residentId, Deeds.apprenticed({ day: today, master: npcId, apprentice: residentId })));
     await get().saveHubState();
     return { ok: true };
   },
@@ -1284,6 +1294,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     }));
     set({ guild: { ...get().guild, quests: [...get().guild.quests, ...quests] } });
     for (const q of quests) useFeed.getState().push(`On the board at the Hall: ${q.text}`, 'signal');
+    // A want put up is a promise to pay for it: the ledger keeps it open until it is brought
+    await MemoryStore.write({ hubId: activeHubId }, quests.map(q => ({ owner: q.residentId, what: Deeds.promise({ day, owner: q.residentId, what: q.text, questId: q.id }) })));
     await get().saveHubState();
   },
 
@@ -1297,6 +1309,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     };
     set({ guild: { ...guild, quests: [...guild.quests, quest] } });
     useFeed.getState().push(`On the board at the Hall: ${quest.text}`, 'signal');
+    const hubId = get().activeHubId;
+    if (hubId) await MemoryStore.write({ hubId }, [{ owner: askerId, what: Deeds.promise({ day: quest.postedDay, owner: askerId, what: quest.text, questId: quest.id }) }]);
     await get().saveHubState();
   },
 
@@ -1308,6 +1322,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     const held = { ...get().wallets };
     const deltas: Record<string, number> = {};
     const paid: { residentId: string; to: string; days: number; amount: number; without: number }[] = [];
+    // D109: they walk to whoever feeds them, so both remember it. What it cost weighs on the buyer.
+    const met: IMemoryWrite[] = [];
     let changed = false;
     const residents = get().guild.residents.map(r => {
       // A person from before this was kept owes nothing for those days, and stands fed.
@@ -1327,9 +1343,15 @@ export const useHubStore = create<HubState>((set, get) => ({
           deltas[to] = (deltas[to] ?? 0) + cost;
           agenda = NpcAgenda.fold(agenda, d + 1, FED);
           days++;
+          met.push(...bothRemember(r.id, to, Deeds.fed({ day: d, buyer: r.id, seller: to, paid: true }), {
+            a: LadderWeight.of({ loss: true, after: { agenda, facts: residentFacts(r, held[r.id] ?? 0) } })
+          }));
         } else {
           agenda = NpcAgenda.fold(agenda, d + 1);
           without++;
+          met.push(...bothRemember(r.id, to, Deeds.fed({ day: d, buyer: r.id, seller: to, paid: false }), {
+            a: LadderWeight.of({ loss: true, after: { agenda, facts: residentFacts(r, held[r.id] ?? 0) } })
+          }));
         }
       }
       paid.push({ residentId: r.id, to, days, amount: days * cost, without });
@@ -1337,6 +1359,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     if (!changed) return;
     set({ guild: { ...get().guild, residents } });
+    await MemoryStore.write({ hubId: activeHubId }, met);
     if (Object.keys(deltas).length === 0) { await get().saveHubState(); return; }
     await GoldCommit.commit({
       rows: [{ type: 'TRADE', data: { kind: 'RESIDENT_LIVING', day, paid, playerDelta: 0, treasuryDelta: 0, wallets: deltas } }],
@@ -1424,6 +1447,14 @@ export const useHubStore = create<HubState>((set, get) => ({
       hubDoc: get().hubDoc() ?? undefined
     });
     await (await provenance()).recordMany(given, 'TRANSFER', { via: 'QUEST', questId, lotId: resident?.lotId });
+    // The promise is kept: it closes and starts to fade, and who brought it is remembered with what it cost them
+    {
+      const day = worldDay();
+      const agenda = resident ? agendaOf(resident, day) : get().vendors[quest.residentId]?.agenda;
+      const fall = agenda ? LadderWeight.of({ loss: pay > 0, after: { agenda, facts: resident ? residentFacts(resident, held - pay) : { house: true } } }) : 0;
+      await MemoryStore.settle({ hubId: activeHubId }, quest.residentId, questId, day);
+      await MemoryStore.write({ hubId: activeHubId }, [{ owner: quest.residentId, what: Deeds.brought({ day, by: usePlayerStore.getState().player.id, owner: quest.residentId, what: quest.text, fall }) }]);
+    }
     // A keeper's goods go on their own shelves to be looked over, the way anything they take in does.
     const keeper = !resident && get().vendors[quest.residentId];
     if (keeper) set({ vendors: { ...get().vendors, [quest.residentId]: given.reduce((record, item) => VendorSystem.receive(record, item, worldDay()), keeper) } });

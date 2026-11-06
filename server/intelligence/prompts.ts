@@ -12,7 +12,7 @@ import type { IGrowthAsk, ILineAsk } from '../../src/logic/theme/CreatureLines';
 import { FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 import { MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../types';
-import { HARM_BANDS, IGoalAsk, ILogLine, IRoundAsk, JUDGE_BANDS, PROMISE_BANDS, QUEST_SIZES } from '../../src/logic/systems/TalkTypes';
+import { HARM_BANDS, IGoalAsk, IRoundAsk, JUDGE_BANDS, PROMISE_BANDS, QUEST_SIZES } from '../../src/logic/systems/TalkTypes';
 import { LORE_DEPTHS } from '../../src/logic/systems/LoreConstants';
 import { PASS_SCHEMAS, WORLD_PASSES, WORD_KINDS, type WorldPassId } from '../../src/logic/theme/writing/WorldPasses';
 
@@ -159,11 +159,19 @@ You are told the dice: "roll", "required", and "bonuses", which says what each b
 
 You write no numbers, and never promise a number of anything.`;
 
+const TALK_MEMORY = `"memory" is what comes back to them right now, oldest first: each thing they remember, as who did what to whom, when, where, how and why. A "?" is a part they have forgotten: they do not know it, and never fill it in or guess at it. A "ledger" mark is something that does not fade while it is open: a debt, a promise, a threat, or a secret they let slip. What they remember is theirs, and it colours how they take what is said now.`;
+
+const TALK_REMEMBER = `"remember" is what they will keep of this round, in a few plain words each, as they would remember it, with no numbers in it: "did" is what was done or said, as a verb ("asked about", "offered", "threatened"), "what" is what it was about, "how" is the manner of it, and "why" is why they think it was done, or empty if they cannot tell. Who, to whom, when and where are not yours to write.`;
+
 const NPC_TALK_SYSTEM = `You are speaking as one person in a world, in their own voice. Plain words, as a person talks: short, a little guarded, no flourishes, no stage directions, no narration. Keep every answer under fifty words.
 
 ${TALK_WORLD}
 
 ${TALK_BANDS}
+
+${TALK_MEMORY}
+
+${TALK_REMEMBER}
 
 If "goal" is given, it is what this person is working toward right now, and it colours everything they say. They do not announce it unless it would help them. "reply" is what they say. "wants" stays empty.
 
@@ -177,6 +185,10 @@ ${TALK_WORLD}
 
 ${TALK_BANDS}
 
+${TALK_MEMORY}
+
+${TALK_REMEMBER}
+
 A monster has no name to give, so it never gives one, and never names its own kind: it says "this one", or "we", or nothing. "stance" is where it stands with this person now: AGGRESSIVE means it means to kill them and is only hearing them out, NEUTRAL means it will leave them be, FRIENDLY means it has decided they are useful. "body" says what it is.
 
 "mayTellWant" says whether it trusts them enough. While it is false, it will not say what it wants however it is asked, and "wants" stays empty. Once it is true, "wants" says what it wants, in one short line of its own words, and "reply" may say it too. What it wants should be something a person could actually go and do something about: food for its kind, ground to hold, something taken from it, somebody gone.`;
@@ -184,6 +196,8 @@ A monster has no name to give, so it never gives one, and never names its own ki
 const NPC_GOAL_SYSTEM = `You are deciding what one person in a world is working toward right now, from who they are and from what was said to them. You are not speaking to anyone. Nothing here is said out loud.
 
 ${TALK_WORLD}
+
+${TALK_MEMORY}
 
 Every person is out for their own gain, and they climb the same ladder: "rungs" lists it in order and says which rungs are met. "need" is the rung they stand on, and their goal must answer it and no other, because nobody chases a dream on an empty stomach. Only when "need" is purpose may the goal be anything they like.
 
@@ -194,7 +208,7 @@ Answer with:
 - building: if their goal needs a building that does not exist yet, one word from "buildings", exactly. Otherwise empty. "mayAsk" false means they have already asked, so leave it empty.
 - quest: if somebody else could help by bringing things, a quest: "tag" is one word from "questTags", exactly, for what should be brought, "size" is ${QUEST_SIZES.join(', ')}, and "text" is one line in their own voice saying they want it, with no numbers in it, because the amount is not yours to say. Otherwise null. "mayPost" false means they have one up already, so leave it null.
 
-Let what was said to them move this. If someone has offered them something, or shown them a way, their goal can follow it, as long as it answers their rung. Most people need neither a building nor a quest: leave them out unless the goal really wants one.`;
+Let what was said to them move this: "said" is what was just said, and "memory" holds what came before, as far as they remember it. If someone has offered them something, or shown them a way, their goal can follow it, as long as it answers their rung. Most people need neither a building nor a quest: leave them out unless the goal really wants one.`;
 const CHAIN_SYSTEM = `${VOICE}
 
 A person has come to a place that does not know what they know. You resolve it backwards: from what they can bring about, step by step, down to the ground this place already stands on.
@@ -405,9 +419,14 @@ const MEANS_SCHEMA = {
   properties: { promise: { type: 'string', enum: [...PROMISE_BANDS] }, harm: { type: 'string', enum: [...HARM_BANDS] } }
 };
 
+const REMEMBER_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['did', 'what', 'how', 'why'],
+  properties: { did: str, what: str, how: str, why: str }
+};
+
 export const ROUND_SCHEMA: Record<string, unknown> = {
-  type: 'object', additionalProperties: false, required: ['band', 'asked', 'reply', 'wants'],
-  properties: { band: { type: 'string', enum: [...JUDGE_BANDS] }, asked: MEANS_SCHEMA, reply: str, wants: str }
+  type: 'object', additionalProperties: false, required: ['band', 'asked', 'reply', 'wants', 'remember'],
+  properties: { band: { type: 'string', enum: [...JUDGE_BANDS] }, asked: MEANS_SCHEMA, reply: str, wants: str, remember: REMEMBER_SCHEMA }
 };
 
 export const GOAL_SCHEMA: Record<string, unknown> = {
@@ -564,16 +583,15 @@ export function buildRestRequest(queue: unknown, theme: unknown): IDoorRequest {
   };
 }
 
-/**
- * How much of a talk's log goes with each round. The whole of it stays on the record: this is
- * the bill's guard and a guess, and a person forgets what was said a long while back anyway.
- */
-export const TALK_LOG_SENT = 12;
 /** Thinking counts against this too, and a round is short. A ceiling, never a bill. */
 const ROUND_TOKENS = 1500;
 
-const tailOf = (log: ILogLine[] | undefined) => (log ?? []).slice(-TALK_LOG_SENT);
-const roundMessage = (ask: IRoundAsk | IGoalAsk): IDoorMessage[] => [{ role: 'user', content: JSON.stringify({ ...ask, log: tailOf(ask.log) }) }];
+/**
+ * A round carries what the person remembers, as recall chose it (MemoryLaw.recall), and never a
+ * fixed tail of the log: what they have forgotten is gone by the law, not by a count. The bill's
+ * guard is the door's, which refuses any round whose ceiling would pass what a talk may spend.
+ */
+const roundMessage = (ask: IRoundAsk | IGoalAsk): IDoorMessage[] => [{ role: 'user', content: JSON.stringify(ask) }];
 
 /** One round: the message, the roll and what is required (D113). What comes back stands before `TalkLaw.judgeRound`. */
 export function buildNpcTalkRequest(ask: IRoundAsk): IDoorRequest {
@@ -585,7 +603,7 @@ export function buildBargainRequest(ask: IRoundAsk): IDoorRequest {
   return { kind: 'bargain', system: BARGAIN_SYSTEM, schema: ROUND_SCHEMA, maxTokens: ROUND_TOKENS, messages: roundMessage(ask) };
 }
 
-/** D116: the log and the sheet, before the answer. A leader's weekly call asks through this too (D103). */
+/** D116: what they remember and the sheet, before the answer. A leader's weekly call asks through this too (D103). */
 export function buildNpcGoalRequest(ask: IGoalAsk): IDoorRequest {
   return { kind: 'npc_goal', system: NPC_GOAL_SYSTEM, schema: GOAL_SCHEMA, maxTokens: ROUND_TOKENS, messages: roundMessage(ask) };
 }

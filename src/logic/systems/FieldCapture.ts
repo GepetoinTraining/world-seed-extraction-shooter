@@ -8,7 +8,9 @@
  */
 
 import { IItem, UniversalRank } from '../../../types';
-import { useHubStore } from '../../entities/hub/store';
+import { useHubStore, worldDay } from '../../entities/hub/store';
+import { MemoryStore, rememberThreat } from '../../entities/interaction/memoryStore';
+import { Deeds } from '../memory/Deeds';
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import { MobAI } from '../../entities/mob/ai/MobAI';
 import { usePlayerStore } from '../../entities/player/store';
@@ -80,7 +82,10 @@ export const FieldCapture = {
     practise(['trapping'], entity.rank, 8);
     SessionJournal.record('INTERACT', { kind: 'SNARE', bodyId: entity.id, snareId: snare.id, held: roll.held, noticed: roll.noticed });
     if (!roll.held) {
-      if (roll.noticed) MobAI.provoke(entity.id);
+      if (roll.noticed) {
+        MobAI.provoke(entity.id);
+        void rememberThreat(card.seed, entity.id, usePlayerStore.getState().player.id, worldDay(), { held: false });
+      }
       feed(roll.noticed ? 'The snare closes on nothing, and it knows you tried.' : 'The snare closes on nothing. Nothing looks up.', roll.noticed ? 'loss' : 'plain');
       usePlayerStore.getState().recalcWeight();
       return;
@@ -89,6 +94,8 @@ export const FieldCapture = {
     const proof = CreatureLines.proofOf(world.directorRecord, { seed: card.seed, themeId: card.themeId }, entity.definitionId);
     if (!proof) { feed('The snare holds, and what it holds is nothing this machine can read. It gets away.', 'loss'); return; }
     const me = usePlayerStore.getState().player.id;
+    // Caught: it goes to the hub now, and keeps who caught it there, open, as long as it is held
+    void MemoryStore.write({ hubId: useHubStore.getState().activeHubId ?? 'hub' }, [{ owner: entity.id, what: Deeds.caught({ day: worldDay(), by: me, owner: entity.id, held: true }) }]);
     const cage: ICaged = Capture.cage({ body: entity.id, kind: entity.definitionId, seed: card.seed, generation: world.generation, worldUid: world.activeWorldId, by: me, proof });
     const item = Capture.cageItem(cage, `${card.seed}:${snare.id}`);
 

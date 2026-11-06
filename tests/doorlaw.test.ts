@@ -72,7 +72,7 @@ describe('the keeper ask says where the person stands (Q48)', () => {
     const talk = SRC('src/entities/interaction/talkStore.ts');
     expect(talk).toMatch(/where: AT_THE_COUNTER/);
     expect(SRC('src/logic/systems/TalkTypes.ts')).toMatch(/where\?: string/);
-    const system = buildNpcTalkRequest({ who: { name: 'A', rank: 'D', temperament: '', objective: '', want: '', alignment: '', mind: {}, hands: [] }, log: [], said: '', roll: 1, required: 1, bonuses: {}, meter: 1 }).system;
+    const system = buildNpcTalkRequest({ who: { name: 'A', rank: 'D', temperament: '', objective: '', want: '', alignment: '', mind: {}, hands: [] }, memory: [], said: '', roll: 1, required: 1, bonuses: {}, meter: 1 }).system;
     expect(system).toMatch(/"where"/);
     expect(system).toMatch(/never tell them to come/i);
   });

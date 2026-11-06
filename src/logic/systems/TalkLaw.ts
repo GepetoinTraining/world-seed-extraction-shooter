@@ -15,7 +15,7 @@ import { Rng } from '../rng/DeterministicRNG';
 import { Alignment } from './Alignment';
 import { LADDER } from './NpcAgenda';
 import { StatSystem } from './StatSystem';
-import { HARM_BANDS, IGoalAsk, IGoalWords, IMeans, IRoundWords, JUDGE_BANDS, JudgeBand, PROMISE_BANDS, QUEST_SIZES, QuestSize } from './TalkTypes';
+import { HARM_BANDS, IGoalAsk, IGoalWords, IMeans, IRememberWords, IRoundWords, JUDGE_BANDS, JudgeBand, PROMISE_BANDS, QUEST_SIZES, QuestSize } from './TalkTypes';
 
 /** What one round takes out of a person's day. It is the first thing that bounds a long talk. */
 export const TALK_ENERGY = 5;
@@ -73,6 +73,7 @@ export interface IRoundVerdict {
   gated?: boolean;
   reply?: string;
   wants?: string;
+  remember?: IRememberWords;
 }
 
 export const TalkLaw = {
@@ -142,7 +143,15 @@ export const TalkLaw = {
     if (saysAny(words.reply, ctx.hidden) || saysAny(wants, ctx.hidden)) return { ok: false, reason: 'It said a name that stays masked.' };
     const gated = !!ctx.alignment && !!Alignment.refuses(ctx.alignment, words.asked!);
     const band = gated && JUDGE_BANDS.indexOf(words.band!) > JUDGE_BANDS.indexOf(GATED_BAND) ? GATED_BAND : words.band!;
-    return { ok: true, band, gated, reply: words.reply.trim(), wants };
+    // What they will remember is words only, and a masked name in it is dropped, never the round
+    // and a number is not a slot word: whatever holds a digit is left out
+    const kept = (value: unknown) => {
+      const text = typeof value === 'string' ? value.replace(/\S*\d\S*/g, ' ').replace(/\s+/g, ' ').trim() : '';
+      return saysAny(text, ctx.hidden) ? '' : text;
+    };
+    const r = (words.remember ?? {}) as Partial<IRememberWords>;
+    const remember: IRememberWords = { did: kept(r.did), what: kept(r.what), how: kept(r.how), why: kept(r.why) };
+    return { ok: true, band, gated, reply: words.reply.trim(), wants, remember };
   },
 
   /** What is said when no model said anything. It describes, and never pretends to be their words. */
@@ -203,6 +212,6 @@ export const TalkLaw = {
    * C4's to ask.
    */
   leaderAsk(sheet: { temperament: string; drive?: string; goal: string }, choices: string[]): IGoalAsk {
-    return { binding: 'FREE', who: { temperament: sheet.temperament, drive: sheet.drive }, log: [], choices, dealt: sheet.goal, buildings: [], questTags: [] };
+    return { binding: 'FREE', who: { temperament: sheet.temperament, drive: sheet.drive }, memory: [], choices, dealt: sheet.goal, buildings: [], questTags: [] };
   }
 };

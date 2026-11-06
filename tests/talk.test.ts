@@ -69,7 +69,7 @@ import { buildGibberishFace, GIBBERISH_FAMILY } from '../src/render/atoms/gibber
 import { runGoldenCheck } from '../src/entities/world/goldens';
 import { IntelligenceDoor, IDoorRequest, TALK_SPEND_LIMIT_USD, TALK_MESSAGE_LIMIT, AbsentProvider } from '../server/intelligence/door';
 import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { buildBargainRequest, buildNpcGoalRequest, buildNpcTalkRequest, TALK_LOG_SENT } from '../server/intelligence/prompts';
+import { buildBargainRequest, buildNpcGoalRequest, buildNpcTalkRequest } from '../server/intelligence/prompts';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 import { worldDay } from '../src/entities/hub/store';
 import { HubGenerator, POIType } from '../src/entities/hub/HubGenerator';
@@ -80,6 +80,8 @@ import { doorOf } from '../src/render/atoms/hub';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { GoldCommit } from '../src/logic/economy/GoldCommit';
 import { TALK_ENERGY } from '../src/logic/systems/TalkLaw';
+import { MemoryStore, rememberThreat } from '../src/entities/interaction/memoryStore';
+import { MemoryLaw } from '../src/logic/memory/MemoryLaw';
 
 const UID = 'uid_talk';
 const HUB = 'hub_talk';
@@ -263,7 +265,7 @@ describe('line 147: convincing a person is a talk', () => {
     expect(TalkLaw.bonusOf('idle')).toBe(0);
     expect(TalkLaw.bonusOf('moves')).toBeGreaterThan(0);
     expect(TalkLaw.bonusOf('repels')).toBeLessThan(0);
-    const schema = JSON.stringify(buildNpcTalkRequest({ who: {}, log: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any).schema);
+    const schema = JSON.stringify(buildNpcTalkRequest({ who: {}, memory: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any).schema);
     expect(schema).not.toMatch(/"number"|"integer"/);
     for (const band of JUDGE_BANDS) expect(schema).toContain(band);
   });
@@ -358,12 +360,12 @@ describe('line 147: convincing a person is a talk', () => {
       { status: 'CUT_OFF' }
     ]) {
       vi.spyOn(IntelligenceClient, 'npcTalk').mockResolvedValue(out as any);
-      const answer = await TalkDoor.round('t', { who: NpcSheet.surface(NpcSheet.read(SEED, person(), 1), UniversalRank.E), log: [], said: 'x', roll: 50, required: 50, bonuses: {}, meter: 30 } as any, { hidden: [] });
+      const answer = await TalkDoor.round('t', { who: NpcSheet.surface(NpcSheet.read(SEED, person(), 1), UniversalRank.E), memory: [], said: 'x', roll: 50, required: 50, bonuses: {}, meter: 30 } as any, { hidden: [] });
       expect(answer.by).toBe('FLOOR');
       expect(answer.band).toBe('idle');
     }
     vi.spyOn(IntelligenceClient, 'npcTalk').mockImplementation(() => new Promise(() => {}) as any);
-    const late = await TalkDoor.round('t', { who: {}, log: [], said: 'x', roll: 50, required: 50, bonuses: {}, meter: 30 } as any, { hidden: [] }, 5);
+    const late = await TalkDoor.round('t', { who: {}, memory: [], said: 'x', roll: 50, required: 50, bonuses: {}, meter: 30 } as any, { hidden: [] }, 5);
     expect(late.by).toBe('FLOOR');
   });
 
@@ -419,7 +421,7 @@ describe('line 147: what guards a long talk\'s bill', () => {
       } as any
     };
   };
-  const ask = (said = 'x') => buildNpcTalkRequest({ who: {}, log: [], said, roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
+  const ask = (said = 'x') => buildNpcTalkRequest({ who: {}, memory: [], said, roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
 
   it('a talk has a spend limit at the door: over it, nothing is sent', async () => {
     const { provider, asked } = fakeProvider(TALK_SPEND_LIMIT_USD / 2.5);
@@ -431,27 +433,41 @@ describe('line 147: what guards a long talk\'s bill', () => {
     expect((await door.askTalk('t2', ask())).status).toBe('OK');
   });
 
-  it('a round\'s worst case on Haiku is a small part of that limit', () => {
+  it('a round with a little remembered is a small part of that limit on Haiku', () => {
     const provider = new ClaudeProvider({} as any);
     const full = buildNpcTalkRequest({
       who: NpcSheet.surface(NpcSheet.read(SEED, person(), 1), UniversalRank.E),
-      log: Array.from({ length: 200 }, () => ({ who: 'THEM', text: 'y'.repeat(TALK_MESSAGE_LIMIT) })),
+      memory: Array.from({ length: 12 }, (_, day) => ({ day, who: 'Pedro', did: 'said', what: 'y'.repeat(TALK_MESSAGE_LIMIT), toWhom: 'Mara' })),
       said: 'y'.repeat(TALK_MESSAGE_LIMIT), roll: 1, required: 1, bonuses: {}, meter: 1
     } as any);
     expect(provider.ceiling(full, false)).toBeLessThan(TALK_SPEND_LIMIT_USD / 10);
   });
 
-  it('only the tail of a long log goes to the model, and what is kept is not cut', async () => {
-    const log = Array.from({ length: TALK_LOG_SENT * 3 }, (_, i) => ({ who: 'THEM', text: `line ${i} end` }));
-    const request = buildNpcTalkRequest({ who: {}, log, said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
-    expect(request.messages[0].content).toContain(`line ${log.length - 1} end`);
-    expect(request.messages[0].content).not.toContain('line 0 end');
+  it('no count cuts what is remembered: a round that would pass the talk\'s limit is refused at the door, and nothing is sent', async () => {
+    const claude = new ClaudeProvider({} as any);
+    const { provider, asked } = fakeProvider();
+    const door = new IntelligenceDoor({ ...provider, ceiling: (r: IDoorRequest, b: boolean) => claude.ceiling(r, b) });
+    const huge = buildNpcTalkRequest({
+      who: {}, said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1,
+      memory: Array.from({ length: 5000 }, (_, day) => ({ day, who: 'Pedro', did: 'said', what: 'y'.repeat(TALK_MESSAGE_LIMIT) }))
+    } as any);
+    expect((await door.askTalk('huge', huge)).status).toBe('OVER_LIMIT');
+    expect(asked).toHaveLength(0);
+  });
+
+  it('what they remember goes whole and in order, with what they forgot left as "?"', () => {
+    const memory = Array.from({ length: 40 }, (_, day) => ({ day, who: 'Pedro', did: `said line ${day} end`, how: day === 0 ? '?' : 'kindly' }));
+    const request = buildNpcTalkRequest({ who: {}, memory, said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
+    const sent = JSON.parse(request.messages[0].content as string);
+    expect(sent.memory).toEqual(memory);
+    expect(sent.log).toBeUndefined();
+    expect(request.system).toMatch(/"\?" is a part they have forgotten/);
   });
 
   it('the http door refuses a message over the size before anything is sent, and says so', async () => {
     const { provider, asked } = fakeProvider();
     const handler = createIntelligenceHandler(new IntelligenceDoor(provider), { allowRemote: true });
-    const body = JSON.stringify({ talkId: 't', ask: { who: {}, log: [], said: 'y'.repeat(TALK_MESSAGE_LIMIT + 1), roll: 1, required: 1, bonuses: {}, meter: 1 } });
+    const body = JSON.stringify({ talkId: 't', ask: { who: {}, memory: [], said: 'y'.repeat(TALK_MESSAGE_LIMIT + 1), roll: 1, required: 1, bonuses: {}, meter: 1 } });
     const out: any = {};
     const req: any = { method: 'POST', socket: { remoteAddress: '127.0.0.1' }, on(event: string, fn: (b?: Buffer) => void) { if (event === 'data') fn(Buffer.from(body)); if (event === 'end') fn(); } };
     const res: any = { setHeader() {}, end(text: string) { Object.assign(out, JSON.parse(text)); } };
@@ -481,6 +497,8 @@ describe('line 147: what guards a long talk\'s bill', () => {
     await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
     const first = talk().say('One.');
     await talk().say('Two.');
+    // What they remember is read before the door is asked, so the first round reaches it a moment later
+    await vi.waitFor(() => expect(door).toHaveBeenCalled());
     expect(door).toHaveBeenCalledTimes(1);
     release({ status: 'OK', data: words() });
     await first;
@@ -490,9 +508,10 @@ describe('line 147: what guards a long talk\'s bill', () => {
     const man = monster(humanoidDef());
     stage(man);
     let release: (v: any) => void = () => {};
-    vi.spyOn(IntelligenceClient, 'bargain').mockImplementation(() => new Promise(r => { release = r; }) as any);
+    const out = vi.spyOn(IntelligenceClient, 'bargain').mockImplementation(() => new Promise(r => { release = r; }) as any);
     await talk().open({ kind: 'MONSTER', entityId: man.id });
     const said = talk().say('Wait.');
+    await vi.waitFor(() => expect(out).toHaveBeenCalled());
     talk().close();
     release({ status: 'OK', data: words() });
     await said;
@@ -547,7 +566,7 @@ describe('line 147: what guards a long talk\'s bill', () => {
     let params: any;
     const client = { beta: { messages: { stream: (p: any) => { params = p; return { finalMessage: async () => ({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: JSON.stringify(words()) }], usage: { input_tokens: 1, output_tokens: 1 } }) }; } } } };
     const provider = new ClaudeProvider(client as any);
-    for (const request of [ask(), buildNpcGoalRequest({ binding: 'LADDER', who: {}, log: [], rungs: [], need: 'survival', buildings: [], questTags: [] } as any), buildBargainRequest({ who: {}, log: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any)]) {
+    for (const request of [ask(), buildNpcGoalRequest({ binding: 'LADDER', who: {}, memory: [], rungs: [], need: 'survival', buildings: [], questTags: [] } as any), buildBargainRequest({ who: {}, memory: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any)]) {
       const out = await provider.ask(request);
       expect(params.model).toBe('claude-haiku-5-5');
       expect(params.fallbacks).toBeUndefined();
@@ -565,11 +584,11 @@ describe('line 147: what guards a long talk\'s bill', () => {
   });
 
   it('the system text is frozen and long enough to be cached; everything volatile goes in the message', () => {
-    const a = buildNpcTalkRequest({ who: { name: 'A' }, log: [], said: 'one', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
-    const b = buildNpcTalkRequest({ who: { name: 'B' }, log: [], said: 'two', roll: 9, required: 9, bonuses: {}, meter: 9 } as any);
+    const a = buildNpcTalkRequest({ who: { name: 'A' }, memory: [], said: 'one', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
+    const b = buildNpcTalkRequest({ who: { name: 'B' }, memory: [], said: 'two', roll: 9, required: 9, bonuses: {}, meter: 9 } as any);
     expect(a.system).toBe(b.system);
     // Haiku 5.5 caches from 512 tokens. Four characters a token is the safe reading of plain English.
-    for (const request of [a, buildNpcGoalRequest({ binding: 'LADDER', who: {}, log: [], rungs: [], need: 'survival', buildings: [], questTags: [] } as any), buildBargainRequest({ who: {}, log: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any)]) {
+    for (const request of [a, buildNpcGoalRequest({ binding: 'LADDER', who: {}, memory: [], rungs: [], need: 'survival', buildings: [], questTags: [] } as any), buildBargainRequest({ who: {}, memory: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any)]) {
       expect(request.system.length).toBeGreaterThan(512 * 4);
     }
   });
@@ -903,12 +922,13 @@ describe('line 149: alignment refuses, and there is no crime in code', () => {
 describe('line 149: the goal is set before the answer', () => {
   const openKeeper = async () => { await talk().open({ kind: 'CITY', npcId: 'npc_banker' }); };
 
-  it('in the city the goal is asked first, with the log and the sheet, and the answer knows it', async () => {
+  it('in the city the goal is asked first, with what was said, what they remember and the sheet, and the answer knows it', async () => {
     const order: string[] = [];
     const goalDoor = vi.spyOn(IntelligenceClient, 'npcGoal').mockImplementation(async (_id: string, ask: any) => {
       order.push('goal');
       expect(ask.who.name).toBe('Marcus Goldweave');
-      expect(ask.log.some((l: any) => l.text === 'Good morning.')).toBe(true);
+      expect(ask.said).toBe('Good morning.');
+      expect(Array.isArray(ask.memory)).toBe(true);
       return { status: 'OK', data: goalWords({ need: ask.need, goal: 'Stay ahead of the rent.' }) } as any;
     });
     const talkDoor = vi.spyOn(IntelligenceClient, 'npcTalk').mockImplementation(async (_id: string, ask: any) => {
@@ -958,7 +978,7 @@ describe('line 149: the goal is set before the answer', () => {
   });
 
   it('a goal off the ladder is refused, and the rung\'s plain goal stands instead', () => {
-    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'true neutral' }, log: [], rungs: [], buildings: [], questTags: [], mayPost: true, mayAsk: true };
+    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'true neutral' }, memory: [], rungs: [], buildings: [], questTags: [], mayPost: true, mayAsk: true };
     expect(TalkLaw.judgeGoal(goalWords({ need: 'purpose' }), ask).ok).toBe(false);
     expect(TalkLaw.judgeGoal(goalWords({ need: 'survival' }), ask).ok).toBe(true);
     const floor = TalkLaw.floorGoal(ask);
@@ -968,7 +988,7 @@ describe('line 149: the goal is set before the answer', () => {
   });
 
   it('a goal whose means their alignment refuses is refused', () => {
-    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'lawful good' }, log: [], rungs: [], buildings: [], questTags: [], mayPost: true, mayAsk: true };
+    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'lawful good' }, memory: [], rungs: [], buildings: [], questTags: [], mayPost: true, mayAsk: true };
     expect(TalkLaw.judgeGoal(goalWords({ means: { promise: 'breaks', harm: 'none' } }), ask).ok).toBe(false);
     expect(TalkLaw.judgeGoal(goalWords({ means: { promise: 'keeps', harm: 'some' } }), ask).ok).toBe(false);
     const rogue = { ...ask, who: { alignment: 'chaotic evil' } };
@@ -976,7 +996,7 @@ describe('line 149: the goal is set before the answer', () => {
   });
 
   it('a person acts for their own gain: the prompt says so, and the words never mention a law', () => {
-    const request = buildNpcGoalRequest({ binding: 'LADDER', who: {}, log: [], rungs: [], need: 'survival', buildings: [], questTags: [] } as any);
+    const request = buildNpcGoalRequest({ binding: 'LADDER', who: {}, memory: [], rungs: [], need: 'survival', buildings: [], questTags: [] } as any);
     expect(request.kind).toBe('npc_goal');
     expect(request.system).toMatch(/own gain/i);
     expect(request.system).not.toMatch(/\bcrime|\bcriminal/i);
@@ -1073,7 +1093,7 @@ describe("the city center's keepers are the tech web", () => {
   });
 
   it("the keeper does not send anyone walking, and does not promise what is the counter's to do", () => {
-    const { system } = buildNpcTalkRequest({ who: {}, log: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
+    const { system } = buildNpcTalkRequest({ who: {}, memory: [], said: 'x', roll: 1, required: 1, bonuses: {}, meter: 1 } as any);
     expect(system).toMatch(/never send them/i);
     expect(system).toMatch(/counter/i);
   });
@@ -1118,7 +1138,7 @@ describe('line 150: a person posts a quest and asks for a building', () => {
   });
 
   it('a quest\'s words may hold no digits and must name a real tag', () => {
-    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'true neutral' }, log: [], rungs: [], buildings: [], questTags: ['building'], mayPost: true, mayAsk: true };
+    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'true neutral' }, memory: [], rungs: [], buildings: [], questTags: ['building'], mayPost: true, mayAsk: true };
     expect(TalkLaw.judgeGoal(goalWords({ quest: { ...quest, text: 'Bring me 900 logs.' } }), ask).ok).toBe(false);
     expect(TalkLaw.judgeGoal(goalWords({ quest: { ...quest, tag: 'not_a_tag' } }), ask).ok).toBe(false);
     expect(TalkLaw.judgeGoal(goalWords({ quest }), ask).ok).toBe(true);
@@ -1201,7 +1221,7 @@ describe('line 150: a person posts a quest and asks for a building', () => {
   });
 
   it('only a building the hub can name, and one open at a time', async () => {
-    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'true neutral' }, log: [], rungs: [], buildings: ['bench'], questTags: [], mayPost: true, mayAsk: true };
+    const ask: any = { binding: 'LADDER', need: 'survival', who: { alignment: 'true neutral' }, memory: [], rungs: [], buildings: ['bench'], questTags: [], mayPost: true, mayAsk: true };
     expect(TalkLaw.judgeGoal(goalWords({ building: 'palace' }), ask).ok).toBe(false);
     expect(TalkLaw.judgeGoal(goalWords({ building: 'bench' }), ask).ok).toBe(true);
     await hub().askForBuilding('npc_banker', 'Marcus Goldweave', 'bench', 'Stay ahead.', 'survival');
@@ -1491,5 +1511,74 @@ describe('Q50: a talk shows no cost, and asking draws out what they want', () =>
     expect(talk().stance).not.toBe('FRIENDLY');
     await talk().ask();
     expect(talk().wants).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MEMORY (Pedro, 2026-11-06): what a person remembers goes in place of a tail of the log, and
+// people who meet remember one another
+// ---------------------------------------------------------------------------
+
+describe('a person remembers the talk, and one another', () => {
+  it('in the city, what the last round left is in what the next round sends, by name, in their words', async () => {
+    const asks: any[] = [];
+    vi.spyOn(IntelligenceClient, 'npcTalk').mockImplementation(async (_id: string, ask: any) => {
+      asks.push(ask);
+      return { status: 'OK', data: words({ remember: { did: 'asked about', what: 'the price of 3 loaves', how: 'politely', why: '' } }) } as any;
+    });
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('What does bread cost here?');
+    await talk().say('And for a week of it?');
+    expect(asks[0].memory).toEqual([]);
+    expect(asks[0].log).toBeUndefined();
+    const line = asks[1].memory.find((m: any) => m.did === 'asked about');
+    expect(line).toMatchObject({ who: 'QUOIN', toWhom: 'Marcus Goldweave', how: 'politely', where: 'at their counter face to face' });
+    // A number is not a slot word
+    expect(line.what).toBe('the price of loaves');
+    expect(db.has(`mind_${HUB}_npc_banker`)).toBe(true);
+    expect(db.has(`book_${HUB}`)).toBe(true);
+  });
+
+  it('in the field with no voice, what was said is what they keep', async () => {
+    const entity = person('ent_memory_field');
+    stage(entity);
+    const asks: any[] = [];
+    vi.spyOn(IntelligenceClient, 'npcTalk').mockImplementation(async (_id: string, ask: any) => { asks.push(ask); return { status: 'NO_KEY', reason: 'No key.' } as any; });
+    await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+    await talk().say('The bridge is out to the north.');
+    await talk().say('Anything else?');
+    expect(asks[1].memory.some((m: any) => m.did === 'said' && m.what === 'the bridge is out to the north' && m.toWhom === 'Mara Quill')).toBe(true);
+  });
+
+  it('someone who walks to whoever feeds them is remembered by them, and remembers them', async () => {
+    const resident = await residentNamed('person_memory');
+    await hub().resolveLiving(worldDay() + 2);
+    const today = worldDay() + 2;
+    expect(await MemoryStore.regard({ hubId: HUB }, 'npc_bartender', resident.id, today)).toBeGreaterThan(0);
+    expect(await MemoryStore.regard({ hubId: HUB }, resident.id, 'npc_bartender', today)).toBeGreaterThan(0);
+    const mind = await MemoryStore.mind({ hubId: HUB }, resident.id, today);
+    const book = (db.get(`book_${HUB}`) as any).data;
+    // Two days walked to the same counter are one memory, rehearsed: the day it started, and the last day it said
+    const fed = mind.memories.map(m => MemoryLaw.words(m, book)).filter(m => m.did === 'bought food from');
+    expect(fed).toHaveLength(1);
+    expect(fed[0]).toMatchObject({ who: resident.id, toWhom: 'npc_bartender', when: `day ${worldDay() + 1}` });
+  });
+
+  it('a want put up at the Hall is a promise the ledger keeps open', async () => {
+    const resident = await residentNamed('person_promise');
+    await hub().resolveWants(worldDay());
+    const quest = hub().guild.quests.find(q => q.residentId === resident.id && q.state === 'OPEN')!;
+    const mind = await MemoryStore.mind({ hubId: HUB }, resident.id, worldDay() + 1000);
+    expect(mind.memories.find(m => m.ledger?.key === quest.id)?.ledger).toMatchObject({ kind: 'promise', open: true });
+  });
+
+  it('harm taken in the field is an open ledger entry, and repeats in one encounter are one entry', async () => {
+    await rememberThreat(SEED, 'ent_struck', UID, 5);
+    await rememberThreat(SEED, 'ent_struck', UID, 5);
+    const mind = await MemoryStore.mind({ seed: SEED }, 'ent_struck', 5);
+    expect(mind.memories).toHaveLength(1);
+    expect(mind.memories[0].ledger).toMatchObject({ kind: 'threat', open: true });
+    const recalled = await MemoryStore.recall({ seed: SEED }, 'ent_struck', 500, { people: [UID] }, id => (id === UID ? 'QUOIN' : undefined));
+    expect(recalled[0]).toMatchObject({ who: 'QUOIN', did: 'hurt', ledger: 'threat, open' });
   });
 });

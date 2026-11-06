@@ -6,7 +6,7 @@
 
 import { IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { TalkLaw } from './TalkLaw';
-import { IGoalAsk, IGoalWords, IRoundAsk, IRoundWords, JudgeBand } from './TalkTypes';
+import { IGoalAsk, IGoalWords, IRememberWords, IRoundAsk, IRoundWords, JudgeBand } from './TalkTypes';
 
 /** How long a person is kept waiting before the round goes on without an answer. */
 export const ROUND_PATIENCE_MS = 10_000;
@@ -17,6 +17,8 @@ export interface IRoundAnswer {
   gated?: boolean;
   reply: string;
   wants: string;
+  /** What they will remember of it, from the model. Absent on the floor. */
+  remember?: IRememberWords;
   usage?: IDoorUsage;
   /** Why it fell to the floor, in the door's words. */
   reason?: string;
@@ -47,7 +49,7 @@ export const TalkDoor = {
       console.warn(`[TALK] What came back was refused whole: ${verdict.reason}`);
       return floorRound(verdict.reason, 'REFUSED', out.usage);
     }
-    return { by: 'DOOR', band: verdict.band!, gated: verdict.gated, reply: verdict.reply!, wants: verdict.wants ?? '', usage: out.usage };
+    return { by: 'DOOR', band: verdict.band!, gated: verdict.gated, reply: verdict.reply!, wants: verdict.wants ?? '', remember: verdict.remember, usage: out.usage };
   },
 
   /** D116: asked before the answer, and whatever it comes back as, a person ends up with a goal. */
