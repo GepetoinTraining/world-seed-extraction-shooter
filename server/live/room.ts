@@ -24,6 +24,11 @@
  *   client -> server   { where: IWhere } | { gone: true }
  *   server -> client   { where: IWhere & { uid } } | { gone: <uid> }   to those in the same place only
  *
+ * ONE CONVERSATION AT A TIME (src/logic/live/TalkLine.ts): someone being talked to hears one turn,
+ * and the rest wait in line in the order they reached the room. Held while sockets are open, never kept.
+ *   client -> server   { talk: { op: 'ask' | 'said' | 'leave', npc, party? } }
+ *   server -> client   { line: { npc, focus: [uid], waiting: [[uid]] } }   to everyone in that line, and to one who left it
+ *
  * WHO MAY. Every request and every socket names a character, and the hub's own check decides
  * (HostedWorld.connect, asked over the hub's route so this file holds no account logic): the account
  * holds it, it is in good standing on our world and on the hub, and it owes the hub no receipts.
@@ -37,6 +42,7 @@ import { acceptSocket, type ISocket } from './socket';
 import { isShared, type ChestIntent } from '../../src/logic/live/shared';
 import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../src/entities/world/ChestSystem';
 import { isWhere, whereOf } from '../../src/logic/live/Presence';
+import { TalkLine, emptyLine, type ILine } from '../../src/logic/live/TalkLine';
 
 /** One shape, ok or not: this project compiles without strict null checks, where a union on `ok` does not narrow. */
 export type LiveAccess = (token: string, uid: string) => Promise<{ ok: boolean; worldUid?: string; status?: number; reason?: string }>;
@@ -58,6 +64,11 @@ export class LiveRoom {
   private readonly listening = new Map<string, Set<ISocket>>();
   /** Where each socket's player last said they were: held only while the socket is open. */
   private readonly places = new Map<ISocket, string>();
+  /** Each open socket's player, as checked when it opened. */
+  private readonly players = new Map<ISocket, string>();
+  /** One line for each person being talked to, by world, place and person (TalkLine.ts). */
+  private readonly lines = new Map<string, ILine>();
+  private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly store: SqlStore, private readonly access: LiveAccess, private readonly now: () => number = Date.now) {}
 
@@ -198,12 +209,14 @@ export class LiveRoom {
     if (!socket) return;
     const worldUid = may.worldUid;
     const uid = url.searchParams.get('uid') ?? '';
+    this.players.set(socket, uid);
     socket.onMessage(async text => {
-      let asked: { subscribe?: string; since?: number; where?: unknown; gone?: unknown };
+      let asked: { subscribe?: string; since?: number; where?: unknown; gone?: unknown; talk?: unknown };
       try { asked = JSON.parse(text); } catch { return socket.send(JSON.stringify({ refused: 'That is not JSON.' })); }
       // Where this player is, passed on and never kept (Presence.ts)
       if (asked.where !== undefined) return this.where(worldUid, uid, socket, asked.where);
       if (asked.gone !== undefined) return this.away(worldUid, uid, socket);
+      if (asked.talk !== undefined) return this.talk(worldUid, uid, socket, asked.talk);
       if (asked.subscribe !== channelOf(worldUid)) return socket.send(JSON.stringify({ refused: `This socket is for ${channelOf(worldUid)}.` }));
       const listeners = this.listening.get(worldUid) ?? new Set<ISocket>();
       this.listening.set(worldUid, listeners);
@@ -216,6 +229,7 @@ export class LiveRoom {
     socket.onClose(() => {
       this.away(worldUid, uid, socket);
       this.listening.get(worldUid)?.delete(socket);
+      this.players.delete(socket);
     });
   }
 
@@ -229,7 +243,10 @@ export class LiveRoom {
     if (!isWhere(told)) return;
     const said = whereOf(told);
     const was = this.places.get(socket);
-    if (was !== undefined && was !== said.place) this.tellPlace(worldUid, was, socket, { gone: uid });
+    if (was !== undefined && was !== said.place) {
+      this.leaveLines(worldUid, was, uid);
+      this.tellPlace(worldUid, was, socket, { gone: uid });
+    }
     this.places.set(socket, said.place);
     this.tellPlace(worldUid, said.place, socket, { where: { ...said, uid } });
   }
@@ -238,8 +255,70 @@ export class LiveRoom {
     const was = this.places.get(socket);
     if (was === undefined) return;
     this.places.delete(socket);
+    this.leaveLines(worldUid, was, uid);
     this.tellPlace(worldUid, was, socket, { gone: uid });
   }
+
+  /**
+   * ONE CONVERSATION AT A TIME (TalkLine.ts). A player asks to talk with someone in the place they
+   * stand, says something in their turn, or leaves the line. Everyone in the line is told who is
+   * heard and who waits. The uid is the socket's own, never the message's.
+   */
+  private talk(worldUid: string, uid: string, socket: ISocket, told: unknown) {
+    const t = told as { op?: unknown; npc?: unknown; party?: unknown };
+    const place = this.places.get(socket);
+    if (!t || typeof t !== 'object' || typeof t.npc !== 'string' || !t.npc || place === undefined) return;
+    const party = Array.isArray(t.party) ? t.party.filter((p): p is string => typeof p === 'string') : [];
+    const key = lineKey(worldUid, place, t.npc);
+    const was = this.lines.get(key) ?? emptyLine();
+    const now = this.now();
+    const next = t.op === 'ask' ? TalkLine.ask(was, uid, party, now).line
+      : t.op === 'said' ? TalkLine.said(was, uid, now)
+      : t.op === 'leave' ? TalkLine.leave(was, uid)
+      : null;
+    if (!next) return;
+    // Asking again, already in line, still tells them where they stand
+    this.setLine(worldUid, key, t.npc, was, next, t.op === 'ask' ? [uid] : []);
+  }
+
+  /** A player gone from a place leaves every line there. */
+  private leaveLines(worldUid: string, place: string, uid: string) {
+    const prefix = lineKey(worldUid, place, '');
+    for (const [key, line] of [...this.lines]) {
+      if (!key.startsWith(prefix) || !TalkLine.everyone(line).includes(uid)) continue;
+      this.setLine(worldUid, key, key.slice(prefix.length), line, TalkLine.leave(line, uid), []);
+    }
+  }
+
+  private setLine(worldUid: string, key: string, npc: string, was: ILine, next: ILine, alsoTell: string[]) {
+    if (next.turns.length === 0) this.lines.delete(key);
+    else this.lines.set(key, next);
+    this.tellLine(worldUid, npc, next, new Set([...TalkLine.everyone(was), ...TalkLine.everyone(next), ...alsoTell]));
+    // A turn that sits silent while someone waits is let go when its time comes
+    const timer = this.idleTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.idleTimers.delete(key);
+    const at = TalkLine.idleAt(next);
+    if (at === null) return;
+    const wake = setTimeout(() => {
+      this.idleTimers.delete(key);
+      const line = this.lines.get(key);
+      if (!line) return;
+      const out = TalkLine.idle(line, this.now());
+      if (out.dropped.length > 0) this.setLine(worldUid, key, npc, line, out.line, []);
+      else if (TalkLine.idleAt(line) !== null) this.setLine(worldUid, key, npc, line, line, []);
+    }, Math.max(0, at - this.now()));
+    (wake as { unref?: () => void }).unref?.();
+    this.idleTimers.set(key, wake);
+  }
+
+  private tellLine(worldUid: string, npc: string, line: ILine, to: Set<string>) {
+    const text = JSON.stringify({ line: { npc, ...TalkLine.view(line) } });
+    for (const s of this.listening.get(worldUid) ?? []) if (to.has(this.players.get(s) ?? '')) s.send(text);
+  }
+
+  /** The line of someone being talked to, as the room holds it (for its operator and tests). */
+  lineOf(worldUid: string, place: string, npc: string) { return TalkLine.view(this.lines.get(lineKey(worldUid, place, npc)) ?? emptyLine()); }
 
   /** To everyone listening on the world and standing in `place`, but the one who said it. */
   private tellPlace(worldUid: string, place: string, from: ISocket, message: object) {
@@ -250,6 +329,8 @@ export class LiveRoom {
   /** How many are listening on a world, for its operator. */
   listeners(worldUid: string) { return this.listening.get(worldUid)?.size ?? 0; }
 }
+
+const lineKey = (worldUid: string, place: string, npc: string) => `${worldUid}|${place}|${npc}`;
 
 function readAll(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {

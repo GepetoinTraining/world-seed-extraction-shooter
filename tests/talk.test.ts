@@ -1711,16 +1711,19 @@ describe('the usual, at the door: no model once it is a habit, and back to one w
   });
 });
 
-describe('a city\'s people, minted on chains of their own', () => {
-  it('loading the city mints every keeper and resident once, and the table is the fold of their chains', async () => {
+describe('a city\'s people, minted on the hub\'s chain, acting on chains of their own', () => {
+  it('loading the city mints every keeper and resident once on the hub\'s chain, and the table is the fold of their mints and chains', async () => {
     const resident = await residentNamed('person_minted');
     await hub().settleWallets();
     await hub().settleWallets();
     const table = await PersonLedger.table(HUB);
-    expect(table.find(p => p.npcId === 'npc_bartender')).toMatchObject({ as: 'keeper', seq: 1 });
+    expect(table.find(p => p.npcId === 'npc_bartender')).toMatchObject({ as: 'keeper' });
     expect(table.find(p => p.npcId === resident.id)).toMatchObject({ as: 'resident', name: 'Serin Vale' });
-    expect(table.find(p => p.npcId === resident.id)!.acts.MINTED).toBe(1);
-    expect((await PersonLedger.rows(HUB, 'npc_bartender'))).toHaveLength(1);
+    // One mint each on the hub's chain, none on their own
+    const minted = (await PersonLedger.hubRows(HUB)).map(r => r.payload.data.npcId);
+    expect(minted.filter(id => id === resident.id)).toHaveLength(1);
+    expect(minted.filter(id => id === 'npc_bartender')).toHaveLength(1);
+    expect((await PersonLedger.rows(HUB, 'npc_bartender')).some(r => r.payload.data.kind === 'MINTED')).toBe(false);
   });
 
   it('what they do goes on their chain: the walk to whoever feeds them, and the meetings, the usual marked', async () => {
@@ -1730,6 +1733,10 @@ describe('a city\'s people, minted on chains of their own', () => {
     await hub().resolveLiving(worldDay() + 2);
     const fed = await PersonLedger.record(HUB, one.id);
     expect(typeof fed !== 'string' && fed.fed.paid).toBe(2);
+    // Their own chain starts with an act naming the link of their mint row
+    const [first] = await PersonLedger.rows(HUB, one.id);
+    expect(first.payload.seq).toBe(1);
+    expect(first.payload.data.mint).toBe(typeof fed !== 'string' && fed.mint);
     vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string) => ({
       status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, b: { band: 'idle', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, lines: [{ by: 'a', text: 'Morning.' }] }
     }) as any);
