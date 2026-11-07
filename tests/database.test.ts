@@ -906,9 +906,9 @@ describe('one command brings up everything the game needs', () => {
     for (const file of ['data/test-claude/PG_VERSION', 'data/test-claude/pg_wal/000000010000000000000001', 'data/test-claude.lock', 'data/test-pedro/base/1/1259', 'data/test-pedro.lock', 'data/test-pedro.partial/PG_VERSION', 'data/test-pedro.carried.txt', 'data/test-claude.db', 'data/test-claude.db-wal', 'data/test-pedro.db', 'data/test-pedro.db-shm']) {
       expect(git('check-ignore', file).trim()).toBe(file);
     }
-    expect(git('ls-files', '--others', '--ignored', '--exclude-standard', 'src', 'server', 'tests', 'drizzle').trim()).toBe('');
+    expect(git('ls-files', '--others', '--ignored', '--exclude-standard', 'src', 'shared', 'server', 'tests', 'drizzle').trim()).toBe('');
     // And every file the game's store is built from is really in the repository.
-    const tracked = git('ls-files', 'src/entities/data', 'src/logic/persistence', 'server', 'drizzle').split(/\r?\n/);
+    const tracked = git('ls-files', 'src/entities/data', 'src/logic/persistence', 'shared', 'server', 'drizzle').split(/\r?\n/);
     for (const file of ['shared/entities/data/StoreClient.ts', 'shared/entities/data/StoreUnit.ts', 'shared/entities/data/wire.ts', 'shared/entities/data/similarity.ts', 'shared/SqlStore.ts', 'src/logic/persistence/BrowserImport.ts']) {
       expect(tracked, `${file} is not tracked`).toContain(file);
     }
