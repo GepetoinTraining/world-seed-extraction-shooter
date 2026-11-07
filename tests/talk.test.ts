@@ -84,6 +84,7 @@ import { MemoryStore, rememberThreat } from '../src/entities/interaction/memoryS
 import { MemoryLaw } from '../src/logic/memory/MemoryLaw';
 import { MeetDoor } from '../src/logic/systems/MeetDoor';
 import { MeetLaw } from '../src/logic/systems/MeetLaw';
+import { PersonLedger } from '../src/logic/people/PersonLedger';
 
 const UID = 'uid_talk';
 const HUB = 'hub_talk';
@@ -1707,5 +1708,44 @@ describe('the usual, at the door: no model once it is a habit, and back to one w
     const book = db.get(`book_${HUB}`).data;
     const mind = await MemoryStore.mind({ hubId: HUB }, one.id, start + quiet);
     expect(mind.memories.map(m => MemoryLaw.words(m, book)).some(m => m.did === 'nodded at' && m.when === `day ${start + quiet}`)).toBe(true);
+  });
+});
+
+describe('a city\'s people, minted on chains of their own', () => {
+  it('loading the city mints every keeper and resident once, and the table is the fold of their chains', async () => {
+    const resident = await residentNamed('person_minted');
+    await hub().settleWallets();
+    await hub().settleWallets();
+    const table = await PersonLedger.table(HUB);
+    expect(table.find(p => p.npcId === 'npc_bartender')).toMatchObject({ as: 'keeper', seq: 1 });
+    expect(table.find(p => p.npcId === resident.id)).toMatchObject({ as: 'resident', name: 'Serin Vale' });
+    expect(table.find(p => p.npcId === resident.id)!.acts.MINTED).toBe(1);
+    expect((await PersonLedger.rows(HUB, 'npc_bartender'))).toHaveLength(1);
+  });
+
+  it('what they do goes on their chain: the walk to whoever feeds them, and the meetings, the usual marked', async () => {
+    const one = await residentNamed('person_chain_a');
+    const two = await residentNamed('person_chain_b');
+    await hub().settleWallets();
+    await hub().resolveLiving(worldDay() + 2);
+    const fed = await PersonLedger.record(HUB, one.id);
+    expect(typeof fed !== 'string' && fed.fed.paid).toBe(2);
+    vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string) => ({
+      status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, b: { band: 'idle', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, lines: [{ by: 'a', text: 'Morning.' }] }
+    }) as any);
+    await MeetDoor.live(HUB, { a: one.id, b: two.id, day: worldDay(), where: 'by the tavern', why: 'waiting' });
+    const a = await PersonLedger.record(HUB, one.id);
+    const b = await PersonLedger.record(HUB, two.id);
+    expect(typeof a !== 'string' && a.met[two.id]).toEqual({ times: 1, band: 'lands', usual: 0 });
+    expect(typeof b !== 'string' && b.met[one.id]).toEqual({ times: 1, band: 'idle', usual: 0 });
+  });
+
+  it('a talk with someone in the city goes on that person\'s chain', async () => {
+    await hub().settleWallets();
+    answering(words());
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('Good day.');
+    const banker = await PersonLedger.record(HUB, 'npc_banker');
+    expect(typeof banker !== 'string' && banker.acts.TALKED).toBe(1);
   });
 });

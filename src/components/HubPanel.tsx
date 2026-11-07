@@ -8,6 +8,7 @@ import { Button, Input, Panel } from './ui/kit';
 import { HubClient, IHubCharacter, IHubWhere } from '../logic/hub/HubClient';
 import { useIdentityStore } from '../entities/identity/store';
 import { usePlayerStore } from '../entities/player/store';
+import { useHubStore } from '../entities/hub/store';
 import { PoolSection } from './PoolSection';
 
 const STANDING: Record<IHubCharacter['standing'], string> = {
@@ -101,7 +102,11 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
                 const out = await HubClient.sendReceipts(certificate.metadata.uid, () => usePlayerStore.getState().player.bank.gold);
                 if (!out.ok) return out.reason ?? 'The receipts were not checked.';
                 const rerun = out.rerun as { sessions: number; rolls: number; owed: number } | undefined;
-                return `Checked. The hub now holds ${out.held} and signed for it.${rerun ? ` It reran ${rerun.rolls} drop${rerun.rolls === 1 ? '' : 's'} from ${rerun.sessions} session${rerun.sessions === 1 ? '' : 's'}${rerun.owed ? `; ${rerun.owed} still owed` : ''}.` : ''}`;
+                // The city's people go up with the receipts: each on a chain of their own, minted by the hub
+                const city = useHubStore.getState().activeHubId;
+                const people = city ? (await HubClient.sendPeople(city)).people ?? [] : [];
+                const peopleHeld = people.filter(p => p.ok).length;
+                return `Checked. The hub now holds ${out.held} and signed for it.${rerun ? ` It reran ${rerun.rolls} drop${rerun.rolls === 1 ? '' : 's'} from ${rerun.sessions} session${rerun.sessions === 1 ? '' : 's'}${rerun.owed ? `; ${rerun.owed} still owed` : ''}.` : ''}${people.length > 0 ? ` It checked ${peopleHeld} of ${people.length} people of this city.` : ''}`;
               })}>SEND RECEIPTS</Button>
             </>
           )}

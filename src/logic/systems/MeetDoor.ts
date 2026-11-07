@@ -23,6 +23,7 @@ import { INeedFill, NpcAgenda } from './NpcAgenda';
 import { NpcSheet } from './NpcSheet';
 import { IMeetOutcome, MeetLaw } from './MeetLaw';
 import { HabitLaw, IStanding, IUsual } from './HabitLaw';
+import { PersonLedger } from '../people/PersonLedger';
 import { IMeetAsk, IMeetLine, IMeetSide, IMeetWords } from './TalkTypes';
 import { UniversalRank } from '../../../types';
 
@@ -133,7 +134,7 @@ function keepHabit(q: IMeetQueue, m: IQueued, outcome: IMeetOutcome): void {
 }
 
 /** What a meeting changed, written: belonging for both, and what each keeps of the other. */
-async function settle(hubId: string, outcomes: { meeting: IMeeting; outcome: IMeetOutcome }[]): Promise<void> {
+async function settle(hubId: string, outcomes: { meeting: IMeeting; outcome: IMeetOutcome; usual?: boolean }[]): Promise<void> {
   if (outcomes.length === 0) return;
   const fills: Record<string, INeedFill> = {};
   const add = (id: string, fill: INeedFill) => { fills[id] = { belonging: (fills[id]?.belonging ?? 0) + (fill.belonging ?? 0) }; };
@@ -146,6 +147,11 @@ async function settle(hubId: string, outcomes: { meeting: IMeeting; outcome: IMe
     const standing = standingOf(id);
     return standing ? LadderWeight.of({ loss: MeetLaw.isLoss(band), after: standing }) : 0;
   };
+  // On each one's own chain: whom they met, and whether it was the usual
+  await PersonLedger.actMany(hubId, outcomes.flatMap(({ meeting, outcome, usual }) => [
+    { npcId: meeting.a, act: { kind: 'MET' as const, with: meeting.b, where: meeting.where, why: meeting.why, band: outcome.a.band, usual: !!usual } },
+    { npcId: meeting.b, act: { kind: 'MET' as const, with: meeting.a, where: meeting.where, why: meeting.why, band: outcome.b.band, usual: !!usual } }
+  ]));
   await MemoryStore.write({ hubId }, outcomes.flatMap(({ meeting, outcome }) => [
     { owner: meeting.a, what: Deeds.met({ day: meeting.day, owner: meeting.a, other: meeting.b, where: meeting.where, why: meeting.why, remember: outcome.a.remember, fall: fallOf(meeting.a, outcome.a.band) }) },
     { owner: meeting.b, what: Deeds.met({ day: meeting.day, owner: meeting.b, other: meeting.a, where: meeting.where, why: meeting.why, remember: outcome.b.remember, fall: fallOf(meeting.b, outcome.b.band) }) }
@@ -188,7 +194,7 @@ export const MeetDoor = {
   tick(hubId: string): Promise<void> {
     return inTurn(async () => {
       const q = await loadQueue(hubId);
-      const settled: { meeting: IMeeting; outcome: IMeetOutcome }[] = [];
+      const settled: { meeting: IMeeting; outcome: IMeetOutcome; usual?: boolean }[] = [];
       // Whatever leaves the queue happened: its routine is written once it is settled, so neither the
       // habit nor the context ever counts the meeting being decided
       const happened: IMeeting[] = [];
@@ -218,7 +224,7 @@ export const MeetDoor = {
       for (const m of q.pending) {
         const verdict = await usualOf(hubId, m, q.habits ?? {});
         if (verdict.usual) {
-          settled.push({ meeting: m, outcome: HabitLaw.replay(q.habits![habitKey(m)], m.key, m.a, m.b) });
+          settled.push({ meeting: m, outcome: HabitLaw.replay(q.habits![habitKey(m)], m.key, m.a, m.b), usual: true });
           done([m]);
         } else waiting.push({ ...m, now: standingsOf(m) });
       }
@@ -279,7 +285,7 @@ export const MeetDoor = {
       // The usual is said again, and no model is asked
       if ((await usualOf(hubId, meeting, habits)).usual) {
         const outcome = HabitLaw.replay(habits[habitKey(meeting)], key, meeting.a, meeting.b);
-        await settle(hubId, [{ meeting, outcome }]);
+        await settle(hubId, [{ meeting, outcome, usual: true }]);
         return outcome.lines;
       }
       const now = standingsOf(meeting);
