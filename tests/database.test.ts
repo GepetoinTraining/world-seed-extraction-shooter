@@ -513,7 +513,8 @@ describe('line 71: a gold change is one commit', () => {
     // capture gold the ledger has not heard of.
     const src = read('src/entities/hub/store.ts');
     const lines = src.split('\n');
-    const changes = lines.flatMap((l, i) => /gold: s\.player\.bank\.gold [-+]/.test(l) ? [i] : []);
+    // A gold change is the player's GOLD change, handed through the player's port
+    const changes = lines.flatMap((l, i) => /kind: 'GOLD', delta: /.test(l) ? [i] : []);
     expect(changes.length).toBeGreaterThanOrEqual(7);
     for (const at of changes) {
       const rest = lines.slice(at).join('\n');
