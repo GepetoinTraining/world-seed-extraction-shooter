@@ -22,15 +22,21 @@ import { LadderWeight } from '../memory/MemoryLaw';
 import { INeedFill, NpcAgenda } from './NpcAgenda';
 import { NpcSheet } from './NpcSheet';
 import { IMeetOutcome, MeetLaw } from './MeetLaw';
+import { HabitLaw, IStanding, IUsual } from './HabitLaw';
 import { IMeetAsk, IMeetLine, IMeetSide, IMeetWords } from './TalkTypes';
 import { UniversalRank } from '../../../types';
 
 /** A meeting as the city saw it: who, who, where, why, and the day. */
 export interface IMeeting { a: string; b: string; day: number; where: string; why: string }
 
+/** A meeting waiting or out: its key, and where each stood when it went out, for the habit it may form. */
+type IQueued = IMeeting & { key: string; now?: Record<string, IStanding> };
+
 interface IMeetQueue {
-  pending: (IMeeting & { key: string })[];
-  out: { id: string; batchId: string; meetings: (IMeeting & { key: string })[] }[];
+  pending: IQueued[];
+  out: { id: string; batchId: string; meetings: IQueued[] }[];
+  /** The last meeting a model wrote for each pair and routine (HabitLaw.key), to be said again as the usual. */
+  habits?: Record<string, IUsual>;
   /** Meetings already talked through, by key, so one pair talks once a day. Days gone by are let go. */
   met: string[];
 }
@@ -91,6 +97,41 @@ function standingOf(id: string): { agenda: ReturnType<typeof NpcAgenda.fresh>; f
   return null;
 }
 
+/** Where someone stands now, as the usual compares it: their rung by index, and their goal. */
+function standingNow(id: string): IStanding | undefined {
+  const s = standingOf(id);
+  if (!s) return undefined;
+  const goal = useHubStore.getState().guild.residents.find(r => r.id === id)?.goal?.text;
+  return { rung: LadderWeight.standing(s.agenda, s.facts), ...(goal ? { goal } : {}) };
+}
+
+function standingsOf(m: IMeeting): Record<string, IStanding> {
+  const out: Record<string, IStanding> = {};
+  for (const id of [m.a, m.b]) { const s = standingNow(id); if (s) out[id] = s; }
+  return out;
+}
+
+const habitKey = (m: IMeeting) => HabitLaw.key(m.a, m.b, m.where, m.why);
+
+/** Every meeting writes the routine for both: the other met them, here, over this. The φ law makes a habit of it. */
+const writeRoutines = (hubId: string, meetings: IMeeting[]) => MemoryStore.write({ hubId }, meetings.flatMap(m => [
+  { owner: m.a, what: HabitLaw.routine({ day: m.day, owner: m.a, other: m.b, where: m.where, why: m.why }) },
+  { owner: m.b, what: HabitLaw.routine({ day: m.day, owner: m.b, other: m.a, where: m.where, why: m.why }) }
+]));
+
+/** Is this meeting the usual? Read from both minds as they stand today, against the meeting last written for the pair. */
+async function usualOf(hubId: string, m: IMeeting, habits: Record<string, IUsual>) {
+  const place = { hubId };
+  const minds = { [m.a]: await MemoryStore.mind(place, m.a, m.day), [m.b]: await MemoryStore.mind(place, m.b, m.day) };
+  return HabitLaw.decide({ ...m, today: m.day, minds, book: await MemoryStore.book(place), now: standingsOf(m), last: habits[habitKey(m)] });
+}
+
+/** What a model wrote for a pair, kept to say again. */
+function keepHabit(q: IMeetQueue, m: IQueued, outcome: IMeetOutcome): void {
+  const habits = q.habits ?? (q.habits = {});
+  habits[habitKey(m)] = HabitLaw.keep(outcome, m.a, m.b, m.now ?? standingsOf(m), m.day, habits[habitKey(m)]);
+}
+
 /** What a meeting changed, written: belonging for both, and what each keeps of the other. */
 async function settle(hubId: string, outcomes: { meeting: IMeeting; outcome: IMeetOutcome }[]): Promise<void> {
   if (outcomes.length === 0) return;
@@ -118,16 +159,17 @@ export const MeetDoor = {
     return inTurn(async () => {
       const q = await loadQueue(hubId);
       const known = new Set([...q.met, ...q.pending.map(p => p.key), ...q.out.flatMap(o => o.meetings.map(m => m.key))]);
-      let added = 0;
+      const added: IMeeting[] = [];
       for (const m of meetings) {
         if (m.a === m.b) continue;
         const key = MeetLaw.key(m.a, m.b, m.day);
         if (known.has(key)) continue;
         known.add(key);
         q.pending.push({ ...m, key });
-        added++;
+        added.push(m);
       }
-      if (added > 0) await saveQueue(hubId, q);
+      if (added.length === 0) return;
+      await saveQueue(hubId, q);
     });
   },
 
@@ -147,30 +189,46 @@ export const MeetDoor = {
     return inTurn(async () => {
       const q = await loadQueue(hubId);
       const settled: { meeting: IMeeting; outcome: IMeetOutcome }[] = [];
+      // Whatever leaves the queue happened: its routine is written once it is settled, so neither the
+      // habit nor the context ever counts the meeting being decided
+      const happened: IMeeting[] = [];
+      const done = (ms: IQueued[]) => { q.met.push(...ms.map(m => m.key)); happened.push(...ms); };
 
       const stillOut: IMeetQueue['out'] = [];
       for (const batch of q.out) {
         const got = await IntelligenceClient.collectWindow<{ meetings: Partial<IMeetWords>[] }>(batch.batchId);
         if (got.status === 'OK') {
           const { outcomes } = MeetLaw.judgeBatch(got.data, batch.meetings.map(m => ({ id: m.key })));
-          for (const outcome of outcomes) settled.push({ meeting: batch.meetings.find(m => m.key === outcome.id)!, outcome });
-          q.met.push(...batch.meetings.map(m => m.key));
+          for (const outcome of outcomes) {
+            const meeting = batch.meetings.find(m => m.key === outcome.id)!;
+            settled.push({ meeting, outcome });
+            keepHabit(q, meeting, outcome);
+          }
+          done(batch.meetings);
         } else if (got.status === 'PENDING' || got.status === 'OUTAGE' || got.status === 'OFFLINE') {
           stillOut.push(batch);
         } else {
-          q.met.push(...batch.meetings.map(m => m.key));
+          done(batch.meetings);
         }
       }
       q.out = stillOut;
 
-      let waiting = q.pending;
+      // The usual first: a meeting that is one goes no further than this, and costs nothing
+      let waiting: IQueued[] = [];
+      for (const m of q.pending) {
+        const verdict = await usualOf(hubId, m, q.habits ?? {});
+        if (verdict.usual) {
+          settled.push({ meeting: m, outcome: HabitLaw.replay(q.habits![habitKey(m)], m.key, m.a, m.b) });
+          done([m]);
+        } else waiting.push({ ...m, now: standingsOf(m) });
+      }
       q.pending = [];
       let size = waiting.length;
       while (waiting.length > 0) {
         const part = waiting.slice(0, size);
         const asks = (await Promise.all(part.map(m => askOf(hubId, m)))).filter((a): a is IMeetAsk => !!a);
         const filedOnes = part.filter(m => asks.some(a => a.id === m.key));
-        q.met.push(...part.filter(m => !filedOnes.includes(m)).map(m => m.key));
+        done(part.filter(m => !filedOnes.includes(m)));
         if (asks.length === 0) { waiting = waiting.slice(part.length); continue; }
         const id = `meet_${hubId}_${filedOnes[0].key}_${filedOnes.length}`;
         const filed = await IntelligenceClient.fileWindow(id, 'meet', asks, {}, 0) as { status: string; batchId?: string; data?: unknown };
@@ -178,14 +236,18 @@ export const MeetDoor = {
         if (filed.status === 'PENDING' && filed.batchId) q.out.push({ id, batchId: filed.batchId, meetings: filedOnes });
         else if (filed.status === 'OK') {
           const { outcomes } = MeetLaw.judgeBatch(filed.data, asks);
-          for (const outcome of outcomes) settled.push({ meeting: filedOnes.find(m => m.key === outcome.id)!, outcome });
-          q.met.push(...filedOnes.map(m => m.key));
+          for (const outcome of outcomes) {
+            const meeting = filedOnes.find(m => m.key === outcome.id)!;
+            settled.push({ meeting, outcome });
+            keepHabit(q, meeting, outcome);
+          }
+          done(filedOnes);
         } else if (filed.status === 'OFFLINE' || filed.status === 'OUTAGE' || filed.status === 'BUSY') {
           // The door could not be reached: they wait for the next tick
           q.pending.push(...waiting);
           break;
         } else {
-          q.met.push(...filedOnes.map(m => m.key));
+          done(filedOnes);
         }
         waiting = waiting.slice(part.length);
         size = waiting.length;
@@ -193,6 +255,7 @@ export const MeetDoor = {
 
       await saveQueue(hubId, q);
       await settle(hubId, settled);
+      await writeRoutines(hubId, happened);
     });
   },
 
@@ -211,13 +274,31 @@ export const MeetDoor = {
       return true;
     });
     if (!claimed) return null;
-    const ask = await askOf(hubId, { ...meeting, key });
-    if (!ask) return null;
-    const got = await IntelligenceClient.npcMeet<IMeetWords>(key, ask);
-    if (got.status !== 'OK') return null;
-    const verdict = MeetLaw.judge(got.data, ask);
-    if (!verdict.ok) return null;
-    await settle(hubId, [{ meeting, outcome: verdict.outcome! }]);
-    return verdict.outcome!.lines;
+    try {
+      const habits = (await inTurn(() => loadQueue(hubId))).habits ?? {};
+      // The usual is said again, and no model is asked
+      if ((await usualOf(hubId, meeting, habits)).usual) {
+        const outcome = HabitLaw.replay(habits[habitKey(meeting)], key, meeting.a, meeting.b);
+        await settle(hubId, [{ meeting, outcome }]);
+        return outcome.lines;
+      }
+      const now = standingsOf(meeting);
+      const ask = await askOf(hubId, { ...meeting, key });
+      if (!ask) return null;
+      const got = await IntelligenceClient.npcMeet<IMeetWords>(key, ask);
+      if (got.status !== 'OK') return null;
+      const verdict = MeetLaw.judge(got.data, ask);
+      if (!verdict.ok) return null;
+      await inTurn(async () => {
+        const q = await loadQueue(hubId);
+        keepHabit(q, { ...meeting, key, now }, verdict.outcome!);
+        await saveQueue(hubId, q);
+      });
+      await settle(hubId, [{ meeting, outcome: verdict.outcome! }]);
+      return verdict.outcome!.lines;
+    } finally {
+      // It happened, answered or not: the routine is written once it is decided
+      await writeRoutines(hubId, [meeting]);
+    }
   }
 };

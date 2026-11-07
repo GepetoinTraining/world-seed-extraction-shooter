@@ -20,6 +20,7 @@ import { LADDER, NpcAgenda } from '../src/logic/systems/NpcAgenda';
 import { Deeds } from '../src/logic/memory/Deeds';
 import { NpcContext } from '../src/logic/memory/NpcContext';
 import { MeetLaw } from '../src/logic/systems/MeetLaw';
+import { HabitLaw, IUsual, USUAL_MARK } from '../src/logic/systems/HabitLaw';
 import { ResidentDay } from '../src/entities/hub/residentDay';
 import { WINDOW_REQUESTS, buildNpcMeetRequest } from '../server/intelligence/prompts';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -327,5 +328,86 @@ describe('two people meeting', () => {
     const live = buildNpcMeetRequest(asks[0]);
     expect(live.kind).toBe('npc_talk');
     expect(live.system).toMatch(/"lines" is what they say to each other/);
+  });
+});
+
+
+describe('the usual (Pedro: "hey glenda! want the usual?" "yes bob!")', () => {
+  const WHERE = 'at the counter', WHY = 'buying a day of food';
+  const sides = { bob: { band: 'lands' as const, remember: { did: 'joked about', what: 'the weather', how: 'warmly', why: '' } }, glenda: { band: 'idle' as const, remember: { did: 'asked for', what: 'the usual', how: 'briskly', why: '' } } };
+  const last = (over: Partial<IUsual> = {}): IUsual => ({ sides, lines: [{ by: 'bob', text: 'The usual?' }, { by: 'glenda', text: 'Yes, Bob.' }], rung: { bob: 2, glenda: 4 }, goal: {}, day: 0, ...over });
+  const now = { bob: { rung: 2 }, glenda: { rung: 4 } };
+
+  /** Bob and Glenda meet the same way each day from day 0 to `days - 1`. */
+  const habit = (days: number) => {
+    let book = emptyBook();
+    let bob: IMind = freshMind('bob', 0), glenda: IMind = freshMind('glenda', 0);
+    for (let d = 0; d < days; d++) {
+      ({ mind: bob, book } = MemoryLaw.remember(bob, book, HabitLaw.routine({ day: d, owner: 'bob', other: 'glenda', where: WHERE, why: WHY })));
+      ({ mind: glenda, book } = MemoryLaw.remember(glenda, book, HabitLaw.routine({ day: d, owner: 'glenda', other: 'bob', where: WHERE, why: WHY })));
+    }
+    return { book, minds: { bob, glenda } };
+  };
+  const decide = (h: ReturnType<typeof habit>, today: number, over: Record<string, unknown> = {}) =>
+    HabitLaw.decide({ a: 'bob', b: 'glenda', where: WHERE, why: WHY, today, ...h, now, last: last(), ...over } as any);
+
+  it('the mark is φ² on strength × (1 + gravity): at full strength, gravity at the ledger bar φ', () => {
+    expect(USUAL_MARK).toBeCloseTo(1 + PHI, 12);
+  });
+
+  it('a routine grows into the usual by being met, not by a count: held rises with each meeting until it is past the mark', () => {
+    let previous = 0, crossed = -1;
+    for (let days = 1; days <= 12; days++) {
+      const h = habit(days);
+      const held = Math.min(HabitLaw.held(h.minds.bob, 'glenda', WHERE, WHY, days - 1), HabitLaw.held(h.minds.glenda, 'bob', WHERE, WHY, days - 1));
+      expect(held).toBeGreaterThanOrEqual(previous);
+      previous = held;
+      if (crossed < 0 && held >= USUAL_MARK) crossed = days;
+    }
+    expect(crossed).toBeGreaterThan(1);
+    expect(decide(habit(crossed), crossed - 1)).toEqual({ usual: true });
+    expect(decide(habit(crossed - 1), crossed - 2)).toEqual({ usual: false, because: 'faded' });
+  });
+
+  it('without a meeting a model wrote, there is nothing to say again', () => {
+    expect(decide(habit(12), 11, { last: undefined })).toEqual({ usual: false, because: 'unwritten' });
+  });
+
+  it('stopping meeting fades it, and a deep habit outlasts a fresh one', () => {
+    const fresh = habit(6), deep = habit(40);
+    const lasts = (h: ReturnType<typeof habit>, from: number) => {
+      let d = from;
+      while (decide(h, d).usual) d += 1;
+      return d - from;
+    };
+    expect(decide(fresh, 5).usual).toBe(true);
+    expect(lasts(deep, 39)).toBeGreaterThan(lasts(fresh, 5));
+    expect(decide(fresh, 5 + lasts(fresh, 5))).toEqual({ usual: false, because: 'faded' });
+  });
+
+  it('anything open between them sends it back to a model', () => {
+    const h = habit(12);
+    const owed = MemoryLaw.remember(h.minds.glenda, h.book, Deeds.secret({ day: 11, owner: 'glenda', to: 'bob', want: 'a house of her own' }));
+    expect(decide({ book: owed.book, minds: { ...h.minds, glenda: owed.mind } }, 11)).toEqual({ usual: false, because: 'open' });
+  });
+
+  it('either of them lower on the ladder than when it was written sends it back: the bartender notices when Bob looks rough', () => {
+    expect(decide(habit(12), 11, { now: { bob: { rung: 0 }, glenda: { rung: 4 } } })).toEqual({ usual: false, because: 'fell' });
+    expect(decide(habit(12), 11, { now: { bob: { rung: 3 }, glenda: { rung: 4 } } })).toEqual({ usual: true });
+  });
+
+  it('a new goal sends it back', () => {
+    expect(decide(habit(12), 11, { now: { bob: { rung: 2, goal: 'Save for a house.' }, glenda: { rung: 4 } } })).toEqual({ usual: false, because: 'goal' });
+  });
+
+  it('what is kept says itself again either way round, and a batch with no lines keeps the last lines heard', () => {
+    const outcome = { id: 'm', a: sides.bob, b: sides.glenda, lines: [{ by: 'a' as const, text: 'The usual?' }, { by: 'b' as const, text: 'Yes, Bob.' }] };
+    const kept = HabitLaw.keep(outcome, 'bob', 'glenda', now, 3);
+    const again = HabitLaw.replay(kept, 'm2', 'glenda', 'bob');
+    expect(again.a).toEqual(sides.glenda);
+    expect(again.lines).toEqual([{ by: 'b', text: 'The usual?' }, { by: 'a', text: 'Yes, Bob.' }]);
+    const batch = HabitLaw.keep({ ...outcome, lines: [] }, 'bob', 'glenda', now, 4, kept);
+    expect(batch.lines).toEqual(kept.lines);
+    expect(HabitLaw.key('bob', 'glenda', WHERE, WHY)).toBe(HabitLaw.key('glenda', 'bob', 'At the counter.', WHY));
   });
 });

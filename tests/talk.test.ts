@@ -1657,3 +1657,55 @@ describe('two people meeting (Pedro: batched when nobody watches, live in bubble
     expect(canvas).not.toMatch(/MemoryStore|NpcContext|MemoryLaw/);
   });
 });
+
+
+describe('the usual, at the door: no model once it is a habit, and back to one when something is new', () => {
+  it('two people who meet watched every day stop asking a model, say the lines they said before, and a new goal asks again', async () => {
+    const one = await residentNamed('person_bob');
+    const two = await residentNamed('person_glenda');
+    const lines = [{ by: 'a', text: 'Want the usual?' }, { by: 'b', text: 'Yes, Bob.' }];
+    const said = vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string) => ({
+      status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'asked about', what: 'the usual', how: 'cheerfully', why: '' } }, b: { band: 'lands', remember: { did: 'answered about', what: 'the usual', how: 'cheerfully', why: '' } }, lines }
+    }) as any);
+    const start = worldDay();
+    const meet = (d: number) => MeetDoor.live(HUB, { a: one.id, b: two.id, day: start + d, where: 'by the tavern', why: 'waiting at the same door' });
+    let quiet = -1;
+    for (let d = 0; d < 15 && quiet < 0; d++) {
+      const before = said.mock.calls.length;
+      const heard = await meet(d);
+      expect(heard).toEqual(lines);
+      if (said.mock.calls.length === before) quiet = d;
+    }
+    expect(quiet, 'a habit formed').toBeGreaterThan(0);
+    const calls = said.mock.calls.length;
+    expect(await meet(quiet + 1)).toEqual(lines);
+    expect(said.mock.calls.length).toBe(calls);
+    expect(db.get(`meets_${HUB}`).data.habits).toBeTruthy();
+
+    await hub().noteResidentGoal(one.id, { need: 'safety', text: 'Save for a roof.', setAt: start + quiet + 2 });
+    await meet(quiet + 2);
+    expect(said.mock.calls.length).toBe(calls + 1);
+  });
+
+  it('a meeting nobody watched that is the usual never reaches the batch', async () => {
+    const one = await residentNamed('person_cal');
+    const two = await residentNamed('person_dee');
+    const where = 'by the well', why = 'drawing water';
+    const answer = (asks: any[]) => ({ status: 'OK', data: { meetings: asks.map(a => ({ id: a.id, a: { band: 'idle', remember: { did: 'nodded at', what: 'the water', how: '', why: '' } }, b: { band: 'idle', remember: { did: 'nodded at', what: 'the water', how: '', why: '' } }, lines: [] })) } });
+    const filed = vi.spyOn(IntelligenceClient, 'fileWindow').mockImplementation(async (_id: string, _kind: string, asks: any) => answer(asks) as any);
+    vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({ status: 'PENDING' } as any);
+    const start = worldDay();
+    let quiet = -1;
+    for (let d = 0; d < 15 && quiet < 0; d++) {
+      await MeetDoor.queue(HUB, [{ a: one.id, b: two.id, day: start + d, where, why }]);
+      const before = filed.mock.calls.length;
+      await MeetDoor.tick(HUB);
+      if (filed.mock.calls.length === before) quiet = d;
+    }
+    expect(quiet, 'a habit formed').toBeGreaterThan(0);
+    expect(db.get(`meets_${HUB}`).data.pending).toHaveLength(0);
+    const book = db.get(`book_${HUB}`).data;
+    const mind = await MemoryStore.mind({ hubId: HUB }, one.id, start + quiet);
+    expect(mind.memories.map(m => MemoryLaw.words(m, book)).some(m => m.did === 'nodded at' && m.when === `day ${start + quiet}`)).toBe(true);
+  });
+});
