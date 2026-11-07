@@ -166,9 +166,7 @@ export class InsuranceSystem {
     const consumedIds = bill.items.map(i => i.id);
     const item = this.mintScrollItem(defId, Rng.fromKey(`scroll:${cert.metadata.uid}:${Date.now()}:${stash.length}`));
 
-    pc.apply({ kind: 'UPDATE', update: was => ({ ...was, bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, idx) =>
-        idx === 0 ? { ...tab, items: [...tab.items.filter(i => !consumedIds.includes(i.id)), item] } : tab
-      ) } }) });
+    pc.apply({ kind: 'STASH_REMOVE', ids: consumedIds }, { kind: 'STASH_ADD', items: [item] });
 
     try {
       const { Provenance } = await import('../sovereignty/Provenance');

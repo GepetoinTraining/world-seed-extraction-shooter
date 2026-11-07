@@ -82,7 +82,7 @@ export const RestDoor = {
     waking = true;
     try {
       await RestDoor.collect(pc);
-      pc.apply({ kind: 'UPDATE', update: was => RestSystem.wake(was) });
+      pc.apply({ kind: 'WAKE' });
       feed('You slept. It is another day.', 'signal');
       await PlayerPersistence.flush('rest', pc.view().player);
     } finally {
@@ -114,20 +114,17 @@ export const RestDoor = {
     const id = `rest_${player.id}_${player.dayCount ?? 0}`;
     const out = await IntelligenceClient.fileRest(id, queue, summary);
     if (out.status === 'PENDING' && out.batchId) {
-      pc.apply({ kind: 'UPDATE', update: was => ({
-          ...was,
-          pendingDream: {
-            batchId: out.batchId!,
-            filedAt: Date.now(),
-            themeId: theme?.themeId,
-            asked: {
-              skills: (skills as { id: string }[]).map(q => q.id),
-              weaves: (weaves as { id: string }[]).map(q => q.id),
-              gifts: gifts.map(q => q.id),
-              sittings: studied.map(q => q.id)
-            }
-          }
-        }) });
+      pc.apply({ kind: 'PENDING_DREAM', dream: {
+        batchId: out.batchId!,
+        filedAt: Date.now(),
+        themeId: theme?.themeId,
+        asked: {
+          skills: (skills as { id: string }[]).map(q => q.id),
+          weaves: (weaves as { id: string }[]).map(q => q.id),
+          gifts: gifts.map(q => q.id),
+          sittings: studied.map(q => q.id)
+        }
+      } });
     } else if (out.status !== 'NO_KEY' && out.status !== 'OFFLINE') {
       console.log(`[REST] The batch waits for the next rest: ${out.status}. ${out.reason ?? ''}`);
     }
@@ -143,7 +140,7 @@ export const RestDoor = {
     const out = await IntelligenceClient.collectRest<IDreamResult>(pending.batchId);
     if (out.status === 'PENDING' || out.status === 'OFFLINE' || out.status === 'NO_KEY') return;
     if (out.status !== 'OK' || !out.data) {
-      pc.apply({ kind: 'UPDATE', update: was => ({ ...was, pendingDream: undefined }) });
+      pc.apply({ kind: 'PENDING_DREAM' });
       return;
     }
     const asker = pc.view().player;
@@ -151,7 +148,7 @@ export const RestDoor = {
     const verdict = RestSystem.judgeDream(out.data, pending.asked, asker, held ? [...new Set(held.abilities.flatMap(a => a.elements))] : undefined);
     if (!verdict.ok) {
       console.warn(`[REST] What came back was refused whole: ${verdict.reason}`);
-      pc.apply({ kind: 'UPDATE', update: was => ({ ...was, pendingDream: undefined }) });
+      pc.apply({ kind: 'PENDING_DREAM' });
       return;
     }
     const before = pc.view().player;

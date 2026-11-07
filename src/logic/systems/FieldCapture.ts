@@ -33,13 +33,7 @@ const levelOf = (tags: string[], pc: IPlayerPort) => pc.view().player.bank.unive
 const practise = (tags: string[], rank: UniversalRank | string, xp: number, pc: IPlayerPort) =>
   pc.apply({ kind: 'WORK_ON', pair: WebSystem.mint(tags, []), rank: Math.max(0, Object.values(UniversalRank).indexOf(rank as UniversalRank)), xp });
 
-const dropFromPack = (itemId: string, pc: IPlayerPort) => pc.apply({ kind: 'UPDATE', update: was => {
-  const held = was.currentSession;
-  if (!held) return was;
-  const layout = { ...(held.inventoryLayout || {}) };
-  delete layout[itemId];
-  return { ...was, currentSession: { ...held, inventory: held.inventory.filter(i => i.id !== itemId), inventoryLayout: layout } };
-} });
+const dropFromPack = (itemId: string, pc: IPlayerPort) => pc.apply({ kind: 'PACK_REMOVE', itemId });
 
 const here = (port: IWorldPort) => {
   const world = port.view();
@@ -126,7 +120,7 @@ export const FieldCapture = {
     practise(['taming'], cage.def.rank as string, 8, pc);
     SessionJournal.record('INTERACT', { kind: 'TAME', body: cage.body, held: roll.held, attempt });
     if (!roll.held) {
-      pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, inventory: was.currentSession.inventory.map(i => (i.id === itemId ? { ...i, creatureData: { ...cage, tameTries: attempt + 1 } } : i)) } }) : was });
+      pc.apply({ kind: 'PACK_REPLACE', item: { ...item, creatureData: { ...cage, tameTries: attempt + 1 } } });
       feed('It wants nothing to do with you yet. It stays in the cage.', 'plain');
       return;
     }
@@ -140,7 +134,7 @@ export const FieldCapture = {
     } });
     MobAI.follow(id, until);
     dropFromPack(itemId, pc);
-    pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, tamed: [...(was.currentSession.tamed ?? []), { entityId: id, item: { ...item, creatureData: { ...cage, tameTries: attempt + 1 } }, until }] } }) : was });
+    pc.apply({ kind: 'TAMED_ADD', tamed: { entityId: id, item: { ...item, creatureData: { ...cage, tameTries: attempt + 1 } }, until } });
     pc.apply({ kind: 'RECALC_WEIGHT' });
     feed('It follows. For now.', 'proof');
   },
@@ -158,7 +152,7 @@ export const FieldCapture = {
         feed('What followed you has stopped. It goes back to being what it was.', 'plain');
       }
     }
-    pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, tamed: (was.currentSession.tamed ?? []).filter(t => t.until > now) } }) : was });
+    pc.apply({ kind: 'TAMED_EXPIRE', now });
   },
 
   /** At the beacon: what is still beside you goes home with you, and it weighs nothing in the pack. */
@@ -167,7 +161,7 @@ export const FieldCapture = {
     if (!held?.tamed?.length) return;
     const standing = new Set(bodiesOf(port.view()).filter(e => (e.health ?? 0) > 0).map(e => e.id));
     const out = held.tamed.filter(t => standing.has(t.entityId));
-    pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, tamed: [], inventory: [...was.currentSession.inventory, ...out.map(t => t.item)] } }) : was });
+    pc.apply({ kind: 'TAMED_CLEAR' }, { kind: 'PACK_ADD', items: out.map(t => t.item) });
     for (const t of out) { MobAI.unfollow(t.entityId); port.apply({ kind: 'REMOVE_BODY', entityId: t.entityId }); }
     if (out.length > 0) feed(`${out.length === 1 ? 'What followed you walks' : `${out.length} that followed you walk`} out beside you.`, 'proof');
   },
@@ -217,7 +211,7 @@ export const FieldCapture = {
     const key = `${pc.view().player.id}:${Date.now()}:${Rng.fromKey(String(stash.length)).next()}`;
     const res = Capture.tieSnare(stash, key);
     if (!res.ok || !res.item) return { ok: false, reason: res.reason };
-    pc.apply({ kind: 'UPDATE', update: was => ({ ...was, bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: [...tab.items.filter(x => !res.consumedIds.includes(x.id)), res.item!] } : tab)) } }) });
+    pc.apply({ kind: 'STASH_REMOVE', ids: res.consumedIds }, { kind: 'STASH_ADD', items: [res.item] });
     await Provenance.record(res.item, 'MINT', { origin: 'IMPROVISATION', consumedIds: res.consumedIds });
     return { ok: true };
   }

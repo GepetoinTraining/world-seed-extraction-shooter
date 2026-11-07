@@ -69,13 +69,33 @@ describe('the player store is the one writer of the player', () => {
       { kind: 'GOLD', delta: -30 },
       { kind: 'STASH_ADD', items: [item('b'), item('c')] },
       { kind: 'STASH_REMOVE', ids: ['a'] },
-      { kind: 'UPDATE', update: p => ({ ...p, username: 'Read back' }) }
+      { kind: 'PENDING_DREAM', dream: { batchId: 'b1', asked: { skills: [], weaves: [] } } }
     );
     const after = playerPort.view().player;
     expect(after.bank.gold).toBe(70);
     expect(after.bank.stashTabs[0].items.map(i => i.id)).toEqual(['b', 'c']);
-    expect(after.username).toBe('Read back');
+    expect(after.pendingDream?.batchId).toBe('b1');
     playerPort.apply({ kind: 'SET', player: start });
     expect(playerPort.view().player).toBe(start);
   });
+});
+
+describe('every change is plain data: it can be stored, sent and checked again', () => {
+  // Pedro, 2026-11-07: a player's additions are logged and checked by the hub on reconnect, so no change carries a function
+  for (const [file, union] of [['src/entities/player/playerView.ts', 'PlayerChange'], ['src/entities/world/worldView.ts', 'WorldChange']] as const) {
+    it(`${union} names no function among its kinds`, () => {
+      const text = readFileSync(file, 'utf8');
+      const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true);
+      const found: string[] = [];
+      sf.forEachChild(n => {
+        if (!ts.isTypeAliasDeclaration(n) || n.name.text !== union) return;
+        (function visit(m: ts.Node) {
+          if (ts.isFunctionTypeNode(m) || ts.isMethodSignature(m) || ts.isConstructorTypeNode(m)) found.push(`${file}:${sf.getLineAndCharacterOfPosition(m.getStart(sf)).line + 1}`);
+          ts.forEachChild(m, visit);
+        })(n.type);
+        found.push('seen');
+      });
+      expect(found).toEqual(['seen']);
+    });
+  }
 });

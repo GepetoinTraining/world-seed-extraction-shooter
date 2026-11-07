@@ -123,7 +123,7 @@ export const StudyDoor = {
     if (scope) {
       const eye = StudySystem.scopeSkillId(scope);
       if (next.bank.universalSkills[eye]) pc.apply({ kind: 'GAIN_SKILL_XP', skillId: eye, amount: 15, tags: ['study', 'intel'] });
-      else pc.apply({ kind: 'UPDATE', update: p => WebSystem.accrue(p, { id: eye, tags: [`identify_${scope}`] }, 0) });
+      else pc.apply({ kind: 'ACCRUE', node: { id: eye, tags: [`identify_${scope}`] }, rank: 0 });
     }
 
     SessionJournal.record('INTERACT', { kind: 'STUDY', target: StudySystem.keyOf(target), outcome: sitting.outcome });

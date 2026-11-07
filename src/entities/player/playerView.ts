@@ -5,14 +5,15 @@
  * No system imports the store. The same shape as the world's (src/entities/world/worldView.ts),
  * after the TTRPG engine's schema: a container owns its state, every change goes through one door.
  *
- * Most of a player's changes are bespoke, so one kind (`UPDATE`) carries a pure step over the
- * player, applied to the player as it stands when it lands. The common ones have kinds of their own.
+ * Every change is plain data, so it can be stored, sent and checked again (a player's additions are
+ * checked by the hub on reconnect). Where a change follows a law, it names the law and its inputs,
+ * and the store runs it; `SET` carries a whole player a law has already worked out.
  * Where the store's own law answers back (an item refused, a verdict on a move), the port carries
  * that call by name, and the store stays the one that runs it.
  *
  * This file imports types only, so reaching it reaches nothing else of the game.
  */
-import type { EquipSlotId, IItem, IPlayer } from '../../../shared/types';
+import type { EquipSlotId, IEscort, IItem, IPlayer } from '../../../shared/types';
 import type { Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import type { ISkillPair } from '../../../shared/logic/systems/WebSystem';
 import type { IActionContext } from './systems/SkillDiscovery';
@@ -26,13 +27,27 @@ export interface IPlayerView {
 export type PlayerChange =
   /** A whole player, worked out by a law from the one read: it replaces the one that stands. */
   | { kind: 'SET'; player: IPlayer }
-  /** A pure step over the player, applied to the player as it stands when it lands. */
-  | { kind: 'UPDATE'; update: (player: IPlayer) => IPlayer }
   /** Gold in the bank, up or down. */
   | { kind: 'GOLD'; delta: number }
   /** Into the stash's first tab, and out of it. */
   | { kind: 'STASH_ADD'; items: IItem[] }
   | { kind: 'STASH_REMOVE'; ids: string[] }
+  /** The field pack: in, out (its place on the grid with it), and one piece changed in place. */
+  | { kind: 'PACK_ADD'; items: IItem[] }
+  | { kind: 'PACK_REMOVE'; itemId: string }
+  | { kind: 'PACK_REPLACE'; item: IItem }
+  /** Mended to full, on the body and in the stash. */
+  | { kind: 'REPAIR'; itemId: string }
+  /** What follows the person in the field: the tamed (until when) and the escorts. */
+  | { kind: 'TAMED_ADD'; tamed: { entityId: string; item: IItem; until: number } }
+  | { kind: 'TAMED_EXPIRE'; now: number }
+  | { kind: 'TAMED_CLEAR' }
+  | { kind: 'ESCORTS'; escorts: IEscort[] }
+  /** Laws the store runs by name: studies queued for the night, waking, a dream filed or cleared, a node accrued. */
+  | { kind: 'QUEUE_STUDY'; ids: string[] }
+  | { kind: 'WAKE' }
+  | { kind: 'PENDING_DREAM'; dream?: IPlayer['pendingDream'] }
+  | { kind: 'ACCRUE'; node: ISkillPair; rank: number }
   /** The store's own steps that answer nothing back. */
   | { kind: 'RECALC_WEIGHT' }
   | { kind: 'WORK_ON'; pair: ISkillPair; rank: number; xp: number }

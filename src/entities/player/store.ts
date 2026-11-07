@@ -224,14 +224,36 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const firstTab = (p: IPlayer, items: (now: IItem[]) => IItem[]): IPlayer => ({
       ...p, bank: { ...p.bank, stashTabs: p.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: items(tab.items) } : tab)) }
     });
+    // A field change with no field session changes nothing
+    const inSession = (p: IPlayer, step: (cur: NonNullable<IPlayer['currentSession']>) => NonNullable<IPlayer['currentSession']>): IPlayer =>
+      p.currentSession ? { ...p, currentSession: step(p.currentSession) } : p;
     for (const change of changes) {
       const store = get();
       switch (change.kind) {
         case 'SET': set({ player: change.player }); break;
-        case 'UPDATE': set(s => ({ player: change.update(s.player) })); break;
         case 'GOLD': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + change.delta } } })); break;
         case 'STASH_ADD': set(s => ({ player: firstTab(s.player, now => [...now, ...change.items]) })); break;
         case 'STASH_REMOVE': set(s => ({ player: firstTab(s.player, now => now.filter(i => !change.ids.includes(i.id))) })); break;
+        case 'PACK_ADD': set(s => ({ player: inSession(s.player, cur => ({ ...cur, inventory: [...cur.inventory, ...change.items] })) })); break;
+        case 'PACK_REMOVE': set(s => ({ player: inSession(s.player, cur => {
+          const layout = { ...(cur.inventoryLayout ?? {}) };
+          delete layout[change.itemId];
+          return { ...cur, inventory: cur.inventory.filter(i => i.id !== change.itemId), inventoryLayout: layout };
+        }) })); break;
+        case 'PACK_REPLACE': set(s => ({ player: inSession(s.player, cur => ({ ...cur, inventory: cur.inventory.map(i => (i.id === change.item.id ? change.item : i)) })) })); break;
+        case 'REPAIR': set(s => {
+          const mended = <T extends IItem>(i: T): T => (i.id === change.itemId ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability } } : i);
+          const p = s.player;
+          return { player: firstTab({ ...p, equipment: p.equipment ? { ...p.equipment, items: p.equipment.items.map(mended) } : p.equipment }, now => now.map(mended)) };
+        }); break;
+        case 'TAMED_ADD': set(s => ({ player: inSession(s.player, cur => ({ ...cur, tamed: [...(cur.tamed ?? []), change.tamed] })) })); break;
+        case 'TAMED_EXPIRE': set(s => ({ player: inSession(s.player, cur => ({ ...cur, tamed: (cur.tamed ?? []).filter(t => t.until > change.now) })) })); break;
+        case 'TAMED_CLEAR': set(s => ({ player: inSession(s.player, cur => ({ ...cur, tamed: [] })) })); break;
+        case 'ESCORTS': set(s => ({ player: inSession(s.player, cur => ({ ...cur, escorts: change.escorts })) })); break;
+        case 'QUEUE_STUDY': set(s => ({ player: change.ids.reduce((p, id) => RestSystem.queueStudy(p, id), s.player) })); break;
+        case 'WAKE': set(s => ({ player: RestSystem.wake(s.player) })); break;
+        case 'PENDING_DREAM': set(s => ({ player: { ...s.player, pendingDream: change.dream } })); break;
+        case 'ACCRUE': set(s => ({ player: WebSystem.accrue(s.player, change.node, change.rank) })); break;
         case 'RECALC_WEIGHT': store.recalcWeight(); break;
         case 'WORK_ON': store.workOn(change.pair, change.rank, change.xp); break;
         case 'GAIN_SKILL_XP': store.gainSkillXp(change.skillId, change.amount, change.tags, change.context); break;

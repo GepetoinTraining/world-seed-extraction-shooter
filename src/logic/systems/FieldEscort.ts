@@ -18,7 +18,7 @@ import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const session = (pc: IPlayerPort) => pc.view().player.currentSession;
 
-const setEscorts = (change: (escorts: IEscort[]) => IEscort[], pc: IPlayerPort) => pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, escorts: change(was.currentSession.escorts ?? []) } }) : was });
+const setEscorts = (change: (escorts: IEscort[]) => IEscort[], pc: IPlayerPort) => pc.apply({ kind: 'ESCORTS', escorts: change(session(pc)?.escorts ?? []) });
 
 const bondId = (bond: IEscort['bond']) => `bond_${fnv1a(`${bond.worldSeed}:${bond.entityId}`).toString(36)}`;
 
@@ -128,13 +128,7 @@ export const FieldEscort = {
     const held = session(pc);
     if (!held) return false;
     const sheet = item.bondData.sheet;
-    pc.apply({ kind: 'UPDATE', update: was => {
-      const cur = was.currentSession;
-      if (!cur) return was;
-      const layout = { ...(cur.inventoryLayout ?? {}) };
-      delete layout[item.id];
-      return { ...was, currentSession: { ...cur, inventory: cur.inventory.filter(i => i.id !== item.id), inventoryLayout: layout } };
-    } });
+    pc.apply({ kind: 'PACK_REMOVE', itemId: item.id });
     port.apply({ kind: 'ADD_BODY', entity: {
       id: item.bondData.entityId, type: EntityType.NPC, definitionId: 'npc_survivor',
       position: { x: held.position.x + 15, y: held.position.z + 15 }, rank: item.bondData.rank, rarity: item.bondData.rarity, isHostile: false,
@@ -161,13 +155,7 @@ export const FieldEscort = {
       ...carried.map(c => Escort.bondOf(c.bondData!, bondId(c.bondData!), true))
     ];
     const carriedIds = new Set(carried.map(c => c.id));
-    pc.apply({ kind: 'UPDATE', update: was => {
-      const cur = was.currentSession;
-      if (!cur) return was;
-      const layout = { ...(cur.inventoryLayout ?? {}) };
-      carriedIds.forEach(id => delete layout[id]);
-      return { ...was, currentSession: { ...cur, escorts: [], inventoryLayout: layout, inventory: [...cur.inventory.filter(i => !carriedIds.has(i.id)), ...bonds] } };
-    } });
+    pc.apply({ kind: 'ESCORTS', escorts: [] }, ...[...carriedIds].map(itemId => ({ kind: 'PACK_REMOVE' as const, itemId })), { kind: 'PACK_ADD', items: bonds });
     for (const e of walking) { MobAI.unfollow(e.entityId); port.apply({ kind: 'REMOVE_BODY', entityId: e.entityId }); }
     pc.apply({ kind: 'RECALC_WEIGHT' });
     for (const e of walking) feed(`${e.name} walks out beside you.`, 'proof');

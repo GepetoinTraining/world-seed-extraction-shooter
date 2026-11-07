@@ -60,7 +60,7 @@ function charge(pc: IPlayerPort, amount: number, reason: string, data: Record<st
 
 /** D50: even a paid reader needs the night. What she has is known at the next rest. */
 function studyOvernight(ids: string[], pc: IPlayerPort) {
-  pc.apply({ kind: 'UPDATE', update: was => ids.reduce((p, id) => RestSystem.queueStudy(p, id), was) });
+  pc.apply({ kind: 'QUEUE_STUDY', ids });
 }
 
 /** Repair cost: a quarter of the item's value, scaled by what's missing. */
@@ -84,14 +84,7 @@ export function repairItem(itemId: string, pc: IPlayerPort): { ok: boolean; text
   const cost = repairCost(item as any, pc.view().player.attributes);
   if (cost === 0) return { ok: false, text: `${item.name} needs no work.` };
   if (!charge(pc, cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank(pc).gold}G.` };
-  const mended = <T extends IItem>(i: T): T => i.id === itemId ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability } } : i;
-  pc.apply({ kind: 'UPDATE', update: was => ({
-      ...was,
-      equipment: was.equipment ? { ...was.equipment, items: was.equipment.items.map(mended) } : was.equipment,
-      bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, idx) =>
-        idx === 0 ? { ...tab, items: tab.items.map(mended) } : tab
-      ) }
-    }) });
+  pc.apply({ kind: 'REPAIR', itemId });
   return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
 }
 
@@ -187,9 +180,7 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
       stats: { health_restore: 15 },
       description: 'Mostly water. The rest is a rumor of barley. Restores a little health in the field.'
     };
-    pc.apply({ kind: 'UPDATE', update: was => ({ ...was, bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, idx) =>
-        idx === 0 ? { ...tab, items: [...tab.items, ale] } : tab
-      ) } }) });
+    pc.apply({ kind: 'STASH_ADD', items: [ale] });
     return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
   },
   GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
