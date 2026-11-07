@@ -1034,10 +1034,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             kind: event.type === 'HIT' ? 'hit' : 'death',
             x: event.position.x, y: event.position.y, at: now, size
           });
-          if (event.type === 'HIT' && event.entityId) {
-            MobAI.provoke(event.entityId); // what ignored you stops ignoring you
-            void rememberThreat(useWorldStore.getState().currentMap?.seed ?? '', event.entityId, usePlayerStore.getState().player.id, worldDay());
-          }
+          if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
+          if (event.type === 'HIT' && event.entityId) void rememberThreat(useWorldStore.getState().currentMap?.seed ?? '', event.entityId, usePlayerStore.getState().player.id, worldDay());
           if (event.type === 'KILL' && event.xpReward) {
             feed(`${event.displayName ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
             // Line 80: defeating a thing teaches what it casts, at the next rest. Line 90: the Director hears.
