@@ -4,20 +4,20 @@
  * the card only explains the answer. Hover and keyboard share one target list.
  */
 
-import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../types';
+import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../shared/types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
-import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
-import { EntityType, IWorldEntity } from '../../entities/world/types';
-import { QUALITY_NAMES, qualityBand } from './atoms';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
+import { QUALITY_NAMES, qualityBand } from '../../../shared/render/atoms/atoms';
 import { Escort } from '../../logic/systems/Escort';
 import { LAYER } from './world';
-import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
-import { setBonusText } from '../../entities/hub/template';
-import { IRoomState, roomAdditions } from '../../entities/hub/room';
-import { WebSystem } from '../../logic/systems/WebSystem';
-import { NpcSheet } from '../../logic/systems/NpcSheet';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { setBonusText } from '../../../shared/entities/hub/template';
+import { IRoomState, roomAdditions } from '../../../shared/entities/hub/room';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 import { SurveySystem } from '../../logic/systems/SurveySystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { WorldClock } from '../../entities/world/WorldClock';

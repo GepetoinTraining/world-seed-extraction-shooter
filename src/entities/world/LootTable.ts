@@ -8,20 +8,20 @@
  * - Bosses always drop SOMETHING good
  */
 
-import { ItemFactory } from '../item/ItemFactory';
-import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
-import { IItem, UniversalRank, Rarity } from '../../../types';
-import { IMobDefinition } from '../mob/types';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { SeededRNG, Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { IItem, UniversalRank, Rarity } from '../../../shared/types';
+import { IMobDefinition } from '../../../shared/entities/mob/types';
 import { DeedSystem } from '../../logic/systems/DeedSystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
-import { BiomeType } from './types';
-import { DreamingSystem, IAffixPool } from './Dreaming';
-import { EntityType, IWorldEntity } from './types';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
-import { JUNK_CHANCE } from '../../logic/theme/ThemeFormula';
+import { BiomeType } from '../../../shared/entities/world/types';
+import { DreamingSystem, IAffixPool } from '../../../shared/entities/world/Dreaming';
+import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { JUNK_CHANCE } from '../../../shared/logic/theme/ThemeFormula';
 import { LootBook } from '../../logic/theme/LootBook';
-import { IDropLine, LootLaw, lootItemsOf } from '../../logic/theme/LootLaw';
-import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { IDropLine, LootLaw, lootItemsOf } from '../../../shared/logic/theme/LootLaw';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 
 /** A drop rolled on a theme's table (LootLaw.ts): which table, at what rank, what it said. The journal keeps it, so a hub can roll it again (D134). */
 export interface ITableRoll { table: string; rank: string; lines: IDropLine[] }

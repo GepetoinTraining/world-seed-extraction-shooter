@@ -7,12 +7,12 @@
  * says plainly what is in it. The numbers are guesses until Wave 12.
  */
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
-import { COOK_WAY } from '../economy/gameWays';
-import { answersTag } from '../../entities/hub/room';
-import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
-import { CompositionSystem } from '../economy/CompositionSystem';
-import { Rng, fnv1a } from '../rng/DeterministicRNG';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
+import { COOK_WAY } from '../../../shared/logic/economy/gameWays';
+import { answersTag } from '../../../shared/entities/hub/room';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
+import { Rng, fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 
 /** The least that makes a meal, rather than a thing eaten where it stands. */
 const LEAST_IN_THE_POT = 2;

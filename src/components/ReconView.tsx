@@ -10,18 +10,18 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { DreamingSystem } from '../entities/world/Dreaming';
+import { DreamingSystem } from '../../shared/entities/world/Dreaming';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { ISector, ScanLevel } from '../entities/world/types';
+import { ISector, ScanLevel } from '../../shared/entities/world/types';
 import { WorldClock } from '../entities/world/WorldClock';
-import { SECTOR_CHUNKS, sectorOf } from '../entities/world/grid';
+import { SECTOR_CHUNKS, sectorOf } from '../../shared/entities/world/grid';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
-import { Sprite } from '../render/atoms/atoms';
+import { Sprite } from '../../shared/render/atoms/atoms';
 import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
-import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { IManifestLine, ISurveyEntry, SurveySystem } from '../logic/systems/SurveySystem';
 import { ScanPass } from '../logic/systems/ScanPass';
 import { MapSystem, isMapItem } from '../logic/systems/MapSystem';

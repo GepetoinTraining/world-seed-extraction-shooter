@@ -9,13 +9,13 @@
  * Wave 12.
  */
 
-import { IAttributes, MENTAL_ATTRIBUTES, UniversalRank } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { Rng } from '../rng/DeterministicRNG';
-import { Alignment } from './Alignment';
+import { IAttributes, MENTAL_ATTRIBUTES, UniversalRank } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { Alignment } from '../../../shared/logic/systems/Alignment';
 import { LADDER } from './NpcAgenda';
-import { StatSystem } from './StatSystem';
-import { HARM_BANDS, IGoalAsk, IGoalWords, IMeans, IRememberWords, IRoundWords, JUDGE_BANDS, JudgeBand, PROMISE_BANDS, QUEST_SIZES, QuestSize } from './TalkTypes';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { HARM_BANDS, IGoalAsk, IGoalWords, IMeans, IRememberWords, IRoundWords, JUDGE_BANDS, JudgeBand, PROMISE_BANDS, QUEST_SIZES, QuestSize } from '../../../shared/logic/systems/TalkTypes';
 
 /** What one round takes out of a person's day. It is the first thing that bounds a long talk. */
 export const TALK_ENERGY = 5;

@@ -11,7 +11,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { StoreClient, useVault } from '../entities/data/StoreClient';
+import { StoreClient, useVault } from '../../shared/entities/data/StoreClient';
 import { BrowserImport, IImportReport } from '../logic/persistence/BrowserImport';
 import { Busy, Button, Panel } from './ui/kit';
 

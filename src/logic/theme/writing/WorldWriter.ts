@@ -12,22 +12,22 @@
  * What comes out is a pack like any other, and the same law judges it.
  */
 
-import { ITagEntry } from '../../../../types';
-import { fnv1a, Rng, SeededRNG } from '../../rng/DeterministicRNG';
-import { TagLaw } from '../../content/TagLaw';
-import { cosineSimilarity } from '../../../entities/data/similarity';
-import { EmbeddingService, IEmbedder } from '../../../services/EmbeddingService';
-import { ThemeLaw } from '../ThemeLaw';
+import { ITagEntry } from '../../../../shared/types';
+import { fnv1a, Rng, SeededRNG } from '../../../../shared/logic/rng/DeterministicRNG';
+import { TagLaw } from '../../../../shared/logic/content/TagLaw';
+import { cosineSimilarity } from '../../../../shared/entities/data/similarity';
+import { EmbeddingService, IEmbedder } from '../../../../shared/services/EmbeddingService';
+import { ThemeLaw } from '../../../../shared/logic/theme/ThemeLaw';
 import {
   BEHAVIORS, BIOMES, BUILDS, IThemeAbility, IThemeAnchor, IThemeBody, IThemeConsumable, IThemeCreature, IThemeGear, IThemeGood,
   IThemeJunk, IThemeMaterial, IThemePack, IThemeProfession, IThemeStation, IThemeTerrain, PACES, RANKS, SIZES, ThemeRank, THREATS,
   WEIGHTS, WORTHS, MATERIAL_FORMS, HARVEST_VERBS
-} from '../ThemeTypes';
-import { FLORA_FORMS, IPoolEntry, IPull, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from './WorldPool';
+} from '../../../../shared/logic/theme/ThemeTypes';
+import { FLORA_FORMS, IPoolEntry, IPull, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from '../../../../shared/logic/theme/writing/WorldPool';
 import {
   IDressingAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILifeAnswer, IMadeAnswer, IPassAnswers, IPeopleAnswer, ITerrainAnswer,
   IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
-} from './WorldPasses';
+} from '../../../../shared/logic/theme/writing/WorldPasses';
 
 /** A pass refused once is asked once more, told why. A guard on the bill, like the chain's. */
 export const PASS_TRIES = 2;

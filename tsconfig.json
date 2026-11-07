@@ -31,5 +31,6 @@
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
   "include": [".", "**/*.ts", "**/*.tsx", "**/*.d.ts"],
-  "exclude": ["node_modules", "dist", "prototype"]
+  "exclude": ["node_modules", "dist", "prototype", "shared", ".shared-types"],
+  "references": [{ "path": "./shared" }]
 }

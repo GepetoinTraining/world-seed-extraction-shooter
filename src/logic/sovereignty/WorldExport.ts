@@ -10,7 +10,7 @@
  * certs verify, others import on digest integrity alone.
  */
 
-import { VectorStore } from '../../entities/data/VectorStore';
+import { VectorStore } from '../../../shared/entities/data/VectorStore';
 import { IWorldCertificate } from '../../entities/world/WorldCertificate';
 import { sha256Hex } from '../journal/SessionJournal';
 

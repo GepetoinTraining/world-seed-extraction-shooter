@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 
 const db = new Map<string, any>();
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -40,8 +40,8 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAttributes, IItem, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, Rarity, SlotType, UniversalRank } from '../types';
-import { EntityType, IWorldEntity } from '../src/entities/world/types';
+import { IAttributes, IItem, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, Rarity, SlotType, UniversalRank } from '../shared/types';
+import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { useWorldStore } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
@@ -50,26 +50,26 @@ import { InteractionEngine } from '../src/entities/interaction/InteractionEngine
 import { useTalk } from '../src/entities/interaction/talkStore';
 import { pickInteract } from '../src/logic/systems/FieldInput';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
 import { Ledger } from '../src/logic/ledger/Ledger';
-import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { NpcSheet } from '../shared/logic/systems/NpcSheet';
 import { LADDER, NEEDS, NpcAgenda } from '../src/logic/systems/NpcAgenda';
-import { ALIGNMENTS, Alignment } from '../src/logic/systems/Alignment';
+import { ALIGNMENTS, Alignment } from '../shared/logic/systems/Alignment';
 import { TalkLaw } from '../src/logic/systems/TalkLaw';
 import { TalkDoor } from '../src/logic/systems/TalkDoor';
-import { HARM_BANDS, JUDGE_BANDS, PROMISE_BANDS, TALK_MESSAGE_LIMIT as SAID_LIMIT } from '../src/logic/systems/TalkTypes';
+import { HARM_BANDS, JUDGE_BANDS, PROMISE_BANDS, TALK_MESSAGE_LIMIT as SAID_LIMIT } from '../shared/logic/systems/TalkTypes';
 import { MIND_TAGS, MonsterMind, SPEECH_RUNG } from '../src/logic/systems/MonsterMind';
-import { StatSystem } from '../src/logic/systems/StatSystem';
-import { WebBank } from '../src/logic/content/WebBank';
-import { WebSystem } from '../src/logic/systems/WebSystem';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { SessionJournal } from '../src/logic/journal/SessionJournal';
 import { bubbleOf, gibberish } from '../src/render/atoms/speech';
 import { buildGibberishFace, GIBBERISH_FAMILY } from '../src/render/atoms/gibberishFace';
 import { runGoldenCheck } from '../src/entities/world/goldens';
-import { IntelligenceDoor, IDoorRequest, TALK_SPEND_LIMIT_USD, TALK_MESSAGE_LIMIT, AbsentProvider } from '../server/intelligence/door';
-import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { buildBargainRequest, buildNpcGoalRequest, buildNpcTalkRequest } from '../server/intelligence/prompts';
+import { IntelligenceDoor, IDoorRequest, TALK_SPEND_LIMIT_USD, TALK_MESSAGE_LIMIT, AbsentProvider } from '../shared/intelligence/door';
+import { ClaudeProvider, MODEL_FOR } from '../shared/intelligence/claude';
+import { buildBargainRequest, buildNpcGoalRequest, buildNpcTalkRequest } from '../shared/intelligence/prompts';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 import { worldDay } from '../src/entities/hub/store';
 import { HubGenerator, POIType } from '../src/entities/hub/HubGenerator';
@@ -197,11 +197,11 @@ describe('a person\'s sheet is a surface, dealt at read time', () => {
   });
 
   it('dealing it moves no stream: stats and skills are what they were, and the vectors stand', () => {
-    const before = readFileSync('src/logic/systems/NpcSheet.ts', 'utf8');
+    const before = readFileSync('shared/logic/systems/NpcSheet.ts', 'utf8');
     expect(before).toMatch(/`\$\{key\}:stats`/);
     expect(before).toMatch(/`\$\{key\}:skills`/);
     expect(before).toMatch(/Alignment\.deal\(key\)/);
-    expect(readFileSync('src/logic/systems/Alignment.ts', 'utf8')).toMatch(/`\$\{key\}:alignment`/);
+    expect(readFileSync('shared/logic/systems/Alignment.ts', 'utf8')).toMatch(/`\$\{key\}:alignment`/);
     expect(runGoldenCheck().ok).toBe(true);
   });
 
@@ -650,7 +650,7 @@ describe('line 148: intelligence is a skill, and speech is reached', () => {
 
   it('a line can bring the word: it is registered, so the law takes it in a changed kind\'s tags', () => {
     expect(WebBank.current().tags.some(t => t.tag === 'intelligent')).toBe(true);
-    expect(readFileSync('server/intelligence/prompts.ts', 'utf8')).toMatch(/intelligent/);
+    expect(readFileSync('shared/intelligence/prompts.ts', 'utf8')).toMatch(/intelligent/);
   });
 });
 
@@ -914,7 +914,7 @@ describe('line 149: alignment refuses, and there is no crime in code', () => {
   });
 
   it('the law\'s files hold no crime: no bounty, no guards, no sentence, no infamy yet', () => {
-    for (const file of ['src/logic/systems/Alignment.ts', 'src/logic/systems/TalkLaw.ts', 'src/logic/systems/TalkTypes.ts', 'src/logic/systems/TalkDoor.ts', 'src/entities/interaction/talkStore.ts']) {
+    for (const file of ['shared/logic/systems/Alignment.ts', 'src/logic/systems/TalkLaw.ts', 'shared/logic/systems/TalkTypes.ts', 'src/logic/systems/TalkDoor.ts', 'src/entities/interaction/talkStore.ts']) {
       // His words are quoted in the comments. What is read here is the code.
       const code = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       expect(code, file).not.toMatch(/\bcrime|\bcriminal|\bbounty|\bguards?\b|\bjail|\bsentence|\binfamy/i);

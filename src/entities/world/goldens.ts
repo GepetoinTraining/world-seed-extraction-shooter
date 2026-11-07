@@ -10,13 +10,13 @@
  * run `window.__captureGoldens()` in the dev console and paste the output here.
  */
 
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
-import { WorldGenerator } from './WorldGenerator';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
-import { IMap } from './types';
-import { SECTOR_CHUNKS } from './grid';
-import type { IGenerationContext } from './WorldGenerator';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { WorldGenerator } from '../../../shared/entities/world/WorldGenerator';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { IMap } from '../../../shared/entities/world/types';
+import { SECTOR_CHUNKS } from '../../../shared/entities/world/grid';
+import type { IGenerationContext } from '../../../shared/entities/world/WorldGenerator';
 
 export interface IGoldenVector {
   seed: string;

@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -33,24 +33,24 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, UniversalRank } from '../types';
+import { IItem, UniversalRank } from '../shared/types';
 import {
   IRoomState, IRoomPlacement, emptyRoom, interiorSize, roomDoor, roomEntry, roomSolid,
   fullyWalkable, reachableFrom, placementReachable, canBuildPiece, canPlaceItem,
   builtLotBlocksAt, PIECE_BILLS, SHELL_BILLS, SHELL_STATION, STATION_MIN_AREA, shellBillFor,
   STATION_FUNCTION
-} from '../src/entities/hub/room';
+} from '../shared/entities/hub/room';
 // Wave 10B: the presets fold into the template contract — one path, no second.
-import { ROOM_PRESETS, presetToRoom } from '../src/entities/hub/template';
+import { ROOM_PRESETS, presetToRoom } from '../shared/entities/hub/template';
 import { composeRoom, ROOM_TILE } from '../src/render/atoms/room';
 import { HUB_GENRE, lotArt } from '../src/render/atoms/hub';
-import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../src/render/atoms/atoms';
+import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../shared/render/atoms/atoms';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { CRAFTED_DEFINITIONS, RECIPE_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { CRAFTED_DEFINITIONS, RECIPE_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.
@@ -438,7 +438,7 @@ describe('line 33: stations call the one store, no duplicate logic', () => {
 
     primeStash([...stash(), mint('crf_plank', 'bars:log-sub')]); // keep kit
     const log = ItemFactory.createResourceItem(
-      (await import('../src/entities/item/data/resourceDefinitions')).RESOURCE_DEFINITIONS['res_tree_log'], Rng.fromKey('bars:log')
+      (await import('../shared/entities/item/data/resourceDefinitions')).RESOURCE_DEFINITIONS['res_tree_log'], Rng.fromKey('bars:log')
     );
     primeStash([...stash(), log]);
     const ok = await useHubStore.getState().queueCraft(lotId, 'recipe_plank');

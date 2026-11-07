@@ -4,17 +4,17 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { UniversalRank } from '../types';
-import { WEB_BATCHES } from '../src/entities/generation/packs/webBatches';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
+import { UniversalRank } from '../shared/types';
+import { WEB_BATCHES } from '../shared/entities/generation/packs/webBatches';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
 import { keeperBrought, moreThanTheyNeed, walletBrought } from '../src/entities/hub/money';
 import { residentUpkeepPerDay } from '../src/entities/hub/guild';
-import { Koseki } from '../src/entities/world/Koseki';
-import { Population, emptyPopulationRecord } from '../src/entities/world/Population';
+import { Koseki } from '../shared/entities/world/Koseki';
+import { Population, emptyPopulationRecord } from '../shared/entities/world/Population';
 import { computeGolden, FIRST_THEME_VECTORS } from '../src/entities/world/goldens';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { sealTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
-import { IThemeBody, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { sealTheme, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { IThemeBody, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
 import { Profession } from '../src/logic/systems/Profession';
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));

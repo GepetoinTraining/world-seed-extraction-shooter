@@ -7,10 +7,10 @@
  * Once per theme per session: entering a world asks for its theme's tables if it holds none.
  */
 
-import { ContentRegistry } from './ContentRegistry';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { LootBook } from './LootBook';
-import { ILootWords, LOOT_SCHEMA, lootAskOf, sealLoot } from './LootLaw';
-import { schemaProblem } from '../content/SchemaFit';
+import { ILootWords, LOOT_SCHEMA, lootAskOf, sealLoot } from '../../../shared/logic/theme/LootLaw';
+import { schemaProblem } from '../../../shared/logic/content/SchemaFit';
 
 export interface ILootOutcome { status: string; data?: unknown; reason?: string }
 export type LootDoor = (ask: unknown) => Promise<ILootOutcome>;

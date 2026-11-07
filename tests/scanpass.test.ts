@@ -10,23 +10,23 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { creatureIdOf } from '../src/logic/theme/ThemeCompiler';
-import { CreatureLines, ILineWords } from '../src/logic/theme/CreatureLines';
-import { IThemeGrowth, WorldGrowth } from '../src/logic/theme/WorldGrowth';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { Director, IDirectorRecord, emptyDirectorRecord } from '../src/entities/world/Director';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { creatureIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { CreatureLines, ILineWords } from '../shared/logic/theme/CreatureLines';
+import { IThemeGrowth, WorldGrowth } from '../shared/logic/theme/WorldGrowth';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { Director, IDirectorRecord, emptyDirectorRecord } from '../shared/entities/world/Director';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { DirectorStore } from '../src/entities/world/DirectorStore';
 import { useWorldStore, IWorldCard } from '../src/entities/world/store';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { IAskKind, IScanDoor, IScanRoom, IWindowAnswer, IWindowBatch, ASK_KINDS, COMPUTE_STEPS, ScanPass, SLOTS_PER_WINDOW } from '../src/logic/systems/ScanPass';
 import { RestSystem } from '../src/logic/systems/RestSystem';
-import { AbsentProvider, IDoorRequest, IIntelligenceProvider, IntelligenceDoor, WINDOW_SPEND_LIMIT_USD } from '../server/intelligence/door';
-import { ClaudeProvider } from '../server/intelligence/claude';
+import { AbsentProvider, IDoorRequest, IIntelligenceProvider, IntelligenceDoor, WINDOW_SPEND_LIMIT_USD } from '../shared/intelligence/door';
+import { ClaudeProvider } from '../shared/intelligence/claude';
 import { createIntelligenceHandler } from '../server/intelligence/http';
-import { buildGrowthRequest, buildLineRequest, buildRestRequest, GROWTH_SCHEMA, REST_SCHEMA, WINDOW_REQUESTS } from '../server/intelligence/prompts';
-import { UniversalRank } from '../types';
+import { buildGrowthRequest, buildLineRequest, buildRestRequest, GROWTH_SCHEMA, REST_SCHEMA, WINDOW_REQUESTS } from '../shared/intelligence/prompts';
+import { UniversalRank } from '../shared/types';
 
 installShippedThemes();
 
@@ -681,7 +681,7 @@ describe('D64: growth reaches the living world, and the pinned pack never moves'
   });
 
   it('the hold is gone: no prompt or comment sends growth only to worlds signed later', () => {
-    for (const file of ['server/intelligence/prompts.ts', 'src/logic/systems/RestSystem.ts', 'src/logic/systems/RestDoor.ts']) {
+    for (const file of ['shared/intelligence/prompts.ts', 'src/logic/systems/RestSystem.ts', 'src/logic/systems/RestDoor.ts']) {
       expect(SRC(file), file).not.toMatch(/signed later|signed from now on|never moves|only reach worlds/i);
     }
   });
@@ -916,7 +916,7 @@ describe('it is driven from a client, with nothing blocking play', () => {
   it('the app ticks the door on a timer, and the tick is never awaited by play', () => {
     expect(SRC('App.tsx')).toMatch(/ScanDoor\.tick\(\)/);
     expect(SRC('src/logic/systems/Deploy.ts')).not.toMatch(/ScanDoor/);
-    expect(SRC('src/entities/world/WorldGenerator.ts')).not.toMatch(/ScanDoor|ScanPass|IntelligenceClient/);
+    expect(SRC('shared/entities/world/WorldGenerator.ts')).not.toMatch(/ScanDoor|ScanPass|IntelligenceClient/);
   });
 
   it('the browser holds no key and calls the one door', () => {

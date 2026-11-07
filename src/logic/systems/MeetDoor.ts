@@ -10,7 +10,7 @@
  * already wrote stands, and nothing more is added. Nothing waits on a model (D35).
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { useHubStore, worldDay } from '../../entities/hub/store';
 import { readSheet, residentIdOf } from '../../entities/hub/guild';
 import { residentFacts } from '../../entities/hub/money';
@@ -20,12 +20,12 @@ import { IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { Deeds } from '../memory/Deeds';
 import { LadderWeight } from '../memory/MemoryLaw';
 import { INeedFill, NpcAgenda } from './NpcAgenda';
-import { NpcSheet } from './NpcSheet';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 import { IMeetOutcome, MeetLaw } from './MeetLaw';
 import { HabitLaw, IStanding, IUsual } from './HabitLaw';
 import { PersonLedger } from '../people/PersonLedger';
-import { IMeetAsk, IMeetLine, IMeetSide, IMeetWords } from './TalkTypes';
-import { UniversalRank } from '../../../types';
+import { IMeetAsk, IMeetLine, IMeetSide, IMeetWords } from '../../../shared/logic/systems/TalkTypes';
+import { UniversalRank } from '../../../shared/types';
 
 /** A meeting as the city saw it: who, who, where, why, and the day. */
 export interface IMeeting { a: string; b: string; day: number; where: string; why: string }

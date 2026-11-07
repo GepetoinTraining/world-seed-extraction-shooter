@@ -5,10 +5,10 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { CreationSystem, ICreationAsk, ICreationWords } from '../src/logic/systems/CreationSystem';
 import { KamiPersona } from '../src/logic/systems/KamiPersona';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { WebBank } from '../src/logic/content/WebBank';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildNpcTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildNpcTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../shared/intelligence/prompts';
 
 const SRC = (path: string) => readFileSync(path, 'utf8');
 
@@ -71,7 +71,7 @@ describe('the keeper ask says where the person stands (Q48)', () => {
   it('a keeper\'s round carries where the person is, and the voice is told not to call them over', () => {
     const talk = SRC('src/entities/interaction/talkStore.ts');
     expect(talk).toMatch(/where: AT_THE_COUNTER/);
-    expect(SRC('src/logic/systems/TalkTypes.ts')).toMatch(/where\?: string/);
+    expect(SRC('shared/logic/systems/TalkTypes.ts')).toMatch(/where\?: string/);
     const system = buildNpcTalkRequest({ who: { name: 'A', rank: 'D', temperament: '', objective: '', want: '', alignment: '', mind: {}, hands: [] }, memory: [], said: '', roll: 1, required: 1, bonuses: {}, meter: 1 }).system;
     expect(system).toMatch(/"where"/);
     expect(system).toMatch(/never tell them to come/i);

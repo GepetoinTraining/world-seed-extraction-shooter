@@ -16,7 +16,7 @@
 import { IHubLayout, IPOI, POIType } from './HubGenerator';
 import { doorTile } from './hubManifest';
 import { NeedKind } from '../../logic/systems/NpcAgenda';
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 
 export interface ITile { x: number; y: number }
 

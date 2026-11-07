@@ -11,9 +11,9 @@ import { HUB_NPCS } from '../entities/hub/HubGenerator';
 import { bondItemOf } from '../entities/hub/guild';
 import { ApprenticeRoad, CraftRank, TERM_DAYS, generalKeepers } from '../logic/systems/ApprenticeRoad';
 import { VendorSystem } from '../logic/systems/VendorSystem';
-import { NpcSheet } from '../logic/systems/NpcSheet';
-import { WebBank } from '../logic/content/WebBank';
-import { WebSystem } from '../logic/systems/WebSystem';
+import { NpcSheet } from '../../shared/logic/systems/NpcSheet';
+import { WebBank } from '../../shared/logic/content/WebBank';
+import { WebSystem } from '../../shared/logic/systems/WebSystem';
 import { ArmedButton, Bar, Modal, Row } from './ui/kit';
 import { useFeed } from './ui/stores';
 

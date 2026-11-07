@@ -6,8 +6,8 @@
  * all back up. One doc per world cert uid.
  */
 
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 
 export class Treasury {
 

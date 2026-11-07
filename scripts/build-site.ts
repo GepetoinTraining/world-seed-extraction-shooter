@@ -7,7 +7,7 @@
 import { build } from 'vite';
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { unixScript, windowsScript } from '../src/logic/intelligence/LocalSetup';
-import doorOptions from '../server/intelligence/door-options.json';
+import doorOptions from '../shared/intelligence/door-options.json';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');

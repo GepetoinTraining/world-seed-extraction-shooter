@@ -3,27 +3,27 @@
  * No bar calls a model. Monsters and wind-ups run on a faked clock.
  */
 
-import { Leaders } from '../src/entities/world/Leaders';
+import { Leaders } from '../shared/entities/world/Leaders';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { IPlayer, Rarity, UniversalRank } from '../types';
-import { EffectSystem, IEffectAbility, StatusClock } from '../src/logic/systems/EffectSystem';
+import { IPlayer, Rarity, UniversalRank } from '../shared/types';
+import { EffectSystem, IEffectAbility, StatusClock } from '../shared/logic/systems/EffectSystem';
 import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
 import { RestSystem, IDreamResult, emptyQueue } from '../src/logic/systems/RestSystem';
-import { Director, emptyDirectorRecord } from '../src/entities/world/Director';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { sealTheme } from '../src/logic/theme/ThemeCompiler';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
+import { Director, emptyDirectorRecord } from '../shared/entities/world/Director';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { sealTheme } from '../shared/logic/theme/ThemeCompiler';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { BiomeType, EntityType, IChunk, IWorldEntity, ScanLevel } from '../src/entities/world/types';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { SECTOR_CHUNKS } from '../src/entities/world/grid';
+import { BiomeType, EntityType, IChunk, IWorldEntity, ScanLevel } from '../shared/entities/world/types';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { SECTOR_CHUNKS } from '../shared/entities/world/grid';
 import { usePlayerStore } from '../src/entities/player/store';
 import { StudySystem } from '../src/logic/systems/StudySystem';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { StatSystem } from '../src/logic/systems/StatSystem';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';

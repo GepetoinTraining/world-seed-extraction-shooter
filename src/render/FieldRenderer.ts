@@ -7,13 +7,13 @@
  * NPCs, trees and the player — draw by their feet, so you walk under a crown.
  */
 
-import { CHUNK_PX, QUADRANT_PX, QUADRANT_TILES, quadrantOf } from '../entities/world/grid';
-import { EntityType, IChunk, IMap, IWorldEntity } from '../entities/world/types';
-import { MOB_DEFINITIONS } from '../entities/mob/data/mobDefinitions';
-import { ATOM_PX, CreatureFacing, Genre, Role, Sprite, TILE_ATOMS, buildPalette, px, rankMark } from './atoms/atoms';
+import { CHUNK_PX, QUADRANT_PX, QUADRANT_TILES, quadrantOf } from '../../shared/entities/world/grid';
+import { EntityType, IChunk, IMap, IWorldEntity } from '../../shared/entities/world/types';
+import { MOB_DEFINITIONS } from '../../shared/entities/mob/data/mobDefinitions';
+import { ATOM_PX, CreatureFacing, Genre, Role, Sprite, TILE_ATOMS, buildPalette, px, rankMark } from '../../shared/render/atoms/atoms';
 import { LAYER, baselinePx, entitySprite, standsUpright, terrainBuffer } from './atoms/world';
-import { Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, figure } from './atoms/people';
-import type { IOther } from '../logic/live/Presence';
+import { Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, figure } from '../../shared/render/atoms/people';
+import type { IOther } from '../../shared/logic/live/Presence';
 
 const QUADRANT_ATOMS = QUADRANT_TILES * TILE_ATOMS;
 const MAX_QUADRANTS_PER_FRAME = 3;

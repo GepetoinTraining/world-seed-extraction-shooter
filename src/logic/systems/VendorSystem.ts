@@ -17,7 +17,7 @@
  * the days: salvage and making are handed in, so being away reaches the same place.
  */
 
-import { IItem } from '../../../types';
+import { IItem } from '../../../shared/types';
 import { INeedFill, INpcAgenda, NeedKind, NpcAgenda } from './NpcAgenda';
 import { CHOICE_PREMIUM, DEAL_DAYS, IShopBook, ShopWeek, emptyBook } from '../economy/ShopWeek';
 

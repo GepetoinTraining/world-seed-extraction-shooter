@@ -1,21 +1,21 @@
 import { MonsterMind } from '../../../logic/systems/MonsterMind';
-import { GenreType } from '../../../../types';
-import { IChunk, IMap, EntityType, IWorldEntity } from '../../world/types';
-import { PatternType, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../combat/projectileSystem';
-import { MOB_DEFINITIONS } from '../data/mobDefinitions';
+import { GenreType } from '../../../../shared/types';
+import { IChunk, IMap, EntityType, IWorldEntity } from '../../../../shared/entities/world/types';
+import { PatternType, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../../../shared/entities/combat/projectileSystem';
+import { MOB_DEFINITIONS } from '../../../../shared/entities/mob/data/mobDefinitions';
 import { WorldClock } from '../../world/WorldClock';
-import { Leaders } from '../../world/Leaders';
-import { Wards } from '../../world/Wards';
-import { NpcSheet } from '../../../logic/systems/NpcSheet';
+import { Leaders } from '../../../../shared/entities/world/Leaders';
+import { Wards } from '../../../../shared/entities/world/Wards';
+import { NpcSheet } from '../../../../shared/logic/systems/NpcSheet';
 import { Toll, useTollPrompt } from '../../../logic/systems/Toll';
-import { chunkOf } from '../../world/grid';
-import { WIDEST_VIEW_TILES } from '../../../logic/theme/ThemeFormula';
-import { MobBehavior } from '../types';
+import { chunkOf } from '../../../../shared/entities/world/grid';
+import { WIDEST_VIEW_TILES } from '../../../../shared/logic/theme/ThemeFormula';
+import { MobBehavior } from '../../../../shared/entities/mob/types';
 import { CombatMath } from '../../combat/CombatMath';
-import { WorldGenerator } from '../../world/WorldGenerator';
-import { fnv1a } from '../../../logic/rng/DeterministicRNG';
-import { EffectSystem, IEffectReceipt, StatusClock } from '../../../logic/systems/EffectSystem';
-import { ContentRegistry } from '../../../logic/theme/ContentRegistry';
+import { WorldGenerator } from '../../../../shared/entities/world/WorldGenerator';
+import { fnv1a } from '../../../../shared/logic/rng/DeterministicRNG';
+import { EffectSystem, IEffectReceipt, StatusClock } from '../../../../shared/logic/systems/EffectSystem';
+import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
 
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;

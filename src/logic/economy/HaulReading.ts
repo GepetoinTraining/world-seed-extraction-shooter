@@ -6,7 +6,7 @@
  * charged on that worth, unseen, and the receipt says only that a levy was taken.
  */
 
-import { IItem } from '../../../types';
+import { IItem } from '../../../shared/types';
 import { Escort } from '../systems/Escort';
 
 export interface IHaulReading {

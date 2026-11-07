@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 
 const db = new Map<string, any>();
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -31,7 +31,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
@@ -39,29 +39,29 @@ import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Treasury } from '../src/logic/economy/Treasury';
 import { Provenance } from '../src/logic/sovereignty/Provenance';
 import { HubGenerator, POIType } from '../src/entities/hub/HubGenerator';
-import { CHUNK_TILES } from '../src/entities/world/grid';
+import { CHUNK_TILES } from '../shared/entities/world/grid';
 import { NEW_CARLEON, doorTile, farmChunkPlan, firstPlan, raiseChunk, validateManifest } from '../src/entities/hub/hubManifest';
 import { Farm, emptyFarmland } from '../src/entities/hub/farm';
 import { Herd } from '../src/entities/hub/herd';
 import { FarmDoors } from '../src/entities/hub/farmDoors';
-import { Capture, ICaged } from '../src/logic/systems/Capture';
+import { Capture, ICaged } from '../shared/logic/systems/Capture';
 import { Cooking } from '../src/logic/systems/Cooking';
-import { Koseki } from '../src/entities/world/Koseki';
-import { Population, emptyPopulationRecord } from '../src/entities/world/Population';
-import { emptyDirectorRecord } from '../src/entities/world/Director';
-import { CreatureLines } from '../src/logic/theme/CreatureLines';
-import { creatureIdOf } from '../src/logic/theme/ThemeCompiler';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { Koseki } from '../shared/entities/world/Koseki';
+import { Population, emptyPopulationRecord } from '../shared/entities/world/Population';
+import { emptyDirectorRecord } from '../shared/entities/world/Director';
+import { CreatureLines } from '../shared/logic/theme/CreatureLines';
+import { creatureIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { computeGolden, GOLDEN_VECTORS } from '../src/entities/world/goldens';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { WebBank } from '../src/logic/content/WebBank';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { EntityType } from '../src/entities/world/types';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { EntityType } from '../shared/entities/world/types';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
 
 installShippedThemes();
@@ -1069,7 +1069,7 @@ describe('cooking', () => {
 
 describe('the seams others read', () => {
   it('no price, no clock and no model in the pure laws', () => {
-    for (const file of ['src/entities/hub/farm.ts', 'src/entities/hub/herd.ts', 'src/logic/systems/Capture.ts', 'src/logic/systems/Cooking.ts']) {
+    for (const file of ['src/entities/hub/farm.ts', 'src/entities/hub/herd.ts', 'shared/logic/systems/Capture.ts', 'src/logic/systems/Cooking.ts']) {
       const text = readFileSync(file, 'utf8');
       expect(text, file).not.toMatch(/Date\.now\(|Math\.random\(/);
       expect(text, file).not.toMatch(/fetch\(|anthropic/i);

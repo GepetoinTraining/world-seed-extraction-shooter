@@ -6,9 +6,9 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { EquipSlotId } from '../../types';
+import { EquipSlotId } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
-import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { hotbarCells, wieldRefusal } from '../logic/systems/FieldInput';
 import { handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
 import { ItemSprite, Kbd } from './ui/kit';

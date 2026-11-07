@@ -6,11 +6,11 @@
  * damage, the row on the ledger. What it comes to waits for a dream (RestDoor).
  */
 
-import { IItem, IStudyTarget, StudyOutcome } from '../../../types';
+import { IItem, IStudyTarget, StudyOutcome } from '../../../shared/types';
 import { usePlayerStore } from '../../entities/player/store';
-import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { useHubStore } from '../../entities/hub/store';
-import { ownerHasStationFor } from '../../entities/hub/room';
+import { ownerHasStationFor } from '../../../shared/entities/hub/room';
 import { useFeed, useWaits } from '../../components/ui/stores';
 import { Ledger } from '../ledger/Ledger';
 import { SessionJournal } from '../journal/SessionJournal';
@@ -18,7 +18,7 @@ import { LoreSystem } from './LoreSystem';
 import { RestSystem } from './RestSystem';
 import { StudySystem } from './StudySystem';
 import { Escort } from './Escort';
-import { WebSystem, rankIndexOf } from './WebSystem';
+import { WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem';
 
 const WAIT_ID = 'study_sitting';
 

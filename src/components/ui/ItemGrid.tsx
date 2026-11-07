@@ -6,10 +6,10 @@
  */
 
 import React, { useRef } from 'react';
-import { IGridPlacement, IItem } from '../../../types';
+import { IGridPlacement, IItem } from '../../../shared/types';
 import { Place } from '../../logic/systems/ItemHands';
 import { stepGhost } from '../../logic/systems/ItemHands';
-import { InventorySystem } from '../../entities/player/systems/InventorySystem';
+import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
 import { DropZone, grabByKey, handsJustDropped, pressItem, useDropZone, useHands } from './hands';
 import { ItemSprite } from './kit';
 import { hoverProps } from './stores';

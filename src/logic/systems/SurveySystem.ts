@@ -6,10 +6,10 @@
  * seen is remembered plainly, as counts, and never as the truth of what stands there now.
  */
 
-import { IPlayer } from '../../../types';
-import { IWorldEntity, EntityType, ScanLevel } from '../../entities/world/types';
-import { chunkOf } from '../../entities/world/grid';
-import { Leaders } from '../../entities/world/Leaders';
+import { IPlayer } from '../../../shared/types';
+import { IWorldEntity, EntityType, ScanLevel } from '../../../shared/entities/world/types';
+import { chunkOf } from '../../../shared/entities/world/grid';
+import { Leaders } from '../../../shared/entities/world/Leaders';
 
 export type ISurveyEntry = NonNullable<IPlayer['survey']>[string][string];
 /** One world's sectors, on a character or on paper (D85). */

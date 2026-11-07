@@ -8,10 +8,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { IWorldCycle, WorldClock } from '../../entities/world/WorldClock';
 import { SWEEP_CELLS, SWEEP_STEP_MS, WaitClock } from '../../logic/systems/WaitClock';
-import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '../../render/atoms/atoms';
-import { Archetype, portrait } from '../../render/atoms/people';
+import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '../../../shared/render/atoms/atoms';
+import { Archetype, portrait } from '../../../shared/render/atoms/people';
 import { itemArtFor } from '../../render/atoms/items';
-import { IItem } from '../../../types';
+import { IItem } from '../../../shared/types';
 import { Card, ItemComparison } from '../../render/atoms/inspect';
 import { hoverProps } from './stores';
 import { TERMINAL_GENRE, cssVariables } from './tokens';

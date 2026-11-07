@@ -24,9 +24,9 @@
  * Pure logic over plain data: no store, no clock, no gold moved. The doors are in the hub's store.
  */
 
-import { IHubWeb, IItem, UniversalRank } from '../../../types';
+import { IHubWeb, IItem, UniversalRank } from '../../../shared/types';
 import { MarketCap } from '../../logic/economy/MarketCap';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { HUB_NPCS } from './HubGenerator';
 import { residentUpkeepPerDay } from './guild';
 import { IHubLayout } from './layoutTypes';

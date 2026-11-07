@@ -1,10 +1,10 @@
 import { GoldCommit } from './GoldCommit';
 import { usePlayerStore } from '../../entities/player/store';
-import { IAttributes, ISkillState } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { Rng } from '../rng/DeterministicRNG';
-import { StatSystem } from '../systems/StatSystem';
-import { WebSystem } from '../systems/WebSystem';
+import { IAttributes, ISkillState } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { TAX_EVASION_TAGS } from '../../entities/hub/guild';
 
 /** D100: one try at the gate. A failure pays in full and costs nothing more. */

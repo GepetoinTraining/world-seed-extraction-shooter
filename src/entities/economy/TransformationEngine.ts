@@ -1,6 +1,6 @@
-import { ITransformationRecipe, IIndustrialFacility } from './types';
-import { IItem } from '../../../types';
-import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
+import { ITransformationRecipe, IIndustrialFacility } from '../../../shared/entities/economy/types';
+import { IItem } from '../../../shared/types';
+import { SeededRNG, Rng } from '../../../shared/logic/rng/DeterministicRNG';
 
 export class TransformationEngine {
   

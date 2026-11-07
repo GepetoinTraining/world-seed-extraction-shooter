@@ -15,7 +15,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -33,41 +33,41 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, ItemType, Rarity, UniversalRank } from '../types';
+import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, ItemType, Rarity, UniversalRank } from '../shared/types';
 import {
   LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS,
   SKILL_IMPACT_PER_LEVEL, SKILL_RANK_IMPACT_GROWTH, SKILL_RANK_TIME_GROWTH, SKILL_TIME_FACTOR, THREAT_RADIUS_TILES,
   XP_CONSTANTS, XP_SHARE_CHEST, XP_SHARE_HARVEST, XP_SHARE_THREAT
-} from '../src/entities/player/systems/ProgressionSystem';
+} from '../shared/entities/player/systems/ProgressionSystem';
 import { DEFAULT_ATTRIBUTES } from '../src/entities/player/types';
 import { ARCHETYPES, usePlayerStore } from '../src/entities/player/store';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
 import { ICombatEvent } from '../src/entities/combat/CombatSystems';
 import { CombatMath } from '../src/entities/combat/CombatMath';
-import { ATTRIBUTE_READERS, BASE_ENERGY, ENERGY_PER_ENDURANCE, StatSystem } from '../src/logic/systems/StatSystem';
+import { ATTRIBUTE_READERS, BASE_ENERGY, ENERGY_PER_ENDURANCE, StatSystem } from '../shared/logic/systems/StatSystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
-import { MASTERY_RUNGS, RUNG_XP, WebSystem } from '../src/logic/systems/WebSystem';
+import { MASTERY_RUNGS, RUNG_XP, WebSystem } from '../shared/logic/systems/WebSystem';
 import { repairCost } from '../src/entities/hub/dialogue';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { EffectSystem, IEffectAbility } from '../src/logic/systems/EffectSystem';
-import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { EffectSystem, IEffectAbility } from '../shared/logic/systems/EffectSystem';
+import { NpcSheet } from '../shared/logic/systems/NpcSheet';
 import { CIRCLES_FOR_A_GIFT, CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
-import { PASSIVE_STATS } from '../src/logic/theme/ThemeTypes';
-import { STAT_SCALE } from '../src/logic/theme/ThemeFormula';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
-import { BIOMES, IThemeBody } from '../src/logic/theme/ThemeTypes';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { PASSIVE_STATS } from '../shared/logic/theme/ThemeTypes';
+import { STAT_SCALE } from '../shared/logic/theme/ThemeFormula';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { compileTheme, sealTheme } from '../shared/logic/theme/ThemeCompiler';
+import { BIOMES, IThemeBody } from '../shared/logic/theme/ThemeTypes';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { useWorldStore } from '../src/entities/world/store';
-import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../src/entities/world/ChestSystem';
+import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../shared/entities/world/ChestSystem';
 import { fieldMinimap } from '../src/render/atoms/minimap';
-import { EntityType, IWorldEntity } from '../src/entities/world/types';
-import { RARE_FIND_CHANCE, WorldGenerator } from '../src/entities/world/WorldGenerator';
+import { EntityType, IWorldEntity } from '../shared/entities/world/types';
+import { RARE_FIND_CHANCE, WorldGenerator } from '../shared/entities/world/WorldGenerator';
 
 const CERT = (uid: string, name = 'TESTER') => ({
   metadata: { uid, displayName: name, createdAt: 0 },
@@ -174,7 +174,8 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
       }
     };
     walk('src');
-    expect(hits.sort()).toEqual(['src/entities/hub/store.ts', 'src/entities/player/store.ts', 'src/entities/player/systems/ProgressionSystem.ts']);
+    walk('shared');
+    expect(hits.sort()).toEqual(['shared/entities/player/systems/ProgressionSystem.ts', 'src/entities/hub/store.ts', 'src/entities/player/store.ts']);
   });
 
   it('a grant moves the rank up and resets the level', () => {
@@ -624,7 +625,7 @@ describe('a rarer skill levels slowly, and each level does more', () => {
   });
 
   it('a person in a world keeps the rung their sheet rolled, whatever the rank', () => {
-    expect(readFileSync('src/logic/systems/NpcSheet.ts', 'utf8')).toMatch(/WebSystem\.rungXp\(rung, rank\)/);
+    expect(readFileSync('shared/logic/systems/NpcSheet.ts', 'utf8')).toMatch(/WebSystem\.rungXp\(rung, rank\)/);
     expect(typeof NpcSheet).toBe('function');
   });
 
@@ -662,6 +663,7 @@ describe('line 94: every attribute does real work, through the one door', () => 
       }
     };
     walk('src');
+    walk('shared');
     const all = files.join('\n');
     for (const [attr, readers] of Object.entries(ATTRIBUTE_READERS)) {
       for (const reader of readers) {
@@ -963,7 +965,7 @@ describe('three circles ask the rest door for an active skill or a passive bonus
   });
 
   it('the schema and the system prompt carry the ask', () => {
-    const src = readFileSync('server/intelligence/prompts.ts', 'utf8');
+    const src = readFileSync('shared/intelligence/prompts.ts', 'utf8');
     expect(src).toMatch(/required: \['skills', 'weaves', 'gifts'/);
     expect(src).toMatch(/passive bonus/);
   });

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { PersonChain, type IPersonMint } from '../src/logic/people/PersonChain';
+import { PersonChain, type IPersonMint } from '../shared/logic/people/PersonChain';
 
 const CITY = 'hub_one';
 const HUB = PersonChain.hubUidOf(CITY);

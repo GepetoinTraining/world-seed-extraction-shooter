@@ -27,7 +27,7 @@ import { RestSystem } from '../src/logic/systems/RestSystem';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -45,30 +45,30 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAffixBatch, IBankedAffix, IItem, ItemType, MENTAL_ATTRIBUTES, Rarity, UniversalRank } from '../types';
-import { AffixBank } from '../src/logic/content/AffixBank';
+import { IAffixBatch, IBankedAffix, IItem, ItemType, MENTAL_ATTRIBUTES, Rarity, UniversalRank } from '../shared/types';
+import { AffixBank } from '../shared/logic/content/AffixBank';
 import { bankAndSignAffixes } from '../src/logic/content/BankSigning';
-import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
-import { DreamingSystem } from '../src/entities/world/Dreaming';
+import { AFFIX_BATCHES } from '../shared/entities/generation/packs/affixBatches';
+import { DreamingSystem } from '../shared/entities/world/Dreaming';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import {
   InsuranceSystem, CHARM_DEFINITIONS, SCROLL_DEFINITIONS, SCROLL_MINT_BILL
 } from '../src/logic/systems/InsuranceSystem';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { LootTable } from '../src/entities/world/LootTable';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { CartSystem } from '../src/entities/world/CartSystem';
-import { MintRegistry } from '../src/logic/economy/MintRegistry';
-import { CompositionSystem } from '../src/logic/economy/CompositionSystem';
-import { AFFIX_DEFINITIONS } from '../src/entities/item/data/affixDefinitions';
-import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../src/entities/item/data/itemDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { GEAR_RECIPES, CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
+import { MintRegistry } from '../shared/logic/economy/MintRegistry';
+import { CompositionSystem } from '../shared/logic/economy/CompositionSystem';
+import { AFFIX_DEFINITIONS } from '../shared/entities/item/data/affixDefinitions';
+import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../shared/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { GEAR_RECIPES, CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { BiomeType } from '../src/entities/world/types';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { BiomeType } from '../shared/entities/world/types';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.

@@ -23,9 +23,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { folderUrl, openDatabase } from '../server/connection';
-import { SqlStore, StoreConflict, StoreRefusal } from '../server/SqlStore';
+import { SqlStore, StoreConflict, StoreRefusal } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
-import { IWireDoc, ICommitRequest } from '../src/entities/data/wire';
+import { IWireDoc, ICommitRequest } from '../shared/entities/data/wire';
 
 const NS = { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' };
 const ROOT = process.cwd();
@@ -357,7 +357,7 @@ describe('line 70: one code path, no deploy-only surprises', () => {
       return statSync(join(ROOT, path)).isDirectory() ? walk(path) : [path];
     });
     // This file names what it looks for, so it is the one file left out.
-    const sources = [...walk('server'), ...walk('src'), ...walk('scripts'), ...walk('tests'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p) && p !== 'tests/database.store.test.ts');
+    const sources = [...walk('server'), ...walk('shared'), ...walk('src'), ...walk('scripts'), ...walk('tests'), 'vite.config.ts', 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p) && p !== 'tests/database.store.test.ts');
     const text = (p: string) => readFileSync(join(ROOT, p), 'utf8');
     const quote = (s: string) => new RegExp(`from '${s}'|import\\('${s}'\\)`);
     expect(sources.filter(p => quote('@libsql/client').test(text(p)) || quote('libsql').test(text(p)) || /drizzle-orm\/libsql|sqlite-core/.test(text(p)))).toEqual([]);
@@ -371,12 +371,12 @@ describe('line 70: one code path, no deploy-only surprises', () => {
   });
 
   it('stores signed text in a text column on Postgres, never jsonb, which would reorder it', () => {
-    const src = readFileSync(join(ROOT, 'server/schema.pg.ts'), 'utf8');
+    const src = readFileSync(join(ROOT, 'shared/schema.pg.ts'), 'utf8');
     expect(src).not.toMatch(/jsonb?\(/);
   });
 
   it('has one store: SQL is written once, and no branch asks which database it is on', () => {
-    const src = readFileSync(join(ROOT, 'server/SqlStore.ts'), 'utf8');
+    const src = readFileSync(join(ROOT, 'shared/SqlStore.ts'), 'utf8');
     const dialectBranches = src.match(/dialect\s*===/g) ?? [];
     expect(dialectBranches.length).toBe(0);
     expect(src).not.toMatch(/\bfs\b|readFileSync/);
@@ -384,7 +384,7 @@ describe('line 70: one code path, no deploy-only surprises', () => {
 
   it('ships a migration that has not drifted from its schema', async () => {
     const { getTableConfig } = await import('drizzle-orm/pg-core');
-    const pg = await import('../server/schema.pg');
+    const pg = await import('../shared/schema.pg');
     const journal = JSON.parse(readFileSync(join(ROOT, 'drizzle/pg/meta/_journal.json'), 'utf8'));
     const latest = journal.entries[journal.entries.length - 1].idx.toString().padStart(4, '0');
     const snapshot = JSON.parse(readFileSync(join(ROOT, `drizzle/pg/meta/${latest}_snapshot.json`), 'utf8'));
@@ -397,7 +397,7 @@ describe('line 70: one code path, no deploy-only surprises', () => {
   });
 
   it('notes where pgvector fits', () => {
-    expect(readFileSync(join(ROOT, 'server/schema.pg.ts'), 'utf8')).toMatch(/pgvector/);
+    expect(readFileSync(join(ROOT, 'shared/schema.pg.ts'), 'utf8')).toMatch(/pgvector/);
   });
 });
 

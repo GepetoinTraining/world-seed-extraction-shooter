@@ -13,16 +13,16 @@
  * here reads a clock.
  */
 
-import { IItem } from '../../../types';
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
-import { LAND_NUMBERS, bodyNumbers } from '../../logic/theme/ThemeFormula';
-import { Capture, ICaged } from '../../logic/systems/Capture';
-import { ILineProof } from '../../logic/theme/CreatureLines';
+import { IItem } from '../../../shared/types';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { LAND_NUMBERS, bodyNumbers } from '../../../shared/logic/theme/ThemeFormula';
+import { Capture, ICaged } from '../../../shared/logic/systems/Capture';
+import { ILineProof } from '../../../shared/logic/theme/CreatureLines';
 import { LootTable } from '../world/LootTable';
-import { Population } from '../world/Population';
-import { Rng } from '../../logic/rng/DeterministicRNG';
-import { CompositionSystem } from '../../logic/economy/CompositionSystem';
-import { ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
+import { Population } from '../../../shared/entities/world/Population';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
+import { ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
 import type { IFarmland } from './farm';
 
 export interface IHerdHolder {

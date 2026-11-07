@@ -5,7 +5,7 @@
  */
 import { execFile } from 'node:child_process';
 import { freemem, platform, totalmem, arch } from 'node:os';
-import type { IHost } from './machine';
+import type { IHost } from '../../shared/intelligence/machine';
 
 const run = (file: string, args: string[]) => new Promise<string>(resolve => {
   execFile(file, args, { timeout: 4000, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout)));

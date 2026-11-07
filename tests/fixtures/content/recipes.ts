@@ -1,7 +1,7 @@
-import { ITransformationRecipe, MaterialPropertyType } from '../../../src/entities/economy/types';
-import { ResourceDef } from '../../../src/entities/item/data/resourceDefinitions';
-import { IGearRecipe } from '../../../src/entities/economy/data/recipeDefinitions';
-import { ItemType, UniversalRank, Rarity } from '../../../types';
+import { ITransformationRecipe, MaterialPropertyType } from '../../../shared/entities/economy/types';
+import { ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
+import { IGearRecipe } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { ItemType, UniversalRank, Rarity } from '../../../shared/types';
 
 export const TEST_RECIPES: Record<string, ITransformationRecipe> = {
   'recipe_plank': {

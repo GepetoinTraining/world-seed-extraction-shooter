@@ -6,7 +6,7 @@
  * refusal, no key, no network or a door that never answers all come back as the floor.
  */
 
-import { IItem, IPlayer } from '../../../types';
+import { IItem, IPlayer } from '../../../shared/types';
 import { IDoorMessage, IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { LedgerRowType } from '../ledger/Ledger';
 import { CreationSystem, ICreationAsk, ICreationDraftChoices, ICreationSheet, ICreationWords, IKamiWords } from './CreationSystem';

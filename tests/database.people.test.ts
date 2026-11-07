@@ -14,14 +14,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SqlStore } from '../server/SqlStore';
+import { SqlStore } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
 import { Hub } from '../server/hub/Hub';
 import { makeHubKey, verifyStatement } from '../server/hub/keys';
-import { signedText } from '../src/entities/identity/signedText';
-import { addressOf } from '../src/logic/time/RadixClock';
-import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
-import { PersonChain } from '../src/logic/people/PersonChain';
+import { signedText } from '../shared/entities/identity/signedText';
+import { addressOf } from '../shared/logic/time/RadixClock';
+import { linkOf, ROW_VERSION } from '../shared/logic/ledger/chainLaw';
+import { PersonChain } from '../shared/logic/people/PersonChain';
 
 const ALGORITHM = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
 const b64 = (bytes: ArrayBuffer) => Buffer.from(bytes).toString('base64');

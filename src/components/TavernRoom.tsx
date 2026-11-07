@@ -4,14 +4,14 @@
  */
 
 import React, { useMemo } from 'react';
-import { IItem } from '../../types';
+import { IItem } from '../../shared/types';
 import { IResident, jobOf, readSheet, residentStage } from '../entities/hub/guild';
 import { useHubStore } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { HUB_GENRE } from '../render/atoms/hub';
-import { buildPalette } from '../render/atoms/atoms';
-import { portrait } from '../render/atoms/people';
-import { NpcSheet } from '../logic/systems/NpcSheet';
+import { buildPalette } from '../../shared/render/atoms/atoms';
+import { portrait } from '../../shared/render/atoms/people';
+import { NpcSheet } from '../../shared/logic/systems/NpcSheet';
 import { ArmedButton, Button, Chip, Modal, Panel, SpriteView } from './ui/kit';
 import { useTalk } from '../entities/interaction/talkStore';
 import { useFeed } from './ui/stores';

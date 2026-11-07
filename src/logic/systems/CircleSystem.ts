@@ -11,14 +11,14 @@
  * rest door like everything else (D43): never in play, and nothing waits on it.
  */
 
-import { IEquipmentState, IPlayer, ISkillGift, ISkillState } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { Rng } from '../rng/DeterministicRNG';
-import { TagLaw } from '../content/TagLaw';
-import { affixRange } from '../theme/ThemeFormula';
-import { COST_BANDS, DELIVERIES, EFFECTS, PASSIVE_STATS, STAT_BANDS } from '../theme/ThemeTypes';
-import { EffectSystem, IEffectAbility } from './EffectSystem';
-import { WebSystem } from './WebSystem';
+import { IEquipmentState, IPlayer, ISkillGift, ISkillState } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import { affixRange } from '../../../shared/logic/theme/ThemeFormula';
+import { COST_BANDS, DELIVERIES, EFFECTS, PASSIVE_STATS, STAT_BANDS } from '../../../shared/logic/theme/ThemeTypes';
+import { EffectSystem, IEffectAbility } from '../../../shared/logic/systems/EffectSystem';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 export const CIRCLES_PER_LEVEL = 1;
 /** Pedro's three. A skill has no top: each further three is owed another. */

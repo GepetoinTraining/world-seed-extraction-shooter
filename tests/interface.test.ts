@@ -17,7 +17,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -35,10 +35,10 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { UniversalRank, Rarity, ItemType } from '../types';
+import { UniversalRank, Rarity, ItemType } from '../shared/types';
 import {
   ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, POINTS_PER_LEVEL
-} from '../src/entities/player/systems/ProgressionSystem';
+} from '../shared/entities/player/systems/ProgressionSystem';
 import { usePlayerStore, ARCHETYPES } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
@@ -48,12 +48,12 @@ import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction, repairCost, repairItem } from '../src/entities/hub/dialogue';
 import { useHubStore } from '../src/entities/hub/store';
 import { reconCell, RECON_CELL_ATOMS } from '../src/render/atoms/recon';
-import { BiomeType } from '../src/entities/world/types';
-import { Role, STEPS, px, buildPalette, grayscale } from '../src/render/atoms/atoms';
+import { BiomeType } from '../shared/entities/world/types';
+import { Role, STEPS, px, buildPalette, grayscale } from '../shared/render/atoms/atoms';
 import { itemArtFor } from '../src/render/atoms/items';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { MACHINE_COLORS, FONT_PX, MIN_READABLE_PX, TERMINAL_GENRE } from '../src/components/ui/tokens';
 import { useFeed, useReceipt, useAppView } from '../src/components/ui/stores';
 

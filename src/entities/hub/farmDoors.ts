@@ -6,25 +6,25 @@
  * the shop door the city already has (`buyFromLot`), which pays and records as it always did.
  */
 
-import { IItem, UniversalRank } from '../../../types';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
-import { ItemFactory } from '../item/ItemFactory';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
+import { IItem, UniversalRank } from '../../../shared/types';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { usePlayerStore } from '../player/store';
-import { Koseki } from '../world/Koseki';
+import { Koseki } from '../../../shared/entities/world/Koseki';
 import { Ledger } from '../../logic/ledger/Ledger';
-import { Rng, fnv1a } from '../../logic/rng/DeterministicRNG';
+import { Rng, fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 import { Provenance } from '../../logic/sovereignty/Provenance';
-import { Capture } from '../../logic/systems/Capture';
+import { Capture } from '../../../shared/logic/systems/Capture';
 import { Cooking } from '../../logic/systems/Cooking';
-import { WebSystem } from '../../logic/systems/WebSystem';
-import { CreatureLines } from '../../logic/theme/CreatureLines';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { CreatureLines } from '../../../shared/logic/theme/CreatureLines';
 import { HubGenerator } from './HubGenerator';
 import { Farm, IFarm, IFarmland, IPlanting } from './farm';
 import { Herd, IHerdHolder, IHomeHerd } from './herd';
-import { CHUNK_TILES } from '../world/grid';
+import { CHUNK_TILES } from '../../../shared/entities/world/grid';
 import { HubSide, farmChunkPlan, isFarmland } from './hubManifest';
-import { answersTag } from './room';
+import { answersTag } from '../../../shared/entities/hub/room';
 import { useHubStore, worldDay } from './store';
 
 export interface IFarmVerdict { ok: boolean; reason?: string }

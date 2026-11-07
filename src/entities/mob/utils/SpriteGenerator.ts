@@ -1,4 +1,4 @@
-import { MobSize } from '../types';
+import { MobSize } from '../../../../shared/entities/mob/types';
 
 export class SpriteGenerator {
   

@@ -1,31 +1,31 @@
 import { create } from 'zustand';
-import { IMap, ScanLevel, ISector } from './types';
-import { UniversalRank } from '../../../types';
+import { IMap, ScanLevel, ISector } from '../../../shared/entities/world/types';
+import { UniversalRank } from '../../../shared/types';
 import { WorldCertificateSystem } from './WorldCertificate';
 import { useIdentityStore } from '../identity/store';
 import { WorldGenerationService } from './services/WorldGenerationService';
-import { IGenerationContext, WorldGenerator } from './WorldGenerator';
-import { chunkOf } from './grid';
-import { DreamingSystem } from './Dreaming';
+import { IGenerationContext, WorldGenerator } from '../../../shared/entities/world/WorldGenerator';
+import { chunkOf } from '../../../shared/entities/world/grid';
+import { DreamingSystem } from '../../../shared/entities/world/Dreaming';
 import { LootBook } from '../../logic/theme/LootBook';
 import { LiveClient } from '../../logic/live/LiveClient';
 import { HostedLink } from '../../logic/live/HostedLink';
 import { LootWriter } from '../../logic/theme/LootWriter';
 import { IntelligenceClient } from '../../logic/intelligence/IntelligenceClient';
 import { SharedWork } from '../../logic/hub/SharedWork';
-import { AffixBank } from '../../logic/content/AffixBank';
-import { ContentRegistry } from '../../logic/theme/ContentRegistry';
-import { Director, IDirectorRecord } from './Director';
+import { AffixBank } from '../../../shared/logic/content/AffixBank';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { Director, IDirectorRecord } from '../../../shared/entities/world/Director';
 import { DirectorStore } from './DirectorStore';
-import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from './Population';
-import { IKoseki } from './Koseki';
-import { Leaders } from './Leaders';
-import { Territory } from './Territory';
-import { Wards } from './Wards';
-import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from './ChestSystem';
+import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from '../../../shared/entities/world/Population';
+import { IKoseki } from '../../../shared/entities/world/Koseki';
+import { Leaders } from '../../../shared/entities/world/Leaders';
+import { Territory } from '../../../shared/entities/world/Territory';
+import { Wards } from '../../../shared/entities/world/Wards';
+import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../../../shared/entities/world/ChestSystem';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
-import { StoreUnit } from '../data/StoreUnit';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { ScanPass } from '../../logic/systems/ScanPass';
 import { scanRoom } from '../../logic/systems/ScanRoom';
 import { Tutorial } from '../../logic/systems/Tutorial';
@@ -110,10 +110,10 @@ interface WorldState {
   exitWorld: () => void;
 
   // Wave 2: world mutation (harvest depletion, chest looting, NPC state)
-  updateEntity: (entityId: string, patch: Partial<import('./types').IWorldEntity>) => void;
+  updateEntity: (entityId: string, patch: Partial<import('../../../shared/entities/world/types').IWorldEntity>) => void;
   removeEntity: (entityId: string) => void;
   // Wave 3.3: ground caches (dropped/overflow items become world entities)
-  addEntity: (entity: import('./types').IWorldEntity) => void;
+  addEntity: (entity: import('../../../shared/entities/world/types').IWorldEntity) => void;
   // Wave 10C (D16): towed carts move for real, across chunk lines
   moveEntity: (entityId: string, x: number, y: number) => void;
 }

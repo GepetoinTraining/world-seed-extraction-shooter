@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -35,24 +35,24 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, IPlayer, ISkillGift, IStudySitting, ItemType, Rarity, SlotType, StudyOutcome, UniversalRank } from '../types';
+import { IItem, IPlayer, ISkillGift, IStudySitting, ItemType, Rarity, SlotType, StudyOutcome, UniversalRank } from '../shared/types';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useFeed } from '../src/components/ui/stores';
-import { StatSystem } from '../src/logic/systems/StatSystem';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
 import { IDreamResult, RestSystem, emptyQueue } from '../src/logic/systems/RestSystem';
 import { RestDoor } from '../src/logic/systems/RestDoor';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { StudyDoor } from '../src/logic/systems/StudyDoor';
 import { LORE_DEPTHS, LoreSystem } from '../src/logic/systems/LoreSystem';
 import { CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
-import { WebSystem } from '../src/logic/systems/WebSystem';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
-import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { REST_SPEND_LIMIT_USD } from '../server/intelligence/door';
-import { buildRestRequest, REST_SCHEMA } from '../server/intelligence/prompts';
+import { ClaudeProvider, MODEL_FOR } from '../shared/intelligence/claude';
+import { REST_SPEND_LIMIT_USD } from '../shared/intelligence/door';
+import { buildRestRequest, REST_SCHEMA } from '../shared/intelligence/prompts';
 import { runDialogueAction } from '../src/entities/hub/dialogue';
-import { ProgressionSystem } from '../src/entities/player/systems/ProgressionSystem';
-import { ProcessSystem } from '../src/logic/systems/ProcessSystem';
+import { ProgressionSystem } from '../shared/entities/player/systems/ProgressionSystem';
+import { ProcessSystem } from '../shared/logic/systems/ProcessSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useHubStore } from '../src/entities/hub/store';
 

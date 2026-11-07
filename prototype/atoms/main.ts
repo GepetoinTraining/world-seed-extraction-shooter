@@ -1,20 +1,20 @@
 import '../../tests/fixtures/content/installOnLoad';
-import { MOB_DEFINITIONS } from '../../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
+import { MOB_DEFINITIONS } from '../../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../shared/entities/item/data/resourceDefinitions';
 import {
   ATOM_PX, Genre, Material, RANKS, RARITIES, Role, STEPS, Sprite, avatar, buildPalette, chest, creature, exitBeacon,
   ITEM_CELL, gearMaterial, grain, grayscale, hashBytes, itemArt, material, materialFromProps, npcFigure, px, rankMark, resource, ruin, seal, worldForm
-} from '../../src/render/atoms/atoms';
+} from '../../shared/render/atoms/atoms';
 import { GENRES, STATIC_CONTEXT, composeView, entitySprite, proofView, terrainBuffer } from '../../src/render/atoms/world';
-import { WorldGenerator } from '../../src/entities/world/WorldGenerator';
-import { TerrainSystem, TerrainType } from '../../src/entities/world/TerrainSystem';
-import { BiomeType } from '../../src/entities/world/types';
-import { CHUNK_PX, QUADRANT_PX, quadrantOf } from '../../src/entities/world/grid';
+import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
+import { TerrainSystem, TerrainType } from '../../shared/entities/world/TerrainSystem';
+import { BiomeType } from '../../shared/entities/world/types';
+import { CHUNK_PX, QUADRANT_PX, quadrantOf } from '../../shared/entities/world/grid';
 import { Card, Target, cycleTarget, hitTest, inspectEntity, inspectItem, targetsFrom } from '../../src/render/atoms/inspect';
-import { figure } from '../../src/render/atoms/people';
-import { ItemFactory } from '../../src/entities/item/ItemFactory';
-import { Rng } from '../../src/logic/rng/DeterministicRNG';
-import { EntityType } from '../../src/entities/world/types';
+import { figure } from '../../shared/render/atoms/people';
+import { ItemFactory } from '../../shared/entities/item/ItemFactory';
+import { Rng } from '../../shared/logic/rng/DeterministicRNG';
+import { EntityType } from '../../shared/entities/world/types';
 
 const { map, center } = proofView();
 

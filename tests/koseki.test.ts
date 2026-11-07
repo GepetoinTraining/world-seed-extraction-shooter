@@ -5,16 +5,16 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { IKoseki, Koseki } from '../src/entities/world/Koseki';
-import { Leaders, ILeaderSeed, GOALS } from '../src/entities/world/Leaders';
-import { Population, emptyPopulationRecord } from '../src/entities/world/Population';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { SECTOR_CHUNKS } from '../src/entities/world/grid';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { IKoseki, Koseki } from '../shared/entities/world/Koseki';
+import { Leaders, ILeaderSeed, GOALS } from '../shared/entities/world/Leaders';
+import { Population, emptyPopulationRecord } from '../shared/entities/world/Population';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { SECTOR_CHUNKS } from '../shared/entities/world/grid';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { computeGolden, FIRST_THEME_VECTORS } from '../src/entities/world/goldens';
-import { UniversalRank } from '../types';
+import { UniversalRank } from '../shared/types';
 
 installShippedThemes();
 const themeId = FIRST_THEME_PACK.themeId;
@@ -48,7 +48,7 @@ describe('the register itself', () => {
   });
 
   it('reads no clock and no chance, and changes nothing it is handed', () => {
-    const text = readFileSync('src/entities/world/Koseki.ts', 'utf8');
+    const text = readFileSync('shared/entities/world/Koseki.ts', 'utf8');
     expect(text).not.toMatch(/Date\.now\(|Math\.random\(/);
     const r = founded();
     const before = clone(r);

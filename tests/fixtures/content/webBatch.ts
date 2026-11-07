@@ -1,4 +1,4 @@
-import { IWebBatch, ItemType, Rarity, UniversalRank } from '../../../types';
+import { IWebBatch, ItemType, Rarity, UniversalRank } from '../../../shared/types';
 const F = UniversalRank.F;
 const E = UniversalRank.E;
 const D = UniversalRank.D;

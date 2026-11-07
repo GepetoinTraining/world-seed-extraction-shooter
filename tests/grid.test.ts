@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   CHUNK_PX, CHUNK_QUADRANTS, CHUNK_TILES, QUADRANT_PX, QUADRANT_TILES, SECTOR_CHUNKS, SECTOR_PX, SECTOR_TILES, TILE_PX,
   chunkOf, quadrantOf, sectorOf, tileOf
-} from '../src/entities/world/grid';
-import { BiomeType, EntityType, IChunk } from '../src/entities/world/types';
-import { TerrainSystem, TerrainType } from '../src/entities/world/TerrainSystem';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../src/entities/combat/projectileSystem';
+} from '../shared/entities/world/grid';
+import { BiomeType, EntityType, IChunk } from '../shared/entities/world/types';
+import { TerrainSystem, TerrainType } from '../shared/entities/world/TerrainSystem';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../shared/entities/combat/projectileSystem';
 import { HubGenerator } from '../src/entities/hub/HubGenerator';
 
 // Bars registered before the new generator existed. Do not lower them to get a pass.

@@ -9,22 +9,22 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { BiomeType } from '../entities/world/types';
+import { BiomeType } from '../../shared/entities/world/types';
 import { WorldCertificateSystem, WorldType } from '../entities/world/WorldCertificate';
-import { WorldGenerator } from '../entities/world/WorldGenerator';
+import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { firstPlan } from '../entities/hub/hubManifest';
-import { VectorStore, VectorNamespace } from '../entities/data/VectorStore';
+import { VectorStore, VectorNamespace } from '../../shared/entities/data/VectorStore';
 import { OriginBank, SILHOUETTES } from '../logic/content/OriginBank';
 import { CreationDoor } from '../logic/systems/CreationDoor';
 import { CreationSystem, FATE_GAMBLER, ICreationSheet, ICreationWords, IKamiWords } from '../logic/systems/CreationSystem';
 import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
-import { ContentRegistry } from '../logic/theme/ContentRegistry';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import { ThemeStore } from '../logic/theme/ThemeStore';
 import { IDoorUsage } from '../logic/intelligence/IntelligenceClient';
-import { Sprite, gearMaterial, hashBytes, itemArt } from '../render/atoms/atoms';
+import { Sprite, gearMaterial, hashBytes, itemArt } from '../../shared/render/atoms/atoms';
 import { cityMinimap } from '../render/atoms/minimap';
-import { Archetype, figure } from '../render/atoms/people';
+import { Archetype, figure } from '../../shared/render/atoms/people';
 import { RECON_CELL_ATOMS, reconCell } from '../render/atoms/recon';
 import { useCreationDraft } from './ui/creationDraft';
 import { KamiTalk } from './KamiTalk';

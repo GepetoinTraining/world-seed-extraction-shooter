@@ -9,13 +9,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { SqlStore } from '../server/SqlStore';
+import { SqlStore } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
 import { LiveRoom, type LiveAccess } from '../server/live/room';
 import { tokenOf } from '../server/hub/http';
-import { StoreClient } from '../src/entities/data/StoreClient';
+import { StoreClient } from '../shared/entities/data/StoreClient';
 import { LiveClient, useLive, type ILiveEvent } from '../src/logic/live/LiveClient';
-import { presence } from '../src/logic/live/Presence';
+import { presence } from '../shared/logic/live/Presence';
 
 const WORLD = 'world_live_1';
 const doc = (id: string, data: unknown, at = 1) => ({ id, namespace: 'territories', dataText: JSON.stringify(data), metadata: { createdAt: at, updatedAt: at, version: 1 } });

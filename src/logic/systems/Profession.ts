@@ -7,14 +7,14 @@
  * from their own hands, a station their skills open, and it asks no model anything.
  */
 
-import { ISkillState, IWebPack, IWebStation } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { Rng } from '../rng/DeterministicRNG';
-import { WebBank } from '../content/WebBank';
-import { ContentRegistry } from '../theme/ContentRegistry';
-import { rankStep } from '../theme/ThemeFormula';
-import { IThemeProfession, RANKS, ThemeRank } from '../theme/ThemeTypes';
-import { WebSystem } from './WebSystem';
+import { ISkillState, IWebPack, IWebStation } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { rankStep } from '../../../shared/logic/theme/ThemeFormula';
+import { IThemeProfession, RANKS, ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 export interface IProfession {
   name: string;

@@ -3,19 +3,19 @@
  * game, painted into a byte buffer with no canvas involved.
  */
 
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
-import { WorldGenerator, IGenerationContext } from '../../entities/world/WorldGenerator';
-import { TerrainSystem, TerrainType } from '../../entities/world/TerrainSystem';
-import { CHUNK_TILES, SECTOR_PX, sectorOf } from '../../entities/world/grid';
-import { GenreType } from '../../entities/world/definitions';
-import { BiomeType, EntityType, IMap, IWorldEntity } from '../../entities/world/types';
-import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { WorldGenerator, IGenerationContext } from '../../../shared/entities/world/WorldGenerator';
+import { TerrainSystem, TerrainType } from '../../../shared/entities/world/TerrainSystem';
+import { CHUNK_TILES, SECTOR_PX, sectorOf } from '../../../shared/entities/world/grid';
+import { GenreType } from '../../../shared/entities/world/definitions';
+import { BiomeType, EntityType, IMap, IWorldEntity } from '../../../shared/entities/world/types';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import {
   ATOM_PX, CreatureFacing, GenreLook, KNOWN, TILE_ATOMS, Genre, Ink, Material, Role, Sprite, TRI, chest, creature, exitBeacon, grain, hash2, material,
   npcFigure, px, rankMark, ruin, spent, stamp, structureForm, worldForm
-} from './atoms';
-import { figure } from './people';
+} from '../../../shared/render/atoms/atoms';
+import { figure } from '../../../shared/render/atoms/people';
 
 /** Four colors, a name and a chosen look are all an invented genre has to supply. */
 export const GENRES: Genre[] = [

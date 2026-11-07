@@ -6,7 +6,7 @@
 
 import { IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { TalkLaw } from './TalkLaw';
-import { IGoalAsk, IGoalWords, IRememberWords, IRoundAsk, IRoundWords, JudgeBand } from './TalkTypes';
+import { IGoalAsk, IGoalWords, IRememberWords, IRoundAsk, IRoundWords, JudgeBand } from '../../../shared/logic/systems/TalkTypes';
 
 /** How long a person is kept waiting before the round goes on without an answer. */
 export const ROUND_PATIENCE_MS = 10_000;

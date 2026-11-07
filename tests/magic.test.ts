@@ -6,17 +6,17 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { IEquipmentState, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { IEquipmentState, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { CombatMath } from '../src/entities/combat/CombatMath';
-import { StatSystem, STAT_READERS } from '../src/logic/systems/StatSystem';
-import { AffixBank } from '../src/logic/content/AffixBank';
-import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
+import { StatSystem, STAT_READERS } from '../shared/logic/systems/StatSystem';
+import { AffixBank } from '../shared/logic/content/AffixBank';
+import { AFFIX_BATCHES } from '../shared/entities/generation/packs/affixBatches';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
-import { InventorySystem } from '../src/entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
+import { InventorySystem } from '../shared/entities/player/systems/InventorySystem';
 import { usePlayerStore } from '../src/entities/player/store';
 import { repairItem } from '../src/entities/hub/dialogue';
-import { EntityType, BiomeType, ScanLevel, IChunk } from '../src/entities/world/types';
+import { EntityType, BiomeType, ScanLevel, IChunk } from '../shared/entities/world/types';
 
 const piece = (id: string, stats: Record<string, number>, over: Partial<IItem> = {}): IItem => ({
   id, name: id, type: ItemType.GEAR, slot: SlotType.CHEST, rank: UniversalRank.F, rarity: Rarity.COMMON,

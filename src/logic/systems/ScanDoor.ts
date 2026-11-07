@@ -13,7 +13,7 @@ import { WorldClock } from '../../entities/world/WorldClock';
 import { useFeed } from '../../components/ui/stores';
 import { IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { Ledger } from '../ledger/Ledger';
-import { CreatureLines } from '../theme/CreatureLines';
+import { CreatureLines } from '../../../shared/logic/theme/CreatureLines';
 import { DirectorStore } from '../../entities/world/DirectorStore';
 import { IScanDoor, IScanReport, ScanPass } from './ScanPass';
 import { scanRoom } from './ScanRoom';

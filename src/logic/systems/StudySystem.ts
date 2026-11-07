@@ -24,12 +24,12 @@
  * The roll is the law's: a model is told how it went and never decides it.
  */
 
-import { IItem, IPlayer, IStudyMark, IStudySitting, IStudyTarget, ItemType, SlotType, StudyOutcome, UniversalRank } from '../../../types';
-import { LoadoutSystem, Verdict } from '../../entities/player/systems/LoadoutSystem';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { Rng } from '../rng/DeterministicRNG';
-import { StatSystem } from './StatSystem';
+import { IItem, IPlayer, IStudyMark, IStudySitting, IStudyTarget, ItemType, SlotType, StudyOutcome, UniversalRank } from '../../../shared/types';
+import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
 export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';

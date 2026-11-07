@@ -23,7 +23,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -41,28 +41,28 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, IComposition, ItemType, UniversalRank } from '../types';
+import { IItem, IComposition, ItemType, UniversalRank } from '../shared/types';
 import {
   CompositionSystem, COMPOSITION_RULES_VERSION, LABOR_RATE_GOLD_PER_SECOND
-} from '../src/logic/economy/CompositionSystem';
-import { MintRegistry } from '../src/logic/economy/MintRegistry';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../src/entities/item/data/itemDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+} from '../shared/logic/economy/CompositionSystem';
+import { MintRegistry } from '../shared/logic/economy/MintRegistry';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../shared/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import {
   RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES, STRUCTURE_COSTS
-} from '../src/entities/economy/data/recipeDefinitions';
+} from '../shared/entities/economy/data/recipeDefinitions';
 import { improvise } from '../src/logic/systems/ImprovisedCrafting';
-import { emptyRoom, PIECE_BILLS, pickBill, salvageFor } from '../src/entities/hub/room';
-import { setBonusFor, monoMaterialOf } from '../src/entities/hub/template';
+import { emptyRoom, PIECE_BILLS, pickBill, salvageFor } from '../shared/entities/hub/room';
+import { setBonusFor, monoMaterialOf } from '../shared/entities/hub/template';
 import { composeRoom, ROOM_TILE } from '../src/render/atoms/room';
-import { grayscale, buildPalette, hashBytes } from '../src/render/atoms/atoms';
+import { grayscale, buildPalette, hashBytes } from '../shared/render/atoms/atoms';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../src/constants';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../shared/constants';
 import { HUB_GENRE } from '../src/render/atoms/hub';
 
 // -----------------------------------------------------------------------------

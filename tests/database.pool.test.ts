@@ -12,18 +12,18 @@
  * world is barred from that world only. These bars stand on a store in memory; no model is called.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SqlStore } from '../server/SqlStore';
+import { SqlStore } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
 import { Hub } from '../server/hub/Hub';
 import { HubPool } from '../server/hub/pool';
 import { HostedWorld } from '../server/hub/hosted';
 import { takeTurn } from '../src/logic/hub/PoolWorker';
 import { SharedWork } from '../src/logic/hub/SharedWork';
-import { emptyChain } from '../src/logic/theme/ChainWeb';
+import { emptyChain } from '../shared/logic/theme/ChainWeb';
 import { makeHubKey } from '../server/hub/keys';
-import { signedText } from '../src/entities/identity/signedText';
-import { FIRST_THEME_PACK } from '../src/logic/theme/boot';
-import { bodyOf, compileTheme } from '../src/logic/theme/ThemeCompiler';
+import { signedText } from '../shared/entities/identity/signedText';
+import { FIRST_THEME_PACK } from '../shared/logic/theme/boot';
+import { bodyOf, compileTheme } from '../shared/logic/theme/ThemeCompiler';
 
 const ALGORITHM = { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
 

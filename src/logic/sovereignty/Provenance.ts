@@ -11,9 +11,9 @@
  * that made it home.
  */
 
-import { IItem } from '../../../types';
+import { IItem } from '../../../shared/types';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
 import { useIdentityStore } from '../../entities/identity/store';
 
 export interface IProvenanceEvent {

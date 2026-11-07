@@ -8,11 +8,11 @@
  * player's numbers go through. `FieldEscort` is where it meets the stores.
  */
 
-import { IAttributes, IEscort, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
+import { IAttributes, IEscort, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
 import { CombatMath } from '../../entities/combat/CombatMath';
-import { InventorySystem } from '../../entities/player/systems/InventorySystem';
-import { IWorldEntity } from '../../entities/world/types';
-import { StatSystem } from './StatSystem';
+import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
+import { IWorldEntity } from '../../../shared/entities/world/types';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 
 /** The reach of a bare-handed swing: the same arc a person's own melee swing draws in the field. */
 export const ESCORT_REACH_PX = 60;

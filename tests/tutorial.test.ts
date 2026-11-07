@@ -16,7 +16,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -34,7 +34,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, UniversalRank } from '../types';
+import { IItem, UniversalRank } from '../shared/types';
 import { Tutorial, TUTORIAL_WORLD_ID, LESSONS } from '../src/logic/systems/Tutorial';
 import { ReconView } from '../src/components/ReconView';
 import { WorldCard } from '../src/components/MissionControl';
@@ -42,15 +42,15 @@ import { WORLD_DRAFT_DEFAULTS, draftDanger, useAppView, useFeed, useSheet } from
 import { useWorldStore, IWorldCard } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { ScanLevel } from '../src/entities/world/types';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { BiomeType } from '../src/entities/world/types';
+import { ScanLevel } from '../shared/entities/world/types';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { BiomeType } from '../shared/entities/world/types';
 import { reconCell } from '../src/render/atoms/recon';
 import { quickDeployTargetId } from '../src/entities/hub/dialogue';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
 
 installShippedThemes();
 

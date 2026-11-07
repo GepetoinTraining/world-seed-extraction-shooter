@@ -4,9 +4,9 @@
  * a shown string that names them cannot be banked.
  */
 
-import { IAttributes, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../../types';
+import { IAttributes, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../../shared/types';
 import { IKit, IOrigin, IOriginBatch, IQuestion, KitSource, ORIGIN_BATCHES } from '../../entities/generation/packs/originBatches';
-import { WebBank } from './WebBank';
+import { WebBank } from '../../../shared/logic/content/WebBank';
 
 export const SILHOUETTES = ['OPERATOR', 'STREET_SAMURAI', 'NOMAD', 'ARCANIST'] as const;
 const KIT_SOURCES: readonly KitSource[] = ['weapon', 'armor', 'tool', 'carrier', 'wardrobe', 'consumable'];

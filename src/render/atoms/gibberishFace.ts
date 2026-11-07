@@ -9,7 +9,7 @@
  * The rest is TrueType's own bookkeeping. Glyphs are plain rectangles with no curves and no hints.
  */
 
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 
 export const GIBBERISH_FAMILY = 'WS Gibberish';
 

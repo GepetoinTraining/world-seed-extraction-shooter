@@ -12,7 +12,7 @@ import { readFileSync } from 'fs';
 
 const db = new Map<string, any>();
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -30,7 +30,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
@@ -40,17 +40,17 @@ import { ExitLevy } from '../src/logic/economy/ExitLevy';
 import { Treasury } from '../src/logic/economy/Treasury';
 import { Ledger } from '../src/logic/ledger/Ledger';
 import { Provenance } from '../src/logic/sovereignty/Provenance';
-import { NpcSheet } from '../src/logic/systems/NpcSheet';
-import { StatSystem } from '../src/logic/systems/StatSystem';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { WebBank } from '../src/logic/content/WebBank';
-import { ProgressionSystem } from '../src/entities/player/systems/ProgressionSystem';
+import { NpcSheet } from '../shared/logic/systems/NpcSheet';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { ProgressionSystem } from '../shared/entities/player/systems/ProgressionSystem';
 import { HubGenerator } from '../src/entities/hub/HubGenerator';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { HANDLED_ACTIONS, runDialogueAction } from '../src/entities/hub/dialogue';
 import { doorOf, withinReach } from '../src/render/atoms/hub';
-import { answersTag } from '../src/entities/hub/room';
-import { SYSTEM_TEMPLATES, lotConstruction, sizeNeedsVerdict, templateMatchesRoom, validateTemplate } from '../src/entities/hub/template';
+import { answersTag } from '../shared/entities/hub/room';
+import { SYSTEM_TEMPLATES, lotConstruction, sizeNeedsVerdict, templateMatchesRoom, validateTemplate } from '../shared/entities/hub/template';
 import {
   GUILD_OWNER_ID, IResident, TAX_EVASION_TAGS, benchFactor, chainFromMap, emptyGuild, houseBill, houseTemplateFor, jobOf,
   readSheet, residentStage, residentUpkeepPerDay, trialFor, wantFor
@@ -813,7 +813,7 @@ describe('line 141: dodging the levy is a keyed roll that can fail, and doing it
   it('the plain reduction is gone: subterfuge reaches the roll instead', () => {
     expect((StatSystem as any).levyRate).toBeUndefined();
     expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).not.toMatch(/levyRate/);
-    expect(readFileSync('src/logic/systems/StatSystem.ts', 'utf8')).toMatch(/subterfuge: \[[^\]]*StatSystem\.levyDodgeOdds/);
+    expect(readFileSync('shared/logic/systems/StatSystem.ts', 'utf8')).toMatch(/subterfuge: \[[^\]]*StatSystem\.levyDodgeOdds/);
   });
 
   it('it never works every time, however much is behind it', () => {

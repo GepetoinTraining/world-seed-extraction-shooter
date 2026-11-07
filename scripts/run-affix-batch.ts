@@ -24,12 +24,12 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { AffixBank } from '../src/logic/content/AffixBank';
-import { WebBank } from '../src/logic/content/WebBank';
-import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
-import { WEB_BATCHES } from '../src/entities/generation/packs/webBatches';
-import { fnv1a } from '../src/logic/economy/CompositionSystem';
-import { IAffixBatch, IWebBatch } from '../types';
+import { AffixBank } from '../shared/logic/content/AffixBank';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { AFFIX_BATCHES } from '../shared/entities/generation/packs/affixBatches';
+import { WEB_BATCHES } from '../shared/entities/generation/packs/webBatches';
+import { fnv1a } from '../shared/logic/economy/CompositionSystem';
+import { IAffixBatch, IWebBatch } from '../shared/types';
 
 const candidatePath = process.argv[2];
 
@@ -37,7 +37,7 @@ const candidatePath = process.argv[2];
 if (candidatePath) {
   const candidate = JSON.parse(readFileSync(candidatePath, 'utf8'));
   if (Array.isArray(candidate.creatures)) {
-    const { ThemeLaw } = await import('../src/logic/theme/ThemeLaw');
+    const { ThemeLaw } = await import('../shared/logic/theme/ThemeLaw');
     const verdict = ThemeLaw.validate(candidate, tag => WebBank.current().tags.some(t => t.tag === tag));
     console.log(verdict.ok ? `LAWFUL   theme ${candidate.name}` : verdict.reason);
     process.exit(verdict.ok ? 0 : 1);

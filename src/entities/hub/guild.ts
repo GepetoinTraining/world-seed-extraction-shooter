@@ -15,16 +15,16 @@
  * and nobody covers it: "that's the LITERAL MECHANISM OF MASLOW".
  */
 
-import { IAffix, IItem, ISkillState, IWebPack, UniversalRank } from '../../../types';
-import { INpcSheet } from '../world/types';
-import { ProgressionSystem, RANK_ORDER } from '../player/systems/ProgressionSystem';
-import { STRUCTURE_COSTS } from '../economy/data/recipeDefinitions';
-import { Rng } from '../../logic/rng/DeterministicRNG';
-import { NpcSheet } from '../../logic/systems/NpcSheet';
-import { WebBank } from '../../logic/content/WebBank';
-import { WebSystem } from '../../logic/systems/WebSystem';
+import { IAffix, IItem, ISkillState, IWebPack, UniversalRank } from '../../../shared/types';
+import { INpcSheet } from '../../../shared/entities/world/types';
+import { ProgressionSystem, RANK_ORDER } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { STRUCTURE_COSTS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { ILadderFacts, INpcAgenda, INeedFill, NeedKind, NpcAgenda } from '../../logic/systems/NpcAgenda';
-import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet, sizeNeedsVerdict, templateBill } from './template';
+import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet, sizeNeedsVerdict, templateBill } from '../../../shared/entities/hub/template';
 import type { IClosedWeek } from '../../logic/economy/ShopWeek';
 
 /** Who holds a lot the guild bought. It is nobody's to sell, split or lose. */

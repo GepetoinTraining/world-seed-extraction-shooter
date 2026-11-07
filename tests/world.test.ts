@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { GOLDEN_VECTORS, computeGolden, fingerprintMap } from '../src/entities/world/goldens';
 
 const context = {

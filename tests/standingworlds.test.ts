@@ -8,13 +8,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { useWorldStore } from '../src/entities/world/store';
 import { WorldCertificateSystem, IWorldCertificate, WorldType, AccessMode } from '../src/entities/world/WorldCertificate';
-import { GRID_VERSION } from '../src/entities/world/grid';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { VectorStore } from '../src/entities/data/VectorStore';
+import { GRID_VERSION } from '../shared/entities/world/grid';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { VectorStore } from '../shared/entities/data/VectorStore';
 
 const content = new Map<string, unknown>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async () => null,
@@ -75,7 +75,7 @@ describe('a world never retires (Q43)', () => {
       'src/logic/systems/ScanPass.ts', 'src/entities/hub/dialogue.ts'
     ];
     for (const file of files) expect(SRC(file), file).not.toMatch(/\.retired\b|retired\?:|RETIRED/);
-    expect(SRC('src/entities/world/grid.ts')).not.toMatch(/cannot be walked on this one/);
+    expect(SRC('shared/entities/world/grid.ts')).not.toMatch(/cannot be walked on this one/);
   });
 });
 

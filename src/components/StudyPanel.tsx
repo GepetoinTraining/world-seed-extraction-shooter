@@ -7,17 +7,17 @@
 
 import React, { useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { IPlayer, IStudyTarget } from '../../types';
+import { IPlayer, IStudyTarget } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { useWorldStore } from '../entities/world/store';
-import { WorldGenerator } from '../entities/world/WorldGenerator';
-import { EntityType, IWorldEntity } from '../entities/world/types';
+import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
+import { EntityType, IWorldEntity } from '../../shared/entities/world/types';
 import { inspectEntity } from '../render/atoms/inspect';
 import { LoreSystem } from '../logic/systems/LoreSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { StudySystem } from '../logic/systems/StudySystem';
 import { StudyDoor } from '../logic/systems/StudyDoor';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { Bar, Button, Input } from './ui/kit';
 import { useWaits } from './ui/stores';
 

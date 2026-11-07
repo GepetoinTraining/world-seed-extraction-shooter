@@ -7,9 +7,9 @@
  * drop stands, so a world written before tables drops as it always did.
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
-import { ContentRegistry } from './ContentRegistry';
-import { ILootTable, ILootVerdict, LootLaw, LootSource } from './LootLaw';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { ILootTable, ILootVerdict, LootLaw, LootSource } from '../../../shared/logic/theme/LootLaw';
 
 export const LOOT_CONTENT_TYPE = 'loot_table';
 

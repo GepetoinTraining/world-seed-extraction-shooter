@@ -10,7 +10,7 @@ import React, { useEffect } from 'react';
 import { create } from 'zustand';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
-import { EntityType } from '../entities/world/types';
+import { EntityType } from '../../shared/entities/world/types';
 import { LESSONS, Tutorial } from '../logic/systems/Tutorial';
 import { Panel } from './ui/kit';
 

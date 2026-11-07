@@ -12,7 +12,7 @@ import { IdentityGate } from './src/components/IdentityGate';
 import { HubSelector } from './src/components/HubSelector';
 import { HoldingsPanel } from './src/components/HoldingsPanel';
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
-import { ProgressionSystem } from './src/entities/player/systems/ProgressionSystem';
+import { ProgressionSystem } from './shared/entities/player/systems/ProgressionSystem';
 import { levelLine } from './src/components/ui/levelLine';
 import { useCityDay } from './src/components/ui/useCityDay';
 import { Busy, Button, Chip, Kbd, Modal, RankMark } from './src/components/ui/kit';

@@ -5,11 +5,11 @@
  * nothing about the world; a scanned sector reads only what recon already said.
  */
 
-import { BiomeType, IMap } from '../../entities/world/types';
-import { TerrainSystem } from '../../entities/world/TerrainSystem';
-import { CHUNK_TILES, QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../entities/world/grid';
+import { BiomeType, IMap } from '../../../shared/entities/world/types';
+import { TerrainSystem } from '../../../shared/entities/world/TerrainSystem';
+import { CHUNK_TILES, QUADRANT_TILES, SECTOR_PX, TILE_PX, quadrantOf, sectorOf } from '../../../shared/entities/world/grid';
 import { CELL_TILES } from '../../entities/hub/hubManifest';
-import { Role, Sprite, hash2, px } from './atoms';
+import { Role, Sprite, hash2, px } from '../../../shared/render/atoms/atoms';
 import { RECON_CELL_ATOMS, reconCell } from './recon';
 
 export const MINIMAP_ATOMS = 88;

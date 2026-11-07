@@ -5,9 +5,9 @@
  * free one. Every word the filter reads is what the sheet may show (D19).
  */
 
-import { IGridPlacement, IItem, IPlayer, ItemType, SlotType } from '../../../../types';
-import { InventorySystem, Layout } from './InventorySystem';
-import { LoadoutSystem } from './LoadoutSystem';
+import { IGridPlacement, IItem, IPlayer, ItemType, SlotType } from '../../../../shared/types';
+import { InventorySystem, Layout } from '../../../../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../../../../shared/entities/player/systems/LoadoutSystem';
 
 export const STASH_COLS = 12;
 const SPARE_ROWS = 3;

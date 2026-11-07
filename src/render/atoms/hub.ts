@@ -9,10 +9,10 @@
 
 import { IHubLayout, IPOI, POIType, ZoneType, HubGenerator } from '../../entities/hub/HubGenerator';
 import { CELL_TILES, ROAD_MAIN, ROAD_STREET, doorTile } from '../../entities/hub/hubManifest';
-import { CHUNK_TILES } from '../../entities/world/grid';
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
-import { Genre, Ink, Role, Sprite, hash2, isqrt, material, px, seal, stamp } from './atoms';
-import { castFigure } from './people';
+import { CHUNK_TILES } from '../../../shared/entities/world/grid';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { Genre, Ink, Role, Sprite, hash2, isqrt, material, px, seal, stamp } from '../../../shared/render/atoms/atoms';
+import { castFigure } from '../../../shared/render/atoms/people';
 import { RawWallKind, rawAtom } from './room';
 import { HUB_TILE_PX } from '../../entities/hub/HubCanvas.constants';
 

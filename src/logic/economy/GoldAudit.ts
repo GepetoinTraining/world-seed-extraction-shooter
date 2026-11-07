@@ -10,7 +10,7 @@
  */
 
 import { Ledger } from '../ledger/Ledger';
-import { goldOfRow } from './goldOfRow';
+import { goldOfRow } from '../../../shared/logic/economy/goldOfRow';
 import { Treasury } from './Treasury';
 import { Wallets } from './Wallets';
 import { usePlayerStore } from '../../entities/player/store';

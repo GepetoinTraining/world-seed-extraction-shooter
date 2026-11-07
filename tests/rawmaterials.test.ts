@@ -20,7 +20,7 @@ import { RestSystem } from '../src/logic/systems/RestSystem';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -38,38 +38,38 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAffix, IItem, ItemType, Rarity, UniversalRank, MENTAL_ATTRIBUTES, ROOM_ACTING_STATS } from '../types';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES } from '../src/entities/economy/data/recipeDefinitions';
-import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
-import { AffixBank } from '../src/logic/content/AffixBank';
-import { DreamingSystem } from '../src/entities/world/Dreaming';
-import { CompositionSystem, fnv1a } from '../src/logic/economy/CompositionSystem';
-import { MintRegistry } from '../src/logic/economy/MintRegistry';
+import { IAffix, IItem, ItemType, Rarity, UniversalRank, MENTAL_ATTRIBUTES, ROOM_ACTING_STATS } from '../shared/types';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES } from '../shared/entities/economy/data/recipeDefinitions';
+import { AFFIX_BATCHES } from '../shared/entities/generation/packs/affixBatches';
+import { AffixBank } from '../shared/logic/content/AffixBank';
+import { DreamingSystem } from '../shared/entities/world/Dreaming';
+import { CompositionSystem, fnv1a } from '../shared/logic/economy/CompositionSystem';
+import { MintRegistry } from '../shared/logic/economy/MintRegistry';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { SourcingAudit } from '../src/logic/economy/SourcingAudit';
-import { ProcessSystem, PROCESS_THEME, PROCESS_FAMILIES } from '../src/logic/systems/ProcessSystem';
+import { ProcessSystem, PROCESS_THEME, PROCESS_FAMILIES } from '../shared/logic/systems/ProcessSystem';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { improvise } from '../src/logic/systems/ImprovisedCrafting';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import {
   IRoomState, emptyRoom, pickBill, answersTag, materialLabel, shellBillFor, ownerHasBench, roomProcessBonus, salvageFor,
   PIECE_BILLS, SHELL_BILLS
-} from '../src/entities/hub/room';
-import { ITemplate, SYSTEM_TEMPLATES, defaultSheet, templateBill, templateToRoom } from '../src/entities/hub/template';
+} from '../shared/entities/hub/room';
+import { ITemplate, SYSTEM_TEMPLATES, defaultSheet, templateBill, templateToRoom } from '../shared/entities/hub/template';
 import { composeRoom, ROOM_TILE, rawWallKind } from '../src/render/atoms/room';
 import { composeHub, lotArt, HUB_GENRE } from '../src/render/atoms/hub';
-import { buildPalette, grayscale, hashBytes } from '../src/render/atoms/atoms';
+import { buildPalette, grayscale, hashBytes } from '../shared/render/atoms/atoms';
 import { inspectItem, inspectBuiltRoom } from '../src/render/atoms/inspect';
 import { LORE_FRAGMENTS } from '../src/entities/lore/LoreBible';
 import { HubGenerator } from '../src/entities/hub/HubGenerator';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { runGoldenCheck } from '../src/entities/world/goldens';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.

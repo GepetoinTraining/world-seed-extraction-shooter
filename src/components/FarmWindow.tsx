@@ -8,12 +8,12 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { IItem } from '../../types';
+import { IItem } from '../../shared/types';
 import { Farm } from '../entities/hub/farm';
 import { FarmDoors, IFarmVerdict } from '../entities/hub/farmDoors';
 import { Herd } from '../entities/hub/herd';
 import { HubGenerator } from '../entities/hub/HubGenerator';
-import { answersTag } from '../entities/hub/room';
+import { answersTag } from '../../shared/entities/hub/room';
 import { useHubStore } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { Cooking } from '../logic/systems/Cooking';

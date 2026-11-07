@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -30,7 +30,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { CHUNK_TILES, QUADRANT_TILES } from '../src/entities/world/grid';
+import { CHUNK_TILES, QUADRANT_TILES } from '../shared/entities/world/grid';
 import { HUB_NPCS, HubGenerator, IHubLayout, IPOI, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
 import { runDialogueAction } from '../src/entities/hub/dialogue';
 import {
@@ -39,16 +39,16 @@ import {
 } from '../src/entities/hub/hubManifest';
 import { HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, floorAtom, hubGround, lotArt, passageAtom, roadAtom } from '../src/render/atoms/hub';
 import { cityMinimap } from '../src/render/atoms/minimap';
-import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../src/render/atoms/atoms';
-import { fnv1a } from '../src/logic/rng/DeterministicRNG';
+import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../shared/render/atoms/atoms';
+import { fnv1a } from '../shared/logic/rng/DeterministicRNG';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { emptyRoom, fullyWalkable } from '../src/entities/hub/room';
-import { sizeNeedsVerdict } from '../src/entities/hub/template';
+import { emptyRoom, fullyWalkable } from '../shared/entities/hub/room';
+import { sizeNeedsVerdict } from '../shared/entities/hub/template';
 import { usePlayerStore } from '../src/entities/player/store';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 const SRC = (path: string) => readFileSync(path, 'utf8');
 const allPois = (l: IHubLayout) => l.zones.flatMap(z => z.pois);

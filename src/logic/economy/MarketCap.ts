@@ -11,12 +11,12 @@
  * Pure over what it is handed: the live tables, and the items the city holds.
  */
 
-import { IHubWeb, IItem, IWebPack } from '../../../types';
-import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { WebBank } from '../content/WebBank';
-import { ProcessSystem } from '../systems/ProcessSystem';
-import { WebSystem } from '../systems/WebSystem';
+import { IHubWeb, IItem, IWebPack } from '../../../shared/types';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { ProcessSystem } from '../../../shared/logic/systems/ProcessSystem';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 interface IMaking {
   trade: string | undefined;

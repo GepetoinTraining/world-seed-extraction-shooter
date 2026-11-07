@@ -8,8 +8,8 @@
  * keyed by world uid, holding only what players left behind on wheels.
  */
 
-import { VectorStore, VectorNamespace } from '../data/VectorStore';
-import { ICartState } from './types';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { ICartState } from '../../../shared/entities/world/types';
 
 export interface IPlacedCart {
   id: string;                          // the cart entity id, stable across sessions

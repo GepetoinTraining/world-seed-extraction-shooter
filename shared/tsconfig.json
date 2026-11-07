@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    /* The code the game and the servers both run. Checked against the language alone: no page,
+       no Node. runtime.d.ts lists the few globals both supply. Declarations only. */
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "../.shared-types",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "paths": {
+      "undici-types": ["./absent.d.ts"]
+    }
+  },
+  "include": ["**/*.ts"]
+}

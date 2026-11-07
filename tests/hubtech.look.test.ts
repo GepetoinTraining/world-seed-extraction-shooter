@@ -6,13 +6,13 @@
  * Registered before the build. Meaning goes by shape, never hue alone: Pedro is colourblind.
  */
 import { describe, expect, it } from 'vitest';
-import { STEPS, buildPalette, grayscale, worldForm, worldSize, LOOK_INKS, LOOK_HUES, LOOK_ATOMS } from '../src/render/atoms/atoms';
+import { STEPS, buildPalette, grayscale, worldForm, worldSize, LOOK_INKS, LOOK_HUES, LOOK_ATOMS } from '../shared/render/atoms/atoms';
 import { HUB_GENRE } from '../src/render/atoms/hub';
-import { LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES } from '../src/logic/theme/ThemeTypes';
-import { ChainWeb, IChainGround, IChainRound, emptyChain, lookOfOld } from '../src/logic/theme/ChainWeb';
+import { LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES } from '../shared/logic/theme/ThemeTypes';
+import { ChainWeb, IChainGround, IChainRound, emptyChain, lookOfOld } from '../shared/logic/theme/ChainWeb';
 import { addToLedger, materialsToGenerate } from '../src/entities/hub/hubTech';
 import { emptyTech } from '../src/entities/hub/hubTech';
-import { CHAIN_SCHEMA, buildChainRequest } from '../server/intelligence/prompts';
+import { CHAIN_SCHEMA, buildChainRequest } from '../shared/intelligence/prompts';
 
 const LOOK = { color: 'ochre', shape: 'shard', size: 'medium' } as const;
 const material = (key: string, look: unknown = LOOK): IChainRound['materials'][number] => ({

@@ -7,13 +7,13 @@
  * With nobody signed in nothing is written, and the game stands as it did.
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { ISignedPayload } from '../../entities/identity/certificateSystem';
 import { ILedgerRow, Ledger } from '../ledger/Ledger';
-import { linkOf } from '../ledger/chainLaw';
-import { IHubRoll, IPersonAct, IPersonRecord, PersonAs, PersonChain, PERSON_ROW } from './PersonChain';
+import { linkOf } from '../../../shared/logic/ledger/chainLaw';
+import { IHubRoll, IPersonAct, IPersonRecord, PersonAs, PersonChain, PERSON_ROW } from '../../../shared/logic/people/PersonChain';
 
 export interface IPersonMintAsk { npcId: string; as: PersonAs; name: string; origin: string }
 

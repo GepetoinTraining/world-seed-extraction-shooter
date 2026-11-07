@@ -4,10 +4,10 @@
  * guard, so the first client to touch one owns it, whoever else is running.
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { DirectorStore } from '../../entities/world/DirectorStore';
-import { CreatureLines } from '../theme/CreatureLines';
+import { CreatureLines } from '../../../shared/logic/theme/CreatureLines';
 import type { IScanRoom, IWindowAnswer, IWindowBatch } from './ScanPass';
 
 const batchKey = (worldId: string, id: string) => `scan_${worldId}_batch_${id}`;

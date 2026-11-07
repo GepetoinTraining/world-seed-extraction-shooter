@@ -20,9 +20,9 @@ import { Blob as NodeBlob } from 'node:buffer';
 
 import { folderUrl } from '../server/connection';
 import { CertificateSystem, IPlayerCertificate } from '../src/entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../src/entities/data/VectorStore';
-import { StoreClient, useVault } from '../src/entities/data/StoreClient';
-import { StoreUnit } from '../src/entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../shared/entities/data/VectorStore';
+import { StoreClient, useVault } from '../shared/entities/data/StoreClient';
+import { StoreUnit } from '../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
@@ -30,8 +30,8 @@ import { PlayerPersistence } from '../src/logic/persistence/PlayerPersistence';
 import { BrowserImport, ILegacyDoc } from '../src/logic/persistence/BrowserImport';
 import { HomeHub } from '../src/logic/persistence/HomeHub';
 import { Ledger } from '../src/logic/ledger/Ledger';
-import { linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
-import { addressOf } from '../src/logic/time/RadixClock';
+import { linkOf, ROW_VERSION } from '../shared/logic/ledger/chainLaw';
+import { addressOf } from '../shared/logic/time/RadixClock';
 import { Treasury } from '../src/logic/economy/Treasury';
 import { Wallets } from '../src/logic/economy/Wallets';
 import { ExitLevy } from '../src/logic/economy/ExitLevy';
@@ -39,7 +39,7 @@ import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { GoldCommit } from '../src/logic/economy/GoldCommit';
 import { AvatarExport } from '../src/logic/sovereignty/AvatarExport';
 import { WorldCertificateSystem, WorldType, AccessMode } from '../src/entities/world/WorldCertificate';
-import { UniversalRank } from '../types';
+import { UniversalRank } from '../shared/types';
 
 // Every bar here crosses to a real server in another process, which seven files running at once can starve for longer than the default.
 vi.setConfig({ testTimeout: 30_000 });
@@ -147,13 +147,13 @@ beforeEach(() => {
 
 describe('line 69: saves live in the SQL database', () => {
   it('the game\'s store speaks HTTP and imports no browser database', () => {
-    const src = read('src/entities/data/VectorStore.ts');
+    const src = read('shared/entities/data/VectorStore.ts');
     expect(src).not.toMatch(/RxDBClient|rxdb|dexie/i);
-    expect(read('src/entities/data/StoreClient.ts')).toMatch(/fetch\(/);
+    expect(read('shared/entities/data/StoreClient.ts')).toMatch(/fetch\(/);
   });
 
   it('only the one-time import may touch the old browser database, and only lazily', () => {
-    const offenders = [...walk('src'), 'App.tsx', 'index.tsx']
+    const offenders = [...walk('src'), ...walk('shared'), 'App.tsx', 'index.tsx']
       .filter(p => p !== 'src/entities/data/RxDBClient.ts' && p !== 'src/logic/persistence/BrowserImport.ts' && p !== 'src/entities/identity/VectorStore.ts')
       .filter(p => /RxDBClient|from 'rxdb|from 'dexie/.test(read(p)));
     expect(offenders).toEqual([]);
@@ -321,7 +321,7 @@ describe('line 69: saves live in the SQL database', () => {
     // The hub's own signing key (DEPLOY.md) is made on the server and is the server's: that one file
     // may name a private key, and may never touch a character's (a JWK, a certificate, an export).
     const HUB_KEY = /^server\/hub\/keys\.ts$/;
-    for (const file of walk('server')) {
+    for (const file of [...walk('server'), ...walk('shared')]) {
       if (HUB_KEY.test(file)) {
         expect(read(file)).not.toMatch(/encryptedPrivateKey|privateKeyJWK|jwk|certificate|exportIdentity/i);
         continue;
@@ -499,7 +499,7 @@ describe('line 71: a gold change is one commit', () => {
       expect(src, `${file} appends a gold row outside the commit`).not.toMatch(/Ledger\.append\(\s*'(GOLD_DELTA|TAX|UPKEEP|CHARACTER_GENESIS)'/);
     }
     // Nor does any file outside the economy write a treasury by hand.
-    const writers = walk('src').filter(p => p !== 'src/logic/economy/Treasury.ts' && p !== 'src/logic/persistence/BrowserImport.ts' && /treasury_\$\{/.test(read(p)));
+    const writers = [...walk('src'), ...walk('shared')].filter(p => p !== 'src/logic/economy/Treasury.ts' && p !== 'src/logic/persistence/BrowserImport.ts' && /treasury_\$\{/.test(read(p)));
     expect(writers).toEqual([]);
     // A TRADE row that moves gold takes the commit too.
     expect(read('src/entities/hub/store.ts')).not.toMatch(/Ledger\.append\('TRADE', \{ kind: 'SHOP_SALE'/);
@@ -609,11 +609,11 @@ describe('when the server is down, the bank refuses', () => {
     expect(gate).toMatch(/VAULT/);
     expect(read('index.tsx')).toMatch(/<VaultGate>/);
     // Saves go nowhere else: browser storage holds identity only.
-    for (const file of ['src/logic/persistence/PlayerPersistence.ts', 'src/logic/ledger/Ledger.ts', 'src/logic/economy/Treasury.ts', 'src/logic/economy/GoldCommit.ts', 'src/entities/data/VectorStore.ts', 'src/entities/data/StoreClient.ts', 'src/entities/data/StoreUnit.ts']) {
+    for (const file of ['src/logic/persistence/PlayerPersistence.ts', 'src/logic/ledger/Ledger.ts', 'src/logic/economy/Treasury.ts', 'src/logic/economy/GoldCommit.ts', 'shared/entities/data/VectorStore.ts', 'shared/entities/data/StoreClient.ts', 'shared/entities/data/StoreUnit.ts']) {
       expect(read(file), `${file} reaches for browser storage`).not.toMatch(/localStorage|sessionStorage|indexedDB/);
     }
     // And VectorStore no longer turns a failed read into an empty answer.
-    expect(read('src/entities/data/VectorStore.ts')).not.toMatch(/catch[^}]*return null/s);
+    expect(read('shared/entities/data/VectorStore.ts')).not.toMatch(/catch[^}]*return null/s);
   });
 });
 
@@ -909,7 +909,7 @@ describe('one command brings up everything the game needs', () => {
     expect(git('ls-files', '--others', '--ignored', '--exclude-standard', 'src', 'server', 'tests', 'drizzle').trim()).toBe('');
     // And every file the game's store is built from is really in the repository.
     const tracked = git('ls-files', 'src/entities/data', 'src/logic/persistence', 'server', 'drizzle').split(/\r?\n/);
-    for (const file of ['src/entities/data/StoreClient.ts', 'src/entities/data/StoreUnit.ts', 'src/entities/data/wire.ts', 'src/entities/data/similarity.ts', 'server/SqlStore.ts', 'src/logic/persistence/BrowserImport.ts']) {
+    for (const file of ['shared/entities/data/StoreClient.ts', 'shared/entities/data/StoreUnit.ts', 'shared/entities/data/wire.ts', 'shared/entities/data/similarity.ts', 'shared/SqlStore.ts', 'src/logic/persistence/BrowserImport.ts']) {
       expect(tracked, `${file} is not tracked`).toContain(file);
     }
   });
@@ -921,11 +921,11 @@ describe('one command brings up everything the game needs', () => {
 
 describe('what must not have moved', () => {
   it('the contract is additive: types.ts holds no database type', () => {
-    expect(read('types.ts')).not.toMatch(/ICommitRequest|IWireDoc/);
+    expect(read('shared/types.ts')).not.toMatch(/ICommitRequest|IWireDoc/);
   });
 
   it('EmbeddingService loads without a window, and keeps its offline mode', async () => {
-    const { EmbeddingService } = await import('../src/services/EmbeddingService');
+    const { EmbeddingService } = await import('../shared/services/EmbeddingService');
     const a = await EmbeddingService.embed('stone and stick');
     const b = await EmbeddingService.embed('stone and stick');
     expect(a).toEqual(b);

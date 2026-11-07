@@ -7,21 +7,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { IPlayer } from '../types';
+import { IPlayer } from '../shared/types';
 import { WorldClock, IClockedWorld } from '../src/entities/world/WorldClock';
 import { SurveySystem } from '../src/logic/systems/SurveySystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
-import { StatSystem } from '../src/logic/systems/StatSystem';
-import { Director, emptyDirectorRecord } from '../src/entities/world/Director';
-import { EntityType, IWorldEntity } from '../src/entities/world/types';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { Director, emptyDirectorRecord } from '../shared/entities/world/Director';
+import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { useWorldStore, IWorldCard } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { deployToWorld } from '../src/logic/systems/Deploy';
 import { WorldCard } from '../src/components/MissionControl';
 import { quickDeployTargetId } from '../src/entities/hub/dialogue';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
 
 installShippedThemes();
 

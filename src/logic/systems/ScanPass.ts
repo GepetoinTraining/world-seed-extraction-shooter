@@ -23,16 +23,16 @@
  * for a whole gate.
  *
  * A further step joins COMPUTE_STEPS, and a further ask joins ASK_KINDS, with its prompt
- * beside it in `server/intelligence/prompts.ts`. Nothing else here changes for them.
+ * beside it in `shared/intelligence/prompts.ts`. Nothing else here changes for them.
  */
 
-import { IDirectorRecord } from '../../entities/world/Director';
+import { IDirectorRecord } from '../../../shared/entities/world/Director';
 import { IClockedWorld, WorldClock } from '../../entities/world/WorldClock';
-import { fnv1a } from '../rng/DeterministicRNG';
-import { ContentRegistry } from '../theme/ContentRegistry';
-import { CreatureLines, ILineWorld } from '../theme/CreatureLines';
-import { IThemePack } from '../theme/ThemeTypes';
-import { WorldGrowth } from '../theme/WorldGrowth';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { CreatureLines, ILineWorld } from '../../../shared/logic/theme/CreatureLines';
+import { IThemePack } from '../../../shared/logic/theme/ThemeTypes';
+import { WorldGrowth } from '../../../shared/logic/theme/WorldGrowth';
 
 export interface IScanWorld extends IClockedWorld, ILineWorld {
   id: string;

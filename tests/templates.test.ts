@@ -21,7 +21,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -39,25 +39,25 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ItemType } from '../types';
-import { emptyRoom, interiorSize, STATION_FUNCTION, STATION_MIN_AREA } from '../src/entities/hub/room';
+import { IItem, ItemType } from '../shared/types';
+import { emptyRoom, interiorSize, STATION_FUNCTION, STATION_MIN_AREA } from '../shared/entities/hub/room';
 import {
   ITemplate, ITemplateSheet, SIZE_CLASSES, SYSTEM_TEMPLATES, ROOM_PRESETS, TEMPLATE_MINT_BILL,
   defaultSheet, templateToRoom, validateTemplate, sizeNeedsVerdict, templateBill,
   templateMatchesRoom, monoMaterialOf, lotConstruction, presetToRoom, canAddPiece
-} from '../src/entities/hub/template';
+} from '../shared/entities/hub/template';
 import { TemplateSystem, ITemplateItem } from '../src/logic/systems/TemplateSystem';
 import { composeRoom, templateThumb } from '../src/render/atoms/room';
 import { lotArt } from '../src/render/atoms/hub';
-import { Role, STEPS, hashBytes, px } from '../src/render/atoms/atoms';
+import { Role, STEPS, hashBytes, px } from '../shared/render/atoms/atoms';
 import { itemArtFor } from '../src/render/atoms/items';
 import { inspectItem, inspectTemplateRoom } from '../src/render/atoms/inspect';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { CRAFTED_DEFINITIONS, RECIPE_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { CRAFTED_DEFINITIONS, RECIPE_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.

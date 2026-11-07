@@ -17,7 +17,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { DatabaseUnavailable, IDatabase, openDatabase } from './connection';
-import { documents } from './schema.pg';
+import { documents } from '../shared/schema.pg';
 
 const REGISTRY_ID = 'mint_registry_v1';
 

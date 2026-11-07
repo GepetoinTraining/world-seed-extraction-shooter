@@ -11,7 +11,7 @@
  * speaker is an entity id either way. Pure.
  */
 
-import { IMemoryLine, IToward } from '../systems/TalkTypes';
+import { IMemoryLine, IToward } from '../../../shared/logic/systems/TalkTypes';
 import { IAtomBook } from './AtomBook';
 import { AtomBook } from './AtomBook';
 import { IMind, MemoryLaw, PHI_FLOW, ROLES } from './MemoryLaw';

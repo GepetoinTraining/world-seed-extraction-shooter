@@ -7,24 +7,24 @@
  * map is D65's other open half, and it waits for one to exist.
  */
 
-import { IItem, UniversalRank } from '../../../types';
+import { IItem, UniversalRank } from '../../../shared/types';
 import { useHubStore, worldDay } from '../../entities/hub/store';
 import { MemoryStore, rememberThreat } from '../../entities/interaction/memoryStore';
 import { Deeds } from '../memory/Deeds';
-import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { MobAI } from '../../entities/mob/ai/MobAI';
 import { usePlayerStore } from '../../entities/player/store';
 import { DirectorStore } from '../../entities/world/DirectorStore';
-import { chunkOf } from '../../entities/world/grid';
+import { chunkOf } from '../../../shared/entities/world/grid';
 import { useWorldStore } from '../../entities/world/store';
-import { EntityType, IWorldEntity } from '../../entities/world/types';
+import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { useFeed } from '../../components/ui/stores';
 import { SessionJournal } from '../journal/SessionJournal';
-import { Rng, fnv1a } from '../rng/DeterministicRNG';
+import { Rng, fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 import { Provenance } from '../sovereignty/Provenance';
-import { CreatureLines } from '../theme/CreatureLines';
-import { Capture, ICaged } from './Capture';
-import { WebSystem } from './WebSystem';
+import { CreatureLines } from '../../../shared/logic/theme/CreatureLines';
+import { Capture, ICaged } from '../../../shared/logic/systems/Capture';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 const feed = (text: string, tone: Parameters<ReturnType<typeof useFeed.getState>['push']>[1] = 'plain') => useFeed.getState().push(text, tone);
 const session = () => usePlayerStore.getState().player.currentSession;

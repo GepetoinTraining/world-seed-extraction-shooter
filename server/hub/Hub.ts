@@ -47,28 +47,28 @@
  * different one says the history under the head was written over, which is a challenge.
  */
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import type { SqlStore } from '../SqlStore';
-import { StoreConflict } from '../SqlStore';
-import type { CommitOp, IWireDoc } from '../../src/entities/data/wire';
-import { signedText } from '../../src/entities/identity/signedText';
+import type { SqlStore } from '../../shared/SqlStore';
+import { StoreConflict } from '../../shared/SqlStore';
+import type { CommitOp, IWireDoc } from '../../shared/entities/data/wire';
+import { signedText } from '../../shared/entities/identity/signedText';
 import { IHubKey, ISignedStatement, statementOf, verifyStatement } from './keys';
-import { addressOf, dayIndexOf } from '../../src/logic/time/RadixClock';
-import { chainProblem, linkOf, type IChainStart } from '../../src/logic/ledger/chainLaw';
-import { ContentRegistry } from '../../src/logic/theme/ContentRegistry';
-import { CreatureLines, type ILineProof } from '../../src/logic/theme/CreatureLines';
-import { canonical, themeIdOf } from '../../src/logic/theme/ThemeCompiler';
-import type { IThemePack } from '../../src/logic/theme/ThemeTypes';
-import { installShippedThemes, FIRST_THEME_PACK } from '../../src/logic/theme/boot';
-import { LootLaw, type ILootTable } from '../../src/logic/theme/LootLaw';
-import { goldOfRow, sameGold } from '../../src/logic/economy/goldOfRow';
+import { addressOf, dayIndexOf } from '../../shared/logic/time/RadixClock';
+import { chainProblem, linkOf, type IChainStart } from '../../shared/logic/ledger/chainLaw';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
+import { CreatureLines, type ILineProof } from '../../shared/logic/theme/CreatureLines';
+import { canonical, themeIdOf } from '../../shared/logic/theme/ThemeCompiler';
+import type { IThemePack } from '../../shared/logic/theme/ThemeTypes';
+import { installShippedThemes, FIRST_THEME_PACK } from '../../shared/logic/theme/boot';
+import { LootLaw, type ILootTable } from '../../shared/logic/theme/LootLaw';
+import { goldOfRow, sameGold } from '../../shared/logic/economy/goldOfRow';
 import { rerunDrops, type IRerunFinder } from './rerun';
-import { PersonChain, type IHubRoll, type IPersonMint, type IPersonRecord } from '../../src/logic/people/PersonChain';
-import { ItemLaw, type IItemDefinitions } from '../../src/logic/content/ItemLaw';
-import { CRAFTED_GEAR_BASES, ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
-import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../src/entities/economy/data/recipeDefinitions';
-import { WebBank } from '../../src/logic/content/WebBank';
-import { GAME_WAYS } from '../../src/logic/economy/gameWays';
+import { PersonChain, type IHubRoll, type IPersonMint, type IPersonRecord } from '../../shared/logic/people/PersonChain';
+import { ItemLaw, type IItemDefinitions } from '../../shared/logic/content/ItemLaw';
+import { CRAFTED_GEAR_BASES, ITEM_DEFINITIONS } from '../../shared/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../shared/entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../shared/entities/economy/data/recipeDefinitions';
+import { WebBank } from '../../shared/logic/content/WebBank';
+import { GAME_WAYS } from '../../shared/logic/economy/gameWays';
 
 export interface IHubOptions {
   /** Its own address, named in what it signs. */

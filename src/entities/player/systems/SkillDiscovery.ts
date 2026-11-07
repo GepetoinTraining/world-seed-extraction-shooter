@@ -1,5 +1,5 @@
-import { TagLaw } from '../../../logic/content/TagLaw';
-import { WebBank } from '../../../logic/content/WebBank';
+import { TagLaw } from '../../../../shared/logic/content/TagLaw';
+import { WebBank } from '../../../../shared/logic/content/WebBank';
 
 export interface IActionContext {
   tags: string[];

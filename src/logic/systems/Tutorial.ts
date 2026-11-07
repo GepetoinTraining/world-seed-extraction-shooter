@@ -12,9 +12,9 @@
  * Nothing here points at a boss (Q46): the known block is chosen by threat and place alone.
  */
 
-import { IPlayer, UniversalRank } from '../../../types';
-import { ContentRegistry } from '../theme/ContentRegistry';
-import { IMap, ISector, ScanLevel } from '../../entities/world/types';
+import { IPlayer, UniversalRank } from '../../../shared/types';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { IMap, ISector, ScanLevel } from '../../../shared/entities/world/types';
 import type { IWorldCard } from '../../entities/world/store';
 
 export const TUTORIAL_WORLD_ID = 'tutorial';

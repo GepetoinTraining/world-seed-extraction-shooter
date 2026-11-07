@@ -9,8 +9,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { join } from 'node:path';
 import { openBrowserStore, BROWSER_MIGRATIONS } from '../src/entities/data/BrowserStore';
-import { StoreConflict, SqlStore } from '../server/SqlStore';
-import { StoreClient, StoreRefused, useVault } from '../src/entities/data/StoreClient';
+import { StoreConflict, SqlStore } from '../shared/SqlStore';
+import { StoreClient, StoreRefused, useVault } from '../shared/entities/data/StoreClient';
 
 const row = (uid: string, seq: number, note: string) => ({
   id: `ledger_${uid}_${String(seq).padStart(8, '0')}`,

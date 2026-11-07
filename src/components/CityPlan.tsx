@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { answersTag, materialLabel } from '../entities/hub/room';
+import { answersTag, materialLabel } from '../../shared/entities/hub/room';
 import { chunkBillFor, isFarmland, openSides } from '../entities/hub/hubManifest';
 import { FarmDoors } from '../entities/hub/farmDoors';
 import { useHubStore } from '../entities/hub/store';

@@ -9,13 +9,13 @@
  * with head gear (D22).
  */
 
-import { IAttributes, IEquipmentState, IPlayer } from '../../../types';
-import { fnv1a } from '../rng/DeterministicRNG';
-import { TagLaw } from '../content/TagLaw';
-import { COST_BANDS, DELIVERIES, EFFECTS } from '../theme/ThemeTypes';
-import { abilityNumbers } from '../theme/ThemeFormula';
-import { IEffectAbility } from './EffectSystem';
-import { StatSystem } from './StatSystem';
+import { IAttributes, IEquipmentState, IPlayer } from '../../../shared/types';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import { COST_BANDS, DELIVERIES, EFFECTS } from '../../../shared/logic/theme/ThemeTypes';
+import { abilityNumbers } from '../../../shared/logic/theme/ThemeFormula';
+import { IEffectAbility } from '../../../shared/logic/systems/EffectSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 
 const WEAVE_PREFIX = 'weave_';
 /** What a weave can do in the field. A rest and a forced way out are not chosen by a hash. */

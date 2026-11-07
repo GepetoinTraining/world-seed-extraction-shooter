@@ -4,24 +4,24 @@
  * a door that answers from a script, and nothing is spent.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { FIRST_THEME_PACK } from '../src/logic/theme/boot';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { BIOMES, IThemeBody, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { sealTheme } from '../src/logic/theme/ThemeCompiler';
-import { WebBank } from '../src/logic/content/WebBank';
-import { HASHED_EMBEDDER, IEmbedder } from '../src/services/EmbeddingService';
-import { CountedPull, poolOf, ruledOut } from '../src/logic/theme/writing/WorldPool';
-import { concentration, concentrationResiduals, CountedEmbedder, fieldAffinity, fieldCounts, logOddsZ } from '../src/logic/theme/writing/Counting';
-import { cosineSimilarity } from '../src/entities/data/similarity';
-import { PASS_SCHEMAS, SCHEMA_LIMITS, WORLD_PASSES, WorldPassId, schemaShape } from '../src/logic/theme/writing/WorldPasses';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK } from '../shared/logic/theme/boot';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { BIOMES, IThemeBody, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { sealTheme } from '../shared/logic/theme/ThemeCompiler';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { HASHED_EMBEDDER, IEmbedder } from '../shared/services/EmbeddingService';
+import { CountedPull, poolOf, ruledOut } from '../shared/logic/theme/writing/WorldPool';
+import { concentration, concentrationResiduals, CountedEmbedder, fieldAffinity, fieldCounts, logOddsZ } from '../shared/logic/theme/writing/Counting';
+import { cosineSimilarity } from '../shared/entities/data/similarity';
+import { PASS_SCHEMAS, SCHEMA_LIMITS, WORLD_PASSES, WorldPassId, schemaShape } from '../shared/logic/theme/writing/WorldPasses';
 import { IPassAsk, IPassOutcome, PassDoor, temperOf, writeWorld } from '../src/logic/theme/writing/WorldWriter';
-import { TerrainSystem, TerrainType } from '../src/entities/world/TerrainSystem';
+import { TerrainSystem, TerrainType } from '../shared/entities/world/TerrainSystem';
 import { TerrainCrossing } from '../src/logic/theme/TerrainCrossing';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { CHAIN_PARTS, CHAIN_SCHEMA, buildChainRequest, buildWorldPassRequest } from '../server/intelligence/prompts';
-import { askChainInParts } from '../server/intelligence/parts';
-import type { IDoorRequest } from '../server/intelligence/door';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { CHAIN_PARTS, CHAIN_SCHEMA, buildChainRequest, buildWorldPassRequest } from '../shared/intelligence/prompts';
+import { askChainInParts } from '../shared/intelligence/parts';
+import type { IDoorRequest } from '../shared/intelligence/door';
 
 const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
 

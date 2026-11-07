@@ -8,7 +8,7 @@
  * maintenance or clean stop: later, and nothing lost.
  */
 import { useFeed } from '../../components/ui/stores';
-import { StoreClient } from '../../entities/data/StoreClient';
+import { StoreClient } from '../../../shared/entities/data/StoreClient';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { useWorldStore } from '../../entities/world/store';
 

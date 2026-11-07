@@ -1,4 +1,4 @@
-import { IAffixBatch } from '../../../types';
+import { IAffixBatch } from '../../../shared/types';
 
 
 export const TEST_AFFIX_BATCHES: IAffixBatch[] = [

@@ -12,20 +12,20 @@
  */
 
 import { GameClock } from '../../logic/time/GameClock';
-import { IItem, ItemType, Rarity, UniversalRank } from '../../../types';
+import { IItem, ItemType, Rarity, UniversalRank } from '../../../shared/types';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
 import { useWorldStore } from '../world/store';
 import { WorldClock } from '../world/WorldClock';
-import { ItemFactory } from '../item/ItemFactory';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
-import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { INN_FEE, RestSystem } from '../../logic/systems/RestSystem';
 import { RestDoor } from '../../logic/systems/RestDoor';
 import { Tutorial } from '../../logic/systems/Tutorial';
-import { StatSystem } from '../../logic/systems/StatSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { StudySystem } from '../../logic/systems/StudySystem';
 import { StudyDoor } from '../../logic/systems/StudyDoor';
 

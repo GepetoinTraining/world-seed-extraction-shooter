@@ -7,27 +7,27 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { bodyOf, sealTheme, compileTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
-import { creatureNumbers, GEAR_SHAPES } from '../src/logic/theme/ThemeFormula';
-import { GEAR_KINDS, IThemeBody, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { WebBank } from '../src/logic/content/WebBank';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { EntityType } from '../src/entities/world/types';
-import { SECTOR_CHUNKS } from '../src/entities/world/grid';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { BASE_WALK_TILES_PER_S, LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { creature, worldForm } from '../src/render/atoms/atoms';
-import { IntelligenceDoor, AbsentProvider, IIntelligenceProvider, REST_SPEND_LIMIT_USD } from '../server/intelligence/door';
-import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { buildThemeRequest, buildTalkRequest, buildRestRequest } from '../server/intelligence/prompts';
-import { UniversalRank } from '../types';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { bodyOf, sealTheme, compileTheme, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { creatureNumbers, GEAR_SHAPES } from '../shared/logic/theme/ThemeFormula';
+import { GEAR_KINDS, IThemeBody, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { EntityType } from '../shared/entities/world/types';
+import { SECTOR_CHUNKS } from '../shared/entities/world/grid';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { BASE_WALK_TILES_PER_S, LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { creature, worldForm } from '../shared/render/atoms/atoms';
+import { IntelligenceDoor, AbsentProvider, IIntelligenceProvider, REST_SPEND_LIMIT_USD } from '../shared/intelligence/door';
+import { ClaudeProvider, MODEL_FOR } from '../shared/intelligence/claude';
+import { buildThemeRequest, buildTalkRequest, buildRestRequest } from '../shared/intelligence/prompts';
+import { UniversalRank } from '../shared/types';
 import { usePlayerStore } from '../src/entities/player/store';
 import { inspectItem } from '../src/render/atoms/inspect';
 import { itemArtFor } from '../src/render/atoms/items';
@@ -44,21 +44,21 @@ const walk = (dir: string): string[] => readdirSync(dir).flatMap(name => {
   const path = join(dir, name);
   return statSync(path).isDirectory() ? walk(path) : [path];
 });
-const source = walk('src').filter(p => /\.tsx?$/.test(p));
+const source = [...walk('src'), ...walk('shared')].filter(p => /\.tsx?$/.test(p));
 
 describe('D53: nothing hardcoded', () => {
   it('no content table is written in src: the tables are empty until a theme fills them', () => {
-    const tables = ['src/entities/mob/data/mobDefinitions.ts', 'src/entities/item/data/resourceDefinitions.ts', 'src/entities/item/data/affixDefinitions.ts', 'src/entities/generation/packs/affixBatches.ts'];
+    const tables = ['shared/entities/mob/data/mobDefinitions.ts', 'shared/entities/item/data/resourceDefinitions.ts', 'shared/entities/item/data/affixDefinitions.ts', 'shared/entities/generation/packs/affixBatches.ts'];
     for (const file of tables) {
       const text = readFileSync(file, 'utf8');
       expect(text, file).not.toMatch(/rank:\s*UniversalRank\./);
       expect(text, file).not.toMatch(/baseHealth:\s*\d/);
     }
-    const items = readFileSync('src/entities/item/data/itemDefinitions.ts', 'utf8');
+    const items = readFileSync('shared/entities/item/data/itemDefinitions.ts', 'utf8');
     expect(items).not.toMatch(/universal_name"?:\s*['"]/);
-    const recipes = readFileSync('src/entities/economy/data/recipeDefinitions.ts', 'utf8');
+    const recipes = readFileSync('shared/entities/economy/data/recipeDefinitions.ts', 'utf8');
     expect(recipes).not.toMatch(/inputs:\s*\[\{\s*itemId:\s*'/);
-    const web = readFileSync('src/entities/generation/packs/webBatches.ts', 'utf8');
+    const web = readFileSync('shared/entities/generation/packs/webBatches.ts', 'utf8');
     expect(web).not.toMatch(/run_006/);
   });
 
@@ -233,10 +233,16 @@ describe('line 89: one door', () => {
   });
 
   it('line 88: the SDK and any key stay on the server', () => {
+    // Since Pedro's 2026-11-04 ruling ("their IDB makes the call") the page calls Anthropic on a
+    // player's own key, through the shared door's keyed provider: that one file holds the SDK.
+    // The server's own key is still named nowhere the page runs (that file's header only says where
+    // a server finds it, so its code is read without comments).
+    const keyed = /shared[\\/]intelligence[\\/]claude\.ts$/;
+    const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     for (const file of source) {
       const text = readFileSync(file, 'utf8');
-      expect(text, file).not.toMatch(/@anthropic-ai\/sdk/);
-      expect(text, file).not.toMatch(/ANTHROPIC_API_KEY/);
+      if (!keyed.test(file)) expect(text, file).not.toMatch(/@anthropic-ai\/sdk/);
+      expect(keyed.test(file) ? code(text) : text, file).not.toMatch(/ANTHROPIC_API_KEY/);
     }
     expect(readFileSync('vite.config.ts', 'utf8')).not.toMatch(/define:/);
   });

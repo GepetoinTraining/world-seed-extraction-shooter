@@ -23,7 +23,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -41,38 +41,38 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ISkillState, IWebBatch, IWebPack, TAG_KIND_IDENTITY, UniversalRank, Rarity, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../types';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { WebBank } from '../src/logic/content/WebBank';
+import { IItem, ISkillState, IWebBatch, IWebPack, TAG_KIND_IDENTITY, UniversalRank, Rarity, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../shared/types';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { WebBank } from '../shared/logic/content/WebBank';
 import { bankAndSignWeb } from '../src/logic/content/BankSigning';
-import { WEB_BATCHES } from '../src/entities/generation/packs/webBatches';
-import { WebSystem, MASTERY_RUNGS, RUNG_XP } from '../src/logic/systems/WebSystem';
-import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { WEB_BATCHES } from '../shared/entities/generation/packs/webBatches';
+import { WebSystem, MASTERY_RUNGS, RUNG_XP } from '../shared/logic/systems/WebSystem';
+import { NpcSheet } from '../shared/logic/systems/NpcSheet';
 import { SkillDiscovery } from '../src/entities/player/systems/SkillDiscovery';
-import { ProgressionSystem } from '../src/entities/player/systems/ProgressionSystem';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../src/entities/item/data/itemDefinitions';
-import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
-import { AffixBank } from '../src/logic/content/AffixBank';
-import { ProcessSystem } from '../src/logic/systems/ProcessSystem';
+import { ProgressionSystem } from '../shared/entities/player/systems/ProgressionSystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../shared/entities/item/data/itemDefinitions';
+import { AFFIX_BATCHES } from '../shared/entities/generation/packs/affixBatches';
+import { AffixBank } from '../shared/logic/content/AffixBank';
+import { ProcessSystem } from '../shared/logic/systems/ProcessSystem';
 import { StudySystem } from '../src/logic/systems/StudySystem';
-import { CompositionSystem, fnv1a } from '../src/logic/economy/CompositionSystem';
+import { CompositionSystem, fnv1a } from '../shared/logic/economy/CompositionSystem';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { SourcingAudit } from '../src/logic/economy/SourcingAudit';
 import { Ledger } from '../src/logic/ledger/Ledger';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { runGoldenCheck } from '../src/entities/world/goldens';
-import { EntityType, IWorldEntity } from '../src/entities/world/types';
-import { shellBillFor, SHELL_BILLS, stationFunctionOf, stationMinAreaOf, isStation } from '../src/entities/hub/room';
+import { EntityType, IWorldEntity } from '../shared/entities/world/types';
+import { shellBillFor, SHELL_BILLS, stationFunctionOf, stationMinAreaOf, isStation } from '../shared/entities/hub/room';
 import { inspectEntity, inspectItem } from '../src/render/atoms/inspect';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useWorldStore } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.
@@ -199,6 +199,7 @@ const sourceFiles = (() => {
     }
   };
   walk('src');
+  walk('shared');
   return out;
 })();
 const source = (suffix: string) => sourceFiles.find(f => f.path.endsWith(suffix))!.text;

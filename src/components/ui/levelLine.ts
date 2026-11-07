@@ -3,8 +3,8 @@
  * same words, so a level reached in either place says what it gave in both.
  */
 
-import { IPlayer } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
+import { IPlayer } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 
 export const levelLine = (player: IPlayer): string => {

@@ -9,11 +9,11 @@
  * The expected values below are the page's own readout, taken 2026-11-04 at Unix second 1,793,806,854.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { addressOf, addressText, dayIndexFrom, dayIndexOf, innerCountOf, MODULI, residuesOf, SPAN } from '../src/logic/time/RadixClock';
+import { addressOf, addressText, dayIndexFrom, dayIndexOf, innerCountOf, MODULI, residuesOf, SPAN } from '../shared/logic/time/RadixClock';
 import { GameClock } from '../src/logic/time/GameClock';
-import { chainProblem, linkOf, ROW_VERSION } from '../src/logic/ledger/chainLaw';
-import { signedText } from '../src/entities/identity/signedText';
-import { sha256Hex } from '../src/logic/ledger/sha256';
+import { chainProblem, linkOf, ROW_VERSION } from '../shared/logic/ledger/chainLaw';
+import { signedText } from '../shared/entities/identity/signedText';
+import { sha256Hex } from '../shared/logic/ledger/sha256';
 import { createHash } from 'node:crypto';
 
 const PAGE_MS = 1_793_806_854_000;

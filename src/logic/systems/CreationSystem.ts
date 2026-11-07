@@ -13,21 +13,21 @@
  * certificate's too, and nothing here touches it.
  */
 
-import { IAttributes, ICreationRecord, IItem, ISkillState, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, UniversalRank } from '../../../types';
+import { IAttributes, ICreationRecord, IItem, ISkillState, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, UniversalRank } from '../../../shared/types';
 import type { IDoorMessage } from '../intelligence/IntelligenceClient';
-import { ITEM_DEFINITIONS, ItemDefinition } from '../../entities/item/data/itemDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../../entities/item/ItemFactory';
+import { ITEM_DEFINITIONS, ItemDefinition } from '../../../shared/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
 import { IKitAsk } from '../../entities/generation/packs/originBatches';
 import { IDoorUsage } from '../intelligence/IntelligenceClient';
 import { OriginBank } from '../content/OriginBank';
-import { TagLaw } from '../content/TagLaw';
-import { WebBank } from '../content/WebBank';
-import { Rng } from '../rng/DeterministicRNG';
-import { SHELF } from '../theme/shelf';
-import { SKILL_GRANTS } from '../theme/ThemeTypes';
-import { NpcSheet } from './NpcSheet';
-import { WebSystem } from './WebSystem';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { SHELF } from '../../../shared/logic/theme/shelf';
+import { SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 /** One for the main focus, one for the sub focus, one for what was said. */
 export const GRANTED_SKILLS = 3;

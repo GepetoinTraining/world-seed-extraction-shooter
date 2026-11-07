@@ -9,12 +9,12 @@
 import React, { useMemo, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useWorldStore } from '../entities/world/store';
-import { ContentRegistry } from '../logic/theme/ContentRegistry';
-import { EffectSystem } from '../logic/systems/EffectSystem';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
+import { EffectSystem } from '../../shared/logic/systems/EffectSystem';
 import { WeaveSystem } from '../logic/systems/WeaveSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { RestDoor } from '../logic/systems/RestDoor';
-import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { Button, Chip, Panel } from './ui/kit';
 
 const ACT_WORDS: Record<string, string> = {

@@ -11,12 +11,12 @@
  */
 
 import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { Ledger } from '../ledger/Ledger';
-import { sha256Hex as sha256Sync } from '../ledger/sha256';
-import { sha256Hex } from '../ledger/digest';
+import { sha256Hex as sha256Sync } from '../../../shared/logic/ledger/sha256';
+import { sha256Hex } from '../../../shared/logic/ledger/digest';
 
 export type JournalActionType =
   | 'DROP'        // drop zone confirmed

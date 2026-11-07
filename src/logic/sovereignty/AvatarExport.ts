@@ -14,12 +14,12 @@
  * A file that fails any check is refused whole.
  */
 
-import { IPlayer } from '../../../types';
+import { IPlayer } from '../../../shared/types';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
-import { chainProblem } from '../ledger/chainLaw';
+import { chainProblem } from '../../../shared/logic/ledger/chainLaw';
 import { sha256Hex } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 

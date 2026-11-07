@@ -8,9 +8,9 @@
 
 import React, { useEffect, useRef } from 'react';
 import { create } from 'zustand';
-import { IItem } from '../../../types';
+import { IItem } from '../../../shared/types';
 import { Held, Place, commitMove, ghostStyle, probeMove } from '../../logic/systems/ItemHands';
-import { InventorySystem } from '../../entities/player/systems/InventorySystem';
+import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
 import { usePlayerStore } from '../../entities/player/store';
 import { ItemSprite, Kbd } from './kit';
 import { useFeed } from './stores';

@@ -4,10 +4,10 @@
  * same on every machine for the same table, rank and key.
  */
 import { describe, expect, it } from 'vitest';
-import { FIRST_THEME_PACK } from '../src/logic/theme/boot';
-import { LootLaw, lootIdOf, lootItemsOf, sealLoot, ILootWords, LOOT_SCHEMA } from '../src/logic/theme/LootLaw';
-import { LOOT_PARTS } from '../src/logic/theme/ThemeFormula';
-import { schemaProblem } from '../src/logic/content/SchemaFit';
+import { FIRST_THEME_PACK } from '../shared/logic/theme/boot';
+import { LootLaw, lootIdOf, lootItemsOf, sealLoot, ILootWords, LOOT_SCHEMA } from '../shared/logic/theme/LootLaw';
+import { LOOT_PARTS } from '../shared/logic/theme/ThemeFormula';
+import { schemaProblem } from '../shared/logic/content/SchemaFit';
 
 const pack = FIRST_THEME_PACK;
 const words: ILootWords = {
@@ -95,10 +95,10 @@ describe('the loot law', () => {
 
 describe('a held table drives the drop', () => {
   it('a creature whose theme holds a fitting table drops what the table rolls, minted from its own keys', async () => {
-    const { installShippedThemes } = await import('../src/logic/theme/boot');
+    const { installShippedThemes } = await import('../shared/logic/theme/boot');
     const { LootBook } = await import('../src/logic/theme/LootBook');
     const { LootTable } = await import('../src/entities/world/LootTable');
-    const { compileTheme } = await import('../src/logic/theme/ThemeCompiler');
+    const { compileTheme } = await import('../shared/logic/theme/ThemeCompiler');
     installShippedThemes();
     LootBook.clear();
     const table = sealLoot(pack.themeId, { name: 'Humanoid pockets', source: 'creature', fits: ['humanoid'], lines: [{ what: 'material', item: '', odds: 'always', count: 'few', rank: 'same' }] });

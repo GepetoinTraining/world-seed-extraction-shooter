@@ -9,11 +9,11 @@
  */
 
 import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { GameClock, IClockStamp } from '../time/GameClock';
-import { chainProblem, linkOf, ROW_VERSION } from './chainLaw';
+import { chainProblem, linkOf, ROW_VERSION } from '../../../shared/logic/ledger/chainLaw';
 
 export type LedgerRowType =
   | 'CHARACTER_GENESIS' // identity minted a character

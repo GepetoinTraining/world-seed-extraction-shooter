@@ -1,9 +1,9 @@
-import { VectorStore, VectorNamespace } from '../../data/VectorStore';
-import { IGenerationContext, WorldGenerator } from '../WorldGenerator';
-import { IMap } from '../types';
-import { GRID_VERSION } from '../grid';
-import { ContentRegistry } from '../../../logic/theme/ContentRegistry';
-import type { IDirectorRecord } from '../Director';
+import { VectorStore, VectorNamespace } from '../../../../shared/entities/data/VectorStore';
+import { IGenerationContext, WorldGenerator } from '../../../../shared/entities/world/WorldGenerator';
+import { IMap } from '../../../../shared/entities/world/types';
+import { GRID_VERSION } from '../../../../shared/entities/world/grid';
+import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
+import type { IDirectorRecord } from '../../../../shared/entities/world/Director';
 
 export interface IWorldInstance {
   id: string;

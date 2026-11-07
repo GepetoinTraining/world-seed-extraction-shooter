@@ -9,7 +9,7 @@
  * Until it has been read once (a test, or a page with no server yet) it reads the browser's clock,
  * as the game always did, and says so: its source is 'browser'.
  */
-import { addressOf, DAY_MS, IClockAddress } from './RadixClock';
+import { addressOf, DAY_MS, IClockAddress } from '../../../shared/logic/time/RadixClock';
 
 export interface IClockReading {
   ok: boolean;

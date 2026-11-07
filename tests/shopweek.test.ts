@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -33,7 +33,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { priceOfListing, useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
@@ -42,10 +42,10 @@ import { Treasury } from '../src/logic/economy/Treasury';
 import { Ledger } from '../src/logic/ledger/Ledger';
 import { DEAL_DAYS, ShopWeek } from '../src/logic/economy/ShopWeek';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { StatSystem } from '../src/logic/systems/StatSystem';
-import { installShippedThemes, FIRST_THEME_PACK } from '../src/logic/theme/boot';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { installShippedThemes, FIRST_THEME_PACK } from '../shared/logic/theme/boot';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { residentUpkeepPerDay } from '../src/entities/hub/guild';
 import { readFileSync } from 'fs';
 

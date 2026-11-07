@@ -14,8 +14,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { CertificateSystem, IPlayerCertificate } from '../src/entities/identity/certificateSystem';
-import { VectorNamespace, VectorStore } from '../src/entities/data/VectorStore';
-import { StoreClient } from '../src/entities/data/StoreClient';
+import { VectorNamespace, VectorStore } from '../shared/entities/data/VectorStore';
+import { StoreClient } from '../shared/entities/data/StoreClient';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { Ledger } from '../src/logic/ledger/Ledger';
@@ -25,7 +25,7 @@ import { GoldCommit } from '../src/logic/economy/GoldCommit';
 import { PlayerPersistence } from '../src/logic/persistence/PlayerPersistence';
 import { gatesGoneDown } from '../src/logic/systems/RecordDoor';
 import { Maintenance, STEPS } from '../src/logic/systems/Maintenance';
-import { IWriteDownReceipt } from '../src/entities/data/wire';
+import { IWriteDownReceipt } from '../shared/entities/data/wire';
 
 const ROOT = process.cwd();
 const TSX = ['--disable-warning=ExperimentalWarning', '--import', 'tsx'];

@@ -12,11 +12,11 @@
  * rest: a person is only held here for as long as the work takes.
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { IAskKind } from './ScanPass';
-import { WEEK_MS } from './DecisionLayer';
+import { WEEK_MS } from '../../../shared/logic/systems/DecisionLayer';
 import { LEADER_ASK } from './LeaderPlan';
-import { IWriteDownReceipt } from '../../entities/data/wire';
+import { IWriteDownReceipt } from '../../../shared/entities/data/wire';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

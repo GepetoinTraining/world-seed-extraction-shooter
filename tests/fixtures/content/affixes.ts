@@ -1,4 +1,4 @@
-import { AffixDefinition } from '../../../src/entities/item/data/affixDefinitions';
+import { AffixDefinition } from '../../../shared/entities/item/data/affixDefinitions';
 
 export const TEST_AFFIX_DEFINITIONS: { prefixes: AffixDefinition[], suffixes: AffixDefinition[] } = {
   prefixes: [

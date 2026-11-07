@@ -7,8 +7,8 @@
  * deploy must put real authentication in front of it first (D31 leaves that out).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { SqlStore } from './SqlStore';
-import { StoreConflict, StoreRefusal } from './SqlStore';
+import type { SqlStore } from '../shared/SqlStore';
+import { StoreConflict, StoreRefusal } from '../shared/SqlStore';
 import { UncarriedSave } from './connection';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);

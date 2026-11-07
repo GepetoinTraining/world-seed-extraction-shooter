@@ -6,8 +6,8 @@
 
 import { Ledger } from '../ledger/Ledger';
 import { useHubStore } from '../../entities/hub/store';
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
-import { SHELF_STATE } from '../theme/shelf';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { SHELF_STATE } from '../../../shared/logic/theme/shelf';
 
 const keyOf = (hubId: string) => `magic_unlocked_${hubId}`;
 

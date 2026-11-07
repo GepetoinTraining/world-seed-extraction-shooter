@@ -13,10 +13,10 @@
  */
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import * as schema from '../../../server/schema.pg';
-import { SqlStore } from '../../../server/SqlStore';
-import { DatabaseUnavailable, type IDatabase } from '../../../server/dbShared';
-import { sha256Hex } from '../../logic/ledger/sha256';
+import * as schema from '../../../shared/schema.pg';
+import { SqlStore } from '../../../shared/SqlStore';
+import { DatabaseUnavailable, type IDatabase } from '../../../shared/dbShared';
+import { sha256Hex } from '../../../shared/logic/ledger/sha256';
 import journal from '../../../drizzle/pg/meta/_journal.json';
 
 const FILES = import.meta.glob('../../../drizzle/pg/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;

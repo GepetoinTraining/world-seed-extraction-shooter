@@ -16,10 +16,10 @@
  * move as they are, and a treasury that does not balance goes on the report.
  */
 
-import { chainProblem } from '../ledger/chainLaw';
+import { chainProblem } from '../../../shared/logic/ledger/chainLaw';
 import { CertificateSystem, IPlayerCertificate } from '../../entities/identity/certificateSystem';
-import { IVectorDocument, VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { IVectorDocument, VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { HomeHub } from './HomeHub';
 
 export type ILegacyDoc = IVectorDocument<any>;

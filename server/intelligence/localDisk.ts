@@ -4,7 +4,7 @@
  */
 import { access } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
-import { OllamaRuntime, type ILocalRuntime } from './local';
+import { OllamaRuntime, type ILocalRuntime } from '../../shared/intelligence/local';
 
 /** Is Ollama on this machine, running or not? Its usual places, then the PATH. */
 export async function ollamaOnDisk(): Promise<boolean> {

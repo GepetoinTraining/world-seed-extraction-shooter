@@ -33,7 +33,7 @@ import { openColdDoor } from '../server/coldStore';
 import { DatabaseUnavailable, folderUrl, IDatabase, openDatabase } from '../server/connection';
 import { loadLocalEnv } from '../server/intelligence';
 import { RECORD_TABLES, IRecordTable, RecordRow, RecordTableName, digestOf, fingerprint, normalRow, printKey, sha256 } from '../server/recordRows';
-import * as schema from '../server/schema.pg';
+import * as schema from '../shared/schema.pg';
 
 /** What each table's rows go through to reach the driver, by the schema's own property names. */
 const DRIZZLE_TABLES: Record<TableName, any> = {

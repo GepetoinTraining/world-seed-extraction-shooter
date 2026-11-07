@@ -4,12 +4,12 @@
  * one key everywhere and has its own input; the hotbar reads the harness.
  */
 
-import { EquipSlotId, IEquipmentState, IInteractionOption, IItem, IPlayer, InteractionType, SlotType, TOOL_SLOT_COUNT, toolSlotIds } from '../../../types';
-import { EntityType, IMap, IWorldEntity, ScanLevel } from '../../entities/world/types';
+import { EquipSlotId, IEquipmentState, IInteractionOption, IItem, IPlayer, InteractionType, SlotType, TOOL_SLOT_COUNT, toolSlotIds } from '../../../shared/types';
+import { EntityType, IMap, IWorldEntity, ScanLevel } from '../../../shared/entities/world/types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { CombatMath } from '../../entities/combat/CombatMath';
-import { LoadoutSystem } from '../../entities/player/systems/LoadoutSystem';
-import { TILE_PX } from '../../entities/world/grid';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { TILE_PX } from '../../../shared/entities/world/grid';
 
 // ---------------------------------------------------------------------------
 // HOLD TO FIRE

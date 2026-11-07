@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories', AVATARS: 'avatars' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -30,18 +30,18 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ItemType, Rarity, UniversalRank } from '../types';
+import { IItem, ItemType, Rarity, UniversalRank } from '../shared/types';
 import { IVendorRecipe, IVendorRecord, IWorkTools, VendorSystem } from '../src/logic/systems/VendorSystem';
 import { SalvageSystem, vendorRecipes, workTools } from '../src/logic/systems/SalvageSystem';
 import { ApprenticeRoad, CRAFT_TAG, ICraftsman, TERM_DAYS, generalKeepers } from '../src/logic/systems/ApprenticeRoad';
-import { CompositionSystem } from '../src/logic/economy/CompositionSystem';
-import { WebBank } from '../src/logic/content/WebBank';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
+import { CompositionSystem } from '../shared/logic/economy/CompositionSystem';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { emptyGuild, residentIdOf } from '../src/entities/hub/guild';
 import { useHubStore } from '../src/entities/hub/store';

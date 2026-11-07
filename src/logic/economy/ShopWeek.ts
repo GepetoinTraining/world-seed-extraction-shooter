@@ -14,9 +14,9 @@
  * does not cover, into the keeper's wallet, and a shop's surplus is the guild's already.
  */
 
-import { Rarity, UniversalRank } from '../../../types';
+import { Rarity, UniversalRank } from '../../../shared/types';
 import { residentUpkeepPerDay } from '../../entities/hub/guild';
-import { RANK_ORDER } from '../../entities/player/systems/ProgressionSystem';
+import { RANK_ORDER } from '../../../shared/entities/player/systems/ProgressionSystem';
 
 export const WEEK_DAYS = 7;
 

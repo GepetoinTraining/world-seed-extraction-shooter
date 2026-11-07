@@ -11,9 +11,9 @@
  * Pure: no store here, so the loot table and the player's birth can both read it.
  */
 
-import { IItem, IPlayer, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
-import { CompositionSystem } from '../economy/CompositionSystem';
-import { Rng } from '../rng/DeterministicRNG';
+import { IItem, IPlayer, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 
 /** D80: the free deed is small. */
 export const FREE_DEED_SIZE = 16;

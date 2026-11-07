@@ -6,7 +6,7 @@ import App from './App';
 import { VaultGate } from './src/components/VaultGate';
 import { theme } from './src/theme';
 import { GameClock } from './src/logic/time/GameClock';
-import { StoreClient } from './src/entities/data/StoreClient';
+import { StoreClient } from './shared/entities/data/StoreClient';
 
 // Built for the domain (npm run build:site), the game is the page: its save is in this browser,
 // and its time is the hub's, beside it on the same domain (DEPLOY.md). Otherwise a server on this

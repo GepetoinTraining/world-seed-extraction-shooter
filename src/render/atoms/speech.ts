@@ -8,10 +8,10 @@
  * it is: nothing here leans on hue.
  */
 
-import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
-import { EntityType, IChunk } from '../../entities/world/types';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { EntityType, IChunk } from '../../../shared/entities/world/types';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { GIBBERISH_FAMILY } from './gibberishFace';
 
 /** Guesses until Wave 12. How often a body might speak, how often it does, and for how long. */

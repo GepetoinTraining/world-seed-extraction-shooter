@@ -7,12 +7,12 @@
  * creature's name (D60). The law of what goes on paper and what a reading does is SurveySystem's.
  */
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
 import { usePlayerStore } from '../../entities/player/store';
 import { useIdentityStore } from '../../entities/identity/store';
 import { useWorldStore } from '../../entities/world/store';
 import { WorldClock } from '../../entities/world/WorldClock';
-import { Rng } from '../rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { Ledger } from '../ledger/Ledger';
 import { sha256Hex } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
