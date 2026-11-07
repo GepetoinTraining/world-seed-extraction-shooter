@@ -178,7 +178,7 @@ function monsterSurface(seed: string, entity: IWorldEntity, webVersion: number |
 }
 
 /** Who a city person is, wherever they come from. */
-function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda; keeper?: boolean; resident?: boolean } | null {
+export function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; facts: ILadderFacts; agenda?: INpcAgenda; keeper?: boolean; resident?: boolean } | null {
   const hub = useHubStore.getState();
   const resident = hub.guild.residents.find(r => r.id === npcId);
   // Q19: their ladder is the one on their own record, the one the board reads.
@@ -195,11 +195,11 @@ const addUsage = (spent: number, usage?: IDoorUsage) => spent + (usage?.usd ?? 0
 const me = () => usePlayerStore.getState().player.id;
 
 /** Whoever a city memory names, by the name this city knows them by. */
-const cityNameOf = (id: string): string | undefined => {
+export const cityNameOf = (id: string): string | undefined => {
   const hub = useHubStore.getState();
   const player = usePlayerStore.getState().player;
   if (id === player.id) return player.username;
-  return hub.guild.residents.find(r => r.id === id)?.name ?? HUB_NPCS[id]?.name ?? hub.craftsmen.find(c => c.id === id)?.name;
+  return hub.guild.residents.find(r => r.id === id)?.name ?? HUB_NPCS[id]?.name ?? hub.craftsmen.find(c => c.id === id || residentIdOf(c.bond) === id)?.name;
 };
 
 /** Whoever a field memory names: the person talking, or whoever stands in this world. */
@@ -220,7 +220,7 @@ const mountFor = (place: MemoryPlace, owner: string, said: string | undefined, n
   MemoryStore.mount(place, owner, me(), worldDay(), said, name);
 
 /** What a city person is after right now: what the board holds for them, or what it would post. */
-function cityWantOf(npcId: string, person: NonNullable<ReturnType<typeof cityPerson>>): string | undefined {
+export function cityWantOf(npcId: string, person: NonNullable<ReturnType<typeof cityPerson>>): string | undefined {
   const hub = useHubStore.getState();
   const hubId = hub.activeHubId ?? 'hub_unknown';
   const posted = hub.guild.quests.find(q => q.residentId === npcId && q.state === 'OPEN');
@@ -232,7 +232,7 @@ function cityWantOf(npcId: string, person: NonNullable<ReturnType<typeof cityPer
 const AT_THE_COUNTER = 'at their counter, face to face';
 
 /** A person as a model reads them. A keeper of the center speaks for the hub's whole web, read fresh each time. */
-function citySurface(person: NonNullable<ReturnType<typeof cityPerson>>): ITalkSurface {
+export function citySurface(person: NonNullable<ReturnType<typeof cityPerson>>): ITalkSurface {
   const surface = NpcSheet.surface(person.sheet, person.rank);
   if (!person.keeper) return surface;
   const reach = useHubStore.getState().centerReach();

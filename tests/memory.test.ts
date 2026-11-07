@@ -19,6 +19,9 @@ import {
 import { LADDER, NpcAgenda } from '../src/logic/systems/NpcAgenda';
 import { Deeds } from '../src/logic/memory/Deeds';
 import { NpcContext } from '../src/logic/memory/NpcContext';
+import { MeetLaw } from '../src/logic/systems/MeetLaw';
+import { ResidentDay } from '../src/entities/hub/residentDay';
+import { WINDOW_REQUESTS, buildNpcMeetRequest } from '../server/intelligence/prompts';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Koseki } from '../src/entities/world/Koseki';
@@ -272,5 +275,57 @@ describe('the context a model is given (Pedro: memory is mounted for the model, 
       const src = readFileSync(file, 'utf8');
       expect(src, file).not.toMatch(/MemoryStore\.(mount|recall|mind|regard)|MemoryLaw\.(words|recall)|NpcContext/);
     }
+  });
+});
+
+describe('two people meeting', () => {
+  const side = (band: string) => ({ band, remember: { did: 'asked after', what: 'the 3 harvests', how: 'warmly', why: '' } });
+
+  it('one pair, one key a day, whichever way round', () => {
+    expect(MeetLaw.key('b', 'a', 4)).toBe(MeetLaw.key('a', 'b', 4));
+    expect(MeetLaw.key('a', 'b', 4)).not.toBe(MeetLaw.key('a', 'b', 5));
+  });
+
+  it('the law takes bands and words, drops numbers, and keeps only lines that are theirs', () => {
+    const verdict = MeetLaw.judge({ id: 'm1', a: side('lands') as any, b: side('grates') as any, lines: [{ by: 'a', text: ' Morning. ' }, { by: 'c', text: 'x' } as any, { by: 'b', text: '' }] }, { id: 'm1' });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.outcome!.a.remember.what).toBe('the harvests');
+    expect(verdict.outcome!.lines).toEqual([{ by: 'a', text: 'Morning.' }]);
+    expect(MeetLaw.judge({ id: 'm2', a: side('lands') as any, b: side('lands') as any, lines: [] }, { id: 'm1' }).ok).toBe(false);
+    expect(MeetLaw.judge({ id: 'm1', a: side('loud') as any, b: side('lands') as any, lines: [] }, { id: 'm1' }).ok).toBe(false);
+  });
+
+  it('a batch is judged meeting by meeting, and carries no lines', () => {
+    const out = MeetLaw.judgeBatch({ meetings: [{ id: 'm1', a: side('moves'), b: side('idle'), lines: [{ by: 'a', text: 'hi' }] }, { id: 'm2', a: side('nope'), b: side('idle'), lines: [] }] }, [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }]);
+    expect(out.outcomes.map(o => o.id)).toEqual(['m1']);
+    expect(out.outcomes[0].lines).toEqual([]);
+    expect(out.refused.map(r => r.id)).toEqual(['m2', 'm3']);
+  });
+
+  it('belonging moves by the bands\' own order, a day\'s fall a band, and only a meeting gone badly is a loss', () => {
+    const day = NpcAgenda.dailyFall('belonging');
+    expect(MeetLaw.fillOf('idle')).toEqual({});
+    expect(MeetLaw.fillOf('moves')).toEqual({ belonging: 2 * day });
+    expect(MeetLaw.fillOf('repels')).toEqual({ belonging: -2 * day });
+    expect(MeetLaw.isLoss('grates')).toBe(true);
+    expect(MeetLaw.isLoss('lands')).toBe(false);
+  });
+
+  it('two people standing still near each other meet; someone walking past does not', () => {
+    const at = (x: number, y: number, moving = false) => ({ x, y, moving });
+    expect(ResidentDay.meetings([
+      { id: 'a', at: at(5, 5) }, { id: 'b', at: at(7, 5) }, { id: 'c', at: at(5.5, 5, true) }, { id: 'd', at: at(30, 30) }
+    ])).toEqual([['a', 'b']]);
+  });
+
+  it('a meeting nobody watched rides the window\'s batch, and one being watched is spoken live, on the talk\'s model', () => {
+    const asks = [{ id: 'm1', where: 'by the tavern', why: 'waiting', a: {}, b: {} } as any];
+    const batch = WINDOW_REQUESTS.meet(asks as never[], {} as any);
+    expect(batch.kind).toBe('window');
+    expect(batch.system).toMatch(/"lines" stays empty/);
+    expect(JSON.stringify(batch.schema)).toContain('meetings');
+    const live = buildNpcMeetRequest(asks[0]);
+    expect(live.kind).toBe('npc_talk');
+    expect(live.system).toMatch(/"lines" is what they say to each other/);
   });
 });

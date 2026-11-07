@@ -145,3 +145,47 @@ export interface IGoalAsk {
   mayPost?: boolean;
   mayAsk?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// TWO PEOPLE MEETING (Pedro, 2026-11-06): with nobody watching, a meeting is batched to the
+// stronger model, which says how it went; with somebody watching, it is spoken live, in bubbles.
+// ---------------------------------------------------------------------------
+
+/** One side of a meeting, as the model is given it: their summary and what is mounted facing the other. */
+export interface IMeetSide {
+  /** Their entity id, which the answer never names: it says a or b. */
+  id: string;
+  who: Partial<ITalkSurface>;
+  goal?: string;
+  wants?: string;
+  toward: IToward;
+  memory: IMemoryLine[];
+}
+
+/** Two people who walked to the same place and met there (D109). */
+export interface IMeetAsk {
+  /** The meeting's key: who, who, and the day. The answer says it back. */
+  id: string;
+  /** Where they stood, in words. */
+  where: string;
+  /** What brought them there, in words. */
+  why: string;
+  a: IMeetSide;
+  b: IMeetSide;
+}
+
+export interface IMeetSideWords {
+  /** How the meeting sat with this one, from worst to best. */
+  band: JudgeBand;
+  remember: IRememberWords;
+}
+
+export interface IMeetLine { by: 'a' | 'b'; text: string }
+
+export interface IMeetWords {
+  id: string;
+  a: IMeetSideWords;
+  b: IMeetSideWords;
+  /** What they said to each other, in turn. Empty where nobody hears it. */
+  lines: IMeetLine[];
+}

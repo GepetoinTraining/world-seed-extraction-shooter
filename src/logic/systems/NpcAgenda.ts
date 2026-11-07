@@ -85,6 +85,11 @@ export const NpcAgenda = {
     return LADDER.find(rung => !this.met(agenda, rung, facts)) ?? LADDER[LADDER.length - 1];
   },
 
+  /** What a day takes from a need. Other folds weigh their own fills against it. */
+  dailyFall(need: NeedKind): number {
+    return DECAY[need];
+  },
+
   /** Q20: a day fed holds survival where it stood. What a day eaten gives back is what a day takes. */
   fed(): INeedFill {
     return { survival: DECAY.survival };

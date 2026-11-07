@@ -60,10 +60,21 @@ import { Anchors } from '../../logic/economy/Anchors';
 import { IBinPiece, IVendorRecord, IWorkEvent, VendorSystem } from '../../logic/systems/VendorSystem';
 import { ApprenticeRoad, ICraftsman, generalKeepers } from '../../logic/systems/ApprenticeRoad';
 import { SalvageSystem, workTools } from '../../logic/systems/SalvageSystem';
-import { NpcAgenda } from '../../logic/systems/NpcAgenda';
+import { INeedFill, NpcAgenda } from '../../logic/systems/NpcAgenda';
 import { Deeds } from '../../logic/memory/Deeds';
 import { LadderWeight } from '../../logic/memory/MemoryLaw';
 import { bothRemember, IMemoryWrite, MemoryStore } from '../interaction/memoryStore';
+import type { IMeeting } from '../../logic/systems/MeetDoor';
+
+/**
+ * Meetings nobody watched go to the queue, to be talked through in a batch (MeetDoor). It reads this
+ * store, so it is loaded when it is first needed rather than at the top.
+ */
+const queueMeetings = async (hubId: string, meetings: IMeeting[]): Promise<void> => {
+  if (meetings.length === 0) return;
+  const { MeetDoor } = await import('../../logic/systems/MeetDoor');
+  await MeetDoor.queue(hubId, meetings);
+};
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../logic/systems/TalkTypes';
 import { IHubTech, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
@@ -479,6 +490,8 @@ interface HubState extends ITechDoors {
   resolveLiving: (simDay?: number) => Promise<void>;
   /** Q19: the goal a talk set, kept on the person, for the board and the city to read. */
   noteResidentGoal: (residentId: string, goal: { need: string; text: string; setAt: number }) => Promise<void>;
+  /** What meetings did to people's needs (MeetLaw): a talk that sat well fills belonging, one that sat badly takes it. */
+  fillAgendas: (fills: Record<string, INeedFill>) => Promise<void>;
   /** A want met: the things go to their house, and the hub's treasury pays. */
   fulfilQuest: (questId: string, itemIds: string[]) => Promise<RoomVerdict>;
   /** D83: the hard quest. The one door a rank comes through. */
@@ -934,6 +947,10 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     set({ vendors, craftsmen: out, web: nextWeb, guild: { ...get().guild, residents } });
     await MemoryStore.write({ hubId: activeHubId }, met);
+    // Each of those was two people at one bench, who talked
+    await queueMeetings(activeHubId, met.filter((_, i) => i % 2 === 0).map(w => ({
+      a: w.owner, b: met[met.indexOf(w) + 1].owner, day: today, where: 'at the bench', why: String(w.what.slots.did ?? 'work at the bench')
+    })));
     get().generateDailyStock();
     if (Object.keys(partsDeltas).length > 0) {
       await GoldCommit.commit({
@@ -974,6 +991,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     await Ledger.append('GUILD', { kind: 'PERSON_APPRENTICED', residentId, craftsmanId: begun.craftsman.id, name: begun.craftsman.name, masterId: npcId });
     await MemoryStore.write({ hubId: activeHubId }, bothRemember(npcId, residentId, Deeds.apprenticed({ day: today, master: npcId, apprentice: residentId })));
+    await queueMeetings(activeHubId, [{ a: npcId, b: residentId, day: today, where: 'at the bench', why: 'being taken on as an apprentice' }]);
     await get().saveHubState();
     return { ok: true };
   },
@@ -1324,6 +1342,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const paid: { residentId: string; to: string; days: number; amount: number; without: number }[] = [];
     // D109: they walk to whoever feeds them, so both remember it. What it cost weighs on the buyer.
     const met: IMemoryWrite[] = [];
+    const talks: IMeeting[] = [];
     let changed = false;
     const residents = get().guild.residents.map(r => {
       // A person from before this was kept owes nothing for those days, and stands fed.
@@ -1346,12 +1365,14 @@ export const useHubStore = create<HubState>((set, get) => ({
           met.push(...bothRemember(r.id, to, Deeds.fed({ day: d, buyer: r.id, seller: to, paid: true }), {
             a: LadderWeight.of({ loss: true, after: { agenda, facts: residentFacts(r, held[r.id] ?? 0) } })
           }));
+          talks.push({ a: r.id, b: to, day: d, where: 'at the counter', why: 'buying a day of food' });
         } else {
           agenda = NpcAgenda.fold(agenda, d + 1);
           without++;
           met.push(...bothRemember(r.id, to, Deeds.fed({ day: d, buyer: r.id, seller: to, paid: false }), {
             a: LadderWeight.of({ loss: true, after: { agenda, facts: residentFacts(r, held[r.id] ?? 0) } })
           }));
+          talks.push({ a: r.id, b: to, day: d, where: 'at the counter', why: 'asking for food without the coin to pay' });
         }
       }
       paid.push({ residentId: r.id, to, days, amount: days * cost, without });
@@ -1360,6 +1381,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!changed) return;
     set({ guild: { ...get().guild, residents } });
     await MemoryStore.write({ hubId: activeHubId }, met);
+    await queueMeetings(activeHubId, talks);
     if (Object.keys(deltas).length === 0) { await get().saveHubState(); return; }
     await GoldCommit.commit({
       rows: [{ type: 'TRADE', data: { kind: 'RESIDENT_LIVING', day, paid, playerDelta: 0, treasuryDelta: 0, wallets: deltas } }],
@@ -1368,6 +1390,18 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     set({ wallets: await Wallets.allOf(activeHubId) });
   }),
+
+  fillAgendas: async (fills) => {
+    const ids = Object.keys(fills);
+    if (ids.length === 0) return;
+    const { guild, vendors } = get();
+    // Filled where they stand, never folded: the day's own fold (resolveLiving) still owes them their meals
+    const residents = guild.residents.map(r => fills[r.id] ? { ...r, agenda: NpcAgenda.fill(r.agenda ?? NpcAgenda.fresh(r.livedDay ?? worldDay()), fills[r.id]) } : r);
+    const nextVendors = { ...vendors };
+    for (const id of ids) if (nextVendors[id]) nextVendors[id] = { ...nextVendors[id], agenda: NpcAgenda.fill(nextVendors[id].agenda, fills[id]) };
+    set({ guild: { ...guild, residents }, vendors: nextVendors });
+    await get().saveHubState();
+  },
 
   noteResidentGoal: async (residentId, goal) => {
     const { guild } = get();

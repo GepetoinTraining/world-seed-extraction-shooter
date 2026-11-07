@@ -53,6 +53,12 @@ const allPois = (layout: IHubLayout): IPOI[] => layout.zones.flatMap(z => z.pois
 /** How near a body is near enough to talk to, in tiles. */
 const PERSON_REACH = 1.5;
 
+/**
+ * How near two people waiting have to stand to fall to talking: twice a talk's reach, so lodgers
+ * standing side by side at the tavern meet, and people waiting at one door do. A guess until Wave 12.
+ */
+const MEET_REACH = 2 * PERSON_REACH;
+
 /** Where someone waits at a door: a step or two to the side, close enough to be seen at it. */
 const WAIT_OFFSETS: readonly [number, number][] = [[2, 0], [-2, 0], [0, 2], [2, 1], [-2, 1], [1, 2], [-1, 2], [2, 2], [-2, 2], [3, 0], [-3, 0], [0, 3]];
 
@@ -171,6 +177,19 @@ export const ResidentDay = {
       t -= legMs;
     }
     return { ...centre(route.tiles[0]), moving: false, facing: 'down', step: 0 };
+  },
+
+  /**
+   * Who is meeting whom: two people both stood still, near enough to talk (D109: nothing across a
+   * distance). Each pair once, in the order they were given.
+   */
+  meetings(people: { id: string; at: { x: number; y: number; moving: boolean } }[], reach = MEET_REACH): [string, string][] {
+    const still = people.filter(p => !p.at.moving);
+    const out: [string, string][] = [];
+    for (let i = 0; i < still.length; i++) for (let j = i + 1; j < still.length; j++) {
+      if (Math.hypot(still[i].at.x - still[j].at.x, still[i].at.y - still[j].at.y) <= reach) out.push([still[i].id, still[j].id]);
+    }
+    return out;
   },
 
   /** Who is near enough to talk to: the nearest person within a step and a half of where you stand. */

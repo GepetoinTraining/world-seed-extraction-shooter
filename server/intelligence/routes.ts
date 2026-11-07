@@ -5,7 +5,7 @@
  */
 import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
 import { SETTINGS, type DoorSetting } from './setting';
-import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildLootRequest, buildNpcGoalRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
+import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildLootRequest, buildNpcGoalRequest, buildNpcMeetRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
 import { askChainInParts } from './parts';
 
 /** An answer: a JSON body, or lines written as they come, ending with the last one. */
@@ -15,7 +15,7 @@ export type DoorAnswer =
 
 const json = (status: number, value: unknown): DoorAnswer => ({ status, json: value });
 
-/** `path` is what follows the mount: /status, /machine, /options, /talk, /theme, /world/pass, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /rest/file, /rest/collect, /window/file, /window/collect, and the voice's /machine/try, /local/choose, /local/pull, /key, /auto. */
+/** `path` is what follows the mount: /status, /machine, /options, /talk, /theme, /world/pass, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /npc/meet, /rest/file, /rest/collect, /window/file, /window/collect, and the voice's /machine/try, /local/choose, /local/pull, /key, /auto. */
 export async function routeDoor(door: IntelligenceDoor, method: string, path: string, body: any, given?: DoorSetting): Promise<DoorAnswer> {
   if (path === '/status') return json(200, await door.status());
   const setting = given ?? SETTINGS.get(door);
@@ -84,6 +84,8 @@ export async function routeDoor(door: IntelligenceDoor, method: string, path: st
       const build = path === '/npc/talk' ? buildNpcTalkRequest : buildBargainRequest;
       return json(200, await door.askTalk(String(body.talkId ?? 'talk'), build(body.ask ?? {})));
     }
+    case '/npc/meet':
+      return json(200, await door.askTalk(String(body.talkId ?? 'meet'), buildNpcMeetRequest(body.ask ?? {})));
     case '/npc/goal':
       return json(200, await door.askTalk(String(body.talkId ?? 'talk'), buildNpcGoalRequest(body.ask ?? {})));
     case '/rest/file':

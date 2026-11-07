@@ -82,6 +82,8 @@ import { GoldCommit } from '../src/logic/economy/GoldCommit';
 import { TALK_ENERGY } from '../src/logic/systems/TalkLaw';
 import { MemoryStore, rememberThreat } from '../src/entities/interaction/memoryStore';
 import { MemoryLaw } from '../src/logic/memory/MemoryLaw';
+import { MeetDoor } from '../src/logic/systems/MeetDoor';
+import { MeetLaw } from '../src/logic/systems/MeetLaw';
 
 const UID = 'uid_talk';
 const HUB = 'hub_talk';
@@ -1583,5 +1585,75 @@ describe('a person remembers the talk, and one another', () => {
     expect(mind.memories[0].ledger).toMatchObject({ kind: 'threat', open: true });
     const recalled = await MemoryStore.recall({ seed: SEED }, 'ent_struck', 500, { people: [UID] }, id => (id === UID ? 'QUOIN' : undefined));
     expect(recalled[0]).toMatchObject({ who: 'QUOIN', did: 'hurt', ledger: 'threat, open' });
+  });
+});
+
+describe('two people meeting (Pedro: batched when nobody watches, live in bubbles when somebody does)', () => {
+  const sideWords = (band: string, did: string) => ({ band, remember: { did, what: 'the price of bread', how: 'quietly', why: '' } });
+
+  it('the walk to whoever feeds them waits as a meeting; a batch takes it, and what came back is remembered and felt', async () => {
+    const resident = await residentNamed('person_meet');
+    await hub().resolveLiving(worldDay() + 1);
+    const queued = db.get(`meets_${HUB}`).data;
+    const key = MeetLaw.key(resident.id, 'npc_bartender', worldDay());
+    expect(queued.pending.map((p: any) => p.key)).toContain(key);
+
+    const filed = vi.spyOn(IntelligenceClient, 'fileWindow').mockResolvedValue({ status: 'PENDING', batchId: 'batch_1' } as any);
+    vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({ status: 'PENDING' } as any);
+    await MeetDoor.tick(HUB);
+    expect(filed).toHaveBeenCalledTimes(1);
+    const [, kind, asks] = filed.mock.calls[0] as any[];
+    expect(kind).toBe('meet');
+    const ask = asks.find((a: any) => a.id === key);
+    expect(ask.a.who.name).toBe('Serin Vale');
+    expect(ask.b.toward.knows).not.toBe('stranger');
+    expect(db.get(`meets_${HUB}`).data.out).toHaveLength(1);
+
+    const belongingBefore = residentOf(resident.id).agenda!.needs.belonging;
+    vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({
+      status: 'OK', data: { meetings: asks.map((a: any) => ({ id: a.id, a: sideWords('lands', 'joked about'), b: sideWords('lands', 'haggled over'), lines: [] })) }
+    } as any);
+    await MeetDoor.tick(HUB);
+    expect(db.get(`meets_${HUB}`).data.out).toHaveLength(0);
+    expect(residentOf(resident.id).agenda!.needs.belonging).toBeGreaterThan(belongingBefore);
+    const book = db.get(`book_${HUB}`).data;
+    const mind = await MemoryStore.mind({ hubId: HUB }, resident.id, worldDay());
+    expect(mind.memories.map(m => MemoryLaw.words(m, book)).some(m => m.did === 'joked about' && m.who === 'npc_bartender')).toBe(true);
+  });
+
+  it('with no key the batch never goes, and the meeting is let go: what the deed wrote stands', async () => {
+    const resident = await residentNamed('person_nokey');
+    await hub().resolveLiving(worldDay() + 1);
+    vi.spyOn(IntelligenceClient, 'fileWindow').mockResolvedValue({ status: 'NO_KEY' } as any);
+    vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({ status: 'NO_KEY' } as any);
+    await MeetDoor.tick(HUB);
+    const q = db.get(`meets_${HUB}`).data;
+    expect(q.pending).toHaveLength(0);
+    expect(q.out).toHaveLength(0);
+    expect(await MemoryStore.regard({ hubId: HUB }, resident.id, 'npc_bartender', worldDay() + 1)).toBeGreaterThan(0);
+  });
+
+  it('watched, two people talk now, their lines come back for the bubbles, and once a day is all', async () => {
+    const one = await residentNamed('person_left');
+    const two = await residentNamed('person_right');
+    const said = vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string, ask: any) => ({
+      status: 'OK', data: { id, a: sideWords('moves', 'told a story about'), b: sideWords('grates', 'went on about'), lines: [{ by: 'a', text: 'You hear about the bridge?' }, { by: 'b', text: 'Everyone has.' }] }
+    }) as any);
+    const day = worldDay();
+    const lines = await MeetDoor.live(HUB, { a: one.id, b: two.id, day, where: 'by the tavern', why: 'waiting at the same door' });
+    expect(lines).toEqual([{ by: 'a', text: 'You hear about the bridge?' }, { by: 'b', text: 'Everyone has.' }]);
+    expect((said.mock.calls[0][1] as any).a.toward.knows).toBe('stranger');
+    expect(await MeetDoor.live(HUB, { a: two.id, b: one.id, day, where: 'by the tavern', why: 'again' })).toBeNull();
+    expect(said).toHaveBeenCalledTimes(1);
+    // It went badly for the second: a loss, and what they keep of the first weighs on them
+    expect(await MemoryStore.regard({ hubId: HUB }, two.id, one.id, day)).toBeGreaterThan(await MemoryStore.regard({ hubId: HUB }, one.id, two.id, day));
+    await MeetDoor.queue(HUB, [{ a: one.id, b: two.id, day, where: 'x', why: 'y' }]);
+    expect(db.get(`meets_${HUB}`).data.pending).toHaveLength(0);
+  });
+
+  it('nothing on screen reads what a meeting left behind: the canvas only draws the lines it was handed', () => {
+    const canvas = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
+    expect(canvas).toMatch(/MeetDoor\.live/);
+    expect(canvas).not.toMatch(/MemoryStore|NpcContext|MemoryLaw/);
   });
 });

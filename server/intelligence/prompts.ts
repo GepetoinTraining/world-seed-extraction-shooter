@@ -12,7 +12,7 @@ import type { IGrowthAsk, ILineAsk } from '../../src/logic/theme/CreatureLines';
 import { FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, STAT_SCALE } from '../../src/logic/theme/ThemeFormula';
 import { WEB_BATCHES } from '../../src/entities/generation/packs/webBatches';
 import { MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../../types';
-import { HARM_BANDS, IGoalAsk, IRoundAsk, JUDGE_BANDS, PROMISE_BANDS, QUEST_SIZES } from '../../src/logic/systems/TalkTypes';
+import { HARM_BANDS, IGoalAsk, IMeetAsk, IRoundAsk, JUDGE_BANDS, PROMISE_BANDS, QUEST_SIZES } from '../../src/logic/systems/TalkTypes';
 import { LORE_DEPTHS } from '../../src/logic/systems/LoreConstants';
 import { PASS_SCHEMAS, WORLD_PASSES, WORD_KINDS, type WorldPassId } from '../../src/logic/theme/writing/WorldPasses';
 
@@ -164,6 +164,24 @@ const TALK_MEMORY = `"memory" is what comes back to them right now, oldest first
 "toward" is how they stand with whoever is talking to them: "knows" says whether that one is a stranger to them, known, or well known, and "open" is whatever is unsettled between them, a debt, a promise, a threat or a secret, which they have not forgotten and will not. "wants", if given, is what they are after right now; like a goal, they keep it to themselves unless saying it would help them.`;
 
 const TALK_REMEMBER = `"remember" is what they will keep of this round, in a few plain words each, as they would remember it, with no numbers in it: "did" is what was done or said, as a verb ("asked about", "offered", "threatened"), "what" is what it was about, "how" is the manner of it, and "why" is why they think it was done, or empty if they cannot tell. Who, to whom, when and where are not yours to write.`;
+
+const MEET_BANDS = `For each of the two, "band" is how the meeting sat with them, from worst to best: repels (it went badly and they will hold it against the other), grates (it rubbed them the wrong way), idle (small talk, nothing either way), lands (it went well for them), moves (it meant something to them). Judge each side by who they are and what they want, not by what would be nice. The two can come away differently.`;
+
+const MEET_SYSTEM = `You are writing what passes between two people in a world who have walked to the same place and met there. "a" and "b" are the two, each given as words: who they are, what they are working toward, what they want, how they stand with the other, and what comes back to them when they see each other. "where" is where they stand and "why" is what brought them there. Neither of them is a player and nothing here is a game.
+
+${TALK_WORLD}
+
+${TALK_MEMORY}
+
+${MEET_BANDS}
+
+For each, "remember" is what they will keep of it, in a few plain words each, as they would remember it, with no numbers in it: "did" is what the other did or said, as a verb ("complained about", "offered", "asked after"), "what" is what it was about, "how" is the manner of it, and "why" is why they think the other did it, or empty if they cannot tell.
+
+"lines" is what they say to each other, in turn, as people talk in passing: a few short lines, each under fifteen words, "by" saying who speaks. Plain words, no stage directions, no narration. Say "id" back exactly as it was given.`;
+
+const MEET_BATCH_SYSTEM = `${MEET_SYSTEM}
+
+You are given several meetings at once, which happened apart from one another. Nobody heard any of them, so "lines" stays empty: only how each sat and what each will remember. Answer every meeting, each under its own "id".`;
 
 const NPC_TALK_SYSTEM = `You are speaking as one person in a world, in their own voice. Plain words, as a person talks: short, a little guarded, no flourishes, no stage directions, no narration. Keep every answer under fifty words.
 
@@ -426,6 +444,24 @@ const REMEMBER_SCHEMA = {
   properties: { did: str, what: str, how: str, why: str }
 };
 
+const MEET_SIDE_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['band', 'remember'],
+  properties: { band: { type: 'string', enum: [...JUDGE_BANDS] }, remember: REMEMBER_SCHEMA }
+};
+
+export const MEET_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false, required: ['id', 'a', 'b', 'lines'],
+  properties: {
+    id: str, a: MEET_SIDE_SCHEMA, b: MEET_SIDE_SCHEMA,
+    lines: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['by', 'text'], properties: { by: { type: 'string', enum: ['a', 'b'] }, text: str } } }
+  }
+};
+
+export const MEET_BATCH_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false, required: ['meetings'],
+  properties: { meetings: { type: 'array', items: MEET_SCHEMA } }
+};
+
 export const ROUND_SCHEMA: Record<string, unknown> = {
   type: 'object', additionalProperties: false, required: ['band', 'asked', 'reply', 'wants', 'remember'],
   properties: { band: { type: 'string', enum: [...JUDGE_BANDS] }, asked: MEANS_SCHEMA, reply: str, wants: str, remember: REMEMBER_SCHEMA }
@@ -490,10 +526,26 @@ export function buildGrowthRequest(asks: IGrowthAsk[], theme: IWorldSummary): ID
   };
 }
 
+/** What a meeting's batch can be asked to write, at most, per meeting. A ceiling, never a bill. */
+const MEET_TOKENS = 400;
+
+/**
+ * Meetings nobody watched (Pedro: "batched and sent to sonnet to define the outcomes"). A window is
+ * batched on the stronger model already, so they ride it. What comes back stands before `MeetLaw.judgeBatch`.
+ */
+export function buildMeetWindowRequest(asks: IMeetAsk[]): IDoorRequest {
+  return {
+    kind: 'window', system: MEET_BATCH_SYSTEM, schema: MEET_BATCH_SCHEMA, maxTokens: Math.max(MEET_TOKENS, asks.length * MEET_TOKENS),
+    messages: [{ role: 'user', content: `The meetings:
+${JSON.stringify(asks)}` }]
+  };
+}
+
 /** Each kind of ask a window can carry. A further one (D93's plans) joins here, beside its kind in `ScanPass`. A goal's roll asks nothing: it is compute, on a sheet, under a player's rules. */
 export const WINDOW_REQUESTS: Record<string, (asks: never[], theme: IWorldSummary) => IDoorRequest> = {
   line: buildLineRequest as never,
-  growth: buildGrowthRequest as never
+  growth: buildGrowthRequest as never,
+  meet: buildMeetWindowRequest as never
 };
 
 /**
@@ -603,6 +655,15 @@ export function buildNpcTalkRequest(ask: IRoundAsk): IDoorRequest {
 /** A monster's round, on its own kind and in its own voice (D114). The same law takes it. */
 export function buildBargainRequest(ask: IRoundAsk): IDoorRequest {
   return { kind: 'bargain', system: BARGAIN_SYSTEM, schema: ROUND_SCHEMA, maxTokens: ROUND_TOKENS, messages: roundMessage(ask) };
+}
+
+/**
+ * A meeting somebody is watching, spoken live (Pedro: "the conversation happens and bubble appear
+ * above the npcs heads"). On the talk's own model, as a person's talk is. My call; Pedro may overrule.
+ * What comes back stands before `MeetLaw.judge`.
+ */
+export function buildNpcMeetRequest(ask: IMeetAsk): IDoorRequest {
+  return { kind: 'npc_talk', system: MEET_SYSTEM, schema: MEET_SCHEMA, maxTokens: ROUND_TOKENS, messages: [{ role: 'user', content: JSON.stringify(ask) }] };
 }
 
 /** D116: what they remember and the sheet, before the answer. A leader's weekly call asks through this too (D103). */

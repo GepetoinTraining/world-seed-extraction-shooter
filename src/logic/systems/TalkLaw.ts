@@ -143,15 +143,20 @@ export const TalkLaw = {
     if (saysAny(words.reply, ctx.hidden) || saysAny(wants, ctx.hidden)) return { ok: false, reason: 'It said a name that stays masked.' };
     const gated = !!ctx.alignment && !!Alignment.refuses(ctx.alignment, words.asked!);
     const band = gated && JUDGE_BANDS.indexOf(words.band!) > JUDGE_BANDS.indexOf(GATED_BAND) ? GATED_BAND : words.band!;
-    // What they will remember is words only, and a masked name in it is dropped, never the round
-    // and a number is not a slot word: whatever holds a digit is left out
-    const kept = (value: unknown) => {
-      const text = typeof value === 'string' ? value.replace(/\S*\d\S*/g, ' ').replace(/\s+/g, ' ').trim() : '';
-      return saysAny(text, ctx.hidden) ? '' : text;
+    return { ok: true, band, gated, reply: words.reply.trim(), wants, remember: this.rememberWords(words.remember, ctx.hidden) };
+  },
+
+  /**
+   * What someone will remember, as a model wrote it: words only. A masked name in it is dropped,
+   * never the round, and a number is not a slot word, so whatever holds a digit is left out.
+   */
+  rememberWords(value: unknown, hidden: string[] = []): IRememberWords {
+    const kept = (v: unknown) => {
+      const text = typeof v === 'string' ? v.replace(/\S*\d\S*/g, ' ').replace(/\s+/g, ' ').trim() : '';
+      return saysAny(text, hidden) ? '' : text;
     };
-    const r = (words.remember ?? {}) as Partial<IRememberWords>;
-    const remember: IRememberWords = { did: kept(r.did), what: kept(r.what), how: kept(r.how), why: kept(r.why) };
-    return { ok: true, band, gated, reply: words.reply.trim(), wants, remember };
+    const r = (value ?? {}) as Partial<IRememberWords>;
+    return { did: kept(r.did), what: kept(r.what), how: kept(r.how), why: kept(r.why) };
   },
 
   /** What is said when no model said anything. It describes, and never pretends to be their words. */
