@@ -175,7 +175,8 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
     };
     walk('src');
     walk('shared');
-    expect(hits.sort()).toEqual(['shared/entities/player/systems/ProgressionSystem.ts', 'src/entities/hub/store.ts', 'src/entities/player/store.ts']);
+    // The player's port declares the call (playerView.ts) and forwards it; the guild in the hub store is still its one caller
+    expect(hits.sort()).toEqual(['shared/entities/player/systems/ProgressionSystem.ts', 'src/entities/hub/store.ts', 'src/entities/player/playerView.ts', 'src/entities/player/store.ts']);
   });
 
   it('a grant moves the rank up and resets the level', () => {
@@ -1397,7 +1398,7 @@ describe('a chest stays taken through its cycle, and restocks by rank, rarity an
     const field = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
     expect(field).toMatch(/ChestSystem\.mark\(seen, worldId, e\)/);
     expect(field).toMatch(/reportFell\(event\.entityId, event\.definitionId\)/);
-    expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/world\.reportChestLooted\(entity\.id\)/);
+    expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/kind: 'CHEST_LOOTED', chestId: entity\.id/);
     expect(readFileSync('src/components/ReconView.tsx', 'utf8')).toMatch(/CHESTS YOU KNOW/);
   });
 });

@@ -10,6 +10,7 @@ import { Toll, useTollPrompt } from '../logic/systems/Toll';
 import { Button } from './ui/kit';
 import { useFeed } from './ui/stores';
 import { useWorldStore } from '../entities/world/store';
+import { hubPort } from '../entities/hub/store';
 
 export const TollPrompt: React.FC = () => {
   const asking = useTollPrompt(s => s.asking);
@@ -26,7 +27,7 @@ export const TollPrompt: React.FC = () => {
       <Button
         disabled={!canPay}
         onClick={async () => {
-          const out = await TollDoor.pay(useWorldStore.getState(), playerPort);
+          const out = await TollDoor.pay(useWorldStore.getState(), playerPort, hubPort);
           useFeed.getState().push(out.ok ? `Paid. ${out.paid === 0 ? 'It was yours to begin with.' : 'It steps aside.'}` : out.reason ?? 'It did not take that.', out.ok ? 'proof' : 'loss');
         }}
       >

@@ -31,6 +31,7 @@ import { scanRoom } from '../../logic/systems/ScanRoom';
 import { Tutorial } from '../../logic/systems/Tutorial';
 
 import type { IWorldCard, IWorldPort, IWorldView, WorldChange } from './worldView';
+import { offerPort } from '../storePorts';
 export type { IWorldCard } from './worldView';
 
 interface WorldState extends IWorldView {
@@ -144,6 +145,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         case 'ADOPT_RECORD': world.adoptRecord(change.worldId, change.record); break;
         case 'APPLY_SURVEY': world.applySurvey(change.survey); break;
         case 'CHEST_RECORD': set({ chestRecord: change.record }); break;
+        case 'STORE_TAKEN': world.reportStoreTaken(change.structureId, change.count); break;
+        case 'CHEST_LOOTED': world.reportChestLooted(change.chestId); break;
         case 'DROP_COUNTED':
           set(s => ({ availableWorlds: s.availableWorlds.map(w => (w.id === change.worldId ? { ...w, playerCount: w.playerCount + 1 } : w)) }));
           break;
@@ -521,3 +524,5 @@ export const worldPort: IWorldPort = {
   apply: (...changes) => useWorldStore.getState().apply(...changes),
   open: (worldId) => useWorldStore.getState().selectWorld(worldId)
 };
+
+offerPort('world', worldPort);

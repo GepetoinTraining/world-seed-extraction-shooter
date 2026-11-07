@@ -6,7 +6,7 @@
 import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../shared/types';
-import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
+import { craftName, useHubStore, worldDay, IPlayerLot, hubPort } from '../entities/hub/store';
 import { HubGenerator, IHubLayout, IPOI } from '../entities/hub/HubGenerator';
 import { usePlayerStore, playerPort } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
@@ -102,7 +102,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
           {deeds.map(deed => (
             <Button
               key={deed.id} tone="proof"
-              onClick={() => DeedSystem.redeemDeed(deed, lot.id, { id: player.id, name: player.username }, playerPort)}
+              onClick={() => DeedSystem.redeemDeed(deed, lot.id, { id: player.id, name: player.username }, playerPort, hubPort)}
             >
               REDEEM {deed.name.toUpperCase()}
             </Button>
@@ -177,7 +177,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
       {mine && lot.structureType === 'HOUSE' && !construction && (
         <div style={{ marginTop: 6 }}>
           {/* D43: a bed gives a HOUSE its function. Your own costs nothing. */}
-          <Button tone="signal" onClick={() => void RestDoor.sleep('BED', worldPort, playerPort)}>SLEEP HERE</Button>
+          <Button tone="signal" onClick={() => void RestDoor.sleep('BED', worldPort, playerPort, hubPort)}>SLEEP HERE</Button>
         </div>
       )}
 

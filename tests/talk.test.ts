@@ -44,7 +44,7 @@ import { IAttributes, IItem, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, R
 import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { useWorldStore } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
-import { useHubStore } from '../src/entities/hub/store';
+import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
 import { talkFrom, useTalk } from '../src/entities/interaction/talkStore';
@@ -1602,7 +1602,7 @@ describe('two people meeting (Pedro: batched when nobody watches, live in bubble
 
     const filed = vi.spyOn(IntelligenceClient, 'fileWindow').mockResolvedValue({ status: 'PENDING', batchId: 'batch_1' } as any);
     vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({ status: 'PENDING' } as any);
-    await MeetDoor.tick(HUB);
+    await MeetDoor.tick(HUB, hubPort);
     expect(filed).toHaveBeenCalledTimes(1);
     const [, kind, asks] = filed.mock.calls[0] as any[];
     expect(kind).toBe('meet');
@@ -1615,7 +1615,7 @@ describe('two people meeting (Pedro: batched when nobody watches, live in bubble
     vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({
       status: 'OK', data: { meetings: asks.map((a: any) => ({ id: a.id, a: sideWords('lands', 'joked about'), b: sideWords('lands', 'haggled over'), lines: [] })) }
     } as any);
-    await MeetDoor.tick(HUB);
+    await MeetDoor.tick(HUB, hubPort);
     expect(db.get(`meets_${HUB}`).data.out).toHaveLength(0);
     expect(residentOf(resident.id).agenda!.needs.belonging).toBeGreaterThan(belongingBefore);
     const book = db.get(`book_${HUB}`).data;
@@ -1628,7 +1628,7 @@ describe('two people meeting (Pedro: batched when nobody watches, live in bubble
     await hub().resolveLiving(worldDay() + 1);
     vi.spyOn(IntelligenceClient, 'fileWindow').mockResolvedValue({ status: 'NO_KEY' } as any);
     vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({ status: 'NO_KEY' } as any);
-    await MeetDoor.tick(HUB);
+    await MeetDoor.tick(HUB, hubPort);
     const q = db.get(`meets_${HUB}`).data;
     expect(q.pending).toHaveLength(0);
     expect(q.out).toHaveLength(0);
@@ -1642,10 +1642,10 @@ describe('two people meeting (Pedro: batched when nobody watches, live in bubble
       status: 'OK', data: { id, a: sideWords('moves', 'told a story about'), b: sideWords('grates', 'went on about'), lines: [{ by: 'a', text: 'You hear about the bridge?' }, { by: 'b', text: 'Everyone has.' }] }
     }) as any);
     const day = worldDay();
-    const lines = await MeetDoor.live(HUB, { a: one.id, b: two.id, day, where: 'by the tavern', why: 'waiting at the same door' });
+    const lines = await MeetDoor.live(HUB, { a: one.id, b: two.id, day, where: 'by the tavern', why: 'waiting at the same door' }, hubPort);
     expect(lines).toEqual([{ by: 'a', text: 'You hear about the bridge?' }, { by: 'b', text: 'Everyone has.' }]);
     expect((said.mock.calls[0][1] as any).a.toward.knows).toBe('stranger');
-    expect(await MeetDoor.live(HUB, { a: two.id, b: one.id, day, where: 'by the tavern', why: 'again' })).toBeNull();
+    expect(await MeetDoor.live(HUB, { a: two.id, b: one.id, day, where: 'by the tavern', why: 'again' }, hubPort)).toBeNull();
     expect(said).toHaveBeenCalledTimes(1);
     // It went badly for the second: a loss, and what they keep of the first weighs on them
     expect(await MemoryStore.regard({ hubId: HUB }, two.id, one.id, day)).toBeGreaterThan(await MemoryStore.regard({ hubId: HUB }, one.id, two.id, day));
@@ -1670,7 +1670,7 @@ describe('the usual, at the door: no model once it is a habit, and back to one w
       status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'asked about', what: 'the usual', how: 'cheerfully', why: '' } }, b: { band: 'lands', remember: { did: 'answered about', what: 'the usual', how: 'cheerfully', why: '' } }, lines }
     }) as any);
     const start = worldDay();
-    const meet = (d: number) => MeetDoor.live(HUB, { a: one.id, b: two.id, day: start + d, where: 'by the tavern', why: 'waiting at the same door' });
+    const meet = (d: number) => MeetDoor.live(HUB, { a: one.id, b: two.id, day: start + d, where: 'by the tavern', why: 'waiting at the same door' }, hubPort);
     let quiet = -1;
     for (let d = 0; d < 15 && quiet < 0; d++) {
       const before = said.mock.calls.length;
@@ -1701,7 +1701,7 @@ describe('the usual, at the door: no model once it is a habit, and back to one w
     for (let d = 0; d < 15 && quiet < 0; d++) {
       await MeetDoor.queue(HUB, [{ a: one.id, b: two.id, day: start + d, where, why }]);
       const before = filed.mock.calls.length;
-      await MeetDoor.tick(HUB);
+      await MeetDoor.tick(HUB, hubPort);
       if (filed.mock.calls.length === before) quiet = d;
     }
     expect(quiet, 'a habit formed').toBeGreaterThan(0);
@@ -1741,7 +1741,7 @@ describe('a city\'s people, minted on the hub\'s chain, acting on chains of thei
     vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string) => ({
       status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, b: { band: 'idle', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, lines: [{ by: 'a', text: 'Morning.' }] }
     }) as any);
-    await MeetDoor.live(HUB, { a: one.id, b: two.id, day: worldDay(), where: 'by the tavern', why: 'waiting' });
+    await MeetDoor.live(HUB, { a: one.id, b: two.id, day: worldDay(), where: 'by the tavern', why: 'waiting' }, hubPort);
     const a = await PersonLedger.record(HUB, one.id);
     const b = await PersonLedger.record(HUB, two.id);
     expect(typeof a !== 'string' && a.met[two.id]).toEqual({ times: 1, band: 'lands', usual: 0 });

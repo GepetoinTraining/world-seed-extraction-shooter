@@ -22,6 +22,7 @@ import { sealTheme } from '../../shared/logic/theme/ThemeCompiler';
 import { IThemeBody } from '../../shared/logic/theme/ThemeTypes';
 import { HubUnlock } from '../logic/systems/HubUnlock';
 import { SkyKind, WorldClock } from '../entities/world/WorldClock';
+import { useHubStore } from '../entities/hub/store';
 
 interface WorldCreatorProps {
   opened: boolean;
@@ -103,7 +104,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
       }
       const rules: Partial<IWorldRules> = {
         themeId,
-        magicUnlocked: await HubUnlock.isUnlocked(),
+        magicUnlocked: await HubUnlock.isUnlocked(useHubStore.getState().activeHubId ?? ''),
         accessMode,
         entryFeeGold: entryFee,
         extractionTaxRate: extractionTax / 100,

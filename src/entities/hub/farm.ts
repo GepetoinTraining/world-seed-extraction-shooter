@@ -20,7 +20,7 @@ import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { answersTag } from '../../../shared/entities/hub/room';
 import type { IHomeHerd } from './herd';
-import type { IPlayerLot } from './store';
+import type { IPlayerLot } from './hubView';
 
 /** A bed is two tiles a side, so a plot's beds stand as evenly as its chunk's plots do. */
 export const BED_TILES = 2;

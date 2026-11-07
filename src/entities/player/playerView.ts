@@ -13,9 +13,10 @@
  *
  * This file imports types only, so reaching it reaches nothing else of the game.
  */
-import type { EquipSlotId, IEscort, IItem, IPlayer } from '../../../shared/types';
+import type { EquipSlotId, IEscort, IItem, IPlayer, UniversalRank } from '../../../shared/types';
 import type { Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import type { ISkillPair } from '../../../shared/logic/systems/WebSystem';
+import type { ProcessFamily } from '../../../shared/logic/systems/ProcessSystem';
 import type { IActionContext } from './systems/SkillDiscovery';
 
 /** What a system may read of the player. */
@@ -32,6 +33,8 @@ export type PlayerChange =
   /** Into the stash's first tab, and out of it. */
   | { kind: 'STASH_ADD'; items: IItem[] }
   | { kind: 'STASH_REMOVE'; ids: string[] }
+  /** The bank's lore, as a law worked it out. */
+  | { kind: 'LORE'; lore: IPlayer['bank']['lore'] }
   /** The field pack: in, out (its place on the grid with it), and one piece changed in place. */
   | { kind: 'PACK_ADD'; items: IItem[] }
   | { kind: 'PACK_REMOVE'; itemId: string }
@@ -51,6 +54,7 @@ export type PlayerChange =
   /** The store's own steps that answer nothing back. */
   | { kind: 'RECALC_WEIGHT' }
   | { kind: 'WORK_ON'; pair: ISkillPair; rank: number; xp: number }
+  | { kind: 'PRACTICE_TRADE'; family: ProcessFamily }
   | { kind: 'GAIN_SKILL_XP'; skillId: string; amount: number; tags: string[]; context?: IActionContext }
   | { kind: 'DIVE'; layerId?: string }
   | { kind: 'DROP_ITEM'; itemId: string }
@@ -60,6 +64,7 @@ export type PlayerChange =
 export interface IPlayerCalls {
   tryAddItems(items: IItem[]): { added: IItem[]; rejected: IItem[] };
   applyKillXp(amount: number): { leveledUp: boolean; from: number; to: number; pointsGranted: number };
+  grantRank(to?: UniversalRank): { granted: boolean; from: UniversalRank; to: UniversalRank };
   placeInPack(itemId: string, x: number, y: number, rotated: boolean): Verdict;
   placeInStash(itemId: string, x: number, y: number, rotated: boolean): Verdict;
   stowInPouch(pouchSlot: EquipSlotId, itemId: string): Verdict;

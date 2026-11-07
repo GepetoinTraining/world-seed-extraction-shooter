@@ -40,6 +40,7 @@ import { ReceiptView } from '../src/components/ReceiptScreen';
 import { Escort, ESCORT_REACH_PX } from '../src/logic/systems/Escort';
 import { FieldEscort } from '../src/logic/systems/FieldEscort';
 import { HaulReading } from '../src/logic/economy/HaulReading';
+import { hubPort } from '../src/entities/hub/store';
 
 const SRC = (p: string) => readFileSync(p, 'utf8');
 const SEED = 'seed_field_build';
@@ -210,7 +211,7 @@ describe('Q16: fallen, they are carried as a heavy body nobody may open', () => 
   it('the body cannot be inspected or looted: no study, no salvage, no reading, nothing of theirs on its card', () => {
     const corpse = Escort.corpseOf(fallen());
     expect(Escort.isCorpse(corpse)).toBe(true);
-    expect(StudyDoor.offered(corpse, playerPort)).toBe(false);
+    expect(StudyDoor.offered(corpse, playerPort, hubPort)).toBe(false);
     expect(SalvageSystem.components(corpse, 'k')).toBeNull();
     expect(StudySystem.identifyScopeOf(corpse)).toBeNull();
     const card = inspectItem(corpse, player());

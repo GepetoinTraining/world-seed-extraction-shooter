@@ -8,7 +8,8 @@
  */
 
 import { IItem, UniversalRank } from '../../../shared/types';
-import { useHubStore, worldDay } from '../../entities/hub/store';
+import { worldDay } from '../../entities/hub/worldDay';
+import type { IHubPort } from '../../entities/hub/hubView';
 import { MemoryStore, rememberThreat } from '../../entities/interaction/memoryStore';
 import { Deeds } from '../memory/Deeds';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
@@ -57,7 +58,7 @@ const intoPack = (item: IItem, port: IWorldPort, pc: IPlayerPort) => {
 export const FieldCapture = {
 
   /** A snare set on a body in reach. It is spent either way. */
-  snare(entity: IWorldEntity, port: IWorldPort, pc: IPlayerPort): void {
+  snare(entity: IWorldEntity, port: IWorldPort, pc: IPlayerPort, hp: IHubPort): void {
     const { world, card } = here(port);
     const held = session(pc);
     if (!held || !card || !world.activeWorldId) return;
@@ -89,19 +90,19 @@ export const FieldCapture = {
     if (!proof) { feed('The snare holds, and what it holds is nothing this machine can read. It gets away.', 'loss'); return; }
     const me = pc.view().player.id;
     // Caught: it goes to the hub now, and keeps who caught it there, open, as long as it is held
-    void MemoryStore.write({ hubId: useHubStore.getState().activeHubId ?? 'hub' }, [{ owner: entity.id, what: Deeds.caught({ day: worldDay(), by: me, owner: entity.id, held: true }) }]);
+    void MemoryStore.write({ hubId: hp.view().activeHubId ?? 'hub' }, [{ owner: entity.id, what: Deeds.caught({ day: worldDay(), by: me, owner: entity.id, held: true }) }]);
     const cage: ICaged = Capture.cage({ body: entity.id, kind: entity.definitionId, seed: card.seed, generation: world.generation, worldUid: world.activeWorldId, by: me, proof });
     const item = Capture.cageItem(cage, `${card.seed}:${snare.id}`);
 
     // Off its count and onto this person's register, through the door a move has
-    const hub = useHubStore.getState();
+    const hub = hp.view();
     const hubId = hub.activeHubId ?? 'hub';
     const register = hub.farmland.registers[me] ?? Capture.registerOf(hubId, me, world.generation);
     const now = port.view();
     const written = Population.captured(now.populationRecord ?? emptyPopulationRecord(), entity.id, entity.definitionId, now.generation, register).to;
     port.apply({ kind: 'CAPTURED', entityId: entity.id, definitionId: entity.definitionId, to: register });
-    useHubStore.setState({ farmland: { ...hub.farmland, registers: { ...hub.farmland.registers, [me]: written } } });
-    void useHubStore.getState().saveHubState();
+    hp.apply({ kind: 'REGISTER', personId: me, register: written });
+    void hp.saveHubState();
     port.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
     MobAI.clearMob(entity.id);
     intoPack(item, port, pc);

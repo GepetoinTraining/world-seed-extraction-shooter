@@ -46,7 +46,7 @@ import { ICombatEvent } from '../src/entities/combat/CombatSystems';
 import { AvatarRoster } from '../src/entities/identity/roster';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction, repairCost, repairItem } from '../src/entities/hub/dialogue';
-import { useHubStore } from '../src/entities/hub/store';
+import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { reconCell, RECON_CELL_ATOMS } from '../src/render/atoms/recon';
 import { BiomeType } from '../shared/entities/world/types';
 import { Role, STEPS, px, buildPalette, grayscale } from '../shared/render/atoms/atoms';
@@ -195,13 +195,13 @@ describe('line 27: no dialogue option without an effect', () => {
   });
 
   it('an unregistered action is refused out loud, not swallowed', () => {
-    const effect = runDialogueAction(worldPort, playerPort, 'OPEN_AUCTION');
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_AUCTION');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain('REFUSED');
   });
 
   it('SHOW_BALANCE answers with the real balance', () => {
-    const effect = runDialogueAction(worldPort, playerPort, 'SHOW_BALANCE');
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'SHOW_BALANCE');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain(usePlayerStore.getState().player.bank.gold.toLocaleString());
   });
@@ -214,7 +214,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 1000, stashTabs: [{ name: 'MAIN', items: [item] }] } }
     }));
-    const effect = runDialogueAction(worldPort, playerPort, 'IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(900);
@@ -226,7 +226,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 10, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction(worldPort, playerPort, 'IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     expect(usePlayerStore.getState().player.bank.gold).toBe(10); // nothing moved
   });
@@ -242,7 +242,7 @@ describe('line 27: no dialogue option without an effect', () => {
     }));
     const cost = repairCost(item as any, usePlayerStore.getState().player.attributes);
     expect(cost).toBeGreaterThan(0);
-    const res = repairItem(item.id, playerPort);
+    const res = repairItem(item.id, playerPort, hubPort);
     expect(res.ok).toBe(true);
     const after = usePlayerStore.getState().player;
     expect(after.bank.stashTabs[0].items[0].stats.durability).toBe(100);
@@ -254,7 +254,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 50, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction(worldPort, playerPort, 'BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(40);
@@ -459,7 +459,7 @@ describe('line 31: receipts and the feed', () => {
 
   it('dialogue can steer the terminal to another screen', () => {
     useAppView.getState().setView('HUB');
-    const effect = runDialogueAction(worldPort, playerPort, 'OPEN_BANK');
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_BANK');
     expect(effect).toEqual({ kind: 'navigate', view: 'BANK' });
   });
 });

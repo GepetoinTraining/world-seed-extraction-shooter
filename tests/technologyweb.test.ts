@@ -929,7 +929,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
     const callers = sourceFiles.filter(f => /WebSystem\.rest\(/.test(f.text)).map(f => f.path);
     expect(callers.length).toBe(1);
     expect(callers[0]).toMatch(/RestSystem\.ts$/);
-    expect(source('entities/hub/store.ts')).toMatch(/RestDoor\.settle\(playerPort\)/);
+    expect(source('entities/hub/store.ts')).toMatch(/RestDoor\.settle\(pc, hubPort\)/);
   });
 
   it('the forming list is a fill, never a number the player could read as the bar', () => {

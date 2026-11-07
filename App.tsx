@@ -19,7 +19,7 @@ import { Busy, Button, Chip, Kbd, Modal, RankMark } from './src/components/ui/ki
 import { AppView, useAppView, useFeed, useSheet } from './src/components/ui/stores';
 import { RestBar, WaitStrip } from './src/components/WaitStrip';
 import { WaitClock } from './src/logic/systems/WaitClock';
-import { craftName, useHubStore } from './src/entities/hub/store';
+import { craftName, useHubStore, hubPort } from './src/entities/hub/store';
 import { CharacterSheet } from './src/components/CharacterSheet';
 import { HandsLayer } from './src/components/ui/hands';
 import { HoverLayer } from './src/components/ui/HoverLayer';
@@ -227,16 +227,16 @@ const App: React.FC = () => {
   // D79: a rest ends when its time is up, and this character wakes whoever is watching
   useEffect(() => {
     if (bootStatus !== 'READY') return;
-    void RestDoor.wakeIfDue(playerPort);
-    const interval = setInterval(() => void RestDoor.wakeIfDue(playerPort), 5000);
+    void RestDoor.wakeIfDue(playerPort, hubPort);
+    const interval = setInterval(() => void RestDoor.wakeIfDue(playerPort, hubPort), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 
   // D69: a world's window runs on its own clock, from whichever client is here. Play never waits on it
   useEffect(() => {
     if (bootStatus !== 'READY') return;
-    void ScanDoor.tick(worldPort);
-    const interval = setInterval(() => void ScanDoor.tick(worldPort), 5000);
+    void ScanDoor.tick(worldPort, hubPort);
+    const interval = setInterval(() => void ScanDoor.tick(worldPort, hubPort), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 

@@ -22,6 +22,7 @@ import { quickDeployTargetId } from '../src/entities/hub/dialogue';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { hubPort } from '../src/entities/hub/store';
 
 installShippedThemes();
 
@@ -140,11 +141,11 @@ describe('line 101: the gate', () => {
   it('during scan and off nobody can deploy, and it says why', async () => {
     useWorldStore.setState({ availableWorlds: [card({})] });
     vi.setSystemTime(MINT + H + M);
-    const off = await deployToWorld('w1', worldPort, playerPort);
+    const off = await deployToWorld('w1', worldPort, playerPort, hubPort);
     expect(off.ok).toBe(false);
     expect(off.reason).toMatch(/gate/i);
     vi.setSystemTime(MINT + H + 90 * M + M);
-    const scan = await deployToWorld('w1', worldPort, playerPort);
+    const scan = await deployToWorld('w1', worldPort, playerPort, hubPort);
     expect(scan.ok).toBe(false);
     expect(scan.reason).toMatch(/boot|recon/i);
   });
@@ -369,7 +370,7 @@ describe("line 120: a character's rest takes real time, scaled by what that char
   it('a resting character cannot deploy, and another can play', async () => {
     useWorldStore.setState({ availableWorlds: [{ id: 'dev', seed: 's', size: 32, createdAt: 0, playerCount: 0, isDebug: true, name: 'D', difficulty: 'D', creator: 'x', extractionTaxRate: 0, deathPenalty: 'NONE' }] });
     usePlayerStore.setState(s => ({ player: { ...s.player, rest: { until: Date.now() + H, place: 'INN' as const } } }));
-    const refused = await deployToWorld('dev', worldPort, playerPort);
+    const refused = await deployToWorld('dev', worldPort, playerPort, hubPort);
     expect(refused.ok).toBe(false);
     expect(refused.reason).toMatch(/rest/i);
     usePlayerStore.setState(s => ({ player: { ...s.player, rest: undefined } }));
@@ -378,6 +379,6 @@ describe("line 120: a character's rest takes real time, scaled by what that char
   it('it files to the door when it begins and collects on waking: its downtime is its own batch', () => {
     const src = SRC('src/logic/systems/RestDoor.ts');
     expect(src.indexOf('RestDoor.file(')).toBeLessThan(src.indexOf('async wakeIfDue'));
-    expect(src.slice(src.indexOf('async wakeIfDue'))).toMatch(/RestDoor\.collect\(pc\)/);
+    expect(src.slice(src.indexOf('async wakeIfDue'))).toMatch(/RestDoor\.collect\(pc, hp\)/);
   });
 });

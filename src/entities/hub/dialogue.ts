@@ -14,7 +14,7 @@
 import { GameClock } from '../../logic/time/GameClock';
 import { IAttributes, IItem, IPlayer, ItemType, Rarity, UniversalRank } from '../../../shared/types';
 import type { IPlayerPort } from '../player/playerView';
-import { useHubStore } from './store';
+import type { IHubPort } from './hubView';
 import type { IWorldCard, IWorldPort } from '../world/worldView';
 import { WorldClock } from '../world/WorldClock';
 import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
@@ -39,15 +39,15 @@ export type DialogueEffect =
   | { kind: 'deploy' }
   | { kind: 'close' };
 
-type Handler = (payload: any, world: IWorldPort, pc: IPlayerPort) => DialogueEffect;
+type Handler = (payload: any, world: IWorldPort, pc: IPlayerPort, hp: IHubPort) => DialogueEffect;
 
 const bank = (pc: IPlayerPort) => pc.view().player.bank;
 const stashItems = (pc: IPlayerPort) => bank(pc).stashTabs[0]?.items || [];
 
 /** Gold out of the player, into the hub treasury, onto the ledger. */
-function charge(pc: IPlayerPort, amount: number, reason: string, data: Record<string, any> = {}): boolean {
+function charge(pc: IPlayerPort, amount: number, reason: string, data: Record<string, any> = {}, hp: IHubPort): boolean {
   const p = pc.view().player;
-  const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
+  const hubId = hp.view().activeHubId || 'hub_unknown';
   if (p.bank.gold < amount) return false;
   pc.apply({ kind: 'GOLD', delta: -amount });
   void GoldCommit.commit({
@@ -78,12 +78,12 @@ export function repairable(pc: IPlayerPort): IItem[] {
     .filter(i => i.stats?.maxDurability && (i.stats.durability ?? 0) < i.stats.maxDurability);
 }
 
-export function repairItem(itemId: string, pc: IPlayerPort): { ok: boolean; text: string } {
+export function repairItem(itemId: string, pc: IPlayerPort, hp: IHubPort): { ok: boolean; text: string } {
   const item = [...stashItems(pc), ...(pc.view().player.equipment?.items ?? [])].find(i => i.id === itemId);
   if (!item) return { ok: false, text: 'That is not in your stash or on your body.' };
   const cost = repairCost(item as any, pc.view().player.attributes);
   if (cost === 0) return { ok: false, text: `${item.name} needs no work.` };
-  if (!charge(pc, cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank(pc).gold}G.` };
+  if (!charge(pc, cost, 'REPAIR', { itemId }, hp)) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank(pc).gold}G.` };
   pc.apply({ kind: 'REPAIR', itemId });
   return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
 }
@@ -92,8 +92,8 @@ export function repairItem(itemId: string, pc: IPlayerPort): { ok: boolean; text
 export const allLore = (): string[] => [...LORE_FRAGMENTS, ...ContentRegistry.list().flatMap(t => t.lore)];
 
 /** The day's rumor: deterministic per hub and day, so the whole bar hears the same one. */
-export function rumorOfTheDay(): string {
-  const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
+export function rumorOfTheDay(hp: IHubPort): string {
+  const hubId = hp.view().activeHubId || 'hub_unknown';
   const day = GameClock.day();
   const rng = Rng.fromKey(`${hubId}:rumor:${day}`);
   const lore = allLore();
@@ -112,30 +112,30 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   OPEN_LEDGER: () => ({ kind: 'open', panel: 'ledger' }),
 
   // --- Truthsight (Sera) ---
-  IDENTIFY_ITEM: (payload, _world, pc) => {
+  IDENTIFY_ITEM: (payload, _world, pc, hp) => {
     const cost = payload?.cost ?? 100;
     const unknown = stashItems(pc).filter(i => i.isIdentified === false);
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
     if (bank(pc).gold < cost) return { kind: 'reply', text: `Truth costs ${cost}G. You carry ${bank(pc).gold}G.` };
     const target = unknown.find(i => !RestSystem.isStudied(pc.view().player, i.id));
     if (!target) return { kind: 'reply', text: 'I have everything of yours already. Sleep on it. You will know when you wake.' };
-    charge(pc, cost, 'IDENTIFY', { itemId: target.id });
+    charge(pc, cost, 'IDENTIFY', { itemId: target.id }, hp);
     studyOvernight([target.id], pc);
     return { kind: 'reply', text: 'Leave it with me tonight. Nobody knows a thing until they have slept on it, not even me.' };
   },
-  IDENTIFY_ALL: (payload, _world, pc) => {
+  IDENTIFY_ALL: (payload, _world, pc, hp) => {
     const cost = payload?.cost ?? 500;
     const unknown = stashItems(pc).filter(i => i.isIdentified === false);
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
     if (bank(pc).gold < cost) return { kind: 'reply', text: `All of it at once costs ${cost}G. You carry ${bank(pc).gold}G.` };
-    charge(pc, cost, 'IDENTIFY_ALL', { count: unknown.length });
+    charge(pc, cost, 'IDENTIFY_ALL', { count: unknown.length }, hp);
     studyOvernight(unknown.map(i => i.id), pc);
     return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} on my table. You will know when you wake. Read them before you trust them.` };
   },
   OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
   // D118: anyone in town can be studied. What it comes to is settled at a dream.
-  STUDY_PERSON: (payload, _world, pc) => {
-    const verdict = StudyDoor.start(StudySystem.targetOfPerson(payload), pc);
+  STUDY_PERSON: (payload, _world, pc, hp) => {
+    const verdict = StudyDoor.start(StudySystem.targetOfPerson(payload), pc, hp);
     if (!verdict.ok) return { kind: 'reply', text: verdict.reason! };
     return { kind: 'reply', text: `Look all you like. ${verdict.seconds} seconds of it, and it will cost you ${verdict.cost} energy.` };
   },
@@ -152,19 +152,19 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   }),
   OPEN_SELL: (payload) => ({ kind: 'open', panel: 'sell', ...(payload?.npcId ? { npcId: payload.npcId } : {}) }),
   OPEN_REPAIR: () => ({ kind: 'open', panel: 'repair' }),
-  OPEN_APPRENTICES: (payload) => {
-    void useHubStore.getState().resolveVendors();
+  OPEN_APPRENTICES: (payload, _world, _pc, hp) => {
+    void hp.resolveVendors();
     return { kind: 'open', panel: 'apprentices', npcId: payload?.npcId };
   },
 
   // --- The Rusty Anchor (Old Mags) ---
-  REST: (_payload, world, pc) => {
-    void RestDoor.sleep('INN', world, pc);
+  REST: (_payload, world, pc, hp) => {
+    void RestDoor.sleep('INN', world, pc, hp);
     return { kind: 'reply', text: `${INN_FEE}G, and the bed by the wall. Whatever you have been carrying around in your head, leave it on the pillow.` };
   },
-  BUY_CONSUMABLE: (payload, _world, pc) => {
+  BUY_CONSUMABLE: (payload, _world, pc, hp) => {
     const cost = payload?.cost ?? 10;
-    if (!charge(pc, cost, 'TAVERN', { itemId: payload?.itemId })) {
+    if (!charge(pc, cost, 'TAVERN', { itemId: payload?.itemId }, hp)) {
       return { kind: 'reply', text: `${cost}G. I water it down, I don't give it away.` };
     }
     const rng = Rng.fromKey(`tavern:ale:${Date.now().toString(36)}`);
@@ -183,7 +183,7 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     pc.apply({ kind: 'STASH_ADD', items: [ale] });
     return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
   },
-  GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
+  GET_HINT: (_payload, _world, _pc, hp) => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay(hp)}"` }),
   OPEN_TAVERN: () => ({ kind: 'open', panel: 'tavern' }),
 
   // --- The Land Office (Aurelio Quint): everything that develops the city ---
@@ -207,13 +207,13 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
 /** Every action a dialogue option may carry. The test holds HUB_NPCS to this set. */
 export const HANDLED_ACTIONS = Object.keys(DIALOGUE_HANDLERS);
 
-export function runDialogueAction(world: IWorldPort, pc: IPlayerPort, action: string, payload?: any): DialogueEffect {
+export function runDialogueAction(world: IWorldPort, pc: IPlayerPort, hp: IHubPort, action: string, payload?: any): DialogueEffect {
   const handler = DIALOGUE_HANDLERS[action];
   if (!handler) {
     console.warn(`[DIALOGUE] Unregistered action refused: ${action}`);
     return { kind: 'reply', text: 'The terminal declines. [REFUSED: unregistered request]' };
   }
-  return handler(payload, world, pc);
+  return handler(payload, world, pc, hp);
 }
 
 /** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest. */

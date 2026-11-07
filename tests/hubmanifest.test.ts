@@ -41,7 +41,7 @@ import { HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, floorAtom, hubGrou
 import { cityMinimap } from '../src/render/atoms/minimap';
 import { Role, STEPS, buildPalette, grayscale, hashBytes, px } from '../shared/render/atoms/atoms';
 import { fnv1a } from '../shared/logic/rng/DeterministicRNG';
-import { useHubStore, worldDay } from '../src/entities/hub/store';
+import { useHubStore, worldDay, hubPort } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { emptyRoom, fullyWalkable } from '../shared/entities/hub/room';
 import { sizeNeedsVerdict } from '../shared/entities/hub/template';
@@ -1753,8 +1753,8 @@ describe('the Land Office: the town hall has a land manager', () => {
     expect(actions).toContain('OPEN_DEEDS');
     expect(actions).toContain('OPEN_PLAN');
     expect(actions).toContain('CLOSE');
-    expect(runDialogueAction(worldPort, playerPort, 'OPEN_DEEDS')).toEqual({ kind: 'navigate', view: 'HOLDINGS' });
-    expect(runDialogueAction(worldPort, playerPort, 'OPEN_PLAN')).toEqual({ kind: 'open', panel: 'plan' });
+    expect(runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_DEEDS')).toEqual({ kind: 'navigate', view: 'HOLDINGS' });
+    expect(runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_PLAN')).toEqual({ kind: 'open', panel: 'plan' });
   });
 
   it('is the one way to the deeds in the city', () => {

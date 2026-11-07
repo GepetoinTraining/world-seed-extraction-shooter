@@ -28,7 +28,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 
 import { readFileSync } from 'fs';
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
-import { useHubStore, worldDay } from '../src/entities/hub/store';
+import { useHubStore, worldDay, hubPort } from '../src/entities/hub/store';
 import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
@@ -222,7 +222,7 @@ describe('Q25, as built: the inn charges for the night at full energy', () => {
     await openOn(worldDay());
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 100 } } }));
     expect(RestSystem.energyHeld(player())).toBe(StatSystem.maxEnergyOf(player()));
-    const res = await RestDoor.sleep('INN', worldPort, playerPort);
+    const res = await RestDoor.sleep('INN', worldPort, playerPort, hubPort);
     expect(res.ok).toBe(true);
     expect(player().bank.gold).toBe(100 - INN_FEE);
     expect((await rowsOf('GOLD_DELTA')).some(r => r.data.reason === 'INN' && r.data.amount === -INN_FEE)).toBe(true);

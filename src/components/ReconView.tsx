@@ -13,7 +13,7 @@ import { create } from 'zustand';
 import { DreamingSystem } from '../../shared/entities/world/Dreaming';
 import { useWorldStore, worldPort } from '../entities/world/store';
 import { usePlayerStore, playerPort } from '../entities/player/store';
-import { useHubStore } from '../entities/hub/store';
+import { useHubStore, hubPort } from '../entities/hub/store';
 import { ISector, ScanLevel } from '../../shared/entities/world/types';
 import { WorldClock } from '../entities/world/WorldClock';
 import { SECTOR_CHUNKS, sectorOf } from '../../shared/entities/world/grid';
@@ -258,7 +258,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     }
     if (onDrop) { onDrop(x, y); return; }
     if (!activeWorldId) return;
-    const res = await deployToWorld(activeWorldId, worldPort, playerPort);
+    const res = await deployToWorld(activeWorldId, worldPort, playerPort, hubPort);
     if (!res.ok) { if (res.reason) feed(res.reason, 'loss'); return; }
     useDropOrder.setState({ at: { x, y } });
     useAppView.getState().setView('MISSIONS');

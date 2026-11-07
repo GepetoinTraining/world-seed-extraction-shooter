@@ -15,7 +15,8 @@ import { HubSide, IDismemberment, IRaisedChunk, chunkBillFor, dismemberPlan, fir
 import { Farm, IFarmland, emptyFarmland } from './farm';
 import { Herd } from './herd';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
-import { usePlayerStore, playerPort } from '../player/store';
+import type { IPlayerPort } from '../player/playerView';
+import { offerPort, portOf } from '../storePorts';
 import { Ledger } from '../../logic/ledger/Ledger';
 import { Treasury } from '../../logic/economy/Treasury';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
@@ -65,7 +66,7 @@ import { INeedFill, NpcAgenda } from '../../logic/systems/NpcAgenda';
 import { Deeds } from '../../logic/memory/Deeds';
 import { LadderWeight } from '../../logic/memory/MemoryLaw';
 import { bothRemember, IMemoryWrite, MemoryStore } from '../interaction/memoryStore';
-import type { IMeeting } from '../../logic/systems/MeetDoor';
+import type { IMeeting } from './hubView';
 import { PersonLedger } from '../../logic/people/PersonLedger';
 import type { IPersonAct } from '../../../shared/logic/people/PersonChain';
 
@@ -84,7 +85,10 @@ const queueMeetings = async (hubId: string, meetings: IMeeting[]): Promise<void>
 };
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../../shared/logic/systems/TalkTypes';
-import { IHubTech, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
+import { IHubTech, addToLedger, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
+import { ChainWeb } from '../../../shared/logic/theme/ChainWeb';
+import type { HubChange, IHubPort, IHubView } from './hubView';
+import type { ITechWebPort, TechWebChange } from './techWebView';
 import { ITechDoors, settleSilently, techDoors } from './techDoors';
 
 const provenance = async () => (await import('../../logic/sovereignty/Provenance')).Provenance;
@@ -101,7 +105,7 @@ const VENDOR_ESTEEM_PER_RAISED = 20;
 
 /** Every piece the city holds, and whoever stands in it: what the market cap is taken over. Only the person here is known to a client. */
 const marketItems = (s: Pick<HubState, 'lots' | 'rooms' | 'vendors' | 'guild'>): IItem[] => {
-  const bank = usePlayerStore.getState().player.bank;
+  const bank = pc.view().player.bank;
   return [
     ...s.lots.flatMap(l => [...l.inventory, ...(l.shopListings ?? []).map(li => li.item), ...(l.heldInTrade ?? [])]),
     ...Object.values(s.rooms).flatMap(r => r.placements.map(p => p.item)),
@@ -110,7 +114,7 @@ const marketItems = (s: Pick<HubState, 'lots' | 'rooms' | 'vendors' | 'guild'>):
     ...s.guild.trophies,
     ...s.guild.residents.flatMap(r => r.belongings ?? []),
     ...bank.stashTabs.flatMap(t => t.items),
-    ...(usePlayerStore.getState().player.equipment?.items ?? [])
+    ...(pc.view().player.equipment?.items ?? [])
   ];
 };
 
@@ -198,26 +202,8 @@ const vendorsToday = (vendors: Record<string, IVendorRecord>, craftsmen: ICrafts
 // TYPES
 // =============================================================================
 
-export interface IPlayerLot {
-  id: string;
-  lotIndex: number;
-  ownerId: string | null;
-  ownerName: string | null;
-  purchaseDate: number | null;
-  structureType: 'EMPTY' | 'VENDOR' | 'WORKSHOP' | 'HOUSE' | 'FARM';
-  inventory: IItem[];
-  price: number;
-  // Wave 5.3: a VENDOR lot's storefront
-  shopListings?: { item: IItem; price: number; ask?: { defId: string; name: string } }[];
-  // D115: anchors a shelf took in place of coin, held until its owner collects them
-  heldInTrade?: IItem[];
-  // D115: the week its general tax is paid through. Unset: it owes from the week now open.
-  taxPaidWeek?: number;
-  // Wave 5.4: upkeep is charged per world-day; unpaid lots revert to market
-  upkeepPaidThroughDay?: number;
-  // Sale money held on the lot until its owner collects it
-  proceeds?: number;
-}
+export type { IPlayerLot } from './hubView';
+import type { IPlayerLot } from './hubView';
 
 // Wave 5.2: a queued transformation. Accumulate/resolve — the job is just
 // timestamps; outputs mint when someone looks (resolveCrafts).
@@ -248,7 +234,8 @@ export const craftName = (recipeId: string): string =>
 
 /** Logical world-day (observed time, never stored clocks). */
 /** The game's day (D135): the Unix day, read from the game's clock and not the browser's. */
-export const worldDay = () => GameClock.day();
+export { worldDay } from './worldDay';
+import { worldDay } from './worldDay';
 
 /** The one thing anyone can ask to have raised that is not a station on the web. */
 const BUILDING_HOUSE = 'house';
@@ -339,17 +326,15 @@ async function signRecord(payload: Record<string, any>): Promise<string | undefi
   }
 }
 
-const removeFromStash = (ids: string[]) => usePlayerStore.setState(s => ({
-  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-    idx === 0 ? { ...tab, items: tab.items.filter(i => !ids.includes(i.id)) } : tab
-  ) } }
-}));
+/**
+ * The player, through the port the player store offers (storePorts.ts). The hub store reads the player
+ * and hands it changes like any system; it never imports the player store.
+ */
+const pc = portOf<IPlayerPort>('player', 'hub store');
 
-const addToStash = (items: IItem[]) => usePlayerStore.setState(s => ({
-  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-    idx === 0 ? { ...tab, items: [...tab.items, ...items] } : tab
-  ) } }
-}));
+const removeFromStash = (ids: string[]) => pc.apply({ kind: 'STASH_REMOVE', ids });
+
+const addToStash = (items: IItem[]) => pc.apply({ kind: 'STASH_ADD', items });
 
 // Wave 10D (D18): the bank's mint registry persists write-behind. Claims are
 // never released; a debounced save keeps the doc close behind the memory.
@@ -399,7 +384,11 @@ export interface IAuctionListing {
 // STORE
 // =============================================================================
 
-interface HubState extends ITechDoors {
+interface HubState extends ITechDoors, IHubView {
+  /** The one door a system's changes to the hub come through, applied in order (hubView.ts). */
+  apply: (...changes: HubChange[]) => void;
+  /** The tech web's own door: every change to `web` and `tech` comes through it (techWebView.ts). */
+  applyTech: (...changes: TechWebChange[]) => void;
   activeHubId: string | null;
   /** D74: what has risen, in order. The first is the middle one. */
   chunks: IRaisedChunk[];
@@ -559,6 +548,42 @@ interface HubState extends ITechDoors {
 }
 
 export const useHubStore = create<HubState>((set, get) => ({
+  apply: (...changes) => {
+    const onLot = (lotId: string, step: (lot: IPlayerLot) => IPlayerLot) => set(s => ({ lots: s.lots.map(l => (l.id === lotId ? step(l) : l)) }));
+    for (const change of changes) {
+      switch (change.kind) {
+        case 'FARMLAND': set({ farmland: change.farmland }); break;
+        case 'REGISTER': set(s => ({ farmland: { ...s.farmland, registers: { ...s.farmland.registers, [change.personId]: change.register } } })); break;
+        case 'LAND': set(s => ({ chunks: change.chunks, lots: s.lots.filter(l => !change.removedLotIds.includes(l.id)) })); break;
+        case 'LOT_STORE_ADD': onLot(change.lotId, l => ({ ...l, inventory: [...l.inventory, ...change.items] })); break;
+        case 'LOT_STORE_REMOVE': onLot(change.lotId, l => ({ ...l, inventory: l.inventory.filter(i => i.id !== change.itemId) })); break;
+        case 'LOT_LIST': onLot(change.lotId, l => {
+          const item = l.inventory.find(i => i.id === change.itemId);
+          return item ? { ...l, inventory: l.inventory.filter(i => i.id !== change.itemId), shopListings: [...(l.shopListings ?? []), { item, price: change.price }] } : l;
+        }); break;
+        case 'LOT_UNLIST': onLot(change.lotId, l => {
+          const listing = (l.shopListings ?? []).find(li => li.item.id === change.itemId);
+          return listing ? { ...l, shopListings: (l.shopListings ?? []).filter(li => li.item.id !== change.itemId), inventory: [...l.inventory, listing.item] } : l;
+        }); break;
+        case 'LOT_SHELF_ADD': onLot(change.lotId, l => ({ ...l, shopListings: [...(l.shopListings ?? []), ...change.listings] })); break;
+      }
+    }
+  },
+  applyTech: (...changes) => {
+    for (const change of changes) {
+      const tech = get().tech;
+      switch (change.kind) {
+        case 'WEB': set({ web: change.web }); break;
+        case 'TECH': set({ tech: change.tech }); break;
+        case 'ASK': set({ tech: { ...tech, asks: { ...tech.asks, [change.residentId]: change.ask } } }); break;
+        case 'WORKSHOP_ADD': set({ tech: { ...tech, workshops: [...tech.workshops, change.workshop] } }); break;
+        case 'WORKSHOP_POOL': set({ tech: { ...tech, workshops: tech.workshops.map(w => (w.id === change.workshopId ? { ...w, pool: change.pool, ...(change.raised ? { raised: true } : {}) } : w)) } }); break;
+        case 'WORKSHOPS_STAND': set({ tech: { ...tech, workshops: tech.workshops.map(w => (change.ids.includes(w.id) ? { ...w, standsAt: change.at } : w)) } }); break;
+        case 'CHAIN_ROUND': set({ tech: addToLedger({ ...tech, chain: ChainWeb.merge(tech.chain, change.round, change.residentId) }, change.round, change.residentId, change.at) }); break;
+        case 'RESOLVING': set({ tech: { ...tech, resolving: { ...tech.resolving, [change.residentId]: change.state } } }); break;
+      }
+    }
+  },
   activeHubId: null,
   chunks: firstPlan().chunks,
   farmland: emptyFarmland(),
@@ -574,7 +599,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   guild: emptyGuild(),
   wallets: {},
   tech: emptyTech(),
-  ...techDoors(set as never, get as never, { removeFromStash, dominantDefId, signRecord }),
+  ...techDoors(set as never, get as never, { removeFromStash, dominantDefId, signRecord, player: () => pc }),
   weaponShop: [],
   armorShop: [],
   consumableShop: [],
@@ -608,18 +633,19 @@ export const useHubStore = create<HubState>((set, get) => ({
           craftingJobs: hubStateDoc.data.craftingJobs || [],
           rooms: hubStateDoc.data.rooms || {},
           buildJobs: hubStateDoc.data.buildJobs || [],
-          web: hubStateDoc.data.web || { nodes: {} },
           guild: guildFrom(hubStateDoc.data.guild),
-          farmland: { ...emptyFarmland(), ...hubStateDoc.data.farmland },
-          tech: normalTech(hubStateDoc.data.tech)
+          farmland: { ...emptyFarmland(), ...hubStateDoc.data.farmland }
         });
+        get().applyTech({ kind: 'WEB', web: hubStateDoc.data.web || { nodes: {} } }, { kind: 'TECH', tech: normalTech(hubStateDoc.data.tech) });
       } else {
         // GENERATE FRESH (First time this Hub is visited)
         console.log('[HUB] No state found. Generating fresh layout...');
         
         // The manifest says where the lots stand
         const chunks = firstPlan().chunks;
-        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), web: { nodes: {} }, guild: emptyGuild(), tech: emptyTech(), vendors: {}, craftsmen: [], farmland: emptyFarmland() });
+        set({ chunks, dismembered: [], planDeposit: {}, lots: lotsFor([], HubGenerator.generate({ chunks })), guild: emptyGuild(), vendors: {}, craftsmen: [], farmland: emptyFarmland() });
+        // A hub that has never been seen starts at tech web 0
+        get().applyTech({ kind: 'WEB', web: { nodes: {} } }, { kind: 'TECH', tech: emptyTech() });
         // Save immediately
         await get().saveHubState();
       }
@@ -670,7 +696,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     // Hub changes usually move gold or items, so the bank is saved with them, as
     // one write: an item is never in the stash and on the lot, or on neither.
-    const bank = PlayerPersistence.snapshot(usePlayerStore.getState().player);
+    const bank = PlayerPersistence.snapshot(pc.view().player);
     await StoreUnit.enqueue(async () => {
       const unit = new StoreUnit();
       if (bank) await PlayerPersistence.signInto(unit, bank);
@@ -691,7 +717,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   taxBook: () => taxBook(cityOf(get())),
 
   offerFor: (item, npcId = COUNTER_NPC) => {
-    const offer = StatSystem.vendorOffer(item.value, usePlayerStore.getState().player.attributes);
+    const offer = StatSystem.vendorOffer(item.value, pc.view().player.attributes);
     const asked = Math.ceil(offer * VendorSystem.choiceFactor(get().vendors[npcId], item.universalDefinitionId, worldDay()));
     // Bought from a bargain bin: the counter pays no more than the deal did, or a bin and a counter would print coin for anyone standing between them
     return item.binPrice !== undefined ? Math.min(asked, item.binPrice) : asked;
@@ -744,7 +770,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
       // The general tax: everyone but the centre. Whoever cannot pay it in full owes it still, and keeps their ground.
       const taxRows: { type: 'GOLD_DELTA' | 'TRADE'; data: Record<string, any> }[] = [];
-      const me = usePlayerStore.getState().player;
+      const me = pc.view().player;
       let gold = me.bank.gold;
       let taxIn = 0;
       let lots = state.lots;
@@ -774,7 +800,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...(s.toKeeper > 0 ? [[s.npcId, s.toKeeper]] : []),
         ...Object.entries(benchPay(state.craftsmen, s.npcId).deltas)
       ]));
-      if (gold !== me.bank.gold) usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold } } }));
+      if (gold !== me.bank.gold) pc.apply({ kind: 'GOLD', delta: gold - me.bank.gold });
       set({ vendors, lots, guild: { ...state.guild, week: week + 1, weekFrom: closeDay, lastWeek: { week, shops, tax: taxIn } } });
       // Q31: a print covers the week ahead, so it reads the shelf just stocked
       get().generateDailyStock();
@@ -783,7 +809,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       const made = prints * printAmount(perDay);
       set({ guild: { ...get().guild, printed: printedPlus(get().guild, prints, made) } });
       await GoldCommit.commit({
-        player: usePlayerStore.getState().player,
+        player: pc.view().player,
         rows: [
           ...taxRows,
           ...printRows(activeHubId, perDay, prints, 'SHOP_WEEK'),
@@ -859,7 +885,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const made = prints * printAmount(perDay);
     set({ guild: { ...get().guild, runningDay: day, printed: printedPlus(get().guild, prints, made) } });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [
         ...printRows(activeHubId, perDay, prints, 'THE_DAYS'),
         { type: 'GOLD_DELTA', data: { reason: 'HUB_RUNNING', amount: 0, days, perDay: floorPerDay, treasuryId: activeHubId, treasuryDelta: -paid, wallets: deltas } }
@@ -966,7 +992,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       await noted(person.id, worked.events);
     }
 
-    set({ vendors, craftsmen: out, web: nextWeb, guild: { ...get().guild, residents } });
+    set({ vendors, craftsmen: out, guild: { ...get().guild, residents } });
+    get().applyTech({ kind: 'WEB', web: nextWeb });
     await MemoryStore.write({ hubId: activeHubId }, met);
     await chainActs(activeHubId, acts);
     // Each of those was two people at one bench, who talked
@@ -976,7 +1003,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     get().generateDailyStock();
     if (Object.keys(partsDeltas).length > 0) {
       await GoldCommit.commit({
-        player: usePlayerStore.getState().player,
+        player: pc.view().player,
         rows: [{ type: 'TRADE', data: { kind: 'MASTER_BOUGHT_PARTS', playerDelta: 0, treasuryDelta: 0, wallets: partsDeltas } }],
         wallets: { hubId: activeHubId, deltas: partsDeltas },
         hubDoc: get().hubDoc() ?? undefined
@@ -1023,29 +1050,27 @@ export const useHubStore = create<HubState>((set, get) => ({
   traderShelf: (traderId) => {
     const record = get().vendors[traderId];
     if (!record) return [];
-    return VendorSystem.shelf(VendorSystem.normal(record), [], worldDay(), 0, usePlayerStore.getState().player.id);
+    return VendorSystem.shelf(VendorSystem.normal(record), [], worldDay(), 0, pc.view().player.id);
   },
 
   buyFromTrader: async (traderId, listingId) => {
     const { activeHubId, vendors } = get();
     const row = get().traderShelf(traderId).find(l => l.id === listingId);
     if (!activeHubId || !row || !vendors[traderId]) return null;
-    const player = usePlayerStore.getState().player;
+    const player = pc.view().player;
     const price = priceOfListing(row, player.attributes);
     if (player.bank.gold < price) return null;
     const today = worldDay();
     const taken = VendorSystem.takeOwn(VendorSystem.normal(vendors[traderId]), row.item.id);
     const boughtItem = row.deal ? { ...row.item, binPrice: price } : row.item;
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - price, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-      idx === 0 ? { ...tab, items: [...tab.items, boughtItem] } : tab
-    ) } } }));
+    pc.apply({ kind: 'GOLD', delta: -price }, { kind: 'STASH_ADD', items: [boughtItem] });
     // A master has a purse of their own (D115): what they take is theirs
     const master = get().craftsmen.find(c => c.id === traderId);
     const purse = master ? residentIdOf(master.bond) : traderId;
     const deltas = { [purse]: price };
     set({ wallets: { ...get().wallets, [purse]: (get().wallets[purse] ?? 0) + price } });
     void GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'SHOP_PURCHASE', itemId: row.item.id, defId: row.item.universalDefinitionId, amount: -price, traderId, wallets: deltas } }],
       wallets: { hubId: activeHubId, deltas }
     });
@@ -1072,7 +1097,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!line) return { ok: false, reason: `The next chunk does not ask for anything ${tag}.` };
     const short = line.count - (planDeposit[tag] ?? 0);
     if (short <= 0) return { ok: false, reason: 'The plan holds all it asks for.' };
-    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const stash = pc.view().player.bank.stashTabs[0]?.items || [];
     const items = itemIds.map(id => stash.find(i => i.id === id));
     if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
     const wrong = items.find(i => !answersTag(i!, tag));
@@ -1106,7 +1131,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
   dismemberLot: async (lotId) => {
     const { chunks, dismembered, lots, rooms, buildJobs, activeHubId } = get();
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const lot = lots.find(l => l.id === lotId);
     if (!lot || !activeHubId) return { ok: false, reason: 'There is no such lot.' };
     if (lot.ownerId && lot.ownerId !== p.id) return { ok: false, reason: 'It is someone else\'s to split.' };
@@ -1128,10 +1153,10 @@ export const useHubStore = create<HubState>((set, get) => ({
         ? { ...freshLot(poi), ownerId: lot.ownerId, ownerName: lot.ownerName, purchaseDate: lot.purchaseDate, upkeepPaidThroughDay: lot.upkeepPaidThroughDay }
         : freshLot(poi));
 
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+    pc.apply({ kind: 'GOLD', delta: -cost });
     set({ dismembered: next.dismembered ?? [], lots: lotsFor([...lots.filter(l => l.id !== lotId), ...pieces], layout) });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'LOT_DISMEMBERED', lotId, pieces: pieces.map(l => l.id), amount: -cost, treasuryId: activeHubId, treasuryDelta: cost } }],
       treasury: { worldUid: activeHubId, delta: cost },
       hubDoc: get().hubDoc() ?? undefined
@@ -1144,7 +1169,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   // ==========================================================================
 
   redeemBond: async (itemId) => {
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const { activeHubId, guild } = get();
     if (!activeHubId) return { ok: false, reason: 'There is no tavern open.' };
     const bond = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
@@ -1200,7 +1225,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     });
     // The seller is the treasury that backs the buyer, so no gold moves. The row says so.
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'TRADE', data: { kind: 'GUILD_BOUGHT_LOT', lotId, residentId, price: lot.price, permit: asked - lot.price, playerDelta: 0, treasuryDelta: 0 } }],
       hubDoc: get().hubDoc() ?? undefined
     });
@@ -1220,7 +1245,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const short = line.count - (resident.house.pool[tag]?.count ?? 0);
     if (short <= 0) return { ok: false, reason: `The house holds all the ${tag} it asks for.` };
 
-    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const stash = pc.view().player.bank.stashTabs[0]?.items || [];
     const items = itemIds.map(id => stash.find(i => i.id === id));
     if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
     const wrong = items.find(i => !answersTag(i!, tag));
@@ -1266,7 +1291,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       const now = Date.now();
       const batch = `house_${resident.id}`;
       const shellFinish = now + SHELL_BUILD_SECONDS[tpl.structureType] * 1000;
-      const owner = usePlayerStore.getState().player.id;
+      const owner = pc.view().player.id;
       const jobs: IBuildJob[] = [{
         id: `bld_${now.toString(36)}_res_${lot.lotIndex}`,
         lotId: lot.id, kind: 'SHELL', structureType: tpl.structureType, ownerCertUid: owner,
@@ -1306,13 +1331,14 @@ export const useHubStore = create<HubState>((set, get) => ({
     for (const resident of due) {
       if (!resident.craftsmanId || get().vendors[resident.craftsmanId]) continue;
       const opened = VendorSystem.fresh(resident.craftsmanId, 'TRADER', Math.floor(now / 86_400_000));
-      set({ vendors: { ...get().vendors, [resident.craftsmanId]: { ...opened, patrons: [usePlayerStore.getState().player.id] } } });
+      set({ vendors: { ...get().vendors, [resident.craftsmanId]: { ...opened, patrons: [pc.view().player.id] } } });
       await Ledger.append('GUILD', { kind: 'SHOP_OPENED', residentId: resident.id, craftsmanId: resident.craftsmanId, name: resident.name, lotId: resident.lotId });
       useFeed.getState().push(`${resident.name} has opened a shop of their own, and you will pay less in it.`, 'proof');
     }
     for (const resident of due) {
       // D119: what they know goes into the web silently, and it opens nothing until the web reaches it.
-      set(settleSilently(get().web, get().tech, resident, now));
+      const settled = settleSilently(get().web, get().tech, resident, now);
+      get().applyTech({ kind: 'WEB', web: settled.web }, { kind: 'TECH', tech: settled.tech });
       await Ledger.append('GUILD', { kind: 'PERSON_HOME', residentId: resident.id, name: resident.name, lotId: resident.lotId });
       useFeed.getState().push(`${resident.name} has left the tavern. There is a door with their name on it now.`, 'proof');
     }
@@ -1419,7 +1445,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     await queueMeetings(activeHubId, talks);
     if (Object.keys(deltas).length === 0) { await get().saveHubState(); return; }
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'TRADE', data: { kind: 'RESIDENT_LIVING', day, paid, playerDelta: 0, treasuryDelta: 0, wallets: deltas } }],
       wallets: { hubId: activeHubId, deltas },
       hubDoc: get().hubDoc() ?? undefined
@@ -1475,7 +1501,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!activeHubId) return { ok: false, reason: 'The Hall is shut.' };
     const quest = get().guild.quests.find(q => q.id === questId);
     if (!quest || quest.state !== 'OPEN') return { ok: false, reason: 'That want is not on the board.' };
-    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const stash = pc.view().player.bank.stashTabs[0]?.items || [];
     const items = itemIds.map(id => stash.find(i => i.id === id));
     if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
     if ((items as IItem[]).some(i => i.isIdentified === false)) return { ok: false, reason: 'Read it first. Nobody takes a thing nobody has read.' };
@@ -1497,7 +1523,7 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     // From here to the commit there is no wait.
     const ids = given.map(i => i.id);
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + pay } } }));
+    pc.apply({ kind: 'GOLD', delta: pay });
     removeFromStash(ids);
     const deltas = { [purse]: -pay };
     set({
@@ -1512,7 +1538,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       }
     });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'QUEST_PAID', questId, residentId: quest.residentId, consumedIds: ids, amount: pay, treasuryDelta: 0, wallets: deltas } }],
       wallets: { hubId: activeHubId, deltas },
       hubDoc: get().hubDoc() ?? undefined
@@ -1525,7 +1551,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       const fall = agenda ? LadderWeight.of({ loss: pay > 0, after: { agenda, facts: resident ? residentFacts(resident, held - pay) : { house: true } } }) : 0;
       await MemoryStore.settle({ hubId: activeHubId }, quest.residentId, questId, day);
       await chainActs(activeHubId, [{ npcId: quest.residentId, act: { kind: 'SETTLED', key: questId } }]);
-      await MemoryStore.write({ hubId: activeHubId }, [{ owner: quest.residentId, what: Deeds.brought({ day, by: usePlayerStore.getState().player.id, owner: quest.residentId, what: quest.text, fall }) }]);
+      await MemoryStore.write({ hubId: activeHubId }, [{ owner: quest.residentId, what: Deeds.brought({ day, by: pc.view().player.id, owner: quest.residentId, what: quest.text, fall }) }]);
     }
     // A keeper's goods go on their own shelves to be looked over, the way anything they take in does.
     const keeper = !resident && get().vendors[quest.residentId];
@@ -1535,12 +1561,12 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   passTrial: async (itemIds) => {
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const rank = ProgressionSystem.rankOf(p);
     const trial = trialFor(rank);
     if (!trial) return { ok: false, reason: 'There is no rank above yours for the Hall to give.' };
     const inStash = () => {
-      const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+      const stash = pc.view().player.bank.stashTabs[0]?.items || [];
       return itemIds.map(id => stash.find(i => i.id === id));
     };
     const items = inStash();
@@ -1557,7 +1583,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const ids = given.map(i => i.id);
     removeFromStash(ids);
     set({ guild: { ...get().guild, trophies: [...get().guild.trophies, ...given] } });
-    const { from, to } = usePlayerStore.getState().grantRank(trial.to);
+    const { from, to } = pc.grantRank(trial.to);
     useRankMoment.getState().show({ from, to, at: Date.now() });
     await get().saveHubState();
     await Ledger.append('GUILD', { kind: 'RANK_GRANTED', from, to, consumedIds: ids });
@@ -1566,7 +1592,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   handMapToGuild: async (itemId) => {
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
     if (!item) return { ok: false, reason: 'That is not in your stash.' };
     if (item.type !== ItemType.MAP || !item.mapData) return { ok: false, reason: 'The Hall takes maps here. That is not one.' };
@@ -1636,20 +1662,20 @@ export const useHubStore = create<HubState>((set, get) => ({
   buyLot: async (lotId) => {
     const { lots, activeHubId } = get();
     const lot = lots.find(l => l.id === lotId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || lot.ownerId || !activeHubId) return false;
     if (p.bank.gold < lot.price) {
       console.log(`[LOT] Cannot afford lot ${lot.lotIndex} (${lot.price}G).`);
       return false;
     }
 
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - lot.price } } }));
+    pc.apply({ kind: 'GOLD', delta: -lot.price });
     // The money, its row and the deed to the lot land as one.
     set({ lots: lots.map(l => l.id === lotId
       ? { ...l, ownerId: p.id, ownerName: p.username, purchaseDate: Date.now(), upkeepPaidThroughDay: worldDay() }
       : l) });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'LOT_PURCHASE', lotId, amount: -lot.price, treasuryId: activeHubId, treasuryDelta: lot.price } }],
       treasury: { worldUid: activeHubId, delta: lot.price },
       hubDoc: get().hubDoc() ?? undefined
@@ -1666,12 +1692,12 @@ export const useHubStore = create<HubState>((set, get) => ({
    */
   shellBillNow: (type, stationId) => {
     const { lots, rooms, buildJobs } = get();
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const fitting = stationId ? get().openStationsNow().find(s => s.id === stationId) ?? WebBank.current().stations.find(s => s.id === stationId) : undefined;
     return shellBillFor(type, ownerHasBench(p.id, { lots, rooms, jobs: buildJobs, stash: p.bank.stashTabs[0]?.items || [] }), fitting);
   },
 
-  openStationsNow: () => [...WebSystem.openStationsOf(get().web, usePlayerStore.getState().player.bank.universalSkills), ...openedChainStations(get().tech)],
+  openStationsNow: () => [...WebSystem.openStationsOf(get().web, pc.view().player.bank.universalSkills), ...openedChainStations(get().tech)],
 
   stationRecipesOn: (lotId) => {
     const placed = new Set((get().rooms[lotId]?.placements ?? []).map(p => p.item.universalDefinitionId));
@@ -1684,7 +1710,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const station = WebBank.current().stations.find(s => s.id === web.requiredStation)!;
     const placed = (get().rooms[lotId]?.placements ?? []).some(p => p.item.universalDefinitionId === web.requiredStation);
     if (!placed) return `${web.name} wants a ${station.name} standing in this room.`;
-    const skills = usePlayerStore.getState().player.bank.universalSkills;
+    const skills = pc.view().player.bank.universalSkills;
     if (web.requiresVerb && !WebSystem.hasVerb(skills, web.requiresVerb)) {
       return `${web.name} wants hands that can ${web.requiresVerb.replace(/_/g, ' ')}. Yours can't, yet.`;
     }
@@ -1699,7 +1725,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const room = get().rooms[lotId];
     const mono = room ? monoMaterialOf(room) : null;
     const speedPct = ((mono ? setBonusFor(mono)?.craftSpeedPct : 0) || 0) + (room ? roomProcessBonus(room).craftSpeedPct : 0);
-    const held = usePlayerStore.getState().player;
+    const held = pc.view().player;
     const pair = WebSystem.pairOfJob(recipeId, inputs, held.bank.universalSkills);
     // Line 35: and someone home in this hub who works this material lends the bench their hands.
     const factor = WebSystem.clockFactor(held, pair) * benchFactor(get().guild.residents, pair);
@@ -1707,9 +1733,9 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   restAndCredit: async (kind) => {
-    const { emerged: settled } = RestDoor.settle(playerPort);
+    const { emerged: settled } = RestDoor.settle(pc, hubPort);
     const emerged = settled as ISkillState[];
-    void RestDoor.collect(playerPort);
+    void RestDoor.collect(pc, hubPort);
     for (const skill of emerged) {
       useFeed.getState().push(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
     }
@@ -1719,14 +1745,14 @@ export const useHubStore = create<HubState>((set, get) => ({
   },
 
   creditHeld: async () => {
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!p.id || p.id === 'temp_id') return;
     // Q9: creation's words are signed (D35), so the first to reach a skill names it for the hub
     const { web, firsts, records } = WebSystem.admit(get().web, { uid: p.id, name: p.username }, p.bank.universalSkills, Date.now(), p.skillWords);
     if (firsts.length === 0 && records.length === 0) return;
-    set({ web });
+    get().applyTech({ kind: 'WEB', web });
     const hubId = get().activeHubId;
-    const lore = { ...usePlayerStore.getState().player.bank.lore };
+    const lore = { ...pc.view().player.bank.lore };
     for (const skillId of firsts) {
       const name = WebSystem.nameIn(skillId, web);
       await Ledger.append('TECH', { kind: 'FIRST', skillId, name, hubId, rung: 0 });
@@ -1737,7 +1763,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     for (const { id, rung } of records) {
       await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameIn(id, web), hubId, rung });
     }
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore } } }));
+    pc.apply({ kind: 'LORE', lore });
     await get().saveHubState();
   },
 
@@ -1748,7 +1774,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   buildStructure: async (lotId, type, material, stationId) => {
     const { lots, activeHubId, buildJobs } = get();
     const lot = lots.find(l => l.id === lotId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !activeHubId) return false;
     if (lot.ownerId !== p.id) {
       console.log('[BUILD] You do not own this lot.');
@@ -1805,11 +1831,11 @@ export const useHubStore = create<HubState>((set, get) => ({
     job.signature = await signRecord({ kind: 'SHELL', lotId, structureType: type, consumedIds: job.consumedIds, at: job.queuedAt, ...(stationId ? { stationId } : {}) });
 
     // Signed first: from the gold change to its commit there is no await.
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+    pc.apply({ kind: 'GOLD', delta: -cost });
     removeFromStash(bill.items.map(i => i.id));
     set({ buildJobs: [...get().buildJobs, job] });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [
         { type: 'GOLD_DELTA', data: { reason: 'BUILD_PERMIT', lotId, structure: type, amount: -cost, treasuryId: activeHubId, treasuryDelta: cost } },
         { type: 'BUILD', data: { kind: 'SHELL_QUEUED', jobId: job.id, lotId, structure: type, consumedIds: job.consumedIds } }
@@ -1831,7 +1857,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   applyTemplate: async (lotId, templateItemId, sheet) => {
     const { lots, activeHubId, buildJobs } = get();
     const lot = lots.find(l => l.id === lotId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !activeHubId) return { ok: false, reason: 'There is no lot here.' };
     if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this lot.' };
     if (lot.structureType !== 'EMPTY') return { ok: false, reason: 'The lot already carries a building. Plans are raised on empty ground.' };
@@ -1942,11 +1968,11 @@ export const useHubStore = create<HubState>((set, get) => ({
       job.signature = await signRecord({ kind: 'TEMPLATE_PIECE', lotId, piece: job.piece, at: now });
     }
 
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+    pc.apply({ kind: 'GOLD', delta: -cost });
     removeFromStash(picked.map(i => i.id));
     set({ buildJobs: [...get().buildJobs, ...jobs] });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [
         { type: 'GOLD_DELTA', data: { reason: 'BUILD_PERMIT', lotId, structure: tpl.structureType, template: tpl.name, amount: -cost, treasuryId: activeHubId, treasuryDelta: cost } },
         { type: 'BUILD', data: {
@@ -2046,7 +2072,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { lots, rooms, buildJobs, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const room = rooms[lotId];
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !room) return { ok: false, reason: 'There is no room here yet.' };
     if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this room.' };
 
@@ -2105,7 +2131,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { lots, rooms, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const room = rooms[lotId];
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !room || lot.ownerId !== p.id) return false;
     const piece = room.pieces.find(pc => pc.id === pieceId);
     if (!piece) return false;
@@ -2136,7 +2162,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { lots, rooms, buildJobs, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const room = rooms[lotId];
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !room) return { ok: false, reason: 'There is no room here yet.' };
     if (lot.ownerId !== p.id) return { ok: false, reason: 'You do not own this room.' };
     const stash = p.bank.stashTabs[0]?.items || [];
@@ -2176,7 +2202,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { lots, rooms, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
     const room = rooms[lotId];
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !room || lot.ownerId !== p.id) return false;
     const placement = room.placements.find(pl => pl.id === placementId);
     if (!placement) return false;
@@ -2211,7 +2237,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const lot = lots.find(l => l.id === lotId);
     const recipe = RECIPE_DEFINITIONS[recipeId] ?? WebBank.recipe(recipeId);
     const gearRecipe = GEAR_RECIPES[recipeId];
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || (!recipe && !gearRecipe)) return false;
     // D27: a further station's recipe wants the station standing, and the verb in hand.
     const refusal = get().craftRefusal(lotId, recipeId);
@@ -2271,11 +2297,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const consumed = stash.filter(i => consumedIds.includes(i.id))
       .map(i => ({ defId: i.universalDefinitionId, name: i.name, composition: i.composition, affixes: i.affixes?.length ? i.affixes.map(a => ({ ...a, stats: { ...a.stats } })) : undefined }));
 
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-        idx === 0 ? { ...tab, items: tab.items.filter(i => !consumedIds.includes(i.id)) } : tab
-      ) } }
-    }));
+    pc.apply({ kind: 'STASH_REMOVE', ids: consumedIds });
 
     // D13's numbers: a mono-material workshop runs faster. The composition still
     // records the recipe's own labor — the bench is a convenience, not a chain fact.
@@ -2377,20 +2399,16 @@ export const useHubStore = create<HubState>((set, get) => ({
         if (item) outputs.push(item);
       }
 
-      usePlayerStore.setState(s => ({
-        player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-          idx === 0 ? { ...tab, items: [...tab.items, ...outputs] } : tab
-        ) } }
-      }));
+      pc.apply({ kind: 'STASH_ADD', items: outputs });
       minted += outputs.length;
       // D6, D26: the doing teaches. Practice grows the trade's own skill, and hands
       // that have done the work come to know what it leaves.
-      if (family && outputs.length > 0) usePlayerStore.getState().practiceTrade(family);
+      if (family && outputs.length > 0) pc.apply({ kind: 'PRACTICE_TRADE', family });
       // D27: and the pair itself: the trade and what it worked. It settles at a rest.
-      const pair = WebSystem.pairOfJob(job.recipeId, (job.consumed ?? []).map(c => c.defId), usePlayerStore.getState().player.bank.universalSkills);
+      const pair = WebSystem.pairOfJob(job.recipeId, (job.consumed ?? []).map(c => c.defId), pc.view().player.bank.universalSkills);
       if (pair && outputs.length > 0) {
         const worked = Math.max(0, ...outputs.map(o => rankIndexOf(o.rank)));
-        usePlayerStore.getState().workOn(pair, worked, PROCESS_SKILL_XP_PER_JOB);
+        pc.apply({ kind: 'WORK_ON', pair, rank: worked, xp: PROCESS_SKILL_XP_PER_JOB });
       }
       await Ledger.append('CRAFT', { kind: 'COLLECTED', jobId: job.id, outputIds: outputs.map(o => o.id) });
       // Wave 6.2: crafted goods carry their maker's signature from birth —
@@ -2414,7 +2432,7 @@ export const useHubStore = create<HubState>((set, get) => ({
    */
   sellToVendor: async (itemId, npcId = COUNTER_NPC) => {
     const { activeHubId } = get();
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!activeHubId) return null;
     const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
     if (!item) return null;
@@ -2423,20 +2441,12 @@ export const useHubStore = create<HubState>((set, get) => ({
     const perDay = runningPerDay(cityOf(get()));
     const prints = printsNeeded(await Treasury.balance(activeHubId), offer, perDay);
     const made = prints * printAmount(perDay);
-    if (!(usePlayerStore.getState().player.bank.stashTabs[0]?.items || []).some(i => i.id === itemId)) return null;
+    if (!(pc.view().player.bank.stashTabs[0]?.items || []).some(i => i.id === itemId)) return null;
 
     set({ guild: { ...get().guild, printed: printedPlus(get().guild, prints, made) } });
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: {
-        ...s.player.bank,
-        gold: s.player.bank.gold + offer,
-        stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-          idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== itemId) } : tab
-        )
-      } }
-    }));
+    pc.apply({ kind: 'GOLD', delta: offer }, { kind: 'STASH_REMOVE', ids: [itemId] });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [
         ...printRows(activeHubId, perDay, prints, 'VENDOR_BUYBACK'),
         { type: 'GOLD_DELTA', data: { reason: 'VENDOR_BUYBACK', itemId, defId: item.universalDefinitionId, amount: offer, treasuryId: activeHubId, treasuryDelta: -offer } }
@@ -2457,7 +2467,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   listItemForSale: async (lotId, itemId, price, askDefId) => {
     const { lots, saveHubState } = get();
     const lot = lots.find(l => l.id === lotId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || lot.ownerId !== p.id || lot.structureType !== 'VENDOR') {
       console.log('[SHOP] You need your own VENDOR lot to sell.');
       return false;
@@ -2467,11 +2477,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const asked = askDefId ? Anchors.kinds().find(k => k.defId === askDefId) : undefined;
     if (!item || (askDefId ? !asked : price <= 0)) return false;
 
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-        idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== itemId) } : tab
-      ) } }
-    }));
+    pc.apply({ kind: 'STASH_REMOVE', ids: [itemId] });
     set({ lots: get().lots.map(l => l.id === lotId
       ? { ...l, shopListings: [...(l.shopListings || []), { item, price: asked ? 0 : price, ...(asked ? { ask: asked } : {}) }] }
       : l) });
@@ -2486,7 +2492,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { lots, activeHubId } = get();
     const lot = lots.find(l => l.id === lotId);
     const listing = lot?.shopListings?.find(li => li.item.id === itemId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!lot || !listing || !activeHubId) return false;
 
     // D115: priced in an anchor. No coin moves, and so the hub's cut has nothing to be cut from.
@@ -2494,16 +2500,12 @@ export const useHubStore = create<HubState>((set, get) => ({
       const stash = p.bank.stashTabs[0]?.items || [];
       const paidWith = stash.find(i => i.universalDefinitionId === listing.ask!.defId && i.isIdentified !== false);
       if (!paidWith) return false;
-      usePlayerStore.setState(s => ({
-        player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-          idx === 0 ? { ...tab, items: [...tab.items.filter(i => i.id !== paidWith.id), listing.item] } : tab
-        ) } }
-      }));
+      pc.apply({ kind: 'STASH_REMOVE', ids: [paidWith.id] }, { kind: 'STASH_ADD', items: [listing.item] });
       set({ lots: get().lots.map(l => l.id === lotId
         ? { ...l, shopListings: (l.shopListings || []).filter(li => li.item.id !== itemId), heldInTrade: [...(l.heldInTrade ?? []), paidWith] }
         : l) });
       await GoldCommit.commit({
-        player: usePlayerStore.getState().player,
+        player: pc.view().player,
         rows: [{ type: 'TRADE', data: { kind: 'SHOP_SALE_FOR_ANCHOR', lotId, itemId, paidWith: paidWith.id, paidWithDef: paidWith.universalDefinitionId, playerDelta: 0, treasuryDelta: 0 } }],
         hubDoc: get().hubDoc() ?? undefined
       });
@@ -2525,15 +2527,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     // same identity) receives the net. Either way the hub keeps its fee.
     const playerDelta = -listing.price + (buyerIsOwner ? net : 0);
 
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: {
-        ...s.player.bank,
-        gold: s.player.bank.gold + playerDelta,
-        stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-          idx === 0 ? { ...tab, items: [...tab.items, listing.item] } : tab
-        )
-      } }
-    }));
+    pc.apply({ kind: 'GOLD', delta: playerDelta }, { kind: 'STASH_ADD', items: [listing.item] });
     set({ lots: get().lots.map(l => l.id === lotId
       ? {
           ...l,
@@ -2542,7 +2536,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         }
       : l) });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'TRADE', data: { kind: 'SHOP_SALE', lotId, itemId, price: listing.price, fee, playerDelta, treasuryDelta: fee } }],
       treasury: { worldUid: activeHubId, delta: fee },
       hubDoc: get().hubDoc() ?? undefined
@@ -2557,7 +2551,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   /** D115: what a shelf took in place of coin, to its owner's stash. */
   collectHeld: async (lotId) => {
     const lot = get().lots.find(l => l.id === lotId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const items = lot?.heldInTrade ?? [];
     if (!lot || lot.ownerId !== p.id || items.length === 0) return 0;
     set({ lots: get().lots.map(l => l.id === lotId ? { ...l, heldInTrade: [] } : l) });
@@ -2571,14 +2565,14 @@ export const useHubStore = create<HubState>((set, get) => ({
   collectProceeds: async (lotId) => {
     const { lots } = get();
     const lot = lots.find(l => l.id === lotId);
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     const amount = lot?.proceeds || 0;
     if (!lot || lot.ownerId !== p.id || amount <= 0) return 0;
 
     set({ lots: get().lots.map(l => l.id === lotId ? { ...l, proceeds: 0 } : l) });
-    usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + amount } } }));
+    pc.apply({ kind: 'GOLD', delta: amount });
     await GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'SHOP_PROCEEDS', lotId, amount } }],
       hubDoc: get().hubDoc() ?? undefined
     });
@@ -2589,7 +2583,7 @@ export const useHubStore = create<HubState>((set, get) => ({
   resolveUpkeep: async (simDay) => {
     const day = simDay ?? worldDay();
     const { lots, activeHubId, saveHubState } = get();
-    const p = usePlayerStore.getState().player;
+    const p = pc.view().player;
     if (!activeHubId) return;
     let changed = false;
 
@@ -2607,11 +2601,11 @@ export const useHubStore = create<HubState>((set, get) => ({
         const bonus = StatSystem.upkeepDiscountPct(p.attributes);
         const rate = bonus !== 0 ? Math.max(1, Math.round(base * (1 - bonus / 100))) : base;
         const cost = rate * owed;
-        if (usePlayerStore.getState().player.bank.gold < cost) continue;
-        usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+        if (pc.view().player.bank.gold < cost) continue;
+        pc.apply({ kind: 'GOLD', delta: -cost });
         set({ lots: get().lots.map(l => l.id === lot.id ? { ...l, upkeepPaidThroughDay: day } : l) });
         await GoldCommit.commit({
-          player: usePlayerStore.getState().player,
+          player: pc.view().player,
           rows: [{ type: 'UPKEEP', data: { lotId: lot.id, residentId: resident.id, days: owed, amount: cost, treasuryId: activeHubId } }],
           treasury: { worldUid: activeHubId, delta: cost },
           hubDoc: get().hubDoc() ?? undefined
@@ -2631,13 +2625,13 @@ export const useHubStore = create<HubState>((set, get) => ({
       if (discount !== 0) rate = Math.max(1, Math.round(rate * (1 - discount / 100)));
       const cost = rate * owed;
       const isLocal = lot.ownerId === p.id;
-      const canPay = isLocal && usePlayerStore.getState().player.bank.gold >= cost;
+      const canPay = isLocal && pc.view().player.bank.gold >= cost;
 
       if (canPay) {
-        usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - cost } } }));
+        pc.apply({ kind: 'GOLD', delta: -cost });
         set({ lots: get().lots.map(l => l.id === lot.id ? { ...l, upkeepPaidThroughDay: day } : l) });
         await GoldCommit.commit({
-          player: usePlayerStore.getState().player,
+          player: pc.view().player,
           rows: [{ type: 'UPKEEP', data: { lotId: lot.id, days: owed, amount: cost, treasuryId: activeHubId } }],
           treasury: { worldUid: activeHubId, delta: cost },
           hubDoc: get().hubDoc() ?? undefined
@@ -2802,7 +2796,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!listing || listing.stock <= 0) return null;
 
     // Wave 2 (Wave 5 plumbing, early): gold actually moves, item actually lands
-    const playerStore = usePlayerStore.getState();
+    const playerStore = pc.view();
     const price = priceOfListing(listing, playerStore.player.attributes);
     if (playerStore.player.bank.gold < price) return null;
 
@@ -2827,22 +2821,11 @@ export const useHubStore = create<HubState>((set, get) => ({
       ? { ...listing.item, binPrice: price, composition: unit.composition }
       : listing.held ? listing.item : unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
 
-    usePlayerStore.setState(s => ({
-      player: {
-        ...s.player,
-        bank: {
-          ...s.player.bank,
-          gold: s.player.bank.gold - price,
-          stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-            idx === 0 ? { ...tab, items: [...tab.items, purchasedItem] } : tab
-          )
-        }
-      }
-    }));
+    pc.apply({ kind: 'GOLD', delta: -price }, { kind: 'STASH_ADD', items: [purchasedItem] });
     // Wave 5.1: conservation — the system vendor's take belongs to the hub
     const hubId = get().activeHubId || 'hub_unknown';
     void GoldCommit.commit({
-      player: usePlayerStore.getState().player,
+      player: pc.view().player,
       rows: [{ type: 'GOLD_DELTA', data: { reason: 'SHOP_PURCHASE', itemId: purchasedItem.id, defId: purchasedItem.universalDefinitionId, amount: -price, treasuryId: hubId, treasuryDelta: price } }],
       treasury: { worldUid: hubId, delta: price }
     });
@@ -2864,3 +2847,26 @@ export const useHubStore = create<HubState>((set, get) => ({
     return purchasedItem;
   }
 }));
+/** The hub as a system takes it (hubView.ts): a fresh view on each read, the store's one door, and its calls. */
+export const hubPort: IHubPort = {
+  view: () => useHubStore.getState(),
+  apply: (...changes) => useHubStore.getState().apply(...changes),
+  saveHubState: (...args) => useHubStore.getState().saveHubState(...args),
+  settleLots: (...args) => useHubStore.getState().settleLots(...args),
+  planRaise: (...args) => useHubStore.getState().planRaise(...args),
+  turnTheDay: (...args) => useHubStore.getState().turnTheDay(...args),
+  resolveVendors: (...args) => useHubStore.getState().resolveVendors(...args),
+  generateDailyStock: (...args) => useHubStore.getState().generateDailyStock(...args),
+  creditHeld: (...args) => useHubStore.getState().creditHeld(...args),
+  fillAgendas: (...args) => useHubStore.getState().fillAgendas(...args),
+  purchaseLot: (...args) => useHubStore.getState().purchaseLot(...args),
+  setLotStructure: (...args) => useHubStore.getState().setLotStructure(...args)
+};
+
+/** The tech web, the hub's own container (techWebView.ts): its view and its one door. */
+export const techWebPort: ITechWebPort = {
+  view: () => useHubStore.getState(),
+  apply: (...changes) => useHubStore.getState().applyTech(...changes)
+};
+
+offerPort('hub', hubPort);

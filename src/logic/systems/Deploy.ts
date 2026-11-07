@@ -5,6 +5,7 @@
 
 import type { IWorldPort } from '../../entities/world/worldView';
 import type { IPlayerPort } from '../../entities/player/playerView';
+import type { IHubPort } from '../../entities/hub/hubView';
 import { SessionJournal } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { WorldClock } from '../../entities/world/WorldClock';
@@ -17,18 +18,18 @@ import { useWaits, whileWaiting } from '../../components/ui/stores';
 export const OPENING_WORLD = 'opening_world';
 
 /** Press it twice and nothing more happens: the first is still opening. */
-export async function deployToWorld(worldId: string, world: IWorldPort, pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
+export async function deployToWorld(worldId: string, world: IWorldPort, pc: IPlayerPort, hp: IHubPort): Promise<{ ok: boolean; reason?: string }> {
   if (useWaits.getState().waits.some(w => w.id === OPENING_WORLD)) return { ok: false };
-  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId, world, pc));
+  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId, world, pc, hp));
 }
 
-async function enterWorld(worldId: string, world: IWorldPort, pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
+async function enterWorld(worldId: string, world: IWorldPort, pc: IPlayerPort, hp: IHubPort): Promise<{ ok: boolean; reason?: string }> {
   const card = world.view().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
 
   // D79: a character at rest is down, and another can play
   const now = Date.now();
-  await RestDoor.wakeIfDue(pc, now);
+  await RestDoor.wakeIfDue(pc, hp, now);
   const sleeper = pc.view().player;
   if (RestSystem.isResting(sleeper, now)) {
     return { ok: false, reason: `This character is at rest for ${WorldClock.say(sleeper.rest!.until - now)} more. Another can go.` };

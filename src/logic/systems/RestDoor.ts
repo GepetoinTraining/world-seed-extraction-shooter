@@ -4,7 +4,7 @@
  */
 
 import type { IPlayerPort } from '../../entities/player/playerView';
-import { useHubStore } from '../../entities/hub/store';
+import type { IHubPort } from '../../entities/hub/hubView';
 import type { IWorldPort } from '../../entities/world/worldView';
 import { useFeed } from '../../components/ui/stores';
 import { GoldCommit } from '../economy/GoldCommit';
@@ -23,26 +23,26 @@ const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain'
 
 export const RestDoor = {
   /** Settling, at any rest. A return to the hub comes through here too (D30). */
-  settle(pc: IPlayerPort): { emerged: { id: string }[] } {
+  settle(pc: IPlayerPort, hp: IHubPort): { emerged: { id: string }[] } {
     const { player, read, emerged, learned, floorNamed } = RestSystem.settle(pc.view().player);
     pc.apply({ kind: 'SET', player });
     for (const item of read) feed(`You know what ${item.name} is now. It reads exactly as it was banked.`, 'proof');
     for (const id of learned) feed(`It settled: you could cast ${ContentRegistry.ability(id)?.name ?? 'what you saw'} now.`, 'proof');
-    for (const id of floorNamed) void RestDoor.unlockFrom(id, pc);
+    for (const id of floorNamed) void RestDoor.unlockFrom(id, pc, hp);
     return { emerged };
   },
 
   /** D49: the first magic settled in a hub unlocks that hub, and says so once. */
-  async unlockFrom(what: string, pc: IPlayerPort): Promise<void> {
+  async unlockFrom(what: string, pc: IPlayerPort, hp: IHubPort): Promise<void> {
     const p = pc.view().player;
-    if (await HubUnlock.unlock(p.id, what)) {
+    if (await HubUnlock.unlock(p.id, what, hp.view().activeHubId ?? '')) {
       feed('Something in this hub has changed. What is found from now on may carry more than its name.', 'signal');
-      useHubStore.getState().generateDailyStock();
+      hp.generateDailyStock();
     }
   },
 
   /** A chosen rest begins (D79): the fee, what is queued goes to the door, and this character is down until it ends. */
-  async sleep(place: RestPlace, world: IWorldPort, pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
+  async sleep(place: RestPlace, world: IWorldPort, pc: IPlayerPort, hp: IHubPort): Promise<{ ok: boolean; reason?: string }> {
     const before = pc.view().player;
     const now = Date.now();
     const verdict = RestSystem.canRest(before, place, now);
@@ -52,7 +52,7 @@ export const RestDoor = {
     }
 
     if (place === 'INN') {
-      const hubId = useHubStore.getState().activeHubId ?? 'hub_unknown';
+      const hubId = hp.view().activeHubId ?? 'hub_unknown';
       pc.apply({ kind: 'GOLD', delta: -INN_FEE });
       void GoldCommit.commit({
         player: pc.view().player,
@@ -61,14 +61,14 @@ export const RestDoor = {
       });
     }
 
-    await RestDoor.collect(pc);
-    const { emerged } = RestDoor.settle(pc);
+    await RestDoor.collect(pc, hp);
+    const { emerged } = RestDoor.settle(pc, hp);
     const lying = RestSystem.beginRest(pc.view().player, place, now);
     pc.apply({ kind: 'SET', player: lying });
     for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
-    await useHubStore.getState().creditHeld();
+    await hp.creditHeld();
     await RestDoor.file(emerged, world, pc);
-    if (!(await RestDoor.wakeIfDue(pc, now))) {
+    if (!(await RestDoor.wakeIfDue(pc, hp, now))) {
       feed(`You lie down. This character is at rest for ${WorldClock.say(lying.rest!.until - now)}. Another can go.`, 'signal');
       await PlayerPersistence.flush('rest', pc.view().player);
     }
@@ -76,12 +76,12 @@ export const RestDoor = {
   },
 
   /** The rest ends when its time is up, whoever is watching. Called on a timer and at any door out. */
-  async wakeIfDue(pc: IPlayerPort, now = Date.now()): Promise<boolean> {
+  async wakeIfDue(pc: IPlayerPort, hp: IHubPort, now = Date.now()): Promise<boolean> {
     const { rest } = pc.view().player;
     if (!rest || now < rest.until || waking) return false;
     waking = true;
     try {
-      await RestDoor.collect(pc);
+      await RestDoor.collect(pc, hp);
       pc.apply({ kind: 'WAKE' });
       feed('You slept. It is another day.', 'signal');
       await PlayerPersistence.flush('rest', pc.view().player);
@@ -134,7 +134,7 @@ export const RestDoor = {
   },
 
   /** Bring back what was filed, if it is ready: judged by the law, signed, and applied. */
-  async collect(pc: IPlayerPort): Promise<void> {
+  async collect(pc: IPlayerPort, hp: IHubPort): Promise<void> {
     const pending = pc.view().player.pendingDream;
     if (!pending) return;
     const out = await IntelligenceClient.collectRest<IDreamResult>(pending.batchId);
@@ -157,7 +157,7 @@ export const RestDoor = {
       return { ...w, name: sitting.target.name, gained: LoreSystem.paysFor(sitting)[w.depth as 'fair'] };
     });
     pc.apply({ kind: 'SET', player: RestSystem.applyDream(before, out.data) });
-    const hubId = useHubStore.getState().activeHubId;
+    const hubId = hp.view().activeHubId;
     if (out.usage) await Ledger.append('TECH', { kind: 'INTELLIGENCE_USE', hubId, door: 'rest', ...out.usage });
     for (const w of out.data.weaves) {
       // Spellcraft's rule: the first to name it names it for everyone, signed
@@ -172,7 +172,7 @@ export const RestDoor = {
     for (const t of out.data.taught ?? []) feed(`You woke knowing ${t.name}. ${t.flavor}`, 'proof');
     for (const r of out.data.raised ?? []) feed(r.line, 'proof');
     // D118: a skill taught is held like any other, so the hub's web hears of it by the same door.
-    if ((out.data.taught ?? []).length > 0) await useHubStore.getState().creditHeld();
+    if ((out.data.taught ?? []).length > 0) await hp.creditHeld();
     if (said.length + (out.data.taught?.length ?? 0) + (out.data.raised?.length ?? 0) > 0) {
       await Ledger.append('TECH', {
         kind: 'LORE', hubId, by: before.id, gained: said.reduce((sum, w) => sum + w.gained, 0),

@@ -8,7 +8,7 @@
  */
 
 import type { IWorldCard, IWorldPort } from '../../entities/world/worldView';
-import { useHubStore } from '../../entities/hub/store';
+import type { IHubPort } from '../../entities/hub/hubView';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { useFeed } from '../../components/ui/stores';
 import { IntelligenceClient } from '../intelligence/IntelligenceClient';
@@ -57,7 +57,7 @@ export const ScanDoor = {
   },
 
   /** One pass over every world this client knows, at most once per slot of each. */
-  async tick(world: IWorldPort, now = Date.now()): Promise<void> {
+  async tick(world: IWorldPort, hp: IHubPort, now = Date.now()): Promise<void> {
     if (ticking) return;
     ticking = true;
     try {
@@ -74,7 +74,7 @@ export const ScanDoor = {
         if (report.record) world.apply({ kind: 'ADOPT_RECORD', worldId: card.id, record: report.record });
         say(card, report);
         for (const usage of report.used) {
-          await Ledger.append('TECH', { kind: 'INTELLIGENCE_USE', hubId: useHubStore.getState().activeHubId, door: 'window', worldId: card.id, ...usage });
+          await Ledger.append('TECH', { kind: 'INTELLIGENCE_USE', hubId: hp.view().activeHubId, door: 'window', worldId: card.id, ...usage });
         }
       }
     } catch (e) {

@@ -28,6 +28,7 @@ import { Busy, CycleRibbon, TimerBar } from '../src/components/ui/kit';
 import { WaitStrip } from '../src/components/WaitStrip';
 import { IPlayer } from '../shared/types';
 import { worldPort } from '../src/entities/world/store';
+import { hubPort } from '../src/entities/hub/store';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -275,7 +276,7 @@ describe('the hand has a cooldown, and it reads on the hotbar', () => {
 describe('opening a world', () => {
   it('a second press while one is opening does nothing at all', async () => {
     useWaits.getState().begin({ id: OPENING_WORLD, label: 'OPENING', startedAt: Date.now() });
-    expect(await deployToWorld('anything', worldPort, playerPort)).toEqual({ ok: false });
+    expect(await deployToWorld('anything', worldPort, playerPort, hubPort)).toEqual({ ok: false });
   });
 });
 

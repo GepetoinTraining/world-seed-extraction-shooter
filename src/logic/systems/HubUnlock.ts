@@ -5,7 +5,6 @@
  */
 
 import { Ledger } from '../ledger/Ledger';
-import { useHubStore } from '../../entities/hub/store';
 import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { SHELF_STATE } from '../../../shared/logic/theme/shelf';
 
@@ -13,7 +12,7 @@ const keyOf = (hubId: string) => `magic_unlocked_${hubId}`;
 
 export class HubUnlock {
 
-  static async isUnlocked(hubId = useHubStore.getState().activeHubId ?? ''): Promise<boolean> {
+  static async isUnlocked(hubId: string): Promise<boolean> {
     if (!hubId) return false;
     const doc = await VectorStore.get<{ by: string; at: number }>(VectorNamespace.TERRITORIES, keyOf(hubId));
     SHELF_STATE.magicUnlocked = !!doc?.data;
@@ -21,7 +20,7 @@ export class HubUnlock {
   }
 
   /** The first keeps the claim, signed. Later discoveries in the hub change nothing. */
-  static async unlock(by: string, what: string, hubId = useHubStore.getState().activeHubId ?? ''): Promise<boolean> {
+  static async unlock(by: string, what: string, hubId: string): Promise<boolean> {
     if (!hubId || await this.isUnlocked(hubId)) return false;
     await VectorStore.put({
       id: keyOf(hubId), namespace: VectorNamespace.TERRITORIES, data: { by, what, at: Date.now() },

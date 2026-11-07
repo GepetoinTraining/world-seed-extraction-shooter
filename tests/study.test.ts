@@ -54,7 +54,7 @@ import { runDialogueAction } from '../src/entities/hub/dialogue';
 import { ProgressionSystem } from '../shared/entities/player/systems/ProgressionSystem';
 import { ProcessSystem } from '../shared/logic/systems/ProcessSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { useHubStore } from '../src/entities/hub/store';
+import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { worldPort } from '../src/entities/world/store';
 
 const store = () => usePlayerStore.getState();
@@ -174,28 +174,28 @@ describe('line 153: study is an action anyone can take on anything, and it costs
   it('the energy comes from the day in town and from the pack\'s clock in the field, up front', () => {
     const target = StudySystem.targetOfItem(piece('a'));
     const before = StudySystem.energyLeft(player());
-    const begun = StudyDoor.begin(target, playerPort);
+    const begun = StudyDoor.begin(target, playerPort, hubPort);
     expect(begun.ok).toBe(true);
     expect(player().energyToday).toBe(before - begun.cost!);
     StudyDoor.reset();
 
     set(p => ({ ...p, energyToday: undefined, currentSession: { energy: 40, inventory: [], inventoryLayout: {} } as never }));
-    const out = StudyDoor.begin(StudySystem.targetOfItem(raw('r')), playerPort);
+    const out = StudyDoor.begin(StudySystem.targetOfItem(raw('r')), playerPort, hubPort);
     expect(player().currentSession!.energy).toBe(40 - out.cost!);
     expect(player().energyToday).toBeUndefined();
   });
 
   it('one sitting at a time, and it only lands if it was paid for', async () => {
     const target = StudySystem.targetOfPlace('The Plaza');
-    expect((await StudyDoor.finish(playerPort)).ok).toBe(false);
-    expect(StudyDoor.begin(target, playerPort).ok).toBe(true);
-    expect(StudyDoor.begin(StudySystem.targetOfPlace('Elsewhere'), playerPort).ok).toBe(false);
-    expect((await StudyDoor.finish(playerPort)).ok).toBe(true);
-    expect((await StudyDoor.finish(playerPort)).ok).toBe(false);
+    expect((await StudyDoor.finish(playerPort, hubPort)).ok).toBe(false);
+    expect(StudyDoor.begin(target, playerPort, hubPort).ok).toBe(true);
+    expect(StudyDoor.begin(StudySystem.targetOfPlace('Elsewhere'), playerPort, hubPort).ok).toBe(false);
+    expect((await StudyDoor.finish(playerPort, hubPort)).ok).toBe(true);
+    expect((await StudyDoor.finish(playerPort, hubPort)).ok).toBe(false);
   });
 
   it('every person in town can be asked to sit for it, through the talk', () => {
-    const effect = runDialogueAction(worldPort, playerPort, 'STUDY_PERSON', { id: 'npc_vex', name: 'Vex', title: 'The Guild' });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'STUDY_PERSON', { id: 'npc_vex', name: 'Vex', title: 'The Guild' });
     expect(effect.kind).toBe('reply');
     expect(StudyDoor.sitting()?.target.kind).toBe('person');
     const hub = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
@@ -233,62 +233,62 @@ describe('a finished product is studied only with a workstation for it', () => {
 
   it('with no workstation the button is not offered and the door refuses', () => {
     ownsNothing();
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(false);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
     const before = StudySystem.energyLeft(player());
-    const out = StudyDoor.begin(StudySystem.targetOfItem(gear()), playerPort);
+    const out = StudyDoor.begin(StudySystem.targetOfItem(gear()), playerPort, hubPort);
     expect(out.ok).toBe(false);
     expect(out.reason).toMatch(/workstation|bench/i);
     expect(StudySystem.energyLeft(player())).toBe(before);
   });
 
   it('with one it is', () => {
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(true);
-    expect(StudyDoor.begin(StudySystem.targetOfItem(gear()), playerPort).ok).toBe(true);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(true);
+    expect(StudyDoor.begin(StudySystem.targetOfItem(gear()), playerPort, hubPort).ok).toBe(true);
   });
 
   it('a station held or placed counts, whoever else owns a workshop does not', () => {
     const bench = raw('b', { universalDefinitionId: 'stn_bench' });
     useHubStore.setState({ rooms: {}, lots: [{ id: 'lot_x', ownerId: 'someone_else', structureType: 'WORKSHOP' }] as never });
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(false);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
     inVault(bench);
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(true);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(true);
     inVault();
     useHubStore.setState({ lots: [{ id: 'lot_h', ownerId: player().id, structureType: 'HOUSE' }] as never, rooms: { lot_h: { placements: [{ item: bench }], pieces: [] } } as never });
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(true);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(true);
   });
 
   it('a workstation is for what it makes: a scribe\'s table does not read a sword', () => {
     useHubStore.setState({ rooms: {}, lots: [] as never });
     inVault(raw('s', { universalDefinitionId: 'stn_scribe' }));
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(false);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
   });
 
   it('what was made the improvised way needs no bench, because none made it', () => {
     ownsNothing();
-    expect(StudyDoor.offered(made(null), playerPort)).toBe(true);
-    expect(StudyDoor.offered(made('WORKSHOP'), playerPort)).toBe(false);
+    expect(StudyDoor.offered(made(null), playerPort, hubPort)).toBe(true);
+    expect(StudyDoor.offered(made('WORKSHOP'), playerPort, hubPort)).toBe(false);
   });
 
   it('it is not a thing to do out in the field: the bench is at home', () => {
     set(p => ({ ...p, currentSession: { energy: 50, inventory: [gear()], inventoryLayout: {} } as never }));
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(false);
-    expect(StudyDoor.begin(StudySystem.targetOfItem(gear()), playerPort).ok).toBe(false);
-    expect(StudyDoor.offered(raw('r'), playerPort)).toBe(true);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
+    expect(StudyDoor.begin(StudySystem.targetOfItem(gear()), playerPort, hubPort).ok).toBe(false);
+    expect(StudyDoor.offered(raw('r'), playerPort, hubPort)).toBe(true);
   });
 
   it('an unread piece asks the same, whatever it is, so the button tells nothing', () => {
     ownsNothing();
-    expect(StudyDoor.offered(raw('r', { isIdentified: false }), playerPort)).toBe(false);
-    expect(StudyDoor.offered(gear(), playerPort)).toBe(false);
+    expect(StudyDoor.offered(raw('r', { isIdentified: false }), playerPort, hubPort)).toBe(false);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
     ownsWorkshop();
-    expect(StudyDoor.offered(raw('r', { isIdentified: false }), playerPort)).toBe(true);
+    expect(StudyDoor.offered(raw('r', { isIdentified: false }), playerPort, hubPort)).toBe(true);
   });
 
   it('everything else stays always available: what is raw, a person, a place, a thought', () => {
     ownsNothing();
-    expect(StudyDoor.offered(raw('r'), playerPort)).toBe(true);
+    expect(StudyDoor.offered(raw('r'), playerPort, hubPort)).toBe(true);
     for (const target of [StudySystem.targetOfItem(raw('r')), StudySystem.targetOfPerson({ id: 'n', name: 'N' }), StudySystem.targetOfPlace('P'), StudySystem.targetOfWords('w')]) {
-      expect(StudyDoor.begin(target, playerPort).ok, target.kind).toBe(true);
+      expect(StudyDoor.begin(target, playerPort, hubPort).ok, target.kind).toBe(true);
       StudyDoor.reset();
       set(p => ({ ...p, energyToday: undefined }));
     }
@@ -382,8 +382,8 @@ describe('it is roll based, and the roll is the law\'s', () => {
 describe('"failure damages it, major failure loses it, major win doubles the amount gained"', () => {
   const sit = async (outcome: StudyOutcome, target = StudySystem.targetOfItem(vault()[0])) => {
     forced(outcome);
-    expect(StudyDoor.begin(target, playerPort).ok).toBe(true);
-    return StudyDoor.finish(playerPort);
+    expect(StudyDoor.begin(target, playerPort, hubPort).ok).toBe(true);
+    return StudyDoor.finish(playerPort, hubPort);
   };
 
   it('failure wears a piece with durability, and it stays', async () => {
@@ -504,9 +504,9 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
   it('a piece gone by the time the clock ends costs what it cost, and nothing lands', async () => {
     inVault(piece('a'));
     forced('success');
-    StudyDoor.begin(StudySystem.targetOfItem(vault()[0]), playerPort);
+    StudyDoor.begin(StudySystem.targetOfItem(vault()[0]), playerPort, hubPort);
     inVault();
-    const out = await StudyDoor.finish(playerPort);
+    const out = await StudyDoor.finish(playerPort, hubPort);
     expect(out.ok).toBe(false);
     expect(RestSystem.queueOf(player()).sittings).toEqual([]);
   });
@@ -520,8 +520,8 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
   it('a sitting that paid goes on the log and gives no lore yet', async () => {
     inVault(piece('a'));
     forced('success');
-    StudyDoor.begin(StudySystem.targetOfItem(vault()[0]), playerPort);
-    await StudyDoor.finish(playerPort);
+    StudyDoor.begin(StudySystem.targetOfItem(vault()[0]), playerPort, hubPort);
+    await StudyDoor.finish(playerPort, hubPort);
     expect(RestSystem.queueOf(player()).sittings).toHaveLength(1);
     expect(LoreSystem.held(player())).toBe(0);
   });
@@ -537,12 +537,12 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
     onLog();
     vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
     set(p => ({ ...p, energyToday: 1 }));
-    const out = await RestDoor.sleep('BED', worldPort, playerPort);
+    const out = await RestDoor.sleep('BED', worldPort, playerPort, hubPort);
     expect(out.ok).toBe(true);
     expect(RestSystem.queueOf(player()).sittings).toHaveLength(1);
     expect(LoreSystem.held(player())).toBe(0);
     expect(player().pendingDream).toBeUndefined();
-    await RestDoor.wakeIfDue(playerPort, Date.now() + 24 * 3_600_000);
+    await RestDoor.wakeIfDue(playerPort, hubPort, Date.now() + 24 * 3_600_000);
     expect(player().energyToday).toBeUndefined();
   });
 
@@ -566,8 +566,8 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
     const secret = piece('itm_secret', { name: 'The True Name', tags: ['wood'], isIdentified: false });
     inVault(secret);
     forced('success');
-    StudyDoor.begin(StudySystem.targetOfItem(secret), playerPort);
-    return StudyDoor.finish(playerPort).then(() => {
+    StudyDoor.begin(StudySystem.targetOfItem(secret), playerPort, hubPort);
+    return StudyDoor.finish(playerPort, hubPort).then(() => {
       const q = RestSystem.dreamQueue(player(), []);
       const said = JSON.stringify(q);
       expect(said).not.toContain('itm_secret');
@@ -583,8 +583,8 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
     const target = StudySystem.targetOfCreature({ definitionId: 'mob_true_name', displayName: 'Unknown Contact', rank: UniversalRank.E });
     expect(target.name).toBe('Unknown Contact');
     forced('success');
-    StudyDoor.begin(target, playerPort);
-    return StudyDoor.finish(playerPort).then(() => {
+    StudyDoor.begin(target, playerPort, hubPort);
+    return StudyDoor.finish(playerPort, hubPort).then(() => {
       const said = JSON.stringify(RestSystem.dreamQueue(player(), []));
       expect(said).not.toContain('mob_true_name');
     });
@@ -682,7 +682,7 @@ describe('the dream resolves what was studied', () => {
     onLog();
     set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: askedAll({ sittings: ['sit_1'] }) } }));
     vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ studied: [words({ depth: 'bottomless' })] }) } as never);
-    await RestDoor.collect(playerPort);
+    await RestDoor.collect(playerPort, hubPort);
     expect(player().pendingDream).toBeUndefined();
     expect(RestSystem.queueOf(player()).sittings).toHaveLength(1);
     expect(LoreSystem.held(player())).toBe(0);
@@ -692,7 +692,7 @@ describe('the dream resolves what was studied', () => {
     const sitting = onLog();
     set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: askedAll({ sittings: ['sit_1'] }) } }));
     vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ studied: [words()] }) } as never);
-    await RestDoor.collect(playerPort);
+    await RestDoor.collect(playerPort, hubPort);
     expect(LoreSystem.held(player())).toBe(LoreSystem.paysFor(sitting).fair);
     const feed = useFeed.getState().lines.map(i => i.text).join(' ');
     expect(feed).toContain('It was a log, all the way down.');
@@ -703,7 +703,7 @@ describe('the dream resolves what was studied', () => {
     set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: askedAll({ sittings: ['sit_1'] }) } }));
     onLog('sit_2');
     vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ studied: [words()] }) } as never);
-    await RestDoor.collect(playerPort);
+    await RestDoor.collect(playerPort, hubPort);
     expect(RestSystem.queueOf(player()).sittings.map(s => s.id)).toEqual(['sit_2']);
   });
 });
@@ -1106,8 +1106,8 @@ describe('study is a door the others can read', () => {
   it('every sitting counts on the thing, whichever way it went', async () => {
     const target = StudySystem.targetOfPlace('The Plaza');
     forced('failure');
-    StudyDoor.begin(target, playerPort);
-    await StudyDoor.finish(playerPort);
+    StudyDoor.begin(target, playerPort, hubPort);
+    await StudyDoor.finish(playerPort, hubPort);
     expect(StudySystem.sittingsOn(player(), target)).toBe(1);
   });
 
@@ -1115,8 +1115,8 @@ describe('study is a door the others can read', () => {
     const scrap = piece('j', { type: ItemType.RESOURCE, slot: SlotType.NONE, stats: {}, universalDefinitionId: 'jnk_x_scrap', tags: ['junk'] });
     inVault(scrap);
     forced('success');
-    StudyDoor.begin(StudySystem.targetOfItem(scrap), playerPort);
-    await StudyDoor.finish(playerPort);
+    StudyDoor.begin(StudySystem.targetOfItem(scrap), playerPort, hubPort);
+    await StudyDoor.finish(playerPort, hubPort);
     expect(RestSystem.queueOf(player()).sittings[0].target.junk).toBe(true);
     const src = readFileSync('src/logic/systems/StudySystem.ts', 'utf8');
     expect(src).toMatch(/C8/);

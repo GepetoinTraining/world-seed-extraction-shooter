@@ -14,7 +14,8 @@ import { WebBank } from '../../../shared/logic/content/WebBank';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { IProfession, Profession } from '../../logic/systems/Profession';
 import { absorbWebBatch, STRUCTURE_COSTS } from '../../../shared/entities/economy/data/recipeDefinitions';
-import { usePlayerStore } from '../player/store';
+import type { IPlayerPort } from '../player/playerView';
+import type { TechWebChange } from './techWebView';
 import { useFeed } from '../../components/ui/stores';
 import { IGuildState, IResident, readSheet } from './guild';
 import {
@@ -58,12 +59,15 @@ interface IStoreSide {
   saveHubState: () => Promise<void>;
   openBuildingAsks: () => { id: string; askerId: string; building: string }[];
   meetBuildingAsk: (askId: string, metBy: string) => Promise<void>;
+  applyTech: (...changes: TechWebChange[]) => void;
 }
 
 interface IStoreHelpers {
   removeFromStash: (ids: string[]) => void;
   dominantDefId: (defIds: string[]) => string;
   signRecord: (payload: Record<string, any>) => Promise<string | undefined>;
+  /** The player, through the port the boot handed the hub store. */
+  player: () => IPlayerPort;
 }
 
 const offerGround = () => groundOf();
@@ -82,7 +86,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
   const reachNow = async () => {
     const hubId = get().activeHubId;
     const { web, tech, events } = foldReach(get().web, get().tech, offerGround(), standingNow(), Date.now());
-    set({ web, tech });
+    get().applyTech({ kind: 'WEB', web }, { kind: 'TECH', tech });
     const opened = openedChainStations(tech);
     if (opened.length > 0) absorbWebBatch({ runId: 'chain', model: 'chain', ranAt: 0, stations: opened });
     for (const event of events) {
@@ -103,8 +107,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
     askWorkshop: async (residentId, stationId, words) => {
       if (!residentOf(residentId)) return { ok: false, reason: 'Nobody by that name lives here.' };
       if (!hubStations(get().tech).some((s: IWebStation) => s.id === stationId)) return { ok: false, reason: 'Nobody here could raise that.' };
-      const tech = get().tech;
-      set({ tech: { ...tech, asks: { ...tech.asks, [residentId]: { stationId, words, by: 'TALK' as const } } } });
+      get().applyTech({ kind: 'ASK', residentId, ask: { stationId, words, by: 'TALK' } });
       await get().saveHubState();
       return { ok: true };
     },
@@ -119,7 +122,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       const wanted = stationId ?? offer?.stationId;
       if (!wanted || !hubStations(tech).some(s => s.id === wanted)) return { ok: false, reason: `${resident.name} has no use for that.` };
 
-      const p = usePlayerStore.getState().player;
+      const p = helpers.player().view().player;
       const lot = lots.find(l => l.id === lotId);
       if (!lot) return { ok: false, reason: 'There is no such ground.' };
       if (lot.ownerId !== p.id) return { ok: false, reason: 'It has to be ground you hold.' };
@@ -143,10 +146,10 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
         bill: billFor(stations, tech), pool: {}
       };
       // From the check to its row there is no await: one press, one workshop.
-      usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - permit } } }));
-      set({ tech: { ...tech, workshops: [...tech.workshops, shop] } });
+      helpers.player().apply({ kind: 'GOLD', delta: -permit });
+      get().applyTech({ kind: 'WORKSHOP_ADD', workshop: shop });
       await GoldCommit.commit({
-        player: usePlayerStore.getState().player,
+        player: helpers.player().view().player,
         rows: [{ type: 'GOLD_DELTA', data: { reason: 'BUILD_PERMIT', lotId, structure: 'WORKSHOP', residentId, stations, amount: -permit, treasuryId: activeHubId, treasuryDelta: permit } }],
         treasury: { worldUid: activeHubId, delta: permit },
         hubDoc: get().hubDoc() ?? undefined
@@ -163,7 +166,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       if (!line) return { ok: false, reason: `It does not ask for anything ${tag}.` };
       const short = line.count - (shop.pool[tag]?.count ?? 0);
       if (short <= 0) return { ok: false, reason: `It holds all the ${tag} it asks for.` };
-      const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+      const stash = helpers.player().view().player.bank.stashTabs[0]?.items || [];
       const items = itemIds.map(id => stash.find(i => i.id === id));
       if (items.some(i => !i)) return { ok: false, reason: 'That is not in your stash.' };
       const wrong = items.find(i => !answersTag(i!, tag));
@@ -182,7 +185,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       };
       const met = shop.bill.every(l => (pool[l.tag]?.count ?? 0) >= l.count);
       helpers.removeFromStash(given.map(i => i.id));
-      set({ tech: { ...tech, workshops: tech.workshops.map(w => w.id === workshopId ? { ...w, pool, ...(met ? { raised: true } : {}) } : w) } });
+      get().applyTech({ kind: 'WORKSHOP_POOL', workshopId, pool, raised: met });
       await Ledger.append('BUILD', { kind: 'WORKSHOP_POOLED', lotId: shop.lotId, workshopId, tag, consumedIds: given.map(i => i.id), consumedDefIds: given.map(i => i.universalDefinitionId) });
 
       if (met) {
@@ -197,7 +200,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
         const sheet: ITemplateSheet = { ...base, WALL: pool.building ? helpers.dominantDefId(pool.building.defIds) : tagDefaultMaterial('building') };
         const now = Date.now();
         const shellFinish = now + SHELL_BUILD_SECONDS.WORKSHOP * 1000 * shop.stations.length;
-        const owner = usePlayerStore.getState().player.id;
+        const owner = helpers.player().view().player.id;
         const batch = shop.id;
         const jobs: any[] = [{
           id: `bld_${now.toString(36)}_${shop.id}`, lotId: lot.id, kind: 'SHELL', structureType: 'WORKSHOP', ownerCertUid: owner,
@@ -229,7 +232,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       const due = tech.workshops.filter(w => w.raised && !w.standsAt && !buildJobs.some(j => j.lotId === w.lotId && !j.applied));
       const now = Date.now();
       if (due.length > 0) {
-        set({ tech: { ...tech, workshops: tech.workshops.map(w => due.some(d => d.id === w.id) ? { ...w, standsAt: now } : w) } });
+        get().applyTech({ kind: 'WORKSHOPS_STAND', ids: due.map(d => d.id), at: now });
         for (const shop of due) {
           const resident = residentOf(shop.residentId);
           await Ledger.append('GUILD', { kind: 'WORKSHOP_STANDS', workshopId: shop.id, residentId: shop.residentId, lotId: shop.lotId, mode: shop.mode });
@@ -281,10 +284,10 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
             const verdict = ChainWeb.judge(out.data, tech.chain, ground, open, registered);
             if (!verdict.ok) { state = { ...state, refused: verdict.reason }; continue; }
             state = { ...state, refused: undefined };
-            set({ tech: addToLedger({ ...get().tech, chain: ChainWeb.merge(tech.chain, out.data, resident.id) }, out.data, resident.id, Date.now()) });
+            get().applyTech({ kind: 'CHAIN_ROUND', round: out.data, residentId: resident.id, at: Date.now() });
             if (ChainWeb.open(profession.concept, profession.rank, get().tech.chain, ground, resident.id).length === 0) { state = { ...state, closed: true }; break; }
           }
-          set({ tech: { ...get().tech, resolving: { ...get().tech.resolving, [resident.id]: state } } });
+          get().applyTech({ kind: 'RESOLVING', residentId: resident.id, state });
         }
         await get().saveHubState();
       } finally {

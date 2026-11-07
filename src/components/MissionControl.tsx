@@ -16,6 +16,7 @@ import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
 import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Tutorial } from '../logic/systems/Tutorial';
+import { hubPort } from '../entities/hub/store';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
   UP: 'GATE OPEN — IT CLOSES IN',
@@ -121,7 +122,7 @@ export const MissionControl = () => {
   }, []);
 
   const handleDeploy = async (worldId: string) => {
-    const res = await deployToWorld(worldId, worldPort, playerPort);
+    const res = await deployToWorld(worldId, worldPort, playerPort, hubPort);
     if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
   };
 
