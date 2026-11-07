@@ -175,7 +175,7 @@ describe('with no key, the door runs on the local model (Q24)', () => {
     const door = new IntelligenceDoor(new KeyOrLocalProvider(new Keyless(), new LocalProvider(runtime)));
     const creation = buildCreationRequest({ count: 3, candidates: [] });
     await door.ask(creation);
-    await door.askTalk('t1', buildNpcTalkRequest({ who: { name: 'A', rank: 'D', temperament: '', objective: '', want: '', alignment: '', mind: {}, hands: [] }, log: [], said: 'hi', roll: 50, required: 50, bonuses: {}, meter: 50 }));
+    await door.askTalk('t1', buildNpcTalkRequest({ who: { name: 'A', rank: 'D', temperament: '', objective: '', want: '', alignment: '', mind: {}, hands: [] }, memory: [], said: 'hi', roll: 50, required: 50, bonuses: {}, meter: 50 }));
     expect(runtime.asked.map(r => r.kind)).toEqual(['creation', 'npc_talk']);
     expect(runtime.asked[0].schema).toEqual(creation.schema);
     expect(runtime.asked[0].system).toBe(creation.system);

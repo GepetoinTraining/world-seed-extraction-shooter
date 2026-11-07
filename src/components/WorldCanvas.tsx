@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../types';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
-import { useHubStore } from '../entities/hub/store';
+import { useHubStore, worldDay } from '../entities/hub/store';
+import { rememberThreat } from '../entities/interaction/memoryStore';
 import { WebSystem } from '../logic/systems/WebSystem';
 import { ProjectileSystem, PatternType, IProjectile } from '../entities/combat/projectileSystem';
 import { LootTable } from '../entities/world/LootTable';
@@ -1034,6 +1035,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             x: event.position.x, y: event.position.y, at: now, size
           });
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
+          if (event.type === 'HIT' && event.entityId) void rememberThreat(useWorldStore.getState().currentMap?.seed ?? '', event.entityId, usePlayerStore.getState().player.id, worldDay());
           if (event.type === 'KILL' && event.xpReward) {
             feed(`${event.displayName ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
             // Line 80: defeating a thing teaches what it casts, at the next rest. Line 90: the Director hears.

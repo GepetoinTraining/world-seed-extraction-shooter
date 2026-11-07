@@ -35,8 +35,11 @@ import { StatSystem } from '../../logic/systems/StatSystem';
 import { WebSystem } from '../../logic/systems/WebSystem';
 import { TalkDoor } from '../../logic/systems/TalkDoor';
 import { TALK_ENERGY, TalkLaw } from '../../logic/systems/TalkLaw';
-import { IGoalAsk, ILogLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../logic/systems/TalkTypes';
+import { IGoalAsk, ILogLine, IMemoryLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../logic/systems/TalkTypes';
 import { useFeed } from '../../components/ui/stores';
+import { Deeds } from '../../logic/memory/Deeds';
+import { MemoryPlace, MemoryStore } from './memoryStore';
+import { IMounted } from '../../logic/memory/NpcContext';
 
 export type TalkSubject =
   | { kind: 'FIELD_PERSON'; entityId: string }
@@ -68,7 +71,7 @@ export interface ITalkGoal {
   unanswered?: boolean;
 }
 
-/** A city person's record, beside the hub. The whole log stays here: only its tail goes out. */
+/** A city person's record, beside the hub. The whole log stays here for the window; what goes out is what they remember (memoryStore.ts). */
 interface ICityTalkRecord {
   npcId: string;
   disposition: number;
@@ -189,6 +192,42 @@ function cityPerson(npcId: string): { sheet: INpcSheet; rank: UniversalRank; fac
 
 const addUsage = (spent: number, usage?: IDoorUsage) => spent + (usage?.usd ?? 0);
 
+const me = () => usePlayerStore.getState().player.id;
+
+/** Whoever a city memory names, by the name this city knows them by. */
+const cityNameOf = (id: string): string | undefined => {
+  const hub = useHubStore.getState();
+  const player = usePlayerStore.getState().player;
+  if (id === player.id) return player.username;
+  return hub.guild.residents.find(r => r.id === id)?.name ?? HUB_NPCS[id]?.name ?? hub.craftsmen.find(c => c.id === id)?.name;
+};
+
+/** Whoever a field memory names: the person talking, or whoever stands in this world. */
+const fieldNameOf = (id: string): string | undefined => {
+  const player = usePlayerStore.getState().player;
+  if (id === player.id) return player.username;
+  const entity = liveEntity(id);
+  return entity?.npc?.name ?? entity?.displayName;
+};
+
+const cityPlace = (): MemoryPlace => ({ hubId: useHubStore.getState().activeHubId ?? 'hub_unknown' });
+
+/**
+ * The context the model is given as this round opens (NpcContext.ts): what comes to mind facing the
+ * one talking, and how they stand with them. Pedro: memory is never shown to anyone; it is mounted here.
+ */
+const mountFor = (place: MemoryPlace, owner: string, said: string | undefined, name: (id: string) => string | undefined): Promise<IMounted> =>
+  MemoryStore.mount(place, owner, me(), worldDay(), said, name);
+
+/** What a city person is after right now: what the board holds for them, or what it would post. */
+function cityWantOf(npcId: string, person: NonNullable<ReturnType<typeof cityPerson>>): string | undefined {
+  const hub = useHubStore.getState();
+  const hubId = hub.activeHubId ?? 'hub_unknown';
+  const posted = hub.guild.quests.find(q => q.residentId === npcId && q.state === 'OPEN');
+  const resident = hub.guild.residents.find(r => r.id === npcId);
+  return posted?.text ?? (resident ? wantFor(resident, person.sheet, hubId, resident.wantsMet, residentRung(resident, person.facts, worldDay()).need).text : undefined);
+}
+
 /** Q48: a keeper is talked to across their own counter. */
 const AT_THE_COUNTER = 'at their counter, face to face';
 
@@ -219,7 +258,7 @@ export const useTalk = create<ITalkState>((set, get) => {
   };
 
   /** D116: their goal, set from the log and the sheet, and only when the rung they stand on has moved. */
-  const setCityGoal = async (npcId: string, person: NonNullable<ReturnType<typeof cityPerson>>, agenda: INpcAgenda, talkId: string) => {
+  const setCityGoal = async (npcId: string, person: NonNullable<ReturnType<typeof cityPerson>>, agenda: INpcAgenda, talkId: string, mounted: IMounted, wants: string | undefined, said: string) => {
     const facts = person.facts;
     const rung = NpcAgenda.rung(agenda, facts);
     const standing = get().goal;
@@ -228,7 +267,9 @@ export const useTalk = create<ITalkState>((set, get) => {
     const ask: IGoalAsk = {
       binding: 'LADDER',
       who: citySurface(person),
-      log: get().log,
+      ...mounted,
+      ...(wants ? { wants } : {}),
+      said,
       need: rung.need,
       rungs: LADDER.map(r => ({ need: r.need, says: r.says, met: NpcAgenda.met(agenda, r, facts) })),
       buildings: hub.buildingWords(),
@@ -322,8 +363,9 @@ export const useTalk = create<ITalkState>((set, get) => {
         const required = TalkLaw.required(entity.npc.want, attrs, entity.rank, stats);
         const who = isMonster ? monsterSurface(seed, entity, webVersion) : NpcSheet.surface(NpcSheet.read(seed, entity, webVersion), entity.rank);
         const startStance = isMonster ? MonsterMind.stance(entity.npc.disposition, attrs) : undefined;
+        const mounted = await mountFor({ seed }, entity.id, said, fieldNameOf);
         const ask: IRoundAsk = {
-          who, log: prior, said, roll, required, bonuses: TalkLaw.bonuses(), meter: entity.npc.disposition,
+          who, ...mounted, said, roll, required, bonuses: TalkLaw.bonuses(), meter: entity.npc.disposition,
           ...(isMonster ? { stance: startStance, mayTellWant: startStance === 'FRIENDLY' } : {})
         };
         const answer = await TalkDoor.round(`${SessionJournal.rollKey('talk', entity.id)}`, ask, { alignment: isMonster ? undefined : who.alignment, hidden: kind ? [kind.name] : [] });
@@ -350,6 +392,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         // With no model nobody spoke, so the floor's line is narration, never their words.
         const log: ILogLine[] = [...(stillHere() ? get().log : [...prior, { who: 'THEM' as const, text: said }]), { who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply }];
         fieldLogs.set(`${seed}:${entity.id}`, log);
+        await MemoryStore.write({ seed }, [{ owner: entity.id, what: Deeds.talkRound({ day: worldDay(), speaker: me(), listener: entity.id, said, landed: sums.landed, remember: answer.remember }) }]);
         if (!stillHere()) return;
         set(s => ({
           busy: false, log, meter: sums.disposition, stance, wants,
@@ -368,7 +411,9 @@ export const useTalk = create<ITalkState>((set, get) => {
       const talkId = `${hubId}:${subject.npcId}:${worldDay()}`;
       const agenda = person.agenda ?? NpcAgenda.fold(kept.agenda, worldDay());
       set({ busy: true, note: '', log: [...prior, { who: 'THEM', text: said, name: usePlayerStore.getState().player.username }] });
-      await setCityGoal(subject.npcId, person, agenda, talkId);
+      const mounted = await mountFor(cityPlace(), subject.npcId, said, cityNameOf);
+      const wants = cityWantOf(subject.npcId, person);
+      await setCityGoal(subject.npcId, person, agenda, talkId, mounted, wants, said);
       if (!stillHere()) return;
 
       const attempt = kept.attempts + 1;
@@ -376,7 +421,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const roll = TalkLaw.rollOf(rollKey);
       const required = TalkLaw.required(person.sheet.want, attrs, person.rank, person.sheet.stats);
       const who = citySurface(person);
-      const ask: IRoundAsk = { who, log: prior, said, roll, required, bonuses: TalkLaw.bonuses(), meter: get().meter, goal: get().goal?.text, ...(person.keeper ? { where: AT_THE_COUNTER } : {}) };
+      const ask: IRoundAsk = { who, ...mounted, ...(wants ? { wants } : {}), said, roll, required, bonuses: TalkLaw.bonuses(), meter: get().meter, goal: get().goal?.text, ...(person.keeper ? { where: AT_THE_COUNTER } : {}) };
       const answer = await TalkDoor.round(talkId, ask, { alignment: who.alignment, hidden: [] });
       // Gone mid-round in the city: it never happened. Nothing is on the record, and the same roll waits for the next try.
       if (!stillHere()) return;
@@ -388,6 +433,10 @@ export const useTalk = create<ITalkState>((set, get) => {
         spentUsd: addUsage(s.spentUsd, answer.usage),
         rounds: [...s.rounds, { said, roll, required, band: answer.band, gated: answer.gated, by: answer.by, reply, ...sums }]
       }));
+      await MemoryStore.write(cityPlace(), [{
+        owner: subject.npcId,
+        what: Deeds.talkRound({ day: worldDay(), speaker: me(), listener: subject.npcId, said, landed: sums.landed, remember: answer.remember, ...(person.keeper ? { where: AT_THE_COUNTER } : {}) })
+      }]);
       await saveCity(subject.npcId, agenda, attempt);
     },
 
@@ -403,6 +452,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const { seed } = worldFacts();
       const log: ILogLine[] = [...get().log, { who: 'NOTE', text: `You give them ${gone.name}.` }];
       fieldLogs.set(`${seed}:${entity.id}`, log);
+      void MemoryStore.write({ seed }, [{ owner: entity.id, what: Deeds.gift({ day: worldDay(), giver: me(), taker: entity.id, item: gone.name }) }]);
       const stance = subject.kind === 'MONSTER' ? MonsterMind.stance(entity.npc.disposition, playerAttributes()) : null;
       if (stance) useWorldStore.getState().updateEntity(entity.id, { bargain: { ...entity.bargain, stance, holding: true } });
       set({ log, meter: entity.npc.disposition, stance });
@@ -443,6 +493,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         SessionJournal.record('INTERACT', { kind: 'ASK', targetId: entity.id, rollKey, roll, required, landed, disposition });
         const log: ILogLine[] = [...get().log, note(`You ask if they want something. Rolled ${roll} against ${required}.`), note(said)];
         fieldLogs.set(`${seed}:${entity.id}`, log);
+        if (landed) await MemoryStore.write({ seed }, [{ owner: entity.id, what: Deeds.secret({ day: worldDay(), owner: entity.id, to: me(), want: isMonster ? `wanting ${itWants}` : said }) }]);
         if (!stillHere()) return;
         set({ log, meter: disposition, wants, note: '' });
         return;
@@ -462,14 +513,13 @@ export const useTalk = create<ITalkState>((set, get) => {
       const agenda = person.agenda ?? NpcAgenda.fold(kept.agenda, worldDay());
       const rung = NpcAgenda.rung(agenda, person.facts);
       // What they let slip is the one want: what the board holds for them, or what it would post.
-      const posted = hub.guild.quests.find(q => q.residentId === subject.npcId && q.state === 'OPEN');
-      const resident = hub.guild.residents.find(r => r.id === subject.npcId);
-      const want = posted?.text ?? (resident ? wantFor(resident, person.sheet, hubId, resident.wantsMet, residentRung(resident, person.facts, worldDay()).need).text : null);
+      const want = cityWantOf(subject.npcId, person) ?? null;
       const said = landed
         ? [`They are after ${rung.says}.`, want ?? '', TalkLaw.sheetTells(person.sheet)].filter(Boolean).join(' ')
         : TalkLaw.askMissed(person.sheet.name);
       const meter = landed ? get().meter : Math.max(0, get().meter - 1);
       set(s => ({ busy: false, meter, log: [...s.log, note(`You ask if they want something. Rolled ${roll} against ${required}.`), note(said)] }));
+      if (landed) await MemoryStore.write(cityPlace(), [{ owner: subject.npcId, what: Deeds.secret({ day: worldDay(), owner: subject.npcId, to: me(), want: want ?? rung.says }) }]);
       await saveCity(subject.npcId, agenda, kept.attempts, n);
     },
 
