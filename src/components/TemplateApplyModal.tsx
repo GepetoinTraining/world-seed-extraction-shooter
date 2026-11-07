@@ -6,14 +6,14 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { IItem, ItemType } from '../../types';
+import { IItem, ItemType } from '../../shared/types';
 import { useHubStore, IPlayerLot } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { HubGenerator } from '../entities/hub/HubGenerator';
-import { ITemplateSheet, defaultSheet, sizeNeedsVerdict, templateBill, zoneFloorCount } from '../entities/hub/template';
+import { ITemplateSheet, defaultSheet, sizeNeedsVerdict, templateBill, zoneFloorCount } from '../../shared/entities/hub/template';
 import { ITemplateItem, isTemplateItem } from '../logic/systems/TemplateSystem';
-import { STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
-import { answersTag, materialLabel, tagDefaultMaterial } from '../entities/hub/room';
+import { STRUCTURE_COSTS } from '../../shared/entities/economy/data/recipeDefinitions';
+import { answersTag, materialLabel, tagDefaultMaterial } from '../../shared/entities/hub/room';
 import { useFeed } from './ui/stores';
 import { inspectItem } from '../render/atoms/inspect';
 import { Button, CardView, Chip, ItemSprite, Modal } from './ui/kit';

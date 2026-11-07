@@ -23,17 +23,17 @@
  * stands on another though no recipe says so. `askFor` is what a person's talk writes (C2).
  */
 
-import { IHubWeb, IWebNodeRecord, IWebPack, IWebStation } from '../../../types';
-import { ChainWeb, IChainGround, IChainMaterial, IChainRoute, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../../logic/theme/ChainWeb';
-import { stationNumbers } from '../../logic/theme/ThemeFormula';
-import { RANKS, ThemeRank } from '../../logic/theme/ThemeTypes';
+import { IHubWeb, IWebNodeRecord, IWebPack, IWebStation } from '../../../shared/types';
+import { ChainWeb, IChainGround, IChainMaterial, IChainRoute, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../../../shared/logic/theme/ChainWeb';
+import { stationNumbers } from '../../../shared/logic/theme/ThemeFormula';
+import { RANKS, ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
 import { IProfession } from '../../logic/systems/Profession';
-import { WebSystem } from '../../logic/systems/WebSystem';
-import { TagLaw } from '../../logic/content/TagLaw';
-import { WebBank } from '../../logic/content/WebBank';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../economy/data/recipeDefinitions';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
-import { IRoomState, SHELL_BILLS, interiorSize } from './room';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { IRoomState, SHELL_BILLS, interiorSize } from '../../../shared/entities/hub/room';
 
 export type WorkshopMode = 'WORKSTATION' | 'MACHINE';
 

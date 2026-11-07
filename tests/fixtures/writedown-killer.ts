@@ -14,7 +14,7 @@
 import { randomUUID } from 'node:crypto';
 import { openDatabase } from '../../server/connection';
 import { RecordKeeper } from '../../server/record';
-import { SqlStore } from '../../server/SqlStore';
+import { SqlStore } from '../../shared/SqlStore';
 
 const killAt = process.env.WS_KILL_AT!;
 const from = Number(process.env.WS_KILL_FROM ?? 1);

@@ -7,16 +7,16 @@
  * module owns is how fast a person goes, so that comes in as an argument, as what it is.
  */
 
-import { UniversalRank, Rarity, IPlayer } from '../../../types';
-import { Director, IDirectorRecord } from '../../entities/world/Director';
+import { UniversalRank, Rarity, IPlayer } from '../../../shared/types';
+import { Director, IDirectorRecord } from '../../../shared/entities/world/Director';
 import { IClockedWorld, WorldClock, WorldPhase } from '../../entities/world/WorldClock';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
-import { ContentRegistry } from '../theme/ContentRegistry';
-import { PROCESS_SKILL_XP_PER_JOB } from './ProcessSystem';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { PROCESS_SKILL_XP_PER_JOB } from '../../../shared/logic/systems/ProcessSystem';
 import { REST_MARK_ENERGY, RestSystem } from './RestSystem';
-import { StatSystem } from './StatSystem';
-import { MASTERY_RUNGS, RUNG_XP } from './WebSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { MASTERY_RUNGS, RUNG_XP } from '../../../shared/logic/systems/WebSystem';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;

@@ -22,7 +22,7 @@ const db = new Map<string, any>();
 const savedWorlds: any[] = [];
 let refuseToSign = false;
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -40,19 +40,19 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, IPlayer, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../types';
+import { IItem, IPlayer, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../shared/types';
 import { usePlayerStore, ARCHETYPES } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { WorldType, WorldCertificateSystem } from '../src/entities/world/WorldCertificate';
 import { WorldClock } from '../src/entities/world/WorldClock';
 import { LootTable } from '../src/entities/world/LootTable';
-import { NpcSheet } from '../src/logic/systems/NpcSheet';
+import { NpcSheet } from '../shared/logic/systems/NpcSheet';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { Ledger } from '../src/logic/ledger/Ledger';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Treasury } from '../src/logic/economy/Treasury';
-import { WebBank } from '../src/logic/content/WebBank';
+import { WebBank } from '../shared/logic/content/WebBank';
 import { inspectItem } from '../src/render/atoms/inspect';
 import { itemArtFor } from '../src/render/atoms/items';
 import { WorldDeed, FREE_DEED_SIZE, WORLD_DEED_SIZES, isWorldDeed } from '../src/logic/systems/WorldDeed';
@@ -63,16 +63,16 @@ import { OriginBank } from '../src/logic/content/OriginBank';
 import { ORIGIN_BATCHES, IOriginBatch } from '../src/entities/generation/packs/originBatches';
 import { CREATION_DRAFT_DEFAULTS, CREATION_DRAFT_KEY, useCreationDraft } from '../src/components/ui/creationDraft';
 import { CreationFlow } from '../src/components/CreationFlow';
-import { IntelligenceDoor, AbsentProvider } from '../server/intelligence/door';
-import { ClaudeProvider, MODEL_FOR } from '../server/intelligence/claude';
-import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../server/intelligence/prompts';
+import { IntelligenceDoor, AbsentProvider } from '../shared/intelligence/door';
+import { ClaudeProvider, MODEL_FOR } from '../shared/intelligence/claude';
+import { buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, CREATION_SCHEMA, KAMI_SCHEMA } from '../shared/intelligence/prompts';
 import { KamiPersona } from '../src/logic/systems/KamiPersona';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 import { loadLocalEnv } from '../server/intelligence/index';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
-import { ARCHETYPE_IDS, figure, portrait } from '../src/render/atoms/people';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
+import { ARCHETYPE_IDS, figure, portrait } from '../shared/render/atoms/people';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
 
 installShippedThemes();
 
@@ -440,7 +440,7 @@ describe('who you were: a bank, with the choices the plan names', () => {
   });
 
   it('stands on what ships: every tag it names is registered by the game, not by the test fixture', () => {
-    const shipped = new Set([...SRC('src/entities/generation/packs/webBatches.ts').matchAll(/\{ tag: '([a-z_]+)'/g), ...SRC('src/entities/generation/packs/firstTheme.ts').matchAll(/\{ tag: '([a-z_]+)'/g)].map(m => m[1]));
+    const shipped = new Set([...SRC('shared/entities/generation/packs/webBatches.ts').matchAll(/\{ tag: '([a-z_]+)'/g), ...SRC('shared/entities/generation/packs/firstTheme.ts').matchAll(/\{ tag: '([a-z_]+)'/g)].map(m => m[1]));
     expect(shipped.size).toBeGreaterThan(50);
     for (const batch of ORIGIN_BATCHES) {
       const named = [
@@ -805,7 +805,7 @@ describe('D35: the request, on the server, against a fake', () => {
   it('it is its own kind, on Haiku, as Pedro asked: one constant', () => {
     expect(MODEL_FOR.creation).toBe('claude-haiku-5-5');
     expect(buildCreationRequest(ask).kind).toBe('creation');
-    expect(SRC('server/intelligence/claude.ts')).toMatch(/creation: 'claude-haiku-5-5'/);
+    expect(SRC('shared/intelligence/claude.ts')).toMatch(/creation: 'claude-haiku-5-5'/);
   });
 
   it('sends the schema and a low effort, without the fallback Haiku does not take; prices itself at Haiku', async () => {
@@ -1814,7 +1814,8 @@ describe('the key in .env', () => {
   it('a checkout reads its own file and looks no further, so a test session never spends a person\'s key', () => {
     const loader = SRC('server/intelligence/index.ts');
     expect(loader).toMatch(/resolve\(process\.cwd\(\), '\.env'\)/);
-    expect(loader).not.toMatch(/\.\.\//);
+    // Its imports may climb to the shared code; the file it reads may not climb
+    expect(loader.replace(/^import .*$/gm, '')).not.toMatch(/\.\.\//);
     expect(SRC('.gitignore')).toMatch(/^\.env$/m);
   });
 });

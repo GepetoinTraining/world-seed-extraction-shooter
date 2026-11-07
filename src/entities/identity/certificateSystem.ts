@@ -3,7 +3,7 @@
  * Self-Sovereign Identity via X.509 Certificates
  */
 
-import { signedText } from './signedText';
+import { signedText } from '../../../shared/entities/identity/signedText';
 
 // ============================================================================
 // TYPES

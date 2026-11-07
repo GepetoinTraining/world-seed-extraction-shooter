@@ -1,22 +1,22 @@
 import { LootBook } from '../theme/LootBook';
 import { ThemeStore } from '../theme/ThemeStore';
 import { WorldCertificateSystem, WorldType, AccessMode } from '../../entities/world/WorldCertificate';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
 import { useHubStore } from '../../entities/hub/store';
 import { useIdentityStore } from '../../entities/identity/store';
 import { useWorldStore } from '../../entities/world/store';
 import { usePlayerStore } from '../../entities/player/store';
 // --- FIX START ---
 // Import both from the ROOT types file
-import { UniversalRank, IPlayer } from '../../../types';
+import { UniversalRank, IPlayer } from '../../../shared/types';
 // --- FIX END ---
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Ledger } from '../ledger/Ledger';
 import { GoldCommit } from '../economy/GoldCommit';
 import { HomeHub } from '../persistence/HomeHub';
 import { FIRST_THEME_VECTORS, runGoldenCheck } from '../../entities/world/goldens';
-import { ContentRegistry } from '../theme/ContentRegistry';
-import { FIRST_THEME_PACK } from '../theme/boot';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK } from '../../../shared/logic/theme/boot';
 
 export class StartupSequence {
 
@@ -33,7 +33,7 @@ export class StartupSequence {
       const { AvatarExport } = await import('../sovereignty/AvatarExport');
       const { Provenance } = await import('../sovereignty/Provenance');
       const { WorldExport } = await import('../sovereignty/WorldExport');
-      const { LoadoutSystem } = await import('../../entities/player/systems/LoadoutSystem');
+      const { LoadoutSystem } = await import('../../../shared/entities/player/systems/LoadoutSystem');
       const { CartSystem } = await import('../../entities/world/CartSystem');
       const { CartOverlay } = await import('../../entities/world/CartOverlay');
       // Wave 10C (D21): the dev hook for the slot-protection contract — the
@@ -41,12 +41,12 @@ export class StartupSequence {
       //   __ws.protectSlot('CHEST', 'Dev Ward')
       const protectSlot = (slot: any, by = 'Dev Ward (console)') => usePlayerStore.getState().markSlotProtected(slot, by);
       // Wave 10D: the anatomy's own instruments join the console
-      const { CompositionSystem } = await import('../economy/CompositionSystem');
-      const { MintRegistry } = await import('../economy/MintRegistry');
+      const { CompositionSystem } = await import('../../../shared/logic/economy/CompositionSystem');
+      const { MintRegistry } = await import('../../../shared/logic/economy/MintRegistry');
       // D27: the web's own instruments
-      const { WebBank } = await import('../content/WebBank');
-      const { WebSystem: Web } = await import('../systems/WebSystem');
-      const { NpcSheet } = await import('../systems/NpcSheet');
+      const { WebBank } = await import('../../../shared/logic/content/WebBank');
+      const { WebSystem: Web } = await import('../../../shared/logic/systems/WebSystem');
+      const { NpcSheet } = await import('../../../shared/logic/systems/NpcSheet');
       // D113: the talk's own instruments
       const { useTalk } = await import('../../entities/interaction/talkStore');
       const { MonsterMind } = await import('../systems/MonsterMind');
@@ -56,7 +56,7 @@ export class StartupSequence {
 
     // Wave 3.1: inventory geometry self-test (dev; a real runner lands Wave 7)
     if (import.meta.env.DEV) {
-      const { InventorySystem } = await import('../../entities/player/systems/InventorySystem');
+      const { InventorySystem } = await import('../../../shared/entities/player/systems/InventorySystem');
       const fails = InventorySystem.selfTest();
       if (fails.length === 0) console.log('[BOOT] Inventory geometry self-test ✓');
       else console.error('[BOOT] ⛔ Inventory self-test failures:', fails);
@@ -133,11 +133,11 @@ console.log('[BOOT] Refreshing World List...');
        if (result.status === 'OK') {
            console.log('[BOOT] Neural Imprint verified. Restoring state...');
            // Wave 10C: the three Wave-4 buckets migrate into the slot tree, once
-           const { LoadoutSystem } = await import('../../entities/player/systems/LoadoutSystem');
+           const { LoadoutSystem } = await import('../../../shared/entities/player/systems/LoadoutSystem');
            // D28: and old skill tracks land on lawful ids, once, without loss
-           const { WebSystem } = await import('../systems/WebSystem');
+           const { WebSystem } = await import('../../../shared/logic/systems/WebSystem');
            // D83, D84: and a rank its experience earned is stored, once, with skills kept where they stood
-           const { ProgressionSystem } = await import('../../entities/player/systems/ProgressionSystem');
+           const { ProgressionSystem } = await import('../../../shared/entities/player/systems/ProgressionSystem');
            // D118: and lore already read is held as a resource, once
            const { LoreSystem } = await import('../systems/LoreSystem');
            usePlayerStore.setState({ player: LoreSystem.migrate(ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player)))) });

@@ -5,9 +5,9 @@
  * authentication in front of it (D45): a public route here spends someone's money.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { IntelligenceDoor } from './door';
-import type { DoorSetting } from './setting';
-import { routeDoor } from './routes';
+import type { IntelligenceDoor } from '../../shared/intelligence/door';
+import type { DoorSetting } from '../../shared/intelligence/setting';
+import { routeDoor } from '../../shared/intelligence/routes';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 

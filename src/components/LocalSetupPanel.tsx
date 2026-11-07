@@ -6,7 +6,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Button } from './ui/kit';
-import agents from '../../server/intelligence/agents.json';
+import agents from '../logic/intelligence/agents.json';
 import { SetupSystem, setupPrompt, systemOf, unixScript, windowsScript } from '../logic/intelligence/LocalSetup';
 
 /** This game's own origin: configuration when built for a domain, else where the page is. */

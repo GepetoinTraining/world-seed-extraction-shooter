@@ -8,11 +8,11 @@ import React, { useMemo } from 'react';
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { IResident } from '../entities/hub/guild';
 import { IWorkshop, IWorkshopOffer, WorkshopMode, billFor, roomAreaOf } from '../entities/hub/hubTech';
-import { answersTag, materialLabel } from '../entities/hub/room';
-import { lotConstruction } from '../entities/hub/template';
+import { answersTag, materialLabel } from '../../shared/entities/hub/room';
+import { lotConstruction } from '../../shared/entities/hub/template';
 import { useHubStore } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
-import { STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
+import { STRUCTURE_COSTS } from '../../shared/entities/economy/data/recipeDefinitions';
 import { ArmedButton, Chip } from './ui/kit';
 import { useFeed } from './ui/stores';
 

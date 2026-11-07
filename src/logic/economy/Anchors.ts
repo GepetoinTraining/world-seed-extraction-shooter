@@ -8,12 +8,12 @@
  * in the hub's store). Pure and keyed. No person is told to prefer one.
  */
 
-import { IItem, UniversalRank } from '../../../types';
-import { RANK_ORDER } from '../../entities/player/systems/ProgressionSystem';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../../entities/item/ItemFactory';
-import { Rng } from '../rng/DeterministicRNG';
-import { ANCHOR_CHANCE } from '../theme/ThemeFormula';
+import { IItem, UniversalRank } from '../../../shared/types';
+import { RANK_ORDER } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { ANCHOR_CHANCE } from '../../../shared/logic/theme/ThemeFormula';
 
 const rankAt = (rank: string | undefined) => RANK_ORDER.indexOf(rank as UniversalRank);
 

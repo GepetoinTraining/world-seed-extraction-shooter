@@ -10,12 +10,12 @@
  * refusal in voice. The caller moves the items and signs the record.
  */
 
-import { IItem } from '../../../types';
-import { GEAR_RECIPES, CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../../entities/item/ItemFactory';
-import { CompositionSystem } from '../economy/CompositionSystem';
-import { Rng } from '../rng/DeterministicRNG';
+import { IItem } from '../../../shared/types';
+import { GEAR_RECIPES, CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 
 export interface IImproviseResult {
   ok: boolean;

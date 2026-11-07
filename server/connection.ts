@@ -25,11 +25,11 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as schema from './schema.pg';
+import * as schema from '../shared/schema.pg';
 
-export { DatabaseUnavailable, isDataException, isUniqueViolation } from './dbShared';
-export type { IDatabase, IOpenOptions } from './dbShared';
-import { DatabaseUnavailable, type IDatabase, type IOpenOptions } from './dbShared';
+export { DatabaseUnavailable, isDataException, isUniqueViolation } from '../shared/dbShared';
+export type { IDatabase, IOpenOptions } from '../shared/dbShared';
+import { DatabaseUnavailable, type IDatabase, type IOpenOptions } from '../shared/dbShared';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'pg');

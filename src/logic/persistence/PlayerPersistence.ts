@@ -12,10 +12,10 @@
  *   (jack-out, death, purchases, genesis) call flush() directly.
  */
 
-import { IPlayer } from '../../../types';
+import { IPlayer } from '../../../shared/types';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { usePlayerStore } from '../../entities/player/store';
 import { useIdentityStore } from '../../entities/identity/store';
 import { refusedAvatarId } from './BrowserImport';

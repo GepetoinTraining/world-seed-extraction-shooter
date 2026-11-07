@@ -13,7 +13,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -31,10 +31,10 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, IPlayer, ItemType } from '../types';
+import { IItem, IPlayer, ItemType } from '../shared/types';
 import { SurveySystem, ISurveyEntry } from '../src/logic/systems/SurveySystem';
 import { MapSystem, IMapItem, isMapItem } from '../src/logic/systems/MapSystem';
-import { TEMPLATE_MINT_BILL } from '../src/entities/hub/template';
+import { TEMPLATE_MINT_BILL } from '../shared/entities/hub/template';
 import { ReconView, closeRecon, openRecon } from '../src/components/ReconView';
 import { TemplateStudio } from '../src/components/TemplateStudio';
 import { WorldCard } from '../src/components/MissionControl';
@@ -43,15 +43,15 @@ import { useWorldStore, IWorldCard } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { EntityType, IWorldEntity, ScanLevel } from '../src/entities/world/types';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
+import { EntityType, IWorldEntity, ScanLevel } from '../shared/entities/world/types';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { inspectItem } from '../src/render/atoms/inspect';
 import { itemArtFor } from '../src/render/atoms/items';
-import { hashBytes } from '../src/render/atoms/atoms';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
+import { hashBytes } from '../shared/render/atoms/atoms';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
 
 installShippedThemes();
 

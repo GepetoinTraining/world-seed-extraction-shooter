@@ -8,25 +8,25 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { IPlayer, ItemType } from '../types';
-import { EffectSystem, IEffectAbility } from '../src/logic/systems/EffectSystem';
+import { IPlayer, ItemType } from '../shared/types';
+import { EffectSystem, IEffectAbility } from '../shared/logic/systems/EffectSystem';
 import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
 import { CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
-import { BASE_CHANNEL_MS, StatSystem } from '../src/logic/systems/StatSystem';
-import { COST_BANDS, EFFECTS, IThemeBody, RANKS, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { abilityNumbers, FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, forcedExitWorth, materialNumbers, rankStep, shelfPrice } from '../src/logic/theme/ThemeFormula';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { compileTheme, sealTheme } from '../src/logic/theme/ThemeCompiler';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
+import { BASE_CHANNEL_MS, StatSystem } from '../shared/logic/systems/StatSystem';
+import { COST_BANDS, EFFECTS, IThemeBody, RANKS, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { abilityNumbers, FORCED_EXIT_COST, FORCED_EXIT_FLOOR_RANK, forcedExitWorth, materialNumbers, rankStep, shelfPrice } from '../shared/logic/theme/ThemeFormula';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { compileTheme, sealTheme } from '../shared/logic/theme/ThemeCompiler';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { usePlayerStore } from '../src/entities/player/store';
-import { Rng, fnv1a } from '../src/logic/rng/DeterministicRNG';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { buildRestRequest, buildThemeRequest } from '../server/intelligence/prompts';
-import { GRID_H, GRID_W } from '../src/entities/player/systems/InventorySystem';
+import { Rng, fnv1a } from '../shared/logic/rng/DeterministicRNG';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { buildRestRequest, buildThemeRequest } from '../shared/intelligence/prompts';
+import { GRID_H, GRID_W } from '../shared/entities/player/systems/InventorySystem';
 
 installShippedThemes();
 

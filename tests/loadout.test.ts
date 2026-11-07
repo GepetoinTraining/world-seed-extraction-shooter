@@ -22,7 +22,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -44,18 +44,18 @@ import {
   IItem, IAttributes, ItemType, SlotType, UniversalRank, Rarity,
   BODY_SLOT_IDS, EquipSlotId, HEAD_BUDGET_POSITIONS, MAX_FRAMES,
   TOOL_SLOT_COUNT, toolSlotIds, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES
-} from '../types';
-import { LoadoutSystem, paperDollLayout } from '../src/entities/player/systems/LoadoutSystem';
-import { InventorySystem } from '../src/entities/player/systems/InventorySystem';
+} from '../shared/types';
+import { LoadoutSystem, paperDollLayout } from '../shared/entities/player/systems/LoadoutSystem';
+import { InventorySystem } from '../shared/entities/player/systems/InventorySystem';
 import { CartSystem } from '../src/entities/world/CartSystem';
 import { CartOverlay } from '../src/entities/world/CartOverlay';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { COGNITIVE_FRAMES } from '../src/entities/player/data/cognitiveFrames';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { COGNITIVE_FRAMES } from '../shared/entities/player/data/cognitiveFrames';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { frameMark, itemArtFor } from '../src/render/atoms/items';
-import { Sprite, buildPalette, grayscale } from '../src/render/atoms/atoms';
+import { Sprite, buildPalette, grayscale } from '../shared/render/atoms/atoms';
 import { TERMINAL_GENRE } from '../src/components/ui/tokens';
 
 // -----------------------------------------------------------------------------

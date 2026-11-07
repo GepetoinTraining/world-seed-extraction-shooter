@@ -18,7 +18,7 @@ import { join } from 'path';
 
 const db = new Map<string, any>();
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -36,8 +36,8 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
-import { BiomeType, EntityType } from '../src/entities/world/types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
+import { BiomeType, EntityType } from '../shared/entities/world/types';
 import { useWorldStore } from '../src/entities/world/store';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
@@ -47,27 +47,27 @@ import { Treasury } from '../src/logic/economy/Treasury';
 import { Wallets } from '../src/logic/economy/Wallets';
 import { Anchors } from '../src/logic/economy/Anchors';
 import { Ledger } from '../src/logic/ledger/Ledger';
-import { StatSystem } from '../src/logic/systems/StatSystem';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
 import { SalvageSystem } from '../src/logic/systems/SalvageSystem';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { compileTheme, sealTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { IThemeBody, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { WebBank } from '../src/logic/content/WebBank';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { compileTheme, sealTheme, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { IThemeBody, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
 import { computeGolden } from '../src/entities/world/goldens';
 import { LootTable } from '../src/entities/world/LootTable';
-import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { emptyGuild, residentIdOf, residentUpkeepPerDay } from '../src/entities/hub/guild';
 import { PRINT_DAYS, foldDays, printAmount, printsNeeded, walletBrought } from '../src/entities/hub/money';
 import { MarketCap } from '../src/logic/economy/MarketCap';
-import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
+import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
 
 const UID = 'uid_money';
 const HUB = 'hub_money';
@@ -504,7 +504,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
   });
 
   it('no window still says a hub with no funds cannot buy (found by playing)', () => {
-    for (const path of allSource('src')) expect(readFileSync(path, 'utf8'), path).not.toMatch(/no funds cannot buy|treasury cannot cover/i);
+    for (const path of [...allSource('src'), ...allSource('shared')]) expect(readFileSync(path, 'utf8'), path).not.toMatch(/no funds cannot buy|treasury cannot cover/i);
   });
 
   it('a covered payment prints nothing', async () => {
@@ -736,11 +736,11 @@ describe('a master has a purse now (b5\'s note)', () => {
 
 describe('Pedro: "you don\'t code inflation"', () => {
   it('no word for it in the game\'s source', () => {
-    for (const path of allSource('src')) expect(readFileSync(path, 'utf8'), path).not.toMatch(/inflation|devalu/i);
+    for (const path of [...allSource('src'), ...allSource('shared')]) expect(readFileSync(path, 'utf8'), path).not.toMatch(/inflation|devalu/i);
   });
 
   it('no price door reads a treasury or a wallet', () => {
-    for (const path of ['src/logic/systems/StatSystem.ts', 'src/logic/systems/VendorSystem.ts', 'src/logic/economy/CompositionSystem.ts', 'src/entities/item/ItemFactory.ts']) {
+    for (const path of ['shared/logic/systems/StatSystem.ts', 'src/logic/systems/VendorSystem.ts', 'shared/logic/economy/CompositionSystem.ts', 'shared/entities/item/ItemFactory.ts']) {
       expect(readFileSync(path, 'utf8'), path).not.toMatch(/Treasury|Wallets|printed|totalAll/);
     }
   });

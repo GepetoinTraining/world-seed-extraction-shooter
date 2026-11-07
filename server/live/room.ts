@@ -20,11 +20,11 @@
  *   server -> client   { channel: 'world:<uid>', seq, docs: [IWireDoc] } | { ready: { channel, seq } } | { refused }
  *   client -> server   { subscribe: 'world:<uid>', since: <seq> }
  *
- * OTHER PLAYERS: where each is, passed on and never kept (src/logic/live/Presence.ts).
+ * OTHER PLAYERS: where each is, passed on and never kept (shared/logic/live/Presence.ts).
  *   client -> server   { where: IWhere } | { gone: true }
  *   server -> client   { where: IWhere & { uid } } | { gone: <uid> }   to those in the same place only
  *
- * ONE CONVERSATION AT A TIME (src/logic/live/TalkLine.ts): someone being talked to hears one turn,
+ * ONE CONVERSATION AT A TIME (shared/logic/live/TalkLine.ts): someone being talked to hears one turn,
  * and the rest wait in line in the order they reached the room. Held while sockets are open, never kept.
  *   client -> server   { talk: { op: 'ask' | 'said' | 'leave', npc, party? } }
  *   server -> client   { line: { npc, focus: [uid], waiting: [[uid]] } }   to everyone in that line, and to one who left it
@@ -36,13 +36,13 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
-import type { SqlStore } from '../SqlStore';
-import type { CommitOp, ICommitRequest, IWireDoc, IWireQuery } from '../../src/entities/data/wire';
+import type { SqlStore } from '../../shared/SqlStore';
+import type { CommitOp, ICommitRequest, IWireDoc, IWireQuery } from '../../shared/entities/data/wire';
 import { acceptSocket, type ISocket } from './socket';
-import { isShared, type ChestIntent } from '../../src/logic/live/shared';
-import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../src/entities/world/ChestSystem';
-import { isWhere, whereOf } from '../../src/logic/live/Presence';
-import { TalkLine, emptyLine, type ILine } from '../../src/logic/live/TalkLine';
+import { isShared, type ChestIntent } from '../../shared/logic/live/shared';
+import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../shared/entities/world/ChestSystem';
+import { isWhere, whereOf } from '../../shared/logic/live/Presence';
+import { TalkLine, emptyLine, type ILine } from '../../shared/logic/live/TalkLine';
 
 /** One shape, ok or not: this project compiles without strict null checks, where a union on `ok` does not narrow. */
 export type LiveAccess = (token: string, uid: string) => Promise<{ ok: boolean; worldUid?: string; status?: number; reason?: string }>;

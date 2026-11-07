@@ -10,7 +10,7 @@
  *   loss    — loss, and almost nothing else
  */
 
-import { Genre, Role, STEPS, buildPalette } from '../../render/atoms/atoms';
+import { Genre, Role, STEPS, buildPalette } from '../../../shared/render/atoms/atoms';
 
 /** The bank terminal's own cold genre: UI sprites (items, seals, portraits in
  * panels) are stamped in this, while the city keeps its warm ramp. */

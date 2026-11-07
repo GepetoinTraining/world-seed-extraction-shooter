@@ -27,7 +27,7 @@
 
 import { ILadderFacts, INpcAgenda, LADDER, NpcAgenda } from '../systems/NpcAgenda';
 import { AtomBook, IAtomBook } from './AtomBook';
-import { sha256Hex } from '../ledger/sha256';
+import { sha256Hex } from '../../../shared/logic/ledger/sha256';
 
 // ============================================================
 // THE φ LADDER

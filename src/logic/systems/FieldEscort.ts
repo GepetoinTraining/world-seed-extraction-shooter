@@ -5,15 +5,15 @@
  * at the beacon they go home as the bond the field has always written.
  */
 
-import { IEscort, IItem } from '../../../types';
+import { IEscort, IItem } from '../../../shared/types';
 import { MobAI } from '../../entities/mob/ai/MobAI';
 import { usePlayerStore } from '../../entities/player/store';
 import { useWorldStore } from '../../entities/world/store';
-import { EntityType, IWorldEntity } from '../../entities/world/types';
+import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { useFeed } from '../../components/ui/stores';
-import { fnv1a } from '../rng/DeterministicRNG';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 import { Escort, IEscortSwing } from './Escort';
-import { NpcSheet } from './NpcSheet';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const session = () => usePlayerStore.getState().player.currentSession;

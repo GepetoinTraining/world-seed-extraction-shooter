@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Sprite } from '../../render/atoms/atoms';
+import { Sprite } from '../../../shared/render/atoms/atoms';
 import { TERMINAL_PALETTE } from './kit';
 
 const REPAINT_MS = 250;

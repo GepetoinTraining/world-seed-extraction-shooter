@@ -6,10 +6,10 @@
  * People are slotted by entity id, never by name. A day is written as words, so it can fade.
  */
 
-import { IRememberWords } from '../systems/TalkTypes';
+import { IRememberWords } from '../../../shared/logic/systems/TalkTypes';
 import { LADDER } from '../systems/NpcAgenda';
 import { IRemembering, LadderWeight } from './MemoryLaw';
-import { IKoseki } from '../../entities/world/Koseki';
+import { IKoseki } from '../../../shared/entities/world/Koseki';
 
 const person = (id: string) => ({ person: id });
 export const dayWords = (day: number) => `day ${day}`;

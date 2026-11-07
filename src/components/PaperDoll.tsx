@@ -11,16 +11,16 @@
  */
 
 import React, { useMemo, useRef, useState } from 'react';
-import { Archetype, armorClass, figure, weaponClass } from '../render/atoms/people';
-import { Role, Sprite, px } from '../render/atoms/atoms';
+import { Archetype, armorClass, figure, weaponClass } from '../../shared/render/atoms/people';
+import { Role, Sprite, px } from '../../shared/render/atoms/atoms';
 import { grabByKey, handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
 import { hoverProps } from './ui/stores';
 import { usePlayerStore } from '../entities/player/store';
 import {
   EquipSlotId, HeadPositionId, HEAD_BUDGET_POSITIONS, IItem, SlotType
-} from '../../types';
-import { LoadoutSystem, paperDollLayout } from '../entities/player/systems/LoadoutSystem';
-import { COGNITIVE_FRAMES } from '../entities/player/data/cognitiveFrames';
+} from '../../shared/types';
+import { LoadoutSystem, paperDollLayout } from '../../shared/entities/player/systems/LoadoutSystem';
+import { COGNITIVE_FRAMES } from '../../shared/entities/player/data/cognitiveFrames';
 import { frameMark } from '../render/atoms/items';
 import { Button, Chip, ItemSprite, Kbd, Modal, Panel, SpriteView } from './ui/kit';
 

@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -27,7 +27,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 }));
 
 import { readFileSync } from 'fs';
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
@@ -36,14 +36,14 @@ import { Treasury } from '../src/logic/economy/Treasury';
 import { Ledger } from '../src/logic/ledger/Ledger';
 import { DEAL_DAYS, ShopWeek } from '../src/logic/economy/ShopWeek';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
-import { WebSystem } from '../src/logic/systems/WebSystem';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { RestSystem, INN_FEE } from '../src/logic/systems/RestSystem';
 import { RestDoor } from '../src/logic/systems/RestDoor';
-import { StatSystem } from '../src/logic/systems/StatSystem';
-import { TagLaw } from '../src/logic/content/TagLaw';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { TagLaw } from '../shared/logic/content/TagLaw';
 import { WorldDeed } from '../src/logic/systems/WorldDeed';
 import { WorldCertificateSystem } from '../src/entities/world/WorldCertificate';
-import { installShippedThemes } from '../src/logic/theme/boot';
+import { installShippedThemes } from '../shared/logic/theme/boot';
 
 const source = (path: string) => readFileSync(path, 'utf8');
 const UID = 'uid_city';

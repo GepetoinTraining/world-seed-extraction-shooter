@@ -13,37 +13,37 @@
  */
 
 import { create } from 'zustand';
-import { IAttributes, UniversalRank } from '../../../types';
-import { VectorNamespace, VectorStore } from '../data/VectorStore';
+import { IAttributes, UniversalRank } from '../../../shared/types';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { HUB_NPCS } from '../hub/HubGenerator';
 import { agendaOf, readSheet, residentIdOf, residentRung, wantFor } from '../hub/guild';
 import { moreThanTheyNeed } from '../hub/money';
 import { useHubStore, worldDay } from '../hub/store';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { MobAI } from '../mob/ai/MobAI';
 import { usePlayerStore } from '../player/store';
 import { useWorldStore } from '../world/store';
-import { INpcSheet, IWorldEntity } from '../world/types';
-import { WebBank } from '../../logic/content/WebBank';
+import { INpcSheet, IWorldEntity } from '../../../shared/entities/world/types';
+import { WebBank } from '../../../shared/logic/content/WebBank';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { IDoorUsage } from '../../logic/intelligence/IntelligenceClient';
 import { ILadderFacts, INpcAgenda, LADDER, NpcAgenda } from '../../logic/systems/NpcAgenda';
-import { NpcSheet } from '../../logic/systems/NpcSheet';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 import { MonsterMind, Stance } from '../../logic/systems/MonsterMind';
-import { StatSystem } from '../../logic/systems/StatSystem';
-import { WebSystem } from '../../logic/systems/WebSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { TalkDoor } from '../../logic/systems/TalkDoor';
 import { TALK_ENERGY, TalkLaw } from '../../logic/systems/TalkLaw';
-import { IGoalAsk, ILogLine, IMemoryLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../logic/systems/TalkTypes';
+import { IGoalAsk, ILogLine, IMemoryLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../../shared/logic/systems/TalkTypes';
 import { useFeed } from '../../components/ui/stores';
 import { Deeds } from '../../logic/memory/Deeds';
 import { MemoryPlace, MemoryStore } from './memoryStore';
 import { IMounted } from '../../logic/memory/NpcContext';
 import { PersonLedger } from '../../logic/people/PersonLedger';
 import { LiveClient } from '../../logic/live/LiveClient';
-import { presence } from '../../logic/live/Presence';
-import { TalkLine, type ILineView } from '../../logic/live/TalkLine';
+import { presence } from '../../../shared/logic/live/Presence';
+import { TalkLine, type ILineView } from '../../../shared/logic/live/TalkLine';
 
 export type TalkSubject =
   | { kind: 'FIELD_PERSON'; entityId: string }

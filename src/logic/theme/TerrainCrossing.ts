@@ -4,9 +4,9 @@
  * written before terrain was dressed has no crossing, so its rock stays blocked.
  */
 
-import type { IPlayer } from '../../../types';
-import { TagLaw } from '../content/TagLaw';
-import type { IThemeBody, IThemeTerrain, TerrainRole } from './ThemeTypes';
+import type { IPlayer } from '../../../shared/types';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import type { IThemeBody, IThemeTerrain, TerrainRole } from '../../../shared/logic/theme/ThemeTypes';
 
 export class TerrainCrossing {
 

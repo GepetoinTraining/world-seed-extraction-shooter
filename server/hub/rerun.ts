@@ -17,9 +17,9 @@
  *
  * Pure: what it reads is handed in.
  */
-import { LootLaw, lootItemsOf, type ILootTable } from '../../src/logic/theme/LootLaw';
-import { canonical } from '../../src/logic/theme/ThemeCompiler';
-import type { IThemePack } from '../../src/logic/theme/ThemeTypes';
+import { LootLaw, lootItemsOf, type ILootTable } from '../../shared/logic/theme/LootLaw';
+import { canonical } from '../../shared/logic/theme/ThemeCompiler';
+import type { IThemePack } from '../../shared/logic/theme/ThemeTypes';
 
 export interface IRerunFinder {
   /** A table the hub holds, or one sent with these receipts that the law passed untouched. */

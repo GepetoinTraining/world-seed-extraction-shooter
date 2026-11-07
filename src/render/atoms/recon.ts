@@ -12,9 +12,9 @@
  * no ground fill: the shape of the land, and nothing of who or what stands on it.
  */
 
-import { BiomeType } from '../../entities/world/types';
-import { Role, Sprite, TRI, hash2, px } from './atoms';
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
+import { BiomeType } from '../../../shared/entities/world/types';
+import { Role, Sprite, TRI, hash2, px } from '../../../shared/render/atoms/atoms';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 
 export const RECON_CELL_ATOMS = 16;
 

@@ -10,13 +10,13 @@
  * closes it, and the bar holds the waiver list to exactly what it says.
  */
 
-import { ItemType } from '../../../types';
-import { RESOURCE_DEFINITIONS, BIOME_RESOURCES } from '../../entities/item/data/resourceDefinitions';
-import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES } from '../../entities/economy/data/recipeDefinitions';
-import { PIECE_BILLS, SHELL_BILLS, SHELL_STATION, isStation, shellBillFor } from '../../entities/hub/room';
-import { WebBank } from '../content/WebBank';
-import { TEMPLATE_MINT_BILL } from '../../entities/hub/template';
+import { ItemType } from '../../../shared/types';
+import { RESOURCE_DEFINITIONS, BIOME_RESOURCES } from '../../../shared/entities/item/data/resourceDefinitions';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { PIECE_BILLS, SHELL_BILLS, SHELL_STATION, isStation, shellBillFor } from '../../../shared/entities/hub/room';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { TEMPLATE_MINT_BILL } from '../../../shared/entities/hub/template';
 
 export interface ISourcingRow {
   defId: string;

@@ -1,6 +1,6 @@
-import { UniversalRank, Rarity, ItemType, SlotType, IHarvestConfig } from '../../../types';
-import { MaterialPropertyType } from '../../../src/entities/economy/types';
-import { ResourceDef } from '../../../src/entities/item/data/resourceDefinitions';
+import { UniversalRank, Rarity, ItemType, SlotType, IHarvestConfig } from '../../../shared/types';
+import { MaterialPropertyType } from '../../../shared/entities/economy/types';
+import { ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
 
 const handsConfig = (energy: number, seconds: number): IHarvestConfig => ({
   interactionType: 'HARVEST',

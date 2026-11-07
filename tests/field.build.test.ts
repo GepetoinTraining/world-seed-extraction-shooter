@@ -14,27 +14,27 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: { get: async () => null, put: async () => true, query: async () => [], saveContent: async () => true, searchContent: async () => [] }
 }));
 
-import { IAttributes, IItem, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, Rarity, SlotType, UniversalRank } from '../types';
-import { EntityType, IWorldEntity } from '../src/entities/world/types';
+import { IAttributes, IItem, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, Rarity, SlotType, UniversalRank } from '../shared/types';
+import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { useWorldStore } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { InventorySystem, HEAVY_LOAD_RATIO } from '../src/entities/player/systems/InventorySystem';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
+import { InventorySystem, HEAVY_LOAD_RATIO } from '../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { SalvageSystem } from '../src/logic/systems/SalvageSystem';
-import { StatSystem } from '../src/logic/systems/StatSystem';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { StudyDoor } from '../src/logic/systems/StudyDoor';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { SurveySystem } from '../src/logic/systems/SurveySystem';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { inspectItem } from '../src/render/atoms/inspect';
 import { ReceiptView } from '../src/components/ReceiptScreen';
 import { Escort, ESCORT_REACH_PX } from '../src/logic/systems/Escort';

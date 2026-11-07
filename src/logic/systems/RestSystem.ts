@@ -15,12 +15,12 @@
  * batch waits for the next rest, and nothing ever blocks on a model (line 87).
  */
 
-import { IItem, IPlayer, IStudySitting } from '../../../types';
-import { IThemeBody, SKILL_GRANTS } from '../theme/ThemeTypes';
-import { IThemeGrowth, WorldGrowth } from '../theme/WorldGrowth';
-import { WebSystem } from './WebSystem';
+import { IItem, IPlayer, IStudySitting } from '../../../shared/types';
+import { IThemeBody, SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
+import { IThemeGrowth, WorldGrowth } from '../../../shared/logic/theme/WorldGrowth';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { StudySystem } from './StudySystem';
-import { StatSystem } from './StatSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { WeaveSystem } from './WeaveSystem';
 import { CircleSystem, IGiftWords } from './CircleSystem';
 import { ILoreWords, IRaisedWords, ITaughtWords, LoreSystem } from './LoreSystem';

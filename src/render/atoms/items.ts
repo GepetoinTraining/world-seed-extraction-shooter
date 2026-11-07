@@ -5,9 +5,9 @@
  * Wave 10B: a template's art is its composed plan — real atoms, never an icon.
  */
 
-import { ICognitiveFrame, IItem, ItemType } from '../../../types';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { Role, STEPS, Sprite, gearMaterial, hashBytes, itemArt, materialFromProps } from './atoms';
+import { ICognitiveFrame, IItem, ItemType } from '../../../shared/types';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { Role, STEPS, Sprite, gearMaterial, hashBytes, itemArt, materialFromProps } from '../../../shared/render/atoms/atoms';
 import { templateThumb } from './room';
 
 const encoder = new TextEncoder();

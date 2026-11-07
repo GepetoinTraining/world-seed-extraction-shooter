@@ -10,13 +10,13 @@
  * No table: the pool is read from the live definitions. Pure and keyed.
  */
 
-import { IItem, ItemType } from '../../../types';
-import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
-import { RESOURCE_DEFINITIONS, ResourceDef } from '../../entities/item/data/resourceDefinitions';
-import { ItemFactory } from '../../entities/item/ItemFactory';
-import { CompositionSystem } from '../economy/CompositionSystem';
+import { IItem, ItemType } from '../../../shared/types';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { RESOURCE_DEFINITIONS, ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
 import { Anchors } from '../economy/Anchors';
-import { Rng } from '../rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { IVendorRecipe, IWorkTools } from './VendorSystem';
 
 /** The same bite a wall takes coming down, and the same floor. Guesses until Wave 12. */

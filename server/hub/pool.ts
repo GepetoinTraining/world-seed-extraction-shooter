@@ -20,10 +20,10 @@
 import { randomBytes } from 'node:crypto';
 import type { Hub } from './Hub';
 import { refuse, type IRefusal } from './Hub';
-import { ContentRegistry } from '../../src/logic/theme/ContentRegistry';
-import { CreatureLines, type ILineProof } from '../../src/logic/theme/CreatureLines';
-import { bodyOf } from '../../src/logic/theme/ThemeCompiler';
-import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
+import { CreatureLines, type ILineProof } from '../../shared/logic/theme/CreatureLines';
+import { bodyOf } from '../../shared/logic/theme/ThemeCompiler';
+import type { IThemeBody } from '../../shared/logic/theme/ThemeTypes';
 import { judgeChain, judgeLoot, judgePass, themeOfLootJob } from './poolLaw';
 
 export type PoolVoice = 'keyed' | 'local';

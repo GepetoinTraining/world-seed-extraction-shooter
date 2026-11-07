@@ -3,7 +3,7 @@
  * The breathing city that expands over time.
  */
 
-import { UniversalRank } from '../../../types';
+import { UniversalRank } from '../../../shared/types';
 
 export interface IHubState {
   id: string;

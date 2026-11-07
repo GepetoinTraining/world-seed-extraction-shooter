@@ -4,7 +4,7 @@
  * and the way into recon, its own view (D85), while a world boots or stands open.
  */
 
-import { ContentRegistry } from '../logic/theme/ContentRegistry';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import React, { useEffect, useState } from 'react';
 import { useWorldStore, IWorldCard } from '../entities/world/store';
 import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';

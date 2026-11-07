@@ -3,17 +3,17 @@
  * are the store actions over it, kept here so the store only has to add its doors.
  */
 
-import { IHubWeb, IItem, IWebStation } from '../../../types';
+import { IHubWeb, IItem, IWebStation } from '../../../shared/types';
 import { SharedWork } from '../../logic/hub/SharedWork';
 import { HubGenerator } from './HubGenerator';
-import { IChainStanding, ChainWeb, IChainRound } from '../../logic/theme/ChainWeb';
+import { IChainStanding, ChainWeb, IChainRound } from '../../../shared/logic/theme/ChainWeb';
 import { Ledger } from '../../logic/ledger/Ledger';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { IntelligenceClient } from '../../logic/intelligence/IntelligenceClient';
-import { WebBank } from '../../logic/content/WebBank';
-import { WebSystem } from '../../logic/systems/WebSystem';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { IProfession, Profession } from '../../logic/systems/Profession';
-import { absorbWebBatch, STRUCTURE_COSTS } from '../economy/data/recipeDefinitions';
+import { absorbWebBatch, STRUCTURE_COSTS } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { usePlayerStore } from '../player/store';
 import { useFeed } from '../../components/ui/stores';
 import { IGuildState, IResident, readSheet } from './guild';
@@ -21,8 +21,8 @@ import {
   IHubPopulation, IHubTech, IWorkshop, IWorkshopOffer, WorkshopMode, addToLedger, admitSilently, billFor, foldReach, groundOf, hubPopulation, hubStations,
   offerFor, openedChainStations, routeFor, sizeVerdict, standingOf
 } from './hubTech';
-import { RoomVerdict, answersTag, tagDefaultMaterial, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS } from './room';
-import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet } from './template';
+import { RoomVerdict, answersTag, tagDefaultMaterial, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS } from '../../../shared/entities/hub/room';
+import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet } from '../../../shared/entities/hub/template';
 
 /** What one pass may ask of the door for one person. It guards the bill and caps no content: what is over it waits. */
 const CHAIN_ROUNDS_PER_PASS = 3;

@@ -14,10 +14,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTalk, meterOpensFollowing } from '../entities/interaction/talkStore';
 import { TALK_ENERGY } from '../logic/systems/TalkLaw';
-import { TALK_MESSAGE_LIMIT } from '../logic/systems/TalkTypes';
+import { TALK_MESSAGE_LIMIT } from '../../shared/logic/systems/TalkTypes';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { Busy, Button, Chip, Modal, Panel } from './ui/kit';
 
 /** A 0 to 100 track with notches at what it opens: position and seam, never hue. */

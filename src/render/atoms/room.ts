@@ -8,12 +8,12 @@
  * from itemArtFor — the one rule for what an item looks like.
  */
 
-import { IRoomPiece, IRoomState, placementFootprint, roomDoor } from '../../entities/hub/room';
-import { ITemplate, defaultSheet, templateToRoom } from '../../entities/hub/template';
-import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
-import { CRAFTED_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
-import { fnv1a } from '../../logic/rng/DeterministicRNG';
-import { Role, Sprite, grain, hash2, materialFromProps, px } from './atoms';
+import { IRoomPiece, IRoomState, placementFootprint, roomDoor } from '../../../shared/entities/hub/room';
+import { ITemplate, defaultSheet, templateToRoom } from '../../../shared/entities/hub/template';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { Role, Sprite, grain, hash2, materialFromProps, px } from '../../../shared/render/atoms/atoms';
 import { itemArtFor } from './items';
 
 export const ROOM_TILE = 10; // atoms per 20px tile, same grid as the city

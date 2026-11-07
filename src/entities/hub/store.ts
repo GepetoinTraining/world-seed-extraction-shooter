@@ -4,23 +4,23 @@
  */
 
 import { GameClock } from '../../logic/time/GameClock';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { create } from 'zustand';
-import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStation, ItemType, Rarity, UniversalRank } from '../../../types';
-import { ItemFactory } from '../item/ItemFactory';
-import { CRAFTED_GEAR_BASES } from '../item/data/itemDefinitions';
-import { VectorStore, VectorNamespace, IVectorDocument } from '../data/VectorStore';
+import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStation, ItemType, Rarity, UniversalRank } from '../../../shared/types';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { CRAFTED_GEAR_BASES } from '../../../shared/entities/item/data/itemDefinitions';
+import { VectorStore, VectorNamespace, IVectorDocument } from '../../../shared/entities/data/VectorStore';
 import { HubGenerator, HUB_NPCS, IHubLayout, IPOI } from './HubGenerator';
 import { HubSide, IDismemberment, IRaisedChunk, chunkBillFor, dismemberPlan, firstPlan, raiseChunk } from './hubManifest';
 import { Farm, IFarmland, emptyFarmland } from './farm';
 import { Herd } from './herd';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { usePlayerStore } from '../player/store';
 import { Ledger } from '../../logic/ledger/Ledger';
 import { Treasury } from '../../logic/economy/Treasury';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
-import { StoreUnit } from '../data/StoreUnit';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../economy/data/recipeDefinitions';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { TransformationEngine } from '../economy/TransformationEngine';
 import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
 import { CertificateSystem } from '../identity/certificateSystem';
@@ -29,24 +29,25 @@ import {
   IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill, salvageFor, answersTag,
   ownerHasBench, roomProcessBonus, shellBillFor,
   PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, tagDefaultMaterial
-} from './room';
-import { ITemplate, ITemplateSheet, defaultSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from './template';
-import { CompositionSystem } from '../../logic/economy/CompositionSystem';
-import { MintRegistry } from '../../logic/economy/MintRegistry';
-import { LoadoutSystem } from '../player/systems/LoadoutSystem';
-import { SHELF } from '../../logic/theme/shelf';
+} from '../../../shared/entities/hub/room';
+import { ITemplate, ITemplateSheet, defaultSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from '../../../shared/entities/hub/template';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
+import { MintRegistry } from '../../../shared/logic/economy/MintRegistry';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { SHELF } from '../../../shared/logic/theme/shelf';
 import { RestDoor } from '../../logic/systems/RestDoor';
 import { HubUnlock } from '../../logic/systems/HubUnlock';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E (D21)
-import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on the latest law
-import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
-import { PROCESS_FAMILIES, PROCESS_SKILL_XP_PER_JOB, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
-import { WebBank } from '../../logic/content/WebBank'; // D27
-import { WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the technology web
-import { StatSystem } from '../../logic/systems/StatSystem';
+import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wave 10E: the shelf on the latest law
+import { AffixBank } from '../../../shared/logic/content/AffixBank'; // Wave 10E (D20)
+import { PROCESS_FAMILIES, PROCESS_SKILL_XP_PER_JOB, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { WebBank } from '../../../shared/logic/content/WebBank'; // D27
+import { bankAndSignAffixes, bankAndSignWeb } from '../../logic/content/BankSigning';
+import { WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the technology web
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { useFeed, useRankMoment } from '../../components/ui/stores';
-import { NpcSheet } from '../../logic/systems/NpcSheet';
-import { ProgressionSystem } from '../player/systems/ProgressionSystem';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import {
   GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   mayHaveGround, questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake,
@@ -66,7 +67,7 @@ import { LadderWeight } from '../../logic/memory/MemoryLaw';
 import { bothRemember, IMemoryWrite, MemoryStore } from '../interaction/memoryStore';
 import type { IMeeting } from '../../logic/systems/MeetDoor';
 import { PersonLedger } from '../../logic/people/PersonLedger';
-import type { IPersonAct } from '../../logic/people/PersonChain';
+import type { IPersonAct } from '../../../shared/logic/people/PersonChain';
 
 /** What people did, onto their own chains (PersonChain.ts). Nobody signed in, nothing written. */
 type IAct = { npcId: string; act: Exclude<IPersonAct, { kind: 'MINTED' }> };
@@ -82,7 +83,7 @@ const queueMeetings = async (hubId: string, meetings: IMeeting[]): Promise<void>
   await MeetDoor.queue(hubId, meetings);
 };
 import { TalkLaw } from '../../logic/systems/TalkLaw';
-import { IQuestWords } from '../../logic/systems/TalkTypes';
+import { IQuestWords } from '../../../shared/logic/systems/TalkTypes';
 import { IHubTech, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
 import { ITechDoors, settleSilently, techDoors } from './techDoors';
 
@@ -631,8 +632,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       // Wave 10E (D20): the current content pack is validated, signed and
       // banked into the CONTENT namespace. A broken batch would refuse whole here.
       const signer = useIdentityStore.getState().certificate?.metadata.uid ?? 'SYSTEM';
-      void AffixBank.bankAndSign(signer);
-      void WebBank.bankAndSign(signer);
+      void bankAndSignAffixes(signer);
+      void bankAndSignWeb(signer);
 
       // 2. Generate/Load Shop Stock (Simulated Daily Refresh)
       // In a real app, this would be server-side. Here we simulate it.

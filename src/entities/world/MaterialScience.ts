@@ -1,5 +1,5 @@
-import { IItem, IPlayer, UniversalRank } from '../../../types';
-import { MaterialPropertyType } from '../economy/types';
+import { IItem, IPlayer, UniversalRank } from '../../../shared/types';
+import { MaterialPropertyType } from '../../../shared/entities/economy/types';
 
 // Definition of a Material Affix (The "Hidden" DNA)
 export interface IMaterialAffix {

@@ -5,8 +5,8 @@
  * Think Carleon from Albion, or Stormwind from WoW.
  */
 
-import { UniversalRank } from '../../../types';
-import { CHUNK_TILES } from '../world/grid';
+import { UniversalRank } from '../../../shared/types';
+import { CHUNK_TILES } from '../../../shared/entities/world/grid';
 import { IHubLayout, IHubZone, IPOI, IPassage, IPlacedChunk, IRoadCell, POIType, ZoneType } from './layoutTypes';
 import {
   CELL_TILES, DISMEMBER_PIECE_MIN, EMPTY_MARK, FARMLAND_KIND, IChunkManifest, IHubManifest, IHubPlan, NEW_CARLEON, ROAD_MAIN,

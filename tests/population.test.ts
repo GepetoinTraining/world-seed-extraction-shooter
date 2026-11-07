@@ -7,34 +7,34 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { creatureIdOf, sealTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { IThemeBody, THEME_FORMULA_VERSION, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { WebBank } from '../src/logic/content/WebBank';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { Director, emptyDirectorRecord, IDirectorRecord } from '../src/entities/world/Director';
-import { IGenerationContext, WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { EntityType, IChunk, IMap, IWorldEntity } from '../src/entities/world/types';
-import { CHUNK_PX, SECTOR_CHUNKS, chunkOf } from '../src/entities/world/grid';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { creatureIdOf, sealTheme, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { IThemeBody, THEME_FORMULA_VERSION, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { Director, emptyDirectorRecord, IDirectorRecord } from '../shared/entities/world/Director';
+import { IGenerationContext, WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { EntityType, IChunk, IMap, IWorldEntity } from '../shared/entities/world/types';
+import { CHUNK_PX, SECTOR_CHUNKS, chunkOf } from '../shared/entities/world/grid';
 import { computeGolden, GOLDEN_VECTORS, FIRST_THEME_VECTORS } from '../src/entities/world/goldens';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { CombatSystem } from '../src/entities/combat/CombatSystems';
 import { LootTable } from '../src/entities/world/LootTable';
-import { BASE_WALK_TILES_PER_S } from '../src/entities/player/systems/LoadoutSystem';
+import { BASE_WALK_TILES_PER_S } from '../shared/entities/player/systems/LoadoutSystem';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { Treasury } from '../src/logic/economy/Treasury';
-import { CreatureLines } from '../src/logic/theme/CreatureLines';
-import { StatSystem } from '../src/logic/systems/StatSystem';
-import { UniversalRank, ItemType } from '../types';
-import { IPopulationRecord, ISectorState, Population, emptyPopulationRecord } from '../src/entities/world/Population';
-import { GOALS, Leaders, ILeaderSeed } from '../src/entities/world/Leaders';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { CreatureLines } from '../shared/logic/theme/CreatureLines';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { UniversalRank, ItemType } from '../shared/types';
+import { IPopulationRecord, ISectorState, Population, emptyPopulationRecord } from '../shared/entities/world/Population';
+import { GOALS, Leaders, ILeaderSeed } from '../shared/entities/world/Leaders';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
 installShippedThemes();
 const themeId = FIRST_THEME_PACK.themeId;
@@ -448,7 +448,7 @@ describe('line 111: population moves by births and food (D64)', () => {
   });
 
   it('nothing in the fold names a cap: the source has no ceiling on a count', () => {
-    const text = readFileSync('src/entities/world/Population.ts', 'utf8');
+    const text = readFileSync('shared/entities/world/Population.ts', 'utf8');
     expect(text).not.toMatch(/Math\.min\([^)]*(MAX_|CAP)/);
     expect(text).not.toMatch(/\b(MAX_POP|POPULATION_CAP|CARRYING_CAPACITY|MAX_BODIES)\b/);
   });
@@ -611,7 +611,7 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
       const a = Leaders.rosterOf(SEED, SX, SY, context);
       expect(Leaders.rosterOf(SEED, SX, SY, contextOf(UniversalRank.C))).toEqual(a);
       expect(a).not.toEqual(Leaders.rosterOf('another-world', SX, SY, context));
-      const text = readFileSync('src/entities/world/Leaders.ts', 'utf8');
+      const text = readFileSync('shared/entities/world/Leaders.ts', 'utf8');
       expect(text).not.toMatch(/buildChunk|chunkAt|sectorContents/);
     });
 
@@ -710,7 +710,7 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
     });
 
     it('it reads through the door people use: NpcSheet\'s stats, under the same key', async () => {
-      const { NpcSheet } = await import('../src/logic/systems/NpcSheet');
+      const { NpcSheet } = await import('../shared/logic/systems/NpcSheet');
       const l = leaders[0];
       expect(Leaders.sheetOf(SEED, l, context).stats).toEqual(NpcSheet.statsOf(SEED, { id: l.id, rank: (MOB_DEFINITIONS[l.kind] as unknown as { rank: UniversalRank }).rank }));
     });

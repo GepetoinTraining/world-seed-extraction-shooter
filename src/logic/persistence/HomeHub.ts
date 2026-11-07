@@ -12,7 +12,7 @@
  * common hub, so a second identity still trades with the first.
  */
 
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
 
 const PREFIX = 'home_hub_';
 

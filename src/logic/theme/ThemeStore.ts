@@ -4,10 +4,10 @@
  * so what one hub wrote another can walk (D33, D55).
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
-import { ContentRegistry } from './ContentRegistry';
-import { IThemePack } from './ThemeTypes';
-import { THEME_CONTENT_TYPE } from './boot';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { IThemePack } from '../../../shared/logic/theme/ThemeTypes';
+import { THEME_CONTENT_TYPE } from '../../../shared/logic/theme/boot';
 
 export class ThemeStore {
 

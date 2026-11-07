@@ -22,10 +22,10 @@ import { NpcContext } from '../src/logic/memory/NpcContext';
 import { MeetLaw } from '../src/logic/systems/MeetLaw';
 import { HabitLaw, IUsual, USUAL_MARK } from '../src/logic/systems/HabitLaw';
 import { ResidentDay } from '../src/entities/hub/residentDay';
-import { WINDOW_REQUESTS, buildNpcMeetRequest } from '../server/intelligence/prompts';
+import { WINDOW_REQUESTS, buildNpcMeetRequest } from '../shared/intelligence/prompts';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { Koseki } from '../src/entities/world/Koseki';
+import { Koseki } from '../shared/entities/world/Koseki';
 
 const sold = (day: number, buyer: string, seller: string, extra: Record<string, string> = {}) => ({
   day, slots: { who: { person: buyer }, did: 'bought bread from', toWhom: { person: seller }, when: `day ${day}`, ...extra }

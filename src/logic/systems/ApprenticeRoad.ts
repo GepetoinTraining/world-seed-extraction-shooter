@@ -14,16 +14,16 @@
  * The one roll is keyed. Numbers are guesses until Wave 12.
  */
 
-import { IAttributes, IItem, ISkillState, IWebPack, PHYSICAL_ATTRIBUTES } from '../../../types';
-import { INpcSheet } from '../../entities/world/types';
+import { IAttributes, IItem, ISkillState, IWebPack, PHYSICAL_ATTRIBUTES } from '../../../shared/types';
+import { INpcSheet } from '../../../shared/entities/world/types';
 import { HUB_NPCS } from '../../entities/hub/HubGenerator';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { Rng } from '../rng/DeterministicRNG';
-import { TagLaw } from '../content/TagLaw';
-import { WebBank } from '../content/WebBank';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import { WebBank } from '../../../shared/logic/content/WebBank';
 import { INeedFill, INpcAgenda, NpcAgenda } from './NpcAgenda';
-import { NpcSheet } from './NpcSheet';
-import { WebSystem } from './WebSystem';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 export type CraftRank = 'APPRENTICE' | 'JOURNEYMAN' | 'MASTER';
 

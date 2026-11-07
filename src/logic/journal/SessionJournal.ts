@@ -11,11 +11,12 @@
  */
 
 import { CertificateSystem, ISignedPayload } from '../../entities/identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { Ledger } from '../ledger/Ledger';
-import { sha256Hex as sha256Sync } from '../ledger/sha256';
+import { sha256Hex as sha256Sync } from '../../../shared/logic/ledger/sha256';
+import { sha256Hex } from '../../../shared/logic/ledger/digest';
 
 export type JournalActionType =
   | 'DROP'        // drop zone confirmed
@@ -52,10 +53,7 @@ export interface ISessionReceipt {
   endHash: string;      // SHA-256 of the player doc after banking
 }
 
-export async function sha256Hex(data: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+export { sha256Hex };
 
 export class SessionJournal {
 

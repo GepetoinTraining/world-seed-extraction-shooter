@@ -8,10 +8,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, IncomingMessage, Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { AbsentProvider, IntelligenceDoor, IDoorRequest, IDoorOutcome, IIntelligenceProvider, IProviderStatus, REST_SPEND_LIMIT_USD } from '../server/intelligence/door';
+import { AbsentProvider, IntelligenceDoor, IDoorRequest, IDoorOutcome, IIntelligenceProvider, IProviderStatus, REST_SPEND_LIMIT_USD } from '../shared/intelligence/door';
 import { chooseProvider } from '../server/intelligence/index';
-import { ILocalRuntime, ILocalAnswer, KeyOrLocalProvider, LocalProvider, LocalUnreachable, OllamaRuntime } from '../server/intelligence/local';
-import { buildCreationRequest, buildNpcTalkRequest } from '../server/intelligence/prompts';
+import { ILocalRuntime, ILocalAnswer, KeyOrLocalProvider, LocalProvider, LocalUnreachable, OllamaRuntime } from '../shared/intelligence/local';
+import { buildCreationRequest, buildNpcTalkRequest } from '../shared/intelligence/prompts';
 
 const PROSE: IDoorRequest = { kind: 'npc_talk', system: 'You are a keeper.', messages: [{ role: 'user', content: 'Good evening.' }], maxTokens: 200 };
 const SHAPED: IDoorRequest = { ...PROSE, kind: 'rest', schema: { type: 'object', properties: { studied: { type: 'string' } } } };

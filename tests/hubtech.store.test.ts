@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const db = new Map<string, any>();
 const door = vi.hoisted(() => ({ answers: [] as any[], calls: 0, status: 'OK' as string }));
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -44,21 +44,21 @@ vi.mock('../src/logic/intelligence/IntelligenceClient', async original => {
   };
 });
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { buildingLabel, useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Ledger } from '../src/logic/ledger/Ledger';
-import { WebBank } from '../src/logic/content/WebBank';
-import { CRAFTED_DEFINITIONS } from '../src/entities/economy/data/recipeDefinitions';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
 import { useFeed } from '../src/components/ui/stores';
 import { IResident, readSheet } from '../src/entities/hub/guild';
 import { emptyTech } from '../src/entities/hub/hubTech';
-import { answersTag } from '../src/entities/hub/room';
-import { SYSTEM_TEMPLATES, validateTemplate } from '../src/entities/hub/template';
+import { answersTag } from '../shared/entities/hub/room';
+import { SYSTEM_TEMPLATES, validateTemplate } from '../shared/entities/hub/template';
 
 const UID = 'uid_tech';
 const HUB = 'hub_tech';

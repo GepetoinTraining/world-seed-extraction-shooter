@@ -1,5 +1,5 @@
-import { IMobDefinition, MobSize, MobBehavior } from '../../../src/entities/mob/types';
-import { UniversalRank, GenreType } from '../../../types';
+import { IMobDefinition, MobSize, MobBehavior } from '../../../shared/entities/mob/types';
+import { UniversalRank, GenreType } from '../../../shared/types';
 
 export const TEST_MOBS: Record<string, IMobDefinition> = {
   'mob_fantasy_rat': {

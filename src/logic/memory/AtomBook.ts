@@ -18,7 +18,7 @@
  * Worlds never retire, so a book only grows. Pure: every function hands back a new book.
  */
 
-import { sha256Hex } from '../ledger/sha256';
+import { sha256Hex } from '../../../shared/logic/ledger/sha256';
 
 export interface IAtomBook {
   /** Word atoms: id to the word. */

@@ -1,5 +1,5 @@
-import { UniversalRank, SlotType } from '../../../types';
-import { ItemDefinition, ItemDatabase } from '../../../src/entities/item/data/itemDefinitions';
+import { UniversalRank, SlotType } from '../../../shared/types';
+import { ItemDefinition, ItemDatabase } from '../../../shared/entities/item/data/itemDefinitions';
 
 /**
  * Wave 10D: gear that can only be MADE, never found on a shelf or in a chest.

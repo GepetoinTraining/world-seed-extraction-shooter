@@ -6,13 +6,13 @@
 
 import { IntelligenceClient } from '../../intelligence/IntelligenceClient';
 import { SharedWork } from '../../hub/SharedWork';
-import { WebBank } from '../../content/WebBank';
-import { fnv1a } from '../../rng/DeterministicRNG';
-import { ContentRegistry } from '../ContentRegistry';
-import { CountedPull, poolOf } from './WorldPool';
-import { CountedEmbedder } from './Counting';
+import { WebBank } from '../../../../shared/logic/content/WebBank';
+import { fnv1a } from '../../../../shared/logic/rng/DeterministicRNG';
+import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
+import { CountedPull, poolOf } from '../../../../shared/logic/theme/writing/WorldPool';
+import { CountedEmbedder } from '../../../../shared/logic/theme/writing/Counting';
 import { IWriteResult, writeWorld } from './WorldWriter';
-import type { WorldPassId } from './WorldPasses';
+import type { WorldPassId } from '../../../../shared/logic/theme/writing/WorldPasses';
 
 export interface IMintDraftLine { worldName: string; worldDescription: string; difficulty: string; size: number }
 

@@ -7,12 +7,12 @@
  * from labor and materials, never from burning drawings.
  */
 
-import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
-import { ITemplate, ITemplateDraft, TEMPLATE_MINT_BILL, validateTemplate } from '../../entities/hub/template';
-import { pickBill } from '../../entities/hub/room';
+import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
+import { ITemplate, ITemplateDraft, TEMPLATE_MINT_BILL, validateTemplate } from '../../../shared/entities/hub/template';
+import { pickBill } from '../../../shared/entities/hub/room';
 import { usePlayerStore } from '../../entities/player/store';
 import { useIdentityStore } from '../../entities/identity/store';
-import { Rng } from '../rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { Ledger } from '../ledger/Ledger';
 
 export interface ITemplateItem extends IItem {

@@ -15,10 +15,10 @@
  */
 
 import { create } from 'zustand';
-import { UniversalRank } from '../../../types';
-import { isRosterElite } from '../../entities/world/Leaders';
-import { ISectorState } from '../../entities/world/Population';
-import { TERRITORY_NUMBERS, tollOwed } from '../theme/ThemeFormula';
+import { UniversalRank } from '../../../shared/types';
+import { isRosterElite } from '../../../shared/entities/world/Leaders';
+import { ISectorState } from '../../../shared/entities/world/Population';
+import { TERRITORY_NUMBERS, tollOwed } from '../../../shared/logic/theme/ThemeFormula';
 
 export type TollStatus = 'IDLE' | 'ASKING' | 'CLEAR' | 'FIGHT';
 

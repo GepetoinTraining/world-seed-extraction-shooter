@@ -8,7 +8,7 @@
  * unspent deed: the person keeps their deed rather than lose it to a closed tab.
  */
 
-import { IItem } from '../../../types';
+import { IItem } from '../../../shared/types';
 import { IPlayerCertificate } from '../../entities/identity/certificateSystem';
 import { IWorldCertificate, IWorldRules, WorldCertificateSystem, WorldType } from '../../entities/world/WorldCertificate';
 import { usePlayerStore } from '../../entities/player/store';

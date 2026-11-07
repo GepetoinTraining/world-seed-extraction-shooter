@@ -9,12 +9,12 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, IncomingMessage, Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { readFileSync, readdirSync } from 'node:fs';
-import { IDoorRequest, IntelligenceDoor, AbsentProvider } from '../server/intelligence/door';
-import { ILocalRuntime, IServedModel, LocalProvider } from '../server/intelligence/local';
-import { IHost, ICard, MachineCheck, seatOf } from '../server/intelligence/machine';
-import { IKeyedOption, OpenAICompatibleProvider } from '../server/intelligence/options';
+import { IDoorRequest, IntelligenceDoor, AbsentProvider } from '../shared/intelligence/door';
+import { ILocalRuntime, IServedModel, LocalProvider } from '../shared/intelligence/local';
+import { IHost, ICard, MachineCheck, seatOf } from '../shared/intelligence/machine';
+import { IKeyedOption, OpenAICompatibleProvider } from '../shared/intelligence/options';
 import { readDoorOptions } from '../server/intelligence/optionsFile';
-import { DoorSetting, SETTINGS } from '../server/intelligence/setting';
+import { DoorSetting, SETTINGS } from '../shared/intelligence/setting';
 import { createIntelligenceHandler } from '../server/intelligence/http';
 
 const GB = 1_000_000_000;
@@ -149,7 +149,7 @@ describe('free options, read from data (Pedro: "free options to pick from")', ()
       expect(o.checked, o.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(o.sources?.length, o.id).toBeGreaterThan(0);
     }
-    expect(readFileSync('server/intelligence/door-options.json', 'utf8')).not.toMatch(/"key"\s*:/);
+    expect(readFileSync('shared/intelligence/door-options.json', 'utf8')).not.toMatch(/"key"\s*:/);
     expect(options.local?.suggestions?.length).toBeGreaterThan(0);
     for (const s of options.local!.suggestions!) expect(s.bytes, s.model).toBeGreaterThan(0);
   });

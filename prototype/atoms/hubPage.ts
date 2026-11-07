@@ -1,9 +1,9 @@
 import '../../tests/fixtures/content/installOnLoad';
 import { HUB_NPCS, HubGenerator, IPOI, POIType } from '../../src/entities/hub/HubGenerator';
-import { ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
-import { ATOM_PX, Sprite, buildPalette, grayscale, hashBytes } from '../../src/render/atoms/atoms';
+import { ITEM_DEFINITIONS } from '../../shared/entities/item/data/itemDefinitions';
+import { ATOM_PX, Sprite, buildPalette, grayscale, hashBytes } from '../../shared/render/atoms/atoms';
 import { HUB_GENRE, HUB_TILE, LOT_STATES, LotState, composeHub, doorOf, emblem, lotArt, textSprite } from '../../src/render/atoms/hub';
-import { ARCHETYPE_IDS, Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, castFigure, castPortrait, figure, portrait, weaponClass } from '../../src/render/atoms/people';
+import { ARCHETYPE_IDS, Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, castFigure, castPortrait, figure, portrait, weaponClass } from '../../shared/render/atoms/people';
 
 const layout = HubGenerator.generate();
 const pois = layout.zones.flatMap(z => z.pois);

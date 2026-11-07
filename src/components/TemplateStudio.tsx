@@ -9,12 +9,12 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ItemType } from '../../types';
-import { interiorSize, RoomPieceKind } from '../entities/hub/room';
+import { ItemType } from '../../shared/types';
+import { interiorSize, RoomPieceKind } from '../../shared/entities/hub/room';
 import {
   ITemplateDraft, SIZE_CLASSES, TEMPLATE_MINT_BILL, canAddPiece, defaultSheet,
   templateToRoom, zoneRegionArea
-} from '../entities/hub/template';
+} from '../../shared/entities/hub/template';
 import { ITemplateItem, TemplateSystem, isTemplateItem } from '../logic/systems/TemplateSystem';
 import { usePlayerStore } from '../entities/player/store';
 import { useFeed } from './ui/stores';
@@ -24,9 +24,9 @@ import { SurveySystem } from '../logic/systems/SurveySystem';
 import { useWorldStore } from '../entities/world/store';
 import { WorldClock } from '../entities/world/WorldClock';
 import { composeRoom } from '../render/atoms/room';
-import { buildPalette, grayscale } from '../render/atoms/atoms';
+import { buildPalette, grayscale } from '../../shared/render/atoms/atoms';
 import { HUB_GENRE } from '../render/atoms/hub';
-import { billText } from '../entities/hub/room';
+import { billText } from '../../shared/entities/hub/room';
 import { inspectItem } from '../render/atoms/inspect';
 import { Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Tabs } from './ui/kit';
 

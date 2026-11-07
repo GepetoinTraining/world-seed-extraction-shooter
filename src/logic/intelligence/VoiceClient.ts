@@ -6,9 +6,9 @@
  * provider. The local model's name is remembered, because it is the person's setting and no secret.
  */
 import { DoorTransport } from './DoorTransport';
-import type { IMachineReading, ITried } from '../../../server/intelligence/machine';
-import type { IKeyedOption, IDoorOptions } from '../../../server/intelligence/options';
-import type { IDoorSettingStatus } from '../../../server/intelligence/setting';
+import type { IMachineReading, ITried } from '../../../shared/intelligence/machine';
+import type { IKeyedOption, IDoorOptions } from '../../../shared/intelligence/options';
+import type { IDoorSettingStatus } from '../../../shared/intelligence/setting';
 
 export type { IMachineReading, ITried, IKeyedOption, IDoorSettingStatus };
 

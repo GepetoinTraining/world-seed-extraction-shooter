@@ -9,7 +9,7 @@
  * always is, keeps nothing, and the next person to sit down asks again (D35).
  */
 
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { WorldCertificateSystem } from '../../entities/world/WorldCertificate';
 import { IDoorUsage, IntelligenceClient } from '../intelligence/IntelligenceClient';
 

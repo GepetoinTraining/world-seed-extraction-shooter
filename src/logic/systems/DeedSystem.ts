@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { IItem, UniversalRank, Rarity, ItemType, SlotType } from '../../../types'; 
+import { IItem, UniversalRank, Rarity, ItemType, SlotType } from '../../../shared/types'; 
 import { useHubStore } from '../../entities/hub/store'; 
 
 export interface IDeedItem extends IItem {

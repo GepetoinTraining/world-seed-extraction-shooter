@@ -14,7 +14,7 @@
  */
 import type { Hub } from './Hub';
 import { refuse, type IRefusal } from './Hub';
-import type { IThemePack } from '../../src/logic/theme/ThemeTypes';
+import type { IThemePack } from '../../shared/logic/theme/ThemeTypes';
 
 export interface IHostedManifest {
   world: { worldUid: string; name: string; creatorCertUid: string; themeId: string; [more: string]: unknown };

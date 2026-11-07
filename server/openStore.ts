@@ -4,7 +4,7 @@
  * bundles this one.
  */
 import { openDatabase } from './connection';
-import { SqlStore, type IStoreOptions } from './SqlStore';
+import { SqlStore, type IStoreOptions } from '../shared/SqlStore';
 
 export async function openStore(url: string, options: IStoreOptions = {}): Promise<SqlStore> {
   return new SqlStore(await openDatabase(url, options), options);

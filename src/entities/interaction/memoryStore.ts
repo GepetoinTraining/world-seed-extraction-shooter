@@ -8,7 +8,7 @@
  * and saves, one write at a time per place, so two folds never race over the same book.
  */
 
-import { VectorNamespace, VectorStore } from '../data/VectorStore';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { emptyBook, IAtomBook } from '../../logic/memory/AtomBook';
 import { freshMind, IMind, IRecalled, IRemembering, MemoryLaw } from '../../logic/memory/MemoryLaw';
 import { Deeds } from '../../logic/memory/Deeds';

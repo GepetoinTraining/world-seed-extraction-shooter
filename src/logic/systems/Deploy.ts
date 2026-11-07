@@ -47,7 +47,7 @@ async function enterWorld(worldId: string): Promise<{ ok: boolean; reason?: stri
 
   // Wave 4.4: the world cert's power gates are enforced at the door
   if (card.ipCap || card.ipFloor) {
-    const { RANK_MULTIPLIERS } = await import('../../constants');
+    const { RANK_MULTIPLIERS } = await import('../../../shared/constants');
     const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
     const playerIP = stash.reduce((m, i) => Math.max(m, i.itemPower || 0), 0);
     const rankIP = (r: string) => (RANK_MULTIPLIERS as any)[r] * 100;

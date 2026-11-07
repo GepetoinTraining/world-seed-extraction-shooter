@@ -12,7 +12,7 @@
  * on, so the same manifest can be planted in a world (D80).
  */
 
-import { CHUNK_TILES, QUADRANT_TILES } from '../world/grid';
+import { CHUNK_TILES, QUADRANT_TILES } from '../../../shared/entities/world/grid';
 import { POIType, ZoneType } from './layoutTypes';
 
 export const CELL_TILES = QUADRANT_TILES / 4;

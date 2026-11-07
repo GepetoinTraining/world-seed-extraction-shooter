@@ -6,12 +6,12 @@
  * nothing in between is missed. The game itself still runs here; the room only keeps what is shared.
  */
 import { create } from 'zustand';
-import { StoreClient, liveTransport } from '../../entities/data/StoreClient';
-import type { IWireDoc } from '../../entities/data/wire';
-import { isShared, type ChestIntent } from './shared';
-import type { IChestRecord } from '../../entities/world/ChestSystem';
-import { presence, shouldSay, whereOf, type IWhere } from './Presence';
-import type { ILineView } from './TalkLine';
+import { StoreClient, liveTransport } from '../../../shared/entities/data/StoreClient';
+import type { IWireDoc } from '../../../shared/entities/data/wire';
+import { isShared, type ChestIntent } from '../../../shared/logic/live/shared';
+import type { IChestRecord } from '../../../shared/entities/world/ChestSystem';
+import { presence, shouldSay, whereOf, type IWhere } from '../../../shared/logic/live/Presence';
+import type { ILineView } from '../../../shared/logic/live/TalkLine';
 
 export interface ILiveEvent { channel: string; seq: number; at: number; docs: IWireDoc[] }
 export type LiveStatus = 'OFF' | 'JOINING' | 'LIVE' | 'DROPPED' | 'REFUSED';

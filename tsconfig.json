@@ -26,7 +26,11 @@
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo"
   },
-  "include": [".", "**/*.ts", "**/*.tsx", "**/*.d.ts"]
+  "include": [".", "**/*.ts", "**/*.tsx", "**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "prototype", "shared", ".shared-types"],
+  "references": [{ "path": "./shared" }]
 }

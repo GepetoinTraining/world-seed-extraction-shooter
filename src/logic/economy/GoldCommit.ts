@@ -11,8 +11,8 @@
  * long the queue or a closed vault holds them.
  */
 
-import { VectorStore, IVectorDocument } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, IVectorDocument } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { Ledger, LedgerRowType } from '../ledger/Ledger';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Treasury } from './Treasury';

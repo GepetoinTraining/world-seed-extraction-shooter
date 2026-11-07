@@ -7,26 +7,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { POINTS_PER_LEVEL, ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { POINTS_PER_LEVEL, ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
+import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../logic/systems/CircleSystem';
-import { InventorySystem } from '../entities/player/systems/InventorySystem';
-import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
+import { InventorySystem } from '../../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
-import { EquipSlotId, IAttributes, IItem, ItemType, SlotType, HEAD_BUDGET_POSITIONS } from '../../types';
+import { EquipSlotId, IAttributes, IItem, ItemType, SlotType, HEAD_BUDGET_POSITIONS } from '../../shared/types';
 import { STASH_COLS, StashFilter, StashGrid, StashKind, StashSortKey } from '../entities/player/systems/StashGrid';
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, wholeZone } from './ui/hands';
 import { hoverProps } from './ui/stores';
-import { Archetype } from '../render/atoms/people';
+import { Archetype } from '../../shared/render/atoms/people';
 import { inspectItem } from '../render/atoms/inspect';
 import { ArmedButton, Bar, Busy, Button, CardView, Chip, Input, ItemSprite, Kbd, Panel, PortraitView, RankMark, SealView, SpriteView, Tabs } from './ui/kit';
-import { figure, weaponClass, armorClass } from '../render/atoms/people';
+import { figure, weaponClass, armorClass } from '../../shared/render/atoms/people';
 import { useAppView } from './ui/stores';
 import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
 import { ISignedPayload } from '../entities/identity/certificateSystem';
-import { MASTERY_RUNGS, WebSystem } from '../logic/systems/WebSystem';
-import { WebBank } from '../logic/content/WebBank';
+import { MASTERY_RUNGS, WebSystem } from '../../shared/logic/systems/WebSystem';
+import { WebBank } from '../../shared/logic/content/WebBank';
 
 export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
   HARDWARE: ['strength', 'constitution', 'agility', 'dexterity', 'endurance'],

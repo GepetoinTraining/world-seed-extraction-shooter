@@ -8,11 +8,11 @@
  *
  * Pure: what is judged and what it is judged against come in.
  */
-import { schemaProblem } from '../../src/logic/content/SchemaFit';
-import { LOOT_SCHEMA, LootLaw, sealLoot, type ILootTable, type ILootWords } from '../../src/logic/theme/LootLaw';
-import { PASS_SCHEMAS, WORLD_PASSES, type WorldPassId } from '../../src/logic/theme/writing/WorldPasses';
-import { ChainWeb } from '../../src/logic/theme/ChainWeb';
-import type { IThemeBody } from '../../src/logic/theme/ThemeTypes';
+import { schemaProblem } from '../../shared/logic/content/SchemaFit';
+import { LOOT_SCHEMA, LootLaw, sealLoot, type ILootTable, type ILootWords } from '../../shared/logic/theme/LootLaw';
+import { PASS_SCHEMAS, WORLD_PASSES, type WorldPassId } from '../../shared/logic/theme/writing/WorldPasses';
+import { ChainWeb } from '../../shared/logic/theme/ChainWeb';
+import type { IThemeBody } from '../../shared/logic/theme/ThemeTypes';
 
 export type Judged = { ok: true; reason?: undefined; result: unknown } | { ok: false; reason: string; result?: undefined };
 const no = (reason: string): Judged => ({ ok: false, reason });

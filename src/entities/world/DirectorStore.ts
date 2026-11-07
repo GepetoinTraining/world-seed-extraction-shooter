@@ -3,9 +3,9 @@
  * database. The world's clock moves it, a session's fights feed it, and a chunk reads it.
  */
 
-import { VectorNamespace, VectorStore } from '../data/VectorStore';
-import { Director, IDirectorRecord, emptyDirectorRecord } from './Director';
-import { CreatureLines, ILineWorld } from '../../logic/theme/CreatureLines';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
+import { Director, IDirectorRecord, emptyDirectorRecord } from '../../../shared/entities/world/Director';
+import { CreatureLines, ILineWorld } from '../../../shared/logic/theme/CreatureLines';
 
 const keyOf = (worldUid: string) => `director_${worldUid}`;
 

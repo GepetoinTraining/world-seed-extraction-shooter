@@ -3,51 +3,51 @@ import { create } from 'zustand';
 import {
   IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame, IEquippedSlots, SlotType,
   EquipSlotId, HeadPositionId, HEAD_BUDGET_POSITIONS, IEquipmentState, ItemType as IT
-} from '../../../types';
-import { ItemFactory } from '../item/ItemFactory';
-import { ProgressionSystem, THREAT_RADIUS_TILES, XP_SHARE_CHEST, XP_SHARE_HARVEST } from './systems/ProgressionSystem';
+} from '../../../shared/types';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { ProgressionSystem, THREAT_RADIUS_TILES, XP_SHARE_CHEST, XP_SHARE_HARVEST } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { useWorldStore } from '../world/store';
-import { ChestSystem } from '../world/ChestSystem';
+import { ChestSystem } from '../../../shared/entities/world/ChestSystem';
 import { LiveClient } from '../../logic/live/LiveClient';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { LootTable } from '../world/LootTable';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
-import { ItemType, Rarity } from '../../../types';
-import { InventorySystem } from './systems/InventorySystem';
+import { ItemType, Rarity } from '../../../shared/types';
+import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
 import { StashGrid, StashSortKey } from './systems/StashGrid';
-import { LoadoutSystem, Verdict } from './systems/LoadoutSystem';
-import { StatSystem } from '../../logic/systems/StatSystem';
-import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { Anchors } from '../../logic/economy/Anchors';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
-import { EntityType, ICartState } from '../world/types';
+import { EntityType, ICartState } from '../../../shared/entities/world/types';
 import { MaterialScience } from '../world/MaterialScience';
-import { COGNITIVE_FRAMES } from './data/cognitiveFrames'; // Import definitions
-import { Capture } from '../../logic/systems/Capture';
+import { COGNITIVE_FRAMES } from '../../../shared/entities/player/data/cognitiveFrames'; // Import definitions
+import { Capture } from '../../../shared/logic/systems/Capture';
 import { FieldCapture } from '../../logic/systems/FieldCapture';
 import { FieldEscort } from '../../logic/systems/FieldEscort';
 import { Escort } from '../../logic/systems/Escort';
 import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
-import { CompositionSystem } from '../../logic/economy/CompositionSystem';
+import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
-import { LORE_NOTE_PAY } from '../../logic/systems/LoreConstants';
+import { LORE_NOTE_PAY } from '../../../shared/logic/systems/LoreConstants';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
-import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
-import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
-import { IRoomState, roomAdditions } from '../hub/room';
-import { chunkOf } from '../world/grid';
-import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the web and the auto skill
-import { TagLaw } from '../../logic/content/TagLaw';
+import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
+import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { IRoomState, roomAdditions } from '../../../shared/entities/hub/room';
+import { chunkOf } from '../../../shared/entities/world/grid';
+import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the web and the auto skill
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { CreationSystem, ICreationSheet } from '../../logic/systems/CreationSystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 

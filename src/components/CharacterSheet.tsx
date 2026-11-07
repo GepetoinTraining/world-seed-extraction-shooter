@@ -6,28 +6,28 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } from '../../types';
+import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { useWorldStore } from '../entities/world/store';
 import { FieldCapture } from '../logic/systems/FieldCapture';
 import { Escort } from '../logic/systems/Escort';
-import { WorldGenerator } from '../entities/world/WorldGenerator';
-import { InventorySystem, GRID_H, GRID_W } from '../entities/player/systems/InventorySystem';
-import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
-import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
+import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
+import { InventorySystem, GRID_H, GRID_W } from '../../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
+import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { STASH_COLS } from '../entities/player/systems/StashGrid';
-import { GEAR_RECIPES } from '../entities/economy/data/recipeDefinitions';
+import { GEAR_RECIPES } from '../../shared/entities/economy/data/recipeDefinitions';
 import { StudySystem } from '../logic/systems/StudySystem';
 import { StudyDoor } from '../logic/systems/StudyDoor';
 import { StudyPanel } from './StudyPanel';
-import { WebSystem } from '../logic/systems/WebSystem';
-import { WebBank } from '../logic/content/WebBank';
+import { WebSystem } from '../../shared/logic/systems/WebSystem';
+import { WebBank } from '../../shared/logic/content/WebBank';
 import { isTypingTarget } from '../logic/systems/FieldInput';
 import { PaperDoll } from './PaperDoll';
 import { TheWorking } from './TheWorking';
 import { RestSystem } from '../logic/systems/RestSystem';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid } from './PlayerHub';
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, useHands, wholeZone } from './ui/hands';

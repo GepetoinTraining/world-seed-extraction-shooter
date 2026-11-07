@@ -10,13 +10,13 @@
  * The page cannot read the machine's card or memory; the check says what Ollama and the browser
  * report and leaves the rest unknown.
  */
-import doorOptions from '../../../server/intelligence/door-options.json';
-import { IntelligenceDoor } from '../../../server/intelligence/door';
-import { LocalProvider, OllamaRuntime } from '../../../server/intelligence/local';
-import { parseDoorOptions, type IDoorOptions } from '../../../server/intelligence/options';
-import { DoorSetting, SETTINGS } from '../../../server/intelligence/setting';
-import { NO_HOST, type IHost } from '../../../server/intelligence/machine';
-import { routeDoor, type DoorAnswer } from '../../../server/intelligence/routes';
+import doorOptions from '../../../shared/intelligence/door-options.json';
+import { IntelligenceDoor } from '../../../shared/intelligence/door';
+import { LocalProvider, OllamaRuntime } from '../../../shared/intelligence/local';
+import { parseDoorOptions, type IDoorOptions } from '../../../shared/intelligence/options';
+import { DoorSetting, SETTINGS } from '../../../shared/intelligence/setting';
+import { NO_HOST, type IHost } from '../../../shared/intelligence/machine';
+import { routeDoor, type DoorAnswer } from '../../../shared/intelligence/routes';
 
 /** What a browser can say about the machine: nothing a seat can be judged on (no card, and no free memory), so all of it stays unknown. */
 export const BROWSER_HOST: IHost = NO_HOST;

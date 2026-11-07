@@ -29,3 +29,8 @@ gemini-memory-layer
 *.njsproj
 *.sln
 *.sw?
+
+# type-check cache (tsconfig incremental)
+.tsbuildinfo
+# the shared store's declarations, built by tsc -b
+.shared-types

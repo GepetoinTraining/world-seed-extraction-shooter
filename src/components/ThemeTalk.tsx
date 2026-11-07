@@ -11,14 +11,14 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { IntelligenceClient, IDoorMessage, IDoorUsage } from '../logic/intelligence/IntelligenceClient';
-import { ContentRegistry } from '../logic/theme/ContentRegistry';
-import { IThemeBody } from '../logic/theme/ThemeTypes';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
+import { IThemeBody } from '../../shared/logic/theme/ThemeTypes';
 import { useWorldDraft } from './ui/stores';
 import { usePlayerStore } from '../entities/player/store';
 import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
 import { Busy, Button, Panel } from './ui/kit';
 import { saidOf, writeForMint } from '../logic/theme/writing/mintWriting';
-import { PASS_SAID, WORLD_PASSES, WorldPassId } from '../logic/theme/writing/WorldPasses';
+import { PASS_SAID, WORLD_PASSES, WorldPassId } from '../../shared/logic/theme/writing/WorldPasses';
 
 const SAID_WHEN_CLOSED: Record<string, string> = {
   NO_KEY: 'The Seed is not answering on this server. No key is held here.',

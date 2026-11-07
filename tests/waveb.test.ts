@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories', AVATARS: 'avatars' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -27,18 +27,18 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { creatureIdOf, compileTheme, junkIdsFor } from '../src/logic/theme/ThemeCompiler';
-import { ILineWords, IThemeBody } from '../src/logic/theme/ThemeTypes';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { CreatureLines, ILineRecord } from '../src/logic/theme/CreatureLines';
-import { WorldGrowth, IThemeGrowth } from '../src/logic/theme/WorldGrowth';
-import { Director, emptyDirectorRecord, IDirectorRecord } from '../src/entities/world/Director';
-import { IPopulationRecord, ISectorState, Population, emptyPopulationRecord } from '../src/entities/world/Population';
-import { SECTOR_CHUNKS } from '../src/entities/world/grid';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { creatureIdOf, compileTheme, junkIdsFor } from '../shared/logic/theme/ThemeCompiler';
+import { ILineWords, IThemeBody } from '../shared/logic/theme/ThemeTypes';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { CreatureLines, ILineRecord } from '../shared/logic/theme/CreatureLines';
+import { WorldGrowth, IThemeGrowth } from '../shared/logic/theme/WorldGrowth';
+import { Director, emptyDirectorRecord, IDirectorRecord } from '../shared/entities/world/Director';
+import { IPopulationRecord, ISectorState, Population, emptyPopulationRecord } from '../shared/entities/world/Population';
+import { SECTOR_CHUNKS } from '../shared/entities/world/grid';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { emptyGuild, wantMayTake } from '../src/entities/hub/guild';
@@ -46,11 +46,11 @@ import { WorldDeed } from '../src/logic/systems/WorldDeed';
 import { SalvageSystem } from '../src/logic/systems/SalvageSystem';
 import { VendorSystem } from '../src/logic/systems/VendorSystem';
 import { ApprenticeRoad } from '../src/logic/systems/ApprenticeRoad';
-import { WebBank } from '../src/logic/content/WebBank';
+import { WebBank } from '../shared/logic/content/WebBank';
 
 const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag);
-import { EffectSystem } from '../src/logic/systems/EffectSystem';
-import { IItem, ItemType, Rarity, UniversalRank } from '../types';
+import { EffectSystem } from '../shared/logic/systems/EffectSystem';
+import { IItem, ItemType, Rarity, UniversalRank } from '../shared/types';
 
 installShippedThemes();
 const themeId = FIRST_THEME_PACK.themeId;
@@ -168,7 +168,7 @@ describe('B1 and B2: what a world grows, in a world where everything leaves junk
     const summary = WorldGrowth.summary(pack);
     expect(summary.junk.length).toBe(pack.junk!.length);
     expect(summary.junk[0].from.length).toBeGreaterThan(0);
-    expect(readFileSync('server/intelligence/prompts.ts', 'utf8')).toMatch(/A new creature wears at least one tag from a "from"/);
+    expect(readFileSync('shared/intelligence/prompts.ts', 'utf8')).toMatch(/A new creature wears at least one tag from a "from"/);
     const bare = { ...pack.creatures[0], key: 'bare', name: 'Bare', tags: ['nothing_leaves_this'] };
     const verdict = ThemeLaw.validate(WorldGrowth.grownBody(FIRST_THEME as IThemeBody, growth({ creatures: [bare] })), registered);
     expect(verdict.ok).toBe(false);

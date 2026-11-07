@@ -12,10 +12,10 @@
  * in a simulation instead of by feel (PLAN W4 gate).
  */
 
-import { IAttributes, IEquipmentState, IItem } from '../../../types';
-import { IMobDefinition } from '../mob/types';
-import { StatSystem } from '../../logic/systems/StatSystem';
-import { Rng } from '../../logic/rng/DeterministicRNG';
+import { IAttributes, IEquipmentState, IItem } from '../../../shared/types';
+import { IMobDefinition } from '../../../shared/entities/mob/types';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 
 export const UNARMED_DAMAGE = 5;
 export const UNARMED_SHOTS_PER_SEC = 1.0;

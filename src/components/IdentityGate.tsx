@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { useIdentityStore, IdentityState } from '../entities/identity/store';
 import { usePlayerStore } from '../entities/player/store';
 import { AvatarRoster, IRosterEntry } from '../entities/identity/roster';
-import { Archetype, figure } from '../render/atoms/people';
+import { Archetype, figure } from '../../shared/render/atoms/people';
 import { HomeHub } from '../logic/persistence/HomeHub';
 import { CreationDoor } from '../logic/systems/CreationDoor';
 import { CreationSystem, ICreationSheet } from '../logic/systems/CreationSystem';

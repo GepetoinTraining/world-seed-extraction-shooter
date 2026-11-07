@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { CombatSystem } from '../src/entities/combat/CombatSystems';
-import { IProjectile, PatternType, ProjectileSystem, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../src/entities/combat/projectileSystem';
-import { EntityType, IChunk, IWorldEntity, BiomeType, ScanLevel } from '../src/entities/world/types';
-import { Rarity, UniversalRank } from '../types';
+import { IProjectile, PatternType, ProjectileSystem, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../shared/entities/combat/projectileSystem';
+import { EntityType, IChunk, IWorldEntity, BiomeType, ScanLevel } from '../shared/entities/world/types';
+import { Rarity, UniversalRank } from '../shared/types';
 
 const target = (x: number, y: number, health: number, definitionId = 'mob_scifi_drone'): IWorldEntity => ({
   id: 'target', type: EntityType.MOB, definitionId, position: { x, y },

@@ -14,15 +14,15 @@
  * Every number here is a guess until Wave 12.
  */
 
-import { ILoreEntry, IPlayer, ISkillGift, ISkillState, IStudySitting, StudyOutcome } from '../../../types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { TagLaw } from '../content/TagLaw';
-import { WebBank } from '../content/WebBank';
-import { Rng } from '../rng/DeterministicRNG';
-import { SKILL_GRANTS } from '../theme/ThemeTypes';
+import { ILoreEntry, IPlayer, ISkillGift, ISkillState, IStudySitting, StudyOutcome } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { TagLaw } from '../../../shared/logic/content/TagLaw';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { CircleSystem, IGiftWords } from './CircleSystem';
-import { LORE_DEPTHS, LORE_NOTE_PAY, LoreDepth } from './LoreConstants';
-import { WebSystem } from './WebSystem';
+import { LORE_DEPTHS, LORE_NOTE_PAY, LoreDepth } from '../../../shared/logic/systems/LoreConstants';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 export { LORE_DEPTHS };
 export type { LoreDepth };

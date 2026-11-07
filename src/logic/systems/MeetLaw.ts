@@ -13,7 +13,7 @@
 
 import { INeedFill, NpcAgenda } from './NpcAgenda';
 import { TalkLaw } from './TalkLaw';
-import { IMeetAsk, IMeetLine, IMeetSideWords, IMeetWords, JUDGE_BANDS, JudgeBand, TALK_MESSAGE_LIMIT } from './TalkTypes';
+import { IMeetAsk, IMeetLine, IMeetSideWords, IMeetWords, JUDGE_BANDS, JudgeBand, TALK_MESSAGE_LIMIT } from '../../../shared/logic/systems/TalkTypes';
 
 export interface IMeetOutcome {
   id: string;

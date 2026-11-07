@@ -5,16 +5,16 @@
  */
 
 import '../../tests/fixtures/content/installOnLoad';
-import { IItem } from '../../types';
+import { IItem } from '../../shared/types';
 import {
   IRoomState, STATION_MIN_AREA, tagDefaultMaterial,
   canPlaceItem, emptyRoom, fullyWalkable, roomDoor
-} from '../../src/entities/hub/room';
-import { ROOM_PRESETS, presetToRoom } from '../../src/entities/hub/template';
-import { CRAFTED_DEFINITIONS } from '../../src/entities/economy/data/recipeDefinitions';
-import { ItemFactory } from '../../src/entities/item/ItemFactory';
-import { Rng } from '../../src/logic/rng/DeterministicRNG';
-import { ATOM_PX, Sprite, buildPalette, grayscale, hashBytes } from '../../src/render/atoms/atoms';
+} from '../../shared/entities/hub/room';
+import { ROOM_PRESETS, presetToRoom } from '../../shared/entities/hub/template';
+import { CRAFTED_DEFINITIONS } from '../../shared/entities/economy/data/recipeDefinitions';
+import { ItemFactory } from '../../shared/entities/item/ItemFactory';
+import { Rng } from '../../shared/logic/rng/DeterministicRNG';
+import { ATOM_PX, Sprite, buildPalette, grayscale, hashBytes } from '../../shared/render/atoms/atoms';
 import { HUB_GENRE, lotArt } from '../../src/render/atoms/hub';
 import { composeRoom } from '../../src/render/atoms/room';
 

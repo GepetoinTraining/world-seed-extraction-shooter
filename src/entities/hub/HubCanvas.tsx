@@ -14,8 +14,8 @@ import { composeRoom, rawWallKind } from '../../render/atoms/room';
 import {
   IRoomState, RoomPieceKind, stationFunctionOf, PIECE_BILLS, PIECE_BUILD_SECONDS,
   answersTag, builtLotBlocksAt, materialLabel, roomAdditions, roomDoor, roomEntry, roomSolid
-} from './room';
-import { lotConstruction } from './template';
+} from '../../../shared/entities/hub/room';
+import { lotConstruction } from '../../../shared/entities/hub/template';
 import { TemplateStudio } from '../../components/TemplateStudio';
 import { CityPlan } from '../../components/CityPlan';
 import { GuildHall } from '../../components/GuildHall';
@@ -29,16 +29,16 @@ import { Farm } from './farm';
 import { FarmDoors } from './farmDoors';
 import { VendorSystem } from '../../logic/systems/VendorSystem';
 import { inspectBuiltRoom } from '../../render/atoms/inspect';
-import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
-import { Archetype, Facing, WALK_PHASES, castPortrait, figure, residentFigure } from '../../render/atoms/people';
+import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { Archetype, Facing, WALK_PHASES, castPortrait, figure, residentFigure } from '../../../shared/render/atoms/people';
 import { ResidentDay } from './residentDay';
 import { MeetDoor } from '../../logic/systems/MeetDoor';
 import { MeetLaw } from '../../logic/systems/MeetLaw';
-import { IMeetLine } from '../../logic/systems/TalkTypes';
+import { IMeetLine } from '../../../shared/logic/systems/TalkTypes';
 import { SAYING_SHOWS_MS, drawSaying } from '../../render/atoms/speech';
 import { residentRung } from './guild';
 import { residentFacts } from './money';
-import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
+import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../../shared/render/atoms/atoms';
 import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
 import { ArmedButton, Bar, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
@@ -50,12 +50,12 @@ import { cityMinimap } from '../../render/atoms/minimap';
 import { inspectItem } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
 import { useStudyReach } from '../../components/StudyPanel'; // D118
-import { ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
-import { LoadoutSystem } from '../player/systems/LoadoutSystem';
-import { StatSystem } from '../../logic/systems/StatSystem';
+import { ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
-import { IItem, ItemType } from '../../../types';
+import { IItem, ItemType } from '../../../shared/types';
 
 /** How often the meetings nobody watched are sent and collected, while the city is open. A guess until Wave 12. */
 const MEET_TICK_MS = 60_000;

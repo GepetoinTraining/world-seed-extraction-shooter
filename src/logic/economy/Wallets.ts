@@ -7,8 +7,8 @@
  * all back up.
  */
 
-import { VectorStore, VectorNamespace } from '../../entities/data/VectorStore';
-import { StoreUnit } from '../../entities/data/StoreUnit';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
+import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { Ledger } from '../ledger/Ledger';
 
 const PREFIX = 'wallet_';

@@ -11,7 +11,7 @@ import { Button, Modal } from './ui/kit';
 import { HubPanel } from './HubPanel';
 import { HubClient } from '../logic/hub/HubClient';
 import { useIdentityStore } from '../entities/identity/store';
-import { VectorStore } from '../entities/data/VectorStore';
+import { VectorStore } from '../../shared/entities/data/VectorStore';
 import { ThemeStore } from '../logic/theme/ThemeStore';
 import { HostedLink } from '../logic/live/HostedLink';
 

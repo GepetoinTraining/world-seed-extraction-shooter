@@ -14,10 +14,10 @@
  */
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildChainRequest, CHAIN_SCHEMA } from '../server/intelligence/prompts';
-import { ChainWeb, IChainGround, IChainRound, IChainWeb, emptyChain } from '../src/logic/theme/ChainWeb';
-import { WebBank } from '../src/logic/content/WebBank';
-import { ThemeRank } from '../src/logic/theme/ThemeTypes';
+import { buildChainRequest, CHAIN_SCHEMA } from '../shared/intelligence/prompts';
+import { ChainWeb, IChainGround, IChainRound, IChainWeb, emptyChain } from '../shared/logic/theme/ChainWeb';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { ThemeRank } from '../shared/logic/theme/ThemeTypes';
 
 // A people with no writing, no metal and no wheel. Fire, stone, cane, river.
 export const TRIBE_GROUND: IChainGround = {

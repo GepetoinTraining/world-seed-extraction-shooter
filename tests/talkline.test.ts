@@ -7,7 +7,7 @@
  *   - a silent turn is let go only while someone waits
  */
 import { describe, it, expect } from 'vitest';
-import { TalkLine, TURN_IDLE_MS, emptyLine, type ILine } from '../src/logic/live/TalkLine';
+import { TalkLine, TURN_IDLE_MS, emptyLine, type ILine } from '../shared/logic/live/TalkLine';
 
 const asks = (line: ILine, ...who: [string, string[]?, number?][]) =>
   who.reduce((l, [uid, party = [], at = 0]) => TalkLine.ask(l, uid, party, at).line, line);

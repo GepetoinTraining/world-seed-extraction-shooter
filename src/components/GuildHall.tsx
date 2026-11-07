@@ -7,21 +7,21 @@
 import { useWorldStore } from '../entities/world/store';
 import { WorldClock } from '../entities/world/WorldClock';
 import React, { useEffect, useMemo, useState } from 'react';
-import { IItem, ItemType } from '../../types';
+import { IItem, ItemType } from '../../shared/types';
 import {
   IResident, chainFromMap, chainFromMaps, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed, mayHaveGround, questPay, residentStage,
   residentUpkeepPerDay, trialFor, trialTakes, wantMayTake
 } from '../entities/hub/guild';
 import { Farm } from '../entities/hub/farm';
 import { HUB_NPCS, HubGenerator } from '../entities/hub/HubGenerator';
-import { answersTag, materialLabel } from '../entities/hub/room';
-import { lotConstruction } from '../entities/hub/template';
+import { answersTag, materialLabel } from '../../shared/entities/hub/room';
+import { lotConstruction } from '../../shared/entities/hub/template';
 import { dayLines } from '../entities/hub/money';
 import { buildingLabel, priceOfListing, useHubStore, worldDay } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
-import { LoadoutSystem } from '../entities/player/systems/LoadoutSystem';
-import { ProgressionSystem } from '../entities/player/systems/ProgressionSystem';
-import { StatSystem } from '../logic/systems/StatSystem';
+import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
+import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
+import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { Treasury } from '../logic/economy/Treasury';
 import { ArmedButton, Button, Chip, Modal, Panel, Tabs } from './ui/kit';
 import { hoverProps, useFeed } from './ui/stores';

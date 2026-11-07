@@ -7,7 +7,7 @@
  */
 import { CertificateSystem, ISignedPayload, IPlayerCertificate } from '../../entities/identity/certificateSystem';
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
-import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
+import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { LootBook } from '../theme/LootBook';
 import { PersonLedger } from '../people/PersonLedger';
 

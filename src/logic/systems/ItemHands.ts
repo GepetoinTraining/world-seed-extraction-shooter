@@ -6,12 +6,12 @@
  * A move that is two doors asks the laws first and is never half done.
  */
 
-import { EquipSlotId, IItem, IPlayer } from '../../../types';
-import { InventorySystem, GRID_H, GRID_W } from '../../entities/player/systems/InventorySystem';
-import { LoadoutSystem, Verdict } from '../../entities/player/systems/LoadoutSystem';
+import { EquipSlotId, IItem, IPlayer } from '../../../shared/types';
+import { InventorySystem, GRID_H, GRID_W } from '../../../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { StashGrid } from '../../entities/player/systems/StashGrid';
 import { CartSystem } from '../../entities/world/CartSystem';
-import { IWorldEntity } from '../../entities/world/types';
+import { IWorldEntity } from '../../../shared/entities/world/types';
 import { usePlayerStore } from '../../entities/player/store';
 import { useWorldStore } from '../../entities/world/store';
 

@@ -1,10 +1,10 @@
 /**
- * OTHER PLAYERS, DRAWN A LITTLE BEHIND (src/logic/live/Presence.ts). Each browser says where its
+ * OTHER PLAYERS, DRAWN A LITTLE BEHIND (shared/logic/live/Presence.ts). Each browser says where its
  * own player is; everyone else is drawn BEHIND_MS in their own past, sliding between what they
  * said, walking on for a moment when nothing newer came, then standing and waiting.
  */
 import { describe, it, expect } from 'vitest';
-import { BEHIND_MS, GONE_AFTER_MS, KEEP_WALKING_MS, PresenceBook, SAY_AGAIN_MS, SAY_EVERY_MS, isWhere, placeAt, shouldSay, type IHeard, type IWhere } from '../src/logic/live/Presence';
+import { BEHIND_MS, GONE_AFTER_MS, KEEP_WALKING_MS, PresenceBook, SAY_AGAIN_MS, SAY_EVERY_MS, isWhere, placeAt, shouldSay, type IHeard, type IWhere } from '../shared/logic/live/Presence';
 
 const said = (t: number, x: number, o: Partial<IWhere> = {}): IWhere => ({ place: 'world_a', x, z: 0, facing: 'right', moving: true, t, name: 'Alder', archetype: 'NOMAD', ...o });
 const heard = (uid: string, t: number, x: number, o: Partial<IWhere> = {}): IHeard => ({ uid, ...said(t, x, o) });

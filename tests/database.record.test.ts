@@ -19,9 +19,9 @@ import { ColdDoorRefused, assertNetworkUrl, openColdDoor, requestDeadlineMs } fr
 import { DatabaseUnavailable, folderUrl, openDatabase } from '../server/connection';
 import { RecordKeeper, openLiveStore, recordConfig } from '../server/record';
 import { RECORD_TABLES } from '../server/recordRows';
-import { SqlStore } from '../server/SqlStore';
+import { SqlStore } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
-import * as schema from '../server/schema.pg';
+import * as schema from '../shared/schema.pg';
 
 const ROOT = process.cwd();
 const TSX = ['--disable-warning=ExperimentalWarning', '--import', 'tsx'];
@@ -181,7 +181,7 @@ describe('what asks for a record, and what never does', () => {
       const path = `${dir}/${name}`;
       return statSync(join(ROOT, path)).isDirectory() ? walk(path) : [path];
     });
-    const browser = [...walk('src'), 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p));
+    const browser = [...walk('src'), ...walk('shared'), 'App.tsx', 'index.tsx'].filter(p => /\.tsx?$/.test(p));
     expect(browser.filter(p => /TURSO|VITE_TURSO|libsql:/.test(readFileSync(join(ROOT, p), 'utf8')))).toEqual([]);
     const example = readFileSync(join(ROOT, '.env.example'), 'utf8');
     expect(example).toMatch(/^TURSO_DATABASE_URL=$/m);

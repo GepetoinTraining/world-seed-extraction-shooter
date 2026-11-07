@@ -1,13 +1,13 @@
 // FIXED: Lowercase 'certificateSystem'
-import { GRID_VERSION } from './grid';
+import { GRID_VERSION } from '../../../shared/entities/world/grid';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../identity/certificateSystem';
-import { VectorStore, VectorNamespace } from '../data/VectorStore';
+import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
 import { useIdentityStore } from '../identity/store';
 import { HomeHub } from '../../logic/persistence/HomeHub';
-import { UniversalRank } from '../../../types';
-import { WebBank } from '../../logic/content/WebBank';
-import { AffixBank } from '../../logic/content/AffixBank';
-import { ContentRegistry } from '../../logic/theme/ContentRegistry';
+import { UniversalRank } from '../../../shared/types';
+import { WebBank } from '../../../shared/logic/content/WebBank';
+import { AffixBank } from '../../../shared/logic/content/AffixBank';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { ICadence, SkyKind, WorldClock } from './WorldClock';
 
 export enum WorldType {

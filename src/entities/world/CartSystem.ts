@@ -11,10 +11,10 @@
  * security-affix family (locks, wards, alarms) for 10E's banks to grow into.
  */
 
-import { IItem } from '../../../types';
-import { ICartState, ICartTheft } from './types';
-import { InventorySystem } from '../player/systems/InventorySystem';
-import { LoadoutSystem, Verdict } from '../player/systems/LoadoutSystem';
+import { IItem } from '../../../shared/types';
+import { ICartState, ICartTheft } from '../../../shared/entities/world/types';
+import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 
 const OK: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });

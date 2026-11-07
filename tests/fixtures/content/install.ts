@@ -6,16 +6,16 @@
  * shared records a theme fills in the game. Nothing under `src` may import this.
  */
 
-import { MOB_DEFINITIONS } from '../../../src/entities/mob/data/mobDefinitions';
-import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../../../src/entities/item/data/itemDefinitions';
-import { RESOURCE_DEFINITIONS, BIOME_RESOURCES } from '../../../src/entities/item/data/resourceDefinitions';
-import { AFFIX_DEFINITIONS } from '../../../src/entities/item/data/affixDefinitions';
-import { AFFIX_BATCHES } from '../../../src/entities/generation/packs/affixBatches';
-import { WEB_BATCHES } from '../../../src/entities/generation/packs/webBatches';
-import { RECIPE_DEFINITIONS, GEAR_RECIPES, CRAFTED_DEFINITIONS, absorbWebBatch } from '../../../src/entities/economy/data/recipeDefinitions';
-import { registerCompositionDefs } from '../../../src/logic/economy/CompositionSystem';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../../../shared/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS, BIOME_RESOURCES } from '../../../shared/entities/item/data/resourceDefinitions';
+import { AFFIX_DEFINITIONS } from '../../../shared/entities/item/data/affixDefinitions';
+import { AFFIX_BATCHES } from '../../../shared/entities/generation/packs/affixBatches';
+import { WEB_BATCHES } from '../../../shared/entities/generation/packs/webBatches';
+import { RECIPE_DEFINITIONS, GEAR_RECIPES, CRAFTED_DEFINITIONS, absorbWebBatch } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { registerCompositionDefs } from '../../../shared/logic/economy/CompositionSystem';
 import { LORE_FRAGMENTS } from '../../../src/entities/lore/LoreBible';
-import { SHELF } from '../../../src/logic/theme/shelf';
+import { SHELF } from '../../../shared/logic/theme/shelf';
 import { TEST_MOBS } from './mobs';
 import { TEST_ITEM_DEFINITIONS, TEST_CRAFTED_GEAR_BASES } from './items';
 import { TEST_RESOURCES, TEST_BIOME_RESOURCES } from './resources';

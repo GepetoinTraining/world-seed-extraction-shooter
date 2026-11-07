@@ -1,12 +1,12 @@
-import { IPlayer, IItem, InteractionType, IInteractionOption } from '../../../types';
-import { EntityType, IWorldEntity } from '../world/types';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
-import { WebSystem } from '../../logic/systems/WebSystem';
-import { StatSystem } from '../../logic/systems/StatSystem';
-import { Capture } from '../../logic/systems/Capture';
+import { IPlayer, IItem, InteractionType, IInteractionOption } from '../../../shared/types';
+import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { Capture } from '../../../shared/logic/systems/Capture';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
 import { TALK_ENERGY } from '../../logic/systems/TalkLaw';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 
 /** D109: you can't talk across a distance. The same reach for a person and a monster. */
 export const TALK_REACH_TILES = 4.0;

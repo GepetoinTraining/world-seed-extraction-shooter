@@ -11,8 +11,8 @@
  * and with no answer the code's own rule picks, so a world with no key still grows.
  */
 
-import { ILeaderState } from '../../entities/world/Population';
-import { Territory, VERBS, Verb } from '../../entities/world/Territory';
+import { ILeaderState } from '../../../shared/entities/world/Population';
+import { Territory, VERBS, Verb } from '../../../shared/entities/world/Territory';
 import { IAskKind } from './ScanPass';
 
 export interface IPlanDecision {

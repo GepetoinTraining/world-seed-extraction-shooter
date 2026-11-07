@@ -5,10 +5,10 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { UniversalRank } from '../../../types';
-import { RANK_ORDER } from '../../entities/player/systems/ProgressionSystem';
+import { UniversalRank } from '../../../shared/types';
+import { RANK_ORDER } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { usePlayerStore } from '../../entities/player/store';
-import { IDirectorRecord } from '../../entities/world/Director';
+import { IDirectorRecord } from '../../../shared/entities/world/Director';
 import { DirectorStore } from '../../entities/world/DirectorStore';
 import { useWorldStore } from '../../entities/world/store';
 import { WorldClock } from '../../entities/world/WorldClock';

@@ -1,20 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { ITEM_DEFINITIONS } from '../src/entities/item/data/itemDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { ITEM_DEFINITIONS } from '../shared/entities/item/data/itemDefinitions';
 import { MATERIAL_AFFIXES } from '../src/entities/world/MaterialScience';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
-import { EntityType } from '../src/entities/world/types';
-import { InteractionType } from '../types';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { EntityType } from '../shared/entities/world/types';
+import { InteractionType } from '../shared/types';
 import {
   RANKS, RARITIES, Role, STEPS, Sprite, buildPalette, gearMaterial, grayscale, hashBytes, itemArt, materialFromProps,
   maskDifference, maskOf, px, qualityBand, spent, worldForm
-} from '../src/render/atoms/atoms';
+} from '../shared/render/atoms/atoms';
 import { GENRES, proofView } from '../src/render/atoms/world';
 import { cycleTarget, hitTest, inspectEntity, inspectItem, targetsFrom } from '../src/render/atoms/inspect';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { readFileSync } from 'node:fs';
 
 // Bars registered before any of this art existed. Do not lower them to get a pass.

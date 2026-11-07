@@ -26,7 +26,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -44,16 +44,16 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../types';
+import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useWorldStore } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useAppView, useFeed, useSheet } from '../src/components/ui/stores';
-import { EntityType, IWorldEntity, ScanLevel, BiomeType } from '../src/entities/world/types';
-import { InventorySystem, GRID_H, GRID_W } from '../src/entities/player/systems/InventorySystem';
-import { LoadoutSystem } from '../src/entities/player/systems/LoadoutSystem';
+import { EntityType, IWorldEntity, ScanLevel, BiomeType } from '../shared/entities/world/types';
+import { InventorySystem, GRID_H, GRID_W } from '../shared/entities/player/systems/InventorySystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { CartSystem } from '../src/entities/world/CartSystem';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { inspectItem, compareItems, comparisonFor, placeCard } from '../src/render/atoms/inspect';
 import {
@@ -63,7 +63,7 @@ import {
 import { Held, Place, probeMove, commitMove, ghostStyle, stepGhost } from '../src/logic/systems/ItemHands';
 import { STASH_COLS, StashGrid } from '../src/entities/player/systems/StashGrid';
 import { MINIMAP_ATOMS, MinimapMark, cityMinimap, fieldMinimap, minimapMark } from '../src/render/atoms/minimap';
-import { buildPalette, grayscale } from '../src/render/atoms/atoms';
+import { buildPalette, grayscale } from '../shared/render/atoms/atoms';
 import { TERMINAL_GENRE } from '../src/components/ui/tokens';
 import { HubGenerator } from '../src/entities/hub/HubGenerator';
 
@@ -1376,7 +1376,7 @@ describe('the standing laws reach everything this pass adds', () => {
   });
 
   it('types.ts is additive: the layout on a stash tab is optional', () => {
-    const types = SRC('types.ts');
+    const types = SRC('shared/types.ts');
     expect(types).toMatch(/layout\?: Record<string, IGridPlacement>/);
   });
 });

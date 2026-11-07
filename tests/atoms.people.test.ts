@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { ITEM_DEFINITIONS } from '../src/entities/item/data/itemDefinitions';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { ITEM_DEFINITIONS } from '../shared/entities/item/data/itemDefinitions';
 import { HUB_NPCS, HubGenerator, POIType, ZoneType } from '../src/entities/hub/HubGenerator';
 import {
   ATOM_PX, Role, STEPS, Sprite, buildPalette, creature, exitBeacon, grayscale, hashBytes, maskDifference, maskOf, px
-} from '../src/render/atoms/atoms';
+} from '../shared/render/atoms/atoms';
 import { GENRES, composeView, proofView } from '../src/render/atoms/world';
-import { ARCHETYPE_IDS, castFigure, castPortrait, figure, portrait, weaponClass } from '../src/render/atoms/people';
-import { residentFigure } from '../src/render/atoms/people';
+import { ARCHETYPE_IDS, castFigure, castPortrait, figure, portrait, weaponClass } from '../shared/render/atoms/people';
+import { residentFigure } from '../shared/render/atoms/people';
 import { readFileSync } from 'node:fs';
 import {
   HUB_GENRE, HUB_TILE, LOT_STATES, composeHub, doorOf, emblem, floorAtom, glyph, hubGround, hubSigns, keeperSpot, lightAt, lotArt

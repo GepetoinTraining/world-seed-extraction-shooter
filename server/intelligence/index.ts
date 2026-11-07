@@ -5,12 +5,13 @@
  * machine does (Pedro, Q24: "local model"). `WS_LOCAL_URL` and `WS_LOCAL_MODEL` say which.
  */
 import { resolve } from 'node:path';
-import { AbsentProvider, IntelligenceDoor, type IIntelligenceProvider } from './door';
-import { ClaudeProvider } from './claude';
-import { KeyOrLocalProvider, LocalProvider, localRuntimeFrom } from './local';
+import { AbsentProvider, IntelligenceDoor, type IIntelligenceProvider } from '../../shared/intelligence/door';
+import { ClaudeProvider } from '../../shared/intelligence/claude';
+import { KeyOrLocalProvider, LocalProvider } from '../../shared/intelligence/local';
+import { localRuntimeFrom } from './localDisk';
 import { readDoorOptions } from './optionsFile';
 import { HOST } from './machineHost';
-import { DoorSetting, SETTINGS } from './setting';
+import { DoorSetting, SETTINGS } from '../../shared/intelligence/setting';
 
 export function chooseProvider(env: NodeJS.ProcessEnv = process.env, local = new LocalProvider(localRuntimeFrom(env))): IIntelligenceProvider {
   if (env.WS_LLM_PROVIDER === 'none') return new AbsentProvider('Intelligence is turned off on this server.');

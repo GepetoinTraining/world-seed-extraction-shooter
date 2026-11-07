@@ -1,18 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
-import { RESOURCE_DEFINITIONS } from '../src/entities/item/data/resourceDefinitions';
-import { MobBehavior } from '../src/entities/mob/types';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
+import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
+import { MobBehavior } from '../shared/entities/mob/types';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
-import { TerrainSystem, TerrainType } from '../src/entities/world/TerrainSystem';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { EntityType, IChunk } from '../src/entities/world/types';
-import { TILE_PX, chunkOf, tileCenter, tileOf } from '../src/entities/world/grid';
+import { TerrainSystem, TerrainType } from '../shared/entities/world/TerrainSystem';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { EntityType, IChunk } from '../shared/entities/world/types';
+import { TILE_PX, chunkOf, tileCenter, tileOf } from '../shared/entities/world/grid';
 import {
   ATOM_PX, CreatureFacing, RADIAL_PLANS, Role, STEPS, Sprite, buildPalette, creature, exitBeacon, grayscale,
   hashBytes, maskDifference, maskOf, planFor, px, resource, treeSprite, worldForm
-} from '../src/render/atoms/atoms';
+} from '../shared/render/atoms/atoms';
 import { GENRES, STATIC_CONTEXT, baselinePx, entitySprite, isStandingTree, openGround, proofView, standsUpright, terrainBuffer } from '../src/render/atoms/world';
-import { ARCHETYPE_IDS, WALK_PHASES, figure, portrait } from '../src/render/atoms/people';
+import { ARCHETYPE_IDS, WALK_PHASES, figure, portrait } from '../shared/render/atoms/people';
 
 // Bars registered before the motion existed. Do not lower them to get a pass.
 const CATEGORY_MIN_DIFFERENCE = 0.25;  // every frame and facing, not just frame 0

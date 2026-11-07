@@ -12,7 +12,7 @@ import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
   VectorStore: { get: async () => null, put: async () => true, query: async () => [], saveContent: async () => true, searchContent: async () => [] }
 }));
@@ -20,13 +20,13 @@ vi.mock('../src/entities/data/VectorStore', () => ({
 import { WAIT_STEPS, WaitClock, SWEEP_CELLS } from '../src/logic/systems/WaitClock';
 import { WorldClock } from '../src/entities/world/WorldClock';
 import { useWaits, whileWaiting, useHotbar } from '../src/components/ui/stores';
-import { StatusClock } from '../src/logic/systems/EffectSystem';
+import { StatusClock } from '../shared/logic/systems/EffectSystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { usePlayerStore } from '../src/entities/player/store';
 import { deployToWorld, OPENING_WORLD } from '../src/logic/systems/Deploy';
 import { Busy, CycleRibbon, TimerBar } from '../src/components/ui/kit';
 import { WaitStrip } from '../src/components/WaitStrip';
-import { IPlayer } from '../types';
+import { IPlayer } from '../shared/types';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 

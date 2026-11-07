@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { ISessionReceipt } from '../../logic/journal/SessionJournal';
-import { EquipSlotId, IItem } from '../../../types';
+import { EquipSlotId, IItem } from '../../../shared/types';
 
 // --- WHICH SCREEN (replaces App-local state so dialogue can navigate) ---
 

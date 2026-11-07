@@ -9,9 +9,9 @@
  * MAGIC receipt landed in 10C; this file mints the items that use them.
  */
 
-import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../types';
-import { Rng, SeededRNG } from '../rng/DeterministicRNG';
-import { Verdict } from '../../entities/player/systems/LoadoutSystem';
+import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
+import { Rng, SeededRNG } from '../../../shared/logic/rng/DeterministicRNG';
+import { Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 
 const ok = (slots: EquipSlotId[], until?: number) => ({ ok: true, slots, until });
 const no = (reason: string) => ({ ok: false as const, reason });
@@ -153,7 +153,7 @@ export class InsuranceSystem {
 
     const { usePlayerStore } = await import('../../entities/player/store');
     const { useIdentityStore } = await import('../../entities/identity/store');
-    const { pickBill } = await import('../../entities/hub/room');
+    const { pickBill } = await import('../../../shared/entities/hub/room');
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return { ok: false, reason: 'No identity holds the pen. Jack in first.' };
 

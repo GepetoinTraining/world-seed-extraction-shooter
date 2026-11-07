@@ -16,8 +16,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 import { CertificateSystem, IPlayerCertificate } from '../src/entities/identity/certificateSystem';
-import { VectorNamespace, VectorStore } from '../src/entities/data/VectorStore';
-import { StoreClient } from '../src/entities/data/StoreClient';
+import { VectorNamespace, VectorStore } from '../shared/entities/data/VectorStore';
+import { StoreClient } from '../shared/entities/data/StoreClient';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { Ledger } from '../src/logic/ledger/Ledger';

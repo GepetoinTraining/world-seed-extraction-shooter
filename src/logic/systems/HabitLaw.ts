@@ -19,7 +19,7 @@
 import { AtomBook, IAtomBook } from '../memory/AtomBook';
 import { IMind, IMemory, MemoryLaw, PHI_CAP, Role } from '../memory/MemoryLaw';
 import { NpcContext } from '../memory/NpcContext';
-import { IMeetSideWords } from './TalkTypes';
+import { IMeetSideWords } from '../../../shared/logic/systems/TalkTypes';
 import { IMeetOutcome } from './MeetLaw';
 
 /**

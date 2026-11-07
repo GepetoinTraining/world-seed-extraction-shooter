@@ -9,16 +9,16 @@
  * model writes the NPC, the web is resolved backwards".
  */
 import { describe, expect, it } from 'vitest';
-import { IItem } from '../types';
-import { ChainWeb, IChainGround, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../src/logic/theme/ChainWeb';
-import { IThemeBody, IThemeProfession, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { bodyOf, themeIdOf } from '../src/logic/theme/ThemeCompiler';
+import { IItem } from '../shared/types';
+import { ChainWeb, IChainGround, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../shared/logic/theme/ChainWeb';
+import { IThemeBody, IThemeProfession, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { bodyOf, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
 import { Profession } from '../src/logic/systems/Profession';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { WebBank } from '../src/logic/content/WebBank';
-import { TagLaw } from '../src/logic/content/TagLaw';
-import { buildChainRequest, CHAIN_PARTS, CHAIN_SCHEMA } from '../server/intelligence/prompts';
-import { MODEL_FOR } from '../server/intelligence/claude';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { TagLaw } from '../shared/logic/content/TagLaw';
+import { buildChainRequest, CHAIN_PARTS, CHAIN_SCHEMA } from '../shared/intelligence/prompts';
+import { MODEL_FOR } from '../shared/intelligence/claude';
 import {
   IHubTech, admitSilently, areaFor, billFor, emptyTech, foldReach, groundOf, hubPopulation, hubStations, nextLink, normalTech,
   roomAreaOf, routeFor, sizeVerdict, standingOf, wantedStation, workingStations

@@ -5,15 +5,15 @@
 
 import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useMemo, useState } from 'react';
-import { IItem, ItemType, UniversalRank } from '../../types';
+import { IItem, ItemType, UniversalRank } from '../../shared/types';
 import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
 import { HubGenerator, IHubLayout, IPOI } from '../entities/hub/HubGenerator';
 import { usePlayerStore } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
-import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../entities/economy/data/recipeDefinitions';
-import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../entities/hub/room';
+import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../../shared/entities/economy/data/recipeDefinitions';
+import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../../shared/entities/hub/room';
 import { ArmedButton, Button, Chip, Input, ItemSprite, Panel, TimerBar } from './ui/kit';
-import { lotConstruction } from '../entities/hub/template';
+import { lotConstruction } from '../../shared/entities/hub/template';
 import { isTemplateItem } from '../logic/systems/TemplateSystem';
 import { TemplateApplyModal } from './TemplateApplyModal';
 import { TemplateStudio } from './TemplateStudio';

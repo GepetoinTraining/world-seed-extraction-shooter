@@ -8,27 +8,27 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ContentRegistry } from '../src/logic/theme/ContentRegistry';
-import { ThemeLaw } from '../src/logic/theme/ThemeLaw';
-import { compileTheme, creatureIdOf, sealTheme, themeIdOf } from '../src/logic/theme/ThemeCompiler';
-import { creatureNumbers, descendantNumbers } from '../src/logic/theme/ThemeFormula';
-import { BIOMES, IThemeBody, LINE_FEATURES, THEME_FORMULA_VERSION, THEME_SCHEMA } from '../src/logic/theme/ThemeTypes';
-import { CreatureLines, ILineWords } from '../src/logic/theme/CreatureLines';
-import { FIRST_THEME_PACK, installShippedThemes } from '../src/logic/theme/boot';
-import { FIRST_THEME } from '../src/entities/generation/packs/firstTheme';
-import { WebBank } from '../src/logic/content/WebBank';
-import { Director, IDirectorRecord, emptyDirectorRecord } from '../src/entities/world/Director';
-import { ISectorState, Population, emptyPopulationRecord } from '../src/entities/world/Population';
-import { WorldGenerator } from '../src/entities/world/WorldGenerator';
-import { EntityType, IWorldEntity } from '../src/entities/world/types';
-import { SECTOR_CHUNKS } from '../src/entities/world/grid';
-import { MOB_DEFINITIONS } from '../src/entities/mob/data/mobDefinitions';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { compileTheme, creatureIdOf, sealTheme, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
+import { creatureNumbers, descendantNumbers } from '../shared/logic/theme/ThemeFormula';
+import { BIOMES, IThemeBody, LINE_FEATURES, THEME_FORMULA_VERSION, THEME_SCHEMA } from '../shared/logic/theme/ThemeTypes';
+import { CreatureLines, ILineWords } from '../shared/logic/theme/CreatureLines';
+import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { FIRST_THEME } from '../shared/entities/generation/packs/firstTheme';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { Director, IDirectorRecord, emptyDirectorRecord } from '../shared/entities/world/Director';
+import { ISectorState, Population, emptyPopulationRecord } from '../shared/entities/world/Population';
+import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { EntityType, IWorldEntity } from '../shared/entities/world/types';
+import { SECTOR_CHUNKS } from '../shared/entities/world/grid';
+import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { computeGolden } from '../src/entities/world/goldens';
-import { creature, maskDifference, maskOf, planFor, Plan, SIZE_ATOMS } from '../src/render/atoms/atoms';
-import { fnv1a } from '../src/logic/rng/DeterministicRNG';
-import { AbsentProvider, IntelligenceDoor } from '../server/intelligence/door';
-import { buildLineRequest, buildThemeRequest } from '../server/intelligence/prompts';
-import { UniversalRank } from '../types';
+import { creature, maskDifference, maskOf, planFor, Plan, SIZE_ATOMS } from '../shared/render/atoms/atoms';
+import { fnv1a } from '../shared/logic/rng/DeterministicRNG';
+import { AbsentProvider, IntelligenceDoor } from '../shared/intelligence/door';
+import { buildLineRequest, buildThemeRequest } from '../shared/intelligence/prompts';
+import { UniversalRank } from '../shared/types';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag);
@@ -319,12 +319,12 @@ describe('line 105: a line is a hash graph (D61, D65)', () => {
   });
 
   it('it is computed at the regeneration and never while a chunk is built', () => {
-    for (const file of ['src/entities/world/WorldGenerator.ts', 'src/entities/world/Director.ts']) {
+    for (const file of ['shared/entities/world/WorldGenerator.ts', 'shared/entities/world/Director.ts']) {
       const text = readFileSync(file, 'utf8');
       expect(text, file).not.toMatch(/sha256|SessionJournal/);
     }
-    expect(readFileSync('src/logic/theme/CreatureLines.ts', 'utf8')).toMatch(/sha256Hex/);
-    expect(readFileSync('src/logic/theme/CreatureLines.ts', 'utf8')).not.toMatch(/fnv1a/);
+    expect(readFileSync('shared/logic/theme/CreatureLines.ts', 'utf8')).toMatch(/sha256Hex/);
+    expect(readFileSync('shared/logic/theme/CreatureLines.ts', 'utf8')).not.toMatch(/fnv1a/);
   });
 
   it('with no record a world generates exactly as it did: the hound stays a hound', () => {

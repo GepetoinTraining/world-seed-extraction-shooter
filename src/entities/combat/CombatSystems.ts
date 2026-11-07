@@ -1,11 +1,11 @@
-import { IProjectile, ProjectileSystem } from './projectileSystem';
-import { IWorldEntity, EntityType, IChunk } from '../world/types';
-import { MOB_DEFINITIONS } from '../mob/data/mobDefinitions';
+import { IProjectile, ProjectileSystem } from '../../../shared/entities/combat/projectileSystem';
+import { IWorldEntity, EntityType, IChunk } from '../../../shared/entities/world/types';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { LootTable } from '../world/LootTable';
-import { IItem, UniversalRank, Rarity } from '../../../types';
-import { ProgressionSystem } from '../player/systems/ProgressionSystem';
+import { IItem, UniversalRank, Rarity } from '../../../shared/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
-import { IStatusPlan, StatusClock } from '../../logic/systems/EffectSystem';
+import { IStatusPlan, StatusClock } from '../../../shared/logic/systems/EffectSystem';
 
 export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG' | 'WARDED' | 'BROKE';

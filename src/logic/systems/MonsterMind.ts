@@ -12,13 +12,13 @@
  * Nothing here is stored. A body reads the same from (seed, id, its kind's line) on any machine.
  */
 
-import { IAttributes, ISkillState, MENTAL_ATTRIBUTES } from '../../../types';
-import { MobBehavior } from '../../entities/mob/types';
-import { INpcSheet, IWorldEntity } from '../../entities/world/types';
-import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
-import { NpcSheet } from './NpcSheet';
-import { StatSystem } from './StatSystem';
-import { RUNG_XP, WebSystem } from './WebSystem';
+import { IAttributes, ISkillState, MENTAL_ATTRIBUTES } from '../../../shared/types';
+import { MobBehavior } from '../../../shared/entities/mob/types';
+import { INpcSheet, IWorldEntity } from '../../../shared/entities/world/types';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { RUNG_XP, WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 export const MIND_TAGS = ['intelligent'];
 const BORN_THINKING = 'humanoid';

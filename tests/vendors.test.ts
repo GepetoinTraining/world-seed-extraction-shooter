@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
-vi.mock('../src/entities/data/VectorStore', () => ({
+vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories', AVATARS: 'avatars' },
   VectorStore: {
     get: async (_ns: string, id: string) => db.get(id) ?? null,
@@ -28,21 +28,21 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IAttributes, IItem, ISkillState, ItemType, PHYSICAL_ATTRIBUTES, Rarity, UniversalRank } from '../types';
+import { IAttributes, IItem, ISkillState, ItemType, PHYSICAL_ATTRIBUTES, Rarity, UniversalRank } from '../shared/types';
 import { NEEDS, NpcAgenda } from '../src/logic/systems/NpcAgenda';
 import { IVendorRecord, VENDOR_GOALS, VendorSystem } from '../src/logic/systems/VendorSystem';
 import { ApprenticeRoad, CRAFT_TAG, ICraftsman, TERM_DAYS, TRIAL_DC, generalKeepers } from '../src/logic/systems/ApprenticeRoad';
-import { NpcSheet } from '../src/logic/systems/NpcSheet';
-import { WebBank } from '../src/logic/content/WebBank';
-import { WebSystem } from '../src/logic/systems/WebSystem';
-import { TagLaw } from '../src/logic/content/TagLaw';
+import { NpcSheet } from '../shared/logic/systems/NpcSheet';
+import { WebBank } from '../shared/logic/content/WebBank';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { TagLaw } from '../shared/logic/content/TagLaw';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction } from '../src/entities/hub/dialogue';
 import { useHubStore } from '../src/entities/hub/store';
 import { emptyGuild } from '../src/entities/hub/guild';
 import { usePlayerStore } from '../src/entities/player/store';
-import { ItemFactory } from '../src/entities/item/ItemFactory';
-import { Rng } from '../src/logic/rng/DeterministicRNG';
+import { ItemFactory } from '../shared/entities/item/ItemFactory';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { readFileSync } from 'node:fs';
 
 const DAY = 20_000;
