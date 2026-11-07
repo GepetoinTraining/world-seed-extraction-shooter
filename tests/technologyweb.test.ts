@@ -44,6 +44,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 import { IItem, ISkillState, IWebBatch, IWebPack, TAG_KIND_IDENTITY, UniversalRank, Rarity, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../types';
 import { TagLaw } from '../src/logic/content/TagLaw';
 import { WebBank } from '../src/logic/content/WebBank';
+import { bankAndSignWeb } from '../src/logic/content/BankSigning';
 import { WEB_BATCHES } from '../src/entities/generation/packs/webBatches';
 import { WebSystem, MASTERY_RUNGS, RUNG_XP } from '../src/logic/systems/WebSystem';
 import { NpcSheet } from '../src/logic/systems/NpcSheet';
@@ -654,7 +655,7 @@ describe('line 68: the batch law (D20)', () => {
   });
 
   it('the current pack signs into the content namespace', async () => {
-    const doc = await WebBank.bankAndSign('uid_signer');
+    const doc = await bankAndSignWeb('uid_signer');
     expect(doc?.signature).toBeTruthy();
     expect(doc?.pack.version).toBe(WebBank.version());
     expect(db.get(`content:content_web_pack_v${WebBank.version()}`)).toBeTruthy();

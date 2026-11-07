@@ -251,7 +251,8 @@ export class OllamaRuntime implements ILocalRuntime {
   name = 'ollama';
   private baseUrl: string;
 
-  constructor(baseUrl: string, public model: string, private findInstalled: () => Promise<boolean> = ollamaOnDisk) {
+  /** `findInstalled` is the port to the disk: a page cannot look there, so it is known only by answering. */
+  constructor(baseUrl: string, public model: string, private findInstalled: () => Promise<boolean> = async () => false) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
   }
 
@@ -375,30 +376,4 @@ export class OllamaRuntime implements ILocalRuntime {
     take(buffer + decoder.decode());
     return finish(text, last);
   }
-}
-
-/** Is Ollama on this machine, running or not? Its usual places, then the PATH. */
-async function ollamaOnDisk(): Promise<boolean> {
-  // A page cannot look at the disk: there, the runtime is known only by answering
-  if (typeof process === 'undefined' || !process.versions?.node) return false;
-  const { access } = await import('node:fs/promises');
-  const { join, delimiter } = await import('node:path');
-  const exe = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
-  const places = [
-    ...(process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'Programs', 'Ollama', exe)] : []),
-    ...(process.platform === 'darwin' ? ['/Applications/Ollama.app'] : []),
-    ...(process.env.PATH ?? '').split(delimiter).filter(Boolean).map(dir => join(dir, exe))
-  ];
-  for (const place of places) {
-    try { await access(place); return true; } catch { /* not here */ }
-  }
-  return false;
-}
-
-/**
- * Where the local model is and which one. The model is the person's setting; until they pick,
- * it is the suggestion in the door's options (data, not code), or WS_LOCAL_MODEL.
- */
-export function localRuntimeFrom(env: NodeJS.ProcessEnv = process.env, from?: { url?: string }): ILocalRuntime {
-  return new OllamaRuntime(env.WS_LOCAL_URL?.trim() || from?.url || 'http://127.0.0.1:11434', env.WS_LOCAL_MODEL?.trim() || '');
 }

@@ -47,6 +47,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 
 import { IAffixBatch, IBankedAffix, IItem, ItemType, MENTAL_ATTRIBUTES, Rarity, UniversalRank } from '../types';
 import { AffixBank } from '../src/logic/content/AffixBank';
+import { bankAndSignAffixes } from '../src/logic/content/BankSigning';
 import { AFFIX_BATCHES } from '../src/entities/generation/packs/affixBatches';
 import { DreamingSystem } from '../src/entities/world/Dreaming';
 import { StudySystem } from '../src/logic/systems/StudySystem';
@@ -197,7 +198,7 @@ describe('the bank law: a batch loads, validates and signs, or is refused whole'
   });
 
   it('a loaded pack is SIGNED into the CONTENT namespace, version and signature on the stored doc', async () => {
-    const signed = await AffixBank.bankAndSign('uid_10e');
+    const signed = await bankAndSignAffixes('uid_10e');
     expect(signed).toBeTruthy();
     expect(signed!.signature).toBe('sig_uid_10e');
     expect(signed!.pack.version).toBe(AffixBank.version());

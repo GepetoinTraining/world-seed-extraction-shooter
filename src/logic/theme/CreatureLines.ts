@@ -19,7 +19,7 @@
 import { MOB_DEFINITIONS } from '../../entities/mob/data/mobDefinitions';
 import type { IDirectorRecord } from '../../entities/world/Director';
 import { WebBank } from '../content/WebBank';
-import { sha256Hex } from '../journal/SessionJournal';
+import { sha256Hex } from '../ledger/digest';
 import { Rng } from '../rng/DeterministicRNG';
 import { ContentRegistry } from './ContentRegistry';
 import { canonical, compileTheme, creatureIdOf, junkIdsFor, keyIdsOf } from './ThemeCompiler';

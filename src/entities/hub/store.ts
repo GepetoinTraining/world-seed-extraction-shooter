@@ -42,6 +42,7 @@ import { DreamingSystem } from '../world/Dreaming'; // Wave 10E: the shelf on th
 import { AffixBank } from '../../logic/content/AffixBank'; // Wave 10E (D20)
 import { PROCESS_FAMILIES, PROCESS_SKILL_XP_PER_JOB, ProcessSystem } from '../../logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { WebBank } from '../../logic/content/WebBank'; // D27
+import { bankAndSignAffixes, bankAndSignWeb } from '../../logic/content/BankSigning';
 import { WebSystem, rankIndexOf } from '../../logic/systems/WebSystem'; // D27: the technology web
 import { StatSystem } from '../../logic/systems/StatSystem';
 import { useFeed, useRankMoment } from '../../components/ui/stores';
@@ -631,8 +632,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       // Wave 10E (D20): the current content pack is validated, signed and
       // banked into the CONTENT namespace. A broken batch would refuse whole here.
       const signer = useIdentityStore.getState().certificate?.metadata.uid ?? 'SYSTEM';
-      void AffixBank.bankAndSign(signer);
-      void WebBank.bankAndSign(signer);
+      void bankAndSignAffixes(signer);
+      void bankAndSignWeb(signer);
 
       // 2. Generate/Load Shop Stock (Simulated Daily Refresh)
       // In a real app, this would be server-side. Here we simulate it.

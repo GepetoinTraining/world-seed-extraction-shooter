@@ -18,7 +18,7 @@
  * keeps wearing; its mental line was already dead (10C, D22).
  */
 
-import { IAffixBatch, IBankedAffix, IContentPack, ISignedContentPack, MENTAL_ATTRIBUTES } from '../../../types';
+import { IAffixBatch, IBankedAffix, IContentPack, MENTAL_ATTRIBUTES } from '../../../types';
 import { AFFIX_DEFINITIONS, AffixDefinition } from '../../entities/item/data/affixDefinitions';
 import { AFFIX_BATCHES } from '../../entities/generation/packs/affixBatches';
 import { StatSystem } from '../systems/StatSystem';
@@ -140,26 +140,6 @@ export class AffixBank {
 
   static version(): number {
     return AFFIX_BATCHES.length;
-  }
-
-  // ---------------------------------------------------------------------
-  // SIGNING: a loaded pack is banked signed into the CONTENT namespace
-  // ---------------------------------------------------------------------
-
-  static async bankAndSign(signerUid: string): Promise<ISignedContentPack | null> {
-    try {
-      const pack = this.current();
-      const { CertificateSystem } = await import('../../entities/identity/certificateSystem');
-      const signed = await CertificateSystem.signPayload(signerUid, pack as any);
-      if (!signed) return null;
-      const doc: ISignedContentPack = { pack, signerUid, signature: signed.signature };
-      const { VectorStore } = await import('../../entities/data/VectorStore');
-      await VectorStore.saveContent(`content_pack_v${pack.version}`, 'content_pack', doc);
-      return doc;
-    } catch (e) {
-      console.warn('[BANK] Content pack could not be signed:', e);
-      return null;
-    }
   }
 
   // ---------------------------------------------------------------------

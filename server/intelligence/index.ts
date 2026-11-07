@@ -7,7 +7,8 @@
 import { resolve } from 'node:path';
 import { AbsentProvider, IntelligenceDoor, type IIntelligenceProvider } from './door';
 import { ClaudeProvider } from './claude';
-import { KeyOrLocalProvider, LocalProvider, localRuntimeFrom } from './local';
+import { KeyOrLocalProvider, LocalProvider } from './local';
+import { localRuntimeFrom } from './localDisk';
 import { readDoorOptions } from './optionsFile';
 import { HOST } from './machineHost';
 import { DoorSetting, SETTINGS } from './setting';

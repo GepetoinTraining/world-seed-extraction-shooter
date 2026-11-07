@@ -15,7 +15,7 @@
  */
 
 import {
-  IItem, ISignedWebPack, ITagEntry, IWebBatch, IWebMaterial, IWebPack, IWebTool, SlotType,
+  IItem, ITagEntry, IWebBatch, IWebMaterial, IWebPack, IWebTool, SlotType,
   TAG_KIND_IDENTITY, TagKind, UniversalRank
 } from '../../../types';
 import { WEB_BATCHES } from '../../entities/generation/packs/webBatches';
@@ -402,25 +402,5 @@ export class WebBank {
       implicits: [{ stat: tool.powerStat ?? 'chopping_power', min: base, max: Math.ceil(base * 1.3) }]
     };
     return ItemFactory.createFromTemplate(template, true, rng);
-  }
-
-  // ---------------------------------------------------------------------
-  // SIGNING: a loaded web is banked signed into the CONTENT namespace
-  // ---------------------------------------------------------------------
-
-  static async bankAndSign(signerUid: string): Promise<ISignedWebPack | null> {
-    try {
-      const pack = this.current();
-      const { CertificateSystem } = await import('../../entities/identity/certificateSystem');
-      const signed = await CertificateSystem.signPayload(signerUid, pack as any);
-      if (!signed) return null;
-      const doc: ISignedWebPack = { pack, signerUid, signature: signed.signature };
-      const { VectorStore } = await import('../../entities/data/VectorStore');
-      await VectorStore.saveContent(`content_web_pack_v${pack.version}`, 'web_pack', doc);
-      return doc;
-    } catch (e) {
-      console.warn('[BANK] Web pack could not be signed:', e);
-      return null;
-    }
   }
 }
