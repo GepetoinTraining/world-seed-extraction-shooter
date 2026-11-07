@@ -52,6 +52,8 @@ export const IntelligenceClient = {
   npcTalk: <T>(talkId: string, ask: unknown) => post<T>('/npc/talk', { talkId, ask }),
   npcGoal: <T>(talkId: string, ask: unknown) => post<T>('/npc/goal', { talkId, ask }),
   bargain: <T>(talkId: string, ask: unknown) => post<T>('/npc/bargain', { talkId, ask }),
+  /** Two people meeting while somebody watches: spoken live (MeetDoor). */
+  npcMeet: <T>(talkId: string, ask: unknown) => post<T>('/npc/meet', { talkId, ask }),
 
   /** A conversation as it is written. Every end is an outcome, and a stream that just stops did not finish. */
   async talkKami(messages: IDoorMessage[], onText: (text: string) => void, signal?: AbortSignal, persona?: string): Promise<IDoorOutcome> {

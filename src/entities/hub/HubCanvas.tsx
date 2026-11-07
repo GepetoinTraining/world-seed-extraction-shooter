@@ -32,6 +32,10 @@ import { inspectBuiltRoom } from '../../render/atoms/inspect';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS } from '../economy/data/recipeDefinitions';
 import { Archetype, Facing, WALK_PHASES, castPortrait, figure, residentFigure } from '../../render/atoms/people';
 import { ResidentDay } from './residentDay';
+import { MeetDoor } from '../../logic/systems/MeetDoor';
+import { MeetLaw } from '../../logic/systems/MeetLaw';
+import { IMeetLine } from '../../logic/systems/TalkTypes';
+import { SAYING_SHOWS_MS, drawSaying } from '../../render/atoms/speech';
 import { residentRung } from './guild';
 import { residentFacts } from './money';
 import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../render/atoms/atoms';
@@ -52,6 +56,9 @@ import { StatSystem } from '../../logic/systems/StatSystem';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../types';
+
+/** How often the meetings nobody watched are sent and collected, while the city is open. A guess until Wave 12. */
+const MEET_TICK_MS = 60_000;
 
 const TILE_SIZE = HUB_TILE_PX;
 
@@ -172,6 +179,9 @@ export const HubCanvas: React.FC = () => {
   // Q18: someone who lives here, near enough to talk to where they stand. The walk loop sets it.
   const [nearPerson, setNearPerson] = useState<string | null>(null);
   const nearPersonRef = useRef<string | null>(null);
+  // Two people who stood together today, and the lines of any talk somebody is watching
+  const meetSeenRef = useRef(new Set<string>());
+  const sayingRef = useRef(new Map<string, { a: string; b: string; lines: IMeetLine[]; at: number }>());
   const talking = useTalk(s => !!s.subject);
   busyRef.current = !!(activeNPC || panel || stationPanel || talking);
 
@@ -529,6 +539,26 @@ export const HubCanvas: React.FC = () => {
   // rung sends them, and home again (residentDay.ts). Where is the clock's, the same on every machine.
   const residents = useHubStore(s => s.guild.residents);
   const wallets = useHubStore(s => s.wallets);
+
+  // Where two people stand, in words: by the nearest door the city has
+  const whereNear = useCallback((at: { x: number; y: number }) => {
+    const pois = layout.zones.flatMap(z => z.pois);
+    let best: IPOI | null = null, bestD = Infinity;
+    for (const poi of pois) {
+      const d = Math.hypot(poi.position.x + poi.size.width / 2 - at.x, poi.position.y + poi.size.height / 2 - at.y);
+      if (d < bestD) { best = poi; bestD = d; }
+    }
+    return best ? `by the ${best.name}` : 'in the street';
+  }, [layout]);
+
+  // What nobody watched goes out in a batch, and comes back on a later tick
+  useEffect(() => {
+    const hubId = useHubStore.getState().activeHubId;
+    if (!hubId) return;
+    void MeetDoor.tick(hubId);
+    const timer = setInterval(() => void MeetDoor.tick(hubId), MEET_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
   const residentRoutes = useMemo(() => {
     const walkable = (x: number, y: number) => !!layout.navMesh[y]?.[x] && !blockedLotTiles.has(y * layout.width + x);
     const day = worldDay();
@@ -738,7 +768,7 @@ export const HubCanvas: React.FC = () => {
       }
       ctx.stroke();
       ctx.setLineDash([]);
-      const standing: { id: string; at: { x: number; y: number } }[] = [];
+      const standing: { id: string; at: { x: number; y: number; moving: boolean } }[] = [];
       const clock = Date.now();
       for (const r of residentRoutes) {
         const at = ResidentDay.whereAt(r.route, clock, r.id);
@@ -753,6 +783,33 @@ export const HubCanvas: React.FC = () => {
       const body = bodyFor(facingRef.current, stepRef.current.step, movingRef.current);
       const w = body.width * ATOM_PX, h = body.height * ATOM_PX;
       ctx.drawImage(body, Math.round((p.x - w / 2 - ox) / 2) * 2, Math.round((p.y - h / 2 - oy) / 2) * 2, w, h);
+
+      // Pedro: two people who meet talk. Watched, it is spoken now and seen in bubbles; unwatched, it waits for a batch.
+      const hubId = useHubStore.getState().activeHubId;
+      if (hubId) {
+        const day = worldDay();
+        const onScreen = (at: { x: number; y: number }) => {
+          const sx = at.x * TILE_SIZE - ox, sy = at.y * TILE_SIZE - oy;
+          return sx >= 0 && sy >= 0 && sx <= canvas.width && sy <= canvas.height;
+        };
+        for (const [a, b] of ResidentDay.meetings(standing)) {
+          const key = MeetLaw.key(a, b, day);
+          if (meetSeenRef.current.has(key)) continue;
+          meetSeenRef.current.add(key);
+          const atA = standing.find(s => s.id === a)!.at, atB = standing.find(s => s.id === b)!.at;
+          const meeting = { a, b, day, where: whereNear(atA), why: 'waiting at the same door' };
+          if (onScreen(atA) && onScreen(atB)) {
+            void MeetDoor.live(hubId, meeting).then(lines => { if (lines && lines.length > 0) sayingRef.current.set(key, { a, b, lines, at: Date.now() }); });
+          } else void MeetDoor.queue(hubId, [meeting]);
+        }
+      }
+      for (const [key, said] of sayingRef.current) {
+        const i = Math.floor((clock - said.at) / SAYING_SHOWS_MS);
+        if (i >= said.lines.length) { sayingRef.current.delete(key); continue; }
+        const line = said.lines[i];
+        const speaker = standing.find(s => s.id === (line.by === 'a' ? said.a : said.b));
+        if (speaker) drawSaying(ctx, line.text, speaker.at.x * TILE_SIZE - ox, speaker.at.y * TILE_SIZE - oy - TILE_SIZE);
+      }
       const poi = nearbyRef.current;
       if (poi) {
         ctx.strokeStyle = '#fafafa';
@@ -763,7 +820,7 @@ export const HubCanvas: React.FC = () => {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cityBitmaps, groundEdges, residentRoutes, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion]);
+  }, [cityBitmaps, groundEdges, residentRoutes, player.id, player.archetype, blockedAt, cameraOffset, reducedMotion, whereNear]);
 
   const handleCityClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();

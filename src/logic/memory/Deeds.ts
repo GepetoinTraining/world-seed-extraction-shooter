@@ -116,6 +116,21 @@ export const Deeds = {
       .map(f => ({ heir: e.body, fallen: f.body, at: e.enteredAt })));
   },
 
+  /**
+   * Two people met and talked (MeetLaw): each keeps the other as who, themselves as to whom, and
+   * the words the model gave their side. Where it gave none, what brought them stands in.
+   */
+  met(o: { day: number; owner: string; other: string; where: string; why: string; remember?: IRememberWords; fall?: number }): IRemembering {
+    const r = o.remember;
+    return {
+      day: o.day, ...(o.fall ? { fall: o.fall } : {}),
+      slots: {
+        who: person(o.other), did: r?.did || 'talked with', what: r?.what || o.why, toWhom: person(o.owner),
+        when: dayWords(o.day), where: o.where, ...(r?.how ? { how: r.how } : {}), ...(r?.why ? { why: r.why } : {})
+      }
+    };
+  },
+
   /** A line's head fell and another took its place: the one who follows remembers the one before. */
   succeeded(o: { day: number; heir: string; fallen: string }): IRemembering {
     return { day: o.day, slots: { who: person(o.heir), did: 'took the place of', toWhom: person(o.fallen), when: dayWords(o.day) } };

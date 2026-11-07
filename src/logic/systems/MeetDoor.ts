@@ -1,0 +1,223 @@
+/**
+ * TWO PEOPLE MEETING, reaching out: the part of MeetLaw that touches stores and the door.
+ *
+ * A meeting nobody watched waits in the hub's queue (`meets_${hubId}`, beside the minds) and goes
+ * out in a batch on the window's model; a later tick collects it. A meeting somebody watches goes
+ * out at once, and its lines come back for the bubbles. Either way, what comes back is judged, and
+ * what it changed is written: memory for both, and belonging.
+ *
+ * With no key, a refusal or a broken answer, the meeting still happened: the memory its deed
+ * already wrote stands, and nothing more is added. Nothing waits on a model (D35).
+ */
+
+import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
+import { useHubStore, worldDay } from '../../entities/hub/store';
+import { readSheet, residentIdOf } from '../../entities/hub/guild';
+import { residentFacts } from '../../entities/hub/money';
+import { MemoryStore } from '../../entities/interaction/memoryStore';
+import { cityNameOf, cityPerson, citySurface, cityWantOf } from '../../entities/interaction/talkStore';
+import { IntelligenceClient } from '../intelligence/IntelligenceClient';
+import { Deeds } from '../memory/Deeds';
+import { LadderWeight } from '../memory/MemoryLaw';
+import { INeedFill, NpcAgenda } from './NpcAgenda';
+import { NpcSheet } from './NpcSheet';
+import { IMeetOutcome, MeetLaw } from './MeetLaw';
+import { IMeetAsk, IMeetLine, IMeetSide, IMeetWords } from './TalkTypes';
+import { UniversalRank } from '../../../types';
+
+/** A meeting as the city saw it: who, who, where, why, and the day. */
+export interface IMeeting { a: string; b: string; day: number; where: string; why: string }
+
+interface IMeetQueue {
+  pending: (IMeeting & { key: string })[];
+  out: { id: string; batchId: string; meetings: (IMeeting & { key: string })[] }[];
+  /** Meetings already talked through, by key, so one pair talks once a day. Days gone by are let go. */
+  met: string[];
+}
+
+const queueId = (hubId: string) => `meets_${hubId}`;
+const emptyQueue = (): IMeetQueue => ({ pending: [], out: [], met: [] });
+const dayOfKey = (key: string) => Number(key.split('|')[3]);
+
+async function loadQueue(hubId: string): Promise<IMeetQueue> {
+  return (await VectorStore.get<IMeetQueue>(VectorNamespace.TERRITORIES, queueId(hubId)))?.data ?? emptyQueue();
+}
+
+async function saveQueue(hubId: string, queue: IMeetQueue): Promise<void> {
+  const now = Date.now();
+  const today = worldDay();
+  // A day gone by cannot repeat, so its keys are let go
+  const met = queue.met.filter(k => dayOfKey(k) >= today - 1);
+  await VectorStore.put({ id: queueId(hubId), namespace: VectorNamespace.TERRITORIES, data: { ...queue, met }, metadata: { createdAt: now, updatedAt: now, ownerCertUid: hubId, version: 1 } });
+}
+
+let turn: Promise<unknown> = Promise.resolve();
+/** One at a time: the queue is one record. */
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const next = turn.then(work, work);
+  turn = next.catch(() => undefined);
+  return next;
+}
+
+/** Who someone in the city is, as a model reads them: a resident, a keeper, or someone on the road at a bench. */
+function surfaceOf(id: string): Pick<IMeetSide, 'who' | 'goal' | 'wants'> | null {
+  const person = cityPerson(id);
+  if (person) {
+    const resident = useHubStore.getState().guild.residents.find(r => r.id === id);
+    const wants = cityWantOf(id, person);
+    return { who: citySurface(person), ...(resident?.goal ? { goal: resident.goal.text } : {}), ...(wants ? { wants } : {}) };
+  }
+  const craftsman = useHubStore.getState().craftsmen.find(c => residentIdOf(c.bond) === id);
+  if (!craftsman) return null;
+  return { who: NpcSheet.surface(readSheet({ bond: craftsman.bond } as never), craftsman.bond.rank as UniversalRank) };
+}
+
+async function askOf(hubId: string, m: IMeeting & { key: string }): Promise<IMeetAsk | null> {
+  const a = surfaceOf(m.a), b = surfaceOf(m.b);
+  if (!a || !b) return null;
+  const place = { hubId };
+  const ma = await MemoryStore.mount(place, m.a, m.b, m.day, m.why, cityNameOf);
+  const mb = await MemoryStore.mount(place, m.b, m.a, m.day, m.why, cityNameOf);
+  return { id: m.key, where: m.where, why: m.why, a: { id: m.a, ...a, ...ma }, b: { id: m.b, ...b, ...mb } };
+}
+
+/** What a person stands on: their agenda and what is known of them, for the weight of a loss. */
+function standingOf(id: string): { agenda: ReturnType<typeof NpcAgenda.fresh>; facts: { house?: boolean; money?: boolean } } | null {
+  const hub = useHubStore.getState();
+  const resident = hub.guild.residents.find(r => r.id === id);
+  if (resident) return { agenda: resident.agenda ?? NpcAgenda.fresh(worldDay()), facts: residentFacts(resident, hub.wallets[id] ?? 0) };
+  const vendor = hub.vendors[id];
+  if (vendor) return { agenda: vendor.agenda, facts: { house: true } };
+  return null;
+}
+
+/** What a meeting changed, written: belonging for both, and what each keeps of the other. */
+async function settle(hubId: string, outcomes: { meeting: IMeeting; outcome: IMeetOutcome }[]): Promise<void> {
+  if (outcomes.length === 0) return;
+  const fills: Record<string, INeedFill> = {};
+  const add = (id: string, fill: INeedFill) => { fills[id] = { belonging: (fills[id]?.belonging ?? 0) + (fill.belonging ?? 0) }; };
+  for (const { meeting, outcome } of outcomes) {
+    add(meeting.a, MeetLaw.fillOf(outcome.a.band));
+    add(meeting.b, MeetLaw.fillOf(outcome.b.band));
+  }
+  await useHubStore.getState().fillAgendas(fills);
+  const fallOf = (id: string, band: IMeetOutcome['a']['band']) => {
+    const standing = standingOf(id);
+    return standing ? LadderWeight.of({ loss: MeetLaw.isLoss(band), after: standing }) : 0;
+  };
+  await MemoryStore.write({ hubId }, outcomes.flatMap(({ meeting, outcome }) => [
+    { owner: meeting.a, what: Deeds.met({ day: meeting.day, owner: meeting.a, other: meeting.b, where: meeting.where, why: meeting.why, remember: outcome.a.remember, fall: fallOf(meeting.a, outcome.a.band) }) },
+    { owner: meeting.b, what: Deeds.met({ day: meeting.day, owner: meeting.b, other: meeting.a, where: meeting.where, why: meeting.why, remember: outcome.b.remember, fall: fallOf(meeting.b, outcome.b.band) }) }
+  ]));
+}
+
+export const MeetDoor = {
+  /** Meetings nobody watched, kept until a tick sends them. One pair, one talk a day. */
+  queue(hubId: string, meetings: IMeeting[]): Promise<void> {
+    if (meetings.length === 0) return Promise.resolve();
+    return inTurn(async () => {
+      const q = await loadQueue(hubId);
+      const known = new Set([...q.met, ...q.pending.map(p => p.key), ...q.out.flatMap(o => o.meetings.map(m => m.key))]);
+      let added = 0;
+      for (const m of meetings) {
+        if (m.a === m.b) continue;
+        const key = MeetLaw.key(m.a, m.b, m.day);
+        if (known.has(key)) continue;
+        known.add(key);
+        q.pending.push({ ...m, key });
+        added++;
+      }
+      if (added > 0) await saveQueue(hubId, q);
+    });
+  },
+
+  /** Has this pair talked today, or is it waiting to? */
+  async talkedToday(hubId: string, a: string, b: string, day: number): Promise<boolean> {
+    const key = MeetLaw.key(a, b, day);
+    const q = await loadQueue(hubId);
+    return q.met.includes(key) || q.pending.some(p => p.key === key) || q.out.some(o => o.meetings.some(m => m.key === key));
+  },
+
+  /**
+   * Collect what came back, then send what waits, as one batch. A batch over what a window may
+   * spend is halved until it fits; one meeting alone over it is let go. No key means no batch: what
+   * waits is let go, and the deeds' own memories stand.
+   */
+  tick(hubId: string): Promise<void> {
+    return inTurn(async () => {
+      const q = await loadQueue(hubId);
+      const settled: { meeting: IMeeting; outcome: IMeetOutcome }[] = [];
+
+      const stillOut: IMeetQueue['out'] = [];
+      for (const batch of q.out) {
+        const got = await IntelligenceClient.collectWindow<{ meetings: Partial<IMeetWords>[] }>(batch.batchId);
+        if (got.status === 'OK') {
+          const { outcomes } = MeetLaw.judgeBatch(got.data, batch.meetings.map(m => ({ id: m.key })));
+          for (const outcome of outcomes) settled.push({ meeting: batch.meetings.find(m => m.key === outcome.id)!, outcome });
+          q.met.push(...batch.meetings.map(m => m.key));
+        } else if (got.status === 'PENDING' || got.status === 'OUTAGE' || got.status === 'OFFLINE') {
+          stillOut.push(batch);
+        } else {
+          q.met.push(...batch.meetings.map(m => m.key));
+        }
+      }
+      q.out = stillOut;
+
+      let waiting = q.pending;
+      q.pending = [];
+      let size = waiting.length;
+      while (waiting.length > 0) {
+        const part = waiting.slice(0, size);
+        const asks = (await Promise.all(part.map(m => askOf(hubId, m)))).filter((a): a is IMeetAsk => !!a);
+        const filedOnes = part.filter(m => asks.some(a => a.id === m.key));
+        q.met.push(...part.filter(m => !filedOnes.includes(m)).map(m => m.key));
+        if (asks.length === 0) { waiting = waiting.slice(part.length); continue; }
+        const id = `meet_${hubId}_${filedOnes[0].key}_${filedOnes.length}`;
+        const filed = await IntelligenceClient.fileWindow(id, 'meet', asks, {}, 0) as { status: string; batchId?: string; data?: unknown };
+        if (filed.status === 'OVER_LIMIT' && part.length > 1) { size = Math.ceil(part.length / 2); continue; }
+        if (filed.status === 'PENDING' && filed.batchId) q.out.push({ id, batchId: filed.batchId, meetings: filedOnes });
+        else if (filed.status === 'OK') {
+          const { outcomes } = MeetLaw.judgeBatch(filed.data, asks);
+          for (const outcome of outcomes) settled.push({ meeting: filedOnes.find(m => m.key === outcome.id)!, outcome });
+          q.met.push(...filedOnes.map(m => m.key));
+        } else if (filed.status === 'OFFLINE' || filed.status === 'OUTAGE' || filed.status === 'BUSY') {
+          // The door could not be reached: they wait for the next tick
+          q.pending.push(...waiting);
+          break;
+        } else {
+          q.met.push(...filedOnes.map(m => m.key));
+        }
+        waiting = waiting.slice(part.length);
+        size = waiting.length;
+      }
+
+      await saveQueue(hubId, q);
+      await settle(hubId, settled);
+    });
+  },
+
+  /**
+   * A meeting somebody is watching: spoken now, and its lines handed back for the bubbles. Null
+   * when this pair has talked today or nothing answered; the meeting still happened either way.
+   */
+  async live(hubId: string, meeting: IMeeting): Promise<IMeetLine[] | null> {
+    const key = MeetLaw.key(meeting.a, meeting.b, meeting.day);
+    // Only the claim holds the queue: the talk itself runs beside it
+    const claimed = await inTurn(async () => {
+      const q = await loadQueue(hubId);
+      if (q.met.includes(key) || q.pending.some(p => p.key === key) || q.out.some(o => o.meetings.some(m => m.key === key))) return false;
+      q.met.push(key);
+      await saveQueue(hubId, q);
+      return true;
+    });
+    if (!claimed) return null;
+    const ask = await askOf(hubId, { ...meeting, key });
+    if (!ask) return null;
+    const got = await IntelligenceClient.npcMeet<IMeetWords>(key, ask);
+    if (got.status !== 'OK') return null;
+    const verdict = MeetLaw.judge(got.data, ask);
+    if (!verdict.ok) return null;
+    await settle(hubId, [{ meeting, outcome: verdict.outcome! }]);
+    return verdict.outcome!.lines;
+  }
+};

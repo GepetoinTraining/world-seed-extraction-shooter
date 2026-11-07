@@ -89,3 +89,45 @@ export function drawSpeech(ctx: CanvasRenderingContext2D, chunks: IChunk[], came
   }
   ctx.restore();
 }
+
+/** A line a person says, readable, as long as they are saying it. A guess until Wave 12. */
+export const SAYING_SHOWS_MS = 3200;
+const SAYING_FONT_PX = 12;
+const SAYING_WIDTH_PX = 190;
+
+/**
+ * Two people talking where somebody can see (Pedro: "bubble appear above the npcs heads"). People
+ * speak words, so the face is a plain one, wrapped to a width. Shape and tail mark it, never hue.
+ */
+export function drawSaying(ctx: CanvasRenderingContext2D, text: string, x: number, headY: number): void {
+  ctx.save();
+  ctx.font = `${SAYING_FONT_PX}px monospace`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > SAYING_WIDTH_PX) { lines.push(line); line = word; } else line = next;
+  }
+  if (line) lines.push(line);
+  const w = Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width))) + BUBBLE_PAD * 2;
+  const lineH = SAYING_FONT_PX + 3;
+  const h = lines.length * lineH + BUBBLE_PAD * 2;
+  const left = Math.round(x - w / 2);
+  const top = Math.round(headY - BUBBLE_TAIL_PX - h);
+  ctx.fillStyle = '#efefef';
+  ctx.fillRect(left, top, w, h);
+  ctx.beginPath();
+  ctx.moveTo(x - BUBBLE_TAIL_PX, top + h);
+  ctx.lineTo(x, top + h + BUBBLE_TAIL_PX);
+  ctx.lineTo(x + BUBBLE_TAIL_PX, top + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#030303';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left, top, w, h);
+  ctx.fillStyle = '#030303';
+  lines.forEach((l, i) => ctx.fillText(l, x, top + BUBBLE_PAD + lineH * i + lineH / 2));
+  ctx.restore();
+}
