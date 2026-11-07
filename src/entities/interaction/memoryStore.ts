@@ -12,6 +12,7 @@ import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { emptyBook, IAtomBook } from '../../logic/memory/AtomBook';
 import { freshMind, IMind, IRecalled, IRemembering, MemoryLaw } from '../../logic/memory/MemoryLaw';
 import { Deeds } from '../../logic/memory/Deeds';
+import { IMounted, NpcContext } from '../../logic/memory/NpcContext';
 
 /** A city is kept; the field lasts the session. */
 export type MemoryPlace = { hubId: string } | { seed: string };
@@ -95,6 +96,14 @@ export const MemoryStore = {
       const mind = await loadMind(place, owner, today);
       return MemoryLaw.recall(mind, book, today, about).map(m => MemoryLaw.words(m, book, name));
     });
+  },
+
+  /**
+   * What a model is given of this person facing a speaker: what comes to mind and how they stand
+   * with them. Memory reaches a model only through this, and is never shown on screen.
+   */
+  mount(place: MemoryPlace, owner: string, speaker: string, today: number, said?: string, name?: (entityId: string) => string | undefined): Promise<IMounted> {
+    return inTurn(place, async () => NpcContext.mount({ mind: await loadMind(place, owner, today), book: await loadBook(place), today, speaker, said, name }));
   },
 
   /** How heavily one person's memories weigh on another. For the koseki's people half. */

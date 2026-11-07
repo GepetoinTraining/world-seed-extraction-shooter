@@ -62,6 +62,13 @@ export interface ITalkSurface {
  */
 export type IMemoryLine = { day: number; ledger?: string } & Partial<Record<'who' | 'did' | 'what' | 'toWhom' | 'when' | 'where' | 'how' | 'why', string>>;
 
+/** How a person stands with whoever is talking to them, from what they remember of them (NpcContext.ts). */
+export interface IToward {
+  knows: 'stranger' | 'known' | 'well known';
+  /** What is unsettled between them, which does not fade: a debt, a promise, a threat, a secret. */
+  open: IMemoryLine[];
+}
+
 /** What a person will remember of a round, in words only. Code fills who, to whom, when and where. */
 export interface IRememberWords { did: string; what: string; how: string; why: string }
 
@@ -69,6 +76,10 @@ export interface IRoundAsk {
   who: ITalkSurface;
   /** What comes to mind, oldest first: the strongest of what they remember and any open ledger entry this touches. */
   memory: IMemoryLine[];
+  /** How they stand with whoever is talking. */
+  toward?: IToward;
+  /** What they are after right now, in words, where it is known. */
+  wants?: string;
   /** What the person said this round. */
   said: string;
   /** The keyed roll, 1 to 100. */
@@ -117,6 +128,8 @@ export interface IGoalAsk {
   who: Partial<ITalkSurface>;
   /** What comes to mind, as a round's ask carries it. */
   memory: IMemoryLine[];
+  toward?: IToward;
+  wants?: string;
   /** What was just said to them, this round. */
   said?: string;
   /** The rung this person stands on. Their goal must answer it. */

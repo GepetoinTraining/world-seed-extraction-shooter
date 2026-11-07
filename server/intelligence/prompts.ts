@@ -159,7 +159,9 @@ You are told the dice: "roll", "required", and "bonuses", which says what each b
 
 You write no numbers, and never promise a number of anything.`;
 
-const TALK_MEMORY = `"memory" is what comes back to them right now, oldest first: each thing they remember, as who did what to whom, when, where, how and why. A "?" is a part they have forgotten: they do not know it, and never fill it in or guess at it. A "ledger" mark is something that does not fade while it is open: a debt, a promise, a threat, or a secret they let slip. What they remember is theirs, and it colours how they take what is said now.`;
+const TALK_MEMORY = `"memory" is what comes back to them right now, oldest first: each thing they remember, as who did what to whom, when, where, how and why. A "?" is a part they have forgotten: they do not know it, and never fill it in or guess at it. A "ledger" mark is something that does not fade while it is open: a debt, a promise, a threat, or a secret they let slip. What they remember is theirs, and it colours how they take what is said now.
+
+"toward" is how they stand with whoever is talking to them: "knows" says whether that one is a stranger to them, known, or well known, and "open" is whatever is unsettled between them, a debt, a promise, a threat or a secret, which they have not forgotten and will not. "wants", if given, is what they are after right now; like a goal, they keep it to themselves unless saying it would help them.`;
 
 const TALK_REMEMBER = `"remember" is what they will keep of this round, in a few plain words each, as they would remember it, with no numbers in it: "did" is what was done or said, as a verb ("asked about", "offered", "threatened"), "what" is what it was about, "how" is the manner of it, and "why" is why they think it was done, or empty if they cannot tell. Who, to whom, when and where are not yours to write.`;
 

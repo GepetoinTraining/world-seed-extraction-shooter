@@ -1535,6 +1535,9 @@ describe('a person remembers the talk, and one another', () => {
     expect(line).toMatchObject({ who: 'QUOIN', toWhom: 'Marcus Goldweave', how: 'politely', where: 'at their counter face to face' });
     // A number is not a slot word
     expect(line.what).toBe('the price of loaves');
+    // Mounted with it: how they stand with the one talking, and what they are after
+    expect(asks[0].toward).toEqual({ knows: 'stranger', open: [] });
+    expect(asks[1].toward.knows).toBe('well known');
     expect(db.has(`mind_${HUB}_npc_banker`)).toBe(true);
     expect(db.has(`book_${HUB}`)).toBe(true);
   });

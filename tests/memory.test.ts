@@ -18,6 +18,9 @@ import {
 } from '../src/logic/memory/MemoryLaw';
 import { LADDER, NpcAgenda } from '../src/logic/systems/NpcAgenda';
 import { Deeds } from '../src/logic/memory/Deeds';
+import { NpcContext } from '../src/logic/memory/NpcContext';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { Koseki } from '../src/entities/world/Koseki';
 
 const sold = (day: number, buyer: string, seller: string, extra: Record<string, string> = {}) => ({
@@ -233,5 +236,41 @@ describe('deeds', () => {
     const r = Deeds.talkRound({ day: 2, speaker: 'p', listener: 'n', said: 'Hello there', landed: false });
     expect(r.slots).toMatchObject({ did: 'said', what: 'Hello there', how: 'and it did not sit well' });
     expect(r.fall).toBeUndefined();
+  });
+});
+
+describe('the context a model is given (Pedro: memory is mounted for the model, never shown)', () => {
+  const met = (mind: IMind, book: ReturnType<typeof emptyBook>, day: number, who: string) =>
+    MemoryLaw.remember(mind, book, { day, slots: { who: { person: who }, did: 'chatted with', toWhom: { person: mind.owner } } });
+
+  it('a stranger, someone known, and someone well known, each read against their own life', () => {
+    let mind: IMind = freshMind('k', 0);
+    let book = emptyBook();
+    expect(NpcContext.toward(mind, book, 'p', 0).knows).toBe('stranger');
+    for (let d = 0; d < 10; d++) ({ mind, book } = met(mind, book, d, 'regular'));
+    ({ mind, book } = MemoryLaw.remember(mind, book, { day: 10, slots: { who: { person: 'passer' }, did: 'asked the way', toWhom: { person: 'k' } } }));
+    expect(NpcContext.toward(mind, book, 'regular', 10).knows).toBe('well known');
+    expect(NpcContext.toward(mind, book, 'passer', 10).knows).toBe('known');
+    expect(NpcContext.toward(mind, book, 'nobody', 10).knows).toBe('stranger');
+  });
+
+  it('what is unsettled with the speaker is mounted, and nothing unsettled with anyone else', () => {
+    let { mind, book } = MemoryLaw.remember(freshMind('k', 0), emptyBook(), { ...Deeds.hit({ day: 0, by: 'p', owner: 'k' }) });
+    ({ mind, book } = MemoryLaw.remember(mind, book, Deeds.hit({ day: 0, by: 'q', owner: 'k' })));
+    const mounted = NpcContext.mount({ mind, book, today: 3, speaker: 'p', said: 'hello', name: id => (id === 'p' ? 'Pedro' : undefined) });
+    expect(mounted.toward.open).toHaveLength(1);
+    expect(mounted.toward.open[0]).toMatchObject({ who: 'Pedro', did: 'hurt', ledger: 'threat, open' });
+    expect(mounted.memory.length).toBeGreaterThan(0);
+  });
+
+  it('no screen reads memory: nothing under src/components mounts, recalls or reads a mind', () => {
+    const files = (dir: string): string[] => readdirSync(dir).flatMap(f => {
+      const full = join(dir, f);
+      return statSync(full).isDirectory() ? files(full) : [full];
+    });
+    for (const file of files('src/components')) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, file).not.toMatch(/MemoryStore\.(mount|recall|mind|regard)|MemoryLaw\.(words|recall)|NpcContext/);
+    }
   });
 });
