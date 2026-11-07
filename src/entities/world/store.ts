@@ -143,6 +143,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         case 'RELEASED': world.reportReleased(change.ground, change.definitionId); break;
         case 'ADOPT_RECORD': world.adoptRecord(change.worldId, change.record); break;
         case 'APPLY_SURVEY': world.applySurvey(change.survey); break;
+        case 'CHEST_RECORD': set({ chestRecord: change.record }); break;
         case 'DROP_COUNTED':
           set(s => ({ availableWorlds: s.availableWorlds.map(w => (w.id === change.worldId ? { ...w, playerCount: w.playerCount + 1 } : w)) }));
           break;

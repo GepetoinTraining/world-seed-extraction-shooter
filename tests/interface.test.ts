@@ -39,7 +39,7 @@ import { UniversalRank, Rarity, ItemType } from '../shared/types';
 import {
   ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, POINTS_PER_LEVEL
 } from '../shared/entities/player/systems/ProgressionSystem';
-import { usePlayerStore, ARCHETYPES } from '../src/entities/player/store';
+import { usePlayerStore, ARCHETYPES, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
 import { ICombatEvent } from '../src/entities/combat/CombatSystems';
@@ -99,7 +99,7 @@ describe('line 30: levels and the old rank ladder (kill XP is finally applied)',
       { type: 'HIT', entityId: 'm2', damage: 5 },
       { type: 'KILL', entityId: 'm3', xpReward: { amount: 80, sourceRank: UniversalRank.F, sourceRarity: Rarity.COMMON } }
     ];
-    const result = applyKillRewards(events);
+    const result = applyKillRewards(events, playerPort);
     expect(result.xpGained).toBe(200);
     expect(usePlayerStore.getState().player.rankXp).toBe(before + 200);
   });
@@ -195,13 +195,13 @@ describe('line 27: no dialogue option without an effect', () => {
   });
 
   it('an unregistered action is refused out loud, not swallowed', () => {
-    const effect = runDialogueAction(worldPort, 'OPEN_AUCTION');
+    const effect = runDialogueAction(worldPort, playerPort, 'OPEN_AUCTION');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain('REFUSED');
   });
 
   it('SHOW_BALANCE answers with the real balance', () => {
-    const effect = runDialogueAction(worldPort, 'SHOW_BALANCE');
+    const effect = runDialogueAction(worldPort, playerPort, 'SHOW_BALANCE');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain(usePlayerStore.getState().player.bank.gold.toLocaleString());
   });
@@ -214,7 +214,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 1000, stashTabs: [{ name: 'MAIN', items: [item] }] } }
     }));
-    const effect = runDialogueAction(worldPort, 'IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, playerPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(900);
@@ -226,7 +226,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 10, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction(worldPort, 'IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, playerPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     expect(usePlayerStore.getState().player.bank.gold).toBe(10); // nothing moved
   });
@@ -240,9 +240,9 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 1000, stashTabs: [{ name: 'MAIN', items: [item] }] } }
     }));
-    const cost = repairCost(item as any);
+    const cost = repairCost(item as any, usePlayerStore.getState().player.attributes);
     expect(cost).toBeGreaterThan(0);
-    const res = repairItem(item.id);
+    const res = repairItem(item.id, playerPort);
     expect(res.ok).toBe(true);
     const after = usePlayerStore.getState().player;
     expect(after.bank.stashTabs[0].items[0].stats.durability).toBe(100);
@@ -254,7 +254,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 50, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction(worldPort, 'BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
+    const effect = runDialogueAction(worldPort, playerPort, 'BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(40);
@@ -459,7 +459,7 @@ describe('line 31: receipts and the feed', () => {
 
   it('dialogue can steer the terminal to another screen', () => {
     useAppView.getState().setView('HUB');
-    const effect = runDialogueAction(worldPort, 'OPEN_BANK');
+    const effect = runDialogueAction(worldPort, playerPort, 'OPEN_BANK');
     expect(effect).toEqual({ kind: 'navigate', view: 'BANK' });
   });
 });

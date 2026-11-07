@@ -10,7 +10,7 @@ import { draftDismissal } from '../logic/systems/FieldInput';
 import { WORLD_DRAFT_DEFAULTS, WorldDraft, draftDanger, useWorldDraft } from './ui/stores';
 import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { WorldType, AccessMode, IWorldRules } from '../entities/world/WorldCertificate';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { FREE_DEED_SIZE, WorldDeed } from '../logic/systems/WorldDeed';
 import { WorldDeedDoor } from '../logic/systems/WorldDeedDoor';
 import { UniversalRank } from '../../shared/types';
@@ -112,7 +112,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
         difficulty,
         sky: sky as SkyKind
       };
-      const minted = await WorldDeedDoor.mint(certificate, deed.id, worldName, worldDescription, worldType, rules);
+      const minted = await WorldDeedDoor.mint(certificate, deed.id, worldName, worldDescription, worldType, rules, playerPort);
       if (minted.ok && minted.world) {
         onCreated(minted.world.data.worldUid);
         reset();

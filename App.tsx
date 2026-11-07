@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { usePlayerStore } from './src/entities/player/store';
+import { usePlayerStore, playerPort } from './src/entities/player/store';
 import { useWorldStore, worldPort } from './src/entities/world/store';
 import { useIdentityStore, IdentityState } from './src/entities/identity/store';
 import { WorldCanvas } from './src/components/WorldCanvas';
@@ -53,7 +53,7 @@ const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; 
           const password = prompt('Passphrase to encrypt your private key:');
           if (!password) return;
           const { AvatarExport } = await import('./src/logic/sovereignty/AvatarExport');
-          const result = await AvatarExport.exportAvatar(password);
+          const result = await AvatarExport.exportAvatar(password, usePlayerStore.getState().player);
           if (!result) { alert('Export failed — see console.'); return; }
           const url = URL.createObjectURL(result.blob);
           const a = document.createElement('a');
@@ -227,8 +227,8 @@ const App: React.FC = () => {
   // D79: a rest ends when its time is up, and this character wakes whoever is watching
   useEffect(() => {
     if (bootStatus !== 'READY') return;
-    void RestDoor.wakeIfDue();
-    const interval = setInterval(() => void RestDoor.wakeIfDue(), 5000);
+    void RestDoor.wakeIfDue(playerPort);
+    const interval = setInterval(() => void RestDoor.wakeIfDue(playerPort), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 

@@ -12,8 +12,8 @@
  */
 
 import { GameClock } from '../../logic/time/GameClock';
-import { IItem, ItemType, Rarity, UniversalRank } from '../../../shared/types';
-import { usePlayerStore } from '../player/store';
+import { IAttributes, IItem, IPlayer, ItemType, Rarity, UniversalRank } from '../../../shared/types';
+import type { IPlayerPort } from '../player/playerView';
 import { useHubStore } from './store';
 import type { IWorldCard, IWorldPort } from '../world/worldView';
 import { WorldClock } from '../world/WorldClock';
@@ -39,18 +39,19 @@ export type DialogueEffect =
   | { kind: 'deploy' }
   | { kind: 'close' };
 
-type Handler = (payload: any, world: IWorldPort) => DialogueEffect;
+type Handler = (payload: any, world: IWorldPort, pc: IPlayerPort) => DialogueEffect;
 
-const bank = () => usePlayerStore.getState().player.bank;
-const stashItems = () => bank().stashTabs[0]?.items || [];
+const bank = (pc: IPlayerPort) => pc.view().player.bank;
+const stashItems = (pc: IPlayerPort) => bank(pc).stashTabs[0]?.items || [];
 
 /** Gold out of the player, into the hub treasury, onto the ledger. */
-function charge(amount: number, reason: string, data: Record<string, any> = {}): boolean {
-  const p = usePlayerStore.getState().player;
+function charge(pc: IPlayerPort, amount: number, reason: string, data: Record<string, any> = {}): boolean {
+  const p = pc.view().player;
   const hubId = useHubStore.getState().activeHubId || 'hub_unknown';
   if (p.bank.gold < amount) return false;
-  usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - amount } } }));
+  pc.apply({ kind: 'GOLD', delta: -amount });
   void GoldCommit.commit({
+    player: pc.view().player,
     rows: [{ type: 'GOLD_DELTA', data: { reason, amount: -amount, treasuryId: hubId, treasuryDelta: amount, ...data } }],
     treasury: { worldUid: hubId, delta: amount }
   });
@@ -58,12 +59,12 @@ function charge(amount: number, reason: string, data: Record<string, any> = {}):
 }
 
 /** D50: even a paid reader needs the night. What she has is known at the next rest. */
-function studyOvernight(ids: string[]) {
-  usePlayerStore.setState(s => ({ player: ids.reduce((p, id) => RestSystem.queueStudy(p, id), s.player) }));
+function studyOvernight(ids: string[], pc: IPlayerPort) {
+  pc.apply({ kind: 'UPDATE', update: was => ids.reduce((p, id) => RestSystem.queueStudy(p, id), was) });
 }
 
 /** Repair cost: a quarter of the item's value, scaled by what's missing. */
-export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }, attributes = usePlayerStore.getState().player.attributes): number {
+export function repairCost(item: { value: number; stats: { durability?: number; maxDurability?: number } }, attributes: IAttributes): number {
   const { durability, maxDurability } = item.stats;
   if (durability === undefined || !maxDurability || durability >= maxDurability) return 0;
   const missing = (maxDurability - durability) / maxDurability;
@@ -71,28 +72,26 @@ export function repairCost(item: { value: number; stats: { durability?: number; 
 }
 
 /** The one door to what can be repaired: the stash and the body (R6). */
-export function repairable(): IItem[] {
-  const equipment = usePlayerStore.getState().player.equipment;
-  return [...stashItems(), ...(equipment?.items ?? [])]
+export function repairable(pc: IPlayerPort): IItem[] {
+  const equipment = pc.view().player.equipment;
+  return [...stashItems(pc), ...(equipment?.items ?? [])]
     .filter(i => i.stats?.maxDurability && (i.stats.durability ?? 0) < i.stats.maxDurability);
 }
 
-export function repairItem(itemId: string): { ok: boolean; text: string } {
-  const item = [...stashItems(), ...(usePlayerStore.getState().player.equipment?.items ?? [])].find(i => i.id === itemId);
+export function repairItem(itemId: string, pc: IPlayerPort): { ok: boolean; text: string } {
+  const item = [...stashItems(pc), ...(pc.view().player.equipment?.items ?? [])].find(i => i.id === itemId);
   if (!item) return { ok: false, text: 'That is not in your stash or on your body.' };
-  const cost = repairCost(item as any);
+  const cost = repairCost(item as any, pc.view().player.attributes);
   if (cost === 0) return { ok: false, text: `${item.name} needs no work.` };
-  if (!charge(cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank().gold}G.` };
+  if (!charge(pc, cost, 'REPAIR', { itemId })) return { ok: false, text: `Repair costs ${cost}G. You carry ${bank(pc).gold}G.` };
   const mended = <T extends IItem>(i: T): T => i.id === itemId ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability } } : i;
-  usePlayerStore.setState(s => ({
-    player: {
-      ...s.player,
-      equipment: s.player.equipment ? { ...s.player.equipment, items: s.player.equipment.items.map(mended) } : s.player.equipment,
-      bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+  pc.apply({ kind: 'UPDATE', update: was => ({
+      ...was,
+      equipment: was.equipment ? { ...was.equipment, items: was.equipment.items.map(mended) } : was.equipment,
+      bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, idx) =>
         idx === 0 ? { ...tab, items: tab.items.map(mended) } : tab
       ) }
-    }
-  }));
+    }) });
   return { ok: true, text: `${item.name} restored for ${cost}G. The frame remembers its shape.` };
 }
 
@@ -113,37 +112,37 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
 
   // --- The Consortium (Marcus Goldweave) ---
   OPEN_BANK: () => ({ kind: 'navigate', view: 'BANK' }),
-  SHOW_BALANCE: () => ({
+  SHOW_BALANCE: (_payload, _world, pc) => ({
     kind: 'reply',
-    text: `The ledger holds ${bank().gold.toLocaleString()} G under your signature. The bank honors it. The bank always honors it.`
+    text: `The ledger holds ${bank(pc).gold.toLocaleString()} G under your signature. The bank honors it. The bank always honors it.`
   }),
   OPEN_LEDGER: () => ({ kind: 'open', panel: 'ledger' }),
 
   // --- Truthsight (Sera) ---
-  IDENTIFY_ITEM: (payload) => {
+  IDENTIFY_ITEM: (payload, _world, pc) => {
     const cost = payload?.cost ?? 100;
-    const unknown = stashItems().filter(i => i.isIdentified === false);
+    const unknown = stashItems(pc).filter(i => i.isIdentified === false);
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
-    if (bank().gold < cost) return { kind: 'reply', text: `Truth costs ${cost}G. You carry ${bank().gold}G.` };
-    const target = unknown.find(i => !RestSystem.isStudied(usePlayerStore.getState().player, i.id));
+    if (bank(pc).gold < cost) return { kind: 'reply', text: `Truth costs ${cost}G. You carry ${bank(pc).gold}G.` };
+    const target = unknown.find(i => !RestSystem.isStudied(pc.view().player, i.id));
     if (!target) return { kind: 'reply', text: 'I have everything of yours already. Sleep on it. You will know when you wake.' };
-    charge(cost, 'IDENTIFY', { itemId: target.id });
-    studyOvernight([target.id]);
+    charge(pc, cost, 'IDENTIFY', { itemId: target.id });
+    studyOvernight([target.id], pc);
     return { kind: 'reply', text: 'Leave it with me tonight. Nobody knows a thing until they have slept on it, not even me.' };
   },
-  IDENTIFY_ALL: (payload) => {
+  IDENTIFY_ALL: (payload, _world, pc) => {
     const cost = payload?.cost ?? 500;
-    const unknown = stashItems().filter(i => i.isIdentified === false);
+    const unknown = stashItems(pc).filter(i => i.isIdentified === false);
     if (unknown.length === 0) return { kind: 'reply', text: 'Nothing you carry is hiding anything from me.' };
-    if (bank().gold < cost) return { kind: 'reply', text: `All of it at once costs ${cost}G. You carry ${bank().gold}G.` };
-    charge(cost, 'IDENTIFY_ALL', { count: unknown.length });
-    studyOvernight(unknown.map(i => i.id));
+    if (bank(pc).gold < cost) return { kind: 'reply', text: `All of it at once costs ${cost}G. You carry ${bank(pc).gold}G.` };
+    charge(pc, cost, 'IDENTIFY_ALL', { count: unknown.length });
+    studyOvernight(unknown.map(i => i.id), pc);
     return { kind: 'reply', text: `${unknown.length} signal${unknown.length === 1 ? '' : 's'} on my table. You will know when you wake. Read them before you trust them.` };
   },
   OPEN_LORE: () => ({ kind: 'open', panel: 'lore' }),
   // D118: anyone in town can be studied. What it comes to is settled at a dream.
-  STUDY_PERSON: (payload) => {
-    const verdict = StudyDoor.start(StudySystem.targetOfPerson(payload));
+  STUDY_PERSON: (payload, _world, pc) => {
+    const verdict = StudyDoor.start(StudySystem.targetOfPerson(payload), pc);
     if (!verdict.ok) return { kind: 'reply', text: verdict.reason! };
     return { kind: 'reply', text: `Look all you like. ${verdict.seconds} seconds of it, and it will cost you ${verdict.cost} energy.` };
   },
@@ -166,13 +165,13 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   },
 
   // --- The Rusty Anchor (Old Mags) ---
-  REST: (_payload, world) => {
-    void RestDoor.sleep('INN', world);
+  REST: (_payload, world, pc) => {
+    void RestDoor.sleep('INN', world, pc);
     return { kind: 'reply', text: `${INN_FEE}G, and the bed by the wall. Whatever you have been carrying around in your head, leave it on the pillow.` };
   },
-  BUY_CONSUMABLE: (payload) => {
+  BUY_CONSUMABLE: (payload, _world, pc) => {
     const cost = payload?.cost ?? 10;
-    if (!charge(cost, 'TAVERN', { itemId: payload?.itemId })) {
+    if (!charge(pc, cost, 'TAVERN', { itemId: payload?.itemId })) {
       return { kind: 'reply', text: `${cost}G. I water it down, I don't give it away.` };
     }
     const rng = Rng.fromKey(`tavern:ale:${Date.now().toString(36)}`);
@@ -188,11 +187,9 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
       stats: { health_restore: 15 },
       description: 'Mostly water. The rest is a rumor of barley. Restores a little health in the field.'
     };
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+    pc.apply({ kind: 'UPDATE', update: was => ({ ...was, bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, idx) =>
         idx === 0 ? { ...tab, items: [...tab.items, ale] } : tab
-      ) } }
-    }));
+      ) } }) });
     return { kind: 'reply', text: 'One Watered Ale, stashed with your things. Mark it Carry if you want it on the drop.' };
   },
   GET_HINT: () => ({ kind: 'reply', text: `Heard this one today: "${rumorOfTheDay()}"` }),
@@ -219,20 +216,20 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
 /** Every action a dialogue option may carry. The test holds HUB_NPCS to this set. */
 export const HANDLED_ACTIONS = Object.keys(DIALOGUE_HANDLERS);
 
-export function runDialogueAction(world: IWorldPort, action: string, payload?: any): DialogueEffect {
+export function runDialogueAction(world: IWorldPort, pc: IPlayerPort, action: string, payload?: any): DialogueEffect {
   const handler = DIALOGUE_HANDLERS[action];
   if (!handler) {
     console.warn(`[DIALOGUE] Unregistered action refused: ${action}`);
     return { kind: 'reply', text: 'The terminal declines. [REFUSED: unregistered request]' };
   }
-  return handler(payload, world);
+  return handler(payload, world, pc);
 }
 
 /** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest. */
-export function quickDeployTargetId(cards: IWorldCard[]): string | null {
+export function quickDeployTargetId(cards: IWorldCard[], player: IPlayer): string | null {
   const now = Date.now();
   const worlds = cards.filter(w => WorldClock.momentAt(w, now).canDeploy);
   const tutorial = worlds.find(w => Tutorial.isTutorial(w));
-  if (tutorial && Tutorial.firstOrderOpen(usePlayerStore.getState().player)) return tutorial.id;
+  if (tutorial && Tutorial.firstOrderOpen(player)) return tutorial.id;
   return (worlds.find(w => !Tutorial.isTutorial(w)) ?? tutorial)?.id ?? null;
 }

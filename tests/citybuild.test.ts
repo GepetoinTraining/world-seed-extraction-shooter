@@ -29,7 +29,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 import { readFileSync } from 'fs';
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Treasury } from '../src/logic/economy/Treasury';
@@ -222,7 +222,7 @@ describe('Q25, as built: the inn charges for the night at full energy', () => {
     await openOn(worldDay());
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 100 } } }));
     expect(RestSystem.energyHeld(player())).toBe(StatSystem.maxEnergyOf(player()));
-    const res = await RestDoor.sleep('INN', worldPort);
+    const res = await RestDoor.sleep('INN', worldPort, playerPort);
     expect(res.ok).toBe(true);
     expect(player().bank.gold).toBe(100 - INN_FEE);
     expect((await rowsOf('GOLD_DELTA')).some(r => r.data.reason === 'INN' && r.data.amount === -INN_FEE)).toBe(true);
@@ -238,7 +238,7 @@ describe('Q35, as built: a world deed sells at the counter', () => {
     const paid = await hub().sellToVendor(deed.id);
     expect(paid).toBeGreaterThan(0);
     expect(player().bank.stashTabs[0].items.some(i => i.id === deed.id)).toBe(false);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -258,7 +258,7 @@ describe('Q31: the print reads the week ahead', () => {
     const atClose = prints.filter(r => r.data.why === 'SHOP_WEEK');
     expect(atClose.length).toBeGreaterThan(0);
     expect(atClose[0].data.perDay).toBe(hub().runningBook().perDay);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -272,7 +272,7 @@ describe('Q32 and Q33: the keepers\' shelves keep a piece its stock days, from t
     expect(KEEPERS.every(k => hub().vendors[k].bin.length === 0)).toBe(true);
     // What was not sold is still on the shelf, at its own stock
     expect(shelves().some(l => l.id.startsWith('listing_kept_'))).toBe(true);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a plain piece goes on a deal once it has sat its seven days, at the close after that', async () => {
@@ -283,7 +283,7 @@ describe('Q32 and Q33: the keepers\' shelves keep a piece its stock days, from t
     for (const k of KEEPERS) for (const piece of hub().vendors[k].bin) {
       expect(ShopWeek.stockDays(piece.item.rank, piece.item.rarity)).toBeLessThanOrEqual(ShopWeek.WEEK_DAYS + 2);
     }
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a higher rank is kept past the close that bins a plain one', async () => {
@@ -313,7 +313,7 @@ describe('Q32 and Q33: the keepers\' shelves keep a piece its stock days, from t
     expect(hub().weaponShop.find(l => l.id === kept.id)!.stock).toBe(before - 1);
     expect(100_000 - player().bank.gold).toBe(Math.ceil(StatSystem.shopPrice(kept.price, player().attributes)));
     await new Promise(r => setTimeout(r, 0));
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -368,7 +368,7 @@ describe('Q39: the city folds its days at midnight while the person stays in it'
     const rows = (await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'HUB_RUNNING');
     expect(rows).toHaveLength(1);
     expect(rows[0].data.days).toBe(1);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the city view watches for midnight and turns the day', () => {

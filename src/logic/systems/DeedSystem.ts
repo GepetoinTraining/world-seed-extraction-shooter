@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { IItem, UniversalRank, Rarity, ItemType, SlotType } from '../../../shared/types'; 
 import { useHubStore } from '../../entities/hub/store'; 
+import type { IPlayerPort } from '../../entities/player/playerView';
 
 export interface IDeedItem extends IItem {
   itemType: 'DEED';
@@ -96,7 +97,8 @@ export class DeedSystem {
   static async redeemDeed(
     deed: IDeedItem,
     targetLotId: string,
-    player: { id: string; name: string }
+    player: { id: string; name: string },
+    pc: IPlayerPort
   ): Promise<{ success: boolean; message: string }> {
     
     const hubStore = useHubStore.getState();
@@ -110,12 +112,7 @@ export class DeedSystem {
     if (!purchaseSuccess) return { success: false, message: "Failed to process lot transfer." };
 
     // Wave 5: the deed is CONSUMED by redemption, and the transfer is on the record
-    const { usePlayerStore } = await import('../../entities/player/store');
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-        idx === 0 ? { ...tab, items: tab.items.filter(i => i.id !== deed.id) } : tab
-      ) } }
-    }));
+    pc.apply({ kind: 'STASH_REMOVE', ids: [deed.id] });
     const { Ledger } = await import('../ledger/Ledger');
     await Ledger.append('TRADE', { kind: 'DEED_REDEEMED', deedId: deed.id, lotId: targetLotId, playerDelta: 0, treasuryDelta: 0 });
 

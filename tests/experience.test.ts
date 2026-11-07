@@ -40,7 +40,7 @@ import {
   XP_CONSTANTS, XP_SHARE_CHEST, XP_SHARE_HARVEST, XP_SHARE_THREAT
 } from '../shared/entities/player/systems/ProgressionSystem';
 import { DEFAULT_ATTRIBUTES } from '../src/entities/player/types';
-import { ARCHETYPES, usePlayerStore } from '../src/entities/player/store';
+import { ARCHETYPES, usePlayerStore, playerPort } from '../src/entities/player/store';
 import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
@@ -156,7 +156,7 @@ describe('line 128: levels come from experience, rank does not', () => {
   it('what a fight pays reports a level, never a rank', () => {
     const cost = ProgressionSystem.levelCost(UniversalRank.F, 1);
     const events: ICombatEvent[] = [{ type: 'KILL', entityId: 'm1', xpReward: { amount: cost, sourceRank: UniversalRank.F, sourceRarity: Rarity.COMMON } }];
-    const rewards = applyKillRewards(events);
+    const rewards = applyKillRewards(events, playerPort);
     expect(rewards.xpGained).toBe(cost);
     expect(rewards.levelUp).toEqual({ from: 1, to: 2, points: POINTS_PER_LEVEL });
     expect(rewards).not.toHaveProperty('rankUp');

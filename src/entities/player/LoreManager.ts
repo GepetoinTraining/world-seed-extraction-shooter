@@ -1,4 +1,3 @@
-import { usePlayerStore } from './store';
 
 export interface ILoreEntry {
   topic: string; // e.g., 'lore_scifi_mech_schematics'

@@ -1,5 +1,5 @@
 import { GoldCommit } from './GoldCommit';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { IAttributes, ISkillState } from '../../../shared/types';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
@@ -35,19 +35,19 @@ export class ExitLevy {
   }
 
   /** Every attempt is practice, landed or not, and it goes through the web like any other work. */
-  static practise(attempt: ILevyAttempt, rank: number): void {
+  static practise(attempt: ILevyAttempt, rank: number, pc: IPlayerPort): void {
     if (!attempt.attempted) return;
     const pair = WebSystem.mint(TAX_EVASION_TAGS, []);
-    usePlayerStore.getState().workOn(pair, rank, Math.max(1, Math.ceil(attempt.full * 0.5)));
+    pc.apply({ kind: 'WORK_ON', pair, rank, xp: Math.max(1, Math.ceil(attempt.full * 0.5)) });
   }
 
   /** This person, at this gate, now. */
-  static attemptNow(worldUid: string, sessionId: string, haulValue: number, rateAsked: number): ILevyAttempt {
-    const { player } = usePlayerStore.getState();
+  static attemptNow(worldUid: string, sessionId: string, haulValue: number, rateAsked: number, pc: IPlayerPort): ILevyAttempt {
+    const { player } = pc.view();
     const skill = player.bank.universalSkills[WebSystem.mint(TAX_EVASION_TAGS, []).id];
     const attempt = this.assess({ playerId: player.id, worldUid, sessionId, haulValue, rateAsked, attributes: player.attributes, skill });
     // The skill stands at the rank of who is doing it, not of what they happened to carry.
-    this.practise(attempt, ProgressionSystem.rankIndex(ProgressionSystem.rankOf(player)));
+    this.practise(attempt, ProgressionSystem.rankIndex(ProgressionSystem.rankOf(player)), pc);
     return attempt;
   }
 
@@ -55,16 +55,15 @@ export class ExitLevy {
    * Charges the world's fee on a completed session. Returns the gold actually taken.
    * With an attempt, the row says what was asked and what the rate paid came to, dodged or not.
    */
-  static async charge(worldUid: string, haulValue: number, rate: number, attempt?: ILevyAttempt): Promise<number> {
+  static async charge(pc: IPlayerPort, worldUid: string, haulValue: number, rate: number, attempt?: ILevyAttempt): Promise<number> {
     const owed = Math.floor(haulValue * rate);
-    const charged = Math.min(owed, usePlayerStore.getState().player.bank.gold);
+    const charged = Math.min(owed, pc.view().player.bank.gold);
     const said = attempt?.attempted ? { rateAsked: attempt.rateAsked, dodged: attempt.dodged, odds: attempt.odds } : {};
     if (charged <= 0 && !attempt?.attempted) return 0;
 
-    usePlayerStore.setState(state => ({
-      player: { ...state.player, bank: { ...state.player.bank, gold: state.player.bank.gold - charged } }
-    }));
+    pc.apply({ kind: 'GOLD', delta: -charged });
     await GoldCommit.commit({
+      player: pc.view().player,
       rows: [{ type: 'TAX', data: { worldCertUid: worldUid, haulValue, rate, owed, tax: charged, ...said } }],
       treasury: { worldUid, delta: charged }
     });

@@ -14,6 +14,7 @@ import type { IPlayer, UniversalRank } from '../../../shared/types';
 import type { IDirectorRecord } from '../../../shared/entities/world/Director';
 import type { IPopulationRecord } from '../../../shared/entities/world/Population';
 import type { IKoseki } from '../../../shared/entities/world/Koseki';
+import type { IChestRecord } from '../../../shared/entities/world/ChestSystem';
 import type { ICadence, IClockedWorld, SkyKind } from './WorldClock';
 
 export interface IWorldCard extends IClockedWorld {
@@ -78,7 +79,9 @@ export type WorldChange =
   /** A person's survey of the open world, laid over its sectors. */
   | { kind: 'APPLY_SURVEY'; survey: Record<string, ISurveyEntry> | undefined }
   /** One more drop counted into a world (Q41). */
-  | { kind: 'DROP_COUNTED'; worldId: string };
+  | { kind: 'DROP_COUNTED'; worldId: string }
+  /** The open world's chest record, as a live room holds it. */
+  | { kind: 'CHEST_RECORD'; record: IChestRecord };
 
 /**
  * The world as a system takes it: a fresh view each time it reads, and the one door its changes go

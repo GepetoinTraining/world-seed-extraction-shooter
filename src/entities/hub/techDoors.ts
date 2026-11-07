@@ -146,6 +146,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - permit } } }));
       set({ tech: { ...tech, workshops: [...tech.workshops, shop] } });
       await GoldCommit.commit({
+        player: usePlayerStore.getState().player,
         rows: [{ type: 'GOLD_DELTA', data: { reason: 'BUILD_PERMIT', lotId, structure: 'WORKSHOP', residentId, stations, amount: -permit, treasuryId: activeHubId, treasuryDelta: permit } }],
         treasury: { worldUid: activeHubId, delta: permit },
         hubDoc: get().hubDoc() ?? undefined

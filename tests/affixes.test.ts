@@ -64,7 +64,7 @@ import { AFFIX_DEFINITIONS } from '../shared/entities/item/data/affixDefinitions
 import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES } from '../shared/entities/item/data/itemDefinitions';
 import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { GEAR_RECIPES, CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { BiomeType } from '../shared/entities/world/types';
@@ -607,14 +607,14 @@ describe('insurance is an item: the magic names what the death keeps', () => {
   });
 
   it('the scroll is written at the scribe\'s table on paper and ink, exactly once, or refused naming the shortfall', async () => {
-    const refusal = await InsuranceSystem.mintScrollAtScribe('scr_keeping');
+    const refusal = await InsuranceSystem.mintScrollAtScribe('scr_keeping', playerPort);
     expect(refusal.ok).toBe(false);
     expect(refusal.reason).toMatch(/paper|ink/i);
     const bill = SCROLL_MINT_BILL.flatMap(line =>
       Array.from({ length: line.quantity }, (_, i) => mintRes(line.defId, `scr:bill:${line.defId}:${i}`)));
     grantStash(bill);
     const before = stash().length;
-    const minted = await InsuranceSystem.mintScrollAtScribe('scr_keeping');
+    const minted = await InsuranceSystem.mintScrollAtScribe('scr_keeping', playerPort);
     expect(minted.ok).toBe(true);
     expect(minted.item!.scrollData).toBeTruthy();
     // the bill left exactly once and the scroll landed: net = before - bill + 1

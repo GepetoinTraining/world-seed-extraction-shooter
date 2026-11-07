@@ -22,7 +22,7 @@ import { WorldClock } from '../src/entities/world/WorldClock';
 import { useWaits, whileWaiting, useHotbar } from '../src/components/ui/stores';
 import { StatusClock } from '../shared/logic/systems/EffectSystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { deployToWorld, OPENING_WORLD } from '../src/logic/systems/Deploy';
 import { Busy, CycleRibbon, TimerBar } from '../src/components/ui/kit';
 import { WaitStrip } from '../src/components/WaitStrip';
@@ -275,7 +275,7 @@ describe('the hand has a cooldown, and it reads on the hotbar', () => {
 describe('opening a world', () => {
   it('a second press while one is opening does nothing at all', async () => {
     useWaits.getState().begin({ id: OPENING_WORLD, label: 'OPENING', startedAt: Date.now() });
-    expect(await deployToWorld('anything', worldPort)).toEqual({ ok: false });
+    expect(await deployToWorld('anything', worldPort, playerPort)).toEqual({ ok: false });
   });
 });
 

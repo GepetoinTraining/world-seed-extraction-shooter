@@ -14,7 +14,7 @@ import { ConnectWorld } from './ConnectWorld';
 import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Tutorial } from '../logic/systems/Tutorial';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
@@ -121,7 +121,7 @@ export const MissionControl = () => {
   }, []);
 
   const handleDeploy = async (worldId: string) => {
-    const res = await deployToWorld(worldId, worldPort);
+    const res = await deployToWorld(worldId, worldPort, playerPort);
     if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
   };
 

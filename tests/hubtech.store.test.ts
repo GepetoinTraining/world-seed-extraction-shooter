@@ -380,7 +380,7 @@ describe('giving it to them', () => {
     expect(player().bank.gold).toBeLessThan(gold);
     await payAll(hub().tech.workshops[0].id);
     await finishBuilds();
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.notes).toEqual([]);
     expect(audit.ok).toBe(true);
   });

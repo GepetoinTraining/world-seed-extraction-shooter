@@ -12,6 +12,7 @@
 import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
 import { Rng, SeededRNG } from '../../../shared/logic/rng/DeterministicRNG';
 import { Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
+import type { IPlayerPort } from '../../entities/player/playerView';
 
 const ok = (slots: EquipSlotId[], until?: number) => ({ ok: true, slots, until });
 const no = (reason: string) => ({ ok: false as const, reason });
@@ -147,17 +148,16 @@ export class InsuranceSystem {
    * ink consumed exactly once, the writing signed into provenance. Refusals
    * name the shortfall.
    */
-  static async mintScrollAtScribe(defId: string): Promise<{ ok: boolean; reason?: string; item?: IItem }> {
+  static async mintScrollAtScribe(defId: string, pc: IPlayerPort): Promise<{ ok: boolean; reason?: string; item?: IItem }> {
     const def = SCROLL_DEFINITIONS[defId];
     if (!def) return { ok: false, reason: 'The table knows no such writing.' };
 
-    const { usePlayerStore } = await import('../../entities/player/store');
     const { useIdentityStore } = await import('../../entities/identity/store');
     const { pickBill } = await import('../../../shared/entities/hub/room');
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return { ok: false, reason: 'No identity holds the pen. Jack in first.' };
 
-    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const stash = pc.view().player.bank.stashTabs[0]?.items || [];
     const bill = pickBill(SCROLL_MINT_BILL.map(l => ({ tag: l.tag, count: l.quantity })), stash);
     if (!bill.ok) {
       return { ok: false, reason: `The scribe's bill is short: ${bill.missing}. Paper and ink, nothing else writes.` };
@@ -166,11 +166,9 @@ export class InsuranceSystem {
     const consumedIds = bill.items.map(i => i.id);
     const item = this.mintScrollItem(defId, Rng.fromKey(`scroll:${cert.metadata.uid}:${Date.now()}:${stash.length}`));
 
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
+    pc.apply({ kind: 'UPDATE', update: was => ({ ...was, bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, idx) =>
         idx === 0 ? { ...tab, items: [...tab.items.filter(i => !consumedIds.includes(i.id)), item] } : tab
-      ) } }
-    }));
+      ) } }) });
 
     try {
       const { Provenance } = await import('../sovereignty/Provenance');

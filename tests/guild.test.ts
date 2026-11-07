@@ -32,7 +32,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { useHubStore, worldDay } from '../src/entities/hub/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useRankMoment } from '../src/components/ui/stores';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
@@ -242,7 +242,7 @@ describe('line 115: a person brought out stays at the tavern', () => {
     expect(actions).toContain('REST');
     expect(actions).toContain('OPEN_TAVERN');
     expect(HANDLED_ACTIONS).toContain('OPEN_TAVERN');
-    expect(runDialogueAction(worldPort, 'OPEN_TAVERN')).toEqual({ kind: 'open', panel: 'tavern' });
+    expect(runDialogueAction(worldPort, playerPort, 'OPEN_TAVERN')).toEqual({ kind: 'open', panel: 'tavern' });
   });
 });
 
@@ -263,7 +263,7 @@ describe('line 115: the guild buys a lot, with the hub treasury behind it', () =
     expect(hub().guild.residents[0].lotId).toBe(lot.id);
     expect(await Treasury.balance(HUB)).toBe(before);
     expect(player().bank.gold).toBe(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
     const rows = await Ledger.list(UID);
     expect(rows.some(r => r.payload.type === 'TRADE' && r.payload.data.kind === 'GUILD_BOUGHT_LOT' && r.payload.data.price === lot.price)).toBe(true);
   });
@@ -287,7 +287,7 @@ describe('line 115: the guild buys a lot, with the hub treasury behind it', () =
     expect(await hub().guildBuyLot(resident.id, lot.id)).toEqual({ ok: true });
     expect(hub().lots.find(l => l.id === lot.id)!.ownerId).toBe(GUILD_OWNER_ID);
     expect(await Treasury.balance(HUB)).toBe(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('it buys free ground only, and each person once', async () => {
@@ -315,7 +315,7 @@ describe('line 115: the guild buys a lot, with the hub treasury behind it', () =
     }
     const resident = await lodge();
     expect(await hub().guildBuyLot(resident.id, pieces[0].id)).toEqual({ ok: true });
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('every house the guild can raise is a lawful plan, drawn by nobody but the hub', () => {
@@ -534,7 +534,7 @@ describe('line 115: their wants become quests at the guildhall', () => {
     const home = hub().lots.find(l => l.id === resident.lotId)!;
     expect(items.every(i => home.inventory.some(h => h.id === i.id))).toBe(true);
     expect(hub().guild.quests[0].state).toBe('DONE');
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('short, wrong or spent: a quest refuses and nothing moves', async () => {
@@ -560,7 +560,7 @@ describe('line 115: their wants become quests at the guildhall', () => {
     expect(stash().length).toBe(quest.count);
     expect(hub().guild.quests[0].state).toBe('OPEN');
     expect(hub().guild.printed.count).toBe(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the next want waits for the next day, then posts, and differs by the count of what came before', async () => {
@@ -618,7 +618,7 @@ describe('D10: a resident costs gold through higher upkeep, and no new money pat
     expect(paid).toBeGreaterThanOrEqual(2);
     expect(await Treasury.balance(HUB)).toBe(before + paid);
     expect(hub().lots.find(l => l.id === lot.id)!.ownerId).toBe(GUILD_OWNER_ID);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
     const rows = await Ledger.list(UID);
     expect(rows.some(r => r.payload.type === 'UPKEEP' && r.payload.data.residentId === resident.id)).toBe(true);
   });
@@ -669,26 +669,26 @@ describe('lines 38 and 115: the gold audit balances through a whole cycle', () =
     setGold(500);
     await Ledger.append('GOLD_DELTA', { reason: 'TEST_GRANT', amount: 500 });
     const resident = await house();
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
 
     const quest = hub().guild.quests[0];
     const items = Array.from({ length: quest.count }, () => thing({ tags: [quest.tag], value: 30 }));
     give(items);
     await hub().fulfilQuest(quest.id, items.map(i => i.id));
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
 
     const lot = hub().lots.find(l => l.id === resident.lotId)!;
     const day = lot.upkeepPaidThroughDay! + 3;
     await hub().resolveUpkeep(day);
     await hub().resolveWants(day);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
 
     const next = hub().guild.quests.find(q => q.state === 'OPEN')!;
     const more = Array.from({ length: next.count }, () => thing({ tags: [next.tag], value: 30 }));
     give(more);
     await hub().fulfilQuest(next.id, more.map(i => i.id));
 
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.notes).toEqual([]);
     expect(audit.ok).toBe(true);
     expect(await Ledger.audit(UID)).toMatchObject({ ok: true });
@@ -796,8 +796,8 @@ describe('line 128: the rank comes from the guild, by a hard quest (D83)', () =>
     const vex = HUB_NPCS.npc_guild_master.dialogue;
     expect(vex.greeting).not.toMatch(/Seed lets me|register any/i);
     expect(vex.options.map(o => o.action)).toContain('OPEN_HALL');
-    expect(runDialogueAction(worldPort, 'OPEN_HALL')).toEqual({ kind: 'open', panel: 'guild' });
-    const lore = runDialogueAction(worldPort, 'GUILD_LORE');
+    expect(runDialogueAction(worldPort, playerPort, 'OPEN_HALL')).toEqual({ kind: 'open', panel: 'guild' });
+    const lore = runDialogueAction(worldPort, playerPort, 'GUILD_LORE');
     expect(lore.kind).toBe('reply');
     expect((lore as any).text).not.toMatch(/sealed/i);
   });
@@ -862,30 +862,30 @@ describe('line 141: dodging the levy is a keyed roll that can fail, and doing it
     setGold(1000);
     await Ledger.append('GOLD_DELTA', { reason: 'TEST_GRANT', amount: 1000 });
     const { attempt: failed } = findSession(false);
-    expect(await ExitLevy.charge('w1', 1000, failed.ratePaid, failed)).toBe(50);
+    expect(await ExitLevy.charge(playerPort, 'w1', 1000, failed.ratePaid, failed)).toBe(50);
     expect(player().bank.gold).toBe(950);
     expect(await Treasury.balance('w1')).toBe(50);
     const row = (await Ledger.list(UID)).find(r => r.payload.type === 'TAX')!.payload.data;
     expect(row).toMatchObject({ rate: 0.05, rateAsked: 0.05, dodged: false, tax: 50 });
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a dodge pays nothing, and the row is still written, saying so', async () => {
     setGold(1000);
     await Ledger.append('GOLD_DELTA', { reason: 'TEST_GRANT', amount: 1000 });
     const { attempt: landed } = findSession(true);
-    expect(await ExitLevy.charge('w1', 1000, landed.ratePaid, landed)).toBe(0);
+    expect(await ExitLevy.charge(playerPort, 'w1', 1000, landed.ratePaid, landed)).toBe(0);
     expect(player().bank.gold).toBe(1000);
     const row = (await Ledger.list(UID)).find(r => r.payload.type === 'TAX')!.payload.data;
     expect(row).toMatchObject({ rate: 0, rateAsked: 0.05, dodged: true, tax: 0, owed: 0 });
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the old call still charges plainly, for any other caller', async () => {
     setGold(1000);
     await Ledger.append('GOLD_DELTA', { reason: 'TEST_GRANT', amount: 1000 });
-    expect(await ExitLevy.charge('w2', 1000, 0.05)).toBe(50);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect(await ExitLevy.charge(playerPort, 'w2', 1000, 0.05)).toBe(50);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the skill is on the web, named, and lawful', () => {
@@ -898,9 +898,9 @@ describe('line 141: dodging the levy is a keyed roll that can fail, and doing it
 
   it('an attempt is practice whichever way it goes, and it settles at a rest like any skill', () => {
     const pair = WebSystem.mint(TAX_EVASION_TAGS, []);
-    ExitLevy.practise(findSession(false).attempt, 0);
+    ExitLevy.practise(findSession(false).attempt, 0, playerPort);
     expect(player().skillProgress?.[pair.id]?.attempts).toBe(1);
-    ExitLevy.practise(findSession(true).attempt, 0);
+    ExitLevy.practise(findSession(true).attempt, 0, playerPort);
     expect(player().skillProgress?.[pair.id]?.attempts).toBe(2);
   });
 
@@ -910,19 +910,19 @@ describe('line 141: dodging the levy is a keyed roll that can fail, and doing it
       player: { ...s.player, bank: { ...s.player.bank, universalSkills: { [pair.id]: WebSystem.freshSkill(pair.id, pair.tags, 0) } } }
     }));
     const before = WebSystem.cumulativeXp(player().bank.universalSkills[pair.id]);
-    ExitLevy.practise(findSession(false).attempt, 0);
+    ExitLevy.practise(findSession(false).attempt, 0, playerPort);
     expect(WebSystem.cumulativeXp(player().bank.universalSkills[pair.id])).toBeGreaterThan(before);
   });
 
   it('the skill stands at the rank of who is doing it, not of what they happened to carry (found in play)', () => {
     const pair = WebSystem.mint(TAX_EVASION_TAGS, []);
-    ExitLevy.attemptNow('w1', 'session_rank', 1000, 0.05);
+    ExitLevy.attemptNow('w1', 'session_rank', 1000, 0.05, playerPort);
     expect(player().skillProgress?.[pair.id]?.rank).toBe(ProgressionSystem.rankIndex(ProgressionSystem.rankOf(player())));
   });
 
   it('nothing to hide teaches nothing', () => {
     const pair = WebSystem.mint(TAX_EVASION_TAGS, []);
-    ExitLevy.practise(attempt('session_empty', { haulValue: 0 }), 0);
+    ExitLevy.practise(attempt('session_empty', { haulValue: 0 }), 0, playerPort);
     expect(player().skillProgress?.[pair.id]).toBeUndefined();
   });
 });

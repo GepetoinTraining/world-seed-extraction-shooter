@@ -10,7 +10,7 @@ import { IItem, UniversalRank } from '../../../shared/types';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
-import { usePlayerStore } from '../player/store';
+import type { IPlayerPort } from '../player/playerView';
 import { Koseki } from '../../../shared/entities/world/Koseki';
 import { Ledger } from '../../logic/ledger/Ledger';
 import { Rng, fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
@@ -35,16 +35,12 @@ const TEND_MARKUP = 1.5;
 const XP_PER_WORK = 5;
 
 const hub = () => useHubStore.getState();
-const person = () => usePlayerStore.getState().player;
-const stash = () => person().bank.stashTabs[0]?.items ?? [];
+const person = (pc: IPlayerPort) => pc.view().player;
+const stash = (pc: IPlayerPort) => person(pc).bank.stashTabs[0]?.items ?? [];
 const refuse = (reason: string): IFarmVerdict => ({ ok: false, reason });
 
-const fromStash = (ids: string[]) => usePlayerStore.setState(s => ({
-  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: tab.items.filter(x => !ids.includes(x.id)) } : tab)) } }
-}));
-const toStash = (items: IItem[]) => usePlayerStore.setState(s => ({
-  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: [...tab.items, ...items] } : tab)) } }
-}));
+const fromStash = (ids: string[], pc: IPlayerPort) => pc.apply({ kind: 'STASH_REMOVE', ids });
+const toStash = (items: IItem[], pc: IPlayerPort) => pc.apply({ kind: 'STASH_ADD', items });
 
 const setFarmland = (next: IFarmland) => useHubStore.setState({ farmland: next });
 const farmOf = (land: IFarmland, lotId: string): IFarm => land.farms[lotId] ?? Farm.empty(lotId);
@@ -55,18 +51,18 @@ const plotOf = (lotId: string) => hub().lots.find(l => l.id === lotId && l.struc
 const sizeOf = (lotId: string) => HubGenerator.findPOI(layoutNow(), lotId)?.size;
 
 /** Yours to work, or a refusal in voice. */
-const ownPlot = (lotId: string): { lot: ReturnType<typeof plotOf> } | { reason: string } => {
+const ownPlot = (lotId: string, pc: IPlayerPort): { lot: ReturnType<typeof plotOf> } | { reason: string } => {
   const lot = plotOf(lotId);
   if (!lot) return { reason: 'That is not farmland.' };
-  if (lot.ownerId !== person().id) return { reason: lot.ownerId ? 'It is someone else\'s to work.' : 'Nobody holds it yet. The Land Office has it on the sheet.' };
+  if (lot.ownerId !== person(pc).id) return { reason: lot.ownerId ? 'It is someone else\'s to work.' : 'Nobody holds it yet. The Land Office has it on the sheet.' };
   return { lot };
 };
 
-const practise = (tags: string[], rank: UniversalRank) => {
+const practise = (tags: string[], rank: UniversalRank, pc: IPlayerPort) => {
   const pair = WebSystem.mint(tags, []);
-  usePlayerStore.getState().workOn(pair, Math.max(0, Object.values(UniversalRank).indexOf(rank)), XP_PER_WORK);
+  pc.apply({ kind: 'WORK_ON', pair, rank: Math.max(0, Object.values(UniversalRank).indexOf(rank)), xp: XP_PER_WORK });
 };
-const skillLevel = (tags: string[]) => person().bank.universalSkills?.[WebSystem.mint(tags, []).id]?.level ?? 0;
+const skillLevel = (tags: string[], pc: IPlayerPort) => person(pc).bank.universalSkills?.[WebSystem.mint(tags, []).id]?.level ?? 0;
 
 /** What a bed gives, minted piece by piece, each with its own line. */
 const mintYield = (lotId: string, bed: number, p: IPlanting, seedName: string, now: number, skill: number): IItem[] => {
@@ -130,11 +126,11 @@ export const FarmDoors = {
   // BEDS (line 36)
   // ---------------------------------------------------------------------------
 
-  async plant(lotId: string, itemId: string, bed: number): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async plant(lotId: string, itemId: string, bed: number, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const size = sizeOf(lotId);
-    const item = stash().find(i => i.id === itemId);
+    const item = stash(pc).find(i => i.id === itemId);
     if (!size || !item) return refuse('That is not in your stash.');
     const can = Farm.plantVerdict(item);
     if (!can.ok) return refuse(can.reason!);
@@ -146,7 +142,7 @@ export const FarmDoors = {
     const fits = Farm.fitVerdict(farm, size, planting, bed);
     if (!fits.ok) return refuse(fits.reason!);
 
-    fromStash([item.id]);
+    fromStash([item.id], pc);
     setFarmland(withFarm(land, { ...farm, beds: { ...farm.beds, [bed]: planting } }));
     await Ledger.append('FARM', { kind: 'PLANTED', lotId, bed, defId: def.id, consumedIds: [item.id], consumedDefIds: [def.id] });
     await Provenance.record(item, 'TRANSFER', { via: 'PLANTED', lotId, bed });
@@ -154,8 +150,8 @@ export const FarmDoors = {
     return { ok: true };
   },
 
-  async reap(lotId: string, bed: number): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async reap(lotId: string, bed: number, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const farm = land.farms[lotId];
@@ -167,14 +163,14 @@ export const FarmDoors = {
     if (!def) return refuse('This machine has no record of what that is.');
 
     const tags = planting.grove ? ['grove_keeping'] : ['farming'];
-    const pieces = mintYield(lotId, bed, planting, planting.name, now, skillLevel(tags));
+    const pieces = mintYield(lotId, bed, planting, planting.name, now, skillLevel(tags, pc));
     const after = Farm.afterReap(planting, def, now);
     const { [bed]: _taken, ...beds } = farm.beds;
     setFarmland(withFarm(land, { ...farm, beds: after ? { ...beds, [bed]: after } : beds }));
     putInStore(lotId, pieces);
     await Ledger.append('FARM', { kind: 'REAPED', lotId, bed, defId: def.id, itemIds: pieces.map(i => i.id), consumedIds: [] });
     await recordAll(pieces, { origin: 'FARM', lotId, bed, seedItemId: planting.seedItemId, plantings: planting.plantings });
-    practise(tags, Farm.rankOf(def));
+    practise(tags, Farm.rankOf(def), pc);
     await hub().saveHubState();
     return { ok: true };
   },
@@ -183,31 +179,31 @@ export const FarmDoors = {
   // THE STORE AND THE STAND (line 37, and what a person buys from)
   // ---------------------------------------------------------------------------
 
-  async takeFromStore(lotId: string, itemId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async takeFromStore(lotId: string, itemId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const item = own.lot!.inventory.find(i => i.id === itemId);
     if (!item) return refuse('That is not in the store.');
     useHubStore.setState({ lots: hub().lots.map(l => (l.id === lotId ? { ...l, inventory: l.inventory.filter(i => i.id !== itemId) } : l)) });
-    toStash([item]);
+    toStash([item], pc);
     await hub().saveHubState();
     return { ok: true };
   },
 
-  async putInStore(lotId: string, itemId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async putInStore(lotId: string, itemId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
-    const item = stash().find(i => i.id === itemId);
+    const item = stash(pc).find(i => i.id === itemId);
     if (!item) return refuse('That is not in your stash.');
-    fromStash([itemId]);
+    fromStash([itemId], pc);
     putInStore(lotId, [item]);
     await hub().saveHubState();
     return { ok: true };
   },
 
   /** On the stand, for anyone who walks up. A price is the owner's to name. */
-  async list(lotId: string, itemId: string, price: number): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async list(lotId: string, itemId: string, price: number, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const item = own.lot!.inventory.find(i => i.id === itemId);
     if (!item) return refuse('That is not in the store.');
@@ -222,8 +218,8 @@ export const FarmDoors = {
     return { ok: true };
   },
 
-  async unlist(lotId: string, itemId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async unlist(lotId: string, itemId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const listing = own.lot!.shopListings?.find(li => li.item.id === itemId);
     if (!listing) return refuse('That is not on the stand.');
@@ -237,8 +233,8 @@ export const FarmDoors = {
   },
 
   /** Someone in the city runs it from here on. Null gives it back to the owner's hands. */
-  async setTender(lotId: string, residentId: string | null): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async setTender(lotId: string, residentId: string | null, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     if (residentId && !hub().guild.residents.some(r => r.id === residentId)) return refuse('There is nobody by that name in the city.');
     const land = hub().farmland;
@@ -252,10 +248,10 @@ export const FarmDoors = {
   },
 
   /** The plot is gone. Used at foreclosure, through the same clearing law. */
-  async forget(lotId: string): Promise<void> {
+  async forget(lotId: string, pc: IPlayerPort): Promise<void> {
     const cleared = Herd.clearHolder(Farm.clear(hub().farmland, lotId), { type: 'plot', id: lotId });
     setFarmland(cleared.farmland);
-    if (cleared.items.length > 0) toStash(cleared.items);
+    if (cleared.items.length > 0) toStash(cleared.items, pc);
     await hub().saveHubState();
   },
 
@@ -264,10 +260,10 @@ export const FarmDoors = {
   // ---------------------------------------------------------------------------
 
   /** A cage comes home, and this starts domesticating what is in it. It goes on the person's register. */
-  async admit(lotId: string, itemId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async admit(lotId: string, itemId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
-    const item = stash().find(i => i.id === itemId);
+    const item = stash(pc).find(i => i.id === itemId);
     const cage = item?.creatureData;
     if (!item || !cage) return refuse('There is nothing alive in that.');
     const holder: IHerdHolder = { type: 'plot', id: lotId };
@@ -277,38 +273,38 @@ export const FarmDoors = {
     const herd = standing ? Herd.admit(Herd.fold(standing, today, hub().activeHubId ?? ''), cage) : Herd.start(holder, cage, today);
     const herds = standing ? land.herds.map(h => (h === standing ? herd : h)) : [...land.herds, herd];
 
-    const me = person().id;
+    const me = person(pc).id;
     let register = land.registers[me] ?? Capture.registerOf(hub().activeHubId ?? 'hub', me, today);
     if (!register.entries.some(e => e.body === cage.body)) {
       // Whatever register it left from is the world's. Here it stands by the proof it carries
       const arrival = Koseki.found(cage.caughtAt.worldUid, cage.body, cage.kind, today);
       register = Koseki.adopt(arrival, register, cage.body, cage.kind, today).to;
     }
-    fromStash([item.id]);
+    fromStash([item.id], pc);
     setFarmland({ ...land, herds, registers: { ...land.registers, [me]: register } });
     await Ledger.append('FARM', { kind: 'PENNED', lotId, herdId: herd.id, body: cage.body, consumedIds: [item.id] });
-    practise(['herding'], (cage.def.rank as UniversalRank) ?? UniversalRank.F);
+    practise(['herding'], (cage.def.rank as UniversalRank) ?? UniversalRank.F, pc);
     await hub().saveHubState();
     return { ok: true };
   },
 
-  async feed(lotId: string, herdId: string, itemIds: string[]): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async feed(lotId: string, herdId: string, itemIds: string[], pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const herd = land.herds.find(h => h.id === herdId);
     if (!herd) return refuse('There is no such herd here.');
-    const items = itemIds.map(id => stash().find(i => i.id === id)).filter((i): i is IItem => !!i && Herd.worthOf(i) > 0);
+    const items = itemIds.map(id => stash(pc).find(i => i.id === id)).filter((i): i is IItem => !!i && Herd.worthOf(i) > 0);
     if (items.length === 0) return refuse('Nothing there would feed them.');
-    fromStash(items.map(i => i.id));
+    fromStash(items.map(i => i.id), pc);
     setFarmland({ ...land, herds: land.herds.map(h => (h.id === herdId ? Herd.feed(h, items) : h)) });
     await Ledger.append('FARM', { kind: 'FED', lotId, herdId, consumedIds: items.map(i => i.id), consumedDefIds: items.map(i => i.universalDefinitionId) });
     await hub().saveHubState();
     return { ok: true };
   },
 
-  async slaughter(lotId: string, herdId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async slaughter(lotId: string, herdId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const herd = land.herds.find(h => h.id === herdId);
@@ -319,26 +315,26 @@ export const FarmDoors = {
     putInStore(lotId, res.items);
     await Ledger.append('FARM', { kind: 'SLAUGHTERED', lotId, herdId, itemIds: res.items.map(i => i.id), consumedIds: [] });
     await recordAll(res.items, { origin: 'HERD', lotId, herdId });
-    practise(['herding'], (herd.def.rank as UniversalRank) ?? UniversalRank.F);
+    practise(['herding'], (herd.def.rank as UniversalRank) ?? UniversalRank.F, pc);
     await hub().saveHubState();
     return { ok: true };
   },
 
   /** A head goes back in a cage, to be carried to another map (line 117). It is named now, so the register holds it. */
-  async cageOne(lotId: string, herdId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async cageOne(lotId: string, herdId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const herd = land.herds.find(h => h.id === herdId);
     if (!herd) return refuse('There is no such herd here.');
-    const me = person().id;
+    const me = person(pc).id;
     const out = Herd.cageOne(herd, hub().activeHubId ?? '', me, worldDay(), hub().activeHubId ?? '');
     if (!out) return refuse('There is no head here to cage.');
     const register = land.registers[me] ?? Capture.registerOf(hub().activeHubId ?? 'hub', me, worldDay());
     const written = Koseki.bear(register, out.cage.body, herd.kind, herd.bodies.slice(0, 2), worldDay());
     const item = Capture.cageItem(out.cage, `home:${out.cage.body}`);
     setFarmland({ ...land, herds: land.herds.map(h => (h.id === herdId ? out.herd : h)), registers: { ...land.registers, [me]: written } });
-    toStash([item]);
+    toStash([item], pc);
     await Ledger.append('FARM', { kind: 'CAGED', lotId, herdId, itemIds: [item.id], consumedIds: [] });
     await Provenance.record(item, 'MINT', { origin: 'HERD', lotId, herdId, body: out.cage.body });
     await hub().saveHubState();
@@ -349,20 +345,20 @@ export const FarmDoors = {
    * Two kinds in one pen, and a try. A child of two lines has two parents in its hash (line 117).
    * A hit stands a herd of a new kind with one head; a miss costs the day's trouble, and it is keyed by how many tries have been had.
    */
-  async cross(lotId: string, herdA: string, herdB: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async cross(lotId: string, herdA: string, herdB: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const a = land.herds.find(h => h.id === herdA), b = land.herds.find(h => h.id === herdB);
     if (!a || !b || a.head <= 0 || b.head <= 0) return refuse('It takes a head of each, kept and at home.');
     if (a.kind === b.kind) return refuse('They are the one kind already.');
-    const me = person().id;
+    const me = person(pc).id;
     const register = land.registers[me] ?? Capture.registerOf(hub().activeHubId ?? 'hub', me, worldDay());
     const tries = register.entries.filter(e => e.word === 'child').length + (land.crossTries ?? 0);
     const key = `${hub().activeHubId}:${a.kind}:${b.kind}:${tries}`;
     if (Rng.fromKey(`cross:${key}`).next() >= 0.25) {
       setFarmland({ ...land, crossTries: (land.crossTries ?? 0) + 1 });
-      practise(['herding'], (a.def.rank as UniversalRank) ?? UniversalRank.F);
+      practise(['herding'], (a.def.rank as UniversalRank) ?? UniversalRank.F, pc);
       await hub().saveHubState();
       return refuse('Nothing came of it.');
     }
@@ -386,35 +382,35 @@ export const FarmDoors = {
   // THE HEARTH
   // ---------------------------------------------------------------------------
 
-  async buildHearth(lotId: string): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async buildHearth(lotId: string, pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const farm = farmOf(land, lotId);
     if (farm.hearth) return refuse('It has a hearth.');
     const { tag, count } = Cooking.HEARTH_BILL;
-    const parts = stash().filter(i => answersTag(i, tag)).slice(0, count);
+    const parts = stash(pc).filter(i => answersTag(i, tag)).slice(0, count);
     if (parts.length < count) return refuse(`A hearth takes ${count} ${tag}.`);
-    fromStash(parts.map(i => i.id));
+    fromStash(parts.map(i => i.id), pc);
     setFarmland(withFarm(land, { ...farm, hearth: true }));
     await Ledger.append('FARM', { kind: 'HEARTH_RAISED', lotId, consumedIds: parts.map(i => i.id), consumedDefIds: parts.map(i => i.universalDefinitionId) });
     await hub().saveHubState();
     return { ok: true };
   },
 
-  async cook(lotId: string, itemIds: string[]): Promise<IFarmVerdict> {
-    const own = ownPlot(lotId);
+  async cook(lotId: string, itemIds: string[], pc: IPlayerPort): Promise<IFarmVerdict> {
+    const own = ownPlot(lotId, pc);
     if ('reason' in own) return refuse(own.reason);
     const land = hub().farmland;
     const farm = farmOf(land, lotId);
     if (!farm.hearth) return refuse('There is no hearth here yet.');
-    const items = itemIds.map(id => stash().find(i => i.id === id)).filter((i): i is IItem => !!i);
+    const items = itemIds.map(id => stash(pc).find(i => i.id === id)).filter((i): i is IItem => !!i);
     const can = Cooking.verdict(items);
     if (!can.ok) return refuse(can.reason!);
     const now = Date.now();
     const cooking = farm.cooking ?? [];
-    const job = { id: `cook_${now.toString(36)}_${cooking.length}`, queuedAt: now, finishesAt: now + Cooking.cookMs(items), items, ownerCertUid: person().id };
-    fromStash(items.map(i => i.id));
+    const job = { id: `cook_${now.toString(36)}_${cooking.length}`, queuedAt: now, finishesAt: now + Cooking.cookMs(items), items, ownerCertUid: person(pc).id };
+    fromStash(items.map(i => i.id), pc);
     setFarmland(withFarm(land, { ...farm, cooking: [...cooking, job] }));
     await Ledger.append('FARM', { kind: 'COOKING', lotId, jobId: job.id, consumedIds: items.map(i => i.id), consumedDefIds: items.map(i => i.universalDefinitionId) });
     await hub().saveHubState();
@@ -433,7 +429,7 @@ export const FarmDoors = {
       || Object.values(farmland.farms).some(f => (f.cooking ?? []).some(j => j.finishesAt <= now) || (!!f.tender && Farm.tendOrder(f, now).length > 0));
   },
 
-  async resolve(): Promise<void> {
+  async resolve(pc: IPlayerPort): Promise<void> {
     if (!this.isDue()) return;
     const now = Date.now();
     const today = worldDay();
@@ -446,12 +442,12 @@ export const FarmDoors = {
       let farm = start;
       const done = (farm.cooking ?? []).filter(j => j.finishesAt <= now);
       if (done.length > 0) {
-        const meals = done.map(j => Cooking.meal(j.items, j.id, j.ownerCertUid === person().id ? skillLevel(['cooking']) : 0));
+        const meals = done.map(j => Cooking.meal(j.items, j.id, j.ownerCertUid === person(pc).id ? skillLevel(['cooking'], pc) : 0));
         farm = { ...farm, cooking: (farm.cooking ?? []).filter(j => j.finishesAt > now) };
         putInStore(farm.lotId, meals);
         minted.push(...meals);
         await Ledger.append('FARM', { kind: 'COOKED', lotId: farm.lotId, itemIds: meals.map(i => i.id), consumedIds: [] });
-        if (done.some(j => j.ownerCertUid === person().id)) practise(['cooking'], meals[0].rank);
+        if (done.some(j => j.ownerCertUid === person(pc).id)) practise(['cooking'], meals[0].rank, pc);
       }
 
       // Whoever runs it takes what is ripe, sets one back, and puts the rest on the stand.

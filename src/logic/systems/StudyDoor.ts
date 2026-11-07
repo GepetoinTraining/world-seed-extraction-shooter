@@ -7,7 +7,7 @@
  */
 
 import { IItem, IStudyTarget, StudyOutcome } from '../../../shared/types';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { useHubStore } from '../../entities/hub/store';
 import { ownerHasStationFor } from '../../../shared/entities/hub/room';
@@ -42,9 +42,9 @@ const said = (outcome: StudyOutcome, target: IStudyTarget): string => {
 };
 
 /** What a target asks that this person does not have, or nothing. The bench is at home, so the field has none. */
-const missingStation = (target: IStudyTarget): string | null => {
+const missingStation = (target: IStudyTarget, pc: IPlayerPort): string | null => {
   if (!target.station) return null;
-  const player = usePlayerStore.getState().player;
+  const player = pc.view().player;
   if (player.currentSession) return `That wants a workstation, and yours is not out here. It can wait for home.`;
   const { lots, rooms } = useHubStore.getState();
   const stash = player.bank.stashTabs.flatMap(t => t.items);
@@ -56,27 +56,27 @@ export const StudyDoor = {
   sitting: () => paid,
 
   /** Should this piece show the button at all? */
-  offered: (item: IItem): boolean => !Escort.isCorpse(item) && missingStation(StudySystem.targetOfItem(item)) === null,
+  offered: (item: IItem, pc: IPlayerPort): boolean => !Escort.isCorpse(item) && missingStation(StudySystem.targetOfItem(item), pc) === null,
 
   /** Paid up front. Nothing has been decided yet. */
-  begin(target: IStudyTarget): { ok: boolean; reason?: string; cost?: number; seconds?: number } {
+  begin(target: IStudyTarget, pc: IPlayerPort): { ok: boolean; reason?: string; cost?: number; seconds?: number } {
     if (paid) return { ok: false, reason: `You are already sitting with ${paid.target.name}.` };
-    const held = target.kind === 'item' ? StudySystem.heldItem(usePlayerStore.getState().player, target.ref) : undefined;
+    const held = target.kind === 'item' ? StudySystem.heldItem(pc.view().player, target.ref) : undefined;
     if (held && Escort.isCorpse(held)) return { ok: false, reason: `${held.name} is not yours to look through.` };
-    const missing = missingStation(target);
+    const missing = missingStation(target, pc);
     if (missing) return { ok: false, reason: missing };
-    const player = usePlayerStore.getState().player;
+    const player = pc.view().player;
     const verdict = StudySystem.canStudy(player, target);
     if (!verdict.ok) return verdict;
     const { cost, seconds } = StudySystem.studyAsk(player, target);
-    usePlayerStore.setState({ player: StudySystem.pay(player, cost) });
+    pc.apply({ kind: 'SET', player: StudySystem.pay(player, cost) });
     paid = { target, cost };
     return { ok: true, cost, seconds };
   },
 
   /** The sitting, on a real clock: what every button in the game calls. */
-  start(target: IStudyTarget): { ok: boolean; reason?: string; cost?: number; seconds?: number } {
-    const out = StudyDoor.begin(target);
+  start(target: IStudyTarget, pc: IPlayerPort): { ok: boolean; reason?: string; cost?: number; seconds?: number } {
+    const out = StudyDoor.begin(target, pc);
     if (!out.ok) {
       feed(out.reason!, 'loss');
       return out;
@@ -84,17 +84,17 @@ export const StudyDoor = {
     const startedAt = Date.now();
     useWaits.getState().begin({ id: WAIT_ID, label: 'STUDYING', startedAt, until: startedAt + out.seconds! * 1000 });
     feed(`Sitting with ${target.name}. ${out.cost} energy, ${out.seconds}s.`, 'signal');
-    timer = setTimeout(() => { void StudyDoor.finish(); }, out.seconds! * 1000);
+    timer = setTimeout(() => { void StudyDoor.finish(pc); }, out.seconds! * 1000);
     return out;
   },
 
   /** The clock is up: the roll lands, and it goes on the log. */
-  async finish(): Promise<{ ok: boolean; reason?: string; outcome?: StudyOutcome }> {
+  async finish(pc: IPlayerPort): Promise<{ ok: boolean; reason?: string; outcome?: StudyOutcome }> {
     if (!paid) return { ok: false, reason: 'Nothing was paid for. Nobody has looked.' };
     const { target, cost } = paid;
     StudyDoor.reset();
 
-    const before = usePlayerStore.getState().player;
+    const before = pc.view().player;
     const piece = target.kind === 'item' ? StudySystem.heldItem(before, target.ref) : undefined;
     if (target.kind === 'item' && !piece) {
       feed(`${target.name} is not where you left it. What you paid is gone.`, 'loss');
@@ -116,14 +116,14 @@ export const StudyDoor = {
         }
       }
     }
-    usePlayerStore.setState({ player: next });
+    pc.apply({ kind: 'SET', player: next });
 
     // The eye grows either way: an unschooled one is winging it, and it settles at a rest.
     const scope = piece ? StudySystem.identifyScopeOf(piece) : null;
     if (scope) {
       const eye = StudySystem.scopeSkillId(scope);
-      if (next.bank.universalSkills[eye]) usePlayerStore.getState().gainSkillXp(eye, 15, ['study', 'intel']);
-      else usePlayerStore.setState(s => ({ player: WebSystem.accrue(s.player, { id: eye, tags: [`identify_${scope}`] }, 0) }));
+      if (next.bank.universalSkills[eye]) pc.apply({ kind: 'GAIN_SKILL_XP', skillId: eye, amount: 15, tags: ['study', 'intel'] });
+      else pc.apply({ kind: 'UPDATE', update: p => WebSystem.accrue(p, { id: eye, tags: [`identify_${scope}`] }, 0) });
     }
 
     SessionJournal.record('INTERACT', { kind: 'STUDY', target: StudySystem.keyOf(target), outcome: sitting.outcome });

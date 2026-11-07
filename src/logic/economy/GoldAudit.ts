@@ -13,7 +13,7 @@ import { Ledger } from '../ledger/Ledger';
 import { goldOfRow } from '../../../shared/logic/economy/goldOfRow';
 import { Treasury } from './Treasury';
 import { Wallets } from './Wallets';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayer } from '../../../shared/types';
 import { useIdentityStore } from '../../entities/identity/store';
 
 export interface IGoldAuditResult {
@@ -30,7 +30,8 @@ export interface IGoldAuditResult {
 
 export class GoldAudit {
 
-  static async run(): Promise<IGoldAuditResult> {
+  /** `held` is the player as it stands: its bank's gold is what the ledger is held against. */
+  static async run(held: Pick<IPlayer, 'bank'>): Promise<IGoldAuditResult> {
     const notes: string[] = [];
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return { ok: false, expectedPlayerGold: 0, actualPlayerGold: 0, expectedTreasuryTotal: 0, actualTreasuryTotal: 0, expectedWalletTotal: 0, actualWalletTotal: 0, rows: 0, notes: ['no identity'] };
@@ -56,7 +57,7 @@ export class GoldAudit {
       if (type === 'WALLET') wallets += data.amount ?? 0;
     }
 
-    const actualPlayer = usePlayerStore.getState().player.bank.gold;
+    const actualPlayer = held.bank.gold;
     const actualTreasury = await Treasury.totalAll();
     const actualWallets = await Wallets.totalAll();
 

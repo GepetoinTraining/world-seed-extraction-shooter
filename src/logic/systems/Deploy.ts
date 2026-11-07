@@ -4,7 +4,7 @@
  */
 
 import type { IWorldPort } from '../../entities/world/worldView';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { SessionJournal } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { WorldClock } from '../../entities/world/WorldClock';
@@ -17,19 +17,19 @@ import { useWaits, whileWaiting } from '../../components/ui/stores';
 export const OPENING_WORLD = 'opening_world';
 
 /** Press it twice and nothing more happens: the first is still opening. */
-export async function deployToWorld(worldId: string, world: IWorldPort): Promise<{ ok: boolean; reason?: string }> {
+export async function deployToWorld(worldId: string, world: IWorldPort, pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
   if (useWaits.getState().waits.some(w => w.id === OPENING_WORLD)) return { ok: false };
-  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId, world));
+  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId, world, pc));
 }
 
-async function enterWorld(worldId: string, world: IWorldPort): Promise<{ ok: boolean; reason?: string }> {
+async function enterWorld(worldId: string, world: IWorldPort, pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
   const card = world.view().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
 
   // D79: a character at rest is down, and another can play
   const now = Date.now();
-  await RestDoor.wakeIfDue(now);
-  const sleeper = usePlayerStore.getState().player;
+  await RestDoor.wakeIfDue(pc, now);
+  const sleeper = pc.view().player;
   if (RestSystem.isResting(sleeper, now)) {
     return { ok: false, reason: `This character is at rest for ${WorldClock.say(sleeper.rest!.until - now)} more. Another can go.` };
   }
@@ -48,7 +48,7 @@ async function enterWorld(worldId: string, world: IWorldPort): Promise<{ ok: boo
   // Wave 4.4: the world cert's power gates are enforced at the door
   if (card.ipCap || card.ipFloor) {
     const { RANK_MULTIPLIERS } = await import('../../../shared/constants');
-    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+    const stash = pc.view().player.bank.stashTabs[0]?.items || [];
     const playerIP = stash.reduce((m, i) => Math.max(m, i.itemPower || 0), 0);
     const rankIP = (r: string) => (RANK_MULTIPLIERS as any)[r] * 100;
     if (card.ipCap && playerIP > rankIP(card.ipCap)) {
@@ -65,11 +65,11 @@ async function enterWorld(worldId: string, world: IWorldPort): Promise<{ ok: boo
     await WorldCertificateSystem.recordDrop(worldId);
     world.apply({ kind: 'DROP_COUNTED', worldId });
   }
-  world.apply({ kind: 'APPLY_SURVEY', survey: usePlayerStore.getState().player.survey?.[worldId] });
-  usePlayerStore.getState().diveIntoLayer(card.seed);
+  world.apply({ kind: 'APPLY_SURVEY', survey: pc.view().player.survey?.[worldId] });
+  pc.apply({ kind: 'DIVE', layerId: card.seed });
 
   // Wave 1.2: open the session journal with the claim's baseHash
-  const { player } = usePlayerStore.getState();
+  const { player } = pc.view();
   if (player.currentSession) {
     await SessionJournal.start(
       player.currentSession.sessionId, worldId, card.seed,

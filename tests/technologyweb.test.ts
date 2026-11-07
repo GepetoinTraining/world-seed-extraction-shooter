@@ -69,7 +69,7 @@ import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { shellBillFor, SHELL_BILLS, stationFunctionOf, stationMinAreaOf, isStation } from '../shared/entities/hub/room';
 import { inspectEntity, inspectItem } from '../src/render/atoms/inspect';
 import { useHubStore } from '../src/entities/hub/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useWorldStore, worldPort } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
@@ -929,7 +929,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
     const callers = sourceFiles.filter(f => /WebSystem\.rest\(/.test(f.text)).map(f => f.path);
     expect(callers.length).toBe(1);
     expect(callers[0]).toMatch(/RestSystem\.ts$/);
-    expect(source('entities/hub/store.ts')).toMatch(/RestDoor\.settle\(\)/);
+    expect(source('entities/hub/store.ts')).toMatch(/RestDoor\.settle\(playerPort\)/);
   });
 
   it('the forming list is a fill, never a number the player could read as the bar', () => {
@@ -1313,7 +1313,7 @@ describe('line 65: who found it first, signed', () => {
   it('the row moves no gold: the audit still balances', async () => {
     const uid = await restUntilFirst();
     await Ledger.append('CHARACTER_GENESIS', { gold: player().bank.gold });
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.expectedPlayerGold).toBe(audit.actualPlayerGold);
     expect((await Ledger.list(uid)).filter(r => r.payload.type === 'TECH').every(r => r.payload.data.amount === undefined)).toBe(true);
   });
@@ -1472,7 +1472,7 @@ describe('line 66: an NPC carries stats and skills derived from its seed', () =>
     usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { sessionId: 'sess_bond', layerId: 'l', inventory: [], kitItemIds: [], health: 100, maxHealth: 100, energy: 100, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } } }));
     store().performInteraction(`int_recruit_${entity.id}`, entity.id);
     // Q16: they walk beside you now, and the bond is written at the beacon
-    FieldEscort.walkOut(worldPort);
+    FieldEscort.walkOut(worldPort, playerPort);
     const bond = player().currentSession!.inventory.find(i => i.tags.includes('npc_contract'))!;
     expect(bond.bondData?.worldSeed).toBe('bond_world');
     expect(bond.bondData?.entityId).toBe('ent_bond');

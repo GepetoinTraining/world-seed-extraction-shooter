@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useWorldStore, worldPort } from '../entities/world/store';
 import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import { EffectSystem } from '../../shared/logic/systems/EffectSystem';
@@ -109,7 +109,7 @@ export const TheWorking: React.FC = () => {
 
       {canRestHere && (
         <div style={{ marginTop: 8 }}>
-          <Button tone="signal" onClick={() => void RestDoor.sleep('FIELD', worldPort)}>REST HERE</Button>
+          <Button tone="signal" onClick={() => void RestDoor.sleep('FIELD', worldPort, playerPort)}>REST HERE</Button>
         </div>
       )}
     </Panel>

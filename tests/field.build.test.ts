@@ -22,7 +22,7 @@ vi.mock('../shared/entities/data/VectorStore', () => ({
 import { IAttributes, IItem, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, Rarity, SlotType, UniversalRank } from '../shared/types';
 import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { useWorldStore, worldPort } from '../src/entities/world/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { InventorySystem, HEAVY_LOAD_RATIO } from '../shared/entities/player/systems/InventorySystem';
@@ -170,7 +170,7 @@ describe('Q16: they fight back when engaged', () => {
 describe('Q16: fallen, they are carried as a heavy body nobody may open', () => {
   const fallen = () => {
     const e = recruited()!;
-    FieldEscort.fall(e.entityId, worldPort);
+    FieldEscort.fall(e.entityId, worldPort, playerPort);
     return e;
   };
 
@@ -210,7 +210,7 @@ describe('Q16: fallen, they are carried as a heavy body nobody may open', () => 
   it('the body cannot be inspected or looted: no study, no salvage, no reading, nothing of theirs on its card', () => {
     const corpse = Escort.corpseOf(fallen());
     expect(Escort.isCorpse(corpse)).toBe(true);
-    expect(StudyDoor.offered(corpse)).toBe(false);
+    expect(StudyDoor.offered(corpse, playerPort)).toBe(false);
     expect(SalvageSystem.components(corpse, 'k')).toBeNull();
     expect(StudySystem.identifyScopeOf(corpse)).toBeNull();
     const card = inspectItem(corpse, player());
@@ -224,9 +224,9 @@ describe('Q16: fallen, they are carried as a heavy body nobody may open', () => 
     usePlayerStore.setState(s => ({ player: { ...s.player, attributes: spread({ strength: 9, charisma: 6 }) } }));
     store().performInteraction('int_recruit_ent_a', 'ent_a');
     store().performInteraction('int_recruit_ent_b', 'ent_b');
-    FieldEscort.fall('ent_b', worldPort);
+    FieldEscort.fall('ent_b', worldPort, playerPort);
     store().performInteraction('int_carry_ent_b', 'ent_b');
-    FieldEscort.walkOut(worldPort);
+    FieldEscort.walkOut(worldPort, playerPort);
     const inv = player().currentSession!.inventory;
     const bonds = inv.filter(i => i.bondData);
     expect(bonds.map(b => b.bondData!.entityId).sort()).toEqual(['ent_a', 'ent_b']);
@@ -238,7 +238,7 @@ describe('Q16: fallen, they are carried as a heavy body nobody may open', () => 
 
   it('the field sends blows their way and hands theirs to the fight', () => {
     const canvas = SRC('src/components/WorldCanvas.tsx');
-    expect(canvas).toMatch(/FieldEscort\.walkOut\(worldPort\)/);
+    expect(canvas).toMatch(/FieldEscort\.walkOut\(worldPort, playerPort\)/);
     expect(canvas).toMatch(/Escort\.hitBy\(/);
     expect(canvas).toMatch(/FieldEscort\.swings\(/);
   });
@@ -247,13 +247,13 @@ describe('Q16: fallen, they are carried as a heavy body nobody may open', () => 
   it('what the frame writes back over them is put right from their own record', () => {
     recruited();
     const stale = JSON.parse(JSON.stringify(useWorldStore.getState().currentMap!.chunks));
-    FieldEscort.hurt('ent_person', 10_000, 'k_stale', worldPort);
+    FieldEscort.hurt('ent_person', 10_000, 'k_stale', worldPort, playerPort);
     useWorldStore.setState(s => ({ currentMap: { ...s.currentMap!, chunks: stale } }));
     expect(live('ent_person')!.escort?.fallen).toBeFalsy();
-    FieldEscort.settle(worldPort);
+    FieldEscort.settle(worldPort, playerPort);
     expect(live('ent_person')!.escort?.fallen).toBe(true);
     expect(live('ent_person')!.health).toBe(0);
-    expect(SRC('src/components/WorldCanvas.tsx')).toMatch(/chunks: \{ \.\.\.state\.currentMap\.chunks, \.\.\.chunkUpdates \} \} \}\s*: state\);\s*\/\/[^\n]*\n\s*FieldEscort\.settle\(worldPort\);/);
+    expect(SRC('src/components/WorldCanvas.tsx')).toMatch(/chunks: \{ \.\.\.state\.currentMap\.chunks, \.\.\.chunkUpdates \} \} \}\s*: state\);\s*\/\/[^\n]*\n\s*FieldEscort\.settle\(worldPort, playerPort\);/);
   });
 });
 

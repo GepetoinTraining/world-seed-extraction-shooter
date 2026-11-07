@@ -1192,7 +1192,7 @@ describe('line 45: the gold and item audit over the full raw loop', () => {
     await hub().resolveUpkeep(worldDay() + 1);
     await new Promise(r => setTimeout(r, 25));
 
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.notes).toEqual([]);
     expect(audit.ok).toBe(true);
 

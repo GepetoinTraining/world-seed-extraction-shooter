@@ -13,7 +13,7 @@ import { MemoryStore, rememberThreat } from '../../entities/interaction/memorySt
 import { Deeds } from '../memory/Deeds';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { MobAI } from '../../entities/mob/ai/MobAI';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { DirectorStore } from '../../entities/world/DirectorStore';
 import { chunkOf } from '../../../shared/entities/world/grid';
 import { bodiesOf, bodyOf, openCard, type IWorldPort } from '../../entities/world/worldView';
@@ -28,18 +28,18 @@ import { Capture, ICaged } from '../../../shared/logic/systems/Capture';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 const feed = (text: string, tone: Parameters<ReturnType<typeof useFeed.getState>['push']>[1] = 'plain') => useFeed.getState().push(text, tone);
-const session = () => usePlayerStore.getState().player.currentSession;
-const levelOf = (tags: string[]) => usePlayerStore.getState().player.bank.universalSkills?.[WebSystem.mint(tags, []).id]?.level ?? 0;
-const practise = (tags: string[], rank: UniversalRank | string, xp: number) =>
-  usePlayerStore.getState().workOn(WebSystem.mint(tags, []), Math.max(0, Object.values(UniversalRank).indexOf(rank as UniversalRank)), xp);
+const session = (pc: IPlayerPort) => pc.view().player.currentSession;
+const levelOf = (tags: string[], pc: IPlayerPort) => pc.view().player.bank.universalSkills?.[WebSystem.mint(tags, []).id]?.level ?? 0;
+const practise = (tags: string[], rank: UniversalRank | string, xp: number, pc: IPlayerPort) =>
+  pc.apply({ kind: 'WORK_ON', pair: WebSystem.mint(tags, []), rank: Math.max(0, Object.values(UniversalRank).indexOf(rank as UniversalRank)), xp });
 
-const dropFromPack = (itemId: string) => usePlayerStore.setState(s => {
-  const held = s.player.currentSession;
-  if (!held) return s;
+const dropFromPack = (itemId: string, pc: IPlayerPort) => pc.apply({ kind: 'UPDATE', update: was => {
+  const held = was.currentSession;
+  if (!held) return was;
   const layout = { ...(held.inventoryLayout || {}) };
   delete layout[itemId];
-  return { player: { ...s.player, currentSession: { ...held, inventory: held.inventory.filter(i => i.id !== itemId), inventoryLayout: layout } } };
-});
+  return { ...was, currentSession: { ...held, inventory: held.inventory.filter(i => i.id !== itemId), inventoryLayout: layout } };
+} });
 
 const here = (port: IWorldPort) => {
   const world = port.view();
@@ -47,15 +47,15 @@ const here = (port: IWorldPort) => {
 };
 
 /** The cage goes where the pack can hold it, or to the person's feet. Nothing alive is lost to a full pack. */
-const intoPack = (item: IItem, port: IWorldPort) => {
-  const { rejected } = usePlayerStore.getState().tryAddItems([item]);
+const intoPack = (item: IItem, port: IWorldPort, pc: IPlayerPort) => {
+  const { rejected } = pc.tryAddItems([item]);
   if (rejected.length === 0) return;
-  const pos = session()?.position;
+  const pos = session(pc)?.position;
   if (!pos) return;
   port.apply({ kind: 'ADD_BODY', entity: {
     id: `cache_cage_${item.id}`, type: EntityType.CONTAINER, definitionId: 'ground_cache',
     position: { x: pos.x + 15, y: pos.z + 15 }, rank: item.rank, rarity: item.rarity, isHostile: false,
-    container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: usePlayerStore.getState().player.id }
+    container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: pc.view().player.id }
   } });
   feed('The pack will not take the cage, so it stands at your feet.', 'loss');
 };
@@ -63,9 +63,9 @@ const intoPack = (item: IItem, port: IWorldPort) => {
 export const FieldCapture = {
 
   /** A snare set on a body in reach. It is spent either way. */
-  snare(entity: IWorldEntity, port: IWorldPort): void {
+  snare(entity: IWorldEntity, port: IWorldPort, pc: IPlayerPort): void {
     const { world, card } = here(port);
-    const held = session();
+    const held = session(pc);
     if (!held || !card || !world.activeWorldId) return;
     const def = MOB_DEFINITIONS[entity.definitionId];
     const refusal = Capture.trapRefusal(entity.id, def);
@@ -76,24 +76,24 @@ export const FieldCapture = {
     const max = (def?.baseHealth ?? entity.health ?? 1) + (entity.bonusHealth ?? 0);
     const roll = Capture.trap({
       seed: card.seed, body: entity.id, attempt: fnv1a(snare.id), rank: entity.rank, behavior: def?.behavior,
-      healthShare: (entity.health ?? max) / Math.max(1, max), skill: levelOf(['trapping'])
+      healthShare: (entity.health ?? max) / Math.max(1, max), skill: levelOf(['trapping'], pc)
     });
-    dropFromPack(snare.id);
-    practise(['trapping'], entity.rank, 8);
+    dropFromPack(snare.id, pc);
+    practise(['trapping'], entity.rank, 8, pc);
     SessionJournal.record('INTERACT', { kind: 'SNARE', bodyId: entity.id, snareId: snare.id, held: roll.held, noticed: roll.noticed });
     if (!roll.held) {
       if (roll.noticed) {
         MobAI.provoke(entity.id);
-        void rememberThreat(card.seed, entity.id, usePlayerStore.getState().player.id, worldDay(), { held: false });
+        void rememberThreat(card.seed, entity.id, pc.view().player.id, worldDay(), { held: false });
       }
       feed(roll.noticed ? 'The snare closes on nothing, and it knows you tried.' : 'The snare closes on nothing. Nothing looks up.', roll.noticed ? 'loss' : 'plain');
-      usePlayerStore.getState().recalcWeight();
+      pc.apply({ kind: 'RECALC_WEIGHT' });
       return;
     }
 
     const proof = CreatureLines.proofOf(world.directorRecord, { seed: card.seed, themeId: card.themeId }, entity.definitionId);
     if (!proof) { feed('The snare holds, and what it holds is nothing this machine can read. It gets away.', 'loss'); return; }
-    const me = usePlayerStore.getState().player.id;
+    const me = pc.view().player.id;
     // Caught: it goes to the hub now, and keeps who caught it there, open, as long as it is held
     void MemoryStore.write({ hubId: useHubStore.getState().activeHubId ?? 'hub' }, [{ owner: entity.id, what: Deeds.caught({ day: worldDay(), by: me, owner: entity.id, held: true }) }]);
     const cage: ICaged = Capture.cage({ body: entity.id, kind: entity.definitionId, seed: card.seed, generation: world.generation, worldUid: world.activeWorldId, by: me, proof });
@@ -110,25 +110,23 @@ export const FieldCapture = {
     void useHubStore.getState().saveHubState();
     port.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
     MobAI.clearMob(entity.id);
-    intoPack(item, port);
-    usePlayerStore.getState().recalcWeight();
+    intoPack(item, port, pc);
+    pc.apply({ kind: 'RECALC_WEIGHT' });
     feed('The snare holds. Something alive is in a cage now, and it is not pleased.', 'proof');
   },
 
   /** Let out, and answering to a hand. A hit walks beside you, and walks out with you. A miss stays caged. */
-  tame(itemId: string, port: IWorldPort): void {
-    const held = session();
+  tame(itemId: string, port: IWorldPort, pc: IPlayerPort): void {
+    const held = session(pc);
     const item = held?.inventory.find(i => i.id === itemId);
     const cage = item?.creatureData;
     if (!held || !item || !cage) return;
     const attempt = cage.tameTries ?? 0;
-    const roll = Capture.tame({ cage, attempt, skill: levelOf(['taming']) });
-    practise(['taming'], cage.def.rank as string, 8);
+    const roll = Capture.tame({ cage, attempt, skill: levelOf(['taming'], pc) });
+    practise(['taming'], cage.def.rank as string, 8, pc);
     SessionJournal.record('INTERACT', { kind: 'TAME', body: cage.body, held: roll.held, attempt });
     if (!roll.held) {
-      usePlayerStore.setState(s => s.player.currentSession ? ({
-        player: { ...s.player, currentSession: { ...s.player.currentSession, inventory: s.player.currentSession.inventory.map(i => (i.id === itemId ? { ...i, creatureData: { ...cage, tameTries: attempt + 1 } } : i)) } }
-      }) : s);
+      pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, inventory: was.currentSession.inventory.map(i => (i.id === itemId ? { ...i, creatureData: { ...cage, tameTries: attempt + 1 } } : i)) } }) : was });
       feed('It wants nothing to do with you yet. It stays in the cage.', 'plain');
       return;
     }
@@ -141,17 +139,15 @@ export const FieldCapture = {
       rank: item.rank, rarity: item.rarity, health: def?.baseHealth ?? 1, isHostile: false
     } });
     MobAI.follow(id, until);
-    dropFromPack(itemId);
-    usePlayerStore.setState(s => s.player.currentSession ? ({
-      player: { ...s.player, currentSession: { ...s.player.currentSession, tamed: [...(s.player.currentSession.tamed ?? []), { entityId: id, item: { ...item, creatureData: { ...cage, tameTries: attempt + 1 } }, until }] } }
-    }) : s);
-    usePlayerStore.getState().recalcWeight();
+    dropFromPack(itemId, pc);
+    pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, tamed: [...(was.currentSession.tamed ?? []), { entityId: id, item: { ...item, creatureData: { ...cage, tameTries: attempt + 1 } }, until }] } }) : was });
+    pc.apply({ kind: 'RECALC_WEIGHT' });
     feed('It follows. For now.', 'proof');
   },
 
   /** The time ran out: it stops answering, and it is part of this land from here. Read each second. */
-  expire(port: IWorldPort, now = Date.now()): void {
-    const held = session();
+  expire(port: IWorldPort, pc: IPlayerPort, now = Date.now()): void {
+    const held = session(pc);
     const done = held?.tamed?.filter(t => t.until <= now) ?? [];
     if (!held || done.length === 0) return;
     for (const t of done) {
@@ -162,20 +158,16 @@ export const FieldCapture = {
         feed('What followed you has stopped. It goes back to being what it was.', 'plain');
       }
     }
-    usePlayerStore.setState(s => s.player.currentSession ? ({
-      player: { ...s.player, currentSession: { ...s.player.currentSession, tamed: (s.player.currentSession.tamed ?? []).filter(t => t.until > now) } }
-    }) : s);
+    pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, tamed: (was.currentSession.tamed ?? []).filter(t => t.until > now) } }) : was });
   },
 
   /** At the beacon: what is still beside you goes home with you, and it weighs nothing in the pack. */
-  walkOut(port: IWorldPort): void {
-    const held = session();
+  walkOut(port: IWorldPort, pc: IPlayerPort): void {
+    const held = session(pc);
     if (!held?.tamed?.length) return;
     const standing = new Set(bodiesOf(port.view()).filter(e => (e.health ?? 0) > 0).map(e => e.id));
     const out = held.tamed.filter(t => standing.has(t.entityId));
-    usePlayerStore.setState(s => s.player.currentSession ? ({
-      player: { ...s.player, currentSession: { ...s.player.currentSession, tamed: [], inventory: [...s.player.currentSession.inventory, ...out.map(t => t.item)] } }
-    }) : s);
+    pc.apply({ kind: 'UPDATE', update: was => was.currentSession ? ({ ...was, currentSession: { ...was.currentSession, tamed: [], inventory: [...was.currentSession.inventory, ...out.map(t => t.item)] } }) : was });
     for (const t of out) { MobAI.unfollow(t.entityId); port.apply({ kind: 'REMOVE_BODY', entityId: t.entityId }); }
     if (out.length > 0) feed(`${out.length === 1 ? 'What followed you walks' : `${out.length} that followed you walk`} out beside you.`, 'proof');
   },
@@ -184,9 +176,9 @@ export const FieldCapture = {
    * Let go, here. Back on its own map it only rejoins its count. On another, it joins as a foreign
    * branch with the proof of its line, which moves that map's signed root and not its pack.
    */
-  async release(itemId: string, port: IWorldPort): Promise<void> {
+  async release(itemId: string, port: IWorldPort, pc: IPlayerPort): Promise<void> {
     const { world, card } = here(port);
-    const held = session();
+    const held = session(pc);
     const item = held?.inventory.find(i => i.id === itemId);
     const cage = item?.creatureData;
     if (!held || !item || !cage || !card || !world.activeWorldId) return;
@@ -212,22 +204,20 @@ export const FieldCapture = {
         rank: item.rank, rarity: item.rarity, health: def?.baseHealth ?? 1, isHostile: false
       } }
     );
-    dropFromPack(itemId);
-    usePlayerStore.getState().recalcWeight();
+    dropFromPack(itemId, pc);
+    pc.apply({ kind: 'RECALC_WEIGHT' });
     SessionJournal.record('INTERACT', { kind: 'RELEASE', body: cage.body, ground, foreign: !home });
     await Provenance.record(item, 'TRANSFER', { via: 'RELEASED', worldUid: world.activeWorldId, ground, foreign: !home });
     feed(home ? 'It goes. It knows this ground.' : 'It goes. This land did not know its kind until now, and the map has changed to say so.', 'proof');
   },
 
   /** A snare tied at home, from what the stash holds. */
-  async tieAtHome(): Promise<{ ok: boolean; reason?: string }> {
-    const stash = usePlayerStore.getState().player.bank.stashTabs[0]?.items ?? [];
-    const key = `${usePlayerStore.getState().player.id}:${Date.now()}:${Rng.fromKey(String(stash.length)).next()}`;
+  async tieAtHome(pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
+    const stash = pc.view().player.bank.stashTabs[0]?.items ?? [];
+    const key = `${pc.view().player.id}:${Date.now()}:${Rng.fromKey(String(stash.length)).next()}`;
     const res = Capture.tieSnare(stash, key);
     if (!res.ok || !res.item) return { ok: false, reason: res.reason };
-    usePlayerStore.setState(s => ({
-      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: [...tab.items.filter(x => !res.consumedIds.includes(x.id)), res.item!] } : tab)) } }
-    }));
+    pc.apply({ kind: 'UPDATE', update: was => ({ ...was, bank: { ...was.bank, stashTabs: was.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: [...tab.items.filter(x => !res.consumedIds.includes(x.id)), res.item!] } : tab)) } }) });
     await Provenance.record(res.item, 'MINT', { origin: 'IMPROVISATION', consumedIds: res.consumedIds });
     return { ok: true };
   }

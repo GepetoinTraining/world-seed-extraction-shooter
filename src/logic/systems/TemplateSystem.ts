@@ -10,7 +10,7 @@
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
 import { ITemplate, ITemplateDraft, TEMPLATE_MINT_BILL, validateTemplate } from '../../../shared/entities/hub/template';
 import { pickBill } from '../../../shared/entities/hub/room';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { useIdentityStore } from '../../entities/identity/store';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { Ledger } from '../ledger/Ledger';
@@ -25,19 +25,11 @@ export const isTemplateItem = (item: IItem): item is ITemplateItem =>
 
 export interface TemplateMintResult { ok: boolean; reason?: string; item?: ITemplateItem }
 
-export const stashItems = () => usePlayerStore.getState().player.bank.stashTabs[0]?.items || [];
+export const stashItems = (pc: IPlayerPort) => pc.view().player.bank.stashTabs[0]?.items || [];
 
-export const removeFromStash = (ids: string[]) => usePlayerStore.setState(s => ({
-  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-    idx === 0 ? { ...tab, items: tab.items.filter(i => !ids.includes(i.id)) } : tab
-  ) } }
-}));
+export const removeFromStash = (ids: string[], pc: IPlayerPort) => pc.apply({ kind: 'STASH_REMOVE', ids });
 
-export const addToStash = (items: IItem[]) => usePlayerStore.setState(s => ({
-  player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((tab, idx) =>
-    idx === 0 ? { ...tab, items: [...tab.items, ...items] } : tab
-  ) } }
-}));
+export const addToStash = (items: IItem[], pc: IPlayerPort) => pc.apply({ kind: 'STASH_ADD', items });
 
 export class TemplateSystem {
 
@@ -73,8 +65,8 @@ export class TemplateSystem {
   }
 
   /** Pay paper and ink from the stash, exactly once. Refuses naming the shortfall. */
-  static payBill(): { ok: boolean; reason?: string; ids: string[] } {
-    const bill = pickBill(TEMPLATE_MINT_BILL, stashItems());
+  static payBill(pc: IPlayerPort): { ok: boolean; reason?: string; ids: string[] } {
+    const bill = pickBill(TEMPLATE_MINT_BILL, stashItems(pc));
     if (!bill.ok) return { ok: false, reason: `The scribe's bill is short: ${bill.missing}. Paper and ink, nothing else writes.`, ids: [] };
     return { ok: true, ids: bill.items.map(i => i.id) };
   }
@@ -84,7 +76,7 @@ export class TemplateSystem {
    * validators the builder runs decide, and the refusal says why. A valid plan
    * costs paper and ink, lands signed in the stash, provenance MINT origin DESIGN.
    */
-  static async mintTemplate(draft: ITemplateDraft): Promise<TemplateMintResult> {
+  static async mintTemplate(draft: ITemplateDraft, pc: IPlayerPort): Promise<TemplateMintResult> {
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return { ok: false, reason: 'No identity holds the pen. Jack in first.' };
     if (!draft.name || !draft.name.trim()) return { ok: false, reason: 'A plan with no name cannot be signed.' };
@@ -92,7 +84,7 @@ export class TemplateSystem {
     const verdict = validateTemplate(draft);
     if (!verdict.ok) return { ok: false, reason: verdict.reason! };
 
-    const bill = this.payBill();
+    const bill = this.payBill(pc);
     if (!bill.ok) return { ok: false, reason: bill.reason! };
 
     const tpl: ITemplate = {
@@ -105,8 +97,8 @@ export class TemplateSystem {
     };
     const item = this.buildItem(tpl, `tpl:${cert.metadata.uid}:${tpl.designedAt}:${tpl.name}`);
 
-    removeFromStash(bill.ids);
-    addToStash([item]);
+    removeFromStash(bill.ids, pc);
+    addToStash([item], pc);
     const { Provenance } = await import('../sovereignty/Provenance');
     await Provenance.record(item, 'MINT', { origin: 'DESIGN', authorUid: tpl.authorUid, authorName: tpl.authorName, consumedIds: bill.ids });
     await Ledger.append('DESIGN', { kind: 'TEMPLATE_MINTED', itemId: item.id, name: tpl.name, authorUid: tpl.authorUid, consumedIds: bill.ids });
@@ -117,18 +109,18 @@ export class TemplateSystem {
    * MINT COPY (D14): the same bill, a new item, THE SAME AUTHOR. Whoever holds
    * the pen, the hand on the plan stays the architect's.
    */
-  static async mintCopy(originalItemId: string): Promise<TemplateMintResult> {
+  static async mintCopy(originalItemId: string, pc: IPlayerPort): Promise<TemplateMintResult> {
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return { ok: false, reason: 'No identity holds the pen. Jack in first.' };
-    const original = stashItems().find(i => i.id === originalItemId);
+    const original = stashItems(pc).find(i => i.id === originalItemId);
     if (!original || !isTemplateItem(original)) return { ok: false, reason: 'That plan is not in your stash.' };
 
-    const bill = this.payBill();
+    const bill = this.payBill(pc);
     if (!bill.ok) return { ok: false, reason: bill.reason! };
 
-    const copy = this.buildItem(original.templateData, `tplcopy:${cert.metadata.uid}:${Date.now()}:${original.id}:${stashItems().length}`);
-    removeFromStash(bill.ids);
-    addToStash([copy]);
+    const copy = this.buildItem(original.templateData, `tplcopy:${cert.metadata.uid}:${Date.now()}:${original.id}:${stashItems(pc).length}`);
+    removeFromStash(bill.ids, pc);
+    addToStash([copy], pc);
     const { Provenance } = await import('../sovereignty/Provenance');
     await Provenance.record(copy, 'MINT', {
       origin: 'COPY',

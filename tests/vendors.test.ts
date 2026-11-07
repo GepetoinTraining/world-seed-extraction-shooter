@@ -40,7 +40,7 @@ import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction } from '../src/entities/hub/dialogue';
 import { useHubStore } from '../src/entities/hub/store';
 import { emptyGuild } from '../src/entities/hub/guild';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { readFileSync } from 'node:fs';
@@ -429,7 +429,7 @@ describe('the words reach a person', () => {
   });
 
   it('the action opens the window for that vendor', () => {
-    expect(runDialogueAction(worldPort, 'OPEN_APPRENTICES', { npcId: 'npc_alchemist' })).toEqual({ kind: 'open', panel: 'apprentices', npcId: 'npc_alchemist' });
+    expect(runDialogueAction(worldPort, playerPort, 'OPEN_APPRENTICES', { npcId: 'npc_alchemist' })).toEqual({ kind: 'open', panel: 'apprentices', npcId: 'npc_alchemist' });
   });
 
   it('the window reads ranks in words and progress by the stepped bar, never hue alone', () => {

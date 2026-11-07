@@ -54,7 +54,8 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
 export class AvatarExport {
 
   /** Gather, encrypt, seal. Returns the file and its content-addressed name. */
-  static async exportAvatar(password: string): Promise<{ blob: Blob; filename: string; digest: string } | null> {
+  /** `player` is the player as it stands: it is saved first, so the backup holds it. */
+  static async exportAvatar(password: string, player: IPlayer): Promise<{ blob: Blob; filename: string; digest: string } | null> {
     const stored = localStorage.getItem('worldseed_certificate');
     if (!stored) return null;
     const certificate = JSON.parse(stored) as IPlayerCertificate;
@@ -75,7 +76,7 @@ export class AvatarExport {
       { name: 'AES-GCM', iv: iv as BufferSource }, aes, new TextEncoder().encode(JSON.stringify(jwk))
     );
 
-    await PlayerPersistence.flush('export');
+    await PlayerPersistence.flush('export', player);
     const playerDoc = await VectorStore.get<ISignedPayload<IPlayer>>(VectorNamespace.CHARACTERS, uid);
     const ledger = await Ledger.list(uid);
 

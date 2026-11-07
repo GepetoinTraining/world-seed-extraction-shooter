@@ -15,7 +15,7 @@ import { Herd } from '../entities/hub/herd';
 import { HubGenerator } from '../entities/hub/HubGenerator';
 import { answersTag } from '../../shared/entities/hub/room';
 import { useHubStore } from '../entities/hub/store';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Cooking } from '../logic/systems/Cooking';
 import { FieldCapture } from '../logic/systems/FieldCapture';
 import { ArmedButton, Button, Chip, Input, ItemSprite, Modal, Panel, Tabs } from './ui/kit';
@@ -128,10 +128,10 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
 
   const pressBed = async (bed: number) => {
     const here = farm.beds[bed];
-    if (here) { say(await FarmDoors.reap(lotId, bed), `${here.name}: taken into the store.`); return; }
+    if (here) { say(await FarmDoors.reap(lotId, bed, playerPort), `${here.name}: taken into the store.`); return; }
     const pick = seed ? stash.find(i => i.universalDefinitionId === seed) : undefined;
     if (!pick) { pushFeed('Choose what to plant first.', 'plain'); return; }
-    say(await FarmDoors.plant(lotId, pick.id, bed), `${pick.name} goes in the ground.`);
+    say(await FarmDoors.plant(lotId, pick.id, bed, playerPort), `${pick.name} goes in the ground.`);
   };
 
   return (
@@ -164,10 +164,10 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
             <div style={{ marginTop: 10 }}>
               <div className="ws-small">WHO RUNS IT</div>
               {farm.tender && <div className="ws-small">{guild.residents.find(r => r.id === farm.tender)?.name ?? 'Someone'} takes what is ripe, sets one back, and puts the rest on the stand.</div>}
-              {farm.tender && <Button tone="quiet" onClick={async () => say(await FarmDoors.setTender(lotId, null), 'It is yours to work again.')}>TAKE IT BACK</Button>}
+              {farm.tender && <Button tone="quiet" onClick={async () => say(await FarmDoors.setTender(lotId, null, playerPort), 'It is yours to work again.')}>TAKE IT BACK</Button>}
               {!farm.tender && guild.residents.length === 0 && <span className="ws-dim ws-small">Nobody in the city to ask yet.</span>}
               {!farm.tender && guild.residents.map(r => (
-                <Button key={r.id} tone="quiet" onClick={async () => say(await FarmDoors.setTender(lotId, r.id), `${r.name} runs this plot from here on.`)}>ASK {r.name.toUpperCase()}</Button>
+                <Button key={r.id} tone="quiet" onClick={async () => say(await FarmDoors.setTender(lotId, r.id, playerPort), `${r.name} runs this plot from here on.`)}>ASK {r.name.toUpperCase()}</Button>
               ))}
             </div>
           </Panel>
@@ -180,9 +180,9 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
             items={lot.inventory}
             action={item => (
               <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Button tone="quiet" onClick={async () => say(await FarmDoors.takeFromStore(lotId, item.id), `${item.name}: into your stash.`)}>TO THE STASH</Button>
+                <Button tone="quiet" onClick={async () => say(await FarmDoors.takeFromStore(lotId, item.id, playerPort), `${item.name}: into your stash.`)}>TO THE STASH</Button>
                 <Input aria-label="Price" value={price} onChange={e => setPrice(e.target.value)} style={{ width: 70 }} />
-                <Button tone="signal" onClick={async () => say(await FarmDoors.list(lotId, item.id, Number(price)), `${item.name}: on the stand for ${price} G.`)}>ON THE STAND</Button>
+                <Button tone="signal" onClick={async () => say(await FarmDoors.list(lotId, item.id, Number(price), playerPort), `${item.name}: on the stand for ${price} G.`)}>ON THE STAND</Button>
               </div>
             )}
           />
@@ -199,7 +199,7 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <Chip tone="proof">{li.price} G</Chip>
                   {mine
-                    ? <Button tone="quiet" onClick={async () => say(await FarmDoors.unlist(lotId, li.item.id), `${li.item.name}: back in the store.`)}>TAKE DOWN</Button>
+                    ? <Button tone="quiet" onClick={async () => say(await FarmDoors.unlist(lotId, li.item.id, playerPort), `${li.item.name}: back in the store.`)}>TAKE DOWN</Button>
                     : <Button tone="signal" disabled={player.bank.gold < li.price} onClick={async () => pushFeed((await buyFromLot(lotId, li.item.id)) ? `${li.item.name}: bought.` : 'You cannot pay for that.', 'signal')}>BUY</Button>}
                 </span>
               </div>
@@ -220,14 +220,14 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
                   {h.keeping.map(k => <span key={k.body} className="ws-dim ws-small">One being kept: {k.fedDays} of {k.needs} fed days.</span>)}
                   <span className="ws-dim ws-small">{h.trough.length} things in the trough. {h.proof.nodes.length > 0 ? `${h.proof.nodes.length} changes in its line. ` : ''}{h.proof.nodes[h.proof.nodes.length - 1]?.parents.length === 2 ? 'Of two lines.' : ''}</span>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {feedable.length > 0 && <Button tone="signal" onClick={async () => say(await FarmDoors.feed(lotId, h.id, feedable.map(i => i.id)), `The trough takes ${feedable.length}.`)}>FEED ALL ({feedable.length})</Button>}
-                    <Button tone="quiet" disabled={h.head <= 0} onClick={async () => say(await FarmDoors.cageOne(lotId, h.id), 'One goes back in a cage, into your stash.')}>CAGE ONE</Button>
-                    <ArmedButton tone="quiet" disabled={h.head <= 0} confirmLabel="TAKE ONE: SURE?" onConfirm={async () => say(await FarmDoors.slaughter(lotId, h.id), 'What it gave is in the store.')}>TAKE ONE</ArmedButton>
+                    {feedable.length > 0 && <Button tone="signal" onClick={async () => say(await FarmDoors.feed(lotId, h.id, feedable.map(i => i.id), playerPort), `The trough takes ${feedable.length}.`)}>FEED ALL ({feedable.length})</Button>}
+                    <Button tone="quiet" disabled={h.head <= 0} onClick={async () => say(await FarmDoors.cageOne(lotId, h.id, playerPort), 'One goes back in a cage, into your stash.')}>CAGE ONE</Button>
+                    <ArmedButton tone="quiet" disabled={h.head <= 0} confirmLabel="TAKE ONE: SURE?" onConfirm={async () => say(await FarmDoors.slaughter(lotId, h.id, playerPort), 'What it gave is in the store.')}>TAKE ONE</ArmedButton>
                   </div>
                 </div>
               ))}
               {herds.length >= 2 && herds[0].kind !== herds[1].kind && (
-                <Button tone="quiet" onClick={async () => say(await FarmDoors.cross(lotId, herds[0].id, herds[1].id), 'Something new stands in the pen, of two lines.')}>TRY TO CROSS THE FIRST TWO</Button>
+                <Button tone="quiet" onClick={async () => say(await FarmDoors.cross(lotId, herds[0].id, herds[1].id, playerPort), 'Something new stands in the pen, of two lines.')}>TRY TO CROSS THE FIRST TWO</Button>
               )}
             </div>
           </Panel>
@@ -235,13 +235,13 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
             {cages.length === 0 && <span className="ws-dim ws-small">No cages in the stash. A snare set in a world brings one back.</span>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {cages.map(c => (
-                <Button key={c.id} tone="signal" onClick={async () => say(await FarmDoors.admit(lotId, c.id), 'It goes in the pen. Feed it, and it will come to answer to home in days.')}>
+                <Button key={c.id} tone="signal" onClick={async () => say(await FarmDoors.admit(lotId, c.id, playerPort), 'It goes in the pen. Feed it, and it will come to answer to home in days.')}>
                   PEN THE {String(c.creatureData!.gender).toUpperCase()}, RANK {c.rank}
                 </Button>
               ))}
             </div>
             <div style={{ marginTop: 10 }}>
-              <Button tone="quiet" onClick={async () => { const r = await FieldCapture.tieAtHome(); pushFeed(r.ok ? 'A snare, tied. Carry it into a world.' : r.reason ?? 'It would not tie.', r.ok ? 'signal' : 'loss'); }}>TIE A SNARE</Button>
+              <Button tone="quiet" onClick={async () => { const r = await FieldCapture.tieAtHome(playerPort); pushFeed(r.ok ? 'A snare, tied. Carry it into a world.' : r.reason ?? 'It would not tie.', r.ok ? 'signal' : 'loss'); }}>TIE A SNARE</Button>
             </div>
           </Panel>
         </div>
@@ -250,7 +250,7 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
       {tab === 'HEARTH' && mine && (
         <Panel title="THE HEARTH">
           {!farm.hearth && (
-            <Button tone="signal" onClick={async () => say(await FarmDoors.buildHearth(lotId), 'A hearth stands on the plot.')}>
+            <Button tone="signal" onClick={async () => say(await FarmDoors.buildHearth(lotId, playerPort), 'A hearth stands on the plot.')}>
               RAISE A HEARTH ({Cooking.HEARTH_BILL.count} {Cooking.HEARTH_BILL.tag})
             </Button>
           )}
@@ -266,7 +266,7 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
                 ))}
                 {food.length === 0 && <span className="ws-dim ws-small">Nothing in the stash can be eaten.</span>}
               </div>
-              <Button tone="signal" disabled={pot.length < 2} onClick={async () => { const r = await FarmDoors.cook(lotId, pot); say(r, 'It goes on the fire.'); if (r.ok) setPot([]); }}>COOK ({pot.length})</Button>
+              <Button tone="signal" disabled={pot.length < 2} onClick={async () => { const r = await FarmDoors.cook(lotId, pot, playerPort); say(r, 'It goes on the fire.'); if (r.ok) setPot([]); }}>COOK ({pot.length})</Button>
               {(farm.cooking ?? []).map(job => <span key={job.id} className="ws-small">On the fire: {job.items.length} things, {clock(job.finishesAt - now)} left.</span>)}
             </div>
           )}

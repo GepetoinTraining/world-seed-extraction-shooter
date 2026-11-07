@@ -14,7 +14,7 @@ import { AFFIX_BATCHES } from '../shared/entities/generation/packs/affixBatches'
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { InventorySystem } from '../shared/entities/player/systems/InventorySystem';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { repairItem } from '../src/entities/hub/dialogue';
 import { EntityType, BiomeType, ScanLevel, IChunk } from '../shared/entities/world/types';
 
@@ -47,7 +47,7 @@ describe('R6: repair reads the stash and the body, through one door', () => {
 
   it('a worn piece at 46 of 100 is repaired, paid for, and stays worn', () => {
     const gold = usePlayerStore.getState().player.bank.gold;
-    const res = repairItem('gladius');
+    const res = repairItem('gladius', playerPort);
     expect(res.ok).toBe(true);
     const p = usePlayerStore.getState().player;
     const worn = p.equipment!.items.find(i => i.id === 'gladius')!;

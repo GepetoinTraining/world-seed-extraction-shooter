@@ -11,7 +11,7 @@ import { create } from 'zustand';
 import { IItem } from '../../../shared/types';
 import { Held, Place, commitMove, ghostStyle, probeMove } from '../../logic/systems/ItemHands';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
-import { usePlayerStore } from '../../entities/player/store';
+import { usePlayerStore, playerPort } from '../../entities/player/store';
 import { ItemSprite, Kbd } from './kit';
 import { useFeed } from './stores';
 import { useWorldStore } from '../../entities/world/store';
@@ -85,7 +85,7 @@ function focusItem(id: string) {
 function setDown(): boolean {
   const { held, over } = useHands.getState();
   if (!held || !over) return false;
-  const verdict = commitMove(held, over.place, useWorldStore.getState());
+  const verdict = commitMove(held, over.place, useWorldStore.getState(), playerPort);
   if (!verdict.ok) {
     if (verdict.reason !== 'It is already there.') feedRefusal(verdict.reason);
     return false;

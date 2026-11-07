@@ -47,7 +47,7 @@ import { usePlayerStore } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
-import { useTalk } from '../src/entities/interaction/talkStore';
+import { talkFrom, useTalk } from '../src/entities/interaction/talkStore';
 import { pickInteract } from '../src/logic/systems/FieldInput';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
@@ -237,7 +237,7 @@ describe('line 147: convincing a person is a talk', () => {
     const options = InteractionEngine.getAvailableInteractions(player(), entity, 1);
     expect(options.some(o => o.id === `int_talk_${entity.id}`)).toBe(true);
     expect(options.some(o => o.id.startsWith('int_gift_'))).toBe(false);
-    usePlayerStore.getState().performInteraction(`int_talk_${entity.id}`, entity.id);
+    expect(talkFrom(`int_talk_${entity.id}`, entity.id)).toBe(true);
     expect(talk().subject).toEqual({ kind: 'FIELD_PERSON', entityId: entity.id });
     expect(live(entity.id).npc!.attempts).toBe(0);
     expect(live(entity.id).npc!.disposition).toBe(30);
@@ -695,7 +695,7 @@ describe('line 148: the bargain menu', () => {
   it('a bargain round uses the same number and the same roll, and goes through its own kind', async () => {
     const man = monster(humanoidDef());
     stage(man);
-    usePlayerStore.getState().performInteraction(`int_bargain_${man.id}`, man.id);
+    expect(talkFrom(`int_bargain_${man.id}`, man.id)).toBe(true);
     expect(talk().subject).toEqual({ kind: 'MONSTER', entityId: man.id });
     await vi.waitFor(() => expect(talk().ready).toBe(true));
     const door = vi.spyOn(IntelligenceClient, 'bargain').mockResolvedValue({ status: 'OK', data: words({ band: 'moves' }) } as any);
@@ -1313,7 +1313,7 @@ describe('Q20: after the house, their wallet is paid for work and pays for livin
     const before = hub().wallets[resident.id];
     await hub().resolveRunning(worldDay() + 1);
     expect(hub().wallets[resident.id]).toBe(before + line!.amount);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a lodger has no trade to be paid for yet', async () => {
@@ -1330,13 +1330,13 @@ describe('Q20: after the house, their wallet is paid for work and pays for livin
     expect(hub().wallets[resident.id]).toBe(wallet - cost);
     expect(hub().wallets.npc_bartender).toBe(mags + cost);
     expect(residentRung(residentOf(resident.id), residentFacts(residentOf(resident.id), wallet - cost), worldDay() + 3).need).toBe('safety');
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
 
     homeAt(resident.id);
     const seller = hub().wallets.npc_alchemist;
     await hub().resolveLiving(worldDay() + 4);
     expect(hub().wallets.npc_alchemist).toBe(seller + livingPerDay(resident.bond.rank));
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('what they cannot pay they go without, nobody covers it, and hunger is the rung', async () => {
@@ -1345,6 +1345,7 @@ describe('Q20: after the house, their wallet is paid for work and pays for livin
     // Their coin spent elsewhere, on the record: the fold reads wallets from the database, not the screen.
     const all = hub().wallets[resident.id];
     await GoldCommit.commit({
+      player: usePlayerStore.getState().player,
       rows: [{ type: 'TRADE', data: { kind: 'TEST_SPENT', playerDelta: 0, treasuryDelta: 0, wallets: { [resident.id]: -all } } }],
       wallets: { hubId: HUB, deltas: { [resident.id]: -all } }
     });
