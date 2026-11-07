@@ -1,6 +1,6 @@
 /**
- * A PERSON'S CHAIN, in the browser: minting the people of a city, writing what they do onto their
- * own chains, and reading the city's table of people back as the fold of those chains.
+ * A CITY'S PEOPLE, in the browser: minting them on the hub's own chain, writing what they do onto
+ * their own chains, and reading the city's table of people back as the fold of both.
  *
  * The law is PersonChain's. Rows go through the ledger like any other, signed by the character
  * whose browser computed them, into one unit per call, so a day's acts land together or not at all.
@@ -12,9 +12,10 @@ import { StoreUnit } from '../../entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { ISignedPayload } from '../../entities/identity/certificateSystem';
 import { ILedgerRow, Ledger } from '../ledger/Ledger';
-import { IPersonAct, IPersonRecord, PersonAs, PersonChain, PERSON_ROW } from './PersonChain';
+import { linkOf } from '../ledger/chainLaw';
+import { IHubRoll, IPersonAct, IPersonRecord, PersonAs, PersonChain, PERSON_ROW } from './PersonChain';
 
-export interface IPersonMint { npcId: string; as: PersonAs; name: string; origin: string }
+export interface IPersonMintAsk { npcId: string; as: PersonAs; name: string; origin: string }
 
 const headOf = async (uid: string) => (await VectorStore.get<{ seq: number }>(VectorNamespace.TRANSACTIONS, `ledger_head_${uid}`))?.data?.seq ?? 0;
 
@@ -37,65 +38,87 @@ async function commit(write: (unit: StoreUnit) => Promise<boolean>): Promise<boo
   });
 }
 
+/** The hub's own chain of a city, as this browser holds it, folded. Nothing held is an empty roll. */
+async function rollOf(hubId: string): Promise<IHubRoll | string> {
+  const hubUid = PersonChain.hubUidOf(hubId);
+  const rows = await Ledger.list(hubUid);
+  if (rows.length === 0) return { uid: hubUid, hubId, seq: 0, lastAt: 0, people: {} };
+  return PersonChain.roll(rows.map(r => ({ row: r.payload, link: linkOf(r.signature) })), hubUid);
+}
+
 export const PersonLedger = {
   uidOf: (hubId: string, npcId: string) => PersonChain.uidOf(hubId, npcId),
+  hubUidOf: (hubId: string) => PersonChain.hubUidOf(hubId),
 
-  /** Mint whoever in this city has no chain yet. Someone already minted is passed over. */
-  mintMany(hubId: string, people: IPersonMint[]): Promise<boolean> {
+  /** Mint whoever in this city is not on the hub's chain yet, one row each. Someone already minted is passed over. */
+  mintMany(hubId: string, people: IPersonMintAsk[]): Promise<boolean> {
     if (people.length === 0) return Promise.resolve(true);
+    const hubUid = PersonChain.hubUidOf(hubId);
     return commit(async unit => {
-      let wrote = false;
+      const roll = await rollOf(hubId);
+      if (typeof roll === 'string') { console.error('[PEOPLE] The hub\'s chain does not fold:', roll); return false; }
+      const minting = new Set<string>();
       for (const p of people) {
-        const uid = PersonChain.uidOf(hubId, p.npcId);
-        if (unit.seqOf(uid) > 0 || (await headOf(uid)) > 0) continue;
-        await Ledger.writeInto(unit, PERSON_ROW, { person: uid, kind: 'MINTED', hubId, npcId: p.npcId, as: p.as, name: p.name, origin: p.origin }, uid);
-        wrote = true;
+        const person = PersonChain.uidOf(hubId, p.npcId);
+        if (roll.people[person] || minting.has(person)) continue;
+        await Ledger.writeInto(unit, PERSON_ROW, { hub: hubUid, person, kind: 'MINTED', hubId, npcId: p.npcId, as: p.as, name: p.name, origin: p.origin }, hubUid);
+        minting.add(person);
       }
-      return wrote;
+      return minting.size > 0;
     });
   },
 
-  /** What people did, each onto their own chain, in order. Someone never minted is passed over. */
-  actMany(hubId: string, acts: { npcId: string; act: Exclude<IPersonAct, { kind: 'MINTED' }> }[]): Promise<boolean> {
+  /**
+   * What people did, each onto their own chain, in order. A person's first act names the link of
+   * their mint row; someone not on the hub's chain is passed over.
+   */
+  actMany(hubId: string, acts: { npcId: string; act: IPersonAct }[]): Promise<boolean> {
     if (acts.length === 0) return Promise.resolve(true);
     return commit(async unit => {
       let wrote = false;
-      const minted = new Map<string, boolean>();
+      let roll: IHubRoll | string | null = null;
       for (const { npcId, act } of acts) {
         const uid = PersonChain.uidOf(hubId, npcId);
-        if (!minted.has(uid)) minted.set(uid, unit.seqOf(uid) > 0 || (await headOf(uid)) > 0);
-        if (!minted.get(uid)) continue;
-        await Ledger.writeInto(unit, PERSON_ROW, { person: uid, ...act }, uid);
+        const first = unit.seqOf(uid) === 0 && (await headOf(uid)) === 0;
+        let mint: string | undefined;
+        if (first) {
+          roll ??= await rollOf(hubId);
+          mint = typeof roll === 'string' ? undefined : roll.people[uid]?.link;
+          if (!mint) continue;
+        }
+        await Ledger.writeInto(unit, PERSON_ROW, { person: uid, ...act, ...(mint ? { mint } : {}) }, uid);
         wrote = true;
       }
       return wrote;
     });
   },
 
-  /** One person's chain, as signed rows. */
+  /** One person's own chain, as signed rows. */
   rows(hubId: string, npcId: string): Promise<ISignedPayload<ILedgerRow>[]> {
     return Ledger.list(PersonChain.uidOf(hubId, npcId));
   },
 
-  /** One person, resolved from their chain. A chain that breaks the law says how. */
-  async record(hubId: string, npcId: string): Promise<IPersonRecord | string> {
-    const uid = PersonChain.uidOf(hubId, npcId);
-    return PersonChain.fold((await Ledger.list(uid)).map(r => r.payload), uid);
+  /** The hub's own chain of a city, as signed rows: its mints, in order. */
+  hubRows(hubId: string): Promise<ISignedPayload<ILedgerRow>[]> {
+    return Ledger.list(PersonChain.hubUidOf(hubId));
   },
 
-  /** The city's table of people: every chain held here that minted someone of this city, folded. */
+  /** One person, resolved from their mint and their chain. A chain that breaks the law says how. */
+  async record(hubId: string, npcId: string): Promise<IPersonRecord | string> {
+    const roll = await rollOf(hubId);
+    if (typeof roll === 'string') return roll;
+    const uid = PersonChain.uidOf(hubId, npcId);
+    return PersonChain.fold(roll.people[uid], (await Ledger.list(uid)).map(r => r.payload), uid);
+  },
+
+  /** The city's table of people: everyone on the hub's chain, each folded with their own chain. */
   async table(hubId: string): Promise<IPersonRecord[]> {
-    const rows = (await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS, idPrefix: 'ledger_person_' }))
-      .filter(d => d?.id?.startsWith?.('ledger_person_'));
-    const chains = new Map<string, ILedgerRow[]>();
-    for (const d of rows) {
-      const uid = /^ledger_(.+)_\d+$/.exec(d.id)?.[1];
-      if (uid) chains.set(uid, [...(chains.get(uid) ?? []), d.data.payload]);
-    }
+    const roll = await rollOf(hubId);
+    if (typeof roll === 'string') return [];
     const out: IPersonRecord[] = [];
-    for (const [uid, chain] of chains) {
-      const folded = PersonChain.fold(chain, uid);
-      if (typeof folded !== 'string' && folded.hubId === hubId) out.push(folded);
+    for (const mint of Object.values(roll.people)) {
+      const folded = PersonChain.fold(mint, (await Ledger.list(mint.uid)).map(r => r.payload), mint.uid);
+      if (typeof folded !== 'string') out.push(folded);
     }
     return out.sort((a, b) => a.npcId.localeCompare(b.npcId));
   }

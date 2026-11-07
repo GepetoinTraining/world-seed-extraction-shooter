@@ -9,6 +9,7 @@ import { CertificateSystem, ISignedPayload, IPlayerCertificate } from '../../ent
 import { Ledger, ILedgerRow } from '../ledger/Ledger';
 import { VectorNamespace, VectorStore } from '../../entities/data/VectorStore';
 import { LootBook } from '../theme/LootBook';
+import { PersonLedger } from '../people/PersonLedger';
 
 /**
  * What the hub reruns beside a batch (D134): the player's own reading of their gold at its head,
@@ -110,22 +111,23 @@ export const HubClient = {
    * listed: a reading is sent only when the two agree, so it is the reading at the head sent.
    */
   /**
-   * A city's people, each chain from the row after the last this hub held of it. What the hub
+   * A city's people: the city's own chain of mints first, then the chain of everyone it minted, each
+   * from the row after the last this hub held of it. What the hub
    * answers for each is kept, so the next send starts where it stands. A chain the hub held first
    * from another browser stands there; this one reads from where it says.
    */
   async sendPeople(city: string): Promise<IHubOutcome & { people?: { uid: string; ok: boolean; held?: number; reason?: string }[] }> {
     const sentId = `people_sent_${city}`;
     const sent = (await VectorStore.get<Record<string, number>>(VectorNamespace.TRANSACTIONS, sentId))?.data ?? {};
-    const chains = new Map<string, ISignedPayload<ILedgerRow>[]>();
-    for (const d of await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS, idPrefix: 'ledger_person_' })) {
-      const uid = /^ledger_(person_[0-9a-f]{16})_\d+$/.exec(d?.id ?? '')?.[1];
-      if (!uid || d.data.payload.seq <= (sent[uid] ?? 0)) continue;
-      chains.set(uid, [...(chains.get(uid) ?? []), d.data]);
-    }
-    // Only this city's people: a chain's first row names its city, and a chain sent before was this city's
-    const ours = [...chains].filter(([uid, rows]) => sent[uid] !== undefined || rows.some(r => r.payload.seq === 1 && r.payload.data?.hubId === city));
-    if (ours.length === 0) return { ok: true, people: [] };
+    // The city's own chain of mints goes first, then the chain of everyone it minted (PersonChain.ts)
+    const hubChain = PersonLedger.hubUidOf(city);
+    const hubRows = await Ledger.list(hubChain);
+    const minted = new Set(hubRows.map(r => r.payload.data?.person).filter((p): p is string => typeof p === 'string'));
+    const unsent = (uid: string, rows: ISignedPayload<ILedgerRow>[]) => rows.filter(r => r.payload.seq > (sent[uid] ?? 0));
+    const ours: [string, ISignedPayload<ILedgerRow>[]][] = [[hubChain, unsent(hubChain, hubRows)]];
+    for (const person of minted) ours.push([person, unsent(person, await Ledger.list(person))]);
+    const waiting = ours.filter(([, rows]) => rows.length > 0);
+    if (waiting.length === 0) return { ok: true, people: [] };
     const answers: { uid: string; ok: boolean; held?: number; reason?: string }[] = [];
     let part: { uid: string; rows: ISignedPayload<ILedgerRow>[] }[] = [];
     let size = 0;
@@ -137,7 +139,7 @@ export const HubClient = {
       for (const a of out.people ?? []) { answers.push(a); if (a.held !== undefined) sent[a.uid] = a.held; }
       return true;
     };
-    for (const [uid, rows] of ours) {
+    for (const [uid, rows] of waiting) {
       part.push({ uid, rows: rows.sort((a, b) => a.payload.seq - b.payload.seq) });
       size += rows.length;
       if (size >= ROWS_PER_SEND && !(await flush())) break;

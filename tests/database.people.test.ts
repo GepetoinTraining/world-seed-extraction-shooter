@@ -1,12 +1,15 @@
 /**
  * A CITY'S PEOPLE ON THE HUB (Pedro, 2026-11-06): "the npc needs to be minted as a world entity for
  * the hub under the hubs chain, that will allow you to track them deterministically from their table
- * in the hub and resolve the chain of actions they produce." Test lines, stated plainly:
- *   - a person's chain starts with their mint, which the hub signs with its own clock
- *   - every row after it is something they did, checked by the person's law and folded into the
- *     hub's table of people
+ * in the hub and resolve the chain of actions they produce." And 2026-11-07: "Yes, mint on the hub's".
+ * Test lines, stated plainly:
+ *   - a person is minted on their city's own chain; the hub signs each mint with its own clock, and
+ *     the person stands in the city's table from then
+ *   - what they do goes on their own chain, whose first act names the link of their mint row, checked
+ *     by the person's law and folded into the table
+ *   - a person whose mint the hub does not hold is refused, even when their chain is sound
  *   - a row is signed by a character of the account that sends it, and names the chain it is on
- *   - two browsers writing one person at once: the chain the hub held first stands
+ *   - two browsers writing one chain at once: the chain the hub held first stands
  *   - one chain that breaks the law holds back only itself
  */
 
@@ -35,20 +38,46 @@ async function makeCharacter(uid: string) {
   });
   return { uid, certificate: { metadata: { uid, displayName: 'TESTER', createdAt: 1 }, publicKeyJWK }, sign };
 }
+type Character = Awaited<ReturnType<typeof makeCharacter>>;
 
-/** A person's chain as a browser writes it: each row signed by whoever computed it, linked to the one before. */
-function personChain(city: string, npcId: string) {
-  const uid = PersonChain.uidOf(city, npcId);
+/** Any chain as a browser writes it: each row signed by whoever computed it, linked to the one before. */
+function chainOf(uid: string) {
   let seq = 0;
   let last: string | null = null;
-  const next = async (signer: Awaited<ReturnType<typeof makeCharacter>>, data: Record<string, unknown>, ts: number) => {
-    seq++;
-    const prev = last ? linkOf(last) : null;
-    const row = await signer.sign({ seq, prevSeq: seq - 1, ts, type: 'PERSON', data: { person: uid, ...data }, v: ROW_VERSION, prev, clock: { ...addressOf(ts), by: 'machine' } }, ts);
-    last = row.signature;
-    return row;
+  return {
+    uid,
+    next: async (signer: Character, data: Record<string, unknown>, ts: number) => {
+      seq++;
+      const prev = last ? linkOf(last) : null;
+      const row = await signer.sign({ seq, prevSeq: seq - 1, ts, type: 'PERSON', data, v: ROW_VERSION, prev, clock: { ...addressOf(ts), by: 'machine' } }, ts);
+      last = row.signature;
+      return row;
+    }
   };
-  return { uid, next, mint: (signer: Awaited<ReturnType<typeof makeCharacter>>, ts: number, over: Record<string, unknown> = {}) => next(signer, { kind: 'MINTED', hubId: city, npcId, as: 'keeper', name: 'Mags', origin: `keeper:${npcId}`, ...over }, ts) };
+}
+
+/** A city's own chain of mints. */
+function cityChain(city: string) {
+  const c = chainOf(PersonChain.hubUidOf(city));
+  return {
+    uid: c.uid,
+    mint: (signer: Character, npcId: string, ts: number, over: Record<string, unknown> = {}) =>
+      c.next(signer, { hub: c.uid, person: PersonChain.uidOf(city, npcId), kind: 'MINTED', hubId: city, npcId, as: 'keeper', name: 'Mags', origin: `keeper:${npcId}`, ...over }, ts)
+  };
+}
+
+/** A person's own chain: its first act names the link of their mint row. */
+function personChain(city: string, npcId: string) {
+  const c = chainOf(PersonChain.uidOf(city, npcId));
+  let first = true;
+  return {
+    uid: c.uid,
+    act: (signer: Character, mintRow: { signature: string } | null, data: Record<string, unknown>, ts: number) => {
+      const named = first && mintRow ? { mint: linkOf(mintRow.signature) } : {};
+      first = false;
+      return c.next(signer, { person: c.uid, ...data, ...named }, ts);
+    }
+  };
 }
 
 describe('a city\'s people on the hub', () => {
@@ -78,79 +107,109 @@ describe('a city\'s people on the hub', () => {
     return c;
   };
 
-  it('a mint is held, signed by the hub with its own clock, and the person stands in the city\'s table', async () => {
+  it('a mint on the city\'s chain is held, signed by the hub with its own clock and where it sits, and the person stands in the table', async () => {
     const token = await account();
     const me = await character(token, 'ws_aaaaaaaa_x1_bbbbbbbb');
-    const mags = personChain(CITY, 'npc_bartender');
-    const out = await hub.checkPeople(token, [{ uid: mags.uid, rows: [await mags.mint(me, clock - 10)] }]);
+    const city = cityChain(CITY);
+    const magsRow = await city.mint(me, 'npc_bartender', clock - 10);
+    const bobRow = await city.mint(me, 'res_seed_bob', clock - 9, { as: 'resident', name: 'Bob' });
+    const out = await hub.checkPeople(token, [{ uid: city.uid, rows: [magsRow, bobRow] }]);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     const [answer] = out.people;
-    expect(answer).toMatchObject({ uid: mags.uid, ok: true, held: 1 });
-    expect(answer.record).toMatchObject({ npcId: 'npc_bartender', hubId: CITY, as: 'keeper', name: 'Mags' });
-    expect(verifyStatement(key.publicKeyPem, answer.mint!.text, answer.mint!.signature)).toBe(true);
-    expect(JSON.parse(answer.mint!.text)).toMatchObject({ kind: 'worldseed-person-minted', uid: mags.uid, city: CITY, npcId: 'npc_bartender', at: clock });
+    expect(answer).toMatchObject({ uid: city.uid, ok: true, held: 2 });
+    expect(answer.minted!.map(m => m.uid)).toEqual([PersonChain.uidOf(CITY, 'npc_bartender'), PersonChain.uidOf(CITY, 'res_seed_bob')]);
+    const { mint } = answer.minted![0];
+    expect(verifyStatement(key.publicKeyPem, mint.text, mint.signature)).toBe(true);
+    expect(JSON.parse(mint.text)).toMatchObject({ kind: 'worldseed-person-minted', uid: PersonChain.uidOf(CITY, 'npc_bartender'), city: CITY, npcId: 'npc_bartender', chain: city.uid, seq: 1, link: linkOf(magsRow.signature), at: clock });
+    // In the table before they have done anything, in the order the city's chain minted them
     const table = await hub.peopleOf(token, CITY);
-    expect(table.ok && table.people.map(p => p.record.npcId)).toEqual(['npc_bartender']);
+    expect(table.ok && table.people.map(p => [p.record.npcId, p.record.seq])).toEqual([['npc_bartender', 0], ['res_seed_bob', 0]]);
   });
 
-  it('what they did is folded into their row of the table, and the mint stays the one first signed', async () => {
+  it('what they did is folded into their row of the table, the first act naming their mint, and the mint stays the one first signed', async () => {
     const token = await account();
     const me = await character(token, 'ws_aaaaaaaa_x1_bbbbbbbb');
+    const city = cityChain(CITY);
+    const bobMint = await city.mint(me, 'res_seed_bob', clock - 30, { as: 'resident', name: 'Bob' });
     const bob = personChain(CITY, 'res_seed_bob');
-    const first = await hub.checkPeople(token, [{ uid: bob.uid, rows: [await bob.mint(me, clock - 30, { as: 'resident', name: 'Bob' })] }]);
-    const mint = first.ok ? first.people[0].mint : undefined;
     const rows = [
-      await bob.next(me, { kind: 'FED', from: 'npc_bartender', paid: true, day: 1 }, clock - 20),
-      await bob.next(me, { kind: 'MET', with: 'res_seed_glenda', where: 'by the tavern', why: 'waiting', band: 'lands', usual: false }, clock - 19),
-      await bob.next(me, { kind: 'MET', with: 'res_seed_glenda', where: 'by the tavern', why: 'waiting', band: 'lands', usual: true }, clock - 18),
-      await bob.next(me, { kind: 'PROMISED', key: 'q_1' }, clock - 17)
+      await bob.act(me, bobMint, { kind: 'FED', from: 'npc_bartender', paid: true, day: 1 }, clock - 20),
+      await bob.act(me, bobMint, { kind: 'MET', with: 'res_seed_glenda', where: 'by the tavern', why: 'waiting', band: 'lands', usual: false }, clock - 19),
+      await bob.act(me, bobMint, { kind: 'MET', with: 'res_seed_glenda', where: 'by the tavern', why: 'waiting', band: 'lands', usual: true }, clock - 18),
+      await bob.act(me, bobMint, { kind: 'PROMISED', key: 'q_1' }, clock - 17)
     ];
-    const out = await hub.checkPeople(token, [{ uid: bob.uid, rows }]);
-    expect(out.ok && out.people[0]).toMatchObject({ ok: true, held: 5 });
+    // One send carries both: the city's chain is checked first, so Bob's mint is held before his chain
+    const out = await hub.checkPeople(token, [{ uid: bob.uid, rows }, { uid: city.uid, rows: [bobMint] }]);
+    expect(out.ok && out.people.map(p => [p.uid, p.ok, p.held])).toEqual([[bob.uid, true, 4], [city.uid, true, 1]]);
     const record = out.ok ? out.people[0].record! : null;
     expect(record!.fed).toMatchObject({ paid: 1, without: 0, lastDay: 1 });
     expect(record!.met.res_seed_glenda).toEqual({ times: 2, band: 'lands', usual: 1 });
     expect(record!.open).toEqual(['q_1']);
-    expect(out.ok && out.people[0].mint).toEqual(mint);
+    expect(record!.mint).toBe(linkOf(bobMint.signature));
+    expect(out.ok && out.people[0].mint).toEqual(out.ok && out.people[1].minted![0].mint);
   });
 
-  it('a chain that does not start with its mint, a mint of another chain, or a row naming another person is refused, and nothing of it is held', async () => {
+  it('a person whose mint is not on the city\'s chain is refused, and so is a first act naming another mint', async () => {
     const token = await account();
     const me = await character(token, 'ws_aaaaaaaa_x1_bbbbbbbb');
     const a = personChain(CITY, 'npc_a');
-    const notMinted = await hub.checkPeople(token, [{ uid: a.uid, rows: [await a.next(me, { kind: 'FED', from: 'x', paid: true, day: 1 }, clock - 5)] }]);
-    expect(notMinted.ok && notMinted.people[0]).toMatchObject({ ok: false, held: 0 });
+    const unminted = await hub.checkPeople(token, [{ uid: a.uid, rows: [await a.act(me, { signature: 'nothing' }, { kind: 'FED', from: 'x', paid: true, day: 1 }, clock - 5)] }]);
+    expect(unminted.ok && unminted.people[0]).toMatchObject({ ok: false, held: 0 });
+    expect(unminted.ok && unminted.people[0].reason).toMatch(/not on the hub's chain/);
 
-    const b = personChain(CITY, 'npc_b');
-    const elsewhere = await hub.checkPeople(token, [{ uid: b.uid, rows: [await b.mint(me, clock - 5, { hubId: 'another_city' })] }]);
-    expect(elsewhere.ok && elsewhere.people[0].reason).toMatch(/not of this chain/);
+    const city = cityChain(CITY);
+    const aMint = await city.mint(me, 'npc_a', clock - 6);
+    const bMint = await city.mint(me, 'npc_b', clock - 6);
+    expect((await hub.checkPeople(token, [{ uid: city.uid, rows: [aMint, bMint] }])).ok).toBe(true);
+    const lifted = personChain(CITY, 'npc_a');
+    const wrong = await hub.checkPeople(token, [{ uid: lifted.uid, rows: [await lifted.act(me, bMint, { kind: 'FED', from: 'x', paid: true, day: 1 }, clock - 5)] }]);
+    expect(wrong.ok && wrong.people[0].reason).toMatch(/names their mint/);
+  });
 
-    const c = personChain(CITY, 'npc_c');
-    const lifted = await c.mint(me, clock - 5);
-    const onto = PersonChain.uidOf(CITY, 'npc_d');
-    const moved = await hub.checkPeople(token, [{ uid: onto, rows: [lifted] }]);
-    expect(moved.ok && moved.people[0].reason).toMatch(/another person's chain/);
+  it('the city\'s chain mints only its own people, once each, and a person\'s row lifted onto another\'s chain is refused', async () => {
+    const token = await account();
+    const me = await character(token, 'ws_aaaaaaaa_x1_bbbbbbbb');
+    const city = cityChain(CITY);
+    const elsewhere = await hub.checkPeople(token, [{ uid: city.uid, rows: [await city.mint(me, 'npc_b', clock - 5, { hubId: 'another_city', person: PersonChain.uidOf('another_city', 'npc_b') })] }]);
+    expect(elsewhere.ok && elsewhere.people[0].reason).toMatch(/another city/);
+
+    const fresh = cityChain(CITY);
+    const once = await fresh.mint(me, 'npc_c', clock - 5);
+    const twice = await fresh.mint(me, 'npc_c', clock - 4);
+    const again = await hub.checkPeople(token, [{ uid: fresh.uid, rows: [once, twice] }]);
+    expect(again.ok && again.people[0]).toMatchObject({ ok: false, held: 0 });
+    expect(again.ok && again.people[0].reason).toMatch(/already minted/);
+
+    // c and d both minted in another city; c's first act sent as d's chain
+    const TWO = 'hub_city_two';
+    const two = cityChain(TWO);
+    const cMint = await two.mint(me, 'npc_c', clock - 4);
+    const dMint = await two.mint(me, 'npc_d', clock - 4);
+    const row = await personChain(TWO, 'npc_c').act(me, cMint, { kind: 'FED', from: 'x', paid: true, day: 1 }, clock - 3);
+    const moved = await hub.checkPeople(token, [{ uid: two.uid, rows: [cMint, dMint] }, { uid: PersonChain.uidOf(TWO, 'npc_d'), rows: [row] }]);
+    expect(moved.ok && moved.people.map(p => p.ok)).toEqual([true, false]);
+    expect(moved.ok && moved.people[1].reason).toMatch(/another person's chain/);
   });
 
   it('a row signed by a character another account holds is not this account\'s to send', async () => {
     const mine = await account('tester');
     const theirs = await account('someone');
     const them = await character(theirs, 'ws_cccccccc_x1_dddddddd');
-    const p = personChain(CITY, 'npc_bartender');
-    const out = await hub.checkPeople(mine, [{ uid: p.uid, rows: [await p.mint(them, clock - 5)] }]);
+    const city = cityChain(CITY);
+    const out = await hub.checkPeople(mine, [{ uid: city.uid, rows: [await city.mint(them, 'npc_bartender', clock - 5)] }]);
     expect(out.ok && out.people[0]).toMatchObject({ ok: false });
     expect(out.ok && out.people[0].reason).toMatch(/does not hold here/);
   });
 
-  it('two browsers write one person at once: the chain held first stands, and the other is told to read it back', async () => {
+  it('two browsers write the city\'s chain at once: the chain held first stands, and the other is told to read it back', async () => {
     const token = await account();
     const me = await character(token, 'ws_aaaaaaaa_x1_bbbbbbbb');
     const other = await character(token, 'ws_eeeeeeee_x1_ffffffff');
-    const one = personChain(CITY, 'npc_bartender');
-    const two = personChain(CITY, 'npc_bartender');
-    expect((await hub.checkPeople(token, [{ uid: one.uid, rows: [await one.mint(me, clock - 9)] }])).ok).toBe(true);
-    const out = await hub.checkPeople(token, [{ uid: two.uid, rows: [await two.mint(other, clock - 8)] }]);
+    const one = cityChain(CITY);
+    const two = cityChain(CITY);
+    expect((await hub.checkPeople(token, [{ uid: one.uid, rows: [await one.mint(me, 'npc_bartender', clock - 9)] }])).ok).toBe(true);
+    const out = await hub.checkPeople(token, [{ uid: two.uid, rows: [await two.mint(other, 'npc_bartender', clock - 8)] }]);
     expect(out.ok && out.people[0]).toMatchObject({ ok: false, held: 1 });
     expect(out.ok && out.people[0].reason).toMatch(/read it back from seq 1/);
   });
@@ -158,14 +217,18 @@ describe('a city\'s people on the hub', () => {
   it('one chain that breaks the law holds back only itself', async () => {
     const token = await account();
     const me = await character(token, 'ws_aaaaaaaa_x1_bbbbbbbb');
+    const city = cityChain(CITY);
+    const goodMint = await city.mint(me, 'npc_good', clock - 6);
+    const badMint = await city.mint(me, 'npc_bad', clock - 6);
     const good = personChain(CITY, 'npc_good');
     const bad = personChain(CITY, 'npc_bad');
     const out = await hub.checkPeople(token, [
-      { uid: bad.uid, rows: [await bad.mint(me, clock - 5), await bad.next(me, { kind: 'MINTED', hubId: CITY, npcId: 'npc_bad', as: 'keeper', name: 'Again', origin: '' }, clock - 4)] },
-      { uid: good.uid, rows: [await good.mint(me, clock - 5)] }
+      { uid: city.uid, rows: [goodMint, badMint] },
+      { uid: bad.uid, rows: [await bad.act(me, badMint, { kind: 'FED', from: 'x', paid: true, day: 1 }, clock - 5), await bad.act(me, null, { kind: 'MINTED', hubId: CITY, npcId: 'npc_bad', as: 'keeper', name: 'Again', origin: '' }, clock - 4)] },
+      { uid: good.uid, rows: [await good.act(me, goodMint, { kind: 'FED', from: 'x', paid: true, day: 1 }, clock - 5)] }
     ]);
-    expect(out.ok && out.people.map(p => p.ok)).toEqual([false, true]);
+    expect(out.ok && out.people.map(p => p.ok)).toEqual([true, false, true]);
     const table = await hub.peopleOf(token, CITY);
-    expect(table.ok && table.people.map(p => p.record.npcId)).toEqual(['npc_good']);
+    expect(table.ok && table.people.map(p => [p.record.npcId, p.record.seq])).toEqual([['npc_good', 1], ['npc_bad', 0]]);
   });
 });
