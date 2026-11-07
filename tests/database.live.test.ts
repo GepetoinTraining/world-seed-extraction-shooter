@@ -191,6 +191,52 @@ describe('online play: the world we host, live', () => {
     cedar.ws.close();
   });
 
+  it('someone talked to hears one turn: the rest wait in the order they reached the room, and leaving, walking off or closing lets the next speak (Pedro, 2026-11-07)', async () => {
+    const join = async (uid: string, place: string) => {
+      const s = listen(socketUrl(uid));
+      await s.opened;
+      s.ws.send(JSON.stringify({ subscribe: `world:${WORLD}`, since: 0 }));
+      await until(() => s.heard.some(m => m.ready));
+      s.ws.send(JSON.stringify({ where: { place, x: 0, z: 0, facing: 'down', moving: false, t: 1, name: uid, archetype: 'NOMAD' } }));
+      return s;
+    };
+    const lastLine = (s: { heard: any[] }) => [...s.heard].reverse().find(m => m.line)?.line;
+    const alder = await join('ws_alder', 'field'), birch = await join('ws_birch', 'field'), cedar = await join('ws_cedar', 'field');
+    await new Promise(r => setTimeout(r, 50));
+    const talk = (s: { ws: WebSocket }, op: string, npc = 'npc_smith', o: object = {}) => s.ws.send(JSON.stringify({ talk: { op, npc, ...o } }));
+
+    talk(alder, 'ask');
+    await until(() => !!lastLine(alder));
+    talk(birch, 'ask');
+    await until(() => room.lineOf(WORLD, 'field', 'npc_smith').waiting.length === 1);
+    // cedar names alder as their party, but alder never named cedar
+    talk(cedar, 'ask', 'npc_smith', { party: ['ws_alder'] });
+    await until(() => room.lineOf(WORLD, 'field', 'npc_smith').waiting.length === 2);
+    expect(room.lineOf(WORLD, 'field', 'npc_smith')).toEqual({ focus: ['ws_alder'], waiting: [['ws_birch'], ['ws_cedar']] });
+    // Each in the line is told who is heard and who waits
+    await until(() => lastLine(birch)?.waiting.length === 2);
+    expect(lastLine(birch)).toEqual({ npc: 'npc_smith', focus: ['ws_alder'], waiting: [['ws_birch'], ['ws_cedar']] });
+    // Naming whoever is heard as a party, without being named back, still waits
+    expect(room.lineOf(WORLD, 'field', 'npc_smith').focus).toEqual(['ws_alder']);
+
+    // alder leaves the talk: birch is heard, and alder is told they are out
+    talk(alder, 'leave');
+    await until(() => lastLine(birch)?.focus[0] === 'ws_birch');
+    expect(lastLine(alder)).toEqual({ npc: 'npc_smith', focus: ['ws_birch'], waiting: [['ws_cedar']] });
+    // birch walks into the cellar: out of every line in the field
+    birch.ws.send(JSON.stringify({ where: { place: 'cellar', x: 0, z: 0, facing: 'down', moving: false, t: 2, name: 'ws_birch', archetype: 'NOMAD' } }));
+    await until(() => lastLine(cedar)?.focus[0] === 'ws_cedar');
+    // Someone else in the field is a line of their own
+    talk(alder, 'ask', 'npc_baker');
+    await until(() => room.lineOf(WORLD, 'field', 'npc_baker').focus[0] === 'ws_alder');
+    // cedar closes: the line empties, and nothing of it was kept
+    cedar.ws.close();
+    await until(() => room.lineOf(WORLD, 'field', 'npc_smith').focus.length === 0);
+    expect(await store.query({ namespace: 'live' })).toEqual([]);
+    alder.ws.close();
+    birch.ws.close();
+  });
+
   it('in the game: this player says where they are, at most ten times a second, and the others are drawn from what they hear', async () => {
     StoreClient.useLocal(Promise.resolve({ commit: async () => ({ applied: true }), get: async () => null }));
     const other = listen(socketUrl('ws_alder'));

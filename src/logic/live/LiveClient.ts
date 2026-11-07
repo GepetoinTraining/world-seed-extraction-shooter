@@ -11,6 +11,7 @@ import type { IWireDoc } from '../../entities/data/wire';
 import { isShared, type ChestIntent } from './shared';
 import type { IChestRecord } from '../../entities/world/ChestSystem';
 import { presence, shouldSay, whereOf, type IWhere } from './Presence';
+import type { ILineView } from './TalkLine';
 
 export interface ILiveEvent { channel: string; seq: number; at: number; docs: IWireDoc[] }
 export type LiveStatus = 'OFF' | 'JOINING' | 'LIVE' | 'DROPPED' | 'REFUSED';
@@ -33,6 +34,8 @@ const FIRST_RETRY_MS = 400;
 const MOST_RETRY_MS = 8_000;
 
 const listeners = new Set<(e: ILiveEvent) => void>();
+/** Who hears the lines of people being talked to (TalkLine.ts), as the room tells them. */
+const lineListeners = new Set<(npc: string, view: ILineView) => void>();
 let current: { worldUid: string; uid: string; origin: string; socket: SocketLike | null; stopRoute: () => void; left: boolean; retryMs: number; timer?: ReturnType<typeof setTimeout> } | null = null;
 /** What this browser last said of where its player is, and when (Presence.ts). */
 let lastSaid: { where: IWhere; at: number } | null = null;
@@ -71,6 +74,12 @@ export const LiveClient = {
         // Another player, where they are, or gone (Presence.ts)
         if (said.where) { presence.hear(said.where, Date.now()); return; }
         if (typeof said.gone === 'string') { presence.gone(said.gone); return; }
+        // A line of someone being talked to: who is heard and who waits (TalkLine.ts)
+        if (said.line && typeof said.line.npc === 'string') {
+          const view: ILineView = { focus: Array.isArray(said.line.focus) ? said.line.focus : [], waiting: Array.isArray(said.line.waiting) ? said.line.waiting : [] };
+          for (const fn of lineListeners) fn(said.line.npc, view);
+          return;
+        }
         if (said.ready) { me.retryMs = FIRST_RETRY_MS; useLive.setState(s => ({ status: 'LIVE', seq: Math.max(s.seq, Number(said.ready.seq) || 0) })); return; }
         // An event sent twice (it landed while this socket caught up) is taken once
         if (typeof said.seq !== 'number' || said.seq <= useLive.getState().seq) return;
@@ -112,6 +121,27 @@ export const LiveClient = {
     lastSaid = null;
     try { me?.socket?.send(JSON.stringify({ gone: true })); } catch { /* closing tells them too */ }
   },
+
+  /**
+   * ONE CONVERSATION AT A TIME (TalkLine.ts): ask to talk with someone in this place, say that this
+   * turn is still talking, or leave the line. The room answers with the line, to `onLine`. False when
+   * not playing live, and then nobody else is there to wait for.
+   */
+  talk(op: 'ask' | 'said' | 'leave', npc: string, party: readonly string[] = []): boolean {
+    const me = current;
+    if (!me || me.left || !me.socket || useLive.getState().status !== 'LIVE') return false;
+    try { me.socket.send(JSON.stringify({ talk: { op, npc, party } })); } catch { return false; }
+    return true;
+  },
+
+  /** Every line the room tells this player of. Returns how to stop listening. */
+  onLine(fn: (npc: string, view: ILineView) => void): () => void {
+    lineListeners.add(fn);
+    return () => { lineListeners.delete(fn); };
+  },
+
+  /** This player's own uid while playing live. */
+  me: (): string | null => (current && !current.left ? current.uid : null),
 
   /**
    * A chest claimed or a guard fallen, in the room's queue. The answer is the record as it stands

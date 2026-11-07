@@ -41,6 +41,9 @@ import { Deeds } from '../../logic/memory/Deeds';
 import { MemoryPlace, MemoryStore } from './memoryStore';
 import { IMounted } from '../../logic/memory/NpcContext';
 import { PersonLedger } from '../../logic/people/PersonLedger';
+import { LiveClient } from '../../logic/live/LiveClient';
+import { presence } from '../../logic/live/Presence';
+import { TalkLine, type ILineView } from '../../logic/live/TalkLine';
 
 export type TalkSubject =
   | { kind: 'FIELD_PERSON'; entityId: string }
@@ -144,6 +147,21 @@ const worldFacts = () => {
   };
 };
 
+/**
+ * ONE CONVERSATION AT A TIME (TalkLine.ts). Played live, someone in the field hears one turn and the
+ * rest wait in line; the window says where this player stands. Alone, nobody else is there to wait for.
+ */
+const lineWords = (view: ILineView, me: string): { ready: boolean; note: string } => {
+  const place = TalkLine.placeOf(view, me);
+  if (place === 0) return { ready: true, note: '' };
+  if (place === -1) return { ready: false, note: 'They turned to the next in line. Close the talk and come again to wait once more.' };
+  const where = useWorldStore.getState().activeWorldId ?? '';
+  const names = presence.at(where, Date.now());
+  const heard = view.focus.map(uid => names.find(o => o.uid === uid)?.name ?? 'someone').join(' and ');
+  const ahead = place - 1;
+  return { ready: false, note: `They are talking with ${heard}. ${ahead === 0 ? 'You are next in line.' : `${ahead} ahead of you in line.`}` };
+};
+
 const playerAttributes = (): IAttributes | undefined => usePlayerStore.getState().player.attributes;
 
 const spendEnergy = (cost: number): boolean => {
@@ -241,6 +259,21 @@ export function citySurface(person: NonNullable<ReturnType<typeof cityPerson>>):
 }
 
 export const useTalk = create<ITalkState>((set, get) => {
+  // The room's word on the line of whoever this window is talking with
+  LiveClient.onLine((npc, view) => {
+    const { subject } = get();
+    const me = LiveClient.me();
+    if (!subject || subject.kind === 'CITY' || subject.entityId !== npc || !me) return;
+    const was = get().ready;
+    const words = lineWords(view, me);
+    set({ ready: words.ready, note: words.ready && !was ? 'They turn to you.' : words.note });
+  });
+
+  /** Played live, the window waits for the room to say it is this player's turn. Party: none yet, so a turn of one. */
+  const askTurn = (entityId: string) => {
+    if (LiveClient.talk('ask', entityId, [])) set({ ready: false, note: 'Waiting to see if they are free.' });
+  };
+
   /** What a city person keeps, between one reload and the next. */
   const saveCity = async (npcId: string, agenda: INpcAgenda, attempts: number, asks?: number) => {
     const hubId = useHubStore.getState().activeHubId ?? 'hub_unknown';
@@ -309,6 +342,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const { seed } = worldFacts();
       if (subject.kind === 'FIELD_PERSON') {
         set({ ...EMPTY, subject, title: entity.npc?.name ?? 'Unknown Figure', meter: entity.npc?.disposition ?? 0, log: fieldLogs.get(`${seed}:${entity.id}`) ?? [], ready: true });
+        askTurn(entity.id);
         return;
       }
       const npc = entity.npc ?? monsterSheet(seed, entity);
@@ -318,10 +352,12 @@ export const useTalk = create<ITalkState>((set, get) => {
         ...EMPTY, subject, title: entity.displayName || 'Unknown Contact', meter: npc.disposition, stance,
         wants: MonsterMind.wantOf(entity), log: fieldLogs.get(`${seed}:${entity.id}`) ?? [], ready: true
       });
+      askTurn(entity.id);
     },
 
     close: () => {
       const { subject } = get();
+      if (subject && subject.kind !== 'CITY') LiveClient.talk('leave', subject.entityId);
       if (subject?.kind === 'MONSTER') {
         const entity = liveEntity(subject.entityId);
         if (entity?.bargain) useWorldStore.getState().updateEntity(subject.entityId, { bargain: { ...entity.bargain, holding: false } });
@@ -353,6 +389,7 @@ export const useTalk = create<ITalkState>((set, get) => {
           return;
         }
         set({ busy: true, note: '', log: [...prior, { who: 'THEM', text: said }] });
+        LiveClient.talk('said', subject.entityId);
 
         const isMonster = subject.kind === 'MONSTER';
         const { seed, webVersion } = worldFacts();
@@ -393,6 +430,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         // With no model nobody spoke, so the floor's line is narration, never their words.
         const log: ILogLine[] = [...(stillHere() ? get().log : [...prior, { who: 'THEM' as const, text: said }]), { who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply }];
         fieldLogs.set(`${seed}:${entity.id}`, log);
+        LiveClient.talk('said', subject.entityId);
         await MemoryStore.write({ seed }, [{ owner: entity.id, what: Deeds.talkRound({ day: worldDay(), speaker: me(), listener: entity.id, said, landed: sums.landed, remember: answer.remember }) }]);
         if (!stillHere()) return;
         set(s => ({
