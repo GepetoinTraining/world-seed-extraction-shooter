@@ -10,7 +10,7 @@ import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
-import { useWorldStore } from '../world/store';
+import { useWorldStore, worldPort } from '../world/store';
 import { ChestSystem } from '../../../shared/entities/world/ChestSystem';
 import { LiveClient } from '../../logic/live/LiveClient';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
@@ -1511,7 +1511,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const item = session.inventory.find(i => i.id === itemId);
     if (!item) return;
     // Q16: a body set down lies on the ground again. It is never a cache anyone could open.
-    if (Escort.isCorpse(item)) { FieldEscort.setDown(item); return; }
+    if (Escort.isCorpse(item)) { FieldEscort.setDown(item, worldPort); return; }
 
     const layout = { ...(session.inventoryLayout || {}) };
     delete layout[itemId];
@@ -1621,7 +1621,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const unread = LoadoutSystem.unreadRefusal(item);
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
     // D65: what is in a cage is tried, not eaten
-    if (item.creatureData) { FieldCapture.tame(item.id); return; }
+    if (item.creatureData) { FieldCapture.tame(item.id, worldPort); return; }
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
@@ -1806,7 +1806,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (interactionId.startsWith('int_snare_')) {
       if (!entity) return;
       if (!spendEnergy(Capture.SNARE_ENERGY)) return;
-      FieldCapture.snare(entity);
+      FieldCapture.snare(entity, worldPort);
       return;
     }
 
@@ -1987,7 +1987,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       // Q16: they walk beside you to the beacon, in the world, and fight back when engaged.
       // The bond the hub reads is written at the beacon, from the same facts (D27, Wave 11's seam).
-      const escort = FieldEscort.join(entity);
+      const escort = FieldEscort.join(entity, worldPort);
       if (!escort) return;
       SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name });
       get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
@@ -1998,7 +1998,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Q16: a person brought out who fell, taken up to be carried home
     if (interactionId.startsWith('int_carry_')) {
       if (!entity.escort?.fallen) return;
-      if (FieldEscort.carry(entity.id)) SessionJournal.record('INTERACT', { kind: 'CARRY', targetId: entity.id });
+      if (FieldEscort.carry(entity.id, worldPort)) SessionJournal.record('INTERACT', { kind: 'CARRY', targetId: entity.id });
       return;
     }
   },

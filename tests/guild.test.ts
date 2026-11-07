@@ -55,6 +55,7 @@ import {
   GUILD_OWNER_ID, IResident, TAX_EVASION_TAGS, benchFactor, chainFromMap, emptyGuild, houseBill, houseTemplateFor, jobOf,
   readSheet, residentStage, residentUpkeepPerDay, trialFor, wantFor
 } from '../src/entities/hub/guild';
+import { worldPort } from '../src/entities/world/store';
 
 const UID = 'uid_guild';
 const HUB = 'hub_guild';
@@ -241,7 +242,7 @@ describe('line 115: a person brought out stays at the tavern', () => {
     expect(actions).toContain('REST');
     expect(actions).toContain('OPEN_TAVERN');
     expect(HANDLED_ACTIONS).toContain('OPEN_TAVERN');
-    expect(runDialogueAction('OPEN_TAVERN')).toEqual({ kind: 'open', panel: 'tavern' });
+    expect(runDialogueAction(worldPort, 'OPEN_TAVERN')).toEqual({ kind: 'open', panel: 'tavern' });
   });
 });
 
@@ -795,8 +796,8 @@ describe('line 128: the rank comes from the guild, by a hard quest (D83)', () =>
     const vex = HUB_NPCS.npc_guild_master.dialogue;
     expect(vex.greeting).not.toMatch(/Seed lets me|register any/i);
     expect(vex.options.map(o => o.action)).toContain('OPEN_HALL');
-    expect(runDialogueAction('OPEN_HALL')).toEqual({ kind: 'open', panel: 'guild' });
-    const lore = runDialogueAction('GUILD_LORE');
+    expect(runDialogueAction(worldPort, 'OPEN_HALL')).toEqual({ kind: 'open', panel: 'guild' });
+    const lore = runDialogueAction(worldPort, 'GUILD_LORE');
     expect(lore.kind).toBe('reply');
     expect((lore as any).text).not.toMatch(/sealed/i);
   });

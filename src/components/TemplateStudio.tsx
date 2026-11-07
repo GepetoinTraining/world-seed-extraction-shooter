@@ -399,7 +399,7 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
                   disabled={paperHeld < 1 || inkHeld < 1}
                   title={paperHeld < 1 || inkHeld < 1 ? `needs ${billText(TEMPLATE_MINT_BILL)}` : undefined}
                   onClick={async () => {
-                    const result = await MapSystem.write(worldId);
+                    const result = await MapSystem.write(worldId, useWorldStore.getState().availableWorlds);
                     pushFeed(result.ok ? `${result.item!.name} written and signed. It is in your stash.` : result.reason!, result.ok ? 'proof' : 'loss');
                   }}
                 >

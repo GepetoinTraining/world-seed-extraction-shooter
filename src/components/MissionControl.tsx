@@ -6,7 +6,7 @@
 
 import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import React, { useEffect, useState } from 'react';
-import { useWorldStore, IWorldCard } from '../entities/world/store';
+import { useWorldStore, IWorldCard, worldPort } from '../entities/world/store';
 import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
 import { openRecon } from './ReconView';
 import { WorldCreator } from './WorldCreator';
@@ -121,7 +121,7 @@ export const MissionControl = () => {
   }, []);
 
   const handleDeploy = async (worldId: string) => {
-    const res = await deployToWorld(worldId);
+    const res = await deployToWorld(worldId, worldPort);
     if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
   };
 

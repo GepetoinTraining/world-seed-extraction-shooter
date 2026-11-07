@@ -56,6 +56,7 @@ import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefin
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { MACHINE_COLORS, FONT_PX, MIN_READABLE_PX, TERMINAL_GENRE } from '../src/components/ui/tokens';
 import { useFeed, useReceipt, useAppView } from '../src/components/ui/stores';
+import { worldPort } from '../src/entities/world/store';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.
@@ -194,13 +195,13 @@ describe('line 27: no dialogue option without an effect', () => {
   });
 
   it('an unregistered action is refused out loud, not swallowed', () => {
-    const effect = runDialogueAction('OPEN_AUCTION');
+    const effect = runDialogueAction(worldPort, 'OPEN_AUCTION');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain('REFUSED');
   });
 
   it('SHOW_BALANCE answers with the real balance', () => {
-    const effect = runDialogueAction('SHOW_BALANCE');
+    const effect = runDialogueAction(worldPort, 'SHOW_BALANCE');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain(usePlayerStore.getState().player.bank.gold.toLocaleString());
   });
@@ -213,7 +214,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 1000, stashTabs: [{ name: 'MAIN', items: [item] }] } }
     }));
-    const effect = runDialogueAction('IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(900);
@@ -225,7 +226,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 10, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction('IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     expect(usePlayerStore.getState().player.bank.gold).toBe(10); // nothing moved
   });
@@ -253,7 +254,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 50, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction('BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
+    const effect = runDialogueAction(worldPort, 'BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(40);
@@ -458,7 +459,7 @@ describe('line 31: receipts and the feed', () => {
 
   it('dialogue can steer the terminal to another screen', () => {
     useAppView.getState().setView('HUB');
-    const effect = runDialogueAction('OPEN_BANK');
+    const effect = runDialogueAction(worldPort, 'OPEN_BANK');
     expect(effect).toEqual({ kind: 'navigate', view: 'BANK' });
   });
 });

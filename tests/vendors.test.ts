@@ -44,6 +44,7 @@ import { usePlayerStore } from '../src/entities/player/store';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { readFileSync } from 'node:fs';
+import { worldPort } from '../src/entities/world/store';
 
 const DAY = 20_000;
 const GENERAL = ['npc_weapon_vendor', 'npc_armor_vendor', 'npc_alchemist'];
@@ -428,7 +429,7 @@ describe('the words reach a person', () => {
   });
 
   it('the action opens the window for that vendor', () => {
-    expect(runDialogueAction('OPEN_APPRENTICES', { npcId: 'npc_alchemist' })).toEqual({ kind: 'open', panel: 'apprentices', npcId: 'npc_alchemist' });
+    expect(runDialogueAction(worldPort, 'OPEN_APPRENTICES', { npcId: 'npc_alchemist' })).toEqual({ kind: 'open', panel: 'apprentices', npcId: 'npc_alchemist' });
   });
 
   it('the window reads ranks in words and progress by the stepped bar, never hue alone', () => {

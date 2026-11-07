@@ -8,7 +8,7 @@
 import { IEscort, IItem } from '../../../shared/types';
 import { MobAI } from '../../entities/mob/ai/MobAI';
 import { usePlayerStore } from '../../entities/player/store';
-import { useWorldStore } from '../../entities/world/store';
+import { bodiesOf, bodyOf, openCard, type IWorldPort } from '../../entities/world/worldView';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { useFeed } from '../../components/ui/stores';
 import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
@@ -17,8 +17,6 @@ import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const session = () => usePlayerStore.getState().player.currentSession;
-const bodies = (): IWorldEntity[] => Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).flatMap(c => c.entities);
-const bodyOf = (id: string) => bodies().find(e => e.id === id);
 
 const setEscorts = (change: (escorts: IEscort[]) => IEscort[]) => usePlayerStore.setState(s => s.player.currentSession ? ({
   player: { ...s.player, currentSession: { ...s.player.currentSession, escorts: change(s.player.currentSession.escorts ?? []) } }
@@ -29,10 +27,10 @@ const bondId = (bond: IEscort['bond']) => `bond_${fnv1a(`${bond.worldSeed}:${bon
 export const FieldEscort = {
 
   /** "they will come": secured, they stay in the world, at your side. Nothing goes in the pack. */
-  join(entity: IWorldEntity): IEscort | null {
+  join(entity: IWorldEntity, port: IWorldPort): IEscort | null {
     if (!entity.npc || entity.escort) return null;
-    const world = useWorldStore.getState();
-    const card = world.availableWorlds?.find(w => w.id === world.activeWorldId);
+    const world = port.view();
+    const card = world.availableWorlds ? openCard(world) : undefined;
     const seed = world.currentMap?.seed ?? '';
     const sheet = NpcSheet.read(seed, entity, card?.webVersion);
     const bond: IEscort['bond'] = {
@@ -41,7 +39,7 @@ export const FieldEscort = {
     };
     const escort = Escort.join(entity, bond, sheet.stats ?? NpcSheet.statsOf(seed, entity));
     setEscorts(list => [...list.filter(e => e.entityId !== entity.id), escort]);
-    world.updateEntity(entity.id, { escort: { by: usePlayerStore.getState().player.id }, health: escort.health });
+    port.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { escort: { by: usePlayerStore.getState().player.id }, health: escort.health } });
     MobAI.follow(entity.id, Number.POSITIVE_INFINITY);
     return escort;
   },
@@ -51,19 +49,19 @@ export const FieldEscort = {
   },
 
   /** Where each one still standing is now, for the blows the field throws. */
-  standing(): { entityId: string; x: number; y: number }[] {
+  standing(port: IWorldPort): { entityId: string; x: number; y: number }[] {
     const alive = new Set(this.escorts().filter(e => !e.fallen).map(e => e.entityId));
-    return bodies().filter(b => alive.has(b.id)).map(b => ({ entityId: b.id, x: b.position.x, y: b.position.y }));
+    return bodiesOf(port.view()).filter(b => alive.has(b.id)).map(b => ({ entityId: b.id, x: b.position.x, y: b.position.y }));
   },
 
   /** Their blows this frame, at whatever has engaged within their reach. */
-  swings(now: number, chunkEntities: IWorldEntity[]): IEscortSwing[] {
+  swings(now: number, chunkEntities: IWorldEntity[], port: IWorldPort): IEscortSwing[] {
     const out: IEscortSwing[] = [];
     const hostiles = chunkEntities
       .filter(e => e.type === EntityType.MOB && (e.health ?? 0) > 0 && !MobAI.isFollowing(e.id))
       .map(e => ({ id: e.id, x: e.position.x, y: e.position.y, engaged: MobAI.isActive(e.id) && (e.isHostile !== false || MobAI.isProvoked(e.id)) }));
     if (hostiles.length === 0) return out;
-    const at = new Map<string, { x: number; y: number }>(FieldEscort.standing().map(b => [b.entityId, b]));
+    const at = new Map<string, { x: number; y: number }>(FieldEscort.standing(port).map(b => [b.entityId, b]));
     const next = this.escorts().map(escort => {
       const pos = at.get(escort.entityId);
       if (!pos) return escort;
@@ -76,22 +74,22 @@ export const FieldEscort = {
   },
 
   /** A blow that reached one of them. */
-  hurt(entityId: string, raw: number, key: string): void {
+  hurt(entityId: string, raw: number, key: string, port: IWorldPort): void {
     const escort = this.escorts().find(e => e.entityId === entityId);
     if (!escort || escort.fallen) return;
     const { escort: after, fell } = Escort.take(escort, raw, key);
     setEscorts(list => list.map(e => (e.entityId === entityId ? after : e)));
-    if (fell) this.fall(entityId);
-    else useWorldStore.getState().updateEntity(entityId, { health: after.health });
+    if (fell) this.fall(entityId, port);
+    else port.apply({ kind: 'UPDATE_BODY', entityId, patch: { health: after.health } });
   },
 
   /** Down: they lie where they fell, and wait to be carried. */
-  fall(entityId: string): void {
+  fall(entityId: string, port: IWorldPort): void {
     const escort = this.escorts().find(e => e.entityId === entityId);
     if (!escort) return;
     setEscorts(list => list.map(e => (e.entityId === entityId ? { ...e, health: 0, fallen: true } : e)));
     MobAI.unfollow(entityId);
-    useWorldStore.getState().updateEntity(entityId, { health: 0, escort: { by: usePlayerStore.getState().player.id, fallen: true } });
+    port.apply({ kind: 'UPDATE_BODY', entityId, patch: { health: 0, escort: { by: usePlayerStore.getState().player.id, fallen: true } } });
     feed(`${escort.name} is down. Carry them to the beacon and they come back on the other side.`, 'loss');
   },
 
@@ -99,19 +97,19 @@ export const FieldEscort = {
    * Their own record is the truth of them. The field writes its copy of the chunks back after the
    * blows of a frame have landed, so this puts each body right from the record afterwards.
    */
-  settle(): void {
+  settle(port: IWorldPort): void {
     const by = usePlayerStore.getState().player.id;
     for (const escort of this.escorts()) {
-      const body = bodyOf(escort.entityId);
+      const body = bodyOf(port.view(), escort.entityId);
       if (!body) continue;
       const fallen = !!escort.fallen;
       if (body.health === escort.health && !!body.escort?.fallen === fallen && body.escort?.by === by) continue;
-      useWorldStore.getState().updateEntity(escort.entityId, { health: escort.health, escort: { by, ...(fallen ? { fallen: true } : {}) } });
+      port.apply({ kind: 'UPDATE_BODY', entityId: escort.entityId, patch: { health: escort.health, escort: { by, ...(fallen ? { fallen: true } : {}) } } });
     }
   },
 
   /** "you grab them as a corpse": onto your back, if the pack will bear it. */
-  carry(entityId: string): boolean {
+  carry(entityId: string, port: IWorldPort): boolean {
     const escort = this.escorts().find(e => e.entityId === entityId && e.fallen);
     if (!escort) return false;
     const corpse = Escort.corpseOf(escort);
@@ -120,14 +118,14 @@ export const FieldEscort = {
       feed(`${escort.name} is too heavy for what you carry. Leave something, or leave them.`, 'loss');
       return false;
     }
-    useWorldStore.getState().removeEntity(entityId);
+    port.apply({ kind: 'REMOVE_BODY', entityId });
     usePlayerStore.getState().recalcWeight();
     feed(`You take ${escort.name} up. They are heavy.`, 'plain');
     return true;
   },
 
   /** Set down, they lie at your feet again, as they were. Nothing of theirs comes open. */
-  setDown(item: IItem): boolean {
+  setDown(item: IItem, port: IWorldPort): boolean {
     if (!Escort.isCorpse(item) || !item.bondData) return false;
     const held = session();
     if (!held) return false;
@@ -139,11 +137,11 @@ export const FieldEscort = {
       delete layout[item.id];
       return { player: { ...s.player, currentSession: { ...cur, inventory: cur.inventory.filter(i => i.id !== item.id), inventoryLayout: layout } } };
     });
-    useWorldStore.getState().addEntity({
+    port.apply({ kind: 'ADD_BODY', entity: {
       id: item.bondData.entityId, type: EntityType.NPC, definitionId: 'npc_survivor',
       position: { x: held.position.x + 15, y: held.position.z + 15 }, rank: item.bondData.rank, rarity: item.bondData.rarity, isHostile: false,
       health: 0, npc: { ...(sheet as IWorldEntity['npc'])! }, escort: { by: usePlayerStore.getState().player.id, fallen: true }
-    });
+    } });
     usePlayerStore.getState().recalcWeight();
     feed(`You set ${sheet.name} down.`, 'plain');
     return true;
@@ -153,11 +151,11 @@ export const FieldEscort = {
    * At the beacon: whoever still walks beside you comes home as their bond, and whoever you carried
    * comes back on the other side. A fallen one left on the ground stays in this world.
    */
-  walkOut(): void {
+  walkOut(port: IWorldPort): void {
     const held = session();
     if (!held) return;
     const escorts = held.escorts ?? [];
-    const walking = escorts.filter(e => !e.fallen && (bodyOf(e.entityId)?.health ?? 0) > 0);
+    const walking = escorts.filter(e => !e.fallen && (bodyOf(port.view(), e.entityId)?.health ?? 0) > 0);
     const carried = held.inventory.filter(i => Escort.isCorpse(i) && i.bondData);
     if (walking.length === 0 && carried.length === 0 && escorts.length === 0) return;
     const bonds = [
@@ -172,7 +170,7 @@ export const FieldEscort = {
       carriedIds.forEach(id => delete layout[id]);
       return { player: { ...s.player, currentSession: { ...cur, escorts: [], inventoryLayout: layout, inventory: [...cur.inventory.filter(i => !carriedIds.has(i.id)), ...bonds] } } };
     });
-    for (const e of walking) { MobAI.unfollow(e.entityId); useWorldStore.getState().removeEntity(e.entityId); }
+    for (const e of walking) { MobAI.unfollow(e.entityId); port.apply({ kind: 'REMOVE_BODY', entityId: e.entityId }); }
     usePlayerStore.getState().recalcWeight();
     for (const e of walking) feed(`${e.name} walks out beside you.`, 'proof');
     for (const c of carried) feed(`${c.bondData!.sheet.name} comes back on the other side.`, 'proof');

@@ -15,7 +15,7 @@ import { GameClock } from '../../logic/time/GameClock';
 import { IItem, ItemType, Rarity, UniversalRank } from '../../../shared/types';
 import { usePlayerStore } from '../player/store';
 import { useHubStore } from './store';
-import { useWorldStore } from '../world/store';
+import type { IWorldCard, IWorldPort } from '../world/worldView';
 import { WorldClock } from '../world/WorldClock';
 import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
@@ -39,7 +39,7 @@ export type DialogueEffect =
   | { kind: 'deploy' }
   | { kind: 'close' };
 
-type Handler = (payload?: any) => DialogueEffect;
+type Handler = (payload: any, world: IWorldPort) => DialogueEffect;
 
 const bank = () => usePlayerStore.getState().player.bank;
 const stashItems = () => bank().stashTabs[0]?.items || [];
@@ -166,8 +166,8 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
   },
 
   // --- The Rusty Anchor (Old Mags) ---
-  REST: () => {
-    void RestDoor.sleep('INN');
+  REST: (_payload, world) => {
+    void RestDoor.sleep('INN', world);
     return { kind: 'reply', text: `${INN_FEE}G, and the bed by the wall. Whatever you have been carrying around in your head, leave it on the pillow.` };
   },
   BUY_CONSUMABLE: (payload) => {
@@ -219,19 +219,19 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
 /** Every action a dialogue option may carry. The test holds HUB_NPCS to this set. */
 export const HANDLED_ACTIONS = Object.keys(DIALOGUE_HANDLERS);
 
-export function runDialogueAction(action: string, payload?: any): DialogueEffect {
+export function runDialogueAction(world: IWorldPort, action: string, payload?: any): DialogueEffect {
   const handler = DIALOGUE_HANDLERS[action];
   if (!handler) {
     console.warn(`[DIALOGUE] Unregistered action refused: ${action}`);
     return { kind: 'reply', text: 'The terminal declines. [REFUSED: unregistered request]' };
   }
-  return handler(payload);
+  return handler(payload, world);
 }
 
 /** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest. */
-export function quickDeployTargetId(): string | null {
+export function quickDeployTargetId(cards: IWorldCard[]): string | null {
   const now = Date.now();
-  const worlds = useWorldStore.getState().availableWorlds.filter(w => WorldClock.momentAt(w, now).canDeploy);
+  const worlds = cards.filter(w => WorldClock.momentAt(w, now).canDeploy);
   const tutorial = worlds.find(w => Tutorial.isTutorial(w));
   if (tutorial && Tutorial.firstOrderOpen(usePlayerStore.getState().player)) return tutorial.id;
   return (worlds.find(w => !Tutorial.isTutorial(w)) ?? tutorial)?.id ?? null;

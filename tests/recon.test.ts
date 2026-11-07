@@ -39,7 +39,7 @@ import { ReconView, closeRecon, openRecon } from '../src/components/ReconView';
 import { TemplateStudio } from '../src/components/TemplateStudio';
 import { WorldCard } from '../src/components/MissionControl';
 import { useAppView, useFeed, useSheet } from '../src/components/ui/stores';
-import { useWorldStore, IWorldCard } from '../src/entities/world/store';
+import { useWorldStore, IWorldCard, worldPort } from '../src/entities/world/store';
 import { usePlayerStore } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { useIdentityStore } from '../src/entities/identity/store';
@@ -431,7 +431,7 @@ describe("line 126: a scribe writes a map, and it lands signed in the stash", ()
   const written = async (): Promise<IMapItem> => {
     primeSurvey('w1', { '3,3': entry(3, 1, { MOB: 2, HARVEST: 1 }), '4,4': entry(1, 0, {}) });
     primeStash(scribeKit());
-    const res = await MapSystem.write('w1');
+    const res = await MapSystem.write('w1', useWorldStore.getState().availableWorlds);
     expect(res.ok, res.reason).toBe(true);
     return res.item!;
   };
@@ -450,7 +450,7 @@ describe("line 126: a scribe writes a map, and it lands signed in the stash", ()
   it('refuses a short bill and takes nothing', async () => {
     primeSurvey('w1', { '3,3': entry(3, 1) });
     primeStash([mintRes('crf_paper', 'map:paper')]);
-    const res = await MapSystem.write('w1');
+    const res = await MapSystem.write('w1', useWorldStore.getState().availableWorlds);
     expect(res.ok).toBe(false);
     expect(res.reason).toMatch(/short/);
     expect(stash().length).toBe(1);
@@ -458,9 +458,9 @@ describe("line 126: a scribe writes a map, and it lands signed in the stash", ()
 
   it('refuses when nothing was scanned there, or the world is not on the registry', async () => {
     primeStash(scribeKit());
-    expect((await MapSystem.write('w1')).reason).toMatch(/nothing/i);
+    expect((await MapSystem.write('w1', useWorldStore.getState().availableWorlds)).reason).toMatch(/nothing/i);
     primeSurvey('gone', { '3,3': entry(3, 1) });
-    expect((await MapSystem.write('gone')).reason).toMatch(/registry/);
+    expect((await MapSystem.write('gone', useWorldStore.getState().availableWorlds)).reason).toMatch(/registry/);
     expect(stash().length).toBe(2);
   });
 
@@ -487,7 +487,7 @@ describe("line 126: a scribe writes a map, and it lands signed in the stash", ()
     const scanned = SurveySystem.entry(ScanLevel.COMPLETE, 1, [body('a', { displayName: 'Honored Hound' }), body('b')]);
     primeSurvey('w1', { '3,3': scanned });
     primeStash(scribeKit());
-    const item = (await MapSystem.write('w1')).item!;
+    const item = (await MapSystem.write('w1', useWorldStore.getState().availableWorlds)).item!;
     const everything = JSON.stringify(item) + JSON.stringify(inspectItem(item));
     expect(everything).not.toContain('secret');
     expect(everything).not.toContain('Honored Hound');
@@ -543,7 +543,7 @@ describe('line 126: another character reads it', () => {
   const handOver = async (sectors: Record<string, ISurveyEntry>): Promise<IItem> => {
     primeSurvey('w1', sectors);
     primeStash(scribeKit());
-    const item = (await MapSystem.write('w1')).item!;
+    const item = (await MapSystem.write('w1', useWorldStore.getState().availableWorlds)).item!;
     switchCharacter('uid_reader', 'TENON');
     const passed = JSON.parse(JSON.stringify(item)) as IItem;
     primeStash([passed]);
@@ -553,7 +553,7 @@ describe('line 126: another character reads it', () => {
   it("the reader's survey shows those sectors at the regeneration they were scanned in", async () => {
     const item = await handOver({ [KEY_A]: entry(3, 1), [KEY_B]: entry(2, 0) });
     expect(survey()).toEqual({});
-    const res = MapSystem.read(item.id);
+    const res = MapSystem.read(item.id, worldPort);
     expect(res.ok).toBe(true);
     expect(res.taken).toBe(2);
     expect(survey()[KEY_A].generation).toBe(1);
@@ -563,9 +563,9 @@ describe('line 126: another character reads it', () => {
 
   it('reading it uses nothing up, and a second reading adds nothing', async () => {
     const item = await handOver({ [KEY_A]: entry(3, 1) });
-    expect(MapSystem.read(item.id).taken).toBe(1);
+    expect(MapSystem.read(item.id, worldPort).taken).toBe(1);
     expect(stash().map(i => i.id)).toEqual([item.id]);
-    const again = MapSystem.read(item.id);
+    const again = MapSystem.read(item.id, worldPort);
     expect(again.ok).toBe(true);
     expect(again.taken).toBe(0);
     expect(again.kept).toBe(1);
@@ -574,7 +574,7 @@ describe('line 126: another character reads it', () => {
   it('it changes hands over a counter like any plan, and rides the trade whole and signed', async () => {
     primeSurvey('w1', { [KEY_A]: entry(3, 1) });
     primeStash(scribeKit());
-    const item = (await MapSystem.write('w1')).item!;
+    const item = (await MapSystem.write('w1', useWorldStore.getState().availableWorlds)).item!;
     useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [] } as never);
     await useHubStore.getState().loadHub('hub_map');
     const seller = usePlayerStore.getState().player;
@@ -588,7 +588,7 @@ describe('line 126: another character reads it', () => {
     expect(await useHubStore.getState().buyFromLot(lotId, item.id)).toBe(true);
     const bought = stash().find(i => i.id === item.id)!;
     expect(isMapItem(bought)).toBe(true);
-    expect(MapSystem.read(bought.id).taken).toBe(1);
+    expect(MapSystem.read(bought.id, worldPort).taken).toBe(1);
     expect(survey()[KEY_A].generation).toBe(1);
     const events = db.get(`prov_${item.id}`).data.events.map((e: { payload: { type: string } }) => e.payload.type);
     expect(events).toContain('TRANSFER');
@@ -596,8 +596,8 @@ describe('line 126: another character reads it', () => {
 
   it('refuses what is not a map in the stash', () => {
     primeStash(scribeKit());
-    expect(MapSystem.read(stash()[0].id).ok).toBe(false);
-    expect(MapSystem.read('nope').ok).toBe(false);
+    expect(MapSystem.read(stash()[0].id, worldPort).ok).toBe(false);
+    expect(MapSystem.read('nope', worldPort).ok).toBe(false);
   });
 
   it('the view offers it, the map opens on the board at once, fresh reads deep and old reads land', async () => {

@@ -13,7 +13,7 @@ import { StashGrid } from '../../entities/player/systems/StashGrid';
 import { CartSystem } from '../../entities/world/CartSystem';
 import { IWorldEntity } from '../../../shared/entities/world/types';
 import { usePlayerStore } from '../../entities/player/store';
-import { useWorldStore } from '../../entities/world/store';
+import { bodyOf, type IWorldView } from '../../entities/world/worldView';
 
 export type Place =
   | { kind: 'PACK'; x?: number; y?: number; rotated?: boolean }
@@ -29,9 +29,6 @@ export interface Held { item: IItem; from: Place; rotated: boolean }
 const OK: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
 const ALREADY: Verdict = no('It is already there.');
-
-const worldEntity = (id: string): IWorldEntity | undefined =>
-  Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).flatMap(c => c.entities).find(e => e.id === id);
 
 const onGrid = (p: { x?: number; y?: number }): p is { x: number; y: number } => typeof p.x === 'number' && typeof p.y === 'number';
 
@@ -77,7 +74,7 @@ function slotTakes(player: IPlayer, item: IItem, slot: EquipSlotId): Verdict {
 }
 
 /** The whole question, with no state touched. The ghost reads this every cell it crosses. */
-export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
+export function probeMove(player: IPlayer, held: Held, to: Place, world: IWorldView): Verdict {
   const { item, from } = held;
   const inField = !!player.currentSession;
 
@@ -108,7 +105,7 @@ export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
       if (from.kind === 'SLOT') return packTakes(player, item);
       return from.kind === 'CACHE' ? ALREADY : OK;
     case 'CART': {
-      const cart = worldEntity(to.entityId)?.cart;
+      const cart = bodyOf(world, to.entityId)?.cart;
       if (!cart) return no('No cart there.');
       if (from.kind === 'SLOT') {
         const whole = packTakes(player, item);
@@ -145,9 +142,9 @@ function intoPack(held: Held): Verdict {
 }
 
 /** Through the store's doors. A refused move has moved nothing. */
-export function commitMove(held: Held, to: Place): Verdict {
+export function commitMove(held: Held, to: Place, world: IWorldView): Verdict {
   const st = usePlayerStore.getState();
-  const verdict = probeMove(st.player, held, to);
+  const verdict = probeMove(st.player, held, to, world);
   if (!verdict.ok) return verdict;
   const { item } = held;
 

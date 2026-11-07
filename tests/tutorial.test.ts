@@ -133,15 +133,15 @@ describe('Q14: the debug world becomes the tutorial world', () => {
 describe('Q2: the tutorial is the first order', () => {
   it('quick deploy sends a newcomer to the tutorial, and after it is sealed, to a world of theirs', () => {
     useWorldStore.setState({ availableWorlds: [openWorld({ id: 'mine' }), Tutorial.card(Date.now())] });
-    expect(quickDeployTargetId()).toBe(TUTORIAL_WORLD_ID);
+    expect(quickDeployTargetId(useWorldStore.getState().availableWorlds)).toBe(TUTORIAL_WORLD_ID);
     usePlayerStore.setState(s => ({ player: { ...s.player, tutorialSealedAt: Date.now() } }));
-    expect(quickDeployTargetId()).toBe('mine');
+    expect(quickDeployTargetId(useWorldStore.getState().availableWorlds)).toBe('mine');
   });
 
   it('with no world of their own, quick deploy still reaches the tutorial', () => {
     usePlayerStore.setState(s => ({ player: { ...s.player, tutorialSealedAt: Date.now() } }));
     useWorldStore.setState({ availableWorlds: [Tutorial.card(Date.now())] });
-    expect(quickDeployTargetId()).toBe(TUTORIAL_WORLD_ID);
+    expect(quickDeployTargetId(useWorldStore.getState().availableWorlds)).toBe(TUTORIAL_WORLD_ID);
   });
 
   it('the card says it is the first order until it is sealed', async () => {

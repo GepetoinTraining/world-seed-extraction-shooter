@@ -16,7 +16,8 @@ import { MobAI } from '../../entities/mob/ai/MobAI';
 import { usePlayerStore } from '../../entities/player/store';
 import { DirectorStore } from '../../entities/world/DirectorStore';
 import { chunkOf } from '../../../shared/entities/world/grid';
-import { useWorldStore } from '../../entities/world/store';
+import { bodiesOf, bodyOf, openCard, type IWorldPort } from '../../entities/world/worldView';
+import { Population, emptyPopulationRecord } from '../../../shared/entities/world/Population';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { useFeed } from '../../components/ui/stores';
 import { SessionJournal } from '../journal/SessionJournal';
@@ -40,31 +41,30 @@ const dropFromPack = (itemId: string) => usePlayerStore.setState(s => {
   return { player: { ...s.player, currentSession: { ...held, inventory: held.inventory.filter(i => i.id !== itemId), inventoryLayout: layout } } };
 });
 
-const here = () => {
-  const world = useWorldStore.getState();
-  const card = world.availableWorlds.find(w => w.id === world.activeWorldId);
-  return { world, card };
+const here = (port: IWorldPort) => {
+  const world = port.view();
+  return { world, card: openCard(world) };
 };
 
 /** The cage goes where the pack can hold it, or to the person's feet. Nothing alive is lost to a full pack. */
-const intoPack = (item: IItem) => {
+const intoPack = (item: IItem, port: IWorldPort) => {
   const { rejected } = usePlayerStore.getState().tryAddItems([item]);
   if (rejected.length === 0) return;
   const pos = session()?.position;
   if (!pos) return;
-  useWorldStore.getState().addEntity({
+  port.apply({ kind: 'ADD_BODY', entity: {
     id: `cache_cage_${item.id}`, type: EntityType.CONTAINER, definitionId: 'ground_cache',
     position: { x: pos.x + 15, y: pos.z + 15 }, rank: item.rank, rarity: item.rarity, isHostile: false,
     container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: usePlayerStore.getState().player.id }
-  });
+  } });
   feed('The pack will not take the cage, so it stands at your feet.', 'loss');
 };
 
 export const FieldCapture = {
 
   /** A snare set on a body in reach. It is spent either way. */
-  snare(entity: IWorldEntity): void {
-    const { world, card } = here();
+  snare(entity: IWorldEntity, port: IWorldPort): void {
+    const { world, card } = here(port);
     const held = session();
     if (!held || !card || !world.activeWorldId) return;
     const def = MOB_DEFINITIONS[entity.definitionId];
@@ -103,18 +103,20 @@ export const FieldCapture = {
     const hub = useHubStore.getState();
     const hubId = hub.activeHubId ?? 'hub';
     const register = hub.farmland.registers[me] ?? Capture.registerOf(hubId, me, world.generation);
-    const written = world.reportCaptured(entity.id, entity.definitionId, register);
+    const now = port.view();
+    const written = Population.captured(now.populationRecord ?? emptyPopulationRecord(), entity.id, entity.definitionId, now.generation, register).to;
+    port.apply({ kind: 'CAPTURED', entityId: entity.id, definitionId: entity.definitionId, to: register });
     useHubStore.setState({ farmland: { ...hub.farmland, registers: { ...hub.farmland.registers, [me]: written } } });
     void useHubStore.getState().saveHubState();
-    world.removeEntity(entity.id);
+    port.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
     MobAI.clearMob(entity.id);
-    intoPack(item);
+    intoPack(item, port);
     usePlayerStore.getState().recalcWeight();
     feed('The snare holds. Something alive is in a cage now, and it is not pleased.', 'proof');
   },
 
   /** Let out, and answering to a hand. A hit walks beside you, and walks out with you. A miss stays caged. */
-  tame(itemId: string): void {
+  tame(itemId: string, port: IWorldPort): void {
     const held = session();
     const item = held?.inventory.find(i => i.id === itemId);
     const cage = item?.creatureData;
@@ -134,10 +136,10 @@ export const FieldCapture = {
     const def = MOB_DEFINITIONS[cage.kind];
     const id = `tame_${fnv1a(cage.body).toString(36)}_${attempt}`;
     const until = Date.now() + roll.followMs;
-    useWorldStore.getState().addEntity({
+    port.apply({ kind: 'ADD_BODY', entity: {
       id, type: EntityType.MOB, definitionId: cage.kind, position: { x: held.position.x + 25, y: held.position.z + 25 },
       rank: item.rank, rarity: item.rarity, health: def?.baseHealth ?? 1, isHostile: false
-    });
+    } });
     MobAI.follow(id, until);
     dropFromPack(itemId);
     usePlayerStore.setState(s => s.player.currentSession ? ({
@@ -148,15 +150,15 @@ export const FieldCapture = {
   },
 
   /** The time ran out: it stops answering, and it is part of this land from here. Read each second. */
-  expire(now = Date.now()): void {
+  expire(port: IWorldPort, now = Date.now()): void {
     const held = session();
     const done = held?.tamed?.filter(t => t.until <= now) ?? [];
     if (!held || done.length === 0) return;
     for (const t of done) {
-      const body = Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).flatMap(c => c.entities).find(e => e.id === t.entityId);
+      const body = bodyOf(port.view(), t.entityId);
       if (body) {
         MobAI.unfollow(t.entityId);
-        useWorldStore.getState().reportReleased(`${chunkOf(body.position.x)},${chunkOf(body.position.y)}`, body.definitionId);
+        port.apply({ kind: 'RELEASED', ground: `${chunkOf(body.position.x)},${chunkOf(body.position.y)}`, definitionId: body.definitionId });
         feed('What followed you has stopped. It goes back to being what it was.', 'plain');
       }
     }
@@ -166,15 +168,15 @@ export const FieldCapture = {
   },
 
   /** At the beacon: what is still beside you goes home with you, and it weighs nothing in the pack. */
-  walkOut(): void {
+  walkOut(port: IWorldPort): void {
     const held = session();
     if (!held?.tamed?.length) return;
-    const standing = new Set(Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).flatMap(c => c.entities).filter(e => (e.health ?? 0) > 0).map(e => e.id));
+    const standing = new Set(bodiesOf(port.view()).filter(e => (e.health ?? 0) > 0).map(e => e.id));
     const out = held.tamed.filter(t => standing.has(t.entityId));
     usePlayerStore.setState(s => s.player.currentSession ? ({
       player: { ...s.player, currentSession: { ...s.player.currentSession, tamed: [], inventory: [...s.player.currentSession.inventory, ...out.map(t => t.item)] } }
     }) : s);
-    for (const t of out) { MobAI.unfollow(t.entityId); useWorldStore.getState().removeEntity(t.entityId); }
+    for (const t of out) { MobAI.unfollow(t.entityId); port.apply({ kind: 'REMOVE_BODY', entityId: t.entityId }); }
     if (out.length > 0) feed(`${out.length === 1 ? 'What followed you walks' : `${out.length} that followed you walk`} out beside you.`, 'proof');
   },
 
@@ -182,8 +184,8 @@ export const FieldCapture = {
    * Let go, here. Back on its own map it only rejoins its count. On another, it joins as a foreign
    * branch with the proof of its line, which moves that map's signed root and not its pack.
    */
-  async release(itemId: string): Promise<void> {
-    const { world, card } = here();
+  async release(itemId: string, port: IWorldPort): Promise<void> {
+    const { world, card } = here(port);
     const held = session();
     const item = held?.inventory.find(i => i.id === itemId);
     const cage = item?.creatureData;
@@ -197,17 +199,19 @@ export const FieldCapture = {
       const arrival = await CreatureLines.arrive(world.directorRecord, { seed: card.seed, themeId: card.themeId }, proof, ground);
       if (!arrival.ok) { feed(`It will not take here. ${arrival.reason ?? ''}`.trim(), 'loss'); return; }
       await DirectorStore.save(world.activeWorldId, arrival.record);
-      useWorldStore.getState().adoptRecord(world.activeWorldId, arrival.record);
+      port.apply({ kind: 'ADOPT_RECORD', worldId: world.activeWorldId, record: arrival.record });
       await CreatureLines.define(arrival.record, card.themeId);
     }
     if (!MOB_DEFINITIONS[cage.kind]) Object.assign(MOB_DEFINITIONS, { [cage.kind]: cage.def });
     const def = MOB_DEFINITIONS[cage.kind];
-    const n = (useWorldStore.getState().populationRecord?.released ?? []).filter(b => b.ground === ground && b.at === world.generation).length;
-    useWorldStore.getState().reportReleased(ground, cage.kind);
-    useWorldStore.getState().addEntity({
-      id: `rel_${ground.replace(',', '_')}_${n}`, type: EntityType.MOB, definitionId: cage.kind, position: { x: held.position.x + 25, y: held.position.z + 25 },
-      rank: item.rank, rarity: item.rarity, health: def?.baseHealth ?? 1, isHostile: false
-    });
+    const n = (port.view().populationRecord?.released ?? []).filter(b => b.ground === ground && b.at === world.generation).length;
+    port.apply(
+      { kind: 'RELEASED', ground, definitionId: cage.kind },
+      { kind: 'ADD_BODY', entity: {
+        id: `rel_${ground.replace(',', '_')}_${n}`, type: EntityType.MOB, definitionId: cage.kind, position: { x: held.position.x + 25, y: held.position.z + 25 },
+        rank: item.rank, rarity: item.rarity, health: def?.baseHealth ?? 1, isHostile: false
+      } }
+    );
     dropFromPack(itemId);
     usePlayerStore.getState().recalcWeight();
     SessionJournal.record('INTERACT', { kind: 'RELEASE', body: cage.body, ground, foreign: !home });

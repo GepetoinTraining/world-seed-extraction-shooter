@@ -3,7 +3,7 @@
  * deploy go through the same checks and open the same journal.
  */
 
-import { useWorldStore } from '../../entities/world/store';
+import type { IWorldPort } from '../../entities/world/worldView';
 import { usePlayerStore } from '../../entities/player/store';
 import { SessionJournal } from '../journal/SessionJournal';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
@@ -17,13 +17,13 @@ import { useWaits, whileWaiting } from '../../components/ui/stores';
 export const OPENING_WORLD = 'opening_world';
 
 /** Press it twice and nothing more happens: the first is still opening. */
-export async function deployToWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
+export async function deployToWorld(worldId: string, world: IWorldPort): Promise<{ ok: boolean; reason?: string }> {
   if (useWaits.getState().waits.some(w => w.id === OPENING_WORLD)) return { ok: false };
-  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId));
+  return whileWaiting(OPENING_WORLD, 'OPENING THE GATE', () => enterWorld(worldId, world));
 }
 
-async function enterWorld(worldId: string): Promise<{ ok: boolean; reason?: string }> {
-  const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
+async function enterWorld(worldId: string, world: IWorldPort): Promise<{ ok: boolean; reason?: string }> {
+  const card = world.view().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
 
   // D79: a character at rest is down, and another can play
@@ -59,13 +59,13 @@ async function enterWorld(worldId: string): Promise<{ ok: boolean; reason?: stri
     }
   }
 
-  await useWorldStore.getState().selectWorld(worldId);
+  await world.open(worldId);
   // Q41: AGENTS counts drops into the world. The simulation stands outside the count.
   if (!card.isDebug) {
     await WorldCertificateSystem.recordDrop(worldId);
-    useWorldStore.setState(s => ({ availableWorlds: s.availableWorlds.map(w => (w.id === worldId ? { ...w, playerCount: w.playerCount + 1 } : w)) }));
+    world.apply({ kind: 'DROP_COUNTED', worldId });
   }
-  useWorldStore.getState().applySurvey(usePlayerStore.getState().player.survey?.[worldId]);
+  world.apply({ kind: 'APPLY_SURVEY', survey: usePlayerStore.getState().player.survey?.[worldId] });
   usePlayerStore.getState().diveIntoLayer(card.seed);
 
   // Wave 1.2: open the session journal with the claim's baseHash

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../shared/types';
-import { useWorldStore } from '../entities/world/store';
+import { useWorldStore, worldPort } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore, worldDay } from '../entities/hub/store';
 import { rememberThreat } from '../entities/interaction/memoryStore';
@@ -434,9 +434,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Completes the extraction: tax, journal seal, banking, save — and the SEAL moment
   const completeExtraction = useCallback(() => {
     // D65: what is still following comes home with the haul, and it never had to fit the pack
-    FieldCapture.walkOut();
+    FieldCapture.walkOut(worldPort);
     // Q16: whoever walked beside you goes home as their bond, and whoever you carried comes back
-    FieldEscort.walkOut();
+    FieldEscort.walkOut(worldPort);
     const st = usePlayerStore.getState();
     const session = st.player.currentSession;
     if (!session) return;
@@ -957,7 +957,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const liveAttributes = usePlayerStore.getState().player.attributes;
       const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes) });
       // Q16: who walks beside you, where they stand now
-      const escortsStanding = FieldEscort.standing();
+      const escortsStanding = FieldEscort.standing(worldPort);
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach((p, n) => {
@@ -971,7 +971,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             } else {
               // Q16: a blow aimed at someone beside you lands on them
               const struck = Escort.hitBy(p.origin, p.reachPx ?? 50, escortsStanding);
-              if (struck) FieldEscort.hurt(struck, p.damage ?? 10, `escort_hit:${struck}:${now}:${n}`);
+              if (struck) FieldEscort.hurt(struck, p.damage ?? 10, `escort_hit:${struck}:${now}:${n}`, worldPort);
             }
           }
         });
@@ -996,7 +996,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Q16: a shot that reaches someone beside you first is theirs to take
         const escortStruck = escortsStanding.find(e => ProjectileSystem.sweptDistance(b, e.x, e.y) < 15);
         if (escortStruck && ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) >= 15) {
-          FieldEscort.hurt(escortStruck.entityId, b.damage ?? 8, `escort_shot:${b.id}`);
+          FieldEscort.hurt(escortStruck.entityId, b.damage ?? 8, `escort_shot:${b.id}`, worldPort);
           spentShots.current.set(b.id, now);
           return false;
         }
@@ -1014,7 +1014,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Collision-check ALL visible chunks (AI only returns the modified ones)
       // Q16: and they fight back, at whatever has engaged within their reach
       const simulated = { ...visibleChunks, ...aiResult.updatedChunks };
-      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities)) : [];
+      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities), worldPort) : [];
       // Drawn like your own swing; the same arc, so it lands once however many frames it is drawn
       if (escortSwings.length > 0) setActiveSwings(prev => [...prev.filter(sw => now - sw.startTime < 300), ...escortSwings]);
       const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings);
@@ -1086,7 +1086,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           ? { currentMap: { ...state.currentMap, chunks: { ...state.currentMap.chunks, ...chunkUpdates } } }
           : state);
         // Q16: the copy written back predates this frame's blows on those beside you; their record is the truth
-        FieldEscort.settle();
+        FieldEscort.settle(worldPort);
       }
 
       // Loot: spawn new drops, then auto-pickup anything within reach

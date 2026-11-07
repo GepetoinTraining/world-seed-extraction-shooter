@@ -70,7 +70,7 @@ import { shellBillFor, SHELL_BILLS, stationFunctionOf, stationMinAreaOf, isStati
 import { inspectEntity, inspectItem } from '../src/render/atoms/inspect';
 import { useHubStore } from '../src/entities/hub/store';
 import { usePlayerStore } from '../src/entities/player/store';
-import { useWorldStore } from '../src/entities/world/store';
+import { useWorldStore, worldPort } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 
@@ -1472,7 +1472,7 @@ describe('line 66: an NPC carries stats and skills derived from its seed', () =>
     usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { sessionId: 'sess_bond', layerId: 'l', inventory: [], kitItemIds: [], health: 100, maxHealth: 100, energy: 100, position: { x: 0, y: 0, z: 0 }, statusEffects: [] } } }));
     store().performInteraction(`int_recruit_${entity.id}`, entity.id);
     // Q16: they walk beside you now, and the bond is written at the beacon
-    FieldEscort.walkOut();
+    FieldEscort.walkOut(worldPort);
     const bond = player().currentSession!.inventory.find(i => i.tags.includes('npc_contract'))!;
     expect(bond.bondData?.worldSeed).toBe('bond_world');
     expect(bond.bondData?.entityId).toBe('ent_bond');

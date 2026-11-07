@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePlayerStore } from './src/entities/player/store';
-import { useWorldStore } from './src/entities/world/store';
+import { useWorldStore, worldPort } from './src/entities/world/store';
 import { useIdentityStore, IdentityState } from './src/entities/identity/store';
 import { WorldCanvas } from './src/components/WorldCanvas';
 import { HubCanvas } from './src/entities/hub/HubCanvas';
@@ -235,16 +235,16 @@ const App: React.FC = () => {
   // D69: a world's window runs on its own clock, from whichever client is here. Play never waits on it
   useEffect(() => {
     if (bootStatus !== 'READY') return;
-    void ScanDoor.tick();
-    const interval = setInterval(() => void ScanDoor.tick(), 5000);
+    void ScanDoor.tick(worldPort);
+    const interval = setInterval(() => void ScanDoor.tick(worldPort), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 
   // D133: a gate going down is a downtime, and the record is told. Play never waits on it
   useEffect(() => {
     if (bootStatus !== 'READY') return;
-    void RecordDoor.tick();
-    const interval = setInterval(() => void RecordDoor.tick(), 5000);
+    void RecordDoor.tick(useWorldStore.getState().availableWorlds);
+    const interval = setInterval(() => void RecordDoor.tick(useWorldStore.getState().availableWorlds), 5000);
     return () => clearInterval(interval);
   }, [bootStatus]);
 

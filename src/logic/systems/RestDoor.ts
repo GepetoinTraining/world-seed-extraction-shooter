@@ -5,7 +5,7 @@
 
 import { usePlayerStore } from '../../entities/player/store';
 import { useHubStore } from '../../entities/hub/store';
-import { useWorldStore } from '../../entities/world/store';
+import type { IWorldPort } from '../../entities/world/worldView';
 import { useFeed } from '../../components/ui/stores';
 import { GoldCommit } from '../economy/GoldCommit';
 import { Ledger } from '../ledger/Ledger';
@@ -42,7 +42,7 @@ export const RestDoor = {
   },
 
   /** A chosen rest begins (D79): the fee, what is queued goes to the door, and this character is down until it ends. */
-  async sleep(place: RestPlace): Promise<{ ok: boolean; reason?: string }> {
+  async sleep(place: RestPlace, world: IWorldPort): Promise<{ ok: boolean; reason?: string }> {
     const before = usePlayerStore.getState().player;
     const now = Date.now();
     const verdict = RestSystem.canRest(before, place, now);
@@ -66,7 +66,7 @@ export const RestDoor = {
     usePlayerStore.setState({ player: lying });
     for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
     await useHubStore.getState().creditHeld();
-    await RestDoor.file(emerged);
+    await RestDoor.file(emerged, world);
     if (!(await RestDoor.wakeIfDue(now))) {
       feed(`You lie down. This character is at rest for ${WorldClock.say(lying.rest!.until - now)}. Another can go.`, 'signal');
       await PlayerPersistence.flush('rest');
@@ -91,7 +91,7 @@ export const RestDoor = {
   },
 
   /** Send what was queued, if there is anything and a door. Nothing waits on this. */
-  async file(emerged: { id: string }[]): Promise<void> {
+  async file(emerged: { id: string }[], world: IWorldPort): Promise<void> {
     const player = usePlayerStore.getState().player;
     if (player.pendingDream) return;
     const queue = RestSystem.dreamQueue(player, emerged);
@@ -105,8 +105,8 @@ export const RestDoor = {
     }
     if (skills.length === 0 && weaves.length === 0 && gifts.length === 0 && studied.length === 0 && !LoreSystem.worthFiling(player)) return;
 
-    const world = useWorldStore.getState();
-    const card = world.availableWorlds.find(w => w.id === world.activeWorldId) ?? world.availableWorlds[0];
+    const view = world.view();
+    const card = view.availableWorlds.find(w => w.id === view.activeWorldId) ?? view.availableWorlds[0];
     const theme = ContentRegistry.get(card?.themeId) ?? ContentRegistry.list()[0];
     const summary = theme ? { name: theme.name, premise: theme.premise, regions: theme.regions.map(r => r.name), elements: [...new Set(theme.abilities.flatMap(a => a.elements))] } : {};
 

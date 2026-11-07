@@ -30,42 +30,12 @@ import { ScanPass } from '../../logic/systems/ScanPass';
 import { scanRoom } from '../../logic/systems/ScanRoom';
 import { Tutorial } from '../../logic/systems/Tutorial';
 
-export interface IWorldCard extends IClockedWorld {
-  id: string;
-  seed: string;
-  size: number;
-  createdAt: number;
-  cadence?: ICadence;
-  sky?: SkyKind;
-  playerCount: number;
-  isDebug?: boolean;
-  /** Q14: the tutorial world, a newcomer's first order. It stands outside the clock (`isDebug`). */
-  isTutorial?: boolean;
-  name: string;
-  difficulty: string;
-  creator: string;
-  extractionTaxRate: number; // Wave 2.5: the hub's cut, from the world cert
-  // Wave 4.4: enforced world rules
-  deathPenalty: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH';
-  ipCap?: UniversalRank;
-  ipFloor?: UniversalRank;
-  // Wave 10E (D20): the content-pack version pinned at mint. Absent = minted
-  // before the banks; the world keeps the purged legacy pool, forever.
-  packVersion?: number;
-  // D27: the web this world's people are read through. Absent = the first version.
-  webVersion?: number;
-  /**
-   * D53: the theme it reads. Pedro (Q43): a world never retires, so a world minted before themes,
-   * or pinned to one this hub does not hold, reads the hub's own theme (`ContentRegistry.standing`).
-   */
-  themeId?: string;
-  magicUnlocked?: boolean;
-  /** Who minted it, whole, and the deed they spent. A toll's gold reads these (`Toll.ownerOf`). */
-  creatorUid?: string;
-  mintedWithDeed?: string;
-}
+import type { IWorldCard, IWorldPort, IWorldView, WorldChange } from './worldView';
+export type { IWorldCard } from './worldView';
 
-interface WorldState {
+interface WorldState extends IWorldView {
+  /** The one door a system's changes come through, applied in order (worldView.ts). */
+  apply: (...changes: WorldChange[]) => void;
   /** D48: how this world's monsters have come along, fed by this session's fights. */
   directorRecord: IDirectorRecord | null;
   reportToDirector: (kind: 'FELLED_A_PERSON' | 'FELL', definitionId: string, body?: { id: string; rank?: UniversalRank }) => void;
@@ -162,6 +132,23 @@ LiveClient.on(event => {
 });
 
 export const useWorldStore = create<WorldState>((set, get) => ({
+  apply: (...changes) => {
+    for (const change of changes) {
+      const world = get();
+      switch (change.kind) {
+        case 'ADD_BODY': world.addEntity(change.entity); break;
+        case 'UPDATE_BODY': world.updateEntity(change.entityId, change.patch); break;
+        case 'REMOVE_BODY': world.removeEntity(change.entityId); break;
+        case 'CAPTURED': world.reportCaptured(change.entityId, change.definitionId, change.to); break;
+        case 'RELEASED': world.reportReleased(change.ground, change.definitionId); break;
+        case 'ADOPT_RECORD': world.adoptRecord(change.worldId, change.record); break;
+        case 'APPLY_SURVEY': world.applySurvey(change.survey); break;
+        case 'DROP_COUNTED':
+          set(s => ({ availableWorlds: s.availableWorlds.map(w => (w.id === change.worldId ? { ...w, playerCount: w.playerCount + 1 } : w)) }));
+          break;
+      }
+    }
+  },
   directorRecord: null,
   populationRecord: null,
   reportSeen: (entityIds) => {
@@ -526,3 +513,10 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     }
   }
 }));
+
+/** The world as a system takes it (worldView.ts): a fresh view on each read, and the store's one door. */
+export const worldPort: IWorldPort = {
+  view: () => useWorldStore.getState(),
+  apply: (...changes) => useWorldStore.getState().apply(...changes),
+  open: (worldId) => useWorldStore.getState().selectWorld(worldId)
+};

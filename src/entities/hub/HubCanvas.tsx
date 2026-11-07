@@ -56,6 +56,7 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../shared/types';
+import { useWorldStore, worldPort } from '../world/store';
 
 /** How often the meetings nobody watched are sent and collected, while the city is open. A guess until Wave 12. */
 const MEET_TICK_MS = 60_000;
@@ -474,9 +475,9 @@ export const HubCanvas: React.FC = () => {
         return;
       case 'deploy': {
         setActiveNPC(null); setNpcReply(null);
-        const target = quickDeployTargetId();
+        const target = quickDeployTargetId(useWorldStore.getState().availableWorlds);
         if (!target) { pushFeed('No walkable reality on the registry.', 'loss'); return; }
-        const res = await deployToWorld(target);
+        const res = await deployToWorld(target, worldPort);
         if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
         return;
       }
@@ -1010,7 +1011,7 @@ export const HubCanvas: React.FC = () => {
                   key={i}
                   tone={opt.action === 'CLOSE' ? 'quiet' : 'signal'}
                   autoFocus={i === 0}
-                  onClick={() => void applyEffect(runDialogueAction(opt.action, opt.payload))}
+                  onClick={() => void applyEffect(runDialogueAction(worldPort, opt.action, opt.payload))}
                 >
                   {opt.label}
                 </Button>

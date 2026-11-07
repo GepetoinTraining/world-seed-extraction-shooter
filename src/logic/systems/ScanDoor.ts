@@ -7,7 +7,7 @@
  * server that is down, a world still regenerates and stands on plain names.
  */
 
-import { useWorldStore, IWorldCard } from '../../entities/world/store';
+import type { IWorldCard, IWorldPort } from '../../entities/world/worldView';
 import { useHubStore } from '../../entities/hub/store';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { useFeed } from '../../components/ui/stores';
@@ -57,11 +57,11 @@ export const ScanDoor = {
   },
 
   /** One pass over every world this client knows, at most once per slot of each. */
-  async tick(now = Date.now()): Promise<void> {
+  async tick(world: IWorldPort, now = Date.now()): Promise<void> {
     if (ticking) return;
     ticking = true;
     try {
-      const worlds = useWorldStore.getState().availableWorlds.filter(w => !w.isDebug);
+      const worlds = world.view().availableWorlds.filter(w => !w.isDebug);
       for (const card of worlds) {
         await ScanDoor.defineOnce(card);
         const moment = WorldClock.momentAt(card, now);
@@ -71,7 +71,7 @@ export const ScanDoor = {
         lastSlot.set(card.id, slot);
 
         const report = await ScanPass.step(card, now, scanRoom, browserDoor);
-        if (report.record) useWorldStore.getState().adoptRecord(card.id, report.record);
+        if (report.record) world.apply({ kind: 'ADOPT_RECORD', worldId: card.id, record: report.record });
         say(card, report);
         for (const usage of report.used) {
           await Ledger.append('TECH', { kind: 'INTELLIGENCE_USE', hubId: useHubStore.getState().activeHubId, door: 'window', worldId: card.id, ...usage });

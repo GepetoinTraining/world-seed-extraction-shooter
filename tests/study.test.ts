@@ -55,6 +55,7 @@ import { ProgressionSystem } from '../shared/entities/player/systems/Progression
 import { ProcessSystem } from '../shared/logic/systems/ProcessSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useHubStore } from '../src/entities/hub/store';
+import { worldPort } from '../src/entities/world/store';
 
 const store = () => usePlayerStore.getState();
 const player = () => store().player;
@@ -194,7 +195,7 @@ describe('line 153: study is an action anyone can take on anything, and it costs
   });
 
   it('every person in town can be asked to sit for it, through the talk', () => {
-    const effect = runDialogueAction('STUDY_PERSON', { id: 'npc_vex', name: 'Vex', title: 'The Guild' });
+    const effect = runDialogueAction(worldPort, 'STUDY_PERSON', { id: 'npc_vex', name: 'Vex', title: 'The Guild' });
     expect(effect.kind).toBe('reply');
     expect(StudyDoor.sitting()?.target.kind).toBe('person');
     const hub = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
@@ -536,7 +537,7 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
     onLog();
     vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
     set(p => ({ ...p, energyToday: 1 }));
-    const out = await RestDoor.sleep('BED');
+    const out = await RestDoor.sleep('BED', worldPort);
     expect(out.ok).toBe(true);
     expect(RestSystem.queueOf(player()).sittings).toHaveLength(1);
     expect(LoreSystem.held(player())).toBe(0);
@@ -548,7 +549,7 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
   it('with no key a person is told it waits, and never told it failed', async () => {
     onLog();
     vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
-    await RestDoor.file([]);
+    await RestDoor.file([], worldPort);
     const feed = useFeed.getState().lines.map(i => i.text).join(' ');
     expect(feed).toMatch(/waits/i);
   });
@@ -556,7 +557,7 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
   it('a sitting is what the door files, even with nothing else queued', async () => {
     onLog();
     const file = vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'PENDING', batchId: 'b1' } as never);
-    await RestDoor.file([]);
+    await RestDoor.file([], worldPort);
     expect(file).toHaveBeenCalledOnce();
     expect(player().pendingDream!.asked.sittings).toEqual(['sit_1']);
   });
@@ -782,7 +783,7 @@ describe('"Gifts also cost lore"', () => {
   it('a person is told what the gift waits on, once, at the rest', async () => {
     holding();
     vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
-    await RestDoor.file([]);
+    await RestDoor.file([], worldPort);
     const feed = useFeed.getState().lines.map(i => i.text).join(' ');
     expect(feed).toMatch(/lore/i);
   });
@@ -793,7 +794,7 @@ describe('"Gifts also cost lore"', () => {
     onLog('sit_2', 'success');
     expect(LoreSystem.giftsToAsk(player()).map(g => g.id)).toEqual([axeWood().id]);
     vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
-    await RestDoor.file([]);
+    await RestDoor.file([], worldPort);
     const feed = useFeed.getState().lines.map(i => i.text).join(' ');
     expect(feed).toContain(WebSystem.nameOf(axeWood().id));
     expect(feed).toMatch(/gift/i);
@@ -990,7 +991,7 @@ describe('lore improves passives', () => {
 describe('lore held brings the dream only when it has something new to spend', () => {
   it('nothing held and nothing logged asks nothing', async () => {
     const file = vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
-    await RestDoor.file([]);
+    await RestDoor.file([], worldPort);
     expect(file).not.toHaveBeenCalled();
   });
 
@@ -998,7 +999,7 @@ describe('lore held brings the dream only when it has something new to spend', (
     set(p => ({ ...p, bank: { ...p.bank, loreHeld: 1_000_000, lore: { wood: { topic: 'wood', xp: 1, level: 1, dateDiscovered: 0 }, axe: { topic: 'axe', xp: 1, level: 1, dateDiscovered: 0 } } } }));
     expect(LoreSystem.worthFiling(player())).toBe(true);
     const file = vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'PENDING', batchId: 'b1' } as never);
-    await RestDoor.file([]);
+    await RestDoor.file([], worldPort);
     expect(file).toHaveBeenCalledOnce();
   });
 

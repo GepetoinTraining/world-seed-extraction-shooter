@@ -9,7 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { useWorldStore } from '../entities/world/store';
+import { useWorldStore, worldPort } from '../entities/world/store';
 import { FieldCapture } from '../logic/systems/FieldCapture';
 import { Escort } from '../logic/systems/Escort';
 import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
@@ -173,7 +173,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
               <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>{selectedItem.creatureData ? 'TRY TO TAME' : 'USE'}</Button>
             )}
             {selectedItem.creatureData && (
-              <Button tone="quiet" onClick={() => { void FieldCapture.release(selectedItem.id); setSelected(null); }}>LET IT GO HERE</Button>
+              <Button tone="quiet" onClick={() => { void FieldCapture.release(selectedItem.id, worldPort); setSelected(null); }}>LET IT GO HERE</Button>
             )}
             {/* Wave 10E (D21): insurance is spent, not eaten — the magic names what it keeps */}
             {read && (selectedItem.charmData || selectedItem.scrollData) && (

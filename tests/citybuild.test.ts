@@ -44,6 +44,7 @@ import { TagLaw } from '../shared/logic/content/TagLaw';
 import { WorldDeed } from '../src/logic/systems/WorldDeed';
 import { WorldCertificateSystem } from '../src/entities/world/WorldCertificate';
 import { installShippedThemes } from '../shared/logic/theme/boot';
+import { worldPort } from '../src/entities/world/store';
 
 const source = (path: string) => readFileSync(path, 'utf8');
 const UID = 'uid_city';
@@ -221,7 +222,7 @@ describe('Q25, as built: the inn charges for the night at full energy', () => {
     await openOn(worldDay());
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 100 } } }));
     expect(RestSystem.energyHeld(player())).toBe(StatSystem.maxEnergyOf(player()));
-    const res = await RestDoor.sleep('INN');
+    const res = await RestDoor.sleep('INN', worldPort);
     expect(res.ok).toBe(true);
     expect(player().bank.gold).toBe(100 - INN_FEE);
     expect((await rowsOf('GOLD_DELTA')).some(r => r.data.reason === 'INN' && r.data.amount === -INN_FEE)).toBe(true);

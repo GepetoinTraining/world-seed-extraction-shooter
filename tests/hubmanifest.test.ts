@@ -49,6 +49,7 @@ import { usePlayerStore } from '../src/entities/player/store';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { worldPort } from '../src/entities/world/store';
 
 const SRC = (path: string) => readFileSync(path, 'utf8');
 const allPois = (l: IHubLayout) => l.zones.flatMap(z => z.pois);
@@ -1752,8 +1753,8 @@ describe('the Land Office: the town hall has a land manager', () => {
     expect(actions).toContain('OPEN_DEEDS');
     expect(actions).toContain('OPEN_PLAN');
     expect(actions).toContain('CLOSE');
-    expect(runDialogueAction('OPEN_DEEDS')).toEqual({ kind: 'navigate', view: 'HOLDINGS' });
-    expect(runDialogueAction('OPEN_PLAN')).toEqual({ kind: 'open', panel: 'plan' });
+    expect(runDialogueAction(worldPort, 'OPEN_DEEDS')).toEqual({ kind: 'navigate', view: 'HOLDINGS' });
+    expect(runDialogueAction(worldPort, 'OPEN_PLAN')).toEqual({ kind: 'open', panel: 'plan' });
   });
 
   it('is the one way to the deeds in the city', () => {

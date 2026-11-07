@@ -15,7 +15,7 @@
 import { IPlayer, UniversalRank } from '../../../shared/types';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { IMap, ISector, ScanLevel } from '../../../shared/entities/world/types';
-import type { IWorldCard } from '../../entities/world/store';
+import type { IWorldCard } from '../../entities/world/worldView';
 
 export const TUTORIAL_WORLD_ID = 'tutorial';
 const TUTORIAL_SEED = 'dev-sandbox-v4';
