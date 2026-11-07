@@ -109,6 +109,45 @@ export const HubClient = {
    * @param readGold the character's gold as the game holds it, read before and after the rows are
    * listed: a reading is sent only when the two agree, so it is the reading at the head sent.
    */
+  /**
+   * A city's people, each chain from the row after the last this hub held of it. What the hub
+   * answers for each is kept, so the next send starts where it stands. A chain the hub held first
+   * from another browser stands there; this one reads from where it says.
+   */
+  async sendPeople(city: string): Promise<IHubOutcome & { people?: { uid: string; ok: boolean; held?: number; reason?: string }[] }> {
+    const sentId = `people_sent_${city}`;
+    const sent = (await VectorStore.get<Record<string, number>>(VectorNamespace.TRANSACTIONS, sentId))?.data ?? {};
+    const chains = new Map<string, ISignedPayload<ILedgerRow>[]>();
+    for (const d of await VectorStore.query<ISignedPayload<ILedgerRow>>({ namespace: VectorNamespace.TRANSACTIONS, idPrefix: 'ledger_person_' })) {
+      const uid = /^ledger_(person_[0-9a-f]{16})_\d+$/.exec(d?.id ?? '')?.[1];
+      if (!uid || d.data.payload.seq <= (sent[uid] ?? 0)) continue;
+      chains.set(uid, [...(chains.get(uid) ?? []), d.data]);
+    }
+    // Only this city's people: a chain's first row names its city, and a chain sent before was this city's
+    const ours = [...chains].filter(([uid, rows]) => sent[uid] !== undefined || rows.some(r => r.payload.seq === 1 && r.payload.data?.hubId === city));
+    if (ours.length === 0) return { ok: true, people: [] };
+    const answers: { uid: string; ok: boolean; held?: number; reason?: string }[] = [];
+    let part: { uid: string; rows: ISignedPayload<ILedgerRow>[] }[] = [];
+    let size = 0;
+    const flush = async () => {
+      if (part.length === 0) return true;
+      const out = await call<IHubOutcome & { people?: { uid: string; ok: boolean; held?: number; reason?: string }[] }>('/people', { chains: part });
+      part = []; size = 0;
+      if (!out.ok) return false;
+      for (const a of out.people ?? []) { answers.push(a); if (a.held !== undefined) sent[a.uid] = a.held; }
+      return true;
+    };
+    for (const [uid, rows] of ours) {
+      part.push({ uid, rows: rows.sort((a, b) => a.payload.seq - b.payload.seq) });
+      size += rows.length;
+      if (size >= ROWS_PER_SEND && !(await flush())) break;
+    }
+    await flush();
+    const now = Date.now();
+    await VectorStore.put({ id: sentId, namespace: VectorNamespace.TRANSACTIONS, data: sent, metadata: { createdAt: now, updatedAt: now, version: 1 } });
+    return { ok: true, people: answers };
+  },
+
   async sendReceipts(uid: string, readGold?: () => number): Promise<IHubOutcome & { held?: number; sent?: number; ack?: IHubStatement; challenge?: unknown; rerun?: unknown }> {
     const record = await this.record(uid);
     if (!record.ok) return record;

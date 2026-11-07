@@ -40,6 +40,7 @@ import { useFeed } from '../../components/ui/stores';
 import { Deeds } from '../../logic/memory/Deeds';
 import { MemoryPlace, MemoryStore } from './memoryStore';
 import { IMounted } from '../../logic/memory/NpcContext';
+import { PersonLedger } from '../../logic/people/PersonLedger';
 
 export type TalkSubject =
   | { kind: 'FIELD_PERSON'; entityId: string }
@@ -433,6 +434,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         spentUsd: addUsage(s.spentUsd, answer.usage),
         rounds: [...s.rounds, { said, roll, required, band: answer.band, gated: answer.gated, by: answer.by, reply, ...sums }]
       }));
+      await PersonLedger.actMany(useHubStore.getState().activeHubId ?? 'hub_unknown', [{ npcId: subject.npcId, act: { kind: 'TALKED', with: me(), band: answer.band } }]);
       await MemoryStore.write(cityPlace(), [{
         owner: subject.npcId,
         what: Deeds.talkRound({ day: worldDay(), speaker: me(), listener: subject.npcId, said, landed: sums.landed, remember: answer.remember, ...(person.keeper ? { where: AT_THE_COUNTER } : {}) })

@@ -30,6 +30,7 @@ export type LedgerRowType =
   | 'PRINT'             // a hub printed coin into its treasury (D115). data: { hubId, amount, perDay, days, why }
   | 'WALLET'            // a person came with their own coin (D115). data: { kind, hubId, personId, amount }
   | 'FARM'              // what happened on farmland: planted, reaped, penned, fed, cooked. Mints items, moves no gold
+  | 'PERSON'            // on a person's own chain (PersonChain.ts): their mint, then what they did. Moves no gold
   | 'TOMBSTONE';        // marks an earlier row as superseded — never delete
 
 export interface ILedgerRow {
@@ -75,11 +76,16 @@ export class Ledger {
     }
   }
 
-  /** Sign the next row into a unit. Whatever else is in the unit lands with it. */
-  static async writeInto(unit: StoreUnit, type: LedgerRowType, data: Record<string, any>): Promise<number | null> {
+  /**
+   * Sign the next row into a unit. Whatever else is in the unit lands with it. `owner` is the chain
+   * it goes on: the character's own by default, or a person's (PersonChain.ts), which the character
+   * signs because their browser computed it.
+   */
+  static async writeInto(unit: StoreUnit, type: LedgerRowType, data: Record<string, any>, owner?: string): Promise<number | null> {
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return null;
-    const uid = cert.metadata.uid;
+    const signer = cert.metadata.uid;
+    const uid = owner ?? signer;
 
     const head = await VectorStore.get<{ seq: number }>(VectorNamespace.TRANSACTIONS, this.headId(uid));
     const prevSeq = Math.max(head?.data?.seq ?? 0, unit.seqOf(uid));
@@ -94,7 +100,7 @@ export class Ledger {
     }
     const ts = GameClock.now();
     const row: ILedgerRow = { seq, prevSeq, ts, type, data, v: ROW_VERSION, prev: before ? linkOf(before) : null, clock: GameClock.stamp(ts) };
-    const signed = await CertificateSystem.signPayload(uid, row);
+    const signed = await CertificateSystem.signPayload(signer, row);
 
     await VectorStore.put({
       id: this.rowId(uid, seq),
@@ -103,7 +109,7 @@ export class Ledger {
       metadata: {
         createdAt: row.ts,
         updatedAt: row.ts,
-        ownerCertUid: uid,
+        ownerCertUid: signer,
         signature: signed.signature,
         version: 1
       }

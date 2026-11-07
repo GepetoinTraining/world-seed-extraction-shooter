@@ -12,6 +12,8 @@
  *   hub_theme_{themeId}     a theme this hub has judged and holds as known
  *   hub_kind_{kind}         a creature kind this hub has checked, with the numbers its line makes
  *   hub_world_{worldUid}    a world this hub has checked: its maker, the theme it is pinned to
+ *   hub_person_{uid}        a person of a city (PersonChain.ts): the fold of their chain, the
+ *                           account that first sent it, and the mint this hub signed
  *   ledger_{uid}_{seq}      the rows of that character's ledger this hub checked and holds. The
  *                           store's own law (rows only append, each onto the last, and never
  *                           change) is the chain law here too
@@ -58,6 +60,7 @@ import { installShippedThemes, FIRST_THEME_PACK } from '../../src/logic/theme/bo
 import { LootLaw, type ILootTable } from '../../src/logic/theme/LootLaw';
 import { goldOfRow, sameGold } from '../../src/logic/economy/goldOfRow';
 import { rerunDrops, type IRerunFinder } from './rerun';
+import { PersonChain, type IPersonRecord } from '../../src/logic/people/PersonChain';
 import { ItemLaw, type IItemDefinitions } from '../../src/logic/content/ItemLaw';
 import { CRAFTED_GEAR_BASES, ITEM_DEFINITIONS } from '../../src/entities/item/data/itemDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../src/entities/item/data/resourceDefinitions';
@@ -76,6 +79,11 @@ export interface IRefusal { ok: false; status: number; reason: string; [more: st
 export type Answer<T> = ({ ok: true; reason?: undefined } & T) | IRefusal;
 
 export interface IAccount { key: string; handle: string }
+
+/** A person's chain id (PersonChain.uidOf). */
+const PERSON_UID = /^person_[0-9a-f]{16}$/;
+
+export interface IPersonAnswer { uid: string; ok: boolean; reason?: string; held?: number; head?: string | null; record?: IPersonRecord; mint?: ISignedStatement }
 
 export interface ISignedRow {
   payload: { seq: number; prevSeq: number; ts: number; type: string; data: unknown; v?: number; prev?: string | null; clock?: any };
@@ -494,6 +502,120 @@ export class Hub {
     const head = await this.headHash(own.uid, held);
     const ack = statementOf(this.key, { kind: 'worldseed-hub-receipt', hub: this.id, issuer: this.publicUrl, uid: own.uid, seq: held, head, gold: done.rerun.gold, at: this.now() });
     return { ok: true, held, head, standing: done.standing, ack, rerun: done.rerun };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PEOPLE (Pedro, 2026-11-06): "the npc needs to be minted as a world entity for the hub under the
+  // hubs chain, that will allow you to track them deterministically from their table in the hub and
+  // resolve the chain of actions they produce."
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A city's people, each on a chain of their own. Each chain is checked on its own: every row
+   * signed by a character this account holds here, in order on the rows this hub holds, each on the
+   * one under it, no day this hub has not reached, and every act through the person's law, folded
+   * onto what this hub holds of them. The first row is their mint, and the hub signs it with its own
+   * clock. A chain that fails says why and is held no further; the others stand.
+   */
+  async checkPeople(token: unknown, chains: unknown): Promise<Answer<{ people: IPersonAnswer[] }>> {
+    const account = await this.who(token);
+    if ('ok' in account) return account;
+    if (!Array.isArray(chains)) return refuse(400, 'People come as a list of chains.');
+    const keys = new Map<string, CryptoKey | null>();
+    const keyOf = async (certUid: string): Promise<CryptoKey | null> => {
+      if (!keys.has(certUid)) {
+        const c = typeof certUid === 'string' && UID.test(certUid) ? await this.read<any>(`hub_character_${certUid}`) : null;
+        keys.set(certUid, c && c.data.account === account.key ? await this.publicKey(c.data.publicKeyJWK) : null);
+      }
+      return keys.get(certUid)!;
+    };
+    const people: IPersonAnswer[] = [];
+    for (const chain of chains as { uid?: unknown; rows?: unknown }[]) {
+      people.push(await this.checkPerson(chain?.uid, chain?.rows, keyOf, account.key));
+    }
+    return { ok: true, people };
+  }
+
+  private async checkPerson(uid: unknown, rows: unknown, keyOf: (certUid: string) => Promise<CryptoKey | null>, accountKey: string): Promise<IPersonAnswer> {
+    if (typeof uid !== 'string' || !PERSON_UID.test(uid)) return { uid: String(uid), ok: false, reason: 'That names no chain of a person.' };
+    const no = async (reason: string): Promise<IPersonAnswer> => ({ uid, ok: false, reason, held: await this.heldSeq(uid) });
+    if (!Array.isArray(rows)) return no('A chain comes as a list of signed rows.');
+    for (const row of rows) {
+      const problem = rowShapeProblem(row, (row as ISignedRow)?.certUid);
+      if (problem) return no(problem);
+    }
+    const sorted = [...(rows as ISignedRow[])].sort((a, b) => a.payload.seq - b.payload.seq);
+    const texts = sorted.map(r => JSON.stringify(r));
+    for (const row of sorted) {
+      const key = await keyOf(row.certUid);
+      if (!key) return no(`Row ${row.payload.seq} was signed by a character this account does not hold here.`);
+      if (!(await this.verifies(key, row))) return no(`Row ${row.payload.seq} was not signed by the key it names. Nothing of this chain was held.`);
+    }
+
+    let held = await this.heldSeq(uid);
+    const fresh: { row: ISignedRow; text: string }[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const { seq } = sorted[i].payload;
+      if (i > 0 && seq === sorted[i - 1].payload.seq) {
+        if (texts[i] !== texts[i - 1]) return no(`Two different rows at seq ${seq} came together.`);
+        continue;
+      }
+      if (seq > held) { fresh.push({ row: sorted[i], text: texts[i] }); continue; }
+      const kept = await this.store.get(rowId(uid, seq));
+      // Two browsers wrote this person at once: the one this hub held first stands, and the other reads it back
+      if (kept && kept.dataText !== texts[i]) return no(`This hub already holds another row at seq ${seq} of this person. The chain this hub holds stands: read it back from seq ${seq}.`);
+    }
+    for (let i = 0; i < fresh.length; i++) {
+      if (fresh[i].row.payload.seq !== held + 1 + i) return no(`This hub holds this person to seq ${held}. Send from seq ${held + 1}, in order.`);
+    }
+    if (fresh.length === 0) return { uid, ok: true, held, head: await this.headHash(uid, held) };
+
+    const today = dayIndexOf(this.now());
+    for (const { row } of fresh) {
+      if (dayIndexOf(row.payload.ts) > today) return no(`Row ${row.payload.seq} is dated a day this hub has not reached. Nothing of this chain was held.`);
+    }
+    const underText = held > 0 ? (await this.store.get(rowId(uid, held)))?.dataText : undefined;
+    const under = underText ? JSON.parse(underText) : null;
+    const before: IChainStart | null = under ? { seq: held, signature: under.signature, ts: under.payload.ts, v: under.payload.v } : null;
+    const linked = chainProblem(fresh.map(f => f.row), before);
+    if (linked) return no(`${linked.why} Nothing of this chain was held.`);
+
+    // The person's own law, folded onto what this hub holds of them
+    const table = (await this.read<{ record: IPersonRecord; mint?: ISignedStatement; account: string }>(`hub_person_${uid}`))?.data ?? null;
+    let record: IPersonRecord | null = table?.record ?? null;
+    for (const { row } of fresh) {
+      const out = PersonChain.apply(record, row.payload, uid);
+      if (typeof out === 'string') return no(`${out} Nothing of this chain was held.`);
+      record = out;
+    }
+    const at = this.now();
+    const mint = table?.mint ?? statementOf(this.key, {
+      kind: 'worldseed-person-minted', hub: this.id, issuer: this.publicUrl, uid, city: record!.hubId, npcId: record!.npcId, as: record!.as, at, day: dayIndexOf(at), address: addressOf(at)
+    });
+    const ops: CommitOp[] = [
+      ...fresh.map(({ row, text }): CommitOp => ({
+        kind: 'put',
+        doc: { id: rowId(uid, row.payload.seq), namespace: LEDGER_NS, dataText: text, metadata: { createdAt: Math.trunc(row.payload.ts), updatedAt: Math.trunc(row.payload.ts), ownerCertUid: row.certUid, signature: row.signature, version: 1 } }
+      })),
+      { kind: 'put', doc: this.doc(`hub_person_${uid}`, { type: 'hub_person', city: record!.hubId, record: record!, mint, account: table?.account ?? accountKey }) }
+    ];
+    try {
+      await this.commit(ops);
+    } catch (e) {
+      if (e instanceof StoreConflict) return no('Another send for this person landed first. Look again.');
+      throw e;
+    }
+    held = await this.heldSeq(uid);
+    return { uid, ok: true, held, head: await this.headHash(uid, held), record: record!, mint };
+  }
+
+  /** A city's table of people, as this hub holds them: each the fold of their chain, with the mint it signed. */
+  async peopleOf(token: unknown, city: unknown): Promise<Answer<{ people: { record: IPersonRecord; mint: ISignedStatement }[] }>> {
+    const account = await this.who(token);
+    if ('ok' in account) return account;
+    if (typeof city !== 'string' || !city) return refuse(400, 'That names no city.');
+    const docs = await this.store.query({ namespace: NS, filter: { 'data.type': 'hub_person' } });
+    return { ok: true, people: docs.map(d => JSON.parse(d.dataText)).filter(p => p.city === city).map(p => ({ record: p.record, mint: p.mint })) };
   }
 
   /**

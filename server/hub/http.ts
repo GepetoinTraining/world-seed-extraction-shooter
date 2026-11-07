@@ -122,6 +122,8 @@ export function createHubHandler(hub: Hub) {
         case '/characters/nonce': return answer(res, await hub.nonce(token));
         case '/characters': return answer(res, await hub.registerCharacter(token, body.certificate, body.proof));
         case '/receipts': return answer(res, await hub.checkReceipts(token, body.uid, body.rows, { reading: body.reading, sessions: body.sessions, tables: body.tables }));
+        case '/people': return answer(res, await hub.checkPeople(token, body.chains));
+        case '/people/table': return answer(res, await hub.peopleOf(token, body.city));
         case '/worlds/check': return answer(res, await hub.checkWorld(token, body.manifest));
         case '/pool/join': return answer(res, await pool.join(token, body.voice));
         case '/pool/leave': return answer(res, await pool.leave(token));

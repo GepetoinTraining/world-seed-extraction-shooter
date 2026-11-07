@@ -111,6 +111,11 @@ export const MemoryStore = {
     return inTurn(place, async () => MemoryLaw.regard(await loadMind(place, owner, today), other, today));
   },
 
+  /** The place's book of words, for a law that reads atoms. */
+  book(place: MemoryPlace): Promise<IAtomBook> {
+    return inTurn(place, () => loadBook(place));
+  },
+
   /** The whole mind, for a reader that needs more than recall. */
   mind(place: MemoryPlace, owner: string, today: number): Promise<IMind> {
     return inTurn(place, async () => MemoryLaw.fold(await loadMind(place, owner, today), today));

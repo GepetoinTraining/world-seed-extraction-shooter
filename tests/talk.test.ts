@@ -84,6 +84,7 @@ import { MemoryStore, rememberThreat } from '../src/entities/interaction/memoryS
 import { MemoryLaw } from '../src/logic/memory/MemoryLaw';
 import { MeetDoor } from '../src/logic/systems/MeetDoor';
 import { MeetLaw } from '../src/logic/systems/MeetLaw';
+import { PersonLedger } from '../src/logic/people/PersonLedger';
 
 const UID = 'uid_talk';
 const HUB = 'hub_talk';
@@ -1655,5 +1656,96 @@ describe('two people meeting (Pedro: batched when nobody watches, live in bubble
     const canvas = readFileSync('src/entities/hub/HubCanvas.tsx', 'utf8');
     expect(canvas).toMatch(/MeetDoor\.live/);
     expect(canvas).not.toMatch(/MemoryStore|NpcContext|MemoryLaw/);
+  });
+});
+
+
+describe('the usual, at the door: no model once it is a habit, and back to one when something is new', () => {
+  it('two people who meet watched every day stop asking a model, say the lines they said before, and a new goal asks again', async () => {
+    const one = await residentNamed('person_bob');
+    const two = await residentNamed('person_glenda');
+    const lines = [{ by: 'a', text: 'Want the usual?' }, { by: 'b', text: 'Yes, Bob.' }];
+    const said = vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string) => ({
+      status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'asked about', what: 'the usual', how: 'cheerfully', why: '' } }, b: { band: 'lands', remember: { did: 'answered about', what: 'the usual', how: 'cheerfully', why: '' } }, lines }
+    }) as any);
+    const start = worldDay();
+    const meet = (d: number) => MeetDoor.live(HUB, { a: one.id, b: two.id, day: start + d, where: 'by the tavern', why: 'waiting at the same door' });
+    let quiet = -1;
+    for (let d = 0; d < 15 && quiet < 0; d++) {
+      const before = said.mock.calls.length;
+      const heard = await meet(d);
+      expect(heard).toEqual(lines);
+      if (said.mock.calls.length === before) quiet = d;
+    }
+    expect(quiet, 'a habit formed').toBeGreaterThan(0);
+    const calls = said.mock.calls.length;
+    expect(await meet(quiet + 1)).toEqual(lines);
+    expect(said.mock.calls.length).toBe(calls);
+    expect(db.get(`meets_${HUB}`).data.habits).toBeTruthy();
+
+    await hub().noteResidentGoal(one.id, { need: 'safety', text: 'Save for a roof.', setAt: start + quiet + 2 });
+    await meet(quiet + 2);
+    expect(said.mock.calls.length).toBe(calls + 1);
+  });
+
+  it('a meeting nobody watched that is the usual never reaches the batch', async () => {
+    const one = await residentNamed('person_cal');
+    const two = await residentNamed('person_dee');
+    const where = 'by the well', why = 'drawing water';
+    const answer = (asks: any[]) => ({ status: 'OK', data: { meetings: asks.map(a => ({ id: a.id, a: { band: 'idle', remember: { did: 'nodded at', what: 'the water', how: '', why: '' } }, b: { band: 'idle', remember: { did: 'nodded at', what: 'the water', how: '', why: '' } }, lines: [] })) } });
+    const filed = vi.spyOn(IntelligenceClient, 'fileWindow').mockImplementation(async (_id: string, _kind: string, asks: any) => answer(asks) as any);
+    vi.spyOn(IntelligenceClient, 'collectWindow').mockResolvedValue({ status: 'PENDING' } as any);
+    const start = worldDay();
+    let quiet = -1;
+    for (let d = 0; d < 15 && quiet < 0; d++) {
+      await MeetDoor.queue(HUB, [{ a: one.id, b: two.id, day: start + d, where, why }]);
+      const before = filed.mock.calls.length;
+      await MeetDoor.tick(HUB);
+      if (filed.mock.calls.length === before) quiet = d;
+    }
+    expect(quiet, 'a habit formed').toBeGreaterThan(0);
+    expect(db.get(`meets_${HUB}`).data.pending).toHaveLength(0);
+    const book = db.get(`book_${HUB}`).data;
+    const mind = await MemoryStore.mind({ hubId: HUB }, one.id, start + quiet);
+    expect(mind.memories.map(m => MemoryLaw.words(m, book)).some(m => m.did === 'nodded at' && m.when === `day ${start + quiet}`)).toBe(true);
+  });
+});
+
+describe('a city\'s people, minted on chains of their own', () => {
+  it('loading the city mints every keeper and resident once, and the table is the fold of their chains', async () => {
+    const resident = await residentNamed('person_minted');
+    await hub().settleWallets();
+    await hub().settleWallets();
+    const table = await PersonLedger.table(HUB);
+    expect(table.find(p => p.npcId === 'npc_bartender')).toMatchObject({ as: 'keeper', seq: 1 });
+    expect(table.find(p => p.npcId === resident.id)).toMatchObject({ as: 'resident', name: 'Serin Vale' });
+    expect(table.find(p => p.npcId === resident.id)!.acts.MINTED).toBe(1);
+    expect((await PersonLedger.rows(HUB, 'npc_bartender'))).toHaveLength(1);
+  });
+
+  it('what they do goes on their chain: the walk to whoever feeds them, and the meetings, the usual marked', async () => {
+    const one = await residentNamed('person_chain_a');
+    const two = await residentNamed('person_chain_b');
+    await hub().settleWallets();
+    await hub().resolveLiving(worldDay() + 2);
+    const fed = await PersonLedger.record(HUB, one.id);
+    expect(typeof fed !== 'string' && fed.fed.paid).toBe(2);
+    vi.spyOn(IntelligenceClient, 'npcMeet').mockImplementation(async (id: string) => ({
+      status: 'OK', data: { id, a: { band: 'lands', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, b: { band: 'idle', remember: { did: 'greeted', what: 'the day', how: '', why: '' } }, lines: [{ by: 'a', text: 'Morning.' }] }
+    }) as any);
+    await MeetDoor.live(HUB, { a: one.id, b: two.id, day: worldDay(), where: 'by the tavern', why: 'waiting' });
+    const a = await PersonLedger.record(HUB, one.id);
+    const b = await PersonLedger.record(HUB, two.id);
+    expect(typeof a !== 'string' && a.met[two.id]).toEqual({ times: 1, band: 'lands', usual: 0 });
+    expect(typeof b !== 'string' && b.met[one.id]).toEqual({ times: 1, band: 'idle', usual: 0 });
+  });
+
+  it('a talk with someone in the city goes on that person\'s chain', async () => {
+    await hub().settleWallets();
+    answering(words());
+    await talk().open({ kind: 'CITY', npcId: 'npc_banker' });
+    await talk().say('Good day.');
+    const banker = await PersonLedger.record(HUB, 'npc_banker');
+    expect(typeof banker !== 'string' && banker.acts.TALKED).toBe(1);
   });
 });
