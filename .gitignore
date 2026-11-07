@@ -29,3 +29,6 @@ gemini-memory-layer
 *.njsproj
 *.sln
 *.sw?
+
+# type-check cache (tsconfig incremental)
+.tsbuildinfo
