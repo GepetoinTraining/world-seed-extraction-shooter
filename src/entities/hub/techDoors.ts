@@ -248,6 +248,10 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
       resolving = true;
       try {
         const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
+        const registeredNow = WebBank.current().tags.filter(t => !t.retired).map(t => t.tag);
+        // C5: which model would answer is part of what is asked. Looked up once a pass, and only if someone is to be asked.
+        let model: string | null = null;
+        const modelNow = async () => (model ??= (await IntelligenceClient.status()).model ?? '');
         const ground = offerGround();
         const groundLine = {
           things: ground.things.map(t => `${t.key} (${t.rank}): ${t.name}`),
@@ -261,6 +265,8 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
           if (!profession || profession.from !== 'THEME') continue;
           let state = get().tech.resolving[resident.id] ?? { closed: false, calls: 0 };
           if (state.closed) continue;
+          let asked = false;
+          let refusedAsk: string | undefined;
           for (let round = 0; round < CHAIN_ROUNDS_PER_PASS; round++) {
             const tech = get().tech;
             const open = ChainWeb.open(profession.concept, profession.rank, tech.chain, ground, resident.id);
@@ -275,18 +281,25 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
               },
               open, refused: state.refused
             };
+            // C5: the law refused this very ask before, and nothing it depends on has changed. It waits, unsent.
+            const askId = ChainWeb.askIdOf(ask, registeredNow, await modelNow());
+            if (askId === state.refusedAsk) break;
             // Shared work: the pool's turn when someone is there, judged by the hub against this chain; this player's door when not
             const check = { chain: tech.chain, ground, open, registered: WebBank.current().tags.filter(t => !t.retired).map(t => t.tag) };
             const out = await SharedWork.ask('chain', '/chain', { ask, check }, () => IntelligenceClient.resolveChain<IChainRound>(ask)) as { status: string; data?: IChainRound };
             // No key, no network, a busy door: an outcome, and it waits for the next look.
             if (out.status !== 'OK' || !out.data) break;
             state = { ...state, calls: state.calls + 1 };
+            asked = true;
             const verdict = ChainWeb.judge(out.data, tech.chain, ground, open, registered);
-            if (!verdict.ok) { state = { ...state, refused: verdict.reason }; continue; }
+            // Within a pass the law's answer goes back to the model, as one asking; what is still refused at its end is remembered
+            if (!verdict.ok) { state = { ...state, refused: verdict.reason }; refusedAsk = askId; continue; }
             state = { ...state, refused: undefined };
+            refusedAsk = undefined;
             get().applyTech({ kind: 'CHAIN_ROUND', round: out.data, residentId: resident.id, at: Date.now() });
             if (ChainWeb.open(profession.concept, profession.rank, get().tech.chain, ground, resident.id).length === 0) { state = { ...state, closed: true }; break; }
           }
+          if (asked) state = { ...state, refusedAsk };
           get().applyTech({ kind: 'RESOLVING', residentId: resident.id, state });
         }
         await get().saveHubState();

@@ -199,7 +199,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
               )
             )}
             {/* Q27: identifying is a learned skill, and nothing is read before town. Study at home teaches it. */}
-            {/* D118: for energy, and it can go badly. A finished product asks for a workstation for it, and so does anything unread, so it tells nothing. */}
+            {/* D118: for energy, and it can go badly. A finished product asks for a workstation for it; anything unread asks for none, in town, so it tells nothing. */}
             {StudyDoor.offered(selectedItem, playerPort, hubPort) && (
               <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem), playerPort, hubPort)}>
                 STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).seconds}s

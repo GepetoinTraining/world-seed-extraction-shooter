@@ -276,12 +276,23 @@ describe('a finished product is studied only with a workstation for it', () => {
     expect(StudyDoor.offered(raw('r'), playerPort, hubPort)).toBe(true);
   });
 
-  it('an unread piece asks the same, whatever it is, so the button tells nothing', () => {
+  // C6 (leg 2), by Pedro's study ruling (2026-11-01): an interaction "literally always available, but, it costs energy".
+  // A newcomer has no bench, and identifying is learned only by sitting with what nobody has read.
+  it('an unread piece needs no bench, whatever it is, so a newcomer can begin and the button tells nothing', () => {
     ownsNothing();
-    expect(StudyDoor.offered(raw('r', { isIdentified: false }), playerPort, hubPort)).toBe(false);
-    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
-    ownsWorkshop();
     expect(StudyDoor.offered(raw('r', { isIdentified: false }), playerPort, hubPort)).toBe(true);
+    expect(StudyDoor.offered(piece('g2', { isIdentified: false }), playerPort, hubPort)).toBe(true);
+    expect(StudyDoor.offered(gear(), playerPort, hubPort)).toBe(false);
+    expect(StudyDoor.begin(StudySystem.targetOfItem(piece('g2', { isIdentified: false })), playerPort, hubPort).ok).toBe(true);
+  });
+
+  it('Q27 stands: nothing is read before town, so an unread piece is not studied in the field', () => {
+    const unread = raw('r', { isIdentified: false });
+    set(p => ({ ...p, currentSession: { energy: 50, inventory: [unread], inventoryLayout: {} } as never }));
+    expect(StudyDoor.offered(unread, playerPort, hubPort)).toBe(false);
+    const out = StudyDoor.begin(StudySystem.targetOfItem(unread), playerPort, hubPort);
+    expect(out.ok).toBe(false);
+    expect(out.reason).toMatch(/town/i);
   });
 
   it('everything else stays always available: what is raw, a person, a place, a thought', () => {

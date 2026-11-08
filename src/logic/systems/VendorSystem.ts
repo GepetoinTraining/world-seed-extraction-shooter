@@ -18,6 +18,7 @@
  */
 
 import { IItem } from '../../../shared/types';
+import { Escort } from './Escort';
 import { INeedFill, INpcAgenda, NeedKind, NpcAgenda } from './NpcAgenda';
 import { CHOICE_PREMIUM, DEAL_DAYS, IShopBook, ShopWeek, emptyBook } from '../economy/ShopWeek';
 
@@ -143,6 +144,16 @@ const FRESH_CONTAINER = { listed: [], parts: [], bin: [], since: {}, demand: {},
 const binKey = (piece: IBinPiece) => `${piece.price}|${piece.until}|${JSON.stringify({ ...piece.item, id: undefined })}`;
 
 export const VendorSystem = {
+  /**
+   * What a counter will not buy, and why, or null. Q12: nothing tells an unread piece's worth, and an offer would.
+   * Q17: a person brought out is not goods, on paper or on your back (C2 and C3, leg 2).
+   */
+  refuses(item: IItem): string | null {
+    if (Escort.isPerson(item)) return 'That is a person. The counter does not buy people.';
+    if (item.isIdentified === false) return 'Read it first. The counter does not buy a thing nobody has read.';
+    return null;
+  },
+
   fresh(npcId: string, kind: VendorKind, day: number): IVendorRecord {
     return { npcId, kind, agenda: NpcAgenda.fresh(day), sold: { day, lines: {} }, held: [], worked: day, ...FRESH_CONTAINER };
   },

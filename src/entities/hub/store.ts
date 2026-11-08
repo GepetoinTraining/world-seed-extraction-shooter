@@ -830,6 +830,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   turnTheDay: async () => {
     if (!get().activeHubId) return;
     await get().resolveRunning();
+    // Q39 (C4, leg 2): a person's living is a day's fold like the rest, in the order a load folds it
+    await get().resolveLiving();
     await get().resolveVendors();
     await get().resolveUpkeep();
     await get().resolveWants();
@@ -2436,6 +2438,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!activeHubId) return null;
     const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
     if (!item) return null;
+    // Q12 and Q17: nothing unread, and nobody
+    if (VendorSystem.refuses(item)) return null;
 
     const offer = get().offerFor(item, npcId);
     const perDay = runningPerDay(cityOf(get()));

@@ -154,10 +154,12 @@ export class StudySystem {
   /**
    * Pedro: "Finished products should have the button to be studied IF you have a workstation
    * for it". What made it says which; improvised work had none, so it asks for none. An unread
-   * piece asks the same whatever it is, so the button tells nothing (D32).
+   * piece asks for nothing, whatever it is, so the button tells nothing (D32), and a newcomer with
+   * no bench can still begin learning the eye (C6, by the study ruling: always available, for energy).
+   * Nothing is read before town all the same (Q27): StudyDoor keeps it out of the field.
    */
   static stationAsked(item: IItem): string | null {
-    if (item.isIdentified === false) return GENERAL_STATION;
+    if (item.isIdentified === false) return null;
     if (!this.isFinished(item)) return null;
     const steps = item.composition?.steps ?? [];
     return steps.length > 0 ? steps[steps.length - 1].facility : GENERAL_STATION;

@@ -41,10 +41,14 @@ const said = (outcome: StudyOutcome, target: IStudyTarget): string => {
   return kind === 'item' ? `${name} is lost to you. Whatever was in it went with it.` : `${name} has closed to you. It will not sit for you for some days.`;
 };
 
-/** What a target asks that this person does not have, or nothing. The bench is at home, so the field has none. */
+/**
+ * What a target asks that this person does not have, or nothing. The bench is at home, so the field has none.
+ * Q27: nothing is read before town, so an unread piece waits for town though it asks for no bench (C6).
+ */
 const missingStation = (target: IStudyTarget, pc: IPlayerPort, hp: IHubPort): string | null => {
-  if (!target.station) return null;
   const player = pc.view().player;
+  if (target.kind === 'item' && target.hidden && player.currentSession) return `Nothing is read out here. It can wait for town.`;
+  if (!target.station) return null;
   if (player.currentSession) return `That wants a workstation, and yours is not out here. It can wait for home.`;
   const { lots, rooms } = hp.view();
   const stash = player.bank.stashTabs.flatMap(t => t.items);

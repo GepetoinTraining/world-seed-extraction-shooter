@@ -66,7 +66,8 @@ export interface IHubTech {
   workshops: IWorkshop[];
   asks: Record<string, IBuildingAsk>;
   /** How a person's chain stands: written to the ground, or a round still owed. */
-  resolving: Record<string, { closed: boolean; calls: number; refused?: string }>;
+  /** `refusedAsk`: the id of the last ask the law refused (ChainWeb.askIdOf). The same ask is not sent again (C5). */
+  resolving: Record<string, { closed: boolean; calls: number; refused?: string; refusedAsk?: string }>;
   /** Chain stations the reach has put in the hub's hands, by key. */
   reached: string[];
   /** What each person is, as read when they came home. A later theme does not change it. */
