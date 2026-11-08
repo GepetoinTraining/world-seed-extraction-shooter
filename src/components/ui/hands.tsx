@@ -11,9 +11,10 @@ import { create } from 'zustand';
 import { IItem } from '../../../shared/types';
 import { Held, Place, commitMove, ghostStyle, probeMove } from '../../logic/systems/ItemHands';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
-import { usePlayerStore } from '../../entities/player/store';
+import { usePlayerStore, playerPort } from '../../entities/player/store';
 import { ItemSprite, Kbd } from './kit';
 import { useFeed } from './stores';
+import { useWorldStore } from '../../entities/world/store';
 
 const DRAG_START_PX = 4;
 
@@ -59,7 +60,7 @@ function overFor(zoneId: string, place: Place, held: Held): Over | null {
   if (!zone) return null;
   const rect = zone.rect(place, held);
   if (!rect) return null;
-  const verdict = probeMove(usePlayerStore.getState().player, held, place);
+  const verdict = probeMove(usePlayerStore.getState().player, held, place, useWorldStore.getState());
   return { zoneId, place, rect, ok: verdict.ok, reason: verdict.reason };
 }
 
@@ -84,7 +85,7 @@ function focusItem(id: string) {
 function setDown(): boolean {
   const { held, over } = useHands.getState();
   if (!held || !over) return false;
-  const verdict = commitMove(held, over.place);
+  const verdict = commitMove(held, over.place, useWorldStore.getState(), playerPort);
   if (!verdict.ok) {
     if (verdict.reason !== 'It is already there.') feedRefusal(verdict.reason);
     return false;

@@ -25,7 +25,7 @@ import { Treasury } from '../src/logic/economy/Treasury';
 import { ExitLevy } from '../src/logic/economy/ExitLevy';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { Provenance } from '../src/logic/sovereignty/Provenance';
 
@@ -69,7 +69,7 @@ describe('shop sale between identities', () => {
     expect(usePlayerStore.getState().player.bank.gold).toBe(0);
     expect(await Treasury.balance('hub')).toBe(5);
     expect(useHubStore.getState().lots[0].proceeds).toBe(95);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
 
     // Now the seller's identity collects
     usePlayerStore.setState(s => ({ player: { ...s.player, id: 'seller' } }));
@@ -95,11 +95,11 @@ describe('exit levy', () => {
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 3 } } }));
     await Ledger.append('CHARACTER_GENESIS', { gold: 3 });
 
-    const charged = await ExitLevy.charge('world', 1000, 0.05);
+    const charged = await ExitLevy.charge(playerPort, 'world', 1000, 0.05);
 
     expect(charged).toBe(3);
     expect(usePlayerStore.getState().player.bank.gold).toBe(0);
     expect(await Treasury.balance('world')).toBe(3);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });

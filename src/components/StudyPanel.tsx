@@ -8,7 +8,7 @@
 import React, { useMemo, useState } from 'react';
 import { create } from 'zustand';
 import { IPlayer, IStudyTarget } from '../../shared/types';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useWorldStore } from '../entities/world/store';
 import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
 import { EntityType, IWorldEntity } from '../../shared/entities/world/types';
@@ -20,6 +20,7 @@ import { StudyDoor } from '../logic/systems/StudyDoor';
 import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { Bar, Button, Input } from './ui/kit';
 import { useWaits } from './ui/stores';
+import { hubPort } from '../entities/hub/store';
 
 /** How far the eye reaches in the field: the inspect card's own reach. */
 const FIELD_REACH_PX = 220;
@@ -92,7 +93,7 @@ export const StudyPanel: React.FC = () => {
         style={{ display: 'flex', gap: 4, margin: '2px 0 4px' }}
         onSubmit={e => {
           e.preventDefault();
-          if (StudyDoor.start(StudySystem.targetOfWords(words)).ok) setWords('');
+          if (StudyDoor.start(StudySystem.targetOfWords(words), playerPort, hubPort).ok) setWords('');
         }}
       >
         <Input aria-label="Study anything else" placeholder="Anything…" value={words} onChange={e => setWords(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
@@ -105,7 +106,7 @@ export const StudyPanel: React.FC = () => {
             tone="quiet"
             disabled={sitting}
             title={`Study ${target.name}`}
-            onClick={() => StudyDoor.start(target)}
+            onClick={() => StudyDoor.start(target, playerPort, hubPort)}
           >
             <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{target.name.toUpperCase()}</span>
           </Button>

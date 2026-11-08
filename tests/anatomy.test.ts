@@ -588,7 +588,7 @@ describe('the gold and item audit balances across the itemization economy', () =
     await new Promise(r => setTimeout(r, 25));
 
     // THE AUDIT: gold balances by ledger replay, treasuries included
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.notes).toEqual([]);
     expect(audit.ok).toBe(true);
 

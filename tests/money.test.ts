@@ -390,7 +390,7 @@ describe('Pedro: "each one of the buildings in the city center need to have an u
       const owed = lines.filter(l => l.who === id).reduce((s, l) => s + l.amount, 0);
       expect(hub().wallets[id] - before[id], id).toBe(owed);
     }
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the Hall shows each building\'s value', () => {
@@ -458,7 +458,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     expect(await hub().guildBuyLot(resident.id, lot.id)).toEqual({ ok: true });
     expect(await Treasury.balance(HUB)).toBe(0);
     expect(await rowsOf('PRINT')).toHaveLength(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   // Moved on purpose: a want no longer reaches the treasury (Pedro: "that's the LITERAL MECHANISM OF MASLOW"). The counter does.
@@ -474,7 +474,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     const prints = await rowsOf('PRINT');
     expect(prints).toHaveLength(1);
     expect(prints[0].data).toMatchObject({ hubId: HUB, amount: 14 * perDay, perDay, days: 14 });
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a sale worth more than one print prints as many as it takes', async () => {
@@ -489,7 +489,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     expect(prints).toHaveLength(4);
     for (const p of prints) expect(p.data.amount).toBe(14 * perDay);
     expect(hub().guild.printed).toEqual({ count: 4, total: 4 * 14 * perDay });
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the counter buys with an empty treasury too', async () => {
@@ -500,7 +500,7 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     expect(offer).toBeGreaterThan(0);
     expect(player().bank.gold).toBe(offer);
     expect(await rowsOf('PRINT')).toHaveLength(1);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('no window still says a hub with no funds cannot buy (found by playing)', () => {
@@ -528,9 +528,9 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
   });
 
   it('the audit catches coin no row accounts for', async () => {
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
     await Treasury.credit(HUB, 500);
-    expect((await GoldAudit.run()).ok).toBe(false);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(false);
   });
 });
 
@@ -548,7 +548,7 @@ describe('D115: the cycle going: the hub pays what it runs on, into its people\'
     await hub().resolveRunning(worldDay() + 1);
     expect(await Treasury.balance(HUB)).toBe(treasury - perDay);
     expect(walletsTotal()).toBe(wallets + perDay);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the same day is not paid twice, and days are paid in one fold', async () => {
@@ -562,7 +562,7 @@ describe('D115: the cycle going: the hub pays what it runs on, into its people\'
   it('a hub left alone keeps printing, and the audit still adds up', async () => {
     await hub().resolveRunning(worldDay() + 700);
     expect((await rowsOf('PRINT')).length).toBeGreaterThan(1);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a hub saved before this pays no back-days', async () => {
@@ -595,7 +595,7 @@ describe('D115: every NPC brings money, so they have their own wallets', () => {
     for (const id of Object.keys(HUB_NPCS)) expect(hub().wallets[id], id).toBeGreaterThan(0);
     const rows = await rowsOf('WALLET');
     for (const id of Object.keys(HUB_NPCS)) expect(rows.some(r => r.data.personId === id && r.data.kind === 'BROUGHT'), id).toBe(true);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('it comes with them once, however many times the hub opens', async () => {
@@ -611,7 +611,7 @@ describe('D115: every NPC brings money, so they have their own wallets', () => {
     expect(hub().wallets[resident.id]).toBe(walletBrought(resident.id, UniversalRank.D));
     expect(await Wallets.balance(HUB, resident.id)).toBe(hub().wallets[resident.id]);
     expect((await rowsOf('WALLET')).some(r => r.data.personId === resident.id)).toBe(true);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a person the hub saved before wallets gets theirs on opening', async () => {
@@ -649,10 +649,10 @@ describe('D115: every NPC brings money, so they have their own wallets', () => {
   });
 
   it('the audit catches a wallet no row accounts for', async () => {
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
     const unit = { add: () => {} } as any;
     await Wallets.writeInto(unit, HUB, 'npc_banker', 7);
-    const result = await GoldAudit.run();
+    const result = await GoldAudit.run(usePlayerStore.getState().player);
     expect(result.ok).toBe(false);
     expect(result.notes.join(' ')).toMatch(/wallet/i);
   });
@@ -687,7 +687,7 @@ describe('a master has a purse now (b5\'s note)', () => {
     expect(await Treasury.balance(HUB)).toBe(treasury);
     expect(hub().wallets[resident.id]).toBe(before + paid);
     expect(await Wallets.balance(HUB, resident.id)).toBe(before + paid);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a master pays a keeper for parts, as far as their wallet goes, and it is a person\'s own limit', () => {
@@ -726,7 +726,7 @@ describe('a master has a purse now (b5\'s note)', () => {
     expect(row.data.treasuryDelta).toBe(0);
     expect(hub().wallets[resident.id]).toBeLessThan(master);
     expect(hub().wallets.npc_weapon_vendor).toBe(keeper + (master - hub().wallets[resident.id]));
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -940,7 +940,7 @@ describe('Pedro: "the players need to circumvent it or find another coin"', () =
     const lot = hub().lots.find(l => l.id === lotId)!;
     expect(lot.shopListings).toHaveLength(0);
     expect(lot.heldInTrade?.map(i => i.id)).toEqual([pay.id]);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('without the anchor the sale does not happen, and coin will not do', async () => {
@@ -1003,6 +1003,6 @@ describe('Pedro: "the players need to circumvent it or find another coin"', () =
     const treasury = await Treasury.balance(HUB);
     expect(await hub().buyFromLot(lotId, goods.id)).toBe(true);
     expect(await Treasury.balance(HUB)).toBeGreaterThan(treasury);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });

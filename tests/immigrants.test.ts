@@ -132,7 +132,7 @@ describe('"every imigrant comes in with cash"', () => {
   it('it comes with them when they are lodged, on a signed row', async () => {
     const resident = await lodge();
     expect(hub().wallets[resident.id]).toBe(walletBrought(resident.id, UniversalRank.D));
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -201,7 +201,7 @@ describe('"they circulate money"', () => {
     expect(await Treasury.balance(HUB)).toBe(treasury);
     expect(await rowsOf('PRINT')).toHaveLength(0);
     expect(await allCoin()).toBe(coin);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('the row says whose coin it was', async () => {
@@ -228,7 +228,7 @@ describe('"they circulate money"', () => {
     expect(await rowsOf('PRINT')).toHaveLength(0);
     expect(hub().guild.quests.find(q => q.id === quest.id)!.state).toBe('OPEN');
     for (const id of ids) expect(stash().some(i => i.id === id)).toBe(true);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('so they stay at the tavern with no ground, until someone brings what they can afford', async () => {

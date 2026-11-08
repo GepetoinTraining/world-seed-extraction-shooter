@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EquipSlotId, IActiveSession, IItem, ItemType, SlotType } from '../../shared/types';
-import { useWorldStore } from '../entities/world/store';
-import { usePlayerStore } from '../entities/player/store';
+import { useWorldStore, worldPort } from '../entities/world/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useHubStore, worldDay } from '../entities/hub/store';
 import { rememberThreat } from '../entities/interaction/memoryStore';
 import { WebSystem } from '../../shared/logic/systems/WebSystem';
@@ -58,7 +58,7 @@ import { ReconView } from './ReconView';
 import { TutorialGuide } from './TutorialGuide';
 import { Tutorial } from '../logic/systems/Tutorial';
 import { TalkWindow } from './TalkWindow';
-import { useTalk } from '../entities/interaction/talkStore';
+import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
 import { drawSpeech } from '../render/atoms/speech';
 import { installGibberishFace } from '../render/atoms/gibberishFace';
@@ -434,9 +434,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   // Completes the extraction: tax, journal seal, banking, save — and the SEAL moment
   const completeExtraction = useCallback(() => {
     // D65: what is still following comes home with the haul, and it never had to fit the pack
-    FieldCapture.walkOut();
+    FieldCapture.walkOut(worldPort, playerPort);
     // Q16: whoever walked beside you goes home as their bond, and whoever you carried comes back
-    FieldEscort.walkOut();
+    FieldEscort.walkOut(worldPort, playerPort);
     const st = usePlayerStore.getState();
     const session = st.player.currentSession;
     if (!session) return;
@@ -488,7 +488,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const haulValue = reading.shownWorth;
     const shownOf = { unread: reading.unread, persons: reading.persons };
     // D100: the levy can be dodged, on a roll that can fail, and trying is practice.
-    const levy = ExitLevy.attemptNow(worldCertUid || 'unknown', session.sessionId, leviable, card?.extractionTaxRate ?? 0.05);
+    const levy = ExitLevy.attemptNow(worldCertUid || 'unknown', session.sessionId, leviable, card?.extractionTaxRate ?? 0.05, playerPort);
     const rate = levy.ratePaid;
     const tax = levy.owed;
     const startedAt = Date.now();
@@ -527,7 +527,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     void (async () => {
       // D30: the sealed session is the rest. What was worked at may settle, and the receipt says so.
       const settled = await useHubStore.getState().restAndCredit('SEALED');
-      const charged = await ExitLevy.charge(worldCertUid || 'unknown', leviable, rate, levy);
+      const charged = await ExitLevy.charge(playerPort, worldCertUid || 'unknown', leviable, rate, levy);
       if (charged > 0) console.log(`[TAX] Hub levied ${charged}G (${(rate * 100).toFixed(0)}% of the haul).`);
       // Wave 6.2: everything that made it home gets its story signed
       const { Provenance } = await import('../logic/sovereignty/Provenance');
@@ -535,7 +535,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
       const signed = await SessionJournal.finish('EXTRACTED', after);
-      await PlayerPersistence.flush('extract');
+      await PlayerPersistence.flush('extract', usePlayerStore.getState().player);
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
           outcome: 'EXTRACTED', haul, haulValue, ...shownOf, tax, levy,
@@ -763,7 +763,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             ...told
           });
         }
-        return PlayerPersistence.flush('death');
+        return PlayerPersistence.flush('death', usePlayerStore.getState().player);
       });
     };
 
@@ -957,7 +957,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const liveAttributes = usePlayerStore.getState().player.attributes;
       const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes) });
       // Q16: who walks beside you, where they stand now
-      const escortsStanding = FieldEscort.standing();
+      const escortsStanding = FieldEscort.standing(worldPort, playerPort);
       if (aiResult.spawnedPatterns.length > 0) {
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach((p, n) => {
@@ -971,7 +971,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             } else {
               // Q16: a blow aimed at someone beside you lands on them
               const struck = Escort.hitBy(p.origin, p.reachPx ?? 50, escortsStanding);
-              if (struck) FieldEscort.hurt(struck, p.damage ?? 10, `escort_hit:${struck}:${now}:${n}`);
+              if (struck) FieldEscort.hurt(struck, p.damage ?? 10, `escort_hit:${struck}:${now}:${n}`, worldPort, playerPort);
             }
           }
         });
@@ -996,7 +996,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Q16: a shot that reaches someone beside you first is theirs to take
         const escortStruck = escortsStanding.find(e => ProjectileSystem.sweptDistance(b, e.x, e.y) < 15);
         if (escortStruck && ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) >= 15) {
-          FieldEscort.hurt(escortStruck.entityId, b.damage ?? 8, `escort_shot:${b.id}`);
+          FieldEscort.hurt(escortStruck.entityId, b.damage ?? 8, `escort_shot:${b.id}`, worldPort, playerPort);
           spentShots.current.set(b.id, now);
           return false;
         }
@@ -1014,7 +1014,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Collision-check ALL visible chunks (AI only returns the modified ones)
       // Q16: and they fight back, at whatever has engaged within their reach
       const simulated = { ...visibleChunks, ...aiResult.updatedChunks };
-      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities)) : [];
+      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities), worldPort, playerPort) : [];
       // Drawn like your own swing; the same arc, so it lands once however many frames it is drawn
       if (escortSwings.length > 0) setActiveSwings(prev => [...prev.filter(sw => now - sw.startTime < 300), ...escortSwings]);
       const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings);
@@ -1071,7 +1071,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       };
       if (combatResult.events.some(e => e.type === 'HIT')) fired('on_hit');
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
-      const rewards = applyKillRewards(combatResult.events);
+      const rewards = applyKillRewards(combatResult.events, playerPort);
       if (rewards.levelUp) {
         feed(ProgressionSystem.levelUpLine(rewards.levelUp.to, rewards.levelUp.points), 'proof');
       }
@@ -1086,7 +1086,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           ? { currentMap: { ...state.currentMap, chunks: { ...state.currentMap.chunks, ...chunkUpdates } } }
           : state);
         // Q16: the copy written back predates this frame's blows on those beside you; their record is the truth
-        FieldEscort.settle();
+        FieldEscort.settle(worldPort, playerPort);
       }
 
       // Loot: spawn new drops, then auto-pickup anything within reach
@@ -1287,7 +1287,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   const handleActionSelect = (option: any) => {
     if (selectedEntityId) {
-      performInteraction(option.id, selectedEntityId);
+      if (!talkFrom(option.id, selectedEntityId)) performInteraction(option.id, selectedEntityId);
     }
     setMenuPosition(null);
   };
@@ -1359,7 +1359,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const pick = interactPickRef.current();
     if (pick === 'EXIT') { beginChannel(); return; }
     if (!pick) { explainNothing(pos.x, pos.z); return; }
-    if (pick.primary) { performInteraction(pick.primary.id, pick.entity.id); return; }
+    if (pick.primary) { if (!talkFrom(pick.primary.id, pick.entity.id)) performInteraction(pick.primary.id, pick.entity.id); return; }
     const at = entityScreen(pick.entity);
     openMenu(pick.entity, pick.options, at.x, at.y);
   };

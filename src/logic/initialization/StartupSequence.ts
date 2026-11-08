@@ -5,7 +5,7 @@ import { VectorStore, VectorNamespace } from '../../../shared/entities/data/Vect
 import { useHubStore } from '../../entities/hub/store';
 import { useIdentityStore } from '../../entities/identity/store';
 import { useWorldStore } from '../../entities/world/store';
-import { usePlayerStore } from '../../entities/player/store';
+import { usePlayerStore, playerPort } from '../../entities/player/store';
 // --- FIX START ---
 // Import both from the ROOT types file
 import { UniversalRank, IPlayer } from '../../../shared/types';
@@ -143,7 +143,7 @@ console.log('[BOOT] Refreshing World List...');
            usePlayerStore.setState({ player: LoreSystem.migrate(ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player)))) });
            // D72: nobody is locked out of a pocket world, once
            const { WorldDeedDoor } = await import('../systems/WorldDeedDoor');
-           await WorldDeedDoor.grantOnLoad();
+           await WorldDeedDoor.grantOnLoad(playerPort);
            usePlayerStore.getState().recalcAttributes();
            usePlayerStore.getState().recalcWeight();
            // Wave 9.3: the select screen learns the real archetype from the save
@@ -167,7 +167,7 @@ console.log('[BOOT] Refreshing World List...');
            }
            // The first bank doc and the birthright's row land as one.
            // What the creation flow granted lands with them: the kit, the deed and the words, signed.
-           await GoldCommit.commit({ rows: [{ type: 'CHARACTER_GENESIS', data: {
+           await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'CHARACTER_GENESIS', data: {
              certUid: certificate.metadata.uid,
              username: usePlayerStore.getState().player.username,
              gold: usePlayerStore.getState().player.bank.gold // the birthright grant (audited)
@@ -177,7 +177,7 @@ console.log('[BOOT] Refreshing World List...');
        }
 
        // Arm the autosave subscription (10s debounce + critical-moment flushes)
-       PlayerPersistence.start();
+       PlayerPersistence.start(playerPort);
     }
 
     return { status: 'READY' };

@@ -6,20 +6,20 @@
  */
 
 import { ICombatEvent } from './CombatSystems';
-import { usePlayerStore } from '../player/store';
+import type { IPlayerCalls } from '../player/playerView';
 
 export interface IKillReward {
   xpGained: number;
   levelUp: { from: number; to: number; points: number } | null;
 }
 
-export function applyKillRewards(events: ICombatEvent[]): IKillReward {
+export function applyKillRewards(events: ICombatEvent[], pc: Pick<IPlayerCalls, 'applyKillXp'>): IKillReward {
   let xpGained = 0;
   let levelUp: IKillReward['levelUp'] = null;
   for (const e of events) {
     if (e.type !== 'KILL' || !e.xpReward) continue;
     xpGained += e.xpReward.amount;
-    const res = usePlayerStore.getState().applyKillXp(e.xpReward.amount);
+    const res = pc.applyKillXp(e.xpReward.amount);
     if (res.leveledUp) {
       levelUp = levelUp
         ? { from: levelUp.from, to: res.to, points: levelUp.points + res.pointsGranted }

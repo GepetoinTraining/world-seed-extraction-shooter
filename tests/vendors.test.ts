@@ -38,12 +38,13 @@ import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { TagLaw } from '../shared/logic/content/TagLaw';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction } from '../src/entities/hub/dialogue';
-import { useHubStore } from '../src/entities/hub/store';
+import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { emptyGuild } from '../src/entities/hub/guild';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { readFileSync } from 'node:fs';
+import { worldPort } from '../src/entities/world/store';
 
 const DAY = 20_000;
 const GENERAL = ['npc_weapon_vendor', 'npc_armor_vendor', 'npc_alchemist'];
@@ -428,7 +429,7 @@ describe('the words reach a person', () => {
   });
 
   it('the action opens the window for that vendor', () => {
-    expect(runDialogueAction('OPEN_APPRENTICES', { npcId: 'npc_alchemist' })).toEqual({ kind: 'open', panel: 'apprentices', npcId: 'npc_alchemist' });
+    expect(runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_APPRENTICES', { npcId: 'npc_alchemist' })).toEqual({ kind: 'open', panel: 'apprentices', npcId: 'npc_alchemist' });
   });
 
   it('the window reads ranks in words and progress by the stepped bar, never hue alone', () => {

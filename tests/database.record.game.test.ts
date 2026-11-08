@@ -105,13 +105,14 @@ describe('a real avatar, across both stores', () => {
     localStorage.setItem('worldseed_certificate', JSON.stringify(cert));
     useIdentityStore.setState({ certificate: cert });
     usePlayerStore.setState(s => ({ player: { ...s.player, id: uid, username: 'LEDGE naïve 🐉 "q"', bank: { ...s.player.bank, gold: GRANT } } }));
-    await GoldCommit.commit({ rows: [{ type: 'CHARACTER_GENESIS', data: { certUid: uid, gold: GRANT } }] });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'CHARACTER_GENESIS', data: { certUid: uid, gold: GRANT } }] });
 
     let spent = 0;
     const spend = async (n: number) => {
       usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold - n } } }));
       spent += n;
       const seq = await GoldCommit.commit({
+        player: usePlayerStore.getState().player,
         rows: [{ type: 'GOLD_DELTA', data: { reason: 'RECORD', amount: -n, treasuryId: HUB, treasuryDelta: n } }],
         treasury: { worldUid: HUB, delta: n },
         hubDoc: { id: `hub_state_${HUB}`, namespace: VectorNamespace.TERRITORIES, data: { spent, body: 'hub'.repeat(350_000) }, metadata: { createdAt: 1, updatedAt: spent, version: 1 } }
@@ -147,7 +148,7 @@ describe('a real avatar, across both stores', () => {
       expect(hydrated.player.username).toBe('LEDGE naïve 🐉 "q"');
     }
     expect(await Ledger.audit(uid)).toEqual({ ok: true, rows: 9 });
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.notes).toEqual([]);
     expect(audit.ok).toBe(true);
     expect(await Treasury.balance(HUB)).toBe(spent);

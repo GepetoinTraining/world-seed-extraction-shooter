@@ -914,7 +914,7 @@ describe('the trap: closing a world never erases what was saved while it was ope
 
 describe('it is driven from a client, with nothing blocking play', () => {
   it('the app ticks the door on a timer, and the tick is never awaited by play', () => {
-    expect(SRC('App.tsx')).toMatch(/ScanDoor\.tick\(\)/);
+    expect(SRC('App.tsx')).toMatch(/ScanDoor\.tick\(worldPort, hubPort\)/);
     expect(SRC('src/logic/systems/Deploy.ts')).not.toMatch(/ScanDoor/);
     expect(SRC('shared/entities/world/WorldGenerator.ts')).not.toMatch(/ScanDoor|ScanPass|IntelligenceClient/);
   });

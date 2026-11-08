@@ -576,3 +576,18 @@ export const useTalk = create<ITalkState>((set, get) => {
 
 /** Does the meter open what it opens? The window asks this and the store's own door checks it again. */
 export const meterOpensFollowing = (meter: number): boolean => meter >= StatSystem.recruitDisposition(playerAttributes());
+
+/**
+ * D113, D114: nobody clicks a person round any more. A person or a monster spoken to opens the talk, and
+ * each round happens there. The screen asks this first; what it does not take goes to the player store.
+ * Answers whether it took the interaction.
+ */
+export function talkFrom(interactionId: string, targetId: string): boolean {
+  const kind = interactionId.startsWith('int_talk_') ? 'FIELD_PERSON' : interactionId.startsWith('int_bargain_') ? 'MONSTER' : null;
+  if (!kind) return false;
+  if (!usePlayerStore.getState().player.currentSession) return true;
+  const entity = liveEntity(targetId);
+  if (!entity || (kind === 'FIELD_PERSON' && !entity.npc)) return true;
+  void useTalk.getState().open({ kind, entityId: entity.id });
+  return true;
+}

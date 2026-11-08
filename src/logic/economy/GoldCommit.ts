@@ -11,6 +11,7 @@
  * long the queue or a closed vault holds them.
  */
 
+import type { IPlayer } from '../../../shared/types';
 import { VectorStore, IVectorDocument } from '../../../shared/entities/data/VectorStore';
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { Ledger, LedgerRowType } from '../ledger/Ledger';
@@ -19,6 +20,8 @@ import { Treasury } from './Treasury';
 import { Wallets } from './Wallets';
 
 export interface IGoldCommit {
+  /** The player as it stands at the call, after the gold change: its bank doc goes in the same unit. */
+  player: IPlayer;
   rows: { type: LedgerRowType; data: Record<string, any> }[];
   treasury?: { worldUid: string; delta: number };
   /** People's own coin (D115). The row beside it says the same in its `wallets`. */
@@ -31,7 +34,7 @@ export class GoldCommit {
 
   /** Returns the seq of the last row written, or null if the server refused. */
   static commit(spec: IGoldCommit): Promise<number | null> {
-    const snapshot = PlayerPersistence.snapshot();
+    const snapshot = PlayerPersistence.snapshot(spec.player);
 
     return StoreUnit.enqueue(async () => {
       // A conflict means another tab moved this chain: read its head again and re-sign.

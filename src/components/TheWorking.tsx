@@ -7,8 +7,8 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { usePlayerStore } from '../entities/player/store';
-import { useWorldStore } from '../entities/world/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
+import { useWorldStore, worldPort } from '../entities/world/store';
 import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import { EffectSystem } from '../../shared/logic/systems/EffectSystem';
 import { WeaveSystem } from '../logic/systems/WeaveSystem';
@@ -16,6 +16,7 @@ import { RestSystem } from '../logic/systems/RestSystem';
 import { RestDoor } from '../logic/systems/RestDoor';
 import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { Button, Chip, Panel } from './ui/kit';
+import { hubPort } from '../entities/hub/store';
 
 const ACT_WORDS: Record<string, string> = {
   damage: 'hurts what it reaches', control: 'slows what it reaches', heal: 'mends you', buff: 'quickens you',
@@ -109,7 +110,7 @@ export const TheWorking: React.FC = () => {
 
       {canRestHere && (
         <div style={{ marginTop: 8 }}>
-          <Button tone="signal" onClick={() => void RestDoor.sleep('FIELD')}>REST HERE</Button>
+          <Button tone="signal" onClick={() => void RestDoor.sleep('FIELD', worldPort, playerPort, hubPort)}>REST HERE</Button>
         </div>
       )}
     </Panel>

@@ -14,14 +14,15 @@ import { RestSystem } from '../src/logic/systems/RestSystem';
 import { StatSystem } from '../shared/logic/systems/StatSystem';
 import { Director, emptyDirectorRecord } from '../shared/entities/world/Director';
 import { EntityType, IWorldEntity } from '../shared/entities/world/types';
-import { useWorldStore, IWorldCard } from '../src/entities/world/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { useWorldStore, IWorldCard, worldPort } from '../src/entities/world/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { deployToWorld } from '../src/logic/systems/Deploy';
 import { WorldCard } from '../src/components/MissionControl';
 import { quickDeployTargetId } from '../src/entities/hub/dialogue';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
+import { hubPort } from '../src/entities/hub/store';
 
 installShippedThemes();
 
@@ -140,11 +141,11 @@ describe('line 101: the gate', () => {
   it('during scan and off nobody can deploy, and it says why', async () => {
     useWorldStore.setState({ availableWorlds: [card({})] });
     vi.setSystemTime(MINT + H + M);
-    const off = await deployToWorld('w1');
+    const off = await deployToWorld('w1', worldPort, playerPort, hubPort);
     expect(off.ok).toBe(false);
     expect(off.reason).toMatch(/gate/i);
     vi.setSystemTime(MINT + H + 90 * M + M);
-    const scan = await deployToWorld('w1');
+    const scan = await deployToWorld('w1', worldPort, playerPort, hubPort);
     expect(scan.ok).toBe(false);
     expect(scan.reason).toMatch(/boot|recon/i);
   });
@@ -166,7 +167,7 @@ describe('line 101: the gate', () => {
   it('quick deploy never sends anyone at a closed gate', () => {
     useWorldStore.setState({ availableWorlds: [card({ id: 'closed' }), card({ id: 'open', createdAt: MINT + H + M })] });
     vi.setSystemTime(MINT + H + 2 * M);
-    expect(quickDeployTargetId()).toBe('open');
+    expect(quickDeployTargetId(useWorldStore.getState().availableWorlds, usePlayerStore.getState().player)).toBe('open');
   });
 
   it('the collapse timer is gone', () => {
@@ -369,7 +370,7 @@ describe("line 120: a character's rest takes real time, scaled by what that char
   it('a resting character cannot deploy, and another can play', async () => {
     useWorldStore.setState({ availableWorlds: [{ id: 'dev', seed: 's', size: 32, createdAt: 0, playerCount: 0, isDebug: true, name: 'D', difficulty: 'D', creator: 'x', extractionTaxRate: 0, deathPenalty: 'NONE' }] });
     usePlayerStore.setState(s => ({ player: { ...s.player, rest: { until: Date.now() + H, place: 'INN' as const } } }));
-    const refused = await deployToWorld('dev');
+    const refused = await deployToWorld('dev', worldPort, playerPort, hubPort);
     expect(refused.ok).toBe(false);
     expect(refused.reason).toMatch(/rest/i);
     usePlayerStore.setState(s => ({ player: { ...s.player, rest: undefined } }));
@@ -378,6 +379,6 @@ describe("line 120: a character's rest takes real time, scaled by what that char
   it('it files to the door when it begins and collects on waking: its downtime is its own batch', () => {
     const src = SRC('src/logic/systems/RestDoor.ts');
     expect(src.indexOf('RestDoor.file(')).toBeLessThan(src.indexOf('async wakeIfDue'));
-    expect(src.slice(src.indexOf('async wakeIfDue'))).toMatch(/RestDoor\.collect\(\)/);
+    expect(src.slice(src.indexOf('async wakeIfDue'))).toMatch(/RestDoor\.collect\(pc, hp\)/);
   });
 });

@@ -6,7 +6,7 @@
 
 import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import React, { useEffect, useState } from 'react';
-import { useWorldStore, IWorldCard } from '../entities/world/store';
+import { useWorldStore, IWorldCard, worldPort } from '../entities/world/store';
 import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
 import { openRecon } from './ReconView';
 import { WorldCreator } from './WorldCreator';
@@ -14,8 +14,9 @@ import { ConnectWorld } from './ConnectWorld';
 import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Tutorial } from '../logic/systems/Tutorial';
+import { hubPort } from '../entities/hub/store';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
   UP: 'GATE OPEN — IT CLOSES IN',
@@ -121,7 +122,7 @@ export const MissionControl = () => {
   }, []);
 
   const handleDeploy = async (worldId: string) => {
-    const res = await deployToWorld(worldId);
+    const res = await deployToWorld(worldId, worldPort, playerPort, hubPort);
     if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
   };
 

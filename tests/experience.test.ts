@@ -40,7 +40,7 @@ import {
   XP_CONSTANTS, XP_SHARE_CHEST, XP_SHARE_HARVEST, XP_SHARE_THREAT
 } from '../shared/entities/player/systems/ProgressionSystem';
 import { DEFAULT_ATTRIBUTES } from '../src/entities/player/types';
-import { ARCHETYPES, usePlayerStore } from '../src/entities/player/store';
+import { ARCHETYPES, usePlayerStore, playerPort } from '../src/entities/player/store';
 import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
@@ -156,7 +156,7 @@ describe('line 128: levels come from experience, rank does not', () => {
   it('what a fight pays reports a level, never a rank', () => {
     const cost = ProgressionSystem.levelCost(UniversalRank.F, 1);
     const events: ICombatEvent[] = [{ type: 'KILL', entityId: 'm1', xpReward: { amount: cost, sourceRank: UniversalRank.F, sourceRarity: Rarity.COMMON } }];
-    const rewards = applyKillRewards(events);
+    const rewards = applyKillRewards(events, playerPort);
     expect(rewards.xpGained).toBe(cost);
     expect(rewards.levelUp).toEqual({ from: 1, to: 2, points: POINTS_PER_LEVEL });
     expect(rewards).not.toHaveProperty('rankUp');
@@ -175,7 +175,8 @@ describe('line 128: the rank is granted, levels reset, and stats stay (D83)', ()
     };
     walk('src');
     walk('shared');
-    expect(hits.sort()).toEqual(['shared/entities/player/systems/ProgressionSystem.ts', 'src/entities/hub/store.ts', 'src/entities/player/store.ts']);
+    // The player's port declares the call (playerView.ts) and forwards it; the guild in the hub store is still its one caller
+    expect(hits.sort()).toEqual(['shared/entities/player/systems/ProgressionSystem.ts', 'src/entities/hub/store.ts', 'src/entities/player/playerView.ts', 'src/entities/player/store.ts']);
   });
 
   it('a grant moves the rank up and resets the level', () => {
@@ -1397,7 +1398,7 @@ describe('a chest stays taken through its cycle, and restocks by rank, rarity an
     const field = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
     expect(field).toMatch(/ChestSystem\.mark\(seen, worldId, e\)/);
     expect(field).toMatch(/reportFell\(event\.entityId, event\.definitionId\)/);
-    expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/world\.reportChestLooted\(entity\.id\)/);
+    expect(readFileSync('src/entities/player/store.ts', 'utf8')).toMatch(/kind: 'CHEST_LOOTED', chestId: entity\.id/);
     expect(readFileSync('src/components/ReconView.tsx', 'utf8')).toMatch(/CHESTS YOU KNOW/);
   });
 });

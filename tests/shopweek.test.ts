@@ -148,7 +148,7 @@ describe('"that difference between expected win and component is the weekly cost
     const rows = (await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK');
     expect(rows).toHaveLength(1);
     expect(rows[0].data.loss).toBe(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('when the deal runs out it comes apart, its parts are the keeper\'s, and the next close carries the loss on a signed row', async () => {
@@ -157,7 +157,7 @@ describe('"that difference between expected win and component is the weekly cost
     const rows = (await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK');
     expect(rows).toHaveLength(2);
     expect(rows[1].data.loss).toBeGreaterThan(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('only the centre: a master\'s own shop books nothing to the guild', async () => {
@@ -200,7 +200,7 @@ describe('"then the guild balances the shops budget out for the cost"', () => {
     const prints = (await rowsOf('PRINT')).reduce((sum, p) => sum + p.data.amount, 0);
     expect(await Treasury.balance(HUB)).toBe(treasury + prints - floor - paid);
     for (const shop of rows[1].data.shops) expect(hub().wallets[shop.npcId]).toBeGreaterThanOrEqual(wallets[shop.npcId] + shop.toKeeper);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a sale goes on the keeper\'s book, and its coin is the guild\'s already', async () => {
@@ -228,7 +228,7 @@ describe('"then the guild balances the shops budget out for the cost"', () => {
     expect((await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK')).toHaveLength(1);
     await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 3);
     expect((await rowsOf('GOLD_DELTA')).filter(r => r.data.reason === 'SHOP_WEEK')).toHaveLength(3);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('found by playing: two folds at once pay the days and the week once', async () => {
@@ -240,7 +240,7 @@ describe('"then the guild balances the shops budget out for the cost"', () => {
     const paid = rows.filter(r => r.data.reason === 'HUB_RUNNING' || r.data.reason === 'SHOP_WEEK').reduce((sum, r) => sum + r.data.treasuryDelta, 0);
     const printed = (await rowsOf('PRINT')).reduce((sum, r) => sum + r.data.amount, 0);
     expect(await Treasury.balance(HUB)).toBe(before + paid + printed);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a hub saved before this starts its week now and owes nothing behind it', async () => {
@@ -325,7 +325,7 @@ describe('"they incure the weekly cost of a person at an apprentice\'s pay"', ()
     const pay = ShopWeek.apprenticePay(UniversalRank.D);
     expect(hub().wallets.res_seed_p1).toBe(before + pay);
     expect(hub().guild.lastWeek!.shops.find(s => s.npcId === 'npc_weapon_vendor')!.pay).toBe(pay);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('"the more people working the costlier it gets"', async () => {
@@ -377,7 +377,7 @@ describe('"tech per tile is a general tax, EVERYONE BUT the city center pays it,
     expect(rows).toHaveLength(1);
     expect(rows[0].data.amount).toBe(-tiles * 10);
     expect(rows[0].data.treasuryDelta).toBe(tiles * 10);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('no tech, no tax', async () => {
@@ -408,7 +408,7 @@ describe('"tech per tile is a general tax, EVERYONE BUT the city center pays it,
     const held = hub().wallets.res_s_e;
     await hub().resolveRunning(nextWeek());
     expect(hub().wallets.res_s_e).toBe(held >= owed ? held - owed : held);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('someone who cannot pay keeps their ground: the debt waits', async () => {
@@ -418,7 +418,7 @@ describe('"tech per tile is a general tax, EVERYONE BUT the city center pays it,
     expect(player().bank.gold).toBe(0);
     expect(hub().lots.find(l => l.id === lotId)!.ownerId).toBe(UID);
     expect(hub().lots.find(l => l.id === lotId)!.taxPaidWeek).toBeLessThan(hub().guild.week!);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('a debt is paid in full when it can be, for every week behind', async () => {
@@ -430,7 +430,7 @@ describe('"tech per tile is a general tax, EVERYONE BUT the city center pays it,
     await grant(1_000_000);
     await hub().resolveRunning(worldDay() + ShopWeek.WEEK_DAYS * 3);
     expect(1_000_000 - player().bank.gold).toBe(tiles * 10 * 3);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -445,13 +445,13 @@ describe('the fortnight, on the week\'s cost', () => {
   it('it goes 14 days with nobody coming before it needs to print', async () => {
     await hub().resolveRunning(worldDay() + 14);
     expect(await rowsOf('PRINT')).toHaveLength(0);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('left alone long enough it prints, and goes on printing', async () => {
     await hub().resolveRunning(worldDay() + 700);
     expect((await rowsOf('PRINT')).length).toBeGreaterThan(1);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 });
 
@@ -552,7 +552,7 @@ describe('"a bargain bin at 40% the item but higher than the component timed dea
     expect(hub().vendors[npc].book.earned).toBe(row.price);
     expect(hub().vendors[npc].book.loss).toBe(0);
     expect(player().bank.stashTabs[0].items.some(i => i.id === bought.id)).toBe(true);
-    expect((await GoldAudit.run()).ok).toBe(true);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
   it('no discount takes a deal under its components: it is the deal\'s price for anyone', () => {

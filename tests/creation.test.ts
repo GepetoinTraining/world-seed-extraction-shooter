@@ -41,7 +41,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 }));
 
 import { IItem, IPlayer, ItemType, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../shared/types';
-import { usePlayerStore, ARCHETYPES } from '../src/entities/player/store';
+import { usePlayerStore, ARCHETYPES, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { WorldType, WorldCertificateSystem } from '../src/entities/world/WorldCertificate';
@@ -177,7 +177,7 @@ describe('line 113: everyone begins with one free deed', () => {
 });
 
 describe('line 113: minting spends a deed', () => {
-  const mint = (deedId: string, rules: any = {}) => WorldDeedDoor.mint(CERT('u_one'), deedId, 'POCKET', 'mine', WorldType.EXTRACTION, rules);
+  const mint = (deedId: string, rules: any = {}) => WorldDeedDoor.mint(CERT('u_one'), deedId, 'POCKET', 'mine', WorldType.EXTRACTION, rules, playerPort);
 
   beforeEach(() => born());
 
@@ -354,7 +354,7 @@ describe('line 113: a deed can be exchanged like any item', () => {
     const offer = await useHubStore.getState().sellToVendor(deed.id);
     expect(offer).toBeGreaterThan(0);
     expect(deeds()).toHaveLength(0);
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.expectedPlayerGold).toBe(audit.actualPlayerGold);
   });
 
@@ -372,7 +372,7 @@ describe('line 113: a deed can be exchanged like any item', () => {
     expect(deeds().map(d => d.id).sort()).toEqual([own.id, deed.id].sort());
     expect(player().bank.gold).toBe(400);
 
-    const res = await WorldDeedDoor.mint(CERT('u_buyer'), deed.id, 'TRADED', 'd', WorldType.EXTRACTION, {});
+    const res = await WorldDeedDoor.mint(CERT('u_buyer'), deed.id, 'TRADED', 'd', WorldType.EXTRACTION, {}, playerPort);
     expect(res.ok, res.reason).toBe(true);
     expect(res.world!.data.rules.mintedWithDeed).toBe(deed.id);
     expect(deeds().map(d => d.id)).toEqual([own.id]);
@@ -384,7 +384,7 @@ describe('line 113: a deed can be exchanged like any item', () => {
     born('u_two');
     const theirs = deeds()[0];
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, stashTabs: [{ name: 'S', items: [theirs, deed] }] } } }));
-    const res = await WorldDeedDoor.mint(CERT('u_two'), deed.id, 'BOUGHT', 'd', WorldType.EXTRACTION, {});
+    const res = await WorldDeedDoor.mint(CERT('u_two'), deed.id, 'BOUGHT', 'd', WorldType.EXTRACTION, {}, playerPort);
     expect(res.ok, res.reason).toBe(true);
     expect(res.world!.data.creatorCertUid).toBe('u_two');
     expect(deeds().map(d => d.id)).toEqual([theirs.id]);
@@ -643,7 +643,7 @@ describe('what you carry: a kit that keeps the gold audit', () => {
     born('u_audit', 'NOMAD', sheetOf());
     await Ledger.append('CHARACTER_GENESIS', { gold: player().bank.gold });
     for (const row of CreationDoor.genesisRows(player())) await Ledger.append(row.type, row.data);
-    const audit = await GoldAudit.run();
+    const audit = await GoldAudit.run(usePlayerStore.getState().player);
     expect(audit.expectedPlayerGold).toBe(500);
     expect(audit.actualPlayerGold).toBe(500);
   });

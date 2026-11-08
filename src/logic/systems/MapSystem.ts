@@ -8,9 +8,9 @@
  */
 
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { useIdentityStore } from '../../entities/identity/store';
-import { useWorldStore } from '../../entities/world/store';
+import type { IWorldCard, IWorldPort } from '../../entities/world/worldView';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { Ledger } from '../ledger/Ledger';
@@ -60,15 +60,15 @@ export class MapSystem {
   }
 
   /** WRITE A MAP: everything this character holds of one world, for the same bill as a plan. */
-  static async write(worldId: string): Promise<MapWriteResult> {
+  static async write(worldId: string, cards: IWorldCard[], pc: IPlayerPort): Promise<MapWriteResult> {
     const cert = useIdentityStore.getState().certificate;
     if (!cert) return { ok: false, reason: 'No identity holds the pen. Jack in first.' };
-    const card = useWorldStore.getState().availableWorlds.find(w => w.id === worldId);
+    const card = cards.find(w => w.id === worldId);
     if (!card) return { ok: false, reason: 'That world is not on the registry.' };
-    const sectors = SurveySystem.mapSheet(usePlayerStore.getState().player.survey?.[worldId] ?? {});
+    const sectors = SurveySystem.mapSheet(pc.view().player.survey?.[worldId] ?? {});
     if (Object.keys(sectors).length === 0) return { ok: false, reason: 'Nothing scanned there to write down.' };
 
-    const bill = TemplateSystem.payBill();
+    const bill = TemplateSystem.payBill(pc);
     if (!bill.ok) return { ok: false, reason: bill.reason! };
 
     const writtenAt = Date.now();
@@ -78,10 +78,10 @@ export class MapSystem {
       writtenAt, sectors
     };
     const value = SurveySystem.mapWorth(sectors, WorldClock.momentAt(card, writtenAt).generation);
-    const item = this.buildItem(data, sectors, value, `map:${cert.metadata.uid}:${writtenAt}:${worldId}:${stashItems().length}`);
+    const item = this.buildItem(data, sectors, value, `map:${cert.metadata.uid}:${writtenAt}:${worldId}:${stashItems(pc).length}`);
 
-    removeFromStash(bill.ids);
-    addToStash([item]);
+    removeFromStash(bill.ids, pc);
+    addToStash([item], pc);
     const { Provenance } = await import('../sovereignty/Provenance');
     // The signature covers what it says, so a later reader can hold the two together
     const digest = await sha256Hex(JSON.stringify(data));
@@ -91,17 +91,16 @@ export class MapSystem {
   }
 
   /** READ A MAP: the sectors join this character's own record, and the map stays in the stash. */
-  static read(itemId: string): MapReadResult {
-    const item = stashItems().find(i => i.id === itemId);
+  static read(itemId: string, world: IWorldPort, pc: IPlayerPort): MapReadResult {
+    const item = stashItems(pc).find(i => i.id === itemId);
     if (!item || !isMapItem(item)) return { ok: false, reason: 'That map is not in your stash.' };
 
     const { worldId, sectors } = item.mapData;
-    const { player, taken, kept } = SurveySystem.readMap(usePlayerStore.getState().player, worldId, sectors);
+    const { player, taken, kept } = SurveySystem.readMap(pc.view().player, worldId, sectors);
     if (taken > 0) {
-      usePlayerStore.setState({ player });
-      const world = useWorldStore.getState();
-      if (world.activeWorldId === worldId) world.applySurvey(player.survey?.[worldId]);
-      void PlayerPersistence.flush('survey');
+      pc.apply({ kind: 'SET', player });
+      if (world.view().activeWorldId === worldId) world.apply({ kind: 'APPLY_SURVEY', survey: player.survey?.[worldId] });
+      void PlayerPersistence.flush('survey', pc.view().player);
     }
     return { ok: true, taken, kept };
   }

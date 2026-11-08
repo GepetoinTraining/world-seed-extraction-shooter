@@ -39,14 +39,14 @@ import { UniversalRank, Rarity, ItemType } from '../shared/types';
 import {
   ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS, POINTS_PER_LEVEL
 } from '../shared/entities/player/systems/ProgressionSystem';
-import { usePlayerStore, ARCHETYPES } from '../src/entities/player/store';
+import { usePlayerStore, ARCHETYPES, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { applyKillRewards } from '../src/entities/combat/killRewards';
 import { ICombatEvent } from '../src/entities/combat/CombatSystems';
 import { AvatarRoster } from '../src/entities/identity/roster';
 import { HUB_NPCS } from '../src/entities/hub/HubGenerator';
 import { DIALOGUE_HANDLERS, HANDLED_ACTIONS, runDialogueAction, repairCost, repairItem } from '../src/entities/hub/dialogue';
-import { useHubStore } from '../src/entities/hub/store';
+import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { reconCell, RECON_CELL_ATOMS } from '../src/render/atoms/recon';
 import { BiomeType } from '../shared/entities/world/types';
 import { Role, STEPS, px, buildPalette, grayscale } from '../shared/render/atoms/atoms';
@@ -56,6 +56,7 @@ import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefin
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { MACHINE_COLORS, FONT_PX, MIN_READABLE_PX, TERMINAL_GENRE } from '../src/components/ui/tokens';
 import { useFeed, useReceipt, useAppView } from '../src/components/ui/stores';
+import { worldPort } from '../src/entities/world/store';
 
 // -----------------------------------------------------------------------------
 // Bars, set before the build. Do not lower them to get a pass.
@@ -98,7 +99,7 @@ describe('line 30: levels and the old rank ladder (kill XP is finally applied)',
       { type: 'HIT', entityId: 'm2', damage: 5 },
       { type: 'KILL', entityId: 'm3', xpReward: { amount: 80, sourceRank: UniversalRank.F, sourceRarity: Rarity.COMMON } }
     ];
-    const result = applyKillRewards(events);
+    const result = applyKillRewards(events, playerPort);
     expect(result.xpGained).toBe(200);
     expect(usePlayerStore.getState().player.rankXp).toBe(before + 200);
   });
@@ -194,13 +195,13 @@ describe('line 27: no dialogue option without an effect', () => {
   });
 
   it('an unregistered action is refused out loud, not swallowed', () => {
-    const effect = runDialogueAction('OPEN_AUCTION');
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_AUCTION');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain('REFUSED');
   });
 
   it('SHOW_BALANCE answers with the real balance', () => {
-    const effect = runDialogueAction('SHOW_BALANCE');
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'SHOW_BALANCE');
     expect(effect.kind).toBe('reply');
     expect((effect as any).text).toContain(usePlayerStore.getState().player.bank.gold.toLocaleString());
   });
@@ -213,7 +214,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 1000, stashTabs: [{ name: 'MAIN', items: [item] }] } }
     }));
-    const effect = runDialogueAction('IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(900);
@@ -225,7 +226,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 10, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction('IDENTIFY_ITEM', { cost: 100 });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'IDENTIFY_ITEM', { cost: 100 });
     expect(effect.kind).toBe('reply');
     expect(usePlayerStore.getState().player.bank.gold).toBe(10); // nothing moved
   });
@@ -239,9 +240,9 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 1000, stashTabs: [{ name: 'MAIN', items: [item] }] } }
     }));
-    const cost = repairCost(item as any);
+    const cost = repairCost(item as any, usePlayerStore.getState().player.attributes);
     expect(cost).toBeGreaterThan(0);
-    const res = repairItem(item.id);
+    const res = repairItem(item.id, playerPort, hubPort);
     expect(res.ok).toBe(true);
     const after = usePlayerStore.getState().player;
     expect(after.bank.stashTabs[0].items[0].stats.durability).toBe(100);
@@ -253,7 +254,7 @@ describe('line 27: no dialogue option without an effect', () => {
     usePlayerStore.setState(s => ({
       player: { ...s.player, bank: { ...s.player.bank, gold: 50, stashTabs: [{ name: 'MAIN', items: [] }] } }
     }));
-    const effect = runDialogueAction('BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'BUY_CONSUMABLE', { itemId: 'drink_ale', cost: 10 });
     expect(effect.kind).toBe('reply');
     const after = usePlayerStore.getState().player;
     expect(after.bank.gold).toBe(40);
@@ -458,7 +459,7 @@ describe('line 31: receipts and the feed', () => {
 
   it('dialogue can steer the terminal to another screen', () => {
     useAppView.getState().setView('HUB');
-    const effect = runDialogueAction('OPEN_BANK');
+    const effect = runDialogueAction(worldPort, playerPort, hubPort, 'OPEN_BANK');
     expect(effect).toEqual({ kind: 'navigate', view: 'BANK' });
   });
 });

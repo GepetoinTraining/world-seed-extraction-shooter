@@ -1,4 +1,3 @@
-import { useTalk } from '../interaction/talkStore';
 import { create } from 'zustand';
 import {
   IPlayer, IItem, UniversalRank, IAttributes, ICognitiveFrame, IEquippedSlots, SlotType,
@@ -10,7 +9,9 @@ import { SkillDiscovery, IActionContext } from './systems/SkillDiscovery';
 import { DEFAULT_ATTRIBUTES, IBaseAttributes } from './types';
 import { IPlayerCertificate } from '../identity/certificateSystem';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
-import { useWorldStore } from '../world/store';
+import type { IWorldPort } from '../world/worldView';
+import type { IHubPort } from '../hub/hubView';
+import { offerPort, portOf } from '../storePorts';
 import { ChestSystem } from '../../../shared/entities/world/ChestSystem';
 import { LiveClient } from '../../logic/live/LiveClient';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
@@ -50,6 +51,7 @@ import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shar
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { CreationSystem, ICreationSheet } from '../../logic/systems/CreationSystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
+import type { IPlayerPort, PlayerChange } from './playerView';
 
 /** Chests whose live claim won, opening now (LiveClient.chests). */
 const claimedChests = new Set<string>();
@@ -58,7 +60,7 @@ const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain
 
 /** The biome under a world position, when its chunk is built (10E: the Dreaming reads it). */
 const biomeAt = (pos: { x: number; y: number }) => {
-  const map = useWorldStore.getState().currentMap;
+  const map = wp.view().currentMap;
   return map?.chunks[`${chunkOf(pos.x)},${chunkOf(pos.y)}`]?.biome;
 };
 
@@ -71,6 +73,8 @@ export const ARCHETYPES: Record<string, Partial<IBaseAttributes>> = {
 };
 
 interface PlayerState {
+  /** The one door a system's changes come through, applied in order (playerView.ts). */
+  apply: (...changes: PlayerChange[]) => void;
   player: IPlayer;
   view: 'BANK' | 'SESSION';
   lootContainer: IItem[] | null;
@@ -215,9 +219,62 @@ const quietEquip = (get: () => PlayerState, itemId: string) => {
 };
 
 let cacheSeq = 0;
+/**
+ * The world, through the port the world store offers (storePorts.ts). The player store reads the world
+ * and hands it changes like any system; it never imports the world store.
+ */
+const wp = portOf<IWorldPort>('world', 'player store');
+/** The hub, the same way: what a field act asks of it (a register, a save). */
+const hp = portOf<IHubPort>('hub', 'player store');
+
 const shown = LoadoutSystem.shownName.bind(LoadoutSystem);
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
+  apply: (...changes) => {
+    const firstTab = (p: IPlayer, items: (now: IItem[]) => IItem[]): IPlayer => ({
+      ...p, bank: { ...p.bank, stashTabs: p.bank.stashTabs.map((tab, i) => (i === 0 ? { ...tab, items: items(tab.items) } : tab)) }
+    });
+    // A field change with no field session changes nothing
+    const inSession = (p: IPlayer, step: (cur: NonNullable<IPlayer['currentSession']>) => NonNullable<IPlayer['currentSession']>): IPlayer =>
+      p.currentSession ? { ...p, currentSession: step(p.currentSession) } : p;
+    for (const change of changes) {
+      const store = get();
+      switch (change.kind) {
+        case 'SET': set({ player: change.player }); break;
+        case 'GOLD': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: s.player.bank.gold + change.delta } } })); break;
+        case 'STASH_ADD': set(s => ({ player: firstTab(s.player, now => [...now, ...change.items]) })); break;
+        case 'STASH_REMOVE': set(s => ({ player: firstTab(s.player, now => now.filter(i => !change.ids.includes(i.id))) })); break;
+        case 'PACK_ADD': set(s => ({ player: inSession(s.player, cur => ({ ...cur, inventory: [...cur.inventory, ...change.items] })) })); break;
+        case 'PACK_REMOVE': set(s => ({ player: inSession(s.player, cur => {
+          const layout = { ...(cur.inventoryLayout ?? {}) };
+          delete layout[change.itemId];
+          return { ...cur, inventory: cur.inventory.filter(i => i.id !== change.itemId), inventoryLayout: layout };
+        }) })); break;
+        case 'PACK_REPLACE': set(s => ({ player: inSession(s.player, cur => ({ ...cur, inventory: cur.inventory.map(i => (i.id === change.item.id ? change.item : i)) })) })); break;
+        case 'REPAIR': set(s => {
+          const mended = <T extends IItem>(i: T): T => (i.id === change.itemId ? { ...i, stats: { ...i.stats, durability: i.stats.maxDurability } } : i);
+          const p = s.player;
+          return { player: firstTab({ ...p, equipment: p.equipment ? { ...p.equipment, items: p.equipment.items.map(mended) } : p.equipment }, now => now.map(mended)) };
+        }); break;
+        case 'TAMED_ADD': set(s => ({ player: inSession(s.player, cur => ({ ...cur, tamed: [...(cur.tamed ?? []), change.tamed] })) })); break;
+        case 'TAMED_EXPIRE': set(s => ({ player: inSession(s.player, cur => ({ ...cur, tamed: (cur.tamed ?? []).filter(t => t.until > change.now) })) })); break;
+        case 'TAMED_CLEAR': set(s => ({ player: inSession(s.player, cur => ({ ...cur, tamed: [] })) })); break;
+        case 'ESCORTS': set(s => ({ player: inSession(s.player, cur => ({ ...cur, escorts: change.escorts })) })); break;
+        case 'QUEUE_STUDY': set(s => ({ player: change.ids.reduce((p, id) => RestSystem.queueStudy(p, id), s.player) })); break;
+        case 'WAKE': set(s => ({ player: RestSystem.wake(s.player) })); break;
+        case 'PENDING_DREAM': set(s => ({ player: { ...s.player, pendingDream: change.dream } })); break;
+        case 'ACCRUE': set(s => ({ player: WebSystem.accrue(s.player, change.node, change.rank) })); break;
+        case 'RECALC_WEIGHT': store.recalcWeight(); break;
+        case 'WORK_ON': store.workOn(change.pair, change.rank, change.xp); break;
+        case 'PRACTICE_TRADE': store.practiceTrade(change.family); break;
+        case 'LORE': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore: change.lore } } })); break;
+        case 'GAIN_SKILL_XP': store.gainSkillXp(change.skillId, change.amount, change.tags, change.context); break;
+        case 'DIVE': store.diveIntoLayer(change.layerId); break;
+        case 'DROP_ITEM': store.dropItem(change.itemId); break;
+        case 'TOGGLE_CARRY': store.toggleCarry(change.itemId); break;
+      }
+    }
+  },
   player: INITIAL_PLAYER_TEMPLATE,
   view: 'BANK',
   lootContainer: null,
@@ -620,7 +677,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   takeFromCache: (entityId, itemId) => {
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     const inside = entity?.container?.items;
     const item = inside?.find(i => i.id === itemId);
@@ -632,19 +689,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return v;
     }
     const left = inside.filter(i => i.id !== itemId);
-    if (left.length === 0) world.removeEntity(entityId);
-    else world.updateEntity(entityId, { container: { ...entity.container!, items: left } });
+    if (left.length === 0) wp.apply({ kind: 'REMOVE_BODY', entityId: entityId });
+    else wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { container: { ...entity.container!, items: left } } });
     SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entityId, itemIds: [itemId] });
     return { ok: true };
   },
 
   placeOnCart: (entityId, itemId, x, y, rotated) => {
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
     const placed = CartSystem.placeAt(entity.cart, itemId, x, y, rotated);
     if (!placed) return { ok: false, reason: 'The cart bed has no room there. It stays where it was.' };
-    world.updateEntity(entityId, { cart: placed });
+    wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { cart: placed } });
     void get().persistCarts();
     return { ok: true };
   },
@@ -1030,7 +1087,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     if (!item?.cartData) return { ok: false, reason: 'That does not unfold into a cart.' };
 
-    const world = useWorldStore.getState();
+    const world = wp.view();
     if (!world.currentMap) return { ok: false, reason: 'No world to stand it in.' };
 
     let cart = CartSystem.newCart(item, state.player.id, state.player.username);
@@ -1056,7 +1113,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }) : s);
     get().recalcWeight();
 
-    world.addEntity({
+    wp.apply({ kind: 'ADD_BODY', entity: {
       id: entityId,
       type: EntityType.CART,
       definitionId: 'cart_field',
@@ -1065,7 +1122,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       rarity: item.rarity,
       isHostile: false,
       cart
-    });
+    } });
     SessionJournal.record('INTERACT', { kind: 'CART_DEPLOY', entityId, cartItemId: item.id });
     feed(`${item.name} unfolds. Its bed is ${cart.gridW}×${cart.gridH}; your seal is on it. It stays in the world — even past your death.`, 'proof');
     await get().persistCarts();
@@ -1076,7 +1133,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const state = get();
     const session = state.player.currentSession;
     if (!session) return { ok: false, reason: 'Nothing to tow outside the field.' };
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
 
@@ -1093,7 +1150,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       useWaits.getState().begin({ id: waitId, label: 'BREAKING THE LOCKS', startedAt, until: startedAt + seconds * 1000 });
       await new Promise(resolve => setTimeout(resolve, seconds * 1000));
       useWaits.getState().end(waitId);
-      const still = Object.values(useWorldStore.getState().currentMap?.chunks || {})
+      const still = Object.values(wp.view().currentMap?.chunks || {})
         .flatMap(c => c.entities).find(e => e.id === entityId);
       if (!still?.cart || still.cart.towedBy) return { ok: false, reason: 'The cart is gone, or another hand beat you to the bar.' };
     }
@@ -1116,7 +1173,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       feed('You take the tow bar. The cart follows; your pace pays for it.', 'signal');
     }
 
-    world.updateEntity(entityId, { cart });
+    wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { cart } });
     set(s => s.player.currentSession ? ({
       player: { ...s.player, currentSession: { ...s.player.currentSession, towingCartId: entityId } }
     }) : s);
@@ -1129,9 +1186,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const session = get().player.currentSession;
     const entityId = session?.towingCartId;
     if (!entityId) return;
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
-    if (entity?.cart) world.updateEntity(entityId, { cart: { ...entity.cart, towedBy: undefined } });
+    if (entity?.cart) wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { cart: { ...entity.cart, towedBy: undefined } } });
     set(s => s.player.currentSession ? ({
       player: { ...s.player, currentSession: { ...s.player.currentSession, towingCartId: undefined } }
     }) : s);
@@ -1146,7 +1203,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session) return { ok: false, reason: 'The cart is in the field.' };
     const item = session.inventory.find(i => i.id === itemId);
     if (!item) return { ok: false, reason: 'No such item in the pack.' };
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
 
@@ -1165,7 +1222,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         inventoryLayout: layout
       } }
     }) : s);
-    world.updateEntity(entityId, { cart: loaded });
+    wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { cart: loaded } });
     get().recalcWeight();
     SessionJournal.record('INTERACT', { kind: 'CART_LOAD', entityId, itemId });
     feed(`${shown(item)} onto the cart bed. The pack breathes; the tow bar will not.`, 'plain');
@@ -1177,7 +1234,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const state = get();
     const session = state.player.currentSession;
     if (!session) return { ok: false, reason: 'The cart is in the field.' };
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
     const item = entity.cart.items.find(i => i.id === itemId);
@@ -1189,14 +1246,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       feed(v.reason, 'loss');
       return v;
     }
-    world.updateEntity(entityId, { cart: CartSystem.unload(entity.cart, itemId)! });
+    wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { cart: CartSystem.unload(entity.cart, itemId)! } });
     SessionJournal.record('INTERACT', { kind: 'CART_UNLOAD', entityId, itemId });
     void get().persistCarts();
     return { ok: true };
   },
 
   persistCarts: async () => {
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const worldUid = world.activeWorldId;
     if (!worldUid || !world.currentMap) return;
     const placed: IPlacedCart[] = Object.values(world.currentMap.chunks)
@@ -1511,7 +1568,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const item = session.inventory.find(i => i.id === itemId);
     if (!item) return;
     // Q16: a body set down lies on the ground again. It is never a cache anyone could open.
-    if (Escort.isCorpse(item)) { FieldEscort.setDown(item); return; }
+    if (Escort.isCorpse(item)) { FieldEscort.setDown(item, wp, playerPort); return; }
 
     const layout = { ...(session.inventoryLayout || {}) };
     delete layout[itemId];
@@ -1533,7 +1590,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const pos = session.position;
     // The tie-break matters: two caches in one millisecond once shared an id, and taking one took both.
     const cacheId = `cache_${session.sessionId.slice(0, 8)}_${Date.now().toString(36)}_${++cacheSeq}`;
-    useWorldStore.getState().addEntity({
+    wp.apply({ kind: 'ADD_BODY', entity: {
       id: cacheId,
       type: EntityType.CONTAINER,
       definitionId: 'ground_cache',
@@ -1542,7 +1599,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       rarity: item.rarity,
       isHostile: false,
       container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: state.player.id }
-    });
+    } });
     SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
     feed(`Left behind: ${shown(item)}. The cache is still yours, if you come back for it.`, 'plain');
   },
@@ -1582,7 +1639,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const pos = get().player.currentSession?.position;
       if (pos) {
         const cacheId = `cache_imp_${Date.now().toString(36)}`;
-        useWorldStore.getState().addEntity({
+        wp.apply({ kind: 'ADD_BODY', entity: {
           id: cacheId,
           type: EntityType.CONTAINER,
           definitionId: 'ground_cache',
@@ -1591,7 +1648,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           rarity: result.item.rarity,
           isHostile: false,
           container: { lootRank: result.item.rank, looted: false, hasLore: false, items: rejected, cacheOwner: get().player.id }
-        });
+        } });
         feed(`The pack refuses ${result.item.name}; a cache holds it at your feet.`, 'loss');
       }
     }
@@ -1621,7 +1678,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const unread = LoadoutSystem.unreadRefusal(item);
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
     // D65: what is in a cage is tried, not eaten
-    if (item.creatureData) { FieldCapture.tame(item.id); return; }
+    if (item.creatureData) { FieldCapture.tame(item.id, wp, playerPort); return; }
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
@@ -1714,7 +1771,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!session) return;
 
     // Resolve the live entity from the world
-    const world = useWorldStore.getState();
+    const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {})
       .flatMap(c => c.entities)
       .find(e => e.id === targetId);
@@ -1751,7 +1808,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         const pos = get().player.currentSession?.position;
         if (pos) {
           const cacheId = `cache_ovf_${Date.now().toString(36)}_${++cacheSeq}`;
-          useWorldStore.getState().addEntity({
+          wp.apply({ kind: 'ADD_BODY', entity: {
             id: cacheId,
             type: EntityType.CONTAINER,
             definitionId: 'ground_cache',
@@ -1760,7 +1817,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             rarity: rejected[0].rarity,
             isHostile: false,
             container: { lootRank: rejected[0].rank, looted: false, hasLore: false, items: rejected, cacheOwner: get().player.id }
-          });
+          } });
           SessionJournal.record('INTERACT', { kind: 'OVERFLOW_CACHE', cacheId, itemIds: rejected.map(i => i.id) });
           feed(`The pack refuses ${rejected.length} item${rejected.length === 1 ? '' : 's'}; a cache holds them at your feet.`, 'loss');
         }
@@ -1806,7 +1863,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (interactionId.startsWith('int_snare_')) {
       if (!entity) return;
       if (!spendEnergy(Capture.SNARE_ENERGY)) return;
-      FieldCapture.snare(entity);
+      FieldCapture.snare(entity, wp, playerPort, hp);
       return;
     }
 
@@ -1841,14 +1898,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (usesLeft <= 0) {
         if (def.regrowMs) {
           // Flora: depleted, regrows on the world clock
-          world.updateEntity(entity.id, { usesRemaining: 0, regrowAt: Date.now() + def.regrowMs });
+          wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { usesRemaining: 0, regrowAt: Date.now() + def.regrowMs } });
         } else {
           // Mineral: the vein is dry forever
-          world.removeEntity(entity.id);
+          wp.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
           console.log(`[HARVEST] ${def.name} depleted. The vein runs dry.`);
         }
       } else {
-        world.updateEntity(entity.id, { usesRemaining: usesLeft });
+        wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { usesRemaining: usesLeft } });
       }
 
       if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5));
@@ -1876,11 +1933,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         if (taken.length > 0) {
           spendEnergy(2);
           const left = entity.container.items.filter(i => !taken.some(t => t.id === i.id));
-          if (left.length === 0) world.removeEntity(entity.id);
-          else world.updateEntity(entity.id, { container: { ...entity.container, items: left } });
+          if (left.length === 0) wp.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
+          else wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container, items: left } } });
           SessionJournal.record('INTERACT', { kind: 'CACHE_PICKUP', targetId: entity.id, itemIds: taken.map(i => i.id) });
           // D93: a leader's store is that much poorer when its cycle closes
-          if (entity.structure) world.reportStoreTaken(entity.id, taken.length);
+          if (entity.structure) wp.apply({ kind: 'STORE_TAKEN', structureId: entity.id, count: taken.length });
           feed(`Recovered ${taken.length === 1 ? shown(taken[0]) : `${taken.length} items`}.`, 'proof');
         }
         if (rejected.length > 0) feed(`The pack refuses ${rejected.length}; ${rejected.length === 1 ? 'it stays' : 'they stay'} in the cache.`, 'loss');
@@ -1892,13 +1949,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       // Played live, a chest is claimed first, in the room's queue; it opens only for the claim that
       // won, and the write is the room's, after (Pedro: "the first or best lag gets the first spot")
-      const live = useWorldStore.getState();
+      const live = wp.view();
       if (!claimedNow && ChestSystem.isChest(entity.id) && LiveClient.isLive(live.activeWorldId)) {
         const saw = live.chestRecord?.chests[entity.id]?.lootedAt ?? null;
         void LiveClient.chests({ op: 'loot', chestId: entity.id, cycle: live.generation, saw }).then(out => {
-          if (out?.record) useWorldStore.setState({ chestRecord: out.record });
+          if (out?.record) wp.apply({ kind: 'CHEST_RECORD', record: out.record });
           if (out?.ok) { claimedChests.add(entity.id); get().performInteraction(interactionId, targetId); return; }
-          useWorldStore.getState().updateEntity(entity.id, { container: { ...entity.container!, looted: true } });
+          wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container!, looted: true } } });
           feed(out?.reason ?? 'The chest could not be claimed.', 'loss');
         });
         return;
@@ -1910,13 +1967,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
 
       // D115: a gem, a work of art, a valuable. Its own stream, so nothing above or below it moves.
-      const chestWorld = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
+      const chestWorld = wp.view().availableWorlds.find(w => w.id === wp.view().activeWorldId);
       const anchor = Anchors.fromChest(Anchors.foundIn(chestWorld?.themeId, biomeAt(entity.position), entity.container.lootRank), rollKey);
       if (anchor) loot.push(anchor);
 
       if (entity.container.hasLore) {
-        const worldCard = useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId);
-        const worldLore = ContentRegistry.lore(worldCard?.themeId, useWorldStore.getState().directorRecord ?? undefined);
+        const worldCard = wp.view().availableWorlds.find(w => w.id === wp.view().activeWorldId);
+        const worldLore = ContentRegistry.lore(worldCard?.themeId, wp.view().directorRecord ?? undefined);
         const fragment = rng.pick(worldLore.length > 0 ? worldLore : LORE_FRAGMENTS);
         const piece = {
           ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
@@ -1934,8 +1991,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       addToInventory(loot);
-      world.updateEntity(entity.id, { container: { ...entity.container, looted: true } });
-      world.reportChestLooted(entity.id);
+      wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container, looted: true } } });
+      wp.apply({ kind: 'CHEST_LOOTED', chestId: entity.id });
       const onTable = LootTable.chestRoll(entity.container.lootRank, rollKey, biomeAt(entity.position));
       SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id), ...(onTable ? { table: onTable } : {}) });
       get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });
@@ -1946,17 +2003,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ------------------------------------------------------------------
     // NPC SOCIAL LOOP (Wave 2.4): TALK, GIFT, RECRUIT
     // ------------------------------------------------------------------
-    // D113, D114: nobody clicks a person round any more. This opens the talk, and each round happens there.
-    if (interactionId.startsWith('int_talk_')) {
-      if (!entity.npc) return;
-      void useTalk.getState().open({ kind: 'FIELD_PERSON', entityId: entity.id });
-      return;
-    }
-
-    if (interactionId.startsWith('int_bargain_')) {
-      void useTalk.getState().open({ kind: 'MONSTER', entityId: entity.id });
-      return;
-    }
+    // D113, D114: talking opens the talk store's door, which the screen asks first (talkStore.talkFrom).
 
     if (interactionId.startsWith('int_gift_')) {
       if (!entity.npc) return;
@@ -1974,7 +2021,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }) : state);
       get().recalcWeight();
 
-      useWorldStore.getState().updateEntity(entity.id, { npc: { ...entity.npc, disposition } });
+      wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { npc: { ...entity.npc, disposition } } });
       SessionJournal.record('INTERACT', { kind: 'GIFT', targetId: entity.id, itemId: gift.id, disposition });
       get().processAction({ tags: ['social', 'trade'], magnitude: 10 });
       feed(`Gave ${gift.name} to ${entity.npc.name} (${disposition}/100).`, 'plain');
@@ -1987,7 +2034,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       // Q16: they walk beside you to the beacon, in the world, and fight back when engaged.
       // The bond the hub reads is written at the beacon, from the same facts (D27, Wave 11's seam).
-      const escort = FieldEscort.join(entity);
+      const escort = FieldEscort.join(entity, wp, playerPort);
       if (!escort) return;
       SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name });
       get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
@@ -1998,7 +2045,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Q16: a person brought out who fell, taken up to be carried home
     if (interactionId.startsWith('int_carry_')) {
       if (!entity.escort?.fallen) return;
-      if (FieldEscort.carry(entity.id)) SessionJournal.record('INTERACT', { kind: 'CARRY', targetId: entity.id });
+      if (FieldEscort.carry(entity.id, wp, playerPort)) SessionJournal.record('INTERACT', { kind: 'CARRY', targetId: entity.id });
       return;
     }
   },
@@ -2086,3 +2133,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().workOn(pair, rankIndexOf(context.targetRank), Math.ceil(context.magnitude * 0.5));
   }
 }));
+
+/** The player as a system takes it (playerView.ts): a fresh view on each read, the store's one door, and its calls. */
+export const playerPort: IPlayerPort = {
+  view: () => usePlayerStore.getState(),
+  apply: (...changes) => usePlayerStore.getState().apply(...changes),
+  watch: (listener) => usePlayerStore.subscribe((state, prev) => { if (state.player !== prev.player) listener(state.player, prev.player); }),
+  tryAddItems: (...args) => usePlayerStore.getState().tryAddItems(...args),
+  applyKillXp: (...args) => usePlayerStore.getState().applyKillXp(...args),
+  grantRank: (...args) => usePlayerStore.getState().grantRank(...args),
+  placeInPack: (...args) => usePlayerStore.getState().placeInPack(...args),
+  placeInStash: (...args) => usePlayerStore.getState().placeInStash(...args),
+  stowInPouch: (...args) => usePlayerStore.getState().stowInPouch(...args),
+  equipSwap: (...args) => usePlayerStore.getState().equipSwap(...args),
+  unequipFromSlot: (...args) => usePlayerStore.getState().unequipFromSlot(...args),
+  placeOnCart: (...args) => usePlayerStore.getState().placeOnCart(...args),
+  loadCart: (...args) => usePlayerStore.getState().loadCart(...args),
+  unloadCart: (...args) => usePlayerStore.getState().unloadCart(...args),
+  takeFromCache: (...args) => usePlayerStore.getState().takeFromCache(...args)
+};
+
+offerPort('player', playerPort);

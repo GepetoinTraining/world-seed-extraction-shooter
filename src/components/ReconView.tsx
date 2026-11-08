@@ -11,9 +11,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { DreamingSystem } from '../../shared/entities/world/Dreaming';
-import { useWorldStore } from '../entities/world/store';
-import { usePlayerStore } from '../entities/player/store';
-import { useHubStore } from '../entities/hub/store';
+import { useWorldStore, worldPort } from '../entities/world/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
+import { useHubStore, hubPort } from '../entities/hub/store';
 import { ISector, ScanLevel } from '../../shared/entities/world/types';
 import { WorldClock } from '../entities/world/WorldClock';
 import { SECTOR_CHUNKS, sectorOf } from '../../shared/entities/world/grid';
@@ -52,7 +52,7 @@ export async function openRecon(worldId: string): Promise<void> {
 /** Whichever way a person leaves the view, the world they held open is let go and what they read is saved. */
 export function closeRecon(): void {
   useWorldStore.getState().exitWorld();
-  void PlayerPersistence.flush('survey');
+  void PlayerPersistence.flush('survey', usePlayerStore.getState().player);
 }
 
 /** With onDrop it is the field's first step inside a session. Without it, it stands alone, from a card. */
@@ -258,7 +258,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     }
     if (onDrop) { onDrop(x, y); return; }
     if (!activeWorldId) return;
-    const res = await deployToWorld(activeWorldId);
+    const res = await deployToWorld(activeWorldId, worldPort, playerPort, hubPort);
     if (!res.ok) { if (res.reason) feed(res.reason, 'loss'); return; }
     useDropOrder.setState({ at: { x, y } });
     useAppView.getState().setView('MISSIONS');
@@ -266,7 +266,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
 
   const newsIn = (map: typeof maps[number]) => SurveySystem.readMap(player, map.mapData.worldId, map.mapData.sectors).taken;
   const readMap = (map: typeof maps[number]) => {
-    const res = MapSystem.read(map.id);
+    const res = MapSystem.read(map.id, worldPort, playerPort);
     if (!res.ok) { feed(res.reason!, 'loss'); return; }
     feed(`${map.name}: ${res.taken} sector${res.taken === 1 ? '' : 's'} added${res.kept ? `, and ${res.kept} kept, for you held as fresh` : ''}.`, 'proof');
   };

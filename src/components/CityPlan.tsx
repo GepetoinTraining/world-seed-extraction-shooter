@@ -8,7 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { answersTag, materialLabel } from '../../shared/entities/hub/room';
 import { chunkBillFor, isFarmland, openSides } from '../entities/hub/hubManifest';
 import { FarmDoors } from '../entities/hub/farmDoors';
-import { useHubStore } from '../entities/hub/store';
+import { useHubStore, hubPort } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { ArmedButton, Button, Modal, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
@@ -117,7 +117,7 @@ export const CityPlan: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               title={!choice ? 'Choose where it rises.' : !met ? 'The deposit is short.' : 'The whole chunk, portioned evenly by the hub.'}
               onClick={async () => {
                 if (!choice) return;
-                const res = await FarmDoors.raiseFarmland(choice.side, choice.beside);
+                const res = await FarmDoors.raiseFarmland(choice.side, choice.beside, hubPort);
                 pushFeed(res.ok ? 'New ground is ploughed whole. The hub has portioned it into even plots, for sale at the deeds.' : res.reason ?? 'It would not rise.', res.ok ? 'proof' : 'loss');
                 if (res.ok) setChosen(null);
               }}
@@ -131,7 +131,7 @@ export const CityPlan: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   confirmLabel="THE WHOLE CHUNK: SURE?"
                   onConfirm={async () => {
                     const [cx, cy] = ploughing.split(',').map(Number);
-                    const res = await FarmDoors.makeFarmland({ cx, cy });
+                    const res = await FarmDoors.makeFarmland({ cx, cy }, hubPort);
                     pushFeed(res.ok ? 'That ground is farmland now, whole, and the hub has portioned it into even plots.' : res.reason ?? 'It would not go.', res.ok ? 'proof' : 'loss');
                     if (res.ok) setPloughing(null);
                   }}

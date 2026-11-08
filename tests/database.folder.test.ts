@@ -97,7 +97,7 @@ describe('a folder, a real server, and hard stops in the middle of writes', () =
     localStorage.setItem('worldseed_certificate', JSON.stringify(cert));
     useIdentityStore.setState({ certificate: cert });
     usePlayerStore.setState(s => ({ player: { ...s.player, id: uid, username: 'KILN', bank: { ...s.player.bank, gold: GRANT } } }));
-    await GoldCommit.commit({ rows: [{ type: 'CHARACTER_GENESIS', data: { certUid: uid, gold: GRANT } }] });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'CHARACTER_GENESIS', data: { certUid: uid, gold: GRANT } }] });
 
     let acknowledged = 0;
     let lastHub = '';
@@ -110,6 +110,7 @@ describe('a folder, a real server, and hard stops in the middle of writes', () =
       const data = { save: n, body: 'hub'.repeat(350_000) };
       lastHub = sha(JSON.stringify(data));
       return GoldCommit.commit({
+        player: usePlayerStore.getState().player,
         rows: [{ type: 'GOLD_DELTA', data: { reason: 'FOLDER', amount: -STEP, treasuryId: HUB, treasuryDelta: STEP } }],
         treasury: { worldUid: HUB, delta: STEP },
         hubDoc: { id: `hub_state_${HUB}`, namespace: VectorNamespace.TERRITORIES, data, metadata: { createdAt: 1, updatedAt: n, version: 1 } }
@@ -139,7 +140,7 @@ describe('a folder, a real server, and hard stops in the middle of writes', () =
 
       expect((await Ledger.list(uid)).length).toBe(acknowledged + 1);
       expect(await Ledger.audit(uid)).toEqual({ ok: true, rows: acknowledged + 1 });
-      const audit = await GoldAudit.run();
+      const audit = await GoldAudit.run(usePlayerStore.getState().player);
       expect(audit.notes).toEqual([]);
       expect(audit.ok).toBe(true);
       expect(audit.actualPlayerGold).toBe(GRANT - acknowledged * STEP);

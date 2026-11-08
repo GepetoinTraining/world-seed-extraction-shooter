@@ -24,7 +24,7 @@ import { VectorStore, VectorNamespace } from '../shared/entities/data/VectorStor
 import { StoreClient, useVault } from '../shared/entities/data/StoreClient';
 import { StoreUnit } from '../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../src/entities/identity/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useHubStore } from '../src/entities/hub/store';
 import { PlayerPersistence } from '../src/logic/persistence/PlayerPersistence';
 import { BrowserImport, ILegacyDoc } from '../src/logic/persistence/BrowserImport';
@@ -105,7 +105,7 @@ async function becomeAvatar(name: string, gold = 500): Promise<IPlayerCertificat
   localStorage.setItem('worldseed_certificate', JSON.stringify(cert));
   useIdentityStore.setState({ certificate: cert });
   usePlayerStore.setState(s => ({ player: { ...s.player, id: cert.metadata.uid, username: name, bank: { ...s.player.bank, gold } } }));
-  await GoldCommit.commit({ rows: [{ type: 'CHARACTER_GENESIS', data: { certUid: cert.metadata.uid, gold } }] });
+  await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'CHARACTER_GENESIS', data: { certUid: cert.metadata.uid, gold } }] });
   return cert;
 }
 
@@ -166,7 +166,7 @@ describe('line 69: saves live in the SQL database', () => {
     const cert = await becomeAvatar('LOAM');
     const uid = cert.metadata.uid;
     spend(40);
-    await GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'TEST', amount: -40, treasuryId: 'hub_l69', treasuryDelta: 40 } }], treasury: { worldUid: 'hub_l69', delta: 40 } });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'TEST', amount: -40, treasuryId: 'hub_l69', treasuryDelta: 40 } }], treasury: { worldUid: 'hub_l69', delta: 40 } });
 
     await stopServer();
     await startServer();
@@ -182,14 +182,14 @@ describe('line 69: saves live in the SQL database', () => {
   it('a real signature still verifies after the round trip through the column', async () => {
     const cert = await becomeAvatar('BYTE');
     usePlayerStore.setState(s => ({ player: { ...s.player, username: 'BYTE naïve 🐉 "q" \\ \n', bank: { ...s.player.bank, lore: { z: { topic: 'z', xp: 1.1, level: 2, dateDiscovered: 1e21 }, '10': { topic: 'ten', xp: 0, level: 1, dateDiscovered: 0 }, '2': { topic: 'two', xp: 0, level: 1, dateDiscovered: 0 } } } } }));
-    await PlayerPersistence.flush('bytes');
+    await PlayerPersistence.flush('bytes', usePlayerStore.getState().player);
     const back = await PlayerPersistence.hydrate(cert);
     expect(back.status).toBe('OK');
   });
 
   it('a changed save is still refused after the move to SQL', async () => {
     const cert = await becomeAvatar('FORGE');
-    await PlayerPersistence.flush('test');
+    await PlayerPersistence.flush('test', usePlayerStore.getState().player);
     const doc = await VectorStore.get<any>(VectorNamespace.CHARACTERS, cert.metadata.uid);
     doc!.data.payload.bank.gold = 9_999_999;
     await VectorStore.put(doc!);
@@ -200,10 +200,10 @@ describe('line 69: saves live in the SQL database', () => {
     const cert = await becomeAvatar('RESTORE');
     const uid = cert.metadata.uid;
     spend(25);
-    await GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'TEST', amount: -25, treasuryId: 'hub_back', treasuryDelta: 25 } }], treasury: { worldUid: 'hub_back', delta: 25 } });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'TEST', amount: -25, treasuryId: 'hub_back', treasuryDelta: 25 } }], treasury: { worldUid: 'hub_back', delta: 25 } });
     await VectorStore.put({ id: `hub_state_back_${uid}`, namespace: VectorNamespace.TERRITORIES, data: { lots: [{ id: 'lot', ownerId: uid }] }, metadata: { createdAt: 1, updatedAt: 1, version: 1 } });
 
-    const backup = await AvatarExport.exportAvatar('open sesame');
+    const backup = await AvatarExport.exportAvatar('open sesame', usePlayerStore.getState().player);
     const file = await textOf(backup!.blob);
     const rowsBefore = JSON.stringify(await Ledger.list(uid));
 
@@ -229,11 +229,11 @@ describe('line 69: saves live in the SQL database', () => {
   it('an old backup never rolls the database back and never forks the chain', async () => {
     const cert = await becomeAvatar('STALE');
     const uid = cert.metadata.uid;
-    const old = await textOf((await AvatarExport.exportAvatar('pw'))!.blob);
+    const old = await textOf((await AvatarExport.exportAvatar('pw', usePlayerStore.getState().player))!.blob);
 
     // Play goes on after the backup was taken.
     spend(100);
-    await GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'AFTER', amount: -100, treasuryId: 'hub_stale', treasuryDelta: 100 } }], treasury: { worldUid: 'hub_stale', delta: 100 } });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'AFTER', amount: -100, treasuryId: 'hub_stale', treasuryDelta: 100 } }], treasury: { worldUid: 'hub_stale', delta: 100 } });
     const rowsAfterPlay = (await Ledger.list(uid)).length;
 
     wipeBrowser();
@@ -255,8 +255,8 @@ describe('line 69: saves live in the SQL database', () => {
     const cert = await becomeAvatar('MOVER');
     const uid = cert.metadata.uid;
     spend(5);
-    await GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'T', amount: -5 } }] });
-    const file = await textOf((await AvatarExport.exportAvatar('pw'))!.blob);
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'T', amount: -5 } }] });
+    const file = await textOf((await AvatarExport.exportAvatar('pw', usePlayerStore.getState().player))!.blob);
 
     // A second, empty database: another machine, or a lost file.
     await stopServer();
@@ -282,10 +282,10 @@ describe('line 69: saves live in the SQL database', () => {
   it('refuses a backup whose chain disagrees with the database, writing nothing', async () => {
     const cert = await becomeAvatar('FORK');
     const uid = cert.metadata.uid;
-    const file = JSON.parse(await textOf((await AvatarExport.exportAvatar('pw'))!.blob));
+    const file = JSON.parse(await textOf((await AvatarExport.exportAvatar('pw', usePlayerStore.getState().player))!.blob));
     // Same identity, a row the database never saw at a seq it already holds.
     spend(1);
-    await GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'REAL', amount: -1 } }] });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'REAL', amount: -1 } }] });
     const forged = await CertificateSystem.signPayload(uid, { seq: 2, prevSeq: 1, ts: 1, type: 'GOLD_DELTA', data: { reason: 'FORK', amount: 1000 } });
     file.body.ledger.push(forged);
     const { sha256Hex } = await import('../src/logic/journal/SessionJournal');
@@ -346,7 +346,7 @@ describe('line 71: a gold change is one commit', () => {
       if (String(url).endsWith('/commit')) seen.push(JSON.parse(init.body));
       return real(url, init);
     });
-    await ExitLevy.charge('world_one', 1000, 0.05);
+    await ExitLevy.charge(playerPort, 'world_one', 1000, 0.05);
     spy.mockRestore();
 
     expect(seen.length).toBe(1);
@@ -376,7 +376,7 @@ describe('line 71: a gold change is one commit', () => {
     const hub = `hub_overlap_${cert.metadata.uid}`;
     await Promise.all(Array.from({ length: 12 }, () => {
       spend(10);
-      return GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'BURST', amount: -10, treasuryId: hub, treasuryDelta: 10 } }], treasury: { worldUid: hub, delta: 10 } });
+      return GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'BURST', amount: -10, treasuryId: hub, treasuryDelta: 10 } }], treasury: { worldUid: hub, delta: 10 } });
     }));
     expect((await Ledger.audit(cert.metadata.uid)).ok).toBe(true);
     expect((await Ledger.list(cert.metadata.uid)).length).toBe(13);
@@ -400,6 +400,7 @@ describe('line 71: a gold change is one commit', () => {
     for (let i = 0; i < 12; i++) {
       spend(10);
       await GoldCommit.commit({
+        player: usePlayerStore.getState().player,
         rows: [{ type: 'GOLD_DELTA', data: { reason: 'WHILE_COMPACTING', amount: -10, treasuryId: hub, treasuryDelta: 10, padding } }],
         treasury: { worldUid: hub, delta: 10 }
       });
@@ -417,13 +418,13 @@ describe('line 71: a gold change is one commit', () => {
     const cert = await becomeAvatar('ORDER', 1000);
     const hub = `hub_order_${cert.metadata.uid}`;
     spend(10);
-    const first = GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'A', amount: -10, treasuryId: hub, treasuryDelta: 10 } }], treasury: { worldUid: hub, delta: 10 } });
-    const flush = PlayerPersistence.flush('in-between');
+    const first = GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'A', amount: -10, treasuryId: hub, treasuryDelta: 10 } }], treasury: { worldUid: hub, delta: 10 } });
+    const flush = PlayerPersistence.flush('in-between', usePlayerStore.getState().player);
     spend(10); // this change's commit is queued after the flush
-    const second = GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'B', amount: -10, treasuryId: hub, treasuryDelta: 10 } }], treasury: { worldUid: hub, delta: 10 } });
+    const second = GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'B', amount: -10, treasuryId: hub, treasuryDelta: 10 } }], treasury: { worldUid: hub, delta: 10 } });
     await Promise.all([first, flush, second]);
     expect((await VectorStore.get<any>(VectorNamespace.CHARACTERS, cert.metadata.uid))!.data.payload.bank.gold).toBe(980);
-    expect((await GoldAudit.run()).notes.filter(n => n.startsWith('player'))).toEqual([]);
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).notes.filter(n => n.startsWith('player'))).toEqual([]);
   });
 
   it('two tabs on one avatar cannot fork the chain: the loser re-reads and takes the next seq', async () => {
@@ -456,6 +457,7 @@ describe('line 71: a gold change is one commit', () => {
     expect(await Wallets.totalAll()).toBe(total + 100);
 
     await GoldCommit.commit({
+      player: usePlayerStore.getState().player,
       rows: [{ type: 'TRADE', data: { kind: 'TEST', playerDelta: 0, treasuryDelta: 0, wallets: { res_a: -20, npc_b: 20 } } }],
       wallets: { hubId: hub, deltas: { res_a: -20, npc_b: 20 } }
     });
@@ -478,6 +480,7 @@ describe('line 71: a gold change is one commit', () => {
     const cert = await becomeAvatar('PRINTER');
     const hub = `hub_print_${Math.random().toString(36).slice(2)}`;
     await GoldCommit.commit({
+      player: usePlayerStore.getState().player,
       rows: [
         { type: 'PRINT', data: { hubId: hub, amount: 1400, perDay: 100, days: 14, why: 'TEST' } },
         { type: 'GOLD_DELTA', data: { reason: 'TEST', amount: 0, treasuryId: hub, treasuryDelta: -100 } }
@@ -510,7 +513,8 @@ describe('line 71: a gold change is one commit', () => {
     // capture gold the ledger has not heard of.
     const src = read('src/entities/hub/store.ts');
     const lines = src.split('\n');
-    const changes = lines.flatMap((l, i) => /gold: s\.player\.bank\.gold [-+]/.test(l) ? [i] : []);
+    // A gold change is the player's GOLD change, handed through the player's port
+    const changes = lines.flatMap((l, i) => /kind: 'GOLD', delta: /.test(l) ? [i] : []);
     expect(changes.length).toBeGreaterThanOrEqual(7);
     for (const at of changes) {
       const rest = lines.slice(at).join('\n');
@@ -541,7 +545,7 @@ describe('line 71: a gold change is one commit', () => {
 describe('when the server is down, the bank refuses', () => {
   it('reads wait instead of answering "nothing there", and the vault says it is closed', async () => {
     const cert = await becomeAvatar('OUTAGE');
-    await PlayerPersistence.flush('before');
+    await PlayerPersistence.flush('before', usePlayerStore.getState().player);
     useVault.setState({ status: 'OPEN' });
     await stopServer();
 
@@ -563,7 +567,7 @@ describe('when the server is down, the bank refuses', () => {
     const hub = `hub_held_${cert.metadata.uid}`;
     await stopServer();
     spend(20);
-    const pending = GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'HELD', amount: -20, treasuryId: hub, treasuryDelta: 20 } }], treasury: { worldUid: hub, delta: 20 } });
+    const pending = GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'HELD', amount: -20, treasuryId: hub, treasuryDelta: 20 } }], treasury: { worldUid: hub, delta: 20 } });
     await new Promise(r => setTimeout(r, 300));
     expect(useVault.getState().status).toBe('CLOSED');
     await startServer();
@@ -699,7 +703,7 @@ describe('the one-time import of existing browser data', () => {
 
     useIdentityStore.setState({ certificate: a.cert });
     usePlayerStore.setState(s => ({ player: { ...s.player, id: a.uid, bank: { ...s.player.bank, gold: 350 } } }));
-    await GoldCommit.commit({ rows: [{ type: 'GOLD_DELTA', data: { reason: 'PLAY', amount: -50, treasuryId: hub, treasuryDelta: 50 } }], treasury: { worldUid: hub, delta: 50 } });
+    await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'GOLD_DELTA', data: { reason: 'PLAY', amount: -50, treasuryId: hub, treasuryDelta: 50 } }], treasury: { worldUid: hub, delta: 50 } });
 
     await BrowserImport.importDocs(docs, [a.cert], 'localhost:3102');
     expect((await VectorStore.get<any>(VectorNamespace.CHARACTERS, a.uid))!.data.payload.bank.gold).toBe(350);

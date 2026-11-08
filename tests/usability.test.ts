@@ -45,7 +45,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 }));
 
 import { EquipSlotId, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useWorldStore } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useAppView, useFeed, useSheet } from '../src/components/ui/stores';
@@ -283,10 +283,10 @@ describe('line 59: a pack item moves to a chosen cell', () => {
   it('sets down exactly where asked, and only where it fits', () => {
     const a = rock('a', 2, 2), b = rock('b', 1, 1);
     field([a, b]);
-    expect(commitMove(held(a, { kind: 'PACK' }), { kind: 'PACK', x: 5, y: 3, rotated: false }).ok).toBe(true);
+    expect(commitMove(held(a, { kind: 'PACK' }), { kind: 'PACK', x: 5, y: 3, rotated: false }, useWorldStore.getState(), playerPort).ok).toBe(true);
     expect(session().inventoryLayout!['a']).toEqual({ x: 5, y: 3, rotated: false });
 
-    const refused = commitMove(held(b, { kind: 'PACK' }), { kind: 'PACK', x: 6, y: 4, rotated: false });
+    const refused = commitMove(held(b, { kind: 'PACK' }), { kind: 'PACK', x: 6, y: 4, rotated: false }, useWorldStore.getState(), playerPort);
     expect(refused.ok).toBe(false);
     expect(refused.reason).toMatch(/\S/);
     expect(session().inventoryLayout!['b']).not.toEqual({ x: 6, y: 4, rotated: false });
@@ -295,9 +295,9 @@ describe('line 59: a pack item moves to a chosen cell', () => {
   it('off the grid and over the edge are refused; rotating while held changes the footprint asked for', () => {
     const long = rock('long', 3, 1);
     field([long]);
-    expect(probeMove(player(), held(long, { kind: 'PACK' }), { kind: 'PACK', x: GRID_W - 1, y: 0, rotated: false }).ok).toBe(false);
-    expect(probeMove(player(), held(long, { kind: 'PACK' }, true), { kind: 'PACK', x: GRID_W - 1, y: 0, rotated: true }).ok).toBe(true);
-    expect(commitMove(held(long, { kind: 'PACK' }, true), { kind: 'PACK', x: GRID_W - 1, y: 0, rotated: true }).ok).toBe(true);
+    expect(probeMove(player(), held(long, { kind: 'PACK' }), { kind: 'PACK', x: GRID_W - 1, y: 0, rotated: false }, useWorldStore.getState()).ok).toBe(false);
+    expect(probeMove(player(), held(long, { kind: 'PACK' }, true), { kind: 'PACK', x: GRID_W - 1, y: 0, rotated: true }, useWorldStore.getState()).ok).toBe(true);
+    expect(commitMove(held(long, { kind: 'PACK' }, true), { kind: 'PACK', x: GRID_W - 1, y: 0, rotated: true }, useWorldStore.getState(), playerPort).ok).toBe(true);
     expect(session().inventoryLayout!['long']).toEqual({ x: GRID_W - 1, y: 0, rotated: true });
   });
 
@@ -320,7 +320,7 @@ describe('line 59: a pack item moves to a chosen cell', () => {
     expect(at).toMatchObject({ x: 0, y: 0 });
     for (let i = 0; i < 20; i++) at = stepGhost(at, 1, 0, a, GRID_W, GRID_H);
     expect(at).toMatchObject({ x: GRID_W - 2 });
-    expect(commitMove(held(a, { kind: 'PACK' }), at).ok).toBe(true);
+    expect(commitMove(held(a, { kind: 'PACK' }), at, useWorldStore.getState(), playerPort).ok).toBe(true);
   });
 
   it('no grab, rotate or place sequence loses or duplicates anything', () => {
@@ -333,7 +333,7 @@ describe('line 59: a pack item moves to a chosen cell', () => {
       const rotated = rng.int(0, 2) === 1;
       const to: Place = { kind: 'PACK', x: rng.int(-1, GRID_W + 1), y: rng.int(-1, GRID_H + 1), rotated };
       const h = held(item, { kind: 'PACK' }, rotated);
-      if (rng.int(0, 4) !== 0) commitMove(h, to); // else: Escape, nothing happened
+      if (rng.int(0, 4) !== 0) commitMove(h, to, useWorldStore.getState(), playerPort); // else: Escape, nothing happened
       const ids = session().inventory.map(i => i.id).sort();
       expect(ids).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
       const occ = InventorySystem.buildOccupancy(session().inventory, session().inventoryLayout!);
@@ -630,7 +630,7 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
       if (to.kind === 'CART' && rng.int(0, 2) === 0) to = { kind: 'CART', entityId: 'cart_1', x: rng.int(0, 10), y: rng.int(0, 8), rotated: false };
       const asked = rng.int(0, 5);
       if (asked === 0) continue; // Escape: put it back
-      const verdict = commitMove(h, to);
+      const verdict = commitMove(h, to, useWorldStore.getState(), playerPort);
       if (verdict.ok) moved++; else { refused++; expect(verdict.reason, JSON.stringify(to)).toMatch(/\S/); }
       expect(everywhere(), `op ${op}`).toEqual(expected);
     }
@@ -660,7 +660,7 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
       const to: Place = rng.int(0, 2) === 0
         ? { kind: 'STASH', x: rng.int(-1, STASH_COLS + 1), y: rng.int(0, 12), rotated: rng.int(0, 2) === 1 }
         : slots[rng.int(0, slots.length)];
-      if (commitMove(h, to).ok) moved++;
+      if (commitMove(h, to, useWorldStore.getState(), playerPort).ok) moved++;
       expect(everywhereBank(), `op ${op}`).toEqual(expected);
     }
     expect(moved).toBeGreaterThan(200);
@@ -673,10 +673,10 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
     const helm = synth('helm', SlotType.HEAD);
     field([helm]);
     const to: Place = { kind: 'SLOT', slot: 'CHEST' };
-    const asked = probeMove(player(), held(helm, { kind: 'PACK' }), to);
+    const asked = probeMove(player(), held(helm, { kind: 'PACK' }), to, useWorldStore.getState());
     expect(asked.ok).toBe(false);
     expect(asked.reason).toBe(LoadoutSystem.canEquip(player(), helm, 'CHEST').reason);
-    const done = commitMove(held(helm, { kind: 'PACK' }), to);
+    const done = commitMove(held(helm, { kind: 'PACK' }), to, useWorldStore.getState(), playerPort);
     expect(done).toEqual(asked);
     expect(session().inventory.map(i => i.id)).toEqual(['helm']);
   });
@@ -715,11 +715,11 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
   it('the belt: a pouch sits on it, and what it stacks drops into the pouch', () => {
     const b = belt('b'), p = vialPouch('p'), v = vial('v'), r = rock('r');
     field([b, p, v, r]);
-    expect(commitMove(held(b, { kind: 'PACK' }), { kind: 'SLOT', slot: 'BELT' }).ok).toBe(true);
-    expect(commitMove(held(p, { kind: 'PACK' }), { kind: 'SLOT', slot: 'POUCH_1' }).ok).toBe(true);
-    expect(commitMove(held(v, { kind: 'PACK' }), { kind: 'SLOT', slot: 'POUCH_1' }).ok).toBe(true);
+    expect(commitMove(held(b, { kind: 'PACK' }), { kind: 'SLOT', slot: 'BELT' }, useWorldStore.getState(), playerPort).ok).toBe(true);
+    expect(commitMove(held(p, { kind: 'PACK' }), { kind: 'SLOT', slot: 'POUCH_1' }, useWorldStore.getState(), playerPort).ok).toBe(true);
+    expect(commitMove(held(v, { kind: 'PACK' }), { kind: 'SLOT', slot: 'POUCH_1' }, useWorldStore.getState(), playerPort).ok).toBe(true);
     expect(player().equipment!.items.find(i => i.id === 'p')!.pouchData!.contents.map(c => c.id)).toEqual(['v']);
-    const no = commitMove(held(r, { kind: 'PACK' }), { kind: 'SLOT', slot: 'POUCH_1' });
+    const no = commitMove(held(r, { kind: 'PACK' }), { kind: 'SLOT', slot: 'POUCH_1' }, useWorldStore.getState(), playerPort);
     expect(no.ok).toBe(false);
     expect(no.reason).toMatch(/stacks only/);
   });
@@ -727,10 +727,10 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
   it('the ground: leaving a thing makes one cache, and taking it back empties that cache', () => {
     const r = rock('r');
     field([r]);
-    expect(commitMove(held(r, { kind: 'PACK' }), { kind: 'GROUND' }).ok).toBe(true);
+    expect(commitMove(held(r, { kind: 'PACK' }), { kind: 'GROUND' }, useWorldStore.getState(), playerPort).ok).toBe(true);
     const cache = entities().find(e => e.container?.items)!;
     expect(session().inventory).toEqual([]);
-    expect(commitMove(held(r, { kind: 'CACHE', entityId: cache.id }), { kind: 'PACK', x: 3, y: 2, rotated: false }).ok).toBe(true);
+    expect(commitMove(held(r, { kind: 'CACHE', entityId: cache.id }), { kind: 'PACK', x: 3, y: 2, rotated: false }, useWorldStore.getState(), playerPort).ok).toBe(true);
     expect(entities().find(e => e.id === cache.id)).toBeUndefined();
     expect(session().inventoryLayout!['r']).toEqual({ x: 3, y: 2, rotated: false });
   });
@@ -738,12 +738,12 @@ describe('line 74: one pair of hands, and nothing lost or duplicated', () => {
   it('the cart: a chosen cell on the bed, and back into a chosen cell in the pack', () => {
     const r = rock('r', 2, 2);
     field([r], [cartEntity('cart_1')]);
-    expect(commitMove(held(r, { kind: 'PACK' }), { kind: 'CART', entityId: 'cart_1', x: 4, y: 3, rotated: false }).ok).toBe(true);
+    expect(commitMove(held(r, { kind: 'PACK' }), { kind: 'CART', entityId: 'cart_1', x: 4, y: 3, rotated: false }, useWorldStore.getState(), playerPort).ok).toBe(true);
     const cart = () => entities().find(e => e.id === 'cart_1')!.cart!;
     expect(cart().layout['r']).toEqual({ x: 4, y: 3, rotated: false });
-    expect(commitMove(held(r, { kind: 'CART', entityId: 'cart_1' }), { kind: 'CART', entityId: 'cart_1', x: 0, y: 0, rotated: true }).ok).toBe(true);
+    expect(commitMove(held(r, { kind: 'CART', entityId: 'cart_1' }), { kind: 'CART', entityId: 'cart_1', x: 0, y: 0, rotated: true }, useWorldStore.getState(), playerPort).ok).toBe(true);
     expect(cart().layout['r']).toEqual({ x: 0, y: 0, rotated: true });
-    expect(commitMove(held(r, { kind: 'CART', entityId: 'cart_1' }), { kind: 'PACK', x: 6, y: 4, rotated: false }).ok).toBe(true);
+    expect(commitMove(held(r, { kind: 'CART', entityId: 'cart_1' }), { kind: 'PACK', x: 6, y: 4, rotated: false }, useWorldStore.getState(), playerPort).ok).toBe(true);
     expect(cart().items).toEqual([]);
     expect(session().inventoryLayout!['r']).toEqual({ x: 6, y: 4, rotated: false });
   });
@@ -1269,8 +1269,8 @@ describe('what has not been read cannot be worked, and does not give itself away
       { kind: 'PACK', x: 99, y: 99, rotated: false }, { kind: 'CART', entityId: 'cart_1', x: 99, y: 99, rotated: false }
     ];
     for (const item of [blade, r]) for (const to of places) {
-      listen(probeMove(player(), held(item, { kind: 'PACK' }), to));
-      listen(commitMove(held(item, { kind: 'PACK' }), to));
+      listen(probeMove(player(), held(item, { kind: 'PACK' }), to, useWorldStore.getState()));
+      listen(commitMove(held(item, { kind: 'PACK' }), to, useWorldStore.getState(), playerPort));
     }
     // and through a swap, a move off the body, the ground and the cart
     listen(store().equipSwap('sig_blade', 'RIGHT_HAND'));

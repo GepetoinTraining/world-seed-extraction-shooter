@@ -94,7 +94,7 @@ describe('AGENTS counts drops, written at deploy (Q41)', () => {
 
   it('the door into a world writes the drop, after the world opened, and the simulation is not counted', () => {
     const deploy = SRC('src/logic/systems/Deploy.ts');
-    const opened = deploy.indexOf('selectWorld(worldId)');
+    const opened = deploy.indexOf('world.open(worldId)');
     const counted = deploy.indexOf('recordDrop(');
     expect(counted).toBeGreaterThan(opened);
     expect(deploy.slice(opened, counted + 200)).toMatch(/isDebug/);

@@ -10,7 +10,7 @@
 import { useFeed } from '../../components/ui/stores';
 import { StoreClient } from '../../../shared/entities/data/StoreClient';
 import { WorldClock } from '../../entities/world/WorldClock';
-import { useWorldStore } from '../../entities/world/store';
+import type { IWorldCard } from '../../entities/world/worldView';
 
 const lastPhase = new Map<string, string>();
 const told = new Set<string>();
@@ -27,11 +27,11 @@ export function gatesGoneDown(worlds: { id: string; phase: string }[], seen: Map
 }
 
 export const RecordDoor = {
-  async tick(now = Date.now()): Promise<void> {
+  async tick(cards: IWorldCard[], now = Date.now()): Promise<void> {
     if (ticking) return;
     ticking = true;
     try {
-      const worlds = useWorldStore.getState().availableWorlds
+      const worlds = cards
         .filter(w => !w.isDebug)
         .map(w => ({ id: w.id, phase: WorldClock.momentAt(w, now).phase as string }));
       if (gatesGoneDown(worlds, lastPhase).length > 0) {

@@ -16,7 +16,7 @@ import {
   templateToRoom, zoneRegionArea
 } from '../../shared/entities/hub/template';
 import { ITemplateItem, TemplateSystem, isTemplateItem } from '../logic/systems/TemplateSystem';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useFeed } from './ui/stores';
 import { InsuranceSystem, SCROLL_DEFINITIONS } from '../logic/systems/InsuranceSystem'; // Wave 10E (D21)
 import { MapSystem } from '../logic/systems/MapSystem';
@@ -213,7 +213,7 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
       ...draft,
       zones: measuredZones.map(z => ({ name: z.name, tiles: z.tiles, minArea: z.measured }))
     };
-    const res = await TemplateSystem.mintTemplate(final);
+    const res = await TemplateSystem.mintTemplate(final, playerPort);
     if (res.ok) {
       pushFeed(`${res.item.name} minted, signed, in the stash. The plan is yours to keep or sell.`, 'proof');
       setVoice(`${res.item.name} minted. The architect's name travels with it.`);
@@ -224,7 +224,7 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
   };
 
   const mintCopy = async (id: string) => {
-    const res = await TemplateSystem.mintCopy(id);
+    const res = await TemplateSystem.mintCopy(id, playerPort);
     if (res.ok) pushFeed(`${res.item.name} copied for ${billText(TEMPLATE_MINT_BILL)}. The original hand signs every copy.`, 'proof');
     else pushFeed(res.reason, 'loss');
   };
@@ -364,7 +364,7 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
                 disabled={paperHeld < 1 || inkHeld < 1}
                 title={paperHeld < 1 || inkHeld < 1 ? 'needs 1 paper, 1 ink' : undefined}
                 onClick={async () => {
-                  const result = await InsuranceSystem.mintScrollAtScribe(def.id);
+                  const result = await InsuranceSystem.mintScrollAtScribe(def.id, playerPort);
                   pushFeed(result.ok ? `${def.name} written and signed. It is in your stash.` : result.reason!, result.ok ? 'proof' : 'loss');
                 }}
               >
@@ -399,7 +399,7 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
                   disabled={paperHeld < 1 || inkHeld < 1}
                   title={paperHeld < 1 || inkHeld < 1 ? `needs ${billText(TEMPLATE_MINT_BILL)}` : undefined}
                   onClick={async () => {
-                    const result = await MapSystem.write(worldId);
+                    const result = await MapSystem.write(worldId, useWorldStore.getState().availableWorlds, playerPort);
                     pushFeed(result.ok ? `${result.item!.name} written and signed. It is in your stash.` : result.reason!, result.ok ? 'proof' : 'loss');
                   }}
                 >

@@ -6,8 +6,8 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { HubGenerator, IPOI, POIType, HUB_NPCS, INPCDefinition } from './HubGenerator';
-import { usePlayerStore } from '../player/store';
-import { craftName, priceOfListing, useHubStore, worldDay } from './store';
+import { usePlayerStore, playerPort } from '../player/store';
+import { craftName, priceOfListing, useHubStore, worldDay, hubPort } from './store';
 import { HUB_TILE_PX } from './HubCanvas.constants';
 import { HUB_GENRE, IPlotShow, composeHub, LotState, RawFacade, distanceTo, doorOf, withinReach } from '../../render/atoms/hub';
 import { composeRoom, rawWallKind } from '../../render/atoms/room';
@@ -56,6 +56,7 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IItem, ItemType } from '../../../shared/types';
+import { useWorldStore, worldPort } from '../world/store';
 
 /** How often the meetings nobody watched are sent and collected, while the city is open. A guess until Wave 12. */
 const MEET_TICK_MS = 60_000;
@@ -350,7 +351,7 @@ export const HubCanvas: React.FC = () => {
       setNow(Date.now());
       const due = useHubStore.getState().buildJobs.some(j => !j.applied && j.finishesAt <= Date.now());
       if (due) void useHubStore.getState().resolveBuilds();
-      if (FarmDoors.isDue()) void FarmDoors.resolve();
+      if (FarmDoors.isDue(hubPort)) void FarmDoors.resolve(playerPort, hubPort);
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -474,9 +475,9 @@ export const HubCanvas: React.FC = () => {
         return;
       case 'deploy': {
         setActiveNPC(null); setNpcReply(null);
-        const target = quickDeployTargetId();
+        const target = quickDeployTargetId(useWorldStore.getState().availableWorlds, usePlayerStore.getState().player);
         if (!target) { pushFeed('No walkable reality on the registry.', 'loss'); return; }
-        const res = await deployToWorld(target);
+        const res = await deployToWorld(target, worldPort, playerPort, hubPort);
         if (!res.ok && res.reason) pushFeed(res.reason, 'loss');
         return;
       }
@@ -555,8 +556,8 @@ export const HubCanvas: React.FC = () => {
   useEffect(() => {
     const hubId = useHubStore.getState().activeHubId;
     if (!hubId) return;
-    void MeetDoor.tick(hubId);
-    const timer = setInterval(() => void MeetDoor.tick(hubId), MEET_TICK_MS);
+    void MeetDoor.tick(hubId, hubPort);
+    const timer = setInterval(() => void MeetDoor.tick(hubId, hubPort), MEET_TICK_MS);
     return () => clearInterval(timer);
   }, []);
   const residentRoutes = useMemo(() => {
@@ -799,7 +800,7 @@ export const HubCanvas: React.FC = () => {
           const atA = standing.find(s => s.id === a)!.at, atB = standing.find(s => s.id === b)!.at;
           const meeting = { a, b, day, where: whereNear(atA), why: 'waiting at the same door' };
           if (onScreen(atA) && onScreen(atB)) {
-            void MeetDoor.live(hubId, meeting).then(lines => { if (lines && lines.length > 0) sayingRef.current.set(key, { a, b, lines, at: Date.now() }); });
+            void MeetDoor.live(hubId, meeting, hubPort).then(lines => { if (lines && lines.length > 0) sayingRef.current.set(key, { a, b, lines, at: Date.now() }); });
           } else void MeetDoor.queue(hubId, [meeting]);
         }
       }
@@ -1010,7 +1011,7 @@ export const HubCanvas: React.FC = () => {
                   key={i}
                   tone={opt.action === 'CLOSE' ? 'quiet' : 'signal'}
                   autoFocus={i === 0}
-                  onClick={() => void applyEffect(runDialogueAction(opt.action, opt.payload))}
+                  onClick={() => void applyEffect(runDialogueAction(worldPort, playerPort, hubPort, opt.action, opt.payload))}
                 >
                   {opt.label}
                 </Button>
@@ -1319,7 +1320,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
 const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { player } = usePlayerStore();
   const pushFeed = useFeed(s => s.push);
-  const worn = repairable();
+  const worn = repairable(playerPort);
 
   return (
     <Modal title="REPAIR — STEELWEAVE" onClose={onClose} width={520}>
@@ -1329,7 +1330,7 @@ const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       {worn.length === 0 && <div className="ws-dim ws-small">Nothing you own needs work.</div>}
       <div className="ws-list">
         {worn.map(item => {
-          const cost = repairCost(item as any);
+          const cost = repairCost(item as any, usePlayerStore.getState().player.attributes);
           return (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
@@ -1343,7 +1344,7 @@ const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 tone="signal"
                 disabled={player.bank.gold < cost}
                 onClick={() => {
-                  const res = repairItem(item.id);
+                  const res = repairItem(item.id, playerPort, hubPort);
                   pushFeed(res.text, res.ok ? 'signal' : 'loss');
                 }}
               >

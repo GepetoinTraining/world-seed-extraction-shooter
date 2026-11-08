@@ -53,7 +53,7 @@ import { Role, STEPS, hashBytes, px } from '../shared/render/atoms/atoms';
 import { itemArtFor } from '../src/render/atoms/items';
 import { inspectItem, inspectTemplateRoom } from '../src/render/atoms/inspect';
 import { useHubStore } from '../src/entities/hub/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { CRAFTED_DEFINITIONS, RECIPE_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
@@ -127,7 +127,7 @@ const finishJobs = () =>
 
 async function mintedTemplate(d = draft()): Promise<ITemplateItem> {
   primeStash([...stash(), ...scribeKit()]);
-  const res = await TemplateSystem.mintTemplate(d as any);
+  const res = await TemplateSystem.mintTemplate(d as any, playerPort);
   expect(res.ok, res.reason).toBe(true);
   return res.item!;
 }
@@ -242,7 +242,7 @@ describe('an invalid template cannot be minted, and says why', () => {
   it('a refused mint consumes nothing', async () => {
     primeStash(scribeKit());
     const before = stash().length;
-    const res = await TemplateSystem.mintTemplate(draft({ pieces: [{ kind: 'WINDOW', x: 5, y: 5 }], zones: [] }) as any);
+    const res = await TemplateSystem.mintTemplate(draft({ pieces: [{ kind: 'WINDOW', x: 5, y: 5 }], zones: [] }) as any, playerPort);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason!.length).toBeGreaterThan(0);
     expect(stash().length).toBe(before);
@@ -280,7 +280,7 @@ describe('paper and ink are the mint bill (D14)', () => {
 
   it('minting pays one paper and one ink, signs, and the item carries the plan', async () => {
     primeStash([...scribeKit(), mintRes('crf_plank', 'tpl:spare')]);
-    const res = await TemplateSystem.mintTemplate(draft() as any);
+    const res = await TemplateSystem.mintTemplate(draft() as any, playerPort);
     expect(res.ok, res.ok ? '' : res.reason).toBe(true);
     const item = res.item!;
     // Paper and ink left; the plank stayed; the template arrived.
@@ -447,14 +447,14 @@ describe('line 42: a template raises a house under construction', () => {
 describe("line 44: the architect's name survives", () => {
   it('a copy keeps the original author, even minted by another hand', async () => {
     primeStash(scribeKit());
-    const res = await TemplateSystem.mintTemplate(draft() as any);
+    const res = await TemplateSystem.mintTemplate(draft() as any, playerPort);
     expect(res.ok).toBe(true);
     const original = res.item!;
 
     // Another identity holds the original and mints a copy.
     useIdentityStore.setState({ certificate: CERT('uid_buyer', 'VESPER') });
     primeStash([original, ...scribeKit()]);
-    const copyRes = await TemplateSystem.mintCopy(original.id);
+    const copyRes = await TemplateSystem.mintCopy(original.id, playerPort);
     expect(copyRes.ok, copyRes.ok ? '' : copyRes.reason).toBe(true);
     const copy = copyRes.item!;
     expect(copy.id).not.toBe(original.id);
@@ -553,11 +553,11 @@ describe('an under-construction lot blocks exactly what it draws', () => {
 describe('template thumbnails are real composed atoms', () => {
   it('the item art IS the composed plan, and two plans differ', async () => {
     primeStash(scribeKit());
-    const a = (await TemplateSystem.mintTemplate(draft() as any)).item!;
+    const a = (await TemplateSystem.mintTemplate(draft() as any, playerPort)).item!;
     primeStash([...stash(), ...scribeKit()]);
     const b = (await TemplateSystem.mintTemplate(draft({
       name: 'BARE SHELL', pieces: [], zones: []
-    }) as any)).item!;
+    }) as any, playerPort)).item!;
 
     const artA = itemArtFor(a);
     const artB = itemArtFor(b);

@@ -6,9 +6,9 @@
 import { RestDoor } from '../logic/systems/RestDoor';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../shared/types';
-import { craftName, useHubStore, worldDay, IPlayerLot } from '../entities/hub/store';
+import { craftName, useHubStore, worldDay, IPlayerLot, hubPort } from '../entities/hub/store';
 import { HubGenerator, IHubLayout, IPOI } from '../entities/hub/HubGenerator';
-import { usePlayerStore } from '../entities/player/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
 import { DeedSystem, IDeedItem } from '../logic/systems/DeedSystem';
 import { GEAR_RECIPES, RECIPE_DEFINITIONS, STRUCTURE_COSTS } from '../../shared/entities/economy/data/recipeDefinitions';
 import { SHELL_BILLS, SHELL_BUILD_SECONDS, answersTag, billText, materialLabel, pickBill } from '../../shared/entities/hub/room';
@@ -19,6 +19,7 @@ import { TemplateApplyModal } from './TemplateApplyModal';
 import { TemplateStudio } from './TemplateStudio';
 import { useFeed } from './ui/stores';
 import { AskFor, BuyListing, CollectHeld } from './ShelfAsk';
+import { worldPort } from '../entities/world/store';
 
 const STRUCTURES = ['WORKSHOP', 'VENDOR', 'HOUSE'] as const;
 const DAY_MS = 86_400_000;
@@ -101,7 +102,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
           {deeds.map(deed => (
             <Button
               key={deed.id} tone="proof"
-              onClick={() => DeedSystem.redeemDeed(deed, lot.id, { id: player.id, name: player.username })}
+              onClick={() => DeedSystem.redeemDeed(deed, lot.id, { id: player.id, name: player.username }, playerPort, hubPort)}
             >
               REDEEM {deed.name.toUpperCase()}
             </Button>
@@ -176,7 +177,7 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
       {mine && lot.structureType === 'HOUSE' && !construction && (
         <div style={{ marginTop: 6 }}>
           {/* D43: a bed gives a HOUSE its function. Your own costs nothing. */}
-          <Button tone="signal" onClick={() => void RestDoor.sleep('BED')}>SLEEP HERE</Button>
+          <Button tone="signal" onClick={() => void RestDoor.sleep('BED', worldPort, playerPort, hubPort)}>SLEEP HERE</Button>
         </div>
       )}
 

@@ -7,9 +7,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } from '../../shared/types';
-import { usePlayerStore } from '../entities/player/store';
-import { useHubStore } from '../entities/hub/store';
-import { useWorldStore } from '../entities/world/store';
+import { usePlayerStore, playerPort } from '../entities/player/store';
+import { useHubStore, hubPort } from '../entities/hub/store';
+import { useWorldStore, worldPort } from '../entities/world/store';
 import { FieldCapture } from '../logic/systems/FieldCapture';
 import { Escort } from '../logic/systems/Escort';
 import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
@@ -173,7 +173,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
               <Button tone="signal" onClick={() => { consumeItem(selectedItem.id); setSelected(null); }}>{selectedItem.creatureData ? 'TRY TO TAME' : 'USE'}</Button>
             )}
             {selectedItem.creatureData && (
-              <Button tone="quiet" onClick={() => { void FieldCapture.release(selectedItem.id); setSelected(null); }}>LET IT GO HERE</Button>
+              <Button tone="quiet" onClick={() => { void FieldCapture.release(selectedItem.id, worldPort, playerPort); setSelected(null); }}>LET IT GO HERE</Button>
             )}
             {/* Wave 10E (D21): insurance is spent, not eaten — the magic names what it keeps */}
             {read && (selectedItem.charmData || selectedItem.scrollData) && (
@@ -200,8 +200,8 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             )}
             {/* Q27: identifying is a learned skill, and nothing is read before town. Study at home teaches it. */}
             {/* D118: for energy, and it can go badly. A finished product asks for a workstation for it, and so does anything unread, so it tells nothing. */}
-            {StudyDoor.offered(selectedItem) && (
-              <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem))}>
+            {StudyDoor.offered(selectedItem, playerPort, hubPort) && (
+              <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem), playerPort, hubPort)}>
                 STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).seconds}s
               </Button>
             )}
@@ -291,8 +291,8 @@ const VaultPanels: React.FC = () => {
             {(piece.slot !== SlotType.NONE || tool) && (
               <Button tone="proof" onClick={() => { if (usePlayerStore.getState().equipSwap(piece.id).ok) setSelected(null); }}>EQUIP</Button>
             )}
-            {StudyDoor.offered(piece) && (
-              <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(piece))}>
+            {StudyDoor.offered(piece, playerPort, hubPort) && (
+              <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(piece), playerPort, hubPort)}>
                 STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).seconds}s
               </Button>
             )}

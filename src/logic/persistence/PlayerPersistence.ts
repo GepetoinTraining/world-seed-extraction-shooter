@@ -16,7 +16,7 @@ import { IPlayer } from '../../../shared/types';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../../entities/identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
-import { usePlayerStore } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { useIdentityStore } from '../../entities/identity/store';
 import { refusedAvatarId } from './BrowserImport';
 
@@ -31,6 +31,8 @@ export class PlayerPersistence {
 
   private static timer: ReturnType<typeof setTimeout> | null = null;
   private static started = false;
+  /** The player the autosave reads, as the boot handed it. */
+  private static watched: Pick<IPlayerPort, 'view' | 'watch'> | null = null;
 
   /** The persistent half of the player: the session never goes in the bank doc. */
   static persistable(player: IPlayer): IPlayer {
@@ -41,18 +43,17 @@ export class PlayerPersistence {
     return JSON.stringify(this.persistable(player));
   }
 
-  /** Begin watching the store. Call once, after hydration. */
-  static start() {
+  /** Begin watching the player. Call once, after hydration, with the store's port. */
+  static start(player: Pick<IPlayerPort, 'view' | 'watch'>) {
     if (this.started) return;
     this.started = true;
+    this.watched = player;
 
-    usePlayerStore.subscribe((state, prev) => {
-      if (state.player !== prev.player) this.scheduleAutosave();
-    });
+    player.watch(() => this.scheduleAutosave());
 
     // Best-effort flush when the tab goes away
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') void this.flush('visibility');
+      if (document.visibilityState === 'hidden' && this.watched) void this.flush('visibility', this.watched.view().player);
     });
 
     console.log('[PERSIST] Autosave armed.');
@@ -60,7 +61,7 @@ export class PlayerPersistence {
 
   private static scheduleAutosave() {
     if (this.timer) return;
-    this.timer = setTimeout(() => void this.flush('autosave'), AUTOSAVE_DEBOUNCE_MS);
+    this.timer = setTimeout(() => { if (this.watched) void this.flush('autosave', this.watched.view().player); }, AUTOSAVE_DEBOUNCE_MS);
   }
 
   /**
@@ -68,9 +69,8 @@ export class PlayerPersistence {
    * save. Taken at the call, not at the write: a gold change's commit and every
    * save queue in order, so a save can never hold gold whose row comes after it.
    */
-  static snapshot(): IPlayer | null {
+  static snapshot(player: IPlayer): IPlayer | null {
     const cert = useIdentityStore.getState().certificate;
-    const { player } = usePlayerStore.getState();
 
     if (!cert) return null;
     // Never persist the blank template over a real identity's slot
@@ -99,11 +99,11 @@ export class PlayerPersistence {
     }, false, { unit });
   }
 
-  /** Sign and write the player doc now. */
-  static async flush(reason: string): Promise<boolean> {
+  /** Sign and write the player doc now, as it stands at the call. */
+  static async flush(reason: string, player: IPlayer): Promise<boolean> {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
 
-    const doc = this.snapshot();
+    const doc = this.snapshot(player);
     if (!doc) return false;
 
     return StoreUnit.enqueue(async () => {

@@ -32,8 +32,8 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 }));
 
 import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../shared/types';
-import { useHubStore, worldDay } from '../src/entities/hub/store';
-import { usePlayerStore } from '../src/entities/player/store';
+import { useHubStore, worldDay, hubPort } from '../src/entities/hub/store';
+import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Treasury } from '../src/logic/economy/Treasury';
@@ -208,10 +208,10 @@ describe('farmland is a whole chunk, and the hub portions it', () => {
     const east = layout.chunks[1];
     const lots = layout.zones.flatMap(z => z.pois).filter(p => p.type === POIType.PLAYER_LOT && p.position.x >= east.x && p.position.x < east.x + CHUNK_TILES);
     expect(await hub().buyLot(lots[0].id)).toBe(true);
-    expect((await FarmDoors.makeFarmland({ cx: 1, cy: 0 })).ok).toBe(false);
+    expect((await FarmDoors.makeFarmland({ cx: 1, cy: 0 }, hubPort)).ok).toBe(false);
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, gold: 100_000 } } }));
     useHubStore.setState({ lots: hub().lots.map(l => l.id === lots[0].id ? { ...l, ownerId: null, ownerName: null } : l) });
-    expect((await FarmDoors.makeFarmland({ cx: 1, cy: 0 })).ok).toBe(true);
+    expect((await FarmDoors.makeFarmland({ cx: 1, cy: 0 }, hubPort)).ok).toBe(true);
     expect(hub().lots.some(l => l.id === lots[0].id)).toBe(false);
     expect(hub().lots.filter(l => l.structureType === 'FARM').length).toBeGreaterThan(0);
   });
@@ -264,19 +264,19 @@ describe('line 36: planting what you harvested', () => {
     giveToStash(seed);
     const t0 = 2_000_000_000_000;
     at(t0);
-    const planted = await FarmDoors.plant(plotId, seed.id, 0);
+    const planted = await FarmDoors.plant(plotId, seed.id, 0, playerPort, hubPort);
     expect(planted.ok).toBe(true);
     expect(stash().some(i => i.id === seed.id)).toBe(false);
     expect(hub().farmland.farms[plotId].beds[0].defId).toBe(WHEAT());
 
     // Not yet
-    expect((await FarmDoors.reap(plotId, 0)).ok).toBe(false);
+    expect((await FarmDoors.reap(plotId, 0, playerPort, hubPort)).ok).toBe(false);
     const ripeAt = Farm.ripeAt(hub().farmland.farms[plotId].beds[0]);
     expect(ripeAt).toBeGreaterThan(t0);
 
     // Leave. No clock runs while away: it is read from the time, and only the time
     at(ripeAt + 1);
-    const reaped = await FarmDoors.reap(plotId, 0);
+    const reaped = await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     expect(reaped.ok).toBe(true);
     const held = hub().lots.find(l => l.id === plotId)!.inventory;
     expect(held.length).toBeGreaterThan(0);
@@ -310,15 +310,15 @@ describe('line 36: planting what you harvested', () => {
     expect(a).toBe(b);
     expect(a).toBeGreaterThan(0);
     const plotId = await ownPlot();
-    const audit0 = await GoldAudit.run();
+    const audit0 = await GoldAudit.run(usePlayerStore.getState().player);
     const gold = player().bank.gold;
     const treasury = await Treasury.balance(HUB);
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.reap(plotId, 0);
+    await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     expect(player().bank.gold).toBe(gold);
     expect(await Treasury.balance(HUB)).toBe(treasury);
     expect(audit0).toBeTruthy();
@@ -329,12 +329,12 @@ describe('line 36: planting what you harvested', () => {
     const s1 = harvested(WHEAT()), s2 = harvested(WHEAT());
     giveToStash(s1, s2);
     at(2_000_000_000_000);
-    expect((await FarmDoors.plant(plotId, s1.id, 0)).ok).toBe(true);
-    expect((await FarmDoors.plant(plotId, s2.id, 0)).ok).toBe(false);
+    expect((await FarmDoors.plant(plotId, s1.id, 0, playerPort, hubPort)).ok).toBe(true);
+    expect((await FarmDoors.plant(plotId, s2.id, 0, playerPort, hubPort)).ok).toBe(false);
     expect(stash().some(i => i.id === s2.id)).toBe(true);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    const count = (await FarmDoors.reap(plotId, 0), hub().lots.find(l => l.id === plotId)!.inventory.length);
-    expect((await FarmDoors.reap(plotId, 0)).ok).toBe(false);
+    const count = (await FarmDoors.reap(plotId, 0, playerPort, hubPort), hub().lots.find(l => l.id === plotId)!.inventory.length);
+    expect((await FarmDoors.reap(plotId, 0, playerPort, hubPort)).ok).toBe(false);
     expect(hub().lots.find(l => l.id === plotId)!.inventory.length).toBe(count);
   });
 
@@ -343,7 +343,7 @@ describe('line 36: planting what you harvested', () => {
     useHubStore.setState({ lots: hub().lots.map(l => l.id === plotId ? { ...l, ownerId: 'someone', ownerName: 'Someone' } : l) });
     const s = harvested(WHEAT());
     giveToStash(s);
-    expect((await FarmDoors.plant(plotId, s.id, 0)).ok).toBe(false);
+    expect((await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort)).ok).toBe(false);
     expect(stash().some(i => i.id === s.id)).toBe(true);
   });
 });
@@ -354,7 +354,7 @@ describe('grove keeping', () => {
     const oak = harvested(OAK());
     giveToStash(oak);
     at(2_000_000_000_000);
-    const planted = await FarmDoors.plant(plotId, oak.id, 0);
+    const planted = await FarmDoors.plant(plotId, oak.id, 0, playerPort, hubPort);
     expect(planted.ok).toBe(true);
     const bed = hub().farmland.farms[plotId].beds[0];
     expect(bed.grove).toBe(true);
@@ -362,16 +362,16 @@ describe('grove keeping', () => {
     // Its block is taken
     const s = harvested(WHEAT());
     giveToStash(s);
-    expect((await FarmDoors.plant(plotId, s.id, 1)).ok).toBe(false);
+    expect((await FarmDoors.plant(plotId, s.id, 1, playerPort, hubPort)).ok).toBe(false);
 
     at(Farm.ripeAt(bed) + 1);
-    expect((await FarmDoors.reap(plotId, 0)).ok).toBe(true);
+    expect((await FarmDoors.reap(plotId, 0, playerPort, hubPort)).ok).toBe(true);
     const after = hub().farmland.farms[plotId].beds[0];
     expect(after).toBeTruthy();
     expect(after.bears).toBe(1);
     expect(Farm.ripeAt(after)).toBeGreaterThan(Date.now());
     at(Farm.ripeAt(after) + 1);
-    expect((await FarmDoors.reap(plotId, 0)).ok).toBe(true);
+    expect((await FarmDoors.reap(plotId, 0, playerPort, hubPort)).ok).toBe(true);
     expect(hub().farmland.farms[plotId].beds[0].bears).toBe(2);
   });
 
@@ -393,9 +393,9 @@ describe('line 37: stored by their real grain, with their history', () => {
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.reap(plotId, 0);
+    await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     const held = hub().lots.find(l => l.id === plotId)!.inventory;
     expect(new Set(held.map(i => i.id)).size).toBe(held.length);
   });
@@ -405,20 +405,20 @@ describe('line 37: stored by their real grain, with their history', () => {
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.reap(plotId, 0);
+    await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     const piece = hub().lots.find(l => l.id === plotId)!.inventory[0];
     expect(piece.farmLine).toEqual(expect.objectContaining({ lotId: plotId, seedItemId: s.id, plantings: 1 }));
     expect(piece.composition?.steps ?? []).toEqual([]);
     expect(piece.composition?.materials[0]?.origin ?? (piece.composition as any)?.origin).toBeTruthy();
 
     // Planted again, it counts on
-    expect((await FarmDoors.takeFromStore(plotId, piece.id)).ok).toBe(true);
+    expect((await FarmDoors.takeFromStore(plotId, piece.id, playerPort, hubPort)).ok).toBe(true);
     expect(stash().some(i => i.id === piece.id)).toBe(true);
-    await FarmDoors.plant(plotId, piece.id, 0);
+    await FarmDoors.plant(plotId, piece.id, 0, playerPort, hubPort);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.reap(plotId, 0);
+    await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     const next = hub().lots.find(l => l.id === plotId)!.inventory.find(i => i.farmLine?.seedItemId === piece.id)!;
     expect(next.farmLine!.plantings).toBe(2);
   });
@@ -428,9 +428,9 @@ describe('line 37: stored by their real grain, with their history', () => {
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.reap(plotId, 0);
+    await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     const piece = hub().lots.find(l => l.id === plotId)!.inventory[0];
     const lines = Farm.historyOf(piece);
     expect(lines.join(' ')).toMatch(/first planting/i);
@@ -467,16 +467,16 @@ describe('a farm is something a person runs and is bought from', () => {
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.reap(plotId, 0);
+    await FarmDoors.reap(plotId, 0, playerPort, hubPort);
     return plotId;
   };
 
   it('the owner lists from the store, and the stand is read by what it sells', async () => {
     const plotId = await grown();
     const piece = hub().lots.find(l => l.id === plotId)!.inventory[0];
-    expect((await FarmDoors.list(plotId, piece.id, 12)).ok).toBe(true);
+    expect((await FarmDoors.list(plotId, piece.id, 12, playerPort, hubPort)).ok).toBe(true);
     expect(hub().lots.find(l => l.id === plotId)!.inventory.some(i => i.id === piece.id)).toBe(false);
     const sellers = Farm.sellers(hub().lots, 'food');
     expect(sellers.length).toBe(1);
@@ -488,7 +488,7 @@ describe('a farm is something a person runs and is bought from', () => {
   it('a buyer pays through the shop door the city already has, and the audit holds', async () => {
     const plotId = await grown();
     const piece = hub().lots.find(l => l.id === plotId)!.inventory[0];
-    await FarmDoors.list(plotId, piece.id, 20);
+    await FarmDoors.list(plotId, piece.id, 20, playerPort, hubPort);
     useHubStore.setState({ lots: hub().lots.map(l => l.id === plotId ? { ...l, ownerId: 'someone', ownerName: 'Someone' } : l) });
     const gold = player().bank.gold;
     expect(await hub().buyFromLot(plotId, piece.id)).toBe(true);
@@ -502,14 +502,14 @@ describe('a farm is something a person runs and is bought from', () => {
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     const resident = { id: 'res_x', name: 'Orrin Basalt', lotId: null } as any;
     useHubStore.setState({ guild: { ...hub().guild, residents: [resident] } });
-    expect((await FarmDoors.setTender(plotId, resident.id)).ok).toBe(true);
+    expect((await FarmDoors.setTender(plotId, resident.id, playerPort, hubPort)).ok).toBe(true);
     expect(hub().farmland.farms[plotId].tender).toBe(resident.id);
 
     at(Farm.ripeAt(hub().farmland.farms[plotId].beds[0]) + 1);
-    await FarmDoors.resolve();
+    await FarmDoors.resolve(playerPort, hubPort);
     const farm = hub().farmland.farms[plotId];
     const lot = hub().lots.find(l => l.id === plotId)!;
     expect(farm.beds[0]).toBeTruthy();
@@ -525,7 +525,7 @@ describe('a farm is something a person runs and is bought from', () => {
 
   it('a tender is only one person at a time, and only one who is in the city', async () => {
     const plotId = await ownPlot();
-    expect((await FarmDoors.setTender(plotId, 'res_nobody')).ok).toBe(false);
+    expect((await FarmDoors.setTender(plotId, 'res_nobody', playerPort, hubPort)).ok).toBe(false);
   });
 
   it('losing the plot gives back what stood on it, and frees the ground as a plot', async () => {
@@ -533,15 +533,15 @@ describe('a farm is something a person runs and is bought from', () => {
     const s = harvested(WHEAT());
     giveToStash(s);
     at(2_000_000_000_000);
-    await FarmDoors.plant(plotId, s.id, 0);
+    await FarmDoors.plant(plotId, s.id, 0, playerPort, hubPort);
     const cage = Capture.cageItem(caged(), 'lost');
     const third = harvested(WHEAT());
     giveToStash(cage, third);
-    await FarmDoors.admit(plotId, cage.id);
+    await FarmDoors.admit(plotId, cage.id, playerPort, hubPort);
     const id = hub().farmland.herds[0].id;
-    await FarmDoors.feed(plotId, id, [third.id]);
+    await FarmDoors.feed(plotId, id, [third.id], playerPort, hubPort);
     useHubStore.setState({ farmland: { ...hub().farmland, herds: hub().farmland.herds.map(h => ({ ...h, head: 2 })) } });
-    await FarmDoors.forget(plotId);
+    await FarmDoors.forget(plotId, playerPort, hubPort);
     expect(hub().farmland.farms[plotId]).toBeUndefined();
     expect(hub().farmland.herds).toEqual([]);
     // Nothing alive is lost with the ground: the one being kept and the two at home come away caged, and the trough with them
@@ -831,14 +831,14 @@ describe('the herding half of 152: a herd at home', () => {
     giveToStash(cage, ...feed);
     const t0 = 2_000_000_000_000;
     at(t0);
-    expect((await FarmDoors.admit(plotId, cage.id)).ok).toBe(true);
+    expect((await FarmDoors.admit(plotId, cage.id, playerPort, hubPort)).ok).toBe(true);
     expect(stash().some(i => i.id === cage.id)).toBe(false);
     const herd = Herd.heldBy(hub().farmland.herds, { type: 'plot', id: plotId })[0];
     expect(herd.keeping.length).toBe(1);
     expect(hub().farmland.registers[UID]).toBeTruthy();
-    expect((await FarmDoors.feed(plotId, herd.id, feed.map(i => i.id))).ok).toBe(true);
+    expect((await FarmDoors.feed(plotId, herd.id, feed.map(i => i.id), playerPort, hubPort)).ok).toBe(true);
     at(t0 + (Herd.daysToKeep(herd.def as any) + 1) * 86_400_000);
-    await FarmDoors.resolve();
+    await FarmDoors.resolve(playerPort, hubPort);
     expect(hub().farmland.herds.find(h => h.id === herd.id)!.head).toBeGreaterThanOrEqual(1);
   });
 
@@ -847,10 +847,10 @@ describe('the herding half of 152: a herd at home', () => {
     const cage = Capture.cageItem(caged(), 'door2');
     giveToStash(cage);
     at(2_000_000_000_000);
-    await FarmDoors.admit(plotId, cage.id);
+    await FarmDoors.admit(plotId, cage.id, playerPort, hubPort);
     const id = hub().farmland.herds[0].id;
     useHubStore.setState({ farmland: { ...hub().farmland, herds: hub().farmland.herds.map(h => ({ ...h, head: 3, keeping: [] })) } });
-    const out = await FarmDoors.cageOne(plotId, id);
+    const out = await FarmDoors.cageOne(plotId, id, playerPort, hubPort);
     expect(out.ok).toBe(true);
     const item = stash().find(i => i.creatureData);
     expect(item).toBeTruthy();
@@ -864,7 +864,7 @@ describe('the herding half of 152: a herd at home', () => {
     giveToStash(cage);
     const gold = player().bank.gold, treasury = await Treasury.balance(HUB);
     at(2_000_000_000_000);
-    await FarmDoors.admit(plotId, cage.id);
+    await FarmDoors.admit(plotId, cage.id, playerPort, hubPort);
     expect(player().bank.gold).toBe(gold);
     expect(await Treasury.balance(HUB)).toBe(treasury);
   });
@@ -985,13 +985,13 @@ describe('line 117: a captured creature joins another map, with the proof of its
     const a = Capture.cageItem(caged(GOAT()), 'a'), b = Capture.cageItem(caged(OX()), 'b');
     giveToStash(a, b);
     at(2_000_000_000_000);
-    await FarmDoors.admit(plotId, a.id);
-    await FarmDoors.admit(plotId, b.id);
+    await FarmDoors.admit(plotId, a.id, playerPort, hubPort);
+    await FarmDoors.admit(plotId, b.id, playerPort, hubPort);
     const herds = hub().farmland.herds;
     expect(herds.length).toBe(2);
     useHubStore.setState({ farmland: { ...hub().farmland, herds: herds.map(h => ({ ...h, head: 2, keeping: [], bodies: h.bodies })) } });
     let crossed: any = { ok: false, reason: 'unset' };
-    for (let i = 0; i < 40 && !crossed.ok; i++) crossed = await FarmDoors.cross(plotId, herds[0].id, herds[1].id);
+    for (let i = 0; i < 40 && !crossed.ok; i++) crossed = await FarmDoors.cross(plotId, herds[0].id, herds[1].id, playerPort, hubPort);
     expect(crossed.ok).toBe(true);
     const child = hub().farmland.herds.find(h => !herds.some(o => o.id === h.id))!;
     expect(child.proof.nodes[child.proof.nodes.length - 1].parents.length).toBe(2);
@@ -1038,21 +1038,21 @@ describe('cooking', () => {
 
   it('a hearth stands on a plot by a bill of stone, and cooks on a clock', async () => {
     const plotId = await ownPlot();
-    expect((await FarmDoors.cook(plotId, [])).ok).toBe(false);
+    expect((await FarmDoors.cook(plotId, [], playerPort, hubPort)).ok).toBe(false);
     const stones = Array.from({ length: Cooking.HEARTH_BILL.count }, () => harvested(STONE()));
     giveToStash(...stones);
-    expect((await FarmDoors.buildHearth(plotId)).ok).toBe(true);
+    expect((await FarmDoors.buildHearth(plotId, playerPort, hubPort)).ok).toBe(true);
     expect(stash().filter(i => i.universalDefinitionId === STONE()).length).toBe(0);
     expect(hub().farmland.farms[plotId].hearth).toBe(true);
     const a = food(), b = food('accrual_berry');
     giveToStash(a, b);
     at(2_000_000_000_000);
-    expect((await FarmDoors.cook(plotId, [a.id, b.id])).ok).toBe(true);
+    expect((await FarmDoors.cook(plotId, [a.id, b.id], playerPort, hubPort)).ok).toBe(true);
     expect(stash().some(i => i.id === a.id)).toBe(false);
-    await FarmDoors.resolve();
+    await FarmDoors.resolve(playerPort, hubPort);
     expect(hub().lots.find(l => l.id === plotId)!.inventory.filter(i => i.tags.includes('meal')).length).toBe(0);
     at(2_000_000_000_000 + Cooking.cookMs([a, b]) + 1);
-    await FarmDoors.resolve();
+    await FarmDoors.resolve(playerPort, hubPort);
     expect(hub().lots.find(l => l.id === plotId)!.inventory.filter(i => i.tags.includes('meal')).length).toBe(1);
   });
 

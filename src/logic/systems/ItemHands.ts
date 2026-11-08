@@ -12,8 +12,8 @@ import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/
 import { StashGrid } from '../../entities/player/systems/StashGrid';
 import { CartSystem } from '../../entities/world/CartSystem';
 import { IWorldEntity } from '../../../shared/entities/world/types';
-import { usePlayerStore } from '../../entities/player/store';
-import { useWorldStore } from '../../entities/world/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
+import { bodyOf, type IWorldView } from '../../entities/world/worldView';
 
 export type Place =
   | { kind: 'PACK'; x?: number; y?: number; rotated?: boolean }
@@ -29,9 +29,6 @@ export interface Held { item: IItem; from: Place; rotated: boolean }
 const OK: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
 const ALREADY: Verdict = no('It is already there.');
-
-const worldEntity = (id: string): IWorldEntity | undefined =>
-  Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).flatMap(c => c.entities).find(e => e.id === id);
 
 const onGrid = (p: { x?: number; y?: number }): p is { x: number; y: number } => typeof p.x === 'number' && typeof p.y === 'number';
 
@@ -77,7 +74,7 @@ function slotTakes(player: IPlayer, item: IItem, slot: EquipSlotId): Verdict {
 }
 
 /** The whole question, with no state touched. The ghost reads this every cell it crosses. */
-export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
+export function probeMove(player: IPlayer, held: Held, to: Place, world: IWorldView): Verdict {
   const { item, from } = held;
   const inField = !!player.currentSession;
 
@@ -108,7 +105,7 @@ export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
       if (from.kind === 'SLOT') return packTakes(player, item);
       return from.kind === 'CACHE' ? ALREADY : OK;
     case 'CART': {
-      const cart = worldEntity(to.entityId)?.cart;
+      const cart = bodyOf(world, to.entityId)?.cart;
       if (!cart) return no('No cart there.');
       if (from.kind === 'SLOT') {
         const whole = packTakes(player, item);
@@ -134,66 +131,64 @@ export function probeMove(player: IPlayer, held: Held, to: Place): Verdict {
 }
 
 /** Off the source and into the pack, whichever door that source has. */
-function intoPack(held: Held): Verdict {
-  const st = usePlayerStore.getState();
+function intoPack(held: Held, pc: IPlayerPort): Verdict {
   switch (held.from.kind) {
-    case 'SLOT': return st.unequipFromSlot(held.from.slot);
-    case 'CART': return st.unloadCart(held.from.entityId, held.item.id);
-    case 'CACHE': return st.takeFromCache(held.from.entityId, held.item.id);
+    case 'SLOT': return pc.unequipFromSlot(held.from.slot);
+    case 'CART': return pc.unloadCart(held.from.entityId, held.item.id);
+    case 'CACHE': return pc.takeFromCache(held.from.entityId, held.item.id);
     default: return OK;
   }
 }
 
 /** Through the store's doors. A refused move has moved nothing. */
-export function commitMove(held: Held, to: Place): Verdict {
-  const st = usePlayerStore.getState();
-  const verdict = probeMove(st.player, held, to);
+export function commitMove(held: Held, to: Place, world: IWorldView, pc: IPlayerPort): Verdict {
+  const verdict = probeMove(pc.view().player, held, to, world);
   if (!verdict.ok) return verdict;
   const { item } = held;
 
   switch (to.kind) {
     case 'PACK': {
-      const came = intoPack(held);
+      const came = intoPack(held, pc);
       if (!came.ok) return came;
-      return onGrid(to) ? usePlayerStore.getState().placeInPack(item.id, to.x, to.y, !!to.rotated) : OK;
+      return onGrid(to) ? pc.placeInPack(item.id, to.x, to.y, !!to.rotated) : OK;
     }
     case 'STASH': {
       if (held.from.kind === 'SLOT') {
-        const off = st.unequipFromSlot(held.from.slot);
+        const off = pc.unequipFromSlot(held.from.slot);
         if (!off.ok) return off;
       }
-      return onGrid(to) ? usePlayerStore.getState().placeInStash(item.id, to.x, to.y, !!to.rotated) : OK;
+      return onGrid(to) ? pc.placeInStash(item.id, to.x, to.y, !!to.rotated) : OK;
     }
     case 'SLOT': {
       if (to.slot.startsWith('POUCH_') && !item.pouchData) {
-        const came = intoPack(held);
+        const came = intoPack(held, pc);
         if (!came.ok) return came;
-        return usePlayerStore.getState().stowInPouch(to.slot, item.id);
+        return pc.stowInPouch(to.slot, item.id);
       }
       if (held.from.kind === 'CART' || held.from.kind === 'CACHE') {
-        const came = intoPack(held);
+        const came = intoPack(held, pc);
         if (!came.ok) return came;
       }
-      return usePlayerStore.getState().equipSwap(item.id, to.slot);
+      return pc.equipSwap(item.id, to.slot);
     }
     case 'GROUND': {
-      const came = intoPack(held);
+      const came = intoPack(held, pc);
       if (!came.ok) return came;
-      usePlayerStore.getState().dropItem(item.id);
+      pc.apply({ kind: 'DROP_ITEM', itemId: item.id });
       return OK;
     }
     case 'CART': {
       if (held.from.kind === 'CART') {
-        return usePlayerStore.getState().placeOnCart(to.entityId, item.id, to.x!, to.y!, !!to.rotated);
+        return pc.placeOnCart(to.entityId, item.id, to.x!, to.y!, !!to.rotated);
       }
-      const came = intoPack(held);
+      const came = intoPack(held, pc);
       if (!came.ok) return came;
-      const loaded = usePlayerStore.getState().loadCart(to.entityId, item.id);
+      const loaded = pc.loadCart(to.entityId, item.id);
       if (!loaded.ok || !onGrid(to)) return loaded;
-      return usePlayerStore.getState().placeOnCart(to.entityId, item.id, to.x, to.y, !!to.rotated);
+      return pc.placeOnCart(to.entityId, item.id, to.x, to.y, !!to.rotated);
     }
     case 'KIT':
-      st.toggleCarry(item.id);
+      pc.apply({ kind: 'TOGGLE_CARRY', itemId: item.id });
       return OK;
     case 'CACHE':
       return verdict;
