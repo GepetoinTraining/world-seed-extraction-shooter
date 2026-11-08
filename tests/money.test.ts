@@ -503,6 +503,28 @@ describe('D108: nothing refuses for want of coin, because the hub prints', () =>
     expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
   });
 
+  // C2 and C3 (leg 2), by Q12 and Q17: the counter showed "Unidentified Signal 98G listed value · SELL 58G"
+  // and bought "Escort Bond: Orrin Error" for 120 G. Nothing tells an unread piece's worth, and a person is not goods.
+  it('the counter does not buy what nobody has read, or a person', async () => {
+    const unread = thing({ value: 98, isIdentified: false });
+    const bond = bondOf('person_sold');
+    give([unread, bond]);
+    const gold = player().bank.gold;
+    expect(VendorSystem.refuses(unread)).toMatch(/read/i);
+    expect(VendorSystem.refuses(bond)).toMatch(/person/i);
+    expect(VendorSystem.refuses(thing())).toBeNull();
+    expect(await hub().sellToVendor(unread.id)).toBeNull();
+    expect(await hub().sellToVendor(bond.id)).toBeNull();
+    expect(player().bank.gold).toBe(gold);
+    expect(player().bank.stashTabs[0].items.map(i => i.id)).toEqual(expect.arrayContaining([unread.id, bond.id]));
+  });
+
+  it('neither counter shows a worth or a sale before it asks what it refuses', () => {
+    for (const path of ['src/entities/hub/HubCanvas.tsx', 'src/components/PlayerHub.tsx']) {
+      expect(readFileSync(path, 'utf8'), path).toMatch(/VendorSystem\.refuses\(/);
+    }
+  });
+
   it('no window still says a hub with no funds cannot buy (found by playing)', () => {
     for (const path of [...allSource('src'), ...allSource('shared')]) expect(readFileSync(path, 'utf8'), path).not.toMatch(/no funds cannot buy|treasury cannot cover/i);
   });

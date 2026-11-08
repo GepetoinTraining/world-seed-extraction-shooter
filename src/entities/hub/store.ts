@@ -2436,6 +2436,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (!activeHubId) return null;
     const item = (p.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
     if (!item) return null;
+    // Q12 and Q17: nothing unread, and nobody
+    if (VendorSystem.refuses(item)) return null;
 
     const offer = get().offerFor(item, npcId);
     const perDay = runningPerDay(cityOf(get()));

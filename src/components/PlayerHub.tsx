@@ -10,6 +10,7 @@ import { useHubStore } from '../entities/hub/store';
 import { POINTS_PER_LEVEL, ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../logic/systems/CircleSystem';
+import { VendorSystem } from '../logic/systems/VendorSystem';
 import { InventorySystem } from '../../shared/entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
@@ -456,13 +457,18 @@ export const StashTab: React.FC = () => {
               )}
               {/* U14: a sale is a deliberate step, and it sits apart from CARRY */}
               <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'space-between' }}>
-                <ArmedButton
-                  tone="proof"
-                  confirmLabel={`SELL FOR ${StatSystem.vendorOffer(selected.value, player.attributes)}G: SURE?`}
-                  onConfirm={() => { void sellToVendor(selected.id); setSelectedId(null); }}
-                >
-                  SELL {StatSystem.vendorOffer(selected.value, player.attributes)}G
-                </ArmedButton>
+                {/* Q12 and Q17: an unread piece shows no offer, and a person is not for sale */}
+                {VendorSystem.refuses(selected) ? (
+                  <span className="ws-dim ws-small">{VendorSystem.refuses(selected)}</span>
+                ) : (
+                  <ArmedButton
+                    tone="proof"
+                    confirmLabel={`SELL FOR ${StatSystem.vendorOffer(selected.value, player.attributes)}G: SURE?`}
+                    onConfirm={() => { void sellToVendor(selected.id); setSelectedId(null); }}
+                  >
+                    SELL {StatSystem.vendorOffer(selected.value, player.attributes)}G
+                  </ArmedButton>
+                )}
                 <ArmedButton
                   tone="loss"
                   confirmLabel="DISCARD: IT DOES NOT COME BACK"

@@ -1287,18 +1287,20 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
       {stash.length === 0 && <div className="ws-dim ws-small">Your stash is empty.</div>}
       <div className="ws-list">
         {stash.map(item => {
-          const offer = offerFor(item, npcId);
+          // Q12 and Q17: an unread piece shows no worth and no offer, and a person is not for sale
+          const refused = VendorSystem.refuses(item);
+          const offer = refused ? 0 : offerFor(item, npcId);
           return (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(item)}</span>
-                  <span className="ws-dim ws-small">{item.value}G listed value</span>
+                  <span className="ws-dim ws-small">{refused ?? `${item.value}G listed value`}</span>
                 </span>
               </span>
               {/* U14: a sale is a deliberate step */}
-              <ArmedButton
+              {!refused && <ArmedButton
                 tone="proof"
                 confirmLabel={`SELL FOR ${offer}G: SURE?`}
                 onConfirm={async () => {
@@ -1308,7 +1310,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
                 }}
               >
                 SELL {offer}G
-              </ArmedButton>
+              </ArmedButton>}
             </div>
           );
         })}
