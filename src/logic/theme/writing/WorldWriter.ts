@@ -158,6 +158,8 @@ class Draft {
   private brought = new Map<string, string>();
   private packs: Map<string, IThemePack>;
   private ownWords = new Set<string>();
+  /** Every word this world has registered, new or already on the books: what a later pass is told it may use (C1). */
+  private spoken = new Set<string>();
   added = 0;
   picked = 0;
   takenFromPool = 0;
@@ -179,7 +181,7 @@ class Draft {
   save(): string {
     return JSON.stringify({
       body: this.body, without: this.without, names: this.names.save(), keys: [...this.keys], brought: [...this.brought],
-      ownWords: [...this.ownWords], added: this.added, picked: this.picked, takenFromPool: this.takenFromPool
+      ownWords: [...this.ownWords], spoken: [...this.spoken], added: this.added, picked: this.picked, takenFromPool: this.takenFromPool
     });
   }
 
@@ -191,6 +193,7 @@ class Draft {
     this.keys = new Set(s.keys);
     this.brought = new Map(s.brought);
     this.ownWords = new Set(s.ownWords);
+    this.spoken = new Set(s.spoken);
     this.added = s.added;
     this.picked = s.picked;
     this.takenFromPool = s.takenFromPool;
@@ -217,6 +220,7 @@ class Draft {
       if (!w || !TagLaw.isCanonicalSpelling(w.tag)) return refuse(`"${w?.tag}" is not a word: lower_snake_case, one spelling.`);
       if (!(WORD_KINDS as readonly string[]).includes(w.kind)) return refuse(`"${w.tag}" is of no kind the registry keeps.`);
       if (!w.meaning?.trim()) return refuse(`"${w.tag}" has no meaning.`);
+      this.spoken.add(w.tag);
       // A word already registered keeps its first meaning: using it is free, redefining it is not done
       if (this.known(w.tag)) continue;
       this.ownWords.add(w.tag);
@@ -224,6 +228,9 @@ class Draft {
     }
     return null;
   }
+
+  /** The words this world has registered so far, as a pass's ask names them. */
+  words(): string[] { return [...new Set([...this.body.tags.map(t => t.tag), ...this.spoken])]; }
 
   unknown(tags: string[]): string | undefined { return (tags ?? []).find(t => !this.known(t)); }
 
@@ -569,7 +576,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     o.onPass?.(pass, i);
     const offered: IPassAsk['offered'] = {};
     for (const list of PASS_PULLS[pass]) {
-      const near = await o.pull.offer(list, query(), d.without);
+      // Nothing is offered that the fold would refuse to bring: what it stands on is ruled out too (C1)
+      const near = (await o.pull.offer(list, query(), d.without)).filter(e => !d.bringsRuledOut(e));
       for (const e of near) offeredIds.set(e.id, e);
       offered[list] = near.map(e => ({ id: e.id, is: e.text }));
     }
@@ -580,7 +588,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     let spent = 0;
     while (!done && tries < PASS_TRIES) {
       tries++;
-      const out = await o.door(pass, { pass, said, world: worldSoFar(d), offered, words: d.body.tags.map(t => t.tag), ...(refused ? { refused } : {}) });
+      const out = await o.door(pass, { pass, said, world: worldSoFar(d), offered, words: d.words(), ...(refused ? { refused } : {}) });
       usage = sum(usage, out.usage);
       spent += out.usage?.usd ?? 0;
       if (out.status !== 'OK' || !out.data) {

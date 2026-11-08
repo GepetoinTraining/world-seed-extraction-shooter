@@ -14,7 +14,7 @@ import { WEB_BATCHES } from '../entities/generation/packs/webBatches';
 import { MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES } from '../types';
 import { HARM_BANDS, IGoalAsk, IMeetAsk, IRoundAsk, JUDGE_BANDS, PROMISE_BANDS, QUEST_SIZES } from '../logic/systems/TalkTypes';
 import { LORE_DEPTHS } from '../logic/systems/LoreConstants';
-import { PASS_SCHEMAS, WORLD_PASSES, WORD_KINDS, type WorldPassId } from '../logic/theme/writing/WorldPasses';
+import { PASS_SCHEMAS, WORLD_PASSES, WORD_KINDS, tightPass, type WorldPassId } from '../logic/theme/writing/WorldPasses';
 
 const REGISTRY = (() => {
   const byKind = new Map<string, string[]>();
@@ -23,6 +23,9 @@ const REGISTRY = (() => {
   }
   return [...byKind.entries()].map(([kind, tags]) => `${kind}: ${tags.join(', ')}`).join('\n');
 })();
+
+/** The words the registry above lists, for a schema held to them (C1). */
+const REGISTRY_WORDS = [...new Set(WEB_BATCHES.flatMap(b => (b.tags ?? []).filter(t => !t.retired).map(t => t.tag)))];
 
 const RANKS_LINE = RANKS.join(', ');
 
@@ -343,7 +346,9 @@ export function buildWorldPassRequest(pass: WorldPassId, ask: Record<string, unk
   const { refused, ...rest } = ask;
   const again = refused ? `\n\nThe last answer to this pass was refused and nothing of it stands. ${String(refused)} Write it again without that.` : '';
   return {
-    kind: Number(draft.size) >= LARGE_WORLD_SECTORS ? 'theme_large' : 'theme', system: WORLD_SYSTEM, schema: PASS_SCHEMAS[pass], maxTokens: 16000,
+    kind: Number(draft.size) >= LARGE_WORLD_SECTORS ? 'theme_large' : 'theme', system: WORLD_SYSTEM, schema: PASS_SCHEMAS[pass],
+    // C1: a local model is held to the schema tightened to this ask, so what it writes is what the fold can take
+    tight: tightPass(pass, rest as never, REGISTRY_WORDS), maxTokens: 16000,
     messages: [{ role: 'user', content: `${PASS_ASKS[pass]}\n\n${JSON.stringify(rest)}${again}` }]
   };
 }

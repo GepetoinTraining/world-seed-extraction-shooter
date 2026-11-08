@@ -11,7 +11,7 @@ import { BIOMES, IThemeBody, THEME_SCHEMA } from '../shared/logic/theme/ThemeTyp
 import { sealTheme } from '../shared/logic/theme/ThemeCompiler';
 import { WebBank } from '../shared/logic/content/WebBank';
 import { HASHED_EMBEDDER, IEmbedder } from '../shared/services/EmbeddingService';
-import { CountedPull, poolOf, ruledOut } from '../shared/logic/theme/writing/WorldPool';
+import { CountedPull, poolOf, ruledOut, standsOnRuledOut } from '../shared/logic/theme/writing/WorldPool';
 import { concentration, concentrationResiduals, CountedEmbedder, fieldAffinity, fieldCounts, logOddsZ } from '../shared/logic/theme/writing/Counting';
 import { cosineSimilarity } from '../shared/entities/data/similarity';
 import { PASS_SCHEMAS, SCHEMA_LIMITS, WORLD_PASSES, WorldPassId, schemaShape } from '../shared/logic/theme/writing/WorldPasses';
@@ -456,5 +456,128 @@ describe('the skilled ground, in the field', () => {
     expect(TerrainSystem.isBlockedTile(seed, rock.x, rock.y)).toBe(true);
     expect(TerrainSystem.isBlockedTile(seed, rock.x, rock.y, true)).toBe(false);
     expect(TerrainSystem.isBlockedTile(seed, water.x, water.y, true)).toBe(true);
+  });
+});
+
+// -------------------------------------------------------------------------
+// C1 (leg 2): with no key, the local model could not write a new world. Gemma's ground left a kind of
+// ground unnamed, and its skilled ground was crossed with "climb", a word nobody had registered. A local
+// grammar holds a model to every word of a schema, so each pass asks it in the schema tightened to that ask.
+// -------------------------------------------------------------------------
+
+/** Enough of JSON schema to read what the tight schemas say. A local grammar enforces the same. */
+function fits(schema: any, value: unknown, at = '$'): string | null {
+  if (schema.enum && !schema.enum.includes(value)) return `${at}: ${JSON.stringify(value)} is not one of the ${schema.enum.length} offered`;
+  if (schema.type === 'string') {
+    if (typeof value !== 'string') return `${at}: not a string`;
+    if (schema.minLength !== undefined && value.length < schema.minLength) return `${at}: too short`;
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) return `${at}: "${value}" does not match ${schema.pattern}`;
+    return null;
+  }
+  if (schema.type === 'boolean') return typeof value === 'boolean' ? null : `${at}: not a boolean`;
+  if (schema.type === 'array') {
+    if (!Array.isArray(value)) return `${at}: not an array`;
+    if (schema.minItems !== undefined && value.length < schema.minItems) return `${at}: fewer than ${schema.minItems}`;
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) return `${at}: more than ${schema.maxItems}`;
+    for (let i = 0; i < value.length; i++) {
+      const item = schema.prefixItems?.[i] ?? schema.items;
+      const bad = item ? fits(item, value[i], `${at}[${i}]`) : null;
+      if (bad) return bad;
+    }
+    return null;
+  }
+  if (schema.type === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return `${at}: not an object`;
+    const v = value as Record<string, unknown>;
+    for (const key of schema.required ?? []) if (!(key in v)) return `${at}.${key}: missing`;
+    for (const [key, child] of Object.entries(v)) {
+      const sub = schema.properties?.[key];
+      if (!sub) { if (schema.additionalProperties === false) return `${at}.${key}: not asked for`; continue; }
+      const bad = fits(sub, child, `${at}.${key}`);
+      if (bad) return bad;
+    }
+    return null;
+  }
+  return null;
+}
+
+describe('C1: a local model is asked each pass in the schema tightened to it', () => {
+  const answered = async () => {
+    const { door } = scriptedDoor();
+    const seen: { pass: WorldPassId; ask: IPassAsk; data: unknown }[] = [];
+    const out = await write(async (pass, ask) => {
+      const outcome = await door(pass, ask);
+      seen.push({ pass, ask, data: outcome.data });
+      return outcome;
+    });
+    expect(out.ok, out.reason).toBe(true);
+    return seen;
+  };
+
+  it('every pass carries a tight schema beside the frozen one, which stays as it was', async () => {
+    for (const { pass, ask } of await answered()) {
+      const request = buildWorldPassRequest(pass, ask as never, {});
+      expect(request.schema, pass).toBe(PASS_SCHEMAS[pass]);
+      expect(request.tight, pass).toBeTruthy();
+      expect(request.tight, pass).not.toBe(request.schema);
+    }
+  });
+
+  it('what the law takes, the tight schema takes: a whole world written in it is not held back', async () => {
+    for (const { pass, ask, data } of await answered()) {
+      expect(fits(buildWorldPassRequest(pass, ask as never, {}).tight, data), pass).toBeNull();
+    }
+  });
+
+  it('what Gemma wrote in leg 2 cannot be written in it', async () => {
+    const seen = await answered();
+    const of = (pass: WorldPassId) => seen.find(s => s.pass === pass)!;
+    const ground = of('ground');
+    const tightGround = buildWorldPassRequest('ground', ground.ask as never, {}).tight;
+    const named = ground.data as { regions: { biome: string }[] };
+    // A kind of ground left unnamed: the frozen schema takes it, the tight one does not
+    const short = { ...named, regions: named.regions.filter(r => r.biome !== 'OVERGROWTH') };
+    expect(fits(PASS_SCHEMAS.ground, short)).toBeNull();
+    expect(fits(tightGround, short)).not.toBeNull();
+    expect(fits(tightGround, { ...named, regions: named.regions.map(r => (r.biome === 'OVERGROWTH' ? { ...r, name: '' } : r)) })).not.toBeNull();
+
+    // A skilled ground crossed with a word nobody registered
+    const terrain = of('terrain');
+    const unregistered = { ...(terrain.data as object), skilled: { pick: '', ground: 'tangled mounds', blurb: '', crossing: 'clamber_over' } };
+    expect(fits(PASS_SCHEMAS.terrain, unregistered)).toBeNull();
+    expect(fits(buildWorldPassRequest('terrain', terrain.ask as never, {}).tight, unregistered)).not.toBeNull();
+
+    // A creature tagged with a leader's word, a word nobody registered, or a pick nobody offered
+    const life = of('life');
+    const tightLife = buildWorldPassRequest('life', life.ask as never, {}).tight;
+    const fauna = (tags: string[]) => ({ ...(life.data as object), fauna: [{ is: 'a moth', tags, social: false, builds: false, regions: ['RUINS'] }] });
+    expect(fits(tightLife, fauna(['vacuum']))).toBeNull();
+    expect(fits(tightLife, fauna(['boss']))).not.toBeNull();
+    expect(fits(tightLife, fauna(['descriptive_glow']))).not.toBeNull();
+    expect(fits(tightLife, { ...(life.data as object), picked: [{ id: 'nobody.offered.this', regions: ['RUINS'] }] })).not.toBeNull();
+  });
+
+  // Found on the real run: Gemma picked an Audit Board, offered, which stands on Compound Oak in a world without trees.
+  // Held to what it is offered, a model can only pick what was offered; so nothing is offered that cannot be picked.
+  it('nothing is offered that stands on what the world is without', async () => {
+    const seen = await answered();
+    const ground = seen.find(s => s.pass === 'ground')!;
+    const without = (ground.data as { without: string[] }).without;
+    expect(without).toContain('trees');
+    const offered = seen.filter(s => s.pass !== 'ground').flatMap(s => Object.values(s.ask.offered).flat());
+    expect(offered.length).toBeGreaterThan(0);
+    for (const o of offered) {
+      const e = pooled(o.id);
+      expect(standsOnRuledOut(FIRST_THEME_PACK, e.packList, e.key, without), o.id).toBeNull();
+    }
+  });
+
+  it('a word the world registered in an earlier pass is one a later pass may use', async () => {
+    const seen = await answered();
+    const terrain = seen.find(s => s.pass === 'terrain')!;
+    expect(terrain.ask.words).toContain('climb');
+    expect(fits(buildWorldPassRequest('terrain', terrain.ask as never, {}).tight, terrain.data)).toBeNull();
+    const ground = seen.find(s => s.pass === 'ground')!;
+    expect(fits(buildWorldPassRequest('terrain', ground.ask as never, {}).tight, terrain.data)).not.toBeNull();
   });
 });

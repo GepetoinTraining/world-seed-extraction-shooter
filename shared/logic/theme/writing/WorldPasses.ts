@@ -85,6 +85,78 @@ export const PASS_SCHEMAS: Record<WorldPassId, Record<string, unknown>> = {
 };
 
 // -------------------------------------------------------------------------
+// Tightened to one ask (C1, leg 2)
+// -------------------------------------------------------------------------
+
+/** Who leads, and who is one of a kind, is code's to decide: no creature is written with these. */
+const LEADER_WORDS = ['elite', 'boss', 'titan', 'god'];
+/** TagLaw's spelling: lower_snake_case, one spelling. */
+const SPELLED = { type: 'string', pattern: '^[a-z][a-z0-9]*(_[a-z0-9]+)*$' };
+const said = { type: 'string', minLength: 1 };
+const someOf = (item: Record<string, unknown>, minItems = 0) => ({ type: 'array', items: item, ...(minItems > 0 ? { minItems } : {}) });
+
+export interface ITightAsk { offered?: Record<string, { id: string }[]>; words?: string[] }
+
+/**
+ * A pass's schema, tightened to this one ask. A model held to every word of its schema (a local one: its grammar
+ * is the schema) then writes only what the writer's fold can take: every kind of ground named, once and in order;
+ * every tag a word already registered, on the books or by this world in an earlier pass; every pick an id it was
+ * offered; no creature tagged as a leader. A word registered in a pass is for the passes after it. The frozen
+ * schema stays what a provider that caches reads, and the fold still judges everything (WorldWriter.ts).
+ */
+export function tightPass(pass: WorldPassId, ask: ITightAsk, registry: readonly string[]): Record<string, unknown> {
+  const known = [...new Set([...registry, ...(ask.words ?? [])])].sort();
+  const word = known.length > 0 ? oneOf(known) : str;
+  const unled = known.filter(w => !LEADER_WORDS.includes(w));
+  const creatureWord = unled.length > 0 ? oneOf(unled) : str;
+  const words = list({ tag: SPELLED, kind: oneOf(WORD_KINDS), meaning: said });
+  const regions = someOf(oneOf(BIOMES), 1);
+  const idsOf = (lists: readonly string[], end = '') => lists.flatMap(l => ask.offered?.[l] ?? []).map(o => o.id).filter(id => id.endsWith(end));
+  const ids = (lists: readonly string[]) => {
+    const offered = idsOf(lists);
+    return offered.length > 0 ? someOf(oneOf(offered)) : { type: 'array', items: str, maxItems: 0 };
+  };
+  const pickedAt = (lists: readonly string[]) => {
+    const offered = idsOf(lists);
+    return offered.length > 0 ? list({ id: oneOf(offered), regions }) : { type: 'array', items: obj({ id: str, regions }), maxItems: 0 };
+  };
+  const dressing = (role: 'impassable' | 'skilled') => obj({
+    pick: oneOf(['', ...idsOf(['terrain'], `.terrain.${role}`)]),
+    ground: said, blurb: str,
+    crossing: role === 'skilled' ? word : oneOf([''])
+  });
+
+  switch (pass) {
+    case 'ground': return obj({
+      name: said, premise: said,
+      regions: { type: 'array', prefixItems: BIOMES.map(b => obj({ biome: oneOf([b]), name: said, blurb: str })), minItems: BIOMES.length, maxItems: BIOMES.length },
+      without: strs, prefixes: someOf(said, 1), suffixes: someOf(said, 1), words
+    });
+    case 'terrain': return obj({ impassable: dressing('impassable'), skilled: dressing('skilled'), words });
+    case 'life': return obj({
+      picked: pickedAt(PASS_PULLS.life),
+      flora: list({ is: said, form: oneOf(FLORA_FORMS), tags: someOf(word), regions }),
+      fauna: list({ is: said, tags: someOf(creatureWord, 1), social: bool, builds: bool, regions }),
+      words
+    });
+    case 'people': return obj({
+      picked: ids(PASS_PULLS.people),
+      professions: list({ is: said, concept: SPELLED, workshop: said, tool: someOf(word, 1), material: someOf(word, 1) }),
+      words
+    });
+    case 'holds': return obj({
+      picked: pickedAt(PASS_PULLS.holds),
+      minerals: list({ is: said, form: oneOf(MINERAL_FORMS), tags: someOf(word), regions }),
+      junk: list({ is: said, tags: someOf(word), from: someOf(word, 1) }),
+      anchors: list({ is: said, tags: someOf(word), regions }),
+      words
+    });
+    case 'made': return obj({ picked: ids(PASS_PULLS.made) });
+    case 'known': return obj({ picked: ids(PASS_PULLS.known), lore: strs });
+  }
+}
+
+// -------------------------------------------------------------------------
 // What each answer is, as code reads it
 // -------------------------------------------------------------------------
 
