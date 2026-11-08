@@ -22,8 +22,11 @@ import { TagLaw } from '../shared/logic/content/TagLaw';
 import { CHAIN_PARTS, CHAIN_SCHEMA, buildChainRequest, buildWorldPassRequest } from '../shared/intelligence/prompts';
 import { askChainInParts } from '../shared/intelligence/parts';
 import type { IDoorRequest } from '../shared/intelligence/door';
+import { WEB_BATCHES } from '../shared/entities/generation/packs/webBatches';
 
 const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
+/** The registry as it ships, read before any test registers a world's words. */
+const SHIPPED_WORDS = new Set(WEB_BATCHES.flatMap(b => (b.tags ?? []).filter(t => !t.retired).map(t => t.tag)));
 
 beforeAll(() => {
   expect(ContentRegistry.install(FIRST_THEME_PACK).ok).toBe(true);
@@ -63,7 +66,7 @@ describe('every ask compiles on its own', () => {
 
   it('a pass is told the earlier passes in its message, and the system text is one for all, so they share a cache', () => {
     const a = buildWorldPassRequest('ground', { said: 'a moon' }, {});
-    const b = buildWorldPassRequest('life', { said: 'a moon', world: { name: 'X' } }, {});
+    const b = buildWorldPassRequest('fauna', { said: 'a moon', world: { name: 'X' } }, {});
     expect(a.system).toBe(b.system);
     expect(b.messages[0].content).toContain('"world"');
   });
@@ -238,19 +241,23 @@ function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: 
   const counts: Record<string, number> = {};
   const answers: Record<WorldPassId, (ask: IPassAsk) => unknown> = {
     ground: () => ({
-      name: 'The Quiet Moon', premise: 'A moon with no air, where a bank still keeps its hours.',
-      regions: BIOMES.map(b => ({ biome: b, name: `The ${b.toLowerCase()} side`, blurb: 'Gray, and still.' })),
+      premise: 'A moon with no air, where a bank still keeps its hours.',
+      regions: BIOMES.map(b => ({ biome: b, blurb: `The ${b.toLowerCase()} side: gray, and still.` })),
       without: ['trees'], prefixes: ['Gray', 'Hollow', 'Still', 'Pale'], suffixes: ['crawler', 'moth', 'glass', 'drift'],
       words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' }]
     }),
     terrain: () => ({
       impassable: { pick: '', ground: 'tunnels', blurb: 'Old bores that drop into nothing.', crossing: '' },
-      skilled: { pick: '', ground: 'a dark-side crater', blurb: 'Its rim is sheer and cold.', crossing: 'climb' },
+      skilled: { pick: '', ground: 'a dark-side crater', blurb: 'Its rim is sheer and cold.', crossing: { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' } },
       words: []
     }),
-    life: ask => ({
-      picked: [{ id: first(ask, 'fauna'), regions: ['RUINS'] }, { id: first(ask, 'flora'), regions: ['WASTELAND'] }].filter(p => p.id),
+    flora: ask => ({
+      picked: [{ id: first(ask, 'flora'), regions: ['WASTELAND'] }].filter(p => p.id),
       flora: [{ is: 'a gray lichen that eats starlight', form: 'shrub', tags: [], regions: ['WASTELAND', 'OVERGROWTH'] }],
+      words: []
+    }),
+    fauna: ask => ({
+      picked: [{ id: first(ask, 'fauna'), regions: ['RUINS'] }].filter(p => p.id),
       // A thing the pool holds, by its plain name: it is taken from the pool, never written again
       fauna: [
         { is: 'Pension Ox', tags: ['vacuum'], social: false, builds: false, regions: ['INDUSTRIAL'] },
@@ -273,7 +280,15 @@ function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: 
       words: []
     }),
     made: ask => ({ picked: [first(ask, 'gear'), first(ask, 'gear', 1)].filter(Boolean) }),
-    known: () => ({ picked: [], lore: ['The moon kept the bank\'s hours long after the bank was gone.'] })
+    known: () => ({ picked: [], lore: ['The moon kept the bank\'s hours long after the bank was gone.'] }),
+    // C16: what the pool could not give, added in the one list the need names
+    lack: ask => ({
+      fauna: ask.lack!.list === 'fauna' ? [{ is: 'a slow gray grazer', tags: ['vacuum'], social: true, builds: false, regions: ['RUINS'] }] : [],
+      materials: ask.lack!.list === 'materials' ? [{ is: 'packed regolith blocks', form: 'rock', tags: [], regions: ['RUINS'] }] : [],
+      anchors: ask.lack!.list === 'anchors' ? [{ is: 'a bank seal of old silver', tags: [], regions: ['RUINS'] }] : [],
+      gear: ask.lack!.list === 'gear' ? [{ is: 'boots of wrapped suit cloth', kind: ask.lack!.kinds![0] }] : [],
+      words: []
+    })
   };
   const door: PassDoor = async (pass, ask) => {
     asks.push(ask);
@@ -297,9 +312,9 @@ describe('a world, written in passes', () => {
     const out = await write(door);
     expect(asks.map(a => a.pass)).toEqual([...WORLD_PASSES]);
     expect(asks[0].offered).toEqual({});
-    const life = asks.find(a => a.pass === 'life')!;
-    expect((life.world.terrain as string[]).join(' ')).toContain('dark-side crater');
-    expect(life.words).toContain('vacuum');
+    const fauna = asks.find(a => a.pass === 'fauna')!;
+    expect((fauna.world.terrain as string[]).join(' ')).toContain('dark-side crater');
+    expect(fauna.words).toContain('vacuum');
     expect(out.ok).toBe(true);
   });
 
@@ -314,7 +329,7 @@ describe('a world, written in passes', () => {
     const { door, asks } = scriptedDoor();
     const out = await write(door);
     if (!out.ok) throw new Error(out.reason);
-    const pickedId = asks.find(a => a.pass === 'life')!.offered.fauna[0].id;
+    const pickedId = asks.find(a => a.pass === 'fauna')!.offered.fauna[0].id;
     const source = pooled(pickedId).entry as unknown as IThemeBody['creatures'][number];
     const held = out.body.creatures.filter(c => c.name === source.name);
     expect(held.length).toBe(1);
@@ -334,15 +349,15 @@ describe('a world, written in passes', () => {
 
   it('the world rules things out: no tree is offered, and adding one is refused, then asked again', async () => {
     const { door, asks } = scriptedDoor({
-      life: (ask, n) => ({
-        picked: [], fauna: [{ is: 'a pale moth that drinks static', tags: ['vacuum'], social: true, builds: false, regions: ALL }, { is: 'a glass hound that runs the rim', tags: ['vacuum'], social: true, builds: false, regions: ALL }],
+      flora: (ask, n) => ({
+        picked: [],
         flora: n === 1 ? [{ is: 'a tall gray tree', form: 'tree', tags: [], regions: ALL }] : [{ is: 'a gray lichen that eats starlight', form: 'shrub', tags: [], regions: ALL }],
         words: []
       })
     });
     const out = await write(door);
     expect(out.ok).toBe(true);
-    const lifeAsks = asks.filter(a => a.pass === 'life');
+    const lifeAsks = asks.filter(a => a.pass === 'flora');
     expect(lifeAsks[0].offered.flora.some(o => o.id.endsWith('.compound_oak'))).toBe(false);
     expect(lifeAsks.length).toBe(2);
     expect(lifeAsks[1].refused).toContain('without');
@@ -355,8 +370,12 @@ describe('a world, written in passes', () => {
     const pool = new Set(poolOf([FIRST_THEME_PACK]).map(e => String(e.entry.name)));
     const added = [...out.body.creatures, ...out.body.materials, ...(out.body.professions ?? []), ...out.body.junk!].filter(x => !pool.has(x.name));
     expect(added.length).toBeGreaterThan(4);
-    for (const x of added) expect(x.name, x.name).toMatch(/^(Gray|Hollow|Still|Pale)( (Gray|Hollow|Still|Pale))?(crawler|moth|glass|drift)$/);
-    expect(new Set(added.map(x => x.name)).size).toBe(added.length);
+    const own = /^(Gray|Hollow|Still|Pale)( (Gray|Hollow|Still|Pale))?(crawler|moth|glass|drift)$/;
+    for (const x of added) expect(x.name, x.name).toMatch(own);
+    // C17: the world and every kind of its ground are named from the same lists
+    for (const name of [out.body.name, ...out.body.regions.map(r => r.name)]) expect(name, name).toMatch(own);
+    const all = [...added.map(x => x.name), out.body.name, ...out.body.regions.map(r => r.name)];
+    expect(new Set(all).size).toBe(all.length);
     expect(added.find(x => x.blurb === 'a hollow crawler that hunts by the shake of the ground')).toBeDefined();
   });
 
@@ -539,7 +558,7 @@ describe('C1: a local model is asked each pass in the schema tightened to it', (
     const short = { ...named, regions: named.regions.filter(r => r.biome !== 'OVERGROWTH') };
     expect(fits(PASS_SCHEMAS.ground, short)).toBeNull();
     expect(fits(tightGround, short)).not.toBeNull();
-    expect(fits(tightGround, { ...named, regions: named.regions.map(r => (r.biome === 'OVERGROWTH' ? { ...r, name: '' } : r)) })).not.toBeNull();
+    expect(fits(tightGround, { ...named, regions: named.regions.map(r => (r.biome === 'OVERGROWTH' ? { ...r, blurb: '' } : r)) })).not.toBeNull();
 
     // A skilled ground crossed with a word nobody registered
     const terrain = of('terrain');
@@ -548,8 +567,8 @@ describe('C1: a local model is asked each pass in the schema tightened to it', (
     expect(fits(buildWorldPassRequest('terrain', terrain.ask as never, {}).tight, unregistered)).not.toBeNull();
 
     // A creature tagged with a leader's word, a word nobody registered, or a pick nobody offered
-    const life = of('life');
-    const tightLife = buildWorldPassRequest('life', life.ask as never, {}).tight;
+    const life = of('fauna');
+    const tightLife = buildWorldPassRequest('fauna', life.ask as never, {}).tight;
     const fauna = (tags: string[]) => ({ ...(life.data as object), fauna: [{ is: 'a moth', tags, social: false, builds: false, regions: ['RUINS'] }] });
     expect(fits(tightLife, fauna(['vacuum']))).toBeNull();
     expect(fits(tightLife, fauna(['boss']))).not.toBeNull();
@@ -574,10 +593,184 @@ describe('C1: a local model is asked each pass in the schema tightened to it', (
 
   it('a word the world registered in an earlier pass is one a later pass may use', async () => {
     const seen = await answered();
-    const terrain = seen.find(s => s.pass === 'terrain')!;
-    expect(terrain.ask.words).toContain('climb');
-    expect(fits(buildWorldPassRequest('terrain', terrain.ask as never, {}).tight, terrain.data)).toBeNull();
+    const fauna = seen.find(s => s.pass === 'fauna')!;
+    expect(fauna.ask.words).toContain('vacuum');
+    expect(fits(buildWorldPassRequest('fauna', fauna.ask as never, {}).tight, fauna.data)).toBeNull();
     const ground = seen.find(s => s.pass === 'ground')!;
-    expect(fits(buildWorldPassRequest('terrain', ground.ask as never, {}).tight, terrain.data)).not.toBeNull();
+    expect(fits(buildWorldPassRequest('fauna', ground.ask as never, {}).tight, fauna.data)).not.toBeNull();
+  });
+});
+
+// -------------------------------------------------------------------------
+// C15 to C17 (after leg 2's fixes): on the local model the life pass sometimes wrote on past its room; a world could
+// still stop at a floor the pool could not fill; and what came back read like code, its climbing ground crossed with "cloth".
+// -------------------------------------------------------------------------
+
+/** The first pack, with what a test takes away from the pool. */
+const without = (cut: (p: typeof FIRST_THEME_PACK) => Partial<typeof FIRST_THEME_PACK>) => ({ ...FIRST_THEME_PACK, ...cut(FIRST_THEME_PACK) });
+const writeFrom = (door: PassDoor, pack: typeof FIRST_THEME_PACK) => writeWorld('An airless moon. The bank never closed.', {
+  door, pull: new CountedPull(poolOf([pack])), packs: [pack], registered, seed: 'moon', difficulty: 'D'
+});
+
+describe('C15: what grows and what lives are asked apart, so no ask runs past its room', () => {
+  it('flora, then fauna, each its own pass; the second is told what the first made', async () => {
+    const { door, asks } = scriptedDoor();
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const order = asks.map(a => a.pass);
+    expect(order.indexOf('flora')).toBeGreaterThan(order.indexOf('terrain'));
+    expect(order.indexOf('fauna')).toBe(order.indexOf('flora') + 1);
+    const fauna = asks.find(a => a.pass === 'fauna')!;
+    expect((fauna.world.grows as string[]).join(' ')).toContain('eats starlight');
+    expect(Object.keys(fauna.offered)).toEqual(['fauna']);
+  });
+
+  it('no ask carries plants and creatures together, frozen or tight', async () => {
+    const lists = (schema: any) => Object.keys(schema.properties ?? {});
+    for (const pass of WORLD_PASSES) {
+      const tight = buildWorldPassRequest(pass, { pass }, {}).tight;
+      for (const schema of [PASS_SCHEMAS[pass], tight]) {
+        expect(lists(schema).includes('flora') && lists(schema).includes('fauna'), pass).toBe(false);
+      }
+    }
+  });
+});
+
+describe('C16: what the pool cannot give, the model adds; it is never a refusal', () => {
+  it('nothing in the pool can raise a wall: the model is asked for it, and code makes it a building material', async () => {
+    const pack = without(p => ({ materials: p.materials.map(m => ({ ...m, tags: m.tags.filter(t => t !== 'building') })) }));
+    const { door, asks } = scriptedDoor({
+      holds: ask => ({ picked: [], minerals: [{ is: 'regolith that packs hard', form: 'sand', tags: [], regions: ['RUINS'] }], junk: [], anchors: [], words: [] })
+    });
+    const out = await writeFrom(door, pack);
+    expect(out.reason ?? '').not.toContain('nothing in the pool');
+    expect(out.ok, out.reason).toBe(true);
+    const lack = asks.find(a => a.pass === 'lack')!;
+    expect(lack.lack).toMatchObject({ need: 'raise a wall', list: 'materials' });
+    const wall = out.body!.materials.find(m => m.blurb === 'packed regolith blocks')!;
+    expect(wall.tags).toContain('building');
+    expect(wall.name).toMatch(/^(Gray|Hollow|Still|Pale)/);
+  });
+
+  it('nothing in the pool can shoe a beginner: the model adds boots of a kind the need names, at rank F', async () => {
+    const pack = without(p => ({ gear: p.gear.filter(g => g.kind !== 'feet') }));
+    const { door, asks } = scriptedDoor();
+    const out = await writeFrom(door, pack);
+    expect(out.ok, out.reason).toBe(true);
+    const lack = asks.find(a => a.pass === 'lack' && a.lack?.list === 'gear')!;
+    expect(lack.lack!.kinds).toEqual(['feet']);
+    expect(out.body!.gear.find(g => g.kind === 'feet' && g.rank === 'F')?.blurb).toBe('boots of wrapped suit cloth');
+    expect(ThemeLaw.validate(out.body!, t => registered(t) || out.body!.tags.some(w => w.tag === t))).toEqual({ ok: true });
+  });
+
+  it('a lack ask holds the model to the one list the need names, and to the kinds that answer it', () => {
+    const tight = buildWorldPassRequest('lack', { lack: { need: 'shoe a beginner', list: 'gear', kinds: ['feet'] } }, {}).tight;
+    const empty = { fauna: [], materials: [], anchors: [], gear: [], words: [] };
+    expect(fits(tight, empty)).not.toBeNull();
+    expect(fits(tight, { ...empty, gear: [{ is: 'rag boots', kind: 'feet' }] })).toBeNull();
+    expect(fits(tight, { ...empty, gear: [{ is: 'a club', kind: 'bludgeon' }] })).not.toBeNull();
+    expect(fits(tight, { ...empty, gear: [{ is: 'rag boots', kind: 'feet' }], fauna: [{ is: 'a moth', tags: ['vacuum'], social: false, builds: false, regions: ['RUINS'] }] })).not.toBeNull();
+  });
+});
+
+describe('C17: what a person reads is plain words, and names come from the world\'s own lists', () => {
+  it('the model is never asked for a name: not the world\'s, not a ground\'s', () => {
+    const ground = PASS_SCHEMAS.ground as any;
+    expect(Object.keys(ground.properties)).not.toContain('name');
+    expect(Object.keys(ground.properties.regions.items.properties)).not.toContain('name');
+  });
+
+  it('a code word cannot be written where a person reads: in a name piece, in what a thing is, in a ground', async () => {
+    const seen: { pass: WorldPassId; ask: IPassAsk; data: any }[] = [];
+    const { door } = scriptedDoor();
+    await write(async (pass, ask) => { const o = await door(pass, ask); seen.push({ pass, ask, data: o.data }); return o; });
+    const tight = (pass: WorldPassId) => buildWorldPassRequest(pass, seen.find(s => s.pass === pass)!.ask as never, {}).tight;
+    const data = (pass: WorldPassId) => seen.find(s => s.pass === pass)!.data;
+    expect(fits(tight('ground'), { ...data('ground'), prefixes: ['drowned_flat'] })).not.toBeNull();
+    expect(fits(tight('ground'), { ...data('ground'), prefixes: ['Drowned'] })).toBeNull();
+    expect(fits(tight('ground'), { ...data('ground'), prefixes: ['drowned'] })).not.toBeNull();
+    expect(fits(tight('fauna'), { ...data('fauna'), fauna: [{ is: 'line_pigeon', tags: ['vacuum'], social: true, builds: false, regions: ['RUINS'] }] })).not.toBeNull();
+    expect(fits(tight('terrain'), { ...data('terrain'), skilled: { ...data('terrain').skilled, ground: 'rising_slope' } })).not.toBeNull();
+  });
+
+  it('a name drawn from pieces in lowercase still reads as a name: a capital first', async () => {
+    const { door } = scriptedDoor({
+      ground: () => ({
+        premise: 'A moon with no air.', regions: BIOMES.map(b => ({ biome: b, blurb: 'Gray, and still.' })),
+        without: ['trees'], prefixes: ['chron', 'ferri'], suffixes: ['gloom', 'basin', 'cog'], words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' }]
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    for (const name of [out.body!.name, ...out.body!.regions.map(r => r.name)]) expect(name, name).toMatch(/^(Chron|Ferri)( (Chron|Ferri))*(gloom|basin|cog)$/);
+  });
+
+  // Found on the real run: pieces came with hyphens ("Orchard- Mire-scape"), and a well run dry numbered a name ("Stil Mech Orch 4")
+  it('a name is letters, never a number: a well that runs dry adds a prefix, and a stray hyphen is shed', async () => {
+    const { door } = scriptedDoor({
+      ground: () => ({
+        premise: 'A moon with no air.', regions: BIOMES.map(b => ({ biome: b, blurb: 'Gray, and still.' })),
+        without: ['trees'], prefixes: ['Gray-'], suffixes: ['-moth'], words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' }]
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const pool = new Set(poolOf([FIRST_THEME_PACK]).map(e => String(e.entry.name)));
+    const drawn = [out.body!.name, ...out.body!.regions.map(r => r.name), ...[...out.body!.creatures, ...out.body!.materials, ...out.body!.junk!].map(x => x.name).filter(n => !pool.has(n))];
+    expect(drawn.length).toBeGreaterThan(10);
+    for (const name of drawn) expect(name, name).toMatch(/^Gray( Gray)*moth$/);
+    expect(new Set(drawn).size).toBe(drawn.length);
+    const tight = buildWorldPassRequest('ground', { pass: 'ground' }, {}).tight as any;
+    expect(fits(tight.properties.prefixes, ['Orchard-'])).not.toBeNull();
+    expect(fits(tight.properties.suffixes, ['scape'])).toBeNull();
+  });
+
+  it('a code word that gets past a schema is refused, and the pass asked again', async () => {
+    const { door, asks } = scriptedDoor({
+      fauna: (ask, n) => ({
+        picked: [],
+        fauna: [
+          { is: n === 1 ? 'line_pigeon' : 'a pigeon that flies in lines', tags: ['vacuum'], social: true, builds: false, regions: ALL },
+          { is: 'a glass hound that runs the rim', tags: ['vacuum'], social: true, builds: false, regions: ALL }
+        ],
+        words: []
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const fauna = asks.filter(a => a.pass === 'fauna');
+    expect(fauna.length).toBe(2);
+    expect(fauna[1].refused).toContain('line_pigeon');
+    expect(out.body!.creatures.some(c => c.blurb.includes('_'))).toBe(false);
+  });
+
+  // The cause of "cloth": the crossing was held to the registered words, "climb" is not one, and a grammar that let
+  // "cl" begin could only end it as "clip" or "cloth". The crossing is now the word, registered with it when new
+  it('the skilled ground is crossed with the word the model means, registered with it when the registry lacks it', async () => {
+    const shipped = SHIPPED_WORDS;
+    expect(shipped.has('climb')).toBe(false);
+    expect([...shipped].filter(w => w.startsWith('cl')).sort()).toEqual(['clip', 'cloth']);
+    const seen: { pass: WorldPassId; ask: IPassAsk }[] = [];
+    const { door } = scriptedDoor({
+      ground: () => ({
+        premise: 'A moon with no air.', regions: BIOMES.map(b => ({ biome: b, blurb: 'Gray, and still.' })),
+        without: [], prefixes: ['Gray', 'Pale'], suffixes: ['moth', 'drift', 'glass'], words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }]
+      }),
+      terrain: () => ({
+        impassable: { pick: '', ground: 'tunnels', blurb: 'Old bores.', crossing: '' },
+        skilled: { pick: '', ground: 'a sheer crater rim', blurb: 'Cold.', crossing: { tag: 'rimclimb', kind: 'action', meaning: 'Getting up a crater rim.' } },
+        words: []
+      })
+    });
+    const out = await write(async (pass, ask) => { seen.push({ pass, ask }); return door(pass, ask); });
+    expect(out.ok, out.reason).toBe(true);
+    const skilled = out.body!.terrain!.find(t => t.role === 'skilled')!;
+    expect(skilled.crossing).toBe('rimclimb');
+    expect(out.body!.tags.find(t => t.tag === 'rimclimb')?.meaning).toBe('Getting up a crater rim.');
+    // The tight schema takes a word the registry lacks: it is no longer narrowed to the registered ones
+    const terrainAsk = seen.find(s => s.pass === 'terrain')!.ask;
+    const tight = buildWorldPassRequest('terrain', terrainAsk as never, {}).tight as any;
+    expect(fits(tight.properties.skilled.properties.crossing, { tag: 'climb', kind: 'action', meaning: 'Getting up and over.' })).toBeNull();
+    expect(tight.properties.skilled.properties.crossing.enum).toBeUndefined();
   });
 });

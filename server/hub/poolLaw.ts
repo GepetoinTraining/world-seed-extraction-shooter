@@ -10,7 +10,7 @@
  */
 import { schemaProblem } from '../../shared/logic/content/SchemaFit';
 import { LOOT_SCHEMA, LootLaw, sealLoot, type ILootTable, type ILootWords } from '../../shared/logic/theme/LootLaw';
-import { PASS_SCHEMAS, WORLD_PASSES, type WorldPassId } from '../../shared/logic/theme/writing/WorldPasses';
+import { PASS_SCHEMAS, WORLD_ASKS, type WorldPassId } from '../../shared/logic/theme/writing/WorldPasses';
 import { ChainWeb } from '../../shared/logic/theme/ChainWeb';
 import type { IThemeBody } from '../../shared/logic/theme/ThemeTypes';
 
@@ -27,7 +27,7 @@ function picksOf(answer: any): string[] {
 
 export function judgePass(body: any, data: unknown): Judged {
   const pass = body?.pass as WorldPassId;
-  if (!WORLD_PASSES.includes(pass)) return no('A world is written in no such pass.');
+  if (!WORLD_ASKS.includes(pass)) return no('A world is written in no such pass.');
   const shape = schemaProblem(PASS_SCHEMAS[pass], data);
   if (shape) return no(shape);
   const offered = new Set(Object.values((body?.ask?.offered ?? {}) as Record<string, { id: string }[]>).flatMap(list => (Array.isArray(list) ? list.map(e => e?.id) : [])));

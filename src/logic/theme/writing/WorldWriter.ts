@@ -25,8 +25,8 @@ import {
 } from '../../../../shared/logic/theme/ThemeTypes';
 import { FLORA_FORMS, IPoolEntry, IPull, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from '../../../../shared/logic/theme/writing/WorldPool';
 import {
-  IDressingAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILifeAnswer, IMadeAnswer, IPassAnswers, IPeopleAnswer, ITerrainAnswer,
-  IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
+  IDressingAnswer, IFaunaAnswer, IFloraAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILack, ILackAnswer, IMadeAnswer, IPassAnswers,
+  IPeopleAnswer, ITerrainAnswer, IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
 } from '../../../../shared/logic/theme/writing/WorldPasses';
 
 /** A pass refused once is asked once more, told why. A guard on the bill, like the chain's. */
@@ -42,6 +42,8 @@ export interface IPassAsk {
   offered: Record<string, { id: string; is: string }[]>;
   /** Words this world has registered so far. */
   words: string[];
+  /** C16: what the world still lacks that the pool could not give, when that is what is asked. */
+  lack?: ILack;
   refused?: string;
 }
 
@@ -114,25 +116,40 @@ class NameWell {
     return well;
   }
 
-  private join(a: string, b: string) {
-    return /^[a-z]/.test(b) ? `${a}${b}` : `${a} ${b}`;
+  /** A piece reads as a word: its first letter a capital, whatever case it came in. */
+  private word(piece: string) { return piece.charAt(0).toUpperCase() + piece.slice(1); }
+
+  private join(head: string[], suffix: string) {
+    const last = head.length - 1;
+    const words = head.map(p => this.word(p));
+    // A suffix in lowercase grows onto the piece before it; one in capitals stands as its own word
+    words[last] = /^[a-z]/.test(suffix) ? `${words[last]}${suffix}` : `${words[last]} ${suffix}`;
+    return words.join(' ');
   }
 
-  draw(key: string): string {
-    const combos: string[] = [];
-    for (const p of this.prefixes) for (const s of this.suffixes) combos.push(this.join(p, s));
-    // Exhausted, the lists still name: a second prefix before the first
-    for (const p of this.prefixes) for (const q of this.prefixes) if (p !== q) for (const s of this.suffixes) combos.push(this.join(`${p} ${q}`, s));
-    const start = combos.length ? fnv1a(`${this.seed}:name:${key}`) % combos.length : 0;
-    for (let i = 0; i < combos.length; i++) {
-      const name = combos[(start + i) % combos.length];
-      if (!this.taken.has(name.toLowerCase())) { this.take(name); return name; }
+  /** Every run of `depth` prefixes, none the same twice in a row unless the list holds only one. */
+  private heads(depth: number): string[][] {
+    let runs: string[][] = [[]];
+    for (let i = 0; i < depth; i++) {
+      runs = runs.flatMap(run => this.prefixes.filter(p => this.prefixes.length === 1 || p !== run[run.length - 1]).map(p => [...run, p]));
     }
-    let n = 2;
-    const base = combos[start] ?? key;
-    while (this.taken.has(`${base} ${n}`.toLowerCase())) n++;
-    this.take(`${base} ${n}`);
-    return `${base} ${n}`;
+    return runs;
+  }
+
+  /**
+   * The shortest free name first: one prefix and one suffix, then two prefixes, and on. The lists never run out,
+   * so a name never needs a number (C17): each depth holds names the one before it does not.
+   */
+  draw(key: string): string {
+    if (this.prefixes.length === 0 || this.suffixes.length === 0) return key;
+    const at = fnv1a(`${this.seed}:name:${key}`);
+    for (let depth = 1; ; depth++) {
+      const combos = this.heads(depth).flatMap(head => this.suffixes.map(s => this.join(head, s)));
+      for (let i = 0; i < combos.length; i++) {
+        const name = combos[(at + i) % combos.length];
+        if (!this.taken.has(name.toLowerCase())) { this.take(name); return name; }
+      }
+    }
   }
 }
 
@@ -376,6 +393,8 @@ function worldSoFar(d: Draft): Record<string, unknown> {
 }
 
 const regionsOk = (regions: string[]) => Array.isArray(regions) && regions.length > 0 && regions.every(isBiome);
+/** C17: what a person reads of a thing is plain words. A code word is refused, and the model says it again. */
+const codeWord = (text: string | undefined) => /_/.test(text ?? '');
 
 export async function writeWorld(said: string, o: IWriteOptions): Promise<IWriteResult> {
   const d = new Draft(o);
@@ -413,20 +432,23 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
 
   const folds: { [P in WorldPassId]: (a: IPassAnswers[P], pass: P) => Promise<Refusal | null> } = {
     ground: async (a: IGroundAnswer) => {
-      if (!a?.name?.trim() || !a.premise?.trim()) return refuse('the world needs a name and a premise.');
+      if (!a?.premise?.trim()) return refuse('the world needs a premise.');
       const regions = BIOMES.map(b => (a.regions ?? []).find(r => r.biome === b));
-      const missing = BIOMES.find((b, i) => !regions[i]?.name?.trim());
-      if (missing) return refuse(`nothing says what the ${missing} ground is called in this world.`);
+      const missing = BIOMES.find((b, i) => !regions[i]?.blurb?.trim());
+      if (missing) return refuse(`nothing says what the ${missing} ground is like in this world.`);
       const clean = (xs: string[]) => [...new Set((xs ?? []).map(x => (x ?? '').trim()).filter(x => x && !/\d/.test(x)))];
-      const prefixes = clean(a.prefixes), suffixes = clean(a.suffixes);
-      if (prefixes.length === 0 || suffixes.length === 0) return refuse('names come from the world\'s prefixes and suffixes, and a list is empty.');
+      // A piece a name is made of is a sound of this world, never a code word (C17)
+      const pieces = (xs: string[]) => [...new Set(clean(xs).filter(x => !codeWord(x)).map(x => x.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, '')).filter(Boolean))];
+      const prefixes = pieces(a.prefixes), suffixes = pieces(a.suffixes);
+      if (prefixes.length === 0 || suffixes.length === 0) return refuse('names come from the world\'s prefixes and suffixes, each a sound in plain letters, and a list is empty.');
       const w = d.addWords(a.words);
       if (w) return w;
-      d.body.name = a.name.trim();
       d.body.premise = a.premise.trim();
-      d.body.regions = regions.map(r => ({ biome: r!.biome as IThemeBody['regions'][number]['biome'], name: r!.name.trim(), blurb: (r!.blurb ?? '').trim() }));
       d.without = clean(a.without);
       d.names = new NameWell(prefixes, suffixes, o.seed);
+      // C17: the model names nothing, the world and its grounds included: every name is drawn from its own lists
+      d.body.name = d.names.draw('world');
+      d.body.regions = regions.map(r => ({ biome: r!.biome as IThemeBody['regions'][number]['biome'], name: d.names.draw(`region:${r!.biome}`), blurb: r!.blurb.trim() }));
       return null;
     },
 
@@ -443,7 +465,14 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
           continue;
         }
         if (!ans.ground?.trim()) return refuse(`the ${role} ground is not called anything.`);
-        const crossing = role === 'skilled' ? (ans.crossing ?? '').trim() : '';
+        if (codeWord(ans.ground)) return refuse(`say what the ${role} ground is in plain words: "${ans.ground}" reads as a code word.`);
+        // C17: the skilled crossing may come with its meaning, and is registered with it when it is new
+        const said = ans.crossing as string | IWord | undefined;
+        if (role === 'skilled' && said && typeof said === 'object') {
+          const w = d.addWords([said]);
+          if (w) return w;
+        }
+        const crossing = role === 'skilled' ? (typeof said === 'object' ? said?.tag ?? '' : said ?? '').trim() : '';
         if (role === 'skilled' && !(TagLaw.isCanonicalSpelling(crossing) && d.known(crossing))) {
           return refuse(`the ${ans.ground} is crossed with a skill, and "${crossing}" is not a registered word. Register it in "words".`);
         }
@@ -454,27 +483,32 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       return null;
     },
 
-    life: async (a: ILifeAnswer) => {
+    // C15: what grows, then what lives, each its own ask
+    flora: async (a: IFloraAnswer) => {
       const w = d.addWords(a?.words ?? []);
       if (w) return w;
-      const p = pickAll(a?.picked ?? [], ['flora', 'fauna']);
+      const p = pickAll(a?.picked ?? [], ['flora']);
       if (p) return p;
       for (const f of a?.flora ?? []) {
-        if (!f.is?.trim() || !(FLORA_FORMS as readonly string[]).includes(f.form) || !regionsOk(f.regions)) return refuse('a new plant needs what it is, a form that grows, and where it lives.');
-        const t = d.unknown(f.tags);
-        if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+        const bad = plantRefused(f);
+        if (bad) return bad;
         { const r = await fromPool('flora', f.is, f.regions); if (typeof r === 'object') return r; if (r) continue; }
-        addMaterial(f.is, f.form, f.tags, f.regions, 'life');
+        addMaterial(f.is, f.form, f.tags, f.regions, 'flora');
       }
-      // Fauna is one field: what is dangerous is rolled, never written
+      return null;
+    },
+
+    // Fauna is one field: what is dangerous is rolled, never written
+    fauna: async (a: IFaunaAnswer) => {
+      const w = d.addWords(a?.words ?? []);
+      if (w) return w;
+      const p = pickAll(a?.picked ?? [], ['fauna']);
+      if (p) return p;
       for (const f of a?.fauna ?? []) {
-        if (!f.is?.trim() || !regionsOk(f.regions)) return refuse('a new creature needs what it is and where it lives.');
-        if (!f.tags?.length) return refuse('a new creature carries at least one word, so it leaves something when it falls.');
-        const t = d.unknown(f.tags);
-        if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
-        if (f.tags.some(x => ['elite', 'boss', 'titan', 'god'].includes(x))) return refuse('who leads, and who is one of a kind, is decided by code, never written.');
+        const bad = creatureRefused(f);
+        if (bad) return bad;
         { const r = await fromPool('fauna', f.is, f.regions); if (typeof r === 'object') return r; if (r) continue; }
-        addCreature(f.is, f.tags, !!f.social, !!f.builds, f.regions, 'life');
+        addCreature(f.is, f.tags, !!f.social, !!f.builds, f.regions, 'fauna');
       }
       return null;
     },
@@ -486,6 +520,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       if (p) return p;
       for (const pr of a?.professions ?? []) {
         if (!pr.is?.trim() || !pr.workshop?.trim() || !TagLaw.isCanonicalSpelling(pr.concept ?? '')) return refuse('a trade needs what it is, its concept as one lower_snake_case word, and its workshop.');
+        if (codeWord(pr.is) || codeWord(pr.workshop)) return refuse(`say what "${pr.is}" is and where it works in plain words, not code words.`);
         if (!pr.tool?.length || !pr.material?.length) return refuse(`${pr.is} connects no tool or no material (D25).`);
         const t = d.unknown([...pr.tool, ...pr.material]);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
@@ -504,6 +539,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       if (p) return p;
       for (const m of a?.minerals ?? []) {
         if (!m.is?.trim() || !(MINERAL_FORMS as readonly string[]).includes(m.form) || !regionsOk(m.regions)) return refuse('a new thing in the ground needs what it is, a form it lies in, and where.');
+        if (codeWord(m.is)) return refuse(`say what "${m.is}" is in plain words, not a code word.`);
         const t = d.unknown(m.tags);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('minerals', m.is, m.regions); if (typeof r === 'object') return r; if (r) continue; }
@@ -511,6 +547,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       }
       for (const j of a?.junk ?? []) {
         if (!j.is?.trim() || !j.from?.length) return refuse('junk needs what it is and the creature words it comes from.');
+        if (codeWord(j.is)) return refuse(`say what "${j.is}" is in plain words, not a code word.`);
         const t = d.unknown([...j.tags, ...j.from]);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('junk', j.is); if (typeof r === 'object') return r; if (r) continue; }
@@ -518,12 +555,11 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       }
       for (const an of a?.anchors ?? []) {
         if (!an.is?.trim() || !regionsOk(an.regions)) return refuse('a thing of worth needs what it is and where it is found.');
+        if (codeWord(an.is)) return refuse(`say what "${an.is}" is in plain words, not a code word.`);
         const t = d.unknown(an.tags);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('anchors', an.is, an.regions); if (typeof r === 'object') return r; if (r) continue; }
-        const { name, key } = d.fresh('anchor');
-        const rng = d.rng('anchor', d.added);
-        d.body.anchors!.push({ key, name, blurb: an.is.trim(), tags: an.tags, rank: d.rank(rng), weight: rng.pick([...WEIGHTS]), worth: rng.pick([...WORTHS]), foundIn: [...new Set(an.regions)] as IThemeAnchor['foundIn'] });
+        addAnchor(an.is, an.tags, an.regions, 'anchor');
       }
       return null;
     },
@@ -538,8 +574,78 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       if (lore.some(l => /\d/.test(l))) return refuse('lore is words, and a line has a number in it.');
       d.body.lore = lore;
       return null;
+    },
+
+    // C16: what the law asks and the pool could not give, the model adds; the need decides what it is for
+    lack: async (a: ILackAnswer) => {
+      const lack = asked!;
+      const w = d.addWords(a?.words ?? []);
+      if (w) return w;
+      const where = (regions: string[]) => [...new Set([...(regions ?? []), ...(lack.regions ?? [])])];
+      const items = (a?.[lack.list] ?? []) as unknown[];
+      if (items.length === 0) return refuse(`this world still lacks something to ${lack.need}, and nothing was added in "${lack.list}".`);
+      if (lack.list === 'fauna') {
+        for (const f of items as IFaunaAnswer['fauna']) {
+          const bad = creatureRefused({ ...f, regions: where(f.regions) });
+          if (bad) return bad;
+          const c = addCreature(f.is, f.tags, lack.role === 'lead' || !!f.social, !!f.builds, where(f.regions), 'lack');
+          if (lack.role === 'monster' || lack.role === 'animal') {
+            const threat = lack.role === 'monster' ? 'deadly' : 'meek';
+            Object.assign(c, { threat, ...temperOf(threat) });
+            if (c.tree === 'animal') c.builds = false;
+          }
+          if (lack.role === 'start') c.rank = 'F';
+        }
+      }
+      if (lack.list === 'materials') {
+        for (const m of items as ILackAnswer['materials']) {
+          const forms = [...FLORA_FORMS, ...MINERAL_FORMS] as readonly string[];
+          if (!m.is?.trim() || !forms.includes(m.form) || !regionsOk(where(m.regions))) return refuse('a new material needs what it is, the form it takes, and where.');
+          if (codeWord(m.is)) return refuse(`say what "${m.is}" is in plain words, not a code word.`);
+          if (ruledOut({ text: m.is }, d.without)) return refuse(`"${m.is}" is something this world is without.`);
+          const t = d.unknown(m.tags);
+          if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+          const tags = lack.role === 'building' ? [...new Set([...(m.tags ?? []), 'building'])] : m.tags;
+          addMaterial(m.is, m.form, tags, where(m.regions), 'lack');
+        }
+      }
+      if (lack.list === 'anchors') {
+        for (const an of items as ILackAnswer['anchors']) {
+          if (!an.is?.trim() || !regionsOk(where(an.regions))) return refuse('a thing of worth needs what it is and where it is found.');
+          if (codeWord(an.is)) return refuse(`say what "${an.is}" is in plain words, not a code word.`);
+          const t = d.unknown(an.tags);
+          if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+          addAnchor(an.is, an.tags, where(an.regions), 'lack');
+        }
+      }
+      if (lack.list === 'gear') {
+        for (const g of items as ILackAnswer['gear']) {
+          if (!g.is?.trim() || codeWord(g.is)) return refuse('a new piece needs what it is, in plain words.');
+          if (lack.kinds?.length && !lack.kinds.includes(g.kind)) return refuse(`"${g.kind}" does not ${lack.need}: it is one of ${lack.kinds.join(', ')}.`);
+          if (ruledOut({ text: g.is }, d.without)) return refuse(`"${g.is}" is something this world is without.`);
+          addGear(g.is, g.kind);
+        }
+      }
+      return null;
     }
   } as never;
+
+  const plantRefused = (f: IFloraAnswer['flora'][number]): Refusal | null => {
+    if (!f.is?.trim() || !(FLORA_FORMS as readonly string[]).includes(f.form) || !regionsOk(f.regions)) return refuse('a new plant needs what it is, a form that grows, and where it lives.');
+    if (codeWord(f.is)) return refuse(`say what "${f.is}" is in plain words, not a code word.`);
+    const t = d.unknown(f.tags);
+    return t ? refuse(`"${t}" is not a registered word. Register it in "words".`) : null;
+  };
+
+  const creatureRefused = (f: IFaunaAnswer['fauna'][number]): Refusal | null => {
+    if (!f.is?.trim() || !regionsOk(f.regions)) return refuse('a new creature needs what it is and where it lives.');
+    if (codeWord(f.is)) return refuse(`say what "${f.is}" is in plain words, not a code word.`);
+    if (!f.tags?.length) return refuse('a new creature carries at least one word, so it leaves something when it falls.');
+    const t = d.unknown(f.tags);
+    if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+    if (f.tags.some(x => ['elite', 'boss', 'titan', 'god'].includes(x))) return refuse('who leads, and who is one of a kind, is decided by code, never written.');
+    return null;
+  };
 
   const addMaterial = (is: string, form: string, tags: string[], regions: string[], pass: string) => {
     const { name, key } = d.fresh('material');
@@ -556,11 +662,27 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     const rng = d.rng(pass, d.added);
     const threat = rng.pick([...THREATS]);
     const { behavior, tree } = temperOf(threat);
-    d.body.creatures.push({
+    const c: IThemeCreature = {
       key, name, blurb: is.trim(), tags, rank: d.rank(rng), size: rng.pick([...SIZES]), behavior,
       build: rng.pick([...BUILDS]), threat, pace: rng.pick([...PACES]),
       habitat: [...new Set(regions)] as IThemeCreature['habitat'], innate: [], tree, social, builds: tree === 'animal' ? false : builds, leads: ''
-    });
+    };
+    d.body.creatures.push(c);
+    return c;
+  };
+
+  const addAnchor = (is: string, tags: string[], regions: string[], pass: string) => {
+    const { name, key } = d.fresh('anchor');
+    const rng = d.rng(pass, d.added);
+    d.body.anchors!.push({ key, name, blurb: is.trim(), tags: tags ?? [], rank: d.rank(rng), weight: rng.pick([...WEIGHTS]), worth: rng.pick([...WORTHS]), foundIn: [...new Set(regions)] as IThemeAnchor['foundIn'] });
+  };
+
+  /** A piece the pool could not give: found, never made here, rank F, a beginner's. A tool answers what its verb works here. */
+  const addGear = (is: string, kind: string) => {
+    const { name, key } = d.fresh('gear');
+    const verb = kind.endsWith('_tool') ? kind.slice(0, -'_tool'.length) : '';
+    const works = verb ? [...new Set(d.body.materials.filter(m => m.verb === verb).flatMap(m => m.tags))] : [];
+    d.body.gear.push({ key, name, blurb: is.trim(), kind: kind as IThemeGear['kind'], rank: 'F', tags: [], works, carries: '', trigger: '', from: [], craftAt: 'none' });
   };
 
   const addJunk = (is: string, tags: string[], from: string[], pass: string): string => {
@@ -571,9 +693,13 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
   };
 
   // ---------------------------------------------------------------- the passes
-  for (let i = 0; i < WORLD_PASSES.length; i++) {
-    const pass = WORLD_PASSES[i];
+  /** The need a lack ask is out for (C16). */
+  let asked: ILack | undefined;
+
+  /** One pass, asked again once if refused. The failure, or null when it stood. */
+  const runPass = async (pass: WorldPassId, i: number, lack?: ILack): Promise<IWriteResult | null> => {
     o.onPass?.(pass, i);
+    asked = lack;
     const offered: IPassAsk['offered'] = {};
     for (const list of PASS_PULLS[pass]) {
       // Nothing is offered that the fold would refuse to bring: what it stands on is ruled out too (C1)
@@ -588,7 +714,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     let spent = 0;
     while (!done && tries < PASS_TRIES) {
       tries++;
-      const out = await o.door(pass, { pass, said, world: worldSoFar(d), offered, words: d.words(), ...(refused ? { refused } : {}) });
+      const out = await o.door(pass, { pass, said, world: worldSoFar(d), offered, words: d.words(), ...(lack ? { lack } : {}), ...(refused ? { refused } : {}) });
       usage = sum(usage, out.usage);
       spent += out.usage?.usd ?? 0;
       if (out.status !== 'OK' || !out.data) {
@@ -607,11 +733,24 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     }
     passes.push({ pass, tries, picked: d.picked - before.picked, added: d.added - before.added, takenFromPool: d.takenFromPool - before.pool, usd: spent });
     if (!done) return { ok: false, pass, reason: `Refused twice: ${refused}`, usage, passes };
+    return null;
+  };
+
+  for (let i = 0; i < WORLD_PASSES.length; i++) {
+    const failed = await runPass(WORLD_PASSES[i], i);
+    if (failed) return failed;
   }
 
   // ---------------------------------------------------------------- the floors
-  const floor = await floors(d, o, query(), embedder, addJunk);
-  if (floor) return { ok: false, reason: floor, usage, passes };
+  // C16: what the pool cannot give is never a refusal: the model adds it, one need an ask, and the floors are read again.
+  // A need met stays met (the fold makes what is added meet it), so this ends when the floors are whole
+  for (let lack = await floors(d, o, query(), embedder, addJunk), last = ''; lack; lack = await floors(d, o, query(), embedder, addJunk)) {
+    const key = JSON.stringify(lack);
+    if (key === last) return { ok: false, pass: 'lack', reason: `the world still lacks something to ${lack.need}.`, usage, passes };
+    last = key;
+    const failed = await runPass('lack', WORLD_PASSES.length, lack);
+    if (failed) return failed;
+  }
 
   const verdict = ThemeLaw.validate(d.body, tag => d.known(tag));
   if (!verdict.ok) return { ok: false, reason: verdict.reason ?? 'The law refused it.', usage, passes };
@@ -620,17 +759,18 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
 
 /**
  * What the law asks of every world, filled by code from the pool, nearest to the theme first.
- * Who leads is code's to decide (D93), and so is every band. Returns why it could not, or null.
+ * Who leads is code's to decide (D93), and so is every band. Returns the first thing the pool
+ * could not give, for the model to add (C16), or null when the floors are whole.
  */
-async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbedder, addJunk: (is: string, tags: string[], from: string[], pass: string) => string): Promise<string | null> {
+async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbedder, addJunk: (is: string, tags: string[], from: string[], pass: string) => string): Promise<ILack | null> {
   const b = d.body;
   const nearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean) => {
     const all = await o.pull.near(list, query, d.without);
     return all.find(e => ok(e) && !d.bringsRuledOut(e));
   };
-  const bringNearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean, why: string): Promise<string | null> => {
+  const bringNearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean, lack: ILack): Promise<ILack | null> => {
     const e = await nearest(list, ok);
-    if (!e) return `nothing in the pool could ${why}.`;
+    if (!e) return lack;
     d.bring(e);
     return null;
   };
@@ -645,7 +785,7 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
     const other = b.creatures.filter(c => added(c) && b.creatures.filter(x => x.tree === c.tree).length > 1)[0];
     if (other) Object.assign(other, { threat, ...temperOf(threat), builds: tree === 'animal' ? false : other.builds });
     else {
-      const why = await bringNearest('fauna', e => entry<IThemeCreature>(e).tree === tree, `give it ${tree === 'monster' ? 'something dangerous' : 'something harmless'}`);
+      const why = await bringNearest('fauna', e => entry<IThemeCreature>(e).tree === tree, { need: `give it ${tree === 'monster' ? 'something dangerous' : 'something harmless'}`, list: 'fauna', role: tree });
       if (why) return why;
     }
   }
@@ -655,7 +795,7 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
     const own = b.creatures.find(c => c.innate.length === 0 && c.tree === 'animal') ?? b.creatures[0];
     if (own) own.rank = 'F';
     else {
-      const why = await bringNearest('fauna', e => ['F', 'E'].includes(entry<IThemeCreature>(e).rank), 'give it something to start on');
+      const why = await bringNearest('fauna', e => ['F', 'E'].includes(entry<IThemeCreature>(e).rank), { need: 'give it something to start on', list: 'fauna', role: 'start' });
       if (why) return why;
     }
   }
@@ -668,7 +808,7 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
       const step = Math.min(RANKS.length - 1, RANKS.indexOf(led.rank) + 1);
       b.creatures.push({ ...led, key, name, blurb: `What leads the ${led.name}.`, tags: [...led.tags, 'elite'], rank: RANKS[step], leads: led.key, build: 'massive' });
     } else {
-      const why = await bringNearest('fauna', e => isPlainElite(entry<IThemeCreature>(e)) && !!entry<IThemeCreature>(e).social, 'lead a pack');
+      const why = await bringNearest('fauna', e => isPlainElite(entry<IThemeCreature>(e)) && !!entry<IThemeCreature>(e).social, { need: 'lead a pack, living in a group', list: 'fauna', role: 'lead' });
       if (why) return why;
     }
   }
@@ -682,32 +822,33 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
   }
 
   // The gear that takes a person out and back
-  const gearNeeds: [string, (g: IThemeGear) => boolean][] = [
-    ['arm a beginner', g => WEAPON_KINDS.includes(g.kind) && g.rank === 'F'],
-    ['dress a beginner', g => ARMOR_KINDS.includes(g.kind) && g.rank === 'F'],
-    ['shoe a beginner', g => g.kind === 'feet' && g.rank === 'F']
+  const gearNeeds: [string, string[]][] = [
+    ['arm a beginner', WEAPON_KINDS],
+    ['dress a beginner', ARMOR_KINDS],
+    ['shoe a beginner', ['feet']]
   ];
-  for (const [why, ok] of gearNeeds) {
+  for (const [need, kinds] of gearNeeds) {
+    const ok = (g: IThemeGear) => kinds.includes(g.kind) && g.rank === 'F';
     if (b.gear.some(ok)) continue;
-    const no = await bringNearest('gear', e => ok(entry<IThemeGear>(e)), why);
+    const no = await bringNearest('gear', e => ok(entry<IThemeGear>(e)), { need, list: 'gear', kinds });
     if (no) return no;
   }
 
   if (!b.materials.some(m => m.tags.includes('building'))) {
     const near = await nearest('minerals', e => entry<IThemeMaterial>(e).tags.includes('building'))
       ?? await nearest('flora', e => entry<IThemeMaterial>(e).tags.includes('building'));
-    if (!near) return 'nothing in the pool could raise a wall.';
+    if (!near) return { need: 'raise a wall', list: 'materials', role: 'building' };
     d.bring(near);
   }
   if (b.anchors!.length === 0) {
-    const no = await bringNearest('anchors', () => true, 'hold value');
+    const no = await bringNearest('anchors', () => true, { need: 'hold value', list: 'anchors' });
     if (no) return no;
   }
 
   // Last, as whatever came before may stand on wood or ore: a tool for every verb the ground asks
   for (const verb of ['chop', 'mine'] as const) {
     if (!b.materials.some(m => m.verb === verb) || b.gear.some(g => g.kind === `${verb}_tool`)) continue;
-    const no = await bringNearest('gear', e => entry<IThemeGear>(e).kind === `${verb}_tool`, `${verb} what the ground holds`);
+    const no = await bringNearest('gear', e => entry<IThemeGear>(e).kind === `${verb}_tool`, { need: `${verb} what the ground holds`, list: 'gear', kinds: [`${verb}_tool`] });
     if (no) return no;
   }
 
@@ -722,12 +863,12 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
     const gatherable = b.materials.filter(m => m.restores !== 'energy');
     if (!gatherable.some(m => m.habitat.includes(region.biome))) {
       const m = await closest(gatherable);
-      if (!m) return `nothing can be gathered on the ${region.biome} ground.`;
+      if (!m) return { need: `grow or lie on the ${region.biome} ground`, list: 'materials', regions: [region.biome] };
       m.habitat = [...m.habitat, region.biome];
     }
     if (!b.creatures.some(c => c.habitat.includes(region.biome))) {
       const c = await closest(b.creatures);
-      if (!c) return `nothing lives on the ${region.biome} ground.`;
+      if (!c) return { need: `live on the ${region.biome} ground`, list: 'fauna', regions: [region.biome] };
       c.habitat = [...c.habitat, region.biome];
     }
   }
