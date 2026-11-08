@@ -23,6 +23,13 @@ import {
 } from './ThemeTypes';
 import { rankStep } from './ThemeFormula';
 import { fnv1a } from '../rng/DeterministicRNG';
+import { canonical } from './ThemeCompiler';
+
+/**
+ * The law's version. Raise it whenever `judge` reads a round differently: every refusal remembered under
+ * the old law is a new ask under the new one (C5, leg 2).
+ */
+export const CHAIN_LAW_VERSION = 1;
 
 const has = (values: readonly string[], v: string) => values.includes(v);
 
@@ -102,6 +109,18 @@ const thingKeys = (chain: IChainWeb, ground: IChainGround) => new Set<string>([
 ]);
 
 export const ChainWeb = {
+  /**
+   * What was asked, as an id: computed from the ask's inputs, the words the law registers, the law's version and
+   * the model, the way a theme's id comes from its words. The law's last answer is fed back to the model and is not
+   * an input. The same ask refused once is not sent again until one of these changes (C5).
+   */
+  askIdOf(ask: { person: unknown; ground: unknown; written: unknown; open: unknown; refused?: string }, registered: readonly string[], model: string, law = CHAIN_LAW_VERSION): string {
+    const bytes = canonical({ person: ask.person, ground: ask.ground, written: ask.written, open: ask.open, registered: [...registered].sort(), model, law });
+    const a = fnv1a(`chain:a:${bytes}`).toString(16).padStart(8, '0');
+    const b = fnv1a(`chain:b:${bytes}`).toString(16).padStart(8, '0');
+    return `chain_${a}${b}`;
+  },
+
   /** Two rounds' worth of writing, read as one. */
   merge(chain: IChainWeb, round: IChainRound, by?: string): IChainWeb {
     return {

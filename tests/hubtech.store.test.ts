@@ -57,6 +57,7 @@ import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
 import { useFeed } from '../src/components/ui/stores';
 import { IResident, readSheet } from '../src/entities/hub/guild';
 import { emptyTech } from '../src/entities/hub/hubTech';
+import { ChainWeb, CHAIN_LAW_VERSION } from '../shared/logic/theme/ChainWeb';
 import { answersTag } from '../shared/entities/hub/room';
 import { SYSTEM_TEMPLATES, validateTemplate } from '../shared/entities/hub/template';
 
@@ -544,6 +545,40 @@ describe('the door', () => {
     expect(hub().tech.chain.goods).toEqual([]);
     expect(hub().tech.resolving[resident.id].closed).toBe(false);
     expect(hub().tech.resolving[resident.id].refused).toContain('refused');
+  });
+
+  // C5 (leg 2): a refused chain was asked again on every load, 16 calls in ten days. No cap: the refusal is
+  // remembered by what was asked, and the same ask waits until something it depends on changes.
+  it('a refused ask is not sent again until what it depends on changes', async () => {
+    const bad = () => ({ tags: [], materials: [], gear: [], stations: [], goods: [{ key: 'bad', name: 'x', blurb: '', tags: [], rank: 'S', weight: 'light', trade: 'smithing', station: '', from: [{ key: 'res_tree_log', count: 1 }], makes: 1, answers: 'repair', hp: 100 }] });
+    door.status = 'OK';
+    door.calls = 0;
+    door.answers = Array.from({ length: 12 }, bad);
+    const resident = await findWorking();
+    useHubStore.setState(s => ({ tech: { ...s.tech, professions: { [resident.id]: { name: 'Fixer', blurb: '', concept: 'repair', knows: 'how to fix', workshop: 'a garage', tool: ['hammer'], material: ['metal'], rank: 'S', from: 'THEME' } }, resolving: {} } } as any));
+    await hub().resolveChains();
+    const firstPass = door.calls;
+    expect(firstPass).toBeGreaterThan(0);
+    expect(hub().tech.resolving[resident.id].refusedAsk).toMatch(/^chain_/);
+
+    // Loads with nothing changed ask nothing
+    await hub().resolveChains();
+    await hub().resolveChains();
+    expect(door.calls).toBe(firstPass);
+
+    // What the ask depends on changes (here the person's concept, as a new theme would): it is a new ask
+    useHubStore.setState(s => ({ tech: { ...s.tech, professions: { [resident.id]: { ...s.tech.professions[resident.id], concept: 'mending' } } } } as any));
+    await hub().resolveChains();
+    expect(door.calls).toBeGreaterThan(firstPass);
+  });
+
+  it('the id of an ask is computed from its inputs, the law\'s version and the model, and from nothing else', () => {
+    const ask = { person: { name: 'Fixer', concept: 'repair' }, ground: { things: ['a'], stations: [], tools: [] }, written: { words: [], things: [], stations: [] }, open: [{ key: 'repair' }] };
+    const id = ChainWeb.askIdOf(ask as never, ['metal', 'wood'], 'gemma');
+    expect(ChainWeb.askIdOf({ ...ask, refused: 'whatever the law said' } as never, ['wood', 'metal'], 'gemma')).toBe(id);
+    expect(ChainWeb.askIdOf(ask as never, ['metal', 'wood'], 'claude-haiku')).not.toBe(id);
+    expect(ChainWeb.askIdOf(ask as never, ['metal', 'wood', 'glass'], 'gemma')).not.toBe(id);
+    expect(ChainWeb.askIdOf(ask as never, ['metal', 'wood'], 'gemma', CHAIN_LAW_VERSION + 1)).not.toBe(id);
   });
 });
 
