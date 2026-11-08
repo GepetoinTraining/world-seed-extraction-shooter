@@ -1369,6 +1369,19 @@ describe('Q20: after the house, their wallet is paid for work and pays for livin
     await hub().loadHub(HUB);
     expect(residentOf(resident.id).livedDay).toBe(worldDay() + 2);
   });
+
+  // C4 (leg 2), by Q39: over two days in the city Orrin's food went unpaid and no meeting with the feeder was
+  // queued; the next load made the days up at once. The midnight fold folds their living too.
+  it('the midnight fold, while the person stays in the city, folds their living as a load would', async () => {
+    const resident = await residentNamed();
+    const day = worldDay();
+    const wallet = hub().wallets[resident.id];
+    vi.spyOn(Date, 'now').mockImplementation(() => (day + 1) * 86_400_000 + 1_000);
+    await hub().turnTheDay();
+    expect(residentOf(resident.id).livedDay).toBe(day + 1);
+    expect(hub().wallets[resident.id]).toBe(wallet - livingPerDay(resident.bond.rank));
+    expect((await GoldAudit.run(usePlayerStore.getState().player)).ok).toBe(true);
+  });
 });
 
 describe('Q20: walked to by goals', () => {

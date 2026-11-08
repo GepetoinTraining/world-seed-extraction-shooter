@@ -830,6 +830,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   turnTheDay: async () => {
     if (!get().activeHubId) return;
     await get().resolveRunning();
+    // Q39 (C4, leg 2): a person's living is a day's fold like the rest, in the order a load folds it
+    await get().resolveLiving();
     await get().resolveVendors();
     await get().resolveUpkeep();
     await get().resolveWants();
