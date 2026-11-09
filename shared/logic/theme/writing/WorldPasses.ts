@@ -3,7 +3,7 @@
  * "geography, water and mountains, where fauna and flora are, it's multiple passes, don't
  * choke a model"). Each pass is one small ask, given what the earlier passes made. Fauna
  * is one field, animals and monsters together ("fauna connects animal and monster"): the
- * life pass places it all, and code rolls which of it is aggressive.
+ * fauna pass places it all, and code rolls which of it is aggressive.
  *
  * Every schema here is small enough to compile on its own: every field required, no
  * unions, a handful of enums. Nothing in one is a number, a stat or what a thing does.
@@ -11,32 +11,39 @@
  * names come from the world's own prefix and suffix lists.
  */
 
-import { BIOMES } from '../ThemeTypes';
+import { BIOMES, GEAR_KINDS } from '../ThemeTypes';
 import { FLORA_FORMS, MINERAL_FORMS, PoolList } from './WorldPool';
 
-export const WORLD_PASSES = ['ground', 'terrain', 'life', 'people', 'holds', 'made', 'known'] as const;
-export type WorldPassId = typeof WORLD_PASSES[number];
+/** C15: what grows and what lives are two passes, the second given what the first made, so neither ask runs past its room. */
+export const WORLD_PASSES = ['ground', 'terrain', 'flora', 'fauna', 'people', 'holds', 'made', 'known'] as const;
+/** Every ask a world is written in: its passes in order, and what it still lacks once the pool is read (C16). */
+export const WORLD_ASKS = [...WORLD_PASSES, 'lack'] as const;
+export type WorldPassId = typeof WORLD_ASKS[number];
 
 /** What each pass pulls from the pool, in the order it asks. */
 export const PASS_PULLS: Record<WorldPassId, PoolList[]> = {
   ground: [],
   terrain: ['terrain'],
-  life: ['flora', 'fauna'],
+  flora: ['flora'],
+  fauna: ['fauna'],
   people: ['professions'],
   holds: ['minerals', 'junk', 'anchors'],
   made: ['gear', 'goods', 'stations', 'consumables'],
-  known: ['abilities', 'affixes']
+  known: ['abilities', 'affixes'],
+  lack: []
 };
 
 /** What a person reads while a pass is out. */
 export const PASS_SAID: Record<WorldPassId, string> = {
   ground: 'THE LAY OF THE LAND',
   terrain: 'WATER AND HEIGHTS',
-  life: 'WHAT GROWS AND WHAT LIVES THERE, AND WHERE',
+  flora: 'WHAT GROWS THERE, AND WHERE',
+  fauna: 'WHAT LIVES THERE, AND WHERE',
   people: 'WHO WORKS THERE',
   holds: 'WHAT LIES IN THE GROUND',
   made: 'WHAT IS MADE AND WORN',
-  known: 'WHAT IT KNOWS, AND ITS LORE'
+  known: 'WHAT IT KNOWS, AND ITS LORE',
+  lack: 'WHAT IT STILL LACKS'
 };
 
 const str = { type: 'string' };
@@ -55,15 +62,20 @@ const PICKED_WITH_REGIONS = list({ id: str, regions: REGIONS });
 const DRESSING = obj({ pick: str, ground: str, blurb: str, crossing: str });
 
 export const PASS_SCHEMAS: Record<WorldPassId, Record<string, unknown>> = {
+  // C17: the model names nothing, the world included. Its name and every ground's are drawn from its own lists
   ground: obj({
-    name: str, premise: str,
-    regions: list({ biome: oneOf(BIOMES), name: str, blurb: str }),
+    premise: str,
+    regions: list({ biome: oneOf(BIOMES), blurb: str }),
     without: strs, prefixes: strs, suffixes: strs, words: WORDS
   }),
   terrain: obj({ impassable: DRESSING, skilled: DRESSING, words: WORDS }),
-  life: obj({
+  flora: obj({
     picked: PICKED_WITH_REGIONS,
     flora: list({ is: str, form: oneOf(FLORA_FORMS), tags: strs, regions: REGIONS }),
+    words: WORDS
+  }),
+  fauna: obj({
+    picked: PICKED_WITH_REGIONS,
     fauna: list({ is: str, tags: strs, social: bool, builds: bool, regions: REGIONS }),
     words: WORDS
   }),
@@ -81,8 +93,30 @@ export const PASS_SCHEMAS: Record<WorldPassId, Record<string, unknown>> = {
   }),
   // What is made is selected only: the tech web adds what a world's people make (D129, the chain)
   made: obj({ picked: strs }),
-  known: obj({ picked: strs, lore: strs })
+  known: obj({ picked: strs, lore: strs }),
+  // C16: what the law asks of any world and the pool cannot give, the model adds. One need an ask, the need says which list
+  lack: obj({
+    fauna: list({ is: str, tags: strs, social: bool, builds: bool, regions: REGIONS }),
+    materials: list({ is: str, form: oneOf([...FLORA_FORMS, ...MINERAL_FORMS]), tags: strs, regions: REGIONS }),
+    anchors: list({ is: str, tags: strs, regions: REGIONS }),
+    gear: list({ is: str, kind: oneOf(GEAR_KINDS) }),
+    words: WORDS
+  })
 };
+
+/** What a world still lacks once the pool is read, and which list of the lack ask fills it (C16). */
+export type LackList = 'fauna' | 'materials' | 'anchors' | 'gear';
+export interface ILack {
+  /** What it is for, in words: "raise a wall". */
+  need: string;
+  list: LackList;
+  /** What code makes of what is added, so it meets the need: never the model's to say. */
+  role?: 'monster' | 'animal' | 'start' | 'lead' | 'building';
+  /** For gear: the kinds that answer the need. */
+  kinds?: string[];
+  /** The kinds of ground it must reach, when the need is a place. */
+  regions?: string[];
+}
 
 // -------------------------------------------------------------------------
 // Tightened to one ask (C1, leg 2)
@@ -93,9 +127,17 @@ const LEADER_WORDS = ['elite', 'boss', 'titan', 'god'];
 /** TagLaw's spelling: lower_snake_case, one spelling. */
 const SPELLED = { type: 'string', pattern: '^[a-z][a-z0-9]*(_[a-z0-9]+)*$' };
 const said = { type: 'string', minLength: 1 };
+/** C17: what a person reads of a thing is plain words, never a code word: no underscore, no digit. */
+const PLAIN = { type: 'string', pattern: "^[A-Za-z][A-Za-z ,.'-]*$" };
+/** A piece a name is made of: a sound of this world. */
+const NAME_PIECE = { type: 'string', pattern: '^[A-Za-z]+$' };
+/** A name begins with its prefix, so a prefix begins with a capital. */
+const NAME_START = { type: 'string', pattern: '^[A-Z][A-Za-z]*$' };
+/** C17: the one word a skill must carry to cross the skilled ground, registered with it when it is new. */
+const CROSSING = obj({ tag: SPELLED, kind: oneOf(WORD_KINDS), meaning: said });
 const someOf = (item: Record<string, unknown>, minItems = 0) => ({ type: 'array', items: item, ...(minItems > 0 ? { minItems } : {}) });
 
-export interface ITightAsk { offered?: Record<string, { id: string }[]>; words?: string[] }
+export interface ITightAsk { offered?: Record<string, { id: string }[]>; words?: string[]; lack?: ILack }
 
 /**
  * A pass's schema, tightened to this one ask. A model held to every word of its schema (a local one: its grammar
@@ -120,39 +162,57 @@ export function tightPass(pass: WorldPassId, ask: ITightAsk, registry: readonly 
     const offered = idsOf(lists);
     return offered.length > 0 ? list({ id: oneOf(offered), regions }) : { type: 'array', items: obj({ id: str, regions }), maxItems: 0 };
   };
+  // C17: a crossing held to the registered words had no "climb" in it, and a grammar that let "cl" begin could only
+  // end it as "cloth". The skilled crossing is the word itself, registered with its meaning when it is new
   const dressing = (role: 'impassable' | 'skilled') => obj({
     pick: oneOf(['', ...idsOf(['terrain'], `.terrain.${role}`)]),
-    ground: said, blurb: str,
-    crossing: role === 'skilled' ? word : oneOf([''])
+    ground: PLAIN, blurb: str,
+    crossing: role === 'skilled' ? CROSSING : oneOf([''])
   });
 
   switch (pass) {
     case 'ground': return obj({
-      name: said, premise: said,
-      regions: { type: 'array', prefixItems: BIOMES.map(b => obj({ biome: oneOf([b]), name: said, blurb: str })), minItems: BIOMES.length, maxItems: BIOMES.length },
-      without: strs, prefixes: someOf(said, 1), suffixes: someOf(said, 1), words
+      premise: said,
+      regions: { type: 'array', prefixItems: BIOMES.map(b => obj({ biome: oneOf([b]), blurb: said })), minItems: BIOMES.length, maxItems: BIOMES.length },
+      without: strs, prefixes: someOf(NAME_START, 1), suffixes: someOf(NAME_PIECE, 1), words
     });
     case 'terrain': return obj({ impassable: dressing('impassable'), skilled: dressing('skilled'), words });
-    case 'life': return obj({
-      picked: pickedAt(PASS_PULLS.life),
-      flora: list({ is: said, form: oneOf(FLORA_FORMS), tags: someOf(word), regions }),
-      fauna: list({ is: said, tags: someOf(creatureWord, 1), social: bool, builds: bool, regions }),
+    case 'flora': return obj({
+      picked: pickedAt(PASS_PULLS.flora),
+      flora: list({ is: PLAIN, form: oneOf(FLORA_FORMS), tags: someOf(word), regions }),
+      words
+    });
+    case 'fauna': return obj({
+      picked: pickedAt(PASS_PULLS.fauna),
+      fauna: list({ is: PLAIN, tags: someOf(creatureWord, 1), social: bool, builds: bool, regions }),
       words
     });
     case 'people': return obj({
       picked: ids(PASS_PULLS.people),
-      professions: list({ is: said, concept: SPELLED, workshop: said, tool: someOf(word, 1), material: someOf(word, 1) }),
+      professions: list({ is: PLAIN, concept: SPELLED, workshop: PLAIN, tool: someOf(word, 1), material: someOf(word, 1) }),
       words
     });
     case 'holds': return obj({
       picked: pickedAt(PASS_PULLS.holds),
-      minerals: list({ is: said, form: oneOf(MINERAL_FORMS), tags: someOf(word), regions }),
-      junk: list({ is: said, tags: someOf(word), from: someOf(word, 1) }),
-      anchors: list({ is: said, tags: someOf(word), regions }),
+      minerals: list({ is: PLAIN, form: oneOf(MINERAL_FORMS), tags: someOf(word), regions }),
+      junk: list({ is: PLAIN, tags: someOf(word), from: someOf(word, 1) }),
+      anchors: list({ is: PLAIN, tags: someOf(word), regions }),
       words
     });
     case 'made': return obj({ picked: ids(PASS_PULLS.made) });
     case 'known': return obj({ picked: ids(PASS_PULLS.known), lore: strs });
+    case 'lack': {
+      // The one list the need asks for holds at least one thing; the others hold none
+      const lack = ask.lack;
+      const of = (l: LackList, item: Record<string, unknown>) => (lack?.list === l ? someOf(obj(item), 1) : { type: 'array', items: obj(item), maxItems: 0 });
+      return obj({
+        fauna: of('fauna', { is: PLAIN, tags: someOf(creatureWord, 1), social: bool, builds: bool, regions }),
+        materials: of('materials', { is: PLAIN, form: oneOf([...FLORA_FORMS, ...MINERAL_FORMS]), tags: someOf(word), regions }),
+        anchors: of('anchors', { is: PLAIN, tags: someOf(word), regions }),
+        gear: of('gear', { is: PLAIN, kind: oneOf(lack?.kinds?.length ? lack.kinds : GEAR_KINDS) }),
+        words
+      });
+    }
   }
 }
 
@@ -162,20 +222,17 @@ export function tightPass(pass: WorldPassId, ask: ITightAsk, registry: readonly 
 
 export interface IWord { tag: string; kind: typeof WORD_KINDS[number]; meaning: string }
 export interface IPickedAt { id: string; regions: string[] }
-export interface IDressingAnswer { pick: string; ground: string; blurb: string; crossing: string }
+/** The skilled crossing is a word, or the word with its meaning when the tight schema asked it so (C17). */
+export interface IDressingAnswer { pick: string; ground: string; blurb: string; crossing: string | IWord }
 
 export interface IGroundAnswer {
-  name: string; premise: string;
-  regions: { biome: string; name: string; blurb: string }[];
+  premise: string;
+  regions: { biome: string; blurb: string }[];
   without: string[]; prefixes: string[]; suffixes: string[]; words: IWord[];
 }
 export interface ITerrainAnswer { impassable: IDressingAnswer; skilled: IDressingAnswer; words: IWord[] }
-export interface ILifeAnswer {
-  picked: IPickedAt[];
-  flora: { is: string; form: string; tags: string[]; regions: string[] }[];
-  fauna: { is: string; tags: string[]; social: boolean; builds: boolean; regions: string[] }[];
-  words: IWord[];
-}
+export interface IFloraAnswer { picked: IPickedAt[]; flora: { is: string; form: string; tags: string[]; regions: string[] }[]; words: IWord[] }
+export interface IFaunaAnswer { picked: IPickedAt[]; fauna: { is: string; tags: string[]; social: boolean; builds: boolean; regions: string[] }[]; words: IWord[] }
 export interface IPeopleAnswer {
   picked: string[];
   professions: { is: string; concept: string; workshop: string; tool: string[]; material: string[] }[];
@@ -190,10 +247,14 @@ export interface IHoldsAnswer {
 }
 export interface IMadeAnswer { picked: string[] }
 export interface IKnownAnswer { picked: string[]; lore: string[] }
+export interface ILackAnswer {
+  fauna: IFaunaAnswer['fauna']; materials: { is: string; form: string; tags: string[]; regions: string[] }[];
+  anchors: IHoldsAnswer['anchors']; gear: { is: string; kind: string }[]; words: IWord[];
+}
 
 export interface IPassAnswers {
-  ground: IGroundAnswer; terrain: ITerrainAnswer; life: ILifeAnswer; people: IPeopleAnswer;
-  holds: IHoldsAnswer; made: IMadeAnswer; known: IKnownAnswer;
+  ground: IGroundAnswer; terrain: ITerrainAnswer; flora: IFloraAnswer; fauna: IFaunaAnswer; people: IPeopleAnswer;
+  holds: IHoldsAnswer; made: IMadeAnswer; known: IKnownAnswer; lack: ILackAnswer;
 }
 
 // -------------------------------------------------------------------------

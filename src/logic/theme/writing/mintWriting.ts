@@ -28,11 +28,16 @@ export async function writeForMint(said: string, draft: IMintDraftLine, onPass?:
   // Counted from this hub's own worlds: no model, nothing installed (Pedro: "or none at all")
   const embedder = CountedEmbedder.of(pool.map(e => e.text));
   const registered = (tag: string) => WebBank.current().tags.some(t => t.tag === tag && !t.retired);
+  // What each registered word means, read once: an exclusion is read through it (C18)
+  const meanings = new Map(WebBank.current().tags.filter(t => !t.retired).map(t => [t.tag, t.meaning]));
   return writeWorld(said, {
     // Shared work: a hub's pool writes it in turns when someone is there, this player's door when not
     door: (pass, ask) => SharedWork.ask('pass', '/world/pass', { pass, ask, draft: { ...draft } }, () => IntelligenceClient.writePass(pass, ask, { ...draft })),
     pull: new CountedPull(pool, embedder),
     embedder, packs, registered,
+    meaningOf: word => meanings.get(word),
+    // The person's own name for the world stands; an empty field gets one drawn from the world's lists
+    name: draft.worldName,
     seed: `mint:${fnv1a(said).toString(16)}`,
     difficulty: draft.difficulty,
     onPass
