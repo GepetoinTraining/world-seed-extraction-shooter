@@ -142,7 +142,7 @@ export const ThemeTalk: React.FC = () => {
 
       {writing && (
         <div style={{ marginTop: 6 }}>
-          <Busy label={`THE SEED IS WRITING: ${PASS_SAID[writing]}${writing === 'lack' ? '' : ` (${(WORLD_PASSES as readonly string[]).indexOf(writing) + 1} OF ${WORLD_PASSES.length})`}`} />
+          <Busy label={`THE SEED IS WRITING: ${PASS_SAID[writing]}${(WORLD_PASSES as readonly string[]).includes(writing) ? ` (${(WORLD_PASSES as readonly string[]).indexOf(writing) + 1} OF ${WORLD_PASSES.length})` : ''}`} />
         </div>
       )}
       {refusal && <div className="ws-loss ws-small" style={{ marginTop: 6 }}>{refusal}</div>}
