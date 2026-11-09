@@ -113,14 +113,44 @@ export function poolOf(packs: IThemePack[]): IPoolEntry[] {
 const stem = (w: string) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
 const tokens = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stem);
 
+/** What a word means, where the registry or the world itself gave it one. */
+export type MeaningOf = (word: string) => string | undefined;
+
+/** The words of a text as the registry spells them: a tag keeps its underscores, so it can be looked up. */
+const spelled = (text: string) => text.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean);
+
+/** A phrase stands in these words when its own words come side by side, in its order. */
+const says = (words: string[], phrase: string[]) => words.some((_, i) => phrase.every((p, j) => words[i + j] === p));
+
 /**
- * The theme rules things out (Pedro: an airless moon gets no trees). A pooled thing whose
- * own words, tags or form carry a word the world is without is never offered.
+ * A clause that denies what it names says it is absent: "to shape timber, without a mill" is no
+ * mill. Clauses break at punctuation. The words that deny are grammar, the same in every world.
  */
-export function ruledOut(entry: Pick<IPoolEntry, 'text'>, without: string[]): boolean {
-  if (without.length === 0) return false;
-  const banned = new Set(without.flatMap(tokens));
-  return tokens(entry.text).some(t => banned.has(t));
+const DENIALS = new Set(['no', 'not', 'without', 'never', 'nor', 'none']);
+const affirms = (meaning: string, phrase: string[]) => meaning.split(/[.,;:!?()]+/).some(clause => {
+  const words = tokens(clause);
+  return words.some((_, i) => phrase.every((p, j) => words[i + j] === p) && !words.slice(0, i).some(w => DENIALS.has(w)));
+});
+
+/**
+ * The theme rules things out (Pedro: an airless moon gets no trees). A thing whose own words,
+ * tags or form say what the world is without is never offered, and never added.
+ *
+ * C18: an exclusion is the whole phrase it is, never its words one by one: a world without
+ * "moving water" keeps its water-bloom. What a thing is called may not say the phrase, so it
+ * is read by meaning too, one step: a word the thing says whose registered meaning says the
+ * phrase (a river, "a wide band of moving water") is ruled out with it.
+ */
+export function ruledOut(entry: Pick<IPoolEntry, 'text'>, without: string[], meaningOf?: MeaningOf): boolean {
+  const phrases = without.map(tokens).filter(p => p.length > 0);
+  if (phrases.length === 0) return false;
+  if (phrases.some(p => says(tokens(entry.text), p))) return true;
+  if (!meaningOf) return false;
+  for (const w of new Set(spelled(entry.text))) {
+    const meaning = meaningOf(w) ?? meaningOf(stem(w));
+    if (meaning && phrases.some(p => affirms(meaning, p))) return true;
+  }
+  return false;
 }
 
 /**
@@ -141,7 +171,7 @@ export function standsOn(pack: IThemeBody, packList: string, key: string): { pac
 }
 
 /** The first thing this entry stands on, at any depth, that the world is without; or null. */
-export function standsOnRuledOut(pack: IThemeBody, packList: string, key: string, without: string[]): string | null {
+export function standsOnRuledOut(pack: IThemeBody, packList: string, key: string, without: string[], meaningOf?: MeaningOf): string | null {
   if (without.length === 0) return null;
   const seen = new Set<string>();
   const walk = (list: string, k: string): string | null => {
@@ -149,7 +179,7 @@ export function standsOnRuledOut(pack: IThemeBody, packList: string, key: string
     if (seen.has(id)) return null;
     seen.add(id);
     const entry = ((pack as unknown as Record<string, { key: string }[] | undefined>)[list] ?? []).find(x => x.key === k);
-    if (entry && ruledOut({ text: textOf(list as PackList, entry as unknown as Record<string, unknown>) }, without)) return String((entry as { name?: string }).name ?? k);
+    if (entry && ruledOut({ text: textOf(list as PackList, entry as unknown as Record<string, unknown>) }, without, meaningOf)) return String((entry as { name?: string }).name ?? k);
     for (const dep of standsOn(pack, list, k)) {
       const found = walk(dep.packList, dep.key);
       if (found) return found;
@@ -175,7 +205,7 @@ export interface IPull {
   near(list: PoolList, query: string, without?: string[]): Promise<IPoolEntry[]>;
   /** What one ask offers: the entries that score above their list's mean. */
   offer(list: PoolList, query: string, without?: string[]): Promise<IPoolEntry[]>;
-  /** Is this new thing already in the pool? The entry it is, by its plain name or by nearness. */
+  /** Is this new thing already in the pool? The entry it is: by its plain name, its name said first, or nearness to its words or to what it is. */
   same(list: PoolList, text: string): Promise<IPoolEntry | null>;
 }
 
@@ -190,6 +220,7 @@ const family = (id: string) => id.split(':')[0];
 /** The pull over a pool held in memory: every installed pack, as the database gave them (`ThemeStore.loadBanked`). */
 export class CountedPull implements IPull {
   private vectors: Promise<number[][]> | null = null;
+  private blurbs: Promise<number[][]> | null = null;
   private readonly embedder: IEmbedder;
   /** How distinctive each entry is to the fields it lives in, beyond its count: the residual, never raw. */
   private readonly residual: number[];
@@ -235,17 +266,34 @@ export class CountedPull implements IPull {
     return (above.length ? above : ranked).map(x => x.e);
   }
 
+  private whats(): Promise<number[][]> {
+    this.blurbs ??= this.embedder.embed(this.pool.map(e => String(e.entry.blurb ?? '')));
+    return this.blurbs;
+  }
+
   async same(list: PoolList, text: string): Promise<IPoolEntry | null> {
     // The plain name of a thing the pool holds is that thing: "an oak" is the oak
     const plain = text.trim().toLowerCase().replace(/^(an?|the)\s+/, '');
     const named = this.pool.find(e => e.list === list && String(e.entry.name ?? '').toLowerCase() === plain);
     if (named) return named;
-    const top = (await this.ranked(list, text, []))[0];
-    if (!top) return null;
+    // C19: a thing said with a pooled thing's name first, then what it is, is that thing ("Lead Dun, that knows every debtor")
+    const first = this.pool.find(e => {
+      const name = String(e.entry.name ?? '').toLowerCase();
+      return e.list === list && name.length > 0 && plain.startsWith(name) && /^\s*[,:;(–—]/.test(plain.slice(name.length));
+    });
+    if (first) return first;
+    // Near to its whole entry, or to what it is alone: a pooled thing's own words, copied, are that thing (C19)
     const [q] = await this.embedder.embed([text]);
-    const near = cosineSimilarity(q ?? [], (await this.all())[this.pool.indexOf(top.e)] ?? []);
+    const [all, whats] = await Promise.all([this.all(), this.whats()]);
+    let best: { e: IPoolEntry; near: number } | null = null;
+    this.pool.forEach((e, i) => {
+      if (e.list !== list) return;
+      const near = Math.max(cosineSimilarity(q ?? [], all[i] ?? []), cosineSimilarity(q ?? [], whats[i] ?? []));
+      if (!best || near > best.near) best = { e, near };
+    });
     const at = SAME_THING_AT[family(this.embedder.id)] ?? SAME_THING_DEFAULT;
-    return near >= at ? top.e : null;
+    const found = best as { e: IPoolEntry; near: number } | null;
+    return found && found.near >= at ? found.e : null;
   }
 }
 

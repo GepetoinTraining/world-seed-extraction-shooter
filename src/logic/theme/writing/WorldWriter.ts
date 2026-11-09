@@ -23,7 +23,7 @@ import {
   IThemeJunk, IThemeMaterial, IThemePack, IThemeProfession, IThemeStation, IThemeTerrain, PACES, RANKS, SIZES, ThemeRank, THREATS,
   WEIGHTS, WORTHS, MATERIAL_FORMS, HARVEST_VERBS
 } from '../../../../shared/logic/theme/ThemeTypes';
-import { FLORA_FORMS, IPoolEntry, IPull, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from '../../../../shared/logic/theme/writing/WorldPool';
+import { FLORA_FORMS, IPoolEntry, IPull, MeaningOf, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from '../../../../shared/logic/theme/writing/WorldPool';
 import {
   IDressingAnswer, IFaunaAnswer, IFloraAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILack, ILackAnswer, IMadeAnswer, IPassAnswers,
   IPeopleAnswer, ITerrainAnswer, IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
@@ -56,6 +56,10 @@ export interface IWriteOptions {
   /** The packs the pool was read from, so a pick can bring what it stands on. */
   packs: IThemePack[];
   registered: (tag: string) => boolean;
+  /** What a registered word means: an exclusion is read through it (C18), so a world without moving water has no river. */
+  meaningOf?: MeaningOf;
+  /** The name the person gave the world. Their own words stand; only when it is empty is one drawn from the lists. */
+  name?: string;
   /** Keys every roll. The same talk and seed write the same world. */
   seed: string;
   /** The world's danger: what is added is rolled at or below it. */
@@ -187,11 +191,17 @@ class Draft {
 
   known(tag: string) { return this.ownWords.has(tag) || this.o.registered(tag); }
 
+  /** What a word means: as this world registered it, else as the registry has it. */
+  meaning: MeaningOf = word => this.body.tags.find(t => t.tag === word)?.meaning ?? this.o.meaningOf?.(word);
+
+  /** This text says something the world is without, by its own words or by what they mean (C18). */
+  rulesOut(text: string): boolean { return ruledOut({ text }, this.without, this.meaning); }
+
   /** Picking this would bring in something the world is without: its name, or null. */
   bringsRuledOut(e: IPoolEntry): string | null {
-    if (ruledOut(e, this.without)) return String(e.entry.name ?? e.key);
+    if (ruledOut(e, this.without, this.meaning)) return String(e.entry.name ?? e.key);
     const pack = this.packs.get(e.themeId);
-    return pack ? standsOnRuledOut(pack, e.packList, e.key, this.without) : null;
+    return pack ? standsOnRuledOut(pack, e.packList, e.key, this.without, this.meaning) : null;
   }
 
   /** Everything a pass may change, so a refused answer leaves nothing behind. */
@@ -396,6 +406,20 @@ const regionsOk = (regions: string[]) => Array.isArray(regions) && regions.lengt
 /** C17: what a person reads of a thing is plain words. A code word is refused, and the model says it again. */
 const codeWord = (text: string | undefined) => /_/.test(text ?? '');
 
+/** The words of what a thing is, its article set aside: "a growth" says what "growth" says. */
+const wordsOf = (text: string) => {
+  const words = (text ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return ['a', 'an', 'the'].includes(words[0]) ? words.slice(1) : words;
+};
+/**
+ * C19: what a new thing is says something its siblings do not. A line whose every word one of
+ * them already says is thin ("growth", three times), whatever its length: the sibling it repeats, or null.
+ */
+const echoed = (is: string, siblings: string[]): string | null => {
+  const own = new Set(wordsOf(is));
+  return siblings.find(s => { const theirs = new Set(wordsOf(s)); return [...own].every(w => theirs.has(w)); }) ?? null;
+};
+
 export async function writeWorld(said: string, o: IWriteOptions): Promise<IWriteResult> {
   const d = new Draft(o);
   const embedder = o.embedder ?? EmbeddingService.current();
@@ -420,7 +444,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
 
   /** A thing the pool already holds is picked, not written again (true). One the world is without is refused; false means it is new. */
   const fromPool = async (list: PoolList, is: string, regions?: string[]): Promise<boolean | Refusal> => {
-    if (ruledOut({ text: is }, d.without)) return refuse(`"${is}" is something this world is without.`);
+    if (d.rulesOut(is)) return refuse(`"${is}" is something this world is without.`);
     const same = await o.pull.same(list, is);
     if (!same) return false;
     const banned = d.bringsRuledOut(same);
@@ -429,6 +453,13 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     d.takenFromPool++;
     return true;
   };
+
+  /** C19: a new thing that repeats one of its siblings is refused, the sibling named, and the pass asked again. */
+  const thin = (is: string, siblings: { blurb: string }[]): Refusal | null => {
+    const s = echoed(is, siblings.map(x => x.blurb));
+    return s === null ? null : refuse(`"${is.trim()}" says nothing that "${s}" does not: say what sets it apart from the rest of this world.`);
+  };
+  const formed = (forms: readonly string[]) => d.body.materials.filter(m => forms.includes(m.form));
 
   const folds: { [P in WorldPassId]: (a: IPassAnswers[P], pass: P) => Promise<Refusal | null> } = {
     ground: async (a: IGroundAnswer) => {
@@ -446,8 +477,11 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       d.body.premise = a.premise.trim();
       d.without = clean(a.without);
       d.names = new NameWell(prefixes, suffixes, o.seed);
-      // C17: the model names nothing, the world and its grounds included: every name is drawn from its own lists
-      d.body.name = d.names.draw('world');
+      // C17: the model names nothing, the world and its grounds included: every name is drawn from its own lists.
+      // The person's own name for the world outranks anything drawn, and nothing else is drawn to it
+      const typed = (o.name ?? '').trim();
+      if (typed) d.names.take(typed);
+      d.body.name = typed || d.names.draw('world');
       d.body.regions = regions.map(r => ({ biome: r!.biome as IThemeBody['regions'][number]['biome'], name: d.names.draw(`region:${r!.biome}`), blurb: r!.blurb.trim() }));
       return null;
     },
@@ -493,6 +527,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         const bad = plantRefused(f);
         if (bad) return bad;
         { const r = await fromPool('flora', f.is, f.regions); if (typeof r === 'object') return r; if (r) continue; }
+        { const t = thin(f.is, formed(FLORA_FORMS)); if (t) return t; }
         addMaterial(f.is, f.form, f.tags, f.regions, 'flora');
       }
       return null;
@@ -508,6 +543,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         const bad = creatureRefused(f);
         if (bad) return bad;
         { const r = await fromPool('fauna', f.is, f.regions); if (typeof r === 'object') return r; if (r) continue; }
+        { const t = thin(f.is, d.body.creatures); if (t) return t; }
         addCreature(f.is, f.tags, !!f.social, !!f.builds, f.regions, 'fauna');
       }
       return null;
@@ -525,6 +561,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         const t = d.unknown([...pr.tool, ...pr.material]);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('professions', pr.is); if (typeof r === 'object') return r; if (r) continue; }
+        { const t = thin(pr.is, d.body.professions ?? []); if (t) return t; }
         const { name, key } = d.fresh('profession');
         const rng = d.rng('profession', d.added);
         d.body.professions!.push({ key, name, blurb: pr.is.trim(), rank: d.rank(rng), concept: pr.concept, knows: pr.is.trim(), workshop: pr.workshop.trim(), tool: pr.tool, material: pr.material } as IThemeProfession);
@@ -543,6 +580,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         const t = d.unknown(m.tags);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('minerals', m.is, m.regions); if (typeof r === 'object') return r; if (r) continue; }
+        { const t = thin(m.is, formed(MINERAL_FORMS)); if (t) return t; }
         addMaterial(m.is, m.form, m.tags, m.regions, 'holds');
       }
       for (const j of a?.junk ?? []) {
@@ -551,6 +589,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         const t = d.unknown([...j.tags, ...j.from]);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('junk', j.is); if (typeof r === 'object') return r; if (r) continue; }
+        { const t = thin(j.is, d.body.junk ?? []); if (t) return t; }
         addJunk(j.is, j.tags, j.from, 'holds');
       }
       for (const an of a?.anchors ?? []) {
@@ -559,6 +598,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         const t = d.unknown(an.tags);
         if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
         { const r = await fromPool('anchors', an.is, an.regions); if (typeof r === 'object') return r; if (r) continue; }
+        { const t = thin(an.is, d.body.anchors ?? []); if (t) return t; }
         addAnchor(an.is, an.tags, an.regions, 'anchor');
       }
       return null;
@@ -586,7 +626,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       if (items.length === 0) return refuse(`this world still lacks something to ${lack.need}, and nothing was added in "${lack.list}".`);
       if (lack.list === 'fauna') {
         for (const f of items as IFaunaAnswer['fauna']) {
-          const bad = creatureRefused({ ...f, regions: where(f.regions) });
+          const bad = creatureRefused({ ...f, regions: where(f.regions) }) ?? thin(f.is, d.body.creatures);
           if (bad) return bad;
           const c = addCreature(f.is, f.tags, lack.role === 'lead' || !!f.social, !!f.builds, where(f.regions), 'lack');
           if (lack.role === 'monster' || lack.role === 'animal') {
@@ -602,9 +642,10 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
           const forms = [...FLORA_FORMS, ...MINERAL_FORMS] as readonly string[];
           if (!m.is?.trim() || !forms.includes(m.form) || !regionsOk(where(m.regions))) return refuse('a new material needs what it is, the form it takes, and where.');
           if (codeWord(m.is)) return refuse(`say what "${m.is}" is in plain words, not a code word.`);
-          if (ruledOut({ text: m.is }, d.without)) return refuse(`"${m.is}" is something this world is without.`);
+          if (d.rulesOut(m.is)) return refuse(`"${m.is}" is something this world is without.`);
           const t = d.unknown(m.tags);
           if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+          { const e = thin(m.is, d.body.materials); if (e) return e; }
           const tags = lack.role === 'building' ? [...new Set([...(m.tags ?? []), 'building'])] : m.tags;
           addMaterial(m.is, m.form, tags, where(m.regions), 'lack');
         }
@@ -615,6 +656,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
           if (codeWord(an.is)) return refuse(`say what "${an.is}" is in plain words, not a code word.`);
           const t = d.unknown(an.tags);
           if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
+          { const e = thin(an.is, d.body.anchors ?? []); if (e) return e; }
           addAnchor(an.is, an.tags, where(an.regions), 'lack');
         }
       }
@@ -622,7 +664,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         for (const g of items as ILackAnswer['gear']) {
           if (!g.is?.trim() || codeWord(g.is)) return refuse('a new piece needs what it is, in plain words.');
           if (lack.kinds?.length && !lack.kinds.includes(g.kind)) return refuse(`"${g.kind}" does not ${lack.need}: it is one of ${lack.kinds.join(', ')}.`);
-          if (ruledOut({ text: g.is }, d.without)) return refuse(`"${g.is}" is something this world is without.`);
+          if (d.rulesOut(g.is)) return refuse(`"${g.is}" is something this world is without.`);
+          { const e = thin(g.is, d.body.gear); if (e) return e; }
           addGear(g.is, g.kind);
         }
       }

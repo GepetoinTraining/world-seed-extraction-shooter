@@ -774,3 +774,149 @@ describe('C17: what a person reads is plain words, and names come from the world
     expect(tight.properties.skilled.properties.crossing.enum).toBeUndefined();
   });
 });
+
+const writeNamed = (door: PassDoor, name?: string) => writeWorld('An airless moon. The bank never closed.', {
+  door, pull: new CountedPull(poolOf([FIRST_THEME_PACK])), packs: [FIRST_THEME_PACK], registered, seed: 'moon', difficulty: 'D', name
+});
+const DRAWN = /^(Gray|Hollow|Still|Pale)( (Gray|Hollow|Still|Pale))*(crawler|moth|glass|drift)$/;
+
+describe('the typed name: a person\'s own name for the world outranks anything drawn', () => {
+  it('a typed name survives the whole world pass, and nothing else is drawn to it', async () => {
+    const out = await writeNamed(scriptedDoor().door, 'THE STILL ORCHARD');
+    expect(out.ok, out.reason).toBe(true);
+    expect(out.body!.name).toBe('THE STILL ORCHARD');
+    // Everywhere else, names are still drawn from the world's lists (C17)
+    for (const r of out.body!.regions) expect(r.name, r.name).toMatch(DRAWN);
+    const pool = new Set(poolOf([FIRST_THEME_PACK]).map(e => String(e.entry.name)));
+    const drawn = [...out.body!.creatures, ...out.body!.materials, ...out.body!.junk!].map(x => x.name).filter(n => !pool.has(n));
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const n of drawn) expect(n.toLowerCase()).not.toBe('the still orchard');
+  });
+
+  it('an empty field gets a name drawn from the lists', async () => {
+    for (const name of ['', '   ', undefined]) {
+      const out = await writeNamed(scriptedDoor().door, name);
+      expect(out.ok, out.reason).toBe(true);
+      expect(out.body!.name, String(name)).toMatch(DRAWN);
+    }
+  });
+});
+
+/** Registered meanings, as the database keeps them: what a river is, said in other words. */
+const WATER_MEANINGS: Record<string, string> = {
+  river: 'A wide band of moving water.',
+  stream: 'A narrow run of moving water, shallow enough to wade.',
+  waterfall: 'Moving water dropping over an edge.',
+  pond: 'Still water, with no moving water in it.',
+  hew: 'To shape timber by the blow, without a mill.'
+};
+const meaningOf = (w: string) => WATER_MEANINGS[w];
+
+describe('C18: an exclusion is the whole phrase it is, read by meaning, never word by word', () => {
+  it('"water-bloom" passes "without moving water"; a river, a stream or a waterfall is still ruled out', () => {
+    expect(ruledOut({ text: 'Water-bloom on the still pools' }, ['moving water'], meaningOf)).toBe(false);
+    expect(ruledOut({ text: 'a water-bloom' }, ['moving water'])).toBe(false);
+    // Said in its own words, and said by what a word means
+    expect(ruledOut({ text: 'a slick of moving water' }, ['moving water'])).toBe(true);
+    for (const text of ['a river', 'the rivers of the low ground', 'a cold stream', 'a waterfall']) {
+      expect(ruledOut({ text }, ['moving water'], meaningOf), text).toBe(true);
+    }
+    // A meaning that denies the phrase does not say it
+    expect(ruledOut({ text: 'a pond' }, ['moving water'], meaningOf)).toBe(false);
+    expect(ruledOut({ text: 'hew' }, ['mill'], meaningOf)).toBe(false);
+    expect(ruledOut({ text: 'a mill wheel' }, ['mill'], meaningOf)).toBe(true);
+  });
+
+  it('a one-word exclusion works as before', () => {
+    for (const text of ['a fire pit', 'fires on the ridge', 'Fire-eater']) expect(ruledOut({ text }, ['fire']), text).toBe(true);
+    expect(ruledOut({ text: 'a pit of ash' }, ['fire'])).toBe(false);
+    expect(ruledOut({ text: 'Compound Oak tree wood' }, ['trees'])).toBe(true);
+  });
+
+  it('a world without moving water keeps its water-bloom, and a river the world registered is refused and asked again', async () => {
+    const { door, asks } = scriptedDoor({
+      ground: () => ({
+        premise: 'An orchard where nothing flows.', regions: BIOMES.map(b => ({ biome: b, blurb: `The ${b.toLowerCase()} side: still.` })),
+        without: ['moving water'], prefixes: ['Gray', 'Hollow', 'Still', 'Pale'], suffixes: ['crawler', 'moth', 'glass', 'drift'],
+        words: [
+          { tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' },
+          { tag: 'river', kind: 'descriptive', meaning: 'A wide band of moving water.' }
+        ]
+      }),
+      flora: () => ({ picked: [], flora: [{ is: 'a water-bloom on the still pools', form: 'shrub', tags: [], regions: ALL }], words: [] }),
+      fauna: (ask, n) => ({
+        picked: [],
+        fauna: [
+          { is: n === 1 ? 'an eel of the river' : 'an eel of the still pools', tags: ['vacuum'], social: true, builds: false, regions: ALL },
+          { is: 'a glass hound that runs the rim', tags: ['vacuum'], social: true, builds: false, regions: ALL }
+        ],
+        words: []
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    expect(out.body!.materials.some(m => m.blurb === 'a water-bloom on the still pools')).toBe(true);
+    const fauna = asks.filter(a => a.pass === 'fauna');
+    expect(fauna.length).toBe(2);
+    expect(fauna[1].refused).toContain('an eel of the river');
+    expect(out.body!.creatures.some(c => c.blurb.includes('river'))).toBe(false);
+  });
+});
+
+describe('C19: a copy is the pooled thing, and a thin line is asked again', () => {
+  const lien = FIRST_THEME_PACK.creatures.find(c => c.key === 'lien_moth')!;
+
+  it('a pooled thing\'s name said first, or its own words copied, is that thing', async () => {
+    const pull = new CountedPull(poolOf([FIRST_THEME_PACK]));
+    expect((await pull.same('fauna', 'Lien Moth, which settles on whatever is owed'))?.key).toBe('lien_moth');
+    expect((await pull.same('fauna', lien.blurb))?.key).toBe('lien_moth');
+    // A name that only begins a longer one is not that thing
+    expect(await pull.same('fauna', 'Receiver crab that hoards bright shells')).toBeNull();
+  });
+
+  it('a copy the model writes as new is taken from the pool, never minted again under a drawn name', async () => {
+    const { door } = scriptedDoor({
+      fauna: () => ({
+        picked: [],
+        fauna: [
+          { is: 'Lien Moth, which settles on whatever is owed', tags: ['vacuum'], social: true, builds: false, regions: ALL },
+          { is: lien.blurb, tags: ['vacuum'], social: true, builds: false, regions: ALL },
+          { is: 'a glass hound that runs the rim', tags: ['vacuum'], social: true, builds: false, regions: ALL }
+        ],
+        words: []
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const moths = out.body!.creatures.filter(c => c.blurb === lien.blurb || c.blurb.startsWith('Lien Moth'));
+    expect(moths.map(c => c.name)).toEqual(['Lien Moth']);
+    expect(out.passes.find(p => p.pass === 'fauna')!.takenFromPool).toBe(2);
+  });
+
+  it('a line that repeats its siblings\' words is refused with the reason, however short the distinct ones are', async () => {
+    const { door, asks } = scriptedDoor({
+      flora: (ask, n) => ({
+        picked: [],
+        flora: (n === 1 ? ['growth', 'growth', 'a growth'] : ['moss', 'fern', 'reed']).map(is => ({ is, form: 'shrub', tags: [], regions: ALL })),
+        words: []
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const flora = asks.filter(a => a.pass === 'flora');
+    expect(flora.length).toBe(2);
+    expect(flora[1].refused).toContain('"growth" says nothing that "growth" does not');
+    expect(out.body!.materials.filter(m => ['moss', 'fern', 'reed'].includes(m.blurb)).length).toBe(3);
+    expect(out.body!.materials.some(m => m.blurb === 'growth')).toBe(false);
+  });
+
+  it('thin every time, the pass stops on it after its two tries', async () => {
+    const { door } = scriptedDoor({
+      flora: () => ({ picked: [], flora: ['growth', 'growth'].map(is => ({ is, form: 'shrub', tags: [], regions: ALL })), words: [] })
+    });
+    const out = await write(door);
+    expect(out.ok).toBe(false);
+    expect(out.pass).toBe('flora');
+    expect(out.reason).toContain('sets it apart');
+  });
+});
