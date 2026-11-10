@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "pedro": "node --import tsx scripts/pedro.ts",
+    "pedro:window": "node --import tsx scripts/pedro.ts --window --built",
     "db:sync": "node --import tsx scripts/pedro.ts --sync-only",
     "serve": "node --import tsx server/main.ts",
     "play": "vite build && node --import tsx server/main.ts",

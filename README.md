@@ -42,6 +42,19 @@ npm run pedro
 
 That plays on `data/test-pedro` at `http://localhost:3200`. It first syncs the shared base with `test-claude`: the definitions, every item's history and the registry of claims, in both directions, and nothing that belongs to a character. If a server is running on either folder the sync cannot run: this says so and plays on. `npm run db:sync` runs the sync alone, and fails if it cannot.
 
+The same game in a window of its own, outside any other program's browser:
+
+```bash
+npm run pedro:window
+```
+
+That builds the game, serves it from the runner at the same address, and opens it in a Chromium browser already on the machine (Chrome, then Edge, Chromium, Brave) as an app window: no tabs, no address bar, no extensions, and a profile folder of its own, `data/window-pedro`. Nothing is installed. Closing the window stops the game cleanly, with the write-down in it.
+
+- **The profile folder holds the key of any character made in that window.** Deleting it deletes them, as clearing a browser's data does. A character made in another browser comes over with the game's own BACKUP, then RESTORE A BACKUP in the window.
+- `npm run pedro -- --window` is the dev server in the same window, on the same profile, for when a change should show without a rebuild.
+- `WS_BROWSER` names another browser. `WS_WINDOW_ARGS` adds flags of your own, such as `--start-fullscreen`.
+- A window that ends in under three seconds is taken as handed over to one already open on the profile: the game stays up, and says so.
+
 To run the built game standing alone, on a folder or on a served Postgres:
 
 ```bash
