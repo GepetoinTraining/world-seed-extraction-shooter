@@ -41,6 +41,8 @@ export interface IWorldCard extends IClockedWorld {
   packVersion?: number;
   // D27: the web this world's people are read through. Absent = the first version.
   webVersion?: number;
+  // C24: the ground this world is laid by (`GROUND_VERSION`). Absent = the first: nothing lies loose.
+  groundVersion?: number;
   /**
    * D53: the theme it reads. Pedro (Q43): a world never retires, so a world minted before themes,
    * or pinned to one this hub does not hold, reads the hub's own theme (`ContentRegistry.standing`).

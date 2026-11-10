@@ -985,3 +985,36 @@ describe('C21: a name reads as a name: one prefix and one suffix, and more piece
     expect(fits(PASS_SCHEMAS.names, { prefixes: ['Dusk'], suffixes: ['fall'] })).toBeNull();
   });
 });
+
+// -------------------------------------------------------------------------
+// C24 (Pedro, 2026-11-10: "We need to seed some form of handy throw able object"): a stone to throw is laid
+// loose across a world's ground from what the world wrote in the pebble form, so every world has to hold one.
+// -------------------------------------------------------------------------
+
+describe('C24: every written world holds something loose to pick up and throw', () => {
+  const loose = <T extends { form: string }>(body: { materials: T[] }) => body.materials.filter(m => m.form === 'pebble');
+
+  it('the pool has one: it is brought from the pool, and the model is asked for nothing', async () => {
+    const { door, asks } = scriptedDoor();
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    expect(loose(out.body!).length).toBeGreaterThan(0);
+    expect(FIRST_THEME_PACK.materials.filter(m => m.form === 'pebble').map(m => m.blurb)).toContain(loose(out.body!)[0].blurb);
+    expect(asks.some(a => a.pass === 'lack' && a.lack?.need === 'pick up and throw')).toBe(false);
+  });
+
+  it('nothing in the pool can be thrown: the model is asked for it, and code makes it a loose stone taken by hand', async () => {
+    const pack = without(p => ({ materials: p.materials.filter(m => m.form !== 'pebble') }));
+    const { door, asks } = scriptedDoor();
+    const out = await writeFrom(door, pack);
+    expect(out.ok, out.reason).toBe(true);
+    const lack = asks.find(a => a.pass === 'lack' && a.lack?.need === 'pick up and throw')!;
+    expect(lack, 'a lack ask for something to throw').toBeDefined();
+    expect(lack.lack).toMatchObject({ list: 'materials' });
+    // The scripted answer says "rock": what it is for decides its form, never the model
+    const stone = out.body!.materials.find(m => m.blurb === 'packed regolith blocks')!;
+    expect(stone.form).toBe('pebble');
+    expect(stone.verb).toBe('hands');
+    expect(ThemeLaw.validate(out.body!, t => registered(t) || out.body!.tags.some(w => w.tag === t))).toEqual({ ok: true });
+  });
+});

@@ -670,7 +670,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
           if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
           { const e = thin(m.is, d.body.materials); if (e) return e; }
           const tags = lack.role === 'building' ? [...new Set([...(m.tags ?? []), 'building'])] : m.tags;
-          addMaterial(m.is, m.form, tags, where(m.regions), 'lack');
+          // What it is for decides its form: something to pick up and throw lies loose, whatever form was written
+          addMaterial(m.is, lack.role === 'loose' ? LOOSE_FORM : m.form, tags, where(m.regions), 'lack');
         }
       }
       if (lack.list === 'anchors') {
@@ -854,6 +855,9 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
  * Who leads is code's to decide (D93), and so is every band. Returns the first thing the pool
  * could not give, for the model to add (C16), or null when the floors are whole.
  */
+/** The form a loose stone is written in: taken by hand, and thrown (`Throwable.ts`). */
+const LOOSE_FORM = 'pebble';
+
 async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbedder, addJunk: (is: string, tags: string[], from: string[], pass: string) => string): Promise<ILack | null> {
   const b = d.body;
   const nearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean) => {
@@ -934,6 +938,12 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
   }
   if (b.anchors!.length === 0) {
     const no = await bringNearest('anchors', () => true, { need: 'hold value', list: 'anchors' });
+    if (no) return no;
+  }
+  // C24: a stone to throw is laid loose across a world's ground from what it wrote in the pebble form
+  // (`WorldGenerator.layLoose`), so every world holds one: the pool's nearest, or the model's own
+  if (!b.materials.some(m => m.form === LOOSE_FORM)) {
+    const no = await bringNearest('minerals', e => entry<IThemeMaterial>(e).form === LOOSE_FORM, { need: 'pick up and throw', list: 'materials', role: 'loose' });
     if (no) return no;
   }
 

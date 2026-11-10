@@ -118,7 +118,7 @@ export interface ILack {
   need: string;
   list: LackList;
   /** What code makes of what is added, so it meets the need: never the model's to say. */
-  role?: 'monster' | 'animal' | 'start' | 'lead' | 'building';
+  role?: 'monster' | 'animal' | 'start' | 'lead' | 'building' | 'loose';
   /** For gear: the kinds that answer the need. */
   kinds?: string[];
   /** The kinds of ground it must reach, when the need is a place. */

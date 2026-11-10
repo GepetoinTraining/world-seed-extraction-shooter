@@ -9,6 +9,7 @@ import { UniversalRank, Rarity } from '../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { hash2, layerSeed, valueNoise } from '../../logic/rng/noise';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { isLooseStone } from '../item/Throwable';
 import { Director, IDirectorPool, IDirectorRecord } from './Director';
 import { Leaders, isRosterElite } from './Leaders';
 
@@ -28,7 +29,24 @@ export interface IGenerationContext {
   webVersion?: number;
   /** D103: how long this world's cycle runs, so what a week holds is real days in any world. */
   cycleMs?: number;
+  /** C24: the ground this world pinned at its mint (`GROUND_VERSION`). Absent means the first: nothing lies loose. */
+  groundVersion?: number;
 }
+
+/**
+ * THE GROUND A WORLD IS LAID BY (C24). Pinned in a world's certificate at its mint, as its web and
+ * its bank are, because a world must generate the same land for ever: a world minted before a
+ * version pins none of it and generates exactly what it always did.
+ *
+ *   1 (or absent)  what grows and lies by the land's own table, and nothing else.
+ *   2              a stone to throw lies loose across the ground (Pedro, 2026-11-10: "We need to
+ *                  seed some form of handy throw able object"), from whatever the world wrote in
+ *                  the pebble form, on a roll of its own.
+ */
+export const GROUND_VERSION = 2;
+/** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
+const LOOSE_STONE_CHANCE = 0.5;
+const LOOSE_STONES_TOGETHER = 2;
 
 /** One body to stand on a chunk, by its kind, with what its sheet adds if it has one. */
 export interface IBodyToStand {
@@ -391,7 +409,47 @@ export class WorldGenerator {
     const ctx = ordered(context);
     const chunk = this.chunkFrom(seed, exits, cx, cy, ctx, false);
     this.standLeaders(seed, chunk, context);
+    this.layLoose(seed, chunk, ctx);
     return chunk;
+  }
+
+  /**
+   * C24: A STONE TO THROW, NEAR AT HAND. What the world wrote in the pebble form grows by the land's
+   * own table only on its own kinds of ground, so on any other ground there was none for hundreds of
+   * tiles. Here it is laid loose on every ground whose table lays none: in about half of all
+   * quadrants, one or two together. A few seconds' walk from anywhere, and not a carpet. Both numbers
+   * are guesses until Wave 12.
+   *
+   * Only for a world that pinned this ground (`GROUND_VERSION`). It rolls on its own keys and is laid
+   * after everything else stands, on tiles nothing holds, so nothing that was there moves for it.
+   * No stone is named here: a world with another loose thing lays that.
+   */
+  private static layLoose(seed: string, chunk: IChunk, ctx: IGenerationContext) {
+    if ((ctx.groundVersion ?? 1) < 2) return;
+    const stones = ctx.resourceDefinitions.filter(isLooseStone);
+    if (stones.length === 0) return;
+    const table = BIOME_RESOURCES[chunk.biome] || [];
+    if (stones.some((s: any) => table.includes(s.id))) return;
+
+    for (let cqy = 0; cqy < CHUNK_QUADRANTS; cqy++) for (let cqx = 0; cqx < CHUNK_QUADRANTS; cqx++) {
+      const qx = chunk.x * CHUNK_QUADRANTS + cqx, qy = chunk.y * CHUNK_QUADRANTS + cqy;
+      const own = Rng.fromKey(`${seed}:loose:v1:${qx},${qy}`);
+      if (own.next() >= LOOSE_STONE_CHANCE) continue;
+      const x0 = qx * QUADRANT_TILES, y0 = qy * QUADRANT_TILES;
+      const field = new TileField(seed, x0, y0);
+      for (const e of chunk.entities) field.reserve(tileOf(e.position.x), tileOf(e.position.y));
+      const stone: any = own.pick(stones);
+      const tx = x0 + own.int(0, QUADRANT_TILES), ty = y0 + own.int(0, QUADRANT_TILES);
+      const together = own.int(1, LOOSE_STONES_TOGETHER + 1);
+      for (let i = 0; i < together; i++) {
+        const at = field.place(tx + own.int(-1, 2), ty + own.int(-1, 2));
+        if (!at) continue;
+        chunk.entities.push({
+          id: `ent_${qx}_${qy}_loose${i}`, type: EntityType.RESOURCE, definitionId: stone.id, position: at,
+          rank: stone.rank || UniversalRank.F, rarity: Rarity.COMMON, isHostile: false, usesRemaining: stone.uses ?? 1
+        });
+      }
+    }
   }
 
   /**
