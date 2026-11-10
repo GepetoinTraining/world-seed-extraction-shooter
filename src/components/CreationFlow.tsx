@@ -45,16 +45,20 @@ const SILHOUETTE_LINES: Record<string, string> = {
 const encoder = new TextEncoder();
 const attr = (a: string) => a.replace(/_/g, ' ').toUpperCase();
 
-/** A choice says so by a mark and a seam, never by hue alone. */
-const Choice: React.FC<{ chosen: boolean; onPick: () => void; children: React.ReactNode; title?: string }> = ({ chosen, onPick, children, title }) => (
+/**
+ * A choice says so by a mark and a seam, never by hue alone. One that is waiting on an earlier
+ * choice stands in its place with a dashed seam, so the page is the same size before and after (C12).
+ */
+const Choice: React.FC<{ chosen: boolean; onPick: () => void; children: React.ReactNode; title?: string; waiting?: boolean }> = ({ chosen, onPick, children, title, waiting }) => (
   <button
     type="button" onClick={onPick} aria-pressed={chosen} title={title} className="ws-ui"
+    disabled={waiting} aria-disabled={waiting || undefined}
     style={{
-      display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', cursor: 'pointer', width: '100%',
+      display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', cursor: waiting ? 'default' : 'pointer', width: '100%',
       background: chosen ? 'var(--ws-signal-0)' : 'var(--ws-void-2)',
-      border: `1px solid ${chosen ? 'var(--ws-signal-2)' : 'var(--ws-void-4)'}`,
-      borderLeft: chosen ? '4px double var(--ws-signal-2)' : '1px solid var(--ws-void-4)',
-      padding: 8, color: 'inherit', fontFamily: 'var(--ws-mono)'
+      border: `1px ${waiting ? 'dashed' : 'solid'} ${chosen ? 'var(--ws-signal-2)' : 'var(--ws-void-4)'}`,
+      borderLeft: chosen ? '4px double var(--ws-signal-2)' : `1px ${waiting ? 'dashed' : 'solid'} var(--ws-void-4)`,
+      padding: 8, color: 'inherit', fontFamily: 'var(--ws-mono)', opacity: waiting ? 0.55 : 1
     }}
   >
     <span className={chosen ? 'ws-signal' : 'ws-dim'} aria-hidden style={{ flex: 'none' }}>{chosen ? '[X]' : '[ ]'}</span>
@@ -208,24 +212,23 @@ export const CreationFlow: React.FC<{
               </Choice>
             ))}
           </div>
-          {origin && (
-            <>
-              <div className="ws-dim ws-small" style={{ margin: '12px 0 6px', letterSpacing: '0.08em' }}>THE SHAPE YOU WEAR. THE FACE COMES FROM THE CERTIFICATE, AFTER THE MINT.</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                {SILHOUETTES.map(key => (
-                  <Choice key={key} chosen={silhouette === key} onPick={() => set({ silhouette: key })} title={SILHOUETTE_LINES[key]}>
-                    <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <SpriteView sprite={figure({ uid: 'preview:unborn', archetype: key as Archetype })} scale={2} />
-                      <span>
-                        <span className="ws-bright" style={{ display: 'block' }}>{key.replace('_', ' ')}</span>
-                        <span className="ws-dim ws-small" style={{ display: 'block' }}>{SILHOUETTE_LINES[key]}</span>
-                      </span>
-                    </span>
-                  </Choice>
-                ))}
-              </div>
-            </>
-          )}
+          {/* C12: the shapes stand here from the start, waiting on a life, so picking one never moves what is under the pointer */}
+          <div className="ws-dim ws-small" style={{ margin: '12px 0 6px', letterSpacing: '0.08em' }}>
+            THE SHAPE YOU WEAR. {origin ? 'THE FACE COMES FROM THE CERTIFICATE, AFTER THE MINT.' : isFate ? 'FATE WEARS ITS OWN.' : 'PICK A LIFE FIRST: IT COMES CHOSEN WITH ONE.'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {SILHOUETTES.map(key => (
+              <Choice key={key} chosen={!!origin && silhouette === key} waiting={!origin} onPick={() => set({ silhouette: key })} title={SILHOUETTE_LINES[key]}>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <SpriteView sprite={figure({ uid: 'preview:unborn', archetype: key as Archetype })} scale={2} />
+                  <span>
+                    <span className="ws-bright" style={{ display: 'block' }}>{key.replace('_', ' ')}</span>
+                    <span className="ws-dim ws-small" style={{ display: 'block' }}>{SILHOUETTE_LINES[key]}</span>
+                  </span>
+                </span>
+              </Choice>
+            ))}
+          </div>
           <div className="ws-dim ws-small" style={{ margin: '12px 0 6px', letterSpacing: '0.08em' }}>OR SAY NOTHING ABOUT IT</div>
           <Choice chosen={isFate} onPick={pickFate}>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

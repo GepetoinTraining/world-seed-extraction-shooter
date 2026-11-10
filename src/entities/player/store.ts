@@ -26,6 +26,7 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { Anchors } from '../../logic/economy/Anchors';
 import { RestSystem } from '../../logic/systems/RestSystem';
+import { FieldWords } from '../../logic/systems/FieldWords';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
@@ -187,7 +188,8 @@ interface PlayerState {
   performInteraction: (interactionId: string, targetId: string) => void;
   gainSkillXp: (skillId: string, amount: number, tags: string[], actionContext?: IActionContext) => void;
   /** D27: work done with a pair. Held, it grows by use. Not held, it wings it and accrues. */
-  workOn: (pair: ISkillPair, rank: number, xp: number) => void;
+  /** `costly`: the road charged more for a first try, so the feed may say so (N13). */
+  workOn: (pair: ISkillPair, rank: number, xp: number, costly?: boolean) => void;
   processAction: (context: IActionContext) => void;
 }
 
@@ -265,7 +267,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         case 'PENDING_DREAM': set(s => ({ player: { ...s.player, pendingDream: change.dream } })); break;
         case 'ACCRUE': set(s => ({ player: WebSystem.accrue(s.player, change.node, change.rank) })); break;
         case 'RECALC_WEIGHT': store.recalcWeight(); break;
-        case 'WORK_ON': store.workOn(change.pair, change.rank, change.xp); break;
+        case 'WORK_ON': store.workOn(change.pair, change.rank, change.xp, change.costly); break;
         case 'PRACTICE_TRADE': store.practiceTrade(change.family); break;
         case 'LORE': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore: change.lore } } })); break;
         case 'GAIN_SKILL_XP': store.gainSkillXp(change.skillId, change.amount, change.tags, change.context); break;
@@ -1070,7 +1072,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
     SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, refill, health });
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
-    feed(`${item.name}, straight from the belt: ${restore >= 0 ? '+' : ''}${restore} health. The pack never opened.`, restore >= 0 ? 'signal' : 'loss');
+    const said = FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts, fromBelt: true });
+    feed(said.text, said.tone);
     return { ok: true };
   },
 
@@ -1698,8 +1701,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const refill = item.stats?.energy_restore || 0;
     if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
     SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, refill, health });
-    if (refill > 0 && restore === 0) feed(`${item.name}: +${refill} energy.`, 'proof');
-    else feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
+    const said = FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts });
+    feed(said.text, said.tone);
   },
 
   /** Mark a stash item to go along on the next session. */
@@ -1908,7 +1911,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { usesRemaining: usesLeft } });
       }
 
-      if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5));
+      if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5), effort.winging);
       // Layer 4: what is gathered gives up its element, from its own world's elements
       const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
@@ -2101,7 +2104,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  workOn: (pair, rank, xp) => {
+  workOn: (pair, rank, xp, costly = false) => {
     if (get().player.bank.universalSkills[pair.id]) {
       get().gainSkillXp(pair.id, xp, pair.tags);
       set(s => {
@@ -2112,7 +2115,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
     if (!get().player.skillProgress?.[pair.id]) {
-      feed(`Winging it: ${WebSystem.nameOf(pair.id)}. It costs more without the skill, and it counts toward it.`, 'signal');
+      // N13: only a road that charged more for the first try says so
+      feed(FieldWords.winging(WebSystem.nameOf(pair.id), costly), 'signal');
     }
     set(s => ({ player: WebSystem.accrue(s.player, pair, rank) }));
   },

@@ -13,7 +13,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTalk, meterOpensFollowing } from '../entities/interaction/talkStore';
-import { TALK_ENERGY } from '../logic/systems/TalkLaw';
+import { TALK_ENERGY, TalkLaw } from '../logic/systems/TalkLaw';
+import { worldDay } from '../entities/hub/worldDay';
 import { TALK_MESSAGE_LIMIT } from '../../shared/logic/systems/TalkTypes';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
@@ -58,6 +59,7 @@ export const TalkWindow: React.FC = () => {
     ? [{ at: line, label: 'neutral' }, { at: Math.round(line + (100 - line) * 2 / 3), label: 'friendly' }]
     : subject.kind === 'FIELD_PERSON' ? [{ at: line, label: 'follows' }] : [];
   const last = rounds[rounds.length - 1];
+  const marks = TalkLaw.dayMarks(log, worldDay());
 
   const send = async () => {
     const text = saying.trim();
@@ -91,16 +93,24 @@ export const TalkWindow: React.FC = () => {
         <div ref={logRef} style={{ height: 230, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, border: '1px solid var(--ws-text-dim)', padding: 8 }}>
           {log.length === 0 && <span className="ws-dim ws-small">Say something. Everything you say counts, and you can only say it once.</span>}
           {log.map((entry, i) => (
-            <div key={i} className="ws-small" style={entry.who === 'THEM' ? { paddingLeft: 24, textAlign: 'right' } : entry.who === 'NOTE' ? { fontStyle: 'italic' } : { paddingRight: 24 }}>
-              {entry.who === 'THEM' ? <b>YOU: </b> : entry.who === 'NPC' ? <b>{title.toUpperCase()}: </b> : null}{entry.text}
-            </div>
+            <React.Fragment key={i}>
+              {/* C13: where another day's lines start, a dashed rule says which day, so nothing old reads as today's */}
+              {marks[i] && (
+                <div className="ws-dim" role="separator" aria-label={marks[i]!} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, letterSpacing: '0.08em', flexShrink: 0 }}>
+                  <span style={{ flex: 1, borderTop: '1px dashed var(--ws-text-dim)' }} />{marks[i]}<span style={{ flex: 1, borderTop: '1px dashed var(--ws-text-dim)' }} />
+                </div>
+              )}
+              <div className="ws-small" style={entry.who === 'THEM' ? { paddingLeft: 24, textAlign: 'right' } : entry.who === 'NOTE' ? { fontStyle: 'italic' } : { paddingRight: 24 }}>
+                {entry.who === 'THEM' ? <b>YOU: </b> : entry.who === 'NPC' ? <b>{title.toUpperCase()}: </b> : null}{entry.text}
+              </div>
+            </React.Fragment>
           ))}
           {busy && <Busy label={`${title} is thinking`} />}
         </div>
 
         {last && (
           <div className="ws-small" aria-label="The last round">
-            Rolled {last.roll}{last.bonus !== 0 ? ` ${last.bonus > 0 ? '+' : '−'} ${Math.abs(last.bonus)}` : ''} against {last.required}: {last.landed ? 'it landed' : 'it missed'}, regard {last.delta >= 0 ? '+' : '−'}{Math.abs(last.delta)}. {last.by === 'FLOOR' ? 'No bonus: no voice judged it.' : `They took it as: ${last.band}.`}
+            Rolled {last.roll}{last.bonus !== 0 ? ` ${last.bonus > 0 ? '+' : '−'} ${Math.abs(last.bonus)}` : ''} against {last.required}: {last.landed ? 'it landed' : 'it missed'}, regard {last.delta >= 0 ? '+' : '−'}{Math.abs(last.delta)}. {last.by === 'FLOOR' ? 'No bonus: no voice judged it.' : `They took your words ${TalkLaw.tookAs(last.band)}.`}
           </div>
         )}
         {note && <div className="ws-dim ws-small" role="status">{note}</div>}

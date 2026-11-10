@@ -33,6 +33,8 @@ export interface ILogLine {
   text: string;
   /** Who said it, in a city where more than one person talks to the same keeper. */
   name?: string;
+  /** C13: the day it was said, where the talk is kept across days. Absent on a line kept from before this was written. */
+  day?: number;
 }
 
 /** A person, in words: what a model has to work from. It holds no raw stat. */

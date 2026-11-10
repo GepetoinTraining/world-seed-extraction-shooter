@@ -226,8 +226,9 @@ describe('line 103: scanning decays', () => {
     const text = JSON.stringify(lines);
     expect(text).not.toContain('secret');
     expect(text).toContain('Honored Hound');
-    expect(text).toContain('Unknown contact');
-    expect(lines.find(l => l.label === 'Unknown contact')!.count).toBe(2);
+    // N10: the list names a creature as its card does, in the card's own capitals
+    expect(text).toContain('Unknown Contact');
+    expect(lines.find(l => l.label === 'Unknown Contact')!.count).toBe(2);
   });
 });
 

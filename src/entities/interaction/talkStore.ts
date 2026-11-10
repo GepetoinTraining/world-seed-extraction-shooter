@@ -136,6 +136,9 @@ const fieldLogs = new Map<string, ILogLine[]>();
 
 const cityRecordId = (hubId: string, npcId: string) => `talk_${hubId}_${npcId}`;
 
+/** C13: a city talk is kept across days, so each line it keeps says which day it was said on. */
+const today = (line: ILogLine): ILogLine => ({ ...line, day: worldDay() });
+
 const liveEntity = (id: string): IWorldEntity | undefined =>
   Object.values(useWorldStore.getState().currentMap?.chunks ?? {}).flatMap(c => c.entities).find(e => e.id === id);
 
@@ -449,7 +452,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const kept = await loadCity(subject.npcId, person);
       const talkId = `${hubId}:${subject.npcId}:${worldDay()}`;
       const agenda = person.agenda ?? NpcAgenda.fold(kept.agenda, worldDay());
-      set({ busy: true, note: '', log: [...prior, { who: 'THEM', text: said, name: usePlayerStore.getState().player.username }] });
+      set({ busy: true, note: '', log: [...prior, today({ who: 'THEM', text: said, name: usePlayerStore.getState().player.username })] });
       const mounted = await mountFor(cityPlace(), subject.npcId, said, cityNameOf);
       const wants = cityWantOf(subject.npcId, person);
       await setCityGoal(subject.npcId, person, agenda, talkId, mounted, wants, said);
@@ -467,7 +470,7 @@ export const useTalk = create<ITalkState>((set, get) => {
       const sums = TalkLaw.settle({ roll, required, band: answer.band, disposition: get().meter });
       const reply = answer.reply || TalkLaw.floorReply(sums.landed, person.sheet.name);
       set(s => ({
-        busy: false, meter: sums.disposition, log: [...s.log, { who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply }],
+        busy: false, meter: sums.disposition, log: [...s.log, today({ who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply })],
         note: answer.by === 'FLOOR' ? (SAID_WHEN_SILENT[answer.status ?? ''] ?? 'That got no answer: the round rolled without it.') : (answer.gated ? 'They will not do that, whatever you say.' : ''),
         spentUsd: addUsage(s.spentUsd, answer.usage),
         rounds: [...s.rounds, { said, roll, required, band: answer.band, gated: answer.gated, by: answer.by, reply, ...sums }]
@@ -558,7 +561,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         ? [`They are after ${rung.says}.`, want ?? '', TalkLaw.sheetTells(person.sheet)].filter(Boolean).join(' ')
         : TalkLaw.askMissed(person.sheet.name);
       const meter = landed ? get().meter : Math.max(0, get().meter - 1);
-      set(s => ({ busy: false, meter, log: [...s.log, note(`You ask if they want something. Rolled ${roll} against ${required}.`), note(said)] }));
+      set(s => ({ busy: false, meter, log: [...s.log, today(note(`You ask if they want something. Rolled ${roll} against ${required}.`)), today(note(said))] }));
       if (landed) await MemoryStore.write(cityPlace(), [{ owner: subject.npcId, what: Deeds.secret({ day: worldDay(), owner: subject.npcId, to: me(), want: want ?? rung.says }) }]);
       await saveCity(subject.npcId, agenda, kept.attempts, n);
     },

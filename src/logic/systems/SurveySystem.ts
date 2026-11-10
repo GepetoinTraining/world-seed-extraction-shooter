@@ -10,6 +10,7 @@ import { IPlayer } from '../../../shared/types';
 import { IWorldEntity, EntityType, ScanLevel } from '../../../shared/entities/world/types';
 import { chunkOf } from '../../../shared/entities/world/grid';
 import { Leaders } from '../../../shared/entities/world/Leaders';
+import { ContactNames } from './ContactNames';
 
 export type ISurveyEntry = NonNullable<IPlayer['survey']>[string][string];
 /** One world's sectors, on a character or on paper (D85). */
@@ -49,11 +50,15 @@ export interface IManifestLine {
   mark: 'leader' | 'pack' | 'single';
   /** A leader's: how many walk behind it. */
   pack?: number;
+  /** C7: how many leaders or packs that read exactly like this one the line stands for. One for bodies on their own. */
+  times: number;
 }
 
+/** How well a reader knows a definition. With nobody asking, a thing reads by its plain name. */
+type KnowledgeReader = (definitionId: string) => number;
+const PLAINLY_KNOWN: KnowledgeReader = () => 1;
+
 const MARK_ORDER: IManifestLine['mark'][] = ['leader', 'pack', 'single'];
-/** D60: a creature gives only the name it has earned. */
-const labelOf = (e: IWorldEntity) => (e.type === EntityType.MOB ? (e.displayName ?? 'Unknown contact') : e.definitionId);
 const highest = (bodies: IWorldEntity[]) => bodies.reduce((top, e) => (RANK_ORDER.indexOf(String(e.rank)) > RANK_ORDER.indexOf(top) ? String(e.rank) : top), String(bodies[0].rank));
 const commonest = (labels: string[]) => {
   const n = new Map<string, number>();
@@ -167,11 +172,14 @@ export const SurveySystem = {
   },
 
   /**
-   * A deep scan's list, led by the danger. D60: a creature gives only the name it has earned.
+   * A deep scan's list, led by the danger. D60: a creature gives only the name it has earned, and
+   * N10: everything else reads by the name its card would give this reader, never by an id.
    * Q44: what a scan sees shows, all of it. A leader is marked with the pack behind it, and a pack
-   * that walks together is one line; nothing is cut off the end.
+   * that walks together is one line; nothing is cut off the end. C7: leaders or packs that read
+   * exactly alike share a line that says how many, so every body is still counted.
    */
-  manifest(entities: IWorldEntity[]): IManifestLine[] {
+  manifest(entities: IWorldEntity[], level: KnowledgeReader = PLAINLY_KNOWN): IManifestLine[] {
+    const labelOf = (e: IWorldEntity) => ContactNames.fromAbove(e, level);
     const herds = new Map<string, IWorldEntity[]>();
     const singles: IWorldEntity[] = [];
     for (const e of entities) {
@@ -179,13 +187,19 @@ export const SurveySystem = {
       if (!herd) { singles.push(e); continue; }
       herds.set(herd, [...(herds.get(herd) ?? []), e]);
     }
-    const lines: IManifestLine[] = [];
-    for (const [herd, members] of herds) {
+    const herded = new Map<string, IManifestLine>();
+    const fold = (line: Omit<IManifestLine, 'key' | 'times'>) => {
+      const key = `${line.mark}:${line.label}:${line.rank}:${line.hostile ? 'danger' : 'calm'}:${line.mark === 'leader' ? line.pack : line.count}`;
+      const same = herded.get(key);
+      if (same) same.times++;
+      else herded.set(key, { ...line, key, times: 1 });
+    };
+    for (const members of herds.values()) {
       const leader = members.find(m => Leaders.isLeader(m.id));
       if (leader) {
-        lines.push({ key: `leader:${herd}`, label: labelOf(leader), rank: String(leader.rank), hostile: !!leader.isHostile, count: 1, mark: 'leader', pack: members.length - 1 });
+        fold({ label: labelOf(leader), rank: String(leader.rank), hostile: !!leader.isHostile, count: 1, mark: 'leader', pack: members.length - 1 });
       } else if (members.length >= 2) {
-        lines.push({ key: `pack:${herd}`, label: commonest(members.map(labelOf)), rank: highest(members), hostile: members.some(m => !!m.isHostile), count: members.length, mark: 'pack' });
+        fold({ label: commonest(members.map(labelOf)), rank: highest(members), hostile: members.some(m => !!m.isHostile), count: members.length, mark: 'pack' });
       } else singles.push(...members);
     }
     const byLabel = new Map<string, IManifestLine>();
@@ -194,11 +208,30 @@ export const SurveySystem = {
       const key = `${label}:${e.rank}`;
       const line = byLabel.get(key);
       if (line) line.count++;
-      else byLabel.set(key, { key, label, rank: String(e.rank), hostile: !!e.isHostile, count: 1, mark: 'single' });
+      else byLabel.set(key, { key, label, rank: String(e.rank), hostile: !!e.isHostile, count: 1, mark: 'single', times: 1 });
     }
-    return [...lines, ...byLabel.values()].sort((a, b) =>
+    return [...herded.values(), ...byLabel.values()].sort((a, b) =>
       Number(b.hostile) - Number(a.hostile) || MARK_ORDER.indexOf(a.mark) - MARK_ORDER.indexOf(b.mark)
-      || RANK_ORDER.indexOf(b.rank) - RANK_ORDER.indexOf(a.rank) || b.count - a.count || (a.key < b.key ? -1 : 1));
+      || RANK_ORDER.indexOf(b.rank) - RANK_ORDER.indexOf(a.rank) || (b.pack ?? 0) - (a.pack ?? 0) || b.count - a.count
+      || (a.key < b.key ? -1 : 1));
+  },
+
+  /**
+   * Q44: one line, said so it reads without colour. A leader leads with a triangle and the pack
+   * behind it, a pack with its bars, and danger with a bang ahead of everything. C7: a line that
+   * stands for several says how many, ahead of its mark.
+   */
+  say(line: IManifestLine): string {
+    const danger = line.hostile ? '! ' : '';
+    const several = line.times > 1 ? `${line.times}× ` : '';
+    if (line.mark === 'leader') return `${danger}${several}▲ LEADER [${line.rank}] ${line.label}${line.pack ? `, ${line.pack} behind ${line.times > 1 ? 'each' : 'it'}` : ''}`;
+    if (line.mark === 'pack') return `${danger}${several}≡ PACK OF ${line.count} [${line.rank}] ${line.label}`;
+    return `${danger}${line.count}× [${line.rank}] ${line.label}`;
+  },
+
+  /** N10: how many of one kind a scan counted, in plain words. */
+  counted(type: string, count: number): string {
+    return ContactNames.counted(type, count);
   },
 
   /** Q44: the leaders and packs a scan saw, from the depth that sees them (D93's `seen`). */

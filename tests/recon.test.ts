@@ -220,7 +220,7 @@ describe("line 125: recon has its own view, reached without entering a world's f
     await clickSector(A.x, A.y);
     expect(text()).toMatch(/LAST READ/);
     expect(text()).toMatch(/1 regeneration\(s\) ago/);
-    expect(text()).toMatch(/then: 7× MOB/);
+    expect(text()).toMatch(/then: 7 creatures/); // N10: a kind is counted in plain words
     expect(survey()[KEY_A].generation).toBe(0);
 
     await clickSector(A.x, A.y);

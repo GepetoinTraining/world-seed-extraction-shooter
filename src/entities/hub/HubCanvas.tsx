@@ -402,7 +402,7 @@ export const HubCanvas: React.FC = () => {
     if (!material) { pushFeed(`The bill asks for something ${bill.tag}; the stash has none.`, 'loss'); return; }
     const t = aheadTile();
     const res = await useHubStore.getState().queuePiece(lotId, kind, t.x, t.y, material.id);
-    if (res.ok) pushFeed(`${kind} queued from ${material.name} (${PIECE_BUILD_SECONDS[kind]}s).`, 'signal');
+    if (res.ok) pushFeed(`${kind} queued from ${LoadoutSystem.shownName(material)} (${PIECE_BUILD_SECONDS[kind]}s).`, 'signal');
     else pushFeed(res.reason, 'loss');
   };
 
@@ -412,7 +412,7 @@ export const HubCanvas: React.FC = () => {
     if (!lotId || !item) { pushFeed('Choose something from the stash to place.', 'loss'); return; }
     const t = aheadTile();
     const res = await useHubStore.getState().placeItem(lotId, item.id, t.x, t.y, false);
-    if (res.ok) { pushFeed(`${item.name} placed, signed, on record.`, 'proof'); setPlaceSelId(''); }
+    if (res.ok) { pushFeed(`${LoadoutSystem.shownName(item)} placed, signed, on record.`, 'proof'); setPlaceSelId(''); }
     else pushFeed(res.reason, 'loss');
   };
 
@@ -421,7 +421,7 @@ export const HubCanvas: React.FC = () => {
     const near = nearPlacementRef.current;
     if (!lotId || !near) { pushFeed('Nothing in reach to reclaim.', 'loss'); return; }
     const ok = await useHubStore.getState().reclaimItem(lotId, near.id);
-    pushFeed(ok ? `${near.item.name} reclaimed to the stash.` : 'The room would not give it up.', ok ? 'signal' : 'loss');
+    pushFeed(ok ? `${LoadoutSystem.shownName(near.item)} reclaimed to the stash.` : 'The room would not give it up.', ok ? 'signal' : 'loss');
   };
 
   const demolishAhead = async () => {
@@ -902,7 +902,7 @@ export const HubCanvas: React.FC = () => {
       {insideLot && nearPlacement && !stationPanel && (
         <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
           <Chip tone="signal">
-            <b>{nearPlacement.item.name}</b>{nearStationFn ? <> <Kbd>E</Kbd> WORK</> : null}
+            <b>{LoadoutSystem.shownName(nearPlacement.item)}</b>{nearStationFn ? <> <Kbd>E</Kbd> WORK</> : null}
           </Chip>
         </div>
       )}
@@ -927,7 +927,7 @@ export const HubCanvas: React.FC = () => {
                     <Button
                       key={k}
                       tone={buildKind === k ? 'signal' : 'quiet'}
-                      title={mat ? `${PIECE_BILLS[k].count}x ${PIECE_BILLS[k].tag} — ${mat.name}` : `needs ${PIECE_BILLS[k].tag}`}
+                      title={mat ? `${PIECE_BILLS[k].count}x ${PIECE_BILLS[k].tag} — ${LoadoutSystem.shownName(mat)}` : `needs ${PIECE_BILLS[k].tag}`}
                       onClick={() => setBuildKind(buildKind === k ? null : k)}
                     >
                       {k}
@@ -951,11 +951,11 @@ export const HubCanvas: React.FC = () => {
               <span className="ws-dim ws-small" style={{ marginTop: 4 }}>Placement. The item moves in; the record is signed.</span>
               <select className="ws-input" value={placeSelId} onChange={e => setPlaceSelId(e.target.value)} aria-label="Item to place">
                 <option value="">Thing to place…</option>
-                {stashItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                {stashItems.map(i => <option key={i.id} value={i.id}>{LoadoutSystem.shownName(i)}</option>)}
               </select>
               <Button disabled={!placeSelId} onClick={() => void placeAhead()}>PLACE ON THE TILE AHEAD</Button>
               <Button tone="quiet" disabled={!nearPlacement} onClick={() => void reclaimNear()}>
-                RECLAIM {nearPlacement ? nearPlacement.item.name.toUpperCase() : 'IN REACH'}
+                RECLAIM {nearPlacement ? LoadoutSystem.shownName(nearPlacement.item).toUpperCase() : 'IN REACH'}
               </Button>
 
               {myPendingJobs.length > 0 && (
@@ -1129,7 +1129,7 @@ const WorkshopStationModal: React.FC<{ lotId: string; now: number; onClose: () =
             {studyable.map(item => (
               <div key={item.id} className="ws-row" {...hoverProps(item)}>
                 <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
-                  {item.isIdentified === false ? 'Unidentified signal' : item.name}
+                  {LoadoutSystem.shownName(item)}
                 </span>
                 <Button tone="quiet" onClick={() => {
                   const v = usePlayerStore.getState().studyItemAtStation(item.id);
@@ -1190,7 +1190,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <select className="ws-input" style={{ flex: 1 }} value={listId} onChange={e => setListId(e.target.value)} aria-label="Item to list">
               <option value="">Item to list…</option>
-              {stash.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              {stash.map(i => <option key={i.id} value={i.id}>{LoadoutSystem.shownName(i)}</option>)}
             </select>
             <AskFor value={askDefId} onChange={setAskDefId} />
             {!askDefId && <Input type="number" min={1} value={listPrice} onChange={e => setListPrice(e.target.value)} style={{ width: 70 }} aria-label="Price" />}
@@ -1211,7 +1211,7 @@ const CounterStationModal: React.FC<{ lotId: string; onClose: () => void }> = ({
           <div key={listing.item.id} className="ws-row" {...hoverProps(listing.item)}>
             <span style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
               <ItemSprite item={listing.item} cellPx={14} />
-              <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.item.name}</span>
+              <span className="ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(listing.item)}</span>
             </span>
             <BuyListing lotId={lotId} listing={listing} />
           </div>
@@ -1338,7 +1338,7 @@ const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(item)}</span>
                   <span className="ws-dim ws-small">{item.stats.durability}/{item.stats.maxDurability} durability</span>
                 </span>
               </span>

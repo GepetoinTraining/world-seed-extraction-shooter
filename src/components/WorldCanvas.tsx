@@ -1566,7 +1566,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       {/* Vitals HUD (Wave 9.2: bars, rank and load — the exposure is the point) */}
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {/* C10: the row wraps inside its column, so nothing runs under the lesson or the gate's warning at the top centre */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
           <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">{levelLine(player)}</Chip>

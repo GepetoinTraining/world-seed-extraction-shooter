@@ -150,7 +150,8 @@ export function suggestStart(map: Pick<IMap, 'width' | 'height' | 'sectors'>): S
     kind: 'DROP',
     x: best.x, y: best.y,
     why: best.hasExtraction
-      ? `Threat ${best.difficulty} with a beacon in it: the way out is already under your feet.`
+      // L7: a sector is wide, and the drop lands anywhere in it. The beacon is in the sector, not at the feet
+      ? `Threat ${best.difficulty}, with a beacon somewhere in it: a way out without leaving the sector.`
       : `Threat ${best.difficulty}, the lowest on record. No beacon recorded here yet; scan around it for one.`
   };
 }
