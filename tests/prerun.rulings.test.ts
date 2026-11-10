@@ -59,7 +59,7 @@ import { PlayerPersistence } from '../src/logic/persistence/PlayerPersistence';
 import { ContactNames } from '../src/logic/systems/ContactNames';
 import { CreationDoor } from '../src/logic/systems/CreationDoor';
 import { CreationSystem, GRANTED_SKILLS, ICreationWords, IKamiWords } from '../src/logic/systems/CreationSystem';
-import { fireMode, wieldRefusal } from '../src/logic/systems/FieldInput';
+import { fireMode, throwsLeft, wieldRefusal } from '../src/logic/systems/FieldInput';
 import { SurveySystem } from '../src/logic/systems/SurveySystem';
 import { TALK_ENERGY } from '../src/logic/systems/TalkLaw';
 import { inspectEntity } from '../src/render/atoms/inspect';
@@ -555,6 +555,17 @@ describe('C14: a pebble can be picked up, taken in the hand and thrown', () => {
     expect(hand()).toBeUndefined();
     expect(player().equipment!.slots.RIGHT_HAND).toBeUndefined();
     expect(fed()).toMatch(/last one/i);
+  });
+
+  it('the hand says how many throws are left: the one held and every one carried', () => {
+    const [a, b, c] = [pebble('a'), pebble('b'), pebble('c')];
+    const oak = mint(treeDef(), 't');
+    expect(throwsLeft(a, [b, oak, c])).toBe(3);
+    expect(throwsLeft(a, [])).toBe(1);
+    // A hand holding anything else, or nothing, counts no throws
+    expect(throwsLeft(oak, [a, b])).toBeUndefined();
+    expect(throwsLeft(undefined, [a, b])).toBeUndefined();
+    expect(SRC('src/components/Hotbar.tsx')).toMatch(/throwsLeft\(item, carried\)/);
   });
 
   it('nothing but a thing to throw is spent that way', () => {

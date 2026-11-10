@@ -46,6 +46,14 @@ export function wieldRefusal(item: IItem | undefined): string | null {
   return `${LoadoutSystem.shownName(item)} guards. It does not swing.`;
 }
 
+/**
+ * C14: how many throws a hand holding a stone has: the one held and every one carried, since the
+ * next comes to the hand by itself. A hand holding anything else, or nothing, counts none.
+ */
+export function throwsLeft(held: IItem | undefined, carried: IItem[]): number | undefined {
+  return isThrowable(held) ? 1 + carried.filter(isThrowable).length : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // ONE INTERACT KEY
 // ---------------------------------------------------------------------------

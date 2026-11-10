@@ -6,15 +6,16 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { EquipSlotId } from '../../shared/types';
+import { EquipSlotId, IItem } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
-import { hotbarCells, wieldRefusal } from '../logic/systems/FieldInput';
+import { hotbarCells, throwsLeft, wieldRefusal } from '../logic/systems/FieldInput';
 import { handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
 import { ItemSprite, Kbd } from './ui/kit';
 import { hoverProps, useFeed, useHotbar } from './ui/stores';
 
 const CELL = 44;
+const NOTHING_CARRIED: IItem[] = [];
 
 const SHORT: Partial<Record<string, string>> = { RIGHT_HAND: 'RIGHT', LEFT_HAND: 'LEFT' };
 const shortOf = (slot: string) => SHORT[slot] ?? (slot.startsWith('TOOL_') ? 'TOOL' : 'POUCH');
@@ -49,6 +50,8 @@ const CooldownShade: React.FC<{ ms: number }> = ({ ms }) => {
 
 export const Hotbar: React.FC = () => {
   const equipment = usePlayerStore(s => s.player.equipment);
+  // C14: what is carried, for the count on a hand that throws
+  const carried = usePlayerStore(s => s.player.currentSession?.inventory) ?? NOTHING_CARRIED;
   const active = useHotbar(s => s.active);
   const cooldown = useHotbar(s => s.cooldown);
   const root = useRef<HTMLDivElement>(null);
@@ -68,7 +71,8 @@ export const Hotbar: React.FC = () => {
         const item = equipment ? LoadoutSystem.itemIn(equipment, cell.slot) : undefined;
         const seam = i > 0 && cells[i - 1].group !== cell.group;
         const isActive = cell.slot === active;
-        const count = item?.pouchData?.contents.length;
+        // What a pouch holds, or how many throws a hand has left: the one held and every one carried
+        const count = item?.pouchData?.contents.length ?? throwsLeft(item, carried);
         return (
           <React.Fragment key={cell.slot}>
             {seam && <span aria-hidden style={{ width: 2, height: CELL, background: 'var(--ws-text-dim)', margin: '0 4px', flexShrink: 0 }} />}
