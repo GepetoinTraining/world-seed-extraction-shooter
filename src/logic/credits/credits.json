@@ -3,7 +3,7 @@
   "people": [
     {
       "name": "Pedro Garcia",
-      "did": "The design, every ruling in the plan, and the playing. Every commit is under his name."
+      "did": "The design, every ruling in the plan, and the playing. Every commit carries that name."
     }
   ],
   "built": [
@@ -58,7 +58,7 @@
       "name": "Claude Fable 5.2",
       "maker": "Anthropic",
       "when": "2026-11",
-      "did": "The fixes before Pedro's own run, his three rulings of 2026-11-10, the game's own window, and this screen.",
+      "did": "The fixes before Pedro's own run, the three rulings of 2026-11-10, the game's own window, and this screen.",
       "record": "The commits of 2026-11-10 signed \"Claude\", and that day's build session."
     }
   ],
