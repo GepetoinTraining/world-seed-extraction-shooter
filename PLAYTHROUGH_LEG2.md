@@ -258,14 +258,14 @@ The road above is the game as it stood on 2026-11-07. These were fixed after it 
 - **Step 1.** Creation's first page no longer grows: the four shapes stand on it from the start, waiting on a life (C12). The landing page's words on the model are current (C11). The skills granted are ones the kit can work: the Seed checks, the law holds it to that, and with no model nothing is rolled for a skill (C9, ruled 2026-11-10).
 - **Step 2.** The lesson box no longer covers the readout (C10). The tutorial's recon reads 7 lines of leaders and packs where it read about 640 (C7).
 - **Step 4.** With no key the local model writes a whole world (C1, C15 to C21). Recon reads the ground by the world's name for it, counts in plain words, names what it lists, and says a sector is 512 m across (N10, L6). The advice no longer says the way out is under your feet (L7). A first try at a chest no longer says it cost more (N13).
-- **Step 4, the drop.** A pebble is picked up by hand ("PICK UP TALLY PEBBLE"), taken in either hand and thrown, one spent a throw (C14, ruled 2026-11-10).
+- **Step 4, the drop.** A pebble is picked up by hand ("PICK UP TALLY PEBBLE"), taken in either hand and thrown, one spent a throw (C14, ruled 2026-11-10). One lies within a few seconds' walk of any drop, in the tutorial and in any world minted from now on (C24a, ruled 2026-11-10).
 - **Step 4, the sale.** The counter refuses an unread piece and a person (C2, C3).
 - **Step 5.** A person has no name until it is asked: "Unknown Figure" on the card, in "TALK (UNKNOWN FIGURE · 30/100)" and in the talk's window, until ASK THEIR NAME, their own reply, or their agreeing to come gives it (C23, ruled 2026-11-10).
 - **Step 6.** "They took your words well" in place of "They took it as: lands" (C8). A talk kept across days rules off each day (C13). A resident's living folds at midnight (C4). A refused chain is not asked again until something changes (C5).
 - **Step 7.** An unread piece can be studied in town with no bench (C6).
 - **Anywhere.** A screen that breaks says so and offers to draw again, which keeps a run (T2).
 
-His to feel, from what the three rulings left open: how far a newcomer's first pebble lies and what it costs to take (C24), and whether an empty hand should still loose a shot now that there are stones to throw (C25).
+His to feel, from what the three rulings left open: what a pebble costs to take, 3 energy on a first try (C24), and whether an empty hand should still loose a shot now that there are stones to throw (C25).
 
 ## Pedro's run
 
