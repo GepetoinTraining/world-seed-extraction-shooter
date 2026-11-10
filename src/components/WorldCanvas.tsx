@@ -30,6 +30,7 @@ import { presence } from '../../shared/logic/live/Presence';
 import { MOB_DEFINITIONS } from '../../shared/entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../../shared/entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
+import { isThrowable } from '../../shared/entities/item/Throwable';
 import { TollPrompt } from './TollPrompt';
 import { SurveySystem } from '../logic/systems/SurveySystem';
 import { CartSystem } from '../entities/world/CartSystem';
@@ -409,7 +410,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
 
     lastShotRef.current = now;
-    if (weapon) st.wearSlot(slot, 1); // durability: every use costs
+    // Durability: every use costs. C14: a stone thrown is spent, and the next one carried comes to the hand
+    if (isThrowable(weapon)) st.spendThrown(slot);
+    else if (weapon) st.wearSlot(slot, 1);
   };
 
   // Wave 2.5: extraction channel + regrow sweep timing
@@ -1566,7 +1569,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       {/* Vitals HUD (Wave 9.2: bars, rank and load — the exposure is the point) */}
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, width: 240, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {/* C10: the row wraps inside its column, so nothing runs under the lesson or the gate's warning at the top centre */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <Chip tone="signal">ACTIVE AGENT</Chip>
           <Chip title={`Rank ${rank}, from the guild`}><RankMark rank={rank} scale={2} />{rank}</Chip>
           <Chip title="Level, from experience. It begins again at each rank, and what you built stays.">{levelLine(player)}</Chip>

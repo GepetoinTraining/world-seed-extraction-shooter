@@ -19,6 +19,7 @@ import { IRoomState, roomAdditions } from '../../../shared/entities/hub/room';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 import { SurveySystem } from '../../logic/systems/SurveySystem';
+import { ContactNames } from '../../logic/systems/ContactNames';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { WorldClock } from '../../entities/world/WorldClock';
 
@@ -91,7 +92,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
     Object.entries(def.materialProps || {}).forEach(([k, v]) => rows.push([PROPERTY_NAMES[k] || k, String(v)]));
   }
 
-  const title = level <= 0 ? 'Unknown Substance' : def.name;
+  const title = ContactNames.of(e, ctx.level, ctx.player);
   const lacksTool = needs.some(n => n.startsWith('Needs'));
   const tail = canAct ? 'ready' : uses <= 0 ? 'spent' : lacksTool ? (needs[0].includes('ower') ? 'weak tool' : 'needs tool') : 'too far';
   return { title, rows, needs, canAct, compact: compact(title, tail) };
@@ -99,7 +100,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
 
 function inspectMob(e: IWorldEntity): Card {
   const def = MOB_DEFINITIONS[e.definitionId] as any;
-  const title = e.displayName || 'Unknown Contact'; // D60: def.name is never shown
+  const title = ContactNames.of(e, () => 0); // D60: def.name is never shown
   const max = (def?.baseHealth ?? 0) + (e.bonusHealth ?? 0);
   const health = e.health ?? max;
   const rows: [string, string][] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
@@ -117,7 +118,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
   switch (e.type) {
     case EntityType.NPC: {
       const npc = e.npc;
-      const title = npc?.name || 'Unknown Figure';
+      const title = ContactNames.of(e, ctx.level, ctx.player);
       // Q16: fallen on the way out. Nothing of theirs is anyone's to read.
       if (e.escort?.fallen) {
         return { title, rows: [['Down', 'carried out, they come back on the other side']], needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'carry' : 'too far') };
@@ -134,7 +135,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     }
     case EntityType.CONTAINER: {
       const looted = !!e.container?.looted;
-      const title = e.definitionId === 'ground_cache' ? 'Ground Cache' : e.definitionId === 'struct_store' ? 'Store' : 'Chest';
+      const title = ContactNames.of(e, ctx.level, ctx.player);
       const needs = looted ? ['Already emptied'] : canAct ? [] : ['Move closer'];
       return { title, rows: [['Rank', String(e.container?.lootRank ?? e.rank)]], needs, canAct, compact: compact(title, looted ? 'empty' : canAct ? 'ready' : 'too far') };
     }
@@ -145,7 +146,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     case EntityType.STRUCTURE:
       if (e.structure) {
         const s = e.structure;
-        const title = s.built ? `${s.fn[0].toUpperCase()}${s.fn.slice(1)}` : 'Scaffolding';
+        const title = ContactNames.of(e, ctx.level, ctx.player);
         const state = s.brokenAt !== undefined ? 'down' : s.built ? `${e.health ?? s.maxHealth} of ${s.maxHealth}` : `${s.paid ?? 0} of ${s.bill ?? 0} paid`;
         const made = s.material ? (RESOURCE_DEFINITIONS[s.material]?.name ?? s.material) : undefined;
         return { title, rows: [['State', state], ...(made ? [['Drawn from', made] as [string, string]] : [])], needs: [], canAct: false, compact: compact(title, state) };

@@ -9,6 +9,7 @@ import { ReconView, closeRecon } from './src/components/ReconView';
 import { MaintenanceNotice } from './src/components/MaintenanceNotice';
 import { PlayerHub } from './src/components/PlayerHub';
 import { IdentityGate } from './src/components/IdentityGate';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { HubSelector } from './src/components/HubSelector';
 import { HoldingsPanel } from './src/components/HoldingsPanel';
 import { StartupSequence } from './src/logic/initialization/StartupSequence';
@@ -308,26 +309,31 @@ const App: React.FC = () => {
   // C. HUB SELECTOR
   if (!hubSelected) {
     return (
-      <>
+      <ErrorBoundary>
         <HubSelector onSelect={() => setHubSelected(true)} />
         <SystemConsole />
         <ReceiptScreen />
-      </>
+      </ErrorBoundary>
     );
   }
+
+  // T2: from here on a screen that breaks is caught below this component, so the boot, the hub
+  // and the session it holds stand through it, and trying again draws the same screen.
 
   // D. ACTIVE GAME SESSION
   if (session && currentMap) {
     return (
       <div style={{ height: '100vh', background: 'var(--ws-void-1)' }}>
-        <WorldCanvas session={session} />
-        <SystemConsole />
-        <FeedView />
-        <WaitStrip />
-        <ReceiptScreen />
-        <CharacterSheet />
-        <HoverLayer />
-        <HandsLayer />
+        <ErrorBoundary>
+          <WorldCanvas session={session} />
+          <SystemConsole />
+          <FeedView />
+          <WaitStrip />
+          <ReceiptScreen />
+          <CharacterSheet />
+          <HoverLayer />
+          <HandsLayer />
+        </ErrorBoundary>
       </div>
     );
   }
@@ -335,23 +341,25 @@ const App: React.FC = () => {
   // E. MAIN SHELL: one thin bar, then the screen (D7)
   return (
     <div className="ws-ui" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--ws-void-1)' }}>
-      <TerminalBar devMode={devMode} onDevMode={setDevMode} />
-      <MaintenanceNotice />
-      <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' || view === 'RECON' || (view === 'TUNING' && !devMode) ? 'hidden' : 'auto' }}>
-        {(view === 'HUB' || (view === 'TUNING' && !devMode)) && <HubCanvas />}
-        {(view === 'MISSIONS' || (view === 'RECON' && !currentMap)) && <MissionControl />}
-        {view === 'RECON' && currentMap && <ReconView />}
-        {view === 'BANK' && <PlayerHub />}
-        {view === 'HOLDINGS' && <HoldingsPanel devMode={devMode} />}
-        {view === 'TUNING' && devMode && <TuningPanel />}
-      </div>
-      <SystemConsole />
-      <FeedView />
-      <WaitStrip />
-      <ReceiptScreen />
-      <CharacterSheet />
-      <HoverLayer />
-      <HandsLayer />
+      <ErrorBoundary>
+        <TerminalBar devMode={devMode} onDevMode={setDevMode} />
+        <MaintenanceNotice />
+        <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' || view === 'RECON' || (view === 'TUNING' && !devMode) ? 'hidden' : 'auto' }}>
+          {(view === 'HUB' || (view === 'TUNING' && !devMode)) && <HubCanvas />}
+          {(view === 'MISSIONS' || (view === 'RECON' && !currentMap)) && <MissionControl />}
+          {view === 'RECON' && currentMap && <ReconView />}
+          {view === 'BANK' && <PlayerHub />}
+          {view === 'HOLDINGS' && <HoldingsPanel devMode={devMode} />}
+          {view === 'TUNING' && devMode && <TuningPanel />}
+        </div>
+        <SystemConsole />
+        <FeedView />
+        <WaitStrip />
+        <ReceiptScreen />
+        <CharacterSheet />
+        <HoverLayer />
+        <HandsLayer />
+      </ErrorBoundary>
     </div>
   );
 };

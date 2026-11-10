@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
 import App from './App';
 import { VaultGate } from './src/components/VaultGate';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { theme } from './src/theme';
 import { GameClock } from './src/logic/time/GameClock';
 import { StoreClient } from './shared/entities/data/StoreClient';
@@ -36,7 +37,10 @@ root.render(
   <React.StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme="dark">
       <VaultGate>
-        <App />
+        {/* T2: the last thing that can catch an error while drawing. The app's own screens have one each, inside */}
+        <ErrorBoundary whole>
+          <App />
+        </ErrorBoundary>
       </VaultGate>
     </MantineProvider>
   </React.StrictMode>

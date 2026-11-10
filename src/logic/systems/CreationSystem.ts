@@ -59,25 +59,35 @@ export interface ICreationDraftChoices {
 export interface ICreationSkillWords { id: string; name: string; flavor: string; grants: string[] }
 export interface ICreationWords { line: string; skills: ICreationSkillWords[] }
 
+/** One thing a person carries, as whoever grants their skills is shown it: what it is called and what it is. */
+export interface ICarried { name: string; tags: string[] }
+/**
+ * A skill that could be granted. `name` is the bank's, and absent when nobody has named the skill
+ * yet (Q47). `tool` is what it is worked with, in the web's own tool words, and absent for what bare
+ * hands do (C9).
+ */
+export interface ICandidate { id: string; name?: string; tags: string[]; tool?: string[] }
+
 /** What goes to the door. It carries who they were in plain words, and never the bank's id. */
 export interface ICreationAsk {
   who: { was: string; line: string };
   focus: { main: string | null; sub: string | null };
-  carries: string[];
+  /** C9: by name and by tag, so what a skill is worked with can be checked against it. */
+  carries: ICarried[];
   said: { asked: string; answered: string }[];
   alsoSaid: string;
   count: number;
-  /** `name` is the bank's, and absent when nobody has named the skill yet (Q47). */
-  candidates: { id: string; name?: string; tags: string[] }[];
+  candidates: ICandidate[];
+  /** Why the last grant was not taken, when this is the second asking. */
+  refused?: string;
 }
 
 /** What Kami chooses from. Only the bank's kits and the web's skills: he sets a class, he does not mint things. */
 export interface IKamiAsk {
   attributes: string[];
-  kits: { id: string; says: string; line: string; carries: string[] }[];
+  kits: { id: string; says: string; line: string; carries: ICarried[] }[];
   count: number;
-  /** `name` is the bank's, and absent when nobody has named the skill yet (Q47). */
-  candidates: { id: string; name?: string; tags: string[] }[];
+  candidates: ICandidate[];
 }
 
 /** What he sets up. */
@@ -224,14 +234,68 @@ export class CreationSystem {
     return keyedShuffle(OriginBank.questions(), `creation:questions:${originId}`).slice(0, QUESTIONS_ASKED);
   }
 
-  /** Every skill this web can mint, the ones that lean toward these words first. */
-  private static ranked(leans: readonly string[], key: string, except: string[] = []): { id: string; tags: string[] }[] {
+  // ---------------------------------------------------------------------------
+  // C9: THE KIT AND THE SKILLS AGREE (Pedro, 2026-11-10: "api call haiku and make him check if
+  // the kit makes sense... randomness shouldn't be allowed there"). A skill is worked with a
+  // tool or by hand, and the web says which. Whoever grants (the Seed, Kami, or the floor) is
+  // held to what the person carries, and nothing here is rolled.
+  // ---------------------------------------------------------------------------
+
+  /** What a skill is worked with: the web's tool words among its tags. None means bare hands. */
+  static toolsOf(skillId: string): string[] {
+    const tools = new Set(WebBank.current().tags.filter(t => t.kind === 'tool').map(t => t.tag));
+    return (TagLaw.parseSkillId(skillId) ?? []).filter(t => tools.has(t));
+  }
+
+  /** A skill as it is offered: its bank name where it has one, its tags, and what it is worked with. */
+  private static candidate(skillId: string): ICandidate {
+    const tool = this.toolsOf(skillId);
+    return { id: skillId, name: WebSystem.bankNameOf(skillId), tags: TagLaw.parseSkillId(skillId) ?? [], ...(tool.length > 0 ? { tool } : {}) };
+  }
+
+  /** What a kit holds, by name and tag. */
+  static carried(kitId: string): ICarried[] {
+    return this.kitPreview(kitId).map(p => ({ name: p.name, tags: p.tags }));
+  }
+
+  /** The candidates someone carrying these things can work: by hand, or with a tool they hold. */
+  static workable<T extends { tool?: string[] }>(candidates: T[], carries: ICarried[]): T[] {
+    const held = new Set(carries.flatMap(c => c.tags));
+    return candidates.filter(c => (c.tool ?? []).every(t => held.has(t)));
+  }
+
+  /**
+   * THE LAW ON IT: a grant makes sense when every skill in it can be worked with what the person
+   * carries. Where the web holds too few such skills to fill a grant, all of them must be in it.
+   */
+  static sense(ids: string[], ask: Pick<ICreationAsk, 'carries' | 'candidates' | 'count'>): { ok: boolean; reason?: string } {
+    const works = this.workable(ask.candidates, ask.carries);
+    const can = new Set(works.map(c => c.id));
+    const said = (c: ICandidate) => c.name ?? WebSystem.nameOf(c.id);
+    if (works.length >= ask.count) {
+      const stray = ask.candidates.find(c => ids.includes(c.id) && !can.has(c.id));
+      return stray ? { ok: false, reason: `${said(stray)} is worked with a ${(stray.tool ?? []).join(' and a ')}, and they carry none.` } : { ok: true };
+    }
+    const passed = works.find(c => !ids.includes(c.id));
+    return passed ? { ok: false, reason: `${said(passed)} is something they can work with what they carry, and it was passed over.` } : { ok: true };
+  }
+
+  /**
+   * Every skill this web can mint, in an order anyone could work out: what the kit can work, then
+   * what leans furthest toward these words, then what the bank has named, then by id. No dice.
+   * `namedFirst` puts the bank's names ahead of the leaning, for the floor: it has no voice to name
+   * a skill (Q47), so among what the kit can work it takes a named one before a nameless one.
+   */
+  private static ranked(leans: readonly string[], kitId: string, except: string[] = [], namedFirst = false): ICandidate[] {
     const lean = new Set(leans);
-    const all = WebBank.connections(WebBank.current())
-      .map(c => ({ id: c.skillId, tags: TagLaw.parseSkillId(c.skillId) ?? [] }))
-      .filter(c => !except.includes(c.id));
-    const score = (c: { tags: string[] }) => c.tags.filter(t => lean.has(t)).length;
-    return keyedShuffle(all, key).sort((a, b) => score(b) - score(a));
+    const all = WebBank.connections(WebBank.current()).map(c => this.candidate(c.skillId)).filter(c => !except.includes(c.id));
+    const can = new Set(this.workable(all, this.carried(kitId)).map(c => c.id));
+    const score = (c: ICandidate) => c.tags.filter(t => lean.has(t)).length;
+    const works = (a: ICandidate, b: ICandidate) => Number(can.has(b.id)) - Number(can.has(a.id));
+    const leaning = (a: ICandidate, b: ICandidate) => score(b) - score(a);
+    const named = (a: ICandidate, b: ICandidate) => Number(!!b.name) - Number(!!a.name);
+    const byId = (a: ICandidate, b: ICandidate) => (a.id < b.id ? -1 : 1);
+    return all.sort((a, b) => works(a, b) || (namedFirst ? named(a, b) || leaning(a, b) : leaning(a, b) || named(a, b)) || byId(a, b));
   }
 
   /**
@@ -253,11 +317,11 @@ export class CreationSystem {
   /** What the door is asked. A person's skills come from the web's own list and no other. */
   static ask(draft: ICreationDraftChoices): ICreationAsk {
     const origin = OriginBank.origin(draft.originId);
-    const ask = this.ranked([...(origin?.leans.main ?? []), ...(origin?.leans.sub ?? []), ...this.answerLeans(draft)], `creation:ask:${draft.originId}:${answersKey(draft)}`);
+    const candidates = this.ranked([...(origin?.leans.main ?? []), ...(origin?.leans.sub ?? []), ...this.answerLeans(draft)], draft.kitId);
     return {
       who: { was: origin?.says ?? '', line: origin?.line ?? '' },
       focus: { main: origin?.main ?? null, sub: origin?.sub ?? null },
-      carries: this.kitPreview(draft.kitId).map(p => p.name),
+      carries: this.carried(draft.kitId),
       said: OriginBank.questions().flatMap(q => {
         const picked = q.answers.find(a => a.id === draft.answers[q.id]);
         return picked ? [{ asked: q.asks, answered: picked.says }] : [];
@@ -265,25 +329,26 @@ export class CreationSystem {
       alsoSaid: draft.said.trim(),
       count: GRANTED_SKILLS,
       // Q47: a skill nobody has named goes nameless, for the model to name
-      candidates: ask.map(c => ({ id: c.id, name: WebSystem.bankNameOf(c.id), tags: c.tags }))
+      candidates
     };
   }
 
   /**
-   * THE FLOOR (D35): with no key and no network, this is what the Seed says. It is keyed by
-   * the answers, so the same answers grant the same, and it stands before the same law.
+   * THE FLOOR (D35): with no key and no network, this is what the Seed says. It follows the
+   * life, the answers and the kit and rolls nothing for a skill (C9), so the same choices grant
+   * the same, and it stands before the same law. Only its closing words are picked by key.
    */
   static floor(draft: ICreationDraftChoices): ICreationWords {
     const origin = OriginBank.origin(draft.originId);
     const key = `creation:floor:${draft.originId}:${answersKey(draft)}`;
     const picked: string[] = [];
-    const take = (leans: readonly string[], part: string) => {
-      const best = this.namedFirst(this.ranked(leans, `${key}:${part}`, picked))[0];
+    const take = (leans: readonly string[]) => {
+      const best = this.ranked(leans, draft.kitId, picked, true)[0];
       if (best) picked.push(best.id);
     };
-    take(origin?.leans.main ?? [], 'main');
-    take(origin?.leans.sub ?? [], 'sub');
-    take(this.answerLeans(draft), 'said');
+    take(origin?.leans.main ?? []);
+    take(origin?.leans.sub ?? []);
+    take(this.answerLeans(draft));
 
     const rng = Rng.fromKey(`${key}:words`);
     const flavors = OriginBank.flavors();
@@ -319,7 +384,8 @@ export class CreationSystem {
       const stray = (s.grants ?? []).find(g => !(SKILL_GRANTS as readonly string[]).includes(g));
       if (stray) return no(`${s.id} grants "${stray}", and the game has no such thing.`);
     }
-    return { ok: true };
+    // C9: what was granted has to be workable with what they carry
+    return Array.isArray(ask.carries) ? this.sense(words.skills.map(s => s.id), ask) : { ok: true };
   }
 
   // ---------------------------------------------------------------------------
@@ -329,9 +395,9 @@ export class CreationSystem {
   static kamiAsk(): IKamiAsk {
     return {
       attributes: ALL_ATTRIBUTES.map(String),
-      kits: OriginBank.kits().map(k => ({ id: k.id, says: k.says, line: k.line, carries: this.kitPreview(k.id).map(p => p.name) })),
+      kits: OriginBank.kits().map(k => ({ id: k.id, says: k.says, line: k.line, carries: this.carried(k.id) })),
       count: GRANTED_SKILLS,
-      candidates: WebBank.connections(WebBank.current()).map(c => ({ id: c.skillId, name: WebSystem.bankNameOf(c.skillId), tags: TagLaw.parseSkillId(c.skillId) ?? [] }))
+      candidates: WebBank.connections(WebBank.current()).map(c => this.candidate(c.skillId))
     };
   }
 
@@ -343,11 +409,16 @@ export class CreationSystem {
     if (HIDDEN.test(words.name)) return no('He said what stays unsaid.');
     if (!ask.attributes.includes(words.main) || !ask.attributes.includes(words.sub)) return no(`"${words.main}" and "${words.sub}" are not both attributes.`);
     if (words.main === words.sub) return no('He named the same focus twice.');
-    if (!ask.kits.some(k => k.id === words.kit)) return no(`He offered a kit the bank does not hold: ${words.kit}.`);
-    return this.judge(words, { candidates: ask.candidates, count: ask.count } as ICreationAsk);
+    const kit = ask.kits.find(k => k.id === words.kit);
+    if (!kit) return no(`He offered a kit the bank does not hold: ${words.kit}.`);
+    // C9: the kit he chose is what the skills he granted are held against
+    return this.judge(words, { candidates: ask.candidates, count: ask.count, carries: kit.carries } as ICreationAsk);
   }
 
-  /** With no key, no answer or a broken one: fate deals the whole of it, keyed by what was said. */
+  /**
+   * With no key, no answer or a broken one: fate deals the whole of it, keyed by what was said.
+   * Dealing is what this one is. It still deals the skills from what the kit it dealt can work (C9).
+   */
   static fateFloor(messages: Pick<IDoorMessage, 'role' | 'content'>[]): IKamiWords {
     const key = `creation:fate:${messages.map(m => `${m.role}=${m.content}`).join('|')}`;
     const [main, sub] = keyedShuffle(ALL_ATTRIBUTES.map(String), `${key}:focus`);
@@ -355,12 +426,16 @@ export class CreationSystem {
     const flavors = OriginBank.flavors();
     const names = OriginBank.fateNames();
     const lines = OriginBank.fateLines();
+    const kit = keyedShuffle(OriginBank.kits().map(k => k.id), `${key}:kit`)[0];
+    const all = WebBank.connections(WebBank.current()).map(c => this.candidate(c.skillId));
+    const can = this.workable(all, this.carried(kit));
+    const dealt = [...this.namedFirst(keyedShuffle(can, `${key}:skills`)), ...keyedShuffle(all.filter(c => !can.includes(c)), `${key}:rest`)];
     return {
       name: names.length > 0 ? rng.pick(names) : 'WHATEVER CAME UP',
       line: lines.length > 0 ? rng.pick(lines) : 'The bank honors it.',
       main, sub,
-      kit: keyedShuffle(OriginBank.kits().map(k => k.id), `${key}:kit`)[0],
-      skills: this.namedFirst(this.ranked([], `${key}:skills`)).slice(0, GRANTED_SKILLS).map(c => ({
+      kit,
+      skills: dealt.slice(0, GRANTED_SKILLS).map(c => ({
         id: c.id, name: WebSystem.nameOf(c.id), flavor: flavors.length > 0 ? rng.pick(flavors) : '', grants: []
       }))
     };

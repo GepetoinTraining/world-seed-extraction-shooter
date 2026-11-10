@@ -16,6 +16,7 @@ import { IAttributes, IEquipmentState, IItem } from '../../../shared/types';
 import { IMobDefinition } from '../../../shared/entities/mob/types';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
+import { isThrowable, thrownDamage } from '../../../shared/entities/item/Throwable';
 
 export const UNARMED_DAMAGE = 5;
 export const UNARMED_SHOTS_PER_SEC = 1.0;
@@ -43,7 +44,9 @@ export class CombatMath {
 
   /** Damage of one player projectile/swing with this weapon. */
   static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState): number {
-    const base = this.isUsable(weapon) ? Math.round(6 + (weapon!.itemPower || 0) * 0.08) : UNARMED_DAMAGE;
+    // C14: a stone thrown lands by how hard it is, and a bare hand by what a bare hand does
+    const base = isThrowable(weapon) ? thrownDamage(weapon!)
+      : this.isUsable(weapon) ? Math.round(6 + (weapon!.itemPower || 0) * 0.08) : UNARMED_DAMAGE;
     return Math.max(1, base + StatSystem.total(equipment, 'damage'));
   }
 

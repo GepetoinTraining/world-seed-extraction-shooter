@@ -76,8 +76,41 @@ export interface IRoundVerdict {
   remember?: IRememberWords;
 }
 
+/**
+ * C8: how a line sat with them, in the window's words. A band's own name is for the model and the
+ * record; "lands" beside a roll that missed reads as the roll, so the window never says it.
+ */
+const TOOK_AS: Record<JudgeBand, string> = {
+  repels: 'very badly',
+  grates: 'badly',
+  idle: 'as nothing much',
+  lands: 'well',
+  moves: 'very well'
+};
+
 export const TalkLaw = {
   bonusOf,
+
+  /** C8: "They took your words well." The roll says landed or missed; this says only how the words sat. */
+  tookAs(band: JudgeBand): string {
+    return TOOK_AS[band];
+  },
+
+  /**
+   * C13: a kept talk runs over many days, and a line from the first one must not read as today's.
+   * For each line, the mark that stands above it, or null: where a day starts, how long ago it was.
+   * A talk that is all today's carries no mark, and neither does one that keeps no days at all (a
+   * talk in the field lasts one session). A line kept from before days were written reads as earlier.
+   */
+  dayMarks(log: { day?: number }[], today: number): (string | null)[] {
+    if (log.every(line => line.day === today) || log.every(line => line.day === undefined)) return log.map(() => null);
+    const say = (day: number | undefined) => {
+      if (day === undefined) return 'EARLIER';
+      const ago = today - day;
+      return ago <= 0 ? 'TODAY' : ago === 1 ? 'YESTERDAY' : `${ago} DAYS AGO`;
+    };
+    return log.map((line, i) => (i === 0 || log[i - 1].day !== line.day ? say(line.day) : null));
+  },
 
   bonuses(): Record<JudgeBand, number> {
     return Object.fromEntries(JUDGE_BANDS.map(band => [band, bonusOf(band)])) as Record<JudgeBand, number>;

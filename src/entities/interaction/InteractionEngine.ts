@@ -1,11 +1,13 @@
 import { IPlayer, IItem, InteractionType, IInteractionOption } from '../../../shared/types';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { isLooseStone } from '../../../shared/entities/item/Throwable';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { Capture } from '../../../shared/logic/systems/Capture';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
 import { TALK_ENERGY } from '../../logic/systems/TalkLaw';
+import { ContactNames } from '../../logic/systems/ContactNames';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 
 /** D109: you can't talk across a distance. The same reach for a person and a monster. */
@@ -59,7 +61,8 @@ export class InteractionEngine {
 
         options.push({
           id: `int_harvest_${target.id}`,
-          label: `Extract ${resourceDef.name}`,
+          // C14: a loose stone is picked up, as it will be thrown; everything else is still extracted
+          label: `${isLooseStone(resourceDef) ? 'Pick up' : 'Extract'} ${resourceDef.name}`,
           type: InteractionType.HARVEST,
           icon: bareHands ? '✋' : (bestTool.icon || '🛠️'),
           // D27: the menu says what the store will charge: winging it costs more
@@ -112,7 +115,7 @@ export class InteractionEngine {
     if (target.type === EntityType.NPC && target.escort?.fallen && dist < TALK_REACH_TILES) {
       return [{
         id: `int_carry_${target.id}`,
-        label: `Carry (${target.npc?.name ?? 'them'})`,
+        label: `Carry (${ContactNames.knowsName(player, target) ? target.npc!.name : 'them'})`,
         type: InteractionType.COMMUNE,
         icon: '',
         energyCost: 0,
@@ -128,7 +131,8 @@ export class InteractionEngine {
 
       options.push({
         id: `int_talk_${target.id}`,
-        label: `Talk (${npc.name} · ${npc.disposition}/100)`,
+        // A person has no name until it is asked: the prompt says who the character knows them as
+        label: `Talk (${ContactNames.personName(target, player)} · ${npc.disposition}/100)`,
         type: InteractionType.COMMUNE,
         icon: '',
         energyCost: TALK_ENERGY,

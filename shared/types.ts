@@ -968,6 +968,12 @@ export interface IPlayer {
   levelsBanked?: number;
   /** Chests this character has seen, by world and id: where, and how they were last seen. Knowledge, never the truth of now. */
   chestMarks?: Record<string, Record<string, { x: number; y: number; empty: boolean }>>;
+  /**
+   * People whose name this character has been told (Pedro, 2026-11-10: "if you never ask someone's
+   * name, they don't have one"). Keyed by the person: their body's id and the name their world dealt
+   * them (`ContactNames.personKey`). Knowledge of this character's own, kept between drops.
+   */
+  namesKnown?: Record<string, true>;
   /** What each skill's circles have earned, by skill id. Its numbers were rolled here, never by a model. */
   skillGifts?: Record<string, ISkillGift[]>;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */

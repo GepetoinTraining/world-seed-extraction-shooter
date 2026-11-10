@@ -26,11 +26,14 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { Anchors } from '../../logic/economy/Anchors';
 import { RestSystem } from '../../logic/systems/RestSystem';
+import { FieldWords } from '../../logic/systems/FieldWords';
+import { ContactNames } from '../../logic/systems/ContactNames';
+import { isLooseStone, isThrowable } from '../../../shared/entities/item/Throwable';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
-import { EntityType, ICartState } from '../../../shared/entities/world/types';
+import { EntityType, ICartState, IWorldEntity } from '../../../shared/entities/world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from '../../../shared/entities/player/data/cognitiveFrames'; // Import definitions
 import { Capture } from '../../../shared/logic/systems/Capture';
@@ -122,6 +125,10 @@ interface PlayerState {
   placeOnCart: (entityId: string, itemId: string, x: number, y: number, rotated: boolean) => Verdict;
   /** What is in this slot wears, whichever hand fired it. */
   wearSlot: (slot: EquipSlotId, amount: number) => void;
+  /** C14: one throw of what this hand holds. */
+  spendThrown: (slot: EquipSlotId) => void;
+  /** This character has been told a person's name (`ContactNames`). It is theirs to keep. */
+  learnName: (person: Pick<IWorldEntity, 'id' | 'npc'>) => void;
   /** Unequip to the pack (in session, cap-checked) or the stash (in the bank). */
   unequipFromSlot: (slotId: EquipSlotId) => Verdict;
   /** D22: set or clear a cognitive frame on a head-budget position. */
@@ -187,7 +194,8 @@ interface PlayerState {
   performInteraction: (interactionId: string, targetId: string) => void;
   gainSkillXp: (skillId: string, amount: number, tags: string[], actionContext?: IActionContext) => void;
   /** D27: work done with a pair. Held, it grows by use. Not held, it wings it and accrues. */
-  workOn: (pair: ISkillPair, rank: number, xp: number) => void;
+  /** `costly`: the road charged more for a first try, so the feed may say so (N13). */
+  workOn: (pair: ISkillPair, rank: number, xp: number, costly?: boolean) => void;
   processAction: (context: IActionContext) => void;
 }
 
@@ -265,7 +273,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         case 'PENDING_DREAM': set(s => ({ player: { ...s.player, pendingDream: change.dream } })); break;
         case 'ACCRUE': set(s => ({ player: WebSystem.accrue(s.player, change.node, change.rank) })); break;
         case 'RECALC_WEIGHT': store.recalcWeight(); break;
-        case 'WORK_ON': store.workOn(change.pair, change.rank, change.xp); break;
+        case 'WORK_ON': store.workOn(change.pair, change.rank, change.xp, change.costly); break;
         case 'PRACTICE_TRADE': store.practiceTrade(change.family); break;
         case 'LORE': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore: change.lore } } })); break;
         case 'GAIN_SKILL_XP': store.gainSkillXp(change.skillId, change.amount, change.tags, change.context); break;
@@ -1070,7 +1078,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
     SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, refill, health });
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
-    feed(`${item.name}, straight from the belt: ${restore >= 0 ? '+' : ''}${restore} health. The pack never opened.`, restore >= 0 ? 'signal' : 'loss');
+    const said = FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts, fromBelt: true });
+    feed(said.text, said.tone);
     return { ok: true };
   },
 
@@ -1698,8 +1707,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const refill = item.stats?.energy_restore || 0;
     if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
     SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, refill, health });
-    if (refill > 0 && restore === 0) feed(`${item.name}: +${refill} energy.`, 'proof');
-    else feed(restore >= 0 ? `${item.name}: +${restore} health.` : `${item.name}: ${restore} health. It cured something else.`, restore >= 0 ? 'signal' : 'loss');
+    const said = FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts });
+    feed(said.text, said.tone);
   },
 
   /** Mark a stash item to go along on the next session. */
@@ -1745,6 +1754,39 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return { player: { ...s.player, equipment: { ...eq, items } } };
     });
   },
+
+  /**
+   * C14: a stone thrown is gone from the hand, and the next one carried comes to the same hand,
+   * so a held button keeps throwing while the pack has any. The last one leaves the hand empty.
+   * Anything else in a hand is left alone: it wears, and that is `wearSlot`'s.
+   */
+  spendThrown: (target) => {
+    const held = get().player.equipment ? LoadoutSystem.itemIn(get().player.equipment!, target) : undefined;
+    if (!held || !isThrowable(held)) return;
+    const next = get().player.currentSession?.inventory.find(isThrowable);
+    set(s => {
+      const eq = s.player.equipment;
+      if (!eq) return s;
+      const slots = { ...eq.slots };
+      const items = eq.items.filter(i => i.id !== held.id);
+      let currentSession = s.player.currentSession;
+      if (next && currentSession) {
+        slots[target] = next.id;
+        items.push(next);
+        const layout = { ...(currentSession.inventoryLayout || {}) };
+        delete layout[next.id];
+        currentSession = { ...currentSession, inventory: currentSession.inventory.filter(i => i.id !== next.id), inventoryLayout: layout };
+      } else {
+        delete slots[target];
+      }
+      return { player: { ...s.player, equipment: { ...eq, slots, items }, currentSession } };
+    });
+    get().recalcWeight();
+    SessionJournal.record('INTERACT', { kind: 'THROW', itemId: held.id, ...(next ? { drew: next.id } : {}) });
+    if (!next) feed(`That was the last one. The ${target === 'LEFT_HAND' ? 'left' : 'right'} hand is empty.`, 'plain');
+  },
+
+  learnName: (person) => set(s => ({ player: ContactNames.learnName(s.player, person) })),
 
   /** Rotate an item in the grid, if the turned footprint fits. */
   rotateItem: (itemId) => {
@@ -1908,11 +1950,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { usesRemaining: usesLeft } });
       }
 
-      if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5));
+      if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5), effort.winging);
       // Layer 4: what is gathered gives up its element, from its own world's elements
       const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
-      feed(`Harvested ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
+      // C14: a loose stone is picked up, in the feed as in the prompt
+      feed(`${isLooseStone(def) ? 'Picked up' : 'Harvested'} ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
     }
@@ -2024,7 +2067,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { npc: { ...entity.npc, disposition } } });
       SessionJournal.record('INTERACT', { kind: 'GIFT', targetId: entity.id, itemId: gift.id, disposition });
       get().processAction({ tags: ['social', 'trade'], magnitude: 10 });
-      feed(`Gave ${gift.name} to ${entity.npc.name} (${disposition}/100).`, 'plain');
+      // A person has no name until it is asked
+      feed(`Gave ${gift.name} to ${ContactNames.knowsName(get().player, entity) ? entity.npc.name : 'them'} (${disposition}/100).`, 'plain');
       return;
     }
 
@@ -2038,7 +2082,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!escort) return;
       SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name });
       get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
-      feed(`${entity.npc.name} walks beside you now. Reach the beacon together.`, 'signal');
+      // Someone who agrees to come says who they are. From here the character knows their name
+      const alreadyKnown = ContactNames.knowsName(get().player, entity);
+      set(s => ({ player: ContactNames.learnName(s.player, entity) }));
+      feed(alreadyKnown
+        ? `${entity.npc.name} walks beside you now. Reach the beacon together.`
+        : `They give their name, ${entity.npc.name}, and walk beside you now. Reach the beacon together.`, 'signal');
       return;
     }
 
@@ -2101,7 +2150,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  workOn: (pair, rank, xp) => {
+  workOn: (pair, rank, xp, costly = false) => {
     if (get().player.bank.universalSkills[pair.id]) {
       get().gainSkillXp(pair.id, xp, pair.tags);
       set(s => {
@@ -2112,7 +2161,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
     if (!get().player.skillProgress?.[pair.id]) {
-      feed(`Winging it: ${WebSystem.nameOf(pair.id)}. It costs more without the skill, and it counts toward it.`, 'signal');
+      // N13: only a road that charged more for the first try says so
+      feed(FieldWords.winging(WebSystem.nameOf(pair.id), costly), 'signal');
     }
     set(s => ({ player: WebSystem.accrue(s.player, pair, rank) }));
   },

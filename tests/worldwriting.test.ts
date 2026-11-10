@@ -235,6 +235,9 @@ const idOf = (ask: IPassAsk, list: string, key: string) => ask.offered[list]?.fi
 const first = (ask: IPassAsk, list: string, skip = 0) => ask.offered[list]?.[skip]?.id;
 const ALL = [...BIOMES];
 
+const MORE_PREFIXES = ['Dusk', 'Ember', 'Frost', 'Lumen', 'Marrow', 'Nettle', 'Quill', 'Rust', 'Sable', 'Tallow', 'Umber', 'Vesper', 'Wick', 'Yarrow'];
+const MORE_SUFFIXES = ['fall', 'reach', 'mere', 'hold', 'wane', 'spire', 'hollow', 'vale'];
+
 /** What a model might answer for an airless moon, pass by pass. It picks from what was offered. */
 function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: number) => unknown>> = {}): { door: PassDoor; asks: IPassAsk[] } {
   const asks: IPassAsk[] = [];
@@ -288,7 +291,13 @@ function scriptedDoor(overrides: Partial<Record<WorldPassId, (ask: IPassAsk, n: 
       anchors: ask.lack!.list === 'anchors' ? [{ is: 'a bank seal of old silver', tags: [], regions: ['RUINS'] }] : [],
       gear: ask.lack!.list === 'gear' ? [{ is: 'boots of wrapped suit cloth', kind: ask.lack!.kinds![0] }] : [],
       words: []
-    })
+    }),
+    // C21: the names ran out, and the world writes more pieces in its own sound, never ones it has
+    names: ask => {
+      const has = new Set([...ask.names!.prefixes, ...ask.names!.suffixes].map(p => p.toLowerCase()));
+      const fresh = (xs: string[]) => xs.filter(x => !has.has(x.toLowerCase())).slice(0, 2);
+      return { prefixes: fresh(MORE_PREFIXES), suffixes: fresh(MORE_SUFFIXES) };
+    }
   };
   const door: PassDoor = async (pass, ask) => {
     asks.push(ask);
@@ -705,9 +714,10 @@ describe('C17: what a person reads is plain words, and names come from the world
     for (const name of [out.body!.name, ...out.body!.regions.map(r => r.name)]) expect(name, name).toMatch(/^(Chron|Ferri)( (Chron|Ferri))*(gloom|basin|cog)$/);
   });
 
-  // Found on the real run: pieces came with hyphens ("Orchard- Mire-scape"), and a well run dry numbered a name ("Stil Mech Orch 4")
-  it('a name is letters, never a number: a well that runs dry adds a prefix, and a stray hyphen is shed', async () => {
-    const { door } = scriptedDoor({
+  // Found on the real run: pieces came with hyphens ("Orchard- Mire-scape"), and a well run dry numbered a name ("Stil Mech Orch 4"),
+  // then stacked its pieces ("Orcho Glint Orcho Glint Orcho Felt", C21): gibberish, Pedro 2026-11-09
+  it('a name is one prefix and one suffix, never a number or a piece said twice: a well that runs dry asks the world for more', async () => {
+    const { door, asks } = scriptedDoor({
       ground: () => ({
         premise: 'A moon with no air.', regions: BIOMES.map(b => ({ biome: b, blurb: 'Gray, and still.' })),
         without: ['trees'], prefixes: ['Gray-'], suffixes: ['-moth'], words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' }]
@@ -718,8 +728,15 @@ describe('C17: what a person reads is plain words, and names come from the world
     const pool = new Set(poolOf([FIRST_THEME_PACK]).map(e => String(e.entry.name)));
     const drawn = [out.body!.name, ...out.body!.regions.map(r => r.name), ...[...out.body!.creatures, ...out.body!.materials, ...out.body!.junk!].map(x => x.name).filter(n => !pool.has(n))];
     expect(drawn.length).toBeGreaterThan(10);
-    for (const name of drawn) expect(name, name).toMatch(/^Gray( Gray)*moth$/);
     expect(new Set(drawn).size).toBe(drawn.length);
+    // The first ask for more carries the pieces the world had, the hyphens shed
+    const more = asks.filter(a => a.pass === 'names');
+    expect(more.length).toBeGreaterThan(0);
+    expect(more[0].names).toEqual({ prefixes: ['Gray'], suffixes: ['moth'] });
+    // Every name is exactly one prefix and one suffix the world wrote
+    const prefixes = ['Gray', ...MORE_PREFIXES], suffixes = ['moth', ...MORE_SUFFIXES];
+    const made = new Set(prefixes.flatMap(p => suffixes.map(s => `${p}${s}`)));
+    for (const name of drawn) expect(made.has(name), name).toBe(true);
     const tight = buildWorldPassRequest('ground', { pass: 'ground' }, {}).tight as any;
     expect(fits(tight.properties.prefixes, ['Orchard-'])).not.toBeNull();
     expect(fits(tight.properties.suffixes, ['scape'])).toBeNull();
@@ -918,5 +935,86 @@ describe('C19: a copy is the pooled thing, and a thin line is asked again', () =
     expect(out.ok).toBe(false);
     expect(out.pass).toBe('flora');
     expect(out.reason).toContain('sets it apart');
+  });
+});
+
+describe('C21: a name reads as a name: one prefix and one suffix, and more pieces when they run out', () => {
+  // The real run's lists: two prefixes and one suffix, and a world adding a dozen things
+  const short = () => ({
+    premise: 'A drowned orchard where clockwork bees still harvest.', regions: BIOMES.map(b => ({ biome: b, blurb: 'Wet, and ticking.' })),
+    without: ['trees'], prefixes: ['Orcho', 'Glint'], suffixes: ['Felt'], words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' }]
+  });
+
+  it('no name says a piece twice, and a pass whose names ran out is not asked again for it', async () => {
+    const { door, asks } = scriptedDoor({ ground: short });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const pool = new Set(poolOf([FIRST_THEME_PACK]).map(e => String(e.entry.name)));
+    const drawn = [out.body!.name, ...out.body!.regions.map(r => r.name), ...[...out.body!.creatures, ...out.body!.materials, ...out.body!.junk!, ...out.body!.professions!].map(x => x.name).filter(n => !pool.has(n))];
+    for (const name of drawn) {
+      const words = name.split(' ');
+      expect(words.length, name).toBeLessThanOrEqual(2);
+      expect(new Set(words).size, name).toBe(words.length);
+      expect(name, name).not.toMatch(/Orcho.*Orcho|Glint.*Glint|Orcho.*Glint|Glint.*Orcho/);
+    }
+    expect(new Set(drawn).size).toBe(drawn.length);
+    // The answer that ran the names dry stood once the world had more: the pass itself was asked once
+    expect(asks.filter(a => a.pass === 'fauna').length).toBe(1);
+    expect(asks.filter(a => a.pass === 'names').length).toBeGreaterThan(0);
+    expect(out.passes.some(p => p.pass === 'names')).toBe(true);
+  });
+
+  it('more pieces are new ones: an answer with nothing new is refused, and asked again', async () => {
+    const { door, asks } = scriptedDoor({
+      ground: short,
+      names: (ask, n) => (n === 1 ? { prefixes: ['orcho', 'Glint'], suffixes: ['Felt'] } : { prefixes: [`Ash${'ab'.repeat(n)}`, `Brine${'ab'.repeat(n)}`], suffixes: ['Mere', 'Wane'] })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    const more = asks.filter(a => a.pass === 'names');
+    expect(more[1].refused).toContain('already');
+    expect(more[1].names!.prefixes).toEqual(['Orcho', 'Glint']);
+  });
+
+  it('the ask for more pieces holds the model to letters, a prefix starting with a capital, and at least one prefix', () => {
+    const tight = buildWorldPassRequest('names', { pass: 'names', names: { prefixes: ['Gray'], suffixes: ['moth'] } }, {}).tight as any;
+    expect(fits(tight, { prefixes: ['Dusk'], suffixes: [] })).toBeNull();
+    expect(fits(tight, { prefixes: [], suffixes: ['fall'] })).not.toBeNull();
+    expect(fits(tight, { prefixes: ['dusk'], suffixes: [] })).not.toBeNull();
+    expect(fits(tight, { prefixes: ['Dusk-'], suffixes: [] })).not.toBeNull();
+    expect(fits(PASS_SCHEMAS.names, { prefixes: ['Dusk'], suffixes: ['fall'] })).toBeNull();
+  });
+});
+
+// -------------------------------------------------------------------------
+// C24 (Pedro, 2026-11-10: "We need to seed some form of handy throw able object"): a stone to throw is laid
+// loose across a world's ground from what the world wrote in the pebble form, so every world has to hold one.
+// -------------------------------------------------------------------------
+
+describe('C24: every written world holds something loose to pick up and throw', () => {
+  const loose = <T extends { form: string }>(body: { materials: T[] }) => body.materials.filter(m => m.form === 'pebble');
+
+  it('the pool has one: it is brought from the pool, and the model is asked for nothing', async () => {
+    const { door, asks } = scriptedDoor();
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    expect(loose(out.body!).length).toBeGreaterThan(0);
+    expect(FIRST_THEME_PACK.materials.filter(m => m.form === 'pebble').map(m => m.blurb)).toContain(loose(out.body!)[0].blurb);
+    expect(asks.some(a => a.pass === 'lack' && a.lack?.need === 'pick up and throw')).toBe(false);
+  });
+
+  it('nothing in the pool can be thrown: the model is asked for it, and code makes it a loose stone taken by hand', async () => {
+    const pack = without(p => ({ materials: p.materials.filter(m => m.form !== 'pebble') }));
+    const { door, asks } = scriptedDoor();
+    const out = await writeFrom(door, pack);
+    expect(out.ok, out.reason).toBe(true);
+    const lack = asks.find(a => a.pass === 'lack' && a.lack?.need === 'pick up and throw')!;
+    expect(lack, 'a lack ask for something to throw').toBeDefined();
+    expect(lack.lack).toMatchObject({ list: 'materials' });
+    // The scripted answer says "rock": what it is for decides its form, never the model
+    const stone = out.body!.materials.find(m => m.blurb === 'packed regolith blocks')!;
+    expect(stone.form).toBe('pebble');
+    expect(stone.verb).toBe('hands');
+    expect(ThemeLaw.validate(out.body!, t => registered(t) || out.body!.tags.some(w => w.tag === t))).toEqual({ ok: true });
   });
 });

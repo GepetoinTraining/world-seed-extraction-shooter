@@ -14,6 +14,7 @@
 
 import { IPlayer, UniversalRank } from '../../../shared/types';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { GROUND_VERSION } from '../../../shared/entities/world/WorldGenerator';
 import { IMap, ISector, ScanLevel } from '../../../shared/entities/world/types';
 import type { IWorldCard } from '../../entities/world/worldView';
 
@@ -79,7 +80,9 @@ export class Tutorial {
       creator: 'THE NEXUS',
       extractionTaxRate: 0.05,
       // Q14: nothing brought in is lost here
-      deathPenalty: 'NONE'
+      deathPenalty: 'NONE',
+      // C24: it has no certificate to pin a ground in, so it is laid by the ground of the day: a stone to throw lies near the drop
+      groundVersion: GROUND_VERSION
     };
   }
 

@@ -236,7 +236,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ directorRecord: told });
     const card = get().availableWorlds.find(w => w.id === worldId);
     if (generationContext && card) {
-      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), webVersion: generationContext.webVersion, cycleMs: generationContext.cycleMs, lay: generationContext.lay };
+      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), webVersion: generationContext.webVersion, groundVersion: generationContext.groundVersion, cycleMs: generationContext.cycleMs, lay: generationContext.lay };
     }
   },
   settled: async () => { await landing; },
@@ -290,6 +290,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           ipFloor: cert.data.rules.ipFloor,
           packVersion: cert.data.rules.contentPackVersion,
           webVersion: cert.data.rules.webVersion,
+          groundVersion: cert.data.rules.groundVersion,
           // Q43: a world never retires. An older grid is walked on this one, and a theme it cannot read here gives way to the hub's own.
           themeId: ContentRegistry.standing(cert.data.rules.themeId),
           magicUnlocked: cert.data.rules.magicUnlocked
@@ -329,7 +330,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         const populationRecord = worldCard.isDebug ? null : await PopulationStore.load(worldCard.id).catch(() => emptyPopulationRecord());
         set({ chestRecord, populationRecord });
         const cadence = worldCard.cadence ?? WorldClock.cadenceFor(worldCard.size);
-        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs };
+        // C24: the land is laid by the ground the world pinned, as its people are read through the web it pinned
+        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion, groundVersion: worldCard.groundVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs };
         generationContext = {
           ...context,
           lay: chunk => {

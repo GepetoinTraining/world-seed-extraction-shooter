@@ -53,7 +53,7 @@ export type PlayerChange =
   | { kind: 'ACCRUE'; node: ISkillPair; rank: number }
   /** The store's own steps that answer nothing back. */
   | { kind: 'RECALC_WEIGHT' }
-  | { kind: 'WORK_ON'; pair: ISkillPair; rank: number; xp: number }
+  | { kind: 'WORK_ON'; pair: ISkillPair; rank: number; xp: number; costly?: boolean }
   | { kind: 'PRACTICE_TRADE'; family: ProcessFamily }
   | { kind: 'GAIN_SKILL_XP'; skillId: string; amount: number; tags: string[]; context?: IActionContext }
   | { kind: 'DIVE'; layerId?: string }

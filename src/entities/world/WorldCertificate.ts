@@ -1,5 +1,6 @@
 // FIXED: Lowercase 'certificateSystem'
 import { GRID_VERSION } from '../../../shared/entities/world/grid';
+import { GROUND_VERSION } from '../../../shared/entities/world/WorldGenerator';
 import { CertificateSystem, IPlayerCertificate, ISignedPayload } from '../identity/certificateSystem';
 import { VectorStore, VectorNamespace } from '../../../shared/entities/data/VectorStore';
 import { useIdentityStore } from '../identity/store';
@@ -64,6 +65,11 @@ export interface IWorldRules {
   cadence?: ICadence;
   /** D71: its sky. Absent means it turns. */
   sky?: SkyKind;
+  /**
+   * C24: the ground this world is laid by (`GROUND_VERSION`), pinned at its mint so its land never
+   * changes under it. Absent on a world minted before: nothing lies loose there, as it always was.
+   */
+  groundVersion?: number;
 }
 
 export interface IWorldCertificateData {
@@ -143,6 +149,8 @@ export class WorldCertificateSystem {
       // The pin is the one-way door: this world dreams this bank forever.
       contentPackVersion: AffixBank.version(),
       webVersion: WebBank.version(),
+      // C24: and the ground it is laid by, so a stone to throw lies near at hand in every world minted from now on
+      groundVersion: GROUND_VERSION,
       themeId: worldType === WorldType.HUB ? undefined : ContentRegistry.defaultThemeId(),
       ...rules
     };

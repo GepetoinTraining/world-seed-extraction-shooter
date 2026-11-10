@@ -1054,7 +1054,9 @@ describe('the fifth class: fate gambler', () => {
     main: 'perception',
     sub: 'subterfuge',
     kit: OriginBank.origin('cooking')!.kits[0],
-    skills: ask.candidates.slice(0, GRANTED_SKILLS).map((c, i) => ({ id: c.id, name: `Dealt ${i}`, flavor: 'It came up.', grants: [] }))
+    // C9: a lawful class grants what the kit it names can work
+    skills: CreationSystem.workable(ask.candidates, ask.kits.find(k => k.id === OriginBank.origin('cooking')!.kits[0])!.carries)
+      .slice(0, GRANTED_SKILLS).map((c, i) => ({ id: c.id, name: `Dealt ${i}`, flavor: 'It came up.', grants: [] }))
   });
   const draft = { ...draftOf('cooking'), originId: '', kitId: '', silhouette: FATE_GAMBLER, answers: {} };
 
@@ -1359,7 +1361,8 @@ describe('the fifth class: the screens', () => {
     status: 'OK',
     data: {
       name: 'Faked Stake', line: 'It is set. Faked, for this bar.', main: 'perception', sub: 'focus', kit: ask.kits[0].id,
-      skills: ask.candidates.slice(0, GRANTED_SKILLS).map((c, i) => ({ id: c.id, name: `Dealt Hand ${i}`, flavor: 'Faked.', grants: [] }))
+      // C9: a lawful class grants what the kit it names can work
+      skills: CreationSystem.workable(ask.candidates, ask.kits[0].carries).slice(0, GRANTED_SKILLS).map((c, i) => ({ id: c.id, name: `Dealt Hand ${i}`, flavor: 'Faked.', grants: [] }))
     },
     usage: { model: 'claude-sonnet-5-5', inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, usd: 0.01 }
   });

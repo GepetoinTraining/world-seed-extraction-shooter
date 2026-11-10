@@ -36,7 +36,8 @@ const clampNeed = (value: number) => Math.max(0, Math.min(100, value));
  * house has no house whatever a number says.
  */
 export const LADDER: readonly { need: NeedKind; says: string; fact?: keyof ILadderFacts }[] = [
-  { need: 'survival', says: 'fed' },
+  // W6: each rung's words finish "Working toward …" and "They are after …" as a sentence
+  { need: 'survival', says: 'being fed' },
   { need: 'safety', says: 'a house of their own', fact: 'house' },
   { need: 'esteem', says: 'more money than they need', fact: 'money' },
   { need: 'belonging', says: 'a spouse and children', fact: 'family' },

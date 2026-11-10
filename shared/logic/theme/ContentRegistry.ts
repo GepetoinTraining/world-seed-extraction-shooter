@@ -21,7 +21,7 @@ import { AffixBank } from '../content/AffixBank';
 import type { IGenerationContext } from '../../entities/world/WorldGenerator';
 import type { IDirectorRecord } from '../../entities/world/Director';
 import { ICompiledTheme, IAbility, bodyOf, compileTheme, themeIdOf } from './ThemeCompiler';
-import { IThemeBody, IThemePack } from './ThemeTypes';
+import { IThemeBody, IThemePack, IThemeRegion } from './ThemeTypes';
 import { IThemeVerdict, ThemeLaw } from './ThemeLaw';
 import { SHELF } from './shelf';
 import { WorldGrowth } from './WorldGrowth';
@@ -180,8 +180,13 @@ export class ContentRegistry {
     return [...(this.get(themeId)?.lore ?? []), ...(director?.lines?.grown ?? []).flatMap(b => b.growth.lore)];
   }
 
+  /** What a world calls one kind of its ground, and what it says of it. */
+  static region(themeId: string | undefined, biome: string): IThemeRegion | undefined {
+    return this.get(themeId)?.regions.find(r => r.biome === biome);
+  }
+
   static regionName(themeId: string | undefined, biome: string): string | undefined {
-    return this.get(themeId)?.regions.find(r => r.biome === biome)?.name;
+    return this.region(themeId, biome)?.name;
   }
 
   /** A theme's bank as a pack, for the dream: its own entries only, with effects folded in. */

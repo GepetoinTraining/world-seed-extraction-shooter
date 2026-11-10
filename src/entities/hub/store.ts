@@ -2410,7 +2410,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       const pair = WebSystem.pairOfJob(job.recipeId, (job.consumed ?? []).map(c => c.defId), pc.view().player.bank.universalSkills);
       if (pair && outputs.length > 0) {
         const worked = Math.max(0, ...outputs.map(o => rankIndexOf(o.rank)));
-        pc.apply({ kind: 'WORK_ON', pair, rank: worked, xp: PROCESS_SKILL_XP_PER_JOB });
+        // N13: a bench job without the skill took a quarter longer (clockFactor), so its first try may say it cost more
+        pc.apply({ kind: 'WORK_ON', pair, rank: worked, xp: PROCESS_SKILL_XP_PER_JOB, costly: true });
       }
       await Ledger.append('CRAFT', { kind: 'COLLECTED', jobId: job.id, outputIds: outputs.map(o => o.id) });
       // Wave 6.2: crafted goods carry their maker's signature from birth —

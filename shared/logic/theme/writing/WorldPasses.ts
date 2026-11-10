@@ -16,8 +16,11 @@ import { FLORA_FORMS, MINERAL_FORMS, PoolList } from './WorldPool';
 
 /** C15: what grows and what lives are two passes, the second given what the first made, so neither ask runs past its room. */
 export const WORLD_PASSES = ['ground', 'terrain', 'flora', 'fauna', 'people', 'holds', 'made', 'known'] as const;
-/** Every ask a world is written in: its passes in order, and what it still lacks once the pool is read (C16). */
-export const WORLD_ASKS = [...WORLD_PASSES, 'lack'] as const;
+/**
+ * Every ask a world is written in: its passes in order, what it still lacks once the pool is read (C16), and more
+ * name pieces when every name its lists make is taken (C21).
+ */
+export const WORLD_ASKS = [...WORLD_PASSES, 'lack', 'names'] as const;
 export type WorldPassId = typeof WORLD_ASKS[number];
 
 /** What each pass pulls from the pool, in the order it asks. */
@@ -30,7 +33,8 @@ export const PASS_PULLS: Record<WorldPassId, PoolList[]> = {
   holds: ['minerals', 'junk', 'anchors'],
   made: ['gear', 'goods', 'stations', 'consumables'],
   known: ['abilities', 'affixes'],
-  lack: []
+  lack: [],
+  names: []
 };
 
 /** What a person reads while a pass is out. */
@@ -43,7 +47,8 @@ export const PASS_SAID: Record<WorldPassId, string> = {
   holds: 'WHAT LIES IN THE GROUND',
   made: 'WHAT IS MADE AND WORN',
   known: 'WHAT IT KNOWS, AND ITS LORE',
-  lack: 'WHAT IT STILL LACKS'
+  lack: 'WHAT IT STILL LACKS',
+  names: 'MORE NAMES'
 };
 
 const str = { type: 'string' };
@@ -101,7 +106,9 @@ export const PASS_SCHEMAS: Record<WorldPassId, Record<string, unknown>> = {
     anchors: list({ is: str, tags: strs, regions: REGIONS }),
     gear: list({ is: str, kind: oneOf(GEAR_KINDS) }),
     words: WORDS
-  })
+  }),
+  // C21: a name is one prefix and one suffix; when every one the lists make is taken, the world writes more pieces
+  names: obj({ prefixes: strs, suffixes: strs })
 };
 
 /** What a world still lacks once the pool is read, and which list of the lack ask fills it (C16). */
@@ -111,7 +118,7 @@ export interface ILack {
   need: string;
   list: LackList;
   /** What code makes of what is added, so it meets the need: never the model's to say. */
-  role?: 'monster' | 'animal' | 'start' | 'lead' | 'building';
+  role?: 'monster' | 'animal' | 'start' | 'lead' | 'building' | 'loose';
   /** For gear: the kinds that answer the need. */
   kinds?: string[];
   /** The kinds of ground it must reach, when the need is a place. */
@@ -136,6 +143,9 @@ const NAME_START = { type: 'string', pattern: '^[A-Z][A-Za-z]*$' };
 /** C17: the one word a skill must carry to cross the skilled ground, registered with it when it is new. */
 const CROSSING = obj({ tag: SPELLED, kind: oneOf(WORD_KINDS), meaning: said });
 const someOf = (item: Record<string, unknown>, minItems = 0) => ({ type: 'array', items: item, ...(minItems > 0 ? { minItems } : {}) });
+
+/** The pieces a world's names are made of (C21). */
+export interface INamePieces { prefixes: string[]; suffixes: string[] }
 
 export interface ITightAsk { offered?: Record<string, { id: string }[]>; words?: string[]; lack?: ILack }
 
@@ -213,6 +223,8 @@ export function tightPass(pass: WorldPassId, ask: ITightAsk, registry: readonly 
         words
       });
     }
+    // At least one new prefix: it makes a new name with every suffix the world has
+    case 'names': return obj({ prefixes: someOf(NAME_START, 1), suffixes: someOf(NAME_PIECE) });
   }
 }
 
@@ -251,10 +263,11 @@ export interface ILackAnswer {
   fauna: IFaunaAnswer['fauna']; materials: { is: string; form: string; tags: string[]; regions: string[] }[];
   anchors: IHoldsAnswer['anchors']; gear: { is: string; kind: string }[]; words: IWord[];
 }
+export type INamesAnswer = INamePieces;
 
 export interface IPassAnswers {
   ground: IGroundAnswer; terrain: ITerrainAnswer; flora: IFloraAnswer; fauna: IFaunaAnswer; people: IPeopleAnswer;
-  holds: IHoldsAnswer; made: IMadeAnswer; known: IKnownAnswer; lack: ILackAnswer;
+  holds: IHoldsAnswer; made: IMadeAnswer; known: IKnownAnswer; lack: ILackAnswer; names: INamesAnswer;
 }
 
 // -------------------------------------------------------------------------

@@ -16,13 +16,15 @@ import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useHubStore, hubPort } from '../entities/hub/store';
 import { ISector, ScanLevel } from '../../shared/entities/world/types';
 import { WorldClock } from '../entities/world/WorldClock';
-import { SECTOR_CHUNKS, sectorOf } from '../../shared/entities/world/grid';
+import { SECTOR_CHUNKS, SECTOR_TILES, sectorOf } from '../../shared/entities/world/grid';
+import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
+import { WebSystem } from '../../shared/logic/systems/WebSystem';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
 import { Sprite } from '../../shared/render/atoms/atoms';
 import { reconCell, RECON_CELL_ATOMS } from '../render/atoms/recon';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
-import { IManifestLine, ISurveyEntry, SurveySystem } from '../logic/systems/SurveySystem';
+import { ISurveyEntry, SurveySystem } from '../logic/systems/SurveySystem';
 import { ScanPass } from '../logic/systems/ScanPass';
 import { MapSystem, isMapItem } from '../logic/systems/MapSystem';
 import { deployToWorld, OPENING_WORLD } from '../logic/systems/Deploy';
@@ -68,16 +70,8 @@ const holdingCells = (entry: ISurveyEntry | undefined, sx: number, sy: number) =
   }));
 };
 
-/**
- * Q44: one manifest line, said so it reads without colour. A leader leads with a triangle and the
- * pack behind it, a pack with its bars, and danger with a bang ahead of the count.
- */
-const manifestText = (line: IManifestLine): string => {
-  const danger = line.hostile ? '! ' : '';
-  if (line.mark === 'leader') return `${danger}▲ LEADER [${line.rank}] ${line.label}${line.pack ? `, ${line.pack} behind it` : ''}`;
-  if (line.mark === 'pack') return `${danger}≡ PACK OF ${line.count} [${line.rank}] ${line.label}`;
-  return `${danger}${line.count}× [${line.rank}] ${line.label}`;
-};
+/** N10: a kind of ground no world has named yet, in plain words and never as the game's own word for it. */
+const plainGround = (biome: string): string => `${biome[0]}${biome.slice(1).toLowerCase().replace(/_/g, ' ')}`;
 
 export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = ({ onDrop }) => {
   const free = !onDrop;
@@ -188,6 +182,8 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
 
   const selectedKey = selectedDropZone ? `${selectedDropZone.x},${selectedDropZone.y}` : null;
   const selected = selectedKey ? currentMap.sectors[selectedKey] : null;
+  // N10: the ground's name and what is said of it are this world's own writing
+  const region = selected ? ContentRegistry.region(availableWorlds.find(w => w.id === activeWorldId)?.themeId, selected.biome) : undefined;
 
   const scanAt = (sx: number, sy: number) => {
     const sector = currentMap.sectors[`${sx},${sy}`];
@@ -414,9 +410,11 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
         {!selected && <span className="ws-dim ws-small">No sector selected. The land shows from above: each kind of ground has its own pattern, faint through the static until scanned. A scan reads the rest: the threat, the way out (the lozenge), and who stands there (ticks along the top edge).</span>}
         {selected && (
           <div className="ws-list ws-small">
-            <div className="ws-row"><span className="ws-dim">SECTOR</span><span>{selected.x}·{selected.y}</span></div>
-            {/* Q14: the ground shows from above, before any scan */}
-            <div className="ws-row"><span className="ws-dim">BIOME</span><span>{selected.biome}</span></div>
+            {/* L6: a sector is wide, and saying so is what makes its counts read as one sector's */}
+            <div className="ws-row"><span className="ws-dim">SECTOR</span><span>{selected.x}·{selected.y} · {SECTOR_TILES} m across</span></div>
+            {/* Q14: the ground shows from above, before any scan. N10: by the name this world gives it */}
+            <div className="ws-row"><span className="ws-dim">GROUND</span><span>{region?.name ?? plainGround(selected.biome)}</span></div>
+            {region?.blurb && <div className="ws-dim ws-small">{region.blurb}</div>}
             {selected.scanLevel < ScanLevel.BASIC && <div className="ws-row ws-dim"><span>Not scanned: threat, exit and contacts unknown</span><span /></div>}
             {selected.scanLevel >= ScanLevel.BASIC && (
               <>
@@ -460,7 +458,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                 <>
                   <div className="ws-row"><span className="ws-dim">LAST READ</span><span>{SurveySystem.staleBy(entry, generation)} regeneration(s) ago</span></div>
                   {Object.entries(entry.contacts).map(([type, count]) => (
-                    <div key={type} className="ws-row ws-dim"><span>then: {count}× {type}</span><span /></div>
+                    <div key={type} className="ws-row ws-dim"><span>then: {SurveySystem.counted(type, count)}</span><span /></div>
                   ))}
                   <div className="ws-dim ws-small">Stale. Scan again to learn what changed.</div>
                 </>
@@ -483,28 +481,33 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
               <>
                 <div className="ws-row"><span className="ws-dim">CONTACTS</span><span /></div>
                 {Object.entries(entityCounts(selected)).map(([type, count]) => (
-                  <div key={type} className="ws-row"><span>{count}× {type}</span><span /></div>
+                  <div key={type} className="ws-row"><span>{SurveySystem.counted(type, count)}</span><span /></div>
                 ))}
                 {selected.entities.length === 0 && <div className="ws-row"><span className="ws-dim">Sector clear.</span><span /></div>}
-                {/* Q44: this depth marks a leader seen (D93), so what it saw shows here, by shape */}
-                {SurveySystem.packs(selected.entities).length > 0 && (
-                  <>
-                    <div className="ws-row"><span className="ws-dim">LEADERS AND PACKS</span><span /></div>
-                    {SurveySystem.packs(selected.entities).map(line => (
-                      <div key={line.key} className="ws-row">
-                        <span className={line.hostile ? 'ws-loss' : undefined}>{manifestText(line)}</span><span />
-                      </div>
-                    ))}
-                  </>
-                )}
+                {/* Q44: this depth marks a leader seen (D93), so what it saw shows here, by shape.
+                    C7: a deeper scan lists them in its manifest, so they are said once, there */}
+                {selected.scanLevel < ScanLevel.COMPLETE && (() => {
+                  const packs = SurveySystem.packs(selected.entities);
+                  if (packs.length === 0) return null;
+                  return (
+                    <>
+                      <div className="ws-row"><span className="ws-dim">LEADERS AND PACKS</span><span /></div>
+                      {packs.map(line => (
+                        <div key={line.key} className="ws-row">
+                          <span className={line.hostile ? 'ws-loss' : undefined}>{SurveySystem.say(line)}</span><span />
+                        </div>
+                      ))}
+                    </>
+                  );
+                })()}
               </>
             )}
             {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
               <>
                 <div className="ws-row"><span className="ws-dim">MANIFEST</span><span /></div>
-                {SurveySystem.manifest(selected.entities).map(line => (
+                {SurveySystem.manifest(selected.entities, WebSystem.knowledgeReader(player), player).map(line => (
                   <div key={line.key} className="ws-row">
-                    <span className={line.hostile ? 'ws-loss' : undefined}>{manifestText(line)}</span><span />
+                    <span className={line.hostile ? 'ws-loss' : undefined}>{SurveySystem.say(line)}</span><span />
                   </div>
                 ))}
               </>

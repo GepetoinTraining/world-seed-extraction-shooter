@@ -9,6 +9,7 @@ import { EntityType, IMap, IWorldEntity, ScanLevel } from '../../../shared/entit
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { isThrowable } from '../../../shared/entities/item/Throwable';
 import { TILE_PX } from '../../../shared/entities/world/grid';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +42,16 @@ export function wieldRefusal(item: IItem | undefined): string | null {
   if (!item) return null;
   if (item.slot === SlotType.MAIN_HAND) return null;
   if (item.slot === SlotType.TOOL || (item.tags || []).includes('tool')) return null;
+  if (isThrowable(item)) return null; // C14: a stone in the hand is thrown
   return `${LoadoutSystem.shownName(item)} guards. It does not swing.`;
+}
+
+/**
+ * C14: how many throws a hand holding a stone has: the one held and every one carried, since the
+ * next comes to the hand by itself. A hand holding anything else, or nothing, counts none.
+ */
+export function throwsLeft(held: IItem | undefined, carried: IItem[]): number | undefined {
+  return isThrowable(held) ? 1 + carried.filter(isThrowable).length : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +160,8 @@ export function suggestStart(map: Pick<IMap, 'width' | 'height' | 'sectors'>): S
     kind: 'DROP',
     x: best.x, y: best.y,
     why: best.hasExtraction
-      ? `Threat ${best.difficulty} with a beacon in it: the way out is already under your feet.`
+      // L7: a sector is wide, and the drop lands anywhere in it. The beacon is in the sector, not at the feet
+      ? `Threat ${best.difficulty}, with a beacon somewhere in it: a way out without leaving the sector.`
       : `Threat ${best.difficulty}, the lowest on record. No beacon recorded here yet; scan around it for one.`
   };
 }

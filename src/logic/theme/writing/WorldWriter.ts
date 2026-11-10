@@ -25,8 +25,8 @@ import {
 } from '../../../../shared/logic/theme/ThemeTypes';
 import { FLORA_FORMS, IPoolEntry, IPull, MeaningOf, MINERAL_FORMS, PoolList, ruledOut, standsOnRuledOut } from '../../../../shared/logic/theme/writing/WorldPool';
 import {
-  IDressingAnswer, IFaunaAnswer, IFloraAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILack, ILackAnswer, IMadeAnswer, IPassAnswers,
-  IPeopleAnswer, ITerrainAnswer, IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
+  IDressingAnswer, IFaunaAnswer, IFloraAnswer, IGroundAnswer, IHoldsAnswer, IKnownAnswer, ILack, ILackAnswer, IMadeAnswer, INamePieces,
+  INamesAnswer, IPassAnswers, IPeopleAnswer, ITerrainAnswer, IWord, PASS_PULLS, WORD_KINDS, WORLD_PASSES, WorldPassId
 } from '../../../../shared/logic/theme/writing/WorldPasses';
 
 /** A pass refused once is asked once more, told why. A guard on the bill, like the chain's. */
@@ -44,6 +44,8 @@ export interface IPassAsk {
   words: string[];
   /** C16: what the world still lacks that the pool could not give, when that is what is asked. */
   lack?: ILack;
+  /** C21: the pieces the world's names are made of, when every name they make is taken and more are asked. */
+  names?: INamePieces;
   refused?: string;
 }
 
@@ -105,12 +107,42 @@ const VERB_OF_FORM: Record<string, typeof HARVEST_VERBS[number]> = { tree: 'chop
 type Refusal = { refused: string };
 const refuse = (why: string): Refusal => ({ refused: why });
 
+/** Every name the lists make is taken: the world writes more pieces, and what was being named is named again (C21). */
+class WellDry {
+  constructor(readonly pieces: INamePieces) {}
+}
+
+/** A piece a name is made of, as code keeps it: letters only, a stray hyphen shed, never a code word (C17). */
+const piecesOf = (xs: string[]) => [...new Set((xs ?? [])
+  .map(x => (x ?? '').trim())
+  .filter(x => x && !/\d/.test(x) && !/_/.test(x))
+  .map(x => x.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ''))
+  .filter(Boolean))];
+
 /** A name from the world's own lists: never the model's word for one thing. Unique in the world. */
 class NameWell {
   private taken = new Set<string>();
   constructor(private prefixes: string[], private suffixes: string[], private seed: string) {}
 
   take(name: string) { this.taken.add(name.trim().toLowerCase()); }
+
+  pieces(): INamePieces { return { prefixes: [...this.prefixes], suffixes: [...this.suffixes] }; }
+
+  /** New pieces join the lists; one the world has, in any case, is not new. Returns the pieces that were new. */
+  grow(more: INamePieces): INamePieces {
+    const fresh = (have: string[], add: string[]) => {
+      const seen = new Set(have.map(p => p.toLowerCase()));
+      return piecesOf(add).filter(p => {
+        if (seen.has(p.toLowerCase())) return false;
+        seen.add(p.toLowerCase());
+        return true;
+      });
+    };
+    const added = { prefixes: fresh(this.prefixes, more.prefixes), suffixes: fresh(this.suffixes, more.suffixes) };
+    this.prefixes.push(...added.prefixes);
+    this.suffixes.push(...added.suffixes);
+    return added;
+  }
 
   save() { return { prefixes: this.prefixes, suffixes: this.suffixes, seed: this.seed, taken: [...this.taken] }; }
 
@@ -123,37 +155,25 @@ class NameWell {
   /** A piece reads as a word: its first letter a capital, whatever case it came in. */
   private word(piece: string) { return piece.charAt(0).toUpperCase() + piece.slice(1); }
 
-  private join(head: string[], suffix: string) {
-    const last = head.length - 1;
-    const words = head.map(p => this.word(p));
-    // A suffix in lowercase grows onto the piece before it; one in capitals stands as its own word
-    words[last] = /^[a-z]/.test(suffix) ? `${words[last]}${suffix}` : `${words[last]} ${suffix}`;
-    return words.join(' ');
-  }
-
-  /** Every run of `depth` prefixes, none the same twice in a row unless the list holds only one. */
-  private heads(depth: number): string[][] {
-    let runs: string[][] = [[]];
-    for (let i = 0; i < depth; i++) {
-      runs = runs.flatMap(run => this.prefixes.filter(p => this.prefixes.length === 1 || p !== run[run.length - 1]).map(p => [...run, p]));
-    }
-    return runs;
+  /** A suffix in lowercase grows onto the prefix; one in capitals stands as its own word. */
+  private join(prefix: string, suffix: string) {
+    return /^[a-z]/.test(suffix) ? `${this.word(prefix)}${suffix}` : `${this.word(prefix)} ${suffix}`;
   }
 
   /**
-   * The shortest free name first: one prefix and one suffix, then two prefixes, and on. The lists never run out,
-   * so a name never needs a number (C17): each depth holds names the one before it does not.
+   * A name is one prefix and one suffix, as the ground ask tells the model, and never a number (C17) or a piece
+   * said twice (C21: "Orcho Glint Orcho Glint Orcho Felt" is gibberish, Pedro 2026-11-09). When every name the
+   * lists make is taken, the well is dry: the world is asked for more pieces, never made to stack the ones it has.
    */
   draw(key: string): string {
     if (this.prefixes.length === 0 || this.suffixes.length === 0) return key;
     const at = fnv1a(`${this.seed}:name:${key}`);
-    for (let depth = 1; ; depth++) {
-      const combos = this.heads(depth).flatMap(head => this.suffixes.map(s => this.join(head, s)));
-      for (let i = 0; i < combos.length; i++) {
-        const name = combos[(at + i) % combos.length];
-        if (!this.taken.has(name.toLowerCase())) { this.take(name); return name; }
-      }
+    const names = this.prefixes.flatMap(p => this.suffixes.map(s => this.join(p, s)));
+    for (let i = 0; i < names.length; i++) {
+      const name = names[(at + i) % names.length];
+      if (!this.taken.has(name.toLowerCase())) { this.take(name); return name; }
     }
+    throw new WellDry(this.pieces());
   }
 }
 
@@ -429,6 +449,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
 
   // ---------------------------------------------------------------- the folds
   const offeredIds = new Map<string, IPoolEntry>();
+  /** Every piece the names ask added, kept past a refused answer: the ground pass's own lists are read again with them. */
+  const more: INamePieces = { prefixes: [], suffixes: [] };
 
   const pickAll = (picked: { id: string; regions?: string[] }[], lists: PoolList[]): Refusal | null => {
     for (const p of picked ?? []) {
@@ -469,14 +491,15 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
       if (missing) return refuse(`nothing says what the ${missing} ground is like in this world.`);
       const clean = (xs: string[]) => [...new Set((xs ?? []).map(x => (x ?? '').trim()).filter(x => x && !/\d/.test(x)))];
       // A piece a name is made of is a sound of this world, never a code word (C17)
-      const pieces = (xs: string[]) => [...new Set(clean(xs).filter(x => !codeWord(x)).map(x => x.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, '')).filter(Boolean))];
-      const prefixes = pieces(a.prefixes), suffixes = pieces(a.suffixes);
+      const prefixes = piecesOf(a.prefixes), suffixes = piecesOf(a.suffixes);
       if (prefixes.length === 0 || suffixes.length === 0) return refuse('names come from the world\'s prefixes and suffixes, each a sound in plain letters, and a list is empty.');
       const w = d.addWords(a.words);
       if (w) return w;
       d.body.premise = a.premise.trim();
       d.without = clean(a.without);
       d.names = new NameWell(prefixes, suffixes, o.seed);
+      // Pieces the world wrote when this answer ran its names dry (C21)
+      d.names.grow(more);
       // C17: the model names nothing, the world and its grounds included: every name is drawn from its own lists.
       // The person's own name for the world outranks anything drawn, and nothing else is drawn to it
       const typed = (o.name ?? '').trim();
@@ -647,7 +670,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
           if (t) return refuse(`"${t}" is not a registered word. Register it in "words".`);
           { const e = thin(m.is, d.body.materials); if (e) return e; }
           const tags = lack.role === 'building' ? [...new Set([...(m.tags ?? []), 'building'])] : m.tags;
-          addMaterial(m.is, m.form, tags, where(m.regions), 'lack');
+          // What it is for decides its form: something to pick up and throw lies loose, whatever form was written
+          addMaterial(m.is, lack.role === 'loose' ? LOOSE_FORM : m.form, tags, where(m.regions), 'lack');
         }
       }
       if (lack.list === 'anchors') {
@@ -669,6 +693,17 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
           addGear(g.is, g.kind);
         }
       }
+      return null;
+    },
+
+    // C21: more pieces for a world whose names ran out. Only a piece it does not have yet counts
+    names: async (a: INamesAnswer) => {
+      const added = d.names.grow({ prefixes: a?.prefixes ?? [], suffixes: a?.suffixes ?? [] });
+      if (added.prefixes.length === 0 && added.suffixes.length === 0) {
+        return refuse('every piece written is one this world already has: write new ones, in plain letters.');
+      }
+      more.prefixes.push(...added.prefixes);
+      more.suffixes.push(...added.suffixes);
       return null;
     }
   } as never;
@@ -740,9 +775,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
   let asked: ILack | undefined;
 
   /** One pass, asked again once if refused. The failure, or null when it stood. */
-  const runPass = async (pass: WorldPassId, i: number, lack?: ILack): Promise<IWriteResult | null> => {
+  const runPass = async (pass: WorldPassId, i: number, lack?: ILack, names?: INamePieces): Promise<IWriteResult | null> => {
     o.onPass?.(pass, i);
-    asked = lack;
     const offered: IPassAsk['offered'] = {};
     for (const list of PASS_PULLS[pass]) {
       // Nothing is offered that the fold would refuse to bring: what it stands on is ruled out too (C1)
@@ -757,7 +791,7 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     let spent = 0;
     while (!done && tries < PASS_TRIES) {
       tries++;
-      const out = await o.door(pass, { pass, said, world: worldSoFar(d), offered, words: d.words(), ...(lack ? { lack } : {}), ...(refused ? { refused } : {}) });
+      const out = await o.door(pass, { pass, said, world: worldSoFar(d), offered, words: d.words(), ...(lack ? { lack } : {}), ...(names ? { names } : {}), ...(refused ? { refused } : {}) });
       usage = sum(usage, out.usage);
       spent += out.usage?.usd ?? 0;
       if (out.status !== 'OK' || !out.data) {
@@ -765,8 +799,24 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
         return { ok: false, pass, status: out.status, reason: out.reason ?? `The Seed did not answer (${out.status}).`, usage, passes };
       }
       // A refused answer leaves nothing behind: the draft is rebuilt from what stood before it
-      const snapshot = d.save();
-      const verdict = await folds[pass](out.data as never, pass as never);
+      let snapshot = d.save();
+      let verdict: Refusal | null;
+      for (;;) {
+        try {
+          asked = lack;
+          verdict = await folds[pass](out.data as never, pass as never);
+          break;
+        } catch (e) {
+          if (!(e instanceof WellDry)) throw e;
+          // C21: the answer ran the names dry. The world writes more pieces, and the same answer is read again
+          d.restore(snapshot);
+          // The ground pass makes its well as it folds, so the restored draft may not hold the pieces yet
+          d.names.grow(e.pieces);
+          const failed = await runPass('names', WORLD_PASSES.length, undefined, e.pieces);
+          if (failed) return failed;
+          snapshot = d.save();
+        }
+      }
       if (verdict) {
         d.restore(snapshot);
         refused = verdict.refused;
@@ -805,6 +855,9 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
  * Who leads is code's to decide (D93), and so is every band. Returns the first thing the pool
  * could not give, for the model to add (C16), or null when the floors are whole.
  */
+/** The form a loose stone is written in: taken by hand, and thrown (`Throwable.ts`). */
+const LOOSE_FORM = 'pebble';
+
 async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbedder, addJunk: (is: string, tags: string[], from: string[], pass: string) => string): Promise<ILack | null> {
   const b = d.body;
   const nearest = async (list: PoolList, ok: (e: IPoolEntry) => boolean) => {
@@ -885,6 +938,12 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
   }
   if (b.anchors!.length === 0) {
     const no = await bringNearest('anchors', () => true, { need: 'hold value', list: 'anchors' });
+    if (no) return no;
+  }
+  // C24: a stone to throw is laid loose across a world's ground from what it wrote in the pebble form
+  // (`WorldGenerator.layLoose`), so every world holds one: the pool's nearest, or the model's own
+  if (!b.materials.some(m => m.form === LOOSE_FORM)) {
+    const no = await bringNearest('minerals', e => entry<IThemeMaterial>(e).form === LOOSE_FORM, { need: 'pick up and throw', list: 'materials', role: 'loose' });
     if (no) return no;
   }
 
