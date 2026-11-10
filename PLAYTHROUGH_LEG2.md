@@ -252,6 +252,19 @@ These are the places where a newcomer's road most depends on feel, for Pedro to 
 - The rest's 3:20 wait.
 - Whether "tougher" after ten days (twice the creatures, the same strength) is the tougher meant.
 
+## Changed since this run, before Pedro's
+
+The road above is the game as it stood on 2026-11-07. These were fixed after it (the ledger's Fixed has each, with its commit), so Pedro's run will not meet them as written:
+- **Step 1.** Creation's first page no longer grows: the four shapes stand on it from the start, waiting on a life (C12). The landing page's words on the model are current (C11).
+- **Step 2.** The lesson box no longer covers the readout (C10). The tutorial's recon reads 7 lines of leaders and packs where it read about 640 (C7).
+- **Step 4.** With no key the local model writes a whole world (C1, C15 to C21). Recon reads the ground by the world's name for it, counts in plain words, names what it lists, and says a sector is 512 m across (N10, L6). The advice no longer says the way out is under your feet (L7). A first try at a chest no longer says it cost more (N13).
+- **Step 4, the sale.** The counter refuses an unread piece and a person (C2, C3).
+- **Step 6.** "They took your words well" in place of "They took it as: lands" (C8). A talk kept across days rules off each day (C13). A resident's living folds at midnight (C4). A refused chain is not asked again until something changes (C5).
+- **Step 7.** An unread piece can be studied in town with no bench (C6).
+- **Anywhere.** A screen that breaks says so and offers to draw again, which keeps a run (T2).
+
+Still as written, and his to feel: the kit against the skills (C9), and a blade against a moth (C14).
+
 ## Pedro's run
 
 ### 1. Arriving
