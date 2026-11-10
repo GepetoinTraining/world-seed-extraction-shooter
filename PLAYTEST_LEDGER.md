@@ -78,6 +78,20 @@ Built on `claude/pre-run-fixes`. The rulings are quoted in Fixed, under C9, C14 
 | C27 | A name is asked only in the field. In the city a keeper's sign names them and everyone brought out gave their name when they agreed to come, so nothing there is unnamed, and nothing there was changed. The person talked to is also told the character's name from the first round, by the model's own context. Both are for the hiding pass | `talkStore.ts` (`cityPerson`, `fieldNameOf`), `HubCanvas.tsx` |
 | C28 | The Seed's check of the kit has only met a faked door. No real model has granted under the new instructions: no key was used, and a model held to the grammar is offered only what the kit can work, so a local run would prove little. A first real run may need its words tuned | `prompts.ts` (`CREATION_SYSTEM`, `KAMI_SET_SYSTEM`), `CreationDoor.seek` |
 
+### Found while building the entry view, 2026-11-10
+
+Built on `claude/entry-view`, on Pedro's word: "before I play, let's set up an entry point view".
+
+| # | What happens | Where |
+|---|---|---|
+| C29 | The colour vision setting has never been judged by an eye of the kind it is for. It adds what that eye does not see onto an axis it does (greens toward blue for red and green, blues toward purple for blue and green), and bars hold that greys stay grey and that the game's own red and green end up further apart. How hard it pushes is a guess. The standard recipe was measured first and left out: it pulled the same red and green closer for those eyes (0.538 to 0.315, and 0.373 to 0.171). The two red and green kinds push the same axis and differ only in how each weighs a colour. Pedro can judge one of them | `MOVED` in `src/logic/settings/Settings.ts` |
+| C30 | Under a server on the person's own machine, an accepted key lives in that server's memory, so stopping the game forgets it, and `npm run pedro:window` stops the game with its window. A key in `.env` is not touched by this. Whether an accepted key should outlast a restart was already Pedro's open call, and the form makes it felt | `DoorSetting.held`, `KeysPanel.tsx` |
+| C31 | The providers the form offers are the five rows of the door's options file. Other labs are a row each, and a row needs its key page, its terms and a model read on the provider's own pages, which nobody has done for them | `shared/intelligence/door-options.json` |
+| C32 | The credits name no version for the Gemini that wrote the first commits, nor for the Claude of the first overhaul and the design conversations, because no record here gives one. Pedro may remember them: each is one line in the file | `src/logic/credits/credits.json` |
+| C33 | The game has no sound, so the volume moves nothing but two test notes. A browser holds sound back until the person has acted on the page: the test says when it did not play. Driven by script the notes never played, so nobody has heard them yet | `src/logic/settings/Sound.ts` |
+| C34 | Text grows through the interface's own type sizes, up to twice the drawn size. Screens made of fixed widths (the modals, the creation page) were not checked above 150%, and at 150% the entry view was the only screen looked at | `fontVariables`, every screen |
+| C35 | The key form and the older THE VOICE panel both take a key. The older one accepts in one step, with no dry run. They share the door, so either works, and one of them should go | `VoicePanel.tsx`, `KeysPanel.tsx` |
+
 ## Fixed
 
 | # | What was wrong | Commit | Checked |

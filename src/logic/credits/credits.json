@@ -1,0 +1,139 @@
+{
+  "about": "Who and what made this game, as the record shows it. Gathered 2026-11-10 from the repository's commits and their sign-offs, the saved build sessions, the code's own history, and the door's options file. A model is named with the version the record gives. Where the record gives none, the entry says so and names none: add the version here when it is known.",
+  "people": [
+    {
+      "name": "Pedro Garcia",
+      "did": "The design, every ruling in the plan, and the playing. Every commit is under his name."
+    }
+  ],
+  "built": [
+    {
+      "name": "Gemini, in Google AI Studio",
+      "maker": "Google",
+      "when": "2025-11",
+      "did": "The first version: the project's frame, the ranks and rarities, the first item factory and the first world on a canvas.",
+      "record": "The first commits, 2025-11-21, are an AI Studio export. Which Gemini wrote them is not on record."
+    },
+    {
+      "name": "Claude, on claude.ai",
+      "maker": "Anthropic",
+      "when": "2025-11",
+      "did": "The first overhaul and its handover, then the design conversations the plan grew from.",
+      "record": "Commit 9e98b65, 2025-11-22: \"massive overhaul courtesy of claude!\". The conversations are in Pedro's own archive. Which Claude each one was is not on record."
+    },
+    {
+      "id": "claude-fable-5",
+      "name": "Claude Fable 5",
+      "maker": "Anthropic",
+      "when": "2026-10",
+      "did": "The game's return after eleven months: the playable loop, the systems plan, and its first waves, from signed saves and the one grid to the interface, the houses, the load-out and the anatomy of items.",
+      "record": "28 commits signed, 2026-10-30 and 2026-10-31."
+    },
+    {
+      "id": "claude-fable-5-1",
+      "name": "Claude Fable 5.1",
+      "maker": "Anthropic",
+      "when": "2026-10",
+      "did": "A few turns inside those first two days of sessions.",
+      "record": "Named 18 times in the saved build sessions of 2026-10-30 and 2026-10-31. It signed no commit."
+    },
+    {
+      "id": "claude-opus-5-5",
+      "name": "Claude Opus 5.5",
+      "maker": "Anthropic",
+      "when": "2026-10",
+      "did": "Most of the game as it stands: the living worlds and their clock, the people and their memory, the two stores, the door to a model, the hub and the hosted world, and the passes that joined them.",
+      "record": "253 commits signed, 2026-10-30 to 2026-11-09, and most of the saved build sessions."
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "name": "Claude Haiku 5.5",
+      "maker": "Anthropic",
+      "when": "2026-11",
+      "did": "Searches and small errands inside a build session.",
+      "record": "Named in the saved build sessions of 2026-11-01, as a helper. It signed no commit."
+    },
+    {
+      "id": "claude-fable-5-2",
+      "name": "Claude Fable 5.2",
+      "maker": "Anthropic",
+      "when": "2026-11",
+      "did": "The fixes before Pedro's own run, his three rulings of 2026-11-10, the game's own window, and this screen.",
+      "record": "The commits of 2026-11-10 signed \"Claude\", and that day's build session."
+    }
+  ],
+  "voices": [
+    {
+      "id": "claude-haiku-5-5",
+      "name": "Claude Haiku 5.5",
+      "maker": "Anthropic",
+      "did": "The Seed at creation, a person's talk and goals, a bargain, a hub's chain.",
+      "record": "shared/intelligence/claude.ts"
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "name": "Claude Sonnet 5.5",
+      "maker": "Anthropic",
+      "did": "Kami, a world's theme, a rest, a world's window, what a chest holds, and the option on a player's own Anthropic key.",
+      "record": "shared/intelligence/claude.ts and the door's options file"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "name": "Claude Opus 5.5",
+      "maker": "Anthropic",
+      "did": "A large world's theme.",
+      "record": "shared/intelligence/claude.ts"
+    },
+    {
+      "id": "gemma4:e4b-it-qat",
+      "name": "Gemma 4 E4B",
+      "maker": "Google",
+      "did": "The model suggested for a player's own machine. It writes a whole world.",
+      "record": "The door's options file: measured 2026-11-04."
+    },
+    {
+      "id": "gemma4:e2b-it-qat",
+      "name": "Gemma 4 E2B",
+      "maker": "Google",
+      "did": "The model suggested for a smaller card, or memory alone.",
+      "record": "The door's options file: measured 2026-11-04."
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash",
+      "maker": "Google",
+      "did": "An option on a player's own key.",
+      "record": "The door's options file, terms read 2026-11-04."
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "gpt-oss-120b, served by Groq",
+      "maker": "OpenAI",
+      "did": "An option on a player's own Groq key.",
+      "record": "The door's options file, terms read 2026-11-04."
+    },
+    {
+      "id": "openrouter/free",
+      "name": "OpenRouter's free models",
+      "maker": "OpenRouter, and each model's own maker",
+      "did": "An option on a player's own key. Which model answers is OpenRouter's choice.",
+      "record": "The door's options file, terms read 2026-11-04."
+    },
+    {
+      "id": "mistral-small-latest",
+      "name": "Mistral Small",
+      "maker": "Mistral AI",
+      "did": "An option on a player's own key.",
+      "record": "The door's options file, terms read 2026-11-04."
+    }
+  ],
+  "earlier": [
+    {
+      "id": "gemini-2.0-flash",
+      "name": "Gemini 2.0 Flash",
+      "maker": "Google",
+      "did": "The game's first voice, in the first days. Taken out whole on 2026-11-01, when the door was rebuilt on Claude.",
+      "record": "Named in the code from commit 9e98b65, 2025-11-22."
+    }
+  ]
+}

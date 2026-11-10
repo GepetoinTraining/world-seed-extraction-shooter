@@ -37,6 +37,8 @@ import { TuningPanel } from './src/components/debug/TuningPanel';
 import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
 import { VoicePanel } from './src/components/VoicePanel';
 import { HubPanel } from './src/components/HubPanel';
+import { EntryView } from './src/components/EntryView';
+import { AccessibilityPanel, ConfigurationPanel } from './src/components/SettingsPanels';
 
 installConsoleInterceptor();
 
@@ -44,8 +46,9 @@ installConsoleInterceptor();
 const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; onClose: () => void }> = ({ devMode, onDevMode, onClose }) => {
   const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [hubOpen, setHubOpen] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
   return (
-  <Modal title="SYSTEM" onClose={onClose} width={voiceOpen || hubOpen ? 660 : 420}>
+  <Modal title="SYSTEM" onClose={onClose} width={voiceOpen || hubOpen || settingsOpen ? 660 : 420}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <Button
         autoFocus
@@ -81,6 +84,10 @@ const SystemMenu: React.FC<{ devMode: boolean; onDevMode: (v: boolean) => void; 
         THE HUB
       </Button>
       {hubOpen && <HubPanel titled={false} />}
+      <Button tone="quiet" aria-pressed={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)} title="Volume, text size and colour vision, kept on this device">
+        SETTINGS
+      </Button>
+      {settingsOpen && <><ConfigurationPanel /><AccessibilityPanel /></>}
       <Button tone="quiet" aria-pressed={devMode} onClick={() => onDevMode(!devMode)} title="Developer tools, also on Ctrl+Shift+D">
         DEVELOPER TOOLS: {devMode ? 'ON' : 'OFF'}
       </Button>
@@ -189,6 +196,10 @@ const App: React.FC = () => {
   const [bootFailed, setBootFailed] = useState<string | null>(null);
   const [hubSelected, setHubSelected] = useState(false);
   const [gateDone, setGateDone] = useState(false);
+  // The entry view comes first. Someone sent back to pick another avatar has been through it already.
+  const [entered, setEntered] = useState(() => {
+    try { return localStorage.getItem('worldseed_force_select') === '1'; } catch { return false; }
+  });
 
   const session = player.currentSession;
 
@@ -263,6 +274,16 @@ const App: React.FC = () => {
   }, [bootStatus]);
 
   // --- VIEW ROUTER ---
+
+  // 0. THE ENTRY VIEW: what a person meets first, before any character
+  if (!entered && !gateDone) {
+    return (
+      <>
+        <EntryView onPlay={() => setEntered(true)} />
+        <SystemConsole />
+      </>
+    );
+  }
 
   // A. IDENTITY GATE (birth, restore, and character select — Wave 9.3)
   if (identityState !== IdentityState.READY || !gateDone) {

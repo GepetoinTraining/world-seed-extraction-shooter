@@ -62,5 +62,41 @@ export const VoiceClient = {
     if (kept) await call('/key', kept);
   },
 
+  /** One question to the provider: does it take this key. The door holds nothing after it. */
+  testKey: (optionId: string, key: string) => call<{ ok: boolean; reason?: string }>('/key/test', { optionId, key }),
+
+  /**
+   * Whose keys are held, and which is in use. Never a key. In the page, a key sealed in this browser
+   * counts as held even before the door has taken it again.
+   */
+  async keys(): Promise<IHeldKey[]> {
+    const held: IHeldKey[] = (await call<{ keys: IHeldKey[] }>('/keys'))?.keys ?? [];
+    const sealed = await DoorTransport.vault()?.held().catch(() => [] as string[]) ?? [];
+    const waiting = sealed.filter(id => !held.some(k => k.optionId === id));
+    if (waiting.length === 0) return held;
+    const offered = (await VoiceClient.options())?.keyed ?? [];
+    return [...held, ...waiting.map(id => ({ optionId: id, name: offered.find(o => o.id === id)?.name ?? id, inUse: false }))];
+  },
+
+  /** A held key is put in use without being typed again. In the page, the door may need it from its seal first. */
+  async useHeld(optionId: string) {
+    type Out = { ok: boolean; reason?: string; status?: IDoorSettingStatus };
+    let out = await call<Out>('/key/use', { optionId });
+    if (!out?.ok) {
+      const kept = await DoorTransport.vault()?.readOne(optionId).catch(() => null);
+      if (kept) out = await call<Out>('/key', kept);
+    }
+    if (out?.ok) await DoorTransport.vault()?.use(optionId).catch(() => undefined);
+    return out;
+  },
+
+  /** One key is dropped, from the door and from its seal. */
+  async forgetKey(optionId: string) {
+    await DoorTransport.vault()?.drop(optionId).catch(() => undefined);
+    return call<{ ok: boolean; reason?: string }>('/key/forget', { optionId });
+  },
+
   remembered
 };
+
+export interface IHeldKey { optionId: string; name: string; inUse: boolean }

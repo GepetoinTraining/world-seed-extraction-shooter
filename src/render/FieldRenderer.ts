@@ -14,6 +14,7 @@ import { ATOM_PX, CreatureFacing, Genre, Role, Sprite, TILE_ATOMS, buildPalette,
 import { LAYER, baselinePx, entitySprite, standsUpright, terrainBuffer } from './atoms/world';
 import { Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, figure } from '../../shared/render/atoms/people';
 import type { IOther } from '../../shared/logic/live/Presence';
+import { textScale } from '../logic/settings/store';
 
 const QUADRANT_ATOMS = QUADRANT_TILES * TILE_ATOMS;
 const MAX_QUADRANTS_PER_FRAME = 3;
@@ -59,6 +60,8 @@ const snap =(v: number) => Math.round(v / ATOM_PX) * ATOM_PX;
 
 /** Another player's name plate: over the head, square, no tail, so it never reads as speech. */
 const PLATE_FONT_PX = 11;
+/** As drawn, times the text size the person asked for. */
+const platePx = () => Math.round(PLATE_FONT_PX * textScale());
 const PLATE_PAD = 3;
 const PLATE_ABOVE_PX = 6;
 /** A stride is ~560ms whatever the cycle (WorldCanvas): another player's legs keep the same time. */
@@ -180,11 +183,11 @@ export class FieldRenderer {
   /** A dark square plate with a light edge and the name in it, centred over the head. */
   private drawPlate(ctx: CanvasRenderingContext2D, name: string, x: number, headTop: number) {
     ctx.save();
-    ctx.font = `${PLATE_FONT_PX}px monospace`;
+    ctx.font = `${platePx()}px monospace`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     const w = Math.ceil(ctx.measureText(name).width) + PLATE_PAD * 2;
-    const h = PLATE_FONT_PX + PLATE_PAD * 2;
+    const h = platePx() + PLATE_PAD * 2;
     const left = Math.round(x - w / 2), top = Math.round(headTop - PLATE_ABOVE_PX - h);
     ctx.fillStyle = '#030303';
     ctx.fillRect(left, top, w, h);

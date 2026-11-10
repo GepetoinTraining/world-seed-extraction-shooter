@@ -22,6 +22,8 @@ export async function routeDoor(door: IntelligenceDoor, method: string, path: st
   // The check on this machine and the free options: read here, answered to this machine only
   if (path === '/machine' && method === 'GET') return setting ? json(200, await setting.check.read()) : json(200, { status: 'REFUSED', reason: 'This server has no setting to read.' });
   if (path === '/options' && method === 'GET') return json(200, setting ? { keyed: setting.options.keyed, local: setting.options.local ?? null } : { keyed: [], local: null });
+  // Whose keys are held and which is in use. Never a key.
+  if (path === '/keys' && method === 'GET') return json(200, { keys: setting ? setting.keys() : [] });
   if (method !== 'POST') return json(405, { error: 'POST only.' });
 
   const conversation = (body.messages ?? []) as IDoorMessage[];
@@ -46,6 +48,16 @@ export async function routeDoor(door: IntelligenceDoor, method: string, path: st
       const out = await setting.useKey(String(body.optionId ?? ''), String(body.key ?? ''));
       return json(200, out);
     }
+    case '/key/test':
+      if (!setting) return unsettable();
+      // One question to the provider. The key is not held after it, whatever the answer.
+      return json(200, await setting.testKey(String(body.optionId ?? ''), String(body.key ?? '')));
+    case '/key/use':
+      if (!setting) return unsettable();
+      return json(200, await setting.useHeld(String(body.optionId ?? '')));
+    case '/key/forget':
+      if (!setting) return unsettable();
+      return json(200, setting.forgetKey(String(body.optionId ?? '')));
     case '/auto':
       if (!setting) return unsettable();
       setting.useAuto();

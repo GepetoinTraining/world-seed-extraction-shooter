@@ -8,6 +8,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { theme } from './src/theme';
 import { GameClock } from './src/logic/time/GameClock';
 import { StoreClient } from './shared/entities/data/StoreClient';
+import { installSettings } from './src/logic/settings/store';
 
 // Built for the domain (npm run build:site), the game is the page: its save is in this browser,
 // and its time is the hub's, beside it on the same domain (DEPLOY.md). Otherwise a server on this
@@ -20,6 +21,9 @@ if (import.meta.env.VITE_WS_STORE === 'browser') {
     .then(([{ openPageDoor }, { createKeyVault, indexedDbShelf }, { DoorTransport }]) => DoorTransport.usePage(openPageDoor(), createKeyVault(indexedDbShelf())));
 }
 void GameClock.keepInStep();
+
+// The person's own settings for this device are on the page before the first screen is drawn
+installSettings();
 
 // 1. Core Mantine Styles
 import '@mantine/core/styles.css';

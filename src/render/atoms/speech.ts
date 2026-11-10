@@ -13,12 +13,15 @@ import { EntityType, IChunk } from '../../../shared/entities/world/types';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { GIBBERISH_FAMILY } from './gibberishFace';
+import { textScale } from '../../logic/settings/store';
 
 /** Guesses until Wave 12. How often a body might speak, how often it does, and for how long. */
 const BUBBLE_EVERY_MS = 6000;
 const BUBBLE_CHANCE = 0.35;
 const BUBBLE_SHOWS_MS = 2600;
 const BUBBLE_FONT_PX = 11;
+/** As drawn, times the text size the person asked for. */
+const bubblePx = () => Math.round(BUBBLE_FONT_PX * textScale());
 const BUBBLE_PAD = 5;
 const BUBBLE_ABOVE_PX = 26;
 const BUBBLE_TAIL_PX = 6;
@@ -56,7 +59,7 @@ export function bubbleOf(entityId: string, now: number): string | null {
 /** Every speaker in view that is saying something, over its head. The camera is the field's own. */
 export function drawSpeech(ctx: CanvasRenderingContext2D, chunks: IChunk[], camera: { x: number; z: number }, width: number, height: number, now: number): void {
   ctx.save();
-  ctx.font = `${BUBBLE_FONT_PX}px "${GIBBERISH_FAMILY}", monospace`;
+  ctx.font = `${bubblePx()}px "${GIBBERISH_FAMILY}", monospace`;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   for (const chunk of chunks) {
@@ -69,7 +72,7 @@ export function drawSpeech(ctx: CanvasRenderingContext2D, chunks: IChunk[], came
       const text = bubbleOf(entity.id, now);
       if (!text) continue;
       const w = Math.ceil(ctx.measureText(text).width) + BUBBLE_PAD * 2;
-      const h = BUBBLE_FONT_PX + BUBBLE_PAD * 2;
+      const h = bubblePx() + BUBBLE_PAD * 2;
       const left = Math.round(x - w / 2);
       const top = Math.round(y - BUBBLE_ABOVE_PX - h);
       ctx.fillStyle = '#efefef';
@@ -93,6 +96,7 @@ export function drawSpeech(ctx: CanvasRenderingContext2D, chunks: IChunk[], came
 /** A line a person says, readable, as long as they are saying it. A guess until Wave 12. */
 export const SAYING_SHOWS_MS = 3200;
 const SAYING_FONT_PX = 12;
+const sayingPx = () => Math.round(SAYING_FONT_PX * textScale());
 const SAYING_WIDTH_PX = 190;
 
 /**
@@ -101,7 +105,7 @@ const SAYING_WIDTH_PX = 190;
  */
 export function drawSaying(ctx: CanvasRenderingContext2D, text: string, x: number, headY: number): void {
   ctx.save();
-  ctx.font = `${SAYING_FONT_PX}px monospace`;
+  ctx.font = `${sayingPx()}px monospace`;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   const lines: string[] = [];
@@ -112,7 +116,7 @@ export function drawSaying(ctx: CanvasRenderingContext2D, text: string, x: numbe
   }
   if (line) lines.push(line);
   const w = Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width))) + BUBBLE_PAD * 2;
-  const lineH = SAYING_FONT_PX + 3;
+  const lineH = sayingPx() + 3;
   const h = lines.length * lineH + BUBBLE_PAD * 2;
   const left = Math.round(x - w / 2);
   const top = Math.round(headY - BUBBLE_TAIL_PX - h);

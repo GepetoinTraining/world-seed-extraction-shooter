@@ -4,7 +4,7 @@
  *
  *   auto    the server's own key while there is one, the local model while there is none (Q24)
  *   local   the local model, the person's mode, whichever served model they picked
- *   keyed   a free option on the person's own key (`door-options.json`)
+ *   keyed   an option on the person's own key (`door-options.json`). Several keys may be held, one in use
  *   off     nothing: every door still answers, and the game goes on
  *
  * Work filed under one choice is collected from the same provider, whatever the person picked since.
@@ -29,6 +29,8 @@ export class DoorSetting implements IIntelligenceProvider {
   readonly check: MachineCheck;
   private mode: DoorMode;
   private keyed?: KeyedProvider;
+  /** Every key the person accepted, by its option. Held here, in memory, and nowhere else. */
+  private held = new Map<string, KeyedProvider>();
 
   /** Until the person picks, the local model is the one suggested for this machine. */
   private picked: Promise<void>;
@@ -57,23 +59,64 @@ export class DoorSetting implements IIntelligenceProvider {
     this.mode = 'local';
   }
 
-  /** A free option on the person's key. The key is kept here, in memory, and nowhere else. */
-  async useKey(optionId: string, key: string): Promise<{ ok: boolean; reason?: string; status?: IDoorSettingStatus }> {
+  /** The provider this key would speak to, or why there is none. Nothing is asked of anyone yet. */
+  private providerOf(optionId: string, key: string): KeyedProvider | { reason: string } {
     const option = this.options.keyed.find(o => o.id === optionId);
-    if (!option) return { ok: false, reason: 'No such option is offered.' };
-    if (!key.trim()) return { ok: false, reason: 'That key is empty.' };
-    const made = providerFor(option, key.trim());
+    if (!option) return { reason: 'No such option is offered.' };
+    if (!key.trim()) return { reason: 'That key is empty.' };
+    return providerFor(option, key.trim());
+  }
+
+  /** One question to the provider: does it take this key. Nothing is held and nothing changes, whatever it answers. */
+  async testKey(optionId: string, key: string): Promise<{ ok: boolean; reason?: string }> {
+    const made = this.providerOf(optionId, key);
+    if ('reason' in made) return { ok: false, reason: made.reason };
+    const status = await made.status();
+    return status.available ? { ok: true } : { ok: false, reason: status.reason };
+  }
+
+  /** An option on the person's key, accepted: held and put in use. The key is kept here, in memory, and nowhere else. */
+  async useKey(optionId: string, key: string): Promise<{ ok: boolean; reason?: string; status?: IDoorSettingStatus }> {
+    const made = this.providerOf(optionId, key);
     if ('reason' in made) return { ok: false, reason: made.reason };
     const status = await made.status();
     if (!status.available) return { ok: false, reason: status.reason };
+    this.held.set(optionId, made);
     this.keyed = made;
     this.mode = 'keyed';
     return { ok: true, status: await this.status() };
   }
 
-  /** Back to the server's own way. The key is dropped. */
+  /** A key already held is put in use, without being typed again. */
+  async useHeld(optionId: string): Promise<{ ok: boolean; reason?: string; status?: IDoorSettingStatus }> {
+    const kept = this.held.get(optionId);
+    if (!kept) return { ok: false, reason: 'No key is held for that one.' };
+    this.keyed = kept;
+    this.mode = 'keyed';
+    return { ok: true, status: await this.status() };
+  }
+
+  /** One key is dropped. If it was the one in use, the voice goes back to the server's own way. */
+  forgetKey(optionId: string): { ok: boolean; reason?: string } {
+    const kept = this.held.get(optionId);
+    if (!kept) return { ok: false, reason: 'No key is held for that one.' };
+    this.held.delete(optionId);
+    if (this.keyed === kept) {
+      this.keyed = undefined;
+      if (this.mode === 'keyed') this.mode = 'auto';
+    }
+    return { ok: true };
+  }
+
+  /** Whose keys are held, in the order they were accepted, and which is in use. Never a key. */
+  keys(): { optionId: string; name: string; inUse: boolean }[] {
+    return [...this.held].map(([optionId, provider]) => ({ optionId, name: provider.option.name, inUse: this.mode === 'keyed' && this.keyed === provider }));
+  }
+
+  /** Back to the server's own way. Every key is dropped. */
   useAuto(): void {
     this.keyed = undefined;
+    this.held.clear();
     this.mode = 'auto';
   }
 
@@ -112,7 +155,11 @@ export class DoorSetting implements IIntelligenceProvider {
 
   collect(batchId: string): Promise<IDoorOutcome> {
     if (LocalProvider.owns(batchId)) return this.local.collect(batchId);
-    if (OpenAICompatibleProvider.owns(batchId)) return this.keyed?.collect(batchId) ?? Promise.resolve({ status: 'OUTAGE', reason: 'That key is no longer held. It stays queued.' });
+    if (OpenAICompatibleProvider.owns(batchId)) {
+      // Collected on the key it was filed on, whichever key is in use by now
+      const filedOn = [...this.held.values()].find(p => p instanceof OpenAICompatibleProvider && p.holds(batchId)) ?? this.keyed;
+      return filedOn?.collect(batchId) ?? Promise.resolve({ status: 'OUTAGE', reason: 'That key is no longer held. It stays queued.' });
+    }
     // A batch filed on a person's Anthropic key is collected on that key
     if (this.keyed?.option.protocol === 'anthropic') return this.keyed.collect(batchId);
     return this.auto.collect(batchId);

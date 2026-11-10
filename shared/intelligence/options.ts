@@ -18,6 +18,10 @@ export interface IKeyedOption {
   baseUrl: string;
   model: string;
   keyPage?: string;
+  /** How this provider's keys start, when they start one way: a hint for a dry run (keyShape.ts), never a rule. */
+  keyStart?: string;
+  /** The start of a key as a person would see it, with what follows left out. */
+  keyShape?: string;
   /** Its free terms, as read on its own pages, and when. */
   free?: string;
   card?: string;
@@ -59,6 +63,11 @@ export class OpenAICompatibleProvider implements IIntelligenceProvider {
 
   static owns(batchId: string): boolean {
     return batchId.startsWith(KEYED_BATCH);
+  }
+
+  /** Whether this work was filed here, on this key. */
+  holds(batchId: string): boolean {
+    return this.filed.has(batchId);
   }
 
   private get base(): string {
