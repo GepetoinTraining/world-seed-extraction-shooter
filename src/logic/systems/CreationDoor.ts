@@ -17,23 +17,46 @@ export const DOOR_PATIENCE_MS = 12_000;
 
 export interface ICreationAnswer { words: ICreationWords; by: 'DOOR' | 'FLOOR'; usage?: IDoorUsage; reason?: string }
 
+/** How many times the Seed is asked for one grant: once, and once more with the reason if the law refused it. */
+const GRANT_ASKS = 2;
+
+/** What two asks cost together. The record names the model once and adds what it read and wrote. */
+const addUsage = (a: IDoorUsage | undefined, b: IDoorUsage | undefined): IDoorUsage | undefined => {
+  if (!a || !b) return a ?? b;
+  const sum: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) if (typeof v === 'number') sum[k] = (typeof sum[k] === 'number' ? sum[k] as number : 0) + v;
+  return sum as unknown as IDoorUsage;
+};
+
 const SHEET_KEY = (uid: string) => `worldseed_creation_sheet_${uid}`;
 
 export const CreationDoor = {
+  /**
+   * C9: a grant the law refuses is asked once more, with the reason, as a world's passes are. A second
+   * refusal falls to the floor, which follows the same law and makes sense on its own. Both asks share
+   * the one wait, and whatever was spent on them is on the record either way.
+   */
   async seek(draft: ICreationDraftChoices, patienceMs = DOOR_PATIENCE_MS): Promise<ICreationAnswer> {
     const floor = CreationSystem.floor(draft);
     const ask: ICreationAsk = CreationSystem.ask(draft);
-    const out = await Promise.race([
-      IntelligenceClient.grantSkills<ICreationWords>(ask),
-      new Promise<{ status: 'OUTAGE'; data?: undefined; usage?: undefined; reason: string }>(resolve => setTimeout(() => resolve({ status: 'OUTAGE', reason: 'The Seed took too long.' }), patienceMs))
+    let usage: IDoorUsage | undefined;
+    const granting = async (): Promise<ICreationAnswer> => {
+      let refused: string | undefined;
+      for (let attempt = 0; attempt < GRANT_ASKS; attempt++) {
+        const out = await IntelligenceClient.grantSkills<ICreationWords>(refused ? { ...ask, refused } : ask);
+        usage = addUsage(usage, out.usage);
+        if (out.status !== 'OK' || !out.data) return { words: floor, by: 'FLOOR', usage, reason: out.reason ?? out.status };
+        const verdict = CreationSystem.judge(out.data, ask);
+        if (verdict.ok) return { words: out.data, by: 'DOOR', usage };
+        console.warn(`[CREATION] What came back was refused whole: ${verdict.reason}`);
+        refused = verdict.reason;
+      }
+      return { words: floor, by: 'FLOOR', usage, reason: refused };
+    };
+    return Promise.race([
+      granting(),
+      new Promise<ICreationAnswer>(resolve => setTimeout(() => resolve({ words: floor, by: 'FLOOR', usage, reason: 'The Seed took too long.' }), patienceMs))
     ]);
-    if (out.status !== 'OK' || !out.data) return { words: floor, by: 'FLOOR', reason: out.reason ?? out.status };
-    const verdict = CreationSystem.judge(out.data, ask);
-    if (!verdict.ok) {
-      console.warn(`[CREATION] What came back was refused whole: ${verdict.reason}`);
-      return { words: floor, by: 'FLOOR', usage: out.usage, reason: verdict.reason };
-    }
-    return { words: out.data, by: 'DOOR', usage: out.usage };
   },
 
   /** He sets up the class. Whatever comes back, however late, this answers, and fate deals what he does not. */

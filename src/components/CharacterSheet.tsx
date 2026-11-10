@@ -15,6 +15,7 @@ import { Escort } from '../logic/systems/Escort';
 import { WorldGenerator } from '../../shared/entities/world/WorldGenerator';
 import { InventorySystem, GRID_H, GRID_W } from '../../shared/entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
+import { isThrowable } from '../../shared/entities/item/Throwable';
 import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { STASH_COLS } from '../entities/player/systems/StashGrid';
 import { GEAR_RECIPES } from '../../shared/entities/economy/data/recipeDefinitions';
@@ -61,7 +62,8 @@ const packPrimary = (item: IItem) => {
   }
   if (item.cartData) { void st.deployCart(item.id); return; }
   if (item.type === ItemType.CONSUMABLE && !item.charmData && !item.scrollData) { st.consumeItem(item.id); return; }
-  if (item.slot !== SlotType.NONE || item.tags?.includes('tool')) { st.equipSwap(item.id); return; }
+  // C14: a stone to throw has no slot of its own and still goes in a hand
+  if (item.slot !== SlotType.NONE || item.tags?.includes('tool') || isThrowable(item)) { st.equipSwap(item.id); return; }
   feed(`${item.name} has no slot and no use in the hand. It rides the pack.`, 'plain');
 };
 
@@ -208,7 +210,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             {read && selectedItem.type === ItemType.LORE && selectedItem.description && (
               <Button tone="proof" onClick={() => feed(`"${selectedItem.description}"`, 'proof')}>READ</Button>
             )}
-            {read && (selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool')) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
+            {read && (selectedItem.slot !== 'NONE' || selectedItem.tags?.includes('tool') || isThrowable(selectedItem)) && selectedItem.type !== ItemType.CONSUMABLE && !selectedItem.cartData && (
               <Button tone="proof" onClick={() => {
                 const v = usePlayerStore.getState().equipSwap(selectedItem.id);
                 if (v.ok) setSelected(null);
@@ -288,7 +290,7 @@ const VaultPanels: React.FC = () => {
             <div className="ws-bright ws-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {piece.isIdentified === false ? 'Unidentified Signal' : piece.name}
             </div>
-            {(piece.slot !== SlotType.NONE || tool) && (
+            {(piece.slot !== SlotType.NONE || tool || isThrowable(piece)) && (
               <Button tone="proof" onClick={() => { if (usePlayerStore.getState().equipSwap(piece.id).ok) setSelected(null); }}>EQUIP</Button>
             )}
             {StudyDoor.offered(piece, playerPort, hubPort) && (

@@ -27,11 +27,13 @@ import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { Anchors } from '../../logic/economy/Anchors';
 import { RestSystem } from '../../logic/systems/RestSystem';
 import { FieldWords } from '../../logic/systems/FieldWords';
+import { ContactNames } from '../../logic/systems/ContactNames';
+import { isLooseStone, isThrowable } from '../../../shared/entities/item/Throwable';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
 import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
-import { EntityType, ICartState } from '../../../shared/entities/world/types';
+import { EntityType, ICartState, IWorldEntity } from '../../../shared/entities/world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from '../../../shared/entities/player/data/cognitiveFrames'; // Import definitions
 import { Capture } from '../../../shared/logic/systems/Capture';
@@ -123,6 +125,10 @@ interface PlayerState {
   placeOnCart: (entityId: string, itemId: string, x: number, y: number, rotated: boolean) => Verdict;
   /** What is in this slot wears, whichever hand fired it. */
   wearSlot: (slot: EquipSlotId, amount: number) => void;
+  /** C14: one throw of what this hand holds. */
+  spendThrown: (slot: EquipSlotId) => void;
+  /** This character has been told a person's name (`ContactNames`). It is theirs to keep. */
+  learnName: (person: Pick<IWorldEntity, 'id' | 'npc'>) => void;
   /** Unequip to the pack (in session, cap-checked) or the stash (in the bank). */
   unequipFromSlot: (slotId: EquipSlotId) => Verdict;
   /** D22: set or clear a cognitive frame on a head-budget position. */
@@ -1749,6 +1755,39 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
   },
 
+  /**
+   * C14: a stone thrown is gone from the hand, and the next one carried comes to the same hand,
+   * so a held button keeps throwing while the pack has any. The last one leaves the hand empty.
+   * Anything else in a hand is left alone: it wears, and that is `wearSlot`'s.
+   */
+  spendThrown: (target) => {
+    const held = get().player.equipment ? LoadoutSystem.itemIn(get().player.equipment!, target) : undefined;
+    if (!held || !isThrowable(held)) return;
+    const next = get().player.currentSession?.inventory.find(isThrowable);
+    set(s => {
+      const eq = s.player.equipment;
+      if (!eq) return s;
+      const slots = { ...eq.slots };
+      const items = eq.items.filter(i => i.id !== held.id);
+      let currentSession = s.player.currentSession;
+      if (next && currentSession) {
+        slots[target] = next.id;
+        items.push(next);
+        const layout = { ...(currentSession.inventoryLayout || {}) };
+        delete layout[next.id];
+        currentSession = { ...currentSession, inventory: currentSession.inventory.filter(i => i.id !== next.id), inventoryLayout: layout };
+      } else {
+        delete slots[target];
+      }
+      return { player: { ...s.player, equipment: { ...eq, slots, items }, currentSession } };
+    });
+    get().recalcWeight();
+    SessionJournal.record('INTERACT', { kind: 'THROW', itemId: held.id, ...(next ? { drew: next.id } : {}) });
+    if (!next) feed(`That was the last one. The ${target === 'LEFT_HAND' ? 'left' : 'right'} hand is empty.`, 'plain');
+  },
+
+  learnName: (person) => set(s => ({ player: ContactNames.learnName(s.player, person) })),
+
   /** Rotate an item in the grid, if the turned footprint fits. */
   rotateItem: (itemId) => {
     const session = get().player.currentSession;
@@ -1915,7 +1954,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Layer 4: what is gathered gives up its element, from its own world's elements
       const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
-      feed(`Harvested ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
+      // C14: a loose stone is picked up, in the feed as in the prompt
+      feed(`${isLooseStone(def) ? 'Picked up' : 'Harvested'} ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
       if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
     }
@@ -2027,7 +2067,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { npc: { ...entity.npc, disposition } } });
       SessionJournal.record('INTERACT', { kind: 'GIFT', targetId: entity.id, itemId: gift.id, disposition });
       get().processAction({ tags: ['social', 'trade'], magnitude: 10 });
-      feed(`Gave ${gift.name} to ${entity.npc.name} (${disposition}/100).`, 'plain');
+      // A person has no name until it is asked
+      feed(`Gave ${gift.name} to ${ContactNames.knowsName(get().player, entity) ? entity.npc.name : 'them'} (${disposition}/100).`, 'plain');
       return;
     }
 
@@ -2041,7 +2082,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!escort) return;
       SessionJournal.record('INTERACT', { kind: 'RECRUIT', targetId: entity.id, npcName: entity.npc.name });
       get().processAction({ tags: ['social', 'rescue', 'charisma'], magnitude: 50 });
-      feed(`${entity.npc.name} walks beside you now. Reach the beacon together.`, 'signal');
+      // Someone who agrees to come says who they are. From here the character knows their name
+      const alreadyKnown = ContactNames.knowsName(get().player, entity);
+      set(s => ({ player: ContactNames.learnName(s.player, entity) }));
+      feed(alreadyKnown
+        ? `${entity.npc.name} walks beside you now. Reach the beacon together.`
+        : `They give their name, ${entity.npc.name}, and walk beside you now. Reach the beacon together.`, 'signal');
       return;
     }
 

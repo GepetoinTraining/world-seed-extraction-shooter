@@ -30,6 +30,7 @@ import { presence } from '../../shared/logic/live/Presence';
 import { MOB_DEFINITIONS } from '../../shared/entities/mob/data/mobDefinitions';
 import { InventorySystem, GRID_W, GRID_H } from '../../shared/entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
+import { isThrowable } from '../../shared/entities/item/Throwable';
 import { TollPrompt } from './TollPrompt';
 import { SurveySystem } from '../logic/systems/SurveySystem';
 import { CartSystem } from '../entities/world/CartSystem';
@@ -409,7 +410,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
 
     lastShotRef.current = now;
-    if (weapon) st.wearSlot(slot, 1); // durability: every use costs
+    // Durability: every use costs. C14: a stone thrown is spent, and the next one carried comes to the hand
+    if (isThrowable(weapon)) st.spendThrown(slot);
+    else if (weapon) st.wearSlot(slot, 1);
   };
 
   // Wave 2.5: extraction channel + regrow sweep timing

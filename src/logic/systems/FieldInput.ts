@@ -9,6 +9,7 @@ import { EntityType, IMap, IWorldEntity, ScanLevel } from '../../../shared/entit
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { isThrowable } from '../../../shared/entities/item/Throwable';
 import { TILE_PX } from '../../../shared/entities/world/grid';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,7 @@ export function wieldRefusal(item: IItem | undefined): string | null {
   if (!item) return null;
   if (item.slot === SlotType.MAIN_HAND) return null;
   if (item.slot === SlotType.TOOL || (item.tags || []).includes('tool')) return null;
+  if (isThrowable(item)) return null; // C14: a stone in the hand is thrown
   return `${LoadoutSystem.shownName(item)} guards. It does not swing.`;
 }
 

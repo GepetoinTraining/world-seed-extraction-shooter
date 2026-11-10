@@ -173,13 +173,15 @@ export const SurveySystem = {
 
   /**
    * A deep scan's list, led by the danger. D60: a creature gives only the name it has earned, and
-   * N10: everything else reads by the name its card would give this reader, never by an id.
+   * N10: everything else reads by the name its card would give this reader, never by an id. A person
+   * gives a name only to someone who has been told it.
    * Q44: what a scan sees shows, all of it. A leader is marked with the pack behind it, and a pack
    * that walks together is one line; nothing is cut off the end. C7: leaders or packs that read
    * exactly alike share a line that says how many, so every body is still counted.
    */
-  manifest(entities: IWorldEntity[], level: KnowledgeReader = PLAINLY_KNOWN): IManifestLine[] {
-    const labelOf = (e: IWorldEntity) => ContactNames.fromAbove(e, level);
+  manifest(entities: IWorldEntity[], level: KnowledgeReader = PLAINLY_KNOWN, reader?: Pick<IPlayer, 'namesKnown'>): IManifestLine[] {
+    // A person reads as an unknown figure unless this reader has been told their name
+    const labelOf = (e: IWorldEntity) => ContactNames.of(e, level, reader);
     const herds = new Map<string, IWorldEntity[]>();
     const singles: IWorldEntity[] = [];
     for (const e of entities) {

@@ -52,6 +52,7 @@ import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/bo
 import { ILogLine, JUDGE_BANDS } from '../shared/logic/systems/TalkTypes';
 import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { SurveySystem } from '../src/logic/systems/SurveySystem';
+import { ContactNames } from '../src/logic/systems/ContactNames';
 import { suggestStart } from '../src/logic/systems/FieldInput';
 import { TalkLaw } from '../src/logic/systems/TalkLaw';
 import { LADDER } from '../src/logic/systems/NpcAgenda';
@@ -156,8 +157,10 @@ describe("N10: a deep scan's list names what it saw, the way its card would", ()
     expect(labels).toContain('Exit');
   });
 
-  it('a person nobody has talked to is one of the unknown figures, and one who has been met gives their name', () => {
-    const lines = SurveySystem.manifest(seen(), () => 1);
+  it('a person is one of the unknown figures, and only one whose name the reader was told gives it', () => {
+    // Ruled 2026-11-10: a name is known by being asked, not by having talked (tests/prerun.rulings.test.ts)
+    const told = ContactNames.learnName({}, seen().find(e => e.id === 'p1')!);
+    const lines = SurveySystem.manifest(seen(), () => 1, told);
     expect(lines.find(l => l.label === 'Unknown Figure')!.count).toBe(2);
     expect(lines.find(l => l.label === 'Orrin Error')!.count).toBe(1);
     const said = JSON.stringify(lines);
@@ -307,7 +310,7 @@ describe('N10, L6, L7: recon reads in the world\'s own words', () => {
 
   it('the list is given the reader\'s own knowledge of what grows there', () => {
     const view = SRC('src/components/ReconView.tsx');
-    expect(view).toMatch(/SurveySystem\.manifest\(selected\.entities, WebSystem\.knowledgeReader\(player\)\)/);
+    expect(view).toMatch(/SurveySystem\.manifest\(selected\.entities, WebSystem\.knowledgeReader\(player\), player\)/);
     expect(view).toMatch(/SurveySystem\.say\(line\)/);
     expect(view).not.toMatch(/\{count\}× \{type\}/);
   });

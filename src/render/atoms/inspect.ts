@@ -92,7 +92,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
     Object.entries(def.materialProps || {}).forEach(([k, v]) => rows.push([PROPERTY_NAMES[k] || k, String(v)]));
   }
 
-  const title = ContactNames.of(e, ctx.level);
+  const title = ContactNames.of(e, ctx.level, ctx.player);
   const lacksTool = needs.some(n => n.startsWith('Needs'));
   const tail = canAct ? 'ready' : uses <= 0 ? 'spent' : lacksTool ? (needs[0].includes('ower') ? 'weak tool' : 'needs tool') : 'too far';
   return { title, rows, needs, canAct, compact: compact(title, tail) };
@@ -118,7 +118,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
   switch (e.type) {
     case EntityType.NPC: {
       const npc = e.npc;
-      const title = ContactNames.of(e, ctx.level);
+      const title = ContactNames.of(e, ctx.level, ctx.player);
       // Q16: fallen on the way out. Nothing of theirs is anyone's to read.
       if (e.escort?.fallen) {
         return { title, rows: [['Down', 'carried out, they come back on the other side']], needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'carry' : 'too far') };
@@ -135,7 +135,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     }
     case EntityType.CONTAINER: {
       const looted = !!e.container?.looted;
-      const title = ContactNames.of(e, ctx.level);
+      const title = ContactNames.of(e, ctx.level, ctx.player);
       const needs = looted ? ['Already emptied'] : canAct ? [] : ['Move closer'];
       return { title, rows: [['Rank', String(e.container?.lootRank ?? e.rank)]], needs, canAct, compact: compact(title, looted ? 'empty' : canAct ? 'ready' : 'too far') };
     }
@@ -146,7 +146,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
     case EntityType.STRUCTURE:
       if (e.structure) {
         const s = e.structure;
-        const title = ContactNames.of(e, ctx.level);
+        const title = ContactNames.of(e, ctx.level, ctx.player);
         const state = s.brokenAt !== undefined ? 'down' : s.built ? `${e.health ?? s.maxHealth} of ${s.maxHealth}` : `${s.paid ?? 0} of ${s.bill ?? 0} paid`;
         const made = s.material ? (RESOURCE_DEFINITIONS[s.material]?.name ?? s.material) : undefined;
         return { title, rows: [['State', state], ...(made ? [['Drawn from', made] as [string, string]] : [])], needs: [], canAct: false, compact: compact(title, state) };

@@ -505,7 +505,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
             {selected.scanLevel >= ScanLevel.COMPLETE && selected.entities.length > 0 && (
               <>
                 <div className="ws-row"><span className="ws-dim">MANIFEST</span><span /></div>
-                {SurveySystem.manifest(selected.entities, WebSystem.knowledgeReader(player)).map(line => (
+                {SurveySystem.manifest(selected.entities, WebSystem.knowledgeReader(player), player).map(line => (
                   <div key={line.key} className="ws-row">
                     <span className={line.hostile ? 'ws-loss' : undefined}>{SurveySystem.say(line)}</span><span />
                   </div>

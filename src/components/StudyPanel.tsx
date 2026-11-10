@@ -17,6 +17,7 @@ import { LoreSystem } from '../logic/systems/LoreSystem';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { StudySystem } from '../logic/systems/StudySystem';
 import { StudyDoor } from '../logic/systems/StudyDoor';
+import { ContactNames } from '../logic/systems/ContactNames';
 import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { Bar, Button, Input } from './ui/kit';
 import { useWaits } from './ui/stores';
@@ -37,7 +38,8 @@ const living = (e: IWorldEntity) => (e.type === EntityType.MOB || e.npc ? 1 : 0)
 
 const fieldTarget = (e: IWorldEntity, player: IPlayer): IStudyTarget => {
   if (e.type === EntityType.MOB) return StudySystem.targetOfCreature({ definitionId: e.definitionId, displayName: e.displayName, rank: e.rank });
-  if (e.npc) return StudySystem.targetOfPerson({ id: e.id, name: e.npc.name, rank: e.rank });
+  // A person has no name until it is asked, so one never asked is studied as an unknown figure
+  if (e.npc) return StudySystem.targetOfPerson({ id: e.id, name: ContactNames.personName(e, player), rank: e.rank });
   // The inspect card's own title: what can be seen of it, and nothing more
   return StudySystem.targetOfThing({ id: e.id, name: inspectEntity(e, { player, dist: 0, level: () => 0 }).title, rank: e.rank });
 };

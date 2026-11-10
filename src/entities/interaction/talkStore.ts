@@ -40,6 +40,7 @@ import { useFeed } from '../../components/ui/stores';
 import { Deeds } from '../../logic/memory/Deeds';
 import { MemoryPlace, MemoryStore } from './memoryStore';
 import { IMounted } from '../../logic/memory/NpcContext';
+import { ContactNames } from '../../logic/systems/ContactNames';
 import { PersonLedger } from '../../logic/people/PersonLedger';
 import { LiveClient } from '../../logic/live/LiveClient';
 import { presence } from '../../../shared/logic/live/Presence';
@@ -103,6 +104,8 @@ interface ITalkState {
   goal: ITalkGoal | null;
   stance: Stance | null;
   wants: string | null;
+  /** A person in the field has no name until it is asked. True once this character has been told it; always true where no name is in question. */
+  named: boolean;
 
   open: (subject: TalkSubject) => Promise<void>;
   close: () => void;
@@ -116,11 +119,19 @@ interface ITalkState {
    * what they want, and missed, they give nothing away and like being asked a little less.
    */
   ask: () => Promise<void>;
+  /**
+   * Pedro, 2026-11-10: "if you never ask someone's name, they don't have one". A line of the talk like
+   * any other: in the field it costs what a round costs. No roll: a person asked their name gives it.
+   */
+  askName: () => Promise<void>;
 }
 
 const EMPTY = {
-  subject: null, title: '', ready: false, busy: false, log: [], rounds: [], meter: 0, note: '', spentUsd: 0, goal: null, stance: null, wants: null
+  subject: null, title: '', ready: false, busy: false, log: [], rounds: [], meter: 0, note: '', spentUsd: 0, goal: null, stance: null, wants: null, named: true
 };
+
+/** What an unnamed person is called in a sentence. The window's title and the card say "Unknown Figure". */
+const THE_STRANGER = 'The stranger';
 
 /** What the door's answer means to someone standing there. */
 const SAID_WHEN_SILENT: Record<string, string> = {
@@ -344,7 +355,9 @@ export const useTalk = create<ITalkState>((set, get) => {
       if (!entity) return;
       const { seed } = worldFacts();
       if (subject.kind === 'FIELD_PERSON') {
-        set({ ...EMPTY, subject, title: entity.npc?.name ?? 'Unknown Figure', meter: entity.npc?.disposition ?? 0, log: fieldLogs.get(`${seed}:${entity.id}`) ?? [], ready: true });
+        // A person has no name until it is asked: the window opens on who this character knows them as
+        const reader = usePlayerStore.getState().player;
+        set({ ...EMPTY, subject, title: ContactNames.personName(entity, reader), named: ContactNames.knowsName(reader, entity), meter: entity.npc?.disposition ?? 0, log: fieldLogs.get(`${seed}:${entity.id}`) ?? [], ready: true });
         askTurn(entity.id);
         return;
       }
@@ -414,7 +427,11 @@ export const useTalk = create<ITalkState>((set, get) => {
         const now = liveEntity(entity.id);
         if (!now?.npc) { if (stillHere()) set({ busy: false, note: 'There is nobody there now.' }); return; }
         const sums = TalkLaw.settle({ roll, required, band: answer.band, disposition: now.npc.disposition });
-        const reply = answer.reply || TalkLaw.floorReply(sums.landed, isMonster ? undefined : now.npc.name);
+        // A person has no name until it is asked. One they say themselves is heard, and is theirs from then on
+        if (!isMonster && answer.by === 'DOOR' && ContactNames.saidTheirName(answer.reply, now.npc.name)) usePlayerStore.getState().learnName(now);
+        const named = isMonster || ContactNames.knowsName(usePlayerStore.getState().player, now);
+        const called = isMonster ? get().title : named ? now.npc.name : THE_STRANGER;
+        const reply = answer.reply || TalkLaw.floorReply(sums.landed, isMonster ? undefined : called);
         const stance = isMonster ? MonsterMind.stance(sums.disposition, attrs) : null;
         // Once it has said what it wants in its own words, that stands. Until then its sheet says, and its words can still replace that.
         const wantsHeard = !!now.bargain?.wantsHeard || (stance === 'FRIENDLY' && !!answer.wants);
@@ -428,7 +445,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         });
         SessionJournal.record('INTERACT', { kind: isMonster ? 'BARGAIN' : 'TALK', targetId: entity.id, rollKey, roll, required, band: answer.band, bonus: sums.bonus, landed: sums.landed, by: answer.by, disposition: sums.disposition });
         usePlayerStore.getState().processAction({ tags: ['social', 'charisma'], magnitude: sums.landed ? 15 : 5 });
-        useFeed.getState().push(`${get().title} ${sums.landed ? 'warms to you' : 'is unconvinced'} (${sums.disposition}/100).`, sums.landed ? 'signal' : 'plain');
+        useFeed.getState().push(`${called} ${sums.landed ? 'warms to you' : 'is unconvinced'} (${sums.disposition}/100).`, sums.landed ? 'signal' : 'plain');
 
         // With no model nobody spoke, so the floor's line is narration, never their words.
         const log: ILogLine[] = [...(stillHere() ? get().log : [...prior, { who: 'THEM' as const, text: said }]), { who: answer.by === 'DOOR' ? 'NPC' : 'NOTE', text: reply }];
@@ -438,6 +455,7 @@ export const useTalk = create<ITalkState>((set, get) => {
         if (!stillHere()) return;
         set(s => ({
           busy: false, log, meter: sums.disposition, stance, wants,
+          ...(isMonster ? {} : { named, title: ContactNames.personName(now, usePlayerStore.getState().player) }),
           note: answer.by === 'FLOOR' ? (SAID_WHEN_SILENT[answer.status ?? ''] ?? 'That got no answer: the round rolled without it.') : (answer.gated ? 'They will not do that, whatever you say.' : ''),
           spentUsd: addUsage(s.spentUsd, answer.usage),
           rounds: [...s.rounds, { said, roll, required, band: answer.band, gated: answer.gated, by: answer.by, reply, ...sums }]
@@ -564,6 +582,21 @@ export const useTalk = create<ITalkState>((set, get) => {
       set(s => ({ busy: false, meter, log: [...s.log, today(note(`You ask if they want something. Rolled ${roll} against ${required}.`)), today(note(said))] }));
       if (landed) await MemoryStore.write(cityPlace(), [{ owner: subject.npcId, what: Deeds.secret({ day: worldDay(), owner: subject.npcId, to: me(), want: want ?? rung.says }) }]);
       await saveCity(subject.npcId, agenda, kept.attempts, n);
+    },
+
+    askName: async () => {
+      const { subject, busy, ready, named } = get();
+      if (subject?.kind !== 'FIELD_PERSON' || busy || !ready || named) return;
+      const entity = liveEntity(subject.entityId);
+      if (!entity?.npc) { set({ note: 'There is nobody there now.' }); return; }
+      if (!spendEnergy(TALK_ENERGY)) { set({ note: `Asking takes ${TALK_ENERGY} energy, as a round does. You are out of it.` }); return; }
+      usePlayerStore.getState().learnName(entity);
+      SessionJournal.record('INTERACT', { kind: 'ASK_NAME', targetId: entity.id });
+      const { seed } = worldFacts();
+      const log: ILogLine[] = [...get().log, { who: 'NOTE', text: 'You ask their name.' }, { who: 'NOTE', text: `They give it: ${entity.npc.name}.` }];
+      fieldLogs.set(`${seed}:${entity.id}`, log);
+      if (get().subject !== subject) return;
+      set({ log, title: entity.npc.name, named: true, note: '' });
     },
 
     bring: () => {

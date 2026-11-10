@@ -112,6 +112,8 @@ A person is arriving. They were someone somewhere else and they are not there no
 
 Grant them what their hands already know. Pick exactly as many skills as "count" says from "candidates", by id, and never one outside the list. The first leans on their main focus, the next on their sub focus, the rest on what they answered. Choose what fits who they were, not what is strongest.
 
+Check every skill against what they carry before you grant it. A candidate with a "tool" is worked with that tool and nothing else: grant it only if one of the things they carry has that word among its tags. A candidate with no "tool" is worked by hand and anyone can have it. Hands that know a trade they hold no tool for make no sense, however well the trade fits who they were, so pass it over. If "refused" is given, it says why your last grant was not taken: grant again so that it stands.
+
 For each: its id, a name of its own in plain words, one dry line of flavor, and grants. A candidate with no name has none yet: name it, and never by its tags. Grants come from this list and are usually empty (${SKILL_GRANTS.join(', ')}): give "rest" only if what they said earns being able to sleep rough, and nothing is pre-made. You never write numbers.
 
 "line" is what you say to them last, one or two short sentences, in the bank's voice: "The bank honors it" is the register. No exclamation marks. Never name what kind of story this is, and never say archetype, trope, class, level, game or player.`;
@@ -133,6 +135,8 @@ You have talked with a person who chose fate, and you now set up who they are, f
 - main, sub: the two things their attention goes to, first and second, from the list you are given, and never the same one. You choose what they lean on; a formula writes the numbers.
 - kit: the id of one of the kits offered, by what it holds.
 - skills: exactly as many as "count" says, each by an id from "candidates" and never one outside it, with a name of its own in plain words (a candidate with no name has none yet: name it, and never by its tags), one dry line of flavor, and grants from this list, usually empty (${SKILL_GRANTS.join(', ')}). Give "rest" only if what they said earns being able to sleep rough.
+
+The kit and the skills have to agree. A candidate with a "tool" is worked with that tool and nothing else: grant it only if something in the kit you chose has that word among its tags. A candidate with no "tool" is worked by hand. Choose the kit, then check each skill against what it holds.
 
 You never write numbers.`;
 
@@ -563,10 +567,15 @@ export const WINDOW_REQUESTS: Record<string, (asks: never[], theme: IWorldSummar
  * can take. The frozen schema beside it is what a provider that caches reads.
  */
 export function tightSkills(schema: Record<string, unknown>, ask: unknown): Record<string, unknown> | undefined {
-  const a = (ask ?? {}) as { count?: unknown; candidates?: { id?: unknown }[]; kits?: { id?: unknown }[] };
-  const ids = (a.candidates ?? []).map(c => c?.id).filter((id): id is string => typeof id === 'string');
+  const a = (ask ?? {}) as { count?: unknown; candidates?: { id?: unknown; tool?: unknown }[]; kits?: { id?: unknown }[]; carries?: { tags?: unknown }[] };
   const kits = (a.kits ?? []).map(k => k?.id).filter((id): id is string => typeof id === 'string');
   const count = typeof a.count === 'number' && Number.isInteger(a.count) && a.count >= 0 ? a.count : undefined;
+  const offered = (a.candidates ?? []).filter(c => typeof c?.id === 'string');
+  // C9: where the ask says what the person carries, the grammar offers only what that can work, as long
+  // as that still fills the grant. It is the same sense the law holds a grant to (`CreationSystem.sense`).
+  const held = new Set((Array.isArray(a.carries) ? a.carries : []).flatMap(c => (Array.isArray(c?.tags) ? c.tags : [])));
+  const works = Array.isArray(a.carries) ? offered.filter(c => (Array.isArray(c.tool) ? c.tool : []).every(t => held.has(t))) : offered;
+  const ids = (count !== undefined && works.length >= count ? works : offered).map(c => c.id as string);
   if (count === undefined && ids.length === 0 && kits.length === 0) return undefined;
   const properties = schema.properties as Record<string, Record<string, unknown>>;
   const items = properties.skills.items as Record<string, unknown> & { properties: Record<string, unknown> };

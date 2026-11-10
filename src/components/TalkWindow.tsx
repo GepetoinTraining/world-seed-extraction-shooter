@@ -36,7 +36,7 @@ const MeterTrack: React.FC<{ value: number; lines: { at: number; label: string }
 );
 
 export const TalkWindow: React.FC = () => {
-  const { subject, title, ready, busy, log, rounds, meter, note, goal, stance, wants, say, give, bring, ask, close } = useTalk();
+  const { subject, title, ready, busy, log, rounds, meter, note, goal, stance, wants, named, say, give, bring, ask, askName, close } = useTalk();
   const cityId = subject?.kind === 'CITY' ? subject.npcId : null;
   const onTheBoard = useHubStore(s => cityId ? s.guild.quests.find(q => q.residentId === cityId && q.state === 'OPEN')?.text ?? null : null);
   const attributes = usePlayerStore(s => s.player.attributes);
@@ -132,10 +132,19 @@ export const TalkWindow: React.FC = () => {
         </div>
 
         <div className="ws-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-          <Button tone="quiet" disabled={busy || !ready} onClick={() => void ask()}
-            title={inTheField ? `Your mind against theirs. It takes ${TALK_ENERGY} energy, as a round does.` : 'Your mind against theirs.'}>
-            ASK IF THEY WANT SOMETHING
-          </Button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {/* A person has no name until it is asked, and this is the asking. It stands only while there is something to ask */}
+            {subject.kind === 'FIELD_PERSON' && !named && (
+              <Button tone="quiet" disabled={busy || !ready} onClick={() => void askName()}
+                title={`Nobody has a name until it is asked. It takes ${TALK_ENERGY} energy, as a round does, and they give it.`}>
+                ASK THEIR NAME
+              </Button>
+            )}
+            <Button tone="quiet" disabled={busy || !ready} onClick={() => void ask()}
+              title={inTheField ? `Your mind against theirs. It takes ${TALK_ENERGY} energy, as a round does.` : 'Your mind against theirs.'}>
+              ASK IF THEY WANT SOMETHING
+            </Button>
+          </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {inTheField && (session?.inventory.length ?? 0) > 0 && (
               <Button tone="quiet" disabled={busy} onClick={give} title="The least of what you carry goes">OFFER SOMETHING</Button>

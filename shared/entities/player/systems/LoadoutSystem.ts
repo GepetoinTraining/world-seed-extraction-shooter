@@ -27,6 +27,7 @@ import {
 } from '../../../types';
 import { COGNITIVE_FRAMES } from '../data/cognitiveFrames';
 import { InventorySystem } from './InventorySystem';
+import { isThrowable } from '../../item/Throwable';
 import { StatSystem } from '../../../logic/systems/StatSystem';
 
 export interface Verdict {
@@ -104,6 +105,11 @@ export class LoadoutSystem {
 
   /** Does this slot take this item? The refusal names the slot and the reason. */
   static slotAccepts(slotId: EquipSlotId, item: IItem): Verdict {
+    // C14: a stone to throw is cargo that a hand, either one, can also hold
+    if (isThrowable(item)) {
+      return slotId === 'RIGHT_HAND' || slotId === 'LEFT_HAND' ? OK
+        : no(`${this.shownName(item)} is for a hand to throw. Nothing else on the body holds it.`);
+    }
     if (item.slot === SlotType.NONE && !isTool(item)) {
       return no(`${this.shownName(item)} is cargo, not gear. No slot on the body takes it.`);
     }
@@ -147,6 +153,8 @@ export class LoadoutSystem {
 
   /** The default home for an item, honoring what is already worn (rings find the free finger). */
   static slotForItem(item: IItem, equipment?: IEquipmentState): EquipSlotId | null {
+    // C14: a stone to throw takes whichever hand is free, the right first, so it can ride beside a blade
+    if (isThrowable(item)) return equipment?.slots.RIGHT_HAND && !equipment.slots.LEFT_HAND ? 'LEFT_HAND' : 'RIGHT_HAND';
     if (isTool(item) && !item.pouchData) {
       for (const t of toolSlotIds(TOOL_SLOT_COUNT)) if (!equipment?.slots[t]) return t;
       return toolSlotIds(TOOL_SLOT_COUNT)[0];
