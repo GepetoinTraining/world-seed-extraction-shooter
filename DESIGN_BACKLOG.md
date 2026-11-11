@@ -58,6 +58,8 @@ The ruling it was built to (D16): a towed thing with its own grid and a real cos
 
 **Not there today:** beds of different sizes (the data allows it; the content has one), and a cart's own stats. This meets his ruling that gear is a generated noun: a cart is a kind like any other, and its bed and stats are what it carries.
 
+**Now built (3bd8bd7, the interface pass, part 3).** Pedro: "the carts need variable sizes of bed and their stats". A gear kind may carry a size word; `ThemeFormula.cartNumbers` turns a cart's size word and rank into its bed, its own weight and the load it bears, and quality is read at the mint. No size reads MEDIUM, the first world's 10 by 8, so the pinned theme's cart is unchanged in bed and weight. The tow reads the load against what this cart bears. The cart's window says what the bed is, its weight and load, its lock and its alarm, in words. A cart folds back into the very kit that unfolded. Wear is not part of it. Open calls: ledger I3a to I3e.
+
 ### 1.4 The item grid
 
 | Today | Where |
