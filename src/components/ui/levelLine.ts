@@ -8,7 +8,7 @@ import { ProgressionSystem } from '../../../shared/entities/player/systems/Progr
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 
 export const levelLine = (player: IPlayer): string => {
-  const points = player.attributePoints ?? 0;
+  const points = ProgressionSystem.unspent(player).total;
   const circles = CircleSystem.free(player);
   return `LV ${ProgressionSystem.levelOf(player)}${points > 0 ? ` · ${points} TO SPEND` : ''}${circles > 0 ? ` · ${circles} TO FILL` : ''}`;
 };

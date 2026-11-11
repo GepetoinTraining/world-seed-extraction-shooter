@@ -30,7 +30,7 @@ import { PaperDoll } from './PaperDoll';
 import { TheWorking } from './TheWorking';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { StatSystem } from '../../shared/logic/systems/StatSystem';
-import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid } from './PlayerHub';
+import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid, pointWord, pointsLine } from './PlayerHub';
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, useHands, wholeZone } from './ui/hands';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
@@ -324,7 +324,7 @@ const WhoPanel: React.FC = () => {
   const { player, spendAttributePoint } = usePlayerStore();
   const rank = ProgressionSystem.rankOf(player);
   const progress = ProgressionSystem.levelProgress(player);
-  const points = player.attributePoints ?? 0;
+  const points = ProgressionSystem.unspent(player).total;
   // D52: what an attribute does, in a line of its own that holds its place
   const [told, setTold] = useState<keyof IAttributes | null>(null);
   const held = useMemo(() => new Set(WebSystem.earnedSheet(player, WebBank.current(), useHubStore.getState().web).earned.map(r => r.id)), [player.bank.universalSkills, player.skillProgress]);
@@ -339,7 +339,7 @@ const WhoPanel: React.FC = () => {
       style={{ flex: '1 1 240px', minWidth: 240, height: PACK_BODY_H, overflowY: 'auto' }}
     >
       <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
-      {points > 0 && <div style={{ margin: '4px 0' }}><Chip tone="signal">{points} POINT{points === 1 ? '' : 'S'} TO SPEND</Chip></div>}
+      {points > 0 && <div style={{ margin: '4px 0' }}><Chip tone="signal">TO SPEND: {pointsLine(player)}</Chip></div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', columnGap: 10, margin: '6px 0' }}>
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
@@ -350,8 +350,8 @@ const WhoPanel: React.FC = () => {
                 <span className="ws-dim">{attr === 'intimidation' ? 'IMD' : attr.slice(0, 3).toUpperCase()}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span className="ws-bright">{player.attributes[attr] || 0}</span>
-                  {points > 0 && (
-                    <Button tone="signal" aria-label={`Raise ${attr}`} style={{ padding: '0 4px' }} onClick={() => spendAttributePoint(attr)}>+</Button>
+                  {ProgressionSystem.pointFor(player, attr) && (
+                    <Button tone="signal" aria-label={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} title={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} style={{ padding: '0 4px' }} onClick={() => spendAttributePoint(attr)}>+</Button>
                   )}
                 </span>
               </div>

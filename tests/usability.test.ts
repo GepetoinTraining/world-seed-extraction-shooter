@@ -1132,7 +1132,8 @@ describe('line 76: one key, one sheet, field and city alike', () => {
     const before = player().baseAttributes.strength;
     const { host, press, done, act } = await mount();
     await press('Tab');
-    const raise = host.querySelector('[aria-label="Raise strength"]') as HTMLButtonElement;
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "4 points per level, one free point and one for each of the buckets"): the + now says which point it spends
+    const raise = host.querySelector('[aria-label^="Raise strength"]') as HTMLButtonElement;
     await act(async () => { raise.click(); });
     expect(player().baseAttributes.strength).toBe(before + 1);
     expect(player().attributePoints).toBe(1);

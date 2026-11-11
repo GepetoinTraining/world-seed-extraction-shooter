@@ -111,14 +111,18 @@ describe('line 30: levels and the old rank ladder (kill XP is finally applied)',
     expect(res.to).toBe(2);
     expect(res.pointsGranted).toBe(POINTS_PER_LEVEL);
     const p1 = usePlayerStore.getState().player;
-    expect(p1.attributePoints).toBe(POINTS_PER_LEVEL);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "4 points per level, one free point and one for each of the buckets")
+    expect(ProgressionSystem.unspent(p1).total).toBe(POINTS_PER_LEVEL);
 
     const strBefore = p1.baseAttributes.strength;
     expect(usePlayerStore.getState().spendAttributePoint('strength')).toBe(true);
     const p2 = usePlayerStore.getState().player;
     expect(p2.baseAttributes.strength).toBe(strBefore + 1);
     expect(p2.attributes.strength).toBe(strBefore + 1); // effective follows base
-    expect(p2.attributePoints).toBe(POINTS_PER_LEVEL - 1);
+    expect(ProgressionSystem.unspent(p2).total).toBe(POINTS_PER_LEVEL - 1);
+    // Strength is the body's: its group point went first, and the free one waits
+    expect(p2.groupPoints?.body).toBe(0);
+    expect(p2.attributePoints).toBe(1);
   });
 
   it('no points means no spend', () => {

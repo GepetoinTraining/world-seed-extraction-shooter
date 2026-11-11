@@ -1,4 +1,4 @@
-import { IPlayer, ISkillProgress, ISkillState, UniversalRank, Rarity } from '../../../types';
+import { IAttributes, IPlayer, ISkillProgress, ISkillState, UniversalRank, Rarity } from '../../../types';
 
 // --- XP TABLES ---
 const RANK_BASE_XP: Record<UniversalRank, number> = {
@@ -74,7 +74,24 @@ export const RANK_XP_THRESHOLDS: Record<UniversalRank, number> = {
 // level after asks more by LEVEL_GROWTH. Three levels at rank F are 45 rats where
 // the old rank-up's three points were 20, and the next rank's foes pay what its
 // levels ask. Guesses until Wave 12.
-export const POINTS_PER_LEVEL = 1;
+/**
+ * A LEVEL'S POINTS (BALANCE_RUN.md 2.13). Pedro, 2026-11-11: "4 points per level, one free point and one for each of the
+ * buckets". One goes on any attribute; one for each group goes only inside its group, and is spent before the free one.
+ */
+export type AttributeGroup = 'body' | 'mind' | 'self';
+export const ATTRIBUTE_GROUPS: Record<AttributeGroup, (keyof IAttributes)[]> = {
+  body: ['strength', 'constitution', 'agility', 'dexterity', 'endurance'],
+  mind: ['intelligence', 'focus', 'engineering', 'hacking', 'perception'],
+  self: ['charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership']
+};
+export const GROUP_ORDER: AttributeGroup[] = ['body', 'mind', 'self'];
+/** The word each group is shown by, in its place on the sheet: never told apart by colour alone. */
+export const GROUP_WORDS: Record<AttributeGroup, string> = { body: 'HARDWARE', mind: 'SOFTWARE', self: 'WETWARE' };
+export const FREE_POINTS_PER_LEVEL = 1;
+export const GROUP_POINTS_PER_LEVEL = 1;
+export const POINTS_PER_LEVEL = FREE_POINTS_PER_LEVEL + GROUP_POINTS_PER_LEVEL * GROUP_ORDER.length;
+/** Pedro: "the circles in skills, not at every level, one at every 3 levels". */
+export const LEVELS_PER_CIRCLE = 3;
 export const LEVEL_KILLS = 5;
 export const LEVEL_GROWTH = 1.5;
 
@@ -149,9 +166,42 @@ export class ProgressionSystem {
     return Math.max(1, Math.floor(worth(target) * share + threats.reduce((sum, t) => sum + worth(t) * XP_SHARE_THREAT, 0)));
   }
 
-  /** The line a level gets, wherever the experience came from. */
-  static levelUpLine(to: number, points: number): string {
-    return `LEVEL ${to}. +${points} attribute point${points === 1 ? '' : 's'}, and a circle to fill. On the sheet.`;
+  /** The line a level gets, wherever the experience came from: what its points are, and a circle when one came. */
+  static levelUpLine(to: number, points: number, circle = false): string {
+    const levels = Math.max(1, Math.round(points / POINTS_PER_LEVEL));
+    return `LEVEL ${to}. +${points} attribute point${points === 1 ? '' : 's'}: ${levels} free, and ${levels} each for ${GROUP_ORDER.map(g => GROUP_WORDS[g]).join(', ')}${circle ? ', and a circle to fill' : ''}. On the sheet.`;
+  }
+
+  /** The circles every level climbed has earned, at any rank: one at every third. */
+  static circlesEarned(player: HasLevels): number {
+    return Math.floor(this.levelsEarned(player) / LEVELS_PER_CIRCLE);
+  }
+
+  static groupOf(attribute: keyof IAttributes): AttributeGroup | null {
+    return GROUP_ORDER.find(g => ATTRIBUTE_GROUPS[g].includes(attribute)) ?? null;
+  }
+
+  /** What waits to be spent. A save from before the groups has only free points, and they stay free. */
+  static unspent(player: Pick<IPlayer, 'attributePoints' | 'groupPoints'>): { free: number; body: number; mind: number; self: number; total: number } {
+    const free = player.attributePoints ?? 0;
+    const [body, mind, self] = GROUP_ORDER.map(g => player.groupPoints?.[g] ?? 0);
+    return { free, body, mind, self, total: free + body + mind + self };
+  }
+
+  /** Which point raising this attribute would spend: its group's own first, then the free one, or none. */
+  static pointFor(player: Pick<IPlayer, 'attributePoints' | 'groupPoints'>, attribute: keyof IAttributes): AttributeGroup | 'free' | null {
+    const group = this.groupOf(attribute);
+    if (group && (player.groupPoints?.[group] ?? 0) > 0) return group;
+    return (player.attributePoints ?? 0) > 0 ? 'free' : null;
+  }
+
+  /** One point spent on an attribute's base. Pure: the store works out what it adds up to. */
+  static spendPoint(player: IPlayer, attribute: keyof IAttributes): { player: IPlayer; spent: AttributeGroup | 'free' } | null {
+    const spent = this.pointFor(player, attribute);
+    if (!spent || !(attribute in (player.baseAttributes ?? {}))) return null;
+    const baseAttributes = { ...player.baseAttributes, [attribute]: (player.baseAttributes[attribute] ?? 0) + 1 };
+    if (spent === 'free') return { player: { ...player, baseAttributes, attributePoints: (player.attributePoints ?? 0) - 1 }, spent };
+    return { player: { ...player, baseAttributes, groupPoints: { ...player.groupPoints, [spent]: (player.groupPoints?.[spent] ?? 0) - 1 } }, spent };
   }
 
   /** Experience lands: lifetime and level both, and each level crossed pays its points. */
@@ -161,8 +211,10 @@ export class ProgressionSystem {
     const from = this.levelOf(settled);
     const fed = { ...settled, rankXp: (settled.rankXp ?? 0) + gained, levelXp: (settled.levelXp ?? 0) + gained };
     const to = this.levelOf(fed);
-    const points = (to - from) * POINTS_PER_LEVEL;
-    return { player: { ...fed, attributePoints: (fed.attributePoints ?? 0) + points }, from, to, points };
+    const levels = to - from;
+    const groupPoints = Object.fromEntries(GROUP_ORDER.map(g => [g, (fed.groupPoints?.[g] ?? 0) + levels * GROUP_POINTS_PER_LEVEL]));
+    const out = levels > 0 ? { ...fed, attributePoints: (fed.attributePoints ?? 0) + levels * FREE_POINTS_PER_LEVEL, groupPoints } : fed;
+    return { player: out, from, to, points: levels * POINTS_PER_LEVEL };
   }
 
   /**
@@ -211,7 +263,8 @@ export class ProgressionSystem {
       rank,
       levelXp,
       levelsBanked,
-      attributePoints: (player.attributePoints ?? 0) + (level - 1) * POINTS_PER_LEVEL,
+      // A save from before D83: its old points were one a level, all free, and they stay so (no migration: 2.13)
+      attributePoints: (player.attributePoints ?? 0) + (level - 1) * FREE_POINTS_PER_LEVEL,
       bank: player.bank && { ...player.bank, universalSkills: mapValues(player.bank.universalSkills ?? {}, scaleSkill) },
       skillProgress: player.skillProgress && mapValues(player.skillProgress, scaleWork)
     };

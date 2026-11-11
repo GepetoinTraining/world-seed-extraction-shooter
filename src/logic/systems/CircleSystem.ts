@@ -20,7 +20,8 @@ import { COST_BANDS, DELIVERIES, EFFECTS, PASSIVE_STATS, STAT_BANDS } from '../.
 import { EffectSystem, IEffectAbility } from '../../../shared/logic/systems/EffectSystem';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
-export const CIRCLES_PER_LEVEL = 1;
+/** Pedro, 2026-11-11: "the circles in skills, not at every level, one at every 3 levels". The rule is shared: ProgressionSystem.circlesEarned. */
+export { LEVELS_PER_CIRCLE } from '../../../shared/entities/player/systems/ProgressionSystem';
 /** Pedro's three. A skill has no top: each further three is owed another. */
 export const CIRCLES_FOR_A_GIFT = 3;
 
@@ -51,7 +52,7 @@ export class CircleSystem {
   }
 
   static free(player: IPlayer): number {
-    return Math.max(0, ProgressionSystem.levelsEarned(player) * CIRCLES_PER_LEVEL - this.filled(player));
+    return Math.max(0, ProgressionSystem.circlesEarned(player) - this.filled(player));
   }
 
   /** The door. Only a skill the web can read takes a circle, and only if one is free. */
@@ -59,7 +60,7 @@ export class CircleSystem {
     const refused = (reason: string) => ({ ok: false, reason, player, owed: false });
     const skill = WebSystem.heldSkills(player.bank.universalSkills).find(s => s.id === skillId);
     if (!skill) return refused('That is not a skill you hold.');
-    if (this.free(player) <= 0) return refused('No circle is free. A level gives one.');
+    if (this.free(player) <= 0) return refused('No circle is free. Every third level climbed gives one.');
     const circles = this.circlesOf(skill) + 1;
     return {
       ok: true,

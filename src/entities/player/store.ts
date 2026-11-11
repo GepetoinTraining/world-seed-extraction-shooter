@@ -370,19 +370,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   spendAttributePoint: (attribute) => {
-    const p = get().player;
-    if ((p.attributePoints ?? 0) <= 0) return false;
-    if (!(attribute in p.baseAttributes)) return false;
-    set(state => ({
-      player: {
-        ...state.player,
-        attributePoints: (state.player.attributePoints ?? 0) - 1,
-        baseAttributes: {
-          ...state.player.baseAttributes,
-          [attribute]: (state.player.baseAttributes as any)[attribute] + 1
-        }
-      }
-    }));
+    // 2.13: the attribute's group point first, then the free one; a group point never leaves its group
+    const spent = ProgressionSystem.spendPoint(get().player, attribute as keyof IAttributes);
+    if (!spent) return false;
+    set({ player: spent.player });
     get().recalcAttributes();
     return true;
   },
@@ -1947,9 +1938,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const threats = Object.values(world.currentMap?.chunks ?? {}).flatMap(c => c.entities)
         .filter(e => e.type === EntityType.MOB && e.isHostile && (e.health ?? 0) > 0 && Math.hypot(e.position.x - at.x, e.position.y - at.y) <= THREAT_RADIUS_TILES * 20);
       const xp = ProgressionSystem.worldXp(target, share, threats);
+      const circlesBefore = ProgressionSystem.circlesEarned(get().player);
       const res = get().applyKillXp(xp);
       SessionJournal.record('INTERACT', { kind: 'WORLD_XP', targetId: entity!.id, xp, threats: threats.length });
-      if (res.leveledUp) feed(ProgressionSystem.levelUpLine(res.to, res.pointsGranted), 'proof');
+      if (res.leveledUp) feed(ProgressionSystem.levelUpLine(res.to, res.pointsGranted, ProgressionSystem.circlesEarned(get().player) > circlesBefore), 'proof');
       return xp;
     };
 

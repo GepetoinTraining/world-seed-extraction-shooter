@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
-import { POINTS_PER_LEVEL, ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
+import { ATTRIBUTE_GROUPS as GROUPS, GROUP_ORDER, GROUP_WORDS, AttributeGroup, LEVELS_PER_CIRCLE, POINTS_PER_LEVEL, ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../logic/systems/CircleSystem';
 import { VendorSystem } from '../logic/systems/VendorSystem';
@@ -29,11 +29,19 @@ import { ISignedPayload } from '../entities/identity/certificateSystem';
 import { MASTERY_RUNGS, WebSystem } from '../../shared/logic/systems/WebSystem';
 import { WebBank } from '../../shared/logic/content/WebBank';
 
-export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = {
-  HARDWARE: ['strength', 'constitution', 'agility', 'dexterity', 'endurance'],
-  SOFTWARE: ['intelligence', 'focus', 'engineering', 'hacking', 'perception'],
-  WETWARE: ['charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership']
+/** The groups are the shared rules' (2.13); a sheet draws each by its word and its place, in this order. */
+export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = Object.fromEntries(GROUP_ORDER.map(g => [GROUP_WORDS[g], GROUPS[g]]));
+
+/** The kind of point a + would spend, in words: a group's own, or the free one. */
+export const pointWord = (kind: AttributeGroup | 'free'): string => (kind === 'free' ? 'the free point' : `a ${GROUP_WORDS[kind]} point`);
+
+/** What waits to be spent, by kind, in one line: "1 FREE · 1 HARDWARE · 1 SOFTWARE · 1 WETWARE". */
+export const pointsLine = (player: Parameters<typeof ProgressionSystem.unspent>[0]): string => {
+  const left = ProgressionSystem.unspent(player);
+  return [...(left.free > 0 ? [`${left.free} FREE`] : []), ...GROUP_ORDER.filter(g => left[g] > 0).map(g => `${left[g]} ${GROUP_WORDS[g]}`)].join(' · ');
 };
+
+const groupOfWord = (word: string): AttributeGroup => GROUP_ORDER.find(g => GROUP_WORDS[g] === word)!;
 
 // ---------------------------------------------------------------------------
 // D27: what the hands know. A rung reads by position and fill, never by hue.
@@ -154,7 +162,7 @@ const AgentTab: React.FC = () => {
 
   const rank = ProgressionSystem.rankOf(player);
   const progress = ProgressionSystem.levelProgress(player);
-  const points = player.attributePoints ?? 0;
+  const points = ProgressionSystem.unspent(player).total;
   const stash = player.bank.stashTabs[0]?.items || [];
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
 
@@ -236,14 +244,14 @@ const AgentTab: React.FC = () => {
         </div>
         <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Fights, chests and what you gather feed the level, more for what is riskier. Each level grants {POINTS_PER_LEVEL} attribute point and a circle. The guild sets the rank; the level begins again there, and what you built stays.
+          Fights, chests and what you gather feed the level, more for what is riskier. Each level grants {POINTS_PER_LEVEL} attribute points: one free, and one for each group, spent only inside it. Every {LEVELS_PER_CIRCLE} levels climbed bring a circle. The guild sets the rank; the level begins again there, and what you built stays.
         </div>
       </Panel>
       <HandsPanel />
-      <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {points}</span> : undefined}>
+      <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {pointsLine(player)}</span> : undefined}>
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
           <div key={group} style={{ marginBottom: 8 }}>
-            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>{group}</div>
+            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>{group}{(player.groupPoints?.[groupOfWord(group)] ?? 0) > 0 ? ` · ${player.groupPoints![groupOfWord(group)]} TO SPEND HERE` : ''}</div>
             {attrs.map(attr => {
               const val = player.attributes[attr] || 0;
               const base = player.baseAttributes[attr] || 0;
@@ -254,8 +262,8 @@ const AgentTab: React.FC = () => {
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {diff !== 0 && <span className={diff > 0 ? 'ws-signal ws-small' : 'ws-loss ws-small'}>{diff > 0 ? '+' : ''}{diff}</span>}
                     <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
-                    {points > 0 && (
-                      <Button tone="signal" onClick={() => spendAttributePoint(attr)} title={`Raise ${attr} permanently`}>+1</Button>
+                    {ProgressionSystem.pointFor(player, attr) && (
+                      <Button tone="signal" onClick={() => spendAttributePoint(attr)} title={`Raise ${attr} permanently, with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`}>+1</Button>
                     )}
                   </span>
                 </div>

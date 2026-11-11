@@ -987,6 +987,8 @@ export interface IPlayer {
   // into baseAttributes.
   rankXp?: number;
   attributePoints?: number;
+  /** BALANCE_RUN.md 2.13: a level's point for each group of attributes (body, mind, self), spent only inside it. */
+  groupPoints?: Partial<Record<'body' | 'mind' | 'self', number>>;
   /** D83: set by the guild for hard quests. An old save takes the rank its experience earned, once. */
   rank?: UniversalRank;
   /** D83: experience since the last rank. A grant sets it back to zero; the level reads from it. */

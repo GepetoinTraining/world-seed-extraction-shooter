@@ -86,6 +86,8 @@ export interface IPlayerEntity {
   level: number;
   experience: number;
   attributePoints: number; 
+  /** BALANCE_RUN.md 2.13: a level's point for each group of attributes, spent only inside it. */
+  groupPoints?: Partial<Record<'body' | 'mind' | 'self', number>>;
   attributes: IBaseAttributes;
   bank: {
     accountId: string;

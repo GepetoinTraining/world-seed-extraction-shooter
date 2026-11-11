@@ -35,7 +35,7 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
 
 import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillProgress, ItemType, Rarity, UniversalRank } from '../shared/types';
 import {
-  LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS,
+  FREE_POINTS_PER_LEVEL, LEVEL_GROWTH, LEVEL_KILLS, POINTS_PER_LEVEL, ProgressionSystem, RANK_ORDER, RANK_XP_THRESHOLDS,
   SKILL_IMPACT_PER_LEVEL, SKILL_RANK_IMPACT_GROWTH, SKILL_RANK_TIME_GROWTH, SKILL_TIME_FACTOR, THREAT_RADIUS_TILES,
   XP_CONSTANTS, XP_SHARE_CHEST, XP_SHARE_HARVEST, XP_SHARE_THREAT
 } from '../shared/entities/player/systems/ProgressionSystem';
@@ -140,7 +140,9 @@ describe('line 128: levels come from experience, rank does not', () => {
     expect(at.from).toBe(1);
     expect(at.to).toBe(2);
     expect(at.pointsGranted).toBe(POINTS_PER_LEVEL);
-    expect(player().attributePoints).toBe(POINTS_PER_LEVEL);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "4 points per level, one free point and one for each of the buckets"): the level's four are one free and one for each group
+    expect(ProgressionSystem.unspent(player()).total).toBe(POINTS_PER_LEVEL);
+    expect(player().attributePoints).toBe(FREE_POINTS_PER_LEVEL);
     const before = player().baseAttributes.agility;
     expect(store().spendAttributePoint('agility')).toBe(true);
     expect(player().attributes.agility).toBe(before + 1);
@@ -246,7 +248,8 @@ describe('line 128: an existing character keeps what its old experience earned, 
     const spare = ProgressionSystem.levelCost(UniversalRank.E, 1);
     const moved = ProgressionSystem.migrate(old(RANK_XP_THRESHOLDS[UniversalRank.E] + spare));
     expect(ProgressionSystem.levelOf(moved)).toBe(2);
-    expect(moved.attributePoints).toBe(2 + POINTS_PER_LEVEL);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "4 points per level, one free point and one for each of the buckets"): a save from before keeps the one free point a level it was paid, and nothing is migrated
+    expect(moved.attributePoints).toBe(2 + FREE_POINTS_PER_LEVEL);
     expect(moved.rankXp).toBe(RANK_XP_THRESHOLDS[UniversalRank.E] + spare);
   });
 
@@ -879,34 +882,40 @@ describe('banked levels are circles to fill', () => {
   };
   const levels = (n: number) => usePlayerStore.setState(s => ({ player: { ...s.player, levelsBanked: n } }));
 
-  it('a new character has none, and each level climbed is one', () => {
+  it('a new character has none, and every third level climbed is one', () => {
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "the circles in skills, not at every level, one at every 3 levels")
     expect(CircleSystem.free(player())).toBe(0);
     store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1));
+    expect(CircleSystem.free(player())).toBe(0);
+    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 2) + ProgressionSystem.levelCost(UniversalRank.F, 3));
     expect(CircleSystem.free(player())).toBe(1);
   });
 
   it('a rank\'s reset takes none: what was free stays free, and what was filled stays filled', () => {
     hold(pair().id);
-    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1) + ProgressionSystem.levelCost(UniversalRank.F, 2));
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "the circles in skills, not at every level, one at every 3 levels"): three levels climbed make the circle to fill
+    store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1) + ProgressionSystem.levelCost(UniversalRank.F, 2) + ProgressionSystem.levelCost(UniversalRank.F, 3));
     store().fillCircle(pair().id);
     const free = CircleSystem.free(player());
     store().grantRank();
     expect(ProgressionSystem.levelOf(player())).toBe(1);
-    expect(ProgressionSystem.levelsEarned(player())).toBe(2);
+    expect(ProgressionSystem.levelsEarned(player())).toBe(3);
     expect(CircleSystem.free(player())).toBe(free);
     expect(player().bank.universalSkills[pair().id].circles).toBe(1);
   });
 
   it('levels still pay attribute points beside the circle', () => {
-    const res = store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1));
-    expect(res.pointsGranted).toBe(POINTS_PER_LEVEL);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "the circles in skills, not at every level, one at every 3 levels"): every level pays its points, and the third pays the circle
+    const res = store().applyKillXp(ProgressionSystem.levelCost(UniversalRank.F, 1) + ProgressionSystem.levelCost(UniversalRank.F, 2) + ProgressionSystem.levelCost(UniversalRank.F, 3));
+    expect(res.pointsGranted).toBe(3 * POINTS_PER_LEVEL);
     expect(CircleSystem.free(player())).toBe(1);
   });
 
   it('filling spends one, and without one free the door refuses', () => {
     hold(pair().id);
     expect(store().fillCircle(pair().id)).toBe(false);
-    levels(1);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "the circles in skills, not at every level, one at every 3 levels")
+    levels(3);
     expect(store().fillCircle(pair().id)).toBe(true);
     expect(CircleSystem.free(player())).toBe(0);
     expect(store().fillCircle(pair().id)).toBe(false);
@@ -914,7 +923,8 @@ describe('banked levels are circles to fill', () => {
   });
 
   it('only a skill the web can read takes a circle', () => {
-    levels(3);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "the circles in skills, not at every level, one at every 3 levels"): nine levels climbed make three circles
+    levels(9);
     usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, universalSkills: { old_track: { ...WebSystem.freshSkill('old_track', [], 0), legacy: true } } } } }));
     expect(store().fillCircle('old_track')).toBe(false);
     expect(store().fillCircle('skill_never_held')).toBe(false);
@@ -923,7 +933,8 @@ describe('banked levels are circles to fill', () => {
 
   it('no skill has a top, and each further three is owed another', () => {
     hold(pair().id);
-    levels(9);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "the circles in skills, not at every level, one at every 3 levels"): nine circles take twenty-seven levels climbed
+    levels(27);
     for (let i = 0; i < 9; i++) expect(store().fillCircle(pair().id)).toBe(true);
     expect(CircleSystem.asks(player())[0].owed).toBe(3);
   });
@@ -1178,8 +1189,9 @@ describe('experience pays in the world, by the risk', () => {
     stand([chest({ container: { lootRank: UniversalRank.A, looted: false, hasLore: false } })]);
     store().performInteraction('int_open_chest_1', 'chest_1');
     expect(ProgressionSystem.levelOf(player())).toBeGreaterThan(1);
-    expect(player().attributePoints).toBeGreaterThan(0);
-    expect(CircleSystem.free(player())).toBeGreaterThan(0);
+    // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "4 points per level, one free point and one for each of the buckets"), and a circle only at every third level climbed
+    expect(ProgressionSystem.unspent(player()).total).toBe((ProgressionSystem.levelOf(player()) - 1) * POINTS_PER_LEVEL);
+    expect(CircleSystem.free(player())).toBe(ProgressionSystem.circlesEarned(player()));
   });
 
   it('no double dip: a cache of what was already yours pays nothing', () => {
