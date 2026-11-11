@@ -944,6 +944,40 @@ A reading, by the coordinator, not confirmed by Pedro.
 - That second half was then checked and built. As the code stood, a forming skill became held at any rest on its own roll and no lore was asked. Asked whether learning one should ask for lore, Pedro: "Yes, ask for lore". Built at `3eccdcc` (ledger S1f): a forming skill whose roll comes good is learned only if its person holds its price in lore, which is spent; without it the skill keeps forming and keeps its roll. The price is the one a dream already asked to teach a skill, 40 at rank F and half again each rank.
 - On whether 40 is the right price for a newcomer's first skill, Pedro: "depends, do lore pieces give a fixed amount? they used to drop a lot, studying should also give some lore, and paper or data items should give more lore". Read in the code: a note read pays a fixed 15 lore at any rank; a sitting already pays lore, 10 at rank F on a success, doubled on a major win, nothing on a failure, halved or doubled by depth, half again each rank; nothing pays more for a paper or a data item. How often lore pieces drop today was not measured.
 - And then, his ruling for the pass that sets those numbers: "needs a balancing pass, lore should be slower than exp but fixed... like, a person should be able to target farm lore itself". Read as: lore comes more slowly than experience; what an act pays in lore is a known amount a person can plan on; and there is a way to go after lore on purpose, not only to come across it. Today a sitting's lore swings on its roll, by his own earlier words that a major win doubles it, so how "fixed" sits beside that is his to say. The pass is not run.
+
+## 3.7 Lore, as Pedro means it
+
+Pedro, 2026-11-11, whole:
+
+> "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore, but we can add a debuff for a critical failure that you miss read something, it shows up as a high lore amount and decreases over new lore read.
+>
+> The specialize in lore would be better if we designed the (design as in the view) of the tech web, what's unlocking what, where do things sit, so people could minimally plan their lore. This would open the possibility of downtime actions for the clock in server idea, go to sleep and stack the actions the character will take.
+>
+> The lore then becomes what I intended it to be, once a player has a skill, a craft, anything related to the tech web they can produce the skill as a lore piece to trade, sell, or even give. That opens the board (questing) to lore being a resource.
+>
+> Adventurer, we need fire power, our smithies cannot work sovereign silver! Find us a solution."
+
+Four things, set beside the code. The readings are the coordinator's.
+
+```
+1. the roll           one roll of a hundred, with a scale that says what each stretch of it gives: that is what "fixed" means,
+                      a known amount for each stretch. Lore held is never taken away.
+                      a critical failure is a misreading: it shows as a large amount of lore, and what is read afterwards wears it down
+                      today: a twenty-sided roll against a bar, four outcomes, nothing on a failure, double on a major win
+                      (a talk round already rolls 1 to 100: TalkLaw.rollOf)
+                      read as: the misread amount is not lore to spend; new lore pays it off first. Not confirmed.
+2. the web's view     a view of the tech web: what unlocks what and where things sit, so a person can plan what to study
+                      today: nothing draws the web. A person's skill enters a hub's web unseen and is heard of only when the web
+                      reaches it (D125: "the players cannot know, they need to make the web reach it"), so what the view may show is a design question
+3. downtime           with the server's clock as the clock, a person lays out what their character will do and goes to sleep
+                      today: nothing queues an act
+4. lore as a good     whoever holds a skill, a craft, anything of the web can write it out as a lore piece to trade, sell or give,
+                      and the board can ask for lore: a hub that cannot work a material asks an adventurer for the way
+                      today: a trade's note can be found and read, and a chest's fragment may be one; nothing writes a note from a held skill.
+                      Copies of a template are already minted at the scribe's table for paper and ink (D14)
+```
+
+The first is a rule and can be built once its scale has numbers, which is the lore balancing pass. The other three are design: a view, a queue of acts, and a new kind of good with the board asking for it.
 - For money, the lesson is the unclosed loop: every source needs a sink of its size. His "getting too much money feels bad and not getting any feels bad as well" is that loop.
 
 ## 3.6 Not read
