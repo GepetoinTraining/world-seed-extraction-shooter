@@ -876,6 +876,49 @@ Missed by every worker, by the checker's reading:
 - How often a run ends in death.
 - Nothing by any worker was run in the game. `server/`, the tutorial's own fight rules, and Kami's and creation's calls were read by nobody.
 
+## 2.13 The calls, made
+
+Pedro, 2026-11-11, when handed the lore pass's eight calls: "is there any reason for you to not make the calls? we pretty much think the same about the game, and the first time I called you in here you jumped in, read meele and played it... so I guess you truly can make the calls".
+
+So the calls of 2.11 are made here, by the coordinator, on that word. Each follows the recommendation the workers and the checker gave unless a ruling of his or a decision he approved says otherwise, and then his stands. Every one is a line he can strike. Nothing here is built.
+
+| # | The call | Made | Why this way |
+|---|---|---|---|
+| 1 | Does a rank double? | Yes, 2 | As recommended |
+| 2 | What a plain body is worth, and the unit | A quarter of a person in what it holds and in what it deals, for a middling body alone; the pack is the unit, and several alike are counted as n(n+1)/2 of one; a body's share reaches its will in a talk | The creature and talk workers |
+| 3 | Ten seconds between equals | Yes | As recommended; it is rank F today |
+| 4 | What a run is | Health comes back with a rest or a heal, not at a drop. A good run brings home about three pieces. A death costs what is carried and worn, as now | A rest is already where skills settle and lore lands. To be felt in play first of all |
+| 5 | The trial and the sheet | Passing lifts every attribute by one | D83 promises no stat is lost at a trial |
+| 6 | A person's wind-up, and a hit felt | Yes to both | Without them there is no triangle. To be felt in play |
+| 7 | Where a piece gets its rank | From where it came, never from its kind; two of a thing refine into one of the next rank | His ruling that gear is a generated noun |
+| 8 | What a kill pays and a level costs | Experience bent by the risk taken, and the price of a level reads the tool held as well as the rank; a first level stays at today's five plain kills | The character worker wanted twelve; at twelve, lore would come faster than experience, against his rule for lore |
+| 9 | The ladder's weight, any stat anywhere | Ruled by him: any stat on any piece, an epic kit worth a rank | His |
+| 10 | Is what you wear a weight you bear? | No. What is worn stays off the carry limit. Heavy pieces cost pace by their own penalty | The gear worker's yes would overturn 10C.3, which he approved |
+| 11 | Is every taking a channel? | Yes: a harvest takes its seconds, with a bar | The world worker; ledger T1 |
+| 12 | The empty hand with no stone | It throws, as he ruled, at 8 tiles and under the draw | His ruling stands over the fight worker's advice |
+| 13 | Does one lone property need magic? | No. The unlock opens pairs | His: uncommon is technological |
+| 14 | A creature faster than a walk | In a burst, with a rest the formula sets | Keeps "a person can always leave", from outside the burst |
+| 15 | Does the ground stop two ranks above a world's own? | No hard stop: the ground runs on, each further rank less likely | His rule against caps. To be checked against ledger R4 when built |
+| 16 | One roll on a piece | One: its quality | As recommended |
+| 17 | Legendary and artifact | Whose the piece was | As recommended |
+| 18 | Standing worlds | The numbers move and the words stay. A piece minted before keeps what is stamped on it; a character's health follows the new law | His ruling that a change is pinned and never applied to what stands |
+| 19 | What a cast is worth | Twice a bow for each second stood; an aether for 3 damage | The fight worker |
+| 20 | Frames | No change. Three at most and only frames carry the mind's attributes, as D22 has it, until frames are designed | His decision stands; the rest is the design pass |
+| 21 | A line grown a rank over its letter | It takes the next letter | As recommended |
+| 22 | The talk's sizes | As proposed: an equal costs most of a day on plain words, the best words are worth one rank, a rank counts twice | The talk worker |
+| 23 | Regard in the city, and coin in a talk | Regard opens whether they will stand with you; coin may be offered, by the gift's law | The talk worker |
+| 24 | Does a deed carry a rank? | No. A deed names a size | D80 stands over the economy worker |
+| 25 | Does reading a map spend the mind's limit? | Yes, one point a sector | His: recon gets a limit tied to the mind's attributes |
+| 26 | What moves a skill's rank | Lore | As recommended |
+| 27 | Endurance | Two more readers: the walk under a full pack, and what a tick of poison takes | As recommended |
+| 28 | The weekly tax's size | The form stays | As recommended |
+| 29 | The tutorial after the first order | It still does not take what a newcomer carries | His answer to Q14 stands |
+| 30 | What falls at zero health | It lies where the body fell until the cycle turns | As recommended |
+
+The eight calls of the lore pass are made the same way at the end of 3.8, and the open rows the study work left (ledger S1d to S1j) stand as built.
+
+**The fight's shapes.** In the same message: "something for us to do is make the combat and bullet shapes, it should be bullet hellish, and meele needs reach, and it needs to have that arc, an axe has reach but doesn't hit close to the character usin (darius (lol) q), a spear can atack forward far, and wide arc... see the concept?" Read as: every kind of weapon has a shape of its own on the ground, how far it reaches, how wide it sweeps, and where it does not reach at all (an axe hits out at its edge and misses what stands against its wielder; a spear reaches far ahead); and shots come in patterns that fill the field. Today every swing is one arc, 60 px long and 0.75 rad either side, whatever is held; a shot is a single line; and two patterns, a spread and a spiral, are written and nothing fires them (`STAT_TREES.md` section 9). The fight worker's set already gives each kind its reach and arc (2.2). The shapes are the first piece of the fight's rebalance. Not started.
+
 # Part 3. What the tabletop engine has
 
 Pedro, 2026-11-11, on how gear and its materials should be built: "Ttrpg has the logic". And on what to read in `D:\-ttrpg-engine`: "Those + economy and extraction (fauna, flora, biome, predation and husbandry)... Should give you the gist".
@@ -1103,6 +1146,8 @@ Lore stays slower than experience on a mixed day, by about three to two. A newco
 6. A fragment from intelligent creatures at 5% and from hoards at 25%, on their own streams: recommended. Alternative: a loot kind for lore.
 7. The model stops choosing a sitting's depth: recommended, since "fixed" asks it.
 8. 40 for a first skill: stands.
+
+**Made, 2026-11-11, by the coordinator on his word (2.13).** 1: the roll and its scale as in a. 2: a category is the thing's tree in the hub's web, the same tree study is discounted by, and its family word where the web says nothing of it. That goes against the recommendation and follows his ruling that a tree is a function of hubs; what a person is shown of a category stays within what they may know. 3: two thirds to the category, a third general. 4: a misreading of three times the base, locking only its category, as he ruled. 5: a document pays twice and a thing of paper half again; a data item pays as a document once a theme writes one. 6: lore pieces drop a lot, as he asked: a fragment from a creature that can be talked to "sometimes" (25%, the loot law's own band, where 5% was recommended) and from a leader's or a boss's hoard "often" (60%, where 25% was). A day's sittings are bounded by its energy, so more fragments make more to trade and not more lore a day. 7: the model no longer chooses a sitting's depth. 8: 40 for a first skill stands.
 
 Not measured: how many ruins a run meets (only the rule, 1 chunk in 10, was read; no world was generated), how long the forming skill's own roll takes, a newcomer's intelligence at creation, whether recon shows a ruin, whether a dream is answered with no key, and kills by sampling: the first world's tables were counted line by line, and they hold no lore by their kinds, so no kill was run.
 
