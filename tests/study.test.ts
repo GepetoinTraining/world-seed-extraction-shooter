@@ -210,7 +210,9 @@ describe('line 153: study is an action anyone can take on anything, and it costs
     expect(sheet).toMatch(/STUDY ·/);
     const panel = readFileSync('src/components/StudyPanel.tsx', 'utf8');
     expect(panel).toMatch(/targetOfWords/);
-    expect(panel).toMatch(/targetOfCreature/);
+    // S1k: a field thing is made a target by what it shows, in FieldStudy, which the panel calls
+    expect(panel).toMatch(/FieldStudy\.target\(/);
+    expect(readFileSync('src/logic/systems/FieldStudy.ts', 'utf8')).toMatch(/targetOfCreature/);
     expect(panel).toMatch(/targetOfPlace/);
   });
 });

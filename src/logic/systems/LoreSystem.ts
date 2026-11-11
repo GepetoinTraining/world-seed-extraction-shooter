@@ -118,6 +118,18 @@ export class LoreSystem {
     return Object.values(player.bank.loreKinds ?? {});
   }
 
+  /**
+   * Lore of each category as the study panel reads it (S2h), under the word the person may see for it: what it holds
+   * with any misreading in it, so a misread category reads high and comes down as new lore pays it off. Pedro: "it shows
+   * up as a high lore amount and decreases over new lore read". Highest first, then by name; an empty one is not shown.
+   */
+  static shownKinds(player: IPlayer): { key: string; name: string; reads: number }[] {
+    return this.kinds(player)
+      .map(k => ({ key: k.key, name: k.name, reads: Math.round(k.held + k.misread) }))
+      .filter(k => k.reads > 0)
+      .sort((a, b) => b.reads - a.reads || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+
   /** What happened to the thing studied keeps today's ways: only a success or better pays the things that ride on it. */
   static pays(outcome: StudyOutcome): boolean {
     return OUTCOME_FACTOR[outcome] > 0;
