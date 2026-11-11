@@ -12,6 +12,7 @@ import { Ledger } from '../ledger/Ledger';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { IntelligenceClient } from '../intelligence/IntelligenceClient';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { hubTreeOf } from '../../entities/hub/hubTech';
 import { HubUnlock } from './HubUnlock';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
@@ -25,11 +26,11 @@ const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain'
 export const RestDoor = {
   /** Settling, at any rest. A return to the hub comes through here too (D30). */
   settle(pc: IPlayerPort, hp: IHubPort): { emerged: { id: string }[] } {
-    const { player, read, emerged, wanting, learned, floorNamed, made } = RestSystem.settle(pc.view().player);
+    const { player, read, emerged, wanting, learned, floorNamed, made } = RestSystem.settle(pc.view().player, hubTreeOf(hp.view().tech));
     pc.apply({ kind: 'SET', player });
     // Pedro, 2026-11-11: "Yes, ask for lore". What was learned says what it took; what wanted lore says it waits
     for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now, and it took ${WebSystem.learnPrice((skill as { rank?: number }).rank ?? 0)} lore.`, 'proof');
-    for (const w of wanting) feed(`${WebSystem.nameOf(w.id)} was ready to settle, and it wants ${w.price} lore. You hold ${player.bank.loreHeld ?? 0}. It will keep until you have it.`, 'plain');
+    for (const w of wanting) feed(`${WebSystem.nameOf(w.id)} was ready to settle, and it wants ${w.price} lore. You hold ${w.held} it can use. It will keep until you have it.`, 'plain');
     for (const item of read) feed(`You know what ${item.name} is now. It reads exactly as it was banked.`, 'proof');
     // What was made by setting one thing on another is read now, and not before (PairCraft)
     for (const m of made) {
@@ -156,7 +157,8 @@ export const RestDoor = {
     }
     const asker = pc.view().player;
     const held = ContentRegistry.get(pending.themeId);
-    const verdict = RestSystem.judgeDream(out.data, pending.asked, asker, held ? [...new Set(held.abilities.flatMap(a => a.elements))] : undefined);
+    const hub = hubTreeOf(hp.view().tech);
+    const verdict = RestSystem.judgeDream(out.data, pending.asked, asker, held ? [...new Set(held.abilities.flatMap(a => a.elements))] : undefined, hub);
     if (!verdict.ok) {
       console.warn(`[REST] What came back was refused whole: ${verdict.reason}`);
       pc.apply({ kind: 'PENDING_DREAM' });
@@ -165,9 +167,10 @@ export const RestDoor = {
     const before = pc.view().player;
     const said = (out.data.studied ?? []).map(w => {
       const sitting = RestSystem.queueOf(before).sittings.find(s => s.id === w.id)!;
-      return { ...w, name: sitting.target.name, gained: LoreSystem.paysFor(sitting)[w.depth as 'fair'] };
+      const lore = LoreSystem.loreOf(sitting);
+      return { ...w, name: sitting.target.name, lore, gained: lore.amount };
     });
-    pc.apply({ kind: 'SET', player: RestSystem.applyDream(before, out.data) });
+    pc.apply({ kind: 'SET', player: RestSystem.applyDream(before, out.data, hub) });
     const hubId = hp.view().activeHubId;
     if (out.usage) await Ledger.append('TECH', { kind: 'INTELLIGENCE_USE', hubId, door: 'rest', ...out.usage });
     for (const w of out.data.weaves) {
@@ -179,7 +182,8 @@ export const RestDoor = {
     }
     for (const s of out.data.skills) feed(`${s.name}: ${s.flavor}`, 'signal');
     for (const g of out.data.gifts ?? []) feed(`${WebSystem.nameOf(g.skill)} gave you ${g.name}. ${g.blurb}`, 'proof');
-    for (const w of said) feed(`${w.name}: ${w.line} +${w.gained} lore.`, 'proof');
+    // The lore pass: what a sitting gave, by kind; a misreading reads as lore of its category, and high
+    for (const w of said) feed(LoreSystem.saidOf(w.name, w.line, w.lore), 'proof');
     for (const t of out.data.taught ?? []) feed(`You woke knowing ${t.name}. ${t.flavor}`, 'proof');
     for (const r of out.data.raised ?? []) feed(r.line, 'proof');
     // D118: a skill taught is held like any other, so the hub's web hears of it by the same door.

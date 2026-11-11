@@ -10,7 +10,8 @@
 
 import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
 import { SeededRNG, Rng } from '../../../shared/logic/rng/DeterministicRNG';
-import { IItem, UniversalRank, Rarity } from '../../../shared/types';
+import { IItem, ItemType, UniversalRank, Rarity } from '../../../shared/types';
+import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { IMobDefinition } from '../../../shared/entities/mob/types';
 import { DeedSystem } from '../../logic/systems/DeedSystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
@@ -84,6 +85,19 @@ export class LootTable {
     const prefix = themeId ? creatureIdOf(themeId, '') : '';
     const keys = prefix ? [mobDef.id, line?.root].filter((id): id is string => !!id && id.startsWith(prefix)).map(id => id.slice(prefix.length)) : [];
     return this.rollOnTable(themeId, 'creature', mobDef.tags, mobDef.rank, rollKey, keys);
+  }
+
+  /** A written fragment (the lore pass, call 6) from its own keyed stream, in its world's words when it has any. */
+  static loreFragment(rollKey: string, themeId?: string): IItem {
+    const rng = Rng.fromKey(`${rollKey}:lore_fragment:piece`);
+    const words = ContentRegistry.lore(themeId, undefined);
+    return {
+      ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
+      type: ItemType.LORE,
+      description: rng.pick(words.length > 0 ? words : LORE_FRAGMENTS),
+      value: 50,
+      tags: ['lore', 'document']
+    };
   }
 
   /** The table roll behind a chest, in the dreamed world's theme, for the journal. */

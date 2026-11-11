@@ -109,9 +109,10 @@ export const StudyDoor = {
       return { ok: false, reason: 'It is gone.' };
     }
 
-    const { player, sitting } = StudySystem.sit(before, target, cost, GameClock.now());
+    // The lore pass: the roll fixes what it pays, filed by the hub's web; a dream lands it
+    const { player, sitting } = StudySystem.sit(before, target, cost, GameClock.now(), hubTreeOf(hp.view().tech));
     let next = player;
-    if (LoreSystem.pays(sitting.outcome)) next = RestSystem.queueSitting(next, sitting);
+    if (LoreSystem.gives(sitting)) next = RestSystem.queueSitting(next, sitting);
     if (piece && sitting.outcome !== 'major_failure') {
       // D50 still holds: looking gets there. Q27: an unread piece gets there only through the eye for its kind.
       const reads = StudySystem.canRead(before, piece);
@@ -125,6 +126,7 @@ export const StudyDoor = {
       }
     }
     // A document that paid has given what it held, and is spent: read and then sold was one thing too many
+    // A reading that gives its whole worth (fair or better) has given what it held; a little one leaves it, the worse (H11)
     const spent = !!piece && StudySystem.isDocument(piece) && LoreSystem.pays(sitting.outcome);
     if (spent) next = StudySystem.loseItem(next, piece!.id);
     pc.apply({ kind: 'SET', player: next });

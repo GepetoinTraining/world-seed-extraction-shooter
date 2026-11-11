@@ -119,7 +119,8 @@ describe('a note is spent when it is read, so it cannot be read and then sold', 
   it('sitting with a document until it pays spends it too', async () => {
     const doc = fragment();
     inVault(doc);
-    vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d20: 15, total: 15, dc: 8, outcome: 'success' });
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): a sitting rolls a hundred now; this one is forced fair
+    vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d100: 60, total: 60, dc: 41, outcome: 'success' });
     expect(StudyDoor.begin(StudySystem.targetOfItem(doc), playerPort, hubPort).ok).toBe(true);
     expect((await StudyDoor.finish(playerPort, hubPort)).outcome).toBe('success');
     expect(stash().some(i => i.id === doc.id)).toBe(false);
@@ -131,7 +132,7 @@ describe('a note is spent when it is read, so it cannot be read and then sold', 
   it('a sitting that fails leaves the document, the worse for it, as any piece', async () => {
     const doc = fragment();
     inVault(doc);
-    vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d20: 3, total: 3, dc: 8, outcome: 'failure' });
+    vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d100: 20, total: 20, dc: 41, outcome: 'failure' });
     StudyDoor.begin(StudySystem.targetOfItem(doc), playerPort, hubPort);
     await StudyDoor.finish(playerPort, hubPort);
     expect(stash().some(i => i.id === doc.id)).toBe(true);
@@ -140,7 +141,7 @@ describe('a note is spent when it is read, so it cannot be read and then sold', 
   it('nothing but a document is spent by a sitting: a material stays, and a person on paper is never one', async () => {
     const oak = mint(written('tree'), 'oak');
     inVault(oak);
-    vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d20: 15, total: 15, dc: 8, outcome: 'success' });
+    vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d100: 60, total: 60, dc: 41, outcome: 'success' });
     StudyDoor.begin(StudySystem.targetOfItem(oak), playerPort, hubPort);
     await StudyDoor.finish(playerPort, hubPort);
     expect(stash().some(i => i.id === oak.id)).toBe(true);

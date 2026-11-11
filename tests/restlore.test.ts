@@ -83,7 +83,8 @@ describe('a forming skill asks for lore at the rest (Pedro, 2026-11-11: "Yes, as
     expect(player.bank.universalSkills[axe.id]).toBeUndefined();
     expect(player.skillProgress?.[axe.id]).toEqual(axe);
     expect(player.bank.loreHeld).toBe(short);
-    expect(wanting).toEqual([{ id: axe.id, price: WebSystem.learnPrice(axe.rank) }]);
+    // The lore pass, 2026-11-11 ("in the same category yes, general lore no"): what wants lore says what it could use
+    expect(wanting).toEqual([{ id: axe.id, price: WebSystem.learnPrice(axe.rank), held: short }]);
   });
 
   it('a roll that does not come good costs nothing, lore or no lore', () => {

@@ -14,24 +14,21 @@
  * Every number here is a guess until Wave 12.
  */
 
-import { ILoreEntry, IPlayer, ISkillGift, ISkillState, IStudySitting, StudyOutcome } from '../../../shared/types';
+import { ILoreEntry, ILoreKind, IPlayer, ISittingLore, ISkillGift, ISkillState, IStudySitting, StudyOutcome } from '../../../shared/types';
+import { LoreLaw } from '../../../shared/logic/systems/LoreLaw';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { WebBank } from '../../../shared/logic/content/WebBank';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { CircleSystem, IGiftWords } from './CircleSystem';
-import { LORE_DEPTHS, LORE_NOTE_PAY, LORE_RANK_GROWTH, LORE_TEACH_PRICE, LoreDepth, loreTeachPrice } from '../../../shared/logic/systems/LoreConstants';
-import { WebSystem } from '../../../shared/logic/systems/WebSystem';
-
-export { LORE_DEPTHS };
-export type { LoreDepth };
-const DEPTH_FACTOR: Record<LoreDepth, number> = { shallow: 0.5, fair: 1, deep: 2 };
+import { LORE_NOTE_PAY, LORE_PER_SITTING, LORE_RANK_GROWTH, LORE_TEACH_PRICE, loreTeachPrice } from '../../../shared/logic/systems/LoreConstants';
+import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 /** Pedro: "major win doubles the amount gained". What failed damaged the thing and pays nothing. */
 const OUTCOME_FACTOR: Record<StudyOutcome, number> = { major_win: 2, success: 1, failure: 0, major_failure: 0 };
 
-export const LORE_PER_SITTING = 10;
+export { LORE_PER_SITTING };
 export const LORE_GIFT_PRICE = 30;
 export { LORE_TEACH_PRICE };
 export const LORE_RAISE_PRICE = 20;
@@ -41,7 +38,8 @@ const RAISE_SHARE = 0.25;
 export const SITTINGS_PER_DREAM = 40;
 const TOPICS_TOLD = 40;
 
-export interface ILoreWords { id: string; depth: string; topics: string[]; line: string }
+/** What a dream says of a sitting. It words it; the roll already said what it pays (the lore pass, call 7). */
+export interface ILoreWords { id: string; topics: string[]; line: string }
 export interface ITaughtWords { tags: string[]; name: string; flavor: string; grants: string[] }
 export interface IRaisedWords { gift: string; line: string }
 
@@ -55,7 +53,6 @@ export interface ILoreAnswer {
 
 const growth = (rank: number) => Math.pow(LORE_RANK_GROWTH, Math.max(0, rank));
 const sittingsOf = (player: IPlayer): IStudySitting[] => player.restQueue?.sittings ?? [];
-const isDepth = (word: string): word is LoreDepth => (LORE_DEPTHS as readonly string[]).includes(word);
 const no = (reason: string) => ({ ok: false, reason });
 
 const findGift = (player: IPlayer, giftId: string): { skillId: string; gift: ISkillGift } | undefined => {
@@ -86,13 +83,42 @@ export class LoreSystem {
   // THE FORMULA
   // -----------------------------------------------------------------------
 
-  /** What each depth would pay for this sitting. Told to the model; the law reads the same numbers. */
-  static paysFor(sitting: Pick<IStudySitting, 'rankIndex' | 'outcome'>): Record<LoreDepth, number> {
-    const pay = (depth: LoreDepth) =>
-      Math.max(1, Math.round(LORE_PER_SITTING * growth(sitting.rankIndex) * DEPTH_FACTOR[depth])) * OUTCOME_FACTOR[sitting.outcome];
-    return { shallow: pay('shallow'), fair: pay('fair'), deep: pay('deep') };
+  /**
+   * What a sitting pays, as its roll fixed it (the lore pass). One logged before the rule has no record, and reads its
+   * outcome as the stretch it pairs with, filed under its own tags' family.
+   */
+  static loreOf(sitting: Pick<IStudySitting, 'rankIndex' | 'outcome' | 'target' | 'lore'>): ISittingLore {
+    if (sitting.lore) return sitting.lore;
+    const { stretch, times } = LoreLaw.stretchOfOutcome(sitting.outcome);
+    const found = sitting.target.hidden ? null : WebSystem.categoryOf(sitting.target.tags ?? []);
+    return {
+      stretch, amount: LoreLaw.pay(sitting.rankIndex, times), misread: stretch === 'misread' ? LoreLaw.misreadOf(sitting.rankIndex) : 0,
+      ...(found ? { category: { key: found.key, name: found.word?.replace(/_/g, ' ') ?? sitting.target.name } } : {})
+    };
   }
 
+  /** Does this sitting give anything, lore or a misreading, for a dream to land? */
+  static gives(sitting: Pick<IStudySitting, 'rankIndex' | 'outcome' | 'target' | 'lore'>): boolean {
+    const lore = this.loreOf(sitting);
+    return lore.amount > 0 || lore.misread > 0;
+  }
+
+  /** What a person is told a sitting gave, by kind. A misreading reads as lore of its category, and high (call 4). */
+  static saidOf(name: string, line: string, lore: ISittingLore): string {
+    const { category, general } = LoreLaw.split(lore.amount, !!lore.category);
+    const parts = [
+      ...(lore.category && category + lore.misread > 0 ? [`+${category + lore.misread} lore of ${lore.category.name}`] : []),
+      ...(general > 0 ? [`+${general} general`] : [])
+    ];
+    return `${name}: ${line} ${parts.length > 0 ? `${parts.join(', ')}.` : 'Nothing you could keep.'}`;
+  }
+
+  /** Lore of each category this person holds. */
+  static kinds(player: IPlayer): ILoreKind[] {
+    return Object.values(player.bank.loreKinds ?? {});
+  }
+
+  /** What happened to the thing studied keeps today's ways: only a success or better pays the things that ride on it. */
   static pays(outcome: StudyOutcome): boolean {
     return OUTCOME_FACTOR[outcome] > 0;
   }
@@ -138,7 +164,8 @@ export class LoreSystem {
 
   /** The most this dream could have to spend: the purse, and every sitting at its deepest. */
   static reachable(player: IPlayer): number {
-    return this.held(player) + this.sittingsToAsk(player).reduce((sum, s) => sum + this.paysFor(s).deep, 0);
+    // What is held, and all a queued sitting gives: a gift of its own category could be paid by every part of it
+    return LoreLaw.reach(player.bank) + this.sittingsToAsk(player).reduce((sum, s) => sum + this.loreOf(s).amount, 0);
   }
 
   /** The gifts lore could pay for, one to a skill. The rest stay owed, because owed is read from the skill. */
@@ -181,7 +208,9 @@ export class LoreSystem {
       outcome: s.outcome,
       before: s.before,
       peak: s.rankIndex,
-      pays: this.paysFor(s)
+      // The roll said what it pays: the model words it. Only the general share is the purse's to spend
+      stretch: this.loreOf(s).stretch,
+      gives: LoreLaw.split(this.loreOf(s).amount, !!this.loreOf(s).category).general
     }));
   }
 
@@ -227,15 +256,16 @@ export class LoreSystem {
     return Math.max(0, ...tags.map(t => topics[t]?.peak ?? 0));
   }
 
-  /** What the answer leaves the person knowing, before anything is spent. */
-  private static credited(player: IPlayer, studied: ILoreWords[]): { purse: number; topics: Record<string, ILoreEntry> } {
-    let purse = this.held(player);
+  /** What the answer leaves the person knowing, before anything is spent: each sitting's lore, by kind (the lore pass). */
+  private static credited(player: IPlayer, studied: ILoreWords[]): { purse: { loreHeld: number; loreKinds?: Record<string, ILoreKind> }; topics: Record<string, ILoreEntry> } {
+    let purse: { loreHeld: number; loreKinds?: Record<string, ILoreKind> } = { loreHeld: this.held(player), loreKinds: player.bank.loreKinds };
     const topics = { ...(player.bank.lore ?? {}) };
     for (const words of studied) {
       const sitting = this.askedSitting(player, words.id);
-      if (!sitting || !isDepth(words.depth)) continue;
-      const pay = this.paysFor(sitting)[words.depth];
-      purse += pay;
+      if (!sitting) continue;
+      const lore = this.loreOf(sitting);
+      const pay = lore.amount;
+      purse = LoreLaw.credit(purse, lore.category, lore.amount, lore.misread);
       for (const topic of words.topics ?? []) {
         const prior = topics[topic];
         topics[topic] = {
@@ -255,7 +285,7 @@ export class LoreSystem {
    * asked about, a word outside the vocabulary, a thing never studied, or more than the
    * purse. The log stays, and the next rest asks again.
    */
-  static judge(answer: ILoreAnswer, asked: { sittings?: string[] }, player: IPlayer): { ok: boolean; reason?: string } {
+  static judge(answer: ILoreAnswer, asked: { sittings?: string[] }, player: IPlayer, hub?: IHubTree): { ok: boolean; reason?: string } {
     const studied = answer.studied ?? [];
     const taught = answer.taught ?? [];
     const raised = answer.raised ?? [];
@@ -263,7 +293,6 @@ export class LoreSystem {
     for (const words of studied) {
       const sitting = this.askedSitting(player, words.id);
       if (!(asked.sittings ?? []).includes(words.id) || !sitting) return no(`Nobody asked about ${words.id}.`);
-      if (!isDepth(words.depth)) return no(`${words.id}: "${words.depth}" is not a depth.`);
       if (!words.line?.trim()) return no(`${words.id} came back with nothing to say.`);
       if (!Array.isArray(words.topics)) return no(`${words.id} came back with no topics.`);
       const stray = words.topics.find(t => !this.isTopic(t, sitting.target.tags));
@@ -288,46 +317,59 @@ export class LoreSystem {
       if (unknown) return no(`${words.name} draws on ${unknown}, and that was never studied.`);
     }
 
-    const raising = new Map<string, number>();
-    let cost = 0;
     for (const words of raised) {
       const found = findGift(player, words.gift);
       if (!found || found.gift.kind !== 'passive') return no(`${words.gift} is not a passive they hold.`);
-      const times = raising.get(words.gift) ?? 0;
-      cost += this.raisePrice(player, words.gift, times);
-      raising.set(words.gift, times + 1);
     }
-    for (const words of taught) cost += this.teachPrice(this.peakOf(TagLaw.canonical(words.tags), topics));
-    cost += this.priceOfGifts(player, answer.gifts ?? []);
-
-    if (cost > purse) return no(`This answer spends ${cost} lore, and they hold ${purse}.`);
+    const spent = this.spendAll(player, answer, purse, topics, hub);
+    if (!spent.purse) return no(`This answer spends ${spent.cost} lore, and they hold ${LoreLaw.reach(purse)}.`);
     return { ok: true };
   }
 
-  private static priceOfGifts(player: IPlayer, gifts: IGiftWords[]): number {
-    const counted = new Map<string, number>();
+  /**
+   * Every price an answer asks, paid in order (gifts, skills taught, raises), each from its own skill's category first and
+   * then general (the lore pass, b). A null purse when one cannot be met: the answer is refused whole.
+   */
+  private static spendAll<T extends { loreHeld: number; loreKinds?: Record<string, ILoreKind> }>(player: IPlayer, answer: ILoreAnswer, start: T, topics: Record<string, ILoreEntry>, hub?: IHubTree): { purse: T | null; cost: number } {
+    let purse: T | null = start;
     let cost = 0;
-    for (const g of gifts) {
+    const pay = (tags: string[], price: number) => {
+      cost += price;
+      if (purse) purse = LoreLaw.spend(purse, WebSystem.categoryOf(tags, hub)?.key, price);
+    };
+    const counted = new Map<string, number>();
+    for (const g of answer.gifts ?? []) {
       const skill = player.bank.universalSkills[g.skill];
       if (!skill) continue;
       const extra = counted.get(g.skill) ?? 0;
-      cost += this.giftPrice(player, skill, extra);
+      pay(skill.tags, this.giftPrice(player, skill, extra));
       counted.set(g.skill, extra + 1);
     }
-    return cost;
+    for (const words of answer.taught ?? []) {
+      const tags = TagLaw.canonical(words.tags);
+      pay(tags, this.teachPrice(this.peakOf(tags, topics)));
+    }
+    const raising = new Map<string, number>();
+    for (const words of answer.raised ?? []) {
+      const found = findGift(player, words.gift);
+      if (!found) continue;
+      const times = raising.get(words.gift) ?? 0;
+      pay(player.bank.universalSkills[found.skillId]?.tags ?? [], this.raisePrice(player, words.gift, times));
+      raising.set(words.gift, times + 1);
+    }
+    return { purse, cost };
   }
 
   // -----------------------------------------------------------------------
   // WHAT A JUDGED ANSWER DOES. Gifts are written by CircleSystem, after this.
   // -----------------------------------------------------------------------
 
-  static apply(player: IPlayer, answer: ILoreAnswer): IPlayer {
+  static apply(player: IPlayer, answer: ILoreAnswer, hub?: IHubTree): IPlayer {
     const studied = answer.studied ?? [];
     const taught = answer.taught ?? [];
     const raised = answer.raised ?? [];
     const { purse, topics } = this.credited(player, studied);
-
-    let spent = this.priceOfGifts(player, answer.gifts ?? []);
+    const paid = this.spendAll(player, answer, purse, topics, hub).purse ?? purse;
     const universalSkills = { ...player.bank.universalSkills };
     const skillProgress = { ...(player.skillProgress ?? {}) };
     const skillWords = { ...(player.skillWords ?? {}) };
@@ -335,7 +377,6 @@ export class LoreSystem {
       const tags = TagLaw.canonical(words.tags);
       const id = TagLaw.skillIdOf(tags);
       const rank = this.peakOf(tags, topics);
-      spent += this.teachPrice(rank);
       universalSkills[id] = WebSystem.freshSkill(id, tags, rank);
       delete skillProgress[id];
       skillWords[id] = { name: words.name, flavor: words.flavor, grants: words.grants ?? [] };
@@ -346,7 +387,6 @@ export class LoreSystem {
     for (const words of raised) {
       const found = findGift(next, words.gift);
       if (!found) continue;
-      spent += this.raisePrice(next, words.gift);
       const gift = this.raised(next, found.gift);
       next = {
         ...next,
@@ -354,12 +394,12 @@ export class LoreSystem {
       };
     }
 
-    const left = Math.max(0, purse - spent);
+    const left = Math.max(0, paid.loreHeld);
     const answered = new Set(studied.map(w => w.id));
     const queue = next.restQueue;
     next = {
       ...next,
-      bank: { ...next.bank, loreHeld: left, loreOffered: left },
+      bank: { ...next.bank, loreHeld: left, loreOffered: left, ...(paid.loreKinds ? { loreKinds: paid.loreKinds } : {}) },
       restQueue: queue && queue.sittings ? { ...queue, sittings: queue.sittings.filter(s => !answered.has(s.id)) } : queue
     };
     for (const id of Object.keys(universalSkills)) {

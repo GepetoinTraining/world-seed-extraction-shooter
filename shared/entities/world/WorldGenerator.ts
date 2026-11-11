@@ -42,8 +42,11 @@ export interface IGenerationContext {
  *   2              a stone to throw lies loose across the ground (Pedro, 2026-11-10: "We need to
  *                  seed some form of handy throw able object"), from whatever the world wrote in
  *                  the pebble form, on a roll of its own.
+ *   3              lore pieces drop a lot (the lore pass, call 6; Pedro: "they used to drop a lot"): a creature
+ *                  with a mind leaves a fragment "sometimes", a leader's or a boss's hoard holds one "often",
+ *                  each on a stream of its own (LoreDrops). The ground is laid as at 2.
  */
-export const GROUND_VERSION = 2;
+export const GROUND_VERSION = 3;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
 const LOOSE_STONE_CHANCE = 0.5;
 const LOOSE_STONES_TOGETHER = 2;

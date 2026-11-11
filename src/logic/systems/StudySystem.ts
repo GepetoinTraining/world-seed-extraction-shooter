@@ -24,7 +24,9 @@
  * The roll is the law's: a model is told how it went and never decides it.
  */
 
-import { IItem, IPlayer, IStudyMark, IStudySitting, IStudyTarget, ItemType, SlotType, StudyOutcome, UniversalRank } from '../../../shared/types';
+import { IItem, IPlayer, ISittingLore, IStudyMark, IStudySitting, IStudyTarget, ItemType, SlotType, StudyOutcome, UniversalRank } from '../../../shared/types';
+import { LoreLaw, LoreStretch } from '../../../shared/logic/systems/LoreLaw';
+import { LORE_DOCUMENT_TIMES, LORE_FAIR_LINE, LORE_PAPER_TIMES, LORE_ROLL_PER_HARM, LORE_ROLL_PER_POINT, LORE_ROLL_PER_RANK } from '../../../shared/logic/systems/LoreConstants';
 import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
@@ -47,13 +49,7 @@ const WINGING_FACTOR = 1.5;
 const ok: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
 
-/** D118: what is asked of a sitting on something at the person's own rank. Guesses until Wave 12, like all of these. */
-export const STUDY_DC_BASE = 8;
-/** Each rank the thing stands above the person. */
-export const STUDY_DC_PER_RANK = 3;
-/** Each failure it already carries. */
-export const STUDY_DC_PER_HARM = 2;
-/** How far from what was asked makes it major. */
+/** How far from what was asked makes it major, on the four-way ladder `degree` reads. A sitting rolls a hundred now (LoreLaw). */
 export const STUDY_MAJOR_MARGIN = 10;
 /** A failure takes this share of a piece's durability. */
 export const STUDY_WEAR_SHARE = 0.25;
@@ -70,7 +66,12 @@ const RAW_TYPES: ItemType[] = [ItemType.RESOURCE, ItemType.COMMODITY, ItemType.L
 /** What a piece asks when nothing says what made it: the general bench, which reads anything. */
 const GENERAL_STATION = 'WORKSHOP';
 
-export interface IStudyRoll { d20: number; total: number; dc: number; outcome: StudyOutcome }
+/**
+ * A sitting's roll (the lore pass, call 1): d100 plus what moves the person, against the bar the thing sets. `stretch` and
+ * `times` say what it pays; `outcome` is what happens to the thing, today's four ways. A roll given only as an outcome reads
+ * as the stretch it pairs with.
+ */
+export interface IStudyRoll { d100: number; total: number; dc: number; outcome: StudyOutcome; stretch?: LoreStretch; times?: number }
 
 export class StudySystem {
 
@@ -292,17 +293,47 @@ export class StudySystem {
     return item ? this.identifyLevel(player, item) : this.bestEye(player);
   }
 
-  /** The roll is keyed by who, what and how many sittings they have taken, so a reload rolls nothing new. */
+  /**
+   * The roll is keyed by who, what and how many sittings they have taken, so a reload rolls nothing new. Pedro, 2026-11-11:
+   * "It needs to use the d100 idea and scales for what the roll gives you". Five a point of the eye and of intelligence above
+   * 1 moves the person; fifteen a rank the thing stands above, and ten a failure it carries, moves the bar. D6 holds: three
+   * ranks above it cannot fail, so it reads at least fair.
+   */
   static rollSitting(player: IPlayer, target: IStudyTarget): IStudyRoll {
     const own = ProgressionSystem.rankOf(player);
     const task = target.rank ?? own;
-    const d20 = Rng.fromKey(`study:${player.id}:${this.keyOf(target)}:${player.studyCount ?? 0}`).int(1, 21);
+    const d100 = Rng.fromKey(`study:${player.id}:${this.keyOf(target)}:${player.studyCount ?? 0}`).int(1, 101);
     const mind = Math.max(0, (player.attributes?.intelligence ?? 1) - 1);
-    const total = d20 + this.eyeFor(player, target) + mind;
-    const dc = STUDY_DC_BASE
-      + (ProgressionSystem.rankIndex(task) - ProgressionSystem.rankIndex(own)) * STUDY_DC_PER_RANK
-      + this.markOf(player, target).harm * STUDY_DC_PER_HARM;
-    return { d20, total, dc, outcome: this.degree(d20, total, dc, ProgressionSystem.checkSkill(own, task).autoSuccess) };
+    const total = d100 + (this.eyeFor(player, target) + mind) * LORE_ROLL_PER_POINT;
+    const dc = LORE_FAIR_LINE
+      + (ProgressionSystem.rankIndex(task) - ProgressionSystem.rankIndex(own)) * LORE_ROLL_PER_RANK
+      + this.markOf(player, target).harm * LORE_ROLL_PER_HARM;
+    let read = LoreLaw.stretchOf(total - dc + LORE_FAIR_LINE);
+    if (ProgressionSystem.checkSkill(own, task).autoSuccess && read.times < 1) read = { stretch: 'fair', times: 1 };
+    return { d100, total, dc, stretch: read.stretch, times: read.times, outcome: LoreLaw.outcomeOf(read.stretch) };
+  }
+
+  /**
+   * What a sitting pays, fixed by its stretch (the lore pass, calls 2 to 5): a share of the thing's base, twice for a
+   * document and half again for a thing of paper; three times the base set as a misreading; and the category it files
+   * under, shown by what the person studied. What shows nothing (an unread piece, a person, a place, typed words) has no
+   * category and pays all general, so neither the price nor the split gives anything away (D32, D125).
+   */
+  static loreOf(player: IPlayer, target: IStudyTarget, read: { stretch: LoreStretch; times: number }, hub?: IHubTree): ISittingLore & { category: { key: string; name: string } | null } {
+    const rank = ProgressionSystem.rankIndex(target.rank ?? ProgressionSystem.rankOf(player));
+    const item = target.kind === 'item' && !target.hidden ? this.heldItem(player, target.ref) : undefined;
+    const shown = target.hidden ? [] : target.tags ?? [];
+    const factor = item && this.isDocument(item) ? LORE_DOCUMENT_TIMES : WebSystem.materialIdentity(shown).includes('paper') ? LORE_PAPER_TIMES : 1;
+    const files = !target.hidden && target.kind !== 'person' && target.kind !== 'place' && (shown.length > 0 || !!item);
+    const keys = item ? [item.universalDefinitionId] : target.kind === 'thing' ? [target.ref] : [];
+    const found = files ? WebSystem.categoryOf(shown, hub, keys) : null;
+    return {
+      stretch: read.stretch,
+      amount: LoreLaw.pay(rank, read.times, factor),
+      // A misreading sits in a category: what shows nothing has nowhere for one to sit
+      misread: read.stretch === 'misread' && found ? LoreLaw.misreadOf(rank) : 0,
+      category: found ? { key: found.key, name: found.word ? found.word.replace(/_/g, ' ') : target.name } : null
+    };
   }
 
   /** Is this piece anywhere this person holds it? */
@@ -372,8 +403,9 @@ export class StudySystem {
    * lost; what cannot be taken away (a person, a building, a creature, a thought) carries
    * the mark instead, which makes it harder, and when lost it will not sit for a while.
    */
-  static sit(player: IPlayer, target: IStudyTarget, energy: number, now: number): { player: IPlayer; sitting: IStudySitting; roll: IStudyRoll } {
+  static sit(player: IPlayer, target: IStudyTarget, energy: number, now: number, hub?: IHubTree): { player: IPlayer; sitting: IStudySitting; roll: IStudyRoll } {
     const roll = this.rollSitting(player, target);
+    const { category, ...paid } = this.loreOf(player, target, roll.stretch ? { stretch: roll.stretch, times: roll.times ?? LoreLaw.timesOf(roll.stretch) } : LoreLaw.stretchOfOutcome(roll.outcome), hub);
     const prior = this.markOf(player, target);
     const held = target.kind === 'item';
     const failed = roll.outcome === 'failure' || roll.outcome === 'major_failure';
@@ -390,7 +422,8 @@ export class StudySystem {
     const own = ProgressionSystem.rankOf(player);
     const sitting: IStudySitting = {
       id: `sit_${count}`, target, outcome: roll.outcome,
-      rankIndex: ProgressionSystem.rankIndex(target.rank ?? own), energy, at: now, before: prior.sittings
+      rankIndex: ProgressionSystem.rankIndex(target.rank ?? own), energy, at: now, before: prior.sittings,
+      lore: { ...paid, ...(category ? { category } : {}) }
     };
     return { player: next, sitting, roll };
   }

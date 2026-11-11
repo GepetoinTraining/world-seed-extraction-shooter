@@ -2,6 +2,8 @@ import { IProjectile, ProjectileSystem } from '../../../shared/entities/combat/p
 import { IWorldEntity, EntityType, IChunk } from '../../../shared/entities/world/types';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { LootTable } from '../world/LootTable';
+import { MonsterMind } from '../../logic/systems/MonsterMind';
+import { LoreDrops } from '../../../shared/logic/systems/LoreDrops';
 import { IItem, UniversalRank, Rarity } from '../../../shared/types';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
@@ -52,7 +54,7 @@ export class CombatSystem {
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
     meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string> }[],
-    opts: { magicFind?: number } = {}
+    opts: { magicFind?: number; groundVersion?: number } = {}
   ): {
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
@@ -111,6 +113,8 @@ export class CombatSystem {
           magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
         } : undefined, rollKey, mob.displayName);
+        // The lore pass, call 6: a creature with a mind leaves a fragment "sometimes", in a world pinned to it
+        if (MonsterMind.holds(def) && LoreDrops.fragment('creature', rollKey, opts.groundVersion)) loot.push(LootTable.loreFragment(rollKey, (def as { themeId?: string }).themeId));
         const onTable = LootTable.creatureRoll(def, rollKey);
         SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id), ...(onTable ? { table: onTable } : {}) });
         if (loot.length > 0) {

@@ -45,6 +45,7 @@ import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D:
 import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E: the knowledge law (D19)
 import { LORE_NOTE_PAY } from '../../../shared/logic/systems/LoreConstants';
+import { LoreDrops } from '../../../shared/logic/systems/LoreDrops';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
 import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
@@ -2143,6 +2144,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           ? { ...piece, name: ProcessSystem.noteOf(trade).name, description: ProcessSystem.noteOf(trade).text, loreData: { processFamily: trade, tier: 1 } }
           : piece);
       }
+      // The lore pass, call 6: a leader's or a boss's hoard holds a fragment "often", in a world pinned to it
+      if (entity.definitionId === 'struct_store' && LoreDrops.fragment('hoard', rollKey, chestWorld?.groundVersion)) loot.push(LootTable.loreFragment(rollKey, chestWorld?.themeId));
 
       addToInventory(loot);
       wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container, looted: true } } });

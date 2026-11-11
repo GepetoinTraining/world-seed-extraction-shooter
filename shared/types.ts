@@ -756,6 +756,31 @@ export interface IStudySitting {
   at: number;
   /** Sittings on this thing before this one. */
   before: number;
+  /**
+   * What the roll made it pay, fixed when it was rolled (the lore pass, call 7): its stretch, the lore it gives, a
+   * misreading if it was one, and the category it pays into. A sitting logged before this has none, and reads its outcome.
+   */
+  lore?: ISittingLore;
+}
+
+/** A sitting's lore, as the law fixed it. `category` is absent for a thing that showed nothing to file it under. */
+export interface ISittingLore {
+  stretch: string;
+  amount: number;
+  misread: number;
+  category?: { key: string; name: string };
+}
+
+/**
+ * Lore of a category (the lore pass, calls 2 to 4). Pedro: "in the same category yes, general lore no, and general lore is the
+ * overall resource". `held` can be spent on what is of this category; while any `misread` stands it cannot, and new lore of
+ * this category wears the misreading down. `name` is what the person was shown: what they studied, never a hub's concept.
+ */
+export interface ILoreKind {
+  key: string;
+  name: string;
+  held: number;
+  misread: number;
 }
 
 /** A person's record of a thing they have sat with. Harm is what a failure leaves on what cannot be taken away. */
@@ -819,6 +844,8 @@ export interface IBank {
   loreHeld?: number;
   /** What the purse held when a dream last had the chance to spend it. A dream is asked again only for more. */
   loreOffered?: number;
+  /** Lore of each category, beside the purse, which is general lore (the lore pass). A save from before has none. */
+  loreKinds?: Record<string, ILoreKind>;
 }
 
 // Wave 3.1: where an item sits in the session grid (contract upgrade: additive)

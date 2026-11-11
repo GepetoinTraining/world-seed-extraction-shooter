@@ -18,7 +18,7 @@
 import { IItem, IMadeWaiting, IPlayer, IStudySitting } from '../../../shared/types';
 import { IThemeBody, SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { IThemeGrowth, WorldGrowth } from '../../../shared/logic/theme/WorldGrowth';
-import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { StudySystem } from './StudySystem';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { WeaveSystem } from './WeaveSystem';
@@ -164,8 +164,8 @@ export class RestSystem {
   // SETTLING: at any rest (D30, D50). Pure.
   // -----------------------------------------------------------------------
 
-  static settle(player: IPlayer): { player: IPlayer; read: IItem[]; emerged: { id: string }[]; wanting: { id: string; price: number }[]; learned: string[]; floorNamed: string[]; made: (IMadeWaiting & { item: IItem })[] } {
-    const { player: skilled, emerged, wanting } = WebSystem.rest(player);
+  static settle(player: IPlayer, hub?: IHubTree): { player: IPlayer; read: IItem[]; emerged: { id: string }[]; wanting: { id: string; price: number; held: number }[]; learned: string[]; floorNamed: string[]; made: (IMadeWaiting & { item: IItem })[] } {
+    const { player: skilled, emerged, wanting } = WebSystem.rest(player, hub);
     const q = this.queueOf(skilled);
 
     // D50: what was studied is known now, exactly as banked.
@@ -279,7 +279,7 @@ export class RestSystem {
    * The law over what came back from a rest (D43). Refused whole when broken: a skill
    * it never asked about, or a grant outside the vocabulary, and nothing changes.
    */
-  static judgeDream(result: IDreamResult, asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }, player?: IPlayer, elements?: string[]): { ok: boolean; reason?: string } {
+  static judgeDream(result: IDreamResult, asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }, player?: IPlayer, elements?: string[], hub?: IHubTree): { ok: boolean; reason?: string } {
     if (!result || !Array.isArray(result.skills) || !Array.isArray(result.weaves)) return { ok: false, reason: 'That is not what a rest returns.' };
     for (const s of result.skills) {
       if (!asked.skills.includes(s.id)) return { ok: false, reason: `Nobody asked about ${s.id}.` };
@@ -295,7 +295,7 @@ export class RestSystem {
     if (player) {
       const verdict = CircleSystem.judgeAll(gifts, player, asked.gifts ?? [], elements);
       if (!verdict.ok) return verdict;
-      const lore = LoreSystem.judge(result, asked, player);
+      const lore = LoreSystem.judge(result, asked, player, hub);
       if (!lore.ok) return lore;
     } else if (gifts.length > 0 || result.studied?.length || result.taught?.length || result.raised?.length) {
       return { ok: false, reason: 'Nobody can say who these gifts are for.' };
@@ -313,8 +313,8 @@ export class RestSystem {
   }
 
   /** What a judged dream does to this person: its words and its grants. */
-  static applyDream(before: IPlayer, result: IDreamResult): IPlayer {
-    const player = LoreSystem.apply(before, result);
+  static applyDream(before: IPlayer, result: IDreamResult, hub?: IHubTree): IPlayer {
+    const player = LoreSystem.apply(before, result, hub);
     const skillWords = { ...(player.skillWords ?? {}) };
     for (const s of result.skills) skillWords[s.id] = { name: s.name, flavor: s.flavor, grants: s.grants ?? [] };
     const weaveNames = { ...(player.weaveNames ?? {}) };

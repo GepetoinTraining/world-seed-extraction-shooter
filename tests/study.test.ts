@@ -43,7 +43,8 @@ import { IDreamResult, RestSystem, emptyQueue } from '../src/logic/systems/RestS
 import { RestDoor } from '../src/logic/systems/RestDoor';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { StudyDoor } from '../src/logic/systems/StudyDoor';
-import { LORE_DEPTHS, LoreSystem } from '../src/logic/systems/LoreSystem';
+import { LoreSystem } from '../src/logic/systems/LoreSystem';
+import { LoreLaw } from '../shared/logic/systems/LoreLaw';
 import { CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
 import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
@@ -73,7 +74,8 @@ const inVault = (...items: IItem[]) => set(p => ({
 }));
 const vault = () => player().bank.stashTabs[0].items;
 
-const forced = (outcome: StudyOutcome) => vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d20: 10, total: 10, dc: 10, outcome });
+// The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): a forced roll gives its outcome, and reads as the stretch it pairs with
+const forced = (outcome: StudyOutcome) => vi.spyOn(StudySystem, 'rollSitting').mockReturnValue({ d100: 50, total: 50, dc: 41, outcome });
 
 const axeWood = () => WebSystem.mint(['axe'], ['wood']);
 const passiveGift = (over: Partial<ISkillGift> = {}): ISkillGift => ({ id: 'gift_axe_0', kind: 'passive', name: 'Steady Hands', blurb: 'They do not shake.', stat: 'max_health', value: 10, ...over });
@@ -115,7 +117,7 @@ beforeEach(() => {
   set(p => ({
     ...p, currentSession: undefined, energyToday: undefined, rest: undefined, restQueue: undefined, pendingDream: undefined,
     skillGifts: undefined, skillWords: undefined, studyMarks: undefined, studyCount: 0, levelsBanked: 0,
-    bank: { ...p.bank, gold: 1000, loreHeld: 0, loreOffered: undefined, lore: {}, universalSkills: {}, stashTabs: [{ ...p.bank.stashTabs[0], items: [] }] }
+    bank: { ...p.bank, gold: 1000, loreHeld: 0, loreOffered: undefined, loreKinds: undefined, lore: {}, universalSkills: {}, stashTabs: [{ ...p.bank.stashTabs[0], items: [] }] }
   }));
 });
 afterEach(() => { StudyDoor.reset(); });
@@ -341,15 +343,16 @@ describe('it is roll based, and the roll is the law\'s', () => {
     const a = StudySystem.rollSitting(player(), target());
     const b = StudySystem.rollSitting(player(), target());
     expect(a).toEqual(b);
-    expect(a.d20).toBeGreaterThanOrEqual(1);
-    expect(a.d20).toBeLessThanOrEqual(20);
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore")
+    expect(a.d100).toBeGreaterThanOrEqual(1);
+    expect(a.d100).toBeLessThanOrEqual(100);
   });
 
   it('the count moves on, so another sitting is another roll', () => {
     const seen = new Set<number>();
     for (let n = 0; n < 40; n++) {
       set(p => ({ ...p, studyCount: n }));
-      seen.add(StudySystem.rollSitting(player(), target()).d20);
+      seen.add(StudySystem.rollSitting(player(), target()).d100);
     }
     expect(seen.size).toBeGreaterThan(5);
   });
@@ -453,18 +456,21 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
     expect(rows.some(r => r.includes('STUDY') && r.includes('major_failure'))).toBe(true);
   });
 
-  it('a major win pays double what the same sitting would have', () => {
-    const plain = LoreSystem.paysFor({ ...onLog('s1', 'success'), rankIndex: 2 });
-    const great = LoreSystem.paysFor({ ...onLog('s2', 'major_win'), rankIndex: 2 });
-    for (const depth of LORE_DEPTHS) expect(great[depth]).toBe(plain[depth] * 2);
+  it('a deep reading pays double a fair one of the same sitting', () => {
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): the roll's stretch sets it, and a major win is a deep reading
+    const plain = LoreSystem.loreOf({ ...onLog('s1', 'success'), rankIndex: 2 });
+    const great = LoreSystem.loreOf({ ...onLog('s2', 'major_win'), rankIndex: 2 });
+    expect(great.amount).toBe(LoreLaw.pay(2, 2));
+    expect(Math.abs(great.amount - plain.amount * 2)).toBeLessThanOrEqual(1);
   });
 
-  it('what failed pays nothing, and asks nothing of the door', async () => {
+  it('a little reading still pays a little, and goes to the dream', async () => {
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"), and "studying should also give some lore": only what shows nothing and misreads pays nothing
     inVault(piece('a'));
     await sit('failure');
     const q = RestSystem.dreamQueue(player(), []) as { studied: unknown[] };
-    expect(q.studied).toEqual([]);
-    expect(RestSystem.queueOf(player()).sittings).toEqual([]);
+    expect(q.studied).toHaveLength(1);
+    expect(RestSystem.queueOf(player()).sittings[0].lore).toMatchObject({ stretch: 'little', amount: 5 });
   });
 
   it('a person, a building, a creature or a thought is marked, because nothing can be taken from them', async () => {
@@ -583,9 +589,12 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
       expect(said).not.toContain('itm_secret');
       expect(said).not.toContain('The True Name');
       expect(said).not.toContain(player().username);
-      const ask = (q as { studied: { outcome: string; pays: Record<string, number> }[] }).studied[0];
+      const ask = (q as { studied: { outcome: string; stretch: string; gives: number; pays?: unknown }[] }).studied[0];
       expect(ask.outcome).toBe('success');
-      expect(Object.keys(ask.pays).sort()).toEqual([...LORE_DEPTHS].sort());
+      // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): the dream is told the stretch and what it gives, and asked for no depth
+      expect(ask.stretch).toBe('fair');
+      expect(ask.gives).toBeGreaterThan(0);
+      expect(ask.pays).toBeUndefined();
     });
   });
 
@@ -606,7 +615,7 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
     expect(first.studied.length).toBeGreaterThan(0);
     expect(first.studied.length).toBeLessThan(90);
     expect(first.studied[0].id).toBe('s0');
-    const after = RestSystem.applyDream(player(), answer({ studied: first.studied.map(s => ({ id: s.id, depth: 'fair', topics: ['wood'], line: 'It was a log.' })) }));
+    const after = RestSystem.applyDream(player(), answer({ studied: first.studied.map(s => ({ id: s.id, topics: ['wood'], line: 'It was a log.' })) }));
     const second = RestSystem.dreamQueue(after, []) as { studied: { id: string }[] };
     expect(second.studied[0].id).toBe(`s${first.studied.length}`);
   });
@@ -637,22 +646,26 @@ describe('"an interaction logged and resolved by LLM": what was gained waits for
 
 describe('the dream resolves what was studied', () => {
   const asked = askedAll({ sittings: ['sit_1'] });
-  const words = (over = {}) => ({ id: 'sit_1', depth: 'fair', topics: ['wood'], line: 'It was a log, all the way down.', ...over });
+  // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): the model words a sitting and no longer chooses its depth
+  const words = (over = {}) => ({ id: 'sit_1', topics: ['wood'], line: 'It was a log, all the way down.', ...over });
 
-  it('a depth becomes lore by the formula, and the topic remembers', () => {
+  it('what the roll fixed becomes lore, two thirds to its category and a third general, and the topic remembers', () => {
     const sitting = onLog();
     const after = RestSystem.applyDream(player(), answer({ studied: [words()] }));
-    expect(LoreSystem.held(after)).toBe(LoreSystem.paysFor(sitting).fair);
-    expect(after.bank.lore.wood.xp).toBe(LoreSystem.paysFor(sitting).fair);
+    const lore = LoreSystem.loreOf(sitting);
+    expect(LoreSystem.held(after)).toBe(LoreLaw.split(lore.amount, true).general);
+    expect(after.bank.loreKinds![lore.category!.key].held).toBe(LoreLaw.split(lore.amount, true).category);
+    expect(after.bank.lore.wood.xp).toBe(lore.amount);
     expect(RestSystem.queueOf(after).sittings).toEqual([]);
   });
 
-  it('a deeper answer pays more, a rarer thing pays more, and it is whatever the formula says', () => {
+  it('a deeper reading pays more, a rarer thing pays more, and it is whatever the law says', () => {
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore")
     const plain = onLog('s1');
     const rare = onLog('s2', 'success', 5);
-    expect(LoreSystem.paysFor(plain).deep).toBeGreaterThan(LoreSystem.paysFor(plain).fair);
-    expect(LoreSystem.paysFor(plain).fair).toBeGreaterThan(LoreSystem.paysFor(plain).shallow);
-    expect(LoreSystem.paysFor(rare).fair).toBeGreaterThan(LoreSystem.paysFor(plain).fair);
+    expect(LoreSystem.loreOf(onLog('s3', 'major_win')).amount).toBeGreaterThan(LoreSystem.loreOf(plain).amount);
+    expect(LoreSystem.loreOf(plain).amount).toBeGreaterThan(LoreSystem.loreOf(onLog('s4', 'failure')).amount);
+    expect(LoreSystem.loreOf(rare).amount).toBeGreaterThan(LoreSystem.loreOf(plain).amount);
   });
 
   it('only what was answered leaves the log', () => {
@@ -667,10 +680,11 @@ describe('the dream resolves what was studied', () => {
     expect(RestSystem.judgeDream(answer({ studied: [words({ id: 'sit_9' })] }), asked, player()).ok).toBe(false);
   });
 
-  it('a depth outside the words, or no line, refuses the whole answer', () => {
+  it('no line refuses the whole answer, and a depth the model sends is not read', () => {
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): the roll says how deep it went, so a depth sent back changes nothing
     onLog();
     expect(RestSystem.judgeDream(answer({ studied: [words()] }), asked, player()).ok).toBe(true);
-    expect(RestSystem.judgeDream(answer({ studied: [words({ depth: 'bottomless' })] }), asked, player()).ok).toBe(false);
+    expect(RestSystem.applyDream(player(), answer({ studied: [words({ depth: 'deep' })] })).bank.loreHeld).toBe(RestSystem.applyDream(player(), answer({ studied: [words()] })).bank.loreHeld);
     expect(RestSystem.judgeDream(answer({ studied: [words({ line: ' ' })] }), asked, player()).ok).toBe(false);
   });
 
@@ -691,7 +705,7 @@ describe('the dream resolves what was studied', () => {
   it('a refused answer leaves the log whole, and the next rest asks again', async () => {
     onLog();
     set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: askedAll({ sittings: ['sit_1'] }) } }));
-    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ studied: [words({ depth: 'bottomless' })] }) } as never);
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ studied: [words({ line: '' })] }) } as never);
     await RestDoor.collect(playerPort, hubPort);
     expect(player().pendingDream).toBeUndefined();
     expect(RestSystem.queueOf(player()).sittings).toHaveLength(1);
@@ -703,9 +717,13 @@ describe('the dream resolves what was studied', () => {
     set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: askedAll({ sittings: ['sit_1'] }) } }));
     vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ studied: [words()] }) } as never);
     await RestDoor.collect(playerPort, hubPort);
-    expect(LoreSystem.held(player())).toBe(LoreSystem.paysFor(sitting).fair);
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): it lands by kind, and the person is told so
+    const lore = LoreSystem.loreOf(sitting);
+    expect(LoreSystem.held(player())).toBe(LoreLaw.split(lore.amount, true).general);
     const feed = useFeed.getState().lines.map(i => i.text).join(' ');
     expect(feed).toContain('It was a log, all the way down.');
+    expect(feed).toContain(`+${LoreLaw.split(lore.amount, true).category} lore of ${lore.category!.name}`);
+    expect(feed).toContain(`+${LoreLaw.split(lore.amount, true).general} general`);
   });
 
   it('a sitting logged after the dream was filed is kept for the next one', async () => {
@@ -774,11 +792,12 @@ describe('"Gifts also cost lore"', () => {
     holding();
     const sitting = onLog('sit_1', 'major_win', 6);
     const price = LoreSystem.giftPrice(player(), skill());
-    expect(LoreSystem.paysFor(sitting).deep).toBeGreaterThanOrEqual(price);
-    const out = answer({ gifts: [giftWords()], studied: [{ id: 'sit_1', depth: 'deep', topics: ['wood'], line: 'Deep.' }] });
+    // The lore pass, 2026-11-11 (Pedro: "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore"): a deep reading's lore, by kind, pays for the gift, its own category first
+    expect(LoreSystem.loreOf(sitting).amount).toBeGreaterThanOrEqual(price);
+    const out = answer({ gifts: [giftWords()], studied: [{ id: 'sit_1', topics: ['wood'], line: 'Deep.' }] });
     expect(RestSystem.judgeDream(out, askedAll({ gifts: [axeWood().id], sittings: ['sit_1'] }), player()).ok).toBe(true);
     const after = RestSystem.applyDream(player(), out);
-    expect(LoreSystem.held(after)).toBe(LoreSystem.paysFor(sitting).deep - price);
+    expect(LoreLaw.reach(after.bank)).toBe(LoreSystem.loreOf(sitting).amount - price);
   });
 
   it('a rarer skill\'s gift costs more, and each further gift in a skill costs more', () => {
@@ -800,8 +819,9 @@ describe('"Gifts also cost lore"', () => {
 
   it('found by playing: a gift the log could pay for is still named when no dream can be reached', async () => {
     holding();
-    onLog('sit_1', 'success');
-    onLog('sit_2', 'success');
+    // The lore pass, 2026-11-11 ("lore should be slower than exp but fixed"): a success can no longer turn out deep, so two deep readings stand where two successes did
+    onLog('sit_1', 'major_win');
+    onLog('sit_2', 'major_win');
     expect(LoreSystem.giftsToAsk(player()).map(g => g.id)).toEqual([axeWood().id]);
     vi.spyOn(IntelligenceClient, 'fileRest').mockResolvedValue({ status: 'NO_KEY' } as never);
     await RestDoor.file([], worldPort, playerPort);
@@ -870,7 +890,7 @@ describe('lore teaches skills', () => {
   it('what one dream resolves opens the topic for what it teaches', () => {
     set(p => ({ ...p, bank: { ...p.bank, loreHeld: 1_000_000, lore: {} } }));
     onLog('sit_1', 'success', 1, ['axe', 'wood']);
-    const out = answer({ taught: [words()], studied: [{ id: 'sit_1', depth: 'fair', topics: ['axe', 'wood'], line: 'Grain.' }] });
+    const out = answer({ taught: [words()], studied: [{ id: 'sit_1', topics: ['axe', 'wood'], line: 'Grain.' }] });
     expect(RestSystem.judgeDream(out, askedAll({ sittings: ['sit_1'] }), player()).ok).toBe(true);
     expect(RestSystem.applyDream(player(), out).bank.universalSkills[axeWood().id].bornRank).toBe(1);
   });
@@ -1107,7 +1127,7 @@ describe('study is a door the others can read', () => {
   it('C5 and C7: what a person has studied, by topic and by thing', () => {
     onLog();
     const sitting = RestSystem.queueOf(player()).sittings[0];
-    const after = RestSystem.applyDream(player(), answer({ studied: [{ id: sitting.id, depth: 'fair', topics: ['wood'], line: 'Grain.' }] }));
+    const after = RestSystem.applyDream(player(), answer({ studied: [{ id: sitting.id, topics: ['wood'], line: 'Grain.' }] }));
     expect(LoreSystem.topicsOf(after).map(t => t.topic)).toEqual(['wood']);
     expect(LoreSystem.knows(after, 'wood')).toBe(true);
     expect(LoreSystem.knows(after, 'drill')).toBe(false);

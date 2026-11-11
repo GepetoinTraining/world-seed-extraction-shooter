@@ -34,6 +34,7 @@ import { WebBank } from '../content/WebBank';
 import { ProcessFamily, ProcessSystem } from './ProcessSystem';
 import { climb } from './StatSystem';
 import { loreTeachPrice } from './LoreConstants';
+import { LoreLaw } from './LoreLaw';
 import { ChainWeb, IChainGround, IChainWeb } from '../theme/ChainWeb';
 
 /** A hub's web, handed over by whoever has the hub: what its chains have written, and the ground they stand on. */
@@ -310,13 +311,14 @@ export class WebSystem {
    * its price, and the price is spent then; without it the skill keeps forming, whole, and is `wanting`. A roll
    * that does not come good asks nothing. The most worked goes first, then by id, so a replay spends the same.
    */
-  static rest(player: IPlayer): { player: IPlayer; emerged: ISkillState[]; wanting: { id: string; price: number }[] } {
+  static rest(player: IPlayer, hub?: IHubTree): { player: IPlayer; emerged: ISkillState[]; wanting: { id: string; price: number; held: number }[] } {
     const progress = player.skillProgress ?? {};
     const held = { ...player.bank.universalSkills };
     const left: Record<string, ISkillProgress> = {};
     const emerged: ISkillState[] = [];
-    const wanting: { id: string; price: number }[] = [];
-    let lore = player.bank.loreHeld ?? 0;
+    const wanting: { id: string; price: number; held: number }[] = [];
+    // The lore pass: a skill takes lore of its own category first, then general (BALANCE_RUN.md 3.8, b)
+    let purse = { loreHeld: player.bank.loreHeld, loreKinds: player.bank.loreKinds };
     const order = Object.keys(progress).sort((a, b) => progress[b].weight - progress[a].weight || (a < b ? -1 : a > b ? 1 : 0));
     for (const id of order) {
       const entry = progress[id];
@@ -326,17 +328,19 @@ export class WebSystem {
         continue;
       }
       const price = this.learnPrice(entry.rank);
-      if (lore < price) {
+      const kind = this.categoryOf(entry.tags, hub)?.key;
+      const paid = LoreLaw.spend(purse, kind, price);
+      if (!paid) {
         left[id] = entry;
-        wanting.push({ id, price });
+        wanting.push({ id, price, held: LoreLaw.spendable(purse, kind) });
         continue;
       }
-      lore -= price;
+      purse = paid;
       const skill = this.freshSkill(id, entry.tags, entry.rank);
       held[id] = skill;
       emerged.push(skill);
     }
-    const bank = { ...player.bank, universalSkills: held, ...(emerged.length > 0 ? { loreHeld: lore } : {}) };
+    const bank = { ...player.bank, universalSkills: held, ...(emerged.length > 0 ? { loreHeld: purse.loreHeld, ...(purse.loreKinds ? { loreKinds: purse.loreKinds } : {}) } : {}) };
     let rested: IPlayer = { ...player, skillProgress: left, bank };
     for (const skill of emerged) rested = this.revealByMastery(rested, skill.id);
     return { player: rested, emerged, wanting };
@@ -371,9 +375,30 @@ export class WebSystem {
   static treeTags(tags: string[], hub?: IHubTree, keys: string[] = [], pack: IWebPack = current()): string[] {
     const own = this.materialIdentity(tags ?? [], pack);
     if (!hub) return own;
-    const around = ChainWeb.treeAround(hub.chain, hub.ground, (key, nodeTags) =>
-      keys.includes(key) || (own.length > 0 && own.every(t => nodeTags.includes(t))));
+    const around = ChainWeb.treeAround(hub.chain, hub.ground, this.seeds(own, keys));
     return around ? TagLaw.canonical([...own, ...this.materialIdentity(around.tags, pack)]) : own;
+  }
+
+  /** Where a thing sits on a hub's web: where the web names it by key, or names something made of all it is made of. */
+  private static seeds(own: string[], keys: string[]): (key: string, nodeTags: string[]) => boolean {
+    return (key, nodeTags) => keys.includes(key) || (own.length > 0 && own.every(t => nodeTags.includes(t)));
+  }
+
+  /**
+   * The category a thing's lore files under (the lore pass, call 2, on Pedro's "this is a function of hubs"): the one
+   * concept of the hub's web it sits under, so two roads to one concept are one category; where the web says nothing of
+   * it, or puts it under more than one concept, its family; with no family, its first material; with nothing worked, none.
+   * A concept's key is never shown (D125): `word` is set only for a registered word a person may read.
+   */
+  static categoryOf(tags: string[], hub?: IHubTree, keys: string[] = [], pack: IWebPack = current()): { key: string; word?: string } | null {
+    const own = this.materialIdentity(tags ?? [], pack);
+    if (hub) {
+      const around = ChainWeb.treeAround(hub.chain, hub.ground, this.seeds(own, keys));
+      if (around && around.concepts.length === 1) return { key: `concept:${around.concepts[0]}` };
+    }
+    const family = own.find(t => WebBank.hasKind(pack, t, ['family']));
+    if (family) return { key: `family:${family}`, word: family };
+    return own.length > 0 ? { key: `material:${own[0]}`, word: own[0] } : null;
   }
 
   /**
