@@ -711,7 +711,7 @@ Readings that are mine: "one suffix one affix" is one suffix and one prefix; fou
 
 Not said: the odds of each tier, what each does to a piece's power, and what legendary and artifact carry.
 
-**"the ranks are tiers".** My reading: an affix's tier is the rank of the piece it sits on, F to SSS, and there is no second tier ladder. Today the code has two, and they do not meet:
+**"the ranks are tiers".** An affix's tier is the rank of the piece it sits on, F to SSS, and there is no second tier ladder. That was my reading and he confirmed it the same day ("Yes, rank is tier"). Today the code has two, and they do not meet:
 
 ```
 an affix's size today
@@ -724,7 +724,7 @@ an affix's size today
 
 Side by side, a tier that grew x 1.5 a rank would run 1, 1.5, 2.25, 3.4, 5.1, 7.6, 11.4, 17.1, 25.6 from F to SSS, against the rank multiplier's 1, 1.2, 1.5, 2, 3, 5, 8, 13, 21.
 
-The other way to read the sentence is that each of uncommon, magical, rare and epic is a tier of its own, which the table above already holds.
+Not said: which growth the one ladder takes, and what becomes of the tier number a theme's writer puts on an affix.
 
 ### A same-rank fight is jokenpo
 
