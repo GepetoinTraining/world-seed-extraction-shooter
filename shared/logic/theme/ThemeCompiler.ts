@@ -14,7 +14,7 @@ import type { IGearRecipe } from '../../entities/economy/data/recipeDefinitions'
 import { fnv1a } from '../rng/DeterministicRNG';
 import { IThemeBody, IThemePack, IThemeAbility, LEADER_FEATURES, THEME_FORMULA_VERSION } from './ThemeTypes';
 import {
-  GEAR_SHAPES, affixRange, consumableNumbers, creatureNumbers, forcedExitWorth, gearBaseIp, goodNumbers,
+  GEAR_SHAPES, affixRange, cartNumbers, consumableNumbers, creatureNumbers, forcedExitWorth, gearBaseIp, goodNumbers,
   anchorNumbers, harvestNumbers, junkNumbers, materialNumbers, rankStep, stationNumbers
 } from './ThemeFormula';
 
@@ -247,7 +247,8 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
       slot: shape.slot, tags: unique([...shape.tags, ...g.tags]), implicits: shape.implicits(step),
       ...(shape.pouch ? { pouch: shape.pouch } : {}),
       ...(shape.belt ? { belt: shape.belt } : {}),
-      ...(shape.cart ? { cart: shape.cart } : {})
+      // A cart's bed and stats from its size word and rank (the interface pass); no size word reads MEDIUM
+      ...(shape.cart ? { cart: cartNumbers({ size: g.size, rank: g.rank }) } : {})
     };
     if (g.carries) base.carries = { ability: ids.get(g.carries)!, trigger: g.trigger };
     if (g.craftAt === 'none') out.items[shape.bucket].push(base);

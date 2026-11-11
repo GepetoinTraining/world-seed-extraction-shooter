@@ -10,6 +10,7 @@ import { ResourceDef } from './data/resourceDefinitions';
 import { MaterialPropertyType } from '../economy/types';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
+import { cartBearsAt, cartFolded } from '../../logic/theme/ThemeFormula';
 
 export class ItemFactory {
 
@@ -135,7 +136,8 @@ export class ItemFactory {
     // Wave 10C: the definition's pouch/belt/cart laws ride onto the item
     if (template.pouch) item.pouchData = { accepts: [...template.pouch.accepts], capacity: template.pouch.capacity, contents: [] };
     if (template.belt) item.beltData = { pouchSlots: template.belt.pouchSlots };
-    if (template.cart) item.cartData = { ...template.cart };
+    // The interface pass: a cart's bed and weight are its kind's; what it bears is read at this piece's quality
+    if (template.cart) item.cartData = { ...template.cart, ...(template.cart.bears !== undefined ? { bears: cartBearsAt(template.cart.bears, quality) } : {}) };
     // Layer 3: a piece can carry an ability. It acts unstudied, and stays hidden until read.
     if (template.carries) item.carries = { ...template.carries };
     // 10C.2: requirements are stamped at mint — deterministic from rank and tags
@@ -296,7 +298,7 @@ export class ItemFactory {
   /** Inventory Tetris footprint derived from the item archetype */
   private static getDimensions(template: ItemDefinition): { width: number; height: number } {
     const tags = template.tags;
-    if (template.cart) return { width: 2, height: 3 };       // a packed cart is a real burden
+    if (template.cart) return cartFolded(template.cart.size); // a packed cart is a real burden, longer the bigger it is
     if (template.pouch) return { width: 1, height: 1 };
     if (tags.includes('two_hand')) return { width: 2, height: 4 };
     if (tags.includes('one_hand') || tags.includes('tool')) return { width: 1, height: 3 };
@@ -317,6 +319,8 @@ export class ItemFactory {
 
   /** Weight in kg: density of the material class x footprint */
   private static getWeight(template: ItemDefinition, dims: { width: number; height: number }): number {
+    // A cart weighs what its kind's bed weighs (ThemeFormula.cartNumbers)
+    if (template.cart?.weight !== undefined) return template.cart.weight;
     const area = dims.width * dims.height;
     let density = 1.0; // kg per grid cell
     if (template.tags.includes('heavy') || template.tags.includes('plate')) density = 2.5;

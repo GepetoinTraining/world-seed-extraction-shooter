@@ -578,6 +578,10 @@ export interface IItem {
   cartData?: {
     gridW: number;
     gridH: number;
+    /** The interface pass, 2026-11-11: its size word, its own weight, and the load it bears before the tow slows. A kit minted before has none. */
+    size?: string;
+    weight?: number;
+    bears?: number;
   };
 
   // Wave 10D (contract upgrade: additive)

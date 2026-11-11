@@ -98,6 +98,7 @@ const CartWindow: React.FC = () => {
   const session = player.currentSession;
   const mine = cart.ownerId === player.id;
   const lastTheft = cart.theftLog[cart.theftLog.length - 1];
+  const said = CartSystem.describe(cart);
 
   return (
     <div className="ws-ui ws-overlay" style={{ background: 'rgba(3,3,3,0.7)', zIndex: 500 }} onClick={closeCartWindow} onPointerDown={e => e.stopPropagation()}>
@@ -123,7 +124,13 @@ const CartWindow: React.FC = () => {
                 onRotate={item => { rotateOnCart(cartWindowId, item.id); }}
               />
               <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-                {CartSystem.cartWeight(cart).toFixed(1)} kg aboard · tow pace ×{CartSystem.towSpeedModifier(CartSystem.cartWeight(cart)).toFixed(2)}
+                {CartSystem.cartWeight(cart).toFixed(1)} kg aboard · tow pace ×{CartSystem.towOf(cart).toFixed(2)}
+              </div>
+              {/* The interface pass: what the bed is, its own weight and load, its lock and its alarm, in words */}
+              <div className="ws-small" style={{ marginTop: 4, maxWidth: cart.gridW * CART_CELL }}>
+                <div>{said.bed.charAt(0).toUpperCase() + said.bed.slice(1)}; {said.weight}; {said.bears}.</div>
+                <div>{said.lock}.</div>
+                <div>{said.alarm}.</div>
               </div>
               {picked && cart.items.some(i => i.id === picked) && (
                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
@@ -472,15 +479,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     let cartHaul: typeof haul = [];
     if (towed?.cart) {
       cartHaul = towed.cart.items;
-      const kitBack = {
-        ...ItemFactory.createResourceItem({
-          id: 'cart_field_t1', name: 'Field Cart (Packed)', weight: 15,
-          dimensions: { width: 2, height: 3 }, tags: ['cart', 'heavy']
-        } as any, Rng.fromKey(`cartfold:${towed.cart.cartItemId}`)),
-        id: towed.cart.cartItemId, // the same cart, folded — never a second one
-        type: ItemType.GEAR,
-        cartData: { gridW: towed.cart.gridW, gridH: towed.cart.gridH }
-      };
+      // The same cart, folded, never a second one: the very kit that unfolded, affixes and all (the interface pass)
+      const kitBack = CartSystem.fold(towed.cart);
       usePlayerStore.setState(s => ({
         player: {
           ...s.player,
@@ -827,7 +827,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           const towed = Object.values(useWorldStore.getState().currentMap?.chunks || {})
             .flatMap(c => c.entities).find(e => e.id === towId);
           if (towed?.cart) {
-            const towMod = CartSystem.towSpeedModifier(CartSystem.cartWeight(towed.cart));
+            const towMod = CartSystem.towOf(towed.cart);
             dx *= towMod;
             dz *= towMod;
           }

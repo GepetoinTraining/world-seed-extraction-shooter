@@ -213,6 +213,12 @@ export interface IThemeGear {
   from: { key: string; count: number }[];
   /** 'none' is found only; 'hands' is the improvised floor, anywhere; 'bench' needs a workshop. */
   craftAt: 'none' | 'hands' | 'bench';
+  /**
+   * The interface pass, 2026-11-11: how big it is, in the creatures' size words. A cart's bed, weight and
+   * load are read from it by the formula; other kinds ignore it. A pack written before it names none,
+   * which reads MEDIUM, the first world's 10 by 8.
+   */
+  size?: typeof SIZES[number];
 }
 
 export interface IThemeConsumable {
@@ -388,7 +394,7 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
     from: list({ key: str, count }), makes: count
   }),
   gear: list({
-    key: str, name: str, blurb: str, kind: oneOf(GEAR_KINDS), rank: oneOf(RANKS), tags: strs, works: strs, carries: str, trigger: str,
+    key: str, name: str, blurb: str, kind: oneOf(GEAR_KINDS), rank: oneOf(RANKS), size: oneOf(SIZES), tags: strs, works: strs, carries: str, trigger: str,
     from: list({ key: str, count }), craftAt: oneOf(['none', 'hands', 'bench'])
   }),
   consumables: list({ key: str, name: str, blurb: str, kind: oneOf(CONSUMABLE_KINDS), rank: oneOf(RANKS), tags: strs, casts: str, onShelf: { type: 'boolean' } }),

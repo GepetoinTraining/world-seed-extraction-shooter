@@ -16,7 +16,7 @@
 
 import { SlotType, UniversalRank } from '../../types';
 import { readsRank } from '../../constants';
-import { GearKind, ThemeRank, RANKS } from './ThemeTypes';
+import { GearKind, ThemeRank, RANKS, SIZES } from './ThemeTypes';
 import { PROJECTILE_RANGE_PX } from '../../entities/combat/projectileSystem';
 import { TILE_PX } from '../../entities/world/grid';
 
@@ -278,8 +278,55 @@ interface IGearShape {
   implicits: (step: number) => { stat: string; min?: number; max?: number; value?: number }[];
   pouch?: { accepts: string[]; capacity: number };
   belt?: { pouchSlots: number };
-  cart?: { gridW: number; gridH: number };
+  /** A cart: its bed and its stats are what it carries, read from the kind's size word by `cartNumbers`. */
+  cart?: true;
 }
+
+// -------------------------------------------------------------------------
+// CARTS (the interface pass, 2026-11-11). Pedro: "the carts need variable sizes of bed and their stats".
+// A cart is a kind like any other: its size word, the creatures' own sizes, becomes a bed the way a
+// creature's size becomes its sight, rank grows it as rank grows everything, and quality is what a
+// better-made one bears. No list of finished carts, and no top: each size and each rank is one ratio
+// more. A theme that names no size reads MEDIUM, which is the first world's 10 by 8.
+// -------------------------------------------------------------------------
+
+const CART_SIZES = SIZES;
+/** The bed of a MEDIUM cart at rank F, in cells: the first world's 10 by 8. */
+const CART_BED_CELLS = 80;
+/** How much more each size up holds, and each rank up. */
+const CART_SIZE_RATIO = 1.6;
+const CART_RANK_RATIO = 1.15;
+/** A bed is a little wider than it is long. */
+const CART_ASPECT = 5 / 4;
+/** What a cart weighs for each cell of bed: the first world's folded cart weighed 15. */
+const CART_KG_PER_CELL = 15 / 80;
+/** What a cart bears before the tow slows, for each cell of bed, at quality 0. */
+const CART_BEARS_PER_CELL = 0.5;
+
+const cartStep = (size?: string): number => {
+  const i = CART_SIZES.indexOf((size ?? 'MEDIUM').toUpperCase() as typeof CART_SIZES[number]);
+  return i < 0 ? 1 : i;
+};
+
+/** A cart kind's bed, weight and the load it bears, from its size word and rank. Quality is read at the mint. */
+export const cartNumbers = (c: { size?: string; rank?: ThemeRank | UniversalRank }) => {
+  const step = cartStep(c.size);
+  const rank = Math.max(0, rankStep((c.rank ?? 'F') as ThemeRank));
+  const cells = CART_BED_CELLS * Math.pow(CART_SIZE_RATIO, step - 1) * Math.pow(CART_RANK_RATIO, rank);
+  const gridW = Math.max(2, Math.round(Math.sqrt(cells * CART_ASPECT)));
+  const gridH = Math.max(2, Math.round(cells / gridW));
+  return {
+    gridW, gridH, size: CART_SIZES[step] as string,
+    weight: Math.round(gridW * gridH * CART_KG_PER_CELL * 10) / 10,
+    bears: Math.round(gridW * gridH * CART_BEARS_PER_CELL)
+  };
+};
+
+/** What a folded cart takes in a pack: two wide, longer by one for each size up. */
+export const cartFolded = (size?: string) => ({ width: 2, height: 2 + cartStep(size) });
+
+/** What a piece of this quality bears: a better-made cart bears more, a worse one less. */
+export const cartBearsAt = (bears: number, quality: number) => Math.max(0, Math.round(bears * (1 + quality) * 10) / 10);
 
 const range = (stat: string, low: number, high: number, step: number, ratio = 1.6) => ({
   stat, min: Math.round(low * Math.pow(ratio, step) * 100) / 100, max: Math.round(high * Math.pow(ratio, step) * 100) / 100
@@ -316,7 +363,7 @@ export const GEAR_SHAPES: Record<GearKind, IGearShape> = {
   bag: { bucket: 'armor_bases', slot: SlotType.BAG, tags: ['bag'], implicits: s => [{ stat: 'carry_bonus_kg', value: 10 + s * 5 }] },
   belt: { bucket: 'armor_bases', slot: SlotType.BELT, tags: ['belt'], implicits: () => [dayLine()], belt: { pouchSlots: 2 } },
   pouch: { bucket: 'armor_bases', slot: SlotType.POUCH, tags: ['pouch'], implicits: () => [], pouch: { accepts: ['consumable'], capacity: 3 } },
-  cart: { bucket: 'armor_bases', slot: SlotType.NONE, tags: ['cart', 'heavy'], implicits: () => [], cart: { gridW: 10, gridH: 8 } },
+  cart: { bucket: 'armor_bases', slot: SlotType.NONE, tags: ['cart', 'heavy'], implicits: () => [], cart: true },
   chop_tool: { bucket: 'tool_bases', slot: SlotType.TOOL, tags: ['tool', 'axe', 'chopping'], implicits: s => [range('chopping_power', 12, 18, s)] },
   mine_tool: { bucket: 'tool_bases', slot: SlotType.TOOL, tags: ['tool', 'pickaxe', 'mining'], implicits: s => [range('mining_power', 12, 18, s)] },
   work_tool: { bucket: 'tool_bases', slot: SlotType.TOOL, tags: ['tool'], implicits: () => [] }

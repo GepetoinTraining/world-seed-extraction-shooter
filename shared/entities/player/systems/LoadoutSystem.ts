@@ -473,9 +473,13 @@ export class LoadoutSystem {
   // D16: towing costs speed (the cart system asks here so there is one law)
   // ---------------------------------------------------------------------
 
-  /** Towing always costs; more when loaded; never below the floor — a cart can always move. */
-  static towSpeedModifier(cartWeightKg: number): number {
-    return Math.max(0.4, 0.75 - cartWeightKg / 400);
+  /**
+   * Towing always costs; more when loaded past what this cart bears; never below the floor, so a cart can
+   * always move. The interface pass, 2026-11-11: each cart bears its own load (ears, from its size and
+   * quality), where every cart once slowed on one line from its first kilo; a cart that names none still does.
+   */
+  static towSpeedModifier(cartWeightKg: number, bearsKg = 0): number {
+    return Math.max(0.4, 0.75 - Math.max(0, cartWeightKg - bearsKg) / 400);
   }
 
   /** 10C.1: the SHOULDER piece is themed per genre — the same slot, a different coat. */

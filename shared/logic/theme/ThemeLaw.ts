@@ -171,6 +171,8 @@ export class ThemeLaw {
       if (!claim(g.key)) return no(`gear "${g.key}" needs its own plain key.`);
       if (!has(RANKS, g.rank)) return no(`${g.key}: "${g.rank}" is not a rank.`);
       if (!has(GEAR_KINDS, g.kind)) return no(`${g.key}: "${g.kind}" is not a kind of gear, so no slot would take it.`);
+      // The interface pass: a size word is the creatures' own, or none (a pack written before names none)
+      if (g.size !== undefined && !has(SIZES, g.size)) return no(`${g.key}: "${g.size}" is not a size. A size is one of ${SIZES.join(', ')}.`);
       if (g.carries && !abilityKeys.has(g.carries)) return no(`${g.key} carries "${g.carries}", which this pack never defines.`);
       if (wayOut.has(g.carries)) return no(`${g.key} carries "${g.carries}", and a trigger would open a way out for nothing.`);
       if (g.carries && !(TRIGGERS as readonly string[]).includes(g.trigger)) return no(`${g.key} fires on "${g.trigger}", and nothing in the game fires on that.`);

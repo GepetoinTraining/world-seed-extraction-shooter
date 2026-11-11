@@ -11,10 +11,13 @@
  * security-affix family (locks, wards, alarms) for 10E's banks to grow into.
  */
 
-import { IItem } from '../../../shared/types';
+import { IItem, ItemType } from '../../../shared/types';
 import { ICartState, ICartTheft } from '../../../shared/entities/world/types';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
 import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { cartFolded, cartNumbers } from '../../../shared/logic/theme/ThemeFormula';
+import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 
 const OK: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
@@ -23,7 +26,8 @@ export class CartSystem {
 
   /** Unfold a packed cart kit into a world cart under its owner's name. */
   static newCart(kitItem: IItem, ownerId: string, ownerName: string): ICartState {
-    const grid = kitItem.cartData ?? { gridW: 10, gridH: 8 };
+    // A kit with no bed of its own (one minted before) reads the formula's default, the first world's 10 by 8
+    const grid = kitItem.cartData ?? cartNumbers({});
     const security = this.securityOf(kitItem);
     return {
       cartItemId: kitItem.id,
@@ -37,7 +41,53 @@ export class CartSystem {
       // 10E (D16's addendum): the kit's security affixes stand on the unfolded cart
       ...(security.lockLevel > 0 || security.alarm
         ? { security: { ...security, by: kitItem.affixes.map(a => a.name).join(', ') } }
-        : {})
+        : {}),
+      // The interface pass: what it is, weighs and bears, and the kit itself, so it folds back the same
+      ...(grid.size !== undefined ? { size: grid.size } : {}),
+      ...(grid.weight !== undefined ? { weight: grid.weight } : {}),
+      ...(grid.bears !== undefined ? { bears: grid.bears } : {}),
+      kit: kitItem
+    };
+  }
+
+  /**
+   * Fold a cart back into its kit: the very piece that was unfolded, its name, rank, quality and
+   * affixes with it, so unfolding it again gives the same cart (the interface pass; the fold once wrote
+   * a weight and a footprint by hand and dropped the rest). A cart saved before it kept its kit is
+   * rebuilt from what the cart still says, as it always was.
+   */
+  static fold(cart: ICartState): IItem {
+    if (cart.kit) return { ...cart.kit, id: cart.cartItemId };
+    const folded = cartFolded(cart.size);
+    return {
+      ...ItemFactory.createResourceItem({
+        id: 'cart_field_t1', name: 'Field Cart (Packed)', weight: cart.weight ?? 15,
+        dimensions: folded, tags: ['cart', 'heavy']
+      } as never, Rng.fromKey(`cartfold:${cart.cartItemId}`)),
+      id: cart.cartItemId,
+      type: ItemType.GEAR,
+      cartData: { gridW: cart.gridW, gridH: cart.gridH, ...(cart.size ? { size: cart.size } : {}), ...(cart.weight !== undefined ? { weight: cart.weight } : {}), ...(cart.bears !== undefined ? { bears: cart.bears } : {}) }
+    };
+  }
+
+  /** This cart's tow pace: what is aboard, against what this cart bears. */
+  static towOf(cart: ICartState): number {
+    return LoadoutSystem.towSpeedModifier(this.cartWeight(cart), cart.bears ?? 0);
+  }
+
+  /** What the cart's window says of it, in words: the bed, its weight and load, the lock, the alarm. */
+  static describe(cart: ICartState): { bed: string; weight: string; bears: string; lock: string; alarm: string } {
+    const lock = cart.security?.lockLevel ?? 0;
+    return {
+      bed: `${cart.size ? `a ${cart.size.toLowerCase()} cart, ` : ''}its bed ${cart.gridW} by ${cart.gridH}`,
+      weight: cart.weight !== undefined ? `weighs ${cart.weight} kg folded` : 'its own weight unknown, from before carts were weighed',
+      bears: (cart.bears ?? 0) > 0 ? `bears ${cart.bears} kg aboard before the tow slows` : 'slows the tow from the first kilo aboard',
+      lock: lock > 0
+        ? `LOCK, level ${lock}: another hand spends ${this.towBreakSeconds(lock)}s breaking it before the bar gives`
+        : 'NO LOCK: any hand may take the bar at once',
+      alarm: cart.security?.alarm
+        ? 'ALARM: it shrieks across the field when another hand takes the bar'
+        : 'NO ALARM: a theft is silent, though always signed'
     };
   }
 

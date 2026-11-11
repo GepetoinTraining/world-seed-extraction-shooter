@@ -19,7 +19,8 @@ export interface ItemDefinition {
   // Wave 10C (additive): the belt-and-pouch law and the cart
   pouch?: { accepts: string[]; capacity: number };   // D17: what it stacks, and how much
   belt?: { pouchSlots: number };                     // D17: slots the belt opens
-  cart?: { gridW: number; gridH: number };           // D16: the bed a packed cart unfolds to
+  /** D16: the bed a packed cart unfolds to; the interface pass: its size word, own weight and the load it bears (ThemeFormula.cartNumbers). */
+  cart?: { gridW: number; gridH: number; size?: string; weight?: number; bears?: number };
   /** Layer 3: an ability this base carries, and when it fires. */
   carries?: { ability: string; trigger: string };
 }

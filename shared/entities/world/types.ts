@@ -46,6 +46,12 @@ export interface ICartState {
   theftLog: ICartTheft[];
   /** 10E (D16's addendum): security affixes from the kit, captured at unfold. */
   security?: { lockLevel: number; alarm: boolean; by: string };
+  /** The interface pass, 2026-11-11: what the cart is (its size word), weighs, and bears before the tow slows. */
+  size?: string;
+  weight?: number;
+  bears?: number;
+  /** The kit as it was unfolded, so folding it back gives the same cart. A cart saved before has none. */
+  kit?: import('../../types').IItem;
 }
 
 // NEW: The Intel Levels
