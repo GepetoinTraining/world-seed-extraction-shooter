@@ -670,7 +670,7 @@ the magic unlock       whether any affix, any creature trait or any dream exists
 
 ## 11. What Pedro has ruled for the run
 
-Two rulings, 2026-11-11, given on reading this document. His words are quoted whole. What follows each is what the code has today, and where a reading of his words is mine it says so.
+Three rulings, 2026-11-11, given on reading this document. His words are quoted whole. What follows each is what the code has today, and where a reading of his words is mine it says so.
 
 ### The first tier above normal is "magical"
 
@@ -691,7 +691,40 @@ what he said                                   what the code has today
 └─ magic is the name for the first tier        the first tier above COMMON is named UNCOMMON
 ```
 
-My reading, not confirmed: magical is the name of the first tier above normal, the one the code calls uncommon, and the name is earned by the fiction (technology nobody understands yet). His first list ran "uncommon magical rare epic", which can also be read as a tier of its own between uncommon and rare. The two readings differ by one step on the ladder.
+I had read magical as a new name for uncommon. He corrected that the same day: it is a tier of its own.
+
+> "uncommon is technological with 1 stat (prefix or suffix), then magical 2 stats (one suffix one affix), rare 4 epic 6. the ranks are tiers"
+
+| Tier | Affixes today | Affixes as ruled |
+|---|---|---|
+| common | none | none: this is "normal" |
+| uncommon | one, prefix or suffix | one, prefix or suffix. Technological. |
+| magical | the tier does not exist | two: one prefix and one suffix |
+| rare | 1 + 1 | four |
+| epic | 2 + 2 | six |
+| legendary | 3 + 3 | not said |
+| artifact | no rule; set by hand | not said |
+
+So the counts the code gives rare, epic and legendary today move down one step to magical, rare and epic.
+
+Readings that are mine: "one suffix one affix" is one suffix and one prefix; four is two and two, six is three and three; and the counts are of affixes, though he says "stats" (six of the nineteen shipped affixes give two stats each).
+
+Not said: the odds of each tier, what each does to a piece's power, and what legendary and artifact carry.
+
+**"the ranks are tiers".** My reading: an affix's tier is the rank of the piece it sits on, F to SSS, and there is no second tier ladder. Today the code has two, and they do not meet:
+
+```
+an affix's size today
+├─ its bank tier       a number the theme's writer chose for that affix; the banked range grows x 1.5 for each tier above 1
+│                      17 of the 19 shipped affixes are tier 1, 2 are tier 2                         ThemeFormula.affixRange, ThemeLaw
+├─ the piece's rank    the roll x RANK_MULTIPLIERS: 1, 1.2, 1.5, 2, 3, 5, 8, 13, 21                   ItemFactory.generateAffixes
+├─ nothing matches the two: any affix the piece's tags allow can land on any rank, a tier-2 one on a rank-F piece
+└─ what is written on the piece is always tier 1
+```
+
+Side by side, a tier that grew x 1.5 a rank would run 1, 1.5, 2.25, 3.4, 5.1, 7.6, 11.4, 17.1, 25.6 from F to SSS, against the rank multiplier's 1, 1.2, 1.5, 2, 3, 5, 8, 13, 21.
+
+The other way to read the sentence is that each of uncommon, magical, rare and epic is a tier of its own, which the table above already holds.
 
 ### A same-rank fight is jokenpo
 
