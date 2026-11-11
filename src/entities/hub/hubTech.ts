@@ -28,7 +28,7 @@ import { ChainWeb, IChainGround, IChainMaterial, IChainRoute, IChainRound, IChai
 import { stationNumbers } from '../../../shared/logic/theme/ThemeFormula';
 import { RANKS, ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
 import { IProfession } from '../../logic/systems/Profession';
-import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { WebBank } from '../../../shared/logic/content/WebBank';
 import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
@@ -139,6 +139,18 @@ export function groundOf(pack: IWebPack = WebBank.current()): IChainGround {
     stations: pack.stations.map(s => ({ key: s.id, name: s.name, tool: s.connection.tool, material: s.connection.material })),
     tools: [...new Set(pack.tools.map(t => t.tag))]
   };
+}
+
+let groundRead: { pack: IWebPack; ground: IChainGround } | null = null;
+
+/**
+ * The hub's web as study reads it (S1a, Pedro, 2026-11-11: "this is a function of hubs"). Nothing when its
+ * chains answer no concept yet, so a hub that has written nothing costs no read of the ground.
+ */
+export function hubTreeOf(tech: Pick<IHubTech, 'chain'> | undefined, pack: IWebPack = WebBank.current()): IHubTree | undefined {
+  if (!tech?.chain.goods.some(g => g.answers)) return undefined;
+  if (groundRead?.pack !== pack) groundRead = { pack, ground: groundOf(pack) };
+  return { chain: tech.chain, ground: groundRead.ground };
 }
 
 // ---------------------------------------------------------------------------

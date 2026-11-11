@@ -15,6 +15,7 @@ import type { IItem } from '../../../shared/types';
 import type { IRoomState, RoomVerdict } from '../../../shared/entities/hub/room';
 import type { IDismemberment, IRaisedChunk, HubSide } from './hubManifest';
 import type { IFarmland } from './farm';
+import type { IHubTech } from './hubTech';
 import type { IGuildState } from './guild';
 import type { ICraftsman } from '../../logic/systems/ApprenticeRoad';
 import type { INeedFill } from '../../logic/systems/NpcAgenda';
@@ -53,6 +54,8 @@ export interface IHubView {
   farmland: IFarmland;
   lots: IPlayerLot[];
   rooms: Record<string, IRoomState>;
+  /** What the hub's chains have written: a sitting's tree is read from it (S1a). */
+  tech?: Pick<IHubTech, 'chain'>;
   craftsmen: ICraftsman[];
   guild: IGuildState;
   wallets: Record<string, number>;

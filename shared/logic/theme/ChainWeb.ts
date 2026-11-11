@@ -364,6 +364,55 @@ export const ChainWeb = {
     return routes[0] ?? null;
   },
 
+  /**
+   * A thing's tree in this web. Pedro, 2026-11-11, on what a tree of the tech web is: "this is a function of hubs,
+   * there's a check we ran with haiku where I posited fireball could be a skill acquired by going tech and magic,
+   * and it's the same thing, and they would connect". So: from whatever `isSeed` picks, up through everything that
+   * asks for it to every concept it sits under; then down from each concept through every way to it and all that
+   * way asks for. Two roads to one concept are one tree. Null when no concept stands above any seed: the web says
+   * nothing of the thing. The tags are every tag on the tree, once each, in the order the web holds them.
+   */
+  treeAround(chain: IChainWeb, ground: IChainGround, isSeed: (key: string, tags: string[]) => boolean): { concepts: string[]; keys: string[]; tags: string[] } | null {
+    const asks = new Map<string, Set<string>>();
+    const tagsOf = new Map<string, string[]>();
+    const ask = (key: string, ...needs: (string | undefined)[]) => {
+      const set = asks.get(key) ?? new Set<string>();
+      for (const need of needs) if (need) set.add(need);
+      asks.set(key, set);
+    };
+    const tag = (key: string, tags: string[]) => tagsOf.set(key, [...(tagsOf.get(key) ?? []), ...tags]);
+    const servers = (tools: string[]) => chain.gear.filter(g => g.tags.some(t => t !== 'tool' && tools.includes(t))).map(g => g.key);
+
+    for (const g of chain.goods) {
+      ask(g.key, ...g.from.map(l => l.key), g.station || undefined);
+      tag(g.key, g.tags);
+      if (g.answers) ask(g.answers, g.key);
+    }
+    for (const g of chain.gear) { ask(g.key, ...g.from.map(l => l.key)); tag(g.key, [...g.tags, ...g.works]); }
+    for (const m of chain.materials) tag(m.key, m.tags);
+    for (const s of [...ground.stations, ...chain.stations]) { ask(s.key, ...servers(s.tool)); tag(s.key, [...s.tool, ...s.material]); }
+    for (const t of ground.things) {
+      for (const m of t.makers ?? []) ask(t.key, ...m.from.map(l => l.key), m.station);
+      tag(t.key, t.tags);
+    }
+
+    const concepts = conceptsOf(chain);
+    const usedBy = new Map<string, string[]>();
+    for (const [key, needs] of asks) for (const need of needs) usedBy.set(need, [...(usedBy.get(need) ?? []), key]);
+
+    const walk = (from: string[], next: (key: string) => Iterable<string>): Set<string> => {
+      const seen = new Set<string>(from);
+      const queue = [...from];
+      while (queue.length > 0) for (const k of next(queue.shift()!)) if (!seen.has(k)) { seen.add(k); queue.push(k); }
+      return seen;
+    };
+    const seeds = [...new Set([...tagsOf.keys(), ...asks.keys()])].filter(key => isSeed(key, tagsOf.get(key) ?? []));
+    const above = [...walk(seeds, key => usedBy.get(key) ?? [])].filter(key => concepts.has(key)).sort();
+    if (above.length === 0) return null;
+    const keys = [...walk(above, key => asks.get(key) ?? [])].sort();
+    return { concepts: above, keys, tags: [...new Set(keys.flatMap(key => tagsOf.get(key) ?? []))] };
+  },
+
   /** Every key and concept and tool word a round puts on the table. */
   answered(round: IChainRound): string[] {
     return [

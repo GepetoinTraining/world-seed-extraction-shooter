@@ -22,6 +22,7 @@ import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { Bar, Button, Input } from './ui/kit';
 import { useWaits } from './ui/stores';
 import { hubPort } from '../entities/hub/store';
+import { hubTreeOf } from '../entities/hub/hubTech';
 
 /** How far the eye reaches in the field: the inspect card's own reach. */
 const FIELD_REACH_PX = 220;
@@ -74,7 +75,7 @@ export const StudyPanel: React.FC = () => {
   }, [session && Math.round(session.position.x / 20), session && Math.round(session.position.z / 20), map, near]);
 
   const sitting = waits.some(w => w.id === 'study_sitting');
-  const ask = StudySystem.studyAsk(player, here[0]);
+  const ask = StudySystem.studyAsk(player, here[0], hubTreeOf(hubPort.view().tech));
   const topics = LoreSystem.topicsOf(player).slice(0, TOPICS_SHOWN);
   const waiting = RestSystem.queueOf(player).sittings.length;
 

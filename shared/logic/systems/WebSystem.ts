@@ -33,6 +33,13 @@ import { TagLaw } from '../content/TagLaw';
 import { WebBank } from '../content/WebBank';
 import { ProcessFamily, ProcessSystem } from './ProcessSystem';
 import { climb } from './StatSystem';
+import { ChainWeb, IChainGround, IChainWeb } from '../theme/ChainWeb';
+
+/** A hub's web, handed over by whoever has the hub: what its chains have written, and the ground they stand on. */
+export interface IHubTree {
+  chain: IChainWeb;
+  ground: IChainGround;
+}
 
 // ---------------------------------------------------------------------------
 // TUNABLE, and Wave 12's to balance. Structure numbers that never render.
@@ -333,17 +340,30 @@ export class WebSystem {
   }
 
   /**
-   * How much of a thing's tree these hands know. Pedro, 2026-11-11: "we need to make study cost less
-   * for the more someone knows about a tree of the tech web". The tree is the worked thing, the web's
-   * own two worked kinds: the family it is of and the materials it is made of. A held skill is in it
-   * when it works any of those, counts once for each it shares (a nearer branch counts for more), and
-   * counts its level and its rung. Nothing worked, no tree: nought.
+   * What a thing's tree works: the worked tags on it. Pedro, 2026-11-11: "this is a function of hubs". The least
+   * tree is the thing's own family and materials. A hub's web widens it to every concept the thing sits under,
+   * every way to each, and all each way asks for (ChainWeb.treeAround), so two roads to one concept are one tree.
+   * The thing sits on the web where the web names it by key, or names something made of all it is made of.
    */
-  static treeKnowledge(skills: Skills, tags: string[], pack: IWebPack = current()): number {
-    const tree = this.materialIdentity(tags ?? [], pack);
+  static treeTags(tags: string[], hub?: IHubTree, keys: string[] = [], pack: IWebPack = current()): string[] {
+    const own = this.materialIdentity(tags ?? [], pack);
+    if (!hub) return own;
+    const around = ChainWeb.treeAround(hub.chain, hub.ground, (key, nodeTags) =>
+      keys.includes(key) || (own.length > 0 && own.every(t => nodeTags.includes(t))));
+    return around ? TagLaw.canonical([...own, ...this.materialIdentity(around.tags, pack)]) : own;
+  }
+
+  /**
+   * How much of a thing's tree these hands know. Pedro, 2026-11-11: "we need to make study cost less
+   * for the more someone knows about a tree of the tech web". A held skill counts where it works
+   * something on the tree, once for each worked tag it shares with it, by its level and its rung. A
+   * skill still forming counts nothing: "they don't do anything yet". Nothing worked, no tree: nought.
+   */
+  static treeKnowledge(skills: Skills, tags: string[], hub?: IHubTree, keys: string[] = [], pack: IWebPack = current()): number {
+    const tree = this.treeTags(tags, hub, keys, pack);
     if (tree.length === 0) return 0;
     return this.heldSkills(skills).reduce((sum, skill) => {
-      const shared = skill.tags.filter(t => tree.includes(t)).length;
+      const shared = this.materialIdentity(skill.tags, pack).filter(t => tree.includes(t)).length;
       return shared === 0 ? sum : sum + shared * (skill.level + this.masteryOf(skill).rung);
     }, 0);
   }

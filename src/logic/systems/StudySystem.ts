@@ -30,7 +30,7 @@ import { ProgressionSystem } from '../../../shared/entities/player/systems/Progr
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
-import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { DAY_MS } from '../../../shared/logic/time/RadixClock';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
@@ -247,13 +247,16 @@ export class StudySystem {
    * D32's rule holds: what a sitting asks is the person's, never the thing's rank or worth, so its price
    * tells nothing. Pedro, 2026-11-11: study costs less "for the more someone knows about a tree of the
    * tech web", so the ask falls with what this person holds of the tree the shown tags belong to. An
-   * unread piece shows no tags, so it pays whole and still gives nothing away.
+   * unread piece shows no tags, so it pays whole and still gives nothing away. And of the tree: "this is
+   * a function of hubs", so whoever has the hub hands its web over (`hubTreeOf`). A piece in hand is placed
+   * on it by what it is, and a thing in front of the person by what the web calls it; nothing else is.
    */
-  static studyAsk(player: IPlayer, target: IStudyTarget): { cost: number; seconds: number } {
+  static studyAsk(player: IPlayer, target: IStudyTarget, hub?: IHubTree): { cost: number; seconds: number } {
     const item = target.kind === 'item' && !target.hidden ? this.heldItem(player, target.ref) : undefined;
     const scope = item ? this.identifyScopeOf(item) : null;
     const level = scope ? player.bank.universalSkills[this.scopeSkillId(scope)]?.level ?? 0 : this.bestEye(player);
-    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? []);
+    const keys = item ? [item.universalDefinitionId] : target.kind === 'thing' ? [target.ref] : [];
+    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? [], hub, keys);
     return this.askAt(player, level, WebSystem.treeShare(tree));
   }
 
@@ -263,12 +266,12 @@ export class StudySystem {
   }
 
   /** Always available, for energy. Only a person at rest, or something lost to them for now, is refused. */
-  static canStudy(player: IPlayer, target: IStudyTarget, now = Date.now()): Verdict {
+  static canStudy(player: IPlayer, target: IStudyTarget, now = Date.now(), hub?: IHubTree): Verdict {
     if (player.rest && now < player.rest.until) return no('This character is at rest.');
     if (!target.name.trim()) return no('Study what? Name it.');
     const lost = this.markOf(player, target).lostUntilDay;
     if (lost !== undefined && this.dayOf(now) < lost) return no(`${target.name} will not sit for you. Not yet.`);
-    const { cost } = this.studyAsk(player, target);
+    const { cost } = this.studyAsk(player, target, hub);
     const left = this.energyLeft(player);
     if (left < cost) return no(`Refused: needs ${cost} energy, you hold ${Math.floor(left)}. Rest first.`);
     return ok;

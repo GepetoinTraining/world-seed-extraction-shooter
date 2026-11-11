@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { EquipSlotId, IActiveSession, IAttributes, IItem, ItemType, SlotType } from '../../shared/types';
 import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useHubStore, hubPort } from '../entities/hub/store';
+import { hubTreeOf } from '../entities/hub/hubTech';
 import { useWorldStore, worldPort } from '../entities/world/store';
 import { FieldCapture } from '../logic/systems/FieldCapture';
 import { Escort } from '../logic/systems/Escort';
@@ -204,7 +205,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
             {/* D118: for energy, and it can go badly. A finished product asks for a workstation for it; anything unread asks for none, in town, so it tells nothing. */}
             {StudyDoor.offered(selectedItem, playerPort, hubPort) && (
               <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(selectedItem), playerPort, hubPort)}>
-                STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem)).seconds}s
+                STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem), hubTreeOf(useHubStore.getState().tech)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(selectedItem), hubTreeOf(useHubStore.getState().tech)).seconds}s
               </Button>
             )}
             {read && selectedItem.type === ItemType.LORE && selectedItem.description && (
@@ -295,7 +296,7 @@ const VaultPanels: React.FC = () => {
             )}
             {StudyDoor.offered(piece, playerPort, hubPort) && (
               <Button tone="quiet" disabled={waits.some(w => w.id === 'study_sitting')} onClick={() => StudyDoor.start(StudySystem.targetOfItem(piece), playerPort, hubPort)}>
-                STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece)).seconds}s
+                STUDY · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece), hubTreeOf(useHubStore.getState().tech)).cost} energy · {StudySystem.studyAsk(player, StudySystem.targetOfItem(piece), hubTreeOf(useHubStore.getState().tech)).seconds}s
               </Button>
             )}
             <Button

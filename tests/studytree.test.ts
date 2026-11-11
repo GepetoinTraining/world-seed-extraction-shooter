@@ -18,6 +18,8 @@ import { describe, it, expect } from 'vitest';
 import { IPlayer, ISkillState, ItemType, Rarity, SlotType, IItem, UniversalRank } from '../shared/types';
 import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { IDENTIFY_BASE_SECONDS, IDENTIFY_ENERGY, IDENTIFY_FLOOR_SECONDS, StudySystem } from '../src/logic/systems/StudySystem';
+import { ChainWeb, IChainGround, IChainRound, emptyChain } from '../shared/logic/theme/ChainWeb';
+import { emptyTech, hubTreeOf } from '../src/entities/hub/hubTech';
 
 /** A skill held, worked up by this much experience. */
 const known = (tool: string[] | null, worked: string[], xp = 0): ISkillState => {
@@ -144,5 +146,103 @@ describe('a sitting costs less the more its student knows of that tree (Pedro, 2
     expect(ask(student(...skills))).toEqual(once);
     expect(ask(student(...[...skills].reverse()))).toEqual(once);
     expect(knowledge(student(...[...skills].reverse()))).toBe(knowledge(student(...skills)));
+  });
+});
+
+/**
+ * S1a, RULED. Pedro, 2026-11-11: "this is a function of hubs, there's a check we ran with haiku where I
+ * posited fireball could be a skill acquired by going tech and magic, and it's the same thing, and they
+ * would connect... you can try and find it". Then: "Yes, rebuild it". The check is C5's trial, four ways
+ * to one fireball (D125, ChainWeb.ts): a hub's web is written backwards from a concept, and two roads to
+ * one concept are one tree. So a thing's tree is the hub's web around it: every concept it sits under,
+ * every way to each, and everything each way asks for. Its own family and materials stay as the least tree.
+ */
+describe('the tree is the hub\'s web: two roads to one concept are one tree (S1a, ruled)', () => {
+  const good = (key: string, tags: string[], station: string, from: string[], answers: string): IChainRound['goods'][number] => ({
+    key, name: key, blurb: 'x', tags, rank: 'E', weight: 'light', trade: 'smithing', station, from: from.map(k => ({ key: k, count: 1 })), makes: 1, answers
+  });
+  const station = (key: string, tool: string[], material: string[]): IChainRound['stations'][number] => ({ key, name: key, blurb: 'x', tool, material, bill: [] });
+  const round = (over: Partial<IChainRound>): IChainRound => ({ tags: [], materials: [], stations: [], goods: [], gear: [], ...over });
+
+  const GROUND: IChainGround = {
+    things: [
+      { key: 'palm', name: 'Palm', tags: ['flora', 'wood'], rank: 'F' },
+      { key: 'flint', name: 'Flint', tags: ['mineral', 'stone'], rank: 'F' },
+      { key: 'sand_heap', name: 'Sand', tags: ['mineral', 'sand'], rank: 'F' }
+    ],
+    stations: [],
+    tools: ['sickle', 'blunt', 'tongs']
+  };
+  /** Magic and tech to one fireball: a plant that spits it, and a tube that fires it. A lamp answers something else. */
+  const FIREBALL = ChainWeb.merge(emptyChain(), round({
+    stations: [station('glasshouse', ['sickle'], ['flora']), station('tube_shop', ['blunt'], ['metal']), station('glass_shop', ['tongs'], ['glass'])],
+    goods: [
+      good('spit_plant', ['flora'], 'glasshouse', ['palm'], 'fireball'),
+      good('tube', ['metal'], 'tube_shop', ['flint'], 'fireball'),
+      good('lamp', ['glass'], 'glass_shop', ['sand_heap'], 'light')
+    ]
+  }));
+  const hub = { chain: FIREBALL, ground: GROUND };
+
+  const plant = StudySystem.targetOfThing({ id: 'spit_plant', name: 'A fire-spitting plant', tags: ['flora'] });
+  const lamp = StudySystem.targetOfThing({ id: 'lamp', name: 'A lamp', tags: ['glass'] });
+  const reedOffChain = StudySystem.targetOfThing({ id: 'reed', name: 'A reed', tags: ['flora', 'fiber'] });
+
+  /** On the tube road only: works the tube shop's metal, and nothing of the plant's own. */
+  const smith = student(known(['blunt'], ['metal'], 4000));
+  const asks = (who: IPlayer, target: ReturnType<typeof StudySystem.targetOfThing>, h?: typeof hub) => StudySystem.studyAsk(who, target, h);
+
+  it('holding skills on one way to a concept lowers the ask on another way to it', () => {
+    expect(asks(smith, plant)).toEqual(asks(newcomer, plant));
+    expect(asks(smith, plant, hub).cost).toBeLessThan(asks(smith, plant).cost);
+    expect(asks(smith, plant, hub).seconds).toBeLessThan(asks(smith, plant).seconds);
+  });
+
+  it('a thing under a different concept is not helped', () => {
+    expect(WebSystem.treeKnowledge(smith.bank.universalSkills, lamp.tags, hub, [lamp.ref])).toBe(0);
+    expect(asks(smith, lamp, hub)).toEqual(asks(newcomer, lamp, hub));
+  });
+
+  it('a hub\'s web that says nothing of the thing gives exactly what the least tree gives', () => {
+    const someone = student(known(null, ['flora', 'fiber'], 4000), known(['blunt'], ['metal'], 4000));
+    expect(WebSystem.treeKnowledge(someone.bank.universalSkills, reedOffChain.tags, hub, [reedOffChain.ref])).toBe(WebSystem.treeKnowledge(someone.bank.universalSkills, reedOffChain.tags));
+    expect(asks(someone, reedOffChain, hub)).toEqual(asks(someone, reedOffChain));
+  });
+
+  it('with no hub web at all nothing breaks, and a newcomer still pays today\'s price', () => {
+    const bare = { chain: emptyChain(), ground: GROUND };
+    expect(asks(newcomer, plant, bare)).toEqual({ cost: Math.ceil(IDENTIFY_ENERGY * 1.5), seconds: IDENTIFY_BASE_SECONDS });
+    expect(asks(smith, plant, bare)).toEqual(asks(smith, plant));
+    expect(asks(newcomer, plant, hub)).toEqual(asks(newcomer, plant));
+    // A hub that has written nothing hands over nothing to read
+    expect(hubTreeOf(undefined)).toBeUndefined();
+    expect(hubTreeOf(emptyTech())).toBeUndefined();
+    expect(hubTreeOf({ chain: FIREBALL })?.chain).toBe(FIREBALL);
+  });
+
+  it('a need met by any way does not count the same skill twice for being on two ways', () => {
+    const twoTubes = ChainWeb.merge(FIREBALL, round({ goods: [good('cannon', ['metal'], 'tube_shop', ['flint'], 'fireball')] }));
+    const once = WebSystem.treeKnowledge(smith.bank.universalSkills, plant.tags, hub, [plant.ref]);
+    expect(once).toBeGreaterThan(0);
+    expect(WebSystem.treeKnowledge(smith.bank.universalSkills, plant.tags, { chain: twoTubes, ground: GROUND }, [plant.ref])).toBe(once);
+  });
+
+  it('a held piece is placed on the web by what it is, and an unread one still pays whole (D32)', () => {
+    const piece = (isIdentified: boolean): IItem => ({
+      id: `itm_${isIdentified}`, universalDefinitionId: 'spit_plant', name: 'Pod', description: '', type: ItemType.RESOURCE,
+      rank: UniversalRank.F, rarity: Rarity.COMMON, quality: 0.5, level: 1, value: 10, itemPower: 1, tags: [],
+      affixes: [], dimensions: { width: 1, height: 1 }, weight: 1, stats: {}, visuals: { modelId: 'm', colorHex: '#000' }, icon: 'i', isIdentified
+    } as IItem);
+    const holding = (item: IItem): IPlayer => ({ ...smith, bank: { ...smith.bank, stashTabs: [{ name: 'tab', items: [item] }] } } as IPlayer);
+    const read = piece(true);
+    const unread = piece(false);
+    expect(StudySystem.studyAsk(holding(read), StudySystem.targetOfItem(read), hub).cost).toBeLessThan(StudySystem.studyAsk(holding(read), StudySystem.targetOfItem(read)).cost);
+    expect(StudySystem.studyAsk(holding(unread), StudySystem.targetOfItem(unread), hub)).toEqual(StudySystem.studyAsk(holding(unread), StudySystem.targetOfItem(unread)));
+  });
+
+  it('the same inputs give the same cost, in any order the web was written', () => {
+    const shuffled = { ...FIREBALL, goods: [...FIREBALL.goods].reverse(), stations: [...FIREBALL.stations].reverse() };
+    expect(asks(smith, plant, hub)).toEqual(asks(smith, plant, hub));
+    expect(asks(smith, plant, { chain: shuffled, ground: GROUND })).toEqual(asks(smith, plant, hub));
   });
 });
