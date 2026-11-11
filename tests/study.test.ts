@@ -479,9 +479,8 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
     const person = StudySystem.targetOfPerson({ id: 'npc_vex', name: 'Vex', title: 'The Guild' });
     await sit('major_failure', person);
     expect(StudySystem.canStudy(player(), person).ok).toBe(false);
-    const day = player().dayCount ?? 0;
-    set(p => ({ ...p, dayCount: day + 365 }));
-    expect(StudySystem.canStudy(player(), person).ok).toBe(true);
+    // 2026-11-10: the days are the clock's, never a character's rests (Pedro: "server clock is the clock")
+    expect(StudySystem.canStudy(player(), person, Date.now() + 365 * 86_400_000).ok).toBe(true);
   });
 
   // Q27 (2026-11-04): an unread piece is read only through the eye for its kind, so the eye is had first here

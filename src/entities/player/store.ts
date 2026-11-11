@@ -20,7 +20,7 @@ import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { ItemType, Rarity } from '../../../shared/types';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
-import { StashGrid, StashSortKey } from './systems/StashGrid';
+import { STASH_COLS, StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
@@ -1788,22 +1788,43 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   learnName: (person) => set(s => ({ player: ContactNames.learnName(s.player, person) })),
 
-  /** Rotate an item in the grid, if the turned footprint fits. */
+  /**
+   * Turn a piece: in the pack, or in the vault when that is where it is. It turns where it lies when
+   * the turned shape fits, and otherwise moves to the nearest place it does; with no room anywhere
+   * the feed says so (Pedro, of his own run: "rotate needs to be fixed").
+   */
   rotateItem: (itemId) => {
     const session = get().player.currentSession;
-    if (!session) return;
-    const layout = session.inventoryLayout || {};
-    const turned = InventorySystem.tryRotate(session.inventory, layout, itemId);
-    if (!turned) {
-      console.log('[CARRY] No room to rotate that here.');
+    const carried = session?.inventory.find(i => i.id === itemId);
+    if (session && carried) {
+      const turned = InventorySystem.tryRotate(session.inventory, session.inventoryLayout || {}, itemId);
+      if (!turned) {
+        feed(`There is no room in the pack to turn ${shown(carried)}. Clear a space beside it, or drag it and press R.`, 'loss');
+        return;
+      }
+      set(s => s.player.currentSession ? ({
+        player: { ...s.player, currentSession: {
+          ...s.player.currentSession,
+          inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), [itemId]: turned }
+        } }
+      }) : s);
       return;
     }
-    set(s => s.player.currentSession ? ({
-      player: { ...s.player, currentSession: {
-        ...s.player.currentSession,
-        inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), [itemId]: turned }
-      } }
-    }) : s);
+    const tab = get().player.bank.stashTabs[0];
+    const stored = tab?.items.find(i => i.id === itemId);
+    if (!tab || !stored) return;
+    // The vault grows downward, so there is always room under what it holds
+    const layout = StashGrid.resolve(tab.items, tab.layout);
+    const rows = StashGrid.rows(tab.items, layout) + Math.max(stored.dimensions?.width ?? 1, stored.dimensions?.height ?? 1);
+    const turned = InventorySystem.tryRotate(tab.items, layout, itemId, STASH_COLS, rows, (w, h, x, y) => StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y));
+    if (!turned) {
+      feed(`${shown(stored)} is too long to lie that way in the vault.`, 'loss');
+      return;
+    }
+    layout[itemId] = turned;
+    set(s => ({
+      player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, idx) => idx === 0 ? { ...t, layout } : t) } }
+    }));
   },
 
   performInteraction: (interactionId, targetId) => {
@@ -1951,6 +1972,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       if (pair) get().workOn(pair, rankIndexOf(def.rank), Math.ceil(10 * quantity * 0.5), effort.winging);
+      // What has been worked is known by its name from then on, whatever became of what it gave
+      set(s => ({ player: WebSystem.named(s.player, def.id) }));
       // Layer 4: what is gathered gives up its element, from its own world's elements
       const elements = [...new Set(ContentRegistry.get(def.themeId)?.abilities.flatMap(a => a.elements) ?? [])];
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));

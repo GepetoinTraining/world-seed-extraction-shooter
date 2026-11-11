@@ -118,17 +118,32 @@ export class InventorySystem {
     return layout;
   }
 
-  /** Try rotating an item in place. Returns the new placement or null. */
-  static tryRotate(items: IItem[], layout: Layout, itemId: string): IGridPlacement | null {
+  /**
+   * Turn an item: where it lies when the turned shape fits there, and otherwise at the nearest
+   * place it does fit. Found by Pedro in his own run ("rotate needs to be fixed"): a pack is filled
+   * first-fit, so a piece nearly always has a neighbour where its turned shape would lie, and a turn
+   * that only ever tried in place did nothing, with nothing said. Null when the grid has no room for
+   * it turned anywhere. `fits` lets a grid with its own geometry (the vault) answer for itself.
+   */
+  static tryRotate(
+    items: IItem[], layout: Layout, itemId: string, gridW = GRID_W, gridH = GRID_H,
+    fits?: (w: number, h: number, x: number, y: number) => boolean
+  ): IGridPlacement | null {
     const item = items.find(i => i.id === itemId);
     const place = layout[itemId];
     if (!item || !place) return null;
-    const occ = this.buildOccupancy(items, layout);
     const { w, h } = this.footprint(item, !place.rotated);
-    if (this.canPlaceAt(occ, w, h, place.x, place.y, itemId)) {
-      return { ...place, rotated: !place.rotated };
+    const occ = fits ? null : this.buildOccupancy(items, layout, gridW, gridH);
+    const free = fits ?? ((fw: number, fh: number, x: number, y: number) => this.canPlaceAt(occ!, fw, fh, x, y, itemId));
+    let best: IGridPlacement | null = null;
+    let bestFar = Infinity;
+    for (let y = 0; y <= gridH - h; y++) {
+      for (let x = 0; x <= gridW - w; x++) {
+        const far = Math.abs(x - place.x) + Math.abs(y - place.y);
+        if (far < bestFar && free(w, h, x, y)) { best = { x, y, rotated: !place.rotated }; bestFar = far; }
+      }
     }
-    return null;
+    return best;
   }
 
   static usedCells(items: IItem[], layout: Layout): number {

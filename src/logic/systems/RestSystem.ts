@@ -185,7 +185,7 @@ export class RestSystem {
   }
 
   // -----------------------------------------------------------------------
-  // SLEEPING: chosen. The day turns over (D51).
+  // SLEEPING: chosen. The energy of a day comes back (D51). The day itself is the clock's.
   // -----------------------------------------------------------------------
 
   /** What this character holds now: the session's in the field, the day's in the city, and all of it when nothing was spent. */
@@ -208,9 +208,13 @@ export class RestSystem {
     return { ...player, rest: { until: now + this.restMs(player), place, startedAt: now } };
   }
 
-  /** Energy comes back on waking, never on lying down. */
+  /**
+   * Energy comes back on waking, never on lying down. Only a rest inside a world turns this
+   * character's own day (Pedro's own run, 2026-11-10: a rest outside the world is to "continue as
+   * is but not advance the day (server clock is the clock)").
+   */
   static wake(player: IPlayer): IPlayer {
-    return { ...this.restoreEnergy(player), rest: undefined };
+    return { ...this.restoreEnergy(player, player.rest?.place === 'FIELD'), rest: undefined };
   }
 
   /** A hurt in the field ends a rest, and it restored nothing. */
@@ -231,12 +235,13 @@ export class RestSystem {
     return session ? { ...player, currentSession: { ...session, energy } } : { ...player, energyToday: energy };
   }
 
-  static restoreEnergy(player: IPlayer): IPlayer {
+  /** The energy back, whole. `turnsTheDay` is for a rest inside a world: nowhere else does a rest move a day. */
+  static restoreEnergy(player: IPlayer, turnsTheDay = false): IPlayer {
     const full = StatSystem.maxEnergyOf(player);
     return {
       ...player,
       energyToday: undefined,
-      dayCount: (player.dayCount ?? 0) + 1,
+      ...(turnsTheDay ? { dayCount: (player.dayCount ?? 0) + 1 } : {}),
       currentSession: player.currentSession ? { ...player.currentSession, energy: full } : player.currentSession
     };
   }

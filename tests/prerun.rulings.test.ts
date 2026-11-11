@@ -593,8 +593,12 @@ describe('C14: a pebble can be picked up, taken in the hand and thrown', () => {
     stage();
     const node = (def: any): IWorldEntity => ({ id: `node_${def.id}`, type: EntityType.RESOURCE, definitionId: def.id, position: { x: 0, y: 0 }, rank: def.rank, rarity: Rarity.COMMON, isHostile: false, usesRemaining: 1 } as IWorldEntity);
     const label = (def: any) => InteractionEngine.getAvailableInteractions(player(), node(def), 1).find(o => o.id.startsWith('int_harvest_'))?.label;
-    expect(label(pebbleDef())).toBe(`Pick up ${pebbleDef().name}`);
+    // 2026-11-10: a thing never worked reads by its form in the prompt too, and by its name once some is held
+    expect(label(pebbleDef())).toBe('Pick up Unknown Pebble');
     const byHand = defs().find(d => d.themeId && d.visuals?.modelId !== 'pebble' && d.harvestConfig?.requiredToolTags.length === 0)!;
+    expect(label(byHand)).toMatch(/^Extract Unknown /);
+    carrying([pebble('known'), mint(byHand, 'known')]);
+    expect(label(pebbleDef())).toBe(`Pick up ${pebbleDef().name}`);
     expect(label(byHand)).toBe(`Extract ${byHand.name}`);
     expect(SRC('src/entities/player/store.ts')).toMatch(/isLooseStone\(def\) \? 'Picked up' : 'Harvested'/);
   });

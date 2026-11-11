@@ -353,8 +353,18 @@ export const forcedExitWorth = (rank: ThemeRank) => shelfPrice(rank, COST_POWER[
 // lands exactly where it landed here (D134): no power, root or log is taken on the way.
 // -------------------------------------------------------------------------
 
-/** The version a loot table is checked under. A table keeps the one it was written under. */
-export const LOOT_FORMULA_VERSION = 1;
+/**
+ * The version a loot table is checked under. A table keeps the one it was written under.
+ * 2 (2026-11-10): a table can be one creature's own, and such a table holds a spread. Tables written
+ * under 1 were a few to a theme, matched by tags, so they are refused and written again.
+ */
+export const LOOT_FORMULA_VERSION = 2;
+
+/**
+ * How many different odds a creature's own table holds at the least (Pedro, of his own run: "the
+ * drops from the mobs are too consistent ... make the spread be better"). A floor, never a ceiling.
+ */
+export const LOOT_OWN_SPREAD = 3;
 
 /** One draw in this many: the chance of a line, as a whole number. */
 export const LOOT_PARTS = 1_000_000;

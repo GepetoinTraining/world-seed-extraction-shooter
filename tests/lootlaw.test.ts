@@ -14,6 +14,8 @@ const words: ILootWords = {
   name: 'What a biological thing leaves',
   source: 'creature',
   fits: ['biological'],
+  // 2026-11-10: a table says whose it is. This one is nobody's in particular: it fits by tags
+  creature: '',
   lines: [
     { what: 'material', item: '', odds: 'often', count: 'few', rank: 'same' },
     { what: 'gear', item: '', odds: 'seldom', count: 'one', rank: 'same' },

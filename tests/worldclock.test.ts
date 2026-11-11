@@ -357,7 +357,8 @@ describe("line 120: a character's rest takes real time, scaled by what that char
     const awake = RestSystem.wake(resting);
     expect(awake.energyToday).toBeUndefined();
     expect(awake.rest).toBeUndefined();
-    expect(awake.dayCount).toBe(3);
+    // 2026-11-10: a rest outside a world gives the energy back and does not turn the day (Pedro: "server clock is the clock")
+    expect(awake.dayCount).toBe(2);
   });
 
   it('a hurt breaks a rest in the field, and nothing is restored', () => {

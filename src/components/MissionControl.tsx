@@ -77,6 +77,12 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
           {moment.generation === 0 ? 'ALPHA, AS MINTED' : `REGENERATION ${moment.generation}`} · {SKY_WORDS[world.sky ?? 'TURNING']}
         </div>
       )}
+      {/* The tutorial's gate never closes, and it turns all the same: what was taken comes back on its cycles */}
+      {isDev && WorldClock.turns(world) && (
+        <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginTop: 4 }}>
+          {moment.generation === 0 ? 'AS IT FIRST STOOD' : `REGENERATION ${moment.generation}`}
+        </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginTop: isDev ? 10 : 0 }}>
         {/* Q41: the tutorial has no certificate to count visits in, so it shows no count */}

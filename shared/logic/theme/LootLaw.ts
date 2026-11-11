@@ -10,12 +10,18 @@
  *   roll      a drop, from a table, a source and a key: the same three give the same drop on any
  *             machine, because every step is a whole number or one plain divide (D134)
  *
+ * A table can be one creature's own (Pedro, of his own run, 2026-11-10: "loot table the mobs
+ * themselves, make the spread be better"). It names the creature by its key, only that creature
+ * and what grew from it roll on it, it comes before any table that fits by tags, and it must hold
+ * a spread: lines at several different odds, so that a kill gives nothing, little or something
+ * kept, and not the same thing each time.
+ *
  * Pure: no store, no registry, no clock. The browser and the hub run the same file.
  */
 
 import { fnv1a, Rng } from '../rng/DeterministicRNG';
 import { canonical, shortIdOf } from './ThemeCompiler';
-import { LOOT_COUNT_SPAN, LOOT_FORMULA_VERSION, LOOT_ODDS_PARTS, LOOT_PARTS, lootNumbers, GEAR_SHAPES, rankStep } from './ThemeFormula';
+import { LOOT_COUNT_SPAN, LOOT_FORMULA_VERSION, LOOT_ODDS_PARTS, LOOT_OWN_SPREAD, LOOT_PARTS, lootNumbers, GEAR_SHAPES, rankStep } from './ThemeFormula';
 import { BIOMES, IThemeBody, RANKS, ThemeRank } from './ThemeTypes';
 
 export const LOOT_SOURCES = ['creature', 'chest'] as const;
@@ -44,8 +50,16 @@ export interface ILootWords {
   source: LootSource;
   /** What a source must carry for this table to be its: a creature's tags, or a chest's biome. Empty fits every one. */
   fits: string[];
+  /** The key of the one creature this table is for, or empty for a table shared by what it fits. Sealed, it is always said. */
+  creature?: string;
   lines: ILootLineWords[];
 }
+
+/** What rolls: a creature by its tags and the kinds it answers to (its own first, then what it leads or grew from), or a chest by its land. */
+export interface ILootSource { kind: LootSource; tags: string[]; keys?: string[] }
+
+/** A fit no count of matching tags can reach: a creature's own table comes before every shared one. */
+const OWN_FIT = 1_000_000;
 
 /** A line with its numbers. */
 export interface ILootLine extends ILootLineWords { chance: number; low: number; high: number }
@@ -69,7 +83,7 @@ const has = (values: readonly string[], v: unknown): boolean => typeof v === 'st
 
 /** The words alone, in one order: what a table's id is computed from. */
 export const wordsOf = (t: ILootWords): ILootWords => ({
-  name: t.name, source: t.source, fits: [...t.fits],
+  name: t.name, source: t.source, fits: [...t.fits], creature: t.creature ?? '',
   lines: t.lines.map(l => ({ what: l.what, item: l.item, odds: l.odds, count: l.count, rank: l.rank }))
 });
 
@@ -125,12 +139,16 @@ export const LootLaw = {
     if (typeof t.name !== 'string' || !t.name.trim()) return no('A table has a name.');
     if (!has(LOOT_SOURCES, t.source)) return no(`A table drops from ${LOOT_SOURCES.join(' or ')}.`);
     if (!Array.isArray(t.fits) || t.fits.some(f => typeof f !== 'string')) return no('What a table fits is a list of words.');
+    if (typeof t.creature !== 'string') return no('A table says whose it is: a creature by its key, or nobody in particular.');
     if (!Array.isArray(t.lines) || t.lines.length === 0) return no('A table drops something: it has at least one line.');
     if (t.formula !== LOOT_FORMULA_VERSION) return no(`This hub checks loot under formula ${LOOT_FORMULA_VERSION}.`);
 
     if (t.source === 'chest') {
+      if (t.creature) return no('Only a creature has a table of its own: a chest\'s table names none.');
       const odd = t.fits.find(f => !has(BIOMES, f));
       if (odd) return no(`A chest's table fits a land, and "${odd}" is not one.`);
+    } else if (t.creature) {
+      if (!pack.creatures.some(c => c.key === t.creature)) return no(`It is the table of "${t.creature}", which is no creature of its theme.`);
     } else if (t.fits.length > 0) {
       const tags = new Set(pack.creatures.flatMap(c => c.tags));
       if (!t.fits.some(f => tags.has(f))) return no('No creature in its theme carries what it fits, so it would never drop.');
@@ -149,6 +167,12 @@ export const LootLaw = {
       if (!l.item && items[l.what].length === 0) return no(`Line ${i + 1} drops any ${l.what}, and its theme holds none that is found.`);
     }
 
+    // A creature's own table holds a spread: the same thing at the same rate every time is what it is there to end
+    if (t.creature) {
+      const spread = new Set(t.lines.map(l => l.odds)).size;
+      if (spread < LOOT_OWN_SPREAD) return no(`A creature's own table holds lines at ${LOOT_OWN_SPREAD} different odds at the least, and this one holds ${spread}.`);
+    }
+
     // The id is the words': a table written again is a new table
     if (t.id !== lootIdOf(t.themeId, t)) return no('Its id does not match its words.');
 
@@ -161,16 +185,24 @@ export const LootLaw = {
     return { ok: true, table: { ...wordsOf(t), id: t.id, themeId: t.themeId, formula: t.formula, lines }, changes };
   },
 
-  /** Does this table belong to this source? How many of its words the source carries; 0 is no. */
-  fit(table: Pick<ILootTable, 'source' | 'fits'>, source: { kind: LootSource; tags: string[] }): number {
+  /**
+   * Does this table belong to this source? A creature's own table is its creature's and nobody
+   * else's, and nearer kin comes first: the kind itself before the kind it leads or grew from.
+   * Otherwise how many of its words the source carries; 0 is no.
+   */
+  fit(table: Pick<ILootTable, 'source' | 'fits'> & { creature?: string }, source: ILootSource): number {
     if (table.source !== source.kind) return 0;
+    if (table.creature) {
+      const at = (source.keys ?? []).indexOf(table.creature);
+      return at < 0 ? 0 : OWN_FIT - at;
+    }
     if (table.fits.length === 0) return 1;
     const matched = table.fits.filter(f => source.tags.includes(f)).length;
     return matched === 0 ? 0 : 1 + matched;
   },
 
   /** The table a source rolls on: the one that fits it most, then the lowest id. None is the old code's. */
-  pick<T extends Pick<ILootTable, 'id' | 'source' | 'fits'>>(tables: T[], source: { kind: LootSource; tags: string[] }): T | undefined {
+  pick<T extends Pick<ILootTable, 'id' | 'source' | 'fits'> & { creature?: string }>(tables: T[], source: ILootSource): T | undefined {
     let best: T | undefined;
     let bestFit = 0;
     for (const t of [...tables].sort((a, b) => (a.id < b.id ? -1 : 1))) {
@@ -226,11 +258,12 @@ export const LOOT_SCHEMA: Record<string, unknown> = {
     tables: {
       type: 'array',
       items: {
-        type: 'object', additionalProperties: false, required: ['name', 'source', 'fits', 'lines'],
+        type: 'object', additionalProperties: false, required: ['name', 'source', 'fits', 'creature', 'lines'],
         properties: {
           name: str,
           source: oneOf(LOOT_SOURCES),
           fits: { type: 'array', items: str },
+          creature: str,
           lines: {
             type: 'array',
             items: {

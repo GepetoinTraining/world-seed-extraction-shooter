@@ -82,7 +82,8 @@ export class StartupSequence {
     // A shipped theme is banked too, so a later build changing its bytes retires no world pinned to it
     await ThemeStore.bank(FIRST_THEME_PACK);
     await ThemeStore.loadBanked();
-    // Loot tables after the themes they stand on, each judged again (LootLaw.ts)
+    // Loot tables after the themes they stand on, each judged again (LootLaw.ts). The shipped world's own come first
+    LootBook.admitShipped();
     await LootBook.loadBanked();
 
     // 3. GENESIS HUB VERIFICATION

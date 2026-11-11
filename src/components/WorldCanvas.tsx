@@ -63,7 +63,7 @@ import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
 import { drawSpeech } from '../render/atoms/speech';
 import { installGibberishFace } from '../render/atoms/gibberishFace';
-import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract } from '../logic/systems/FieldInput';
+import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
@@ -351,6 +351,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   // Line 72: one shot, if the gate says so. The weapon decides how; the hand decides which.
   fireRef.current = (now: number) => {
+    // An empty hand reaches for a stone it carries, so what flies is one of them and is spent ("the pebbles don't lose ammo")
+    const reached = reachFor(activeWeapon().item, usePlayerStore.getState().player.currentSession?.inventory ?? []);
+    if (reached) usePlayerStore.getState().equipToSlot(reached.id, useHotbar.getState().active);
     const st = usePlayerStore.getState();
     const playerPos = st.player.currentSession?.position;
     if (!playerPos) return;
@@ -539,6 +542,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const after = PlayerPersistence.persistableJson(usePlayerStore.getState().player);
       const signed = await SessionJournal.finish('EXTRACTED', after);
       await PlayerPersistence.flush('extract', usePlayerStore.getState().player);
+      // Whoever came out is taken to the tavern now, once the run is sealed and saved with their bond in it
+      await FieldEscort.lodgeArrivals(haul, itemId => useHubStore.getState().redeemBond(itemId));
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
           outcome: 'EXTRACTED', haul, haulValue, ...shownOf, tax, levy,

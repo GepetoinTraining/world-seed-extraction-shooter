@@ -61,8 +61,9 @@ export class InteractionEngine {
 
         options.push({
           id: `int_harvest_${target.id}`,
-          // C14: a loose stone is picked up, as it will be thrown; everything else is still extracted
-          label: `${isLooseStone(resourceDef) ? 'Pick up' : 'Extract'} ${resourceDef.name}`,
+          // C14: a loose stone is picked up, as it will be thrown; everything else is still extracted.
+          // It is named as its card names it: by its form, until this character has worked it or holds some
+          label: `${isLooseStone(resourceDef) ? 'Pick up' : 'Extract'} ${ContactNames.of(target, WebSystem.knowledgeReader(player), player)}`,
           type: InteractionType.HARVEST,
           icon: bareHands ? '✋' : (bestTool.icon || '🛠️'),
           // D27: the menu says what the store will charge: winging it costs more

@@ -1364,11 +1364,14 @@ describe('a chest stays taken through its cycle, and restocks by rank, rarity an
     expect(await ChestStore.load('never_opened')).toEqual(emptyChestRecord());
   });
 
-  it('a world outside the clock keeps no record', () => {
+  it('a world that never turns keeps no record', () => {
     useWorldStore.setState({ chestRecord: null, activeWorldId: 'dev', generation: 0 } as never);
     useWorldStore.getState().reportChestLooted('ent_1_1_chest');
     expect(useWorldStore.getState().chestRecord).toBeNull();
-    expect(readFileSync('src/entities/world/store.ts', 'utf8')).toMatch(/worldCard\.isDebug \? null : await ChestStore\.load/);
+    // 2026-11-10: the tutorial turns now, so the question is whether a world turns, not whether it is outside the gate's clock
+    const store = readFileSync('src/entities/world/store.ts', 'utf8');
+    expect(store).toMatch(/const keeps = WorldClock\.turns\(worldCard\)/);
+    expect(store).toMatch(/keeps \? await ChestStore\.load\(worldCard\.id\)/);
   });
 
   it('a chest seen is marked for that character, as it was seen, and only a change writes', () => {

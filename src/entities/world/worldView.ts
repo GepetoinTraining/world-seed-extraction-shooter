@@ -86,6 +86,8 @@ export type WorldChange =
   /** A store robbed, and a chest opened, in the open world. */
   | { kind: 'STORE_TAKEN'; structureId: string; count: number }
   | { kind: 'CHEST_LOOTED'; chestId: string }
+  /** A person walked or was carried out of the world: they do not stand in it again. */
+  | { kind: 'LEFT'; entityId: string }
   /** The open world's chest record, as a live room holds it. */
   | { kind: 'CHEST_RECORD'; record: IChestRecord };
 

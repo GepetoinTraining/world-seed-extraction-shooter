@@ -4,7 +4,8 @@
  * none of them ever shows an id.
  *
  * A creature gives only the name it has earned (D60). A thing to gather reads by its name once
- * the reader knows it at all, and as an unknown substance until then.
+ * the reader knows it at all, which is once they have worked it or hold some of it, and by its
+ * form until then: an unknown tree.
  *
  * A person has no name until it is asked (Pedro, 2026-11-10: "if you never ask someone's name,
  * they don't have one, they're just a random person doing something. a player only knows WHAT
@@ -15,6 +16,7 @@
 import { IPlayer } from '../../../shared/types';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { MATERIAL_FORMS } from '../../../shared/logic/theme/ThemeTypes';
 
 export const UNKNOWN_CONTACT = 'Unknown Contact';
 export const UNKNOWN_SUBSTANCE = 'Unknown Substance';
@@ -46,7 +48,7 @@ export const ContactNames = {
       case EntityType.MOB:
         return e.displayName || UNKNOWN_CONTACT;
       case EntityType.RESOURCE:
-        return level(e.definitionId) <= 0 ? UNKNOWN_SUBSTANCE : RESOURCE_DEFINITIONS[e.definitionId]?.name ?? UNKNOWN_SUBSTANCE;
+        return level(e.definitionId) <= 0 ? this.unknownMaterial(e.definitionId) : RESOURCE_DEFINITIONS[e.definitionId]?.name ?? UNKNOWN_SUBSTANCE;
       case EntityType.NPC:
         return this.personName(e, reader);
       case EntityType.CONTAINER:
@@ -61,6 +63,16 @@ export const ContactNames = {
       default:
         return 'Unknown';
     }
+  },
+
+  /**
+   * A thing to gather that the reader has never worked or held. Its form is plain to see, so it reads
+   * by that (an unknown tree, an unknown vein), and what it is made of is kept back. The form is the
+   * one its world wrote it in, so no list of forms lives here.
+   */
+  unknownMaterial(definitionId: string): string {
+    const form = (RESOURCE_DEFINITIONS[definitionId] as { visuals?: { modelId?: string } } | undefined)?.visuals?.modelId;
+    return form && (MATERIAL_FORMS as readonly string[]).includes(form) ? `Unknown ${form[0].toUpperCase()}${form.slice(1)}` : UNKNOWN_SUBSTANCE;
   },
 
   /**

@@ -13,6 +13,7 @@ import type { IHubPort } from '../../entities/hub/hubView';
 import { ownerHasStationFor } from '../../../shared/entities/hub/room';
 import { useFeed, useWaits } from '../../components/ui/stores';
 import { Ledger } from '../ledger/Ledger';
+import { GameClock } from '../time/GameClock';
 import { SessionJournal } from '../journal/SessionJournal';
 import { LoreSystem } from './LoreSystem';
 import { RestSystem } from './RestSystem';
@@ -70,7 +71,8 @@ export const StudyDoor = {
     const missing = missingStation(target, pc, hp);
     if (missing) return { ok: false, reason: missing };
     const player = pc.view().player;
-    const verdict = StudySystem.canStudy(player, target);
+    // What will not sit "for some days" counts them on the game's clock
+    const verdict = StudySystem.canStudy(player, target, GameClock.now());
     if (!verdict.ok) return verdict;
     const { cost, seconds } = StudySystem.studyAsk(player, target);
     pc.apply({ kind: 'SET', player: StudySystem.pay(player, cost) });
@@ -105,7 +107,7 @@ export const StudyDoor = {
       return { ok: false, reason: 'It is gone.' };
     }
 
-    const { player, sitting } = StudySystem.sit(before, target, cost, Date.now());
+    const { player, sitting } = StudySystem.sit(before, target, cost, GameClock.now());
     let next = player;
     if (LoreSystem.pays(sitting.outcome)) next = RestSystem.queueSitting(next, sitting);
     if (piece && sitting.outcome !== 'major_failure') {

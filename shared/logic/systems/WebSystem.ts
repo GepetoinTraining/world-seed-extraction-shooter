@@ -411,9 +411,34 @@ export class WebSystem {
     return out;
   }
 
-  /** The card's reader. Nothing filed reads as the name alone. */
+  /**
+   * The card's reader. A material is known by its name once this character has worked it or holds
+   * some of it, and not before (Pedro, 2026-11-10: "a player only knows WHAT they study or interact
+   * with", and, of his own run, "names of the materials still appear in the world (compound oak
+   * before I chopped it)"). Nothing filed and nothing held reads as not known at all. This replaces
+   * D27's default, where a stranger to a log read its name.
+   */
   static knowledgeReader(player: IPlayer): (defId: string) => number {
-    return defId => player.materialMastery[defId]?.knowledgeLevel ?? 1;
+    let held: Set<string> | null = null;
+    const holds = (defId: string) => {
+      held ??= new Set([
+        ...(player.bank?.stashTabs ?? []).flatMap(t => t.items),
+        ...(player.currentSession?.inventory ?? []),
+        ...(player.equipment?.items ?? [])
+      ].map(i => i.universalDefinitionId));
+      return held.has(defId);
+    };
+    return defId => {
+      const filed = player.materialMastery?.[defId]?.knowledgeLevel ?? 0;
+      return filed >= 1 ? filed : holds(defId) ? 1 : 0;
+    };
+  }
+
+  /** A material worked by hand is known by its name from then on. The same reference back when it already was. */
+  static named(player: IPlayer, defId: string): IPlayer {
+    const prior = player.materialMastery[defId];
+    if ((prior?.knowledgeLevel ?? 0) >= 1) return player;
+    return { ...player, materialMastery: { ...player.materialMastery, [defId]: { resourceId: defId, discoveredAffixes: [], ...prior, knowledgeLevel: 1 } } };
   }
 
   /** What a graded hand reads on a material: what it goes into. */

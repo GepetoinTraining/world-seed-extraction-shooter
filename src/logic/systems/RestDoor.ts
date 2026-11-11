@@ -83,7 +83,8 @@ export const RestDoor = {
     try {
       await RestDoor.collect(pc, hp);
       pc.apply({ kind: 'WAKE' });
-      feed('You slept. It is another day.', 'signal');
+      // Inside a world the sleep was that world's. Anywhere else the day is the clock's, and a rest does not turn it
+      feed(rest.place === 'FIELD' ? 'You slept. It is another day.' : 'You slept. You wake rested, and it is the same day.', 'signal');
       await PlayerPersistence.flush('rest', pc.view().player);
     } finally {
       waking = false;

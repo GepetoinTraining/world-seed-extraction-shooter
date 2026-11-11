@@ -98,6 +98,11 @@ export interface IPopulationRecord {
   plans?: Record<string, { week: number; decisions: { verb: string; target: string; name: string; why: string }[] }>;
   /** What was carried out of a store, until the cycle it happened in has been folded. */
   carried?: Record<string, { at: number; n: number; sector: string }>;
+  /**
+   * People who walked or were carried out of this world, by the body the land deals them, and the
+   * cycle they left in. Never folded away: they live in a city now, and nobody comes through twice.
+   */
+  left?: Record<string, { at: number }>;
 }
 
 export const emptyPopulationRecord = (): IPopulationRecord => ({ sectors: {}, down: {}, seen: {} });
@@ -643,6 +648,9 @@ export class Population {
     const releasedHere = (): IBodyToStand[][] => (record.released ?? [])
       .filter(body => body.at === generation && body.ground === keyOfGround(chunk.x, chunk.y) && defOf(body.kind))
       .map((body, i) => [{ id: `rel_${chunk.x}_${chunk.y}_${i}`, def: defOf(body.kind)! }]);
+    // Pedro's own run, 2026-11-10: "the NPC are extracted and respawn". Whoever left does not stand here again
+    const gone = record.left;
+    if (gone) chunk.entities = chunk.entities.filter(e => e.type !== EntityType.NPC || !gone[e.id]);
     if (generation <= 0) {
       chunk.entities = chunk.entities.filter(e => e.type !== EntityType.MOB || !fellNow(e.id));
       const lands = releasedHere();
@@ -683,6 +691,12 @@ export class Population {
     groups.push(...releasedHere());
     WorldGenerator.standBodies(seed, chunk, groups, context);
     Territory.layOver(seed, chunk, state, record, generation);
+  }
+
+  /** A person brought out of this world, at this cycle. The same record back when they had already left. */
+  static left(record: IPopulationRecord, personId: string, generation: number): IPopulationRecord {
+    if (record.left?.[personId]) return record;
+    return { ...record, left: { ...record.left, [personId]: { at: generation } } };
   }
 
   /** A body let go on this ground, at this cycle. Whether it may be is the person's and the map's to say. */

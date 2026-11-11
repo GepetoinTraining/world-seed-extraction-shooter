@@ -9,7 +9,9 @@
 
 import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
-import { ILootTable, ILootVerdict, LootLaw, LootSource } from '../../../shared/logic/theme/LootLaw';
+import { ILootTable, ILootVerdict, LootLaw, LootSource, sealLoot } from '../../../shared/logic/theme/LootLaw';
+import { FIRST_THEME_LOOT } from '../../../shared/entities/generation/packs/firstThemeLoot';
+import { FIRST_THEME_PACK } from '../../../shared/logic/theme/boot';
 
 export const LOOT_CONTENT_TYPE = 'loot_table';
 
@@ -32,9 +34,26 @@ export const LootBook = {
     return [...held.values()].filter(t => t.themeId === themeId);
   },
 
-  /** The table a source in a theme rolls on, or none. */
-  tableFor(themeId: string | undefined, kind: LootSource, tags: string[]): ILootTable | undefined {
-    return LootLaw.pick(LootBook.forTheme(themeId), { kind, tags });
+  /**
+   * The table a source in a theme rolls on, or none. `keys` are the creatures a body answers to, its
+   * own kind first: a creature's own table comes before any that fits its tags.
+   */
+  tableFor(themeId: string | undefined, kind: LootSource, tags: string[], keys: string[] = []): ILootTable | undefined {
+    return LootLaw.pick(LootBook.forTheme(themeId), { kind, tags, keys });
+  },
+
+  /**
+   * The shipped world's own tables, one to a creature, held from the start: words in a pack, sealed
+   * and judged here like any other. How many stood. Its world then asks no model for them.
+   */
+  admitShipped(): number {
+    let count = 0;
+    for (const words of FIRST_THEME_LOOT) {
+      const verdict = LootBook.admit(sealLoot(FIRST_THEME_PACK.themeId, words));
+      if (verdict.ok) count++;
+      else console.warn(`[LOOT] Shipped table "${words.name}" refused: ${verdict.reason}`);
+    }
+    return count;
   },
 
   all: (): ILootTable[] => [...held.values()],

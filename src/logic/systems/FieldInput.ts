@@ -54,6 +54,16 @@ export function throwsLeft(held: IItem | undefined, carried: IItem[]): number | 
   return isThrowable(held) ? 1 + carried.filter(isThrowable).length : undefined;
 }
 
+/**
+ * Pedro's own run, 2026-11-10: "the pebbles don't lose ammo". A stone carried is what an empty hand
+ * throws: firing with nothing in the hand takes the first stone carried into it, so the shot that
+ * flies is one of them, lands as one, and is spent. A hand holding anything is left alone, and with
+ * no stone carried the bare hand does what it always did (C25, still Pedro's call).
+ */
+export function reachFor(held: IItem | undefined, carried: IItem[]): IItem | undefined {
+  return held ? undefined : carried.find(isThrowable);
+}
+
 // ---------------------------------------------------------------------------
 // ONE INTERACT KEY
 // ---------------------------------------------------------------------------

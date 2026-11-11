@@ -376,6 +376,7 @@ export const VaultGrid: React.FC<{
       selectedId={selectedId}
       onSelect={onSelect}
       onPrimary={vaultPrimary}
+      onRotate={item => usePlayerStore.getState().rotateItem(item.id)}
       dimmed={filter ? item => !StashGrid.matches(item, filter, player) : undefined}
       badge={item => (!item.tags?.includes('tool') && player.bank.carryItemIds?.includes(item.id) ? 'C' : null)}
     />

@@ -342,7 +342,9 @@ describe('line 93 and D58: the rest door', () => {
     expect(RestSystem.settle(tired).player.energyToday).toBe(3);
     const slept = RestSystem.restoreEnergy(tired);
     expect(slept.energyToday).toBeUndefined();
-    expect(slept.dayCount).toBe(5);
+    // 2026-11-10: the energy comes back; the day is the clock's, and only a rest inside a world turns a character's own
+    expect(slept.dayCount).toBe(4);
+    expect(RestSystem.restoreEnergy(tired, true).dayCount).toBe(5);
   });
 
   it('a rest in the field restores the energy in hand', () => {

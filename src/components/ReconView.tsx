@@ -195,7 +195,8 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     setCursor({ x: sx, y: sy });
     if (!canScan) { feed('The gate is down. Nothing reads until it boots.', 'loss'); return; }
     if (tutorial) {
-      const may = Tutorial.mayScan(currentMap, sx, sy);
+      // The one block holds while the first order stands. Sealed, the drone reads wherever it is aimed
+      const may = Tutorial.mayScan(currentMap, sx, sy, firstOrder);
       if (!may.ok) { feed(may.reason!, 'signal'); return; }
     }
     if (known && SurveySystem.staleBy(known, generation) > 0 && !held) return;
@@ -249,7 +250,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
   // D85: from a card the drop goes through the one door, and refusing leaves the view open.
   const drop = async (x: number, y: number) => {
     if (tutorial) {
-      const may = Tutorial.mayDrop(currentMap, x, y);
+      const may = Tutorial.mayDrop(currentMap, x, y, firstOrder);
       if (!may.ok) { feed(may.reason!, 'signal'); return; }
     }
     if (onDrop) { onDrop(x, y); return; }
@@ -312,10 +313,12 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
     return counts;
   };
 
-  const known = tutorial ? Tutorial.knownBlock(currentMap) : null;
+  // The marked block and its lesson stand while the first order does. Sealed, the tutorial reads like any world
+  const guided = tutorial && firstOrder;
+  const known = guided ? Tutorial.knownBlock(currentMap) : null;
   const knownRead = !!known && (currentMap.sectors[`${known.x},${known.y}`]?.scanLevel ?? 0) >= ScanLevel.DETAILED;
   const step = Tutorial.step({ scanned: knownRead, inField: false, metContact: false, sealed: false });
-  const lesson = tutorial ? { title: Tutorial.titleOf(step, firstOrder), body: LESSONS[step].body } : null;
+  const lesson = guided ? { title: Tutorial.titleOf(step, firstOrder), body: LESSONS[step].body } : null;
   const advice = known
     ? { kind: knownRead ? 'DROP' as const : 'SCAN' as const, x: known.x, y: known.y, why: lesson!.body }
     : suggestStart(currentMap);
@@ -529,7 +532,7 @@ export const ReconView: React.FC<{ onDrop?: (x: number, y: number) => void }> = 
                 </>
               );
             })()}
-            {canDrop && (!tutorial || Tutorial.mayDrop(currentMap, selected.x, selected.y).ok) && (
+            {canDrop && (!tutorial || Tutorial.mayDrop(currentMap, selected.x, selected.y, firstOrder).ok) && (
               <div style={{ marginTop: 10 }}>
                 <Button tone="signal" primary style={{ width: '100%', textAlign: 'center' }} onClick={() => void drop(selected.x, selected.y)}>
                   <Kbd>ENTER</Kbd> CONFIRM DROP

@@ -1036,11 +1036,17 @@ describe('mastery: rungs join the reveal law', () => {
     expect(knowledge().knowledgeLevel).toBeGreaterThanOrEqual(2);
   });
 
-  it('a card on a material the holder never worked stays at the name: the default moved from 2 to 1', () => {
+  // 2026-11-10 (Pedro, of his own run: "names of the materials still appear in the world"): the default moved again, from 1 to 0.
+  // A material never worked and never held keeps its name back; holding some of it is knowing its name.
+  it('a card on a material the holder never worked or held keeps its name back: the default moved from 2 to 1, then to 0', () => {
     const entity: any = { id: 'n', type: EntityType.RESOURCE, definitionId: 'res_iron_vein', position: { x: 0, y: 0 }, rank: 'E', rarity: 'COMMON' };
     const card = inspectEntity(entity, { player: player(), dist: 1, level: WebSystem.knowledgeReader(player()) });
-    expect(card.title).toBe('Iron Ore');
+    expect(card.title).not.toBe('Iron Ore');
     expect(card.rows.some(r => r[0] === 'Hardness')).toBe(false);
+    setStash([mint('res_iron_vein', 'held')]);
+    const held = inspectEntity(entity, { player: player(), dist: 1, level: WebSystem.knowledgeReader(player()) });
+    expect(held.title).toBe('Iron Ore');
+    expect(held.rows.some(r => r[0] === 'Hardness')).toBe(false);
     expect(source('components/WorldCanvas.tsx')).not.toMatch(/knowledgeLevel \?\? 2/);
   });
 });

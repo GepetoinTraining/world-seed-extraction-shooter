@@ -169,7 +169,8 @@ describe('the hub\'s pool and the world it hosts', () => {
 
   describe('the game\'s own shared work: a world\'s passes, the chain, loot tables', () => {
     const passBody = { pass: 'made', ask: { pass: 'made', said: 'x', world: {}, offered: { gear: [{ id: 'g1', is: 'a hook' }], goods: [{ id: 'd1', is: 'a rope' }] }, words: [] }, draft: {} };
-    const lootWords = { name: 'Pockets', source: 'creature', fits: ['humanoid'], lines: [{ what: 'material', item: '', odds: 'often', count: 'few', rank: 'same' }] };
+    // 2026-11-10: an answer says whose each table is. This one is nobody's in particular: it fits by tags
+    const lootWords = { name: 'Pockets', source: 'creature', fits: ['humanoid'], creature: '', lines: [{ what: 'material', item: '', odds: 'often', count: 'few', rank: 'same' }] };
     const turn = async (who: string, kind: any, path: string, body: unknown, answer: unknown) => {
       const t = await player(who);
       await pool.join(t, 'keyed');

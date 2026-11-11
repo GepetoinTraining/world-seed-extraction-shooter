@@ -30,6 +30,7 @@ import { ProgressionSystem } from '../../../shared/entities/player/systems/Progr
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { DAY_MS } from '../../../shared/logic/time/RadixClock';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
 export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';
@@ -58,7 +59,7 @@ export const STUDY_WEAR_SHARE = 0.25;
 /** What has no durability loses this much quality, and this share of its worth. */
 export const STUDY_QUALITY_BITE = 0.1;
 export const STUDY_WORTH_BITE = 0.1;
-/** Lost, for what cannot be taken away: how many days it will not sit for you. */
+/** Lost, for what cannot be taken away: how many days it will not sit for you. Days of the game's clock, never of a character's rests. */
 export const STUDY_LOST_DAYS = 7;
 
 const OUTCOME_LADDER: StudyOutcome[] = ['major_failure', 'failure', 'success', 'major_win'];
@@ -237,12 +238,17 @@ export class StudySystem {
     return this.askAt(player, level);
   }
 
+  /** The day a moment falls on: the clock's day, which no rest turns. */
+  static dayOf(now: number): number {
+    return Math.floor(now / DAY_MS);
+  }
+
   /** Always available, for energy. Only a person at rest, or something lost to them for now, is refused. */
   static canStudy(player: IPlayer, target: IStudyTarget, now = Date.now()): Verdict {
     if (player.rest && now < player.rest.until) return no('This character is at rest.');
     if (!target.name.trim()) return no('Study what? Name it.');
     const lost = this.markOf(player, target).lostUntilDay;
-    if (lost !== undefined && (player.dayCount ?? 0) < lost) return no(`${target.name} will not sit for you. Not yet.`);
+    if (lost !== undefined && this.dayOf(now) < lost) return no(`${target.name} will not sit for you. Not yet.`);
     const { cost } = this.studyAsk(player, target);
     const left = this.energyLeft(player);
     if (left < cost) return no(`Refused: needs ${cost} energy, you hold ${Math.floor(left)}. Rest first.`);
@@ -353,7 +359,7 @@ export class StudySystem {
       ...prior,
       sittings: prior.sittings + 1,
       harm: prior.harm + (failed && !held ? 1 : 0),
-      ...(roll.outcome === 'major_failure' && !held ? { lostUntilDay: (player.dayCount ?? 0) + STUDY_LOST_DAYS } : {})
+      ...(roll.outcome === 'major_failure' && !held ? { lostUntilDay: this.dayOf(now) + STUDY_LOST_DAYS } : {})
     };
     const count = player.studyCount ?? 0;
     let next: IPlayer = { ...player, studyCount: count + 1, studyMarks: { ...player.studyMarks, [this.keyOf(target)]: mark } };

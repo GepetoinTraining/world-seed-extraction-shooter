@@ -1,13 +1,19 @@
 /**
  * THE TUTORIAL WORLD (Q2, Q14): a newcomer's first order.
  *
- * The debug world became this. It stands outside the clock, as the debug world did, and
+ * The debug world became this. Its gate stands outside the clock, as the debug world's did, and
  * nothing a person brings into it is lost there: a death costs nothing (the "500 G" of Q14).
  * Everywhere else the first death is as hard as it always was (Q11).
  *
  * It teaches in order: the drone scans one known block, and only that block; the drop goes
  * there; the field shows a contact and what to do about it; an arrow points the way out.
  * It stays open while a person's own world is being written.
+ *
+ * Pedro's own run, 2026-11-10: "the chests always respawn", "the NPC are extracted and respawn",
+ * "I haven't seen the monsters get stronger yet", "tutorial world doesn't allow the scans of other
+ * regions". So it turns like any world, from the day its hub first held it (`turnsFrom`): what is
+ * taken stays taken through its cycle, whoever leaves is gone, and its creatures come along. And
+ * the one block holds only while the first order stands; sealed, it reads and drops anywhere.
  *
  * Nothing here points at a boss (Q46): the known block is chosen by threat and place alone.
  */
@@ -63,9 +69,13 @@ export const LESSONS: Record<TutorialStep, { title: string; body: string }> = {
 };
 
 export class Tutorial {
-  /** The tutorial's card on the zones list. No certificate: it is the hub's own, and outside the clock. */
-  static card(now: number): IWorldCard {
+  /**
+   * The tutorial's card on the zones list. No certificate: it is the hub's own, and its gate is outside
+   * the clock. `turnsFrom` is when this hub first held it; given that, its cycles are counted.
+   */
+  static card(now: number, turnsFrom?: number): IWorldCard {
     return {
+      ...(turnsFrom === undefined ? {} : { turnsFrom }),
       themeId: ContentRegistry.defaultThemeId(),
       id: TUTORIAL_WORLD_ID,
       seed: TUTORIAL_SEED,
@@ -114,15 +124,16 @@ export class Tutorial {
     return at.x === x && at.y === y;
   }
 
-  /** In the tutorial the drone reads the known block and nothing else. */
-  static mayScan(map: Pick<IMap, 'width' | 'height' | 'sectors'>, x: number, y: number): { ok: boolean; reason?: string } {
-    if (this.isKnownBlock(map, x, y)) return { ok: true };
-    return { ok: false, reason: 'In the tutorial the drone reads one block: the marked one. In your own worlds it reads wherever you aim it.' };
+  /** While the first order stands the drone reads the known block and nothing else. Sealed, it reads anywhere. */
+  static mayScan(map: Pick<IMap, 'width' | 'height' | 'sectors'>, x: number, y: number, firstOrder = true): { ok: boolean; reason?: string } {
+    if (!firstOrder || this.isKnownBlock(map, x, y)) return { ok: true };
+    return { ok: false, reason: 'Your first order reads one block: the marked one. Once it is sealed the drone reads wherever you aim it.' };
   }
 
-  /** The drop goes on the known block, once it has been read deep enough to show its contacts. */
-  static mayDrop(map: Pick<IMap, 'width' | 'height' | 'sectors'>, x: number, y: number): { ok: boolean; reason?: string } {
-    if (!this.isKnownBlock(map, x, y)) return { ok: false, reason: 'The tutorial drops on the marked block, the one you read.' };
+  /** While the first order stands the drop goes on the known block, once it has been read deep enough to show its contacts. */
+  static mayDrop(map: Pick<IMap, 'width' | 'height' | 'sectors'>, x: number, y: number, firstOrder = true): { ok: boolean; reason?: string } {
+    if (!firstOrder) return { ok: true };
+    if (!this.isKnownBlock(map, x, y)) return { ok: false, reason: 'Your first order drops on the marked block, the one you read.' };
     const sector: ISector | undefined = map.sectors[`${x},${y}`];
     if (!sector || sector.scanLevel < ScanLevel.DETAILED) return { ok: false, reason: 'Read the marked block deeper first: scan it again until it shows its contacts.' };
     return { ok: true };

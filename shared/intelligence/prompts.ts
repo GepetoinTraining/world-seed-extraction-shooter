@@ -609,16 +609,19 @@ export function buildCreationRequest(ask: unknown): IDoorRequest {
 const LOOT_SYSTEM = [
   'You write the loot tables of a game world: what a creature leaves when it falls, and what a chest in a land holds.',
   'You write in bands only. Code turns every band into numbers, and a law judges the table whole.',
-  'A table drops from a creature or a chest. `fits` names what its source must carry: tags its creatures have, or, for a chest, lands from the list given. Empty fits every source of that kind.',
+  'A table drops from a creature or a chest. A creature\'s table is its own: `creature` holds that one creature\'s key, and `fits` is empty. A chest\'s table has an empty `creature`, and `fits` names lands from the list given; empty fits every chest.',
   'Each line drops one kind of thing: gear, material, good, consumable or junk. `item` names one key from what the world offers of that kind, or is empty for any of that kind at its own rank.',
   'Odds: always, often, sometimes, seldom, rarely. Count: one, few, several. Rank: same as the source, or below it.',
-  'Write a few tables that make the creatures and chests feel like themselves. A boss or an elite earns more than a grunt; junk is common and worth little. Name only keys you were given.'
+  'Write one table for each creature you were given, every one of them, and a few for chests. A creature\'s table reads like that creature: what its body or its habits leave often, what it carries or was eating sometimes, something worth keeping seldom, something to remember rarely.',
+  'A creature\'s table holds lines at three different odds at the least, and four or more lines is better: a kill should sometimes give nothing, often give little, and now and then give something kept. Two creatures should not drop alike. Only a leader, an elite or a god drops anything always, and gear from anything else is seldom or rarely.',
+  'Name only keys you were given. If you are told which creatures still have no table, write those.'
 ].join(' ');
 
 /** A theme's loot tables (LootLaw.ts). What comes back stands before `LootLaw.correct`, table by table. */
 export function buildLootRequest(ask: unknown): IDoorRequest {
   return {
-    kind: 'loot', system: LOOT_SYSTEM, schema: LOOT_SCHEMA, maxTokens: 4000,
+    // One table to a creature: a world of thirty creatures is a long answer
+    kind: 'loot', system: LOOT_SYSTEM, schema: LOOT_SCHEMA, maxTokens: 12000,
     messages: [{ role: 'user', content: `The world, and what it offers: ${JSON.stringify(ask)}` }]
   };
 }

@@ -157,8 +157,33 @@ export const FieldEscort = {
     const carriedIds = new Set(carried.map(c => c.id));
     pc.apply({ kind: 'ESCORTS', escorts: [] }, ...[...carriedIds].map(itemId => ({ kind: 'PACK_REMOVE' as const, itemId })), { kind: 'PACK_ADD', items: bonds });
     for (const e of walking) { MobAI.unfollow(e.entityId); port.apply({ kind: 'REMOVE_BODY', entityId: e.entityId }); }
+    // Whoever came out is written down as gone from this world, so the land does not deal them again
+    for (const entityId of [...walking.map(e => e.entityId), ...carried.map(c => c.bondData!.entityId)]) port.apply({ kind: 'LEFT', entityId });
     pc.apply({ kind: 'RECALC_WEIGHT' });
     for (const e of walking) feed(`${e.name} walks out beside you.`, 'proof');
     for (const c of carried) feed(`${c.bondData!.sheet.name} comes back on the other side.`, 'proof');
+  },
+
+  /**
+   * Back in town: whoever came out with you is taken to the tavern at once, with no paper to hand
+   * over (Pedro's own run, 2026-11-10: "the npc needs to be auto left out when one gets to town if
+   * there's space in the inn"). `lodge` is the tavern's own door, so every refusal it has stands:
+   * whoever it cannot take stays a bond in the stash, and the feed says why.
+   */
+  async lodgeArrivals(haul: IItem[], lodge: (bondItemId: string) => Promise<{ ok: boolean; reason?: string }>): Promise<{ lodged: string[]; waiting: string[] }> {
+    const lodged: string[] = [], waiting: string[] = [];
+    for (const bond of haul) {
+      const name = NpcSheet.fromBond(bond)?.name;
+      if (!name) continue;
+      const res = await lodge(bond.id);
+      if (res.ok) {
+        lodged.push(name);
+        feed(`${name} has a bed at the Rusty Anchor.`, 'proof');
+      } else {
+        waiting.push(name);
+        feed(`${res.reason ?? 'The tavern could not take them.'} ${name} stays with you as a bond in your stash.`, 'loss');
+      }
+    }
+    return { lodged, waiting };
   }
 };

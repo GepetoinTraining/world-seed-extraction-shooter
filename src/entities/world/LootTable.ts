@@ -22,6 +22,7 @@ import { JUNK_CHANCE } from '../../../shared/logic/theme/ThemeFormula';
 import { LootBook } from '../../logic/theme/LootBook';
 import { IDropLine, LootLaw, lootItemsOf } from '../../../shared/logic/theme/LootLaw';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { creatureIdOf } from '../../../shared/logic/theme/ThemeCompiler';
 
 /** A drop rolled on a theme's table (LootLaw.ts): which table, at what rank, what it said. The journal keeps it, so a hub can roll it again (D134). */
 export interface ITableRoll { table: string; rank: string; lines: IDropLine[] }
@@ -51,9 +52,9 @@ export class LootTable {
    * The roll on a table, when this source's theme holds one that fits it; none means the old
    * code's drop. Whole numbers only, so the hub lands where this did.
    */
-  static rollOnTable(themeId: string | undefined, kind: 'creature' | 'chest', tags: string[], rank: string, rollKey: string | undefined): ITableRoll | null {
+  static rollOnTable(themeId: string | undefined, kind: 'creature' | 'chest', tags: string[], rank: string, rollKey: string | undefined, keys: string[] = []): ITableRoll | null {
     if (!rollKey || !themeId) return null;
-    const table = LootBook.tableFor(themeId, kind, tags);
+    const table = LootBook.tableFor(themeId, kind, tags, keys);
     const pack = table ? ContentRegistry.get(themeId) : undefined;
     if (!table || !pack) return null;
     return { table: table.id, rank, lines: LootLaw.roll(table, rank, rollKey, lootItemsOf(pack)) };
@@ -73,9 +74,16 @@ export class LootTable {
     return out;
   }
 
-  /** The table roll behind a creature's drop, for the journal. */
+  /**
+   * The table roll behind a creature's drop, for the journal. A body is asked for by what it is: its
+   * own kind first, then the kind it leads or grew from, so a creature's own table is found before
+   * any that only fits its tags (Pedro, of his own run: "loot table the mobs themselves").
+   */
   static creatureRoll(mobDef: IMobDefinition, rollKey?: string): ITableRoll | null {
-    return this.rollOnTable((mobDef as { themeId?: string }).themeId, 'creature', mobDef.tags, mobDef.rank, rollKey);
+    const { themeId, line } = mobDef as { themeId?: string; line?: { root?: string } };
+    const prefix = themeId ? creatureIdOf(themeId, '') : '';
+    const keys = prefix ? [mobDef.id, line?.root].filter((id): id is string => !!id && id.startsWith(prefix)).map(id => id.slice(prefix.length)) : [];
+    return this.rollOnTable(themeId, 'creature', mobDef.tags, mobDef.rank, rollKey, keys);
   }
 
   /** The table roll behind a chest, in the dreamed world's theme, for the journal. */

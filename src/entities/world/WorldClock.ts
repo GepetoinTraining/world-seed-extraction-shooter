@@ -31,6 +31,11 @@ export interface IClockedWorld {
   sky?: SkyKind;
   /** The simulation stands outside the clock. */
   isDebug?: boolean;
+  /**
+   * The tutorial's: its gate never closes, and its cycles are still counted, from this moment, at
+   * its size's cadence. Without it a world outside the clock stands at alpha for ever.
+   */
+  turnsFrom?: number;
 }
 
 export interface IWorldMoment {
@@ -103,9 +108,16 @@ export class WorldClock {
     return { cadence, cycle: Math.floor(elapsed / period), into: elapsed % period };
   }
 
+  /** Does this world move from cycle to cycle? Every clocked world does, and so does a world outside the clock that was given a start. */
+  static turns(world: IClockedWorld): boolean {
+    return !world.isDebug || world.turnsFrom !== undefined;
+  }
+
   static momentAt(world: IClockedWorld, now: number): IWorldMoment {
     if (world.isDebug) {
-      return { phase: 'UP', generation: 0, msLeft: Infinity, next: 'UP', warning: 'NONE', canDeploy: true, canSurvey: false };
+      // Open always. What turns in it turns by the count of whole cycles since its start
+      const generation = world.turnsFrom === undefined ? 0 : this.place({ ...world, createdAt: world.turnsFrom }, now).cycle;
+      return { phase: 'UP', generation, msLeft: Infinity, next: 'UP', warning: 'NONE', canDeploy: true, canSurvey: false };
     }
     const { cadence, cycle, into } = this.place(world, now);
     const { upMs, offMs, scanMs } = cadence;

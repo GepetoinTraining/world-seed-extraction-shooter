@@ -17,6 +17,7 @@ import { AffixBank } from '../../../shared/logic/content/AffixBank';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from '../../../shared/entities/world/Director';
 import { DirectorStore } from './DirectorStore';
+import { TutorialStart } from './TutorialStart';
 import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from '../../../shared/entities/world/Population';
 import { IKoseki } from '../../../shared/entities/world/Koseki';
 import { Leaders } from '../../../shared/entities/world/Leaders';
@@ -56,6 +57,8 @@ interface WorldState extends IWorldView {
   reportCaptured: (entityId: string, definitionId: string, to: IKoseki) => IKoseki;
   /** D65: a body let go on this ground. It stands now, and is a count once the cycle closes. */
   reportReleased: (ground: string, definitionId: string) => void;
+  /** A person walked or was carried out. They do not stand in this world again. */
+  reportLeft: (entityId: string) => void;
   /** D93: something a leader raised went down. Its ward's clock runs in `Wards`, and what stays down is written on closing. */
   reportBroke: (structureId: string) => void;
   /** D93: what a person carried out of a leader's store. */
@@ -147,6 +150,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         case 'CHEST_RECORD': set({ chestRecord: change.record }); break;
         case 'STORE_TAKEN': world.reportStoreTaken(change.structureId, change.count); break;
         case 'CHEST_LOOTED': world.reportChestLooted(change.chestId); break;
+        case 'LEFT': world.reportLeft(change.entityId); break;
         case 'DROP_COUNTED':
           set(s => ({ availableWorlds: s.availableWorlds.map(w => (w.id === change.worldId ? { ...w, playerCount: w.playerCount + 1 } : w)) }));
           break;
@@ -219,6 +223,14 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     const { populationRecord, activeWorldId, generation } = get();
     if (!populationRecord || !activeWorldId) return;
     const next = Population.release(populationRecord, ground, definitionId, generation);
+    set({ populationRecord: next });
+    void PopulationStore.save(activeWorldId, next);
+  },
+  reportLeft: (entityId) => {
+    const { populationRecord, activeWorldId, generation } = get();
+    if (!populationRecord || !activeWorldId) return;
+    const next = Population.left(populationRecord, entityId, generation);
+    if (next === populationRecord) return;
     set({ populationRecord: next });
     void PopulationStore.save(activeWorldId, next);
   },
@@ -297,7 +309,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       }));
 
       // Q14: the debug world became the tutorial, a newcomer's first order. It stands first.
-      set({ availableWorlds: [Tutorial.card(now), ...realWorlds] });
+      // Its gate never closes, and it turns all the same, from the day this hub first held it.
+      const turnsFrom = await TutorialStart.at(now).catch(() => undefined);
+      set({ availableWorlds: [Tutorial.card(now, turnsFrom), ...realWorlds] });
   },
 
   selectWorld: async (worldId: string) => {
@@ -325,9 +339,11 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         set({ directorRecord: director, generation: moment.generation });
         const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, worldCard.magicUnlocked);
 
-        // A world outside the clock has no cycle to refill on, so it keeps no record
-        const chestRecord = worldCard.isDebug ? null : await ChestStore.load(worldCard.id).catch(() => emptyChestRecord());
-        const populationRecord = worldCard.isDebug ? null : await PopulationStore.load(worldCard.id).catch(() => emptyPopulationRecord());
+        // A world that never turns has no cycle to refill on, so it keeps no record. The tutorial turns (Pedro's own
+        // run, 2026-11-10: "the chests always respawn", "the NPC are extracted and respawn"), so it keeps one like any other
+        const keeps = WorldClock.turns(worldCard);
+        const chestRecord = keeps ? await ChestStore.load(worldCard.id).catch(() => emptyChestRecord()) : null;
+        const populationRecord = keeps ? await PopulationStore.load(worldCard.id).catch(() => emptyPopulationRecord()) : null;
         set({ chestRecord, populationRecord });
         const cadence = worldCard.cadence ?? WorldClock.cadenceFor(worldCard.size);
         // C24: the land is laid by the ground the world pinned, as its people are read through the web it pinned

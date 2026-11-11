@@ -144,10 +144,13 @@ describe("N10: a deep scan's list names what it saw, the way its card would", ()
     expect(line.count).toBe(2);
   });
 
-  it('and as an unknown substance while it is not, with its name kept back', () => {
+  it('and by its form alone while it is not, with its name kept back', () => {
     const lines = SurveySystem.manifest(seen(), () => 0);
     expect(lines.some(l => l.label === def.name)).toBe(false);
-    expect(lines.find(l => l.label === 'Unknown Substance')!.count).toBe(2);
+    // 2026-11-10: what is plain to see is said (an unknown tree), and a thing with no form on record is still an unknown substance
+    expect(lines.find(l => l.label === ContactNames.unknownMaterial(def.id))!.count).toBe(2);
+    expect(ContactNames.unknownMaterial(def.id)).toMatch(/^Unknown /);
+    expect(ContactNames.unknownMaterial(def.id)).not.toContain(def.name);
   });
 
   it('a ruin, a chest and an exit read as the field card names them', () => {
