@@ -7,7 +7,9 @@
  *
  * 2026-11-11, energy (Pedro: "gear needs to give energy stat (you get very little energy simply by
  * levelling), and, we need energy tonics that are limited usage per rest"): energy on gear reads no
- * rank and four kinds carry it, and an energy tonic is a share of the drinker's day. No pack's words
+ * rank, comes mainly as a property, and two kinds carry a little natively ("they shouldn't be hard
+ * coded, this should be a possible stat right? as hardcoded, or implicit, I'd leave it to 1-2 at
+ * most"), and an energy tonic is a share of the drinker's day. No pack's words
  * change, so the pack law (THEME_FORMULA_VERSION) does not move: a sealed world keeps its words and
  * its law, and its kinds compile to these numbers when it is read.
  */
@@ -284,11 +286,12 @@ const range = (stat: string, low: number, high: number, step: number, ratio = 1.
 });
 
 /**
- * A day's energy on a piece, native (2026-11-11): the focus's old line at rank F, which is the ruler
- * BALANCE_RUN 2.5 names, and the same at every rank, since his day reads no rank. Four kinds carry it,
- * as four carry protection (head, chest, legs, shoulder): the focus, the belt, the necklace, the ring.
+ * A day's energy on a piece, native, and small (2026-11-11). Pedro: "they shouldn't be hard coded, this
+ * should be a possible stat right? as hardcoded, or implicit, I'd leave it to 1-2 at most". Energy comes
+ * to gear mainly as a property, on any piece its tags allow; natively only the focus and the belt carry
+ * it, 1 to 2, the same at every rank, since his day reads no rank.
  */
-const dayLine = () => ({ stat: 'max_energy', min: 5, max: 10 });
+const dayLine = () => ({ stat: 'max_energy', min: 1, max: 2 });
 
 /** The grammar of gear: what a kind IS, so a body slot always takes it (R5's rule, as law). */
 export const GEAR_SHAPES: Record<GearKind, IGearShape> = {
@@ -306,9 +309,9 @@ export const GEAR_SHAPES: Record<GearKind, IGearShape> = {
   feet: { bucket: 'armor_bases', slot: SlotType.FEET, tags: ['armor', 'boots', 'light'], implicits: s => [range('movement_speed', 0.03, 0.06, s, 1.2)] },
   shoulder: { bucket: 'armor_bases', slot: SlotType.SHOULDER, tags: ['armor', 'shoulder', 'light'], implicits: s => [range('defense', 2, 4, s)] },
   eyes: { bucket: 'armor_bases', slot: SlotType.EYES, tags: ['jewelry', 'accessory'], implicits: s => [range('field_analysis_speed', 0.1, 0.2, s, 1.2)] },
-  necklace: { bucket: 'armor_bases', slot: SlotType.NECKLACE, tags: ['amulet', 'jewelry'], implicits: s => [range('max_health', 5, 10, s), dayLine()] },
+  necklace: { bucket: 'armor_bases', slot: SlotType.NECKLACE, tags: ['amulet', 'jewelry'], implicits: s => [range('max_health', 5, 10, s)] },
   earring: { bucket: 'armor_bases', slot: SlotType.EARRING, tags: ['jewelry', 'accessory'], implicits: s => [range('noise_reduction', 1, 2, s, 1.3)] },
-  ring: { bucket: 'armor_bases', slot: SlotType.RING, tags: ['ring', 'jewelry'], implicits: s => [range('luck_find_rarity', 0.02, 0.05, s, 1.3), dayLine()] },
+  ring: { bucket: 'armor_bases', slot: SlotType.RING, tags: ['ring', 'jewelry'], implicits: s => [range('luck_find_rarity', 0.02, 0.05, s, 1.3)] },
   quiver: { bucket: 'armor_bases', slot: SlotType.QUIVER, tags: ['quiver'], implicits: s => [range('attack_speed', 0.02, 0.05, s, 1.2)] },
   bag: { bucket: 'armor_bases', slot: SlotType.BAG, tags: ['bag'], implicits: s => [{ stat: 'carry_bonus_kg', value: 10 + s * 5 }] },
   belt: { bucket: 'armor_bases', slot: SlotType.BELT, tags: ['belt'], implicits: () => [dayLine()], belt: { pouchSlots: 2 } },

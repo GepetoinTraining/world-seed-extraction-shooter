@@ -41,7 +41,7 @@ import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
 import { ATTRIBUTE_READERS, StatSystem, TONIC_SLOW_POINTS, climb } from '../shared/logic/systems/StatSystem';
 import { RestSystem } from '../src/logic/systems/RestSystem';
 import { FieldWords } from '../src/logic/systems/FieldWords';
-import { GEAR_SHAPES, TONIC_SHARE, affixRange, consumableNumbers } from '../shared/logic/theme/ThemeFormula';
+import { GEAR_SHAPES, STAT_SCALE, TONIC_SHARE, affixRange, consumableNumbers } from '../shared/logic/theme/ThemeFormula';
 import { RANKS } from '../shared/logic/theme/ThemeTypes';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { ItemDefinition } from '../shared/entities/item/data/itemDefinitions';
@@ -53,10 +53,12 @@ const store = () => usePlayerStore.getState();
 const player = () => store().player;
 const spread = (raised: Partial<IAttributes> = {}): IAttributes => ({ ...DEFAULT_ATTRIBUTES, ...raised });
 
-/** The kinds that carry a day's energy natively, chosen by plain sense (see the ledger's row). */
-const ENERGY_KINDS = ['focus', 'belt', 'necklace', 'ring'] as const;
-/** Protection is one rating (call 1.5): what the armour kinds carry. */
-const PROTECTION = ['physical_reduction', 'defense'];
+/**
+ * The kinds that carry a day's energy natively. Changed on purpose 2026-11-11, from four kinds at 5 to 10.
+ * Pedro: "they shouldn't be hard coded, this should be a possible stat right? as hardcoded, or implicit,
+ * I'd leave it to 1-2 at most".
+ */
+const ENERGY_KINDS = ['focus', 'belt'] as const;
 const TOP = RANKS.indexOf('SSS');
 
 /** In the field with this much energy left, nothing drunk since the last rest. */
@@ -93,19 +95,31 @@ beforeEach(() => {
 // =============================================================================
 
 describe('energy on gear reads no rank', () => {
-  it('each kind chosen carries energy natively, the same at rank F and at rank SSS', () => {
+  // Changed on purpose 2026-11-11 (Pedro: "they shouldn't be hard coded, this should be a possible stat right? as
+  // hardcoded, or implicit, I'd leave it to 1-2 at most"): two kinds natively, 1 to 2 each, where four gave 5 to 10
+  it('only the focus and the belt carry energy natively, 1 to 2 each, the same at rank F and at rank SSS', () => {
     for (const kind of ENERGY_KINDS) {
       const atF = GEAR_SHAPES[kind].implicits(0).find(l => l.stat === 'max_energy');
       const atTop = GEAR_SHAPES[kind].implicits(TOP).find(l => l.stat === 'max_energy');
-      expect(atF, kind).toBeDefined();
-      expect(atF!.min, kind).toBeGreaterThan(0);
+      expect(atF, kind).toMatchObject({ min: 1, max: 2 });
       expect(atTop, kind).toEqual(atF);
     }
+    const carrying = Object.entries(GEAR_SHAPES).filter(([, s]) => s.implicits(0).some(l => l.stat === 'max_energy')).map(([k]) => k);
+    expect(carrying.sort()).toEqual([...ENERGY_KINDS].sort());
   });
 
-  it('energy turns up on as many kinds as protection does', () => {
-    const carrying = (stats: string[]) => Object.values(GEAR_SHAPES).filter(s => s.implicits(0).some(l => stats.includes(l.stat))).length;
-    expect(carrying(['max_energy'])).toBe(carrying(PROTECTION));
+  it('a necklace and a ring carry no energy natively, and keep what they carried before', () => {
+    expect(GEAR_SHAPES.necklace.implicits(0).map(l => l.stat)).toEqual(['max_health']);
+    expect(GEAR_SHAPES.ring.implicits(0).map(l => l.stat)).toEqual(['luck_find_rarity']);
+  });
+
+  it('energy is mainly a property: a piece of any kind its tags allow can take it, and the day reads it', () => {
+    expect(STAT_SCALE.max_energy).toBeGreaterThan(0);
+    const [low, high] = affixRange('max_energy', 'moderate', 1, false);
+    expect(low).toBeGreaterThan(2);
+    expect(high).toBeGreaterThan(low);
+    const ring = { slots: { RING_1: 'ring' }, frames: {}, items: [{ id: 'ring', stats: { max_energy: low } }] } as unknown as IEquipmentState;
+    expect(StatSystem.maxEnergy(spread(), ring)).toBeCloseTo(StatSystem.maxEnergy(spread()) + low);
   });
 
   it('a property of energy is the same on a piece of rank F and of rank S, where the rank still moves health', () => {
