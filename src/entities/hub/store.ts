@@ -1743,9 +1743,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     const { emerged: settled } = RestDoor.settle(pc, hubPort);
     const emerged = settled as ISkillState[];
     void RestDoor.collect(pc, hubPort);
-    for (const skill of emerged) {
-      useFeed.getState().push(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
-    }
+    // What settled, and what wanted lore, was said by the rest door itself
     if (kind === 'DIED' && emerged.length > 0) useFeed.getState().push('Dying taught you that much, at least.', 'plain');
     await get().creditHeld();
     return emerged;

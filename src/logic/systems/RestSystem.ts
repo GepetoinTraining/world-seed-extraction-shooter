@@ -164,8 +164,8 @@ export class RestSystem {
   // SETTLING: at any rest (D30, D50). Pure.
   // -----------------------------------------------------------------------
 
-  static settle(player: IPlayer): { player: IPlayer; read: IItem[]; emerged: { id: string }[]; learned: string[]; floorNamed: string[]; made: (IMadeWaiting & { item: IItem })[] } {
-    const { player: skilled, emerged } = WebSystem.rest(player);
+  static settle(player: IPlayer): { player: IPlayer; read: IItem[]; emerged: { id: string }[]; wanting: { id: string; price: number }[]; learned: string[]; floorNamed: string[]; made: (IMadeWaiting & { item: IItem })[] } {
+    const { player: skilled, emerged, wanting } = WebSystem.rest(player);
     const q = this.queueOf(skilled);
 
     // D50: what was studied is known now, exactly as banked.
@@ -195,7 +195,7 @@ export class RestSystem {
       }
     }
     next = { ...next, weaveNames, restQueue: { ...emptyQueue(), ground: q.ground, weaves: q.weaves, sittings: q.sittings } };
-    return { player: next, read, emerged, learned, floorNamed, made };
+    return { player: next, read, emerged, wanting, learned, floorNamed, made };
   }
 
   // -----------------------------------------------------------------------

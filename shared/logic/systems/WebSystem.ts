@@ -33,6 +33,7 @@ import { TagLaw } from '../content/TagLaw';
 import { WebBank } from '../content/WebBank';
 import { ProcessFamily, ProcessSystem } from './ProcessSystem';
 import { climb } from './StatSystem';
+import { loreTeachPrice } from './LoreConstants';
 import { ChainWeb, IChainGround, IChainWeb } from '../theme/ChainWeb';
 
 /** A hub's web, handed over by whoever has the hub: what its chains have written, and the ground they stand on. */
@@ -297,26 +298,48 @@ export class WebSystem {
     return Rng.fromKey(`${playerId}:${progress.id}:emerge:${progress.attempts}`).next() * 100 < chance;
   }
 
-  /** D30: the batch is processed. Pure: same player in, same player out. */
-  static rest(player: IPlayer): { player: IPlayer; emerged: ISkillState[] } {
+  /** What a forming skill asks in lore to settle: the lore law's own price for a skill, by the rank it is born at. */
+  static learnPrice(rank: number): number {
+    return loreTeachPrice(rank);
+  }
+
+  /**
+   * D30: the batch is processed. Pure: same player in, same player out. Pedro, 2026-11-11: "you need to have
+   * lore as a resource to actually be able to rollover a dream and learn them", and asked whether a rest
+   * should ask for it: "Yes, ask for lore". A skill whose roll comes good is learned only if the purse holds
+   * its price, and the price is spent then; without it the skill keeps forming, whole, and is `wanting`. A roll
+   * that does not come good asks nothing. The most worked goes first, then by id, so a replay spends the same.
+   */
+  static rest(player: IPlayer): { player: IPlayer; emerged: ISkillState[]; wanting: { id: string; price: number }[] } {
     const progress = player.skillProgress ?? {};
     const held = { ...player.bank.universalSkills };
     const left: Record<string, ISkillProgress> = {};
     const emerged: ISkillState[] = [];
-    for (const id of Object.keys(progress).sort()) {
+    const wanting: { id: string; price: number }[] = [];
+    let lore = player.bank.loreHeld ?? 0;
+    const order = Object.keys(progress).sort((a, b) => progress[b].weight - progress[a].weight || (a < b ? -1 : a > b ? 1 : 0));
+    for (const id of order) {
       const entry = progress[id];
       if (held[id]) continue;
-      if (this.emerges(entry, player.id)) {
-        const skill = this.freshSkill(id, entry.tags, entry.rank);
-        held[id] = skill;
-        emerged.push(skill);
-      } else {
+      if (!this.emerges(entry, player.id)) {
         left[id] = entry;
+        continue;
       }
+      const price = this.learnPrice(entry.rank);
+      if (lore < price) {
+        left[id] = entry;
+        wanting.push({ id, price });
+        continue;
+      }
+      lore -= price;
+      const skill = this.freshSkill(id, entry.tags, entry.rank);
+      held[id] = skill;
+      emerged.push(skill);
     }
-    let rested: IPlayer = { ...player, skillProgress: left, bank: { ...player.bank, universalSkills: held } };
+    const bank = { ...player.bank, universalSkills: held, ...(emerged.length > 0 ? { loreHeld: lore } : {}) };
+    let rested: IPlayer = { ...player, skillProgress: left, bank };
     for (const skill of emerged) rested = this.revealByMastery(rested, skill.id);
-    return { player: rested, emerged };
+    return { player: rested, emerged, wanting };
   }
 
   /** Winging it costs half again; knowing it costs what it costs, and less as it climbs. */

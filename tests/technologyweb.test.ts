@@ -121,6 +121,13 @@ const newAvatar = (name = 'TESTER') => {
   return uid;
 };
 
+/**
+ * Pedro, 2026-11-11: "you need to have lore as a resource to actually be able to rollover a dream and learn them",
+ * and asked whether a rest should ask for it: "Yes, ask for lore". These bars are about the roll and the web, not
+ * the purse (tests/restlore.test.ts holds that), so whoever rests in them holds more lore than any skill asks.
+ */
+const withLore = () => usePlayerStore.setState(s => ({ player: { ...s.player, bank: { ...s.player.bank, loreHeld: 1_000_000 } } }));
+
 let hubCounter = 0;
 async function freshHub(): Promise<string[]> {
   useHubStore.setState({ activeHubId: null, lots: [], craftingJobs: [], rooms: {}, buildJobs: [], web: { nodes: {} } } as any);
@@ -840,6 +847,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
       newAvatar();
       const id = fieldWith('res_titanium_vein', [toolOf('tool_pick_tempered_t3', `t${i}`)]);
       harvest(id, 1);
+      withLore();
       const { emerged } = WebSystem.rest({ ...player(), skillProgress: { ...player().skillProgress, [WebSystem.mint(['pickaxe'], defOf('res_titanium_vein').tags).id]: { ...player().skillProgress![WebSystem.mint(['pickaxe'], defOf('res_titanium_vein').tags).id], weight: 1 } } });
       expect(emerged).toEqual([]);
     }
@@ -848,6 +856,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
   it('the roll is keyed: the same state replays the same, across clocks and restarts', () => {
     const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
     harvest(id, 8);
+    withLore();
     const state = player();
     const first = WebSystem.rest(state);
     const random = vi.spyOn(Math, 'random').mockReturnValue(0.999);
@@ -863,6 +872,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
       newAvatar();
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 4);
+      withLore();
       outcomes.push(WebSystem.rest(player()).emerged.length > 0);
     }
     expect(outcomes.some(Boolean)).toBe(true);
@@ -876,6 +886,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
       newAvatar(); tries++;
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 3);
+      withLore();
       const out = WebSystem.rest(player());
       if (out.emerged.length > 0) continue;
       found = true;
@@ -891,6 +902,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
       newAvatar();
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 60);
+      withLore();
       if (WebSystem.rest(player()).emerged.length > 0) brought++;
     }
     expect(brought).toBeGreaterThanOrEqual(20);
@@ -903,6 +915,7 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
       uid = newAvatar();
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 40);
+      withLore();
       const out = WebSystem.rest(player());
       if (out.emerged.length > 0) {
         usePlayerStore.setState({ player: out.player });
@@ -1267,6 +1280,7 @@ describe('line 65: who found it first, signed', () => {
       newAvatar('FIRST');
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 40);
+      withLore();
       const out = await hub().restAndCredit('SEALED');
       if (out.length > 0) return player().id;
     }
@@ -1292,6 +1306,7 @@ describe('line 65: who found it first, signed', () => {
       second = newAvatar('SECOND');
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 40);
+      withLore();
       const out = await hub().restAndCredit('SEALED');
       if (out.length > 0) break;
     }
@@ -1339,6 +1354,7 @@ describe('line 65: who found it first, signed', () => {
       newAvatar('FIRST');
       const id = fieldWith('res_tree_log', [toolOf('tool_axe_field_t1', 'axe')]);
       harvest(id, 40);
+      withLore();
       await hub().restAndCredit('SEALED');
     }
     const firstHands = held(FELLING());

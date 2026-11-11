@@ -25,8 +25,11 @@ const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain'
 export const RestDoor = {
   /** Settling, at any rest. A return to the hub comes through here too (D30). */
   settle(pc: IPlayerPort, hp: IHubPort): { emerged: { id: string }[] } {
-    const { player, read, emerged, learned, floorNamed, made } = RestSystem.settle(pc.view().player);
+    const { player, read, emerged, wanting, learned, floorNamed, made } = RestSystem.settle(pc.view().player);
     pc.apply({ kind: 'SET', player });
+    // Pedro, 2026-11-11: "Yes, ask for lore". What was learned says what it took; what wanted lore says it waits
+    for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now, and it took ${WebSystem.learnPrice((skill as { rank?: number }).rank ?? 0)} lore.`, 'proof');
+    for (const w of wanting) feed(`${WebSystem.nameOf(w.id)} was ready to settle, and it wants ${w.price} lore. You hold ${player.bank.loreHeld ?? 0}. It will keep until you have it.`, 'plain');
     for (const item of read) feed(`You know what ${item.name} is now. It reads exactly as it was banked.`, 'proof');
     // What was made by setting one thing on another is read now, and not before (PairCraft)
     for (const m of made) {
@@ -73,7 +76,6 @@ export const RestDoor = {
     const { emerged } = RestDoor.settle(pc, hp);
     const lying = RestSystem.beginRest(pc.view().player, place, now);
     pc.apply({ kind: 'SET', player: lying });
-    for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now.`, 'proof');
     await hp.creditHeld();
     await RestDoor.file(emerged, world, pc);
     if (!(await RestDoor.wakeIfDue(pc, hp, now))) {

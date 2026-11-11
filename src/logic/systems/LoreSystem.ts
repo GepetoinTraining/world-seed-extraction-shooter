@@ -21,7 +21,7 @@ import { WebBank } from '../../../shared/logic/content/WebBank';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { CircleSystem, IGiftWords } from './CircleSystem';
-import { LORE_DEPTHS, LORE_NOTE_PAY, LoreDepth } from '../../../shared/logic/systems/LoreConstants';
+import { LORE_DEPTHS, LORE_NOTE_PAY, LORE_RANK_GROWTH, LORE_TEACH_PRICE, LoreDepth, loreTeachPrice } from '../../../shared/logic/systems/LoreConstants';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 
 export { LORE_DEPTHS };
@@ -33,10 +33,8 @@ const OUTCOME_FACTOR: Record<StudyOutcome, number> = { major_win: 2, success: 1,
 
 export const LORE_PER_SITTING = 10;
 export const LORE_GIFT_PRICE = 30;
-export const LORE_TEACH_PRICE = 40;
+export { LORE_TEACH_PRICE };
 export const LORE_RAISE_PRICE = 20;
-/** Rarer costs and pays more, on the same curve as gear's. No rank is the top of it. */
-const LORE_RANK_GROWTH = 1.5;
 /** What one raise adds, of what the passive already is. */
 const RAISE_SHARE = 0.25;
 /** How many sittings one dream takes. The rest wait for the next: it keeps an answer inside what a batch can carry. */
@@ -107,7 +105,7 @@ export class LoreSystem {
 
   /** A skill taught, born at this rank. */
   static teachPrice(rank: number): number {
-    return Math.round(LORE_TEACH_PRICE * growth(rank));
+    return loreTeachPrice(rank);
   }
 
   /** The next raise of a held passive. Each costs more than the last, and none is the last. */
