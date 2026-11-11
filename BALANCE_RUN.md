@@ -875,3 +875,69 @@ Missed by every worker, by the checker's reading:
 - If the trial lifts the sheet, a newcomer's dealt 5 holds a piece four ranks above them in full at every rank, so what a piece asks no longer keeps a low body from a high piece.
 - How often a run ends in death.
 - Nothing by any worker was run in the game. `server/`, the tutorial's own fight rules, and Kami's and creation's calls were read by nobody.
+
+# Part 3. What the tabletop engine has
+
+Pedro, 2026-11-11, on how gear and its materials should be built: "Ttrpg has the logic". And on what to read in `D:\-ttrpg-engine`: "Those + economy and extraction (fauna, flora, biome, predation and husbandry)... Should give you the gist".
+
+Four readers each took a fixed list and read every file in it whole: the frame (the two design documents, `hologram.ts`, `mesh-potential.ts`), making, living things, and the economy with what the land yields. Together 42 files and about 15,300 lines of the engine's 147,453. So "not there" below means not in those files, and nothing more. Their notes are in the notes folder under `balance-run/ttrpg/`. This part describes that engine; section 3.5 is a reading and is marked as one.
+
+## 3.1 The gist
+
+```
+every step is a pure function      it takes literal inputs and gives back its result and a receipt of those inputs
+                                   what varies comes from a seed (the lot, the world's day, the maker) or from a die handed in,
+                                   so the same making always gives the same thing and anyone can check it
+a made thing is a lot              with where it came from and the lot it was made of: ore lot, ingot lot, forged lot, each tied to its parent
+quality is the material's          smelting copies the ore's quality and forging copies the ingot's; nothing a maker does changes it
+skill, tool and roll               decide whether the step succeeds, and how many affixes it mints. They multiply nothing.
+heat, flux, the anvil's tier       are thresholds a step must meet, not multipliers
+affixes are what a making adds     a step keeps the affixes its material carried and mints new ones of its own; the name is built from their words
+                                   so a thing's affixes are the sum of its whole road
+mastery of a material              changes what a person can see of it (a deposit, an affix), never what is made
+a tool and a technology            are slots that accept DOMAINS of material (fifteen of them, such as flora-wood), not named items
+a place                            is never stored: it is worked out from the world's seed, its coordinates and the rules it inherits from the places above it,
+                                   and only what players changed is kept
+the four layers                    pure functions; processes that build up over days and resolve; the tree of places with inherited rules; an append-only log that is replayed
+```
+
+## 3.2 The road of one made thing
+
+1. A mine's layer is seeded: which resource, weighted by depth, and how much is left.
+2. Breaking through to a layer and digging it are rolls against a bar that rises with depth and tier, with the tool and the skill added. A dig yields a count, with no quality and no lot.
+3. An older path gives output a day as the deposit's base output x the share of workers it has x the deposit's quality x the workers' efficiency. There the quality belongs to the deposit.
+4. Smelting checks the skill, then the heat, then the flux. Short of flux it yields half. The ingot takes the ore's quality, its tier comes from the recipe, and affixes are minted.
+5. Forging checks the anvil's tier, then rolls skill and tool against the bar. It keeps the ingot's affixes, mints new ones, and drops repeats.
+6. Identifying sets how good an affix a person can see from their mastery of the material, and a passed check raises that by one step.
+
+By the making reader: where a lot's quality is born when a dig yields only a count is not in those files, and the three systems (recipes that name their inputs, the lot and affix functions, the tools with domain slots) are not wired to each other there.
+
+## 3.3 Beside Pedro's design
+
+| His design | In the files read |
+|---|---|
+| A kind is a noun with the slot it goes into | A tool and a technology are a purpose with slots. An item is a lot with a name built prefix, base, suffix. |
+| It asks for properties, not named items | Yes for a tool's and a technology's slots, which accept domains of material. No function fills a slot or tests a material against a domain. Every recipe names its inputs. |
+| Final stats come from the specific materials used | Not in the files read. An item has a quality, a tier and affixes. Quality and affixes do come down from the material, unchanged and inherited. Nothing turns a material's properties into numbers on the thing. |
+| Processes add bonuses, affixes and suffixes | Yes: each step mints its own and keeps its material's. |
+| The same thing is never made twice by chance | Yes: the seed is the lot, the day and the maker. |
+
+## 3.4 The land, living things and the economy
+
+- **The land.** A place is a share for each of 13 classes of material, from the rules it inherits and its seed; a tile holds two to four classes. What can be taken is a separate record, a deposit: a quality, a tier, a base output a day, reserves that run out or a capacity that regrows, and the labour it wants. Taking is a rate over days, with a tool and a skill, and both workers and players drain the same deposit.
+- **Living things.** They are counts and rates, not individuals. Food security scales births and, when low, adds deaths; carrying capacity caps births; below a least number a herd dissolves. A yield is a flat number a head by species: nothing of the animal itself (its size, age or health) reaches what is taken from it, and a product records only its species. Plants have no yield in the files read. The ladder of hunt, trap, tame, domesticate is there. Predators are not matched to prey: predation is a pressure handed in, and nothing in those files calls it.
+- **The economy.** A price is a step table on supply over demand, held between a quarter and four times its base, with no memory of last week. The loop is not closed: taking only adds to supply and nothing in the files read consumes it. The engine's own document names the missing closers and none is built: a cost of living, a price for a made thing as supply cost + labour + markup + tariff, lodging, and what study costs.
+
+## 3.5 How this reads for gear here
+
+A reading, by the coordinator, not confirmed by Pedro.
+
+- A piece is the end of a road of lots. Its affixes are what each material and each step on that road gave it, and its quality is its material's. That is why the materials side outweighs the triangle: a longer and better road is a deeper piece.
+- A found piece is a piece whose road happened in the world.
+- The one roll kept on a piece that the ladder worker proposed (1.4) and this engine's seed of lot, day and maker are the same idea from two ends: keep what went in, and work the numbers out again whenever they are wanted.
+- The step this engine does not have, in the files read, is the one his November 2025 plan states: a slot filled with a specific material, and that material's properties becoming the piece's numbers. The slots are here and the properties are there.
+- For money, the lesson is the unclosed loop: every source needs a sink of its size. His "getting too much money feels bad and not getting any feels bad as well" is that loop.
+
+## 3.6 Not read
+
+The three proposals under `docs/to-be implemented/`, one of them on fauna, predation and domestication; `regionFeatures.ts`, where a plant's harvest seems to be; `tier.ts`, `types.ts`, `interactions.ts` beyond one excerpt, `mm-agriculture`, the cube files, and `docs/oneconversation.md` (13,282 lines). What the readers cost, measured from their transcripts: 4.6 million tokens read back, 0.5 million written and 57 thousand of output, on Sonnet.
