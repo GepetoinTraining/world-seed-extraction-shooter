@@ -917,7 +917,22 @@ So the calls of 2.11 are made here, by the coordinator, on that word. Each follo
 
 The eight calls of the lore pass are made the same way at the end of 3.8, and the open rows the study work left (ledger S1d to S1j) stand as built.
 
-**The fight's shapes.** In the same message: "something for us to do is make the combat and bullet shapes, it should be bullet hellish, and meele needs reach, and it needs to have that arc, an axe has reach but doesn't hit close to the character usin (darius (lol) q), a spear can atack forward far, and wide arc... see the concept?" Read as: every kind of weapon has a shape of its own on the ground, how far it reaches, how wide it sweeps, and where it does not reach at all (an axe hits out at its edge and misses what stands against its wielder; a spear reaches far ahead); and shots come in patterns that fill the field. Today every swing is one arc, 60 px long and 0.75 rad either side, whatever is held; a shot is a single line; and two patterns, a spread and a spiral, are written and nothing fires them (`STAT_TREES.md` section 9). The fight worker's set already gives each kind its reach and arc (2.2). The shapes are the first piece of the fight's rebalance. Not started.
+**Levels, points and circles.** On reading the calls, Pedro, 2026-11-11: "the levels! yes, that's something to fix, when I played it I was wishing for more points in leveling up, 4 points per level, one free point and one for each of the buckets. the circles in skills, not at every level, one at every 3 levels. On rank up reset as we planned so that we can have muiltiple runs (like ragnarok when a player is reborn)."
+
+```
+a level's points     four: one put anywhere, and one for each of the three groups of attributes (the body, the mind, the self),
+                     spent only inside its group. Today a level gives one (POINTS_PER_LEVEL).
+                     today the three groups exist only where the hub's sheet draws them (PlayerHub.tsx); the rules do not know them
+a skill's circles    one at every third level of the skill. Today one at every level (CIRCLES_PER_LEVEL).
+a rank gained        the level starts again at the new rank, so each rank is a run of levels of its own.
+                     the plan already says so: "LEVELS (D83): from experience, reset at each rank, with no top"
+```
+
+Made with it, by the coordinator: attributes, points spent and points not yet spent are kept across a rank, since D83 promises nothing is lost at a trial; levels a character already gained are given their three group points, since a character's sheet follows the law as it stands; circles already made are kept.
+
+What it does to the spine. The character worker found that the rising floor costs a body fifteen points a rank against about four gained (2.1). At four points a level and about four levels a rank a character gains about sixteen: the two now meet, and call 5 (the trial lifts every attribute by one) may no longer be needed. The order of worth in 1.2 put a rank's levels at a quarter of a rank; at four times the points that has to be worked again. Not built: it follows the lore rule in the same session.
+
+**The fight's shapes.** In the same message as the calls: "something for us to do is make the combat and bullet shapes, it should be bullet hellish, and meele needs reach, and it needs to have that arc, an axe has reach but doesn't hit close to the character usin (darius (lol) q), a spear can atack forward far, and wide arc... see the concept?" Read as: every kind of weapon has a shape of its own on the ground, how far it reaches, how wide it sweeps, and where it does not reach at all (an axe hits out at its edge and misses what stands against its wielder; a spear reaches far ahead); and shots come in patterns that fill the field. Today every swing is one arc, 60 px long and 0.75 rad either side, whatever is held; a shot is a single line; and two patterns, a spread and a spiral, are written and nothing fires them (`STAT_TREES.md` section 9). The fight worker's set already gives each kind its reach and arc (2.2). The shapes are the first piece of the fight's rebalance. Not started.
 
 # Part 3. What the tabletop engine has
 
