@@ -937,6 +937,8 @@ What it does to the spine. The character worker found that the rising floor cost
 
 Asked whether to lower what a gift asks from three circles to one, Pedro, 2026-11-11: "Lower to one". So a gift asks one circle in a skill, and a first gift comes with the first circle, after three levels climbed, as it did before the circle's pace changed. What a gift costs in lore is untouched. Not built: it follows the energy build in that build's session.
 
+He then refined it: "how about first gift is one, first gift new skill is 3, so the first first is one". So only the first gift a character ever takes asks one circle; the first gift of every other skill asks three, as a gift does today. Made with it, by the coordinator: a later gift in a skill that already has one keeps the rule the code has for it, counted from where the first one left off.
+
 He agreed to the first two of those calls ("agreed"), and on the third: "sure, but right now no one has a character, and I always strate fresh to test". So nothing here needs a road for characters that already exist: none do.
 
 **Energy.** Pedro, 2026-11-11: "energy management, gear needs to give energy stat (you get very little energy simply by levelling), and, we need energy tonics that are limited usage per rest, and give debuffs as side effects for using."
