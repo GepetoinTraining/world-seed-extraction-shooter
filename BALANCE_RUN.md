@@ -985,6 +985,127 @@ Four things, set beside the code. The readings are the coordinator's.
 The first is a rule and can be built once its scale has numbers, which is the lore balancing pass. The other three are design: a view, a queue of acts, and a new kind of good with the board asking for it.
 - For money, the lesson is the unclosed loop: every source needs a sink of its size. His "getting too much money feels bad and not getting any feels bad as well" is that loop.
 
+## 3.8 The lore pass
+
+Pedro, 2026-11-11, in the order he gave them. These are the rules of the pass:
+
+> "depends, do lore pieces give a fixed amount? they used to drop a lot, studying should also give some lore, and paper or data items should give more lore"
+>
+> "needs a balancing pass, lore should be slower than exp but fixed... like, a person should be able to target farm lore itself"
+>
+> "It needs to use the d100 idea and scales for what the roll gives you, you never lose lore, but we can add a debuff for a critical failure that you miss read something, it shows up as a high lore amount and decreases over new lore read."
+>
+> "in the same category yes, general lore no, and general lore is the overall resource, think of it as albions yellow exp, forgot the name"
+>
+> "Yes, run it"
+
+Two scripts, kept outside the repository in the session's scratchpad and run with `tsx` against the game's own functions: `lore_measure.ts` (what is today) and `lore_propose.ts` (the scale below, priced over every face of the roll). Nothing was built.
+
+### What comes in today
+
+```
+source                 pays                                         how often                                            how it was found
+a trade note read      15 general, at once                          once per trade: 7 trades, so 105 lore ever          lore_measure.ts; readLore refuses a trade already read
+a ruin's chest         one lore piece, always                       a ruin stands in 1 chunk in 10                       WorldGenerator (read), 0.1 a chunk
+  of which             a trade note 25.2%, a plain fragment else    10,000 keyed chests                                   lore_measure.ts, ProcessSystem.chestNote
+a plain fragment       nothing by itself: only by a sitting         -                                                    read: readLore asks for a trade
+a creature killed      no lore piece can drop                       0 of 141 lines in the first world's 27 tables        lore_measure.ts; a line is gear, material, good, consumable or junk
+the shelf              two trades' notes a week, 1 to 3 each        60 G a note                                          read: hub store, generateDailyStock
+a sitting              10 x 1.5^rank x depth x outcome, at a rest   any time, for 15 energy (10 with an eye)             lore_measure.ts, below
+paper or ink things    as anything else                             9 of the 141 lines (carbon paper, bookkeeper's ink)  lore_measure.ts
+```
+
+A sitting today, computed over all twenty faces (d20 + eye + intelligence - 1 against 8, three more per rank above). The model picks the depth.
+
+```
+thing / person          outcomes of 20 (major fail, fail, success, major win)   mean lore: shallow, fair, deep
+F / F, int 1, no eye    1, 6, 10, 3                                              4, 8, 16
+F / F, int 1, eye 1     1, 5, 10, 4                                              4.5, 9, 18
+F / F, int 5, no eye    1, 2, 10, 7                                              6, 12, 24
+E / E, int 1, no eye    1, 6, 10, 3                                              6.4, 12, 24
+E / E, int 5, eye 1     1, 1, 10, 8                                              10.4, 19.5, 39
+F / E, int 1, no eye    1, 3, 10, 6                                              5.5, 11, 22
+```
+
+What it is spent on (`lore_measure.ts`): a forming skill learned or a skill taught 40, 60, 90, 135 at ranks F to C; a gift 30, 45, 68, 101 for the first and twice that for the second; a raise 20, 30, 45, 68 for the first.
+
+Experience beside it (`lore_measure.ts`, `ProgressionSystem`): a kill pays 50 at F, 100 at E, 250 at D; a harvest 2, 4, 10; a chest 25, 50, 125, or 62, 125, 312 with three guards standing. The first level asks 250 at F and 500 at E; the fifth asks 2,795 at F. Fights and chests cost no energy; a tool's harvest costs 6 at F and 8 at E (half again winged), and a sitting 15.
+
+**A day, modelled** (`lore_propose.ts`; the plan is reasoned, the sums computed). A bar of 50 energy, and a rest in town gives it back without turning the day. One run: six kills, one ruin chest with three guards, as many winged harvests as leave 30 energy, then two sittings at home, one of them the chest's fragment. Intelligence 1, no eye, things of the person's own rank.
+
+```
+                       experience in   first level   levels a day   lore in   first skill   skills a day
+rank F                 366             250           1.46           19.8      40            0.49
+rank E                 729             500           1.46           27.8      60            0.46
+F, sittings only       0               -             -              24.0      40            0.60
+```
+
+A first level comes inside the first run, before any rest. A sitting's lore lands at the dream after a rest, so a first skill is learned at the fourth rest on the mixed day and the third on a day of sittings only. The forming skill's own roll was not modelled.
+
+So lore is already slower than experience, by about three to one. It is not fixed: the model picks a depth worth half to double, and the roll swings it from nothing to double. It can be gone after only by sittings: reading gives 105 in a life, and a kill gives none.
+
+### What is proposed
+
+**a. The roll of a hundred.** The total is d100 + 5 for each point of the eye and of intelligence above 1, less 15 for each rank the thing stands above the person: today's d20 weights, five times over. Each stretch pays a known share of the thing's base B = 10 x 1.5^rank. The roll sets the depth; the model only words it.
+
+```
+total        stretch    pays now                                     the nearest outcome today
+5 or less    misread    nothing, and a misreading in its category    a major failure, nothing
+6 to 40      little     B / 2                                        a failure, nothing
+41 to 85     fair       B                                            a success, B at a fair depth
+86 to 100    deep       2 B                                          a major win, 2 B
+101 and up   insight    3 B, and B more for each 15 above 100        out of reach: a d20 tops out at a major win
+```
+
+Computed over every face (`lore_propose.ts`), mean lore a sitting, beside today's at a fair depth:
+
+```
+thing / person          stretches of 100 (misread, little, fair, deep, insight)   proposed   a document   today
+F / F, int 1, no eye    5, 35, 45, 15, 0                                         9.25       18.50        8.00
+F / F, int 1, eye 1     0, 35, 45, 15, 5                                         10.75      21.50        9.00
+F / F, int 5, no eye    0, 20, 45, 15, 20                                        15.00      30.00        12.00
+E / E, int 1, no eye    5, 35, 45, 15, 0                                         14.05      27.75        12.00
+E / E, int 5, eye 1     0, 15, 45, 15, 25                                        25.20      50.25        19.50
+E above, int 1          20, 35, 45, 0, 0                                         9.55       18.75        8.25
+F two above, int 1      35, 35, 30, 0, 0                                         4.75       9.50         4.00
+```
+
+Every stretch but the misreading pays, so studying always gives some, and lore held is never taken. The misreading falls mostly on things above the person: a newcomer misreads 1 time in 20 at their own rank and 7 in 20 two ranks up. What a person knows of a tree stays on the price (S1), not on the roll. Alternative: the tree's points also move the roll, which would make knowing a tree count twice.
+
+**b. The two kinds.** A category is the family a thing is of (flora, mineral, beast, tech…), the registry's own family words and the root of S1's least tree. A sitting on a thing with a family pays two thirds of its lore, rounded down, to that family and the rest as general lore; a thing with no family to show (a person, a place, typed words, an unread piece) pays all general, so a price still tells nothing (D32). A note read pays general. A forming skill learned, a gift and a raise take lore of the skill's own family first, then general; a taught skill takes its topic's family first. The purse, `bank.loreHeld`, stays the general pool with no change of meaning. A family's lore sits in `bank.lore` under its family word, with two new numbers, what can be spent and what is misread; that entry's level and experience stay knowledge and never fall. Alternative: the category is a concept of the hub's web (S1a), which changes from hub to hub while a person carries lore between them.
+
+**c. A misreading.** Three times the sitting's base: 30 at F, 45 at E, 68 at D. It shows in its family as lore, so the family reads high, but while any of it stands that family's lore cannot be spent; general lore is untouched. New lore of that family wears it down by as much as was read, and the new lore is kept, so when it reaches nothing everything read since is spendable and nothing was lost. At two thirds of a mean sitting it wears off in about five sittings of that family at any rank. Alternative: twice the base, about three sittings.
+
+**d. Paper and data.** A sitting on a document (`StudySystem.isDocument`: a fragment, a note) pays twice its stretch and is spent as now; on a thing made of the registered paper material (Carbon Paper), half again. "Data" is no word in the registry yet, so a data item needs one before it can pay more. Both read only what the thing shows. Alternative: a document pays its base by rank whatever the roll, as a note does.
+
+**e. Lore pieces dropping.** Today a ruin's chest always gives one and a kill never. Proposed: the ruin stays as it is; a pack leader's or boss's hoard (`Territory`, `hasLore: false` today) gives one "sometimes" (25%, the loot law's own band); a creature that holds the `intelligent` skill (humanoids by default, by the monster intelligence ruling) drops a fragment "seldom" (5%), on its own keyed stream beside its table, so no table is written again. Alternative: lore as a sixth loot kind, which raises the loot law's formula and asks for every world's tables again.
+
+**f. Going after lore on purpose,** with what the game has: recon for ruins and take their documents; buy the shelf's two notes a week; sit with documents at home for twice the lore; study things of one family, which pays that family and, by S1, costs less the more of its tree is known. A queue of acts while the player sleeps (design) would be a queue of sittings, bounded by the bar of energy each rest gives back.
+
+**g. With a to f.** Same day, same plan (`lore_propose.ts`):
+
+```
+                       experience in   levels a day   lore today   lore proposed   skills a day, today and proposed
+rank F                 366             1.46           19.8         37.0            0.49, 0.93
+rank E                 729             1.46           27.8         53.9            0.46, 0.90
+F, three documents     0               -              24.0         55.5            0.60, 1.39
+```
+
+Lore stays slower than experience on a mixed day, by about three to two. A newcomer who studies the family of the skill they are forming learns it at the third rest, or the second with documents to sit with, and their first level still comes in the first run. 40 stands. Where this bears on the design he named: the web's view must show the family words for anyone to plan lore by them, and a skill written out as a lore piece should pay its reader no more than that skill's price, or writing and reading would mint lore.
+
+### Calls that are his
+
+1. The roll and its scale as in a, weights five times today's: recommended. Alternative: stretches of his own.
+2. A category is a family word: recommended. Alternative: a concept of the hub's web.
+3. Two thirds to the family, a third general: recommended. Alternative: all of it to the family, general only from notes and from things with no family.
+4. A misreading of three times the base, locking only its family: recommended. Alternative: twice the base.
+5. Documents twice, paper half again: recommended. Alternative: a document pays its base, fixed.
+6. A fragment from intelligent creatures at 5% and from hoards at 25%, on their own streams: recommended. Alternative: a loot kind for lore.
+7. The model stops choosing a sitting's depth: recommended, since "fixed" asks it.
+8. 40 for a first skill: stands.
+
+Not measured: how many ruins a run meets (only the rule, 1 chunk in 10, was read; no world was generated), how long the forming skill's own roll takes, a newcomer's intelligence at creation, whether recon shows a ruin, whether a dream is answered with no key, and kills by sampling: the first world's tables were counted line by line, and they hold no lore by their kinds, so no kill was run.
+
 ## 3.6 Not read
 
 The three proposals under `docs/to-be implemented/`, one of them on fauna, predation and domestication; `regionFeatures.ts`, where a plant's harvest seems to be; `tier.ts`, `types.ts`, `interactions.ts` beyond one excerpt, `mm-agriculture`, the cube files, and `docs/oneconversation.md` (13,282 lines). What the readers cost, measured from their transcripts: 4.6 million tokens read back, 0.5 million written and 57 thousand of output, on Sonnet.
