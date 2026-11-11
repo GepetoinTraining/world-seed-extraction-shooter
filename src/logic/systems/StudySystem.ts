@@ -30,6 +30,7 @@ import { ProgressionSystem } from '../../../shared/entities/player/systems/Progr
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { DAY_MS } from '../../../shared/logic/time/RadixClock';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
@@ -134,12 +135,14 @@ export class StudySystem {
     return this.askAt(player, item.isIdentified === false ? this.bestEye(player) : this.identifyLevel(player, item));
   }
 
-  private static askAt(player: IPlayer, level: number): { cost: number; seconds: number } {
+  /** `share` is what still stands of the ask once the tree is counted (WebSystem.treeShare): 1 asks it whole. */
+  private static askAt(player: IPlayer, level: number, share = 1): { cost: number; seconds: number } {
     // Line 77: glasses shorten the clock. Skill and gear make it quick, never instant.
     const eyes = 1 + Math.max(0, StatSystem.total(player.equipment, 'field_analysis_speed') + StatSystem.signalEyes(player.attributes));
+    const energy = level < 1 ? Math.ceil(IDENTIFY_ENERGY * WINGING_FACTOR) : IDENTIFY_ENERGY;
     return {
-      cost: level < 1 ? Math.ceil(IDENTIFY_ENERGY * WINGING_FACTOR) : IDENTIFY_ENERGY,
-      seconds: Math.max(IDENTIFY_FLOOR_SECONDS, Math.round(this.identifySeconds(level) / eyes))
+      cost: Math.max(1, Math.round(energy * share)),
+      seconds: Math.max(IDENTIFY_FLOOR_SECONDS, Math.round(this.identifySeconds(level) / eyes * share))
     };
   }
 
@@ -240,12 +243,18 @@ export class StudySystem {
       : { ...player, energyToday: this.energyLeft(player) - cost };
   }
 
-  /** D32's rule holds: what a sitting asks is the person's, never the thing's, so its price tells nothing. */
+  /**
+   * D32's rule holds: what a sitting asks is the person's, never the thing's rank or worth, so its price
+   * tells nothing. Pedro, 2026-11-11: study costs less "for the more someone knows about a tree of the
+   * tech web", so the ask falls with what this person holds of the tree the shown tags belong to. An
+   * unread piece shows no tags, so it pays whole and still gives nothing away.
+   */
   static studyAsk(player: IPlayer, target: IStudyTarget): { cost: number; seconds: number } {
     const item = target.kind === 'item' && !target.hidden ? this.heldItem(player, target.ref) : undefined;
     const scope = item ? this.identifyScopeOf(item) : null;
     const level = scope ? player.bank.universalSkills[this.scopeSkillId(scope)]?.level ?? 0 : this.bestEye(player);
-    return this.askAt(player, level);
+    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? []);
+    return this.askAt(player, level, WebSystem.treeShare(tree));
   }
 
   /** The day a moment falls on: the clock's day, which no rest turns. */

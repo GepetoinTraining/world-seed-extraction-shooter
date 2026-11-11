@@ -122,8 +122,8 @@ const MENTAL = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
 const over = (attributes: IAttributes | undefined, attr: keyof IAttributes): number =>
   Math.max(0, (attributes?.[attr] ?? 1) - 1);
 
-/** A share from 0 toward 1, climbing with points and never arriving. */
-const climb = (points: number): number => {
+/** A share from 0 toward 1, climbing with points and never arriving. The web's study discount reads it too. */
+export const climb = (points: number): number => {
   const rating = points * CURVE_PER_POINT;
   return rating / (rating + 100);
 };

@@ -32,6 +32,7 @@ import { Rng } from '../rng/DeterministicRNG';
 import { TagLaw } from '../content/TagLaw';
 import { WebBank } from '../content/WebBank';
 import { ProcessFamily, ProcessSystem } from './ProcessSystem';
+import { climb } from './StatSystem';
 
 // ---------------------------------------------------------------------------
 // TUNABLE, and Wave 12's to balance. Structure numbers that never render.
@@ -329,6 +330,27 @@ export class WebSystem {
   /** What a skill's levels add up to. A rare skill's level is worth far more than a common one's. */
   static skillPower(skill: Pick<ISkillState, 'level' | 'rank' | 'bornRank'>): number {
     return (skill.level - 1) * SKILL_IMPACT_PER_LEVEL * ProgressionSystem.skillImpactFactor(ProgressionSystem.skillRarity(skill));
+  }
+
+  /**
+   * How much of a thing's tree these hands know. Pedro, 2026-11-11: "we need to make study cost less
+   * for the more someone knows about a tree of the tech web". The tree is the worked thing, the web's
+   * own two worked kinds: the family it is of and the materials it is made of. A held skill is in it
+   * when it works any of those, counts once for each it shares (a nearer branch counts for more), and
+   * counts its level and its rung. Nothing worked, no tree: nought.
+   */
+  static treeKnowledge(skills: Skills, tags: string[], pack: IWebPack = current()): number {
+    const tree = this.materialIdentity(tags ?? [], pack);
+    if (tree.length === 0) return 0;
+    return this.heldSkills(skills).reduce((sum, skill) => {
+      const shared = skill.tags.filter(t => tree.includes(t)).length;
+      return shared === 0 ? sum : sum + shared * (skill.level + this.masteryOf(skill).rung);
+    }, 0);
+  }
+
+  /** The share of a sitting's ask that still stands for someone who knows this much of its tree: the house curve, never free. */
+  static treeShare(knowledge: number): number {
+    return 1 - climb(Math.max(0, knowledge));
   }
 
   /** The strongest held skill the weapon in the hand answers to: every tag of the skill is on the weapon. */
