@@ -14,6 +14,7 @@ import { CartSystem } from '../../entities/world/CartSystem';
 import { IWorldEntity } from '../../../shared/entities/world/types';
 import type { IPlayerPort } from '../../entities/player/playerView';
 import { bodyOf, type IWorldView } from '../../entities/world/worldView';
+import { PAIR_ENERGY, PairCraft } from '../../../shared/logic/systems/PairCraft';
 
 export type Place =
   | { kind: 'PACK'; x?: number; y?: number; rotated?: boolean }
@@ -22,7 +23,9 @@ export type Place =
   | { kind: 'CART'; entityId: string; x?: number; y?: number; rotated?: boolean }
   | { kind: 'CACHE'; entityId: string }
   | { kind: 'GROUND' }
-  | { kind: 'KIT' };
+  | { kind: 'KIT' }
+  /** Set on another piece in the same grid, to be worked into it (PairCraft). Never a cell. */
+  | { kind: 'ONTO'; grid: 'PACK' | 'STASH'; targetId: string };
 
 export interface Held { item: IItem; from: Place; rotated: boolean }
 
@@ -127,6 +130,17 @@ export function probeMove(player: IPlayer, held: Held, to: Place, world: IWorldV
       return (player.bank.carryItemIds ?? []).includes(item.id) ? ALREADY : OK;
     case 'CACHE':
       return no('A cache takes what you leave on the ground. Drop it there.');
+    case 'ONTO': {
+      // Both lie in one grid: what is in a hand, a cart or a cache is set down first
+      if (from.kind !== to.grid) return no('Set it down beside the other first. Two things are worked together where they both lie.');
+      const beside = to.grid === 'PACK' ? player.currentSession?.inventory ?? [] : player.bank.stashTabs[0]?.items ?? [];
+      const onto = beside.find(i => i.id === to.targetId);
+      if (!onto) return no('There is nothing there to set it on.');
+      const may = PairCraft.mayCombine(item, onto);
+      if (!may.ok) return may;
+      const left = player.currentSession?.energy ?? player.energyToday ?? Infinity;
+      return left < PAIR_ENERGY ? no(`Refused: needs ${PAIR_ENERGY} energy, you hold ${Math.floor(left)}. Rest first.`) : OK;
+    }
   }
 }
 
@@ -192,6 +206,8 @@ export function commitMove(held: Held, to: Place, world: IWorldView, pc: IPlayer
       return OK;
     case 'CACHE':
       return verdict;
+    case 'ONTO':
+      return pc.combine(item.id, to.targetId);
   }
 }
 

@@ -114,8 +114,9 @@ const LOTS_STANDING = 6;
 const LAMPS_STANDING = 7;
 
 // The whole layout, by hash: the same inputs give the same city on every machine.
-const STORED_LAYOUT_HASH = 4003879988;
-const STORED_SECOND_CHUNK_HASH = 1878524915;
+// Recaptured 2026-11-10: the tavern's ten beds are written on it in the plan (Pedro: "10 beds?").
+const STORED_LAYOUT_HASH = 617254617;
+const STORED_SECOND_CHUNK_HASH = 865789896;
 
 beforeEach(() => {
   db.clear();

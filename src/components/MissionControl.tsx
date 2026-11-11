@@ -16,6 +16,7 @@ import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
 import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Tutorial } from '../logic/systems/Tutorial';
+import { SHELF_STATE } from '../../shared/logic/theme/shelf';
 import { hubPort } from '../entities/hub/store';
 
 const GATE_WORDS: Record<WorldPhase, string> = {
@@ -54,7 +55,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
       </div>
       {/* Wave 10E (D20): the pin is on the card — this world dreams this bank, forever */}
       <div className="ws-dim ws-small">
-        {ContentRegistry.get(world.themeId) ? `${ContentRegistry.get(world.themeId)!.name.toUpperCase()} — pinned at mint${world.magicUnlocked ? ' · IT DREAMS' : ''}` : world.packVersion ? `DREAM PACK v${world.packVersion}${world.webVersion ? ` · WEB v${world.webVersion}` : ''} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
+        {ContentRegistry.get(world.themeId) ? `${ContentRegistry.get(world.themeId)!.name.toUpperCase()} — pinned at mint${Tutorial.dreams(world, SHELF_STATE.magicUnlocked) ? ' · IT DREAMS' : ''}` : world.packVersion ? `DREAM PACK v${world.packVersion}${world.webVersion ? ` · WEB v${world.webVersion}` : ''} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
       </div>
 
       <div

@@ -18,6 +18,7 @@ import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { Director, IDirectorRecord } from '../../../shared/entities/world/Director';
 import { DirectorStore } from './DirectorStore';
 import { TutorialStart } from './TutorialStart';
+import { SHELF_STATE } from '../../../shared/logic/theme/shelf';
 import { IPopulationRecord, Population, PopulationStore, emptyPopulationRecord } from '../../../shared/entities/world/Population';
 import { IKoseki } from '../../../shared/entities/world/Koseki';
 import { Leaders } from '../../../shared/entities/world/Leaders';
@@ -248,7 +249,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({ directorRecord: told });
     const card = get().availableWorlds.find(w => w.id === worldId);
     if (generationContext && card) {
-      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, card.magicUnlocked), webVersion: generationContext.webVersion, groundVersion: generationContext.groundVersion, cycleMs: generationContext.cycleMs, lay: generationContext.lay };
+      generationContext = { ...ContentRegistry.contextFor(card.themeId, card.difficulty, told, Tutorial.dreams(card, SHELF_STATE.magicUnlocked)), webVersion: generationContext.webVersion, groundVersion: generationContext.groundVersion, cycleMs: generationContext.cycleMs, lay: generationContext.lay };
     }
   },
   settled: async () => { await landing; },
@@ -337,7 +338,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         const caught = await DirectorStore.catchUp(worldCard.id, moment.generation, lineWorld);
         const director = await ScanPass.compute(scanRoom, worldCard.id, before, caught, lineWorld);
         set({ directorRecord: director, generation: moment.generation });
-        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, worldCard.magicUnlocked);
+        // D49: a minted world dreams as it was pinned; the tutorial, never minted, as its hub stands now
+        const dreams = Tutorial.dreams(worldCard, SHELF_STATE.magicUnlocked);
+        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, dreams);
 
         // A world that never turns has no cycle to refill on, so it keeps no record. The tutorial turns (Pedro's own
         // run, 2026-11-10: "the chests always respawn", "the NPC are extracted and respawn"), so it keeps one like any other
@@ -365,7 +368,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         DreamingSystem.activate(worldCard.seed,
           worldCard.themeId
             // D49: only once magic was unlocked does a world dream at all
-            ? (worldCard.magicUnlocked ? ContentRegistry.dreamPack(worldCard.themeId, director) : null)
+            ? (dreams ? ContentRegistry.dreamPack(worldCard.themeId, director) : null)
             : worldCard.packVersion ? AffixBank.packAt(worldCard.packVersion) : null);
         // A chest in this world rolls on its theme's tables, when the theme has any (LootLaw.ts)
         LootBook.enter(worldCard.themeId);

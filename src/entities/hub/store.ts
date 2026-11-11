@@ -52,7 +52,8 @@ import { ProgressionSystem } from '../../../shared/entities/player/systems/Progr
 import {
   GUILD_OWNER_ID, IBuildingAsk, IGuildState, IResident, IResidentQuest, PAY_SHARE, benchFactor, bondItemOf, emptyGuild, guildFrom, guildHouseCost, houseBill, houseTemplateFor, houseTemplateNamed,
   mayHaveGround, questPay, readSheet, residentIdOf, residentUpkeepPerDay, trialFor, trialTakes, wantFor, wantMayTake,
-  FED, agendaOf, livingPerDay, residentRung, residentWagePerDay, residentWorks
+  FED, agendaOf, livingPerDay, residentRung, residentWagePerDay, residentWorks,
+  bedsTaken, tavernBeds
 } from './guild';
 import { EMPTY_LOT_PER_DAY, IRunningBook, ITaxLine, PRINT_DAYS, foldDays, keeperBrought, npcRank, printAmount, printsNeeded, residentFacts, runningBook, runningPerDay, taxBook, walletBrought } from './money';
 import { DEAL_DAYS, IShopWeekLine, ShopWeek } from '../../logic/economy/ShopWeek';
@@ -1181,6 +1182,10 @@ export const useHubStore = create<HubState>((set, get) => ({
     const id = residentIdOf(bond.bondData);
     const onTheRoad = get().craftsmen.some(c => c.bond.worldSeed === bond.bondData!.worldSeed && c.bond.entityId === bond.bondData!.entityId);
     if (onTheRoad || guild.residents.some(r => r.id === id || r.bondItemId === bond.id)) return { ok: false, reason: `${sheet.name} is already in this city. Nobody comes through twice.` };
+    // The tavern has the beds it has. Whoever finds it full keeps their bond until one frees
+    const beds = tavernBeds(HubGenerator.generate({ chunks: get().chunks, dismembered: get().dismembered }));
+    const taken = bedsTaken(guild.residents, get());
+    if (taken >= beds) return { ok: false, reason: `The Rusty Anchor is full: ${taken} of ${beds} beds.` };
 
     // From the check to the bond leaving there is no await: one press, one person.
     const resident: IResident = {

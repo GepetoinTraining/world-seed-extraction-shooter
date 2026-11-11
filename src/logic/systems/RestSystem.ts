@@ -15,7 +15,7 @@
  * batch waits for the next rest, and nothing ever blocks on a model (line 87).
  */
 
-import { IItem, IPlayer, IStudySitting } from '../../../shared/types';
+import { IItem, IMadeWaiting, IPlayer, IStudySitting } from '../../../shared/types';
 import { IThemeBody, SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { IThemeGrowth, WorldGrowth } from '../../../shared/logic/theme/WorldGrowth';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
@@ -52,9 +52,11 @@ export interface IRestQueue {
   ground: string[];
   /** D118: sittings that paid, logged, waiting for a dream to resolve them. Settling leaves them be. */
   sittings: IStudySitting[];
+  /** Things made by setting one material on another, unread until now (PairCraft). */
+  made: IMadeWaiting[];
 }
 
-export const emptyQueue = (): IRestQueue => ({ studies: [], weaves: [], met: [], ground: [], sittings: [] });
+export const emptyQueue = (): IRestQueue => ({ studies: [], weaves: [], met: [], ground: [], sittings: [], made: [] });
 
 export interface ISkillWords {
   name: string;
@@ -128,6 +130,12 @@ export class RestSystem {
     return { ...player, restQueue: { ...q, studies: [...q.studies, itemId] } };
   }
 
+  /** A thing just made goes on the log unread. What it came to is known at the next rest, and not before. */
+  static queueMade(player: IPlayer, made: IMadeWaiting): IPlayer {
+    const q = this.queueOf(player);
+    return { ...player, restQueue: { ...q, made: [...q.made.filter(m => m.id !== made.id), made] } };
+  }
+
   static queueWeave(player: IPlayer, elements: string[]): IPlayer {
     const q = this.queueOf(player);
     const id = WeaveSystem.idOf(elements);
@@ -156,7 +164,7 @@ export class RestSystem {
   // SETTLING: at any rest (D30, D50). Pure.
   // -----------------------------------------------------------------------
 
-  static settle(player: IPlayer): { player: IPlayer; read: IItem[]; emerged: { id: string }[]; learned: string[]; floorNamed: string[] } {
+  static settle(player: IPlayer): { player: IPlayer; read: IItem[]; emerged: { id: string }[]; learned: string[]; floorNamed: string[]; made: (IMadeWaiting & { item: IItem })[] } {
     const { player: skilled, emerged } = WebSystem.rest(player);
     const q = this.queueOf(skilled);
 
@@ -165,6 +173,12 @@ export class RestSystem {
     const read = allInventories(skilled).filter(i => ids.has(i.id));
     let next = read.reduce((p, item) => StudySystem.reveal(p, item), skilled);
     next = mapItems(next, ids, i => ({ ...i, isIdentified: true }));
+
+    // Pedro, 2026-11-10: "after rest you see what you made". A made thing still held is read; one that is gone is let go
+    const madeIds = new Set(q.made.map(m => m.id));
+    next = mapItems(next, madeIds, i => ({ ...i, isIdentified: true }));
+    const held = allInventories(next);
+    const made = q.made.flatMap(m => { const item = held.find(i => i.id === m.id); return item ? [{ ...m, item }] : []; });
 
     // Line 80: what was met in the field is known, and can be cast.
     const learned = q.met.filter(id => !(next.knownAbilities ?? []).includes(id));
@@ -181,7 +195,7 @@ export class RestSystem {
       }
     }
     next = { ...next, weaveNames, restQueue: { ...emptyQueue(), ground: q.ground, weaves: q.weaves, sittings: q.sittings } };
-    return { player: next, read, emerged, learned, floorNamed };
+    return { player: next, read, emerged, learned, floorNamed, made };
   }
 
   // -----------------------------------------------------------------------

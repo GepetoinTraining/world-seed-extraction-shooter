@@ -168,9 +168,10 @@ export const FieldEscort = {
    * Back in town: whoever came out with you is taken to the tavern at once, with no paper to hand
    * over (Pedro's own run, 2026-11-10: "the npc needs to be auto left out when one gets to town if
    * there's space in the inn"). `lodge` is the tavern's own door, so every refusal it has stands:
-   * whoever it cannot take stays a bond in the stash, and the feed says why.
+   * whoever it cannot take stays a bond in the stash, and the feed says why. `quiet` is for those
+   * who were already waiting on a bed: they are tried again, and still waiting is not news.
    */
-  async lodgeArrivals(haul: IItem[], lodge: (bondItemId: string) => Promise<{ ok: boolean; reason?: string }>): Promise<{ lodged: string[]; waiting: string[] }> {
+  async lodgeArrivals(haul: IItem[], lodge: (bondItemId: string) => Promise<{ ok: boolean; reason?: string }>, quiet = false): Promise<{ lodged: string[]; waiting: string[] }> {
     const lodged: string[] = [], waiting: string[] = [];
     for (const bond of haul) {
       const name = NpcSheet.fromBond(bond)?.name;
@@ -181,7 +182,7 @@ export const FieldEscort = {
         feed(`${name} has a bed at the Rusty Anchor.`, 'proof');
       } else {
         waiting.push(name);
-        feed(`${res.reason ?? 'The tavern could not take them.'} ${name} stays with you as a bond in your stash.`, 'loss');
+        if (!quiet) feed(`${res.reason ?? 'The tavern could not take them.'} ${name} stays with you as a bond in your stash.`, 'loss');
       }
     }
     return { lodged, waiting };

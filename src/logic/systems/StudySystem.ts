@@ -147,6 +147,16 @@ export class StudySystem {
   // STUDY FOR LORE (D118): what can be aimed at. Each says only what the screen shows.
   // -----------------------------------------------------------------------
 
+  /**
+   * Something written, whose worth is what it says: a fragment, a trade's note. Pedro, 2026-11-10:
+   * "The note isn't spent, that needs to be spent because if it isn't there's no reason not to
+   * sell them". So a document is used up by whatever it gives. A person on paper (an escort's bond)
+   * is filed as lore too, and is never a document.
+   */
+  static isDocument(item: IItem): boolean {
+    return item.type === ItemType.LORE && !item.bondData && !(item.tags ?? []).includes('npc_contract');
+  }
+
   /** Was this made by somebody? A plank is, and a log is not. */
   static isFinished(item: IItem): boolean {
     return (item.composition?.depth ?? 0) > 0 || !RAW_TYPES.includes(item.type);

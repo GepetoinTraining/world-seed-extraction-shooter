@@ -72,7 +72,7 @@ export const Hotbar: React.FC = () => {
         const seam = i > 0 && cells[i - 1].group !== cell.group;
         const isActive = cell.slot === active;
         // What a pouch holds, or how many throws a hand has left: the one held and every one carried
-        const count = item?.pouchData?.contents.length ?? throwsLeft(item, carried);
+        const count = item?.pouchData?.contents.length ?? throwsLeft(item, carried, isActive);
         return (
           <React.Fragment key={cell.slot}>
             {seam && <span aria-hidden style={{ width: 2, height: CELL, background: 'var(--ws-text-dim)', margin: '0 4px', flexShrink: 0 }} />}

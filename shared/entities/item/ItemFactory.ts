@@ -164,13 +164,15 @@ export class ItemFactory {
     baseId: string,
     composition: IComposition,
     rng: SeededRNG,
-    opts?: { inheritedAffixes?: IAffix[]; customName?: string }
+    opts?: { inheritedAffixes?: IAffix[]; customName?: string; quality?: number }
   ): IItem | null {
     const template = CRAFTED_GEAR_BASES.find(b => b.id === baseId)
       ?? [...ITEM_DEFINITIONS.weapon_bases, ...ITEM_DEFINITIONS.armor_bases, ...ITEM_DEFINITIONS.tool_bases].find(b => b.id === baseId);
     if (!template) return null;
 
-    const quality = (rng.next() * 0.4) - 0.2;
+    // The roll is always drawn, so a caller that decides the quality itself (PairCraft) moves nothing after it
+    const rolledQuality = (rng.next() * 0.4) - 0.2;
+    const quality = opts?.quality ?? rolledQuality;
     const baseStats = this.generateBaseStats(template, quality, rng);
     const itemPower = CompositionSystem.powerBudget(composition);
     const dimensions = this.getDimensions(template);

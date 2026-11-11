@@ -5,7 +5,8 @@
 
 import React, { useMemo } from 'react';
 import { IItem } from '../../shared/types';
-import { IResident, jobOf, readSheet, residentStage } from '../entities/hub/guild';
+import { IResident, bedsTaken, jobOf, readSheet, residentStage, tavernBeds } from '../entities/hub/guild';
+import { HubGenerator } from '../entities/hub/HubGenerator';
 import { useHubStore } from '../entities/hub/store';
 import { usePlayerStore } from '../entities/player/store';
 import { HUB_GENRE } from '../render/atoms/hub';
@@ -38,7 +39,9 @@ export const ResidentLines: React.FC<{ resident: IResident }> = ({ resident }) =
 };
 
 export const TavernRoom: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { guild, buildJobs, redeemBond } = useHubStore();
+  const { guild, buildJobs, redeemBond, chunks, dismembered } = useHubStore();
+  const beds = useMemo(() => tavernBeds(HubGenerator.generate({ chunks, dismembered })), [chunks, dismembered]);
+  const taken = bedsTaken(guild.residents, { buildJobs });
   const { player } = usePlayerStore();
   const pushFeed = useFeed(s => s.push);
   const bonds = (player.bank.stashTabs[0]?.items ?? []).filter((i: IItem) => !!NpcSheet.fromBond(i));
@@ -73,7 +76,7 @@ export const TavernRoom: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             })}
           </Panel>
         )}
-        <Panel title="IN THE ROOMS" right={<Chip>{lodging.length}</Chip>}>
+        <Panel title="IN THE ROOMS" right={<Chip>{Number.isFinite(beds) ? <>{taken} OF {beds} BEDS</> : lodging.length}</Chip>}>
           {lodging.length === 0 && <span className="ws-dim ws-small">The beds are empty. Nobody you brought out is waiting on a house.</span>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {lodging.map(r => (

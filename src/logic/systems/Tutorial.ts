@@ -100,6 +100,16 @@ export class Tutorial {
     return !!card?.isTutorial;
   }
 
+  /**
+   * Does this world carry prefixes and suffixes (D49)? A minted world keeps what its certificate
+   * pinned. The tutorial is never minted, so it has no pin: like the shelf, it takes its hub's
+   * unlock as it stands (Pedro, of his own run: "the affixes aren't being generated yet", and "I
+   * rested a lot, when does the hub rest?"). Before this it could never carry one.
+   */
+  static dreams(card: Pick<IWorldCard, 'isTutorial' | 'magicUnlocked'>, hubUnlocked: boolean): boolean {
+    return card.isTutorial ? hubUnlocked : !!card.magicUnlocked;
+  }
+
   /** The first order stands until the person has sealed a run out of the tutorial. */
   static firstOrderOpen(player: Pick<IPlayer, 'tutorialSealedAt'>): boolean {
     return !player.tutorialSealedAt;

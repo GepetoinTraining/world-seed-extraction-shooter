@@ -122,6 +122,9 @@ export const StudyDoor = {
         }
       }
     }
+    // A document that paid has given what it held, and is spent: read and then sold was one thing too many
+    const spent = !!piece && StudySystem.isDocument(piece) && LoreSystem.pays(sitting.outcome);
+    if (spent) next = StudySystem.loseItem(next, piece!.id);
     pc.apply({ kind: 'SET', player: next });
 
     // The eye grows either way: an unschooled one is winging it, and it settles at a rest.
@@ -134,11 +137,12 @@ export const StudyDoor = {
 
     SessionJournal.record('INTERACT', { kind: 'STUDY', target: StudySystem.keyOf(target), outcome: sitting.outcome });
     feed(said(sitting.outcome, target), sitting.outcome === 'failure' || sitting.outcome === 'major_failure' ? 'loss' : 'proof');
+    if (spent) feed(`${target.name} has given what it held. It is spent.`, 'plain');
     // The ledger is the person's own record, so it holds the key. Only what the screen showed goes to any door.
     await Ledger.append('TECH', {
       kind: 'STUDY', target: StudySystem.keyOf(target), name: target.name, outcome: sitting.outcome,
       energy: cost, hubId: hp.view().activeHubId, sitting: sitting.id,
-      ...(sitting.outcome === 'major_failure' && piece ? { consumedIds: [piece.id] } : {})
+      ...((sitting.outcome === 'major_failure' || spent) && piece ? { consumedIds: [piece.id] } : {})
     });
     return { ok: true, outcome: sitting.outcome };
   },

@@ -112,7 +112,7 @@ export const NEW_CARLEON: IHubManifest = {
     A: { id: 'poi_armor', type: POIType.VENDOR_ARMOR, name: 'Steelweave Outfitters', size: { width: 4, height: 3 }, interactable: true, solid: true, npcId: 'npc_armor_vendor', metadata: {} },
     C: { id: 'poi_consumables', type: POIType.VENDOR_CONSUMABLES, name: "Alchemist's Corner", size: { width: 3, height: 3 }, interactable: true, solid: true, npcId: 'npc_alchemist', metadata: {} },
     X: { id: 'poi_auction', type: POIType.AUCTION_HOUSE, name: 'The Exchange', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_auctioneer', metadata: {} },
-    T: { id: 'poi_tavern', type: POIType.TAVERN, name: 'The Rusty Anchor', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_bartender', metadata: {} },
+    T: { id: 'poi_tavern', type: POIType.TAVERN, name: 'The Rusty Anchor', size: { width: 5, height: 4 }, interactable: true, solid: true, npcId: 'npc_bartender', metadata: { beds: 10 } },
     l: { series: 'poi_lamp', type: POIType.LAMP_POST, name: 'Street Lamp', size: { width: 1, height: 1 }, interactable: false, solid: true, metadata: { lightRadius: 3 } },
     L: { series: 'poi_lot', type: POIType.PLAYER_LOT, name: 'Lot #{n}', size: { width: 4, height: 4 }, interactable: true, solid: false, stretch: true, metadata: {} },
     // Numbered with the lots, because a lot's number is what the city's drawing reads. It does not stretch: every plot is the same.

@@ -47,11 +47,16 @@ export function wieldRefusal(item: IItem | undefined): string | null {
 }
 
 /**
- * C14: how many throws a hand holding a stone has: the one held and every one carried, since the
- * next comes to the hand by itself. A hand holding anything else, or nothing, counts none.
+ * C14: how many throws a hand has: the stone held and every one carried, since the next comes to the
+ * hand by itself. An empty hand that is the one firing counts every stone carried, because it will
+ * reach for them (`reachFor`), so the number is on the hand before the first throw and falls by one
+ * with each (Pedro, 2026-11-10: "you should have -1 (if you have 7x then 6)"). A hand holding
+ * anything else counts none, and so does an empty hand with nothing to reach for.
  */
-export function throwsLeft(held: IItem | undefined, carried: IItem[]): number | undefined {
-  return isThrowable(held) ? 1 + carried.filter(isThrowable).length : undefined;
+export function throwsLeft(held: IItem | undefined, carried: IItem[], firing = false): number | undefined {
+  const behind = carried.filter(isThrowable).length;
+  if (isThrowable(held)) return 1 + behind;
+  return !held && firing && behind > 0 ? behind : undefined;
 }
 
 /**

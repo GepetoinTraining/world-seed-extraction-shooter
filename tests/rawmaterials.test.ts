@@ -850,10 +850,18 @@ describe('line 62: lore reveals it', () => {
     }
     expect(Object.values(player().materialMastery).some(k => k.discoveredAffixes.length > 0)).toBe(true);
     expect(Object.values(player().bank.lore).length).toBe(1);
-    expect(stash().some(i => i.id === note.id)).toBe(true); // a note is kept, like any document
+    // 2026-11-10 (Pedro: "The note isn't spent, that needs to be spent because if it isn't there's no reason not to sell them")
+    expect(stash().some(i => i.id === note.id)).toBe(false);
     const again = usePlayerStore.getState().readLore(note.id);
     expect(again.ok).toBe(false);
     expect(again.reason).toBeTruthy();
+    // A second note of the same trade is refused as read already, and is kept
+    const second = ProcessSystem.tradeNote('masonry', Rng.fromKey('note3'));
+    setStash([second]);
+    const twice = usePlayerStore.getState().readLore(second.id);
+    expect(twice.ok).toBe(false);
+    expect(twice.reason).toMatch(/read this already/);
+    expect(stash().some(i => i.id === second.id)).toBe(true);
   });
 
   it('an old fragment teaches no trade, and says so in voice', () => {

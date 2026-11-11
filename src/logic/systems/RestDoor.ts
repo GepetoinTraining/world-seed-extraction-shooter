@@ -17,6 +17,7 @@ import { WorldClock } from '../../entities/world/WorldClock';
 import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { IDreamResult, INN_FEE, RestPlace, RestSystem } from './RestSystem';
 import { LoreSystem } from './LoreSystem';
+import { PROCESS_FAMILIES, ProcessFamily } from '../../../shared/logic/systems/ProcessSystem';
 
 let waking = false;
 const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
@@ -24,9 +25,16 @@ const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain'
 export const RestDoor = {
   /** Settling, at any rest. A return to the hub comes through here too (D30). */
   settle(pc: IPlayerPort, hp: IHubPort): { emerged: { id: string }[] } {
-    const { player, read, emerged, learned, floorNamed } = RestSystem.settle(pc.view().player);
+    const { player, read, emerged, learned, floorNamed, made } = RestSystem.settle(pc.view().player);
     pc.apply({ kind: 'SET', player });
     for (const item of read) feed(`You know what ${item.name} is now. It reads exactly as it was banked.`, 'proof');
+    // What was made by setting one thing on another is read now, and not before (PairCraft)
+    for (const m of made) {
+      if (m.outcome === 'major_failure') feed(`What you made came to nothing: ${m.item.name}. ${m.item.description}`, 'loss');
+      else feed(`What you made is ${m.item.name}${m.outcome === 'failure' ? ', and crudely done' : m.outcome === 'major_win' ? ', and better than you had any right to' : ''}.`, 'proof');
+      // The trade it worked is practised whatever came of it: trying is how it is learned
+      if (m.trade && (PROCESS_FAMILIES as readonly string[]).includes(m.trade)) pc.apply({ kind: 'PRACTICE_TRADE', family: m.trade as ProcessFamily });
+    }
     for (const id of learned) feed(`It settled: you could cast ${ContentRegistry.ability(id)?.name ?? 'what you saw'} now.`, 'proof');
     for (const id of floorNamed) void RestDoor.unlockFrom(id, pc, hp);
     return { emerged };

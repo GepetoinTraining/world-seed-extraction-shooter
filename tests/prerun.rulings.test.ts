@@ -565,7 +565,8 @@ describe('C14: a pebble can be picked up, taken in the hand and thrown', () => {
     // A hand holding anything else, or nothing, counts no throws
     expect(throwsLeft(oak, [a, b])).toBeUndefined();
     expect(throwsLeft(undefined, [a, b])).toBeUndefined();
-    expect(SRC('src/components/Hotbar.tsx')).toMatch(/throwsLeft\(item, carried\)/);
+    // 2026-11-10: the hotbar also says which hand is firing, so an empty one counts the stones it will reach for
+    expect(SRC('src/components/Hotbar.tsx')).toMatch(/throwsLeft\(item, carried, isActive\)/);
   });
 
   it('nothing but a thing to throw is spent that way', () => {

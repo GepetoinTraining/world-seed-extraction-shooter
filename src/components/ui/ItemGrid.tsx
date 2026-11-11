@@ -10,6 +10,7 @@ import { IGridPlacement, IItem } from '../../../shared/types';
 import { Place } from '../../logic/systems/ItemHands';
 import { stepGhost } from '../../logic/systems/ItemHands';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
+import { PairCraft } from '../../../shared/logic/systems/PairCraft';
 import { DropZone, grabByKey, handsJustDropped, pressItem, useDropZone, useHands } from './hands';
 import { ItemSprite } from './kit';
 import { hoverProps } from './stores';
@@ -45,6 +46,13 @@ export const ItemGrid: React.FC<{
     resolve: (x, y, held) => {
       const box = root.current?.getBoundingClientRect();
       if (!box) return null;
+      // Over another piece of this grid, with two materials: a drop works them together. Anything else is a cell.
+      if ((place.kind === 'PACK' || place.kind === 'STASH') && held.from.kind === place.kind && PairCraft.isMaterial(held.item)) {
+        const under = (document.elementFromPoint?.(x, y) as HTMLElement | null)?.closest?.('[data-item-id]') as HTMLElement | null;
+        const targetId = under && root.current?.contains(under) ? under.getAttribute('data-item-id') : null;
+        const target = targetId && targetId !== held.item.id ? items.find(i => i.id === targetId) : undefined;
+        if (target && PairCraft.isMaterial(target)) return { kind: 'ONTO', grid: place.kind, targetId: target.id };
+      }
       const { w, h } = InventorySystem.footprint(held.item, held.rotated);
       const cx = Math.round((x - box.left) / cellPx - w / 2);
       const cy = Math.round((y - box.top) / cellPx - h / 2);
@@ -58,6 +66,11 @@ export const ItemGrid: React.FC<{
     step: (at, dx, dy, held) => stepGhost(at, dx, dy, held.item, gridW, gridH),
     rect: (at, held) => {
       const box = root.current?.getBoundingClientRect();
+      if (at.kind === 'ONTO') {
+        // The ghost lies on the piece it would be worked into, at that piece's own size
+        const b = (root.current?.querySelector(`[data-item-id="${at.targetId}"]`) as HTMLElement | null)?.getBoundingClientRect();
+        return b ? { left: b.left, top: b.top, width: b.width, height: b.height } : null;
+      }
       if (!box || (at.kind !== 'PACK' && at.kind !== 'STASH' && at.kind !== 'CART')) return null;
       const { w, h } = InventorySystem.footprint(held.item, held.rotated);
       return { left: box.left + (at.x ?? 0) * cellPx, top: box.top + (at.y ?? 0) * cellPx, width: w * cellPx, height: h * cellPx };

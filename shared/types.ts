@@ -980,7 +980,7 @@ export interface IPlayer {
   energyToday?: number;
   dayCount?: number;
   /** D43, D50: what play queued, for the next rest. */
-  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[]; sittings?: IStudySitting[] };
+  restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[]; sittings?: IStudySitting[]; made?: IMadeWaiting[] };
   /** What was filed at the door and has not come back. */
   pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }; filedAt?: number };
   /** D118: every sitting this character has taken. It keys the next roll, so a reload rolls nothing new. */
@@ -1055,6 +1055,16 @@ export interface IInteractionOption {
     knowledgeId?: string;
     xpTags?: string[];
   };
+}
+
+/** A thing made by setting one material on another, unread until a rest (PairCraft). How it went is kept here and shown nowhere. */
+export interface IMadeWaiting {
+  id: string;
+  outcome: StudyOutcome;
+  /** Why it was lost, when it was. */
+  why?: 'NOTHING' | 'BENCH' | 'HANDS';
+  /** The trade its making worked, practised when it is read. */
+  trade?: string;
 }
 
 export interface IMaterialKnowledge {

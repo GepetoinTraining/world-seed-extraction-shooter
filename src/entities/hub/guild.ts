@@ -181,6 +181,21 @@ export function residentStage(resident: IResident, world: { buildJobs: { lotId: 
 }
 
 // ---------------------------------------------------------------------------
+// THE TAVERN'S BEDS (Pedro, 2026-11-10, asked what its space is: "10 beds?")
+// ---------------------------------------------------------------------------
+
+/** How many the tavern lodges: the count written on it in the city's plan. A plan that writes none turns nobody away. */
+export function tavernBeds(layout: { zones: { pois: { type: string; metadata?: Record<string, unknown> }[] }[] }): number {
+  const beds = layout.zones.flatMap(z => z.pois).find(p => p.type === 'TAVERN')?.metadata?.beds;
+  return typeof beds === 'number' ? beds : Infinity;
+}
+
+/** Beds taken: everyone the gate brought who is not yet under a roof of their own. */
+export function bedsTaken(residents: IResident[], world: { buildJobs: { lotId: string; applied: boolean }[] }): number {
+  return residents.filter(r => residentStage(r, world) !== 'HOME').length;
+}
+
+// ---------------------------------------------------------------------------
 // THE HOUSE (D8): NPCs do not design. A preset plan, a pooled bill.
 // ---------------------------------------------------------------------------
 

@@ -74,6 +74,8 @@ export interface IPlayerCalls {
   loadCart(entityId: string, itemId: string): Verdict;
   unloadCart(entityId: string, itemId: string): Verdict;
   takeFromCache(entityId: string, itemId: string): Verdict;
+  /** One material set on another: both are used, and an unread thing comes of it (PairCraft). */
+  combine(itemId: string, ontoId: string): Verdict;
 }
 
 /**

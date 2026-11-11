@@ -349,6 +349,10 @@ export const HandsLayer: React.FC = () => {
         {over && !over.ok && over.reason && over.reason !== 'It is already there.' && (
           <div className="ws-bright ws-small">{over.reason}</div>
         )}
+        {/* Set on another piece: said before the drop, because it cannot be taken back */}
+        {over && over.ok && over.place.kind === 'ONTO' && (
+          <div className="ws-bright ws-small">LET GO TO WORK THEM TOGETHER: both are used, and you will know what came of it after you rest.</div>
+        )}
       </div>
     </div>
   );

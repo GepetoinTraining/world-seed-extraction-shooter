@@ -544,6 +544,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       await PlayerPersistence.flush('extract', usePlayerStore.getState().player);
       // Whoever came out is taken to the tavern now, once the run is sealed and saved with their bond in it
       await FieldEscort.lodgeArrivals(haul, itemId => useHubStore.getState().redeemBond(itemId));
+      // ...and whoever was still waiting on a bed from an earlier run is tried again, quietly
+      const waited = (usePlayerStore.getState().player.bank.stashTabs[0]?.items ?? []).filter(i => !haul.some(h => h.id === i.id));
+      await FieldEscort.lodgeArrivals(waited, itemId => useHubStore.getState().redeemBond(itemId), true);
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
           outcome: 'EXTRACTED', haul, haulValue, ...shownOf, tax, levy,

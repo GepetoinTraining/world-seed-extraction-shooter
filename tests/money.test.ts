@@ -652,6 +652,9 @@ describe('D115: every NPC brings money, so they have their own wallets', () => {
     let resident = await lodge('person_0');
     for (let i = 1; !(await hub().takeApprentice('npc_weapon_vendor', resident.id)).ok; i++) {
       expect(i, 'nobody weak enough among fifty').toBeLessThan(50);
+      // 2026-11-10: the tavern has ten beds, so whoever the bench will not take goes home before the next arrives
+      const passedOver = resident.id;
+      useHubStore.setState(s => ({ guild: { ...s.guild, residents: s.guild.residents.map(r => (r.id === passedOver ? { ...r, lotId: `lot_of_${passedOver}`, homeAt: 1 } : r)) } }));
       resident = await lodge(`person_${i}`);
     }
     const held = hub().wallets[resident.id];

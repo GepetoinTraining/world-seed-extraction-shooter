@@ -48,7 +48,8 @@ import { LORE_NOTE_PAY } from '../../../shared/logic/systems/LoreConstants';
 import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 10E: insurance is an item (D21)
 import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
-import { IRoomState, roomAdditions } from '../../../shared/entities/hub/room';
+import { IRoomState, ownerHasStationFor, roomAdditions } from '../../../shared/entities/hub/room';
+import { PAIR_ENERGY, PairCraft } from '../../../shared/logic/systems/PairCraft';
 import { chunkOf } from '../../../shared/entities/world/grid';
 import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the web and the auto skill
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
@@ -176,6 +177,8 @@ interface PlayerState {
   dropItem: (itemId: string) => void;
   // Wave 10D (10D.2): the floor — stone-and-stick, no bench, anywhere
   improviseInField: (recipeId: string) => { ok: boolean; reason?: string };
+  /** One material set on another: both are used, an unread thing comes of it, and a rest reads it (PairCraft). */
+  combine: (itemId: string, ontoId: string) => Verdict;
   rotateItem: (itemId: string) => void;
 
   toggleCarry: (itemId: string) => void;
@@ -921,18 +924,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (player.bank.lore[topic]) return { ok: false, reason: `You have read this already. The ${data.processFamily} it opens is yours.` };
     set(s => {
       const revealed = ProcessSystem.revealByLore(s.player, item);
+      // Pedro, 2026-11-10: "The note isn't spent, that needs to be spent". Read, it is gone: nothing is left to sell
+      const read = StudySystem.loseItem(revealed, item.id);
       return {
         player: {
-          ...revealed,
+          ...read,
           bank: {
-            ...revealed.bank,
-            lore: { ...revealed.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } },
-            loreHeld: (revealed.bank.loreHeld ?? 0) + LORE_NOTE_PAY // D118: what is read is lore to spend
+            ...read.bank,
+            lore: { ...read.bank.lore, [topic]: { topic, xp: 0, level: 1, dateDiscovered: Date.now() } },
+            loreHeld: (read.bank.loreHeld ?? 0) + LORE_NOTE_PAY // D118: what is read is lore to spend
           }
         }
       };
     });
-    feed(`Read ${item.name}. What common ${data.processFamily} leaves behind now reads on the card.`, 'proof');
+    feed(`Read ${item.name}. What common ${data.processFamily} leaves behind now reads on the card. The note is spent.`, 'proof');
+    void import('../../logic/ledger/Ledger').then(({ Ledger }) =>
+      Ledger.append('TECH', { kind: 'NOTE_READ', name: item.name, family: data.processFamily, consumedIds: [item.id] }));
     return { ok: true };
   },
 
@@ -1789,6 +1796,87 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   learnName: (person) => set(s => ({ player: ContactNames.learnName(s.player, person) })),
 
   /**
+   * CRAFTING BY TWO (Pedro, 2026-11-10: "material + material, one dragged on top of another, and
+   * then Unidentified appears. there's a secret crafting roll that's done, and after rest you see
+   * what you made"). The law is PairCraft's. This is the door: both pieces leave, the unread thing
+   * lies where the second one lay when it fits there, the energy is paid, and it goes on the log
+   * for the rest. The feed says the same words whatever came of it.
+   */
+  combine: (itemId, ontoId) => {
+    const p = get().player;
+    const session = p.currentSession;
+    const tab = p.bank.stashTabs[0];
+    const beside = session ? session.inventory : tab?.items ?? [];
+    const item = beside.find(i => i.id === itemId);
+    const onto = beside.find(i => i.id === ontoId);
+    if (!item || !onto) return { ok: false, reason: 'Two things are worked together where they both lie.' };
+    const may = PairCraft.mayCombine(item, onto);
+    if (!may.ok) return may;
+    const left = StudySystem.energyLeft(p);
+    if (left < PAIR_ENERGY) return { ok: false, reason: `Refused: needs ${PAIR_ENERGY} energy, you hold ${Math.floor(left)}. Rest first.` };
+
+    // In the field the roll is the session's own, so a hub can roll it again; at home it is keyed by the two pieces, which are used
+    const rollKey = session ? SessionJournal.rollKey('make', `${item.id}:${onto.id}`) : `make:${p.id}:${item.id}:${onto.id}`;
+    const hub = hp.view();
+    const made = PairCraft.make(item, onto, {
+      rank: ProgressionSystem.rankOf(p),
+      dexterity: p.attributes?.dexterity ?? 1,
+      skillLevel: id => p.bank.universalSkills[id]?.level ?? 0,
+      // A bench is at home. Out in a world there is none under anybody's hands
+      hasBench: asks => !session && ownerHasStationFor(asks, p.id, { lots: hub.lots, rooms: hub.rooms, stash: p.bank.stashTabs.flatMap(t => t.items) })
+    }, rollKey);
+    const waiting = { id: made.item.id, outcome: made.outcome, ...(made.why ? { why: made.why } : {}), ...(made.recipe?.trade ? { trade: made.recipe.trade } : {}) };
+    const used = [item.id, onto.id];
+
+    if (session) {
+      const layout = { ...(session.inventoryLayout || {}) };
+      const lay = layout[onto.id];
+      for (const id of used) delete layout[id];
+      const inventory = session.inventory.filter(i => !used.includes(i.id));
+      // Where the second one lay, when what came of it fits there; otherwise wherever the pack has room
+      const { w, h } = InventorySystem.footprint(made.item, false);
+      const fitsThere = !!lay && InventorySystem.canPlaceAt(InventorySystem.buildOccupancy(inventory, layout), w, h, lay.x, lay.y);
+      set(s => ({ player: RestSystem.queueMade(StudySystem.pay({ ...s.player, currentSession: { ...s.player.currentSession!, inventory, inventoryLayout: layout } }, PAIR_ENERGY), waiting) }));
+      if (fitsThere) {
+        set(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, inventory: [...s.player.currentSession!.inventory, made.item], inventoryLayout: { ...s.player.currentSession!.inventoryLayout, [made.item.id]: { x: lay!.x, y: lay!.y, rotated: false } } } } }));
+      } else {
+        const { rejected } = get().tryAddItems([made.item]);
+        const pos = get().player.currentSession?.position;
+        if (rejected.length > 0 && pos) {
+          wp.apply({ kind: 'ADD_BODY', entity: {
+            id: `cache_made_${made.item.id}`, type: EntityType.CONTAINER, definitionId: 'ground_cache', position: { x: pos.x + 15, y: pos.z + 15 },
+            rank: made.item.rank, rarity: made.item.rarity, isHostile: false,
+            container: { lootRank: made.item.rank, looted: false, hasLore: false, items: rejected, cacheOwner: get().player.id }
+          } });
+          feed('The pack has no room for what came of it; a cache holds it at your feet.', 'loss');
+        }
+      }
+      get().recalcWeight();
+      SessionJournal.record('INTERACT', { kind: 'MAKE', rollKey, consumedIds: used, itemId: made.item.id });
+    } else {
+      const layout = StashGrid.resolve(tab!.items, tab!.layout);
+      const lay = layout[onto.id];
+      for (const id of used) delete layout[id];
+      const items = [...tab!.items.filter(i => !used.includes(i.id)), made.item];
+      const { w, h } = InventorySystem.footprint(made.item, false);
+      if (lay && StashGrid.canPlace(items, layout, made.item.id, w, h, lay.x, lay.y)) layout[made.item.id] = { x: lay.x, y: lay.y, rotated: false };
+      set(s => ({
+        player: RestSystem.queueMade(StudySystem.pay({
+          ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, idx) => (idx === 0 ? { ...t, items, layout } : t)) }
+        }, PAIR_ENERGY), waiting)
+      }));
+    }
+
+    // The same words whatever it came to: what was made is nobody's to know before a rest
+    feed(`You set ${shown(item)} on ${shown(onto)} and work them together. Something comes of it. You will know what after you rest.`, 'signal');
+    void import('../../logic/ledger/Ledger').then(({ Ledger }) =>
+      Ledger.append('TECH', { kind: 'MADE', itemId: made.item.id, consumedIds: used, hubId: hub.activeHubId }));
+    void import('../../logic/sovereignty/Provenance').then(({ Provenance }) =>
+      Provenance.record(made.item, 'MINT', { origin: 'IMPROVISATION', rollKey }));
+    return { ok: true };
+  },
+
+  /**
    * Turn a piece: in the pack, or in the vault when that is where it is. It turns where it lies when
    * the turned shape fits, and otherwise moves to the nearest place it does; with no room anywhere
    * the feed says so (Pedro, of his own run: "rotate needs to be fixed").
@@ -2223,7 +2311,8 @@ export const playerPort: IPlayerPort = {
   placeOnCart: (...args) => usePlayerStore.getState().placeOnCart(...args),
   loadCart: (...args) => usePlayerStore.getState().loadCart(...args),
   unloadCart: (...args) => usePlayerStore.getState().unloadCart(...args),
-  takeFromCache: (...args) => usePlayerStore.getState().takeFromCache(...args)
+  takeFromCache: (...args) => usePlayerStore.getState().takeFromCache(...args),
+  combine: (...args) => usePlayerStore.getState().combine(...args)
 };
 
 offerPort('player', playerPort);

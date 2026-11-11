@@ -52,8 +52,8 @@ import { doorOf, withinReach } from '../src/render/atoms/hub';
 import { answersTag } from '../shared/entities/hub/room';
 import { SYSTEM_TEMPLATES, lotConstruction, sizeNeedsVerdict, templateMatchesRoom, validateTemplate } from '../shared/entities/hub/template';
 import {
-  GUILD_OWNER_ID, IResident, TAX_EVASION_TAGS, benchFactor, chainFromMap, emptyGuild, houseBill, houseTemplateFor, jobOf,
-  readSheet, residentStage, residentUpkeepPerDay, trialFor, wantFor
+  GUILD_OWNER_ID, IResident, TAX_EVASION_TAGS, bedsTaken, benchFactor, chainFromMap, emptyGuild, houseBill, houseTemplateFor, jobOf,
+  readSheet, residentStage, residentUpkeepPerDay, tavernBeds, trialFor, wantFor
 } from '../src/entities/hub/guild';
 import { worldPort } from '../src/entities/world/store';
 
@@ -176,6 +176,45 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 // LINE 115: THE TAVERN
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// THE TAVERN HAS TEN BEDS (Pedro, 2026-11-10, asked what its space is: "10 beds?")
+// ---------------------------------------------------------------------------
+
+describe('Pedro, 2026-11-10: the tavern has ten beds', () => {
+  const plan = () => HubGenerator.generate({ chunks: hub().chunks, dismembered: hub().dismembered });
+  const bring = async (entityId: string) => {
+    const bond = bondOf(entityId);
+    give([bond]);
+    return { bond, res: await hub().redeemBond(bond.id) };
+  };
+
+  it('the count is the tavern\'s own, written on it in the city\'s plan', () => {
+    expect(tavernBeds(plan())).toBe(10);
+    expect(readFileSync('src/entities/hub/hubManifest.ts', 'utf8')).toMatch(/poi_tavern[^\n]*metadata: \{ beds: 10 \}/);
+  });
+
+  it('ten are lodged, and the eleventh is turned away in voice and keeps their bond', async () => {
+    for (let i = 0; i < 10; i++) expect((await bring(`bed_${i}`)).res).toEqual({ ok: true });
+    expect(bedsTaken(hub().guild.residents, hub())).toBe(10);
+    const { bond, res } = await bring('bed_10');
+    expect(res.ok).toBe(false);
+    expect(res.reason).toMatch(/10 of 10/);
+    expect(hub().guild.residents).toHaveLength(10);
+    expect(stash().some(i => i.id === bond.id)).toBe(true);
+  });
+
+  it('a lodger whose own house stands has left their bed for the next', async () => {
+    for (let i = 0; i < 10; i++) await bring(`bed_${i}`);
+    useHubStore.setState(s => ({ guild: { ...s.guild, residents: s.guild.residents.map((r, i) => (i === 0 ? { ...r, lotId: 'lot_x', homeAt: 1 } : r)) } }));
+    expect(bedsTaken(hub().guild.residents, hub())).toBe(9);
+    expect((await bring('bed_10')).res).toEqual({ ok: true });
+  });
+
+  it('the room says how many beds are taken', () => {
+    expect(readFileSync('src/components/TavernRoom.tsx', 'utf8')).toMatch(/OF \{beds\} BEDS|of \{beds\} beds/);
+  });
+});
 
 describe('line 115: a person brought out stays at the tavern', () => {
   it('a bond redeemed is a lodger, and the bond is gone', async () => {

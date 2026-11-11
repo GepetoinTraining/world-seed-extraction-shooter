@@ -153,7 +153,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
         {!selectedItem && <StudyPanel />}
         {!selectedItem && (
           <div className="ws-dim ws-small" style={{ marginTop: 8 }}>
-            Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand.
+            Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand. Drag one material onto another to work them together: both are used, and a rest shows what you made.
           </div>
         )}
         {/* Q16: someone you are carrying out. Nothing of theirs is yours to open. */}
