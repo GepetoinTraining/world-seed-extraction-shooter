@@ -66,6 +66,12 @@ export const WaitStrip: React.FC = () => {
 
 const STATUS_WORDS: Record<string, string> = { slow: 'SLOW', dot: 'HURTING', ward: 'WARD', haste: 'HASTE', weaken: 'WEAK' };
 
+/** A tonic's slow, by its mark and its words, until the next rest: the same chip in the field and in the city (E1e). */
+export const TonicMark: React.FC = () => {
+  const heavy = FieldWords.tonicMark(usePlayerStore(s => s.player.tonicsSinceRest ?? 0));
+  return heavy ? <Chip>{heavy}</Chip> : null;
+};
+
 /** What is working on your body and how long it has left, beside the vitals. Your own state is never hidden from you. */
 export const BodyClocks: React.FC = () => {
   const effects = usePlayerStore(s => s.player.currentSession?.activeEffects);
@@ -86,7 +92,7 @@ export const BodyClocks: React.FC = () => {
             : <>{STATUS_WORDS[e.kind] ?? e.kind.toUpperCase()} {WorldClock.say(e.until - now)}</>}
         </Chip>
       ))}
-      {heavy && <Chip key="tonics">{heavy}</Chip>}
+      {heavy && <TonicMark />}
       {kept.map(m => (
         <Chip key={`${m.by}:${m.until}`} tone="proof">
           {m.startedAt

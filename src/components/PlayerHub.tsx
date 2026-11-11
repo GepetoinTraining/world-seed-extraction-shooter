@@ -17,6 +17,7 @@ import { PaperDoll } from './PaperDoll';
 import { EquipSlotId, IAttributes, IItem, ItemType, SlotType, HEAD_BUDGET_POSITIONS } from '../../shared/types';
 import { STASH_COLS, StashFilter, StashGrid, StashKind, StashSortKey } from '../entities/player/systems/StashGrid';
 import { ItemGrid } from './ui/ItemGrid';
+import { groupHeading, plusSays } from './ui/levelLine';
 import { useDropZone, wholeZone } from './ui/hands';
 import { hoverProps } from './ui/stores';
 import { Archetype } from '../../shared/render/atoms/people';
@@ -41,7 +42,7 @@ export const pointsLine = (player: Parameters<typeof ProgressionSystem.unspent>[
   return [...(left.free > 0 ? [`${left.free} FREE`] : []), ...GROUP_ORDER.filter(g => left[g] > 0).map(g => `${left[g]} ${GROUP_WORDS[g]}`)].join(' · ');
 };
 
-const groupOfWord = (word: string): AttributeGroup => GROUP_ORDER.find(g => GROUP_WORDS[g] === word)!;
+export const groupOfWord = (word: string): AttributeGroup => GROUP_ORDER.find(g => GROUP_WORDS[g] === word)!;
 
 // ---------------------------------------------------------------------------
 // D27: what the hands know. A rung reads by position and fill, never by hue.
@@ -249,10 +250,13 @@ const AgentTab: React.FC = () => {
         </div>
       </Panel>
       <HandsPanel />
-      <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">SPEND {pointsLine(player)}</span> : undefined}>
+      <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">{points} TO SPEND</span> : undefined}>
+        {/* G1g: the line by kind sits in the body, where it wraps inside the panel at any width */}
+        {points > 0 && <div className="ws-signal ws-small" style={{ whiteSpace: 'normal', marginBottom: 6 }}>SPEND {pointsLine(player)}</div>}
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
           <div key={group} style={{ marginBottom: 8 }}>
-            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>{group}{(player.groupPoints?.[groupOfWord(group)] ?? 0) > 0 ? ` · ${player.groupPoints![groupOfWord(group)]} TO SPEND HERE` : ''}</div>
+            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>{groupHeading(player, groupOfWord(group))}</div>
+            {plusSays(player, groupOfWord(group)) && <div className="ws-signal ws-small" style={{ marginBottom: 2 }}>{plusSays(player, groupOfWord(group))}</div>}
             {attrs.map(attr => {
               const val = player.attributes[attr] || 0;
               const base = player.baseAttributes[attr] || 0;
@@ -264,7 +268,7 @@ const AgentTab: React.FC = () => {
                     {diff !== 0 && <span className={diff > 0 ? 'ws-signal ws-small' : 'ws-loss ws-small'}>{diff > 0 ? '+' : ''}{diff}</span>}
                     <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
                     {ProgressionSystem.pointFor(player, attr) && (
-                      <Button tone="signal" onClick={() => spendAttributePoint(attr)} title={`Raise ${attr} permanently, with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`}>+1</Button>
+                      <Button tone="signal" onClick={() => spendAttributePoint(attr)} aria-label={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} title={`Raise ${attr} permanently, with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`}>+1</Button>
                     )}
                   </span>
                 </div>

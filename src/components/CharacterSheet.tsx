@@ -30,7 +30,8 @@ import { PaperDoll } from './PaperDoll';
 import { TheWorking } from './TheWorking';
 import { RestSystem } from '../logic/systems/RestSystem';
 import { StatSystem } from '../../shared/logic/systems/StatSystem';
-import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid, pointWord, pointsLine } from './PlayerHub';
+import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid, groupOfWord, pointWord, pointsLine } from './PlayerHub';
+import { groupHeading, plusSays } from './ui/levelLine';
 import { ItemGrid } from './ui/ItemGrid';
 import { useDropZone, useHands, wholeZone } from './ui/hands';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
@@ -344,7 +345,11 @@ const WhoPanel: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', columnGap: 10, margin: '6px 0' }}>
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
           <div key={group} style={{ minWidth: 0 }}>
-            <div className="ws-dim ws-small" style={{ letterSpacing: '0.06em', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</div>
+            {/* G1f: the heading says what waits in this group, and a line what its + spends, with no pointer */}
+            <div style={{ minHeight: ProgressionSystem.unspent(player).total > 0 ? '5.8em' : undefined }}>
+              <div className="ws-dim ws-small" style={{ letterSpacing: '0.06em' }}>{groupHeading(player, groupOfWord(group))}</div>
+              {plusSays(player, groupOfWord(group)) && <div className="ws-signal ws-small">{plusSays(player, groupOfWord(group))}</div>}
+            </div>
             {attrs.map(attr => (
               <div key={attr} className="ws-small" title={`${attr}: ${StatSystem.attributeWork(attr, player.attributes)}`} onMouseEnter={() => setTold(attr)} onMouseLeave={() => setTold(null)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                 <span className="ws-dim">{attr === 'intimidation' ? 'IMD' : attr.slice(0, 3).toUpperCase()}</span>

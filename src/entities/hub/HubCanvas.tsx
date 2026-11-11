@@ -42,6 +42,7 @@ import { ATOM_PX, Role, Sprite, buildPalette, hash2, px } from '../../../shared/
 import { DialogueEffect, repairCost, repairItem, repairable, runDialogueAction, quickDeployTargetId } from './dialogue';
 import { deployToWorld } from '../../logic/systems/Deploy';
 import { ArmedButton, Bar, Button, CardView, Chip, Input, ItemSprite, Kbd, Modal, Panel, SpriteView, TimerBar } from '../../components/ui/kit';
+import { TonicMark } from '../../components/WaitStrip';
 import { hoverProps, useAppView, useFeed } from '../../components/ui/stores';
 import { AskFor, BuyListing, CollectHeld } from '../../components/ShelfAsk';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
@@ -860,6 +861,8 @@ export const HubCanvas: React.FC = () => {
         {insideLot
           ? <span className="ws-dim ws-small">{HubGenerator.lotName(layout, insideLot).toUpperCase()} — {insideLot.structureType}{mineInside ? '' : ` · ${insideLot.ownerName}'s`}</span>
           : currentZone && <span className="ws-dim ws-small">{currentZone.name}</span>}
+        {/* E1e: a tonic slows the walk in the city too, so the city says so, as the field does */}
+        <div style={{ alignSelf: 'flex-start' }}><TonicMark /></div>
       </div>
 
       {/* Line 75: the minimap, on the street */}
