@@ -25,6 +25,8 @@ What a character has that no sheet shows, by comparing the character's record wi
 
 **Not there today:** one large sheet that is the same in a world and at home, and a place on it for anything in the list above.
 
+**Now built (89adf1c, the interface pass, part 2).** Pedro: "right now we have the small character sheet and no big one". One large sheet, the same in a world and at home (`LargeSheet.tsx`), opened by SHIFT+C or the small sheet's LARGE SHEET button; the AGENT tab shows it. It holds every item in the list above but who is known by name, each in its own place: health, energy and aether with their maxima, every derived fight number with what feeds it, gold, lore by category, mastery, gifts, statuses, who walks with you, what waits at the next rest, the body at full size, and the pack or the vault and kit. Its numbers come through `SheetNumbers`, which asks the rules; the carry limit is `LoadoutSystem.carryLimit`. Open calls: ledger I2a to I2f.
+
 ### 1.2 Dropping by dragging outside
 
 | Today | Where |
