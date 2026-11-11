@@ -923,14 +923,17 @@ The eight calls of the lore pass are made the same way at the end of 3.8, and th
 a level's points     four: one put anywhere, and one for each of the three groups of attributes (the body, the mind, the self),
                      spent only inside its group. Today a level gives one (POINTS_PER_LEVEL).
                      today the three groups exist only where the hub's sheet draws them (PlayerHub.tsx); the rules do not know them
-a skill's circles    one at every third level of the skill. Today one at every level (CIRCLES_PER_LEVEL).
+a skill's circles    one at every third level. Today one at every level (CIRCLES_PER_LEVEL).
+                     the coordinator first read this as every third level of the skill. That was wrong about the code: a circle has
+                     always come from the CHARACTER's levels, and the person fills it into the skill they choose. So it is one circle
+                     at every third level a character climbs. Built that way (ledger G1a).
 a rank gained        the level starts again at the new rank, so each rank is a run of levels of its own.
                      the plan already says so: "LEVELS (D83): from experience, reset at each rank, with no top"
 ```
 
 Made with it, by the coordinator: attributes, points spent and points not yet spent are kept across a rank, since D83 promises nothing is lost at a trial; levels a character already gained are given their three group points, since a character's sheet follows the law as it stands; circles already made are kept.
 
-What it does to the spine. The character worker found that the rising floor costs a body fifteen points a rank against about four gained (2.1). At four points a level and about four levels a rank a character gains about sixteen: the two now meet, and call 5 (the trial lifts every attribute by one) may no longer be needed. The order of worth in 1.2 put a rank's levels at a quarter of a rank; at four times the points that has to be worked again. Not built: it follows the lore rule in the same session.
+What it does to the spine. The character worker found that the rising floor costs a body fifteen points a rank against about four gained (2.1). At four points a level and about four levels a rank a character gains about sixteen: the two now meet, and call 5 (the trial lifts every attribute by one) may no longer be needed. The order of worth in 1.2 put a rank's levels at a quarter of a rank; at four times the points that has to be worked again. Built since, at `5d6622c` (ledger G1): four points a level through `ProgressionSystem.spendPoint`, a group's point spent before the free one; a circle at every third level climbed; and the rank's reset was found already built (`grantRank`). A gift still asks three circles in one skill, so a first gift now takes nine levels climbed where it took three, which at about four levels a rank is a character's third rank (G1b). Not seen on screen.
 
 He agreed to the first two of those calls ("agreed"), and on the third: "sure, but right now no one has a character, and I always strate fresh to test". So nothing here needs a road for characters that already exist: none do.
 
