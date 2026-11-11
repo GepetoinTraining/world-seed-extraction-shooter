@@ -68,11 +68,12 @@ const FormingFill: React.FC<{ fill: number }> = ({ fill }) => (
 );
 
 /**
- * A skill's circles, in threes. Filled and hollow are told apart by shape, and each
- * group of three has a gap, so it reads in grayscale. There is always a next group: no top.
+ * A skill's circles, in groups that end where a gift falls: threes, but a first group of one for the
+ * character's very first gift (2026-11-11). Filled and hollow are told apart by shape, and each group
+ * has a gap, so it reads in grayscale. There is always a next group: no top.
  */
-const Circles: React.FC<{ filled: number }> = ({ filled }) => {
-  const slots = (Math.floor(filled / CIRCLES_FOR_A_GIFT) + 1) * CIRCLES_FOR_A_GIFT;
+const Circles: React.FC<{ filled: number; first?: number }> = ({ filled, first = CIRCLES_FOR_A_GIFT }) => {
+  const slots = filled < first ? first : first + (Math.floor((filled - first) / CIRCLES_FOR_A_GIFT) + 1) * CIRCLES_FOR_A_GIFT;
   return (
     <span role="img" aria-label={`${filled} circles`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
       {Array.from({ length: slots }, (_, i) => (
@@ -80,7 +81,7 @@ const Circles: React.FC<{ filled: number }> = ({ filled }) => {
           width: 7, height: 7, borderRadius: '50%', boxSizing: 'border-box',
           border: '1px solid var(--ws-text-body)',
           background: i < filled ? 'var(--ws-text-body)' : 'transparent',
-          marginLeft: i > 0 && i % CIRCLES_FOR_A_GIFT === 0 ? 4 : 0
+          marginLeft: i >= first && (i - first) % CIRCLES_FOR_A_GIFT === 0 ? 4 : 0
         }} />
       ))}
     </span>
@@ -111,7 +112,7 @@ export const HandsPanel: React.FC = () => {
               </span>
             </div>
             <div className="ws-row" style={{ padding: '2px 0' }}>
-              <Circles filled={row.circles} />
+              <Circles filled={row.circles} first={CircleSystem.firstAsks(player, row.id)} />
               {freeCircles > 0 && (
                 <Button tone="signal" aria-label={`Fill a circle in ${row.name}`} style={{ padding: '0 4px' }} onClick={() => fillCircle(row.id)}>+</Button>
               )}

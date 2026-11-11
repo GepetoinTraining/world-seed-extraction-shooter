@@ -6,7 +6,9 @@
  *
  * Every level climbed, at any rank, is a circle to fill: what is free is levels climbed
  * less what is filled, so nothing can drift out of step and a rank's reset takes none.
- * Each third circle in a skill is owed a gift. What is owed is read from the skill too,
+ * Each third circle in a skill is owed a gift, but the very first gift a character takes asks one
+ * circle, in whichever skill (Pedro, 2026-11-11: "how about first gift is one, first gift new skill
+ * is 3, so the first first is one"), and that skill counts on in threes from there. What is owed is read from the skill too,
  * so a batch that fails simply asks again at the next rest. The call goes through the
  * rest door like everything else (D43): never in play, and nothing waits on it.
  */
@@ -24,6 +26,12 @@ import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 export { LEVELS_PER_CIRCLE } from '../../../shared/entities/player/systems/ProgressionSystem';
 /** Pedro's three. A skill has no top: each further three is owed another. */
 export const CIRCLES_FOR_A_GIFT = 3;
+/**
+ * Asked "A first gift now takes nine levels. Lower what a gift asks from three circles to one?", Pedro
+ * answered "Lower to one", then: "how about first gift is one, first gift new skill is 3, so the first
+ * first is one". The very first gift a character takes asks this many circles; every other first asks three.
+ */
+export const CIRCLES_FOR_A_FIRST_GIFT = 1;
 
 /** What a model writes for one skill. Only the fields of its own kind are read. */
 export interface IGiftWords {
@@ -62,19 +70,40 @@ export class CircleSystem {
     if (!skill) return refused('That is not a skill you hold.');
     if (this.free(player) <= 0) return refused('No circle is free. Every third level climbed gives one.');
     const circles = this.circlesOf(skill) + 1;
-    return {
-      ok: true,
-      player: { ...player, bank: { ...player.bank, universalSkills: { ...player.bank.universalSkills, [skillId]: { ...skill, circles } } } },
-      owed: circles % CIRCLES_FOR_A_GIFT === 0
-    };
+    const next = { ...player, bank: { ...player.bank, universalSkills: { ...player.bank.universalSkills, [skillId]: { ...skill, circles } } } };
+    return { ok: true, player: next, owed: this.owedTo(next, { ...skill, circles }) > this.owedTo(player, skill) };
+  }
+
+  /** Does this character hold any gift at all? A save from before that does is never made cheaper. */
+  static holdsAGift(player: IPlayer): boolean {
+    return Object.values(player.skillGifts ?? {}).some(gifts => gifts.length > 0);
+  }
+
+  /**
+   * While a character holds no gift, the one skill its first gift goes to: the one with the most
+   * circles, then the first by its id, so two skills never both take a first gift at one circle.
+   */
+  private static firstInLine(player: IPlayer): string | undefined {
+    if (this.holdsAGift(player)) return undefined;
+    return WebSystem.heldSkills(player.bank.universalSkills)
+      .filter(s => this.circlesOf(s) >= CIRCLES_FOR_A_FIRST_GIFT)
+      .sort((a, b) => this.circlesOf(b) - this.circlesOf(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0]?.id;
+  }
+
+  /** How many circles this skill's first gift asks: one for the character's very first, three for any other. */
+  static firstAsks(player: IPlayer, skillId: string): number {
+    const first = this.giftsOf(player, skillId).some(g => g.first) || this.firstInLine(player) === skillId;
+    return first ? CIRCLES_FOR_A_FIRST_GIFT : CIRCLES_FOR_A_GIFT;
   }
 
   static giftsOf(player: IPlayer, skillId: string): ISkillGift[] {
     return player.skillGifts?.[skillId] ?? [];
   }
 
+  /** A first gift at one counts every later one on in threes from it: one, four, seven; any other skill three, six, nine. */
   private static owedTo(player: IPlayer, skill: ISkillState): number {
-    return Math.max(0, Math.floor(this.circlesOf(skill) / CIRCLES_FOR_A_GIFT) - this.giftsOf(player, skill.id).length);
+    const ahead = CIRCLES_FOR_A_GIFT - this.firstAsks(player, skill.id);
+    return Math.max(0, Math.floor((this.circlesOf(skill) + ahead) / CIRCLES_FOR_A_GIFT) - this.giftsOf(player, skill.id).length);
   }
 
   /** What the rest door asks about. It says what the skill is, and nothing else about the person. */
@@ -132,6 +161,7 @@ export class CircleSystem {
   /** A judged gift lands. The number is rolled here, keyed, from the skill's rarity; a model writes words. */
   static apply(player: IPlayer, gifts: IGiftWords[]): IPlayer {
     if (gifts.length === 0) return player;
+    const firstSkill = this.firstInLine(player);
     const skillGifts = { ...(player.skillGifts ?? {}) };
     for (const g of gifts) {
       const skill = player.bank.universalSkills[g.skill];
@@ -141,7 +171,7 @@ export class CircleSystem {
       const gift: ISkillGift = g.kind === 'active'
         ? { id, kind: 'active', name: g.name, blurb: g.blurb, elements: g.elements, delivery: g.delivery, effect: g.effect, cost: g.cost }
         : { id, kind: 'passive', name: g.name, blurb: g.blurb, stat: g.stat, value: this.passiveValue(player.id, id, g, skill) };
-      skillGifts[g.skill] = [...held, gift];
+      skillGifts[g.skill] = [...held, g.skill === firstSkill && held.length === 0 ? { ...gift, first: true } : gift];
     }
     return this.withPassives({ ...player, skillGifts });
   }

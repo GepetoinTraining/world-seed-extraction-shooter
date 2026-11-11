@@ -958,10 +958,19 @@ describe('three circles ask the rest door for an active skill or a passive bonus
     expect(CIRCLES_FOR_A_GIFT).toBe(3);
   });
 
-  it('two circles ask nothing, and the third is owed', () => {
+  it('a character\'s very first gift asks one circle; once one is held, two circles ask nothing, and the third is owed', () => {
+    // Changed on purpose 2026-11-11. Asked "A first gift now takes nine levels. Lower what a gift asks from three
+    // circles to one?", Pedro answered "Lower to one", then: "how about first gift is one, first gift new skill is 3,
+    // so the first first is one".
+    ready(1);
+    expect(CircleSystem.asks(player()).map(a => a.id)).toEqual([pair().id]);
+    const held = { kind: 'passive', name: 'Old Grain', blurb: '', id: 'gift_other_0' } as never;
+    usePlayerStore.setState(s => ({ player: { ...s.player, skillGifts: { skill_other: [held] } } }));
     ready(2);
+    usePlayerStore.setState(s => ({ player: { ...s.player, skillGifts: { skill_other: [held] } } }));
     expect(CircleSystem.asks(player())).toEqual([]);
     ready(3);
+    usePlayerStore.setState(s => ({ player: { ...s.player, skillGifts: { skill_other: [held] } } }));
     expect(CircleSystem.asks(player()).map(a => a.id)).toEqual([pair().id]);
   });
 
@@ -1086,7 +1095,8 @@ describe('three circles ask the rest door for an active skill or a passive bonus
 
   it('the sheet shows circles by shape, in threes, with a way to fill them', () => {
     const src = readFileSync('src/components/PlayerHub.tsx', 'utf8');
-    expect(src).toMatch(/<Circles filled=\{row\.circles\} \/>/);
+    // Changed on purpose 2026-11-11. Pedro: "how about first gift is one, first gift new skill is 3, so the first first is one": the first group can be one
+    expect(src).toMatch(/<Circles filled=\{row\.circles\} first=\{CircleSystem\.firstAsks\(player, row\.id\)\} \/>/);
     expect(src).toMatch(/background: i < filled \?/);
     expect(src).toMatch(/Fill a circle in/);
     // Q28: the field's chip and the city's bar read one line, which says what waits

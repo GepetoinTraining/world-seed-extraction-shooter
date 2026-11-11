@@ -805,6 +805,8 @@ export interface ISkillGift {
   value?: number;
   /** D118: how many times a dream has spent lore to raise this passive. */
   raises?: number;
+  /** The character's very first gift, which asked one circle (Pedro, 2026-11-11: "so the first first is one"). Its skill counts on in threes from there. */
+  first?: boolean;
 }
 
 export interface ISkillState {
