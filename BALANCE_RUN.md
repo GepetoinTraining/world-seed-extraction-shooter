@@ -932,6 +932,27 @@ Made with it, by the coordinator: attributes, points spent and points not yet sp
 
 What it does to the spine. The character worker found that the rising floor costs a body fifteen points a rank against about four gained (2.1). At four points a level and about four levels a rank a character gains about sixteen: the two now meet, and call 5 (the trial lifts every attribute by one) may no longer be needed. The order of worth in 1.2 put a rank's levels at a quarter of a rank; at four times the points that has to be worked again. Not built: it follows the lore rule in the same session.
 
+He agreed to the first two of those calls ("agreed"), and on the third: "sure, but right now no one has a character, and I always strate fresh to test". So nothing here needs a road for characters that already exist: none do.
+
+**Energy.** Pedro, 2026-11-11: "energy management, gear needs to give energy stat (you get very little energy simply by levelling), and, we need energy tonics that are limited usage per rest, and give debuffs as side effects for using."
+
+```
+gear gives energy    today a day's energy is 50 + 0.2 for each point of endurance + what is worn (his own formula),
+                     and only one kind of gear carries energy natively, the focus (5 to 10 at rank F), with one affix stat for it
+                     so a level's four points move a day by less than one
+a tonic              today an energy draught gives 10 at rank F and 1,102 at SSS against a day of 50, as often as one is drunk,
+                     with no side effect. Nothing counts what was drunk since the last rest.
+```
+
+Made with it, by the coordinator, each his to strike:
+
+- Energy on gear is an amount that a rank does not multiply, by his ruling on the day and call 1.5. It is sized on the gear worker's rule for such amounts (2.5), and more kinds than the focus carry it natively, so it is found as often as protection is.
+- A tonic gives a share of the drinker's own day, never an amount by rank, so no tonic outgrows the day.
+- How many tonics a rest allows comes from the body, through endurance, which has one reader today: one, and more with endurance. The limit is his rule and not a cap on content.
+- A tonic's side effect is a status its theme names for it, from the ones the game has, sized by the one formula. It lasts until the next rest and each further tonic deepens it. Lore held, health and what is carried are never taken by it.
+
+Not built: it follows the lore rule and the levels in the same session.
+
 **The fight's shapes.** In the same message as the calls: "something for us to do is make the combat and bullet shapes, it should be bullet hellish, and meele needs reach, and it needs to have that arc, an axe has reach but doesn't hit close to the character usin (darius (lol) q), a spear can atack forward far, and wide arc... see the concept?" Read as: every kind of weapon has a shape of its own on the ground, how far it reaches, how wide it sweeps, and where it does not reach at all (an axe hits out at its edge and misses what stands against its wielder; a spear reaches far ahead); and shots come in patterns that fill the field. Today every swing is one arc, 60 px long and 0.75 rad either side, whatever is held; a shot is a single line; and two patterns, a spread and a spiral, are written and nothing fires them (`STAT_TREES.md` section 9). The fight worker's set already gives each kind its reach and arc (2.2). The shapes are the first piece of the fight's rebalance. Not started.
 
 # Part 3. What the tabletop engine has
