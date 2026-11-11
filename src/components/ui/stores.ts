@@ -111,10 +111,22 @@ export async function whileWaiting<T>(id: string, label: string, work: () => Pro
 
 // --- THE CHARACTER SHEET (line 76): open or not, wherever you are ---
 
-export const useSheet = create<{ open: boolean; toggle: () => void; close: () => void }>(set => ({
+/**
+ * The small sheet, and the large one (the interface pass, 2026-11-11: "right now we have the small
+ * character sheet and no big one"). Opening the large one puts the small one away, and closing it
+ * brings the small one back if it was open, so the pack's hands never have two of one place.
+ */
+export const useSheet = create<{
+  open: boolean; large: boolean; wasOpen: boolean;
+  toggle: () => void; close: () => void; toggleLarge: () => void; closeLarge: () => void;
+}>(set => ({
   open: false,
+  large: false,
+  wasOpen: false,
   toggle: () => set(s => ({ open: !s.open })),
-  close: () => set({ open: false })
+  close: () => set({ open: false }),
+  toggleLarge: () => set(s => (s.large ? { large: false, open: s.wasOpen } : { large: true, wasOpen: s.open, open: false })),
+  closeLarge: () => set(s => (s.large ? { large: false, open: s.wasOpen } : {}))
 }));
 
 // --- THE MINT-WORLD DRAFT (line 58): it outlives the window it is written in ---

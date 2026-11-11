@@ -1446,7 +1446,8 @@ describe('line 128: the sheet and the HUD show level and rank as two things', ()
   });
 
   it('the sheet, the bank, the field HUD and the top bar each say LV beside the rank mark', () => {
-    for (const path of ['src/components/CharacterSheet.tsx', 'src/components/PlayerHub.tsx', 'src/components/WorldCanvas.tsx', 'App.tsx']) {
+    // Changed 2026-11-11, the interface pass: Pedro, "right now we have the small character sheet and no big one". The AGENT tab now shows the large sheet, so what it drew lives in LargeSheet.tsx.
+    for (const path of ['src/components/CharacterSheet.tsx', 'src/components/LargeSheet.tsx', 'src/components/WorldCanvas.tsx', 'App.tsx']) {
       const src = read(path);
       expect(src, path).toMatch(/RankMark/);
       // Q28: the field HUD and the top bar say it through one line, levelLine

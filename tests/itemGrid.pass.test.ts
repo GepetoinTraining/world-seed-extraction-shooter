@@ -397,7 +397,8 @@ describe('the screen\'s wiring', () => {
   });
 
   it('the hub\'s kit panel tells the load in words', () => {
-    const hub = SRC('src/components/PlayerHub.tsx');
+    // Part 2 of this pass moved the kit panel onto the large sheet, which the AGENT tab now shows
+    const hub = SRC('src/components/LargeSheet.tsx');
     expect(hub).toMatch(/loadWord\(/);
   });
 

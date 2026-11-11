@@ -56,18 +56,53 @@ export class CombatMath {
    */
   static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes, skillPower: number = 0): IOutgoingHit {
     const rng = Rng.fromKey(key);
-    const bare = this.weaponDamage(weapon, equipment);
-    const base = Math.round((this.isMelee(weapon) ? bare * StatSystem.meleeScale(attributes) : bare) * (1 + skillPower));
+    const base = this.baseHit(weapon, equipment, attributes, skillPower);
     const poison = StatSystem.total(equipment, 'poison_damage');
     if (rng.next() < StatSystem.critChance(equipment, attributes)) {
-      const multiplier = BASE_CRIT_MULTIPLIER + StatSystem.total(equipment, 'crit_multiplier');
-      return { damage: Math.round(base * multiplier), crit: true, glance: false, poison };
+      return { damage: Math.round(base * this.critMultiplier(equipment)), crit: true, glance: false, poison };
     }
-    const accuracy = Math.max(-99, StatSystem.accuracyRating(equipment, attributes));
-    if (rng.next() < BASE_GLANCE * 100 / (100 + accuracy)) {
+    if (rng.next() < this.glanceChance(equipment, attributes)) {
       return { damage: Math.max(1, Math.round(base * GLANCE_FACTOR)), crit: false, glance: true, poison };
     }
     return { damage: base, crit: false, glance: false, poison };
+  }
+
+  // The parts of a blow, each named once, so the large sheet shows the very numbers a fight rolls
+  // against and never a second sum of its own (the interface pass, 2026-11-11).
+
+  /** A hit before it crits or glances: the hand, what is worn, strength for a swing, and the hand's own skill. */
+  static baseHit(weapon: IItem | undefined, equipment: IEquipmentState | undefined, attributes?: IAttributes, skillPower: number = 0): number {
+    const bare = this.weaponDamage(weapon, equipment);
+    return Math.round((this.isMelee(weapon) ? bare * StatSystem.meleeScale(attributes) : bare) * (1 + skillPower));
+  }
+
+  /** What a crit multiplies a hit by: the base, and what is worn. */
+  static critMultiplier(equipment: IEquipmentState | undefined): number {
+    return BASE_CRIT_MULTIPLIER + StatSystem.total(equipment, 'crit_multiplier');
+  }
+
+  /** The chance a hit that does not crit glances: fewer with accuracy, from dexterity and what is worn. */
+  static glanceChance(equipment: IEquipmentState | undefined, attributes?: IAttributes): number {
+    const accuracy = Math.max(-99, StatSystem.accuracyRating(equipment, attributes));
+    return BASE_GLANCE * 100 / (100 + accuracy);
+  }
+
+  /** What a glance leaves of a hit. */
+  static glanceFactor(): number {
+    return GLANCE_FACTOR;
+  }
+
+  /** The chance a blow arriving misses entirely: the evasion rating, from agility and what is worn, on its curve. */
+  static dodgeChance(equipment: IEquipmentState | undefined, attributes?: IAttributes): number {
+    return Math.max(0, curve(StatSystem.evasionRating(equipment, attributes)));
+  }
+
+  /** The chance a blow that lands is blocked, and what a block leaves of it. */
+  static blockChance(equipment: IEquipmentState | undefined): number {
+    return StatSystem.total(equipment, 'block_chance');
+  }
+  static blockFactor(): number {
+    return BLOCK_FACTOR;
   }
 
   /** Milliseconds between shots/swings. */
@@ -116,10 +151,10 @@ export class CombatMath {
   static incoming(raw: number, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes): IIncomingHit {
     if (raw <= 0) return { damage: 0, dodged: false, blocked: false };
     const rng = Rng.fromKey(key);
-    if (rng.next() < Math.max(0, curve(StatSystem.evasionRating(equipment, attributes)))) {
+    if (rng.next() < this.dodgeChance(equipment, attributes)) {
       return { damage: 0, dodged: true, blocked: false };
     }
-    const blocked = rng.next() < StatSystem.total(equipment, 'block_chance');
+    const blocked = rng.next() < this.blockChance(equipment);
     const landed = (blocked ? raw * BLOCK_FACTOR : raw) * StatSystem.blowFactor(attributes);
     return { damage: Math.max(1, Math.round(landed * (1 - this.mitigationOf(equipment)))), dodged: false, blocked };
   }

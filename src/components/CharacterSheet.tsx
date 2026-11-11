@@ -35,6 +35,7 @@ import { groupHeading, plusSays } from './ui/levelLine';
 import { ItemGrid } from './ui/ItemGrid';
 import { dropByKey, useDropZone, useHands, wholeZone } from './ui/hands';
 import { GROUND_REACH } from '../logic/systems/ItemHands';
+import { LargeSheetOverlay } from './LargeSheet';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
 import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 
@@ -107,7 +108,7 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
   );
 };
 
-const PackPanels = ({ session }: { session: IActiveSession }) => {
+export const PackPanels = ({ session }: { session: IActiveSession }) => {
   const { dropItem, rotateItem, consumeItem, arrangePack, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
   // Line 124: a study's clock, where the HUD can read it
@@ -357,6 +358,8 @@ const WhoPanel: React.FC = () => {
       right={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={rank} scale={2} />RANK {rank}</span>}
       style={{ flex: '1 1 240px', minWidth: 240, height: PACK_BODY_H, overflowY: 'auto' }}
     >
+      {/* The interface pass: the quick sheet opens the large one, where everything the character has is */}
+      <Button tone="quiet" style={{ marginBottom: 4 }} onClick={() => useSheet.getState().toggleLarge()}>LARGE SHEET <Kbd>SHIFT+C</Kbd></Button>
       <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
       {points > 0 && <div style={{ margin: '4px 0' }}><Chip tone="signal">TO SPEND: {pointsLine(player)}</Chip></div>}
 
@@ -445,6 +448,14 @@ export const CharacterSheet: React.FC = () => {
         sheet.toggle();
         return;
       }
+      // SHIFT+C: the large sheet, from wherever the small one opens (the interface pass)
+      if (e.key.toLowerCase() === 'c' && e.shiftKey) {
+        const walking = !!usePlayerStore.getState().player.currentSession || useAppView.getState().view === 'HUB';
+        if (!walking) return;
+        stop();
+        sheet.toggleLarge();
+        return;
+      }
       if (e.key.toLowerCase() === 'c') {
         stop();
         sheet.toggle();
@@ -473,5 +484,6 @@ export const CharacterSheet: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
-  return open ? <SheetBody /> : null;
+  const large = useSheet(s => s.large);
+  return <>{open && <SheetBody />}{large && <LargeSheetOverlay />}</>;
 };

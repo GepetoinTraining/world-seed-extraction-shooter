@@ -107,17 +107,19 @@ describe('G1f: both sheets say what waits in each group, and what a + spends, wi
     expect(plusSays(p(0, 0), 'body')).toBeNull();
   });
   it('the field sheet and the AGENT tab both draw them, and the AGENT tab names each + for keys', () => {
-    for (const path of ['src/components/CharacterSheet.tsx', 'src/components/PlayerHub.tsx']) {
+    // Changed 2026-11-11, the interface pass: Pedro, "right now we have the small character sheet and no big one". The AGENT tab now shows the large sheet, so what it drew lives in LargeSheet.tsx.
+    for (const path of ['src/components/CharacterSheet.tsx', 'src/components/LargeSheet.tsx']) {
       expect(source(path)).toMatch(/groupHeading\(player/);
       expect(source(path)).toMatch(/plusSays\(player/);
     }
-    expect(source('src/components/PlayerHub.tsx')).toMatch(/aria-label=\{`Raise \$\{attr\}/);
+    expect(source('src/components/LargeSheet.tsx')).toMatch(/aria-label=\{`Raise \$\{attr\}/);
   });
 });
 
 describe('G1g: the AGENT tab keeps its spend line inside its panel', () => {
   it('the title carries a count only; the line by kind sits in the body, where it can wrap', () => {
-    const hub = source('src/components/PlayerHub.tsx');
+    // Changed 2026-11-11, the interface pass: Pedro, "right now we have the small character sheet and no big one". The AGENT tab now shows the large sheet, so what it drew lives in LargeSheet.tsx.
+    const hub = source('src/components/LargeSheet.tsx');
     expect(hub).not.toMatch(/title="ATTRIBUTES" right=\{[^}]*pointsLine/);
     expect(hub).toMatch(/whiteSpace: 'normal'[\s\S]{0,120}SPEND \{pointsLine\(player\)\}/);
   });

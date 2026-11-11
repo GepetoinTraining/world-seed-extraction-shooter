@@ -14,6 +14,7 @@ import { VendorSystem } from '../logic/systems/VendorSystem';
 import { InventorySystem } from '../../shared/entities/player/systems/InventorySystem';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
+import { LargeSheet } from './LargeSheet';
 import { EquipSlotId, IAttributes, IItem, ItemType, SlotType, HEAD_BUDGET_POSITIONS } from '../../shared/types';
 import { STASH_COLS, StashFilter, StashGrid, StashKind, StashSortKey } from '../entities/player/systems/StashGrid';
 import { ItemGrid } from './ui/ItemGrid';
@@ -155,149 +156,9 @@ export const HandsPanel: React.FC = () => {
 };
 
 // ---------------------------------------------------------------------------
-// AGENT: the build — attributes, frames, and the loadout for the next drop
+// AGENT: the large character sheet itself (the interface pass, 2026-11-11). Pedro: "right now we have
+// the small character sheet and no big one". The tab is no longer a second, different sheet.
 // ---------------------------------------------------------------------------
-
-const AgentTab: React.FC = () => {
-  const { player, spendAttributePoint, toggleCarry, recalcWeight } = usePlayerStore();
-  useEffect(() => { recalcWeight(); }, [recalcWeight]);
-
-  const rank = ProgressionSystem.rankOf(player);
-  const progress = ProgressionSystem.levelProgress(player);
-  const points = ProgressionSystem.unspent(player).total;
-  const stash = player.bank.stashTabs[0]?.items || [];
-  const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
-
-  // The next drop's kit: the HARNESS rides as worn (weightless against the
-  // limit, 10C.3); the pack takes tools-in-stash and whatever is marked CARRY
-  const kit = stash.filter(i => i.tags?.includes('tool') || player.bank.carryItemIds?.includes(i.id));
-  const kitWeight = kit.reduce((s, i) => s + (i.weight || 0), 0);
-  const capacity = InventorySystem.maxCarryWeight(player.attributes.strength) + LoadoutSystem.bagCapacityBonus(equipment);
-  // The figure draws what the harness holds (Wave 10C: the tree is the truth)
-  const held = LoadoutSystem.itemIn(equipment, 'RIGHT_HAND');
-  const worn = LoadoutSystem.itemIn(equipment, 'CHEST');
-  const kitZone = useRef<HTMLDivElement>(null);
-  useDropZone('kit', wholeZone(kitZone, { kind: 'KIT' }));
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: `auto ${STASH_COLS * VAULT_CELL + 26}px minmax(280px, 1fr)`, gap: 10, alignItems: 'start' }}>
-      <PaperDoll />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <Panel title="THE VAULT" right={<span className="ws-proof">{player.bank.gold.toLocaleString()} G</span>}>
-          <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>Drag a piece onto the body, or right-click to wear it. Sell and sort on the STASH tab.</div>
-          <div style={{ maxHeight: 300, overflowY: 'auto', overflowX: 'hidden' }}>
-            <VaultGrid zoneId="vault" cellPx={VAULT_CELL} />
-          </div>
-        </Panel>
-        <div ref={kitZone} data-drop-zone="kit">
-        <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg{InventorySystem.loadWord(kitWeight, capacity) ? ` · ${InventorySystem.loadWord(kitWeight, capacity)}` : ''}</span>}>
-          <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
-            Tools always ride. Drag anything else here, and it drops with you — and can be lost with you.
-          </div>
-          {kit.length === 0 && <div className="ws-dim ws-small">Nothing marked. You would drop with empty hands.</div>}
-          <div className="ws-list">
-            {kit.map(item => (
-              <div key={item.id} className="ws-row" {...hoverProps(item)}>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-                  <ItemSprite item={item} cellPx={16} />
-                  <span style={{ minWidth: 0 }}>
-                    <span className="t" style={{ display: 'block' }}>{item.name}</span>
-                    <span className="s">{item.weight}kg{item.tags?.includes('tool') ? ' · TOOL, ALWAYS CARRIED' : ''}</span>
-                  </span>
-                </span>
-                {!item.tags?.includes('tool') && (
-                  <Button tone="quiet" onClick={() => toggleCarry(item.id)}>LEAVE HOME</Button>
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%${InventorySystem.loadWord(kitWeight, capacity) ? ` · ${InventorySystem.loadWord(kitWeight, capacity)}` : ''}`} />
-          </div>
-          <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
-            Session weight above 80% reads SLOWED in the field.
-            {equipment.items.length > 0 && <> The harness carries {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg more, and none of it counts: the limit is the haul, not the harness.</>}
-          </div>
-        </Panel>
-        </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
-      <Panel title="IDENTITY">
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
-          <PortraitView uid={player.id} archetype={(player.archetype || 'OPERATOR') as Archetype} scale={3} />
-          <SpriteView
-            sprite={figure({
-              uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype,
-              weapon: held ? weaponClass(held.tags || []) : undefined,
-              armor: worn ? armorClass(worn.tags || []) : undefined
-            })}
-            scale={4}
-            title="You, as the next drop will draw you"
-          />
-        </div>
-        <div className="ws-bright">{player.username.toUpperCase()}</div>
-        <div className="ws-dim ws-small" style={{ wordBreak: 'break-all' }}>{player.id}</div>
-        <div className="ws-dim ws-small">{player.creation?.className ?? (player.archetype || 'OPERATOR').replace('_', ' ')}</div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 4px' }}>
-          <RankMark rank={rank} scale={3} />
-          <span className="ws-bright">RANK {rank}</span>
-          {points > 0 && <Chip tone="signal">{points} POINT{points === 1 ? '' : 'S'} TO SPEND</Chip>}
-        </div>
-        <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
-        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Fights, chests and what you gather feed the level, more for what is riskier. Each level grants {POINTS_PER_LEVEL} attribute points: one free, and one for each group, spent only inside it. Every {LEVELS_PER_CIRCLE} levels climbed bring a circle. The guild sets the rank; the level begins again there, and what you built stays.
-        </div>
-      </Panel>
-      <HandsPanel />
-      <Panel title="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">{points} TO SPEND</span> : undefined}>
-        {/* G1g: the line by kind sits in the body, where it wraps inside the panel at any width */}
-        {points > 0 && <div className="ws-signal ws-small" style={{ whiteSpace: 'normal', marginBottom: 6 }}>SPEND {pointsLine(player)}</div>}
-        {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
-          <div key={group} style={{ marginBottom: 8 }}>
-            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>{groupHeading(player, groupOfWord(group))}</div>
-            {plusSays(player, groupOfWord(group)) && <div className="ws-signal ws-small" style={{ marginBottom: 2 }}>{plusSays(player, groupOfWord(group))}</div>}
-            {attrs.map(attr => {
-              const val = player.attributes[attr] || 0;
-              const base = player.baseAttributes[attr] || 0;
-              const diff = val - base;
-              return (
-                <div key={attr} className="ws-row" title={StatSystem.attributeWork(attr, player.attributes)} style={{ padding: '2px 0' }}>
-                  <span style={{ textTransform: 'capitalize' }}>{attr}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {diff !== 0 && <span className={diff > 0 ? 'ws-signal ws-small' : 'ws-loss ws-small'}>{diff > 0 ? '+' : ''}{diff}</span>}
-                    <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
-                    {ProgressionSystem.pointFor(player, attr) && (
-                      <Button tone="signal" onClick={() => spendAttributePoint(attr)} aria-label={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} title={`Raise ${attr} permanently, with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`}>+1</Button>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
-          THE HEAD BUDGET — HEAD, EYES, EARRING, NECKLACE each hold gear OR a frame; three frames at most.
-          Gear never adds to the mental stats; a frame does, beside what you were dealt, and they drive the recon survey too.
-        </div>
-        {HEAD_BUDGET_POSITIONS.map(position => {
-          const frame = LoadoutSystem.frameAt(equipment, position);
-          const gear = LoadoutSystem.itemIn(equipment, position);
-          return (
-            <div key={position} className="ws-row">
-              <span className="ws-dim ws-small" style={{ width: 80 }}>{position}</span>
-              <span className={frame ? 'ws-signal' : gear ? 'ws-bright' : 'ws-dim'}>
-                {frame ? `${frame.name} (frame)` : gear ? gear.name : 'open'}
-              </span>
-            </div>
-          );
-        })}
-        <div className="ws-dim ws-small" style={{ marginTop: 2 }}>Seat and clear frames on the body, left.</div>
-      </Panel>
-      </div>
-    </div>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // SKILLS: grown by use; the rank is effectiveness against the task (D6)
@@ -599,7 +460,7 @@ export const PlayerHub = () => {
         active={bankTab}
         onChange={setBankTab}
       />
-      {bankTab === 'agent' && <AgentTab />}
+      {bankTab === 'agent' && <LargeSheet />}
       {bankTab === 'skills' && <SkillsTab />}
       {bankTab === 'stash' && <StashTab />}
       {bankTab === 'ledger' && <LedgerTab />}

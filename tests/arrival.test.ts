@@ -60,7 +60,8 @@ describe('a lot reads the same on the street and on every screen (N9)', () => {
 
 describe('the Agent tab tells the truth about mental stats (N11)', () => {
   it('does not say frames are their only source, since a new sheet is dealt them', () => {
-    const text = SRC('src/components/PlayerHub.tsx');
+    // Changed 2026-11-11, the interface pass: Pedro, "right now we have the small character sheet and no big one". The AGENT tab now shows the large sheet, so what it drew lives in LargeSheet.tsx.
+    const text = SRC('src/components/LargeSheet.tsx');
     expect(text).not.toMatch(/come only from frames/);
     expect(text).toMatch(/Gear never adds to the mental stats/);
   });
