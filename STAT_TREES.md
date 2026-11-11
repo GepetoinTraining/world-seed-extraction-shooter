@@ -16,6 +16,7 @@ This is that list, read from the code at `dbd5461`. Nothing here is a proposal: 
 | 8 | The numbers side by side, rank by rank |
 | 9 | Where the numbers disagree with themselves |
 | 10 | Every system that holds numbers, for splitting the work |
+| 11 | What Pedro has ruled for the run, and each ruling against today's code |
 
 **How it was read.** The core files (`StatSystem`, `CombatMath`, `ThemeFormula`, `ItemFactory`, `constants`, `ProgressionSystem`) were read by hand. The tables in section 8 were computed by the game's own functions, not by hand. The rest was gathered by five sweeps of the code (attributes, ladders, item stats, the fight, a census of every tunable number) and spot-checked. A line marked *by reading* is something the code appears to do that was not run. Section 10 ends with what was not read at all.
 
@@ -73,6 +74,7 @@ strength
 ├─ melee damage x (1 + 0.04 x over)                                                           meleeScale -> CombatMath.outgoing
 │   └─ a weapon tagged melee only: not a bare hand, not a thrown stone, not a tool's swing
 ├─ asked by heavy and two-handed gear: 1 + 2 x s                                              LoadoutSystem.requirementsFor
+│   └─ those two tags are read first, so the shipped bow (two-handed, ranged) asks strength, and so does the chest piece (heavy)
 ├─ a leader's damage: + base x 0.1 x STR above its rank's start                               ThemeFormula.leaderNumbers
 └─ an escort who falls weighs 30 + 10 x their STR                                             Escort.ts
 
@@ -91,7 +93,7 @@ dexterity
 ├─ accuracy rating + 3 x over, with worn accuracy_rating                                      accuracyRating -> CombatMath.outgoing
 │   └─ chance a hit glances (half damage) = 0.2 x 100 / (100 + accuracy)
 ├─ the making roll: + (DEX - 1) on the twenty-sided roll                                      PairCraft.make
-└─ asked by blades, one-handed and ranged gear: 1 + 2 x s
+└─ asked by blades and one-handed gear, and by ranged gear that is not two-handed: 1 + 2 x s
 
 endurance
 └─ energy for a day = 50 + 0.2 x END + worn max_energy                                        maxEnergy (Pedro: "0.2 of endurance + initial value + items")
@@ -665,3 +667,66 @@ the magic unlock       whether any affix, any creature trait or any dream exists
 - `server/`, and every number that only draws the screen.
 - Affixes on a weapon in a real fight, and the tutorial's own fight rules, were not followed through.
 - The counts are estimates.
+
+## 11. What Pedro has ruled for the run
+
+Two rulings, 2026-11-11, given on reading this document. His words are quoted whole. What follows each is what the code has today, and where a reading of his words is mine it says so.
+
+### The first tier above normal is "magical"
+
+Asked whether a tier named magical should be added, since the code has none:
+
+> "because tech web is "magical", anything above normal has magical properties, some are technological (the materials being better make the stats better, roll affixes or even enhance the weapon), magic is a neat way to put the first tier, as in, it's technology we don't undersand"
+
+```
+what he said                                   what the code has today
+├─ anything above normal has magical           a common piece carries no affix; every tier above it carries at least one (section 4)
+│  properties
+├─ the tech web is what is "magical"           the gate on every affix, creature trait and dream is already named for it:
+│                                              a hub's magic unlock (SHELF_STATE.magicUnlocked, D49, ledger H12)
+├─ better materials make the stats better      a made piece only: its power is the budget of its materials' hardness and density
+│                                              a found piece reads no material at all
+├─ roll affixes                                by rarity, at the mint (section 5)
+├─ or even enhance the weapon                  by reading, nothing adds to a finished weapon after it is made
+└─ magic is the name for the first tier        the first tier above COMMON is named UNCOMMON
+```
+
+My reading, not confirmed: magical is the name of the first tier above normal, the one the code calls uncommon, and the name is earned by the fiction (technology nobody understands yet). His first list ran "uncommon magical rare epic", which can also be read as a tier of its own between uncommon and rare. The two readings differ by one step on the ladder.
+
+### A same-rank fight is jokenpo
+
+Asked how long a same-rank fight should last, he answered who should win it:
+
+> "same rank fight should be jokenpo style, ranged beats meele, speed beats ranged (assassin or stealth, mounted) and meele beats speed."
+
+So the spine is a triangle, not a length. The length of a fight and the size of each edge are not ruled.
+
+```
+ranged beats melee          holds today, and at no cost
+├─ a shot reaches 400 px; a swing 60 px; a creature's plain blow 50 px
+├─ a bare walk is 4 tiles a second and the fastest creature 3.7, so a shooter who keeps walking is never caught
+└─ a bare hand shoots, so everyone is ranged before they own anything
+
+speed beats ranged          nothing today
+├─ nothing closes on a shooter: no creature is faster than a walk, and none charges or leaps (FLANK is declared in MobAI and never used)
+├─ unseen: quiet shortens how far a creature notices, and a blow struck unseen is an ordinary blow
+├─ no mount exists; a tamed creature follows and is not ridden
+└─ what speed has to work with: walk (agility, boots, a haste working), evasion (agility), quiet (subterfuge, an earring)
+
+melee beats speed           nothing today
+├─ a swing hits every body in its arc once; nothing slows, holds or punishes a faster body that comes near
+├─ stun and weaken are declared and nothing makes them
+└─ what melee has to work with: strength on the hit, physical reduction, defense, block, intimidation on blows taken
+```
+
+Where each side already sits in the code:
+
+| Side | Gear | The attribute its gear asks | A creature |
+|---|---|---|---|
+| Melee | blade, bludgeon, any tool (tag `melee`) | strength for the bludgeon and a tool; dexterity for the blade | AGGRESSIVE, SWARM, SIEGE |
+| Ranged | bow, a stone, a bare hand (tag `ranged`) | strength for the shipped bow, because it is two-handed and that tag is read first | TURRET, and an AGGRESSIVE one that knows a ranged working |
+| Speed | nothing of its own; head, legs and boots are tagged `light` | agility | pace `swift`, 3.7 tiles a second |
+
+So by what gear asks today, the shooter and the heavy fighter are raised on the same attribute, and nothing asks for agility but light armour.
+
+Not ruled: where a working sits. In the code a working has its own reach (touch, melee, ranged, area, aura), and a focus fires a burst around its holder.
