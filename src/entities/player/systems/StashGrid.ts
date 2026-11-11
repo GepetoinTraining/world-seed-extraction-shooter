@@ -50,13 +50,22 @@ export class StashGrid {
     const out: Layout = {};
     const rows = new Rows(cols);
     const homeless: IItem[] = [];
+    // Like things stack (the interface pass): a piece whose like already lies on its very place joins it
+    const stackAt = new Set<string>();
+    const spot = (p: IGridPlacement, key: string) => `${p.x},${p.y},${p.rotated}|${key}`;
     for (const item of items) {
       const p = layout?.[item.id];
       if (p) {
         const { w, h } = InventorySystem.footprint(item, p.rotated);
+        const key = InventorySystem.stackKey(item);
+        if (key !== null && stackAt.has(spot(p, key))) {
+          out[item.id] = { x: p.x, y: p.y, rotated: p.rotated };
+          continue;
+        }
         if (rows.free(p.x, p.y, w, h)) {
           rows.take(p.x, p.y, w, h);
           out[item.id] = { x: p.x, y: p.y, rotated: p.rotated };
+          if (key !== null) stackAt.add(spot(p, key));
           continue;
         }
       }
@@ -64,6 +73,9 @@ export class StashGrid {
     }
     let start = 0;
     for (const item of homeless) {
+      const key = InventorySystem.stackKey(item);
+      const like = key === null ? undefined : items.find(o => o.id !== item.id && out[o.id] && InventorySystem.stackKey(o) === key);
+      if (like) { out[item.id] = { ...out[like.id] }; continue; }
       const { w, h } = this.fitted(item, cols);
       const at = rows.place(w, h, start);
       rows.take(at.x, at.y, w, h);
@@ -104,25 +116,42 @@ export class StashGrid {
     return covered.size;
   }
 
-  /** Can this footprint sit here, with only itself ignored? */
-  static canPlace(items: IItem[], layout: Layout, itemId: string, w: number, h: number, x: number, y: number, cols = STASH_COLS): boolean {
+  /**
+   * Can this footprint sit here, with only itself ignored? Exactly on a stack of its like, it can
+   * (the interface pass). `moving` are the pieces in hand: where they lay blocks nothing.
+   */
+  static canPlace(items: IItem[], layout: Layout, itemId: string, w: number, h: number, x: number, y: number, cols = STASH_COLS, moving: string[] = [itemId]): boolean {
     if (x < 0 || y < 0 || x + w > cols) return false;
+    const lifted = new Set(moving);
+    const self = items.find(i => i.id === itemId);
+    const key = self ? InventorySystem.stackKey(self) : null;
     for (const other of items) {
-      if (other.id === itemId) continue;
+      if (other.id === itemId || lifted.has(other.id)) continue;
       const p = layout[other.id];
       if (!p) continue;
       const f = InventorySystem.footprint(other, p.rotated);
-      if (x < p.x + f.w && x + w > p.x && y < p.y + f.h && y + h > p.y) return false;
+      if (x < p.x + f.w && x + w > p.x && y < p.y + f.h && y + h > p.y) {
+        if (key !== null && p.x === x && p.y === y && f.w === w && f.h === h && InventorySystem.stackKey(other) === key) continue;
+        return false;
+      }
     }
     return true;
   }
 
-  /** Packed in the order asked: the highest number first, the first name first. */
+  /** In the order a sort asks: the highest number first, the first name first. The pack sorts by it too. */
+  static sorted(items: IItem[], key: StashSortKey): IItem[] {
+    return [...items].sort((a, b) => this.compare(a, b, key));
+  }
+
+  /** Packed in the order asked: the highest number first, the first name first. Like things stack. */
   static arrange(items: IItem[], key: StashSortKey, cols = STASH_COLS): Layout {
-    const sorted = [...items].sort((a, b) => this.compare(a, b, key));
+    const sorted = this.sorted(items, key);
     const out: Layout = {};
     const rows = new Rows(cols);
     for (const item of sorted) {
+      const stackKey = InventorySystem.stackKey(item);
+      const like = stackKey === null ? undefined : sorted.find(o => o.id !== item.id && out[o.id] && InventorySystem.stackKey(o) === stackKey);
+      if (like) { out[item.id] = { ...out[like.id] }; continue; }
       const { w, h } = this.fitted(item, cols);
       const at = rows.place(w, h, 0);
       rows.take(at.x, at.y, w, h);

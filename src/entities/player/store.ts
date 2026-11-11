@@ -19,7 +19,8 @@ import { LootTable } from '../world/LootTable';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { ItemType, Rarity } from '../../../shared/types';
-import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
+import { InventorySystem, GRID_H, GRID_W } from '../../../shared/entities/player/systems/InventorySystem';
+import { GROUND_REACH } from '../../logic/systems/ItemHands';
 import { STASH_COLS, StashGrid, StashSortKey } from './systems/StashGrid';
 import { LoadoutSystem, Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
@@ -118,13 +119,18 @@ interface PlayerState {
   /** The usability pass (U6): equipping in one step. What the slot held goes where this came from. */
   equipSwap: (itemId: string, slotId?: EquipSlotId) => Verdict;
   /** The usability pass (line 59): set a pack item down on a chosen cell. */
-  placeInPack: (itemId: string, x: number, y: number, rotated: boolean) => Verdict;
+  /** `along`: the whole of a stack in hand moves with it (the interface pass). */
+  placeInPack: (itemId: string, x: number, y: number, rotated: boolean, along?: string[]) => Verdict;
   /** The usability pass (U13): where things sit in the vault. Nothing here moves an item out of it. */
-  placeInStash: (itemId: string, x: number, y: number, rotated: boolean) => Verdict;
+  placeInStash: (itemId: string, x: number, y: number, rotated: boolean, along?: string[]) => Verdict;
   arrangeStash: (key: StashSortKey) => void;
+  /** The interface pass: pack the pack tight, or in one of the vault's own orders. Nothing is ever left without a place. */
+  arrangePack: (key: 'TIGHT' | StashSortKey) => Verdict;
   /** The usability pass (line 74): one thing out of a ground cache, through the pack's caps. */
   takeFromCache: (entityId: string, itemId: string) => Verdict;
-  placeOnCart: (entityId: string, itemId: string, x: number, y: number, rotated: boolean) => Verdict;
+  placeOnCart: (entityId: string, itemId: string, x: number, y: number, rotated: boolean, along?: string[]) => Verdict;
+  /** Ledger H1b: a piece on a cart's bed turns by a door of its own, with its stack. */
+  rotateOnCart: (entityId: string, itemId: string) => Verdict;
   /** What is in this slot wears, whichever hand fired it. */
   wearSlot: (slot: EquipSlotId, amount: number) => void;
   /** C14: one throw of what this hand holds. */
@@ -175,11 +181,12 @@ interface PlayerState {
 
   // Wave 3: the body is real
   tryAddItems: (items: IItem[]) => { added: IItem[]; rejected: IItem[] };
-  dropItem: (itemId: string) => void;
+  /** said: a stack dropped whole says one line, on its last piece, naming how many (the interface pass). */
+  dropItem: (itemId: string, said?: { quiet?: boolean; count?: number }) => void;
   // Wave 10D (10D.2): the floor — stone-and-stick, no bench, anywhere
   improviseInField: (recipeId: string) => { ok: boolean; reason?: string };
   /** One material set on another: both are used, an unread thing comes of it, and a rest reads it (PairCraft). */
-  combine: (itemId: string, ontoId: string) => Verdict;
+  combine: (itemId: string, ontoId: string, cartId?: string) => Verdict;
   rotateItem: (itemId: string) => void;
 
   toggleCarry: (itemId: string) => void;
@@ -282,7 +289,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         case 'LORE': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore: change.lore } } })); break;
         case 'GAIN_SKILL_XP': store.gainSkillXp(change.skillId, change.amount, change.tags, change.context); break;
         case 'DIVE': store.diveIntoLayer(change.layerId); break;
-        case 'DROP_ITEM': store.dropItem(change.itemId); break;
+        case 'DROP_ITEM': store.dropItem(change.itemId, { quiet: change.quiet, count: change.count }); break;
         case 'TOGGLE_CARRY': store.toggleCarry(change.itemId); break;
       }
     }
@@ -632,35 +639,57 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     return { ok: true };
   },
 
-  placeInPack: (itemId, x, y, rotated) => {
+  placeInPack: (itemId, x, y, rotated, along) => {
     const session = get().player.currentSession;
     const item = session?.inventory.find(i => i.id === itemId);
     if (!session || !item) return { ok: false, reason: 'No such item in the pack.' };
     const layout = session.inventoryLayout || {};
-    const { w, h } = InventorySystem.footprint(item, rotated);
-    const occ = InventorySystem.buildOccupancy(session.inventory, layout);
-    if (!InventorySystem.canPlaceAt(occ, w, h, x, y, itemId)) {
+    // Like things stack (the interface pass): the pieces in hand move together, and may lie on their like
+    const moving = (along?.includes(itemId) ? along : [itemId, ...(along ?? [])]).filter(id => session.inventory.some(i => i.id === id));
+    if (!InventorySystem.fitsAt(session.inventory, layout, item, x, y, rotated, GRID_W, GRID_H, moving)) {
       return { ok: false, reason: `The pack has no room there. ${shown(item)} stays where it was.` };
     }
     set(s => s.player.currentSession ? ({
       player: { ...s.player, currentSession: {
         ...s.player.currentSession,
-        inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), [itemId]: { x, y, rotated } }
+        inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), ...Object.fromEntries(moving.map(id => [id, { x, y, rotated }])) }
       } }
     }) : s);
     return { ok: true };
   },
 
-  placeInStash: (itemId, x, y, rotated) => {
+  arrangePack: (key) => {
+    const session = get().player.currentSession;
+    if (!session) return { ok: false, reason: 'The pack is in the field.' };
+    const order = key === 'TIGHT'
+      ? [...session.inventory].sort((a, b) => {
+        const fa = InventorySystem.footprint(a, false), fb = InventorySystem.footprint(b, false);
+        return (fb.w * fb.h) - (fa.w * fa.h);
+      })
+      : StashGrid.sorted(session.inventory, key);
+    // A sort that cannot hold everything falls back to packing tight; if even that cannot, nothing moves
+    const layout = InventorySystem.packInOrder(order) ?? (key === 'TIGHT' ? null : InventorySystem.packInOrder(
+      [...session.inventory].sort((a, b) => InventorySystem.footprint(b, false).w * InventorySystem.footprint(b, false).h - InventorySystem.footprint(a, false).w * InventorySystem.footprint(a, false).h)));
+    if (!layout) {
+      const v = { ok: false, reason: 'The pack cannot be laid out that way without leaving something out. Nothing moved.' };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    set(s => s.player.currentSession ? ({ player: { ...s.player, currentSession: { ...s.player.currentSession, inventoryLayout: layout } } }) : s);
+    return { ok: true };
+  },
+
+  placeInStash: (itemId, x, y, rotated, along) => {
     const tab = get().player.bank.stashTabs[0];
     const item = tab?.items.find(i => i.id === itemId);
     if (!tab || !item) return { ok: false, reason: 'No such item in the vault.' };
     const layout = StashGrid.resolve(tab.items, tab.layout);
     const { w, h } = InventorySystem.footprint(item, rotated);
-    if (!StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y)) {
+    const moving = (along?.includes(itemId) ? along : [itemId, ...(along ?? [])]).filter(id => tab.items.some(i => i.id === id));
+    if (!StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y, STASH_COLS, moving)) {
       return { ok: false, reason: `The vault has something there. ${shown(item)} stays where it was.` };
     }
-    layout[itemId] = { x, y, rotated };
+    for (const id of moving) layout[id] = { x, y, rotated };
     set(s => ({
       player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, idx) => idx === 0 ? { ...t, layout } : t) } }
     }));
@@ -698,13 +727,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     return { ok: true };
   },
 
-  placeOnCart: (entityId, itemId, x, y, rotated) => {
+  placeOnCart: (entityId, itemId, x, y, rotated, along) => {
     const world = wp.view();
     const entity = Object.values(world.currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
     if (!entity?.cart) return { ok: false, reason: 'No cart there.' };
-    const placed = CartSystem.placeAt(entity.cart, itemId, x, y, rotated);
+    const placed = CartSystem.placeAt(entity.cart, itemId, x, y, rotated, along);
     if (!placed) return { ok: false, reason: 'The cart bed has no room there. It stays where it was.' };
     wp.apply({ kind: 'UPDATE_BODY', entityId: entityId, patch: { cart: placed } });
+    void get().persistCarts();
+    return { ok: true };
+  },
+
+  rotateOnCart: (entityId, itemId) => {
+    const entity = Object.values(wp.view().currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === entityId);
+    const item = entity?.cart?.items.find(i => i.id === itemId);
+    if (!entity?.cart || !item) return { ok: false, reason: 'Nothing of that name aboard.' };
+    const turned = CartSystem.rotate(entity.cart, itemId);
+    if (!turned) {
+      const v = { ok: false, reason: `There is no room on the bed to turn ${shown(item)}. Clear a space beside it.` };
+      feed(v.reason, 'loss');
+      return v;
+    }
+    wp.apply({ kind: 'UPDATE_BODY', entityId, patch: { cart: turned } });
     void get().persistCarts();
     return { ok: true };
   },
@@ -1544,16 +1588,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     let inv = [...session.inventory];
     let layout = { ...(session.inventoryLayout || InventorySystem.placeAll(session.inventory)) };
     let weight = InventorySystem.totalWeight(inv);
+    // The interface pass: a refusal is said on the screen, with its reason, and not only in the console
+    let tooHeavy: { item: IItem; would: number } | null = null;
+    let noRoom: IItem | null = null;
 
     for (const item of items) {
       const wouldWeigh = weight + (item.weight || 0);
       if (wouldWeigh > maxW) {
         rejected.push(item);
+        tooHeavy ??= { item, would: wouldWeigh };
         continue;
       }
       const place = InventorySystem.autoPlace(inv, layout, item);
       if (!place) {
         rejected.push(item);
+        noRoom ??= item;
         continue;
       }
       layout[item.id] = place;
@@ -1568,14 +1617,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }) : s);
       get().recalcWeight();
     }
-    if (rejected.length > 0) {
-      console.log(`[CARRY] ${rejected.length} item(s) refused: ${rejected.map(shown).join(', ')} (space or weight)`);
-    }
+    if (noRoom) feed(`The pack is full: no room in the grid for ${shown(noRoom)}${rejected.length > 1 ? ` and ${rejected.length - 1} more` : ''}.`, 'loss');
+    else if (tooHeavy) feed(`The pack refuses the weight: ${shown(tooHeavy.item)} would make ${tooHeavy.would.toFixed(1)} of ${maxW} kg${rejected.length > 1 ? `, and ${rejected.length - 1} more stay too` : ''}.`, 'loss');
     return { added, rejected };
   },
 
   /** Leave something behind: it becomes a ground cache, still owned by you. */
-  dropItem: (itemId) => {
+  dropItem: (itemId, said) => {
     const state = get();
     const session = state.player.currentSession;
     if (!session) return;
@@ -1602,6 +1650,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().recalcWeight();
 
     const pos = session.position;
+    // The interface pass: things dropped in one spot make one pile. A drop within reach of a pile this
+    // person made joins it, and the pile is still theirs.
+    const pile = Object.values(wp.view().currentMap?.chunks || {}).flatMap(c => c.entities)
+      .filter(e => e.definitionId === 'ground_cache' && e.container && !e.container.looted && e.container.cacheOwner === state.player.id &&
+        (e.container.items?.length ?? 0) > 0 && Math.hypot(e.position.x - pos.x, e.position.y - pos.z) < GROUND_REACH)
+      .sort((a, b) => Math.hypot(a.position.x - pos.x, a.position.y - pos.z) - Math.hypot(b.position.x - pos.x, b.position.y - pos.z))[0];
+    if (pile?.container) {
+      wp.apply({ kind: 'UPDATE_BODY', entityId: pile.id, patch: { container: { ...pile.container, items: [...(pile.container.items ?? []), item] } } });
+      SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId: pile.id, itemId: item.id, itemName: item.name });
+      if (!said?.quiet) feed(`Dropped at your feet: ${shown(item)}${(said?.count ?? 1) > 1 ? ` ×${said!.count}` : ''}, onto your pile (${(pile.container.items?.length ?? 0) + 1} there). It is still yours.`, 'plain');
+      return;
+    }
     // The tie-break matters: two caches in one millisecond once shared an id, and taking one took both.
     const cacheId = `cache_${session.sessionId.slice(0, 8)}_${Date.now().toString(36)}_${++cacheSeq}`;
     wp.apply({ kind: 'ADD_BODY', entity: {
@@ -1615,7 +1675,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       container: { lootRank: item.rank, looted: false, hasLore: false, items: [item], cacheOwner: state.player.id }
     } });
     SessionJournal.record('INTERACT', { kind: 'DROP_CACHE', cacheId, itemId: item.id, itemName: item.name });
-    feed(`Left behind: ${shown(item)}. The cache is still yours, if you come back for it.`, 'plain');
+    if (!said?.quiet) feed(`Dropped at your feet: ${shown(item)}${(said?.count ?? 1) > 1 ? ` ×${said!.count}` : ''}. The pile is still yours, if you come back for it.`, 'plain');
   },
 
   /**
@@ -1807,11 +1867,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
    * lies where the second one lay when it fits there, the energy is paid, and it goes on the log
    * for the rest. The feed says the same words whatever came of it.
    */
-  combine: (itemId, ontoId) => {
+  combine: (itemId, ontoId, cartId) => {
     const p = get().player;
     const session = p.currentSession;
     const tab = p.bank.stashTabs[0];
-    const beside = session ? session.inventory : tab?.items ?? [];
+    // H13d: a cart's bed takes one material set on another, as the pack and the vault do
+    const cartBody = cartId ? Object.values(wp.view().currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === cartId) : undefined;
+    if (cartId && (!session || !cartBody?.cart)) return { ok: false, reason: 'No cart there.' };
+    const beside = cartBody?.cart ? cartBody.cart.items : session ? session.inventory : tab?.items ?? [];
     const item = beside.find(i => i.id === itemId);
     const onto = beside.find(i => i.id === ontoId);
     if (!item || !onto) return { ok: false, reason: 'Two things are worked together where they both lie.' };
@@ -1833,7 +1896,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const waiting = { id: made.item.id, outcome: made.outcome, ...(made.why ? { why: made.why } : {}), ...(made.recipe?.trade ? { trade: made.recipe.trade } : {}) };
     const used = [item.id, onto.id];
 
-    if (session) {
+    if (cartBody?.cart) {
+      // Where the second one lay, when what came of it fits there; else wherever the bed has room; else the pack
+      const cart = cartBody.cart;
+      const lay = cart.layout[onto.id];
+      const items = cart.items.filter(i => !used.includes(i.id));
+      const layout = { ...cart.layout };
+      for (const id of used) delete layout[id];
+      const place = lay && InventorySystem.fitsAt(items, layout, made.item, lay.x, lay.y, false, cart.gridW, cart.gridH)
+        ? { x: lay.x, y: lay.y, rotated: false }
+        : InventorySystem.autoPlace(items, layout, made.item, cart.gridW, cart.gridH);
+      set(s => ({ player: RestSystem.queueMade(StudySystem.pay(s.player, PAIR_ENERGY), waiting) }));
+      wp.apply({ kind: 'UPDATE_BODY', entityId: cartBody.id, patch: { cart: place
+        ? { ...cart, items: [...items, made.item], layout: { ...layout, [made.item.id]: place } }
+        : { ...cart, items, layout } } });
+      const pos = get().player.currentSession?.position;
+      if (!place && get().tryAddItems([made.item]).rejected.length > 0 && pos) {
+        wp.apply({ kind: 'ADD_BODY', entity: {
+          id: `cache_made_${made.item.id}`, type: EntityType.CONTAINER, definitionId: 'ground_cache', position: { x: pos.x + 15, y: pos.z + 15 },
+          rank: made.item.rank, rarity: made.item.rarity, isHostile: false,
+          container: { lootRank: made.item.rank, looted: false, hasLore: false, items: [made.item], cacheOwner: get().player.id }
+        } });
+      }
+      SessionJournal.record('INTERACT', { kind: 'MAKE', rollKey, consumedIds: used, itemId: made.item.id });
+      void get().persistCarts();
+    } else if (session) {
       const layout = { ...(session.inventoryLayout || {}) };
       const lay = layout[onto.id];
       for (const id of used) delete layout[id];
@@ -1890,7 +1977,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const session = get().player.currentSession;
     const carried = session?.inventory.find(i => i.id === itemId);
     if (session && carried) {
-      const turned = InventorySystem.tryRotate(session.inventory, session.inventoryLayout || {}, itemId);
+      // A stack turns whole (the interface pass): its other pieces are lifted while the turn looks for room
+      const stack = InventorySystem.stackOf(session.inventory, session.inventoryLayout || {}, itemId);
+      const alone = session.inventory.filter(i => i.id === itemId || !stack.includes(i.id));
+      const turned = InventorySystem.tryRotate(alone, session.inventoryLayout || {}, itemId);
       if (!turned) {
         feed(`There is no room in the pack to turn ${shown(carried)}. Clear a space beside it, or drag it and press R.`, 'loss');
         return;
@@ -1898,7 +1988,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set(s => s.player.currentSession ? ({
         player: { ...s.player, currentSession: {
           ...s.player.currentSession,
-          inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), [itemId]: turned }
+          inventoryLayout: { ...(s.player.currentSession.inventoryLayout || {}), ...Object.fromEntries(stack.map(id => [id, turned])) }
         } }
       }) : s);
       return;
@@ -1909,12 +1999,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // The vault grows downward, so there is always room under what it holds
     const layout = StashGrid.resolve(tab.items, tab.layout);
     const rows = StashGrid.rows(tab.items, layout) + Math.max(stored.dimensions?.width ?? 1, stored.dimensions?.height ?? 1);
-    const turned = InventorySystem.tryRotate(tab.items, layout, itemId, STASH_COLS, rows, (w, h, x, y) => StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y));
+    const stack = InventorySystem.stackOf(tab.items, layout, itemId);
+    const turned = InventorySystem.tryRotate(tab.items, layout, itemId, STASH_COLS, rows, (w, h, x, y) => StashGrid.canPlace(tab.items, layout, itemId, w, h, x, y, STASH_COLS, stack));
     if (!turned) {
       feed(`${shown(stored)} is too long to lie that way in the vault.`, 'loss');
       return;
     }
-    layout[itemId] = turned;
+    for (const id of stack) layout[id] = turned;
     set(s => ({
       player: { ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, idx) => idx === 0 ? { ...t, layout } : t) } }
     }));
@@ -2329,7 +2420,8 @@ export const playerPort: IPlayerPort = {
   loadCart: (...args) => usePlayerStore.getState().loadCart(...args),
   unloadCart: (...args) => usePlayerStore.getState().unloadCart(...args),
   takeFromCache: (...args) => usePlayerStore.getState().takeFromCache(...args),
-  combine: (...args) => usePlayerStore.getState().combine(...args)
+  combine: (...args) => usePlayerStore.getState().combine(...args),
+  takeFromPouch: (...args) => usePlayerStore.getState().takeFromPouch(...args)
 };
 
 offerPort('player', playerPort);

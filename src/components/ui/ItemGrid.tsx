@@ -7,11 +7,14 @@
 
 import React, { useRef } from 'react';
 import { IGridPlacement, IItem } from '../../../shared/types';
-import { Place } from '../../logic/systems/ItemHands';
+import { Held, Place } from '../../logic/systems/ItemHands';
 import { stepGhost } from '../../logic/systems/ItemHands';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
 import { PairCraft } from '../../../shared/logic/systems/PairCraft';
-import { DropZone, grabByKey, handsJustDropped, pressItem, useDropZone, useHands } from './hands';
+import { DropZone, dropByKey, grabByKey, handsJustDropped, pressItem, useDropZone, useHands } from './hands';
+
+/** Every piece a hand holds: the one it took, and the rest of its stack. */
+const inHandOf = (held: Held) => new Set([held.item.id, ...(held.along ?? []).map(i => i.id)]);
 import { ItemSprite } from './kit';
 import { hoverProps } from './stores';
 
@@ -40,18 +43,32 @@ export const ItemGrid: React.FC<{
   badge?: (item: IItem) => React.ReactNode;
 }> = ({ zoneId, place, items, layout, gridW, gridH, cellPx, selectedId, onSelect, onPrimary, onRotate, dimmed, badge }) => {
   const root = useRef<HTMLDivElement>(null);
-  const heldId = useHands(s => s.held?.item.id);
+  // Every piece in hand, as one string so the hands' state is read without a new array each time
+  const heldIds = useHands(s => s.held ? [s.held.item.id, ...(s.held.along ?? []).map(i => i.id)].join(',') : '');
+  const inHand = new Set(heldIds ? heldIds.split(',') : []);
+  // Like things stack (the interface pass): a stack is drawn once, at its first piece, with its count
+  const stacks = InventorySystem.stacks(items, layout);
+
+  /** Set on a piece, in the same grid it lies in: the pack, the vault, or this cart's bed (H13d). */
+  const sameGrid = (held: { from: Place }) =>
+    ((place.kind === 'PACK' || place.kind === 'STASH') && held.from.kind === place.kind) ||
+    (place.kind === 'CART' && held.from.kind === 'CART' && held.from.entityId === place.entityId);
+  const ontoPlace = (targetId: string): Place => place.kind === 'CART'
+    ? { kind: 'ONTO', grid: 'CART', entityId: place.entityId, targetId }
+    : { kind: 'ONTO', grid: place.kind as 'PACK' | 'STASH', targetId };
+  const alike = (a: IItem, b: IItem) => { const k = InventorySystem.stackKey(a); return k !== null && k === InventorySystem.stackKey(b); };
 
   const zone: DropZone | null = place.kind === 'CACHE' ? null : {
     resolve: (x, y, held) => {
       const box = root.current?.getBoundingClientRect();
       if (!box) return null;
-      // Over another piece of this grid, with two materials: a drop works them together. Anything else is a cell.
-      if ((place.kind === 'PACK' || place.kind === 'STASH') && held.from.kind === place.kind && PairCraft.isMaterial(held.item)) {
+      // Over another piece of this grid, with two materials: a drop works them together, unless they are
+      // alike, when it joins the stack (O works two like pieces together). Anything else is a cell.
+      if (sameGrid(held) && PairCraft.isMaterial(held.item)) {
         const under = (document.elementFromPoint?.(x, y) as HTMLElement | null)?.closest?.('[data-item-id]') as HTMLElement | null;
         const targetId = under && root.current?.contains(under) ? under.getAttribute('data-item-id') : null;
-        const target = targetId && targetId !== held.item.id ? items.find(i => i.id === targetId) : undefined;
-        if (target && PairCraft.isMaterial(target)) return { kind: 'ONTO', grid: place.kind, targetId: target.id };
+        const target = targetId && !inHandOf(held).has(targetId) ? items.find(i => i.id === targetId) : undefined;
+        if (target && PairCraft.isMaterial(target) && !alike(target, held.item)) return ontoPlace(target.id);
       }
       const { w, h } = InventorySystem.footprint(held.item, held.rotated);
       const cx = Math.round((x - box.left) / cellPx - w / 2);
@@ -74,16 +91,35 @@ export const ItemGrid: React.FC<{
       if (!box || (at.kind !== 'PACK' && at.kind !== 'STASH' && at.kind !== 'CART')) return null;
       const { w, h } = InventorySystem.footprint(held.item, held.rotated);
       return { left: box.left + (at.x ?? 0) * cellPx, top: box.top + (at.y ?? 0) * cellPx, width: w * cellPx, height: h * cellPx };
+    },
+    // The O key: the material lying under the hands' first cell, like or not (H13d)
+    onto: (at, held) => {
+      if (at.kind === 'ONTO') return at;
+      if ((at.kind !== 'PACK' && at.kind !== 'STASH' && at.kind !== 'CART') || !sameGrid(held) || !PairCraft.isMaterial(held.item)) return null;
+      const lifted = inHandOf(held);
+      const under = stacks.find(s => {
+        const p = layout[s.head.id];
+        const f = InventorySystem.footprint(s.head, p.rotated);
+        return !s.ids.some(id => lifted.has(id)) && (at.x ?? 0) >= p.x && (at.x ?? 0) < p.x + f.w && (at.y ?? 0) >= p.y && (at.y ?? 0) < p.y + f.h;
+      });
+      return under && PairCraft.isMaterial(under.head) ? ontoPlace(under.head.id) : null;
     }
   };
   useDropZone(zoneId, zone);
+
+  /** What a press takes in hand: the whole stack, or with Shift half of it, the rest left lying (the interface pass). */
+  const handOf = (stack: { head: IItem; ids: string[] }, half: boolean, rotated: boolean) => {
+    const pieces = stack.ids.map(id => items.find(i => i.id === id)!).filter(Boolean);
+    const take = half && pieces.length > 1 ? pieces.slice(pieces.length - Math.floor(pieces.length / 2)) : pieces;
+    return { item: take[0], from: place as Place, rotated, along: take.slice(1) };
+  };
 
   const walk = (from: IItem, dx: number, dy: number) => {
     const p = layout[from.id];
     if (!p) return;
     let best: IItem | null = null;
     let bestScore = Infinity;
-    for (const other of items) {
+    for (const other of stacks.map(s => s.head)) {
       const q = layout[other.id];
       if (!q || other.id === from.id) continue;
       const ox = q.x - p.x, oy = q.y - p.y;
@@ -109,23 +145,27 @@ export const ItemGrid: React.FC<{
           var(--ws-void-0)`
       }}
     >
-      {items.map(item => {
+      {stacks.map(stack => {
+        const item = stack.head;
+        const count = stack.ids.length;
         const at = layout[item.id];
         if (!at) return null;
         const { w, h } = InventorySystem.footprint(item, at.rotated);
-        const isSel = item.id === selectedId;
-        const isHeld = item.id === heldId;
+        const isSel = stack.ids.includes(selectedId ?? '');
+        const isHeld = stack.ids.some(id => inHand.has(id));
         const faded = dimmed?.(item) ?? false;
+        const shownName = item.isIdentified === false ? 'Unidentified signal' : item.name;
         return (
           <button
             key={item.id}
             type="button"
             className="ws-ui"
             data-item-id={item.id}
+            data-stack-count={count > 1 ? count : undefined}
             {...hoverProps(item)}
             tabIndex={faded ? -1 : 0}
-            aria-label={item.isIdentified === false ? 'Unidentified signal' : item.name}
-            onPointerDown={e => { if (!faded) pressItem(e, { item, from, rotated: at.rotated }); }}
+            aria-label={count > 1 ? `${shownName}, ${count} in a stack` : shownName}
+            onPointerDown={e => { if (!faded) pressItem(e, handOf(stack, e.shiftKey, at.rotated)); }}
             onClick={e => {
               e.stopPropagation();
               if (handsJustDropped()) return;
@@ -135,7 +175,9 @@ export const ItemGrid: React.FC<{
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onPrimary?.(item); }}
             onKeyDown={e => {
               const key = e.key.toLowerCase();
-              if (e.key === 'Enter' || key === 'g') { e.preventDefault(); e.stopPropagation(); grabByKey({ item, from, rotated: at.rotated }, zoneId); }
+              // Shift takes half a stack in hand; X drops what would be taken, at your feet
+              if (e.key === 'Enter' || key === 'g') { e.preventDefault(); e.stopPropagation(); grabByKey(handOf(stack, e.shiftKey, at.rotated), zoneId); }
+              else if (key === 'x' && place.kind !== 'CACHE') { e.preventDefault(); e.stopPropagation(); dropByKey(handOf(stack, e.shiftKey, at.rotated)); }
               else if (key === 'e') { e.preventDefault(); e.stopPropagation(); onPrimary?.(item); }
               else if (key === 'r' && onRotate) { e.preventDefault(); e.stopPropagation(); onRotate(item); }
               else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); walk(item, -1, 0); }
@@ -161,6 +203,11 @@ export const ItemGrid: React.FC<{
               cellPx={cellPx - 4}
               style={at.rotated ? { transform: 'rotate(90deg)' } : undefined}
             />
+            {count > 1 && (
+              <span className="ws-small ws-bright" style={{ position: 'absolute', left: 1, bottom: 0, lineHeight: 1, background: 'var(--ws-void-0)', padding: '0 2px', pointerEvents: 'none' }}>
+                ×{count}
+              </span>
+            )}
             {badge?.(item) && (
               <span className="ws-small ws-bright" style={{ position: 'absolute', right: 1, bottom: 0, lineHeight: 1, background: 'var(--ws-void-0)', padding: '0 2px', pointerEvents: 'none' }}>
                 {badge(item)}

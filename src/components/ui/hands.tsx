@@ -9,7 +9,7 @@
 import React, { useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { IItem } from '../../../shared/types';
-import { Held, Place, commitMove, ghostStyle, probeMove } from '../../logic/systems/ItemHands';
+import { Held, Place, commitMove, ghostStyle, probeMove, NO_GROUND_HOME, NO_GROUND_WINDOW } from '../../logic/systems/ItemHands';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
 import { usePlayerStore, playerPort } from '../../entities/player/store';
 import { ItemSprite, Kbd } from './kit';
@@ -29,6 +29,39 @@ export interface DropZone {
   step: (at: Place, dx: number, dy: number, held: Held) => Place;
   /** Where the ghost draws for this place. */
   rect: (at: Place, held: Held) => Rect | null;
+  /** The O key: the piece under this place, to set the held one on (H13d). Null when none is there. */
+  onto?: (at: Place, held: Held) => Place | null;
+}
+
+/** The field behind every window: the one place a piece let go outside the grids is dropped (the interface pass). */
+const FIELD_ZONE = 'field';
+const FIELD_GHOST_CELL = 36;
+
+/** Clear ground under this point: the field itself, and no window or panel over it. */
+const groundUnder = (hit: Element | null): boolean =>
+  !!hit?.closest?.('[data-field-ground]') && !hit.closest('.ws-overlay') && !!usePlayerStore.getState().player.currentSession;
+
+/** Why a piece let go here, outside every grid, goes back; null when nothing need be said (a near miss on a panel). */
+function noGround(hit: Element | null): string | null {
+  if (!usePlayerStore.getState().player.currentSession) return NO_GROUND_HOME;
+  if (hit?.closest?.('.ws-overlay')) return NO_GROUND_WINDOW;
+  return null;
+}
+
+function fieldOver(x: number, y: number, held: Held): Over {
+  const { w, h } = InventorySystem.footprint(held.item, held.rotated);
+  const verdict = probeMove(usePlayerStore.getState().player, held, { kind: 'GROUND' }, useWorldStore.getState());
+  return {
+    zoneId: FIELD_ZONE, place: { kind: 'GROUND' }, ok: verdict.ok, reason: verdict.reason,
+    rect: { left: x - (w * FIELD_GHOST_CELL) / 2, top: y - (h * FIELD_GHOST_CELL) / 2, width: w * FIELD_GHOST_CELL, height: h * FIELD_GHOST_CELL }
+  };
+}
+
+/** The X key: what is in hand, or the piece chosen, dropped at the person's feet. A refusal says why. */
+export function dropByKey(held: Held): boolean {
+  const verdict = commitMove(held, { kind: 'GROUND' }, useWorldStore.getState(), playerPort);
+  if (!verdict.ok) { feedRefusal(verdict.reason); return false; }
+  return true;
 }
 
 const zones = new Map<string, DropZone>();
@@ -103,8 +136,25 @@ function pointAt(clientX: number, clientY: number) {
   if (zoneId) {
     const place = zones.get(zoneId)?.resolve(clientX, clientY, held) ?? null;
     if (place) next = overFor(zoneId, withRotation(place, held.rotated), held);
+  } else if (groundUnder(hit ?? null)) {
+    // Outside every grid, over the field: let go and it is dropped at your feet
+    next = fieldOver(clientX, clientY, held);
   }
+  if (next?.zoneId === FIELD_ZONE && over?.zoneId === FIELD_ZONE) { useHands.setState({ over: next }); return; }
   if (!sameOver(over, next)) useHands.setState({ over: next });
+}
+
+/** The O key: set the held piece on the one under the hands, by pointer or by keys (H13d). */
+function setOnto(): boolean {
+  const st = useHands.getState();
+  if (!st.held || !st.over) return false;
+  const zone = zones.get(st.over.zoneId);
+  const place = zone?.onto?.(st.over.place, st.held) ?? null;
+  if (!place) { feedRefusal('There is no piece under it to set it on.'); return false; }
+  const over = overFor(st.over.zoneId, place, st.held);
+  if (!over) return false;
+  useHands.setState({ over });
+  return setDown();
 }
 
 /**
@@ -126,19 +176,25 @@ export function pressItem(e: React.PointerEvent, held: Omit<Held, 'rotated'> & {
       pointAt(m.clientX, m.clientY);
     }
   };
-  const finish = (doDrop: boolean) => {
+  const finish = (doDrop: boolean, at?: { x: number; y: number }) => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onCancel);
     if (!dragging) return;
-    if (useHands.getState().held) {
-      if (doDrop) setDown();
+    const { held: inHand, over } = useHands.getState();
+    if (inHand) {
+      if (doDrop && over) setDown();
+      // Let go outside every grid with no ground under it: it goes back, and where there is no ground at all, a line says why
+      else if (doDrop && at) {
+        const why = noGround(document.elementFromPoint?.(at.x, at.y) ?? null);
+        if (why) feedRefusal(why);
+      }
       release();
     }
     justDropped = true;
     window.setTimeout(() => { justDropped = false; }, 0);
   };
-  const onUp = () => finish(true);
+  const onUp = (u: PointerEvent) => finish(true, { x: u.clientX, y: u.clientY });
   const onCancel = () => finish(false);
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
@@ -172,7 +228,8 @@ export function useDropZone(zoneId: string, zone: DropZone | null) {
       resolve: (x, y, h) => latest.current!.resolve(x, y, h),
       start: h => latest.current!.start(h),
       step: (a, dx, dy, h) => latest.current!.step(a, dx, dy, h),
-      rect: (a, h) => latest.current!.rect(a, h)
+      rect: (a, h) => latest.current!.rect(a, h),
+      onto: (a, h) => latest.current?.onto?.(a, h) ?? null
     };
     zones.set(zoneId, live);
     return () => { zones.delete(zoneId); };
@@ -280,6 +337,25 @@ export const HandsLayer: React.FC = () => {
         else if (st.over) useHands.setState({ over: overFor(st.over.zoneId, withRotation(st.over.place, turned.rotated), turned) });
         return;
       }
+      // X drops what is in hand at your feet, by either hand (the interface pass)
+      if (key.toLowerCase() === 'x') {
+        stop();
+        const keyboard = st.mode === 'keyboard';
+        const dropped = dropByKey(st.held);
+        release();
+        justDropped = true;
+        window.setTimeout(() => { justDropped = false; }, 0);
+        if (!dropped && keyboard) focusItem(st.held.item.id);
+        return;
+      }
+      // O sets it on the piece under the hands, like or not (H13d: setting one on another had no key)
+      if (key.toLowerCase() === 'o') {
+        stop();
+        const id = st.held.item.id;
+        if (setOnto()) { release(); justDropped = true; window.setTimeout(() => { justDropped = false; }, 0); }
+        else if (st.mode === 'keyboard') focusItem(id);
+        return;
+      }
       if (st.mode !== 'keyboard') return;
 
       if (key === 'Enter') {
@@ -344,10 +420,13 @@ export const HandsLayer: React.FC = () => {
       )}
       {/* What is in the hands, said in one place, away from the data. */}
       <div style={{ position: 'fixed', left: '50%', top: 12, transform: 'translateX(-50%)', background: 'var(--ws-void-0)', border: '1px solid var(--ws-void-4)', padding: '3px 10px', maxWidth: '80vw' }}>
-        <span className="ws-bright ws-small">{held.item.isIdentified === false ? 'Unidentified Signal' : held.item.name}</span>
-        <span className="ws-dim ws-small"> · <Kbd>R</Kbd> turn · <Kbd>ESC</Kbd> put back{mode === 'keyboard' ? <> · <Kbd>ARROWS</Kbd> walk · <Kbd>TAB</Kbd> next place · <Kbd>ENTER</Kbd> set down</> : null}</span>
+        <span className="ws-bright ws-small">{held.item.isIdentified === false ? 'Unidentified Signal' : held.item.name}{held.along?.length ? ` ×${held.along.length + 1}` : ''}</span>
+        <span className="ws-dim ws-small"> · <Kbd>R</Kbd> turn · <Kbd>X</Kbd> drop at your feet · <Kbd>O</Kbd> set on the piece under it · <Kbd>ESC</Kbd> put back{mode === 'keyboard' ? <> · <Kbd>ARROWS</Kbd> walk · <Kbd>TAB</Kbd> next place · <Kbd>ENTER</Kbd> set down</> : <> · let go over open ground to drop it</>}</span>
         {over && !over.ok && over.reason && over.reason !== 'It is already there.' && (
           <div className="ws-bright ws-small">{over.reason}</div>
+        )}
+        {over && over.ok && over.zoneId === FIELD_ZONE && (
+          <div className="ws-bright ws-small">LET GO TO DROP IT AT YOUR FEET{held.along?.length ? `: all ${held.along.length + 1}` : ''}. It makes a pile you can come back for.</div>
         )}
         {/* Set on another piece: said before the drop, because it cannot be taken back */}
         {over && over.ok && over.place.kind === 'ONTO' && (

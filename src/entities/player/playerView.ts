@@ -57,7 +57,7 @@ export type PlayerChange =
   | { kind: 'PRACTICE_TRADE'; family: ProcessFamily }
   | { kind: 'GAIN_SKILL_XP'; skillId: string; amount: number; tags: string[]; context?: IActionContext }
   | { kind: 'DIVE'; layerId?: string }
-  | { kind: 'DROP_ITEM'; itemId: string }
+  | { kind: 'DROP_ITEM'; itemId: string; quiet?: boolean; count?: number }
   | { kind: 'TOGGLE_CARRY'; itemId: string };
 
 /** The store's own calls that answer back. Its law runs them; a system only asks. */
@@ -65,17 +65,20 @@ export interface IPlayerCalls {
   tryAddItems(items: IItem[]): { added: IItem[]; rejected: IItem[] };
   applyKillXp(amount: number): { leveledUp: boolean; from: number; to: number; pointsGranted: number };
   grantRank(to?: UniversalRank): { granted: boolean; from: UniversalRank; to: UniversalRank };
-  placeInPack(itemId: string, x: number, y: number, rotated: boolean): Verdict;
-  placeInStash(itemId: string, x: number, y: number, rotated: boolean): Verdict;
+  /** `along`: the rest of a stack in hand, moving with it (the interface pass). */
+  placeInPack(itemId: string, x: number, y: number, rotated: boolean, along?: string[]): Verdict;
+  placeInStash(itemId: string, x: number, y: number, rotated: boolean, along?: string[]): Verdict;
   stowInPouch(pouchSlot: EquipSlotId, itemId: string): Verdict;
+  /** U23: the last thing a pouch holds, back through the pack's caps. */
+  takeFromPouch(pouchSlot: EquipSlotId): Verdict;
   equipSwap(itemId: string, slotId?: EquipSlotId): Verdict;
   unequipFromSlot(slotId: EquipSlotId): Verdict;
-  placeOnCart(entityId: string, itemId: string, x: number, y: number, rotated: boolean): Verdict;
+  placeOnCart(entityId: string, itemId: string, x: number, y: number, rotated: boolean, along?: string[]): Verdict;
   loadCart(entityId: string, itemId: string): Verdict;
   unloadCart(entityId: string, itemId: string): Verdict;
   takeFromCache(entityId: string, itemId: string): Verdict;
-  /** One material set on another: both are used, and an unread thing comes of it (PairCraft). */
-  combine(itemId: string, ontoId: string): Verdict;
+  /** One material set on another: both are used, and an unread thing comes of it (PairCraft). On a cart's bed with `cartId` (H13d). */
+  combine(itemId: string, ontoId: string, cartId?: string): Verdict;
 }
 
 /**

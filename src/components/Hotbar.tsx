@@ -10,9 +10,9 @@ import { EquipSlotId, IItem } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { hotbarCells, throwsLeft, wieldRefusal } from '../logic/systems/FieldInput';
-import { handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
+import { grabByKey, handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
 import { ItemSprite, Kbd } from './ui/kit';
-import { hoverProps, useFeed, useHotbar } from './ui/stores';
+import { hoverProps, useFeed, useHotbar, useSheet } from './ui/stores';
 
 const CELL = 44;
 const NOTHING_CARRIED: IItem[] = [];
@@ -82,7 +82,20 @@ export const Hotbar: React.FC = () => {
               {...(item ? hoverProps(item) : {})}
               aria-label={`${cell.slot.replace('_', ' ')}: ${item ? LoadoutSystem.shownName(item) : 'empty'}${cell.digit ? `, key ${cell.digit}` : ''}`}
               aria-pressed={cell.group === 'BELT' ? undefined : isActive}
-              onPointerDown={e => { if (item) pressItem(e, { item, from: { kind: 'SLOT', slot: cell.slot } }); }}
+              onPointerDown={e => {
+                // U23: a pouch that holds something gives its last piece to the drag; an empty one drags itself
+                const inside = item?.pouchData?.contents;
+                if (inside && inside.length > 0) pressItem(e, { item: inside[inside.length - 1], from: { kind: 'POUCH', slot: cell.slot } });
+                else if (item) pressItem(e, { item, from: { kind: 'SLOT', slot: cell.slot } });
+              }}
+              onKeyDown={e => {
+                // The keyboard's way to the same: G takes the pouch's last piece in hand, with the sheet open to set it down
+                const inside = item?.pouchData?.contents;
+                if (e.key.toLowerCase() !== 'g' || !inside?.length) return;
+                e.preventDefault(); e.stopPropagation();
+                if (!useSheet.getState().open) useSheet.getState().toggle();
+                requestAnimationFrame(() => grabByKey({ item: inside[inside.length - 1], from: { kind: 'POUCH', slot: cell.slot } }, 'pack'));
+              }}
               onClick={e => {
                 (e.currentTarget as HTMLButtonElement).blur();
                 if (!handsJustDropped()) activateHotbar(cell.slot);

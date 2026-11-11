@@ -91,13 +91,29 @@ export class CartSystem {
   }
 
   /** Set an item aboard down on a chosen cell. Null when the grid refuses, and nothing moved. */
-  static placeAt(cart: ICartState, itemId: string, x: number, y: number, rotated: boolean): ICartState | null {
+  static placeAt(cart: ICartState, itemId: string, x: number, y: number, rotated: boolean, along: string[] = [itemId]): ICartState | null {
     const item = cart.items.find(i => i.id === itemId);
     if (!item) return null;
-    const { w, h } = InventorySystem.footprint(item, rotated);
-    const occ = InventorySystem.buildOccupancy(cart.items, cart.layout, cart.gridW, cart.gridH);
-    if (!InventorySystem.canPlaceAt(occ, w, h, x, y, itemId)) return null;
-    return { ...cart, layout: { ...cart.layout, [itemId]: { x, y, rotated } } };
+    // Like things stack (the interface pass): a stack in hand moves whole, onto its like if it lies there
+    const moving = along.includes(itemId) ? along : [itemId, ...along];
+    if (!InventorySystem.fitsAt(cart.items, cart.layout, item, x, y, rotated, cart.gridW, cart.gridH, moving)) return null;
+    const layout = { ...cart.layout };
+    for (const id of moving) if (cart.items.some(i => i.id === id)) layout[id] = { x, y, rotated };
+    return { ...cart, layout };
+  }
+
+  /**
+   * Turn a piece on the bed, and its stack with it: where it lies when the turned shape fits, else
+   * at the nearest place it does (ledger H1b: the bed had no key and no button to turn a piece).
+   */
+  static rotate(cart: ICartState, itemId: string): ICartState | null {
+    const stack = InventorySystem.stackOf(cart.items, cart.layout, itemId);
+    const alone = cart.items.filter(i => i.id === itemId || !stack.includes(i.id));
+    const turned = InventorySystem.tryRotate(alone, cart.layout, itemId, cart.gridW, cart.gridH);
+    if (!turned) return null;
+    const layout = { ...cart.layout };
+    for (const id of stack) layout[id] = turned;
+    return { ...cart, layout };
   }
 
   /** Unload one item by id. Returns the new cart, or null when it is not aboard. */

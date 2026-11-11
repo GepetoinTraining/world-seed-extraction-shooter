@@ -11,7 +11,7 @@
  * is ours (ttrpg engine survey: "the tetris part is yours to design").
  */
 
-import { IItem, IGridPlacement } from '../../../types';
+import { IItem, IGridPlacement, ItemType } from '../../../types';
 
 export const GRID_W = 8;
 export const GRID_H = 6;
@@ -84,8 +84,120 @@ export class InventorySystem {
     return true;
   }
 
-  /** First-fit placement: unrotated first, then rotated. Null = no room. */
+  // ---------------------------------------------------------------------------
+  // LIKE THINGS STACK (the interface pass, 2026-11-11). Pedro: "an overall better inventory tetris
+  // system would be good". Every piece stays its own thing in the list, so whatever counts, sells,
+  // crafts, drops or throws still sees each one; a stack is only where things lie: like pieces share
+  // one placement and one footprint. No count caps it. The weight does.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * What makes two pieces one stack: the same kind, rank and rarity, the same quality as the card
+   * shows it (a whole percent), read or unread alike, the same size and weight, and nothing of their
+   * own: no affix, no ability, no pouch, cage, charm, cart, bond, deed or map. Null: never stacks.
+   */
+  static stackKey(item: IItem): string | null {
+    if (item.type !== ItemType.RESOURCE && item.type !== ItemType.CONSUMABLE) return null;
+    if ((item.affixes ?? []).length > 0 || item.carries || item.pouchData || item.beltData || item.cartData || item.charmData ||
+      item.scrollData || item.creatureData || item.bondData || item.deedData || item.worldDeedData || item.mapData ||
+      item.farmLine || item.loreData || item.toolData || item.requirements) return null;
+    if ((item.tags ?? []).some(t => t === 'corpse' || t === 'npc_contract' || t === 'tool')) return null;
+    if ((item.stats as Record<string, number> | undefined)?.maxDurability) return null;
+    const d = item.dimensions || { width: 1, height: 1 };
+    return [
+      item.universalDefinitionId, item.name, item.type, item.rank, item.rarity, Math.round((item.quality ?? 0) * 100),
+      item.isIdentified === false ? 'unread' : 'read', `${d.width}x${d.height}`, item.weight ?? 0, item.casts ?? '',
+      item.binPrice ?? '', JSON.stringify(item.composition ?? null)
+    ].join('|');
+  }
+
+  /**
+   * Can this piece lie at (x, y)? Free cells, or exactly on a stack of its like with the same shape.
+   * `moving` are the pieces in hand: they are lifted, so where they lay blocks nothing.
+   */
+  static fitsAt(items: IItem[], layout: Layout, item: IItem, x: number, y: number, rotated: boolean,
+    gridW = GRID_W, gridH = GRID_H, moving: string[] = [item.id]): boolean {
+    const { w, h } = this.footprint(item, rotated);
+    if (x < 0 || y < 0 || x + w > gridW || y + h > gridH) return false;
+    const lifted = new Set(moving);
+    const key = this.stackKey(item);
+    for (const other of items) {
+      if (lifted.has(other.id) || other.id === item.id) continue;
+      const p = layout[other.id];
+      if (!p) continue;
+      const f = this.footprint(other, p.rotated);
+      if (!(p.x < x + w && x < p.x + f.w && p.y < y + h && y < p.y + f.h)) continue;
+      if (key !== null && p.x === x && p.y === y && f.w === w && f.h === h && this.stackKey(other) === key) continue;
+      return false;
+    }
+    return true;
+  }
+
+  /** The pieces that lie as one stack with this one, itself among them, in the list's order. */
+  static stackOf(items: IItem[], layout: Layout, itemId: string): string[] {
+    const item = items.find(i => i.id === itemId);
+    const at = layout[itemId];
+    const key = item ? this.stackKey(item) : null;
+    if (!item || !at || key === null) return item ? [itemId] : [];
+    return items.filter(o => {
+      const p = layout[o.id];
+      return !!p && p.x === at.x && p.y === at.y && p.rotated === at.rotated && this.stackKey(o) === key;
+    }).map(o => o.id);
+  }
+
+  /** One entry per footprint that holds something: its first piece, and every piece lying there. */
+  static stacks(items: IItem[], layout: Layout): { head: IItem; ids: string[] }[] {
+    const out: { head: IItem; ids: string[] }[] = [];
+    const at = new Map<string, { head: IItem; ids: string[] }>();
+    for (const item of items) {
+      const p = layout[item.id];
+      if (!p) continue;
+      const key = this.stackKey(item);
+      const spot = key === null ? `one:${item.id}` : `${p.x},${p.y},${p.rotated}|${key}`;
+      const found = at.get(spot);
+      if (found) { found.ids.push(item.id); continue; }
+      const entry = { head: item, ids: [item.id] };
+      at.set(spot, entry);
+      out.push(entry);
+    }
+    return out;
+  }
+
+  /** Full: not one cell left free. */
+  static isFull(items: IItem[], layout: Layout, gridW = GRID_W, gridH = GRID_H): boolean {
+    return this.buildOccupancy(items, layout, gridW, gridH).every(row => row.every(c => c !== null));
+  }
+
+  /**
+   * Lay pieces down in the order given, like ones joining their stack, each where it first fits.
+   * Null when they cannot all lie: an arranging never leaves a piece without a place.
+   */
+  static packInOrder(order: IItem[], gridW = GRID_W, gridH = GRID_H): Layout | null {
+    const layout: Layout = {};
+    const placed: IItem[] = [];
+    for (const item of order) {
+      const p = this.autoPlace(placed, layout, item, gridW, gridH);
+      if (!p) return null;
+      layout[item.id] = p;
+      placed.push(item);
+    }
+    return layout;
+  }
+
+  /** The load in words, so no tone has to say it alone. */
+  static loadWord(weight: number, limit: number): string {
+    if (limit > 0 && weight > limit) return 'OVER THE LIMIT';
+    if (limit > 0 && weight / limit > HEAVY_LOAD_RATIO) return 'SLOWED';
+    return '';
+  }
+
+  /** First-fit placement: onto a stack of its like first, then unrotated, then rotated. Null = no room. */
   static autoPlace(items: IItem[], layout: Layout, item: IItem, gridW = GRID_W, gridH = GRID_H): IGridPlacement | null {
+    const key = this.stackKey(item);
+    if (key !== null) {
+      const like = items.find(o => o.id !== item.id && layout[o.id] && this.stackKey(o) === key);
+      if (like) return { ...layout[like.id] };
+    }
     const occ = this.buildOccupancy(items, layout, gridW, gridH);
     for (const rotated of [false, true]) {
       const { w, h } = this.footprint(item, rotated);

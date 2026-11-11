@@ -87,8 +87,10 @@ const WARDED_SAID_MS = 6000;
 
 const CART_CELL = 24;
 const CartWindow: React.FC = () => {
-  const { cartWindowId, closeCartWindow, player, loadCart, unloadCart, rotateItem } = usePlayerStore();
+  const { cartWindowId, closeCartWindow, player, loadCart, unloadCart, rotateItem, rotateOnCart } = usePlayerStore();
   const { currentMap } = useWorldStore();
+  // H1b: a piece on the bed is chosen, and turns by a button and by R
+  const [picked, setPicked] = useState<string | null>(null);
   if (!cartWindowId) return null;
   const entity = Object.values(currentMap?.chunks || {}).flatMap(c => c.entities).find(e => e.id === cartWindowId);
   const cart = entity?.cart;
@@ -115,11 +117,20 @@ const CartWindow: React.FC = () => {
                 gridW={cart.gridW}
                 gridH={cart.gridH}
                 cellPx={CART_CELL}
+                selectedId={picked}
+                onSelect={setPicked}
                 onPrimary={item => { unloadCart(cartWindowId, item.id); }}
+                onRotate={item => { rotateOnCart(cartWindowId, item.id); }}
               />
               <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
                 {CartSystem.cartWeight(cart).toFixed(1)} kg aboard · tow pace ×{CartSystem.towSpeedModifier(CartSystem.cartWeight(cart)).toFixed(2)}
               </div>
+              {picked && cart.items.some(i => i.id === picked) && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  <Button onClick={() => rotateOnCart(cartWindowId, picked)}>TURN IT <Kbd>R</Kbd></Button>
+                  <Button tone="quiet" onClick={() => { unloadCart(cartWindowId, picked); setPicked(null); }}>TO THE PACK <Kbd>E</Kbd></Button>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: GRID_W * CART_CELL + 8 }}>
               <div className="ws-dim ws-small">PACK · drag across, or right-click to send a piece over</div>
@@ -1515,7 +1526,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     >
       <TollPrompt />
       {/* The whole field, drawn each frame by the game loop */}
-      <canvas ref={fieldRef} style={{ position: 'absolute', top: 0, left: 0, imageRendering: 'pixelated' }} />
+      {/* The interface pass: clear ground. A piece let go over it, outside every grid, is dropped at your feet */}
+      <canvas ref={fieldRef} data-field-ground style={{ position: 'absolute', top: 0, left: 0, imageRendering: 'pixelated' }} />
 
       {/* Extraction Control (Wave 2.5): the beacon is a place, not a button */}
       <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }} onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>

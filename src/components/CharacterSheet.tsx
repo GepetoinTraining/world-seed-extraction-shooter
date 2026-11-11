@@ -33,7 +33,8 @@ import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { ATTRIBUTE_GROUPS, HandsPanel, VAULT_CELL, VaultGrid, groupOfWord, pointWord, pointsLine } from './PlayerHub';
 import { groupHeading, plusSays } from './ui/levelLine';
 import { ItemGrid } from './ui/ItemGrid';
-import { useDropZone, useHands, wholeZone } from './ui/hands';
+import { dropByKey, useDropZone, useHands, wholeZone } from './ui/hands';
+import { GROUND_REACH } from '../logic/systems/ItemHands';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
 import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 
@@ -73,7 +74,7 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
   const root = useRef<HTMLDivElement>(null);
   useDropZone('ground', wholeZone(root, { kind: 'GROUND' }));
   const map = useWorldStore(s => s.currentMap);
-  const reach = 3 * TILE_SIZE;
+  const reach = GROUND_REACH;
   const caches = WorldGenerator.chunkKeysInBox(session.position.x, session.position.z, reach + 40)
     .flatMap(k => map?.chunks[k]?.entities ?? [])
     .filter(e => (e.container?.items?.length ?? 0) > 0 && !e.container!.looted &&
@@ -89,7 +90,7 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
       data-drop-zone="ground"
       style={{ marginTop: 6, border: '1px dashed var(--ws-void-4)', width: GRID_W * CELL, height: GROUND_ROWS * GROUND_CELL + 24, padding: '2px 4px', overflowY: 'scroll', overflowX: 'hidden' }}
     >
-      <div className="ws-dim ws-small">GROUND · {cache ? 'a cache in reach' : 'set a thing here to leave it'}</div>
+      <div className="ws-dim ws-small">GROUND · {cache ? `your pile in reach, ${items.length} there` : 'set a thing here, or let go over the field, to drop it'}</div>
       {cache && (
         <ItemGrid
           zoneId={`cache_${cache.id}`}
@@ -107,7 +108,7 @@ const GroundPanel: React.FC<{ session: IActiveSession }> = ({ session }) => {
 };
 
 const PackPanels = ({ session }: { session: IActiveSession }) => {
-  const { dropItem, rotateItem, consumeItem, currentWeight, maxWeight, player } = usePlayerStore();
+  const { dropItem, rotateItem, consumeItem, arrangePack, currentWeight, maxWeight, player } = usePlayerStore();
   const [selected, setSelected] = useState<string | null>(null);
   // Line 124: a study's clock, where the HUD can read it
   const waits = useWaits(s => s.waits);
@@ -118,6 +119,15 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
   const items = session.inventory;
   const ratio = maxWeight > 0 ? currentWeight / maxWeight : 0;
   const selectedItem = items.find(i => i.id === selected);
+  // The interface pass: the pack says plainly when it is full, in words, and drops a whole stack at once
+  const full = InventorySystem.isFull(items, layout);
+  const loadSaid = InventorySystem.loadWord(currentWeight, maxWeight);
+  const stackOfSelected = selectedItem ? InventorySystem.stackOf(items, layout, selectedItem.id) : [];
+  const dropSelected = () => {
+    if (!selectedItem) return;
+    dropByKey({ item: selectedItem, from: { kind: 'PACK' }, rotated: !!layout[selectedItem.id]?.rotated, along: items.filter(i => i.id !== selectedItem.id && stackOfSelected.includes(i.id)) });
+    setSelected(null);
+  };
   // What has not been read offers the same buttons whatever it is, so they tell nothing.
   const read = !!selectedItem && selectedItem.isIdentified !== false;
   const pouchSlots = player.equipment
@@ -129,13 +139,21 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
   return (
     <>
       <Panel
-        title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS`}
+        title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS${full ? ' · FULL' : ''}`}
         right={
           <span className={ratio > 0.8 ? 'ws-loss' : 'ws-dim'}>
-            {currentWeight.toFixed(1)}/{maxWeight}kg{ratio > 0.8 ? ' · SLOWED' : ''}
+            {currentWeight.toFixed(1)}/{maxWeight}kg{loadSaid ? ` · ${loadSaid}` : ''}
           </span>
         }
       >
+        {/* The interface pass: the pack arranges itself, tight or in the vault's own orders */}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
+          <span className="ws-dim ws-small">ARRANGE</span>
+          <Button tone="quiet" title="Pack it tight: the biggest first, like things in one stack" onClick={() => arrangePack('TIGHT')}>TIGHT <Kbd>P</Kbd></Button>
+          {(['NAME', 'RANK', 'VALUE', 'WEIGHT', 'TYPE'] as const).map(key => (
+            <Button key={key} tone="quiet" style={{ padding: '0 4px' }} onClick={() => arrangePack(key)}>{key}</Button>
+          ))}
+        </div>
         <ItemGrid
           zoneId="pack"
           place={{ kind: 'PACK' }}
@@ -155,7 +173,7 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
         {!selectedItem && <StudyPanel />}
         {!selectedItem && (
           <div className="ws-dim ws-small" style={{ marginTop: 8 }}>
-            Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand. Drag one material onto another to work them together: both are used, and a rest shows what you made.
+            Hover to read. Drag to move, <Kbd>R</Kbd> to turn. Right-click or <Kbd>E</Kbd> equips or uses. Click to choose a piece, or <Kbd>ARROWS</Kbd> then <Kbd>ENTER</Kbd> to take it in hand. Like things stack: hold <Kbd>SHIFT</Kbd> as you drag or press <Kbd>ENTER</Kbd> to take half. Let go over the field, or press <Kbd>X</Kbd>, to drop it at your feet. Drag one material onto another, or press <Kbd>O</Kbd> while holding it, to work them together: both are used, and a rest shows what you made.
           </div>
         )}
         {/* Q16: someone you are carrying out. Nothing of theirs is yours to open. */}
@@ -241,8 +259,8 @@ const PackPanels = ({ session }: { session: IActiveSession }) => {
                 </Button>
               );
             })}
-            <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE</Button>
-            <Button tone="loss" onClick={() => { dropItem(selectedItem.id); setSelected(null); }}>LEAVE BEHIND</Button>
+            <Button onClick={() => rotateItem(selectedItem.id)}>ROTATE <Kbd>R</Kbd></Button>
+            <Button tone="loss" onClick={dropSelected}>{stackOfSelected.length > 1 ? `DROP ALL ${stackOfSelected.length}` : 'DROP AT YOUR FEET'} <Kbd>X</Kbd></Button>
           </div>
         )}
         {/* Wave 10D (10D.2): the floor — improvised crafting, right here, no bench */}
@@ -433,6 +451,12 @@ export const CharacterSheet: React.FC = () => {
         return;
       }
       if (!sheet.open) return;
+      // The interface pass: P packs the pack tight, wherever the keys are on the sheet
+      if (e.key.toLowerCase() === 'p' && usePlayerStore.getState().player.currentSession) {
+        stop();
+        usePlayerStore.getState().arrangePack('TIGHT');
+        return;
+      }
       if (e.key === 'Escape') {
         stop();
         sheet.close();

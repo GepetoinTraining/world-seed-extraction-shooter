@@ -190,7 +190,7 @@ const AgentTab: React.FC = () => {
           </div>
         </Panel>
         <div ref={kitZone} data-drop-zone="kit">
-        <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg</span>}>
+        <Panel title="LOADOUT — NEXT DROP" right={<span className={kitWeight > capacity ? 'ws-loss' : 'ws-dim'}>{kitWeight.toFixed(1)} / {capacity} kg{InventorySystem.loadWord(kitWeight, capacity) ? ` · ${InventorySystem.loadWord(kitWeight, capacity)}` : ''}</span>}>
           <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
             Tools always ride. Drag anything else here, and it drops with you — and can be lost with you.
           </div>
@@ -212,7 +212,7 @@ const AgentTab: React.FC = () => {
             ))}
           </div>
           <div style={{ marginTop: 8 }}>
-            <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%`} />
+            <Bar label="LOAD" value={kitWeight} max={capacity} tone={kitWeight > capacity * 0.8 ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, capacity)) * 100)}%${InventorySystem.loadWord(kitWeight, capacity) ? ` · ${InventorySystem.loadWord(kitWeight, capacity)}` : ''}`} />
           </div>
           <div className="ws-dim ws-small" style={{ marginTop: 6 }}>
             Session weight above 80% reads SLOWED in the field.
