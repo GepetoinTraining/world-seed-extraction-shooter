@@ -935,7 +935,7 @@ A reading, by the coordinator, not confirmed by Pedro.
 - A piece is the end of a road of lots. Its affixes are what each material and each step on that road gave it, and its quality is its material's. That is why the materials side outweighs the triangle: a longer and better road is a deeper piece.
 - A found piece is a piece whose road happened in the world.
 - The one roll kept on a piece that the ladder worker proposed (1.4) and this engine's seed of lot, day and maker are the same idea from two ends: keep what went in, and work the numbers out again whenever they are wanted.
-- The step this engine does not have, in the files read, is the one his November 2025 plan states: a slot filled with a specific material, and that material's properties becoming the piece's numbers. The slots are here and the properties are there.
+- The step this engine does not have, in the files read, is the one his November 2025 plan states: a slot filled with a specific material, and that material's properties becoming the piece's numbers. The slots are here and the properties are there. Asked whether that step is built somewhere not yet read or is still to design, Pedro, 2026-11-11: "Still to design". So it is new work for this game and belongs to the design pass (2.12), with what both engines already hold as its two halves.
 - For money, the lesson is the unclosed loop: every source needs a sink of its size. His "getting too much money feels bad and not getting any feels bad as well" is that loop.
 
 ## 3.6 Not read
