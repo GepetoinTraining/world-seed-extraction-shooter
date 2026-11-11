@@ -39,6 +39,8 @@ No record asks for or rules on a drop by dragging out. The one drag system cover
 
 **Not there today:** letting go of a piece outside the grids drops it. To design: what "outside" is (the field behind the sheet, the window's edge), what is said when it happens, and what a pile of dropped things is, since today ten drops are ten caches.
 
+**Now built (32e4d56, the interface pass, part 1).** Pedro: "dragging items outside to drop would be good too". A piece let go over the field's own ground, outside every grid, is dropped at your feet, and the ghost and a line say so first; in the city or over a window with no field behind it, it goes back and a line says why; a near miss on a panel goes back silently. X drops by key. A drop within three tiles of a pile you made joins it. Open calls: ledger I1d, I1e.
+
 ### 1.3 Carts
 
 | Today | Where |
@@ -72,6 +74,8 @@ On record: a pouch's contents cannot be dragged (ledger U23); wear is faint at 3
 **Not there today:** stacks and splits, a sort or an arranging for the pack, a plain sign that the pack is full, anything that makes a pack grow, and a spoken refusal when a pickup does not fit.
 
 Colour alone tells the load in two places in the hub's kit panel (the kit's weight and the load bar's tone), against the project's rule that meaning is carried by position and shape.
+
+**Now built (32e4d56, the interface pass, part 1).** Pedro: "an overall better inventory tetris system would be good". Like things stack in the pack, the vault and a cart's bed: one footprint with a count, weighing their sum, with no top but the weight, every piece still its own thing underneath. Shift takes half, by pointer or key. The pack arranges (TIGHT and the vault's five sorts, P for tight), says FULL, and a pickup that does not fit is refused in the feed with its reason. A pouch's contents drag (U23); a cart's bed turns a piece by button and R (H1b) and takes one material set on another, and O does it by keys (H13d). The kit panel says SLOWED or OVER THE LIMIT in words. Still not there: a pack that holds more cells. Open calls: ledger I1a to I1c, I1f, I1g.
 
 ### 1.5 Handling already on record as open
 
