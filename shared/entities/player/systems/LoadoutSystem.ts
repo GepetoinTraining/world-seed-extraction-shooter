@@ -59,9 +59,10 @@ export class LoadoutSystem {
   /**
    * The pace what you wear gives you. `movement_speed` on any worn piece adds up
    * (0.10 is ten percent), an unstudied one acting like any other. Load, the tow
-   * bar and the ground scale this afterward. Agility adds in the same way.
+   * bar and the ground scale this afterward. Agility adds in the same way. Each tonic drunk since the
+   * last rest takes a little more of it (Pedro, 2026-11-11: tonics "give debuffs as side effects").
    */
-  static walkTilesPerSecond(equipment?: IEquipmentState, attributes?: IAttributes): number {
+  static walkTilesPerSecond(equipment?: IEquipmentState, attributes?: IAttributes, tonics = 0): number {
     const worn = new Set(Object.values(equipment?.slots ?? {}));
     let bonus = StatSystem.paceBonus(attributes);
     for (const item of equipment?.items ?? []) {
@@ -70,7 +71,12 @@ export class LoadoutSystem {
       if (stats.maxDurability && stats.durability === 0) continue; // broken gear does nothing
       bonus += (stats.movement_speed ?? 0) + (stats.movement_speed_penalty ?? 0);
     }
-    return BASE_WALK_TILES_PER_S * Math.max(MIN_WALK_SCALE, 1 + bonus);
+    return BASE_WALK_TILES_PER_S * Math.max(MIN_WALK_SCALE, 1 + bonus) * (1 - StatSystem.tonicSlow(tonics));
+  }
+
+  /** A person's own walk: what they wear, their agility, and the tonics they drank since they last rested. */
+  static walkOf(person: { equipment?: IEquipmentState; attributes?: IAttributes; tonicsSinceRest?: number }): number {
+    return this.walkTilesPerSecond(person.equipment, person.attributes, person.tonicsSinceRest);
   }
 
   /**

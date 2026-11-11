@@ -9,6 +9,7 @@ import { usePlayerStore } from '../entities/player/store';
 import { useHubStore, craftName } from '../entities/hub/store';
 import { WorldClock } from '../entities/world/WorldClock';
 import { WaitClock } from '../logic/systems/WaitClock';
+import { FieldWords } from '../logic/systems/FieldWords';
 import { ABOVE_THE_SHEET } from './FeedView';
 import { Busy, Chip, TimerBar, useNow } from './ui/kit';
 import { useSheet, useWaits } from './ui/stores';
@@ -69,11 +70,13 @@ const STATUS_WORDS: Record<string, string> = { slow: 'SLOW', dot: 'HURTING', war
 export const BodyClocks: React.FC = () => {
   const effects = usePlayerStore(s => s.player.currentSession?.activeEffects);
   const marks = usePlayerStore(s => s.player.equipment?.protected);
+  // 2026-11-11: a tonic's side effect stands until the next rest, by a mark and a word
+  const heavy = FieldWords.tonicMark(usePlayerStore(s => s.player.tonicsSinceRest ?? 0));
   const now = useNow(500);
   const running = (effects ?? []).filter(e => e.until > now);
   // One scroll over three slots is one clock.
   const kept = [...new Map((marks ?? []).filter(m => m.until && m.until > now).map(m => [`${m.by}:${m.until}`, m])).values()];
-  if (running.length === 0 && kept.length === 0) return null;
+  if (running.length === 0 && kept.length === 0 && !heavy) return null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
       {running.map(e => (
@@ -83,6 +86,7 @@ export const BodyClocks: React.FC = () => {
             : <>{STATUS_WORDS[e.kind] ?? e.kind.toUpperCase()} {WorldClock.say(e.until - now)}</>}
         </Chip>
       ))}
+      {heavy && <Chip key="tonics">{heavy}</Chip>}
       {kept.map(m => (
         <Chip key={`${m.by}:${m.until}`} tone="proof">
           {m.startedAt

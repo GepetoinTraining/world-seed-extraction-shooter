@@ -21,6 +21,8 @@ import { IThemeGrowth, WorldGrowth } from '../../../shared/logic/theme/WorldGrow
 import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { StudySystem } from './StudySystem';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { TONIC_SHARE } from '../../../shared/logic/theme/ThemeFormula';
+import { FieldWords } from './FieldWords';
 import { WeaveSystem } from './WeaveSystem';
 import { CircleSystem, IGiftWords } from './CircleSystem';
 import { ILoreWords, IRaisedWords, ITaughtWords, LoreSystem } from './LoreSystem';
@@ -225,10 +227,11 @@ export class RestSystem {
   /**
    * Energy comes back on waking, never on lying down. Only a rest inside a world turns this
    * character's own day (Pedro's own run, 2026-11-10: a rest outside the world is to "continue as
-   * is but not advance the day (server clock is the clock)").
+   * is but not advance the day (server clock is the clock)"). Any rest slept through starts the
+   * count of tonics again (2026-11-11), and with it the walk is whole.
    */
   static wake(player: IPlayer): IPlayer {
-    return { ...this.restoreEnergy(player, player.rest?.place === 'FIELD'), rest: undefined };
+    return { ...this.restoreEnergy(player, player.rest?.place === 'FIELD'), rest: undefined, tonicsSinceRest: undefined };
   }
 
   /** A hurt in the field ends a rest, and it restored nothing. */
@@ -247,6 +250,39 @@ export class RestSystem {
     const left = session?.energy ?? player.energyToday ?? full;
     const energy = Math.max(left, Math.min(full, left + Math.max(0, amount)));
     return session ? { ...player, currentSession: { ...session, energy } } : { ...player, energyToday: energy };
+  }
+
+  // -----------------------------------------------------------------------
+  // TONICS (2026-11-11). Pedro: "we need energy tonics that are limited usage per rest, and give
+  // debuffs as side effects for using."
+  // -----------------------------------------------------------------------
+
+  /** A tonic is anything drunk for energy: the formula's share, or an old draught's amount from before. */
+  static isTonic(item: IItem): boolean {
+    const s = item.stats ?? {};
+    return (s.energy_share ?? 0) > 0 || (s.energy_restore ?? 0) > 0;
+  }
+
+  /** How many tonics this character drank since it last woke. A save from before holds none. */
+  static tonicsDrunk(player: IPlayer): number {
+    return player.tonicsSinceRest ?? 0;
+  }
+
+  /**
+   * The one door for every tonic, from the pack or the belt. It gives a share of the drinker's own day,
+   * never an amount (an old draught's amount only says that it is a tonic), and counts it; the count
+   * slows the walk until the next rest, and nothing else is taken. At the body's limit it is refused,
+   * and the caller keeps the tonic.
+   */
+  static drinkTonic(player: IPlayer, item: IItem): { ok: boolean; reason?: string; player: IPlayer; gave: number; slow: number } {
+    const drunk = this.tonicsDrunk(player);
+    const allowed = StatSystem.tonicsPerRest(player.attributes);
+    if (drunk >= allowed) return { ok: false, reason: FieldWords.tonicRefused(item.name, allowed), player, gave: 0, slow: StatSystem.tonicSlow(drunk) };
+    const share = item.stats?.energy_share ?? TONIC_SHARE;
+    const before = this.energyHeld(player);
+    const lifted = this.refillEnergy(player, Math.round(StatSystem.maxEnergyOf(player) * share));
+    const count = drunk + 1;
+    return { ok: true, player: { ...lifted, tonicsSinceRest: count }, gave: this.energyHeld(lifted) - before, slow: StatSystem.tonicSlow(count) };
   }
 
   /** The energy back, whole. `turnsTheDay` is for a rest inside a world: nowhere else does a rest move a day. */

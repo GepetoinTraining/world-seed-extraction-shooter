@@ -48,7 +48,8 @@ export const STAT_READERS: Record<string, string> = {
   mining_power: 'InteractionEngine',
   chopping_power: 'InteractionEngine',
   health_restore: 'playerStore.useConsumable',
-  energy_restore: 'RestSystem.refillEnergy',
+  energy_restore: 'RestSystem.drinkTonic',
+  energy_share: 'RestSystem.drinkTonic',
   durability: 'CombatMath.isUsable',
   maxDurability: 'repairCost',
   upkeep_discount_pct: 'room.roomBonuses',
@@ -96,6 +97,14 @@ const UPKEEP_OFF_PCT_AT_MOST = 50;
 export const BASE_CHANNEL_MS = 5000;
 /** How fast a point climbs a curve that has a limit. */
 const CURVE_PER_POINT = 2;
+/**
+ * Pedro, 2026-11-11: "energy tonics that are limited usage per rest, and give debuffs as side effects
+ * for using." A body takes one tonic a rest, and one more for each this many points of endurance over
+ * the floor. The limit is his rule; how it grows with endurance is a call he may strike.
+ */
+export const ENDURANCE_PER_TONIC = 5;
+/** How hard each tonic drunk since the last rest leans on the walk, in points on the house curve. */
+export const TONIC_SLOW_POINTS = 5;
 
 /** What each attribute reaches, by the reader that does it. A bar holds that each has a caller. */
 export const ATTRIBUTE_READERS: Record<keyof IAttributes, string[]> = {
@@ -103,7 +112,7 @@ export const ATTRIBUTE_READERS: Record<keyof IAttributes, string[]> = {
   constitution: ['StatSystem.maxHealth'],
   agility: ['StatSystem.paceBonus', 'StatSystem.evasionRating'],
   dexterity: ['StatSystem.fireRateScale', 'StatSystem.accuracyRating'],
-  endurance: ['StatSystem.maxEnergyOf'],
+  endurance: ['StatSystem.maxEnergyOf', 'StatSystem.tonicsPerRest'],
   intelligence: ['LoadoutSystem.reconEfficiency', 'StatSystem.learnRate'],
   focus: ['LoadoutSystem.reconEfficiency', 'WeaveSystem.capacity', 'StatSystem.castPower'],
   engineering: ['StatSystem.repairFactor', 'StatSystem.craftClockFactor'],
@@ -165,6 +174,16 @@ export class StatSystem {
   /** A character's own day. */
   static maxEnergyOf(player: IPlayer): number {
     return this.maxEnergy(player.attributes, player.equipment);
+  }
+
+  /** Endurance: how many tonics a body takes between two rests. One at the floor, one more each five points over it. */
+  static tonicsPerRest(attributes?: IAttributes): number {
+    return 1 + Math.floor(over(attributes, 'endurance') / ENDURANCE_PER_TONIC);
+  }
+
+  /** What the tonics drunk since the last rest take from the walk, as a share: a little more with each, never all of it. */
+  static tonicSlow(tonics = 0): number {
+    return climb(Math.max(0, tonics) * TONIC_SLOW_POINTS);
   }
 
   static pickupRadiusPx(equipment?: IEquipmentState): number {

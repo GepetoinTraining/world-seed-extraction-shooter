@@ -1007,6 +1007,8 @@ export interface IPlayer {
   skillGifts?: Record<string, ISkillGift[]>;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
   energyToday?: number;
+  /** Pedro, 2026-11-11: tonics are "limited usage per rest". How many this character drank since it last woke; none when undefined. */
+  tonicsSinceRest?: number;
   dayCount?: number;
   /** D43, D50: what play queued, for the next rest. */
   restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[]; sittings?: IStudySitting[]; made?: IMadeWaiting[] };

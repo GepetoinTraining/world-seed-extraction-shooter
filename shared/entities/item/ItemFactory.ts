@@ -4,7 +4,7 @@ import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from './data/ite
 import { AffixDefinition } from './data/affixDefinitions';
 import { AffixBank } from '../../logic/content/AffixBank';
 import { IAffixPool } from '../world/Dreaming';
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
+import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS, readsRank } from '../../constants';
 import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { ResourceDef } from './data/resourceDefinitions';
 import { MaterialPropertyType } from '../economy/types';
@@ -380,7 +380,8 @@ export class ItemFactory {
       Object.entries(choice.statModifiers ?? {}).forEach(([key, range]) => {
         const [min, max] = range;
         const baseVal = min + rng.next() * (max - min);
-        const scaled = baseVal * rankMult;
+        // Pedro, 2026-11-11: his day reads no rank, so energy is the same on a piece of any rank
+        const scaled = readsRank(key) ? baseVal * rankMult : baseVal;
         // Wave 10E: fractional stats (attack_speed) keep two decimals instead
         // of rounding to zero; negative offsets (D19) survive the same way.
         rolledStats[key] = Math.abs(scaled) < 1 ? parseFloat(scaled.toFixed(2)) : Math.round(scaled);

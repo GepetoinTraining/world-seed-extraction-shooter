@@ -57,7 +57,7 @@ import { EffectSystem, IEffectAbility } from '../shared/logic/systems/EffectSyst
 import { NpcSheet } from '../shared/logic/systems/NpcSheet';
 import { CIRCLES_FOR_A_GIFT, CircleSystem, IGiftWords } from '../src/logic/systems/CircleSystem';
 import { PASSIVE_STATS } from '../shared/logic/theme/ThemeTypes';
-import { STAT_SCALE } from '../shared/logic/theme/ThemeFormula';
+import { STAT_SCALE, TONIC_SHARE } from '../shared/logic/theme/ThemeFormula';
 import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
 import { compileTheme, sealTheme } from '../shared/logic/theme/ThemeCompiler';
 import { BIOMES, IThemeBody } from '../shared/logic/theme/ThemeTypes';
@@ -447,7 +447,9 @@ describe('energy: magic, potions and very rare plants refill it', () => {
     usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, inventory: [tonic('moss', { energy_restore: 25 })] } } }));
     store().consumeItem('moss');
     const s = player().currentSession!;
-    expect(s.energy).toBe(35);
+    // Changed on purpose 2026-11-11. Pedro: "we need energy tonics that are limited usage per rest, and give
+    // debuffs as side effects for using." A potion is a tonic: three tenths of the drinker's day, not its old 25.
+    expect(s.energy).toBe(10 + Math.round(StatSystem.maxEnergyOf(player()) * TONIC_SHARE));
     expect(s.health).toBe(50);
     expect(s.inventory).toEqual([]);
   });
@@ -484,7 +486,8 @@ describe('energy: magic, potions and very rare plants refill it', () => {
     const compiled = compileTheme(sealTheme(withPlant(), 'test', 0));
     const def = Object.values(compiled.resources).find(r => r.name === 'Day Moss')!;
     expect(def.type).toBe(ItemType.CONSUMABLE);
-    expect(def.stats!.energy_restore).toBeGreaterThan(0);
+    // Changed on purpose 2026-11-11 (Pedro: "energy tonics that are limited usage per rest"): a share of the day, not an amount by rank
+    expect(def.stats!.energy_share).toBe(TONIC_SHARE);
     expect(def.rareFind).toBe(true);
     expect(compiled.shelf.materials).not.toContain(def.id);
     const pack = sealTheme(withPlant(), 'test', 0);

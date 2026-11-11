@@ -3,6 +3,8 @@
  * a line never promises what the books did not do.
  */
 
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+
 export type FeedTone = 'plain' | 'signal' | 'proof' | 'loss';
 
 export const FieldWords = {
@@ -29,5 +31,29 @@ export const FieldWords = {
       : 'used.';
     const tone: FeedTone = restore < 0 ? 'loss' : restore === 0 && refill > 0 ? 'proof' : 'signal';
     return { text: used.fromBelt ? `${name}, straight from the belt: ${what} The pack never opened.` : `${name}: ${what}`, tone };
+  },
+
+  /**
+   * 2026-11-11: a tonic says what it gave and what it cost, in the rest's plain voice. Pedro: tonics
+   * "give debuffs as side effects for using".
+   */
+  tonic(drunk: { name: string; gave: number; slow: number; fromBelt?: boolean }): { text: string; tone: FeedTone } {
+    const gave = drunk.gave > 0 ? `+${drunk.gave} energy.` : 'Your day was already full, so it gave nothing.';
+    const cost = `Your legs grow heavy: you walk ${Math.round(drunk.slow * 100)}% slower until you rest.`;
+    const where = drunk.fromBelt ? `${drunk.name}, straight from the belt` : drunk.name;
+    return { text: `${where}: ${gave} ${cost}`, tone: 'signal' };
+  },
+
+  /** The body's limit, said plainly. The tonic is kept. */
+  tonicRefused(name: string, allowed: number): string {
+    const many = allowed === 1 ? 'one tonic' : `${allowed} tonics`;
+    return `You keep the ${name}. Your body takes ${many} between rests, and you have had ${allowed === 1 ? 'it' : 'them'}. Rest first.`;
+  },
+
+  /** What the field shows while the side effect stands: a mark and a word. Nothing when none stands. */
+  tonicMark(tonics: number): string | null {
+    if (tonics <= 0) return null;
+    const slow = Math.round(StatSystem.tonicSlow(tonics) * 100);
+    return `▼ TONICS ${tonics}: ${slow}% SLOWER UNTIL YOU REST`;
   }
 };

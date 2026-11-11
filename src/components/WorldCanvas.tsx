@@ -800,7 +800,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
         const walker = usePlayerStore.getState().player;
-        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment, walker.attributes) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
+        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment, walker.attributes, walker.tonicsSinceRest) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
 
@@ -966,7 +966,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
       const liveEquipment = usePlayerStore.getState().player.equipment;
       const liveAttributes = usePlayerStore.getState().player.attributes;
-      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes) });
+      const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes, usePlayerStore.getState().player.tonicsSinceRest) });
       // Q16: who walks beside you, where they stand now
       const escortsStanding = FieldEscort.standing(worldPort, playerPort);
       if (aiResult.spawnedPatterns.length > 0) {

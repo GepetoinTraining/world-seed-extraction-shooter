@@ -4,9 +4,16 @@
  * Version 3. All of it is a guess until Wave 12, which tunes this file and nothing
  * else. A pinned world reads the version it was minted under, so a later version
  * never moves a standing world. Nothing here is a ceiling on content.
+ *
+ * 2026-11-11, energy (Pedro: "gear needs to give energy stat (you get very little energy simply by
+ * levelling), and, we need energy tonics that are limited usage per rest"): energy on gear reads no
+ * rank and four kinds carry it, and an energy tonic is a share of the drinker's day. No pack's words
+ * change, so the pack law (THEME_FORMULA_VERSION) does not move: a sealed world keeps its words and
+ * its law, and its kinds compile to these numbers when it is read.
  */
 
 import { SlotType, UniversalRank } from '../../types';
+import { readsRank } from '../../constants';
 import { GearKind, ThemeRank, RANKS } from './ThemeTypes';
 import { PROJECTILE_RANGE_PX } from '../../entities/combat/projectileSystem';
 import { TILE_PX } from '../../entities/world/grid';
@@ -245,10 +252,17 @@ export const goodNumbers = (g: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG
 const STATION_AREA = (billCount: number) => 6 + billCount * 2;
 export const stationNumbers = (billCount: number) => ({ minArea: STATION_AREA(billCount), weight: 40, width: 2, height: 2 });
 
-export const consumableNumbers = (kind: string, rank: ThemeRank) => {
+/**
+ * The share of the drinker's own day an energy tonic gives, at every rank (2026-11-11): three tenths,
+ * the share a heal gives of a body. It is read at the drinking against that body's day, so no tonic
+ * outgrows the day, and a rank moves nothing in it.
+ */
+export const TONIC_SHARE = 0.3;
+
+export const consumableNumbers = (kind: string, rank: ThemeRank): Record<string, number> => {
   const power = geometric(10, 1.8, rankStep(rank));
   if (kind === 'heal') return { health_restore: Math.round(power * 3) };
-  if (kind === 'energy') return { energy_restore: Math.round(power) };
+  if (kind === 'energy') return { energy_share: TONIC_SHARE };
   return {};
 };
 
@@ -269,6 +283,13 @@ const range = (stat: string, low: number, high: number, step: number, ratio = 1.
   stat, min: Math.round(low * Math.pow(ratio, step) * 100) / 100, max: Math.round(high * Math.pow(ratio, step) * 100) / 100
 });
 
+/**
+ * A day's energy on a piece, native (2026-11-11): the focus's old line at rank F, which is the ruler
+ * BALANCE_RUN 2.5 names, and the same at every rank, since his day reads no rank. Four kinds carry it,
+ * as four carry protection (head, chest, legs, shoulder): the focus, the belt, the necklace, the ring.
+ */
+const dayLine = () => ({ stat: 'max_energy', min: 5, max: 10 });
+
 /** The grammar of gear: what a kind IS, so a body slot always takes it (R5's rule, as law). */
 export const GEAR_SHAPES: Record<GearKind, IGearShape> = {
   blade: { bucket: 'weapon_bases', slot: SlotType.MAIN_HAND, tags: ['melee', 'one_hand', 'physical', 'blade'],
@@ -278,19 +299,19 @@ export const GEAR_SHAPES: Record<GearKind, IGearShape> = {
   bow: { bucket: 'weapon_bases', slot: SlotType.MAIN_HAND, tags: ['ranged', 'two_hand', 'physical', 'projectile'],
     implicits: s => [range('accuracy_rating', 15, 30, s), { stat: 'attack_speed', value: 1.0 }] },
   focus: { bucket: 'weapon_bases', slot: SlotType.MAIN_HAND, tags: ['magic', 'one_hand', 'caster'],
-    implicits: s => [range('max_energy', 5, 10, s), { stat: 'attack_speed', value: 0.9 }] },
+    implicits: () => [dayLine(), { stat: 'attack_speed', value: 0.9 }] },
   head: { bucket: 'armor_bases', slot: SlotType.HEAD, tags: ['armor', 'head', 'light'], implicits: s => [range('physical_reduction', 0.01, 0.02, s, 1.3)] },
   chest: { bucket: 'armor_bases', slot: SlotType.CHEST, tags: ['armor', 'chest', 'heavy'], implicits: s => [range('physical_reduction', 0.04, 0.07, s, 1.25)] },
   legs: { bucket: 'armor_bases', slot: SlotType.LEGS, tags: ['armor', 'light'], implicits: s => [range('physical_reduction', 0.02, 0.03, s, 1.25)] },
   feet: { bucket: 'armor_bases', slot: SlotType.FEET, tags: ['armor', 'boots', 'light'], implicits: s => [range('movement_speed', 0.03, 0.06, s, 1.2)] },
   shoulder: { bucket: 'armor_bases', slot: SlotType.SHOULDER, tags: ['armor', 'shoulder', 'light'], implicits: s => [range('defense', 2, 4, s)] },
   eyes: { bucket: 'armor_bases', slot: SlotType.EYES, tags: ['jewelry', 'accessory'], implicits: s => [range('field_analysis_speed', 0.1, 0.2, s, 1.2)] },
-  necklace: { bucket: 'armor_bases', slot: SlotType.NECKLACE, tags: ['amulet', 'jewelry'], implicits: s => [range('max_health', 5, 10, s)] },
+  necklace: { bucket: 'armor_bases', slot: SlotType.NECKLACE, tags: ['amulet', 'jewelry'], implicits: s => [range('max_health', 5, 10, s), dayLine()] },
   earring: { bucket: 'armor_bases', slot: SlotType.EARRING, tags: ['jewelry', 'accessory'], implicits: s => [range('noise_reduction', 1, 2, s, 1.3)] },
-  ring: { bucket: 'armor_bases', slot: SlotType.RING, tags: ['ring', 'jewelry'], implicits: s => [range('luck_find_rarity', 0.02, 0.05, s, 1.3)] },
+  ring: { bucket: 'armor_bases', slot: SlotType.RING, tags: ['ring', 'jewelry'], implicits: s => [range('luck_find_rarity', 0.02, 0.05, s, 1.3), dayLine()] },
   quiver: { bucket: 'armor_bases', slot: SlotType.QUIVER, tags: ['quiver'], implicits: s => [range('attack_speed', 0.02, 0.05, s, 1.2)] },
   bag: { bucket: 'armor_bases', slot: SlotType.BAG, tags: ['bag'], implicits: s => [{ stat: 'carry_bonus_kg', value: 10 + s * 5 }] },
-  belt: { bucket: 'armor_bases', slot: SlotType.BELT, tags: ['belt'], implicits: () => [], belt: { pouchSlots: 2 } },
+  belt: { bucket: 'armor_bases', slot: SlotType.BELT, tags: ['belt'], implicits: () => [dayLine()], belt: { pouchSlots: 2 } },
   pouch: { bucket: 'armor_bases', slot: SlotType.POUCH, tags: ['pouch'], implicits: () => [], pouch: { accepts: ['consumable'], capacity: 3 } },
   cart: { bucket: 'armor_bases', slot: SlotType.NONE, tags: ['cart', 'heavy'], implicits: () => [], cart: { gridW: 10, gridH: 8 } },
   chop_tool: { bucket: 'tool_bases', slot: SlotType.TOOL, tags: ['tool', 'axe', 'chopping'], implicits: s => [range('chopping_power', 12, 18, s)] },
@@ -320,7 +341,8 @@ const BAND = { minor: [0.5, 1], moderate: [1, 2], major: [2, 3.5] } as const;
 
 export const affixRange = (stat: string, band: keyof typeof BAND, tier: number, downside: boolean): [number, number] => {
   const scale = STAT_SCALE[stat] ?? 1;
-  const grow = Math.pow(1.5, Math.max(0, tier - 1));
+  // The writer's tier stands for a rank (BALANCE_RUN 1.5), and energy reads none
+  const grow = readsRank(stat) ? Math.pow(1.5, Math.max(0, tier - 1)) : 1;
   const round = (n: number) => (Math.abs(scale) < 1 ? Math.round(n * 100) / 100 : Math.round(n));
   const low = round(BAND[band][0] * scale * grow);
   const high = Math.max(low, round(BAND[band][1] * scale * grow));

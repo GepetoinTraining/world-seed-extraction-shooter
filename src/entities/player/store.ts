@@ -1057,6 +1057,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const item = pouch.pouchData.contents.find(c => c.type === IT.CONSUMABLE && !c.creatureData);
     if (!item) return { ok: false, reason: `${pouch.name} holds nothing quick to use.` };
     if (!session) return { ok: false, reason: 'Quick-use is for the field.' };
+    // 2026-11-11: a tonic past the body's limit is refused in words, and it stays on the belt
+    const drink = RestSystem.isTonic(item) ? RestSystem.drinkTonic(player, item) : undefined;
+    if (drink && !drink.ok) { feed(drink.reason!, 'loss'); return { ok: false, reason: drink.reason }; }
 
     const restore = item.stats?.health_restore || 0;
     const health = Math.max(1, Math.min(session.maxHealth, session.health + restore));
@@ -1073,11 +1076,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         }
       };
     });
-    const refill = item.stats?.energy_restore || 0;
-    if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
+    const tonic = drink ? RestSystem.drinkTonic(get().player, item) : undefined;
+    if (tonic) set({ player: tonic.player });
+    const refill = tonic?.gave ?? 0;
     SessionJournal.record('INTERACT', { kind: 'QUICK_USE', itemId: item.id, restore, refill, health });
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
-    const said = FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts, fromBelt: true });
+    const said = tonic
+      ? FieldWords.tonic({ name: item.name, gave: refill, slow: tonic.slow, fromBelt: true })
+      : FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts, fromBelt: true });
     feed(said.text, said.tone);
     return { ok: true };
   },
@@ -1687,6 +1693,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!unread.ok) { feed(unread.reason!, 'loss'); return; }
     // D65: what is in a cage is tried, not eaten
     if (item.creatureData) { FieldCapture.tame(item.id, wp, playerPort); return; }
+    // 2026-11-11: a tonic past the body's limit is refused in words, and it stays in the pack
+    const drink = RestSystem.isTonic(item) ? RestSystem.drinkTonic(get().player, item) : undefined;
+    if (drink && !drink.ok) { feed(drink.reason!, 'loss'); return; }
     if (item.casts) set({ pendingCast: item.casts }); // Layer 3: the field casts it, through the one door
 
     const restore = item.stats?.health_restore || 0;
@@ -1702,11 +1711,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       } }
     }) : s);
     get().recalcWeight();
-    // Pedro: a very rare potion or plant can refill the day's energy, as a rest does
-    const refill = item.stats?.energy_restore || 0;
-    if (refill > 0) set(s => ({ player: RestSystem.refillEnergy(s.player, refill) }));
+    // Pedro: a very rare potion or plant can refill the day's energy, as a rest does. Since 2026-11-11 it is
+    // a tonic: a share of the day, counted, and it slows the walk until the next rest
+    const tonic = drink ? RestSystem.drinkTonic(get().player, item) : undefined;
+    if (tonic) set({ player: tonic.player });
+    const refill = tonic?.gave ?? 0;
     SessionJournal.record('INTERACT', { kind: 'CONSUME', itemId, restore, refill, health });
-    const said = FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts });
+    const said = tonic
+      ? FieldWords.tonic({ name: item.name, gave: refill, slow: tonic.slow })
+      : FieldWords.consumed({ name: item.name, restore, refill, casts: !!item.casts });
     feed(said.text, said.tone);
   },
 

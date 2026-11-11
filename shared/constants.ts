@@ -67,3 +67,12 @@ export const BG_RANK_COLORS: Record<UniversalRank, string> = {
   [UniversalRank.SS]: 'bg-rank-ss',
   [UniversalRank.SSS]: 'bg-rank-sss',
 };
+/**
+ * Stats a rank does not move. Pedro, 2026-11-11: "gear needs to give energy stat (you get very little
+ * energy simply by levelling)", and his day reads no rank (BALANCE_RUN 1.5), so energy on a piece is the
+ * same amount at rank F and at SSS, natively and as a property. A list of what reads no rank, not a limit.
+ */
+export const RANKLESS_STATS: readonly string[] = ['max_energy'];
+
+/** Does a rank multiply this stat where a piece is minted? */
+export const readsRank = (stat: string): boolean => !RANKLESS_STATS.includes(stat);

@@ -659,7 +659,7 @@ export const HubCanvas: React.FC = () => {
         const p = roomPosRef.current;
         if (dx !== 0 || dy !== 0) {
           const len = Math.hypot(dx, dy);
-          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes) * TILE_SIZE * dt;
+          const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes, usePlayerStore.getState().player.tonicsSinceRest) * TILE_SIZE * dt;
           const mx = (dx / len) * step, my = (dy / len) * step;
           let nx = p.x + mx;
           if (roomBlocked(nx, p.y) && !roomBlocked(p.x, p.y)) nx = p.x;
@@ -731,7 +731,7 @@ export const HubCanvas: React.FC = () => {
       const p = posRef.current;
       if (dx !== 0 || dy !== 0) {
         const len = Math.hypot(dx, dy);
-        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes) * TILE_SIZE * dt;
+        const step = LoadoutSystem.walkTilesPerSecond(usePlayerStore.getState().player.equipment, usePlayerStore.getState().player.attributes, usePlayerStore.getState().player.tonicsSinceRest) * TILE_SIZE * dt;
         const mx = (dx / len) * step, my = (dy / len) * step;
         let nx = p.x + mx;
         if (blockedAt(nx, p.y) && !blockedAt(p.x, p.y)) nx = p.x;
