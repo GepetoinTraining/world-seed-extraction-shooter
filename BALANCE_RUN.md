@@ -965,7 +965,12 @@ Four things, set beside the code. The readings are the coordinator's.
                       a critical failure is a misreading: it shows as a large amount of lore, and what is read afterwards wears it down
                       today: a twenty-sided roll against a bar, four outcomes, nothing on a failure, double on a major win
                       (a talk round already rolls 1 to 100: TalkLaw.rollOf)
-                      read as: the misread amount is not lore to spend; new lore pays it off first. Not confirmed.
+                      asked whether a misread amount must be paid off before lore can be spent, he said: "in the same category yes, general lore no,
+                      and general lore is the overall resource, think of it as albions yellow exp, forgot the name"
+                      so lore is of two kinds: lore of a category, where a misreading sits and is paid off first, and general lore,
+                      the one pool spent anywhere, which a misreading does not touch
+                      today: one purse spent on everything (bank.loreHeld), and beside it an entry for each topic read (bank.lore[topic],
+                      with a level and experience that nothing fills)
 2. the web's view     a view of the tech web: what unlocks what and where things sit, so a person can plan what to study
                       today: nothing draws the web. A person's skill enters a hub's web unseen and is heard of only when the web
                       reaches it (D125: "the players cannot know, they need to make the web reach it"), so what the view may show is a design question
