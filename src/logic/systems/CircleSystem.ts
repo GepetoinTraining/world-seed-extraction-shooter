@@ -55,6 +55,11 @@ export class CircleSystem {
     return skill.circles ?? 0;
   }
 
+  /** What filling a circle says when it makes a gift owed: one circle, two circles (G2b). */
+  static standsLine(skillName: string, circles: number): string {
+    return `${skillName} stands at ${circles} circle${circles === 1 ? '' : 's'}. It will answer at a rest, when you hold the lore for it.`;
+  }
+
   static filled(player: IPlayer): number {
     return Object.values(player.bank.universalSkills ?? {}).reduce((sum, s) => sum + this.circlesOf(s), 0);
   }

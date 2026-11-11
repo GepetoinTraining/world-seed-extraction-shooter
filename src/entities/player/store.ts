@@ -365,7 +365,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const res = CircleSystem.fill(get().player, skillId);
     if (!res.ok) { feed(res.reason!, 'loss'); return false; }
     set({ player: res.player });
-    if (res.owed) feed(`${WebSystem.nameOf(skillId)} stands at ${CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])} circles. It will answer at a rest, when you hold the lore for it.`, 'proof');
+    if (res.owed) feed(CircleSystem.standsLine(WebSystem.nameOf(skillId), CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])), 'proof');
     return true;
   },
 
@@ -2302,6 +2302,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().workOn(pair, rankIndexOf(context.targetRank), Math.ceil(context.magnitude * 0.5));
   }
 }));
+
+// S2i (2026-11-11): what the pack weighs is read from the player, so any door that hands the store a new player
+// (a SET through the port, a set inside an action, a setState) leaves the load as the pack is, not as it was.
+usePlayerStore.subscribe((state, prev) => {
+  if (state.player === prev.player) return;
+  const currentWeight = InventorySystem.totalWeight(state.player.currentSession?.inventory ?? []);
+  const maxWeight = LoadoutSystem.carryLimit(state.player.attributes?.strength ?? 0, state.player.equipment);
+  if (currentWeight !== state.currentWeight || maxWeight !== state.maxWeight) usePlayerStore.setState({ currentWeight, maxWeight });
+});
 
 /** The player as a system takes it (playerView.ts): a fresh view on each read, the store's one door, and its calls. */
 export const playerPort: IPlayerPort = {
