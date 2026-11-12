@@ -81,7 +81,9 @@ export class CombatMath {
     const blow = Math.max(1, this.ownBlow(weapon, rank) + extra);
     // A tenth is as fine as the card reads; the fight keeps the whole figure
     const tenth = (n: number) => { const r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };
-    return `${tenth(blow)} ${!weapon || isThrowable(weapon) ? 'a throw' : 'a blow'}, ${tenth(blow * this.ownRate(weapon))} a second`;
+    const said = `${tenth(blow)} ${!weapon || isThrowable(weapon) ? 'a throw' : 'a blow'}, ${tenth(blow * this.ownRate(weapon))} a second`;
+    // A broken piece stays in the hand and fights as a bare one until it is repaired: say so beside what it then deals
+    return weapon && !this.isUsable(weapon) ? `broken, the hand fights bare: ${said}` : said;
   }
 
   /** Damage of one player projectile/swing with this weapon: its own blow and every `damage` line worn. */

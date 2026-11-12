@@ -1828,7 +1828,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         const dur = i.stats?.durability;
         if (dur === undefined) return i;
         const next = Math.max(0, dur - amount);
-        if (next === 0 && dur > 0) feed(`${i.name} BROKE. It stays on the body; it stops working.`, 'loss');
+        const max = i.stats?.maxDurability ?? 0;
+        if (next === 0 && dur > 0) feed(`${LoadoutSystem.shownName(i)} BROKE. It stays on the body; it stops working until it is repaired.`, 'loss');
+        // Said once, as it crosses into its last third: the frame of its picture is bitten on that side too
+        else if (max > 0 && next > 0 && dur * 3 >= max && next * 3 < max) feed(`${LoadoutSystem.shownName(i)} is wearing thin: ${Math.max(1, Math.round(next))} of ${max} left. Repair it at home.`, 'loss');
         return { ...i, stats: { ...i.stats, durability: next } };
       });
       return { player: { ...s.player, equipment: { ...eq, items } } };

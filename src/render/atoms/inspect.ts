@@ -345,7 +345,8 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     rows.push(['Quality', `${QUALITY_NAMES[qualityBand(q)]} ${q >= 0 ? '+' : ''}${Math.round(q * 100)}%`]);
   }
   const { durability, maxDurability } = item.stats as Record<string, number>;
-  if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${durability} of ${maxDurability}`]);
+  // Wear is counted by the work done, so it keeps fractions; the card says whole points, and near breaking in its last third
+  if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${Math.max(1, Math.round(durability))} of ${maxDurability}${durability * 3 < maxDurability ? ', near breaking' : ''}`]);
   rows.push(['Weight', `${item.weight} kg`]);
   // D27: a handled hand reads what a material plainly is
   const knowledge = player?.materialMastery[item.universalDefinitionId];

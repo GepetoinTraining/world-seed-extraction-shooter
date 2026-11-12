@@ -1344,7 +1344,7 @@ const RepairModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(item)}</span>
-                  <span className="ws-dim ws-small">{item.stats.durability}/{item.stats.maxDurability} durability</span>
+                  <span className="ws-dim ws-small">{item.stats.durability ? Math.max(1, Math.round(item.stats.durability)) : 0}/{item.stats.maxDurability} durability</span>
                 </span>
               </span>
               <Button

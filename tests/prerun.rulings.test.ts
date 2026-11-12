@@ -580,7 +580,8 @@ describe('C14: a pebble can be picked up, taken in the hand and thrown', () => {
 
   it('the field spends one for each throw, where a weapon would wear', () => {
     const field = SRC('src/components/WorldCanvas.tsx');
-    expect(field).toMatch(/if \(isThrowable\(weapon\)\) st\.spendThrown\(slot\);\s*else if \(weapon\) st\.wearSlot\(slot, 1\);/);
+    // Wear by the work done (2026-11-12): a weapon wears by `blowWear`, no longer one a use
+    expect(field).toMatch(/if \(isThrowable\(weapon\)\) st\.spendThrown\(slot\);[\s\S]{0,200}?else if \(weapon\) st\.wearSlot\(slot, blowWear\(/);
   });
 
   it('the sheet offers to take one in the hand: by its button, and by the click that wears anything else', () => {

@@ -8,6 +8,7 @@ import { WebSystem } from '../../shared/logic/systems/WebSystem';
 import { ProjectileSystem, PatternType, IProjectile, patternOf } from '../../shared/entities/combat/projectileSystem';
 import { PERSON_RADIUS_PX, covers, pushFrom } from '../../shared/entities/combat/Shapes';
 import { SHOT_WEIGHT, blowWeight, bodyPoise, feltHit, rankStep } from '../../shared/logic/theme/ThemeFormula';
+import { blowWear, hitWear, protects } from '../../shared/logic/theme/WearLaw';
 import { LootTable } from '../entities/world/LootTable';
 import { Leaders } from '../../shared/entities/world/Leaders';
 import { CombatSystem, landsOn } from '../entities/combat/CombatSystems';
@@ -477,7 +478,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
     // Durability: every use costs. C14: a stone thrown is spent, and the next one carried comes to the hand
     if (isThrowable(weapon)) st.spendThrown(slot);
-    else if (weapon) st.wearSlot(slot, 1);
+    // Wear by the work done: a blow wears its piece by the share of a second's work it is, landed or not (`WearLaw`)
+    else if (weapon) st.wearSlot(slot, blowWear(weapon.stats?.maxDurability ?? 100, CombatMath.ownRate(weapon), String(weapon.rank)));
   };
 
   // Wave 2.5: extraction channel + regrow sweep timing
@@ -1230,9 +1232,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         if (pickedUp.length > 0 || drops !== lootDrops) setLootDrops(finalDrops);
       }
 
-      // Apply damage to the agent (Wave 4.1: armor mitigates, and wears)
+      // Apply damage to the agent (Wave 4.1: armor mitigates; what protects wears by the work done, below)
       const rawDamage = incomingDamage + combatResult.playerDamage;
-      const armor = getEquipped('armor');
       // Layer 1: what is working on the body, what just landed, and any ward spending itself
       let effects = liveSession.activeEffects ?? [];
       const clock = StatusClock.tick(effects, now);
@@ -1264,8 +1265,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           ? { player: { ...state.player, currentSession: { ...state.player.currentSession, activeEffects: effects } } }
           : state);
       }
+      // Wear by the work done: each piece that protects wears by the share of a body the blows took; a tick of poison wears nothing
+      const blowTaken = Math.min(hit.damage, totalDamage);
+      if (blowTaken > 0) {
+        const wearer = usePlayerStore.getState();
+        const worn = wearer.player.equipment;
+        const share = blowTaken / Math.max(1, liveSession.maxHealth);
+        if (worn) for (const [slotId, pieceId] of Object.entries(worn.slots)) {
+          const piece = worn.items.find(i => i.id === pieceId);
+          if (piece?.stats?.maxDurability && protects(piece)) wearer.wearSlot(slotId as EquipSlotId, hitWear(piece.stats.maxDurability, share, String(piece.rank)));
+        }
+      }
       if (totalDamage > 0) {
-        if (armor) usePlayerStore.getState().wearEquipment('armor', 1);
         const newHealth = Math.max(0, liveSession.health - totalDamage);
         usePlayerStore.setState(state => state.player.currentSession
           ? { player: { ...state.player, currentSession: { ...state.player.currentSession, health: newHealth } } }
