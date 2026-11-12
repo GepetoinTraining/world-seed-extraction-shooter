@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 vi.mock('../shared/entities/data/VectorStore', () => ({
   VectorNamespace: { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' },
@@ -83,6 +84,7 @@ const player = () => usePlayerStore.getState().player;
 const live = (id: string) => Object.values(useWorldStore.getState().currentMap!.chunks).flatMap(c => c.entities).find(e => e.id === id);
 const pack = () => player().currentSession!.inventory;
 const fed = () => useFeed.getState().lines.map(l => l.text).join('\n');
+const SRC = (p: string) => readFileSync(p, 'utf8');
 
 beforeEach(() => {
   useFeed.setState({ lines: [] } as never);
@@ -200,7 +202,8 @@ describe('ML: the try, in the field', () => {
     expect(player().currentSession!.energy).toBeLessThan(1000);
   });
 
-  it('a major win takes twice what a success does', () => {
+  // Pedro, 2026-11-12: "once something exists it's determined, and the skill always gives the same thing" (ML18)
+  it('a major win takes what a success takes: the roll decides only whether it comes away', () => {
     const e = place(iron());
     stage([e], [pickOf(UniversalRank.F)]);
     forced('success');
@@ -210,9 +213,34 @@ describe('ML: the try, in the field', () => {
     stage([e], [pickOf(UniversalRank.F)]);
     forced('major_win');
     usePlayerStore.getState().performInteraction(`int_try_${e.id}`, e.id);
-    expect(pack().filter(i => i.universalDefinitionId === iron().id).length).toBe(once * 2);
-    // Seen in the window: the line read "The Claim Pick find the grain"
-    expect(fed()).toMatch(/The .+ finds the grain of /);
+    expect(pack().filter(i => i.universalDefinitionId === iron().id).length).toBe(once);
+  });
+
+  it('what a success gives is the material and the hand\'s skill by one rule, with no dice: the same every time', () => {
+    const tool = pickOf(UniversalRank.F);
+    const counts: number[] = [];
+    for (let n = 0; n < 6; n++) {
+      const e = place(iron(), `ent_0_0_r${n}`);
+      stage([e], [tool]);
+      forced('success');
+      usePlayerStore.getState().performInteraction(`int_try_${e.id}`, e.id);
+      counts.push(pack().filter(i => i.universalDefinitionId === iron().id).length);
+    }
+    expect(new Set(counts).size).toBe(1);
+    expect(counts[0]).toBe(ExtractLaw.yieldOf(iron(), undefined));
+    // No skill: the least a use gives. Each rung of mastery a piece more, and the skill's levels on top
+    expect(ExtractLaw.yieldOf(iron(), undefined)).toBe((iron().yieldPerUse ?? [1, 1])[0]);
+    const pair = WebSystem.pairOfHarvest(player(), iron())!;
+    const fresh = WebSystem.freshSkill(pair.id, pair.tags, 0);
+    const worked = WebSystem.withCumulativeXp(fresh, 100_000);
+    expect(ExtractLaw.yieldOf(iron(), worked)).toBeGreaterThan(ExtractLaw.yieldOf(iron(), fresh));
+    expect(ExtractLaw.yieldOf(iron(), worked)).toBe(ExtractLaw.yieldOf(iron(), worked));
+  });
+
+  it('a dreamed material is dreamed for good: the same material on the same ground carries the same, every time', () => {
+    const src = SRC('src/entities/player/store.ts');
+    expect(src).toMatch(/DreamingSystem\.materialAffixOf\(/);
+    expect(src).not.toMatch(/materialAffixFor\(dream\.pack, biome, def\.id, rng\)/);
   });
 
   it('a failure wears the tool and leaves the place as it was', () => {

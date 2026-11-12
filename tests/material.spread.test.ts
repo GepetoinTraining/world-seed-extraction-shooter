@@ -151,27 +151,21 @@ describe('ML: a material stands where its base would, rolled from the world\'s s
   });
 });
 
-describe('ML: a variant taken comes back by the same rule, rolled anew', () => {
-  it('from ground 7 a place that comes back is its role\'s pick, then the spread\'s, keyed by the turn', () => {
-    const iron = byKey('collateral_iron'), silver = byKey('sovereign_silver');
+describe('ML17: once a place holds a material, that is what it holds; taken, the same comes back', () => {
+  it('from ground 7 a variant that comes back is the variant that was there, on every turn', () => {
+    const silver = byKey('sovereign_silver');
     const context = ctxAt(7, UniversalRank.D);
-    const kinds = new Set<string>();
-    for (let turn = 1; turn <= 400; turn++) kinds.add(GroundReturn.rolled(SEED, 'ent_9_9_r0', 'INDUSTRIAL', turn, context, iron.id, UniversalRank.D).kind);
-    expect(kinds.has(iron.id)).toBe(true);
-    expect(kinds.has(silver.id)).toBe(true);
-    // The same turn gives the same, on any machine
-    expect(GroundReturn.rolled(SEED, 'ent_9_9_r0', 'INDUSTRIAL', 17, context, iron.id, UniversalRank.D)).toEqual(GroundReturn.rolled(SEED, 'ent_9_9_r0', 'INDUSTRIAL', 17, context, iron.id, UniversalRank.D));
+    const place = { id: 'ent_9_9_r0', type: EntityType.RESOURCE, definitionId: silver.id, position: { x: 0, y: 0 }, rank: UniversalRank.D, rarity: Rarity.RARE, isHostile: false, usesRemaining: silver.uses } as never;
+    for (let turn = 1; turn <= 40; turn++) {
+      const record = GroundReturn.took({ taken: {} }, place, 0, turn);
+      const back = GroundReturn.standing(SEED, place, 'INDUSTRIAL', record, turn + GroundReturn.waitOf(silver), context, undefined, UniversalRank.D);
+      expect(back.definitionId).toBe(silver.id);
+    }
   });
 
-  it('before ground 7 it comes back as RG laid it: evenly from its role, no spread', () => {
-    const iron = byKey('collateral_iron');
-    const six = ctxAt(6, UniversalRank.D);
-    const pool = GroundReturn.poolOf('scatter', 'INDUSTRIAL', six);
-    for (let turn = 1; turn <= 50; turn++) {
-      const back = GroundReturn.rolled(SEED, 'ent_9_9_r0', 'INDUSTRIAL', turn, six, iron.id, UniversalRank.D);
-      expect(pool.map(d => d.id)).toContain(back.kind);
-    }
-    expect(GroundReturn.rolled(SEED, 'ent_9_9_r0', 'INDUSTRIAL', 3, six, iron.id)).toEqual(GroundReturn.rolled(SEED, 'ent_9_9_r0', 'INDUSTRIAL', 3, { resourceDefinitions: six.resourceDefinitions }, iron.id));
+  it('where a variant stands is settled by the seed and the place: the same question, the same answer', () => {
+    const vein = [byKey('collateral_iron'), byKey('sovereign_silver')];
+    for (let i = 0; i < 50; i++) expect(Spread.pick(SEED, `ent_${i}_3_r1`, vein[0], vein, UniversalRank.D).id).toBe(Spread.pick(SEED, `ent_${i}_3_r1`, vein[1], vein, UniversalRank.D).id);
   });
 });
 
@@ -197,6 +191,25 @@ describe('ML: a variant is drawn as its base\'s own picture changed slightly, by
         expect(diff).toBeLessThan(0.4);
       }
     }
+  });
+
+  it('a material\'s look is settled: the pack\'s are the same in every world, whatever a minting adds', () => {
+    const before = ['tellers_reed', 'sovereign_silver', 'collateral_iron', 'chaffwheat'].map(k => SpreadBook.of(byKey(k).id));
+    // A world whose minting added a plainer vein and a reed that wears the reed's own marks
+    const plain = added('plain_vein', 'collateral_iron', { rank: UniversalRank.F, habitat: ['INDUSTRIAL'] });
+    const twin = added('twin_reed', 'tellers_reed', { name: byKey('tellers_reed').name + ' ', habitat: ['RUINS'] });
+    SpreadBook.enter([...(pack().resourceDefinitions as ResourceDef[]), plain, twin], FIRST_THEME_PACK.themeId);
+    expect(['tellers_reed', 'sovereign_silver', 'collateral_iron', 'chaffwheat'].map(k => SpreadBook.of(byKey(k).id))).toEqual(before);
+    // What a minting added always wears its marks, on its pack's base
+    expect(SpreadBook.of(plain.id).base?.id).toBe(byKey('collateral_iron').id);
+    expect(SpreadBook.of(plain.id).marks.length).toBeGreaterThan(0);
+    // and its look hangs on its own words and its pack alone, not on what else its world added
+    const alone = SpreadBook.of(plain.id);
+    SpreadBook.enter([...(pack().resourceDefinitions as ResourceDef[]), plain], FIRST_THEME_PACK.themeId);
+    expect(SpreadBook.of(plain.id)).toEqual(alone);
+    SpreadBook.enter(pack().resourceDefinitions as ResourceDef[], FIRST_THEME_PACK.themeId);
+    // and a world opened since does not forget it: what exists keeps its look
+    expect(SpreadBook.of(plain.id)).toEqual(alone);
   });
 
   it('two variants of one base are told apart from each other too, within a world', () => {

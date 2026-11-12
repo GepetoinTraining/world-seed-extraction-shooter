@@ -2147,21 +2147,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     /**
-     * What comes away from a place, `times` over: what a try that lands does (ML), and a loose stone picked up. The
+     * What comes away from a place: what a try that lands does (ML), and a loose stone picked up. The
      * energy is paid before this, by whoever asked for it.
      */
-    const takeFrom = (entity: IWorldEntity, def: ResourceDef, pair: ISkillPair | null, effort: { winging: boolean }, times: number) => {
+    const takeFrom = (entity: IWorldEntity, def: ResourceDef, pair: ISkillPair | null, effort: { winging: boolean }) => {
       const usesLeft = (entity.usesRemaining ?? 1) - 1;
       const rollKey = SessionJournal.rollKey('harvest', `${entity.id}:${usesLeft}`);
       const rng = Rng.fromKey(rollKey);
-      const [minY, maxY] = def.yieldPerUse ?? [1, 1];
-      const quantity = rng.int(minY, maxY + 1) * times;
+      // ML18: what is taken is the material and the hand's skill by one rule, with no dice in it
+      const quantity = ExtractLaw.yieldOf(def, pair ? get().player.bank.universalSkills[pair.id] : undefined);
       // Wave 10E (the Dreaming): in a pinned world a harvest may carry a banked
       // affix — the material remembers what the Seed dreamed into it.
-      const dream = DreamingSystem.active();
       const biome = biomeAt(entity.position);
+      // ML18: what the Seed dreamed into this material on this ground is settled, the same on every piece taken here
+      const dreamAffix = biome ? DreamingSystem.materialAffixOf(def.id, biome) : null;
       const items = Array.from({ length: quantity }, () => {
-        const dreamAffix = dream && biome ? DreamingSystem.materialAffixFor(dream.pack, biome, def.id, rng) : null;
         // RG: a place that came back was rolled anew, its quality with it, and what is taken from it carries it
         return ItemFactory.createResourceItem(def, rng, { ...(entity.quality !== undefined ? { quality: entity.quality } : {}), ...(dreamAffix ? { dreamAffix } : {}) });
       });
@@ -2210,7 +2210,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const pair = WebSystem.pairOfHarvest(get().player, def);
       const effort = WebSystem.energyFor(get().player, pair, def.harvestConfig.energyCost);
       if (!spendEnergy(effort.cost)) return;
-      takeFrom(entity, def, pair, effort, 1);
+      takeFrom(entity, def, pair, effort);
       return;
     }
 
@@ -2236,9 +2236,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!roll) return;
       SessionJournal.record('INTERACT', { kind: 'TRY', targetId: entity.id, rollKey, d100: roll.d100, bar: roll.bar, outcome: roll.outcome });
       const held = hand.tool ? LoadoutSystem.shownName(hand.tool) : 'your hands';
+      // ML18: the roll decides only whether it comes away; what comes away is the skill's, the same every time
       if (roll.outcome === 'success' || roll.outcome === 'major_win') {
-        if (roll.outcome === 'major_win') feed(`${hand.tool ? `The ${held} finds` : 'Your hands find'} the grain of ${name}. It gives twice what it should.`, 'signal');
-        takeFrom(entity, def, hand.pair, effort, roll.outcome === 'major_win' ? 2 : 1);
+        takeFrom(entity, def, hand.pair, effort);
         return;
       }
       // A failure damages: what was tried with wears. A bare hand has nothing to wear.

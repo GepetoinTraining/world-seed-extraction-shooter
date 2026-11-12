@@ -139,19 +139,30 @@ function apart(marks: IMark[], taken: Set<string>): IMark[] {
 
 export interface ISpreadEntry { base?: ResourceDef; marks: IMark[] }
 
-/** Each world's own: which material is the base of its form, and what marks each variant wears in it. */
+/**
+ * Which material is the base of its form, and what marks each variant wears. ML17 (Pedro, 2026-11-12: "once something
+ * exists it's determined"): a material's look is settled by its own words and its pack, never by what else a world
+ * holds. The pack's own are worked out from the pack alone, so they are the same in every world on it. What a minting
+ * added always wears its marks, on its pack's base of its form (or its own picture where the pack has none of that
+ * form), turned only away from the pack's own variants, which never move.
+ */
 function bookOf(defs: ResourceDef[], ownTheme?: string): Map<string, ISpreadEntry> {
   const book = new Map<string, ISpreadEntry>();
   const ground = defs.filter(isGroundMaterial).slice().sort(byId);
+  const own = ownTheme ? ground.filter(d => d.themeId === ownTheme) : ground;
+  const added = ownTheme ? ground.filter(d => d.themeId !== ownTheme) : [];
   for (const form of MATERIAL_FORMS) {
-    const base = Spread.baseOf(form, ground, ownTheme);
-    if (!base) continue;
-    book.set(base.id, { marks: [] });
+    const base = Spread.baseOf(form, own);
     const taken = new Set<string>();
-    for (const def of ground.filter(d => d.id !== base.id && formOf(d) === form)) {
+    if (base) book.set(base.id, { marks: [] });
+    for (const def of own.filter(d => d.id !== base?.id && formOf(d) === form)) {
       const marks = apart(Spread.marksOf(def), taken);
       taken.add(signature(marks));
-      book.set(def.id, { base, marks });
+      book.set(def.id, base ? { base, marks } : { marks });
+    }
+    for (const def of added.filter(d => formOf(d) === form)) {
+      const marks = apart(Spread.marksOf(def), taken);
+      book.set(def.id, base ? { base, marks } : { marks });
     }
   }
   return book;
@@ -161,9 +172,13 @@ let entered = new Map<string, ISpreadEntry>();
 const byTheme = new Map<string, Map<string, ISpreadEntry>>();
 
 export const SpreadBook = {
-  /** The world opening: its own materials, its pack's and what its minting added, in any order. */
+  /**
+   * The world opening: its own materials, its pack's and what its minting added, in any order. What is worked out is
+   * kept beside what earlier worlds gave (ML17): each material's look is settled, so a piece of it carried out of its
+   * world is drawn as it was in it.
+   */
   enter(defs: ResourceDef[], ownTheme?: string): void {
-    entered = bookOf(defs, ownTheme);
+    for (const [id, entry] of bookOf(defs, ownTheme)) entered.set(id, entry);
   },
 
   /** What this material is in the world open now; outside one, among its own theme's. A material of no form is plain. */

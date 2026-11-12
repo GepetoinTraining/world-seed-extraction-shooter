@@ -12,10 +12,13 @@
  *     the person's own rank and brings no band;
  *   - the skill: the level held of that tool on that material (the pair the web already mints from a harvest);
  *   - the eye: what the person knows of the material, from nothing (unknown) to its affixes.
- * A misread is a major failure and a deep reading a major win, as a sitting's are. Pure: no store, no clock.
+ * A misread is a major failure, as a sitting's is. Pedro, the same day: "once something exists it's determined, and the
+ * skill always gives the same thing". So the roll decides only whether the material comes away (a deep reading is a
+ * success like any other), and what a success gives is `yieldOf`: the material and the hand's skill, by one rule, with
+ * no dice in it. Pure: no store, no clock.
  */
 
-import { IItem, IPlayer, StudyOutcome, UniversalRank } from '../../types';
+import { IItem, IPlayer, ISkillState, StudyOutcome, UniversalRank } from '../../types';
 import type { ResourceDef } from '../../entities/item/data/resourceDefinitions';
 import { ProgressionSystem } from '../../entities/player/systems/ProgressionSystem';
 import { qualityBand } from '../../render/atoms/atoms';
@@ -95,6 +98,17 @@ export const ExtractLaw = {
     const total = d100 + this.points(hand) * LORE_ROLL_PER_POINT;
     const bar = this.bar(def, hand.rank);
     return { d100, total, bar, outcome: LoreLaw.outcomeOf(LoreLaw.stretchOf(total - bar + LORE_FAIR_LINE).stretch), hand };
+  },
+
+  /**
+   * What a success gives (ML18): the least a use of the material gives, a piece more for every rung of mastery of this
+   * tool on this material, and that grown by what the skill's levels add up to, the same readers that make the work
+   * cheaper (`WebSystem.masteryOf`, `skillPower`), whole pieces only. A hand with no skill of it takes the least.
+   */
+  yieldOf(def: Pick<ResourceDef, 'yieldPerUse'>, skill: ISkillState | undefined): number {
+    const least = Math.max(1, (def.yieldPerUse ?? [1, 1])[0]);
+    if (!skill) return least;
+    return Math.max(least, Math.floor((least + WebSystem.masteryOf(skill).rung) * (1 + WebSystem.skillPower(skill))));
   },
 
   /** How often a hand like this takes the place, in a hundred: what the card says once the material is known. */

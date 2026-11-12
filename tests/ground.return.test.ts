@@ -161,44 +161,39 @@ describe('RG2: a stripped place stands bare until its turn comes, then stands ag
   });
 });
 
-describe('RG3: what comes back is rolled anew, keyed by the place, the seed and the turn it came back in', () => {
+describe('RG3, as Pedro ruled (ML17): what comes back is what was there', () => {
+  // Pedro, 2026-11-12: "once something exists it's determined". This bar held that a return was rolled anew
   const back = (seed: string, e: IWorldEntity, biome: any, record: IGroundRecord, turn: number) => GroundReturn.standing(seed, e, biome, record, turn, ctx());
 
-  it('the same three give the same, on any machine and whenever it is looked at', () => {
-    for (const { e, biome } of places('scatter').slice(0, 20)) {
+  it('the same kind, as much as the kind holds, and the quality it had, on every return and in any world', () => {
+    for (const { e, biome } of places('scatter').slice(0, 40)) {
       const record = GroundReturn.took(emptyGroundRecord(), e, 0, 2);
       const r = 2 + GroundReturn.waitOf(defOf(e.definitionId));
-      const a = back(SEED, e, biome, record, r), b = back(SEED, e, biome, record, r);
-      const later = back(SEED, e, biome, record, r + 6);
-      expect(a).toEqual(b);
-      expect([later.definitionId, later.usesRemaining, later.quality]).toEqual([a.definitionId, a.usesRemaining, a.quality]);
+      const a = back(SEED, e, biome, record, r);
+      expect(a.definitionId).toBe(e.definitionId);
+      expect(a.usesRemaining).toBe(defOf(e.definitionId).uses ?? 1);
+      expect(a.quality).toBe(e.quality);
+      expect(back('another-seed', e, biome, record, r + 6)).toEqual(a);
     }
   });
 
-  it('another world, or another turn, gives another', () => {
-    const scatter = places('scatter').slice(0, 30);
-    const roll = (seed: string, at: number) => scatter.map(({ e, biome }) => {
-      const s = back(seed, e, biome, GroundReturn.took(emptyGroundRecord(), e, 0, at), at + GroundReturn.waitOf(defOf(e.definitionId)));
-      return `${s.definitionId}:${s.usesRemaining}:${s.quality}`;
-    });
-    expect(roll('another-seed', 2)).not.toEqual(roll(SEED, 2));
-    expect(roll(SEED, 5)).not.toEqual(roll(SEED, 2));
-  });
-
-  it('two returns of one place differ: the kind, how much and its quality are each rolled', () => {
-    const pairs = places('scatter').map(({ e, biome }) => {
+  it('two returns of one place are the same thing', () => {
+    for (const { e, biome } of places('scatter').slice(0, 40)) {
       const r1 = 1 + GroundReturn.waitOf(defOf(e.definitionId));
       const first = back(SEED, e, biome, GroundReturn.took(emptyGroundRecord(), e, 0, 1), r1);
       const again = GroundReturn.took(GroundReturn.took(emptyGroundRecord(), e, 0, 1), first, 0, r1);
-      const r2 = r1 + GroundReturn.waitOf(defOf(first.definitionId));
-      return { first, second: back(SEED, e, biome, again, r2), built: e };
-    });
-    expect(pairs.length).toBeGreaterThan(30);
-    expect(pairs.some(p => p.first.definitionId !== p.second.definitionId)).toBe(true);
-    expect(pairs.some(p => p.first.usesRemaining !== p.second.usesRemaining)).toBe(true);
-    expect(pairs.filter(p => p.first.quality !== p.second.quality).length).toBe(pairs.length);
-    // What comes back is not the same thing the land laid there
-    expect(pairs.some(p => p.first.definitionId !== p.built.definitionId)).toBe(true);
+      const second = back(SEED, e, biome, again, r1 + GroundReturn.waitOf(defOf(first.definitionId)));
+      expect([second.definitionId, second.usesRemaining, second.quality]).toEqual([first.definitionId, first.usesRemaining, first.quality]);
+    }
+  });
+
+  it('a place taken while it held something else comes back holding that: the record is what the place held', () => {
+    const { e, biome } = places('scatter')[0];
+    const other = ctx().resourceDefinitions.find((d: any) => d.id !== e.definitionId && d.habitat)!;
+    const held = { ...e, definitionId: other.id, quality: 0.1 };
+    const record = GroundReturn.took(emptyGroundRecord(), held, 0, 1);
+    const came = back(SEED, e, biome, record, 1 + GroundReturn.waitOf(defOf(other.id)));
+    expect([came.definitionId, came.usesRemaining, came.quality]).toEqual([other.id, other.uses ?? 1, 0.1]);
   });
 });
 
@@ -222,19 +217,13 @@ describe('RG4: a place keeps its role, and draws only from its own land', () => 
     for (const { s } of loose) expect(isLooseStone(defOf(s.definitionId))).toBe(true);
   });
 
-  it('how much is half again either way of what the kind holds, and the quality is on the gear scale', () => {
-    let sum = 0, full = 0;
+  // ML17: how much comes back is what the kind holds, and the quality what the place had (none, as the land laid it)
+  it('how much is what the kind holds, and the quality what the place had', () => {
     for (const { s } of [...roll('scatter'), ...roll('tree'), ...roll('loose')]) {
-      const uses = defOf(s.definitionId).uses ?? 1;
-      expect(s.usesRemaining).toBeGreaterThanOrEqual(Math.ceil(uses / 2));
-      expect(s.usesRemaining).toBeLessThanOrEqual(uses + Math.floor(uses / 2));
-      expect(Math.abs(s.quality!)).toBeLessThanOrEqual(QUALITY_SPAN);
+      expect(s.usesRemaining).toBe(defOf(s.definitionId).uses ?? 1);
+      expect(s.quality).toBeUndefined();
       expect(s.rank).toBe(defOf(s.definitionId).rank);
-      sum += s.usesRemaining!; full += uses;
     }
-    // Around what the kind holds, not above it
-    expect(sum / full).toBeGreaterThan(0.85);
-    expect(sum / full).toBeLessThan(1.15);
   });
 });
 
@@ -296,7 +285,7 @@ describe('RG6: in the field, a taking is written down, and the place comes back 
 
   beforeEach(() => useWorldStore.setState({ groundRecord: null } as any));
 
-  it('stripping a place writes the turn down and leaves it standing bare, saying when it comes back, then it comes back rolled anew', () => {
+  it('stripping a place writes the turn down and leaves it standing bare, saying when it comes back, then it comes back as it was', () => {
     const { e, c } = handPlace();
     stage(c);
     const full = e.usesRemaining ?? 1;
@@ -325,14 +314,18 @@ describe('RG6: in the field, a taking is written down, and the place comes back 
     expect(back.usesRemaining).toBeGreaterThan(0);
     expect(back.returning).toBeUndefined();
     expect(back).toEqual(GroundReturn.standing(tutorial.seed, e, c.biome, useWorldStore.getState().groundRecord!, turn, ctx()));
+    // ML17: the same material, as much as its kind holds
+    expect([back.definitionId, back.usesRemaining]).toEqual([e.definitionId, defOf(e.definitionId).uses ?? 1]);
   });
 
   it('a harvest from a place come back carries its quality', () => {
     const { e, c } = handPlace();
     stage(c);
-    const record = GroundReturn.took(emptyGroundRecord(), e, 0, 0);
+    // ML17: a place comes back with the quality it had when taken, so this one held one
+    const record = GroundReturn.took(emptyGroundRecord(), { ...e, quality: 0.1 }, 0, 0);
     const turn = GroundReturn.waitOf(defOf(e.definitionId));
     const back = GroundReturn.standing(tutorial.seed, e, c.biome, record, turn, ctx());
+    expect(back.quality).toBe(0.1);
     useWorldStore.setState({ groundRecord: record } as any);
     useWorldStore.getState().updateEntity(e.id, back);
     usePlayerStore.getState().performInteraction(`int_harvest_${e.id}`, e.id);
