@@ -11,9 +11,12 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { usePlayerStore } from '../entities/player/store';
+import { IHubWeb, IPlayer } from '../../shared/types';
+import { usePlayerStore, playerPort } from '../entities/player/store';
+import { GameClock } from '../logic/time/GameClock';
+import type { IHubTech } from '../entities/hub/hubTech';
 import { useHubStore } from '../entities/hub/store';
-import { IMapNode, MAP_COLUMN, MAP_ROW, WebMap } from '../logic/systems/WebMap';
+import { IMapNode, IPlan, MAP_COLUMN, MAP_ROW, WebMap } from '../logic/systems/WebMap';
 import { Button, Kbd, Panel } from './ui/kit';
 import { isTypingTarget } from '../logic/systems/FieldInput';
 
@@ -43,6 +46,9 @@ const Mark: React.FC<{ node: IMapNode }> = ({ node }) => {
     : <rect x={-SHAPE} y={-SHAPE} width={SHAPE * 2} height={SHAPE * 2} {...common} />;
   return (
     <g>
+      {/* The way to what is marked: a ring around each step; the mark itself, two */}
+      {(node.onWay || node.goal) && <circle cx={0} cy={0} r={SHAPE + 5} fill="none" stroke="var(--ws-text-bright)" strokeWidth={1} />}
+      {node.goal && <circle cx={0} cy={0} r={SHAPE + 9} fill="none" stroke="var(--ws-text-bright)" strokeWidth={1} />}
       {shape}
       {node.state === 'unknown' && <text x={0} y={4} textAnchor="middle" style={{ fontSize: 12, fill: 'var(--ws-text-dim)' }}>?</text>}
     </g>
@@ -54,6 +60,47 @@ const subline = (n: IMapNode): string | null => {
   if (n.study) return `sitting ${n.study.cost} energy, ${n.study.seconds}s`;
   if (n.price !== undefined) return `learning ${n.price} lore${n.category?.word ? `, ${n.category.word}` : ''}`;
   return null;
+};
+
+/** The words of a plan: what is marked, how many steps, and whether the lore held meets what they ask. The large sheet says the same. */
+export function goalWords(player: IPlayer, web: IHubWeb, tech: IHubTech): { name: string; says: string; plan: IPlan } | null {
+  if (!player.webGoal) return null;
+  const plan = WebMap.pathTo(player, { web, tech }, player.webGoal.ref);
+  const marked = WebMap.of(player, { web, tech }).nodes.find(n => n.id === player.webGoal!.ref);
+  const name = marked?.name ?? 'something not known yet';
+  if (plan.broken) return { name, plan, says: 'Nothing you know leads there yet.' };
+  if (plan.steps.length === 0) return { name, plan, says: 'Within reach: nothing stands between you and it.' };
+  const steps = `${plan.steps.length} ${plan.steps.length === 1 ? 'step' : 'steps'}`;
+  if (plan.lore.asked === 0) return { name, plan, says: `${steps}, asking no lore.` };
+  return { name, plan, says: `${steps}, asking ${plan.lore.asked} lore: ${plan.lore.met ? 'you hold enough' : `short by ${plan.lore.short}`}.` };
+}
+
+const STEP_VERB: Record<IMapNode['kind'], string> = { thing: 'Have', skill: 'Learn', station: 'Stand at' };
+
+/** The way there, step by step, and what it asks set against what is held. */
+const WayPanel: React.FC<{ player: IPlayer; web: IHubWeb; tech: IHubTech }> = ({ player, web, tech }) => {
+  const words = goalWords(player, web, tech);
+  if (!words) return <Panel title="WORKING TOWARD"><div className="ws-dim ws-small">Nothing marked. Pick anything on the web and mark it to see the way there and what it asks.</div></Panel>;
+  const { plan } = words;
+  return (
+    <Panel title={`WORKING TOWARD: ${words.name.toUpperCase()}`}>
+      <div className="ws-small" data-web-way style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div>{words.says}</div>
+        {plan.steps.map((s, i) => (
+          <div key={s.id} className={s.state === 'unknown' ? 'ws-dim' : undefined}>
+            {i + 1}. {STEP_VERB[s.kind]} {s.name ?? `${KIND_WORD[s.kind]} not known`}{s.kind === 'skill' && s.price ? `: ${s.price} lore` : ''}{s.state === 'forming' ? ' (forming)' : ''}
+          </div>
+        ))}
+        {plan.lore.lines.map(l => (
+          <div key={l.key}>
+            {l.word ? `LORE OF ${l.word.toUpperCase()}` : 'A KIND YOU HOLD NO LORE OF'}: asks {l.asked}; {l.fromOwn} of its own, {l.fromGeneral} general{l.short > 0 ? `, short ${l.short}` : ''}.
+          </div>
+        ))}
+        {plan.lore.asked > 0 && <div>GENERAL: {plan.lore.general.asked} asked of {Math.round(plan.lore.general.held)} held.</div>}
+        <Button tone="quiet" onClick={() => playerPort.apply({ kind: 'WEB_GOAL', goal: undefined })}>STOP WORKING TOWARD IT</Button>
+      </div>
+    </Panel>
+  );
 };
 
 export const TechWebView: React.FC = () => {
@@ -154,7 +201,8 @@ export const TechWebView: React.FC = () => {
           </svg>
         </div>
       </div>
-      <div style={{ flex: '0 1 300px', minWidth: 220 }} data-web-detail>
+      <div style={{ flex: '0 1 320px', minWidth: 220, display: 'flex', flexDirection: 'column', gap: 8 }} data-web-detail>
+        <WayPanel player={player} web={web} tech={tech} />
         <Panel title={node ? (node.name ?? 'NOT KNOWN').toUpperCase() : 'PICK ONE'}>
           {!node && <div className="ws-dim ws-small">Pick anything on the web to read what it links to and what it would ask.</div>}
           {node && (
@@ -162,6 +210,9 @@ export const TechWebView: React.FC = () => {
               <div>{KIND_WORD[node.kind]}, {STATE_WORD[node.state]}.</div>
               {node.study && <div>A sitting on it asks {node.study.cost} energy and {node.study.seconds}s of you.</div>}
               {node.price !== undefined && <div>Learning it would ask {node.price} lore{node.category?.word ? `, of ${node.category.word} first, then general` : ', of its own kind first, then general'}.</div>}
+              {player.webGoal?.ref === node.id
+                ? <div className="ws-dim">This is what you are working toward.</div>
+                : <Button tone="quiet" onClick={() => playerPort.apply({ kind: 'WEB_GOAL', goal: { ref: node.id, at: GameClock.now() } })}>WORK TOWARD THIS</Button>}
               {links.map(e => {
                 const other = byId.get(e.from === node.id ? e.to : e.from);
                 const outward = e.from === node.id;

@@ -1022,6 +1022,8 @@ export interface IPlayer {
   pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }; filedAt?: number };
   /** D118: every sitting this character has taken. It keys the next roll, so a reload rolls nothing new. */
   studyCount?: number;
+  /** The design pass, part 2: what on the tech web this character is working toward, by the web's key (`WebMap`). Absent: nothing marked. */
+  webGoal?: { ref: string; at: number };
   /** D118: what this character has sat with, by `StudySystem.keyOf`. */
   studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */

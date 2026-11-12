@@ -33,7 +33,7 @@ import { useDropZone, wholeZone } from './ui/hands';
 import { hoverProps, useHotbar, useSheet } from './ui/stores';
 import { Bar, Button, ItemSprite, Kbd, Panel, PortraitView, RankMark, SpriteView } from './ui/kit';
 import { isTypingTarget } from '../logic/systems/FieldInput';
-import { useWebView } from './TechWebView';
+import { goalWords, useWebView } from './TechWebView';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -95,6 +95,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
   const player = usePlayerStore(s => s.player);
   const spend = usePlayerStore(s => s.spendAttributePoint);
   const web = useHubStore(s => s.web);
+  const hubTech = useHubStore(s => s.tech);
   const session = player.currentSession;
   const equipment = player.equipment ?? LoadoutSystem.emptyEquipment();
   const rank = ProgressionSystem.rankOf(player);
@@ -209,6 +210,13 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
         <Line word="GENERAL" value={String(Math.round(lore.general))} feeds="Spent anywhere: on a gift, a raise, a skill learned or taught." />
         {lore.byCategory.length === 0 && <div className="ws-dim ws-small">No lore of a category yet. Study files it under what the thing showed you.</div>}
         {lore.byCategory.map(k => <Line key={k.name} word={k.name.toUpperCase()} value={String(k.reads)} />)}
+        {/* The design pass, part 2: what is marked on the tech web, and what the way there asks */}
+        {(() => {
+          const goal = goalWords(player, web, hubTech);
+          return goal
+            ? <Line word="WORKING TOWARD" value={goal.name} feeds={goal.says} />
+            : <div className="ws-dim ws-small">Working toward nothing marked. THE WEB marks a goal.</div>;
+        })()}
       </Section>
 
       <Section word="MASTERY OF MATERIALS">

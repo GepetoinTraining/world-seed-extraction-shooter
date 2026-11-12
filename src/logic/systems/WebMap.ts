@@ -52,7 +52,26 @@ export interface IMapNode {
   price?: number;
   /** The category its lore files under (WebSystem.categoryOf). The key is never shown; the word only where it may be. */
   category?: { key: string; word?: string };
+  /** A skill's tags, for the law to read. Never shown. */
+  tags?: string[];
+  /** On the way to what the character has marked, and the mark itself (part 2). */
+  onWay?: boolean;
+  goal?: boolean;
 }
+
+/** One step of the way to a mark: a node, as the person may see it. */
+export type IPlanStep = Omit<IMapNode, 'depth' | 'group' | 'groupWord' | 'onWay' | 'goal'>;
+
+/** What the way asks in lore, by category and in general, against what is held: the law's own spend, a category first. */
+export interface IPlanLore {
+  asked: number;
+  lines: { key: string; word?: string; asked: number; fromOwn: number; fromGeneral: number; short: number }[];
+  general: { asked: number; held: number };
+  met: boolean;
+  short: number;
+}
+
+export interface IPlan { goal: string; steps: IPlanStep[]; broken: boolean; lore: IPlanLore }
 
 export interface IMapEdge { from: string; to: string; why: MapLink }
 
@@ -123,6 +142,8 @@ function universe(pack: IWebPack, tech: IMapContext['tech'], extraSkills: Skill[
     edges.push({ from, to, why });
   };
   const workable = WebBank.workableMaterials(pack);
+  /** What makes a thing: a station's recipe, and all it asks for. */
+  const makers = new Map<string, { station: string; inputs: string[] }[]>();
   for (const skill of skills.values()) {
     const worked = WebSystem.materialIdentity(skill.tags, pack);
     if (worked.length > 0) {
@@ -133,11 +154,12 @@ function universe(pack: IWebPack, tech: IMapContext['tech'], extraSkills: Skill[
   for (const r of pack.recipes) {
     if (!stations.some(s => s.id === r.requiredStation)) continue;
     for (const out of r.outputs) {
+      makers.set(out.itemId, [...(makers.get(out.itemId) ?? []), { station: r.requiredStation, inputs: r.inputs.map(i => i.itemId) }]);
       link(`station:${r.requiredStation}`, `thing:${out.itemId}`, 'makes');
       for (const input of r.inputs) link(`thing:${input.itemId}`, `thing:${out.itemId}`, 'feeds');
     }
   }
-  return { things, skills, stations, edges };
+  return { things, skills, stations, edges, makers };
 }
 
 /** How far from the ground: counted from what nothing makes, over work, opening and making. */
@@ -167,12 +189,10 @@ const familyWord = (tags: string[], pack: IWebPack): string => {
   return (worked.find(t => WebBank.hasKind(pack, t, ['family'])) ?? worked[0] ?? '').replace(/_/g, ' ');
 };
 
-export const WebMap = {
-  /**
-   * The web as this person may see it. `tech` is the hub's own (its chain and what it has reached); with none, the web is
-   * the shipped one and the hub has written nothing.
-   */
-  of(player: IPlayer, ctx: IMapContext): IWebMap {
+type Node = Omit<IMapNode, 'depth' | 'group' | 'groupWord'>;
+
+/** Every node of the web with how this person knows it, and the web's links: what both the picture and a plan read. */
+function read(player: IPlayer, ctx: IMapContext) {
     const pack = ctx.pack ?? WebBank.current();
     const held = WebSystem.heldSkills(player.bank.universalSkills ?? {});
     const forming = Object.values(player.skillProgress ?? {});
@@ -182,7 +202,7 @@ export const WebMap = {
       ...forming.map(p => ({ id: p.id, tags: p.tags, rank: p.rank })),
       ...hubNodes.map(n => ({ id: n.id, tags: n.tags, rank: n.rank }))
     ];
-    const { things, skills, stations, edges } = universe(pack, ctx.tech, extra);
+    const { things, skills, stations, edges, makers } = universe(pack, ctx.tech, extra);
     const hub: IHubTree | undefined = ctx.tech ? hubTreeOf(ctx.tech as IHubTech, pack) : undefined;
     const reader = WebSystem.knowledgeReader(player);
     const heldIds = new Set(held.map(s => s.id));
@@ -192,7 +212,7 @@ export const WebMap = {
     const hubTags = hubNodes.map(n => n.tags);
     const reached = new Set(ctx.tech?.reached ?? []);
 
-    const all: Omit<IMapNode, 'depth' | 'group' | 'groupWord'>[] = [];
+    const all: Node[] = [];
     for (const t of things.values()) {
       const yours = reader(t.id) >= 1;
       all.push({
@@ -210,7 +230,7 @@ export const WebMap = {
         : player.skillWords?.[s.id]?.name ?? ctx.web.nodes[s.id]?.name ?? WebSystem.nameOf(s.id, pack);
       const found = WebSystem.categoryOf(s.tags, hub, [], pack);
       all.push({
-        id: `skill:${s.id}`, kind: 'skill', ref: s.id, state, rank: s.rank,
+        id: `skill:${s.id}`, kind: 'skill', ref: s.id, state, rank: s.rank, tags: s.tags,
         ...(name ? { name } : {}),
         ...(state !== 'yours' ? { price: WebSystem.learnPrice(s.rank) } : {}),
         ...(found ? { category: { key: found.key, ...(found.word && state !== 'unknown' ? { word: found.word.replace(/_/g, ' ') } : {}) } } : {})
@@ -221,25 +241,129 @@ export const WebMap = {
         : hubTags.some(tags => connects(tags, s)) || reached.has(s.id) ? 'hub' : 'unknown';
       all.push({ id: `station:${s.id}`, kind: 'station', ref: s.id, state, ...(state !== 'unknown' ? { name: s.name } : {}) });
     }
+    return { pack, all, edges, makers, things, skills };
+}
 
-    // What is drawn: everything known, and one step out from it
+/** What a step asks: nothing, or what learning it asks. */
+const priceOf = (n: Node) => (n.kind === 'skill' && n.state !== 'yours' ? n.price ?? 0 : 0);
+/** Met already: a skill held, a thing known by name, a station the person's hands or the hub's web open (D27: what anyone here has reached opens for everyone here). */
+const isMet = (n: Node) => n.state === 'yours' || (n.kind === 'station' && n.state === 'hub');
+
+export const WebMap = {
+  /**
+   * The web as this person may see it. `tech` is the hub's own (its chain and what it has reached); with none, the web is
+   * the shipped one and the hub has written nothing. A goal the character has marked draws its whole way.
+   */
+  of(player: IPlayer, ctx: IMapContext): IWebMap {
+    const { pack, all, edges, things, skills } = read(player, ctx);
+    const plan = player.webGoal ? this.pathTo(player, ctx, player.webGoal.ref) : null;
+    const way = new Set(plan?.steps.map(s => s.id) ?? []);
+    const goal = player.webGoal?.ref ?? null;
+
+    // What is drawn: everything known, one step out from it, and the way to what is marked
     const knownIds = new Set(all.filter(n => n.state !== 'unknown').map(n => n.id));
     const near = new Set<string>();
     for (const e of edges) {
       if (knownIds.has(e.from)) near.add(e.to);
       if (knownIds.has(e.to)) near.add(e.from);
     }
-    const drawn = all.filter(n => knownIds.has(n.id) || near.has(n.id));
+    const drawn = all.filter(n => knownIds.has(n.id) || near.has(n.id) || way.has(n.id) || n.id === goal);
     const depth = depths(all.map(n => n.id), edges);
     const nodes: IMapNode[] = drawn.map(n => {
       const d = depth.get(n.id) ?? 0;
       const word = n.state === 'unknown' ? 'not known'
         : n.kind === 'station' ? 'stations'
         : familyWord(n.kind === 'thing' ? things.get(n.ref)!.tags : skills.get(n.ref)!.tags, pack) || (n.kind === 'thing' ? 'things' : 'skills');
-      return { ...n, depth: d, group: `${d}:${n.kind}:${n.state === 'unknown' ? '?' : word}`, groupWord: word };
+      return {
+        ...n, depth: d, group: `${d}:${n.kind}:${n.state === 'unknown' ? '?' : word}`, groupWord: word,
+        ...(way.has(n.id) ? { onWay: true } : {}), ...(n.id === goal ? { goal: true } : {})
+      };
     });
     const drawnIds = new Set(nodes.map(n => n.id));
     return { nodes, edges: edges.filter(e => drawnIds.has(e.from) && drawnIds.has(e.to)) };
+  },
+
+  /**
+   * The way to a marked node from what this person knows (part 2): the one that asks least lore, then has fewest steps,
+   * then comes first by key. A skill is met when held, a thing when known by name, a station when the person's hands or the
+   * hub's web open it. A station is reached by any skill that opens it, a skill by any thing it works, a made thing by any
+   * of its makers (its station and all it asks for), and a raw thing not known is a step to find it. Only a skill asks
+   * lore: what learning it asks. Steps come in the order they are taken, the mark last.
+   */
+  pathTo(player: IPlayer, ctx: IMapContext, goal: string): IPlan {
+    const { all, edges, makers } = read(player, ctx);
+    const byId = new Map(all.map(n => [n.id, n]));
+    const into = new Map<string, IMapEdge[]>();
+    for (const e of edges) into.set(e.to, [...(into.get(e.to) ?? []), e]);
+    type Way = { steps: string[]; lore: number };
+    const memo = new Map<string, Way | null>();
+    const walking = new Set<string>();
+    const join = (ways: Way[], last?: string): Way => {
+      const steps = [...new Set([...ways.flatMap(w => w.steps), ...(last ? [last] : [])])];
+      return { steps, lore: steps.reduce((sum, id) => sum + priceOf(byId.get(id)!), 0) };
+    };
+    const better = (a: Way, b: Way) => a.lore - b.lore || a.steps.length - b.steps.length || (a.steps.join('|') < b.steps.join('|') ? -1 : 1);
+    const best = (ways: (Way | null)[]) => ways.filter((w): w is Way => !!w).sort(better)[0] ?? null;
+    const way = (id: string): Way | null => {
+      const n = byId.get(id);
+      if (!n) return null;
+      if (isMet(n)) return { steps: [], lore: 0 };
+      if (memo.has(id)) return memo.get(id)!;
+      if (walking.has(id)) return null;
+      walking.add(id);
+      let out: Way | null = null;
+      const from = (why: MapLink) => (into.get(id) ?? []).filter(e => e.why === why).map(e => e.from).sort();
+      if (n.kind === 'skill' || n.kind === 'station') {
+        const found = best(from(n.kind === 'skill' ? 'works' : 'opens').map(way));
+        out = found ? join([found], id) : null;
+      } else {
+        const made = makers.get(n.ref) ?? [];
+        if (made.length === 0) out = { steps: [id], lore: 0 };
+        else {
+          out = best(made.map(m => {
+            const parts = [way(`station:${m.station}`), ...m.inputs.map(i => way(`thing:${i}`))];
+            return parts.every(p => !!p) ? join(parts as Way[], id) : null;
+          }));
+        }
+      }
+      walking.delete(id);
+      memo.set(id, out);
+      return out;
+    };
+    const found = way(goal);
+    const steps: IPlanStep[] = (found?.steps ?? []).map(id => byId.get(id)!);
+    return { goal, steps, broken: !found, lore: this.loreOf(player, steps) };
+  },
+
+  /** What the steps ask in lore, spent as the law spends it: each skill's own category first, then general. */
+  loreOf(player: IPlayer, steps: IPlanStep[]): IPlanLore {
+    let purse = { loreHeld: player.bank.loreHeld ?? 0, loreKinds: player.bank.loreKinds };
+    const held = purse.loreHeld;
+    const lines = new Map<string, IPlanLore['lines'][number]>();
+    for (const step of steps) {
+      const price = priceOf(step);
+      if (price <= 0) continue;
+      const key = step.category?.key ?? 'general';
+      const kind = purse.loreKinds?.[key];
+      const own = kind && kind.misread <= 0 ? kind.held : 0;
+      const fromOwn = Math.min(own, price);
+      const fromGeneral = Math.min(purse.loreHeld, price - fromOwn);
+      const short = price - fromOwn - fromGeneral;
+      // The person may read the word of a category they hold lore of, or of a skill they know: never its key
+      const word = player.bank.loreKinds?.[key]?.name ?? step.category?.word;
+      const line = lines.get(key) ?? { key, ...(word ? { word } : {}), asked: 0, fromOwn: 0, fromGeneral: 0, short: 0 };
+      lines.set(key, { ...line, asked: line.asked + price, fromOwn: line.fromOwn + fromOwn, fromGeneral: line.fromGeneral + fromGeneral, short: line.short + short });
+      purse = {
+        loreHeld: purse.loreHeld - fromGeneral,
+        loreKinds: kind && fromOwn > 0 ? { ...purse.loreKinds, [key]: { ...kind, held: kind.held - fromOwn } } : purse.loreKinds
+      };
+    }
+    const lines_ = [...lines.values()];
+    const short = lines_.reduce((sum, l) => sum + l.short, 0);
+    return {
+      asked: lines_.reduce((sum, l) => sum + l.asked, 0), lines: lines_,
+      general: { asked: lines_.reduce((sum, l) => sum + l.fromGeneral, 0), held }, met: short === 0, short
+    };
   },
 
   /** The lore held, beside the web: general, and each category under the word the person may see for it. */

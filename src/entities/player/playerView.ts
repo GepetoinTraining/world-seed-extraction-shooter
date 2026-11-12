@@ -58,7 +58,9 @@ export type PlayerChange =
   | { kind: 'GAIN_SKILL_XP'; skillId: string; amount: number; tags: string[]; context?: IActionContext }
   | { kind: 'DIVE'; layerId?: string }
   | { kind: 'DROP_ITEM'; itemId: string; quiet?: boolean; count?: number }
-  | { kind: 'TOGGLE_CARRY'; itemId: string };
+  | { kind: 'TOGGLE_CARRY'; itemId: string }
+  /** What on the tech web the character works toward, or nothing (the design pass, part 2). */
+  | { kind: 'WEB_GOAL'; goal: IPlayer['webGoal'] };
 
 /** The store's own calls that answer back. Its law runs them; a system only asks. */
 export interface IPlayerCalls {
