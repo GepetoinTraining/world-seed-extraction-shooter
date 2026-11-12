@@ -502,6 +502,19 @@ What one blow of a boss takes of a person of its rank, by the size of the body i
 
 - **What the sheets say (2026-11-12).** Show a number through `SheetWords.said` (src/logic/systems): a kept figure such as a max health with a tenth per constitution point is fractional, and a template string prints all of it. The shared `Bar` says its maximum through it. The forming list goes through `foldForming`, which keeps D32's "the eye". The large sheet's fight rows read the ratings at the person's own rank (`ProgressionSystem.rankOf`), never the readers' default F. Lore for a newcomer comes only from a study landing at a rest a model answers (LO1): to see lore move in the hidden window, study a read pebble in the field and rest with the machine's own model running.
 
+- **Checking a person's gear against the law (2026-11-12).** Pedro: "the scaling seems off, check my gear please." These are the steps for checking a saved character's pieces, piece by piece.
+  - **Open a copy, never the save.** Copy the save's folder into scratch and open the copy with `openStore(folderUrl(copy))` from `server/openStore.ts` and `server/connection.ts`. Its lock sits beside the folder, so a copy taken while the game runs opens on its own.
+  - **Find the character.** It is the `characters` document whose `dataText` is `{ payload }`. Its pieces are `equipment.items` and `bank.stashTabs[0].items`. The pack is never in a save: `PlayerPersistence.persistable` drops `currentSession`.
+  - **Find what it sold.** A sold piece lies in the hub's `hub_state_world_…` document, under `vendors.<npc>.held`.
+  - **Find where each piece came from.** A run's journal is a `session_…` document in `transactions`: each `OPEN` names its chest and the ids it gave, and each `KILL` carries its table roll with the ranks in `at`.
+  - **Check the lines.** With `installShippedThemes()`:
+    - a native line is `PieceLaw.nativeLines(kind, step) x (1 + quality)`, the kind being the base found by `universalDefinitionId` in `ITEM_DEFINITIONS`;
+    - an affix is `PieceLaw.affixStats(wordsOf(bank entry), rank, quality, band)` at one of the three bands, the bank coming from `AffixBank.compile(compileTheme(FIRST_THEME_PACK).affixBatches)`;
+    - the power is `PieceLaw.power`.
+  - **Replay a chest.** Call `ContentRegistry.contextFor(theme, 'F')` and `LootBook.enter(theme)`, then `LootTable.generateChestLoot(rank, 1, '<seed>:<session>:chest:<entity>', biome, 5, luck)`, the luck being what the person wore then. It gives the very ids back, so a chest's rank is proven rather than guessed. Without the luck, the depth rolls draw differently and the stream goes its own way after the first piece.
+  - **Read a ground.** `WorldGenerator.rankAt(seed, cx, cy, difficulty)` and `biomeAt` give the ground under a chest (a quadrant `ent_<qx>_<qy>` is chunk `qx/4, qy/4`). `spawnPool` and `pickSpawn` give its guards.
+  - **What it found.** On TORTO3 nothing broke the law (GS1 to GS9). The feel came from three D pieces out of tutorial chests, with the choices behind them measured there.
+
 ## After this pass
 
 `PLAN.md`, under "The next layer": the attributes pass, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).
