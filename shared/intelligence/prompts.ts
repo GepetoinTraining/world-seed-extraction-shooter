@@ -7,6 +7,7 @@
 import type { IDoorMessage, IDoorRequest } from './door';
 import { LOOT_SCHEMA } from '../logic/theme/LootLaw';
 import { MINT_SCHEMA } from '../logic/theme/writing/MintAdditions';
+import { DOING_SCHEMA } from '../logic/systems/MaterialDoing';
 import type { IWorldSummary } from '../logic/theme/WorldGrowth';
 import { THEME_SCHEMA, LINE_SCHEMA, STRIKE_REACHES, STRIKE_SWEEPS, STRIKE_HOLLOWS, VOLLEYS, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SIZES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../logic/theme/ThemeTypes';
 import type { IGrowthAsk, ILineAsk } from '../logic/theme/CreatureLines';
@@ -650,6 +651,24 @@ export function buildBasesRequest(ask: unknown): IDoorRequest {
     // Forty-two rolls and five materials, a short answer each
     kind: 'bases', system: BASES_SYSTEM, schema: MINT_SCHEMA, maxTokens: 16000,
     messages: [{ role: 'user', content: `The world, its rolls and what each is offered: ${JSON.stringify(ask)}` }]
+  };
+}
+
+/** ML21: what one material does, written once, the first time anyone needs it. Words only. */
+const DOING_SYSTEM = `You are saying what one material of this world does when it is made into something people carry or wear.
+
+Answer with three things:
+- "stat": exactly one of the words in "stats": the one thing a piece made of this material carries more of.
+- "band": one of "bands": how strongly, by how rare and how fine the material is.
+- "line": one plain sentence a person reads on the material's card, saying what they would notice in a thing made of it. Never name the material, never write a number, never explain how anything is worked out.
+
+Read the material by its name, its blurb, its form and its world. What it does should follow from what it is. If "refused" is given, it says what did not stand last time: mend it.`;
+
+/** ML21: one material, one short answer. Judged by `MaterialDoing.judge` before anything is kept. */
+export function buildDoingRequest(ask: unknown): IDoorRequest {
+  return {
+    kind: 'doing', system: DOING_SYSTEM, schema: DOING_SCHEMA, maxTokens: 300,
+    messages: [{ role: 'user', content: `The material and its world: ${JSON.stringify(ask)}` }]
   };
 }
 

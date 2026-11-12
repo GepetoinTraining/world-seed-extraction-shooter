@@ -33,11 +33,13 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   // A theme's loot tables are content, written beside the theme, so they take the theme's model (decided; Pedro may overrule)
   loot: 'claude-sonnet-5-5',
   // Pedro, after his run: "make the function that calls up sonnet and asks it, according to the slot rolled and the available bases"
-  bases: 'claude-sonnet-5-5'
+  bases: 'claude-sonnet-5-5',
+  // ML21: what one material does, three words and a line, asked lazily the first time it is needed (the coordinator's call)
+  doing: 'claude-haiku-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low', loot: 'medium', bases: 'medium' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low', loot: 'medium', bases: 'medium', doing: 'low' };
 
 /** Dollars per million tokens. Batches are half. */
 /** Writing to the cache costs a quarter more than plain input, for what it saves on every read after. */
@@ -62,7 +64,7 @@ export const ceilingOf = (request: IDoorRequest, batched: boolean): number => {
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 /** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead, and a declined round still rolls. */
-const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona', 'npc_talk', 'npc_goal', 'bargain', 'chain'];
+const NO_FALLBACK: readonly DoorKind[] = ['creation', 'kami_persona', 'npc_talk', 'npc_goal', 'bargain', 'chain', 'doing'];
 
 const usageOf = (model: string, usage: Anthropic.Usage | undefined, batched: boolean): IDoorUsage | undefined => {
   if (!usage) return undefined;

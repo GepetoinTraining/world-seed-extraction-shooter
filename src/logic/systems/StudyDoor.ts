@@ -22,6 +22,9 @@ import { StudySystem } from './StudySystem';
 import { Escort } from './Escort';
 import { WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { formOf } from '../../../shared/entities/world/Spread';
+import { DoingBook } from '../../../shared/logic/systems/MaterialDoing';
+import { MaterialDoingWriter } from '../theme/writing/MaterialDoingWriter';
 import { EYE_XP_PER_SITTING, StudyLanding } from './StudyLanding';
 
 const WAIT_ID = 'study_sitting';
@@ -115,6 +118,13 @@ export const StudyDoor = {
       const before = WebSystem.knowledgeReader(pc.view().player)(material.id);
       pc.apply({ kind: 'SET', player: WebSystem.studied(pc.view().player, material.id, sitting.outcome === 'major_win' ? 2 : 1) });
       if (before < 1) feed(`${target.name} is ${material.name}.`, 'proof');
+    }
+    // ML21: a material sat with to good effect is the first need of what it does; written once, then read
+    const studiedPiece = target.kind === 'item' ? StudySystem.heldItem(landed.player, target.ref) : undefined;
+    const sat = material ?? (studiedPiece && formOf(RESOURCE_DEFINITIONS[studiedPiece.universalDefinitionId]) ? RESOURCE_DEFINITIONS[studiedPiece.universalDefinitionId] : undefined);
+    if (sat && (sitting.outcome === 'success' || sitting.outcome === 'major_win')) {
+      const fresh = !DoingBook.of(sat.id);
+      void MaterialDoingWriter.need(sat).then(doing => { if (fresh) feed(`${sat.name}: ${doing.line}`, 'proof'); });
     }
     if (spent) feed(`${target.name} has given what it held. It is spent.`, 'plain');
     // The ledger is the person's own record, so it holds the key. Only what the screen showed goes to any door.

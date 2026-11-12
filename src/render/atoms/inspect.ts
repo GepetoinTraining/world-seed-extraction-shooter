@@ -11,6 +11,7 @@ import { InteractionEngine } from '../../entities/interaction/InteractionEngine'
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { Spread, SpreadBook, formOf } from '../../../shared/entities/world/Spread';
+import { DoingBook } from '../../../shared/logic/systems/MaterialDoing';
 import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
 import { isLooseStone } from '../../../shared/entities/item/Throwable';
 import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
@@ -106,6 +107,8 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   if (level <= 0) rows.push(['Known', 'Nothing yet. Study it to learn']);
   else {
     rows.push(['Rank', String(def.rank)]);
+    // ML21: what it does, once someone has needed it; until then it is not yet known
+    if (formOf(def)) rows.push(['Does', DoingBook.of(def.id)?.line ?? 'Not yet known']);
     // RG: a place that came back may hold more than its kind's own
     if (def.uses) rows.push(['Left', uses > def.uses ? `${uses}, more than most` : `${Math.max(0, uses)} of ${def.uses}`]);
     // RG: a place that came back was rolled anew, and says what it came back as
@@ -376,6 +379,9 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   // Wear is counted by the work done, so it keeps fractions; the card says whole points, and near breaking in its last third
   if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${Math.max(1, Math.round(durability))} of ${maxDurability}${durability * 3 < maxDurability ? ', near breaking' : ''}`]);
   rows.push(['Weight', `${item.weight} kg`]);
+  // ML21: a piece of a material of the ground says what the material does, once someone has needed it
+  const groundDef = RESOURCE_DEFINITIONS[item.universalDefinitionId];
+  if (groundDef && formOf(groundDef) && item.type !== ItemType.GEAR) rows.push(['Does', DoingBook.of(groundDef.id)?.line ?? 'Not yet known']);
   // D27: a handled hand reads what a material plainly is
   const knowledge = player?.materialMastery[item.universalDefinitionId];
   if ((knowledge?.knowledgeLevel ?? 0) >= 2) {

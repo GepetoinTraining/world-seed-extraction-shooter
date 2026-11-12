@@ -30,6 +30,7 @@ import { IWorldEntity } from '../../../shared/entities/world/types';
 import { GameClock } from '../../logic/time/GameClock';
 import { MintAdditionsWriter } from '../../logic/theme/writing/MintAdditionsWriter';
 import { SpreadBook } from '../../../shared/entities/world/Spread';
+import { MaterialDoingWriter } from '../../logic/theme/writing/MaterialDoingWriter';
 import type { ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
@@ -436,6 +437,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         };
         // ML: which of its materials is the base of its form, and what marks each variant wears, in this world
         SpreadBook.enter(context.resourceDefinitions as ResourceDef[], ContentRegistry.standing(worldCard.themeId));
+        // ML21: what the materials already do, as written the first time each was needed, for the cards to read
+        void MaterialDoingWriter.enter().catch(() => undefined);
         generationContext = {
           ...context,
           lay: chunk => {
