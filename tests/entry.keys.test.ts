@@ -19,7 +19,7 @@ import { IKeyedOption, parseDoorOptions } from '../shared/intelligence/options';
 import { DoorSetting, SETTINGS } from '../shared/intelligence/setting';
 import { routeDoor } from '../shared/intelligence/routes';
 import { dryRun, keySkeleton } from '../shared/intelligence/keyShape';
-import { canAccept, canTest, emptyForm, tested, typed } from '../src/logic/intelligence/KeyForm';
+import { canAccept, canTest, emptyForm, saidWhenNoneAdded, tested, typed } from '../src/logic/intelligence/KeyForm';
 import { createKeyVault, IKeyShelf } from '../src/logic/intelligence/KeyVault';
 
 const OFFERED = parseDoorOptions(JSON.parse(readFileSync('shared/intelligence/door-options.json', 'utf8'))).keyed;
@@ -233,5 +233,37 @@ describe('in the page, each accepted key is sealed in the player\'s browser', ()
     expect(await vault.read()).toBeNull();
     await vault.forget();
     expect(held.size).toBe(0);
+  });
+});
+
+/**
+ * Pedro, 2026-11-12, on a run where the server's own key was in use and this list read "No key is held":
+ * "the key didn't register as being there". The list holds only what the form added, so while it is empty
+ * it says what the game is using, and never a sentence that reads as "the game has no key".
+ */
+describe('what the list says while nothing was added through the form', () => {
+  it("says the server's own key is in use when it is, and never that no key is held", () => {
+    const said = saidWhenNoneAdded({ mode: 'auto', provider: 'claude', available: true }, false);
+    expect(said).toMatch(/server's own key is in use/i);
+    expect(said).not.toMatch(/no key is held/i);
+  });
+
+  it('says so plainly when the server has no key of its own', () => {
+    expect(saidWhenNoneAdded({ mode: 'auto', provider: 'claude', available: false }, false)).toMatch(/server holds none of its own/i);
+  });
+
+  it("says this machine's own model when that is what answers, and when it does not answer", () => {
+    expect(saidWhenNoneAdded({ mode: 'auto', provider: 'local', available: true }, false)).toMatch(/using this machine's own model/i);
+    expect(saidWhenNoneAdded({ mode: 'auto', provider: 'local', available: false }, false)).toMatch(/own model is not answering/i);
+  });
+
+  it('says the voice is off, and that the door cannot be reached, each in its own words', () => {
+    expect(saidWhenNoneAdded({ mode: 'off', provider: 'claude', available: false }, false)).toMatch(/turned off/i);
+    expect(saidWhenNoneAdded(null, false)).toMatch(/cannot be reached/i);
+  });
+
+  it('in the page there is no server to speak of', () => {
+    expect(saidWhenNoneAdded({ mode: 'auto', provider: 'local', available: false }, true)).not.toMatch(/server/i);
+    expect(saidWhenNoneAdded({ mode: 'auto', provider: 'claude', available: false }, true)).not.toMatch(/server/i);
   });
 });

@@ -12,7 +12,7 @@ import { Button, Input, Panel } from './ui/kit';
 import { IDoorSettingStatus, IHeldKey, IKeyedOption, VoiceClient } from '../logic/intelligence/VoiceClient';
 import { DoorTransport } from '../logic/intelligence/DoorTransport';
 import { dryRun, keySkeleton } from '../../shared/intelligence/keyShape';
-import { IKeyForm, canAccept, canTest, dried, emptyForm, picked, tested, typed } from '../logic/intelligence/KeyForm';
+import { IKeyForm, canAccept, canTest, dried, emptyForm, picked, saidWhenNoneAdded, tested, typed } from '../logic/intelligence/KeyForm';
 
 const modeLine = (s: IDoorSettingStatus | null) => {
   if (!s) return 'THE DOOR CANNOT BE REACHED';
@@ -56,7 +56,7 @@ export const KeysPanel: React.FC<{ style?: React.CSSProperties }> = ({ style }) 
       </div>
 
       <div className="ws-list" style={{ marginTop: 8 }}>
-        {held.length === 0 && <div className="ws-small">No key is held.</div>}
+        {held.length === 0 && <div className="ws-small">{saidWhenNoneAdded(status, DoorTransport.isPage())}</div>}
         {held.map(k => (
           <div key={k.optionId} className="ws-row" style={k.inUse ? { borderLeft: '3px solid currentColor', paddingLeft: 6 } : undefined}>
             <span className={k.inUse ? 'ws-bright' : undefined} style={{ minWidth: 0 }}>{k.inUse ? '► ' : ''}{k.name}<span className="ws-dim ws-small" style={{ whiteSpace: 'nowrap' }}> · {k.inUse ? 'IN USE' : 'HELD'}</span></span>

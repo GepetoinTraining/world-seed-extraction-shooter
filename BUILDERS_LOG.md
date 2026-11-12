@@ -491,6 +491,7 @@ What one blow of a boss takes of a person of its rank, by the size of the body i
 | F | 9% / 6% | 18% / 13% | 74% / 53% | 185% / 132% |
 | C | 9% / 6% | 18% / 13% | 71% / 51% | 177% / 127% |
 | S | 9% / 6% | 17% / 12% | 69% / 50% | 174% / 124% |
+- **"The key is not there" is first a question about a sentence (2026-11-12).** Pedro's second run stopped at the entry view on "No key is held", with his key loaded and working. Before touching the door, ask it: load the root's `.env` into one throwaway process (`process.loadEnvFile`, never read or printed), build the door the launcher's way (`openDoor()` from `server/intelligence/index.ts`) and read `status()`, which retrieves a model's card and bills nothing. `available: true` on `claude` means the key is fine and the fault is in what a screen says. The list in `KeysPanel` holds only keys added through its form; its empty line is now `saidWhenNoneAdded` in `KeyForm.ts` and says what the game is using. To see the game with his key and none of his data, the same load in front of `scripts/pedro.ts` from a worktree: `node --import tsx --input-type=module -e "process.loadEnvFile('<root>/.env'); await import('./scripts/pedro.ts')" -- x --window --built --port <port>` with a scratch `WS_DATA_ROOT` (the `x` is there because `-e` leaves no script name for `process.argv.slice(2)` to drop). Creation asks the model at its fourth screen: stop there, since each answer is paid for.
 
 ## After this pass
 
