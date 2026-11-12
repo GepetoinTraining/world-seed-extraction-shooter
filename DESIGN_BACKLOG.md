@@ -209,3 +209,57 @@ Colour alone tells the load in two places in the hub's kit panel (the kit's weig
 ## 9. Not read
 
 `DEPLOY.md`, `DATA_LAYER_PLAN.md` and `STAT_TREES.md` were not read for this. `PLAN.md`'s test lines 105 to 166 were read but not checked against the code. The code was read only for the four points of section 1, and there only in part: the whole of `WorldCanvas.tsx` and `PlayerHub.tsx`, the hover card, selling and discarding, and the tests were not read. Nothing was run or opened on screen.
+
+## 10. Prices that move: a proposal, not built (PR, 2026-11-12)
+
+Pedro, 2026-11-12: "the price of something known should increase as well, right now the economy is static". What is known is built (ledger PR14 to PR21). This is the rest: what else the hub already keeps that could move a price, one formula for each, what it reads, what it could break, and what a player would see. Nothing here is built. Ledger PR0 to PR13 are the picture it starts from: ten rank-F iron sold in a row to one counter pay 36 each.
+
+**What every mover keeps.** A thing's worth (`value`) never moves once it exists ("once something exists it's determined"): every mover acts on a keeper's offer or ask at the moment, as the week's premium and a keeper's mood already do. Nothing reads how much coin exists (the guild-mints ruling). No top and no table: each mover is read off a law the hub already has. And the first law stays first: a counter pays no more than a thing was bought for (PR18), so no mover below can make buying and selling straight back pay. Each mover's own risk is named beside it.
+
+### 10.1 What a keeper already holds
+
+**Reads.** The keeper's record: how many of the kind it holds (taken in, on its shelf, in parts, in its bin), and how many of the kind it sold last week.
+
+**Formula, from the week's own law, with no new number.** A keeper restocks a kind at what sold last week and one new attempt (PR7), so it expects to sell `pace = sold last week + 1` of it a week, for its stock days (a week a step of rank and rarity), and what is left then goes to the bargain bin at 40% of worth (PR5). The next piece it takes in, with `n` already held, sells off the shelf with the chance `p = min(1, pace x stock weeks / (n + 1))`, and otherwise fetches the bin's share. So what the keeper expects of it, against its shelf's ask, is `expect = p + (1 - p) x 0.4 / 1.5`, and its counter pays today's offer times `expect`. The ask on its own pieces is read by the same `expect`, so the keeper's two sides move together.
+
+**Worked.** Ten iron in a row to a keeper that sold none last week: 36, 23, 19, 17, 15, 14, 14, 13, 13, 13. To one that sold two last week: 36, 36, 36, 30, 26, 23, 21, 20, 19, 18. It never goes under the bin's share (about a quarter of today's offer), and it comes back as the keeper sells, lists or takes apart what it holds.
+
+**What it could break.** The guard holds: an offer only falls, and a thing bought anywhere sells back for no more than it cost. What the guard does not follow is an atom into what is made of it: a glutted keeper's lowered ask lets a person buy a material under its worth, make something, and sell that at its worth, which pays more than the gold a second the labor already earns. Either the ask never falls under what the same keeper's counter pays for the kind at that moment (one `expect` on both sides keeps that for one keeper), or a made thing carries what its atoms cost, summed through its composition as its worth is. Pedro's call. Carrying a glut from one keeper to another that lacks it, as goods and not as a loop, is trade, and nothing here stops it.
+
+**What a player sees.** The second iron to the same counter pays a third less, a keeper across the square pays the full 36, and a week later the first pays full again. The counter row says why in words: "they have plenty of it already".
+
+### 10.2 What is selling, and how lately
+
+**Reads.** The keeper's sales of the kind: the last day it sold (`demand`) and how many this week and last.
+
+**Formula.** No mover of its own: it is 10.1's `pace`. Today's quarter more for a kind sold within seven days (`CHOICE_PREMIUM`, written "a guess until Wave 12") becomes what `pace` already says: a kind that sells is worth its full ask to the keeper, and one that does not is worth less. How lately is read by the same window the keeper already looks back on: a sale counts in full the day it happens and fades evenly to nothing at the end of the kind's stock days, `pace = 1 + sum over its sales of (1 - age / stock days)`. No step at seven days.
+
+**What it could break.** Taking the premium away lowers the top of what any counter pays from 1.25 to 1 times today's offer: no loop can get more than before. A player who sold to a keeper by the premium's week sees less.
+
+**What a player sees.** A kind that sold here lately fetches its full offer; one nobody has bought here in a while fetches less, and more each day as it sells again.
+
+### 10.3 What the hub's people ask for, and how lately
+
+**Reads.** The board's open wants (`IResidentQuest`: a tag, how many, what share of worth the asker pays, the day it was posted) and whether the asker can pay (their wallet).
+
+**Formula.** A want the keeper can see counts as sales it is sure of: the units asked of a tag the thing carries join 10.1's `pace` while the want is open and its asker can pay it, so `p = min(1, (pace + asked) x stock weeks / (n + 1))`. How lately: a want counts in full while it is open; a want its asker cannot pay counts for nothing until they can (Pedro's Maslow rule: "what they cannot afford they go without").
+
+**Worked.** Ten iron in a row to a keeper that sold none last week, with a want on the board for four of metal: 36, 36, 36, 36, 36, 32, 29, 27, 25, 23.
+
+**What it could break.** Found while writing this: the board itself pays the asker's share of worth, 1, 1.2 or 1.4 times it, from the asker's own wallet (`questPay`, PR23), so a thing bought off a shelf and handed to a want can fetch more than it cost. Nothing is printed (it is the asker's coin), and today a keeper never fills a want, so the counter and the board do not meet. If keepers come to fill wants (the ruling that people walk to their supplier), the keeper buys at its counter and sells to the asker at the want's share: that is a living, and it is the asker's coin. The guard question is Pedro's: whether the board, too, pays no more than a thing was bought for.
+
+**What a player sees.** "There is a want for it on the board" on the counter row, and the full offer for as many as are asked.
+
+### 10.4 What the board asks: a station's lack and a house's bill
+
+**Reads.** The board's lore asks (`lore`: a station the hub's web lacks, asking for a written piece of a skill) and the open building asks (`IBuildingAsk`: a house or a station, whose bill is in tags).
+
+**Formula.** The same as 10.3: a building ask's bill, in tags and counts, joins the asked units of those tags while it is open; a lore ask counts one lore piece of the skills it names. No new reading of worth.
+
+**What it could break.** A building's bill is large (a house asks dozens of a tag), so one ask can hold a kind at the full offer for a long while; that is the point, and it ends when the ask is met. The guard is unchanged.
+
+**What a player sees.** While the city is raising a house, wood and stone fetch their full offer at every counter, and the counter says it is wanted for building.
+
+### 10.5 Where it would live
+
+One reader, `VendorSystem.expect(record, defId, today, asked)`, in place of `choiceFactor`, read by `offerFor` and by a keeper's own asks; the asked units from a pure fold of the board's open wants and building asks. Its bar is `tests/known.prices.test.ts`'s sweep, run against every mover: every line bought and offered back at five barterings, with a glut, a sale and a want laid before it.
