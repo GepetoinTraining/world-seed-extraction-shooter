@@ -11,6 +11,7 @@ import { UniversalRank, Rarity } from '../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { hash2, layerSeed, uniformNoise, valueNoise } from '../../logic/rng/noise';
 import { PieceLaw } from '../../logic/theme/PieceLaw';
+import { deathCostsNothing } from '../../logic/systems/DeathCost';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { isLooseStone } from '../item/Throwable';
 import { Director, IDirectorPool, IDirectorRecord } from './Director';
@@ -34,6 +35,8 @@ export interface IGenerationContext {
   cycleMs?: number;
   /** C24: the ground this world pinned at its mint (`GROUND_VERSION`). Absent means the first: nothing lies loose. */
   groundVersion?: number;
+  /** GS19: what a death costs in this world, its card's own word (`DeathCost`). Where it costs nothing, nothing climbs. */
+  deathPenalty?: string;
 }
 
 /**
@@ -187,7 +190,7 @@ export class WorldGenerator {
   static generate(seed: string, size: number, context?: IGenerationContext): IMap {
     const sectors: Record<string, ISector> = {};
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      if (this.sectorExists(seed, size, x, y)) sectors[`${x},${y}`] = this.sectorSummary(seed, x, y, context?.difficulty, context?.groundVersion);
+      if (this.sectorExists(seed, size, x, y)) sectors[`${x},${y}`] = this.sectorSummary(seed, x, y, context?.difficulty, context?.groundVersion, context?.deathPenalty);
     }
     return { seed, width: size, height: size, gridVersion: GRID_VERSION, sectors, chunks: {}, generatedAt: Date.now() };
   }
@@ -222,11 +225,15 @@ export class WorldGenerator {
    * is q^d, q the chance a find goes one step deeper (`PieceLaw.ODDS_Q`), so each further rank is as much less likely as
    * the one before it. The same noise, read through its own spread, so the high ground stands where it stood. Its
    * rarity is how far above the world's own it stands, on the old bands' words.
+   *
+   * GS19: risk and reward travel together. Where a death costs nothing (the world's own word, `deathCostsNothing`, the
+   * tutorial's by Q14), nothing climbs: all its ground is the world's own rank, and so its chests and its bodies.
    */
-  private static rankBand(seed: string, cx: number, cy: number, difficulty?: UniversalRank, groundVersion?: number) {
+  private static rankBand(seed: string, cx: number, cy: number, difficulty?: UniversalRank, groundVersion?: number, deathPenalty?: string) {
     if (difficulty && (groundVersion ?? 1) >= RANKED_FROM_GROUND) {
       const order = Object.values(UniversalRank);
       const u = Math.min(uniformNoise(layerSeed(seed, 'rank:v2'), cx, cy, RANK_PERIOD), 1 - Number.EPSILON);
+      if (deathCostsNothing(deathPenalty)) return [u, difficulty, RANK_BANDS[0][2]] as typeof RANK_BANDS[number];
       const above = Math.floor(Math.log(1 - u) / Math.log(PieceLaw.ODDS_Q));
       const step = Math.min(order.length - 1, order.indexOf(difficulty) + above);
       return [u, order[step], RANK_BANDS[Math.min(above, RANK_BANDS.length - 1)][2]] as typeof RANK_BANDS[number];
@@ -241,12 +248,12 @@ export class WorldGenerator {
     return [band[0], order[step], band[2]] as typeof band;
   }
 
-  /** The rank of a chunk's ground, by the world's difficulty and the ground it pinned (an older ground keeps its bands). */
-  static rankAt(seed: string, cx: number, cy: number, difficulty?: UniversalRank, groundVersion?: number): UniversalRank {
-    return this.rankBand(seed, cx, cy, difficulty, groundVersion)[1];
+  /** The rank of a chunk's ground, by the world's difficulty, the ground it pinned (an older ground keeps its bands) and what a death costs there. */
+  static rankAt(seed: string, cx: number, cy: number, difficulty?: UniversalRank, groundVersion?: number, deathPenalty?: string): UniversalRank {
+    return this.rankBand(seed, cx, cy, difficulty, groundVersion, deathPenalty)[1];
   }
 
-  private static sectorSummary(seed: string, sx: number, sy: number, difficulty?: UniversalRank, groundVersion?: number): ISector {
+  private static sectorSummary(seed: string, sx: number, sy: number, difficulty?: UniversalRank, groundVersion?: number, deathPenalty?: string): ISector {
     const counts: Partial<Record<BiomeType, number>> = {};
     const order = Object.values(UniversalRank);
     let top = 0;
@@ -256,7 +263,7 @@ export class WorldGenerator {
       const cx = sx * SECTOR_CHUNKS + x, cy = sy * SECTOR_CHUNKS + y;
       const biome = this.biomeAt(seed, cx, cy);
       counts[biome] = (counts[biome] || 0) + 1;
-      const [, rank, r] = this.rankBand(seed, cx, cy, difficulty, groundVersion);
+      const [, rank, r] = this.rankBand(seed, cx, cy, difficulty, groundVersion, deathPenalty);
       if (order.indexOf(rank) > top) { top = order.indexOf(rank); rarity = r; }
     }
     const biome = (Object.entries(counts) as [BiomeType, number][]).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
@@ -579,7 +586,7 @@ export class WorldGenerator {
 
   private static chunkFrom(seed: string, exits: { x: number; y: number }[], cx: number, cy: number, ctx: IGenerationContext, countOnly: boolean): IChunk {
     const biome = this.biomeAt(seed, cx, cy);
-    const [, rank, rarity] = this.rankBand(seed, cx, cy, ctx.difficulty, ctx.groundVersion);
+    const [, rank, rarity] = this.rankBand(seed, cx, cy, ctx.difficulty, ctx.groundVersion, ctx.deathPenalty);
 
     const chunk: IChunk = {
       id: `chk_${cx}_${cy}`, x: cx, y: cy, biome, difficulty: rank, rarity,

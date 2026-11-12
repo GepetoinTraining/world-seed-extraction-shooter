@@ -29,10 +29,10 @@ export class WorldGenerationService {
    * Opens a world, resuming its timer if it is still live. Only its record is
    * stored: its land comes from the seed, and chunks are built as they are reached.
    */
-  static async activateWorld(seed: string, size: number, themeId?: string, difficulty?: string, director?: IDirectorRecord, magicUnlocked?: boolean, groundVersion?: number): Promise<IWorldInstance> {
+  static async activateWorld(seed: string, size: number, themeId?: string, difficulty?: string, director?: IDirectorRecord, magicUnlocked?: boolean, groundVersion?: number, deathPenalty?: string): Promise<IWorldInstance> {
     const instanceId = `inst_g${GRID_VERSION}_${seed}_${size}`;
-    // GS2: the drone reads the ground the world pinned, as its chunks are laid by it
-    const context = { ...this.loadContext(themeId, difficulty, director, magicUnlocked), ...(groundVersion !== undefined ? { groundVersion } : {}) };
+    // GS2, GS19: the drone reads the ground the world pinned and what a death costs there, as its chunks are laid by them
+    const context = { ...this.loadContext(themeId, difficulty, director, magicUnlocked), ...(groundVersion !== undefined ? { groundVersion } : {}), ...(deathPenalty !== undefined ? { deathPenalty } : {}) };
     const now = Date.now();
 
     const existing = await VectorStore.get<IWorldInstance>(VectorNamespace.WORLDS, instanceId);

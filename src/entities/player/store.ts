@@ -53,6 +53,7 @@ import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../..
 import { IRoomState, ownerHasStationFor, roomAdditions } from '../../../shared/entities/hub/room';
 import { PAIR_ENERGY, PairCraft } from '../../../shared/logic/systems/PairCraft';
 import { chunkOf } from '../../../shared/entities/world/grid';
+import { deathCostsNothing } from '../../../shared/logic/systems/DeathCost';
 import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the web and the auto skill
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { CreationSystem, ICreationSheet } from '../../logic/systems/CreationSystem';
@@ -1390,7 +1391,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // the haul — field kit included — stays in the world. That is the stakes.
     // Wave 10C (D21): the body falls with the pack, EXCEPT the slots a magic
     // protects. The death keeps exactly what the magic named; nothing more.
-    const banksLoot = penalty === 'NONE';
+    // GS19: read in one place with the ground, which holds nothing above the world's own rank where a death is free
+    const banksLoot = deathCostsNothing(penalty);
     // Q27: coming home reads nothing. What nobody has read is banked unread, for the eye to learn on.
     const sessionLoot = banksLoot
       ? (player.currentSession?.inventory || [])

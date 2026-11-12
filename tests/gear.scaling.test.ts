@@ -27,6 +27,8 @@ import { CombatMath } from '../src/entities/combat/CombatMath';
 import { LootTable } from '../src/entities/world/LootTable';
 import { LootBook } from '../src/logic/theme/LootBook';
 import { rerunDrops } from '../server/hub/rerun';
+import { deathCostsNothing } from '../shared/logic/systems/DeathCost';
+import { Tutorial } from '../src/logic/systems/Tutorial';
 
 installShippedThemes();
 const THEME = FIRST_THEME_PACK.themeId;
@@ -236,5 +238,54 @@ describe('the body law reads a body that names no law as before', () => {
     const hound = mob('dun_hound');
     expect(bodyLawOf(hound, {})).toEqual(hound.standing);
     expect(bodyScale('D') / bodyScale('F')).toBe(4);
+  });
+});
+
+describe('where a death costs nothing, the ground holds nothing above the world\'s own rank (GS19)', () => {
+  const tally = (c: any, span = 256) => {
+    const at: Record<string, number> = {};
+    for (let cy = 0; cy < span; cy++) for (let cx = 0; cx < span; cx++) {
+      const r = WorldGenerator.rankAt('dev-sandbox-v4', cx, cy, c.difficulty, c.groundVersion, c.deathPenalty);
+      at[r] = (at[r] ?? 0) + 1;
+    }
+    return at;
+  };
+  const free = (difficulty = UniversalRank.F) => ({ ...ctx(GROUND_VERSION, difficulty), deathPenalty: 'NONE' });
+
+  it('it is read from the world\'s own word for what a death costs, as the death itself is', () => {
+    expect(deathCostsNothing('NONE')).toBe(true);
+    for (const word of ['INVENTORY_LOSS', 'XP_LOSS', 'PERMADEATH', undefined]) expect(deathCostsNothing(word)).toBe(false);
+    expect(deathCostsNothing(Tutorial.card(0).deathPenalty)).toBe(true);
+  });
+
+  it('a world where a death is free is all its own rank, at F and at E alike', () => {
+    expect(Object.keys(tally(free()))).toEqual(['F']);
+    expect(Object.keys(tally(free(UniversalRank.E), 128))).toEqual(['E']);
+  });
+
+  it('the tutorial, laid by its own card: every sector F to the drone, its chests and its bodies F', () => {
+    const card = Tutorial.card(0);
+    const c = { ...ContentRegistry.contextFor(THEME, card.difficulty, emptyDirectorRecord(), false), groundVersion: card.groundVersion, deathPenalty: card.deathPenalty } as any;
+    const map = WorldGenerator.generate(card.seed, card.size, c);
+    expect(new Set(Object.values(map.sectors).map(s => s.difficulty))).toEqual(new Set(['F']));
+    let bodies = 0, chests = 0;
+    for (let cy = 70; cy < 110; cy++) for (let cx = 60; cx < 100; cx++) {
+      for (const e of WorldGenerator.chunkAt(map, cx, cy, c)?.entities ?? []) {
+        if (e.type === EntityType.MOB) { bodies++; expect(e.rank).toBe('F'); }
+        if (e.container) { chests++; expect(e.container.lootRank).toBe('F'); }
+      }
+    }
+    expect(bodies).toBeGreaterThan(50);
+    expect(chests).toBeGreaterThan(5);
+  });
+
+  it('a world where a death costs something keeps the falling law with no top', () => {
+    const at = tally({ ...ctx(GROUND_VERSION), deathPenalty: 'INVENTORY_LOSS' });
+    expect(at.E).toBeGreaterThan(at.D);
+    expect(at.C ?? 0).toBeGreaterThan(0);
+  });
+
+  it('an older ground keeps its bands, whatever a death costs there', () => {
+    expect(tally({ ...ctx(BODIES_FROM_GROUND), deathPenalty: 'NONE' }).D ?? 0).toBeGreaterThan(0);
   });
 });
