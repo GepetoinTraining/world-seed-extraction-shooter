@@ -963,6 +963,16 @@ describe('lore improves passives', () => {
     expect(a.skillGifts![id()][0].value).toBe(b.skillGifts![id()][0].value);
   });
 
+  // GV31, Pedro's rule ("the skill always gives the same thing"): the step was rolled, 0.8 to 1.2 of its share
+  it('a raise is a fixed step, a quarter of what the gift already is, whoever raises it and however often', () => {
+    withPassive(1_000_000, passiveGift({ value: 12 }));
+    const once = RestSystem.applyDream(player(), answer({ raised: [{ gift: 'gift_axe_0', line: 'x' }] })).skillGifts![id()][0];
+    expect(once.value).toBe(15);
+    holding({ id: 'someone_else', skillGifts: { [axeWood().id]: [passiveGift({ value: 12, raises: 3 })] } } as never, 1_000_000);
+    const other = RestSystem.applyDream(player(), answer({ raised: [{ gift: 'gift_axe_0', line: 'x' }] })).skillGifts![id()][0];
+    expect(other.value).toBe(15);
+  });
+
   it('a small passive still moves, in the small numbers it is written in', () => {
     withPassive(1_000_000, passiveGift({ stat: 'crit_chance', value: 0.02 }));
     const after = RestSystem.applyDream(player(), answer({ raised: [{ gift: 'gift_axe_0', line: 'x' }] }));

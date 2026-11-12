@@ -25,6 +25,7 @@ import { LootTable } from '../src/entities/world/LootTable';
 import { inspectItem } from '../src/render/atoms/inspect';
 import { IMobDefinition } from '../shared/entities/mob/types';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { statWord } from '../shared/logic/systems/StatWords';
 
 installShippedThemes();
 
@@ -176,7 +177,8 @@ describe('the card says the step', () => {
 
   it('shows a number as a person reads it, never a long tail', () => {
     const piece = bare('necklace', UniversalRank.C, 'card:numbers', 0.137);
-    const row = inspectItem(piece).rows.find(([k]) => k === 'max health');
+    // GV42: the card says a stat by its word (health), where it read its key as words (max health)
+    const row = inspectItem(piece).rows.find(([k]) => k === statWord('max_health'));
     expect(row?.[1]).toMatch(/^-?\d+(\.\d{1,2})?$/);
   });
 });

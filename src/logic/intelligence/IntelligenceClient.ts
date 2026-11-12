@@ -50,6 +50,7 @@ export const IntelligenceClient = {
   resolveChain: <T>(ask: unknown) => post<T>('/chain', { ask }),
   writeLoot: <T>(ask: unknown) => post<T>('/loot', { ask }),
   writeBases: <T>(ask: unknown) => post<T>('/world/bases', { ask }),
+  writeDoing: <T>(ask: unknown) => post<T>('/material/doing', { ask }),
 
   // D113, D114, D116: a person waits on each of these. The id is what the door's spend limit counts against.
   npcTalk: <T>(talkId: string, ask: unknown) => post<T>('/npc/talk', { talkId, ask }),

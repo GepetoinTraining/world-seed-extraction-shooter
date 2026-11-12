@@ -114,6 +114,30 @@ describe('the door writes a chain, and the law judges it', () => {
     expect(v.reason).toContain('nonsense');
   });
 
+  // CT1: the live trial, 2026-11-12. A singer's round was refused three times running, each time for one more word
+  // nobody had registered, because the refusal named only the first it met and the next answer mended only that one.
+  it('a refusal for words nobody registered names every one of them at once, and what carries each', () => {
+    const strange = ['hollow', 'piercing', 'woven', 'ringing'];
+    const r = round({
+      materials: [{ ...material('gourd'), tags: ['hollow', 'ore'] }],
+      stations: [station('s', ['piercing'])],
+      goods: [{ ...good('a', 'E', 'fire_pit', ['flint']), tags: ['woven', 'hollow'] }],
+      gear: [{ key: 'drum', name: 'drum', blurb: 'x', tags: ['ringing'], works: [], rank: 'F', kind: 'tool', craftAt: 'none', from: [], look: { color: 'ash', shape: 'lump', size: 'small' } } as any]
+    });
+    const v = ChainWeb.judge(r, emptyChain(), TRIBE, [], tag => !strange.includes(tag));
+    expect(v.ok).toBe(false);
+    for (const word of strange) expect(v.reason).toContain(`"${word}"`);
+    // each word once, with the things that carry it
+    expect(v.reason!.split('"hollow"').length).toBe(2);
+    expect(v.reason).toMatch(/"hollow" \(gourd, a\)/);
+    expect(v.reason).toContain('not registered');
+  });
+
+  it('a round whose every word is registered is not refused for its words', () => {
+    const r = round({ materials: [{ ...material('gourd'), tags: ['ore'] }] });
+    expect(ChainWeb.judge(r, emptyChain(), TRIBE, [], registered).ok).toBe(true);
+  });
+
   it('a key already on the ground is not written again', () => {
     expect(ChainWeb.judge(round({ materials: [material('flint')] }), emptyChain(), TRIBE, [], registered).ok).toBe(false);
   });

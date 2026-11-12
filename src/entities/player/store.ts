@@ -18,6 +18,8 @@ import { RESOURCE_DEFINITIONS, ResourceDef } from '../../../shared/entities/item
 import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
 import { slipWear } from '../../../shared/logic/theme/WearLaw';
 import { StudyDoor } from '../../logic/systems/StudyDoor';
+import { MaterialDoingWriter } from '../../logic/theme/writing/MaterialDoingWriter';
+import { formOf } from '../../../shared/entities/world/Spread';
 import { FieldStudy } from '../../logic/systems/FieldStudy';
 import { inspectEntity } from '../../render/atoms/inspect';
 import { LootTable } from '../world/LootTable';
@@ -1905,6 +1907,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!item || !onto) return { ok: false, reason: 'Two things are worked together where they both lie.' };
     const may = PairCraft.mayCombine(item, onto);
     if (!may.ok) return may;
+    // ML21: a material put into something is the first need of what it does; written once, then read
+    for (const piece of [item, onto]) {
+      const def = RESOURCE_DEFINITIONS[piece.universalDefinitionId];
+      if (def && formOf(def)) void MaterialDoingWriter.need(def);
+    }
     const left = StudySystem.energyLeft(p);
     if (left < PAIR_ENERGY) return { ok: false, reason: `Refused: needs ${PAIR_ENERGY} energy, you hold ${Math.floor(left)}. Rest first.` };
 

@@ -7,6 +7,7 @@
 import type { IDoorMessage, IDoorRequest } from './door';
 import { LOOT_SCHEMA } from '../logic/theme/LootLaw';
 import { MINT_SCHEMA } from '../logic/theme/writing/MintAdditions';
+import { DOING_SCHEMA } from '../logic/systems/MaterialDoing';
 import type { IWorldSummary } from '../logic/theme/WorldGrowth';
 import { THEME_SCHEMA, LINE_SCHEMA, STRIKE_REACHES, STRIKE_SWEEPS, STRIKE_HOLLOWS, VOLLEYS, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SIZES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../logic/theme/ThemeTypes';
 import type { IGrowthAsk, ILineAsk } from '../logic/theme/CreatureLines';
@@ -248,7 +249,7 @@ What they know is a concept, never a means. A fireball is a concept: magic is on
 You write in the shapes a world is written in:
 - goods: the processes. What is made ("key", "name"), at which station, from what ("from": keys and small counts), by which trade, how many it "makes". "answers" is the concept it is one way of bringing about, or empty.
 - stations: the workstations. The tool words and material words that connect to work there (each a word in the registry or in "tags"), and a "bill" by tag of what raising one asks.
-- gear: the tools, kind "work_tool", when a station leans on a tool nothing here makes yet. Its "tags" hold the tool word. It is made "from" things too, "craftAt" "hands" or "bench".
+- gear: the tools, kind "work_tool", when a station leans on a tool nothing here makes yet. Its "tags" hold the tool word. Its "works" hold the material words it works on (each a word in the registry or in "tags"), never the key of a station or of a thing. It is made "from" things too, "craftAt" "hands" or "bench".
 - materials: only what cannot be made and has to be found. Each is added to the world, so say where it lies and how it is taken.
 - look, on every material, good and gear: what it looks like, in three words, and its picture is drawn from them. "color" is one of ${LOOK_COLORS.join(', ')}. "shape" is one of ${LOOK_SHAPES.join(', ')}. "size" is one of ${LOOK_SIZES.join(', ')}. Choose what would really look like that, so that different things have different shapes.
 - tags: new words, one meaning, one spelling, when the registry truly has none. Kinds: tool, family, material, trade, action, descriptive, element, verb.
@@ -650,6 +651,24 @@ export function buildBasesRequest(ask: unknown): IDoorRequest {
     // Forty-two rolls and five materials, a short answer each
     kind: 'bases', system: BASES_SYSTEM, schema: MINT_SCHEMA, maxTokens: 16000,
     messages: [{ role: 'user', content: `The world, its rolls and what each is offered: ${JSON.stringify(ask)}` }]
+  };
+}
+
+/** ML21: what one material does, written once, the first time anyone needs it. Words only. */
+const DOING_SYSTEM = `You are saying what one material of this world does when it is made into something people carry or wear.
+
+Answer with three things:
+- "stat": exactly one of the words in "stats": the one thing a piece made of this material carries more of.
+- "band": one of "bands": how strongly, by how rare and how fine the material is.
+- "line": one plain sentence a person reads on the material's card, saying what they would notice in a thing made of it. Never name the material, never write a number, never explain how anything is worked out.
+
+Read the material by its name, its blurb, its form and its world. What it does should follow from what it is. If "refused" is given, it says what did not stand last time: mend it.`;
+
+/** ML21: one material, one short answer. Judged by `MaterialDoing.judge` before anything is kept. */
+export function buildDoingRequest(ask: unknown): IDoorRequest {
+  return {
+    kind: 'doing', system: DOING_SYSTEM, schema: DOING_SCHEMA, maxTokens: 300,
+    messages: [{ role: 'user', content: `The material and its world: ${JSON.stringify(ask)}` }]
   };
 }
 

@@ -19,7 +19,6 @@ import { LoreLaw } from '../../../shared/logic/systems/LoreLaw';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { WebBank } from '../../../shared/logic/content/WebBank';
-import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { CircleSystem, IGiftWords } from './CircleSystem';
 import { LORE_NOTE_PAY, LORE_PER_SITTING, LORE_RANK_GROWTH, LORE_TEACH_PRICE, loreTeachPrice } from '../../../shared/logic/systems/LoreConstants';
@@ -155,13 +154,18 @@ export class LoreSystem {
     return Math.round(LORE_RAISE_PRICE * growth(rarity) * (1 + (found.gift.raises ?? 0) + extra));
   }
 
-  private static raised(player: IPlayer, gift: ISkillGift): ISkillGift {
+  /**
+   * GV31, Pedro's rule ("the skill always gives the same thing"): a raise adds a fixed step, a quarter of what the gift
+   * already is, in the small numbers it is written in, and never less than its smallest step. It was rolled, 0.8 to 1.2
+   * of that share. The same gift at the same value rises by the same step, whoever raises it.
+   */
+  private static raised(_player: IPlayer, gift: ISkillGift): ISkillGift {
     const raises = gift.raises ?? 0;
     const value = gift.value ?? 0;
     const small = Math.abs(value) < 1;
     const least = small ? 0.01 : 1;
-    const rolled = Math.abs(value) * RAISE_SHARE * (0.8 + 0.4 * Rng.fromKey(`${player.id}:${gift.id}:raise:${raises}`).next());
-    const step = Math.max(least, small ? Math.round(rolled * 100) / 100 : Math.round(rolled));
+    const share = Math.abs(value) * RAISE_SHARE;
+    const step = Math.max(least, small ? Math.round(share * 100) / 100 : Math.round(share));
     return { ...gift, value: small ? Math.round((value + step) * 100) / 100 : value + step, raises: raises + 1 };
   }
 
