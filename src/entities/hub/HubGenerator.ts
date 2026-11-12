@@ -179,6 +179,7 @@ export const HUB_NPCS: Record<string, INPCDefinition> = {
       options: [
         // D51: energy is a day's supply, and a rest is what restores it (D43: it sends what was queued, too)
         { label: 'Rest the night (20g)', action: 'REST' },
+        { label: 'Lay out what you will do while away', action: 'LAY_STACK' },
         { label: 'Who is staying here', action: 'OPEN_TAVERN' },
         { label: 'Buy Drink (10g)', action: 'BUY_CONSUMABLE', payload: { itemId: 'drink_ale', cost: 10 } },
         { label: 'Hear Rumors', action: 'GET_HINT' },

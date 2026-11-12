@@ -28,6 +28,7 @@ import { hoverProps, useFeed } from './ui/stores';
 import { Tutorial } from '../logic/systems/Tutorial';
 import { ResidentFace, ResidentLines } from './TavernRoom';
 import { PopulationLine, WorkshopBlock } from './WorkshopPanel';
+import { LoreBoard } from '../logic/systems/LoreBoard';
 
 type Tab = 'BOARD' | 'PEOPLE' | 'TRIAL' | 'MAPS';
 const TABS: { id: Tab; label: string }[] = [
@@ -41,7 +42,7 @@ const useStash = () => usePlayerStore(s => s.player).bank.stashTabs[0]?.items ??
 
 /** Wants on the board, each with what in your stash answers it. */
 const Board: React.FC = () => {
-  const { guild, fulfilQuest, wallets } = useHubStore();
+  const { guild, fulfilQuest, answerLoreAsk, wallets } = useHubStore();
   const stash = useStash();
   const pushFeed = useFeed(s => s.push);
   const open = guild.quests.filter(q => q.state === 'OPEN');
@@ -73,7 +74,8 @@ const Board: React.FC = () => {
       {open.map(quest => {
         const askerName = guild.residents.find(r => r.id === quest.residentId)?.name ?? quest.askerName ?? 'Someone';
         // The cheapest that answer go first, and the window names them, so nothing dear goes by accident.
-        const answers = stash.filter(i => i.isIdentified !== false && answersTag(i, quest.tag) && wantMayTake(i)).sort((a, b) => (a.value || 0) - (b.value || 0));
+        // The design pass, part 4: an ask for lore takes a written piece that opens the station it names
+        const answers = stash.filter(i => quest.lore ? LoreBoard.answers(quest, i) : i.isIdentified !== false && answersTag(i, quest.tag) && wantMayTake(i)).sort((a, b) => (a.value || 0) - (b.value || 0));
         const given = answers.slice(0, quest.count);
         const ready = given.length >= quest.count;
         const pay = questPay(given, quest.payShare);
@@ -86,9 +88,9 @@ const Board: React.FC = () => {
             <div className="ws-row">
               <span className="ws-dim ws-small">
                 {!ready
-                  ? `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`
+                  ? quest.lore ? 'Bring a written piece of a skill that works it. Whoever holds such a skill can write it out at home.' : `Bring things that are ${quest.tag.replace(/_/g, ' ')}.`
                   : affordable
-                    ? `${askerName} pays ${pay.toLocaleString()} G for these.`
+                    ? `${askerName} pays ${pay.toLocaleString()} G for ${quest.count === 1 ? 'it' : 'these'}.`
                     : `These come to ${pay.toLocaleString()} G, and ${askerName} holds ${holds.toLocaleString()} G. It waits.`}
               </span>
               <ArmedButton
@@ -96,7 +98,7 @@ const Board: React.FC = () => {
                 disabled={!ready || !affordable}
                 confirmLabel={`GIVE ${quest.count}: SURE?`}
                 onConfirm={async () => {
-                  const res = await fulfilQuest(quest.id, given.map(i => i.id));
+                  const res = quest.lore ? await answerLoreAsk(quest.id, given[0].id) : await fulfilQuest(quest.id, given.map(i => i.id));
                   if (!res.ok) pushFeed(res.reason ?? 'It would not go.', 'loss');
                 }}
               >

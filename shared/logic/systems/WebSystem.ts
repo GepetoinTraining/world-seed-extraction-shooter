@@ -292,6 +292,8 @@ export class WebSystem {
    * who, what and how many attempts: the same state always gets the same answer.
    */
   static emerges(progress: ISkillProgress, playerId: string): boolean {
+    // A skill read from a written piece is ready: what it still asks is its price in lore, which the rest asks (part 3)
+    if (progress.ready) return true;
     const dc = this.emergenceDC(progress.rank);
     if (progress.weight < dc) return false;
     // D84: stretched in time, so both the climb and each roll's chance read the factor

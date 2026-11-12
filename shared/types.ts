@@ -414,6 +414,8 @@ export interface ISkillProgress {
   rank: number;
   attempts: number;
   weight: number;
+  /** The design pass, part 3: read from a written piece, so it settles at the next rest whose lore can pay its price. */
+  ready?: boolean;
 }
 
 /** One credit: who, when. */
@@ -549,6 +551,8 @@ export interface IItem {
 
   /** The raw materials leg (D26): a trade note, whose reading opens what a process adds. */
   loreData?: { processFamily: string; tier: number };
+  /** The design pass, part 3: a held skill written out (LorePiece). Who wrote it and when; it never left its writer. */
+  lorePiece?: { skillId: string; tags: string[]; rank: number; by: { uid: string; name: string }; at: number };
 
   /** D27, Wave 11's seam: the person an Escort Bond names, enough to read their sheet back. */
   bondData?: {
@@ -1044,6 +1048,10 @@ export interface IPlayer {
   pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }; filedAt?: number };
   /** D118: every sitting this character has taken. It keys the next roll, so a reload rolls nothing new. */
   studyCount?: number;
+  /** The design pass, part 2: what on the tech web this character is working toward, by the web's key (`WebMap`). Absent: nothing marked. */
+  webGoal?: { ref: string; at: number };
+  /** The design pass, part 5: what this character does while its player is away (Downtime), and the last return's account in words. */
+  downtime?: { stack: import('./logic/systems/Downtime').IDowntimeStack; account?: { at: number; lines: string[] }; stopKey?: string };
   /** D118: what this character has sat with, by `StudySystem.keyOf`. */
   studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */

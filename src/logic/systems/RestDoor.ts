@@ -29,8 +29,8 @@ export const RestDoor = {
     const { player, read, emerged, wanting, learned, floorNamed, made } = RestSystem.settle(pc.view().player, hubTreeOf(hp.view().tech));
     pc.apply({ kind: 'SET', player });
     // Pedro, 2026-11-11: "Yes, ask for lore". What was learned says what it took; what wanted lore says it waits
-    for (const skill of emerged) feed(`It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now, and it took ${WebSystem.learnPrice((skill as { rank?: number }).rank ?? 0)} lore.`, 'proof');
-    for (const w of wanting) feed(`${WebSystem.nameOf(w.id)} was ready to settle, and it wants ${w.price} lore. You hold ${w.held} it can use. It will keep until you have it.`, 'plain');
+    RestSystem.settledWords(emerged as { id: string; rank?: number }[], []).forEach(line => feed(line, 'proof'));
+    RestSystem.settledWords([], wanting).forEach(line => feed(line, 'plain'));
     for (const item of read) feed(`You know what ${item.name} is now. It reads exactly as it was banked.`, 'proof');
     // What was made by setting one thing on another is read now, and not before (PairCraft)
     for (const m of made) {

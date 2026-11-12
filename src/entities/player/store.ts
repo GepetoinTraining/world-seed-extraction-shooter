@@ -291,6 +291,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         case 'DIVE': store.diveIntoLayer(change.layerId); break;
         case 'DROP_ITEM': store.dropItem(change.itemId, { quiet: change.quiet, count: change.count }); break;
         case 'TOGGLE_CARRY': store.toggleCarry(change.itemId); break;
+        case 'DOWNTIME': set(s => {
+          const { downtime: _was, ...rest } = s.player;
+          return { player: change.downtime ? { ...rest, downtime: change.downtime } : rest };
+        }); break;
+        case 'WEB_GOAL': set(s => {
+          const { webGoal: _was, ...rest } = s.player;
+          return { player: change.goal ? { ...rest, webGoal: change.goal } : rest };
+        }); break;
       }
     }
   },

@@ -36,6 +36,11 @@ import { ItemGrid } from './ui/ItemGrid';
 import { dropByKey, useDropZone, useHands, wholeZone } from './ui/hands';
 import { GROUND_REACH } from '../logic/systems/ItemHands';
 import { LargeSheetOverlay } from './LargeSheet';
+import { TechWebOverlay, useWebView } from './TechWebView';
+import { DowntimeDoor } from '../logic/systems/DowntimeDoor';
+
+/** How often the stack is walked while the player is here. The walk reads the game's clock, so how often changes nothing it does. */
+const DOWNTIME_CHECK_MS = 5_000;
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
 import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 
@@ -485,5 +490,13 @@ export const CharacterSheet: React.FC = () => {
   }, []);
 
   const large = useSheet(s => s.large);
-  return <>{open && <SheetBody />}{large && <LargeSheetOverlay />}</>;
+  const webOpen = useWebView(s => s.open);
+  // The design pass, part 5: what was stacked is walked on return, and every few seconds while the player is here
+  useEffect(() => {
+    const walk = () => { void DowntimeDoor.resolve(playerPort, hubPort, worldPort); };
+    walk();
+    const timer = setInterval(walk, DOWNTIME_CHECK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{open && <SheetBody />}{large && <LargeSheetOverlay />}{webOpen && <TechWebOverlay />}</>;
 };

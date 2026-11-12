@@ -4,6 +4,7 @@
  */
 
 import { RestDoor } from '../logic/systems/RestDoor';
+import { DowntimeToggle } from './DowntimePanel';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IItem, ItemType, UniversalRank } from '../../shared/types';
 import { craftName, useHubStore, worldDay, IPlayerLot, hubPort } from '../entities/hub/store';
@@ -178,6 +179,8 @@ const LotCard: React.FC<{ lot: IPlayerLot; poi: IPOI | null; layout: IHubLayout;
         <div style={{ marginTop: 6 }}>
           {/* D43: a bed gives a HOUSE its function. Your own costs nothing. */}
           <Button tone="signal" onClick={() => void RestDoor.sleep('BED', worldPort, playerPort, hubPort)}>SLEEP HERE</Button>
+          {/* The design pass, part 5: what the character does while away is laid at its own bed */}
+          <div style={{ marginTop: 6 }}><DowntimeToggle place="BED" /></div>
         </div>
       )}
 

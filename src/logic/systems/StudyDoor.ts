@@ -21,6 +21,7 @@ import { RestSystem } from './RestSystem';
 import { StudySystem } from './StudySystem';
 import { Escort } from './Escort';
 import { WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem';
+import { EYE_XP_PER_SITTING, StudyLanding } from './StudyLanding';
 
 const WAIT_ID = 'study_sitting';
 
@@ -30,18 +31,6 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
-/** What a sitting says when it lands. A piece can be broken; anything else can only be closed to you. */
-const said = (outcome: StudyOutcome, target: IStudyTarget): string => {
-  const { name, kind } = target;
-  if (outcome === 'major_win') return `${name} opened up further than it should have. You will know how far after you rest.`;
-  if (outcome === 'success') return `You sat with ${name} for as long as it took. You will know what it came to after you rest.`;
-  if (outcome === 'failure') {
-    return kind === 'item'
-      ? `You pressed too hard on ${name}. It is the worse for it, and you learned nothing you could keep.`
-      : `You pressed too hard on ${name}. Nothing you could keep, and it will be harder next time.`;
-  }
-  return kind === 'item' ? `${name} is lost to you. Whatever was in it went with it.` : `${name} has closed to you. It will not sit for you for some days.`;
-};
 
 /**
  * What a target asks that this person does not have, or nothing. The bench is at home, so the field has none.
@@ -102,45 +91,22 @@ export const StudyDoor = {
     const { target, cost } = paid;
     StudyDoor.reset();
 
-    const before = pc.view().player;
-    const piece = target.kind === 'item' ? StudySystem.heldItem(before, target.ref) : undefined;
-    if (target.kind === 'item' && !piece) {
+    // One landing for a hand's sitting and a stacked one (StudyLanding): the roll, the wear, the spent document, the teaching
+    const landed = StudyLanding.land(pc.view().player, target, cost, GameClock.now(), hubTreeOf(hp.view().tech));
+    if (!landed) {
       feed(`${target.name} is not where you left it. What you paid is gone.`, 'loss');
       return { ok: false, reason: 'It is gone.' };
     }
-
-    // The lore pass: the roll fixes what it pays, filed by the hub's web; a dream lands it
-    const { player, sitting } = StudySystem.sit(before, target, cost, GameClock.now(), hubTreeOf(hp.view().tech));
-    let next = player;
-    if (LoreSystem.gives(sitting)) next = RestSystem.queueSitting(next, sitting);
-    if (piece && sitting.outcome !== 'major_failure') {
-      // D50 still holds: looking gets there. Q27: an unread piece gets there only through the eye for its kind.
-      const reads = StudySystem.canRead(before, piece);
-      if (reads && (piece.isIdentified === false || piece.affixes.some(a => !LoadoutSystem.isAffixStudied(next, a.id)))) next = RestSystem.queueStudy(next, piece.id);
-      if (!reads) feed('You could not make out what it is. Your eye for this kind of thing is learning.', 'plain');
-      // D27: loot teaches. What the piece implies accrues, and settles only at a rest.
-      if (!target.hidden && LoreSystem.pays(sitting.outcome)) {
-        for (const d of WebSystem.reverseEngineer(piece).designs) {
-          if (!next.bank.universalSkills[d.skillId]) next = WebSystem.accrueFromStudy(next, { id: d.skillId, tags: d.tags }, rankIndexOf(piece.rank));
-        }
-      }
-    }
-    // A document that paid has given what it held, and is spent: read and then sold was one thing too many
-    // A reading that gives its whole worth (fair or better) has given what it held; a little one leaves it, the worse (H11)
-    const spent = !!piece && StudySystem.isDocument(piece) && LoreSystem.pays(sitting.outcome);
-    if (spent) next = StudySystem.loseItem(next, piece!.id);
-    pc.apply({ kind: 'SET', player: next });
+    const { sitting, piece, spent } = landed;
+    if (landed.unread) feed('You could not make out what it is. Your eye for this kind of thing is learning.', 'plain');
+    pc.apply({ kind: 'SET', player: landed.player });
 
     // The eye grows either way: an unschooled one is winging it, and it settles at a rest.
-    const scope = piece ? StudySystem.identifyScopeOf(piece) : null;
-    if (scope) {
-      const eye = StudySystem.scopeSkillId(scope);
-      if (next.bank.universalSkills[eye]) pc.apply({ kind: 'GAIN_SKILL_XP', skillId: eye, amount: 15, tags: ['study', 'intel'] });
-      else pc.apply({ kind: 'ACCRUE', node: { id: eye, tags: [`identify_${scope}`] }, rank: 0 });
-    }
+    if (landed.eye?.kind === 'GAIN') pc.apply({ kind: 'GAIN_SKILL_XP', skillId: landed.eye.skillId, amount: EYE_XP_PER_SITTING, tags: ['study', 'intel'] });
+    if (landed.eye?.kind === 'ACCRUE') pc.apply({ kind: 'ACCRUE', node: { id: landed.eye.skillId, tags: [landed.eye.tag] }, rank: 0 });
 
     SessionJournal.record('INTERACT', { kind: 'STUDY', target: StudySystem.keyOf(target), outcome: sitting.outcome });
-    feed(said(sitting.outcome, target), sitting.outcome === 'failure' || sitting.outcome === 'major_failure' ? 'loss' : 'proof');
+    feed(StudySystem.saidOf(sitting.outcome, target), sitting.outcome === 'failure' || sitting.outcome === 'major_failure' ? 'loss' : 'proof');
     if (spent) feed(`${target.name} has given what it held. It is spent.`, 'plain');
     // The ledger is the person's own record, so it holds the key. Only what the screen showed goes to any door.
     await Ledger.append('TECH', {

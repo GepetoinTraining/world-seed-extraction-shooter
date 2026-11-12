@@ -19,6 +19,7 @@ import { lotConstruction } from '../../../shared/entities/hub/template';
 import { TemplateStudio } from '../../components/TemplateStudio';
 import { CityPlan } from '../../components/CityPlan';
 import { GuildHall } from '../../components/GuildHall';
+import { DowntimeModal } from '../../components/DowntimePanel';
 import { TavernRoom } from '../../components/TavernRoom';
 import { RankMomentView } from '../../components/WorldCanvas';
 import { TalkWindow } from '../../components/TalkWindow';
@@ -117,7 +118,7 @@ let streetPos: { x: number; y: number } | null = null;
 type HubPanel =
   | { kind: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
   | { kind: 'farm'; lotId: string }
-  | { kind: 'sell'; npcId?: string } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'apprentices'; npcId: string };
+  | { kind: 'sell'; npcId?: string } | { kind: 'repair' } | { kind: 'lore' } | { kind: 'plan' } | { kind: 'tavern' } | { kind: 'guild' } | { kind: 'downtime' } | { kind: 'apprentices'; npcId: string };
 
 export const HubCanvas: React.FC = () => {
   const chunks = useHubStore(s => s.chunks);
@@ -1042,6 +1043,7 @@ export const HubCanvas: React.FC = () => {
       {panel?.kind === 'plan' && <CityPlan onClose={() => setPanel(null)} />}
       {panel?.kind === 'tavern' && <TavernRoom onClose={() => setPanel(null)} />}
       {panel?.kind === 'guild' && <GuildHall onClose={() => setPanel(null)} />}
+      {panel?.kind === 'downtime' && <DowntimeModal place="INN" onClose={() => setPanel(null)} />}
       <RankMomentView />
       <TalkWindow />
       {panel?.kind === 'apprentices' && <ApprenticeWindow npcId={panel.npcId} onClose={() => setPanel(null)} />}

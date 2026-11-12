@@ -352,7 +352,9 @@ describe('Q27: identifying is a learned skill, and nothing is read before town',
   });
 
   it('a sitting on an unread piece reads it only through the eye', () => {
-    expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/StudySystem\.canRead\(/);
+    // The design pass, part 5b: the door lands a sitting through the one landing, where the eye is asked
+    expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/StudyLanding\.land\(/);
+    expect(SRC('src/logic/systems/StudyLanding.ts')).toMatch(/StudySystem\.canRead\(/);
   });
 });
 

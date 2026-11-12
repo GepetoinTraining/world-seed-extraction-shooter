@@ -22,6 +22,7 @@ import { Bar, Button, Input } from './ui/kit';
 import { useWaits } from './ui/stores';
 import { hubPort } from '../entities/hub/store';
 import { hubTreeOf } from '../entities/hub/hubTech';
+import { useWebView } from './TechWebView';
 
 /** How far the eye reaches in the field: the inspect card's own reach. */
 const FIELD_REACH_PX = 220;
@@ -82,6 +83,8 @@ export const StudyPanel: React.FC = () => {
         <span>GENERAL LORE <span className="ws-bright">{LoreSystem.held(player).toLocaleString()}</span></span>
         <span className="ws-dim">{waiting > 0 ? `${waiting} waiting on a dream` : 'nothing waiting'}</span>
       </div>
+      {/* The design pass, part 1: the web to plan lore by, from where lore is spent */}
+      <Button tone="quiet" onClick={() => useWebView.getState().toggle()}>THE TECH WEB</Button>
       {/* S2h: lore of each category, one row each under the word the person may see for it; a misreading is in what it reads */}
       {kinds.map(k => (
         <div key={k.key} className="ws-row ws-small" style={{ padding: '0 0 0 8px' }}>
