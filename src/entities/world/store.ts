@@ -37,9 +37,11 @@ import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { ScanPass } from '../../logic/systems/ScanPass';
 import { scanRoom } from '../../logic/systems/ScanRoom';
 import { Tutorial } from '../../logic/systems/Tutorial';
+import { FirstOrderLane, type ILanePiece } from '../../logic/systems/FirstOrderLane';
+import type { IPlayerPort } from '../player/playerView';
 
 import type { IWorldCard, IWorldPort, IWorldView, WorldChange } from './worldView';
-import { offerPort } from '../storePorts';
+import { offerPort, portOf } from '../storePorts';
 export type { IWorldCard } from './worldView';
 
 interface WorldState extends IWorldView {
@@ -436,9 +438,12 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         };
         // ML: which of its materials is the base of its form, and what marks each variant wears, in this world
         SpreadBook.enter(context.resourceDefinitions as ResourceDef[], ContentRegistry.standing(worldCard.themeId));
+        // TQ (call 4): in the tutorial, while this person's first order stands, what its five need, laid for them alone
+        const lane = firstOrderLane(worldCard, instance.mapData, context);
         generationContext = {
           ...context,
           lay: chunk => {
+            if (lane.length > 0) FirstOrderLane.layOn(chunk, lane, worldCard.seed, generationContext ?? context);
             // Who stands first, then what a chest's guards and contents say
             const living = get().populationRecord;
             if (living) Population.layOver(worldCard.seed, chunk, living, moment.generation, generationContext ?? context);
@@ -635,3 +640,14 @@ export const worldPort: IWorldPort = {
 };
 
 offerPort('world', worldPort);
+
+/** TQ (call 4): the first order's lane for whoever opens the tutorial, while it stands; nothing anywhere else. */
+function firstOrderLane(worldCard: IWorldCard, map: IMap, context: IGenerationContext): ILanePiece[] {
+  let person: ReturnType<IPlayerPort['view']>['player'] | undefined;
+  try { person = portOf<IPlayerPort>('player', 'world store').view().player; } catch { return []; }
+  if (!person || !(Tutorial.isTutorial(worldCard) && Tutorial.firstOrderOpen(person))) return [];
+  // What this person owns of tools, wherever it lies now: the vault before a drop, the pack and the body after
+  const carried = [...(person.bank?.stashTabs?.[0]?.items ?? []), ...(person.currentSession?.inventory ?? []), ...(person.equipment?.items ?? [])];
+  const gone = useWorldStore.getState().populationRecord?.left ?? {};
+  return FirstOrderLane.pieces(map, context, { id: person.id, carried, gone: id => !!gone[id] });
+}

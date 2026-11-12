@@ -138,10 +138,10 @@ describe('Q2: the tutorial is the first order', () => {
     expect(quickDeployTargetId(useWorldStore.getState().availableWorlds, usePlayerStore.getState().player)).toBe('mine');
   });
 
-  it('with no world of their own, quick deploy still reaches the tutorial', () => {
+  it('TQ, call 6 (Pedro: "remove the tutorial after the first run"): once its first order is done, quick deploy never reaches it, even with no world of their own', () => {
     usePlayerStore.setState(s => ({ player: { ...s.player, tutorialSealedAt: Date.now() } }));
     useWorldStore.setState({ availableWorlds: [Tutorial.card(Date.now())] });
-    expect(quickDeployTargetId(useWorldStore.getState().availableWorlds, usePlayerStore.getState().player)).toBe(TUTORIAL_WORLD_ID);
+    expect(quickDeployTargetId(useWorldStore.getState().availableWorlds, usePlayerStore.getState().player)).toBeNull();
   });
 
   it('the card says it is the first order until it is sealed', async () => {
@@ -155,8 +155,9 @@ describe('Q2: the tutorial is the first order', () => {
     expect(SRC('src/components/GuildHall.tsx')).toMatch(/Tutorial\.firstOrderOpen/);
   });
 
-  it('sealing a run out of the tutorial marks the first order done', () => {
-    expect(SRC('src/components/WorldCanvas.tsx')).toMatch(/tutorialSealedAt: Date\.now\(\)/);
+  it('TQ, call 2: the first order is done by its fifth task, extracting with the other four done, not by any run out', () => {
+    expect(SRC('src/components/WorldCanvas.tsx')).toMatch(/FirstOrderDoor\.note\('OUT'/);
+    expect(SRC('src/logic/systems/FirstOrder.ts')).toMatch(/tutorialSealedAt: at/);
   });
 });
 

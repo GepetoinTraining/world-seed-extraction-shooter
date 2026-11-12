@@ -60,7 +60,7 @@ import { useFeed, useHotbar, useRankMoment, useReceipt, useSheet, useWaits } fro
 import { BodyClocks } from './WaitStrip';
 import { ReconView } from './ReconView';
 import { TutorialGuide } from './TutorialGuide';
-import { Tutorial } from '../logic/systems/Tutorial';
+import { FirstOrderDoor } from '../logic/systems/FirstOrderDoor';
 import { TalkWindow } from './TalkWindow';
 import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
@@ -574,11 +574,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
     // every OTHER cart stays in the world, on record
     void usePlayerStore.getState().persistCarts();
-    // Q2: a run sealed out of the tutorial is the first order done
-    if (Tutorial.isTutorial(card) && !st.player.tutorialSealedAt) {
-      usePlayerStore.setState(s => ({ player: { ...s.player, tutorialSealedAt: Date.now() } }));
-      feed('First order sealed. Every other world keeps what falls with you.', 'proof');
-    }
+    // TQ: extracting is the first order's fifth, and counts with the other four done; whoever walked out is counted above
+    FirstOrderDoor.note('OUT', worldPort, playerPort);
     st.emergencyJackOut();
     world.exitWorld();
 
@@ -1185,6 +1182,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (combatResult.events.some(e => e.type === 'HIT')) fired('on_hit');
       if (combatResult.events.some(e => e.type === 'KILL')) fired('on_defeat');
       const rewards = applyKillRewards(combatResult.events, playerPort);
+      // TQ: the kills the person is paid for are the first order's first task
+      const felled = combatResult.events.filter(e => e.type === 'KILL' && e.xpReward).length;
+      if (felled > 0) FirstOrderDoor.note('FELL', worldPort, playerPort, felled);
       if (rewards.levelUp) {
         feed(ProgressionSystem.levelUpLine(rewards.levelUp.to, rewards.levelUp.points), 'proof');
       }

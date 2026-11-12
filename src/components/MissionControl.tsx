@@ -69,7 +69,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
       </div>
       {tutorial && (
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          {firstOrder ? 'Your first order: scan the marked block, drop on it, meet what lives there, and walk out by the beacon.' : 'Sealed once. It stays open while your own world is written.'}
+          {firstOrder ? 'Your first order: scan the marked block and drop on it, then fell three creatures, open a chest, take material from the ground, bring one person out, and walk out by the beacon. Once all five are done, it is behind you.' : 'Your first order is done.'}
         </div>
       )}
       {cycle && <CycleRibbon cycle={cycle} />}
@@ -117,7 +117,10 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
 };
 
 export const MissionControl = () => {
-  const { availableWorlds, refreshWorlds } = useWorldStore();
+  const { availableWorlds: listed, refreshWorlds } = useWorldStore();
+  // TQ (call 6): once the first order is done the tutorial is no longer offered here
+  const sealedAt = usePlayerStore(s => s.player.tutorialSealedAt);
+  const availableWorlds = Tutorial.offered(listed, { tutorialSealedAt: sealedAt });
   const [creatorOpen, setCreatorOpen] = useState(false);
   const pushFeed = useFeed(s => s.push);
   // The online world opens once the tutorial's first order is sealed (Pedro, 2026-11-04)

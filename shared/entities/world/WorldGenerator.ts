@@ -156,7 +156,8 @@ const WANTS = ['GOLD', 'GIFT', 'RESPECT'] as const;
 const clampTile = (t: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, t));
 const exitCache = new Map<string, { x: number; y: number }[]>();
 const dropCache = new Map<string, { x: number; y: number } | null>();
-const DROP_CLEAR_TILES = 14;
+/** The ground around a drop kept clear, in tiles, so nobody lands in a fight. */
+export const DROP_CLEAR_TILES = 14;
 
 /** Places things on tiles, keeping them on open ground and one to a tile. */
 class TileField {
@@ -307,7 +308,7 @@ export class WorldGenerator {
   }
 
   /** Open ground joined to plenty more, so an island can never hold a drop or an exit. */
-  private static isMainland(seed: string, tx: number, ty: number): boolean {
+  static isMainland(seed: string, tx: number, ty: number): boolean {
     const seen = new Set<number>();
     const pack = (x: number, y: number) => (x + 32768) * 65536 + (y + 32768);
     let frontier = [[tx, ty]];
@@ -533,6 +534,25 @@ export class WorldGenerator {
         ...(led ? Array.from({ length: l.pack }, (_, i) => ({ id: `${l.id}_f${i}`, def: led })) : [])
       ];
     }), context);
+  }
+
+  /** TQ: a person's name from the same names the land gives its people, keyed by who they are. */
+  static personName(key: string): string {
+    const rng = Rng.fromKey(`${key}:name`);
+    return `${rng.pick(FIRST_NAMES)} ${rng.pick(SURNAMES)}`;
+  }
+
+  /**
+   * TQ: one plain body of a kind, where it is told, on a built chunk: at the chunk's rank by the law the ground lays bodies
+   * under, as `standBodies` lays one, with no variant and no sheet. The first order's lane stands its creatures so.
+   */
+  static plainBodyAt(chunk: IChunk, id: string, def: any, at: { x: number; y: number }, context: IGenerationContext): IWorldEntity {
+    const laid = laidAt(context.groundVersion, def.rank, chunk.difficulty);
+    const numbers = bodyLawOf(def, laid.law ? { law: laid.law, rank: laid.rank } : undefined);
+    return {
+      id, type: EntityType.MOB, definitionId: def.id, position: at, rank: laid.rank, rarity: Rarity.COMMON, isHostile: true,
+      health: numbers.baseHealth, ...(laid.law ? { law: laid.law } : {})
+    };
   }
 
   /**

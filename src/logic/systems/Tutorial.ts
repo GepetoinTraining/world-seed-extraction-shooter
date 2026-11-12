@@ -110,9 +110,17 @@ export class Tutorial {
     return card.isTutorial ? hubUnlocked : !!card.magicUnlocked;
   }
 
-  /** The first order stands until the person has sealed a run out of the tutorial. */
+  /** The first order stands until its fifth task is done (TQ: `FirstOrder.tick`). */
   static firstOrderOpen(player: Pick<IPlayer, 'tutorialSealedAt'>): boolean {
     return !player.tutorialSealedAt;
+  }
+
+  /**
+   * The worlds this person is offered (TQ, call 6; Pedro: "remove the tutorial after the first run"): once the first order
+   * is done the tutorial is no longer theirs to enter, on any screen. The world itself stands for everyone else.
+   */
+  static offered<T extends Pick<IWorldCard, 'isTutorial'>>(cards: T[], player: Pick<IPlayer, 'tutorialSealedAt'>): T[] {
+    return this.firstOrderOpen(player) ? cards : cards.filter(c => !this.isTutorial(c));
   }
 
   /**

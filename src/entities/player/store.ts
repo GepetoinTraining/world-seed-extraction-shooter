@@ -46,6 +46,7 @@ import { COGNITIVE_FRAMES } from '../../../shared/entities/player/data/cognitive
 import { Capture } from '../../../shared/logic/systems/Capture';
 import { FieldCapture } from '../../logic/systems/FieldCapture';
 import { FieldEscort } from '../../logic/systems/FieldEscort';
+import { FirstOrderDoor } from '../../logic/systems/FirstOrderDoor';
 import { Escort } from '../../logic/systems/Escort';
 import { useFeed, useWaits } from '../../components/ui/stores'; // Wave 9.6: the machine says what happened
 import { improvise } from '../../logic/systems/ImprovisedCrafting'; // Wave 10D: the floor
@@ -2173,6 +2174,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       addToInventory(items);
       SessionJournal.record('HARVEST', { nodeId: entity.id, defId: def.id, rollKey, itemIds: items.map(i => i.id) });
+      FirstOrderDoor.note('MATERIAL', wp, playerPort);
 
       // RG: in a world that turns, a place the land laid remembers it was taken and stands bare until its turn
       const ground = !!wp.view().groundRecord && GroundReturn.isPlace(entity.id);
@@ -2355,6 +2357,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       addToInventory(loot);
       wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container, looted: true } } });
       wp.apply({ kind: 'CHEST_LOOTED', chestId: entity.id });
+      FirstOrderDoor.note('CHEST', wp, playerPort);
       const onTable = LootTable.chestRoll(entity.container.lootRank, rollKey, biomeAt(entity.position));
       SessionJournal.record('INTERACT', { kind: 'OPEN', targetId: entity.id, rollKey, itemIds: loot.map(i => i.id), ...(onTable ? { table: onTable } : {}) });
       get().processAction({ tags: ['scavenging', 'intel'], magnitude: 20 });

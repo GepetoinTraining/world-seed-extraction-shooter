@@ -56,7 +56,7 @@ const Board: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {firstOrder && (
         <Panel title="YOUR FIRST ORDER" tone="signal">
-          <span className="ws-small">Before anyone here can use you, go through THE TUTORIAL at the Nexus: scan the block it marks, drop on it, meet what lives there, and walk out by the beacon. Nothing you bring is lost there. Everywhere else, what you carry falls with you.</span>
+          <span className="ws-small">Before anyone here can use you, go through THE TUTORIAL at the Nexus: scan the block it marks and drop on it, then fell three creatures, open a chest, take material from the ground, bring one person out, and walk out by the beacon. Nothing you bring is lost there. Everywhere else, what you carry falls with you.</span>
         </Panel>
       )}
       {open.length === 0 && (

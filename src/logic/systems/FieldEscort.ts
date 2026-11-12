@@ -14,6 +14,7 @@ import { useFeed } from '../../components/ui/stores';
 import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 import { Escort, IEscortSwing } from './Escort';
 import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
+import { FirstOrderDoor } from './FirstOrderDoor';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const session = (pc: IPlayerPort) => pc.view().player.currentSession;
@@ -161,6 +162,8 @@ export const FieldEscort = {
     for (const entityId of [...walking.map(e => e.entityId), ...carried.map(c => c.bondData!.entityId)]) port.apply({ kind: 'LEFT', entityId });
     pc.apply({ kind: 'RECALC_WEIGHT' });
     for (const e of walking) feed(`${e.name} walks out beside you.`, 'proof');
+    // TQ: someone walked to the way out alive is the first order's fourth
+    if (walking.length > 0) FirstOrderDoor.note('PERSON', port, pc);
     for (const c of carried) feed(`${c.bondData!.sheet.name} comes back on the other side.`, 'proof');
   },
 

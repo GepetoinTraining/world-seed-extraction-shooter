@@ -13,6 +13,7 @@ import { WorldCertificateSystem } from '../../entities/world/WorldCertificate';
 import { RestDoor } from './RestDoor';
 import { RestSystem } from './RestSystem';
 import { useWaits, whileWaiting } from '../../components/ui/stores';
+import { Tutorial } from './Tutorial';
 
 /** The one wait for opening a world, whichever door it came through. */
 export const OPENING_WORLD = 'opening_world';
@@ -26,6 +27,8 @@ export async function deployToWorld(worldId: string, world: IWorldPort, pc: IPla
 async function enterWorld(worldId: string, world: IWorldPort, pc: IPlayerPort, hp: IHubPort): Promise<{ ok: boolean; reason?: string }> {
   const card = world.view().availableWorlds.find(w => w.id === worldId);
   if (!card) return { ok: false, reason: 'No such world.' };
+  // TQ (call 6): the tutorial is behind whoever has done its first order
+  if (Tutorial.offered([card], pc.view().player).length === 0) return { ok: false, reason: 'Your first order is done. The tutorial is behind you.' };
 
   // D79: a character at rest is down, and another can play
   const now = Date.now();

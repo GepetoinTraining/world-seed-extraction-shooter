@@ -218,11 +218,11 @@ export function runDialogueAction(world: IWorldPort, pc: IPlayerPort, hp: IHubPo
   return handler(payload, world, pc, hp);
 }
 
-/** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest. */
+/** Quick deploy target (Q2): the tutorial while it is the first order, then the first walkable world of the rest; never the tutorial after (TQ). */
 export function quickDeployTargetId(cards: IWorldCard[], player: IPlayer): string | null {
   const now = Date.now();
-  const worlds = cards.filter(w => WorldClock.momentAt(w, now).canDeploy);
+  const worlds = Tutorial.offered(cards, player).filter(w => WorldClock.momentAt(w, now).canDeploy);
   const tutorial = worlds.find(w => Tutorial.isTutorial(w));
-  if (tutorial && Tutorial.firstOrderOpen(player)) return tutorial.id;
-  return (worlds.find(w => !Tutorial.isTutorial(w)) ?? tutorial)?.id ?? null;
+  if (tutorial) return tutorial.id;
+  return worlds.find(w => !Tutorial.isTutorial(w))?.id ?? null;
 }

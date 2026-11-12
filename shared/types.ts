@@ -849,6 +849,17 @@ export interface ISkillGift {
   first?: boolean;
 }
 
+/** TQ: one of the tutorial's five tasks, in Pedro's order. */
+export type FirstTask = 'FELL' | 'CHEST' | 'MATERIAL' | 'PERSON' | 'OUT';
+
+/** TQ: how far a character has come through the tutorial's five tasks. Kept through a death and a closed window. */
+export interface IFirstOrderRecord {
+  /** Creatures felled in the tutorial, counted toward the three it asks. */
+  felled: number;
+  /** When each task was done; unset, not yet. */
+  done: Partial<Record<FirstTask, number>>;
+}
+
 export interface ISkillState {
   id: string;
   level: number;
@@ -1072,8 +1083,10 @@ export interface IPlayer {
   studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */
   rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
-  /** Q2, Q14: when this character sealed a run out of the tutorial, its first order. Unset, the order stands. */
+  /** Q2, Q14: when this character sealed its first order: since TQ, the moment the fifth of the tutorial's tasks was done. Unset, the order stands. */
   tutorialSealedAt?: number;
+  /** TQ: the tutorial's five tasks, as far as this character has come (`FirstOrder`). */
+  firstOrder?: IFirstOrderRecord;
   /** TQ (call 9): a dive the window closed on, kept by the save, settled at the next start as a death there would be (`LeftDive`). */
   leftDive?: { session: IActiveSession; penalty: string };
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */

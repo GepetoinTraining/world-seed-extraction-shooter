@@ -1,59 +1,46 @@
 /**
- * THE TUTORIAL IN THE FIELD (Q14): the lesson that stands now, and an arrow to the way out.
+ * THE TUTORIAL IN THE FIELD (Q14, TQ): the first order's five tasks, and an arrow to the way out.
  *
- * It shows only in the tutorial world. The arrow is a shape at a fixed distance from the
- * person, pointing at the nearest beacon, so it reads without hue. The contact lesson gives
- * way to the way out once a hostile body has come within sight.
+ * It shows only in the tutorial world. The tasks stand in Pedro's order, the current one marked by a shape and the word
+ * NOW with what to do about it beneath, done ones by a tick and the word DONE (call 1): by shape, position and words,
+ * never by hue. The arrow is a shape at a fixed distance from the person, pointing at the nearest beacon. The tasks'
+ * things stand along the way out (`FirstOrderLane`), so following it passes each of them in turn.
  */
 
-import React, { useEffect } from 'react';
-import { create } from 'zustand';
+import React from 'react';
 import { useWorldStore } from '../entities/world/store';
 import { usePlayerStore } from '../entities/player/store';
-import { EntityType } from '../../shared/entities/world/types';
-import { LESSONS, Tutorial } from '../logic/systems/Tutorial';
+import { Tutorial } from '../logic/systems/Tutorial';
+import { FirstOrder } from '../logic/systems/FirstOrder';
 import { Panel } from './ui/kit';
-
-/** Which sessions have met a contact. A session's id keys it, so a new run starts the lesson again. */
-const useMet = create<{ sessions: Record<string, true>; near: boolean }>(() => ({ sessions: {}, near: false }));
 
 const ARROW_RADIUS_PX = 96;
 
 export const TutorialGuide: React.FC<{ at: { x: number; z: number }; exit: { x: number; y: number; distance: number } | null }> = ({ at, exit }) => {
   const isTutorial = useWorldStore(s => Tutorial.isTutorial(s.availableWorlds.find(w => w.id === s.activeWorldId)));
-  const sessionId = usePlayerStore(s => s.player.currentSession?.sessionId);
-  const met = useMet(s => !!sessionId && !!s.sessions[sessionId]);
-  const near = useMet(s => s.near);
+  const record = usePlayerStore(s => FirstOrder.of(s.player));
   const firstOrder = usePlayerStore(s => Tutorial.firstOrderOpen(s.player));
 
-  // The contact lesson: a hostile body within sight, read twice a second
-  useEffect(() => {
-    if (!isTutorial || !sessionId) return;
-    const look = () => {
-      const pos = usePlayerStore.getState().player.currentSession?.position;
-      const map = useWorldStore.getState().currentMap;
-      if (!pos || !map) return;
-      const near = Object.values(map.chunks).some(c => c.entities.some(e =>
-        e.type === EntityType.MOB && e.isHostile && Math.hypot(e.position.x - pos.x, e.position.y - pos.z) < Tutorial.CONTACT_RANGE_PX));
-      if (near !== useMet.getState().near) useMet.setState({ near });
-      if (near && !useMet.getState().sessions[sessionId]) useMet.setState(s => ({ sessions: { ...s.sessions, [sessionId]: true } }));
-    };
-    look();
-    const timer = setInterval(look, 500);
-    return () => clearInterval(timer);
-  }, [isTutorial, sessionId]);
-
   if (!isTutorial) return null;
-  const step = Tutorial.step({ scanned: true, inField: true, metContact: met, contactNear: near, sealed: false });
-  const lesson = { title: Tutorial.titleOf(step, firstOrder), body: LESSONS[step].body };
+  const rows = FirstOrder.rows(record);
+  const current = FirstOrder.current(record);
   // Closer than the ring, the beacon itself is the mark
   const angle = exit && exit.distance > ARROW_RADIUS_PX ? Math.atan2(exit.y - at.z, exit.x - at.x) : null;
 
   return (
     <>
       <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 108, width: 420, maxWidth: '40vw', pointerEvents: 'none' }}>
-        <Panel title={lesson.title} tone="signal">
-          <span className="ws-small">{lesson.body}</span>
+        <Panel title={firstOrder ? 'FIRST ORDER' : 'THE TUTORIAL'} tone="signal">
+          <ol aria-label="The first order's tasks" style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {rows.map(row => (
+              <li key={row.task} aria-current={row.current ? 'step' : undefined} className={row.current ? 'ws-bright' : 'ws-dim'} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                <span aria-hidden style={{ width: 14, textAlign: 'center', fontWeight: 700 }}>{row.mark}</span>
+                <span className="ws-small" style={{ flex: 1, textDecoration: row.done ? 'line-through' : undefined }}>{row.title}</span>
+                {row.word && <span className="ws-small" style={{ fontWeight: 700, letterSpacing: '0.1em' }}>{row.word}</span>}
+              </li>
+            ))}
+          </ol>
+          {current && <div className="ws-small" style={{ marginTop: 6 }}>{FirstOrder.hint(current)}</div>}
         </Panel>
       </div>
       {/* The arrow to the way out: a solid chevron on a ring around the person, by position and shape */}
