@@ -45,8 +45,11 @@ export interface IGenerationContext {
  *   3              lore pieces drop a lot (the lore pass, call 6; Pedro: "they used to drop a lot"): a creature
  *                  with a mind leaves a fragment "sometimes", a leader's or a boss's hoard holds one "often",
  *                  each on a stream of its own (LoreDrops). The ground is laid as at 2.
+ *   4              the rarity rescale (BALANCE_RUN 1.4): a piece found takes the rank of where it came from,
+ *                  never its kind's, a rank doubles it once, and its step is read off what it holds (PieceLaw).
+ *                  The ground is laid as at 3.
  */
-export const GROUND_VERSION = 3;
+export const GROUND_VERSION = 4;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
 const LOOSE_STONE_CHANCE = 0.5;
 const LOOSE_STONES_TOGETHER = 2;

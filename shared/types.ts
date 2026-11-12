@@ -26,6 +26,8 @@ export enum Rarity {
   SCRAP = 'SCRAP',
   COMMON = 'COMMON',
   UNCOMMON = 'UNCOMMON',
+  /** Pedro, 2026-11-11: "magical 2 stats (one suffix one affix)", a tier of its own between uncommon and rare. */
+  MAGICAL = 'MAGICAL',
   RARE = 'RARE',
   EPIC = 'EPIC',
   LEGENDARY = 'LEGENDARY',
@@ -475,6 +477,11 @@ export interface IItem {
   carries?: { ability: string; trigger: string };
   /** Layer 3: what a scroll casts when it is used. */
   casts?: string;
+  /**
+   * The rarity rescale: the law a found piece was minted under (PieceLaw.VERSION). Absent is the old law, a
+   * standing world's, whose stamped numbers are kept (call 18); the hub checks each by its own.
+   */
+  pieceLaw?: number;
   id: string;
   universalDefinitionId: string;
   name: string;

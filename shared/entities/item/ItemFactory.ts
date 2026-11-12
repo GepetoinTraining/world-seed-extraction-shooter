@@ -4,13 +4,15 @@ import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from './data/ite
 import { AffixDefinition } from './data/affixDefinitions';
 import { AffixBank } from '../../logic/content/AffixBank';
 import { IAffixPool } from '../world/Dreaming';
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS, readsRank } from '../../constants';
+import { RANK_MULTIPLIERS, readsRank } from '../../constants';
+import { RARITY_MULTIPLIERS } from '../../logic/content/LegacyLaw';
+import { PieceLaw } from '../../logic/theme/PieceLaw';
 import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { ResourceDef } from './data/resourceDefinitions';
 import { MaterialPropertyType } from '../economy/types';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
-import { cartBearsAt, cartFolded } from '../../logic/theme/ThemeFormula';
+import { cartBearsAt, cartFolded, cartNumbers, rankStep } from '../../logic/theme/ThemeFormula';
 
 export class ItemFactory {
 
@@ -25,7 +27,7 @@ export class ItemFactory {
    *               world passes its pinned bank's biome pool; absent, the
    *               purged legacy pool rolls (old worlds keep their dream).
    */
-  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string, pool?: IAffixPool): IItem {
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string, pool?: IAffixPool, opts?: { groundVersion?: number }): IItem {
     if (!rng) {
       console.warn('[FACTORY] Unkeyed item mint — roll is not replayable. Pass an Rng.fromKey stream.');
       rng = Rng.fromKey(`unkeyed:${Date.now()}:${Math.random()}`);
@@ -42,6 +44,13 @@ export class ItemFactory {
       ];
 
     const pinned = baseId ? allBases.find(b => b.id === baseId) : undefined;
+
+    // The rarity rescale: a kind is a noun, so any kind is found at the rank of where it came from.
+    // A world pinned before the law's ground gives what it gave (GROUND_VERSION); hub mints have no ground.
+    if ((opts?.groundVersion ?? PieceLaw.FROM_GROUND) >= PieceLaw.FROM_GROUND) {
+      return this.createFromTemplate(pinned ?? rng.pick(allBases), isIdentified, rng, pool, targetRank);
+    }
+
     let template: ItemDefinition;
 
     if (pinned) {
@@ -55,14 +64,106 @@ export class ItemFactory {
       template = rng.pick(allBases);
     }
 
-    return this.createFromTemplate(template, isIdentified, rng, pool);
+    return this.legacyFromTemplate(template, isIdentified, rng, pool);
   }
 
   /**
    * D27: the same mint, for a base handed in rather than picked: a tool only a
    * batch has heard of. The base never joins a random pool, so no keyed roll moves.
+   *
+   * The rarity rescale (BALANCE_RUN 1.4): the piece takes `rank` from where it came from (the kind's own
+   * word only when nothing says), a rank doubles it once, quality is the one roll and moves every number
+   * on it, and its step is read off what it holds. Nothing numeric is rounded onto it.
    */
-  static createFromTemplate(template: ItemDefinition, isIdentified: boolean, rng: SeededRNG, pool?: IAffixPool): IItem {
+  static createFromTemplate(template: ItemDefinition, isIdentified: boolean, rng: SeededRNG, pool?: IAffixPool, rank?: UniversalRank): IItem {
+    const at = rank ?? template.rank ?? UniversalRank.F;
+    const step = Math.max(0, rankStep(at));
+    const depth = this.rollRarity(rng);
+    const quality = (rng.next() * 0.4) - 0.2;
+
+    const stats: Record<string, number> = {};
+    const native = template.kind ? PieceLaw.nativeLines(template.kind, step)
+      // A base written by hand, with no noun: its own lines, moved from the rank it was written at by the same law
+      : template.implicits.map(l => ({ stat: l.stat, value: (l.value ?? ((l.min ?? 0) + (l.max ?? 0)) / 2) * PieceLaw.rankFactor(l.stat, at) / PieceLaw.rankFactor(l.stat, template.rank ?? at) }));
+    for (const l of native) stats[l.stat] = (stats[l.stat] ?? 0) + l.value * (1 + quality);
+
+    const affixes = this.foundAffixes(template, depth, at, quality, rng, pool);
+    for (const a of affixes) for (const [key, val] of Object.entries(a.stats)) stats[key] = (stats[key] ?? 0) + val;
+
+    const power = PieceLaw.power(at, quality, template.tags.includes('tool'));
+    const rarity = PieceLaw.stepOf(affixes);
+    const cart = template.cart ? { ...template.cart, ...cartNumbers({ size: template.cart.size, rank: at }) } : undefined;
+    const dimensions = this.getDimensions(template);
+
+    const item: IItem = {
+      id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
+      universalDefinitionId: template.id,
+      name: this.nameOf(template.universal_name, affixes),
+      description: this.generateDescription(rarity, quality),
+      type: ItemType.GEAR,
+      slot: template.slot,
+      rank: at,
+      rarity,
+      quality,
+      level: this.getLevelForRank(at),
+      value: Math.max(1, Math.floor(power * 2)),
+      itemPower: power,
+      pieceLaw: PieceLaw.VERSION,
+      tags: [...template.tags],
+      dimensions,
+      weight: cart?.weight ?? this.getWeight(template, dimensions),
+      affixes,
+      stats: { ...stats, durability: 100, maxDurability: 100 },
+      visuals: {
+        modelId: template.tags.includes('weapon') ? 'weapon_mesh' : 'armor_mesh',
+        colorHex: this.getColorForRarity(rarity)
+      },
+      icon: template.tags.includes('weapon') || template.tags.includes('melee') ? 'weapon_icon'
+          : template.tags.includes('tool') ? 'tool_icon'
+          : 'armor_icon',
+      history: { dropDate: Date.now(), killCount: 0 },
+      isIdentified
+    };
+
+    if (template.pouch) item.pouchData = { accepts: [...template.pouch.accepts], capacity: template.pouch.capacity, contents: [] };
+    if (template.belt) item.beltData = { pouchSlots: template.belt.pouchSlots };
+    // A cart's bed at the piece's own rank; what it bears is read at this piece's quality
+    if (cart) item.cartData = { ...cart, ...(cart.bears !== undefined ? { bears: cartBearsAt(cart.bears, quality) } : {}) };
+    if (template.carries) item.carries = { ...template.carries };
+    item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
+    item.composition = CompositionSystem.root({ id: template.id, name: template.universal_name }, 'WORLD');
+    return MintRegistry.claim(item);
+  }
+
+  /**
+   * What a found piece holds. Part 1 of the rescale keeps today's odds of how deep a find goes and today's
+   * counts; each value is the banked roll, doubled a rank where the stat is an amount, times (1 + quality).
+   */
+  private static foundAffixes(template: ItemDefinition, depth: Rarity, rank: UniversalRank, quality: number, rng: SeededRNG, pool?: IAffixPool): IAffix[] {
+    const source = pool ?? AffixBank.legacyPool();
+    const counts: Partial<Record<Rarity, [number, number]>> = {
+      [Rarity.RARE]: [1, 1], [Rarity.EPIC]: [2, 2], [Rarity.LEGENDARY]: [3, 3]
+    };
+    const [prefixes, suffixes] = depth === Rarity.UNCOMMON ? (rng.next() > 0.5 ? [1, 0] : [0, 1]) : counts[depth] ?? [0, 0];
+    const affixes: IAffix[] = [];
+    type Rollable = AffixDefinition | import('../../types').IBankedAffix;
+    const pick = (list: Rollable[]) => {
+      const open = list.filter(def => def.allowedTags.some(tag => template.tags.includes(tag)) && !affixes.some(a => a.id === def.id));
+      if (open.length === 0) return;
+      const choice = rng.pick(open);
+      const stats: Record<string, number> = {};
+      for (const [key, [min, max]] of Object.entries(choice.statModifiers ?? {})) {
+        stats[key] = (min + rng.next() * (max - min)) * PieceLaw.rankFactor(key, rank) * (1 + quality);
+      }
+      affixes.push({ id: choice.id, name: (choice as AffixDefinition).nameTemplate ?? (choice as import('../../types').IBankedAffix).name, type: choice.type, stats, tier: 1 });
+    };
+    for (let i = 0; i < prefixes; i++) pick(source.prefixes);
+    for (let i = 0; i < suffixes; i++) pick(source.suffixes);
+    return affixes;
+  }
+
+  /** The old law, a standing world's: the rank written on its kind, rank entered twice, a power table by rarity. */
+  private static legacyFromTemplate(template: ItemDefinition, isIdentified: boolean, rng: SeededRNG, pool?: IAffixPool): IItem {
     // 2. Roll Rarity
     const rarity = this.rollRarity(rng);
 
@@ -437,6 +538,7 @@ export class ItemFactory {
     switch(rarity) {
       case Rarity.COMMON: return '#e5e5e5';
       case Rarity.UNCOMMON: return '#22c55e';
+      case Rarity.MAGICAL: return '#14b8a6';
       case Rarity.RARE: return '#0ea5e9';
       case Rarity.EPIC: return '#a855f7';
       case Rarity.LEGENDARY: return '#f59e0b';

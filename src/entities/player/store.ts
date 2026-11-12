@@ -2214,11 +2214,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       const rollKey = SessionJournal.rollKey('chest', entity.id);
       const rng = Rng.fromKey(rollKey);
-      // Wave 10E: a chest in a dreamed world fills from its biome's bank
-      const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position));
+      // Wave 10E: a chest in a dreamed world fills from its biome's bank; the rarity rescale: by the law its world's ground pinned
+      const chestWorld = wp.view().availableWorlds.find(w => w.id === wp.view().activeWorldId);
+      const loot = LootTable.generateChestLoot(entity.container.lootRank, 1.0, rollKey, biomeAt(entity.position), chestWorld?.groundVersion);
 
       // D115: a gem, a work of art, a valuable. Its own stream, so nothing above or below it moves.
-      const chestWorld = wp.view().availableWorlds.find(w => w.id === wp.view().activeWorldId);
       const anchor = Anchors.fromChest(Anchors.foundIn(chestWorld?.themeId, biomeAt(entity.position), entity.container.lootRank), rollKey);
       if (anchor) loot.push(anchor);
 

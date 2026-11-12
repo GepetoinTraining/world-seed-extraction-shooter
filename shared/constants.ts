@@ -1,4 +1,4 @@
-import { UniversalRank, Rarity } from './types';
+import { UniversalRank } from './types';
 
 // --- SCALING FACTORS ---
 
@@ -16,19 +16,6 @@ export const RANK_MULTIPLIERS: Record<UniversalRank, number> = {
   [UniversalRank.S]: 8.0,
   [UniversalRank.SS]: 13.0,
   [UniversalRank.SSS]: 21.0, // Fibonacci sequence approach for power spikes
-};
-
-/**
- * Multiplier for Item Power based on Rarity.
- */
-export const RARITY_MULTIPLIERS: Record<Rarity, number> = {
-  [Rarity.SCRAP]: 0.5,
-  [Rarity.COMMON]: 1.0,
-  [Rarity.UNCOMMON]: 1.2,
-  [Rarity.RARE]: 1.5,
-  [Rarity.EPIC]: 2.0,
-  [Rarity.LEGENDARY]: 2.5,
-  [Rarity.ARTIFACT]: 3.5,
 };
 
 // --- ECONOMY CONSTANTS ---
@@ -76,3 +63,31 @@ export const RANKLESS_STATS: readonly string[] = ['max_energy'];
 
 /** Does a rank multiply this stat where a piece is minted? */
 export const readsRank = (stat: string): boolean => !RANKLESS_STATS.includes(stat);
+
+/**
+ * The rarity rescale (BALANCE_RUN 1.2, 1.4): how a stat is read, which decides two things about it on a
+ * piece. An amount is added to a figure and goes before the name; a rating is read through a curve and
+ * goes after it. And whether a rank doubles it: an amount a fight reads does; the day's energy,
+ * kilograms, tiles and seconds never do ("no rank at all"); a rating doubles once its reader reads it
+ * against a rank, which is the fight's rebalance, so until then it reads none on the piece.
+ * A list of how each stat is read, never a limit on what may roll.
+ */
+export const RATING_STATS: readonly string[] = [
+  'defense', 'physical_reduction', 'accuracy_rating', 'evasion_rating', 'crit_chance', 'crit_multiplier', 'block_chance',
+  'movement_speed', 'movement_speed_penalty', 'noise_reduction', 'luck_find_rarity', 'field_analysis_speed', 'attack_speed',
+  'craft_speed_pct', 'upkeep_discount_pct', 'cart_alarm'
+];
+/** Amounts in kilograms, tiles or seconds, beside the day's energy: they read no rank. */
+export const UNIT_STATS: readonly string[] = ['carry_capacity', 'carry_bonus_kg', 'light_radius', 'pickup_radius', 'cart_lock'];
+
+export type StatReading = 'amount' | 'rating' | 'rankless';
+
+/** An amount a rank doubles, a rating, or a number no rank moves. Mind attributes on a frame are amounts of no rank. */
+export const statReading = (stat: string): StatReading =>
+  RANKLESS_STATS.includes(stat) || UNIT_STATS.includes(stat) || MIND_STATS.includes(stat) ? 'rankless'
+    : RATING_STATS.includes(stat) ? 'rating' : 'amount';
+
+/** Which side of a name a stat stands on, by its reader: an amount before (a prefix), a rating after (a suffix). */
+export const statSide = (stat: string): 'PREFIX' | 'SUFFIX' => RATING_STATS.includes(stat) ? 'SUFFIX' : 'PREFIX';
+
+const MIND_STATS: readonly string[] = ['intelligence', 'focus', 'engineering', 'hacking', 'perception', 'charisma', 'intimidation', 'subterfuge', 'bartering', 'leadership'];

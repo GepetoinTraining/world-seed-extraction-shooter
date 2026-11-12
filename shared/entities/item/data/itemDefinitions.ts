@@ -13,6 +13,8 @@ export interface ItemDefinition {
   universal_name: string;
   rank: UniversalRank;
   base_ip: number;
+  /** The rarity rescale: the noun it is (GEAR_SHAPES), so a piece of it can be minted at any rank. */
+  kind?: import('../../../logic/theme/ThemeTypes').GearKind;
   slot: SlotType;
   tags: string[];
   implicits: BaseStatDefinition[];

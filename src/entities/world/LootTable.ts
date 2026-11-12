@@ -24,9 +24,22 @@ import { LootBook } from '../../logic/theme/LootBook';
 import { IDropLine, LootLaw, lootItemsOf } from '../../../shared/logic/theme/LootLaw';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { creatureIdOf } from '../../../shared/logic/theme/ThemeCompiler';
+import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
+import { RANKS } from '../../../shared/logic/theme/ThemeTypes';
 
 /** A drop rolled on a theme's table (LootLaw.ts): which table, at what rank, what it said. The journal keeps it, so a hub can roll it again (D134). */
-export interface ITableRoll { table: string; rank: string; lines: IDropLine[] }
+export interface ITableRoll {
+  table: string; rank: string; lines: IDropLine[];
+  /**
+   * The rarity rescale: the rank each line drops at, from its source's (the same, or one under). A found
+   * piece takes it, never its kind's. Kept beside the lines, so a hub's rerun of the lines lands as before.
+   */
+  at?: string[];
+}
+
+/** A world with no ground pinned is the first (C24): it gives what it gave. */
+const groundOf = (groundVersion?: number) => ({ groundVersion: groundVersion ?? 1 });
+const newLaw = (groundVersion?: number) => groundOf(groundVersion).groundVersion >= PieceLaw.FROM_GROUND;
 
 /** Wave 10E: the pool this drop rolls from — the pinned bank's biome pool in a
  * dreamed world, the purged legacy pool everywhere else (old worlds unchanged). */
@@ -58,20 +71,25 @@ export class LootTable {
     const table = LootBook.tableFor(themeId, kind, tags, keys);
     const pack = table ? ContentRegistry.get(themeId) : undefined;
     if (!table || !pack) return null;
-    return { table: table.id, rank, lines: LootLaw.roll(table, rank, rollKey, lootItemsOf(pack)) };
+    const lines = LootLaw.roll(table, rank, rollKey, lootItemsOf(pack));
+    const step = Math.max(0, RANKS.indexOf(rank as typeof RANKS[number]));
+    const at = lines.map(d => RANKS[table.lines[d.line]?.rank === 'below' ? Math.max(0, step - 1) : step] as string);
+    return { table: table.id, rank, lines, at };
   }
 
   /** What a table's lines mint, each piece from its own keyed stream, so one never moves another. */
-  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool): IItem[] {
+  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number): IItem[] {
     const out: IItem[] = [];
-    for (const d of roll.lines) {
+    roll.lines.forEach((d, i) => {
       for (let n = 0; n < d.count; n++) {
         const own = Rng.fromKey(`${rollKey}:drop:${d.line}:${n}`);
-        if (d.what === 'gear') { out.push(ItemFactory.createItem(d.rank as UniversalRank, false, own, undefined, d.id, pool)); continue; }
+        // The rarity rescale: a found piece takes the rank of where it came from, never its kind's
+        const rank = (newLaw(groundVersion) ? roll.at?.[i] ?? roll.rank : d.rank) as UniversalRank;
+        if (d.what === 'gear') { out.push(ItemFactory.createItem(rank, false, own, undefined, d.id, pool, groundOf(groundVersion))); continue; }
         const def = RESOURCE_DEFINITIONS[d.id];
         if (def) out.push(ItemFactory.createResourceItem(def, own));
       }
-    }
+    });
     return out;
   }
 
@@ -118,7 +136,8 @@ export class LootTable {
     magicFind: number = 1.0,
     context?: ILootContext,
     rollKey?: string,
-    earnedName?: string
+    earnedName?: string,
+    groundVersion?: number
   ): IItem[] {
     // Wave 1.3: every drop derives from a journaled key. Same key -> same loot.
     const rng = Rng.fromKey(rollKey || `unkeyed:loot:${Date.now()}:${Math.random()}`);
@@ -126,11 +145,14 @@ export class LootTable {
     const loot: IItem[] = [];
     const effectiveMF = magicFind * (context?.quantityBonus || 1.0);
     const pool = dreamPool(context?.biome);
+    const ground = groundOf(groundVersion);
+    // Under the rescale a step is read off what a piece holds, never written on it by hand
+    const legacy = !newLaw(groundVersion);
 
     // A theme's own table, when it has one for this creature: the model's words, the law's numbers
     const onTable = this.creatureRoll(mobDef, rollKey);
     if (onTable && rollKey) {
-      loot.push(...this.mint(onTable, rollKey, pool));
+      loot.push(...this.mint(onTable, rollKey, pool, groundVersion));
       loot.push(...this.deedsFor(mobDef, rng, effectiveMF, context, rollKey));
       return loot;
     }
@@ -142,14 +164,14 @@ export class LootTable {
     // Biological mobs drop scrap/materials
     if (mobDef.tags.includes('biological')) {
       if (rng.next() < 0.6 * effectiveMF) {
-        loot.push(ItemFactory.createItem(UniversalRank.F, false, rng, undefined, undefined, pool));
+        loot.push(ItemFactory.createItem(UniversalRank.F, false, rng, undefined, undefined, pool, ground));
       }
     }
 
     // Mechanical mobs drop tech components
     if (mobDef.tags.includes('mechanical')) {
       if (rng.next() < 0.5 * effectiveMF) {
-        const item = ItemFactory.createItem(UniversalRank.E, false, rng, undefined, undefined, pool);
+        const item = ItemFactory.createItem(UniversalRank.E, false, rng, undefined, undefined, pool, ground);
         item.name = 'Salvaged Component';
         loot.push(item);
       }
@@ -164,13 +186,13 @@ export class LootTable {
 
     if (rng.next() < gearChance) {
       // Gear drops at mob's rank, unidentified
-      const item = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
+      const item = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
       loot.push(item);
     }
 
     // Elites get a second roll
     if (mobDef.tags.includes('elite') && rng.next() < gearChance * 0.5) {
-      const bonusItem = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
+      const bonusItem = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
       loot.push(bonusItem);
     }
 
@@ -180,25 +202,25 @@ export class LootTable {
     
     if (mobDef.tags.includes('boss')) {
       // Guaranteed rank-appropriate gear
-      const bossLoot = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
-      bossLoot.rarity = Rarity.EPIC; // Bosses always drop at least Epic
+      const bossLoot = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+      if (legacy) bossLoot.rarity = Rarity.EPIC; // Bosses always drop at least Epic
       loot.push(bossLoot);
 
       // Chance for Legendary
       if (rng.next() < 0.25 * effectiveMF) {
-        const legendary = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
-        legendary.rarity = Rarity.LEGENDARY;
+        const legendary = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+        if (legacy) legendary.rarity = Rarity.LEGENDARY;
         if (earnedName) legendary.name = `${earnedName}'s ${legendary.name}`;
         loot.push(legendary);
       }
 
       // Small chance for Knowledge Tome
       if (rng.next() < 0.10 * effectiveMF) {
-        const tome = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool);
+        const tome = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
         const subject = earnedName ?? 'Something Unnamed';
         tome.name = `Tome of ${subject}`;
         tome.description = `Contains forbidden knowledge about ${subject}. Studying this grants Lore XP.`;
-        tome.rarity = Rarity.LEGENDARY;
+        if (legacy) tome.rarity = Rarity.LEGENDARY;
         loot.push(tome);
       }
     }
@@ -210,14 +232,14 @@ export class LootTable {
     if (mobDef.tags.includes('god') || mobDef.tags.includes('titan')) {
       // Multiple high-rank items
       for (let i = 0; i < 3; i++) {
-        const godLoot = ItemFactory.createItem(UniversalRank.S, false, rng, undefined, undefined, pool);
-        godLoot.rarity = Rarity.LEGENDARY;
+        const godLoot = ItemFactory.createItem(UniversalRank.S, false, rng, undefined, undefined, pool, ground);
+        if (legacy) godLoot.rarity = Rarity.LEGENDARY;
         loot.push(godLoot);
       }
 
       // Artifact-tier item
-      const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool);
-      artifact.rarity = Rarity.ARTIFACT;
+      const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool, ground);
+      if (legacy) artifact.rarity = Rarity.ARTIFACT;
       artifact.name = `Relic of ${earnedName ?? 'Something Unnamed'}`;
       artifact.description = 'An item of impossible origin. Reality bends around it.';
       loot.push(artifact);
@@ -385,14 +407,15 @@ export class LootTable {
   /**
    * Generate loot for a chest/container
    */
-  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string, biome?: BiomeType): IItem[] {
+  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string, biome?: BiomeType, groundVersion?: number): IItem[] {
     const rng = Rng.fromKey(rollKey || `unkeyed:chest:${Date.now()}:${Math.random()}`);
     const loot: IItem[] = [];
     const pool = dreamPool(biome);
+    const ground = groundOf(groundVersion);
 
     // A theme's own table for a chest in this land, when the dreamed world has one
     const onTable = this.chestRoll(chestRank, rollKey, biome);
-    if (onTable && rollKey) return this.mint(onTable, rollKey, pool);
+    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion);
 
     // Chests always have 2-5 items
     const count = 2 + Math.floor(rng.next() * 4);
@@ -400,13 +423,13 @@ export class LootTable {
     for (let i = 0; i < count; i++) {
       // Each item can be chest rank or one below
       const itemRank = rng.next() < 0.7 ? chestRank : this.rankBelow(chestRank);
-      loot.push(ItemFactory.createItem(itemRank, false, rng, undefined, undefined, pool));
+      loot.push(ItemFactory.createItem(itemRank, false, rng, undefined, undefined, pool, ground));
     }
 
     // Chance for bonus rare item
     if (rng.next() < 0.2 * magicFind) {
-      const bonus = ItemFactory.createItem(chestRank, false, rng, undefined, undefined, pool);
-      bonus.rarity = Rarity.RARE;
+      const bonus = ItemFactory.createItem(chestRank, false, rng, undefined, undefined, pool, ground);
+      if (!newLaw(groundVersion)) bonus.rarity = Rarity.RARE;
       loot.push(bonus);
     }
 

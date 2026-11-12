@@ -62,7 +62,7 @@ import { usePlayerStore } from '../src/entities/player/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../shared/constants';
+import { PieceLaw } from '../shared/logic/theme/PieceLaw';
 import { HUB_GENRE } from '../src/render/atoms/hub';
 
 // -----------------------------------------------------------------------------
@@ -198,10 +198,10 @@ describe('the stone-and-stick floor: improvised crafting, no bench, anywhere', (
 
   it('the club is measurably the worst weapon the game can make', () => {
     const club = improvise('improv_club', kit(), 'bars:worst').item!;
-    // the weakest weapon the shelf or the world can mint: COMMON rarity at the
-    // quality floor, over every weapon base the factory knows
-    const worstMintable = Math.min(...ITEM_DEFINITIONS.weapon_bases.map(b =>
-      Math.floor(b.base_ip * RANK_MULTIPLIERS[b.rank] * RARITY_MULTIPLIERS['COMMON' as keyof typeof RARITY_MULTIPLIERS] * 0.8)));
+    // the weakest weapon the shelf or the world can mint: rank F at the quality floor, over every
+    // weapon base the factory knows. The rarity rescale: a piece's power is its rank's and its quality's
+    // (PieceLaw), and no step multiplies it
+    const worstMintable = Math.min(...ITEM_DEFINITIONS.weapon_bases.map(() => PieceLaw.power('F', -0.2, false)));
     expect(club.itemPower).toBeGreaterThan(0);
     expect(club.itemPower).toBeLessThan(worstMintable);
   });

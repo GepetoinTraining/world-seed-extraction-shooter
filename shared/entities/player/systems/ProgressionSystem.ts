@@ -17,6 +17,8 @@ const RARITY_MULTIPLIER: Record<Rarity, number> = {
   [Rarity.SCRAP]: 0.5,
   [Rarity.COMMON]: 1.0,
   [Rarity.UNCOMMON]: 1.2,
+  // The rarity rescale's new step. No body or material is ever magical, so it reads as uncommon does
+  [Rarity.MAGICAL]: 1.2,
   [Rarity.RARE]: 1.5,
   [Rarity.EPIC]: 2.5,
   [Rarity.LEGENDARY]: 5.0,

@@ -243,7 +243,7 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
     const prefix = shape.bucket === 'weapon_bases' ? 'wpn' : shape.bucket === 'tool_bases' ? 'tool' : 'arm';
     const id = idOf(prefix, g.key);
     const base: ItemDefinition = {
-      id, universal_name: g.name, rank: g.rank as UniversalRank, base_ip: gearBaseIp(g.rank, g.kind),
+      id, universal_name: g.name, rank: g.rank as UniversalRank, base_ip: gearBaseIp(g.rank, g.kind), kind: g.kind,
       slot: shape.slot, tags: unique([...shape.tags, ...g.tags]), implicits: shape.implicits(step),
       ...(shape.pouch ? { pouch: shape.pouch } : {}),
       ...(shape.belt ? { belt: shape.belt } : {}),

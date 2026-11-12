@@ -12,6 +12,7 @@
  * in a simulation instead of by feel (PLAN W4 gate).
  */
 
+import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
 import { IAttributes, IEquipmentState, IItem } from '../../../shared/types';
 import { IMobDefinition } from '../../../shared/entities/mob/types';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
@@ -46,7 +47,11 @@ export class CombatMath {
   static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState): number {
     // C14: a stone thrown lands by how hard it is, and a bare hand by what a bare hand does
     const base = isThrowable(weapon) ? thrownDamage(weapon!)
-      : this.isUsable(weapon) ? Math.round(6 + (weapon!.itemPower || 0) * 0.08) : UNARMED_DAMAGE;
+      : !this.isUsable(weapon) ? UNARMED_DAMAGE
+      // The rarity rescale: a fifth of the piece's power, with no bare constant beside it (1.2). A piece a
+      // standing world minted keeps the blow it was stamped with (call 18)
+      : weapon!.pieceLaw !== undefined ? Math.round(PieceLaw.blowOf(weapon!.itemPower || 0))
+      : Math.round(6 + (weapon!.itemPower || 0) * 0.08);
     return Math.max(1, base + StatSystem.total(equipment, 'damage'));
   }
 

@@ -5,8 +5,10 @@
  * derives must be the formula's. What is off is put right, field by field, as a list of changes.
  *
  * What is checked, and why only that:
- *   found gear   rank and level from its base; power and worth from base, rank, rarity and
- *                quality, the factory's own arithmetic (ItemFactory.createFromTemplate)
+ *   found gear   under the rescale (pieceLaw): level, power and worth from its own rank and quality,
+ *                and its step from the count of what it holds (PieceLaw). Under the old law, a standing
+ *                world's: rank and level from its base, power and worth from base, rank, rarity and
+ *                quality, the old factory's arithmetic (LegacyLaw)
  *   a material   rank and rarity from its definition
  *   a made thing its chain, inferred by the host's tech web (Pedro, 2026-11-04: "if the crafting
  *                was done locally then brought online the chain of the crafting is inferrable by
@@ -20,7 +22,9 @@
  * Pure: definitions are handed in.
  */
 
-import { RANK_MULTIPLIERS, RARITY_MULTIPLIERS } from '../../constants';
+import { RANK_MULTIPLIERS } from '../../constants';
+import { RARITY_MULTIPLIERS } from './LegacyLaw';
+import { PieceLaw } from '../theme/PieceLaw';
 import { IItem, ItemType, Rarity, UniversalRank } from '../../types';
 import type { ItemDefinition } from '../../entities/item/data/itemDefinitions';
 import type { ResourceDef } from '../../entities/item/data/resourceDefinitions';
@@ -86,6 +90,16 @@ export const ItemLaw = {
       // Rolled as next() * 0.4 - 0.2, so it is under the top and at least the bottom
       if (!Number.isFinite(q)) return { ok: false, reason: 'Its quality is not a number.' };
       if (q < QUALITY_LOW || q >= QUALITY_HIGH) set('quality', Math.min(Math.max(q, QUALITY_LOW), QUALITY_HIGH - 1e-9));
+      // The rarity rescale: the rank is where it came from, the power its rank and quality, the step its count
+      if (it.pieceLaw !== undefined) {
+        if (!(it.rank in LEVEL)) return { ok: false, reason: `Its rank ${String(it.rank)} is not one this game has.` };
+        set('level', LEVEL[it.rank] ?? 1);
+        const power = PieceLaw.power(it.rank, out.quality, base.tags.includes('tool'));
+        set('itemPower', power);
+        set('value', Math.max(1, Math.floor(power * 2)));
+        set('rarity', PieceLaw.stepOf(it.affixes ?? []));
+        return { ok: true, checked: true, item: out, changes };
+      }
       set('rank', base.rank);
       set('level', LEVEL[base.rank] ?? 1);
       const power = Math.floor(base.base_ip * RANK_MULTIPLIERS[base.rank as UniversalRank] * RARITY_MULTIPLIERS[out.rarity] * (1 + out.quality));
