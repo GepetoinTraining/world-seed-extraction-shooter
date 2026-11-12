@@ -32,6 +32,20 @@ import { ISkillPair, WebSystem } from './WebSystem';
 const STANDARD_BAND = 2;
 const RANK_ORDER = Object.values(UniversalRank);
 
+/**
+ * GV41: how a hand stands, as the card says it. D32 ruled the odds are never shown, so the chance is said in plain steps,
+ * the least chance each step starts at, from none to every time. Words only; the steps are the coordinator's (GV41).
+ */
+export const ODDS_STEPS: { least: number; words: string }[] = [
+  { least: 0, words: 'never' },
+  { least: 1, words: 'hardly ever' },
+  { least: 10, words: 'now and then' },
+  { least: 35, words: 'about half the time' },
+  { least: 65, words: 'more often than not' },
+  { least: 90, words: 'nearly every time' },
+  { least: 100, words: 'every time' }
+];
+
 export interface IHand {
   /** The tool tried with; absent, a bare hand. */
   tool?: IItem;
@@ -111,7 +125,14 @@ export const ExtractLaw = {
     return Math.max(least, Math.floor((least + WebSystem.masteryOf(skill).rung) * (1 + WebSystem.skillPower(skill))));
   },
 
-  /** How often a hand like this takes the place, in a hundred: what the card says once the material is known. */
+  /** A chance in a hundred, said as the card says it. */
+  oddsSaid(odds: number): string {
+    let words = ODDS_STEPS[0].words;
+    for (const step of ODDS_STEPS) if (odds >= step.least) words = step.words;
+    return words;
+  },
+
+  /** How often a hand like this takes the place, in a hundred: said in words on the card once the material is known. */
   oddsOf(hand: IHand, def: ResourceDef): number {
     const need = this.bar(def, hand.rank) - this.points(hand) * LORE_ROLL_PER_POINT;
     return Math.max(0, Math.min(100, 101 - need));

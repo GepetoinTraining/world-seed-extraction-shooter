@@ -27,7 +27,7 @@ import { EXTRACT_BAR_PLAIN, EXTRACT_PER_RANK, EXTRACT_PER_WORTH, extractBar } fr
 import { slipWear } from '../shared/logic/theme/WearLaw';
 import { LORE_FAIR_LINE, LORE_ROLL_PER_POINT } from '../shared/logic/systems/LoreConstants';
 import { LoreLaw } from '../shared/logic/systems/LoreLaw';
-import { ExtractLaw } from '../shared/logic/systems/ExtractLaw';
+import { ExtractLaw, ODDS_STEPS } from '../shared/logic/systems/ExtractLaw';
 import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { SpreadBook } from '../shared/entities/world/Spread';
@@ -148,6 +148,16 @@ describe('ML: what the hand brings: its tool\'s rank and quality, the skill, and
     const far = tally(silver());
     expect(far.major_failure).toBeGreaterThan(800);
     expect(far.success + far.major_win).toBeLessThan(500);
+  });
+
+  // GV41: the card says how a hand stands in a few plain steps, never the number (D32: the odds are never shown)
+  it('the odds are said in plain steps, from never to every time, with no number', () => {
+    const said = [0, 3, 20, 45, 60, 85, 100].map(ExtractLaw.oddsSaid);
+    for (const s of said) expect(s).not.toMatch(/\d/);
+    expect(new Set(said).size).toBeGreaterThanOrEqual(5);
+    // A better chance is never said as a worse step
+    const at = (n: number) => ODDS_STEPS.findIndex(s => s.words === ExtractLaw.oddsSaid(n));
+    for (let n = 1; n <= 100; n++) expect(at(n)).toBeGreaterThanOrEqual(at(n - 1));
   });
 });
 

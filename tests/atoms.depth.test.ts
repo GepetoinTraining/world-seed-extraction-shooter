@@ -4,6 +4,7 @@ import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { ITEM_DEFINITIONS } from '../shared/entities/item/data/itemDefinitions';
 import { MATERIAL_AFFIXES } from '../src/entities/world/MaterialScience';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
+import { ODDS_STEPS } from '../shared/logic/systems/ExtractLaw';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { EntityType } from '../shared/entities/world/types';
@@ -340,7 +341,13 @@ describe('inspect card', () => {
   it('names the tool that is missing, and how a weak one stands', () => {
     const weak = inspectEntity(node('res_titanium_vein'), { player: player(kits.weakPick), dist: 1, level: () => 2 });
     const strong = inspectEntity(node('res_titanium_vein'), { player: player(kits.strongPick), dist: 1, level: () => 2 });
-    const odds = (card: { rows: [string, string][] }) => Number(/about (\d+) times/.exec(card.rows.find(([k]) => k === 'Odds')![1])![1]);
+    // GV41: the odds are said in plain steps, never as a number (D32); a weaker hand's step is never above a stronger one's
+    const odds = (card: { rows: [string, string][] }) => {
+      const said = card.rows.find(([k]) => k === 'Odds')![1];
+      expect(said).not.toMatch(/\d/);
+      return ODDS_STEPS.findIndex(s => said.endsWith(s.words));
+    };
+    expect(odds(weak)).toBeGreaterThanOrEqual(0);
     expect(odds(weak)).toBeLessThanOrEqual(odds(strong));
     const none = inspectEntity(node('res_tree_log'), { player: player([]), dist: 1, level: () => 2 });
     expect(none.needs.join(' ')).toMatch(/axe/);

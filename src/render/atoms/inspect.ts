@@ -119,7 +119,8 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
       rows.push(['Cost', `${cost} energy, ${config.baseTimeSeconds}s${winging ? ', winging it' : ''}`]);
       // ML: how often this hand takes it, once the person knows what it is
       const hand = isLooseStone(def) ? null : ExtractLaw.hand(ctx.player, def);
-      if (hand) rows.push(['Odds', `${hand.tool ? `The ${LoadoutSystem.shownName(hand.tool)} takes` : 'Your hands take'} it about ${ExtractLaw.oddsOf(hand, def)} times in 100`]);
+      // GV41: in plain steps, never the number (D32)
+      if (hand) rows.push(['Odds', `${hand.tool ? `The ${LoadoutSystem.shownName(hand.tool)} takes` : 'Your hands take'} it ${ExtractLaw.oddsSaid(ExtractLaw.oddsOf(hand, def))}`]);
     }
   }
   if (level >= 2) {
