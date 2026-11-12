@@ -220,6 +220,14 @@ export class RestSystem {
     return !!player.rest && now < player.rest.until;
   }
 
+  /** What a rest says of the skills it settled and the ones that wait on lore: the rest door's words, and a stacked rest's. */
+  static settledWords(emerged: { id: string; rank?: number }[], wanting: { id: string; price: number; held: number }[]): string[] {
+    return [
+      ...emerged.map(skill => `It settled: ${WebSystem.nameOf(skill.id)}. The hands know it now, and it took ${WebSystem.learnPrice(skill.rank ?? 0)} lore.`),
+      ...wanting.map(w => `${WebSystem.nameOf(w.id)} was ready to settle, and it wants ${w.price} lore. You hold ${w.held} it can use. It will keep until you have it.`)
+    ];
+  }
+
   static beginRest(player: IPlayer, place: RestPlace, now: number): IPlayer {
     return { ...player, rest: { until: now + this.restMs(player), place, startedAt: now } };
   }

@@ -34,6 +34,7 @@ import { hoverProps, useHotbar, useSheet } from './ui/stores';
 import { Bar, Button, ItemSprite, Kbd, Panel, PortraitView, RankMark, SpriteView } from './ui/kit';
 import { isTypingTarget } from '../logic/systems/FieldInput';
 import { goalWords, useWebView } from './TechWebView';
+import { DowntimeActs } from '../logic/systems/DowntimeActs';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -217,6 +218,19 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
             ? <Line word="WORKING TOWARD" value={goal.name} feeds={goal.says} />
             : <div className="ws-dim ws-small">Working toward nothing marked. THE WEB marks a goal.</div>;
         })()}
+      </Section>
+
+      {/* The design pass, part 5: what is stacked for while away, and what the last return said */}
+      <Section word="WHILE AWAY">
+        {player.downtime?.stack.acts.length
+          ? player.downtime.stack.acts.map((act, i) => <div key={i} className="ws-small">{i + 1}. {DowntimeActs.wordOf(act)}</div>)
+          : <div className="ws-dim ws-small">Nothing stacked. It is laid where you rest: Old Mags' at the inn, or your own bed.</div>}
+        {player.downtime?.account && (
+          <div className="ws-small" style={{ marginTop: 4 }}>
+            <div className="ws-dim">The last return said:</div>
+            {player.downtime.account.lines.map((line, i) => <div key={i}>{line}</div>)}
+          </div>
+        )}
       </Section>
 
       <Section word="MASTERY OF MATERIALS">

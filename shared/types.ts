@@ -1028,6 +1028,8 @@ export interface IPlayer {
   studyCount?: number;
   /** The design pass, part 2: what on the tech web this character is working toward, by the web's key (`WebMap`). Absent: nothing marked. */
   webGoal?: { ref: string; at: number };
+  /** The design pass, part 5: what this character does while its player is away (Downtime), and the last return's account in words. */
+  downtime?: { stack: import('./logic/systems/Downtime').IDowntimeStack; account?: { at: number; lines: string[] }; stopKey?: string };
   /** D118: what this character has sat with, by `StudySystem.keyOf`. */
   studyMarks?: Record<string, IStudyMark>;
   /** D79: a rest takes real time, and until then this character is down. */

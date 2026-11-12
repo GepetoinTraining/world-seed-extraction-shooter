@@ -428,6 +428,19 @@ export class StudySystem {
     return { player: next, sitting, roll };
   }
 
+  /** What a sitting says when it lands. A piece can be broken; anything else can only be closed to you. */
+  static saidOf(outcome: StudyOutcome, target: Pick<IStudyTarget, 'name' | 'kind'>): string {
+    const { name, kind } = target;
+    if (outcome === 'major_win') return `${name} opened up further than it should have. You will know how far after you rest.`;
+    if (outcome === 'success') return `You sat with ${name} for as long as it took. You will know what it came to after you rest.`;
+    if (outcome === 'failure') {
+      return kind === 'item'
+        ? `You pressed too hard on ${name}. It is the worse for it, and you learned nothing you could keep.`
+        : `You pressed too hard on ${name}. Nothing you could keep, and it will be harder next time.`;
+    }
+    return kind === 'item' ? `${name} is lost to you. Whatever was in it went with it.` : `${name} has closed to you. It will not sit for you for some days.`;
+  }
+
   /** The knowledge scope key the mastery machinery files gear study under. */
   static masteryKeyOf(scope: IdentifyScope): string {
     return `gear_${scope}`;

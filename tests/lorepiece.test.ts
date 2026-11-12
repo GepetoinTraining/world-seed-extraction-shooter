@@ -127,7 +127,8 @@ describe('the doors: written at home from the web, and read through study', () =
     expect(SRC('src/logic/systems/LoreWriteDoor.ts')).toMatch(/LORE_WRITTEN/);
   });
   it('a sitting on a written piece teaches the skill it carries', () => {
-    expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/LorePiece\.read\(/);
+    expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/StudyLanding\.land\(/);
+    expect(SRC('src/logic/systems/StudyLanding.ts')).toMatch(/LorePiece\.read\(/);
   });
   it('the piece carries its record on the item contract', () => {
     expect(SRC('shared/types.ts')).toMatch(/lorePiece\?:/);
@@ -164,7 +165,8 @@ describe('reading a piece makes its skill ready to settle, for its price in lore
     expect(out.wanting).toEqual([{ id: AXE.id, price: loreTeachPrice(0), held: 10 }]);
     expect(out.player.bank.universalSkills[AXE.id]).toBeUndefined();
     expect(out.player.skillProgress![AXE.id].ready).toBe(true);
-    expect(SRC2('src/logic/systems/RestDoor.ts')).toMatch(/was ready to settle, and it wants/);
+    expect(SRC2('src/logic/systems/RestDoor.ts')).toMatch(/RestSystem\.settledWords/);
+    expect(SRC2('src/logic/systems/RestSystem.ts')).toMatch(/was ready to settle, and it wants/);
   });
 
   it('a reader who already holds the skill gains nothing toward it', () => {

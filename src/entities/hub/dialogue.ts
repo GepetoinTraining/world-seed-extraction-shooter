@@ -33,7 +33,7 @@ export type DialogueEffect =
   | { kind: 'reply'; text: string }
   | { kind: 'navigate'; view: 'BANK' | 'MISSIONS' | 'HOLDINGS' }
   | { kind: 'open'; panel: 'shop'; category: 'weapon' | 'armor' | 'consumable' }
-  | { kind: 'open'; panel: 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' | 'tavern' | 'guild' }
+  | { kind: 'open'; panel: 'repair' | 'lore' | 'missions' | 'ledger' | 'plan' | 'tavern' | 'guild' | 'downtime' }
   | { kind: 'open'; panel: 'sell'; npcId?: string }
   | { kind: 'open'; panel: 'apprentices'; npcId: string }
   | { kind: 'deploy' }
@@ -162,6 +162,8 @@ export const DIALOGUE_HANDLERS: Record<string, Handler> = {
     void RestDoor.sleep('INN', world, pc, hp);
     return { kind: 'reply', text: `${INN_FEE}G, and the bed by the wall. Whatever you have been carrying around in your head, leave it on the pillow.` };
   },
+  // The design pass, part 5: a stack is laid where a character rests
+  LAY_STACK: () => ({ kind: 'open', panel: 'downtime' }),
   BUY_CONSUMABLE: (payload, _world, pc, hp) => {
     const cost = payload?.cost ?? 10;
     if (!charge(pc, cost, 'TAVERN', { itemId: payload?.itemId }, hp)) {

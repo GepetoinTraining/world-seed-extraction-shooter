@@ -60,7 +60,9 @@ export type PlayerChange =
   | { kind: 'DROP_ITEM'; itemId: string; quiet?: boolean; count?: number }
   | { kind: 'TOGGLE_CARRY'; itemId: string }
   /** What on the tech web the character works toward, or nothing (the design pass, part 2). */
-  | { kind: 'WEB_GOAL'; goal: IPlayer['webGoal'] };
+  | { kind: 'WEB_GOAL'; goal: IPlayer['webGoal'] }
+  /** What is stacked for while the player is away, or nothing (the design pass, part 5). */
+  | { kind: 'DOWNTIME'; downtime: IPlayer['downtime'] };
 
 /** The store's own calls that answer back. Its law runs them; a system only asks. */
 export interface IPlayerCalls {
