@@ -48,4 +48,6 @@ export interface IMobDefinition {
 
   /** D60: this creature's place in its own line. Absent means the first. */
   generation?: number;
+  /** The fight's shapes: how it shoots, as its pack wrote it. Absent, its size and behaviour are read. */
+  volley?: import('../../logic/theme/ThemeTypes').Volley;
 }

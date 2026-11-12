@@ -51,6 +51,25 @@ export const GEAR_KINDS = [
 ] as const;
 export type GearKind = typeof GEAR_KINDS[number];
 
+/**
+ * The fight's shapes (the fight's rebalance, part 1). Pedro, 2026-11-11: "meele needs reach, and it needs to have
+ * that arc, an axe has reach but doesn't hit close to the character usin ..., a spear can atack forward far, and
+ * wide arc". How a kind strikes, in three words, one for each thing a shape on the ground says: how far it reaches,
+ * how wide it sweeps, and whether a haft leaves the ground next to its wielder untouched. The formula turns them
+ * into tiles and radians; a kind that names none is read from its own tags (`strikeWordsOf`).
+ */
+export const STRIKE_REACHES = ['short', 'middling', 'long'] as const;
+export const STRIKE_SWEEPS = ['thrust', 'arc', 'wide'] as const;
+export const STRIKE_HOLLOWS = ['none', 'haft'] as const;
+export interface IStrikeWords {
+  reach: typeof STRIKE_REACHES[number];
+  sweep: typeof STRIKE_SWEEPS[number];
+  hollow: typeof STRIKE_HOLLOWS[number];
+}
+/** How shots leave a hand or a body: one, a fan, a turning stream, or all the way round. "it should be bullet hellish". */
+export const VOLLEYS = ['single', 'spread', 'spiral', 'ring'] as const;
+export type Volley = typeof VOLLEYS[number];
+
 /** Pedro: a potion can refill energy, and the law keeps those off every shelf. */
 export const CONSUMABLE_KINDS = ['heal', 'scroll', 'energy'] as const;
 /** What a material does for whoever eats it. A plant that refills energy is very, very rare. */
@@ -111,6 +130,8 @@ export interface IThemeCreature {
   builds?: boolean;
   /** D93: for a plain elite of a social species, the key of the kind whose pack it heads. Empty otherwise. */
   leads?: string;
+  /** The fight's shapes: how it shoots, when it shoots. A pack written before names none, and its size and behaviour are read. */
+  volley?: Volley;
 }
 
 /** D99: what a creature leaves that is only worth its sale. */
@@ -224,6 +245,10 @@ export interface IThemeGear {
    * which reads MEDIUM, the first world's 10 by 8.
    */
   size?: typeof SIZES[number];
+  /** The fight's shapes: how a weapon or a tool strikes on the ground. Only what swings reads it; a pack written before names none, and the kind's tags are read. */
+  strike?: IStrikeWords;
+  /** The fight's shapes: how what it throws or fires leaves the hand. Only what shoots reads it; none names reads its tags. */
+  volley?: Volley;
 }
 
 export interface IThemeConsumable {
@@ -391,7 +416,7 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   creatures: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), size: oneOf(SIZES), behavior: oneOf(BEHAVIORS),
     build: oneOf(BUILDS), threat: oneOf(THREATS), pace: oneOf(PACES), habitat: manyOf(BIOMES), innate: strs, tree: str,
-    social: { type: 'boolean' }, builds: { type: 'boolean' }, leads: str
+    social: { type: 'boolean' }, builds: { type: 'boolean' }, leads: str, volley: oneOf(VOLLEYS)
   }),
   materials: list({
     key: str, name: str, blurb: str, tags: strs, rank: oneOf(RANKS), form: oneOf(MATERIAL_FORMS), verb: oneOf(HARVEST_VERBS),
@@ -404,7 +429,8 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   }),
   gear: list({
     key: str, name: str, blurb: str, kind: oneOf(GEAR_KINDS), rank: oneOf(RANKS), size: oneOf(SIZES), tags: strs, works: strs, carries: str, trigger: str,
-    from: list({ key: str, count }), craftAt: oneOf(['none', 'hands', 'bench'])
+    from: list({ key: str, count }), craftAt: oneOf(['none', 'hands', 'bench']),
+    strike: obj({ reach: oneOf(STRIKE_REACHES), sweep: oneOf(STRIKE_SWEEPS), hollow: oneOf(STRIKE_HOLLOWS) }), volley: oneOf(VOLLEYS)
   }),
   consumables: list({ key: str, name: str, blurb: str, kind: oneOf(CONSUMABLE_KINDS), rank: oneOf(RANKS), tags: strs, casts: str, onShelf: { type: 'boolean' } }),
   affixes: list({

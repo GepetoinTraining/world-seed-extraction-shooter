@@ -155,6 +155,9 @@ export class ItemFactory {
     // A cart's bed at the piece's own rank; what it bears is read at this piece's quality
     if (cart) item.cartData = { ...cart, ...(cart.bears !== undefined ? { bears: cartBearsAt(cart.bears, quality) } : {}) };
     if (template.carries) item.carries = { ...template.carries };
+    // The fight's shapes ride from the kind's words onto the piece; a kind that wrote none leaves its tags to be read
+    if (template.strike) item.strike = { ...template.strike };
+    if (template.volley) item.volley = template.volley;
     item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
     item.composition = CompositionSystem.root({ id: template.id, name: template.universal_name }, 'WORLD');
     return MintRegistry.claim(item);
@@ -287,6 +290,8 @@ export class ItemFactory {
     if (template.cart) item.cartData = { ...template.cart, ...(template.cart.bears !== undefined ? { bears: cartBearsAt(template.cart.bears, quality) } : {}) };
     // Layer 3: a piece can carry an ability. It acts unstudied, and stays hidden until read.
     if (template.carries) item.carries = { ...template.carries };
+    if (template.strike) item.strike = { ...template.strike };
+    if (template.volley) item.volley = template.volley;
     // 10C.2: requirements are stamped at mint — deterministic from rank and tags
     item.requirements = LoadoutSystem.requirementsFor({ ...item, requirements: undefined });
 

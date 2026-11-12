@@ -1,4 +1,5 @@
-
+import { SHOT_FLIGHT_S, SHOT_SPEED_PX, volleyShots } from '../../logic/theme/ThemeFormula';
+import type { Volley } from '../../logic/theme/ThemeTypes';
 
 export interface IProjectile {
   id: string;
@@ -15,10 +16,12 @@ export interface IProjectile {
   // Position on the previous frame, so a slow frame cannot skip over a target
   prevX?: number;
   prevY?: number;
+  /** The fight's shapes: who its volley has already struck. A volley lands once on one body; its other shots stop there and do nothing. */
+  struck?: Set<string>;
 }
 
-const PROJECTILE_SPEED_PX = 200; // 10 tiles/s at 20px tiles
-const PROJECTILE_FLIGHT_S = 2.0;
+const PROJECTILE_SPEED_PX = SHOT_SPEED_PX; // 10 tiles/s at 20px tiles
+const PROJECTILE_FLIGHT_S = SHOT_FLIGHT_S;
 export const PROJECTILE_RANGE_PX = PROJECTILE_SPEED_PX * PROJECTILE_FLIGHT_S;
 /** How far past a shot's range things keep simulating, so they are live before they come into reach. */
 export const SIM_MARGIN_PX = 100;
@@ -30,80 +33,102 @@ export enum PatternType {
   NOVA = 'NOVA'
 }
 
+/** The fight's shapes: the pattern a volley word flies as. The shots in it are the formula's (`volleyShots`). */
+const PATTERN_OF: Record<Volley, PatternType> = { single: PatternType.SINGLE, spread: PatternType.SHOTGUN, spiral: PatternType.SPIRAL, ring: PatternType.NOVA };
+export const patternOf = (volley: Volley): PatternType => PATTERN_OF[volley] ?? PatternType.SINGLE;
+const volleyOfPattern = (type: PatternType): Volley =>
+  (Object.keys(PATTERN_OF) as Volley[]).find(v => PATTERN_OF[v] === type) ?? 'single';
+
+/** A fired pattern, as the field keeps it. `rangePx` shortens a shot's flight (a thrown stone); none is a shot's whole flight. */
+export interface IFiredPattern {
+  type: PatternType;
+  origin: { x: number; y: number };
+  startTime: number;
+  angle: number;
+  damage?: number;
+  poison?: number;
+  status?: IProjectile['status'];
+  struck?: Set<string>;
+  rangePx?: number;
+}
+
 export class ProjectileSystem {
-  
+
+  /**
+   * Every shot of a pattern still in the air at `currentTime`, recomputed from time: each leaves the origin
+   * when its own delay has passed, at its own angle off the aim, and flies for the pattern's flight.
+   */
   static getProjectilesAtTime(
-    pattern: PatternType, 
-    origin: {x: number, y: number}, 
-    startTime: number, 
+    pattern: PatternType,
+    origin: {x: number, y: number},
+    startTime: number,
     currentTime: number,
-    baseAngle: number
+    baseAngle: number,
+    flightS: number = PROJECTILE_FLIGHT_S
   ): IProjectile[] {
-    
+
     const elapsed = (currentTime - startTime) / 1000;
     if (elapsed < 0) return [];
 
     const bullets: IProjectile[] = [];
     const speed = PROJECTILE_SPEED_PX;
-    const range = PROJECTILE_FLIGHT_S;
+    const colour = pattern === PatternType.NOVA ? 'cyan' : pattern === PatternType.SINGLE ? 'yellow' : 'red';
 
-    if (elapsed > range) return [];
-
-    const dist = speed * elapsed;
-
-    // Helper to create projectile
-    const makeProj = (id: string, a: number, c: string): IProjectile => ({
-        id,
+    volleyShots(volleyOfPattern(pattern)).forEach((shot, i) => {
+      const age = elapsed - shot.delayMs / 1000;
+      if (age < 0 || age > flightS) return;
+      const a = baseAngle + shot.offset;
+      const dist = speed * age;
+      bullets.push({
+        id: `p_${i}`,
         x: origin.x + Math.cos(a) * dist,
         y: origin.y + Math.sin(a) * dist,
         angle: a,
         speed,
-        spawnTime: startTime,
-        lifespan: range,
-        color: c
+        spawnTime: startTime + shot.delayMs,
+        lifespan: flightS,
+        color: colour
+      });
     });
-
-    switch (pattern) {
-      case PatternType.SINGLE:
-        bullets.push(makeProj('p_0', baseAngle, 'yellow'));
-        break;
-
-      case PatternType.SHOTGUN:
-        [-0.25, 0, 0.25].forEach((offset, idx) => {
-          bullets.push(makeProj(`p_${idx}`, baseAngle + offset, 'red'));
-        });
-        break;
-
-      case PatternType.NOVA:
-        for(let i=0; i<8; i++) {
-          bullets.push(makeProj(`p_${i}`, baseAngle + (i * (Math.PI / 4)), 'cyan'));
-        }
-        break;
-    }
 
     return bullets;
   }
-  
+
+  /** How long a pattern has shots in the air: its last shot's delay and one whole flight. */
+  static lifeMs(pattern: { type: PatternType; rangePx?: number }): number {
+    const last = Math.max(...volleyShots(volleyOfPattern(pattern.type)).map(s => s.delayMs));
+    return last + this.flightS(pattern) * 1000;
+  }
+
+  static alive(pattern: { type: PatternType; startTime: number; rangePx?: number }, now: number): boolean {
+    return now - pattern.startTime < this.lifeMs(pattern);
+  }
+
+  private static flightS(pattern: { rangePx?: number }): number {
+    return pattern.rangePx !== undefined ? Math.min(PROJECTILE_FLIGHT_S, pattern.rangePx / PROJECTILE_SPEED_PX) : PROJECTILE_FLIGHT_S;
+  }
+
   /**
    * Projectiles of one firing pattern that are still in flight this frame.
    * Positions are recomputed from time, so `spent` remembers shots that landed.
    */
   static liveShots(
-    pattern: { type: PatternType; origin: { x: number; y: number }; startTime: number; angle: number; damage?: number; poison?: number; status?: IProjectile['status'] },
+    pattern: IFiredPattern,
     shotId: (bulletId: string) => string,
     now: number,
     prevTick: number,
     spent: Map<string, number>
   ): IProjectile[] {
-    return this.getProjectilesAtTime(pattern.type, pattern.origin, pattern.startTime, now, pattern.angle)
+    return this.getProjectilesAtTime(pattern.type, pattern.origin, pattern.startTime, now, pattern.angle, this.flightS(pattern))
       .map(b => {
-        const back = (Math.min(now - prevTick, now - pattern.startTime) / 1000) * b.speed;
+        const back = (Math.min(now - prevTick, now - b.spawnTime) / 1000) * b.speed;
         return {
           ...b,
           id: shotId(b.id),
           damage: pattern.damage,
           poison: pattern.poison,
           status: pattern.status,
+          ...(pattern.struck ? { struck: pattern.struck } : {}),
           prevX: b.x - Math.cos(b.angle) * back,
           prevY: b.y - Math.sin(b.angle) * back
         };
@@ -133,8 +158,8 @@ export class ProjectileSystem {
 
       const angleToBullet = Math.atan2(dy, dx);
       const angleDiff = Math.abs(angleToBullet - swingAngle);
-      
+
       // 0.75 rad is roughly 45 degrees
-      return angleDiff < 0.75; 
+      return angleDiff < 0.75;
   }
 }

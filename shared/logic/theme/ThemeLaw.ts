@@ -8,7 +8,7 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TERRAIN_ROLES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, AFFIX_PAIRS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TERRAIN_ROLES, STRIKE_REACHES, STRIKE_SWEEPS, STRIKE_HOLLOWS, VOLLEYS, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, AFFIX_PAIRS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
 import { statSide } from '../../constants';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
@@ -101,6 +101,8 @@ export class ThemeLaw {
       if (!has(SIZES, c.size)) return no(`${c.key}: "${c.size}" is not a size.`);
       if (!has(BEHAVIORS, c.behavior)) return no(`${c.key}: "${c.behavior}" is not a behavior.`);
       if (!has(BUILDS, c.build) || !has(THREATS, c.threat) || !has(PACES, c.pace)) return no(`${c.key} is outside the bands.`);
+      // The fight's shapes: a volley word, or none (a pack written before names none, and its size and behaviour are read)
+      if (c.volley !== undefined && !has(VOLLEYS, c.volley)) return no(`${c.key} shoots in "${c.volley}", which is no volley. A volley is one of ${VOLLEYS.join(', ')}.`);
       if (c.habitat.length === 0 || !c.habitat.every(b => has(BIOMES, b))) return no(`${c.key} lives nowhere the world has.`);
       const missing = c.innate.find(k => !abilityKeys.has(k));
       if (missing) return no(`${c.key} is born knowing "${missing}", which this pack never defines.`);
@@ -174,6 +176,11 @@ export class ThemeLaw {
       if (!has(GEAR_KINDS, g.kind)) return no(`${g.key}: "${g.kind}" is not a kind of gear, so no slot would take it.`);
       // The interface pass: a size word is the creatures' own, or none (a pack written before names none)
       if (g.size !== undefined && !has(SIZES, g.size)) return no(`${g.key}: "${g.size}" is not a size. A size is one of ${SIZES.join(', ')}.`);
+      // The fight's shapes: how it strikes and how it shoots, in the formula's words, or none (its tags are read)
+      if (g.strike !== undefined && !(has(STRIKE_REACHES, String(g.strike?.reach)) && has(STRIKE_SWEEPS, String(g.strike?.sweep)) && has(STRIKE_HOLLOWS, String(g.strike?.hollow)))) {
+        return no(`${g.key} strikes in words the formula has no shape for. A reach is one of ${STRIKE_REACHES.join(', ')}; a sweep one of ${STRIKE_SWEEPS.join(', ')}; a hollow one of ${STRIKE_HOLLOWS.join(', ')}.`);
+      }
+      if (g.volley !== undefined && !has(VOLLEYS, g.volley)) return no(`${g.key} shoots in "${g.volley}", which is no volley. A volley is one of ${VOLLEYS.join(', ')}.`);
       if (g.carries && !abilityKeys.has(g.carries)) return no(`${g.key} carries "${g.carries}", which this pack never defines.`);
       if (wayOut.has(g.carries)) return no(`${g.key} carries "${g.carries}", and a trigger would open a way out for nothing.`);
       if (g.carries && !(TRIGGERS as readonly string[]).includes(g.trigger)) return no(`${g.key} fires on "${g.trigger}", and nothing in the game fires on that.`);

@@ -9,6 +9,17 @@ import { IItem, UniversalRank, Rarity } from '../../../shared/types';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { IStatusPlan, StatusClock } from '../../../shared/logic/systems/EffectSystem';
+import { bodyRadiusPx, covers } from '../../../shared/entities/combat/Shapes';
+
+/** The fight's shapes: a swing as it lands. `inner` and `half` are its hole and its half-width; a swing that names none is the old arc. */
+export interface IMeleeArc {
+  origin: { x: number; y: number }; angle: number; range: number; inner?: number; half?: number;
+  startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string>;
+}
+/** The arc every swing was before shapes, and an escort's still is. */
+const OLD_HALF_ANGLE = 0.75;
+/** How much ground a body takes: half its drawn width, by its size word (a post or a structure is a middling one). */
+const radiusOf = (ent: IWorldEntity) => bodyRadiusPx(MOB_DEFINITIONS[ent.definitionId]?.size);
 
 export interface ICombatEvent {
   type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG' | 'WARDED' | 'BROKE';
@@ -52,7 +63,7 @@ export class CombatSystem {
     chunks: Record<string, IChunk>,
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
-    meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string> }[],
+    meleeArcs: IMeleeArc[],
     opts: { magicFind?: number; groundVersion?: number; luck?: number } = {}
   ): {
     events: ICombatEvent[]; 
@@ -154,6 +165,13 @@ export class CombatSystem {
         // px: mob radius (12) + bullet radius + grace
         if (ProjectileSystem.sweptDistance(bullet, mob.position.x, mob.position.y) >= 20) continue;
 
+        // The fight's shapes: a volley lands once on one body. Its other shots stop there and do nothing
+        if (bullet.struck?.has(mob.id)) {
+          bulletsToRemove.add(bulletIdx);
+          break;
+        }
+        bullet.struck?.add(mob.id);
+
         // D93: while its anchors stand the blow lands on nothing. It is spent, and it says so
         if (mob.warded) {
           bulletsToRemove.add(bulletIdx);
@@ -195,15 +213,9 @@ export class CombatSystem {
       allMobs.forEach(({ mob, chunkKey }) => {
         if (!mob.health || mob.health <= 0) return;
         if (hitIds.has(mob.id)) return; // one swing lands once per target
-        const dx = mob.position.x - arc.origin.x;
-        const dy = mob.position.y - arc.origin.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        if (dist > arc.range) return;
-        const angleToMob = Math.atan2(dy, dx);
-        const angleDiff = Math.abs(angleToMob - arc.angle);
-        
-        if (angleDiff < 0.75 || angleDiff > Math.PI * 2 - 0.75) {
+        // The fight's shapes: what is struck is exactly what the drawn shape covers, any part of a body
+        const shape = { reachPx: arc.range, innerPx: arc.inner ?? 0, halfAngle: arc.half ?? OLD_HALF_ANGLE };
+        if (covers(shape, arc.origin, arc.angle, mob.position, radiusOf(mob))) {
           if (mob.warded) {
             hitIds.add(mob.id);
             events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, position: mob.position });

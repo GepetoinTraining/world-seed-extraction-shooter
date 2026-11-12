@@ -25,6 +25,9 @@ export interface ItemDefinition {
   cart?: { gridW: number; gridH: number; size?: string; weight?: number; bears?: number };
   /** Layer 3: an ability this base carries, and when it fires. */
   carries?: { ability: string; trigger: string };
+  /** The fight's shapes: how it strikes and how it shoots, as its pack wrote them. Absent, its tags are read. */
+  strike?: import('../../../logic/theme/ThemeTypes').IStrikeWords;
+  volley?: import('../../../logic/theme/ThemeTypes').Volley;
 }
 // -----------------------------------
 

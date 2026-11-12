@@ -15,6 +15,9 @@ import { LAYER, baselinePx, entitySprite, standsUpright, terrainBuffer } from '.
 import { Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, figure } from '../../shared/render/atoms/people';
 import type { IOther } from '../../shared/logic/live/Presence';
 import { textScale } from '../logic/settings/store';
+import { shapeMarks } from '../../shared/entities/combat/Shapes';
+import { volleyShots } from '../../shared/logic/theme/ThemeFormula';
+import type { Volley } from '../../shared/logic/theme/ThemeTypes';
 
 const QUADRANT_ATOMS = QUADRANT_TILES * TILE_ATOMS;
 const MAX_QUADRANTS_PER_FRAME = 3;
@@ -39,7 +42,8 @@ export interface FieldScene {
   others?: IOther[];
   bullets: { x: number; y: number; hostile: boolean }[];
   drops: { x: number; y: number }[];
-  swings: { x: number; y: number; angle: number; range: number }[];
+  /** The fight's shapes: a blow's ground as it lands; `inner` is its hole and `half` its half-width (none is the old arc). */
+  swings: { x: number; y: number; angle: number; range: number; inner?: number; half?: number }[];
   /** Live facing and walk frame per mob id, from the AI. Missing means front, still. */
   mobPoses?: Record<string, MobPose>;
   /** Hit flashes and death bursts, pruned by the caller. */
@@ -278,12 +282,13 @@ export class FieldRenderer {
       ctx.fillRect(x - 2, y - 4, 4, 8);
     });
 
+    // The fight's shapes: your blow's whole ground, solid, as it lands. What it covers is what it struck
     scene.swings.forEach(s => {
       ctx.fillStyle = this.color(Role.SIGNAL, 4);
-      for (let i = -2; i <= 2; i++) {
-        const a = s.angle + i * 0.3;
-        ctx.fillRect(snap(s.x + Math.cos(a) * s.range * 0.7 - ox), snap(s.y + Math.sin(a) * s.range * 0.7 - oz), 4, 4);
-      }
+      const shape = { reachPx: s.range, innerPx: s.inner ?? 0, halfAngle: s.half ?? 0.75 };
+      for (const m of shapeMarks(shape, { x: s.x, y: s.y }, s.angle, 8)) ctx.fillRect(snap(m.x - ox) - 1, snap(m.y - oz) - 1, 2, 2);
+      ctx.fillStyle = this.color(Role.SIGNAL, 3);
+      for (const m of shapeMarks({ ...shape, innerPx: Math.max(shape.innerPx, shape.reachPx - 1) }, { x: s.x, y: s.y }, s.angle, 4)) ctx.fillRect(snap(m.x - ox) - 2, snap(m.y - oz) - 2, 4, 4);
     });
 
     scene.bullets.forEach(b => {
@@ -318,8 +323,12 @@ export class FieldRenderer {
     const x = snap(e.position.x - ox), y = snap(e.position.y - oz);
     ctx.fillStyle = this.color(Role.THREAT, 4);
     if (t.delivery === 'ranged') {
-      for (let d = 24; d < 24 + 120 * (1 - left); d += 12) {
-        ctx.fillRect(snap(x + Math.cos(t.angle) * d) - 2, snap(y + Math.sin(t.angle) * d) - 2, 4, 4);
+      // The fight's shapes: every lane its volley will fly, dashed, drawn out as it comes due
+      for (const shot of volleyShots((t.volley ?? 'single') as Volley)) {
+        const a = t.angle + shot.offset;
+        for (let d = 24; d < 24 + 120 * (1 - left); d += 12) {
+          ctx.fillRect(snap(x + Math.cos(a) * d) - 2, snap(y + Math.sin(a) * d) - 2, 4, 4);
+        }
       }
       return;
     }
@@ -336,6 +345,16 @@ export class FieldRenderer {
         ctx.fillRect(snap(x + Math.cos(a) * r) - 1, snap(y + Math.sin(a) * r) - 1, 2, 2);
       }
       return;
+    }
+    if (t.shape) {
+      // The fight's shapes: the ground the blow will cover, its edge broken and its inside filling from the body
+      // outward as it comes due: told from your own solid blow by the broken edge, never by hue alone
+      const edge = shapeMarks({ ...t.shape, innerPx: Math.max(t.shape.innerPx, t.shape.reachPx - 1) }, e.position, t.angle, 6);
+      edge.forEach((m, i) => { if (i % 2 === 0) ctx.fillRect(snap(m.x - ox) - 2, snap(m.y - oz) - 2, 4, 4); });
+      const filled = t.shape.innerPx + (t.shape.reachPx - t.shape.innerPx) * (1 - left);
+      for (const m of shapeMarks(t.shape, e.position, t.angle, 10)) {
+        if (Math.hypot(m.x - e.position.x, m.y - e.position.y) <= filled) ctx.fillRect(snap(m.x - ox) - 1, snap(m.y - oz) - 1, 2, 2);
+      }
     }
     const r = snap(16 + 24 * left);
     [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {

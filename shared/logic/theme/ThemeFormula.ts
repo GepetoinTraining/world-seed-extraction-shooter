@@ -16,9 +16,16 @@
 
 import { SlotType, UniversalRank } from '../../types';
 import { readsRank } from '../../constants';
-import { GearKind, ThemeRank, RANKS, SIZES } from './ThemeTypes';
-import { PROJECTILE_RANGE_PX } from '../../entities/combat/projectileSystem';
+import { GearKind, IStrikeWords, ThemeRank, RANKS, SIZES, Volley } from './ThemeTypes';
 import { TILE_PX } from '../../entities/world/grid';
+
+/**
+ * How fast a shot flies and for how long, in pixels and seconds: ten tiles a second, two seconds. The
+ * projectile system reads them from here, so the formula owns every number a fight is drawn with.
+ */
+export const SHOT_SPEED_PX = 200;
+export const SHOT_FLIGHT_S = 2.0;
+const PROJECTILE_RANGE_PX = SHOT_SPEED_PX * SHOT_FLIGHT_S;
 
 /** The least pace a relight window is worked from, so a person who has not yet walked still has an answer. */
 const BASE_PACE = 1;
@@ -412,6 +419,87 @@ export const abilityNumbers = (cost: keyof typeof COST_POWER, rank: ThemeRank) =
   durationMs: 1500 + COST_POWER[cost] * 1000,
   telegraphMs: 400 + COST_POWER[cost] * 300
 });
+
+// -------------------------------------------------------------------------
+// THE FIGHT'S SHAPES (the fight's rebalance, part 1). Pedro, 2026-11-11: "it should be bullet hellish, and
+// meele needs reach, and it needs to have that arc, an axe has reach but doesn't hit close to the character
+// usin ..., a spear can atack forward far, and wide arc". A blow is a piece of ground: a ring cut to a wedge,
+// as far as its reach, as wide as its sweep, and empty inside its haft. Tiles and radians: no rank moves them
+// (BALANCE_RUN 1.2, "no rank at all: seconds, tiles, reach, wind-ups"). All guesses until played.
+// -------------------------------------------------------------------------
+
+/** Tiles from the wielder to the far edge. The middling reach is the swing Pedro played: three tiles. */
+const STRIKE_REACH_TILES = { short: 2, middling: 3, long: 4.5 };
+/** Radians either side of where it is aimed. The arc is the swing Pedro played; a thrust is a line; wide sweeps round in front. */
+const STRIKE_HALF_ANGLE = { thrust: 0.15, arc: 0.75, wide: 1.4 };
+/** How much of the reach a haft is: what stands inside it is under the head's swing, untouched. */
+const HAFT_SHARE = 0.55;
+
+export interface IStrikeShape { reachPx: number; innerPx: number; halfAngle: number }
+
+export const strikeNumbers = (w: IStrikeWords): IStrikeShape => {
+  const reachPx = STRIKE_REACH_TILES[w.reach] * TILE_PX;
+  return { reachPx, innerPx: w.hollow === 'haft' ? Math.round(reachPx * HAFT_SHARE) : 0, halfAngle: STRIKE_HALF_ANGLE[w.sweep] };
+};
+
+/**
+ * What a kind's own words say of how it strikes, when its pack named no strike: the pinned pack names none,
+ * and its weapons still differ. Each measure is read from words alone, a word of form over a word of grip,
+ * and a pack's own strike words always win. These are plain words of what a thing is (a haft, a point, two
+ * hands), never the name of any weapon; a word a pack registers that means the same can join its list.
+ */
+const LONG_WORDS = ['spear', 'pike', 'lance', 'polearm', 'halberd', 'glaive', 'scythe', 'whip', 'axe', 'chopping'];
+const SHORT_WORDS = ['improvised', 'knife', 'dagger', 'shiv', 'saw', 'fist', 'claw'];
+const THRUST_WORDS = ['spear', 'pike', 'lance', 'rapier', 'piercing', 'pickaxe', 'mining'];
+const WIDE_WORDS = ['two_hand', 'scythe', 'flail', 'glaive'];
+const HAFT_WORDS = ['axe', 'chopping', 'pickaxe', 'mining', 'polearm', 'halberd', 'glaive', 'scythe'];
+
+const saysAny = (tags: readonly string[], words: readonly string[]) => tags.some(t => words.includes(t));
+
+export const strikeWordsOf = (tags: readonly string[]): IStrikeWords => ({
+  reach: saysAny(tags, LONG_WORDS) ? 'long' : saysAny(tags, SHORT_WORDS) ? 'short' : 'middling',
+  sweep: saysAny(tags, THRUST_WORDS) ? 'thrust' : saysAny(tags, WIDE_WORDS) ? 'wide' : 'arc',
+  hollow: saysAny(tags, HAFT_WORDS) ? 'haft' : 'none'
+});
+
+/** What a magic hand casts round itself; anything else shoots one. */
+export const volleyWordOf = (tags: readonly string[]): Volley =>
+  saysAny(tags, ['magic', 'caster']) ? 'ring' : 'single';
+
+/** A creature's blow, from its own words: a bigger body reaches further, and what besieges sweeps wide. */
+const BLOW_REACH = { TINY: 'short', MEDIUM: 'short', LARGE: 'middling', GIGANTIC: 'long', COLOSSAL: 'long' } as const;
+export const creatureStrikeWords = (c: { size?: string; behavior?: string }): IStrikeWords => ({
+  reach: BLOW_REACH[c.size as keyof typeof BLOW_REACH] ?? 'short',
+  sweep: c.behavior === 'SIEGE' ? 'wide' : 'arc',
+  hollow: 'none'
+});
+
+/** A creature's volley, when its pack named none: what is bolted down turns a spiral, and a bigger body flings more. */
+const VOLLEY_BY_SIZE = { TINY: 'single', MEDIUM: 'spread', LARGE: 'ring', GIGANTIC: 'ring', COLOSSAL: 'ring' } as const;
+export const creatureVolleyOf = (c: { size?: string; behavior?: string; volley?: string }): Volley =>
+  (c.volley as Volley | undefined) ?? (c.behavior === 'TURRET' ? 'spiral' : VOLLEY_BY_SIZE[c.size as keyof typeof VOLLEY_BY_SIZE] ?? 'single');
+
+/** A spread: how many shots and how wide a fan. A spiral: arms, shots down each, how long between them, and how far each turns. A ring: how many. */
+const SPREAD = { shots: 3, fan: 0.6 };
+const SPIRAL = { arms: 3, shots: 5, gapMs: 80, turn: 0.25 };
+const RING_SHOTS = 8;
+
+/** Every shot of a volley: when it leaves after the volley begins, and its angle off where the volley is aimed. */
+export const volleyShots = (v: Volley): { delayMs: number; offset: number }[] => {
+  switch (v) {
+    case 'spread':
+      return Array.from({ length: SPREAD.shots }, (_, i) => ({ delayMs: 0, offset: -SPREAD.fan / 2 + (SPREAD.fan * i) / (SPREAD.shots - 1) }));
+    case 'spiral':
+      return Array.from({ length: SPIRAL.arms * SPIRAL.shots }, (_, n) => {
+        const arm = n % SPIRAL.arms, k = Math.floor(n / SPIRAL.arms);
+        return { delayMs: k * SPIRAL.gapMs, offset: (arm * 2 * Math.PI) / SPIRAL.arms + k * SPIRAL.turn };
+      });
+    case 'ring':
+      return Array.from({ length: RING_SHOTS }, (_, i) => ({ delayMs: 0, offset: (i * 2 * Math.PI) / RING_SHOTS }));
+    default:
+      return [{ delayMs: 0, offset: 0 }];
+  }
+};
 
 /** D77: a forced way out always takes the top band, and a scroll of it is written no lower than this rank. */
 export const FORCED_EXIT_COST = 'extreme' as const;

@@ -487,6 +487,9 @@ export interface IHarvestConfig {
 export interface IItem {
   /** Layer 3: an ability this piece carries, and when it fires. It acts unstudied (D19). */
   carries?: { ability: string; trigger: string };
+  /** The fight's shapes: how it strikes and how it shoots, carried from its kind's words. Absent, its tags are read. */
+  strike?: import('./logic/theme/ThemeTypes').IStrikeWords;
+  volley?: import('./logic/theme/ThemeTypes').Volley;
   /** Layer 3: what a scroll casts when it is used. */
   casts?: string;
   /**

@@ -5,7 +5,8 @@ import { usePlayerStore, playerPort } from '../entities/player/store';
 import { useHubStore, worldDay } from '../entities/hub/store';
 import { rememberThreat } from '../entities/interaction/memoryStore';
 import { WebSystem } from '../../shared/logic/systems/WebSystem';
-import { ProjectileSystem, PatternType, IProjectile } from '../../shared/entities/combat/projectileSystem';
+import { ProjectileSystem, PatternType, IProjectile, patternOf } from '../../shared/entities/combat/projectileSystem';
+import { PERSON_RADIUS_PX, covers } from '../../shared/entities/combat/Shapes';
 import { LootTable } from '../entities/world/LootTable';
 import { Leaders } from '../../shared/entities/world/Leaders';
 import { CombatSystem } from '../entities/combat/CombatSystems';
@@ -334,14 +335,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     }
     const damage = receipt.effect === 'damage' ? receipt.magnitude : Math.round(receipt.magnitude / 4);
     if (receipt.delivery === 'ranged') {
-      setPlayerPatterns(prev => [...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.SINGLE, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status }]);
+      setPlayerPatterns(prev => [...prev.filter(p => ProjectileSystem.alive(p, now)),
+        { type: PatternType.SINGLE, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status, struck: new Set<string>() }]);
     } else if (receipt.delivery === 'melee' || receipt.delivery === 'touch') {
       setActiveSwings(prev => [...prev.filter(s => now - s.startTime < 300),
         { origin: { x: origin.x, y: origin.z }, angle, range: receipt.reachPx, startTime: now, damage, status: receipt.status }]);
     } else {
-      setPlayerPatterns(prev => [...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.NOVA, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status }]);
+      setPlayerPatterns(prev => [...prev.filter(p => ProjectileSystem.alive(p, now)),
+        { type: PatternType.NOVA, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status, struck: new Set<string>() }]);
     }
   };
 
@@ -405,10 +406,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon));
 
     if (mode === 'MELEE') {
-      // Swing: a short arc resolved by CombatSystem
+      // The fight's shapes: the held kind's own ground, swung, struck and drawn as one (CombatSystem, FieldRenderer)
+      const shape = CombatMath.strikeOf(weapon);
       setActiveSwings(prev => [
         ...prev.filter(s => now - s.startTime < 300),
-        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: 60, startTime: now, damage, poison }
+        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: shape.reachPx, inner: shape.innerPx, half: shape.halfAngle, startTime: now, damage, poison }
       ]);
     } else if (mode === 'FOCUS' && st.player.activeCast) {
       // Layer 4: what the focus was set to cast, through the one door
@@ -419,14 +421,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - FOCUS_ENERGY_COST } }
       }) : s);
       setPlayerPatterns(prev => [
-        ...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.NOVA, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison }
+        ...prev.filter(p => ProjectileSystem.alive(p, now)),
+        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>() }
       ]);
     } else {
-      // Ranged (or unarmed): a single shot
+      // Ranged (or unarmed): the hand's own volley, one shot unless its words say otherwise
       setPlayerPatterns(prev => [
-        ...prev.filter(p => now - p.startTime < 2000),
-        { type: PatternType.SINGLE, origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison }
+        ...prev.filter(p => ProjectileSystem.alive(p, now)),
+        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>() }
       ]);
     }
 
@@ -943,7 +945,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       let incomingDamage = 0;
       const landedStatuses: IStatusPlan[] = [];
-      const isAlive = (p: any) => (now - p.startTime) < 2000;
+      const isAlive = (p: any) => ProjectileSystem.alive(p, now);
 
       // Layer 3: a scroll, read. It casts through the same door, and asks nothing of the reserves.
       const scroll = usePlayerStore.getState().pendingCast;
@@ -984,9 +986,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // MELEE strikes resolve instantly; ranged patterns become projectiles
         aiResult.spawnedPatterns.forEach((p, n) => {
           if (p.type === 'MELEE' || p.type === 'AREA') {
-            // A wind-up can be walked away from: what lands is measured when it lands
+            // A wind-up can be walked away from: what lands is what the drawn ground covers when it lands
             const d = Math.hypot(p.origin.x - playerPos.x, p.origin.y - playerPos.z);
-            if (d < (p.reachPx ?? 50)) {
+            if (p.shape ? covers(p.shape, p.origin, p.angle, { x: playerPos.x, y: playerPos.z }, PERSON_RADIUS_PX) : d < (p.reachPx ?? 50)) {
               lastHurtByRef.current = p.shooterId ?? lastHurtByRef.current;
               incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
               if (p.status) landedStatuses.push(p.status);
@@ -1023,6 +1025,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           return false;
         }
         if (ProjectileSystem.sweptDistance(b, playerPos.x, playerPos.z) < 15) {
+          spentShots.current.set(b.id, now);
+          // The fight's shapes: a volley lands once on a person; its other shots stop there and do nothing
+          if (b.struck?.has('you')) return false;
+          b.struck?.add('you');
           incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
           const firedBy = enemyPatterns.find(p => b.id.startsWith(`e_${p.shooterId}_${p.startTime}_`));
           if (firedBy) lastHurtByRef.current = firedBy.shooterId;
@@ -1286,7 +1292,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true }))
           ],
           drops: drops.map((d: any) => d.position),
-          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range }))
+          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range, inner: s.inner, half: s.half }))
         };
         rendererRef.current.renderer.draw(ctx, canvas.width, canvas.height, scene);
         // D114: what can talk is seen talking

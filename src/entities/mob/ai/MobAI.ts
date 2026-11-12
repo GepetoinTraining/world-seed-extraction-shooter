@@ -2,7 +2,7 @@ import { NOISE_SCALE } from '../../../../shared/logic/systems/FightNumbers';
 import { MonsterMind } from '../../../logic/systems/MonsterMind';
 import { GenreType } from '../../../../shared/types';
 import { IChunk, IMap, EntityType, IWorldEntity } from '../../../../shared/entities/world/types';
-import { PatternType, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../../../shared/entities/combat/projectileSystem';
+import { patternOf, PROJECTILE_RANGE_PX, SIM_MARGIN_PX } from '../../../../shared/entities/combat/projectileSystem';
 import { MOB_DEFINITIONS } from '../../../../shared/entities/mob/data/mobDefinitions';
 import { WorldClock } from '../../world/WorldClock';
 import { Leaders } from '../../../../shared/entities/world/Leaders';
@@ -17,12 +17,21 @@ import { WorldGenerator } from '../../../../shared/entities/world/WorldGenerator
 import { fnv1a } from '../../../../shared/logic/rng/DeterministicRNG';
 import { EffectSystem, IEffectReceipt, StatusClock } from '../../../../shared/logic/systems/EffectSystem';
 import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
+import { IStrikeShape, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
+import type { Volley } from '../../../../shared/logic/theme/ThemeTypes';
+import { PERSON_RADIUS_PX, stepOutPx } from '../../../../shared/entities/combat/Shapes';
+import { BASE_WALK_TILES_PER_S } from '../../../../shared/entities/player/systems/LoadoutSystem';
 
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;
 /** How much noise reduction it takes to halve the distance you are noticed from. A guess until Wave 12. */
 /** R4: nothing lands without a wind-up you can see. Guesses until Wave 12. */
 const STRIKE_WINDUP_MS = 450;
+/**
+ * The fight's shapes: a blow is drawn on the ground long enough to step out of. A person needs this long to see it
+ * and start moving, and then the walk out of the drawn shape by its shortest way. A guess until played.
+ */
+const REACTION_MS = 250;
 const ATTACK_COOLDOWN_MS = 2000;
 /** How a body heading for a fixed point turns when the ground refuses its line: its own side first, then the other. */
 /** How long it keeps at a line that gets it no nearer before it stands where it is. A guess until Wave 12. */
@@ -139,7 +148,7 @@ export class MobAI {
     /** Which way it turns past what refuses it. It keeps to one side, or it dithers at a wall. */
     aside?: 1 | -1;
     /** What it has started and not yet finished: seen, and dodged, before it lands. */
-    windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean };
+    windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean; aim: number; shape?: IStrikeShape; volley?: Volley };
     readyAt: Record<string, number>;
     casts: number;
     /** Where a herd at rest walks around, and where it is walking to now. */
@@ -425,6 +434,12 @@ export class MobAI {
             moveY = -Math.sin(angle) * moveSpeed;
           }
 
+          // The fight's shapes: its blow is a piece of ground, its shots a pattern, both read from what it is
+          const blowShape = strikeNumbers(creatureStrikeWords(def ?? {}));
+          const volley = creatureVolleyOf(def ?? {});
+          // Drawn long enough to step out of at the person's walk, from where they stand now, and never quicker than a plain blow's
+          const blowWindupMs = Math.max(STRIKE_WINDUP_MS, REACTION_MS + (stepOutPx(blowShape, dist, PERSON_RADIUS_PX) / ((senses.walk ?? BASE_WALK_TILES_PER_S) * PX)) * 1000);
+
           // A casting or a blow, when it is ready: it winds up first, where you can see it.
           const engaged = behavior !== MobBehavior.PASSIVE && decision.action !== BehaviorPrimitive.FLEE && (mem.provoked || behavior !== MobBehavior.NEUTRAL);
           if (!mem.windup && engaged) {
@@ -437,14 +452,23 @@ export class MobAI {
             if (cast) {
               const ability = ContentRegistry.ability(cast)!;
               const receipt = EffectSystem.resolve(ability, { rank: entity.rank }, `${entity.id}:${mem.casts++}`);
-              mem.readyAt[cast] = now + receipt.cooldownMs + receipt.telegraphMs;
-              mem.windup = { startedAt: now, until: now + receipt.telegraphMs, receipt, delivery: ability.delivery, reachPx: receipt.reachPx, ranged: ability.delivery === 'ranged' };
-            } else if ((decision.action === BehaviorPrimitive.ATTACK_RANGED || decision.action === BehaviorPrimitive.ATTACK_MELEE) && now - mem.lastAttackTime > ATTACK_COOLDOWN_MS) {
+              // A working delivered by hand lands as the body's own blow; one that flies leaves as the body's volley
+              const byHand = ability.delivery === 'melee' || ability.delivery === 'touch';
+              const ranged = ability.delivery === 'ranged';
+              const telegraphMs = byHand ? Math.max(receipt.telegraphMs, blowWindupMs) : receipt.telegraphMs;
+              mem.readyAt[cast] = now + receipt.cooldownMs + telegraphMs;
               mem.windup = {
-                startedAt: now, until: now + STRIKE_WINDUP_MS,
-                delivery: decision.action === BehaviorPrimitive.ATTACK_RANGED ? 'ranged' : 'melee',
-                reachPx: decision.action === BehaviorPrimitive.ATTACK_RANGED ? 400 : 50,
-                ranged: decision.action === BehaviorPrimitive.ATTACK_RANGED
+                startedAt: now, until: now + telegraphMs, receipt, delivery: ability.delivery, reachPx: byHand ? blowShape.reachPx : receipt.reachPx, ranged, aim: angle,
+                ...(byHand ? { shape: blowShape } : {}), ...(ranged ? { volley } : {})
+              };
+            } else if ((decision.action === BehaviorPrimitive.ATTACK_RANGED || decision.action === BehaviorPrimitive.ATTACK_MELEE) && now - mem.lastAttackTime > ATTACK_COOLDOWN_MS) {
+              const ranged = decision.action === BehaviorPrimitive.ATTACK_RANGED;
+              mem.windup = {
+                startedAt: now, until: now + (ranged ? STRIKE_WINDUP_MS : blowWindupMs),
+                delivery: ranged ? 'ranged' : 'melee',
+                reachPx: ranged ? 400 : blowShape.reachPx,
+                ranged, aim: angle,
+                ...(ranged ? { volley } : { shape: blowShape })
               };
             }
           }
@@ -452,7 +476,7 @@ export class MobAI {
           let health = entity.health ?? 0;
           let statuses: never[] = running;
           if (mem.windup && now >= mem.windup.until) {
-            const { receipt, ranged, reachPx } = mem.windup;
+            const { receipt, ranged, reachPx, aim, shape, volley: flies } = mem.windup;
             mem.windup = undefined;
             mem.lastAttackTime = now;
             if (receipt && EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)) {
@@ -461,18 +485,21 @@ export class MobAI {
             } else {
               spawnedPatterns.push({
                 // MELEE and AREA resolve at once by the canvas, within reach; ranged uses the projectile system
-                type: ranged ? PatternType.SINGLE : receipt?.delivery === 'area' || receipt?.delivery === 'aura' ? 'AREA' : 'MELEE',
+                type: ranged ? patternOf(flies ?? 'single') : receipt?.delivery === 'area' || receipt?.delivery === 'aura' ? 'AREA' : 'MELEE',
                 // Wave 4.3: the definition decides what this attack costs you
                 damage: receipt
                   ? (receipt.effect === 'damage' ? receipt.magnitude : Math.round(receipt.magnitude / 4))
                   : CombatMath.mobDamage(def) + (entity.bonusDamage ?? 0),
                 status: receipt?.status,
                 reachPx,
+                // The fight's shapes: the ground it drew, aimed where it was aimed when it began
+                ...(shape ? { shape } : {}),
+                ...(ranged ? { struck: new Set<string>() } : {}),
                 abilityId: receipt?.abilityId,
                 shooterId: entity.id,
                 // Origin is 2D { x, y }
                 origin: { x: entity.position.x, y: entity.position.y },
-                angle: angle,
+                angle: aim,
                 startTime: now,
                 color: 'red'
               });
@@ -538,7 +565,10 @@ export class MobAI {
             ...entity,
             health,
             statuses: statuses as never,
-            telegraph: mem.windup ? { startedAt: mem.windup.startedAt, until: mem.windup.until, delivery: mem.windup.delivery, reachPx: mem.windup.reachPx, angle } : undefined,
+            telegraph: mem.windup ? {
+              startedAt: mem.windup.startedAt, until: mem.windup.until, delivery: mem.windup.delivery, reachPx: mem.windup.reachPx, angle: mem.windup.aim,
+              ...(mem.windup.shape ? { shape: mem.windup.shape } : {}), ...(mem.windup.volley ? { volley: mem.windup.volley } : {})
+            } : undefined,
             position: {
               x: next.x,
               y: next.z

@@ -94,6 +94,10 @@ export interface ITelegraph {
   delivery: string;
   reachPx: number;
   angle: number;
+  /** The fight's shapes: the ground a blow will cover, drawn where it was aimed when it began. */
+  shape?: { reachPx: number; innerPx: number; halfAngle: number };
+  /** The fight's shapes: the volley a shot will leave as, its lanes drawn before it flies. */
+  volley?: string;
 }
 
 /** What a leader's ground holds, read at a chunk. Plain words, and no creature's name (D60). */

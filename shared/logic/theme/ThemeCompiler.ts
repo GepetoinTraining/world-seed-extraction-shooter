@@ -144,6 +144,8 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
       ...(c.social !== undefined ? { social: c.social } : {}),
       ...(c.builds !== undefined ? { builds: c.builds } : {}),
       ...(c.leads ? { leads: creatureIdOf(pack.themeId, c.leads) } : {}),
+      // The fight's shapes: only what was written, so a pack from before compiles to the same bytes
+      ...(c.volley ? { volley: c.volley } : {}),
       ...(pack.junk ? { junk: junkIdsFor(pack, c.tags) } : {}),
       // A leader draws as what it leads, with more to it: told by shape, never hue
       ...(led ? { line: { root: creatureIdOf(pack.themeId, led.key), rootTags: led.tags, features: LEADER_FEATURES } } : {}),
@@ -248,7 +250,10 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
       ...(shape.pouch ? { pouch: shape.pouch } : {}),
       ...(shape.belt ? { belt: shape.belt } : {}),
       // A cart's bed and stats from its size word and rank (the interface pass); no size word reads MEDIUM
-      ...(shape.cart ? { cart: cartNumbers({ size: g.size, rank: g.rank }) } : {})
+      ...(shape.cart ? { cart: cartNumbers({ size: g.size, rank: g.rank }) } : {}),
+      // The fight's shapes: only what was written, so a pack from before compiles to the same bytes
+      ...(g.strike ? { strike: { reach: g.strike.reach, sweep: g.strike.sweep, hollow: g.strike.hollow } } : {}),
+      ...(g.volley ? { volley: g.volley } : {})
     };
     if (g.carries) base.carries = { ability: ids.get(g.carries)!, trigger: g.trigger };
     if (g.craftAt === 'none') out.items[shape.bucket].push(base);
