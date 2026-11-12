@@ -577,6 +577,48 @@ Pedro said yes to merging the voice with the gear and regrowth work and with the
 | GV41 | Open, the coordinator's call: the card's Odds row prints a computed chance ("about 85 times in 100"). By Pedro's rule it is allowed, since the roll decides only whether the material comes away; by D32's spirit ("the odds are never shown", ruled for reading a piece) it is exposure. Left as a number, since the loop's own bar reads the number off the card (`tests/atoms.depth.test.ts`); saying it in words ("more often than not") is a words-only change once that bar is moved | `inspect.ts`, `ExtractLaw.oddsOf` |
 | GV42 | Found by the coordinator's pre-merge run on the join (a87be18), 3,674 of 3,675: the bench-study bar in `tests/rawmaterials.test.ts` still looked for a stat's key on the card ("accuracy rating") where the card now says its word ("aim"), so it went red whenever the rolled record carried a stat that has a word, and green otherwise. It had been read twice as a bar that fails under load. The bar now asks the card for the stat's word through `statWord`. Open beside it: a stat with no word of its own still reaches the card as its key in plain words, seen as "+1 craft speed pct"; it wants a word and its percent sign | `tests/rawmaterials.test.ts`, `StatWords.ts` |
 
+### Found while separating the fight's energy from the day's work, 2026-11-12
+
+Pedro, 2026-11-12, after playing on main: "we need to separate the energy consumption, right now energy is bonkers, it's using way too much, and no level of skill gets it down." The coordinator's five calls, each his to strike: energy is the day's budget for work and a weapon's own blow takes none of it, a focus's cast included (1); every act of work has one cost from one law in `shared/` (2); the skill that does an act brings its cost down, a rank's worth of it halving the cost, with no floor and no top (3); what a full pool pays at rank F with no skill is set by measure (4); the cost is said where the act is offered, and the sheet says what brings each down (5).
+
+Part 1, measured on main at `d6c7e87` before anything was built, in the hidden window on two fresh characters made with no key: the focus kit ("Something to ask through", 51.6 energy) and the tools kit ("The tools of the work", 50.6 energy, given Mining, Felling and Quarrying at level 1 by the Seed). Where the window did not show it, the figure is the code's own reader, and says so.
+
+What each act costs on main, and what a full pool of 51.6 pays for with no skill:
+
+| Act | No skill | Its skill at level 1 | Level 5 | Level 10 | A pool pays | Seen |
+|---|---|---|---|---|---|---|
+| A focus's shot | 10 | no skill is read | | | 5 | window: five shots took 51.6 to 1.6, the sixth "Not enough energy to cast. The focus hums and refuses." |
+| A try with a tool, rank F | 9 | 6 | 4 | 4 | 5 | window: the hatchet 6 with Felling at 1, a found pick 9 with no skill of it |
+| A try by hand, rank F | 3 | 2 | 1 | 1 | 17 | window: 2 on vault stone (the Seed's stone skill), 3 on teller's reed |
+| A sitting, by the eye's level | 15 | 10 | 10 | 10 | 3 | window: "Study Unknown Grain · 15 energy · 12s" |
+| A sitting, no eye, by a skill of its tree | 15 | 14 | 11 | 10 | 3 | readers (`StudySystem.studyAsk`) |
+| A round of talk, a name asked, a want asked, a bargain | 5 | no skill is read | | | 10 | window: 5 each, the round "Winging it: Persuasion" |
+| A chest or a cache opened | 2 | no skill is read | | | 25 | window: 2, "Winging it: Scavenging" |
+| Crafting by two | 5 | no skill is read | | | 10 | window, at home: 5 |
+| A snare | 3 | no skill is read | | | 17 | code (`Capture.SNARE_ENERGY`) |
+| A gift; secured for extraction | 2; 5 | no skill is read | | | 25; 10 | code (`store.performInteraction`) |
+| A loose stone picked up | 2 | as a try by hand | | | 25 | code |
+| Analyze Structure | shows 2, spends 0 | | | | | window |
+
+A plain run, from the drop at (168970, 168970) to the beacon 186 tiles away, counting what stands within ten tiles of the walk, from the world's own generator: 128 places (110 trees, 5 veins of ore, 7 rocks, 2 stands of grain, 4 shrubs), 14 creatures, 2 chests and 1 person. Each kit tried every place it could on the way, in the order met, through the interaction engine that builds the right-click menu and the store's door the menu presses:
+
+| Run | Acts | Energy on main | Pools |
+|---|---|---|---|
+| Focus kit, until the pack refused | 19 tries (11 by hand, 8 with a pick a chest gave) and 1 chest | 106 | 2.1 |
+| Focus kit, the 14 creatures on the way, one shot each at F | 14 shots | 140 | 2.7 |
+| Tools kit, until the pack refused | 19 hatchet tries on the first 6 trees, 15 landed, 14 logs (70 of 77.8 kg) | 114 | 2.25 |
+| Tools kit, worked on past a full pack over every place on the way | 378 tries | 1,646 | 33 |
+| One person turned: their name and seven rounds (BALANCE_RUN 2.8: 6.8 rounds on good words at F), then secured | 9 | 45 | 0.9 |
+| Two sittings at home (BALANCE_RUN 3.8's modelled day) | 2 | 30 | 0.6 |
+
+| # | What | Where |
+|---|---|---|
+| EN0 | The measure, against the calls: nothing contradicts them. The fight alone empties a newcomer's focus pool more than twice on one plain run (14 shots, 140), so separating it (call 1) is most of what Pedro felt. Skill does almost nothing (call 3): a try's cost falls by a tenth a rung of mastery and by `1 + skillPower`, which grows 0.02 a level at rank F, so level 10 costs what level 5 does; a sitting's tree share is `1 - climb(knowledge)` at two points a level, which halves only at fifty levels of its tree; talk, chests, snares, making by two, gifts and the focus read no skill at all. The study-cost work's tree share is kept as the thing a sitting reads (Pedro's "the more someone knows about a tree of the tech web"), and its curve is replaced by the halving | readers above |
+| EN1 | The count a pool is set by (call 4). A plain run's work at rank F: the pack is full after 19 tries for either kit, so a run's tries are 19 (taken on the tools kit, the heavier: 19 with a tool); its 2 chests; the one person it passes turned and secured (9 asks); and the day's 2 sittings. At main's costs, with no skill (half again for each), that is 1.5 × (19 × 6 + 2 × 2 + 9 × 5 + 2 × 10) = 274.5 energy against a plain day of 50: five and a half pools for one run. The 1.5 is not what makes the day short (it is a factor of 1.5 in 5.5), so it stays | `PLAYTEST_LEDGER` (this table) |
+| EN2 | Found on the way: Analyze Structure offers itself at "2 energy · 5s" on every creature, person and chest to a character of intelligence 4 or more, and spends nothing; it pays 100 toward a skill each time | `InteractionEngine` (`int_study`), `store.performInteraction` |
+| EN3 | Found on the way: a loose stone, the empty hand's thing to throw, costs a try by hand's 2 to pick up, so the bare hand's blows are paid in the day's energy one pick at a time | `InteractionEngine` (`int_harvest_`), `harvestNumbers('hands')` |
+| EN4 | Found on the way, not a fault of the game: the feed keeps its last lines only, so a script that reads the feed for the pack's refusal misses it after a long run; the run's count of 19 was read from the session's journal (the first `OVERFLOW_CACHE`). A round of talk with no key was answered by this machine's own model, which the character screen showed as in use | hidden window |
+
 ## Fixed
 
 | # | What was wrong | Commit | Checked |
