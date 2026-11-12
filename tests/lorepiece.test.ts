@@ -4,7 +4,7 @@
  * Pedro, 2026-11-11: "once a player has a skill, a craft, anything related to the tech web they can produce the skill as a
  * lore piece to trade, sell, or even give." And of lore: "you never lose lore".
  *
- * What these bars hold, made by plain sense where no ruling says, and marked in the ledger (W3):
+ * What these bars hold, made by plain sense where no ruling says, and marked in the ledger (DP3):
  *  - only a skill held and rooted in the web (a lawful pair of tags) can be written out, and only at home, where the bench
  *    and the shelf are; writing it out never takes it from its writer;
  *  - it costs one piece of paper (anything made of the registered paper material) and what a sitting on that skill's own

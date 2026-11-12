@@ -5,7 +5,7 @@
  * working toward; the view says the way to it from what they know, and what that way would ask in lore, by category and
  * in general, set against what they hold. The mark is kept with the character and shown on the large sheet.
  *
- * Made by plain sense and marked in the ledger (W2): the way is the one that asks least lore, then has fewest steps,
+ * Made by plain sense and marked in the ledger (DP2): the way is the one that asks least lore, then has fewest steps,
  * then comes first by key; only a skill asks lore (what learning it asks: `learnPrice`); a station and a thing are steps
  * to stand at and to find, which ask none; the lore is spent as the law spends it, a category's own first and then
  * general, so a misreading locks its category here too.

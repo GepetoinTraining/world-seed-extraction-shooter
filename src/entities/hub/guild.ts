@@ -94,6 +94,8 @@ export interface IResidentQuest {
   postedDay: number;
   /** Q19: the rung of their ladder this want answers. Absent on a want posted before the board read it. */
   need?: string;
+  /** The design pass, part 4: a lack in the hub's web, asking for a written piece of a skill that opens this station (LoreBoard). */
+  lore?: { stationId: string; tool: string[]; material: string[] };
 }
 
 export interface IHandedMap {

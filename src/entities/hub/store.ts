@@ -87,6 +87,7 @@ const queueMeetings = async (hubId: string, meetings: IMeeting[]): Promise<void>
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../../shared/logic/systems/TalkTypes';
 import { IHubTech, addToLedger, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
+import { LoreBoard } from '../../logic/systems/LoreBoard';
 import { ChainWeb } from '../../../shared/logic/theme/ChainWeb';
 import type { HubChange, IHubPort, IHubView } from './hubView';
 import type { ITechWebPort, TechWebChange } from './techWebView';
@@ -491,6 +492,10 @@ interface HubState extends ITechDoors, IHubView {
   fillAgendas: (fills: Record<string, INeedFill>) => Promise<void>;
   /** A want met: the things go to their house, and the hub's treasury pays. */
   fulfilQuest: (questId: string, itemIds: string[]) => Promise<RoomVerdict>;
+  /** The design pass, part 4: what the hub's web lacks for its own people, posted on the board as asks for lore. */
+  postLoreAsks: (simDay?: number) => Promise<void>;
+  /** A written piece handed in against such an ask: paid from the asker's purse, and the hub's web gains the skill. */
+  answerLoreAsk: (questId: string, itemId: string) => Promise<RoomVerdict>;
   /** D83: the hard quest. The one door a rank comes through. */
   passTrial: (itemIds: string[]) => Promise<RoomVerdict>;
   /** D93: a map handed to the guild. It is kept whole, and what it would post can be read. */
@@ -1357,6 +1362,8 @@ export const useHubStore = create<HubState>((set, get) => ({
     const day = simDay ?? worldDay();
     const { activeHubId, lots } = get();
     if (!activeHubId) return;
+    // The design pass, part 4: what the web lacks goes up beside the wants, read from the hub's own web and people
+    await get().postLoreAsks(day);
     const posted = get().guild.residents.filter(r => {
       // A person wants things from the day they arrive. A master back for a shop wants the shop first.
       if ((r.craftsmanId && !r.homeAt) || (r.nextWantDay ?? day) > day) return false;
@@ -1564,6 +1571,64 @@ export const useHubStore = create<HubState>((set, get) => ({
     const keeper = !resident && get().vendors[quest.residentId];
     if (keeper) set({ vendors: { ...get().vendors, [quest.residentId]: given.reduce((record, item) => VendorSystem.receive(record, item, worldDay()), keeper) } });
     useFeed.getState().push(`${askerName} has what they wanted, and pays ${pay.toLocaleString()} G.`, 'proof');
+    return { ok: true };
+  },
+
+  postLoreAsks: async (simDay) => {
+    const day = simDay ?? worldDay();
+    const { activeHubId, guild, tech, web } = get();
+    if (!activeHubId) return;
+    const lacks = LoreBoard.lacks({
+      workshops: tech.workshops, web, residents: guild.residents.map(r => ({ id: r.id, name: r.name })), stations: hubStations(tech),
+      // A road that cannot be read (a person with no profession yet) is short of nothing anyone can name
+      next: residentId => { try { return get().workshopOffer(residentId)?.next ?? null; } catch { return null; } }
+    });
+    const share = (residentId: string) => {
+      const r = guild.residents.find(x => x.id === residentId);
+      try { return r ? PAY_SHARE[readSheet(r).want] ?? 1 : 1; } catch { return 1; }
+    };
+    const fresh = lacks.map(lack => LoreBoard.posting(lack, share(lack.askerId), day)).filter(q => !guild.quests.some(o => o.id === q.id));
+    if (fresh.length === 0) return;
+    set({ guild: { ...get().guild, quests: [...get().guild.quests, ...fresh] } });
+    for (const q of fresh) useFeed.getState().push(`On the board at the Hall: ${q.text}`, 'signal');
+    await Ledger.append('TECH', { kind: 'LORE_ASKED', hubId: activeHubId, asks: fresh.map(q => ({ questId: q.id, residentId: q.residentId, stationId: q.lore.stationId })) });
+    await get().saveHubState();
+  },
+
+  answerLoreAsk: async (questId, itemId) => {
+    const { activeHubId } = get();
+    if (!activeHubId) return { ok: false, reason: 'The Hall is shut.' };
+    const quest = get().guild.quests.find(q => q.id === questId);
+    if (!quest || quest.state !== 'OPEN' || !quest.lore) return { ok: false, reason: 'That ask is not on the board.' };
+    const item = (pc.view().player.bank.stashTabs[0]?.items || []).find(i => i.id === itemId);
+    if (!item) return { ok: false, reason: 'That is not in your stash.' };
+    if (!LoreBoard.answers(quest, item)) return { ok: false, reason: `${LoadoutSystem.shownName(item)} is not a written way to work it.` };
+    const resident = get().guild.residents.find(r => r.id === quest.residentId);
+    const askerName = resident?.name ?? quest.askerName ?? 'Someone';
+    // Their own coin, as a want is paid: what they cannot afford waits
+    const pay = questPay([item], quest.payShare);
+    const purse = quest.residentId;
+    const held = get().wallets[purse] ?? 0;
+    if (pay > held) return { ok: false, reason: `That comes to ${pay.toLocaleString()} G, and ${askerName} holds ${held.toLocaleString()} G. They cannot pay it. It waits.` };
+    const now = GameClock.now();
+    pc.apply({ kind: 'GOLD', delta: pay });
+    removeFromStash([item.id]);
+    const deltas = { [purse]: -pay };
+    set({
+      wallets: { ...get().wallets, [purse]: held - pay },
+      guild: { ...get().guild, quests: get().guild.quests.map(q => q.id === questId ? { ...q, state: 'DONE' as const } : q) }
+    });
+    // The hub's web gains what was written, its first credited to whoever wrote it
+    get().applyTech({ kind: 'WEB', web: LoreBoard.admit(get().web, item, now) });
+    await GoldCommit.commit({
+      player: pc.view().player,
+      rows: [{ type: 'GOLD_DELTA', data: { reason: 'LORE_ASK_PAID', questId, residentId: quest.residentId, consumedIds: [item.id], amount: pay, treasuryDelta: 0, wallets: deltas } }],
+      wallets: { hubId: activeHubId, deltas },
+      hubDoc: get().hubDoc() ?? undefined
+    });
+    await Ledger.append('TECH', { kind: 'LORE_HANDED_IN', hubId: activeHubId, questId, skillId: item.lorePiece!.skillId, writtenBy: item.lorePiece!.by.uid, consumedIds: [item.id] });
+    useFeed.getState().push(`${askerName} pays ${pay.toLocaleString()} G. The hub's web now holds ${WebSystem.nameIn(item.lorePiece!.skillId, get().web)}, and the ${hubStations(get().tech).find(s => s.id === quest.lore!.stationId)?.name ?? 'workshop'} can be worked.`, 'proof');
+    await get().saveHubState();
     return { ok: true };
   },
 

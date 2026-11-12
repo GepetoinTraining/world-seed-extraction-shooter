@@ -4,7 +4,7 @@
  * Pedro, 2026-11-11: "The specialize in lore would be better if we designed the (design as in the view) of the tech web,
  * what's unlocking what, where do things sit, so people could minimally plan their lore."
  *
- * What these bars hold, each read from a ruling or made by plain sense and marked in the ledger (W1):
+ * What these bars hold, each read from a ruling or made by plain sense and marked in the ledger (DP1):
  *  - the web is drawn as what unlocks what: a thing is worked by a skill, a skill opens a station, a station makes a thing;
  *    where a thing sits is how far it stands from the ground (its column);
  *  - what this character knows is drawn by name; what the hub has reached is drawn by the hub's name (D27: the web is the
