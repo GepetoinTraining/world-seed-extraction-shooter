@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>World Seed</title>
-  <meta name="description" content="World Seed: a browser game that runs on your own machine. This hub keeps your account and checks your character's receipts.">
+  <meta name="description" content="World Seed: a browser game that runs on your own machine. This hub keeps your account, gives your character its birth, and checks its receipts.">
   <link rel="stylesheet" href="/landing.css">
   <script src="/landing.js" defer></script>
 </head>
@@ -19,34 +19,57 @@
       <h2 id="split">What runs where</h2>
       <ul class="marks">
         <li><span class="mark" aria-hidden="true">[■]</span> <b>In your browser:</b> the game, your play, and your save.</li>
-        <li><span class="mark" aria-hidden="true">[◆]</span> <b>On this hub:</b> your account, and checks: your character's receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</li>
+        <li><span class="mark" aria-hidden="true">[◆]</span> <b>On this hub:</b> your account, your character's birth, and checks: your character's receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</li>
         <li><span class="mark" aria-hidden="true">[ ]</span> <b>Never here:</b> your play, your save, or a model key.</li>
       </ul>
     </section>
 
     <section aria-labelledby="account">
-      <h2 id="account">Make an account</h2>
-      <form id="account-form" autocomplete="on" novalidate>
-        <label>Handle
-          <input name="handle" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false">
-        </label>
-        <p class="hint">3 to 32 letters, digits, dots, dashes or underscores.</p>
-        <label>Password
-          <input name="password" type="password" autocomplete="new-password" required minlength="10">
-        </label>
-        <label>Password again
-          <input name="again" type="password" autocomplete="new-password" required minlength="10">
-        </label>
-        <p class="hint">At least 10 characters. There is no email and no recovery yet, so keep it somewhere safe.</p>
-        <button type="submit">MAKE THE ACCOUNT</button>
-        <p id="account-said" class="said" role="status" aria-live="polite"></p>
-      </form>
+      <h2 id="account">Your account</h2>
+      <p id="account-said" class="said" role="status" aria-live="polite">Asking this hub…</p>
+
+      <!-- Signed in: who, and the way out -->
+      <div id="signed-in" hidden>
+        <p><button type="button" id="sign-out">SIGN OUT</button></p>
+      </div>
+
+      <!-- This hub's accounts are an e-mail and a password, kept by Clerk -->
+      <div id="clerk-forms" hidden>
+        <p>An account here is an e-mail and a password. The e-mail is how you get back in if the password is lost. This hub itself keeps neither: it keeps a handle and what your characters send it.</p>
+        <p class="choice">
+          <button type="button" id="show-sign-up">MAKE AN ACCOUNT</button>
+          <button type="button" id="show-sign-in">SIGN IN</button>
+        </p>
+        <div id="clerk-mount"></div>
+      </div>
+
+      <!-- A hub that keeps its own accounts: a handle and a password -->
+      <div id="builtin-forms" hidden>
+        <form id="account-form" autocomplete="on" novalidate>
+          <label>Handle
+            <input name="handle" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false">
+          </label>
+          <p class="hint">3 to 32 letters, digits, dots, dashes or underscores.</p>
+          <label>Password
+            <input name="password" type="password" autocomplete="current-password" required minlength="10">
+          </label>
+          <label id="again-label">Password again, for a new account
+            <input name="again" type="password" autocomplete="new-password" minlength="10">
+          </label>
+          <p class="hint">At least 10 characters. This hub has no e-mail and no recovery, so keep it somewhere safe.</p>
+          <p class="choice">
+            <button type="submit" name="act" value="make">MAKE THE ACCOUNT</button>
+            <button type="submit" name="act" value="sign-in">SIGN IN</button>
+          </p>
+        </form>
+      </div>
     </section>
 
     <section aria-labelledby="play">
       <h2 id="play">Play</h2>
-      <p><a class="play" href="/play/">PLAY IN THIS BROWSER</a></p>
-      <p>Your save stays in this browser, on this machine. Under SYSTEM, THE HUB, sign in with the account above, register your character and send its receipts.</p>
+      <p id="play-wait">Sign in above first. Every character is born on this hub's word, so the hub has to know whose it is before one is made.</p>
+      <p id="play-go" hidden><a class="play" href="/play/">PLAY IN THIS BROWSER</a></p>
+      <p>Your save stays in this browser, on this machine. Your character is registered here as it is made, and its receipts go up by themselves as you play.</p>
       <p class="hint">One tab holds the save at a time. Clearing this site's data clears the save, so back your avatar up from SYSTEM first.</p>
     </section>
 
@@ -54,6 +77,19 @@
       <h2 id="voice">The model</h2>
       <p>Played here, the game speaks through a model of your choosing, and plays on without one if you choose none. It can be a model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose), or your own key with a provider. Either is set up inside the game, under SYSTEM, THE VOICE, which shows every step before you run it.</p>
       <p class="hint">Safari, and every browser on an iPhone or iPad, cannot reach a model on your own machine, so there a key is the only way. A key is sealed in this browser and is never sent here.</p>
+    </section>
+
+    <section aria-labelledby="yours" id="yours-section" hidden>
+      <h2 id="yours">What this hub holds of you</h2>
+      <ul class="marks" id="held-list"></ul>
+      <p>You can have all of it deleted: the account, its characters as this hub knows them, every receipt, and the e-mail and password with them. What is in this browser is yours and is not touched. It cannot be undone.</p>
+      <form id="delete-form" autocomplete="off" novalidate>
+        <label>To delete everything, write your handle
+          <input name="confirm" spellcheck="false" autocomplete="off">
+        </label>
+        <button type="submit">DELETE MY ACCOUNT AND ALL OF IT</button>
+        <p id="delete-said" class="said" role="status" aria-live="polite"></p>
+      </form>
     </section>
 
     <footer>

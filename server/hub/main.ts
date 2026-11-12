@@ -1,5 +1,5 @@
 /**
- * THE HUB'S LOCAL STAND-IN: the hub's one function (function.ts) behind a plain Node server, with
+ * THE HUB'S LOCAL STAND-IN: the hub as a function host runs it (app.ts) behind a plain Node server, with
  * the landing page beside it, as a function host would serve them. It runs nobody's play and holds
  * no model key (DEPLOY.md).
  *
@@ -18,7 +18,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { folderUrl } from '../connection';
 import { hubKeyFrom } from './keys';
-import { createHubFunction, hubPathOf } from './function';
+import { createHubApp } from './app';
+import { clerkFrontendHost } from './clerk';
 import { createHubListener } from './server';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -29,8 +30,10 @@ const publicUrl = (process.env.WS_PUBLIC_URL ?? `http://${host}:${port}`).replac
 const key = hubKeyFrom(process.env, join(root, 'data', 'hub-key.pem'), line => console.log(line));
 
 // The same function a host runs per request, here behind one local server: the stand-in (DEPLOY.md)
-const hub = createHubFunction({ databaseUrl, key, publicUrl });
+const app = createHubApp({ databaseUrl, key, publicUrl, liveDatabaseUrl: process.env.WS_LIVE_DATABASE_URL, liveListenUrl: process.env.WS_LIVE_LISTEN_URL });
 // The built site when there is one (npm run build:site: the landing page, and the game at /play/), else the landing page alone
 const site = existsSync(join(root, 'dist-site', 'index.html')) ? join(root, 'dist-site') : join(root, 'landing');
-const server = createServer(createHubListener({ api: (req, res) => hub(req, res, hubPathOf(req.url)), landingDir: site, pages: ['/play/'] }));
+const clerkHost = process.env.CLERK_PUBLISHABLE_KEY ? clerkFrontendHost(process.env.CLERK_PUBLISHABLE_KEY.trim()) : null;
+const server = createServer(createHubListener({ api: (req, res) => app.handle(req, res), landingDir: site, pages: ['/play/'], clerkHost }));
+server.on('upgrade', (req, raw) => app.upgrade(req, raw));
 server.listen(port, host, () => console.log(`[HUB] ${key.id} answers on http://${host}:${port} as ${publicUrl} (${databaseUrl.split(':')[0]}), the function's local stand-in`));

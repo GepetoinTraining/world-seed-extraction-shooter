@@ -1,9 +1,9 @@
 /**
  * THE HUB AS A FUNCTION (Pedro, 2026-11-04: "we don't compute anything, we check receipts... vercel
- * and players are computing view workers"). One stateless request handler: a host such as Vercel
- * calls it per request (`api/hub/[...path].ts`), and `npm run hub` calls it behind a plain Node
- * server as the local stand-in. Nothing here outlives a call but the store's connection, which an
- * instance opens once and reuses while it is warm.
+ * and players are computing view workers"). One stateless request handler over the hub's own
+ * routes, and how a host's environment is read. What a host runs is app.ts, which puts online play,
+ * the scheduled call and the accounts beside these routes (`api/hub.ts`). Nothing here outlives a
+ * call but the store's connection, which an instance opens once and reuses while it is warm.
  *
  * WS_HUB_DATABASE_URL   the served Postgres (postgres://…); a folder (pglite://…) for the local stand-in
  * WS_HUB_KEY            the hub's signing key, PKCS#8 PEM, from the host's secret store
