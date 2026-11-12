@@ -25,6 +25,7 @@ import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
 import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
 import { computeGolden, FIRST_THEME_VECTORS, GOLDEN_VECTORS } from '../src/entities/world/goldens';
 import { Tutorial } from '../src/logic/systems/Tutorial';
+import { RANKED_FROM_GROUND } from '../shared/logic/theme/ThemeFormula';
 
 installShippedThemes();
 
@@ -118,8 +119,10 @@ describe('C24: a world pins the ground it is laid by', () => {
     // Since ground 5 (the fight's law) a body is laid by that law and says so: its place, kind and rank are kept,
     // and what it holds is read by the law it was laid under (BodyLaw), so the numbers are not compared here
     const placed = (e: IWorldEntity) => (e.type === EntityType.MOB ? { ...e, health: undefined, law: undefined, bonusHealth: undefined, bonusDamage: undefined } : e);
+    // From ground 6 (GS) the land is ranked anew and its bodies with it, on purpose (tests/gear.scaling.test.ts): the
+    // stones' claim, that a pin only gains, is held at the last ground before that
     const plain = tutorialDrop(themed()).things.map(placed);
-    const laid = tutorialDrop(pinned()).things;
+    const laid = tutorialDrop(themed({ groundVersion: RANKED_FROM_GROUND - 1 })).things;
     expect(laid.filter(e => !laidLoose(e)).map(placed)).toEqual(plain);
     expect(laid.filter(laidLoose).length).toBeGreaterThan(0);
     expect(laid.filter(laidLoose).every(isStone)).toBe(true);

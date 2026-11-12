@@ -95,7 +95,7 @@ export class Leaders {
         const rng = Rng.fromKey(`${seed}:elite:v1:${cx},${cy}`);
         if (rng.next() >= ROSTER_NUMBERS.perChunk) continue;
         const biome = WorldGenerator.biomeAt(seed, cx, cy);
-        const rank = WorldGenerator.rankAt(seed, cx, cy, context.difficulty);
+        const rank = WorldGenerator.rankAt(seed, cx, cy, context.difficulty, context.groundVersion);
         const pool = store.elites.filter(e => (!e.habitat || e.habitat.includes(biome)) && order.indexOf(e.rank) <= order.indexOf(rank));
         if (pool.length === 0) continue;
         // Packs are the rule. What walks alone is the exception, whatever a theme's list holds

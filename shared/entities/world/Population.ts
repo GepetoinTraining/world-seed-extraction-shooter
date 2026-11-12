@@ -225,7 +225,7 @@ export class Population {
       }
       cells.set(keyOfGround(x, y), {
         key: keyOfGround(x, y), cx: x, cy: y, biome: WorldGenerator.biomeAt(seed, x, y),
-        rank: RANK_ORDER.indexOf(WorldGenerator.rankAt(seed, x, y, context.difficulty)),
+        rank: RANK_ORDER.indexOf(WorldGenerator.rankAt(seed, x, y, context.difficulty, context.groundVersion)),
         food: this.foodAt(seed, x, y, context), beside,
         alpha: WorldGenerator.censusChunk(seed, exits, x, y, context)
       });
