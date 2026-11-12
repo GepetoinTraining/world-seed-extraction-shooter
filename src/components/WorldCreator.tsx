@@ -18,6 +18,7 @@ import { Button, Input, Modal, Panel, Tabs } from './ui/kit';
 import { ThemeTalk } from './ThemeTalk';
 import { ContentRegistry } from '../../shared/logic/theme/ContentRegistry';
 import { ThemeStore } from '../logic/theme/ThemeStore';
+import { MintAdditionsWriter } from '../logic/theme/writing/MintAdditionsWriter';
 import { sealTheme } from '../../shared/logic/theme/ThemeCompiler';
 import { IThemeBody } from '../../shared/logic/theme/ThemeTypes';
 import { HubUnlock } from '../logic/systems/HubUnlock';
@@ -115,6 +116,10 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
       };
       const minted = await WorldDeedDoor.mint(certificate, deed.id, worldName, worldDescription, worldType, rules, playerPort);
       if (minted.ok && minted.world) {
+        // IB: what this minting adds, settled before the world first opens, so its land is the same at every opening.
+        // With no key it falls back and adds nothing; it never stops a minting.
+        await MintAdditionsWriter.forWorld(minted.world.data.worldUid, themeId, minted.world.data.seedHash)
+          .catch(e => console.error('[MINT] What the minting adds was not written:', e));
         onCreated(minted.world.data.worldUid);
         reset();
         onClose();

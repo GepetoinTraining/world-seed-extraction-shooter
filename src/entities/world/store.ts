@@ -28,6 +28,7 @@ import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../../.
 import { GroundReturn, GroundStore, IGroundRecord, emptyGroundRecord } from '../../../shared/entities/world/GroundReturn';
 import { IWorldEntity } from '../../../shared/entities/world/types';
 import { GameClock } from '../../logic/time/GameClock';
+import { MintAdditionsWriter } from '../../logic/theme/writing/MintAdditionsWriter';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
@@ -424,7 +425,13 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         set({ chestRecord, populationRecord, groundRecord });
         const cadence = worldCard.cadence ?? WorldClock.cadenceFor(worldCard.size);
         // C24: the land is laid by the ground the world pinned, as its people are read through the web it pinned
-        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion, groundVersion: worldCard.groundVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs };
+        // IB: what its minting added, from the ground it was laid on: found pieces take their nouns from its own bases,
+        // and its land holds its own materials beside its pack's. A world laid before adds nothing
+        const minted = await MintAdditionsWriter.enter(worldCard).catch(() => []);
+        const context: IGenerationContext = {
+          ...instance.context, webVersion: worldCard.webVersion, groundVersion: worldCard.groundVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs,
+          ...(minted.length > 0 ? { resourceDefinitions: [...instance.context.resourceDefinitions, ...minted] } : {})
+        };
         generationContext = {
           ...context,
           lay: chunk => {

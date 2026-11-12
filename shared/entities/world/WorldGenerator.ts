@@ -54,8 +54,11 @@ export interface IGenerationContext {
  *                  what it holds and deals and a plain creature a quarter of a person, and says so (`IWorldEntity.law`);
  *                  a trait is a share of its body. A world standing before keeps its bodies as written. The ground is
  *                  laid as at 4.
+ *   6              what a minting adds (IB): a found piece rolls its slot, then its noun among its own world's bases, its
+ *                  pack's and what its minting added (`MintAdditions`), and its land holds the materials its minting added.
+ *                  A world standing before finds as it did. The ground is laid as at 5.
  */
-export const GROUND_VERSION = 5;
+export const GROUND_VERSION = 6;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
 const LOOSE_STONE_CHANCE = 0.5;
 const LOOSE_STONES_TOGETHER = 2;

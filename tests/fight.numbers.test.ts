@@ -126,7 +126,7 @@ describe('a rank doubles what a body holds and deals, once (calls 1 and 3)', () 
 
 describe('a world that already stands keeps its creatures as written; a new one lays them by the new law', () => {
   it('the ground moved to the version the bodies follow', () => {
-    expect(GROUND_VERSION).toBe(BODIES_FROM_GROUND);
+    expect(GROUND_VERSION).toBeGreaterThanOrEqual(BODIES_FROM_GROUND);
   });
 
   it('a body laid under an older ground reads its old numbers, and one laid under this ground the new', () => {
