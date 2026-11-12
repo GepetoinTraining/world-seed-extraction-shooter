@@ -9,13 +9,16 @@
   const $ = id => document.getElementById(id);
   const HUB = '/api/hub';
 
+  // A state is said with a shape and a word. The shapes are the stylesheet's, one for each state,
+  // so none is told from another by color.
+  const SHAPES = { '[■]': 'ok', '[◆]': 'note', '[ ]': 'none', '[!]': 'warn', '[…]': 'busy' };
   const say = (el, mark, text) => {
     el.textContent = '';
     const m = document.createElement('span');
     m.className = 'mark';
+    m.dataset.mark = SHAPES[mark] || 'note';
     m.setAttribute('aria-hidden', 'true');
-    m.textContent = mark;
-    el.append(m, ' ', text);
+    el.append(m, text);
   };
   const show = (el, on) => { el.hidden = !on; };
 
@@ -119,7 +122,13 @@
     const form = which => {
       clerk.unmountSignUp(mount);
       clerk.unmountSignIn(mount);
-      const options = { fallbackRedirectUrl: location.pathname, signInFallbackRedirectUrl: location.pathname, signUpFallbackRedirectUrl: location.pathname };
+      // Clerk's own form, in the machine's colors and corners. A name it does not know is passed over.
+      const variables = {
+        colorPrimary: '#20de81', colorBackground: '#0a0a0a', colorText: '#f2f2ee', colorForeground: '#f2f2ee', colorTextSecondary: '#9b9ba4', colorMutedForeground: '#9b9ba4',
+        colorInputBackground: '#050505', colorInput: '#050505', colorInputText: '#f2f2ee', colorInputForeground: '#f2f2ee', colorNeutral: '#d6d6cf', colorDanger: '#ef4444',
+        borderRadius: '0px', fontFamily: 'inherit'
+      };
+      const options = { fallbackRedirectUrl: location.pathname, signInFallbackRedirectUrl: location.pathname, signUpFallbackRedirectUrl: location.pathname, appearance: { variables } };
       if (which === 'sign-up') clerk.mountSignUp(mount, options);
       else clerk.mountSignIn(mount, options);
     };

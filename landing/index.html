@@ -4,97 +4,186 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>World Seed</title>
-  <meta name="description" content="World Seed: a browser game that runs on your own machine. This hub keeps your account, gives your character its birth, and checks its receipts.">
+  <meta name="description" content="World Seed: a browser extraction game that runs on your own machine. This hub keeps your account, gives your character its birth, and checks its receipts.">
+  <meta name="theme-color" content="#050505">
+  <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/landing.css">
   <script src="/landing.js" defer></script>
 </head>
 <body>
-  <main>
-    <header>
-      <h1>WORLD SEED</h1>
-      <p class="lede">A browser game that runs on your own machine. Your character is yours: it is made in your browser, signed with a key that never leaves it, and kept on your machine.</p>
-    </header>
+  <div class="ground" aria-hidden="true"></div>
 
-    <section aria-labelledby="split">
-      <h2 id="split">What runs where</h2>
-      <ul class="marks">
-        <li><span class="mark" aria-hidden="true">[■]</span> <b>In your browser:</b> the game, your play, and your save.</li>
-        <li><span class="mark" aria-hidden="true">[◆]</span> <b>On this hub:</b> your account, your character's birth, and checks: your character's receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</li>
-        <li><span class="mark" aria-hidden="true">[ ]</span> <b>Never here:</b> your play, your save, or a model key.</li>
+  <header class="top">
+    <a class="brand" href="/" aria-label="World Seed, home"><img src="/brand/logo.svg" alt="World Seed" width="142" height="56"></a>
+    <nav class="top-nav" aria-label="On this page">
+      <a href="#how">How it runs</a>
+      <a href="#cast">The cast</a>
+      <a href="#voice">The voice</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="pitch">
+        <p class="kicker">Browser extraction game</p>
+        <h1>Go in. Carry it out. <span class="proof">The ledger remembers.</span></h1>
+        <p class="lede">World Seed runs on your own machine. Your character is made in your browser, signed with a key that never leaves it, and kept there. This hub gives it its birth and checks its receipts. It never runs your play.</p>
+        <ul class="facts">
+          <li>Nothing to install</li>
+          <li>Your save stays with you</li>
+          <li>Your own model, or none</li>
+        </ul>
+      </div>
+
+      <aside class="card you" aria-labelledby="account">
+        <h2 id="account">Your account</h2>
+        <p id="account-said" class="said" role="status" aria-live="polite">Asking this hub…</p>
+
+        <!-- Signed in: the way in to the game, and the way out of the account -->
+        <p id="play-go" hidden><a class="button primary play" href="/play/">Play in this browser <span aria-hidden="true">→</span></a></p>
+        <div id="signed-in" hidden>
+          <p><button type="button" class="quiet" id="sign-out">Sign out</button></p>
+        </div>
+
+        <!-- This hub's accounts are an e-mail and a password, kept by Clerk -->
+        <div id="clerk-forms" hidden>
+          <p class="hint">An account is an e-mail and a password. The e-mail is how you get back in if the password is lost. This hub itself keeps neither: only a handle, and what your characters send it.</p>
+          <p class="choice">
+            <button type="button" class="primary" id="show-sign-up">Make an account</button>
+            <button type="button" id="show-sign-in">Sign in</button>
+          </p>
+          <div id="clerk-mount"></div>
+        </div>
+
+        <!-- A hub that keeps its own accounts: a handle and a password -->
+        <div id="builtin-forms" hidden>
+          <form id="account-form" autocomplete="on" novalidate>
+            <label>Handle
+              <input name="handle" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false">
+            </label>
+            <p class="hint">3 to 32 letters, digits, dots, dashes or underscores.</p>
+            <label>Password
+              <input name="password" type="password" autocomplete="current-password" required minlength="10">
+            </label>
+            <label id="again-label">Password again, for a new account
+              <input name="again" type="password" autocomplete="new-password" minlength="10">
+            </label>
+            <p class="hint">At least 10 characters. This hub has no e-mail and no recovery, so keep it somewhere safe.</p>
+            <p class="choice">
+              <button type="submit" class="primary" name="act" value="make">Make the account</button>
+              <button type="submit" name="act" value="sign-in">Sign in</button>
+            </p>
+          </form>
+        </div>
+
+        <p id="play-wait" class="hint">Sign in first. Every character is born on this hub's word, so the hub has to know whose it is before one is made.</p>
+      </aside>
+    </section>
+
+    <section class="band" id="how" aria-labelledby="how-title">
+      <p class="kicker">How it runs</p>
+      <h2 id="how-title">Your machine plays. This hub only checks.</h2>
+      <div class="three">
+        <article class="card ruled">
+          <span class="glyph" data-mark="ok" aria-hidden="true"></span>
+          <h3>In your browser</h3>
+          <p>The game, your play, and your save. Nothing about a dive is sent anywhere while you are in it.</p>
+        </article>
+        <article class="card ruled">
+          <span class="glyph" data-mark="note" aria-hidden="true"></span>
+          <h3>On this hub</h3>
+          <p>Your account, your character's birth, and checks: its receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</p>
+        </article>
+        <article class="card ruled">
+          <span class="glyph" data-mark="none" aria-hidden="true"></span>
+          <h3>Never here</h3>
+          <p>Your play, your save, or a model key.</p>
+        </article>
+      </div>
+      <ul class="notes">
+        <li><span class="mark" data-mark="note" aria-hidden="true"></span>Your character is registered here as it is made, and its receipts go up by themselves as you play.</li>
+        <li><span class="mark" data-mark="note" aria-hidden="true"></span>One tab holds the save at a time. Clearing this site's data clears the save, so back your avatar up from SYSTEM first.</li>
       </ul>
     </section>
 
-    <section aria-labelledby="account">
-      <h2 id="account">Your account</h2>
-      <p id="account-said" class="said" role="status" aria-live="polite">Asking this hub…</p>
-
-      <!-- Signed in: who, and the way out -->
-      <div id="signed-in" hidden>
-        <p><button type="button" id="sign-out">SIGN OUT</button></p>
+    <section class="band" id="cast" aria-labelledby="cast-title">
+      <p class="kicker">Computed, not drawn</p>
+      <h2 id="cast-title">Every world is new. The same machine made all of them.</h2>
+      <p class="wide">Nothing in the game is illustrated. Every body, face and creature is built from the same small pieces by the same rules, so each world the seed grows is its own and still reads as this one. These are the game's own figures, made by the game's own code.</p>
+      <div class="cast">
+        <figure class="card">
+          <div class="faces">
+            <img class="atoms" src="/brand/portrait-operator.png" alt="" width="136" height="136">
+            <img class="atoms" src="/brand/figure-operator.png" alt="" width="72" height="72">
+          </div>
+          <figcaption><b>Operator</b> Reads the machine. Pack and antenna; the terminal answers faster.</figcaption>
+        </figure>
+        <figure class="card">
+          <div class="faces">
+            <img class="atoms" src="/brand/portrait-street-samurai.png" alt="" width="136" height="136">
+            <img class="atoms" src="/brand/figure-street-samurai.png" alt="" width="72" height="72">
+          </div>
+          <figcaption><b>Street Samurai</b> Angular shoulders, a topknot, and no patience for locked doors.</figcaption>
+        </figure>
+        <figure class="card">
+          <div class="faces">
+            <img class="atoms" src="/brand/portrait-nomad.png" alt="" width="136" height="136">
+            <img class="atoms" src="/brand/figure-nomad.png" alt="" width="72" height="72">
+          </div>
+          <figcaption><b>Nomad</b> Hood and cloak. Walks out of places others are carried out of.</figcaption>
+        </figure>
+        <figure class="card">
+          <div class="faces">
+            <img class="atoms" src="/brand/portrait-arcanist.png" alt="" width="136" height="136">
+            <img class="atoms" src="/brand/figure-arcanist.png" alt="" width="72" height="72">
+          </div>
+          <figcaption><b>Arcanist</b> Robe and halo. Asks the Seed directly and sometimes it answers.</figcaption>
+        </figure>
       </div>
+      <p class="hint brackets-note">The four corner brackets are how the machine marks you. Nobody else carries them.</p>
 
-      <!-- This hub's accounts are an e-mail and a password, kept by Clerk -->
-      <div id="clerk-forms" hidden>
-        <p>An account here is an e-mail and a password. The e-mail is how you get back in if the password is lost. This hub itself keeps neither: it keeps a handle and what your characters send it.</p>
-        <p class="choice">
-          <button type="button" id="show-sign-up">MAKE AN ACCOUNT</button>
-          <button type="button" id="show-sign-in">SIGN IN</button>
-        </p>
-        <div id="clerk-mount"></div>
+      <div class="wild" role="img" aria-label="Six creatures of different sizes, built from the same pieces">
+        <img class="atoms" src="/brand/creature-grazer.png" alt="" width="64" height="64">
+        <img class="atoms" src="/brand/creature-wings.png" alt="" width="64" height="64">
+        <img class="atoms" src="/brand/creature-hull.png" alt="" width="88" height="88">
+        <img class="atoms" src="/brand/creature-titan.png" alt="" width="136" height="136">
+        <img class="atoms" src="/brand/creature-tendril.png" alt="" width="88" height="88">
+        <img class="atoms" src="/brand/creature-biped.png" alt="" width="64" height="64">
       </div>
+      <p class="hint center">Some of what walks out there.</p>
+    </section>
 
-      <!-- A hub that keeps its own accounts: a handle and a password -->
-      <div id="builtin-forms" hidden>
-        <form id="account-form" autocomplete="on" novalidate>
-          <label>Handle
-            <input name="handle" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false">
-          </label>
-          <p class="hint">3 to 32 letters, digits, dots, dashes or underscores.</p>
-          <label>Password
-            <input name="password" type="password" autocomplete="current-password" required minlength="10">
-          </label>
-          <label id="again-label">Password again, for a new account
-            <input name="again" type="password" autocomplete="new-password" minlength="10">
-          </label>
-          <p class="hint">At least 10 characters. This hub has no e-mail and no recovery, so keep it somewhere safe.</p>
-          <p class="choice">
-            <button type="submit" name="act" value="make">MAKE THE ACCOUNT</button>
-            <button type="submit" name="act" value="sign-in">SIGN IN</button>
-          </p>
-        </form>
+    <section class="band split" id="voice" aria-labelledby="voice-title">
+      <div>
+        <p class="kicker">The voice</p>
+        <h2 id="voice-title">It speaks through a model you choose.</h2>
+      </div>
+      <div>
+        <p>Played here, the game speaks through a model of your choosing, and plays on without one if you choose none. It can be a model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose), or your own key with a provider. Either is set up inside the game, under SYSTEM, THE VOICE, which shows every step before you run it.</p>
+        <p class="hint">Safari, and every browser on an iPhone or iPad, cannot reach a model on your own machine, so there a key is the only way. A key is sealed in this browser and is never sent here.</p>
       </div>
     </section>
 
-    <section aria-labelledby="play">
-      <h2 id="play">Play</h2>
-      <p id="play-wait">Sign in above first. Every character is born on this hub's word, so the hub has to know whose it is before one is made.</p>
-      <p id="play-go" hidden><a class="play" href="/play/">PLAY IN THIS BROWSER</a></p>
-      <p>Your save stays in this browser, on this machine. Your character is registered here as it is made, and its receipts go up by themselves as you play.</p>
-      <p class="hint">One tab holds the save at a time. Clearing this site's data clears the save, so back your avatar up from SYSTEM first.</p>
-    </section>
-
-    <section aria-labelledby="voice">
-      <h2 id="voice">The model</h2>
-      <p>Played here, the game speaks through a model of your choosing, and plays on without one if you choose none. It can be a model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose), or your own key with a provider. Either is set up inside the game, under SYSTEM, THE VOICE, which shows every step before you run it.</p>
-      <p class="hint">Safari, and every browser on an iPhone or iPad, cannot reach a model on your own machine, so there a key is the only way. A key is sealed in this browser and is never sent here.</p>
-    </section>
-
-    <section aria-labelledby="yours" id="yours-section" hidden>
+    <section class="band" id="yours-section" aria-labelledby="yours" hidden>
+      <p class="kicker">Yours to take back</p>
       <h2 id="yours">What this hub holds of you</h2>
-      <ul class="marks" id="held-list"></ul>
-      <p>You can have all of it deleted: the account, its characters as this hub knows them, every receipt, and the e-mail and password with them. What is in this browser is yours and is not touched. It cannot be undone.</p>
-      <form id="delete-form" autocomplete="off" novalidate>
+      <div class="card ruled held">
+        <ul class="marks" id="held-list"></ul>
+      </div>
+      <p class="wide">You can have all of it deleted: the account, its characters as this hub knows them, every receipt, and the e-mail and password with them. What is in this browser is yours and is not touched. It cannot be undone.</p>
+      <form id="delete-form" class="card loss" autocomplete="off" novalidate>
         <label>To delete everything, write your handle
           <input name="confirm" spellcheck="false" autocomplete="off">
         </label>
-        <button type="submit">DELETE MY ACCOUNT AND ALL OF IT</button>
+        <button type="submit" class="danger">Delete my account and all of it</button>
         <p id="delete-said" class="said" role="status" aria-live="polite"></p>
       </form>
     </section>
-
-    <footer>
-      <p id="hub-said" class="said">Reading this hub…</p>
-    </footer>
   </main>
+
+  <footer class="foot">
+    <img src="/brand/mark.svg" alt="" width="22" height="28">
+    <p id="hub-said" class="said">Reading this hub…</p>
+  </footer>
 </body>
 </html>
