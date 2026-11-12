@@ -19,9 +19,10 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { BASE_CRIT_MULTIPLIER, BASE_GLANCE, BLOCK_FACTOR, GLANCE_FACTOR, RATING_KNEE, UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { isThrowable, thrownDamage } from '../../../shared/entities/item/Throwable';
-import { IStrikeShape, THROW_TILES, strikeNumbers, strikeWordsOf, volleyWordOf } from '../../../shared/logic/theme/ThemeFormula';
+import { IStrikeShape, THROW_TILES, bodyScale, strikeNumbers, strikeWordsOf, volleyWordOf } from '../../../shared/logic/theme/ThemeFormula';
 import { TILE_PX } from '../../../shared/entities/world/grid';
 import type { Volley } from '../../../shared/logic/theme/ThemeTypes';
+import { bodyLawOf } from '../../../shared/entities/mob/BodyLaw';
 
 export const UNARMED_DAMAGE = 5;
 export { UNARMED_SHOTS_PER_SEC };
@@ -31,8 +32,11 @@ export const MAX_MITIGATION = 0.6;
 export interface IOutgoingHit { damage: number; crit: boolean; glance: boolean; poison: number }
 export interface IIncomingHit { damage: number; dodged: boolean; blocked: boolean }
 
-/** A rating's pull, approaching but never reaching one, and able to go negative. */
-const curve = (rating: number): number => rating / (Math.abs(rating) + RATING_KNEE);
+/**
+ * A rating's pull, approaching but never reaching one, and able to go negative. The fight's law (part 3): read against
+ * the rank it is set against, its knee doubled a rank as the rating on a piece is (BALANCE_RUN 1.2). No rank reads F.
+ */
+const curve = (rating: number, against: string = 'F'): number => rating / (Math.abs(rating) + RATING_KNEE * bodyScale(against));
 
 export class CombatMath {
 
@@ -44,13 +48,15 @@ export class CombatMath {
   }
 
   /** Damage of one player projectile/swing with this weapon. */
-  static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState): number {
-    // C14: a stone thrown lands by how hard it is, and a bare hand by what a bare hand does
+  static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState, rank: string = 'F'): number {
+    // C14: a stone thrown lands by how hard it is, and a bare hand by what a bare hand does: half a plain weapon of its body's rank (part 3)
     const base = isThrowable(weapon) ? thrownDamage(weapon!)
-      : !this.isUsable(weapon) ? UNARMED_DAMAGE
+      : !this.isUsable(weapon) ? Math.round(UNARMED_DAMAGE * bodyScale(rank))
       // The rarity rescale: a fifth of the piece's power, with no bare constant beside it (1.2). A piece a
       // standing world minted keeps the blow it was stamped with (call 18)
-      : weapon!.pieceLaw !== undefined ? Math.round(PieceLaw.blowOf(weapon!.itemPower || 0))
+      // The fight's law (part 3): a plain weapon deals a fifth of its power a second, whatever its pace; its own rate cuts it
+      // into blows, so a slow kind hits harder each blow and a quick one lighter
+      : weapon!.pieceLaw !== undefined ? Math.round(PieceLaw.blowOf(weapon!.itemPower || 0) / Math.max(0.1, weapon!.stats?.attack_speed || 1))
       : Math.round(6 + (weapon!.itemPower || 0) * 0.08);
     return Math.max(1, base + StatSystem.total(equipment, 'damage'));
   }
@@ -59,14 +65,14 @@ export class CombatMath {
    * One swing or shot, keyed: what it does, with what is worn and who holds it. The same
    * key answers the same. skillPower is what the hand's own skill adds (WebSystem.handPower).
    */
-  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes, skillPower: number = 0): IOutgoingHit {
+  static outgoing(weapon: IItem | undefined, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes, skillPower: number = 0, rank: string = 'F'): IOutgoingHit {
     const rng = Rng.fromKey(key);
-    const base = this.baseHit(weapon, equipment, attributes, skillPower);
+    const base = this.baseHit(weapon, equipment, attributes, skillPower, rank);
     const poison = StatSystem.total(equipment, 'poison_damage');
     if (rng.next() < StatSystem.critChance(equipment, attributes)) {
       return { damage: Math.round(base * this.critMultiplier(equipment)), crit: true, glance: false, poison };
     }
-    if (rng.next() < this.glanceChance(equipment, attributes)) {
+    if (rng.next() < this.glanceChance(equipment, attributes, rank)) {
       return { damage: Math.max(1, Math.round(base * GLANCE_FACTOR)), crit: false, glance: true, poison };
     }
     return { damage: base, crit: false, glance: false, poison };
@@ -76,8 +82,8 @@ export class CombatMath {
   // against and never a second sum of its own (the interface pass, 2026-11-11).
 
   /** A hit before it crits or glances: the hand, what is worn, strength for a swing, and the hand's own skill. */
-  static baseHit(weapon: IItem | undefined, equipment: IEquipmentState | undefined, attributes?: IAttributes, skillPower: number = 0): number {
-    const bare = this.weaponDamage(weapon, equipment);
+  static baseHit(weapon: IItem | undefined, equipment: IEquipmentState | undefined, attributes?: IAttributes, skillPower: number = 0, rank: string = 'F'): number {
+    const bare = this.weaponDamage(weapon, equipment, rank);
     return Math.round((this.isMelee(weapon) ? bare * StatSystem.meleeScale(attributes) : bare) * (1 + skillPower));
   }
 
@@ -86,10 +92,11 @@ export class CombatMath {
     return BASE_CRIT_MULTIPLIER + StatSystem.total(equipment, 'crit_multiplier');
   }
 
-  /** The chance a hit that does not crit glances: fewer with accuracy, from dexterity and what is worn. */
-  static glanceChance(equipment: IEquipmentState | undefined, attributes?: IAttributes): number {
-    const accuracy = Math.max(-99, StatSystem.accuracyRating(equipment, attributes));
-    return BASE_GLANCE * 100 / (100 + accuracy);
+  /** The chance a hit that does not crit glances: fewer with accuracy, from dexterity and what is worn, read at the holder's own rank. */
+  static glanceChance(equipment: IEquipmentState | undefined, attributes?: IAttributes, rank: string = 'F'): number {
+    const knee = RATING_KNEE * bodyScale(rank);
+    const accuracy = Math.max(-0.99 * knee, StatSystem.accuracyRating(equipment, attributes));
+    return BASE_GLANCE * knee / (knee + accuracy);
   }
 
   /** What a glance leaves of a hit. */
@@ -98,8 +105,8 @@ export class CombatMath {
   }
 
   /** The chance a blow arriving misses entirely: the evasion rating, from agility and what is worn, on its curve. */
-  static dodgeChance(equipment: IEquipmentState | undefined, attributes?: IAttributes): number {
-    return Math.max(0, curve(StatSystem.evasionRating(equipment, attributes)));
+  static dodgeChance(equipment: IEquipmentState | undefined, attributes?: IAttributes, against: string = 'F'): number {
+    return Math.max(0, curve(StatSystem.evasionRating(equipment, attributes), against));
   }
 
   /** The chance a blow that lands is blocked, and what a block leaves of it. */
@@ -167,32 +174,33 @@ export class CombatMath {
    * physical_reduction become one rating and the 60% top goes"). An old piece's straight share is read as the rating
    * that gives the same share alone, so it adds to the rest on the same curve. Negative defense adds to a blow.
    */
-  static mitigationOf(equipment: IEquipmentState | undefined): number {
+  static mitigationOf(equipment: IEquipmentState | undefined, against: string = 'F'): number {
     const worn = StatSystem.worn(equipment);
-    const asRating = (share: number) => (share >= 1 ? Number.MAX_SAFE_INTEGER : RATING_KNEE * share / (1 - share));
+    const asRating = (share: number) => (share >= 1 ? Number.MAX_SAFE_INTEGER : RATING_KNEE * bodyScale(against) * share / (1 - share));
     const shares = worn.reduce((sum, i) => sum + asRating(i.stats?.physical_reduction ?? 0), 0);
     const chestId = equipment?.slots.CHEST;
     const chest = worn.find(i => i.id === chestId);
     const fallback = chest && chest.pieceLaw === undefined && !chest.stats?.physical_reduction && !chest.stats?.defense ? asRating((chest.itemPower || 0) * 0.0004) : 0;
-    return curve(StatSystem.total(equipment, 'defense') + shares + fallback);
+    return curve(StatSystem.total(equipment, 'defense') + shares + fallback, against);
   }
 
   /** One blow arriving, keyed: dodged, blocked, or mitigated. Who it lands on counts too. */
-  static incoming(raw: number, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes): IIncomingHit {
+  static incoming(raw: number, equipment: IEquipmentState | undefined, key: string, attributes?: IAttributes, against: string = 'F'): IIncomingHit {
     if (raw <= 0) return { damage: 0, dodged: false, blocked: false };
     const rng = Rng.fromKey(key);
-    if (rng.next() < this.dodgeChance(equipment, attributes)) {
+    if (rng.next() < this.dodgeChance(equipment, attributes, against)) {
       return { damage: 0, dodged: true, blocked: false };
     }
     const blocked = rng.next() < this.blockChance(equipment);
     const landed = (blocked ? raw * BLOCK_FACTOR : raw) * StatSystem.blowFactor(attributes);
-    return { damage: Math.max(1, Math.round(landed * (1 - this.mitigationOf(equipment)))), dodged: false, blocked };
+    return { damage: Math.max(1, Math.round(landed * (1 - this.mitigationOf(equipment, against)))), dodged: false, blocked };
   }
 
   /** A mob attack's damage from its definition. */
-  static mobDamage(def: IMobDefinition | undefined): number {
+  static mobDamage(def: IMobDefinition | undefined, body?: { law?: number }): number {
     if (!def) return 8;
-    let dmg = def.baseDamage || 8;
+    // The fight's law (part 3): by the law the body was laid under (`BodyLaw`)
+    let dmg = bodyLawOf(def, body).baseDamage || 8;
     if (def.tags?.includes('boss')) dmg = Math.round(dmg * 1.5);
     return dmg;
   }

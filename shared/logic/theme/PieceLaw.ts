@@ -58,7 +58,7 @@ const ODDS_Q = 0.4;
  * of the same rank on the same body, through the fight's own readers (Pedro: "Yes, a whole rank"). Solved and held
  * by `tests/kit.measure.test.ts`; when what a body holds or deals changes, that bar goes red and it is solved again.
  */
-const RULER_FACTOR = 0.2233;
+const RULER_FACTOR = 0.1994;
 
 /**
  * What the body a thing was found on does to the odds of depth: each class up holds twice what the one below it
@@ -77,26 +77,34 @@ const floorBody = (step: number): IAttributes =>
  * rank doubles reads the piece's rank; everything else reads none, so it is read at rank F. Undefined for a stat
  * no worn piece's reader reads (a room's, a cart's, a mind's): those keep the formula's old scale.
  */
+/**
+ * The ratings a reader reads against a rank (the fight's law, part 3): a blow's protection and a dodge against the
+ * striker's, a glance against the holder's own. On a piece they double a rank, as the knee they are read on does.
+ */
+const RANK_RATINGS = new Set(['defense', 'evasion_rating', 'accuracy_rating']);
+const readsRankOf = (stat: string) => statReading(stat) === 'amount' || RANK_RATINGS.has(stat);
+
 function referenceOf(stat: string, rank: UniversalRank | string): number | undefined {
-  const step = statReading(stat) === 'amount' ? Math.max(0, rankStep(rank as UniversalRank)) : 0;
+  const step = readsRankOf(stat) ? Math.max(0, rankStep(rank as UniversalRank)) : 0;
   const body = floorBody(step);
+  const knee = RATING_KNEE * Math.pow(RANK_RATIO, step);
   const blow = BLOW_SHARE * BASE_POWER * Math.pow(RANK_RATIO, step);
   switch (stat) {
     // Amounts: the figure each is added to
     case 'damage': return blow;                                                          // a plain weapon's blow (CombatMath.weaponDamage)
     case 'poison_damage': return blow / (POISON_MS / POISON_TICK_MS);                    // a hit's poison bites this many times
-    case 'max_health': return StatSystem.maxHealth(body);
+    case 'max_health': return StatSystem.maxHealth(body, undefined, RANK_WORDS[Math.min(step, RANK_WORDS.length - 1)]);
     case 'max_energy': return StatSystem.maxEnergy(body);
     case 'carry_capacity': case 'carry_bonus_kg': return InventorySystem.maxCarryWeight(body.strength);
     case 'pickup_radius': return StatSystem.pickupRadiusPx() / TILE_PX;                   // the reach its units are added to
     case 'light_radius': return WIDEST_VIEW_TILES;                                        // sight, against the farthest a body notices from
     // Ratings: the plain figure over what one more adds to it
-    case 'defense': return RATING_KNEE;                                                   // what a blow leaves: 1 + defense / knee
-    case 'evasion_rating': return RATING_KNEE + StatSystem.evasionRating(undefined, body);
+    case 'defense': return knee;                                                          // what a blow leaves: 1 + defense / knee
+    case 'evasion_rating': return knee + StatSystem.evasionRating(undefined, body);
     case 'accuracy_rating': {
       const a0 = StatSystem.accuracyRating(undefined, body);
-      const kept = 1 - BASE_GLANCE * RATING_KNEE / (RATING_KNEE + a0) * (1 - GLANCE_FACTOR);
-      return kept / (BASE_GLANCE * RATING_KNEE * (1 - GLANCE_FACTOR) / Math.pow(RATING_KNEE + a0, 2));
+      const kept = 1 - BASE_GLANCE * knee / (knee + a0) * (1 - GLANCE_FACTOR);
+      return kept / (BASE_GLANCE * knee * (1 - GLANCE_FACTOR) / Math.pow(knee + a0, 2));
     }
     case 'crit_chance': return (1 + StatSystem.critChance(undefined, body) * (BASE_CRIT_MULTIPLIER - 1)) / (BASE_CRIT_MULTIPLIER - 1);
     case 'crit_multiplier': return BASE_CRIT_MULTIPLIER;
@@ -144,7 +152,7 @@ export const PieceLaw = {
 
   /** What a rank does to a stat with no ruler: an amount doubles, the rest read none until their readers read one. */
   rankFactor(stat: string, rank: UniversalRank | string): number {
-    return statReading(stat) === 'amount' ? this.scale(rank) : 1;
+    return readsRankOf(stat) ? this.scale(rank) : 1;
   },
 
   /** A piece's power: 50 x 2^step x (1 + quality), a tool a third. Found or made, the same law. */

@@ -25,14 +25,17 @@ describe('movement speed', () => {
     expect(LoadoutSystem.walkTilesPerSecond(undefined)).toBe(BASE_WALK_TILES_PER_S);
   });
 
-  it('scales with what is worn, and pieces add up', () => {
-    expect(LoadoutSystem.walkTilesPerSecond(worn({ movement_speed: 0.1 }))).toBeCloseTo(BASE_WALK_TILES_PER_S * 1.1);
+  // The fight's law (part 3): what is worn for pace adds up, and the sum is read on a curve, b / (1 + b)
+  it('scales with what is worn, and pieces add up, on the curve', () => {
+    expect(LoadoutSystem.walkTilesPerSecond(worn({ movement_speed: 0.1 }))).toBeCloseTo(BASE_WALK_TILES_PER_S * (1 + 0.1 / 1.1));
     expect(LoadoutSystem.walkTilesPerSecond(worn({ movement_speed: 0.1 }, { movement_speed: 0.25 })))
-      .toBeCloseTo(BASE_WALK_TILES_PER_S * 1.35);
+      .toBeCloseTo(BASE_WALK_TILES_PER_S * (1 + 0.35 / 1.35));
   });
 
-  it('has no ceiling: a huge roll is a huge pace', () => {
-    expect(LoadoutSystem.walkTilesPerSecond(worn({ movement_speed: 9 }))).toBeCloseTo(BASE_WALK_TILES_PER_S * 10);
+  it('has no top: a huge roll is always more pace, approaching twice a walk and never arriving', () => {
+    const huge = LoadoutSystem.walkTilesPerSecond(worn({ movement_speed: 9 }));
+    expect(huge).toBeCloseTo(BASE_WALK_TILES_PER_S * (1 + 9 / 10));
+    expect(LoadoutSystem.walkTilesPerSecond(worn({ movement_speed: 99 }))).toBeGreaterThan(huge);
   });
 
   it('takes penalties, and can never stop you or turn you around', () => {

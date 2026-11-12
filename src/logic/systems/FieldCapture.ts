@@ -7,6 +7,7 @@
  * map is D65's other open half, and it waits for one to exist.
  */
 
+import { bodyLawOf } from '../../../shared/entities/mob/BodyLaw';
 import { IItem, UniversalRank } from '../../../shared/types';
 import { worldDay } from '../../entities/hub/worldDay';
 import type { IHubPort } from '../../entities/hub/hubView';
@@ -68,7 +69,7 @@ export const FieldCapture = {
     const snare = held.inventory.find(i => i.tags?.includes('snare'));
     if (!snare) { feed('You have no snare to set.', 'loss'); return; }
 
-    const max = (def?.baseHealth ?? entity.health ?? 1) + (entity.bonusHealth ?? 0);
+    const max = (def ? bodyLawOf(def, entity).baseHealth : entity.health ?? 1) + (entity.bonusHealth ?? 0);
     const roll = Capture.trap({
       seed: card.seed, body: entity.id, attempt: fnv1a(snare.id), rank: entity.rank, behavior: def?.behavior,
       healthShare: (entity.health ?? max) / Math.max(1, max), skill: levelOf(['trapping'], pc)

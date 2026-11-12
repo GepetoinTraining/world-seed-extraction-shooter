@@ -1,3 +1,5 @@
+import { bodyLawOf, laysByLaw } from '../mob/BodyLaw';
+import { BODIES_FROM_GROUND } from '../../logic/theme/ThemeFormula';
 import { BiomeType, EntityType, IChunk, IMap, ISector, IWorldEntity, ScanLevel } from './types';
 import { GenreType } from './definitions';
 import { TerrainSystem } from './TerrainSystem';
@@ -48,8 +50,12 @@ export interface IGenerationContext {
  *   4              the rarity rescale (BALANCE_RUN 1.4): a piece found takes the rank of where it came from,
  *                  never its kind's, a rank doubles it once, and its step is read off what it holds (PieceLaw).
  *                  The ground is laid as at 3.
+ *   5              the fight's rebalance (BALANCE_RUN 1.2, part 3): a body is laid by the fight's law, a rank doubling
+ *                  what it holds and deals and a plain creature a quarter of a person, and says so (`IWorldEntity.law`);
+ *                  a trait is a share of its body. A world standing before keeps its bodies as written. The ground is
+ *                  laid as at 4.
  */
-export const GROUND_VERSION = 4;
+export const GROUND_VERSION = 5;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
 const LOOSE_STONE_CHANCE = 0.5;
 const LOOSE_STONES_TOGETHER = 2;
@@ -523,11 +529,15 @@ export class WorldGenerator {
           else { mx = x0 + rng.int(0, span); my = y0 + rng.int(0, span); }
         }
         if (!at) continue;
-        const variant = Director.variantOf(seed, body.id, body.def.id, body.def.name, ctx.director, ctx.directorPool, body.def.tags, body.def.generation);
+        // The fight's law (part 3): a world of this ground lays the body by it; one standing before keeps it as written
+        const byLaw = laysByLaw(ctx.groundVersion);
+        const numbers = bodyLawOf(body.def as never, byLaw ? { law: BODIES_FROM_GROUND } : undefined);
+        const variant = Director.variantOf(seed, body.id, body.def.id, body.def.name, ctx.director, ctx.directorPool, body.def.tags, body.def.generation, byLaw ? numbers : undefined);
         const bonusHealth = (body.bonusHealth ?? 0) + variant.bonusHealth, bonusDamage = (body.bonusDamage ?? 0) + variant.bonusDamage;
         chunk.entities.push({
           id: body.id, type: EntityType.MOB, definitionId: body.def.id, position: at,
-          rank: body.def.rank, rarity: Rarity.COMMON, isHostile: true, health: body.def.baseHealth + bonusHealth,
+          rank: body.def.rank, rarity: Rarity.COMMON, isHostile: true, health: numbers.baseHealth + bonusHealth,
+          ...(byLaw ? { law: BODIES_FROM_GROUND } : {}),
           ...(variant.displayName ? { displayName: variant.displayName } : {}),
           ...(bonusHealth !== 0 || bonusDamage !== 0 ? { bonusHealth, bonusDamage } : {}),
           ...(variant.learned.length > 0 ? { learned: variant.learned } : {})
@@ -585,10 +595,13 @@ export class WorldGenerator {
       const at = field.place(tx, ty);
       if (!at || nearDrop(at.x, at.y)) return;
       const body = id(suffix);
-      const variant = countOnly ? { bonusHealth: 0, bonusDamage: 0, traits: [], learned: [] as string[], displayName: undefined } : Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation);
+      const byLaw = laysByLaw(ctx.groundVersion);
+      const numbers = bodyLawOf(template, byLaw ? { law: BODIES_FROM_GROUND } : undefined);
+      const variant = countOnly ? { bonusHealth: 0, bonusDamage: 0, traits: [], learned: [] as string[], displayName: undefined } : Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation, byLaw ? numbers : undefined);
       push({
         id: body, type: EntityType.MOB, definitionId: template.id, position: at,
-        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: template.baseHealth + variant.bonusHealth,
+        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: numbers.baseHealth + variant.bonusHealth,
+        ...(byLaw ? { law: BODIES_FROM_GROUND } : {}),
         ...(variant.displayName ? { displayName: variant.displayName } : {}),
         ...(variant.traits.length > 0 || variant.learned.length > 0 ? {
           bonusHealth: variant.bonusHealth, bonusDamage: variant.bonusDamage, learned: variant.learned

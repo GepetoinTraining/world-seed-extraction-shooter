@@ -7,7 +7,7 @@ import { rememberThreat } from '../entities/interaction/memoryStore';
 import { WebSystem } from '../../shared/logic/systems/WebSystem';
 import { ProjectileSystem, PatternType, IProjectile, patternOf } from '../../shared/entities/combat/projectileSystem';
 import { PERSON_RADIUS_PX, covers, pushFrom } from '../../shared/entities/combat/Shapes';
-import { SHOT_WEIGHT, blowWeight, bodyPoise, feltHit } from '../../shared/logic/theme/ThemeFormula';
+import { SHOT_WEIGHT, blowWeight, bodyPoise, feltHit, rankStep } from '../../shared/logic/theme/ThemeFormula';
 import { LootTable } from '../entities/world/LootTable';
 import { Leaders } from '../../shared/entities/world/Leaders';
 import { CombatSystem } from '../entities/combat/CombatSystems';
@@ -343,15 +343,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       return;
     }
     const damage = receipt.effect === 'damage' ? receipt.magnitude : Math.round(receipt.magnitude / 4);
+    // Part 3: a working is a blow, felt as one: its shot weighs a shot, its blow what its swing weighs
     if (receipt.delivery === 'ranged') {
       setPlayerPatterns(prev => [...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: PatternType.SINGLE, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status, struck: new Set<string>() }]);
+        { type: PatternType.SINGLE, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status, struck: new Set<string>(), weight: SHOT_WEIGHT }]);
     } else if (receipt.delivery === 'melee' || receipt.delivery === 'touch') {
       setActiveSwings(prev => [...prev.filter(s => now - s.startTime < 300),
-        { origin: { x: origin.x, y: origin.z }, angle, range: receipt.reachPx, startTime: now, damage, status: receipt.status }]);
+        { origin: { x: origin.x, y: origin.z }, angle, range: receipt.reachPx, startTime: now, damage, status: receipt.status, weight: blowWeight({ reachPx: receipt.reachPx, innerPx: 0, halfAngle: 0.75 }) }]);
     } else {
       setPlayerPatterns(prev => [...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: PatternType.NOVA, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status, struck: new Set<string>() }]);
+        { type: PatternType.NOVA, origin: { x: origin.x, y: origin.z }, startTime: now, angle, damage, status: receipt.status, struck: new Set<string>(), weight: SHOT_WEIGHT }]);
     }
   };
 
@@ -441,7 +442,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (mode === 'FOCUS' && !st.player.activeCast && (st.player.currentSession?.energy ?? 0) < FOCUS_ENERGY_COST) return;
     const angle = aimFrom(playerPos);
     // Line 77: keyed by the session's own count of shots, so a run replays the same
-    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon));
+    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon), ProgressionSystem.rankOf(st.player));
 
     if (mode === 'MELEE') {
       // The fight's shapes: the held kind's own ground, swung, struck and drawn as one (CombatSystem, FieldRenderer)
@@ -988,6 +989,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const weighs = (weight: number | undefined, from: { x: number; y: number }) => {
         if (weight !== undefined && (!heaviest || weight > heaviest.weight)) heaviest = { weight, from };
       };
+      // Part 3: what is worn is read against the rank of what struck, the highest of it this frame
+      let struckAt: string | undefined;
+      const rankedBy = (rank: string | undefined) => {
+        if (rank && (!struckAt || rankStep(rank as never) > rankStep(struckAt as never))) struckAt = rank;
+      };
       const isAlive = (p: any) => ProjectileSystem.alive(p, now);
 
       // Layer 3: a scroll, read. It casts through the same door, and asks nothing of the reserves.
@@ -1038,10 +1044,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
               lastHurtByRef.current = p.shooterId ?? lastHurtByRef.current;
               incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
               weighs(p.weight, p.origin);
+              rankedBy(p.rank);
               if (p.status) landedStatuses.push(p.status);
             } else {
               // Q16: a blow aimed at someone beside you lands on them
-              const struck = Escort.hitBy(p.origin, p.reachPx ?? 50, escortsStanding);
+              const struck = Escort.hitBy(p.origin, p.reachPx ?? 50, escortsStanding, p.shape ? { shape: p.shape, angle: p.angle } : undefined);
               if (struck) FieldEscort.hurt(struck, p.damage ?? 10, `escort_hit:${struck}:${now}:${n}`, worldPort, playerPort);
             }
           }
@@ -1080,6 +1087,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           weighs(b.weight ?? SHOT_WEIGHT, { x: playerPos.x - Math.cos(b.angle), y: playerPos.z - Math.sin(b.angle) });
           const firedBy = enemyPatterns.find(p => b.id.startsWith(`e_${p.shooterId}_${p.startTime}_`));
           if (firedBy) lastHurtByRef.current = firedBy.shooterId;
+          rankedBy(firedBy?.rank);
           if (firedBy?.status) landedStatuses.push(firedBy.status);
           spentShots.current.set(b.id, now);
           return false;
@@ -1220,7 +1228,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const clock = StatusClock.tick(effects, now);
       effects = clock.statuses;
       landedStatuses.forEach(plan => { effects = StatusClock.add(effects, plan, now); });
-      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)), liveAttributes);
+      const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)), liveAttributes, struckAt ?? 'F');
       // Part 2: what landed is felt. A push from where it came, a pause, and a draw broken by what weighs as much as the person stands
       const struckBy = heaviest as { weight: number; from: { x: number; y: number } } | null;
       if (struckBy && hit.damage > 0 && !hit.dodged) {

@@ -110,7 +110,7 @@ describe('Q16: a person brought out walks beside you', () => {
 
   it('their health is their own, read from their own sheet', () => {
     const escort = recruited()!;
-    expect(escort.maxHealth).toBe(StatSystem.maxHealth(escort.stats));
+    expect(escort.maxHealth).toBe(StatSystem.maxHealth(escort.stats, undefined, escort.rank));
     expect(escort.health).toBe(escort.maxHealth);
   });
 

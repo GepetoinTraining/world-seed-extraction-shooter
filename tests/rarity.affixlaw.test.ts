@@ -101,9 +101,11 @@ describe('part 2: one affix, one stat', () => {
     expect(priced).toBeGreaterThan(0);
   });
 
-  it('a ruler doubles a rank for an amount and reads no rank for a rating, and is one factor times its plain reference', () => {
+  it('a ruler doubles a rank for an amount and for a rating read against a rank, reads none for the rest, and is one factor times its plain reference', () => {
     expect(PieceLaw.ruler('damage', UniversalRank.C) / PieceLaw.ruler('damage', UniversalRank.F)).toBeCloseTo(8, 9);
-    expect(PieceLaw.ruler('evasion_rating', UniversalRank.S)).toBeCloseTo(PieceLaw.ruler('evasion_rating', UniversalRank.F), 9);
+    // The fight's law (part 3): defense, evasion and accuracy are read against a rank, so they double on their piece
+    expect(PieceLaw.ruler('defense', UniversalRank.C) / PieceLaw.ruler('defense', UniversalRank.F)).toBeCloseTo(8, 9);
+    expect(PieceLaw.ruler('crit_chance', UniversalRank.S)).toBeCloseTo(PieceLaw.ruler('crit_chance', UniversalRank.F), 9);
     for (const stat of ['damage', 'max_health', 'defense', 'crit_chance', 'movement_speed', 'luck_find_rarity']) {
       expect(PieceLaw.ruler(stat, UniversalRank.D)).toBeCloseTo(PieceLaw.RULER_FACTOR * PieceLaw.reference(stat, UniversalRank.D), 9);
     }

@@ -139,6 +139,8 @@ export interface IWorldEntity {
   holding?: IHoldingOnEntity;
   statuses?: IEntityStatus[];
   telegraph?: ITelegraph;
+  /** The fight's law (part 3): laid under a ground that follows it (`BODIES_FROM_GROUND`). Absent, the body is as a standing world wrote it. */
+  law?: number;
   /** D60: the only name a person ever reads for this body. Absent means masked. */
   displayName?: string;
   /** D48: what the Director made of this body. Absent means it is as it was born. */

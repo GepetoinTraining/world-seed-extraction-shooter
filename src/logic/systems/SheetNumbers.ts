@@ -10,6 +10,7 @@
  * allowed; a companion whose name was never asked is an unknown figure.
  */
 
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { EquipSlotId, IItem, IPlayer } from '../../../shared/types';
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
@@ -46,7 +47,7 @@ export const SheetNumbers = {
     const hand = this.hand(player, slot);
     const handName = hand ? LoadoutSystem.shownName(hand) : 'a bare hand';
     const swing = CombatMath.isMelee(hand);
-    const hit = CombatMath.baseHit(hand, eq, at, WebSystem.handPower(player, hand));
+    const hit = CombatMath.baseHit(hand, eq, at, WebSystem.handPower(player, hand), ProgressionSystem.rankOf(player));
     const poison = StatSystem.total(eq, 'poison_damage');
     const perSecond = 1000 / CombatMath.fireCooldownMs(hand, eq, at);
     const limit = LoadoutSystem.carryLimit(at.strength, eq);
@@ -111,7 +112,7 @@ export const SheetNumbers = {
 
   /** Health, energy and aether, each against its maximum, and the tonics a body takes between rests. */
   vitals(player: IPlayer) {
-    const maxHealth = StatSystem.maxHealth(player.attributes, player.equipment);
+    const maxHealth = StatSystem.maxHealth(player.attributes, player.equipment, ProgressionSystem.rankOf(player));
     const maxEnergy = StatSystem.maxEnergyOf(player);
     const cap = WeaveSystem.capacity(player.attributes, player.equipment);
     return {

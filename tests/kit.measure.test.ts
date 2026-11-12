@@ -98,22 +98,25 @@ const wear = (kit: IParts[], factor: number): IEquipmentState => {
   return { slots: Object.fromEntries(KIT.map(([slot], i) => [slot, items[i].id])), items, frames: {}, protected: [] } as IEquipmentState;
 };
 
-/** Holds times deals a second, through the fight's own readers. */
-const power = (eq: IEquipmentState, attrs: IAttributes) => {
+/**
+ * Holds times deals a second, through the fight's own readers, at the body's own rank: since the fight's part 3 a body's
+ * health is read at its rank, and protection, a dodge and a glance against a blow and a holder of that rank.
+ */
+const power = (eq: IEquipmentState, attrs: IAttributes, rank: string) => {
   const weapon = eq.items.find(i => i.id === eq.slots.RIGHT_HAND)!;
   // A chance past one is a certainty to its reader (rng.next() < it), so the measure reads it so
-  const taken = (1 - Math.min(1, CombatMath.dodgeChance(eq, attrs))) * (1 - Math.min(1, CombatMath.blockChance(eq)) * (1 - CombatMath.blockFactor()))
-    * StatSystem.blowFactor(attrs) * (1 - CombatMath.mitigationOf(eq));
-  const holds = StatSystem.maxHealth(attrs, eq) / taken;
-  const base = CombatMath.baseHit(weapon, eq, attrs);
+  const taken = (1 - Math.min(1, CombatMath.dodgeChance(eq, attrs, rank))) * (1 - Math.min(1, CombatMath.blockChance(eq)) * (1 - CombatMath.blockFactor()))
+    * StatSystem.blowFactor(attrs) * (1 - CombatMath.mitigationOf(eq, rank));
+  const holds = StatSystem.maxHealth(attrs, eq, rank) / taken;
+  const base = CombatMath.baseHit(weapon, eq, attrs, 0, rank);
   const c = Math.min(1, Math.max(0, StatSystem.critChance(eq, attrs)));
-  const g = Math.min(1, Math.max(0, CombatMath.glanceChance(eq, attrs)));
+  const g = Math.min(1, Math.max(0, CombatMath.glanceChance(eq, attrs, rank)));
   const hit = c * base * CombatMath.critMultiplier(eq) + (1 - c) * (g * base * CombatMath.glanceFactor() + (1 - g) * base)
     + StatSystem.total(eq, 'poison_damage') * (POISON_MS / POISON_TICK_MS);
   return holds * hit * (1000 / CombatMath.fireCooldownMs(weapon, eq, attrs));
 };
 
-const ratio = (kit: IParts[], plain: IParts[], rank: string, factor: number) => power(wear(kit, factor), body(rank)) / power(wear(plain, factor), body(rank));
+const ratio = (kit: IParts[], plain: IParts[], rank: string, factor: number) => power(wear(kit, factor), body(rank), rank) / power(wear(plain, factor), body(rank), rank);
 
 const DEALING = { amounts: ['damage', 'poison_damage', 'carry_capacity'], ratings: ['crit_chance', 'crit_multiplier', 'attack_speed'] };
 const HOLDING = { amounts: ['max_health', 'carry_capacity', 'pickup_radius'], ratings: ['defense', 'evasion_rating', 'block_chance'] };

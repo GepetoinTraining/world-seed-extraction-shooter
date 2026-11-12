@@ -17,10 +17,11 @@ import { WorldGenerator } from '../../../../shared/entities/world/WorldGenerator
 import { fnv1a } from '../../../../shared/logic/rng/DeterministicRNG';
 import { EffectSystem, IEffectReceipt, StatusClock } from '../../../../shared/logic/systems/EffectSystem';
 import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
-import { IStrikeShape, SHOT_WEIGHT, creatureBlowWeight, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
+import { IStrikeShape, SHOT_WEIGHT, BODIES_FROM_GROUND, burstNumbers, bursts, creatureBlowWeight, creatureShare, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
 import type { Volley } from '../../../../shared/logic/theme/ThemeTypes';
 import { PERSON_RADIUS_PX, stepOutPx } from '../../../../shared/entities/combat/Shapes';
 import { BASE_WALK_TILES_PER_S } from '../../../../shared/entities/player/systems/LoadoutSystem';
+import { bodyLawOf } from '../../../../shared/entities/mob/BodyLaw';
 
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;
@@ -149,6 +150,8 @@ export class MobAI {
     aside?: 1 | -1;
     /** What it has started and not yet finished: seen, and dodged, before it lands. */
     windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean; aim: number; shape?: IStrikeShape; volley?: Volley };
+    /** Call 14: a swift body's burst, when it ends, and when the rest after it ends. */
+    burst?: { until: number; restUntil: number; restMs: number };
     readyAt: Record<string, number>;
     casts: number;
     /** Where a herd at rest walks around, and where it is walking to now. */
@@ -225,10 +228,26 @@ export class MobAI {
    */
   static interrupt(entityId: string): boolean {
     const mem = this.mobMemory[entityId];
-    if (!mem?.windup) return false;
-    mem.windup = undefined;
-    mem.lastAttackTime = Date.now() - ATTACK_COOLDOWN_MS;
-    return true;
+    if (!mem) return false;
+    const now = Date.now();
+    let broke = false;
+    // Part 3: melee beats speed by what it does to what comes close. A heavy enough hit ends a burst, and its rest begins
+    if (mem.burst && now < mem.burst.until) {
+      mem.burst = { until: now, restUntil: now + mem.burst.restMs, restMs: mem.burst.restMs };
+      broke = true;
+    }
+    if (mem.windup) {
+      mem.windup = undefined;
+      mem.lastAttackTime = now - ATTACK_COOLDOWN_MS;
+      broke = true;
+    }
+    return broke;
+  }
+
+  /** Call 14: is it bursting past a walk right now? */
+  static isBursting(entityId: string): boolean {
+    const burst = this.mobMemory[entityId]?.burst;
+    return !!burst && Date.now() < burst.until;
   }
 
   static isActive(entityId: string): boolean {
@@ -423,9 +442,21 @@ export class MobAI {
           const kites = def?.genre === GenreType.SCIFI || known.some(id => ContentRegistry.ability(id)?.delivery === 'ranged');
           const decision = this.decideAction(entity.id, behavior, kites, mem.provoked, ctx, { x: entity.position.x, y: entity.position.y });
 
+          // Call 14: a swift body of the fight's law bursts at what it chases from inside its burst's reach, then rests
+          const byLaw = (entity.law ?? 0) >= BODIES_FROM_GROUND;
+          const reachOfBlow = strikeNumbers(creatureStrikeWords(def ?? {})).reachPx;
+          if (byLaw && bursts(def?.speed) && !mem.windup && decision.action === BehaviorPrimitive.APPROACH && (!mem.burst || now >= mem.burst.restUntil)) {
+            const b = burstNumbers(def!.speed);
+            const to = Math.hypot(toThreat.x, toThreat.y);
+            if (to > reachOfBlow && to < b.reachTiles * PX) mem.burst = { until: now + b.ms, restUntil: now + b.ms + b.restMs, restMs: b.restMs };
+          }
+          const bursting = !!mem.burst && now < mem.burst.until;
+          const resting = !!mem.burst && now >= mem.burst.until && now < mem.burst.restUntil;
+          const pace = bursting ? burstNumbers(def?.speed ?? 2).pace : resting ? 0 : (def?.speed ?? 2.0);
+
           // Move at the definition's own pace, against the world's own ground
           const running = ((entity.statuses ?? []) as { until: number }[]).filter(s => s.until > now) as never[];
-          const moveSpeed = (def?.speed ?? 2.0) * PX * deltaTime * StatusClock.paceScale(running) * (mem.windup ? 0 : 1);
+          const moveSpeed = pace * PX * deltaTime * StatusClock.paceScale(running) * (mem.windup ? 0 : 1);
           let moveX = 0;
           let moveY = 0;
           const angle = Math.atan2(toThreat.y, toThreat.x);
@@ -459,12 +490,12 @@ export class MobAI {
             const cast = known.find(id => {
               const ability = ContentRegistry.ability(id);
               if (!ability || (mem.readyAt[id] ?? 0) > now) return false;
-              const receipt = EffectSystem.resolve(ability, { rank: entity.rank }, `${entity.id}:${mem.casts}`);
+              const receipt = EffectSystem.resolve(ability, { rank: entity.rank, ...((entity.law ?? 0) >= BODIES_FROM_GROUND ? { share: creatureShare(def?.size) } : { standing: true }) }, `${entity.id}:${mem.casts}`);
               return EffectSystem.landsOnCaster(ability.effect, ability.delivery) || dist <= Math.max(receipt.reachPx, 2 * PX);
             });
             if (cast) {
               const ability = ContentRegistry.ability(cast)!;
-              const receipt = EffectSystem.resolve(ability, { rank: entity.rank }, `${entity.id}:${mem.casts++}`);
+              const receipt = EffectSystem.resolve(ability, { rank: entity.rank, ...((entity.law ?? 0) >= BODIES_FROM_GROUND ? { share: creatureShare(def?.size) } : { standing: true }) }, `${entity.id}:${mem.casts++}`);
               // A working delivered by hand lands as the body's own blow; one that flies leaves as the body's volley
               const byHand = ability.delivery === 'melee' || ability.delivery === 'touch';
               const ranged = ability.delivery === 'ranged';
@@ -493,7 +524,7 @@ export class MobAI {
             mem.windup = undefined;
             mem.lastAttackTime = now;
             if (receipt && EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)) {
-              if (receipt.effect === 'heal') health = Math.min((def?.baseHealth ?? health) + (entity.bonusHealth ?? 0), health + receipt.magnitude);
+              if (receipt.effect === 'heal') health = Math.min((def ? bodyLawOf(def, entity).baseHealth : health) + (entity.bonusHealth ?? 0), health + receipt.magnitude);
               if (receipt.status) statuses = StatusClock.add(statuses, receipt.status, now) as never[];
             } else {
               spawnedPatterns.push({
@@ -502,14 +533,15 @@ export class MobAI {
                 // Wave 4.3: the definition decides what this attack costs you
                 damage: receipt
                   ? (receipt.effect === 'damage' ? receipt.magnitude : Math.round(receipt.magnitude / 4))
-                  : CombatMath.mobDamage(def) + (entity.bonusDamage ?? 0),
+                  : CombatMath.mobDamage(def, entity) + (entity.bonusDamage ?? 0),
                 status: receipt?.status,
                 reachPx,
                 // The fight's shapes: the ground it drew, aimed where it was aimed when it began
                 ...(shape ? { shape } : {}),
                 ...(ranged ? { struck: new Set<string>() } : {}),
-                // Part 2: what it weighs when it lands, so the person feels it
+                // Part 2: what it weighs when it lands, so the person feels it; part 3: the rank it strikes at
                 weight: ranged ? SHOT_WEIGHT : creatureBlowWeight(def ?? {}),
+                rank: entity.rank,
                 abilityId: receipt?.abilityId,
                 shooterId: entity.id,
                 // Origin is 2D { x, y }
@@ -530,7 +562,7 @@ export class MobAI {
 
           // D93: standing orders. Told to fall back, hurt, it heads for its seat. Told to hold, it stays on its ground
           if (entity.orders) {
-            const whole = (def?.baseHealth ?? 100) + (entity.bonusHealth ?? 0);
+            const whole = (def ? bodyLawOf(def, entity).baseHealth : 100) + (entity.bonusHealth ?? 0);
             const home = mem.home ?? (mem.home = { x: entity.position.x, y: entity.position.y });
             if (entity.orders.posture === 'fall_back' && entity.orders.seat && (entity.health ?? whole) * 2 < whole) {
               const toSeat = Math.atan2(entity.orders.seat.y - entity.position.y, entity.orders.seat.x - entity.position.x);

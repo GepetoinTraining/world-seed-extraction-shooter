@@ -87,6 +87,9 @@ export interface IDirectorPool {
   abilities: string[];
 }
 
+/** A trait's share of the body it sits on, by its band: a twelfth, a sixth, a third, as an affix of its piece. */
+const TRAIT_BANDS: Record<string, number> = { minor: 1 / 12, moderate: 1 / 6, major: 1 / 3 };
+
 const NONE: IMobVariant = { traits: [], learned: [], bonusHealth: 0, bonusDamage: 0 };
 
 export class Director {
@@ -147,7 +150,8 @@ export class Director {
    */
   static variantOf(
     seed: string, entityId: string, definitionId: string, name: string,
-    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined, tags: string[] = [], line = 1
+    record: IDirectorRecord | undefined, pool: IDirectorPool | undefined, tags: string[] = [], line = 1,
+    body?: { baseHealth: number; baseDamage: number }
   ): IMobVariant {
     if (!record || record.generation === 0) return NONE;
     const rng = Rng.fromKey(`director:${seed}:${record.generation}:${entityId}`);
@@ -159,7 +163,11 @@ export class Director {
       const entry = affixes[rng.int(0, affixes.length)];
       const stats: Record<string, number> = {};
       for (const [stat, [low, high]] of Object.entries(entry.statModifiers ?? {})) {
-        stats[stat] = Math.round((low + rng.next() * (high - low)) * 100) / 100;
+        const rolled = Math.round((low + rng.next() * (high - low)) * 100) / 100;
+        // The fight's law (part 3): a trait is a property on a body, a band of the body's own figure, by its words
+        const figure = stat === 'max_health' ? body?.baseHealth : stat === 'damage' ? body?.baseDamage : undefined;
+        const band = (entry as { gives?: { stat: string; band: string }[] }).gives?.find(g => g.stat === stat)?.band ?? 'moderate';
+        stats[stat] = figure !== undefined ? Math.round(figure * (TRAIT_BANDS[band] ?? TRAIT_BANDS.moderate) * 100) / 100 : rolled;
       }
       traits.push({ id: entry.id, name: entry.name, type: entry.type, stats });
     }

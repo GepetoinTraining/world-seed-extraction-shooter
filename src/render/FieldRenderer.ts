@@ -7,6 +7,7 @@
  * NPCs, trees and the player — draw by their feet, so you walk under a crown.
  */
 
+import { bodyLawOf } from '../../shared/entities/mob/BodyLaw';
 import { CHUNK_PX, QUADRANT_PX, QUADRANT_TILES, quadrantOf } from '../../shared/entities/world/grid';
 import { EntityType, IChunk, IMap, IWorldEntity } from '../../shared/entities/world/types';
 import { MOB_DEFINITIONS } from '../../shared/entities/mob/data/mobDefinitions';
@@ -395,7 +396,7 @@ export class FieldRenderer {
 
   /** Pips under a wounded enemy: count and position carry the reading, not hue. */
   private drawHealth(ctx: CanvasRenderingContext2D, e: IWorldEntity, x: number, y: number, w: number) {
-    const max = (MOB_DEFINITIONS[e.definitionId]?.baseHealth ?? 0) + (e.bonusHealth ?? 0);
+    const max = bodyLawOf(MOB_DEFINITIONS[e.definitionId], e).baseHealth + (e.bonusHealth ?? 0);
     const health = e.health ?? 0;
     if (max <= 0 || health >= max || health <= 0) return;
     const pips = 5;

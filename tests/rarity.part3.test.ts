@@ -45,7 +45,8 @@ describe('the coordinator\'s calls on part 2', () => {
     for (const rank of [UniversalRank.F, UniversalRank.C, UniversalRank.S]) {
       const feet = bare('feet', rank, `walk:${rank}`);
       expect(feet.stats.movement_speed).toBeCloseTo(0.045, 12);
-      expect(LoadoutSystem.walkTilesPerSecond(wearing(['BOOTS', feet]), floor(0))).toBeCloseTo(4 * 1.045, 9);
+      // On pace's curve since the fight's part 3: 4 x (1 + 0.045 / 1.045)
+      expect(LoadoutSystem.walkTilesPerSecond(wearing(['BOOTS', feet]), floor(0))).toBeCloseTo(4 * (1 + 0.045 / 1.045), 9);
     }
     // Pace as a property still sizes from the solved ruler
     const words = PieceLaw.wordsOf({ gives: [{ stat: 'movement_speed', band: 'moderate', downside: false }] })!;

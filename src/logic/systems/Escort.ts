@@ -8,6 +8,8 @@
  * player's numbers go through. `FieldEscort` is where it meets the stores.
  */
 
+import { IStrikeShape, blowWeight } from '../../../shared/logic/theme/ThemeFormula';
+import { PERSON_RADIUS_PX, covers } from '../../../shared/entities/combat/Shapes';
 import { IAttributes, IEscort, IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../../shared/types';
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { InventorySystem } from '../../../shared/entities/player/systems/InventorySystem';
@@ -23,6 +25,8 @@ export const CORPSE_TAG = 'npc_corpse';
 type Bond = IEscort['bond'];
 
 export interface IEscortSwing {
+  /** Part 3: what the blow weighs, so what it lands on feels it. */
+  weight?: number;
   origin: { x: number; y: number };
   angle: number;
   range: number;
@@ -33,9 +37,10 @@ export interface IEscortSwing {
 export const Escort = {
 
   /** Who walks beside you now: whole, at the health their own constitution gives them. */
-  join(entity: Pick<IWorldEntity, 'id' | 'npc'>, bond: Bond, stats: IAttributes): IEscort {
-    const maxHealth = StatSystem.maxHealth(stats);
-    return { entityId: entity.id, name: entity.npc?.name ?? bond.sheet.name, stats, health: maxHealth, maxHealth, lastStrikeAt: 0, strikes: 0, bond };
+  join(entity: Pick<IWorldEntity, 'id' | 'npc'>, bond: Bond, stats: IAttributes, rank: string = 'F'): IEscort {
+    // The fight's law (part 3): a body of their own rank, as a person's is
+    const maxHealth = StatSystem.maxHealth(stats, undefined, rank);
+    return { entityId: entity.id, name: entity.npc?.name ?? bond.sheet.name, stats, health: maxHealth, maxHealth, lastStrikeAt: 0, strikes: 0, bond, rank };
   },
 
   /** Their own pace between blows, bare-handed, as a person's own would be. */
@@ -58,20 +63,23 @@ export const Escort = {
       if (d <= bestPx) { best = h; bestPx = d; }
     }
     if (!best) return { escort };
-    const hit = CombatMath.outgoing(undefined, undefined, `escort:${escort.entityId}:${escort.strikes}`, escort.stats);
+    const hit = CombatMath.outgoing(undefined, undefined, `escort:${escort.entityId}:${escort.strikes}`, escort.stats, 0, escort.rank ?? 'F');
     return {
       escort: { ...escort, lastStrikeAt: now, strikes: escort.strikes + 1 },
-      swing: { origin: { ...at }, angle: Math.atan2(best.y - at.y, best.x - at.x), range: ESCORT_REACH_PX, startTime: now, damage: hit.damage },
+      // Part 3: a bare-handed blow weighs what its swing weighs, the old arc at their reach
+      swing: { origin: { ...at }, angle: Math.atan2(best.y - at.y, best.x - at.x), range: ESCORT_REACH_PX, startTime: now, damage: hit.damage, weight: blowWeight({ reachPx: ESCORT_REACH_PX, innerPx: 0, halfAngle: 0.75 }) },
       target: best.id
     };
   },
 
   /** Which of them a blow from here, with this reach, lands on: the nearest in reach, or nobody. */
-  hitBy(origin: { x: number; y: number }, reachPx: number, bodies: { entityId: string; x: number; y: number }[]): string | null {
+  hitBy(origin: { x: number; y: number }, reachPx: number, bodies: { entityId: string; x: number; y: number }[], drawn?: { shape: IStrikeShape; angle: number }): string | null {
     let best: string | null = null;
-    let bestPx = reachPx;
+    let bestPx = drawn ? Infinity : reachPx;
     for (const b of bodies) {
       const d = Math.hypot(b.x - origin.x, b.y - origin.y);
+      // Part 3: a blow drawn as a shape lands on whoever it covers, the nearest of them
+      if (drawn && !covers(drawn.shape, origin, drawn.angle, b, PERSON_RADIUS_PX)) continue;
       if (d < bestPx) { best = b.entityId; bestPx = d; }
     }
     return best;

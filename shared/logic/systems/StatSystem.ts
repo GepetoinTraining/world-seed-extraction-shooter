@@ -15,6 +15,7 @@
  * curve that approaches it. Every rate is a guess until Wave 12.
  */
 
+import { personHealth } from '../theme/ThemeFormula';
 import { IAttributes, IEquipmentState, IItem, IPlayer, ISkillState, MENTAL_ATTRIBUTES } from '../../types';
 
 /** Tiles to pixels, as everywhere in the field. */
@@ -164,8 +165,12 @@ export class StatSystem {
     return this.worn(equipment).reduce((sum, i) => sum + ((i.stats as Record<string, number> | undefined)?.[stat] ?? 0), equipment?.passives?.[stat] ?? 0);
   }
 
-  static maxHealth(attributes: IAttributes, equipment?: IEquipmentState): number {
-    return Math.max(1, 100 + attributes.constitution * 10 + this.total(equipment, 'max_health'));
+  /**
+   * The fight's law (part 3, BALANCE_RUN 1.2): 100 at F, doubled a rank, a tenth more for each point of constitution
+   * over the rank's floor (1 + step) and divided under it, and what is worn. A body that names no rank is read at F.
+   */
+  static maxHealth(attributes: IAttributes, equipment?: IEquipmentState, rank: string = 'F'): number {
+    return Math.max(1, personHealth(rank, attributes.constitution) + this.total(equipment, 'max_health'));
   }
 
   /** One day's supply (D51): an initial value, a fifth of endurance, and what is worn. Levels give none. */

@@ -14,7 +14,7 @@ import type { IGearRecipe } from '../../entities/economy/data/recipeDefinitions'
 import { fnv1a } from '../rng/DeterministicRNG';
 import { IThemeBody, IThemePack, IThemeAbility, LEADER_FEATURES, THEME_FORMULA_VERSION } from './ThemeTypes';
 import {
-  GEAR_SHAPES, affixRange, cartNumbers, consumableNumbers, creatureNumbers, forcedExitWorth, gearBaseIp, goodNumbers,
+  GEAR_SHAPES, affixRange, cartNumbers, consumableNumbers, creatureNumbers, standingCreatureNumbers, forcedExitWorth, gearBaseIp, goodNumbers,
   anchorNumbers, harvestNumbers, junkNumbers, materialNumbers, rankStep, stationNumbers
 } from './ThemeFormula';
 
@@ -149,7 +149,9 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
       ...(pack.junk ? { junk: junkIdsFor(pack, c.tags) } : {}),
       // A leader draws as what it leads, with more to it: told by shape, never hue
       ...(led ? { line: { root: creatureIdOf(pack.themeId, led.key), rootTags: led.tags, features: LEADER_FEATURES } } : {}),
-      ...creatureNumbers(c)
+      ...creatureNumbers(c),
+      // The fight's law (part 3): what a world standing before it laid this body with, kept for that world
+      standing: standingCreatureNumbers(c)
     } as ICompiledTheme['mobs'][string];
   }
 

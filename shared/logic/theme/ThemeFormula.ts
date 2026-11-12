@@ -44,13 +44,67 @@ const THREAT = { meek: 0.6, sharp: 1, deadly: 1.5 };
 const PACE = { slow: 2, steady: 3, swift: 3.7 };
 const VIEW_TILES = { TINY: 8, MEDIUM: 10, LARGE: 12, GIGANTIC: 16, COLOSSAL: 20 };
 
+// -------------------------------------------------------------------------
+// BODIES (the fight's rebalance, part 3; BALANCE_RUN 1.2, calls 1 to 3). A rank doubles what a body holds and
+// what it deals, once, for a person and a creature alike. A plain person holds 100 at F; a plain weapon deals
+// 10 a second; two equals fall in ten seconds at every rank. A plain creature alone, middling, sturdy and sharp,
+// is a quarter of a person in both, and any body is its mass over four.
+// -------------------------------------------------------------------------
+
+/** What one rank is worth to a body: it doubles (call 1). */
+const BODY_RATIO = 2;
+export const bodyScale = (rank: ThemeRank | UniversalRank | string): number => Math.pow(BODY_RATIO, Math.max(0, rankStep(rank as ThemeRank)));
+/** A plain person's health at F, and what a point of constitution over its rank's floor adds of it. */
+export const BODY_HEALTH = 100;
+const HEALTH_PER_POINT = 0.1;
+/** What a plain weapon of rank F deals a second (a fifth of a common piece's power, at rate 1), and a bare hand's blow: half it. */
+export const PLAIN_BLOW_PER_S = 10;
+export const HAND_BLOW = 5;
+/** A creature strikes once in this long at the plain distance: the pause after a blow, and the plain wind-up. */
+export const CREATURE_COOLDOWN_MS = 2000;
+export const CREATURE_WINDUP_MS = 450;
+/** From this ground (`GROUND_VERSION`) a world lays its bodies by this law; a world that stands before it keeps them as written. */
+export const BODIES_FROM_GROUND = 5;
+
+/** A person's health: 100 at F, doubled a rank, a tenth more for each point of constitution over its rank's floor, divided under it. */
+export const personHealth = (rank: ThemeRank | UniversalRank | string, constitution: number): number => {
+  const floorPoints = 1 + Math.max(0, rankStep(rank as ThemeRank));
+  const over = constitution - floorPoints;
+  const share = over >= 0 ? 1 + HEALTH_PER_POINT * over : 1 / (1 + HEALTH_PER_POINT * -over);
+  return Math.round(BODY_HEALTH * bodyScale(rank) * share);
+};
+
+/** A body's share of a person by its size: its mass, the same measure as what it eats, over four (call 2). */
+export const creatureShare = (size?: string): number => (APPETITE[size as keyof typeof APPETITE] ?? APPETITE.MEDIUM) / 4;
+
 export const creatureNumbers = (c: {
   rank: ThemeRank; build: keyof typeof BUILD; threat: keyof typeof THREAT; pace: keyof typeof PACE; size: keyof typeof VIEW_TILES;
-}) => ({
+}) => {
+  const body = BODY_HEALTH * bodyScale(c.rank) * creatureShare(c.size);
+  const perSecond = PLAIN_BLOW_PER_S * bodyScale(c.rank) * creatureShare(c.size);
+  return {
+    baseHealth: Math.max(1, Math.round(body * BUILD[c.build])),
+    baseDamage: Math.max(1, Math.round(perSecond * ((CREATURE_COOLDOWN_MS + CREATURE_WINDUP_MS) / 1000) * THREAT[c.threat])),
+    speed: PACE[c.pace],
+    viewRange: VIEW_TILES[c.size]
+  };
+};
+
+/** A creature's numbers as a world standing before the fight's law laid them (formula version 3): kept for those worlds. */
+export const standingCreatureNumbers = (c: { rank: ThemeRank; build: keyof typeof BUILD; threat: keyof typeof THREAT }) => ({
   baseHealth: Math.round(geometric(20, 2.5, rankStep(c.rank)) * BUILD[c.build]),
-  baseDamage: Math.max(1, Math.round(geometric(5, 1.7, rankStep(c.rank)) * THREAT[c.threat])),
-  speed: PACE[c.pace],
-  viewRange: VIEW_TILES[c.size]
+  baseDamage: Math.max(1, Math.round(geometric(5, 1.7, rankStep(c.rank)) * THREAT[c.threat]))
+});
+
+/**
+ * Call 14: a swift body is faster than a walk only in a burst, twice its own pace for a second, and then it stands
+ * for as long as keeps its pace over the whole cycle at its own, under a walk: a person can still leave from outside it.
+ */
+const BURST_SCALE = 2;
+const BURST_MS = 1000;
+export const bursts = (speed?: number): boolean => (speed ?? 0) >= PACE.swift;
+export const burstNumbers = (pace: number) => ({
+  pace: pace * BURST_SCALE, ms: BURST_MS, restMs: BURST_MS * (BURST_SCALE - 1), reachTiles: pace * BURST_SCALE * (BURST_MS / 1000)
 });
 
 /** How much more a body holds and hits for each step down its line. */
@@ -269,8 +323,8 @@ export const stationNumbers = (billCount: number) => ({ minArea: STATION_AREA(bi
 export const TONIC_SHARE = 0.3;
 
 export const consumableNumbers = (kind: string, rank: ThemeRank): Record<string, number> => {
-  const power = geometric(10, 1.8, rankStep(rank));
-  if (kind === 'heal') return { health_restore: Math.round(power * 3) };
+  // A heal follows bodies (part 3): three tenths of a plain body of its rank
+  if (kind === 'heal') return { health_restore: Math.round(0.3 * BODY_HEALTH * bodyScale(rank)) };
   if (kind === 'energy') return { energy_share: TONIC_SHARE };
   return {};
 };
@@ -411,14 +465,25 @@ const COST_POWER = { trivial: 0.5, low: 1, medium: 1.6, high: 2.5, extreme: 4 };
 const COST_ENERGY = { trivial: 2, low: 5, medium: 10, high: 18, extreme: 30 };
 const COST_COOLDOWN_MS = { trivial: 1500, low: 3000, medium: 6000, high: 10000, extreme: 18000 };
 
-export const abilityNumbers = (cost: keyof typeof COST_POWER, rank: ThemeRank) => ({
-  magnitude: Math.round(geometric(6, 1.7, rankStep(rank)) * COST_POWER[cost]),
-  energy: COST_ENERGY[cost],
-  aether: COST_ENERGY[cost],
-  cooldownMs: COST_COOLDOWN_MS[cost],
-  durationMs: 1500 + COST_POWER[cost] * 1000,
-  telegraphMs: 400 + COST_POWER[cost] * 300
-});
+/**
+ * Call 19: a working is worth twice a bow for each second it is stood for (its telegraph is its draw), a rank doubling
+ * it as it doubles a body; an aether buys three of what it deals at F, and reads no rank, as a day's energy reads none.
+ * A working that deals nothing keeps its band's price. A world that stands before the fight's law reads its creatures'
+ * workings as written (`standing`).
+ */
+export const abilityNumbers = (cost: keyof typeof COST_POWER, rank: ThemeRank, standing = false, effect?: string) => {
+  const telegraphMs = 400 + COST_POWER[cost] * 300;
+  const atF = 2 * PLAIN_BLOW_PER_S * (telegraphMs / 1000);
+  return {
+    magnitude: standing ? Math.round(geometric(6, 1.7, rankStep(rank)) * COST_POWER[cost]) : Math.round(atF * bodyScale(rank)),
+    energy: COST_ENERGY[cost],
+    // An aether buys three of what a working deals; one that deals nothing (a way out, a ward, a rest) keeps its band's price
+    aether: effect === 'damage' && !standing ? Math.round(atF / 3) : COST_ENERGY[cost],
+    cooldownMs: COST_COOLDOWN_MS[cost],
+    durationMs: 1500 + COST_POWER[cost] * 1000,
+    telegraphMs
+  };
+};
 
 // -------------------------------------------------------------------------
 // THE FIGHT'S SHAPES (the fight's rebalance, part 1). Pedro, 2026-11-11: "it should be bullet hellish, and

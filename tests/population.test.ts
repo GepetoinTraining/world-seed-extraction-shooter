@@ -5,6 +5,8 @@
  * No bar here calls a model. The first theme's new words were written by hand, as data.
  */
 
+import { GROUND_VERSION } from '../shared/entities/world/WorldGenerator';
+import { bodyLawOf, laysByLaw } from '../shared/entities/mob/BodyLaw';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
@@ -734,8 +736,9 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
 
     it('its toughness comes from the sheet, through the formula', () => {
       const l = leaders[0];
-      const def = MOB_DEFINITIONS[l.kind] as unknown as { baseHealth: number; baseDamage: number };
       const head = chunkOfLeader(l).entities.find(e => e.id === l.id)!;
+      // The fight's law (part 3): a body reads the numbers its world laid it by
+      const def = bodyLawOf(MOB_DEFINITIONS[l.kind] as never, head);
       const n = Leaders.numbers(SEED, l, context);
       expect(head.health).toBe(def.baseHealth + n.bonusHealth);
       expect(head.bonusHealth).toBe(n.bonusHealth);
@@ -881,7 +884,7 @@ describe('line 134: an elite leads a pack of a social species (D93)', () => {
 
     it('its health stays ordinary for what it is: no more than a few times an ordinary body of its rank', () => {
       for (const l of allLeaders(context)) {
-        const def = MOB_DEFINITIONS[l.kind] as unknown as { baseHealth: number };
+        const def = bodyLawOf(MOB_DEFINITIONS[l.kind] as never, laysByLaw(context.groundVersion) ? { law: GROUND_VERSION } : undefined);
         const n = Leaders.numbers(SEED, l, context);
         expect((def.baseHealth + n.bonusHealth) / def.baseHealth, l.id).toBeLessThanOrEqual(3);
       }

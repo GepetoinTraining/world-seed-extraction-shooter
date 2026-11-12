@@ -445,6 +445,53 @@ One piece is a small part of the whole: the shipped bank spreads an epic piece's
 - **The probes' pack fills up.** Every piece a hidden-window script mints goes into the pack first; after a few dozen the pack refuses the next and `equipSwap` says "No such item within reach", leaving whatever the hand held before in it. Take the probe's own gear out of the pack before minting, and fail loudly when a piece is not taken in hand.
 - **The grid's chunk bar under part 2.** Run with the full parallel suite, the worst of eighty chunks came to 19 to 24 ms against 16 four runs in a row (median 0.4 to 0.6 ms); alone it is 11 ms three times in three, as the baseline's 12 ms in the suite. Nothing in generation changed; part 2 adds a test file and moves what runs beside it.
 
+- **The fight's numbers, part 3 (2026-11-12).** A body is `ThemeFormula`'s: `personHealth(rank, constitution)` (100 x 2^step, a tenth more a point of constitution over the rank's floor), read by `StatSystem.maxHealth(attrs, eq, rank)`; a creature `creatureNumbers` (its mass over four of a person, a blow every 2.45 s); a bare hand half a plain weapon of its body's rank; a weapon a fifth of its power a second, cut into blows by its own pace (`CombatMath.weaponDamage`). `CombatMath`'s rating curve takes the rank it is read against (`mitigationOf(eq, against)`, `dodgeChance(.., against)`, `glanceChance(.., own)`, `incoming(.., against)`), and `PieceLaw`'s `RANK_RATINGS` double on their piece. Callers that name no rank read F, so pass the rank wherever a body has one.
+- **Standing worlds by `BodyLaw`.** `GROUND_VERSION` 5 is `BODIES_FROM_GROUND`: the generator stamps `law: 5` on bodies it lays under that ground and lays older grounds' bodies with no stamp, from the numbers the compiled creature keeps as `standing`. Read what a body holds or deals only through `bodyLawOf(def, body)`; a reader of `def.baseHealth` alone reads the new law for a standing world's body. The golden vectors are untouched because an unpinned world lays unstamped bodies with the old numbers.
+- **The burst (call 14)** is `MobAI` state (`mem.burst`), started in the approach for a swift law-body inside `burstNumbers(pace).reachTiles` and outside its blow, ended early by `MobAI.interrupt` (a hit that breaks). `MobAI.isBursting` says so.
+- **The table's numbers come from `tests/fight.table.test.ts`,** a one-line model of the field read through the game's own readers (FT3p): run it and read the `[TABLE]` lines. Its bars hold only that every meeting ends and that two equals of one hand fall in four to twenty-five seconds.
+
+Equals of each hand, plain kits of the rank, fifteen tiles apart on a line (who wins, in how long, and what the winner keeps). Ranged over melee keeps everything where the field is open and the shooter walks faster (a heavy set walks 3.6); speed over ranged and melee over speed hold at every rank. Two equals of one hand take 10.6 to 19.5 s, the ten seconds of a standing trade lengthened by wind-ups, pushes and broken draws.
+
+| Rank | Meeting | Wins | In | Kept |
+|---|---|---|---|---|
+| F | ranged against melee | ranged | 14.8 s | 100% |
+| F | speed against ranged | speed | 20.7 s | 12% |
+| F | melee against speed | melee | 14.9 s | 12% |
+| F | ranged against ranged | ranged | 19.5 s | 28% |
+| F | melee against melee | both | 16.2 s | 0% |
+| F | speed against speed | both | 14.3 s | 0% |
+| C | ranged against melee | ranged | 14.1 s | 100% |
+| C | speed against ranged | speed | 17.9 s | 22% |
+| C | melee against speed | melee | 13.0 s | 6% |
+| C | ranged against ranged | ranged | 16.8 s | 45% |
+| C | melee against melee | melee (second) | 15.3 s | 1% |
+| C | speed against speed | both | 11.9 s | 0% |
+| S | ranged against melee | ranged | 16.0 s | 68% |
+| S | speed against ranged | speed | 15.4 s | 31% |
+| S | melee against speed | melee | 11.3 s | 11% |
+| S | ranged against ranged | ranged | 15.1 s | 61% |
+| S | melee against melee | melee (second) | 12.4 s | 9% |
+| S | speed against speed | speed (second) | 10.6 s | 4% |
+
+A person (plain body of the rank, the gavel) against a plain creature of its rank (MEDIUM, sturdy, sharp), a pack of three met at once and felled one at a time, and a boss up close (a leader at its floor, x 1.5 its kind's health, striking x 1.5), before armour and in the gavel's waistcoat and trousers. A stand-and-trade: no wind-ups, steps or felt hits.
+
+| Rank | The person | Health | Deals | A plain creature | A pack of three | A boss up close |
+|---|---|---|---|---|---|---|
+| F | before armour | 100 | 9 a second | 3.5 s, 9% of you | 10.6 s, 52% of you | 9% of you a blow; 4.7 s to fell, 17% of you |
+| F | gavel, chest and legs | 100 | 9 a second | 3.5 s, 6% of you | 10.6 s, 37% of you | 6% of you a blow; 4.7 s to fell, 12% of you |
+| C | before armour | 800 | 87 a second | 3.3 s, 8% of you | 10.0 s, 48% of you | 9% of you a blow; 4.4 s to fell, 16% of you |
+| C | gavel, chest and legs | 800 | 87 a second | 3.3 s, 6% of you | 10.0 s, 34% of you | 6% of you a blow; 4.4 s to fell, 12% of you |
+| S | before armour | 6400 | 825 a second | 2.1 s, 5% of you | 6.3 s, 30% of you | 9% of you a blow; 3.1 s to fell, 11% of you |
+| S | gavel, chest and legs | 6400 | 825 a second | 2.1 s, 4% of you | 6.3 s, 21% of you | 6% of you a blow; 3.1 s to fell, 8% of you |
+
+What one blow of a boss takes of a person of its rank, by the size of the body it is (sturdy, sharp; a body's mass over four), before armour and then in the melee kit. Pedro, 2026-11-11: "in wow if you're not a tank the boss kills you by walking close"; a gigantic boss's blow takes most of a person, a colossal one all of it, before armour and after.
+
+| Rank | MEDIUM | LARGE | GIGANTIC | COLOSSAL |
+|---|---|---|---|---|
+| F | 9% / 6% | 18% / 13% | 74% / 53% | 185% / 132% |
+| C | 9% / 6% | 18% / 13% | 71% / 51% | 177% / 127% |
+| S | 9% / 6% | 17% / 12% | 69% / 50% | 174% / 124% |
+
 ## After this pass
 
 `PLAN.md`, under "The next layer": the attributes pass, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).

@@ -267,30 +267,8 @@ export class CombatSystem {
       });
     });
 
-    // 3. MOB -> PLAYER
-    allMobs.forEach(({ mob }) => {
-      if (!mob.health || mob.health <= 0 || !mob.isHostile) return;
-      const dx = playerPos.x - mob.position.x;
-      const dy = playerPos.z - mob.position.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < 1.0) {
-        const def = MOB_DEFINITIONS[mob.definitionId];
-        const damage = def?.baseDamage || 10;
-        playerDamage += damage;
-        
-        // ACTION: Took Damage
-        events.push({
-            type: 'ACTION_LOG',
-            actionContext: {
-                tags: ['defense', 'pain', 'durability'],
-                magnitude: damage
-            }
-        });
-
-        events.push({ type: 'PLAYER_DAMAGE', damage, entityId: mob.id });
-      }
-    });
+    // 3. MOB -> PLAYER: nothing here. Part 3: what is hit is exactly what a drawn shape covers, so standing on a body
+    // costs nothing by itself; a body's blow is its wind-up's shape, resolved by the field (WorldCanvas)
 
     return { events, updatedChunks, survivingBullets, playerDamage, spawnedLoot };
   }

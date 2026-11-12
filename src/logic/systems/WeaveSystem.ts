@@ -57,7 +57,7 @@ export class WeaveSystem {
 
   /** What one casting draws from each element's reserve. */
   static aetherPerElement(ability: IEffectAbility, rank: string): number {
-    const { aether } = abilityNumbers(ability.cost, rank as never);
+    const { aether } = abilityNumbers(ability.cost, rank as never, false, ability.effect);
     return Math.ceil(aether / Math.max(1, ability.elements.length));
   }
 

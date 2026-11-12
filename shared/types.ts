@@ -916,6 +916,8 @@ export interface IEscort {
   /** What Mags reads when they reach the city: the same bond the field always wrote. */
   bond: NonNullable<IItem['bondData']>;
   fallen?: boolean;
+  /** The fight's law (part 3): the rank their body stands at, for what it holds and deals. None is F. */
+  rank?: string;
 }
 
 export interface IActiveSession {

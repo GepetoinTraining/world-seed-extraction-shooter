@@ -11,6 +11,8 @@
  * anchors are `Territory`'s. This one reads who a body is; it builds nothing.
  */
 
+import { bodyLawOf, laysByLaw } from '../mob/BodyLaw';
+import { BODIES_FROM_GROUND } from '../../logic/theme/ThemeFormula';
 import { IAttributes, ISkillState, UniversalRank } from '../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
 import { TagLaw } from '../../logic/content/TagLaw';
@@ -157,7 +159,9 @@ export class Leaders {
   /** What its sheet makes of its body, through the formula. */
   static numbers(seed: string, leader: ILeaderSeed, context: IGenerationContext) {
     const kind = kindOfSeed(leader, context);
-    return leaderNumbers(kind, NpcSheet.statsOf(seed, { id: leader.id, rank: kind.rank }) as unknown as { constitution: number; strength: number });
+    // The fight's law (part 3): from the numbers its world lays the kind with
+    const laid = { ...kind, ...bodyLawOf(kind as never, laysByLaw(context.groundVersion) ? { law: BODIES_FROM_GROUND } : undefined) };
+    return leaderNumbers(laid, NpcSheet.statsOf(seed, { id: leader.id, rank: kind.rank }) as unknown as { constitution: number; strength: number });
   }
 
   /**

@@ -79,12 +79,13 @@ describe('part 1: a rank doubles a piece, once', () => {
     expect(PieceLaw.reading('movement_speed')).toBe('rating');
   });
 
-  it('a weapon\'s blow is a fifth of its power, with no bare constant beside it', () => {
+  it('a weapon\'s blow is a fifth of its power a second, cut by its own pace, with no bare constant beside it', () => {
     const blade = kindOf('blade');
     for (const rank of [UniversalRank.F, UniversalRank.C, UniversalRank.SSS]) {
       const piece = mint(rank, `blow:${rank}`, blade.id);
       piece.affixes = []; piece.stats = { ...piece.stats, damage: 0 };
-      expect(CombatMath.weaponDamage(piece)).toBe(Math.max(1, Math.round(piece.itemPower / 5)));
+      // The fight's part 3: a plain weapon deals a fifth of its power a second whatever its pace (a blade's 1.2 cuts it lighter)
+      expect(CombatMath.weaponDamage(piece)).toBe(Math.max(1, Math.round(piece.itemPower / 5 / piece.stats!.attack_speed!)));
     }
   });
 });

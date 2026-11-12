@@ -1370,8 +1370,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           // field, is haul and gets taxed on the way home like the pack's
           kitItemIds: [...fieldKit.map(i => i.id), ...(state.player.equipment?.items.map(i => i.id) ?? [])],
           inventoryLayout: InventorySystem.placeAll(fieldKit),
-          health: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
-          maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment),
+          health: StatSystem.maxHealth(state.player.attributes, state.player.equipment, ProgressionSystem.rankOf(state.player)),
+          maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment, ProgressionSystem.rankOf(state.player)),
           // D51: a drop refills nothing. What is left of the day comes along.
           energy: state.player.energyToday ?? StatSystem.maxEnergyOf(state.player),
           position: { x: 1500, y: 0, z: 1500 },
@@ -1567,7 +1567,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Line 77: what is worn sets the top of the health bar; taking a piece off takes its health too
       const session = player.currentSession;
       if (session) {
-        const maxHealth = StatSystem.maxHealth(player.attributes, player.equipment);
+        const maxHealth = StatSystem.maxHealth(player.attributes, player.equipment, ProgressionSystem.rankOf(player));
         if (maxHealth !== session.maxHealth) {
           set(s => s.player.currentSession ? { player: { ...s.player, currentSession: {
             ...s.player.currentSession, maxHealth, health: Math.max(1, Math.min(maxHealth, s.player.currentSession.health))

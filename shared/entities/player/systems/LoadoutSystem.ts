@@ -48,6 +48,8 @@ const isTool = (item: IItem): boolean =>
 
 /** The pace in nothing at all, in tiles per second. Field and city walk alike. */
 export const BASE_WALK_TILES_PER_S = 4.0;
+/** Call 10: what each heavy piece worn takes from the walk, as a share: a heavy chest and a heavy weapon walk 3.6. A guess until played. */
+export const HEAVY_PACE = 0.05;
 /** However bad the gear, a person still walks. A floor, not a ceiling: nothing caps the top. */
 const MIN_WALK_SCALE = 0.1;
 
@@ -62,16 +64,26 @@ export class LoadoutSystem {
    * bar and the ground scale this afterward. Agility adds in the same way. Each tonic drunk since the
    * last rest takes a little more of it (Pedro, 2026-11-11: tonics "give debuffs as side effects").
    */
+  /**
+   * The fight's law (part 3): what pace is worn and trained for is read on a curve, b / (1 + b), approaching twice a
+   * walk and never arriving, so nothing needs a top; what slows (a penalty, each heavy piece worn, by its word) is taken
+   * straight. Tiles a second read no rank.
+   */
   static walkTilesPerSecond(equipment?: IEquipmentState, attributes?: IAttributes, tonics = 0): number {
     const worn = new Set(Object.values(equipment?.slots ?? {}));
-    let bonus = StatSystem.paceBonus(attributes);
+    let gain = StatSystem.paceBonus(attributes);
+    let cost = 0;
     for (const item of equipment?.items ?? []) {
       if (!worn.has(item.id)) continue;
       const stats = item.stats ?? {};
       if (stats.maxDurability && stats.durability === 0) continue; // broken gear does nothing
-      bonus += (stats.movement_speed ?? 0) + (stats.movement_speed_penalty ?? 0);
+      gain += stats.movement_speed ?? 0;
+      cost += stats.movement_speed_penalty ?? 0;
+      // Call 10: weight costs pace. A piece that says it is heavy costs its share of the walk
+      if ((item.tags ?? []).includes('heavy')) cost -= HEAVY_PACE;
     }
-    return BASE_WALK_TILES_PER_S * Math.max(MIN_WALK_SCALE, 1 + bonus) * (1 - StatSystem.tonicSlow(tonics));
+    const curved = gain >= 0 ? gain / (1 + gain) : gain;
+    return BASE_WALK_TILES_PER_S * Math.max(MIN_WALK_SCALE, 1 + curved + cost) * (1 - StatSystem.tonicSlow(tonics));
   }
 
   /** A person's own walk: what they wear, their agility, and the tonics they drank since they last rested. */

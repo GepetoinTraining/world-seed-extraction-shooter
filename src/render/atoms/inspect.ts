@@ -4,6 +4,7 @@
  * the card only explains the answer. Hover and keyboard share one target list.
  */
 
+import { bodyLawOf } from '../../../shared/entities/mob/BodyLaw';
 import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
 import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../shared/types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
@@ -102,7 +103,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
 function inspectMob(e: IWorldEntity): Card {
   const def = MOB_DEFINITIONS[e.definitionId] as any;
   const title = ContactNames.of(e, () => 0); // D60: def.name is never shown
-  const max = (def?.baseHealth ?? 0) + (e.bonusHealth ?? 0);
+  const max = bodyLawOf(def, e).baseHealth + (e.bonusHealth ?? 0);
   const health = e.health ?? max;
   const rows: [string, string][] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
   if (def?.size) rows.push(['Size', String(def.size)]);

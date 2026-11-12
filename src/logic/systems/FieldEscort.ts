@@ -35,7 +35,7 @@ export const FieldEscort = {
       worldSeed: seed, entityId: entity.id, webVersion: card?.webVersion, themeId: card?.themeId,
       rank: entity.rank, rarity: entity.rarity, sheet: { ...entity.npc }
     };
-    const escort = Escort.join(entity, bond, sheet.stats ?? NpcSheet.statsOf(seed, entity));
+    const escort = Escort.join(entity, bond, sheet.stats ?? NpcSheet.statsOf(seed, entity), entity.rank);
     setEscorts(list => [...list.filter(e => e.entityId !== entity.id), escort], pc);
     port.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { escort: { by: pc.view().player.id }, health: escort.health } });
     MobAI.follow(entity.id, Number.POSITIVE_INFINITY);

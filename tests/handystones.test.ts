@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import { UniversalRank } from '../shared/types';
-import { IMap, IWorldEntity } from '../shared/entities/world/types';
+import { EntityType, IMap, IWorldEntity } from '../shared/entities/world/types';
 import { TILE_PX, chunkOf, tileOf } from '../shared/entities/world/grid';
 import { GROUND_VERSION, IGenerationContext, WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
@@ -115,9 +115,12 @@ describe('C24: a world pins the ground it is laid by', () => {
   });
 
   it('a world that pins it keeps everything it had, each in its place, and only gains', () => {
-    const plain = tutorialDrop(themed()).things;
+    // Since ground 5 (the fight's law) a body is laid by that law and says so: its place, kind and rank are kept,
+    // and what it holds is read by the law it was laid under (BodyLaw), so the numbers are not compared here
+    const placed = (e: IWorldEntity) => (e.type === EntityType.MOB ? { ...e, health: undefined, law: undefined, bonusHealth: undefined, bonusDamage: undefined } : e);
+    const plain = tutorialDrop(themed()).things.map(placed);
     const laid = tutorialDrop(pinned()).things;
-    expect(laid.filter(e => !laidLoose(e))).toEqual(plain);
+    expect(laid.filter(e => !laidLoose(e)).map(placed)).toEqual(plain);
     expect(laid.filter(laidLoose).length).toBeGreaterThan(0);
     expect(laid.filter(laidLoose).every(isStone)).toBe(true);
   });

@@ -24,6 +24,10 @@ export interface IEffectCaster {
   rank: ThemeRank | string;
   /** What the caster's own gear or mind adds, as a fraction: 0.2 is a fifth harder. */
   power?: number;
+  /** The fight's law (part 3): a creature's working is a blow of its body, its share of a person's. None is a person's. */
+  share?: number;
+  /** A creature of a world standing before the fight's law casts as it was written. */
+  standing?: boolean;
 }
 
 /** What one casting does. A receipt says it all, so a fight can be replayed and shown. */
@@ -71,10 +75,10 @@ const DOT_TICK_MS = 500;
 export class EffectSystem {
 
   static resolve(ability: IEffectAbility, caster: IEffectCaster, key: string): IEffectReceipt {
-    const numbers = abilityNumbers(ability.cost, caster.rank as ThemeRank);
+    const numbers = abilityNumbers(ability.cost, caster.rank as ThemeRank, !!caster.standing, ability.effect);
     const rng = Rng.fromKey(`effect:${ability.id}:${key}`);
     const roll = 1 - ROLL_SPREAD + rng.next() * ROLL_SPREAD * 2;
-    const magnitude = Math.max(1, Math.round(numbers.magnitude * roll * (1 + (caster.power ?? 0))));
+    const magnitude = Math.max(1, Math.round(numbers.magnitude * roll * (1 + (caster.power ?? 0)) * (caster.share ?? 1)));
     const receipt: IEffectReceipt = {
       abilityId: ability.id, key,
       effect: ability.effect, delivery: ability.delivery, elements: ability.elements,
