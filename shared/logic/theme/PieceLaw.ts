@@ -58,7 +58,7 @@ const ODDS_Q = 0.4;
  * of the same rank on the same body, through the fight's own readers (Pedro: "Yes, a whole rank"). Solved and held
  * by `tests/kit.measure.test.ts`; when what a body holds or deals changes, that bar goes red and it is solved again.
  */
-const RULER_FACTOR = 0.2181;
+const RULER_FACTOR = 0.2233;
 
 /**
  * What the body a thing was found on does to the odds of depth: each class up holds twice what the one below it
@@ -101,7 +101,7 @@ function referenceOf(stat: string, rank: UniversalRank | string): number | undef
     case 'crit_chance': return (1 + StatSystem.critChance(undefined, body) * (BASE_CRIT_MULTIPLIER - 1)) / (BASE_CRIT_MULTIPLIER - 1);
     case 'crit_multiplier': return BASE_CRIT_MULTIPLIER;
     case 'block_chance': return 1 / (1 - BLOCK_FACTOR);
-    case 'attack_speed': return UNARMED_SHOTS_PER_SEC * StatSystem.fireRateScale(body);   // haste, added to a hand's own rate
+    case 'attack_speed': case 'haste': return UNARMED_SHOTS_PER_SEC * StatSystem.fireRateScale(body);   // haste, added to a hand's own rate
     case 'movement_speed': return 1 + StatSystem.paceBonus(body);
     case 'physical_reduction': return 1;                                                 // a share summed straight
     case 'noise_reduction': return NOISE_SCALE + StatSystem.noiseReduction(undefined, body);
@@ -110,6 +110,15 @@ function referenceOf(stat: string, rank: UniversalRank | string): number | undef
     default: return undefined;
   }
 }
+
+/**
+ * The stat keys, cleaned (1.4's last paragraph, part 3): protection is one rating, `defense`; carrying is one key,
+ * `carry_capacity`; and `attack_speed` is a weapon's own rate, never an affix, so what the rest of the body adds is
+ * `haste`. An old word naming the other key is read as the one. A piece of the old law keeps its keys, and the
+ * readers read them as the one rating, the one load and the hand's rate (`CombatMath`, `LoadoutSystem`).
+ */
+const ONE_KEY: Record<string, string> = { physical_reduction: 'defense', carry_bonus_kg: 'carry_capacity', attack_speed: 'haste' };
+const oneKey = (stat: string) => ONE_KEY[stat] ?? stat;
 
 /** One affix's words, read from the bank: the one stat it gives, and the price it may ask. */
 export interface IAffixWords { gift: { stat: string; band: Band }; price?: { stat: string; band: Band } }
@@ -161,19 +170,22 @@ export const PieceLaw = {
 
   /**
    * What a kind carries by itself at a rank, at quality 0. The law's sentence kept true: a native line is one ruler
-   * of its stat at the piece's rank. Kept as the kind's own: a weapon's own rate (part 3 splits it from haste), the
-   * day's energy (Pedro: "I'd leave it to 1-2 at most", no rank), and what has no ruler yet (a tool's power, and the
-   * straight protection part 3 folds into one rating), the middle of the formula's rank-F line, doubled a rank where
-   * it is an amount. One roll on a piece (call 16).
+   * of its stat, on its one key, at the piece's rank. Kept as the kind's own, the middle of the formula's rank-F line:
+   * a weapon's own rate; the day's energy (Pedro: "I'd leave it to 1-2 at most", no rank); the boots' own pace (the
+   * coordinator, 2026-11-12: a plain body in a plain kit walks what it walked on main, since "a person can always
+   * leave" is measured against creatures not yet rebalanced); and what has no ruler (a tool's power, doubled a rank).
+   * One roll on a piece (call 16).
    */
   nativeLines(kind: GearKind, step: number): { stat: string; value: number }[] {
     const shape = GEAR_SHAPES[kind];
     const rank = RANK_WORDS[Math.max(0, Math.min(step, RANK_WORDS.length - 1))];
     return shape.implicits(0).map(l => {
       const middle = l.value ?? ((l.min ?? 0) + (l.max ?? 0)) / 2;
-      const own = (shape.bucket === 'weapon_bases' && l.stat === 'attack_speed') || l.stat === 'max_energy' || l.stat === 'physical_reduction';
-      if (!own && referenceOf(l.stat, rank) !== undefined) return { stat: l.stat, value: this.ruler(l.stat, rank) };
-      return { stat: l.stat, value: middle * (statReading(l.stat) === 'amount' ? Math.pow(RANK_RATIO, step) : 1) };
+      const weaponRate = shape.bucket === 'weapon_bases' && l.stat === 'attack_speed';
+      if (weaponRate || l.stat === 'max_energy' || l.stat === 'movement_speed') return { stat: l.stat, value: middle };
+      const stat = oneKey(l.stat);
+      if (referenceOf(stat, rank) !== undefined) return { stat, value: this.ruler(stat, rank) };
+      return { stat, value: middle * (statReading(stat) === 'amount' ? Math.pow(RANK_RATIO, step) : 1) };
     });
   },
 
@@ -213,8 +225,9 @@ export const PieceLaw = {
     const gives = def.gives ?? Object.entries(def.statModifiers ?? {}).map(([stat, [, hi]]) => ({ stat, band: hi < 0 ? 'minor' : 'moderate', downside: hi < 0 }));
     const giftWords = gives.find(g => !g.downside);
     if (!giftWords) return undefined;
-    const gift = { stat: giftWords.stat, band: (BAND_ORDER.includes(giftWords.band as Band) ? giftWords.band : 'moderate') as Band };
-    const priceWords = gives.find(g => g.downside && g.stat !== gift.stat);
+    const gift = { stat: oneKey(giftWords.stat), band: (BAND_ORDER.includes(giftWords.band as Band) ? giftWords.band : 'moderate') as Band };
+    const priceFound = gives.find(g => g.downside && oneKey(g.stat) !== gift.stat);
+    const priceWords = priceFound ? { ...priceFound, stat: oneKey(priceFound.stat) } : undefined;
     const under = BAND_ORDER.indexOf(gift.band) - 1;
     if (!priceWords || under < 0) return { gift };
     const written = BAND_ORDER.indexOf(priceWords.band as Band);
@@ -235,6 +248,15 @@ export const PieceLaw = {
   /** The side an affix stands on, by how its one stat is read: an amount before the name, a rating after it. */
   sideOf(words: IAffixWords): 'PREFIX' | 'SUFFIX' {
     return statSide(words.gift.stat);
+  },
+
+  /**
+   * The word a piece says (call 17): whose it was when it was a body's own, legendary for a boss's and artifact for a
+   * titan's or a god's, and otherwise its step by count. Whose it was is not a count; the count still stands beneath.
+   */
+  wordOf(piece: { affixes: readonly Pick<IAffix, 'type'>[]; whose?: { kind: string } }): Rarity {
+    if (piece.whose) return piece.whose.kind === 'boss' ? Rarity.LEGENDARY : Rarity.ARTIFACT;
+    return this.stepOf(piece.affixes);
   },
 
   /** The step of a piece, by counting what it holds. No step multiplies anything. */

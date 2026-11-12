@@ -74,7 +74,7 @@ export const readsRank = (stat: string): boolean => !RANKLESS_STATS.includes(sta
  */
 export const RATING_STATS: readonly string[] = [
   'defense', 'physical_reduction', 'accuracy_rating', 'evasion_rating', 'crit_chance', 'crit_multiplier', 'block_chance',
-  'movement_speed', 'movement_speed_penalty', 'noise_reduction', 'luck_find_rarity', 'field_analysis_speed', 'attack_speed',
+  'movement_speed', 'movement_speed_penalty', 'noise_reduction', 'luck_find_rarity', 'field_analysis_speed', 'attack_speed', 'haste',
   'craft_speed_pct', 'upkeep_discount_pct', 'cart_alarm'
 ];
 /** Amounts in kilograms, tiles or seconds, beside the day's energy: they read no rank. */

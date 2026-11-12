@@ -97,7 +97,7 @@ export const ItemLaw = {
         const power = PieceLaw.power(it.rank, out.quality, base.tags.includes('tool'));
         set('itemPower', power);
         set('value', Math.max(1, Math.floor(power * 2)));
-        set('rarity', PieceLaw.stepOf(it.affixes ?? []));
+        set('rarity', PieceLaw.wordOf({ affixes: it.affixes ?? [], whose: it.whose }));
         return { ok: true, checked: true, item: out, changes };
       }
       set('rank', base.rank);

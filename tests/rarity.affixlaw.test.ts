@@ -111,7 +111,8 @@ describe('part 2: one affix, one stat', () => {
 
   it('a kind\'s native line is one ruler of its stat at the piece\'s rank, and energy stays 1 to 2 on the focus and the belt', () => {
     for (const rank of [UniversalRank.F, UniversalRank.C, UniversalRank.S]) {
-      for (const [kind, stat] of [['necklace', 'max_health'], ['shoulder', 'defense'], ['ring', 'luck_find_rarity'], ['feet', 'movement_speed']] as const) {
+      // The boots' own pace stays as on main (the coordinator, 2026-11-12; tests/rarity.part3.test.ts)
+      for (const [kind, stat] of [['necklace', 'max_health'], ['shoulder', 'defense'], ['ring', 'luck_find_rarity'], ['chest', 'defense']] as const) {
         const piece = at(kind, `native:${kind}:${rank}`, rank, { depth: 0 });
         expect(piece.stats[stat] / (1 + piece.quality)).toBeCloseTo(PieceLaw.ruler(stat, rank), 9);
       }

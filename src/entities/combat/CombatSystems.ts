@@ -111,7 +111,7 @@ export class CombatSystem {
           biome: origin.biome,
           magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
-        } : undefined, rollKey, mob.displayName, opts.groundVersion, opts.luck ?? 0);
+        } : undefined, rollKey, mob.displayName, opts.groundVersion, opts.luck ?? 0, { bonusHealth: mob.bonusHealth, bonusDamage: mob.bonusDamage });
         // The lore pass, call 6: a creature with a mind leaves a fragment "sometimes", in a world pinned to it
         if (MonsterMind.holds(def) && LoreDrops.fragment('creature', rollKey, opts.groundVersion)) loot.push(LootTable.loreFragment(rollKey, (def as { themeId?: string }).themeId));
         const onTable = LootTable.creatureRoll(def, rollKey);

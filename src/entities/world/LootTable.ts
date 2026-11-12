@@ -150,7 +150,8 @@ export class LootTable {
     rollKey?: string,
     earnedName?: string,
     groundVersion?: number,
-    luck = 0
+    luck = 0,
+    body?: { bonusHealth?: number; bonusDamage?: number }
   ): IItem[] {
     // Wave 1.3: every drop derives from a journaled key. Same key -> same loot.
     const rng = Rng.fromKey(rollKey || `unkeyed:loot:${Date.now()}:${Math.random()}`);
@@ -169,6 +170,7 @@ export class LootTable {
     const onTable = this.creatureRoll(mobDef, rollKey);
     if (onTable && rollKey) {
       loot.push(...this.mint(onTable, rollKey, pool, groundVersion, law));
+      if (!legacy) loot.push(...this.ownPieces(mobDef, rollKey, effectiveMF, earnedName, pool, ground, body));
       loot.push(...this.deedsFor(mobDef, rng, effectiveMF, context, rollKey));
       return loot;
     }
@@ -222,10 +224,10 @@ export class LootTable {
       if (legacy) bossLoot.rarity = Rarity.EPIC; // Bosses always drop at least Epic
       loot.push(bossLoot);
 
-      // Chance for Legendary
-      if (rng.next() < 0.25 * effectiveMF) {
+      // Chance for Legendary. Under the rarity rescale, a boss's own piece (ownPieces), on a stream of its own
+      if (legacy && rng.next() < 0.25 * effectiveMF) {
         const legendary = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
-        if (legacy) legendary.rarity = Rarity.LEGENDARY;
+        legendary.rarity = Rarity.LEGENDARY;
         if (earnedName) legendary.name = `${earnedName}'s ${legendary.name}`;
         loot.push(legendary);
       }
@@ -248,18 +250,21 @@ export class LootTable {
     if (mobDef.tags.includes('god') || mobDef.tags.includes('titan')) {
       // Multiple high-rank items
       for (let i = 0; i < 3; i++) {
-        const godLoot = ItemFactory.createItem(UniversalRank.S, false, rng, undefined, undefined, pool, ground);
+        const godLoot = ItemFactory.createItem(legacy ? UniversalRank.S : mobDef.rank, false, rng, undefined, undefined, pool, ground);
         if (legacy) godLoot.rarity = Rarity.LEGENDARY;
         loot.push(godLoot);
       }
 
-      // Artifact-tier item
-      const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool, ground);
-      if (legacy) artifact.rarity = Rarity.ARTIFACT;
-      artifact.name = `Relic of ${earnedName ?? 'Something Unnamed'}`;
-      artifact.description = 'An item of impossible origin. Reality bends around it.';
-      loot.push(artifact);
+      // Artifact-tier item. Under the rarity rescale, the titan's or the god's own piece (ownPieces)
+      if (legacy) {
+        const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool, ground);
+        artifact.rarity = Rarity.ARTIFACT;
+        artifact.name = `Relic of ${earnedName ?? 'Something Unnamed'}`;
+        artifact.description = 'An item of impossible origin. Reality bends around it.';
+        loot.push(artifact);
+      }
     }
+    if (!legacy && rollKey) loot.push(...this.ownPieces(mobDef, rollKey, effectiveMF, earnedName, pool, ground, body));
 
     // ========================================================================
     // 5. DEED DROPS (THE JACKPOT)
@@ -290,6 +295,22 @@ export class LootTable {
     }
 
     return loot;
+  }
+
+  /**
+   * A body's own piece (the rarity rescale, call 17): legendary and artifact are whose the piece was, never a count.
+   * A boss leaves its own one time in four, as the old drop's legendary did; a titan or a god always. It is found at
+   * the body's own rank, at the body's odds, carries its name (the one it earned, or its kind's) and each trait the
+   * Director made of it (health, damage), on a stream of its own so no other drop moves.
+   */
+  static ownPieces(mobDef: IMobDefinition, rollKey: string, effectiveMF: number, earnedName: string | undefined, pool: IAffixPool | undefined,
+    ground: { groundVersion: number } & IFoundLaw, body?: { bonusHealth?: number; bonusDamage?: number }): IItem[] {
+    const kind = mobDef.tags.includes('titan') ? 'titan' : mobDef.tags.includes('god') ? 'god' : mobDef.tags.includes('boss') ? 'boss' : undefined;
+    if (!kind) return [];
+    const own = Rng.fromKey(`${rollKey}:own`);
+    if (kind === 'boss' && own.next() >= 0.25 * effectiveMF) return [];
+    const traits = [...((body?.bonusHealth ?? 0) > 0 ? ['max_health'] : []), ...((body?.bonusDamage ?? 0) > 0 ? ['damage'] : [])];
+    return [ItemFactory.createItem(mobDef.rank, false, own, undefined, undefined, pool, { ...ground, whose: { name: earnedName ?? mobDef.name, kind }, traits })];
   }
 
   /** A land deed: the game's own rule, not a table's, on the drop's own stream. */

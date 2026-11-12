@@ -21,7 +21,11 @@ import { cartBearsAt, cartFolded, cartNumbers, rankStep } from '../../logic/them
  * `pairsOpen` is whether the hub's magic unlock opened pairs (absent: the hub's own shelf state). `depth`, `band`
  * and `quality` set what is otherwise rolled: a boss's own piece, or the kit the ruler is solved on.
  */
-export interface IFoundLaw { odds?: number; pairsOpen?: boolean; depth?: number; band?: Band; quality?: number }
+export interface IFoundLaw {
+  odds?: number; pairsOpen?: boolean; depth?: number; band?: Band; quality?: number;
+  /** A body's own piece (call 17): whose it was, and the traits it carries, each a property at the major band. */
+  whose?: { name: string; kind: 'boss' | 'titan' | 'god' }; traits?: string[];
+}
 
 /** What an affix may be written for that is not a piece of gear (ThemeLaw's scope words). */
 const SCOPE_WORDS = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scroll']);
@@ -104,15 +108,21 @@ export class ItemFactory {
     const affixes = this.foundAffixes(template, at, quality, rng, pool, law);
     for (const a of affixes) for (const [key, val] of Object.entries(a.stats)) stats[key] = (stats[key] ?? 0) + val;
 
+    // A body's own piece carries that body's traits, each one property of its stat at the major band
+    const whose = law.whose ? { ...law.whose, traits: [...(law.traits ?? [])] } : undefined;
+    for (const trait of whose?.traits ?? []) {
+      for (const [key, val] of Object.entries(PieceLaw.affixStats({ gift: { stat: trait, band: 'major' } }, at, quality))) stats[key] = (stats[key] ?? 0) + val;
+    }
+
     const power = PieceLaw.power(at, quality, template.tags.includes('tool'));
-    const rarity = PieceLaw.stepOf(affixes);
+    const rarity = PieceLaw.wordOf({ affixes, whose });
     const cart = template.cart ? { ...template.cart, ...cartNumbers({ size: template.cart.size, rank: at }) } : undefined;
     const dimensions = this.getDimensions(template);
 
     const item: IItem = {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
       universalDefinitionId: template.id,
-      name: this.nameOf(template.universal_name, affixes),
+      name: whose ? `${whose.name}'s ${this.nameOf(template.universal_name, affixes)}` : this.nameOf(template.universal_name, affixes),
       description: this.generateDescription(rarity, quality),
       type: ItemType.GEAR,
       slot: template.slot,
@@ -123,6 +133,7 @@ export class ItemFactory {
       value: Math.max(1, Math.floor(power * 2)),
       itemPower: power,
       pieceLaw: PieceLaw.VERSION,
+      ...(whose ? { whose } : {}),
       tags: [...template.tags],
       dimensions,
       weight: cart?.weight ?? this.getWeight(template, dimensions),
@@ -189,7 +200,12 @@ export class ItemFactory {
     };
     for (let i = 0; i < prefixes; i++) pick('PREFIX');
     for (let i = 0; i < suffixes; i++) pick('SUFFIX');
-    return affixes;
+    if (depth < 2) return affixes;
+    // A land whose words cannot fill a step stops at the deepest step they do fill (the coordinator, 2026-11-12)
+    const pairs = Math.min(affixes.filter(a => a.type === 'PREFIX').length, affixes.filter(a => a.type === 'SUFFIX').length);
+    if (pairs === 0) return affixes.slice(0, 1);
+    const kept = { PREFIX: 0, SUFFIX: 0 };
+    return affixes.filter(a => kept[a.type]++ < pairs);
   }
 
   /** The old law, a standing world's: the rank written on its kind, rank entered twice, a power table by rarity. */

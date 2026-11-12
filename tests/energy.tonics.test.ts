@@ -128,7 +128,10 @@ describe('energy on gear reads no rank', () => {
     const base = (rank: UniversalRank) => ({ id: 'test_ring', universal_name: 'Test Ring', rank, base_ip: 50, slot: SlotType.RING, tags: ['ring', 'jewelry'], implicits: [] }) as unknown as ItemDefinition;
     const pool = {
       prefixes: [{ id: 'p_day', nameTemplate: 'Enduring', type: 'PREFIX', allowedTags: ['ring'], statModifiers: { max_energy: [8, 16] }, tier: 1 }],
-      suffixes: [{ id: 's_life', nameTemplate: 'of Life', type: 'SUFFIX', allowedTags: ['ring'], statModifiers: { max_health: [10, 20] }, tier: 1 }]
+      suffixes: [{ id: 's_life', nameTemplate: 'of Life', type: 'SUFFIX', allowedTags: ['ring'], statModifiers: { max_health: [10, 20] }, tier: 1 },
+        // The rarity rescale: health is an amount, so it stands with energy before the name; two pairs need two ratings
+        { id: 's_eva', nameTemplate: 'of Slipping', type: 'SUFFIX', allowedTags: ['ring'], statModifiers: { evasion_rating: [1, 2] }, tier: 1 },
+        { id: 's_ward', nameTemplate: 'of Warding', type: 'SUFFIX', allowedTags: ['ring'], statModifiers: { defense: [1, 2] }, tier: 1 }]
     } as never;
     let seen = 0;
     for (let i = 0; i < 200 && seen < 3; i++) {

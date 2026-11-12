@@ -325,14 +325,20 @@ export class LoadoutSystem {
 
   /** The one carry limit: what strength lifts, what the bag adds, and what worn gear adds (line 77, B1). */
   static carryLimit(strength: number, equipment?: IEquipmentState): number {
-    return InventorySystem.maxCarryWeight(strength) + this.bagCapacityBonus(equipment) + StatSystem.total(equipment, 'carry_capacity');
+    // The rarity rescale: carrying is one key; an old bag's `carry_bonus_kg` is read as the same load
+    return InventorySystem.maxCarryWeight(strength) + StatSystem.total(equipment, 'carry_bonus_kg') + StatSystem.total(equipment, 'carry_capacity');
   }
 
   /** Bags extend capacity: the worn BAG's carry bonus, in kg. */
+  /** What a piece adds to a load, on the one key or an old bag's. */
+  static carryOf(item: IItem): number {
+    return (item.stats?.carry_bonus_kg ?? 0) + (item.stats?.carry_capacity ?? 0);
+  }
+
   static bagCapacityBonus(equipment?: IEquipmentState): number {
     if (!equipment) return 0;
     const bag = this.itemIn(equipment, 'BAG');
-    return bag?.stats?.carry_bonus_kg ?? 0;
+    return bag ? this.carryOf(bag) : 0;
   }
 
   // ---------------------------------------------------------------------

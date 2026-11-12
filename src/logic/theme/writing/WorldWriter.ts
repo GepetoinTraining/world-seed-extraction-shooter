@@ -12,14 +12,15 @@
  * What comes out is a pack like any other, and the same law judges it.
  */
 
-import { ITagEntry } from '../../../../shared/types';
+import { ITagEntry, MENTAL_ATTRIBUTES } from '../../../../shared/types';
+import { statSide } from '../../../../shared/constants';
 import { fnv1a, Rng, SeededRNG } from '../../../../shared/logic/rng/DeterministicRNG';
 import { TagLaw } from '../../../../shared/logic/content/TagLaw';
 import { cosineSimilarity } from '../../../../shared/entities/data/similarity';
 import { EmbeddingService, IEmbedder } from '../../../../shared/services/EmbeddingService';
 import { ThemeLaw } from '../../../../shared/logic/theme/ThemeLaw';
 import {
-  BEHAVIORS, BIOMES, BUILDS, IThemeAbility, IThemeAnchor, IThemeBody, IThemeConsumable, IThemeCreature, IThemeGear, IThemeGood,
+  BEHAVIORS, BIOMES, BUILDS, IThemeAbility, IThemeAffix, IThemeAnchor, IThemeBody, IThemeConsumable, IThemeCreature, IThemeGear, IThemeGood,
   IThemeJunk, IThemeMaterial, IThemePack, IThemeProfession, IThemeStation, IThemeTerrain, PACES, RANKS, SIZES, ThemeRank, THREATS,
   WEIGHTS, WORTHS, MATERIAL_FORMS, HARVEST_VERBS
 } from '../../../../shared/logic/theme/ThemeTypes';
@@ -974,7 +975,30 @@ async function floors(d: Draft, o: IWriteOptions, query: string, embedder: IEmbe
       c.habitat = [...c.habitat, region.biome];
     }
   }
+
+  // The rarity rescale: a world's gear affixes give at least three stats added to a figure and three read as
+  // ratings (AFFIX_PAIRS_FROM_FORMULA), so a piece can hold three pairs. What is short comes from the pool, nearest first
+  const giftOf = (a: IThemeAffix) => a.gives.find(g => !g.downside)?.stat;
+  const onGear = (a: IThemeAffix) => a.allowedTags.some(t => !AFFIX_SCOPES.has(t));
+  const tried = new Set<string>();
+  for (const side of ['PREFIX', 'SUFFIX'] as const) {
+    const held = () => new Set(b.affixes.filter(onGear).map(giftOf).filter((s): s is string => !!s && statSide(s) === side));
+    while (held().size < 3) {
+      const have = held();
+      const e = await nearest('affixes', x => {
+        const a = entry<IThemeAffix>(x), gift = giftOf(a);
+        return !tried.has(`${x.themeId}:${x.key}`) && onGear(a) && !!gift && statSide(gift) === side && !have.has(gift) && !AFFIX_MIND.has(gift);
+      });
+      if (!e) break;
+      tried.add(`${e.themeId}:${e.key}`);
+      d.bring(e);
+    }
+  }
   return null;
 }
+
+/** What an affix may be written for that is not a piece of gear, and the mind's stats, which never sit on gear. */
+const AFFIX_SCOPES = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scroll']);
+const AFFIX_MIND = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
 
 export type { IThemeAbility, IThemeStation };

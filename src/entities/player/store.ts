@@ -590,7 +590,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const layout = { ...(session.inventoryLayout || {}) };
       const oldPlace = layout[itemId];
       delete layout[itemId];
-      const newBag = target === 'BAG' ? (item.stats?.carry_bonus_kg ?? 0) : LoadoutSystem.bagCapacityBonus(equipment);
+      const newBag = target === 'BAG' ? LoadoutSystem.carryOf(item) : LoadoutSystem.bagCapacityBonus(equipment);
       const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag + StatSystem.total(equipment, 'carry_capacity');
       const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([holder]);
       if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${shown(holder)} still.` });

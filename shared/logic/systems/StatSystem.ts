@@ -30,6 +30,8 @@ export const STAT_READERS: Record<string, string> = {
   max_health: 'StatSystem.maxHealth',
   max_energy: 'StatSystem.maxEnergy',
   attack_speed: 'CombatMath.fireCooldownMs',
+  /** The rarity rescale: what the body adds to a hand's own rate. A weapon's own rate is `attack_speed`, never an affix. */
+  haste: 'CombatMath.fireCooldownMs',
   accuracy_rating: 'CombatMath.outgoing',
   crit_chance: 'CombatMath.outgoing',
   crit_multiplier: 'CombatMath.outgoing',

@@ -11,8 +11,13 @@
 
 import { ITagEntry } from '../../types';
 
-/** Version 2 knows a line's depth (D61). Version 3 knows who leads and what a body leaves (D93, D99). Version 4 knows what holds value (D115). A pack sealed under an older one stands under the law it was written under. */
-export const THEME_FORMULA_VERSION = 4;
+/** Version 2 knows a line's depth (D61). Version 3 knows who leads and what a body leaves (D93, D99). Version 4 knows what holds value (D115). Version 5 asks enough affixes for three pairs (the rarity rescale). A pack sealed under an older one stands under the law it was written under. */
+export const THEME_FORMULA_VERSION = 5;
+/**
+ * From this version a pack's gear affixes give at least three stats added to a figure and three read as ratings, so a
+ * piece can hold three pairs (the rarity rescale, the coordinator, 2026-11-12). Asked of every pack written from now on.
+ */
+export const AFFIX_PAIRS_FROM_FORMULA = 5;
 /** From this version a pack must hold its trees (D63). */
 export const TREES_FROM_FORMULA = 2;
 /** From this version every creature says social and builds, plain elites lead, and creatures leave junk (D93, D99). */

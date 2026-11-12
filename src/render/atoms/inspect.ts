@@ -4,6 +4,7 @@
  * the card only explains the answer. Hover and keyboard share one target list.
  */
 
+import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
 import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../shared/types';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
@@ -293,6 +294,29 @@ export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | nul
   return { title, rows, needs: [], canAct: false, compact: planned?.compact ?? compact(title, raw ? 'raw' : 'worked') };
 }
 
+const COUNT_WORDS = ['nothing', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+const countWord = (n: number) => COUNT_WORDS[n] ?? String(n);
+
+/**
+ * The rarity rescale: a found piece's step said in words, with how many of its properties stand before its name and
+ * how many after (an amount before, a rating after), and whose it was when it was a body's own. The frame says the
+ * same by its shape (`itemArt`). A count, never more than the name and the old rarity word already told.
+ */
+export function stepWords(item: IItem): string {
+  const word = PieceLaw.wordOf({ affixes: item.affixes ?? [], whose: item.whose });
+  const title = word.charAt(0) + word.slice(1).toLowerCase();
+  const before = (item.affixes ?? []).filter(a => a.type === 'PREFIX').length;
+  const after = (item.affixes ?? []).length - before;
+  const held = before + after === 0 ? 'nothing above normal'
+    : after === 0 ? `${countWord(before)} before its name`
+    : before === 0 ? `${countWord(after)} after its name`
+    : `${countWord(before)} before its name, ${countWord(after)} after`;
+  return item.whose ? `${title}: ${item.whose.name}'s own, a ${item.whose.kind}'s; ${held}` : `${title}: ${held}`;
+}
+
+/** A number as a person reads it: a piece keeps its numbers whole, and the card shows two places at most. */
+const shown = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
+
 /** The title is the name said aloud (`LoadoutSystem.shownName`), so a card and a counter agree. */
 export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
@@ -306,7 +330,7 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     return { title: item.name, rows: [['Weight', `${item.weight} kg`], ['Carried', 'they come back on the other side']], needs: [], canAct: false, compact: compact(item.name, `${item.weight} kg`) };
   }
   const title = LoadoutSystem.shownName(item);
-  const rows: [string, string][] = [['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
+  const rows: [string, string][] = [item.type === ItemType.GEAR && item.pieceLaw !== undefined ? ['Step', stepWords(item)] : ['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
   const q = (item as any).quality as number | undefined;
   // Wave 10D (one quality law): everything sits on the gear scale now. Gear
   // always says its roll; a commodity at exactly 0 took no roll and says
@@ -337,12 +361,12 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     if (['durability', 'maxDurability', 'weight'].includes(k)) return;
     // D22: a mental stat on gear is a dead line — it never reaches the mind
     if (mental.has(k)) rows.push([k.replace(/_/g, ' '), `${v} — asleep. Gear doesn't think.`]);
-    else rows.push([k.replace(/_/g, ' '), String(v)]);
+    else rows.push([k.replace(/_/g, ' '), shown(v)]);
   });
   (item.affixes || []).forEach(a => {
     if (player && LoadoutSystem.isAffixStudied(player, a.id)) {
       const said = Object.entries(a.stats)
-        .map(([k, v]) => `${v >= 0 ? '+' : ''}${v} ${k.replace(/_/g, ' ')}`).join(', ');
+        .map(([k, v]) => `${v >= 0 ? '+' : ''}${shown(v)} ${k.replace(/_/g, ' ')}`).join(', ');
       rows.push(['Affix', `${a.name} — ${said || 'named by the bank; its effect is not yet written'}`]);
     } else {
       rows.push(['Affix', `${a.name} — unstudied. It does its work; the sheet can't see it.`]);

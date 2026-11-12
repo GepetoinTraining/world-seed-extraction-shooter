@@ -112,7 +112,8 @@ export class CombatMath {
     const own = this.isUsable(weapon) ? weapon!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
     // The hand's own rate, and what everything else on the body adds to it
     const onBody = StatSystem.worn(equipment).some(i => i.id === weapon?.id);
-    const others = StatSystem.total(equipment, 'attack_speed') - (onBody ? weapon!.stats?.attack_speed ?? 0 : 0);
+    // An old piece's added rate rides `attack_speed`; the rarity rescale's is `haste`
+    const others = StatSystem.total(equipment, 'attack_speed') - (onBody ? weapon!.stats?.attack_speed ?? 0 : 0) + StatSystem.total(equipment, 'haste');
     return Math.round(1000 / Math.max(0.1, (own + others) * StatSystem.fireRateScale(attributes)));
   }
 
@@ -139,14 +140,19 @@ export class CombatMath {
     return Math.max(1, Math.round(raw * (1 - this.mitigation(armor))));
   }
 
-  /** What everything worn takes off a blow. Negative defense adds to it. */
+  /**
+   * What everything worn takes off a blow: one rating on its curve, with no top (the rarity rescale, 1.4: "defense and
+   * physical_reduction become one rating and the 60% top goes"). An old piece's straight share is read as the rating
+   * that gives the same share alone, so it adds to the rest on the same curve. Negative defense adds to a blow.
+   */
   static mitigationOf(equipment: IEquipmentState | undefined): number {
     const worn = StatSystem.worn(equipment);
-    const reduction = worn.reduce((sum, i) => sum + (i.stats?.physical_reduction ?? 0), 0);
+    const asRating = (share: number) => (share >= 1 ? Number.MAX_SAFE_INTEGER : RATING_KNEE * share / (1 - share));
+    const shares = worn.reduce((sum, i) => sum + asRating(i.stats?.physical_reduction ?? 0), 0);
     const chestId = equipment?.slots.CHEST;
     const chest = worn.find(i => i.id === chestId);
-    const fallback = chest && !chest.stats?.physical_reduction ? (chest.itemPower || 0) * 0.0004 : 0;
-    return Math.min(MAX_MITIGATION, reduction + fallback + curve(StatSystem.total(equipment, 'defense')));
+    const fallback = chest && chest.pieceLaw === undefined && !chest.stats?.physical_reduction && !chest.stats?.defense ? asRating((chest.itemPower || 0) * 0.0004) : 0;
+    return curve(StatSystem.total(equipment, 'defense') + shares + fallback);
   }
 
   /** One blow arriving, keyed: dodged, blocked, or mitigated. Who it lands on counts too. */

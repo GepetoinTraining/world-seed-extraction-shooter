@@ -8,7 +8,8 @@
  * chop with, is refused, because a world minted from it would be a trap.
  */
 
-import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TERRAIN_ROLES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREATS, PACES, MATERIAL_FORMS, HARVEST_VERBS, WEIGHTS, WORTHS, GEAR_KINDS, CONSUMABLE_KINDS, MATERIAL_RESTORES, STAT_BANDS, DELIVERIES, EFFECTS, COST_BANDS, TRIGGERS, REQUIRED_TREES, LINE_FEATURES, TERRAIN_ROLES, TREES_FROM_FORMULA, LEADERS_FROM_FORMULA, ANCHORS_FROM_FORMULA, AFFIX_PAIRS_FROM_FORMULA, THEME_FORMULA_VERSION } from './ThemeTypes';
+import { statSide } from '../../constants';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
 import { StatSystem } from '../systems/StatSystem';
@@ -240,6 +241,19 @@ export class ThemeLaw {
       }
       const t = a.allowedTags.find(tag => !SCOPE_WORDS.has(tag) && !known(tag));
       if (t) return no(`${a.key} may land on "${t}", which is not registered.`);
+    }
+
+    // The rarity rescale: a piece holds up to three pairs, one amount and one rating each, a stat once a piece
+    if (formula >= AFFIX_PAIRS_FROM_FORMULA) {
+      const sides = { PREFIX: new Set<string>(), SUFFIX: new Set<string>() };
+      for (const a of pack.affixes) {
+        if (!a.allowedTags.some(t => !SCOPE_WORDS.has(t))) continue;
+        const gift = a.gives.find(g => !g.downside);
+        if (gift && !MENTAL.has(gift.stat)) sides[statSide(gift.stat)].add(gift.stat);
+      }
+      if (sides.PREFIX.size < 3 || sides.SUFFIX.size < 3) {
+        return no(`its gear affixes give ${sides.PREFIX.size} stats added to a figure and ${sides.SUFFIX.size} read as ratings; a world holds at least three of each, so a piece can hold three pairs.`);
+      }
     }
 
     // D119: optional, so a pack written before there was such a thing stands as it was.

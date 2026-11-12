@@ -796,7 +796,7 @@ export function rankMark(rank: string): Sprite {
   return { w, h: w, data };
 }
 
-export const RARITIES = ['SCRAP', 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'ARTIFACT'];
+export const RARITIES = ['SCRAP', 'COMMON', 'UNCOMMON', 'MAGICAL', 'RARE', 'EPIC', 'LEGENDARY', 'ARTIFACT'];
 
 /** Gear has no material data in the game yet. This is the profile it would need, from tags. */
 export function gearMaterial(tags: string[]): Material {
@@ -893,7 +893,10 @@ export function itemArt(o: ItemArtInput): Sprite {
     return { w, h, data };
   }
 
-  const tier = RARITIES.indexOf(o.rarity);
+  // The rarity rescale: each step its own shape, read by its marks and where they stand, never by hue alone.
+  // Uncommon marks two corners; magical adds the outer line of the other two, an L; rare fills all four corners.
+  // The middle of each side is wear's (the bites below), so no step marks there.
+  const tier = o.rarity;
   const role = o.tags.includes('flora') ? Role.LIFE : Role.MATTER;
 
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -902,13 +905,15 @@ export function itemArt(o: ItemArtInput): Sprite {
     const corner = (x < 3 || x >= w - 3) && (y < 3 || y >= h - 3);
     const leading = (x < 3 && y < 3) || (x >= w - 3 && y >= h - 3);
     let v = px(Role.VOID, 2);
-    if (tier === 0) { if (r === 0) v = (x + y) % 3 === 0 ? px(Role.VOID, 0) : px(Role.MATTER, 1); }
-    else if (tier === 1) { if (r === 0) v = px(Role.MATTER, 1); }
-    else if (tier === 2) { if (r === 0) v = px(Role.MATTER, 1); if (leading) v = px(Role.PROOF, 3); }
-    else if (tier === 3) { if (r === 0) v = px(Role.MATTER, 1); if (corner) v = px(Role.PROOF, 3); }
-    else if (tier === 4) { v = r === 0 ? px(Role.MATTER, 1) : px(Role.MATTER, 3); if (corner) v = px(Role.PROOF, 3); }
-    else if (tier === 5) { if (r === 0) v = px(Role.PROOF, 3); if (corner) v = px(Role.PROOF, 4); }
-    else { v = r === 0 ? px(Role.PROOF, 4) : px(Role.PROOF, 2); }
+    if (tier === 'SCRAP') { if (r === 0) v = (x + y) % 3 === 0 ? px(Role.VOID, 0) : px(Role.MATTER, 1); }
+    else if (tier === 'COMMON') { if (r === 0) v = px(Role.MATTER, 1); }
+    else if (tier === 'UNCOMMON') { if (r === 0) v = px(Role.MATTER, 1); if (leading) v = px(Role.PROOF, 3); }
+    else if (tier === 'MAGICAL') { if (r === 0) v = px(Role.MATTER, 1); if (leading || (corner && r === 0)) v = px(Role.PROOF, 3); }
+    else if (tier === 'RARE') { if (r === 0) v = px(Role.MATTER, 1); if (corner) v = px(Role.PROOF, 3); }
+    else if (tier === 'EPIC') { v = r === 0 ? px(Role.MATTER, 1) : px(Role.MATTER, 3); if (corner) v = px(Role.PROOF, 3); }
+    else if (tier === 'LEGENDARY') { if (r === 0) v = px(Role.PROOF, 3); if (corner) v = px(Role.PROOF, 4); }
+    else if (tier === 'ARTIFACT') { v = r === 0 ? px(Role.PROOF, 4) : px(Role.PROOF, 2); }
+    else { if (r === 0) v = px(Role.MATTER, 1); }
     data[y * w + x] = v;
   }
 

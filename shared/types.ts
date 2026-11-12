@@ -492,6 +492,11 @@ export interface IItem {
    * standing world's, whose stamped numbers are kept (call 18); the hub checks each by its own.
    */
   pieceLaw?: number;
+  /**
+   * The rarity rescale, call 17: whose the piece was, when it was a body's own (a boss's, a titan's or a god's). It
+   * carries that body's name and traits; legendary and artifact are this, never a count (PieceLaw.wordOf).
+   */
+  whose?: { name: string; kind: 'boss' | 'titan' | 'god'; traits: string[] };
   id: string;
   universalDefinitionId: string;
   name: string;

@@ -377,7 +377,7 @@ export const gearBaseIp = (rank: ThemeRank, kind: GearKind) => {
 /** A stat's typical size at tier one: what a band means for this stat. Only stats with a reader. */
 export const STAT_SCALE: Record<string, number> = {
   damage: 6, defense: 8, max_health: 15, max_energy: 8,
-  accuracy_rating: 15, evasion_rating: 12, attack_speed: 0.08,
+  accuracy_rating: 15, evasion_rating: 12, attack_speed: 0.08, haste: 0.08,
   crit_chance: 0.03, crit_multiplier: 0.15, block_chance: 0.04, poison_damage: 3,
   light_radius: 2, pickup_radius: 3, carry_capacity: 3, noise_reduction: 3,
   movement_speed: 0.05, luck_find_rarity: 0.1, field_analysis_speed: 0.1,
