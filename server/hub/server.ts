@@ -14,12 +14,27 @@ const MIME: Record<string, string> = {
   '.ps1': 'text/plain; charset=utf-8', '.sh': 'text/plain; charset=utf-8'
 };
 
-/** The landing page loads only its own files and posts only to its own hub. */
-const PAGE_HEADERS: Record<string, string> = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
-  'X-Frame-Options': 'DENY'
+/**
+ * The landing page loads only its own files and posts only to its own hub. Where the hub's accounts
+ * are Clerk's (clerk.ts), the page also loads Clerk's script from that instance's own address and
+ * talks to it, and Clerk's sign-up form brings its own styles, pictures and bot check.
+ */
+const pageHeaders = (clerkHost?: string | null): Record<string, string> => {
+  const clerk = clerkHost ? ` https://${clerkHost}` : '';
+  return {
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      `script-src 'self'${clerk}${clerk ? ' https://challenges.cloudflare.com' : ''}`,
+      `style-src 'self'${clerk ? " 'unsafe-inline'" : ''}`,
+      `img-src 'self' data:${clerk ? ' https://img.clerk.com' : ''}`,
+      `connect-src 'self'${clerk}`,
+      ...(clerk ? ['frame-src https://challenges.cloudflare.com', "worker-src 'self' blob:"] : []),
+      "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'"
+    ].join('; '),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'X-Frame-Options': 'DENY'
+  };
 };
 
 export interface IHubListenerParts {
@@ -27,10 +42,13 @@ export interface IHubListenerParts {
   landingDir: string;
   /** Paths under which any address is that folder's index.html: the game's own routes. */
   pages?: string[];
+  /** The address Clerk's own script and API answer at, when this hub's accounts are Clerk's. */
+  clerkHost?: string | null;
 }
 
-export function createHubListener({ api, landingDir, pages = [] }: IHubListenerParts) {
+export function createHubListener({ api, landingDir, pages = [], clerkHost }: IHubListenerParts) {
   const root = resolve(landingDir);
+  const PAGE_HEADERS = pageHeaders(clerkHost);
   return (req: IncomingMessage, res: ServerResponse) => {
     let path: string;
     try {

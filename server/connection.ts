@@ -51,14 +51,51 @@ export async function openDatabase(url: string, options: IOpenOptions = {}): Pro
   throw new DatabaseUnavailable(`The database URL "${url}" names no door this server has.`);
 }
 
+/**
+ * SEVERAL PROCESSES ON ONE SERVED POSTGRES (a function host runs as many as it likes). The store's
+ * commit reads before it writes (a guard, a chain's top), which holds inside one process because
+ * its writes take turns there. Across processes they would race: two could both find a guard absent
+ * and both land. So every transaction on a served Postgres first takes one lock, held to its end,
+ * and transactions from every process take turns as one process's do. A commit is a few
+ * statements, so the turn is short. Nothing here changes what a transaction does.
+ */
+const TURN = 1465074754; // 'WSDB'
+
+export function oneWriterAtATime<T extends { transaction: (...args: any[]) => any }>(db: T, lock: (tx: any) => Promise<unknown>): T {
+  return new Proxy(db, {
+    get(target, prop) {
+      if (prop === 'transaction') {
+        return (run: (tx: any) => Promise<unknown>, config?: unknown) =>
+          target.transaction(async (tx: any) => { await lock(tx); return run(tx); }, config);
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+}
+
+/** How often a migration is tried when another process is running the same one this moment. */
+const MIGRATE_TRIES = 4;
+
 async function openPostgres(url: string, options: IOpenOptions): Promise<IDatabase> {
   const { Pool } = (await import('pg')).default;
   const { drizzle } = await import('drizzle-orm/node-postgres');
   const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+  const { sql } = await import('drizzle-orm');
 
   const pool = new Pool({ connectionString: url, ...(options.poolSize ? { max: options.poolSize } : {}) });
-  const db = drizzle(pool, { schema });
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  const plain = drizzle(pool, { schema });
+  // Two processes starting together both find a migration unapplied; the one that loses finds it applied on its next look.
+  for (let tries = 1; ; tries++) {
+    try {
+      await migrate(plain, { migrationsFolder: MIGRATIONS });
+      break;
+    } catch (e) {
+      if (tries >= MIGRATE_TRIES) { await pool.end().catch(() => undefined); throw e; }
+      await sleep(250 * tries);
+    }
+  }
+  const db = oneWriterAtATime(plain, tx => tx.execute(sql`SELECT pg_advisory_xact_lock(${TURN})`));
 
   return {
     dialect: 'postgres',

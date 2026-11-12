@@ -3,7 +3,9 @@
  * checks. It runs nobody's play. Everything it keeps is in its own store, the same SqlStore the game
  * uses, so its record goes to Turso through the same keeper:
  *
- *   hub_account_{handle}    an account: the handle as written, a salted scrypt hash
+ *   hub_account_{handle}    an account: the handle as written, a salted scrypt hash. On a hub whose
+ *                           accounts are Clerk's (clerk.ts) it is hub_account_clerk_{id}: that id
+ *                           and a handle, with no password and no e-mail
  *   hub_session_{sha256}    a session, under the hash of its token and never the token
  *   hub_character_{uid}     a character's public key, the account that holds it, what the hub
  *                           stated when it registered it, and its standing here
@@ -74,6 +76,12 @@ export interface IHubOptions {
   /** Its own address, named in what it signs. */
   publicUrl: string;
   now?: () => number;
+  /**
+   * Who keeps this hub's accounts. 'builtin' is the handle and password below, which a hub anyone
+   * runs keeps. 'clerk' is the hub we launch: an e-mail and a password held by Clerk (clerk.ts),
+   * and nobody makes an account or signs in here by handle.
+   */
+  accounts?: 'builtin' | 'clerk';
 }
 
 export interface IRefusal { ok: false; status: number; reason: string; [more: string]: unknown }
@@ -176,6 +184,9 @@ const UID = /^[A-Za-z0-9_-]+$/;
 const RSA = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+/** The word of a mint that a character's first row carries: the hash of the signature on what this hub stated at its birth. */
+export const mintOf = (issued: ISignedStatement): string => sha256(issued.signature);
 export const refuse = (status: number, reason: string, more: Record<string, unknown> = {}): IRefusal => ({ ok: false, status, reason, ...more });
 const handleKey = (handle: string) => handle.normalize('NFKC').toLowerCase();
 const rowId = (uid: string, seq: number) => `ledger_${uid}_${seq.toString().padStart(8, '0')}`;
@@ -236,7 +247,10 @@ export class Hub {
   // ACCOUNTS AND SESSIONS
   // ---------------------------------------------------------------------------
 
+  get accounts(): 'builtin' | 'clerk' { return this.options.accounts ?? 'builtin'; }
+
   async createAccount(handle: unknown, password: unknown): Promise<Answer<{ account: { handle: string } }>> {
+    if (this.accounts === 'clerk') return refuse(403, 'An account on this hub is made on its own page, with an e-mail and a password.');
     const written = String(handle ?? '').trim().normalize('NFKC');
     if (!HANDLE.test(written)) return refuse(400, 'A handle is 3 to 32 letters, digits, dots, dashes or underscores, with no spaces.');
     if (typeof password !== 'string' || [...password].length < PASSWORD_LEAST) return refuse(400, `A password needs at least ${PASSWORD_LEAST} characters.`);
@@ -252,6 +266,7 @@ export class Hub {
   }
 
   async signIn(handle: unknown, password: unknown): Promise<Answer<{ token: string; account: { handle: string } }>> {
+    if (this.accounts === 'clerk') return refuse(403, 'Signing in to this hub is done on its own page, with an e-mail and a password.');
     const key = handleKey(String(handle ?? '').trim());
     const failuresId = `hub_failures_${key}`;
     const held = (await this.read<{ fails: number; until: number }>(failuresId))?.data;
@@ -274,6 +289,47 @@ export class Hub {
     const at = this.now();
     await this.commit([{ kind: 'put', doc: this.doc(`hub_session_${sha256(token)}`, { type: 'hub_session', account: key, createdAt: at, endsAt: at + SESSION_MS }) }]);
     return { ok: true, token, account: { handle: account!.data.handle } };
+  }
+
+  /**
+   * A session for someone Clerk has already proved (clerk.ts). Their account here is made the first
+   * time they are seen: every new player has one from the moment they sign up, whatever they do next.
+   */
+  async signInAs(who: { provider: 'clerk'; userId: string; handle?: string }): Promise<Answer<{ token: string; account: { handle: string } }>> {
+    if (this.accounts !== 'clerk') return refuse(403, 'This hub keeps its own accounts.');
+    const key = `clerk_${who.userId}`;
+    const id = `hub_account_${key}`;
+    const held = await this.read<{ handle: string; createdAt: number }>(id);
+    const handle = who.handle ?? held?.data.handle ?? `player_${who.userId.slice(-8).toLowerCase()}`;
+    if (!held) {
+      await this.commit([{ kind: 'putIfAbsent', doc: this.doc(id, { type: 'hub_account', handle, provider: 'clerk', createdAt: this.now() }) }], id);
+    } else if (held.data.handle !== handle) {
+      await this.commit([{ kind: 'put', doc: this.doc(id, { ...held.data, handle }, held.doc.metadata.createdAt) }]);
+    }
+    const token = randomBytes(32).toString('base64url');
+    const at = this.now();
+    await this.commit([{ kind: 'put', doc: this.doc(`hub_session_${sha256(token)}`, { type: 'hub_session', account: key, createdAt: at, endsAt: at + SESSION_MS }) }]);
+    return { ok: true, token, account: { handle } };
+  }
+
+  /** What this hub holds of the signed-in account, in counts: what a player is shown before they ask for it to be deleted. */
+  async held(token: unknown): Promise<Answer<{ account: { handle: string; since: number }; characters: { uid: string; displayName: string; receipts: number; standing: Standing }[]; people: number; worlds: number }>> {
+    const account = await this.who(token);
+    if ('ok' in account) return account;
+    const doc = await this.read<{ createdAt?: number }>(`hub_account_${account.key}`);
+    const list = await this.characters(token);
+    if (!list.ok) return list as IRefusal;
+    const mine = (list as { characters: { uid: string; displayName: string; held: number; standing: Standing }[] }).characters;
+    const uids = new Set(mine.map(c => c.uid));
+    const people = (await this.store.query({ namespace: NS, filter: { 'data.type': 'hub_person' } })).filter(d => JSON.parse(d.dataText).account === account.key).length;
+    const worlds = (await this.store.query({ namespace: NS, filter: { 'data.type': 'hub_world' } })).filter(d => uids.has(JSON.parse(d.dataText).creator)).length;
+    return {
+      ok: true,
+      account: { handle: account.handle, since: doc?.data.createdAt ?? doc?.doc.metadata.createdAt ?? 0 },
+      characters: mine.map(c => ({ uid: c.uid, displayName: c.displayName, receipts: c.held, standing: c.standing })),
+      people,
+      worlds
+    };
   }
 
   /** Who a token is, or nobody. */
@@ -341,7 +397,7 @@ export class Hub {
     }
   }
 
-  async registerCharacter(token: unknown, certificate: any, proof: any): Promise<Answer<{ issued: ISignedStatement; uid: string }>> {
+  async registerCharacter(token: unknown, certificate: any, proof: any): Promise<Answer<{ issued: ISignedStatement; uid: string; mint: string }>> {
     const account = await this.who(token);
     if ('ok' in account) return account;
 
@@ -365,7 +421,7 @@ export class Hub {
     const held = await this.read<{ account: string; issued: ISignedStatement }>(id);
     if (held) {
       if (held.data.account !== account.key) return refuse(409, 'That character is held by another account on this hub.');
-      return { ok: true, uid, issued: held.data.issued };
+      return { ok: true, uid, issued: held.data.issued, mint: mintOf(held.data.issued) };
     }
 
     const issued = statementOf(this.key, {
@@ -389,7 +445,7 @@ export class Hub {
     });
     const out = await this.commit([{ kind: 'putIfAbsent', doc }], id);
     if (!out.applied) return refuse(409, 'That character was registered a moment ago. Look again.');
-    return { ok: true, uid, issued };
+    return { ok: true, uid, issued, mint: mintOf(issued) };
   }
 
   private async heldSeq(uid: string): Promise<number> {
@@ -403,13 +459,13 @@ export class Hub {
     return row ? sha256(row.dataText) : null;
   }
 
-  async characters(token: unknown): Promise<Answer<{ characters: { uid: string; displayName: string; held: number; standing: Standing; issued: ISignedStatement }[] }>> {
+  async characters(token: unknown): Promise<Answer<{ characters: { uid: string; displayName: string; held: number; standing: Standing; issued: ISignedStatement; mint: string; born: 'WITNESSED' | 'CLAIMED' | null }[] }>> {
     const account = await this.who(token);
     if ('ok' in account) return account;
     const docs = await this.store.query({ namespace: NS, filter: { 'data.type': 'hub_character', 'data.account': account.key } });
     const characters = await Promise.all(docs.map(async d => {
       const c = JSON.parse(d.dataText);
-      return { uid: c.uid, displayName: c.displayName, held: await this.heldSeq(c.uid), standing: c.standing as Standing, issued: c.issued };
+      return { uid: c.uid, displayName: c.displayName, held: await this.heldSeq(c.uid), standing: c.standing as Standing, issued: c.issued, mint: mintOf(c.issued), born: (c.born ?? null) as 'WITNESSED' | 'CLAIMED' | null };
     }));
     return { ok: true, characters };
   }
@@ -473,6 +529,17 @@ export class Hub {
       }
     }
 
+    // Birth (Pedro, 2026-11-12: "we need the minting of a new player to be done from the hub"). A first row that names
+    // the mint this hub gave the character names this very one (mintOf). One that names none was begun before this
+    // hub knew of it, and is held as that: born CLAIMED, not WITNESSED.
+    const first = fresh[0]?.row.payload.seq === 1 ? fresh[0].row : null;
+    let born: 'WITNESSED' | 'CLAIMED' | null = null;
+    if (first) {
+      const named = (first.payload.data as { mint?: unknown } | undefined)?.mint;
+      if (named !== undefined && named !== mintOf(character.data.issued)) return refuse(400, 'This character\'s first row names a mint this hub did not give it. Nothing in this batch was held.');
+      born = named === undefined ? 'CLAIMED' : 'WITNESSED';
+    }
+
     // Time: nothing from a day this hub has not reached, each moment its own, each row on the one under it
     const today = dayIndexOf(this.now());
     for (const { row } of fresh) {
@@ -501,6 +568,10 @@ export class Hub {
         throw e;
       }
       held = await this.heldSeq(own.uid);
+      if (born) {
+        const now = await this.read<Record<string, unknown>>(`hub_character_${own.uid}`);
+        if (now && now.data.born === undefined) await this.commit([{ kind: 'put', doc: this.doc(`hub_character_${own.uid}`, { ...now.data, born }, now.doc.metadata.createdAt) }]);
+      }
     }
 
     // D134: the rows are held; now the hub does the same arithmetic, on its own time

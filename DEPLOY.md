@@ -14,7 +14,7 @@ The domain is configuration everywhere: nothing in the code names one.
 - its time is the hub's, read from the hub's signed clock and counted on the browser's steady counter (`GameClock`);
 - its session with the hub rides in a cookie the page's scripts cannot read.
 
-**The hub, as stateless functions.** One request handler (`server/hub/function.ts`), which a host such as Vercel runs per request (`api/hub/[...path].ts`, `vercel.json`). Nothing outlives a call but the store: a proof's one-time text is signed by the hub and carries its own account and expiry, and wrong passwords are counted in the store, so any instance answers the same. It computes nothing of play. It:
+**The hub, as stateless functions.** One composition (`server/hub/app.ts`), which a host such as Vercel runs on demand (`api/hub.ts`, `vercel.json`): it answers plain requests and takes the socket's upgrade, so the checks and online play are one deployment and nothing stays running between requests. Nothing outlives a call but the store: a proof's one-time text is signed by the hub and carries its own account and expiry, and wrong passwords are counted in the store, so any instance answers the same. It computes nothing of play. It:
 
 - holds accounts and sessions;
 - registers a player's characters, answering with a statement it signs with its key and its time (D134's anchor);
@@ -23,6 +23,58 @@ The domain is configuration everywhere: nothing in the code names one.
 - keeps its store on a served Postgres (`WS_HUB_DATABASE_URL`), and its record on Turso through the game's own keeper (`WS_RECORD=1`). Players reach neither.
 
 `npm run hub` runs the same function locally behind a plain Node server, serving `dist-site/` (or the landing page alone, before a build): the stand-in for the host.
+
+## Where it runs (2026-11-12)
+
+Pedro asked for the stack to be analyzed and a deployment chosen: "browser local compute and turso backend synced to check receipts + websocket through postgres". The choice, which he took ("vercel is simply the BEST DEPLOYMENT CHOICE EVER"):
+
+| Piece | Where |
+|---|---|
+| The landing page and the game (`dist-site/`) | Vercel's static hosting; the save is in the player's browser |
+| The hub's checks, and online play with its socket | one Vercel Function, `api/hub.ts` |
+| The store, and the word between function instances | one served Postgres |
+| The record | Turso, through the keeper, written down by a scheduled call |
+| Accounts | Clerk: an e-mail and a password |
+
+Vercel Functions take WebSocket upgrades, so the always-on machine this document once set aside for the hosted world is not needed. `npm run hosted` stays as the same thing on one machine, and as the way anyone else runs a hub.
+
+**The new Rust Turso** was looked at for the socket and cannot carry it: it has no network subscription and no publish and subscribe, its change capture is a table to read, its sync is push and pull with "last push wins", and Turso Cloud offers it as an early preview. Turso stays the record.
+
+**Several instances.** A function host starts as many instances as the traffic asks, pins each socket to one, and closes every socket at the function's longest run (300 seconds on Vercel's Hobby plan, 800 on Pro). So:
+
+- every transaction on a served Postgres takes one lock first (`server/connection.ts`), and transactions from every instance take turns as one process's writes do. The store's guards were written for one process and would race without it;
+- a world's events take their numbers in the database: one that finds its number taken reads again and takes the next, and a chest's claim is decided again on what stands then (`server/live/room.ts`);
+- instances nudge each other through the same Postgres, LISTEN and NOTIFY (`server/live/bus.ts`). It is only a nudge: each instance tells its own sockets from the store, by number, and looks again on a slow beat whatever it heard;
+- a line of people waiting to talk is kept in a working table of the room's own (`server/live/lines.ts`), which the record never sees;
+- a player whose socket closed is held in their place and their lines for five seconds, which a browser's reconnect is well inside.
+
+Not made safe for several instances, and said so: the pool's turns (two instances could hand one job to two members, who would both do it; the first answer handed in stands), and the count of wrong passwords on a hub that keeps its own accounts.
+
+**One database, one record.** The hub's store and the hosted world's shared documents share one Postgres unless `WS_LIVE_DATABASE_URL` names another. A record is one chain of write-downs with one head, so two stores cannot share one: kept apart, the world's documents have a record of their own (`TURSO_LIVE_DATABASE_URL`) or none.
+
+**The scheduled call.** A function host has no clean stop for the keeper to write down at, so the host calls `GET /api/hub/maintenance` once a day (`vercel.json`, `crons`), carrying `CRON_SECRET`. It writes down to the record, tidies the database, and finishes any erasure still waiting on the record (below).
+
+### Accounts, a character's birth, and deleting
+
+Pedro, 2026-11-12: "we need to have account and password for players to delete their data from our server", "we need e-mail + password (use clerk)", and "we need the minting of a new player to be done from the hub we're going to launch with the server, every new player get's their account registered there, even if they never log on to the hub".
+
+- **Accounts** (`server/hub/clerk.ts`). On the hub we launch, Clerk holds the e-mail and the password and proves who is at the door. The landing page shows Clerk's form, then asks the hub once for the hub's own session (`POST /sessions/clerk`); from there on it is the hub's cookie, as before, and the game needs no Clerk code. The hub reads Clerk's token with Clerk's public key and no call. It keeps the account's id at Clerk and a handle: no password and no e-mail. A hub anyone else runs names no Clerk and keeps its own handle and password.
+- **Birth.** The landing page shows PLAY only to someone signed in. The character is registered as it is made, and the hub's answer carries its `mint`, which the character's first ledger row names. A first row naming another mint is refused; one naming none is held as `CLAIMED` instead of `WITNESSED`. The game's side of this is not written yet: `HUB_WIRING.md`.
+- **Deleting** (`server/hub/erase.ts`). The player asks (`POST /account/delete`, on the landing page), or Clerk says the account was deleted there (`POST /clerk`). Everything the hub holds of the account goes, in one transaction on the database itself, since the store's own law has no way to delete. The same ids are deleted on the record. A write-down already on its way can land after, so the ids are remembered until a later maintenance finds none of them on the record; then the note is deleted too.
+
+### Putting it on Vercel
+
+Not done: it needs accounts only Pedro can open. In order:
+
+1. A Clerk application for this game. E-mail and password on, username on and required. In the session token, one more claim: `{ "handle": "{{user.username}}" }`. Let users delete their own account.
+2. A Postgres (Neon through Vercel's marketplace is the least to set up). Two addresses from it: the pooled one, and the direct one for the word between instances. On Neon's free plan the database sleeps after five idle minutes; it wakes on the next request, and an instance that lost its listening connection takes it up again.
+3. A database on Turso for the record, and a token.
+4. The hub's signing key: Ed25519, PKCS#8 PEM. `npm run hub` makes one at `data/hub-key.pem` the first time it runs; a deployed hub is given its own and keeps it, since a hub whose key changes cannot stand behind what it signed.
+5. The Vercel project, from this repository, with the settings in the table under Configuration.
+6. In Clerk, a webhook to `https://<the address>/api/hub/clerk` for `user.deleted`, and its signing secret into `CLERK_WEBHOOK_SECRET`.
+7. `GET https://<the address>/api/hub/health` must answer. That proves the function builds and the rewrite reaches it, neither of which has been seen yet.
+
+The address is inside everything the hub signs (`issuer`), so it is chosen before real players register. A `vercel.app` address serves for testing. Vercel's Hobby plan is for non-commercial use, closes sockets every 300 seconds and runs a scheduled call once a day; the project moves to Pro before any money is taken.
 
 ## The world check
 
@@ -70,6 +122,11 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 | `POST /hosted/connect` | signed in | `{ uid }`: the account and the character's standing checked, the world served |
 | `POST /live/get`, `/live/query`, `/live/commit` `?uid=` | signed in, let into our world | online play, on the hosted server only (below) |
 | `GET /live/socket?uid=` (upgrade) | signed in, let into our world | the world's events, by number |
+| `POST /sessions/clerk` | someone Clerk signed in | `{ token }`: this hub's own session, in its cookie. On a hub whose accounts are Clerk's, `/accounts` and `/sessions` answer 403 |
+| `GET /account` | signed in | what this hub holds of the account, in counts |
+| `POST /account/delete` | signed in | `{ confirm: handle }`: everything this hub holds of the account, deleted, and the sign-in at Clerk with it |
+| `GET /maintenance` | the host's scheduled call | the write-down to the record, and erasures waiting on it; carries `CRON_SECRET` |
+| `POST /clerk` | Clerk | its signed word that an account was deleted there |
 
 ## Time (D135)
 
@@ -96,6 +153,14 @@ Pedro: the player and the hub "need to have the same reading done at different t
 | `WS_HUB_KEY` | hub | its signing key (PKCS#8 PEM, Ed25519), from the host's secret store. `npm run hub` makes one into `data/hub-key.pem` when none is named |
 | `WS_PUBLIC_URL` | hub | its own address, named in what it signs |
 | `WS_RECORD`, `TURSO_*` | hub | the record, as before |
+| `WS_LIVE_LISTEN_URL` | hub | a direct (not pooled) connection to the database, for the word between instances. Left out, the database's own address is used |
+| `WS_LIVE_DATABASE_URL` | hub | the hosted world's shared documents, if kept apart from the hub's own; then `TURSO_LIVE_DATABASE_URL` for their record, or none |
+| `CRON_SECRET` | hub | what the host's scheduled call carries. Vercel sends it by itself once it is set |
+| `CLERK_JWT_KEY` | hub | Clerk's public key for this application, PEM (dashboard, API keys, JWKS public key). Naming it is what makes this hub's accounts Clerk's |
+| `CLERK_PUBLISHABLE_KEY` | hub | what the landing page loads Clerk with; public by design |
+| `CLERK_WEBHOOK_SECRET` | hub | the signing secret of the webhook to `/api/hub/clerk` |
+| `CLERK_SECRET_KEY` | hub | to delete the account at Clerk when its player asks the hub to |
+| `CLERK_AUTHORIZED_PARTIES` | hub | the origins a Clerk token may come from; the hub's own address when left out |
 | `VITE_WS_STORE=browser` | game build | set by `npm run build:site`: the save lives in the browser |
 
 ## A local test of the whole thing
@@ -132,7 +197,7 @@ Pedro: "The server still needs it for the world we'll host for everyone, that on
 
 **Reaching it:** after the tutorial's first order is sealed, the zones list shows CONNECT HUB TO ONLINE WORLD, the first thing in the game that asks for an account. Connecting checks that the account holds the character and that the character's standing on our world is good; then the world's certificate and theme join this hub's zones, to deploy into as into any. A character barred from our world (`HostedWorld.setStanding`, the operator's, not a route) is barred from that world only: its account, its own hub and every other world play on.
 
-**The smallest host for it:** one always-on Node process with a Postgres beside it. A single small machine on Fly.io or a starter instance on Render carries that; their current prices were not checked. Money is a later problem, and nothing for billing or limits is built.
+**Where it runs:** on the function host with everything else (Where it runs, above), since 2026-11-12. `npm run hosted` is the same hub as one process on one machine: the local stand-in, and what anyone else runs. Money is a later problem, and nothing for billing or limits is built.
 
 ## Online play
 
@@ -152,5 +217,6 @@ Pedro: "we serve a postgress we socket to join them and keep it live speaking to
 - Rerunning the old code's drops, and anything else on the engines' powers and floats (D134): they wait on integer-only formulas.
 - A world certificate the hub can verify: the certificate keeps its signature but not the moment signed, and its stats change after signing, so nothing can check it today. The check ties a world to a character registered under the account instead.
 - Timers inside a day (rests, crafting jobs) still count milliseconds on `Date.now()` in the browser; they move to `GameClock.now()` in their own pass.
-- A Turso write-down for the hub on a schedule: a function host has no clean stop, so the marks wait in Postgres until a scheduled call writes them down.
-- Goods carried between hubs, charging for model use, the market and its currency.
+- The game's side of a character's birth on the hub's word and of receipts sent by themselves: `HUB_WIRING.md` lays out what to call.
+- What Pedro named on 2026-11-12 and nothing yet serves: a subscription of 5 dollars a month for a player with no key and no local model, which gives the online hub only; forum gold as the market's coin ("D2 forum gold... the easiest model"), a balance kept on the main hub; linking the marketplace on its own.
+- Goods carried between hubs, and the market itself.

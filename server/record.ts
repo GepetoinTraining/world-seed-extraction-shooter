@@ -39,7 +39,6 @@ import { ColdDoorRefused, IColdDoor, IDowntimeJob, IWriteDownHead, openColdDoor 
 import { IDatabase, openDatabase } from './connection';
 import { RECORD_TABLES, RecordRow, RecordTableName, digestOf, fingerprint, normalRow, printKey, sha256, tableOf } from './recordRows';
 import { SqlStore, IStoreKeeper, IStoreOptions } from '../shared/SqlStore';
-import { openStore } from './openStore';
 import { IRecordStatus, IWriteDownReceipt } from '../shared/entities/data/wire';
 
 const RETRY_FIRST_MS = 30_000;
@@ -493,8 +492,20 @@ export const RECORD_AUDIT: IDowntimeJob = {
  * different when the record already holds that save.
  */
 export async function openLiveStore(url: string, env: NodeJS.ProcessEnv = process.env, options: IStoreOptions & IKeeperOptions = {}): Promise<SqlStore> {
+  return (await openLive(url, env, options)).store;
+}
+
+/**
+ * The same store with the database under it, for the few server parts that must ask the database
+ * what the store's own law never does: taking a player's data out (server/hub/erase.ts), and the
+ * live room's working table (server/live/lines.ts). Play and checks go through the store.
+ */
+export async function openLive(url: string, env: NodeJS.ProcessEnv = process.env, options: IStoreOptions & IKeeperOptions = {}): Promise<{ store: SqlStore; database: IDatabase }> {
   const config = recordConfig(env);
-  if (!config.on) return openStore(url, options);
+  if (!config.on) {
+    const database = await openDatabase(url, options);
+    return { store: new SqlStore(database, options), database };
+  }
 
   let head: IWriteDownHead | null | undefined;
   let probe: IColdDoor | null = null;
@@ -514,5 +525,5 @@ export async function openLiveStore(url: string, env: NodeJS.ProcessEnv = proces
     await database.close();
     throw e;
   }
-  return new SqlStore(database, options, keeper);
+  return { store: new SqlStore(database, options, keeper), database };
 }
