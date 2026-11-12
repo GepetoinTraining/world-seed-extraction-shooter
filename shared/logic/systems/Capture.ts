@@ -57,9 +57,6 @@ const oddsOf = (x: number, d: number) => x / (x + d);
 
 export class Capture {
 
-  /** What setting one takes out of a person. A guess until Wave 12. */
-  static readonly SNARE_ENERGY = 3;
-
   /** Whether a snare could go on this body, from what this person carries. */
   static canSnare(carried: IItem[], bodyId: string, def: { tags?: string[] } | undefined): boolean {
     return carried.some(i => i.tags?.includes('snare')) && this.trapRefusal(bodyId, def) === null;

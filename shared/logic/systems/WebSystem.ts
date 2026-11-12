@@ -33,6 +33,7 @@ import { TagLaw } from '../content/TagLaw';
 import { WebBank } from '../content/WebBank';
 import { ProcessFamily, ProcessSystem } from './ProcessSystem';
 import { climb } from './StatSystem';
+import { EnergyLaw } from './EnergyLaw';
 import { loreTeachPrice } from './LoreConstants';
 import { LoreLaw } from './LoreLaw';
 import { ChainWeb, IChainGround, IChainWeb } from '../theme/ChainWeb';
@@ -55,9 +56,7 @@ export type MasteryRung = typeof MASTERY_RUNGS[number];
 export const RUNG_XP: readonly number[] = [0, 60, 180, 420].map(xp => xp * SKILL_TIME_FACTOR);
 
 const WINGING_PENALTY = 5;
-const WINGING_ENERGY_FACTOR = 1.5;
 const WINGING_CLOCK_FACTOR = 1.25;
-const RUNG_ENERGY_DISCOUNT = 0.1;
 const RUNG_CLOCK_DISCOUNT = 0.05;
 const STUDY_SITTING_MODIFIER = 2;
 
@@ -348,12 +347,14 @@ export class WebSystem {
     return { player: rested, emerged, wanting };
   }
 
-  /** Winging it costs half again; knowing it costs what it costs, and less as it climbs. */
+  /**
+   * A try or a taking: the day's work, by its one law (EN). `base` is the place's own ask. Winging it costs half again;
+   * knowing it costs its share of a day, and a rank's worth of the skill of that tool on that material halves it.
+   */
   static energyFor(player: IPlayer, pair: ISkillPair | null, base: number): { cost: number; winging: boolean } {
-    if (!pair || !player.bank) return { cost: base, winging: false };
+    if (!pair || !player.bank) return { cost: EnergyLaw.cost('try', undefined, base), winging: false };
     const skill = player.bank.universalSkills[pair.id];
-    if (!skill) return { cost: Math.ceil(base * WINGING_ENERGY_FACTOR), winging: true };
-    return { cost: Math.max(1, Math.round(base * (1 - this.masteryOf(skill).rung * RUNG_ENERGY_DISCOUNT) / (1 + this.skillPower(skill)))), winging: false };
+    return { cost: EnergyLaw.cost('try', EnergyLaw.levelsOf(skill), base), winging: !skill };
   }
 
   static clockFactor(player: IPlayer, pair: ISkillPair | null): number {
@@ -418,7 +419,10 @@ export class WebSystem {
     }, 0);
   }
 
-  /** The share of a sitting's ask that still stands for someone who knows this much of its tree: the house curve, never free. */
+  /**
+   * The share of a sitting's time that still stands for someone who knows this much of its tree: the house curve, never
+   * free. Its energy is the day's one law's (EN, `EnergyLaw`), where a rank's worth of what is known halves it.
+   */
   static treeShare(knowledge: number): number {
     return 1 - climb(Math.max(0, knowledge));
   }

@@ -34,7 +34,8 @@ import { MonsterMind, Stance } from '../../logic/systems/MonsterMind';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { TalkDoor } from '../../logic/systems/TalkDoor';
-import { TALK_ENERGY, TalkLaw } from '../../logic/systems/TalkLaw';
+import { TalkLaw } from '../../logic/systems/TalkLaw';
+import { WorkCost } from '../../../shared/logic/systems/WorkCost';
 import { IGoalAsk, ILogLine, IMemoryLine, IRoundAsk, ITalkSurface, JudgeBand, TALK_MESSAGE_LIMIT } from '../../../shared/logic/systems/TalkTypes';
 import { useFeed } from '../../components/ui/stores';
 import { Deeds } from '../../logic/memory/Deeds';
@@ -177,6 +178,9 @@ const lineWords = (view: ILineView, me: string): { ready: boolean; note: string 
 };
 
 const playerAttributes = (): IAttributes | undefined => usePlayerStore.getState().player.attributes;
+
+/** EN: what a round of talk, a name asked or a want asked costs this person today, by the day's one law. */
+const roundCost = (): number => WorkCost.of(usePlayerStore.getState().player, 'round');
 
 const spendEnergy = (cost: number): boolean => {
   const session = usePlayerStore.getState().player.currentSession;
@@ -400,8 +404,9 @@ export const useTalk = create<ITalkState>((set, get) => {
       if (subject.kind !== 'CITY') {
         const entity = liveEntity(subject.entityId);
         if (!entity?.npc) { set({ note: 'There is nobody there now.' }); return; }
-        if (!spendEnergy(TALK_ENERGY)) {
-          set({ note: `A round takes ${TALK_ENERGY} energy. You are out of it.` });
+        const cost = roundCost();
+        if (!spendEnergy(cost)) {
+          set({ note: `A round takes ${cost} energy. You are out of it.` });
           return;
         }
         set({ busy: true, note: '', log: [...prior, { who: 'THEM', text: said }] });
@@ -531,7 +536,8 @@ export const useTalk = create<ITalkState>((set, get) => {
         if (!entity?.npc) { set({ note: 'There is nobody there now.' }); return; }
         if (subject.kind === 'MONSTER' && MobAI.isProvoked(subject.entityId)) { set({ note: 'It is done talking. You hurt it.' }); return; }
         // In the field an ask is a round of the talk, and costs what a round does.
-        if (!spendEnergy(TALK_ENERGY)) { set({ note: `Asking takes ${TALK_ENERGY} energy, as a round does. You are out of it.` }); return; }
+        const cost = roundCost();
+        if (!spendEnergy(cost)) { set({ note: `Asking takes ${cost} energy, as a round does. You are out of it.` }); return; }
         const isMonster = subject.kind === 'MONSTER';
         const { seed, webVersion } = worldFacts();
         const kind = isMonster ? monsterKind(entity) : undefined;
@@ -589,7 +595,8 @@ export const useTalk = create<ITalkState>((set, get) => {
       if (subject?.kind !== 'FIELD_PERSON' || busy || !ready || named) return;
       const entity = liveEntity(subject.entityId);
       if (!entity?.npc) { set({ note: 'There is nobody there now.' }); return; }
-      if (!spendEnergy(TALK_ENERGY)) { set({ note: `Asking takes ${TALK_ENERGY} energy, as a round does. You are out of it.` }); return; }
+      const cost = roundCost();
+      if (!spendEnergy(cost)) { set({ note: `Asking takes ${cost} energy, as a round does. You are out of it.` }); return; }
       usePlayerStore.getState().learnName(entity);
       SessionJournal.record('INTERACT', { kind: 'ASK_NAME', targetId: entity.id });
       const { seed } = worldFacts();

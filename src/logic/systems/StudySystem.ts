@@ -33,6 +33,7 @@ import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourc
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { EnergyLaw } from '../../../shared/logic/systems/EnergyLaw';
 import { DAY_MS } from '../../../shared/logic/time/RadixClock';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
@@ -43,9 +44,6 @@ export const STUDY_SECONDS = 20;
 /** Field identify: the base clock at skill level 1. It NEVER reaches zero. */
 export const IDENTIFY_BASE_SECONDS = 12;
 export const IDENTIFY_FLOOR_SECONDS = 2;
-/** D32: what a field attempt costs. A guess until Wave 12. Half again if no eye is schooled at all. */
-export const IDENTIFY_ENERGY = 10;
-const WINGING_FACTOR = 1.5;
 const ok: Verdict = { ok: true };
 const no = (reason: string): Verdict => ({ ok: false, reason });
 
@@ -133,16 +131,21 @@ export class StudySystem {
    * piece. A piece already read, with something unstudied on it, asks its own scope.
    */
   static identifyAsk(player: IPlayer, item: IItem): { cost: number; seconds: number } {
-    return this.askAt(player, item.isIdentified === false ? this.bestEye(player) : this.identifyLevel(player, item));
+    const level = item.isIdentified === false ? this.bestEye(player) : this.identifyLevel(player, item);
+    // EN: identifying is the eye's own work, so a rank's worth of the eye halves it
+    return this.askAt(player, level, Math.max(0, level - 1));
   }
 
-  /** `share` is what still stands of the ask once the tree is counted (WebSystem.treeShare): 1 asks it whole. */
-  private static askAt(player: IPlayer, level: number, share = 1): { cost: number; seconds: number } {
+  /**
+   * D32: what a sitting asks, its energy by the day's one law (EN, `EnergyLaw`): `levels` is what brings it down, and
+   * with no eye schooled at all it costs half again. `share` is what still stands of its time once the tree is counted
+   * (WebSystem.treeShare): 1 asks it whole.
+   */
+  private static askAt(player: IPlayer, level: number, levels: number, share = 1): { cost: number; seconds: number } {
     // Line 77: glasses shorten the clock. Skill and gear make it quick, never instant.
     const eyes = 1 + Math.max(0, StatSystem.total(player.equipment, 'field_analysis_speed') + StatSystem.signalEyes(player.attributes));
-    const energy = level < 1 ? Math.ceil(IDENTIFY_ENERGY * WINGING_FACTOR) : IDENTIFY_ENERGY;
     return {
-      cost: Math.max(1, Math.round(energy * share)),
+      cost: EnergyLaw.cost('sitting', levels, undefined, level < 1),
       seconds: Math.max(IDENTIFY_FLOOR_SECONDS, Math.round(this.identifySeconds(level) / eyes * share))
     };
   }
@@ -258,7 +261,8 @@ export class StudySystem {
     const level = scope ? player.bank.universalSkills[this.scopeSkillId(scope)]?.level ?? 0 : this.bestEye(player);
     const keys = item ? [item.universalDefinitionId] : target.kind === 'thing' ? [target.ref] : [];
     const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? [], hub, keys);
-    return this.askAt(player, level, WebSystem.treeShare(tree));
+    // EN: a sitting's skill is what is known of the thing's tree; the eye says only whether it is winged
+    return this.askAt(player, level, tree, WebSystem.treeShare(tree));
   }
 
   /** The day a moment falls on: the clock's day, which no rest turns. */

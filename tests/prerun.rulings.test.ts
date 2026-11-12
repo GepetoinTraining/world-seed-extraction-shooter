@@ -61,7 +61,7 @@ import { CreationDoor } from '../src/logic/systems/CreationDoor';
 import { CreationSystem, GRANTED_SKILLS, ICreationWords, IKamiWords } from '../src/logic/systems/CreationSystem';
 import { fireMode, throwsLeft, wieldRefusal } from '../src/logic/systems/FieldInput';
 import { SurveySystem } from '../src/logic/systems/SurveySystem';
-import { TALK_ENERGY } from '../src/logic/systems/TalkLaw';
+import { WorkCost } from '../shared/logic/systems/WorkCost';
 import { inspectEntity } from '../src/render/atoms/inspect';
 import { TalkWindow } from '../src/components/TalkWindow';
 import { useFeed } from '../src/components/ui/stores';
@@ -206,10 +206,12 @@ describe('the talk is where a name is asked', () => {
     noVoice();
     await open();
     const energy = player().currentSession!.energy;
+    // Changed on purpose 2026-11-12 (EN): what a round costs is the day's one law's
+    const round = WorkCost.of(player(), 'round');
     await talk().askName();
     expect(talk().title).toBe('Mara Quill');
     expect(talk().named).toBe(true);
-    expect(player().currentSession!.energy).toBe(energy - TALK_ENERGY);
+    expect(player().currentSession!.energy).toBeCloseTo(energy - round, 9);
     expect(ContactNames.knowsName(player(), live(id))).toBe(true);
     expect(talk().log.map(l => l.text).join(' ')).toMatch(/You ask their name/);
     expect(talk().log.map(l => l.text).join(' ')).toMatch(/Mara Quill/);
@@ -227,7 +229,7 @@ describe('the talk is where a name is asked', () => {
   it('with no energy for it, the ask says so and they stay unnamed', async () => {
     noVoice();
     await open();
-    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: TALK_ENERGY - 1 } } }));
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: WorkCost.of(s.player, 'round') / 2 } } }));
     await talk().askName();
     expect(talk().title).toBe('Unknown Figure');
     expect(talk().note).toMatch(/energy/);

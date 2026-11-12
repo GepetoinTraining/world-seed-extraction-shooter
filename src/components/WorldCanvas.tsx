@@ -66,7 +66,7 @@ import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
 import { drawSpeech } from '../render/atoms/speech';
 import { installGibberishFace } from '../render/atoms/gibberishFace';
-import { AimedBy, FOCUS_ENERGY_COST, InteractPick, aimAt, walkFacing, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
+import { AimedBy, InteractPick, aimAt, walkFacing, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
@@ -418,14 +418,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const mode = fireMode(weapon);
     const gate = fireGate({
       held: true, now, lastShot: lastShotRef.current,
-      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes), mode,
-      energy: st.player.currentSession?.energy ?? 0
+      cooldownMs: CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes), mode
     });
-    if (gate === 'NO_ENERGY') {
-      if (!energyToldRef.current) feed('Not enough energy to cast. The focus hums and refuses.', 'loss');
-      energyToldRef.current = true;
-      return;
-    }
     if (gate !== 'FIRE') return;
     const cast = mode === 'FOCUS' && st.player.activeCast ? castWords(st.player.activeCast) : undefined;
     const w = windupOf(weapon, st.player.equipment, st.player.attributes, cast);
@@ -445,7 +439,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const { slot, item: weapon } = activeWeapon();
     if (slot !== held.slot || weapon?.id !== held.weaponId) return;
     const mode = fireMode(weapon);
-    if (mode === 'FOCUS' && !st.player.activeCast && (st.player.currentSession?.energy ?? 0) < FOCUS_ENERGY_COST) return;
     const angle = aimFrom(playerPos, held.by);
     // Line 77: keyed by the session's own count of shots, so a run replays the same
     const { damage, poison, glance } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon), ProgressionSystem.rankOf(st.player));
@@ -461,10 +454,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Layer 4: what the focus was set to cast, through the one door
       castFromFocus(st.player.activeCast, now, playerPos, angle);
     } else if (mode === 'FOCUS') {
-      // Focus: a NOVA burst, paid in energy
-      usePlayerStore.setState(s => s.player.currentSession ? ({
-        player: { ...s.player, currentSession: { ...s.player.currentSession, energy: s.player.currentSession.energy - FOCUS_ENERGY_COST } }
-      }) : s);
+      // Focus: a NOVA burst. EN: a blow takes none of the day's energy, a focus's as a bow's
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
         { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, ...(glance ? { glance } : {}) }

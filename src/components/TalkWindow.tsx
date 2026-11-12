@@ -13,7 +13,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTalk, meterOpensFollowing } from '../entities/interaction/talkStore';
-import { TALK_ENERGY, TalkLaw } from '../logic/systems/TalkLaw';
+import { TalkLaw } from '../logic/systems/TalkLaw';
+import { WorkCost } from '../../shared/logic/systems/WorkCost';
 import { worldDay } from '../entities/hub/worldDay';
 import { TALK_MESSAGE_LIMIT } from '../../shared/logic/systems/TalkTypes';
 import { usePlayerStore } from '../entities/player/store';
@@ -41,6 +42,8 @@ export const TalkWindow: React.FC = () => {
   const onTheBoard = useHubStore(s => cityId ? s.guild.quests.find(q => q.residentId === cityId && q.state === 'OPEN')?.text ?? null : null);
   const attributes = usePlayerStore(s => s.player.attributes);
   const session = usePlayerStore(s => s.player.currentSession);
+  // EN: a round's cost, as the day's one law asks it of this person (their Persuasion brings it down)
+  const round = usePlayerStore(s => WorkCost.of(s.player, 'round'));
   const [saying, setSaying] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +77,7 @@ export const TalkWindow: React.FC = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div className="ws-row" style={{ alignItems: 'center' }}>
           <span className="ws-small">Regard {meter} of 100{stance ? ` · ${stance.toLowerCase()}` : ''}</span>
-          {inTheField && <Chip title="What a round costs out of your day">{TALK_ENERGY} energy a round · {Math.floor(session?.energy ?? 0)} held</Chip>}
+          {inTheField && <Chip title="What a round costs out of your day">{round} energy a round · {Math.floor(session?.energy ?? 0)} held</Chip>}
         </div>
         <MeterTrack value={meter} lines={lines} />
 
@@ -136,12 +139,12 @@ export const TalkWindow: React.FC = () => {
             {/* A person has no name until it is asked, and this is the asking. It stands only while there is something to ask */}
             {subject.kind === 'FIELD_PERSON' && !named && (
               <Button tone="quiet" disabled={busy || !ready} onClick={() => void askName()}
-                title={`Nobody has a name until it is asked. It takes ${TALK_ENERGY} energy, as a round does, and they give it.`}>
+                title={`Nobody has a name until it is asked. It takes ${round} energy, as a round does, and they give it.`}>
                 ASK THEIR NAME
               </Button>
             )}
             <Button tone="quiet" disabled={busy || !ready} onClick={() => void ask()}
-              title={inTheField ? `Your mind against theirs. It takes ${TALK_ENERGY} energy, as a round does.` : 'Your mind against theirs.'}>
+              title={inTheField ? `Your mind against theirs. It takes ${round} energy, as a round does.` : 'Your mind against theirs.'}>
               ASK IF THEY WANT SOMETHING
             </Button>
           </div>

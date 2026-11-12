@@ -600,7 +600,9 @@ describe('a rarer skill levels slowly, and each level does more', () => {
     const risen = holding(skill(SS, 3));
     expect(WebSystem.energyFor(risen, pair, 20).cost).toBeLessThan(WebSystem.energyFor(fresh, pair, 20).cost);
     expect(WebSystem.clockFactor(risen, pair)).toBeLessThan(WebSystem.clockFactor(fresh, pair));
-    expect(WebSystem.energyFor(holding(skill(SS, 500)), pair, 20).cost).toBeGreaterThanOrEqual(1);
+    // Changed on purpose 2026-11-12 (EN, the coordinator's call 3): no floor, so the work falls toward nothing
+    expect(WebSystem.energyFor(holding(skill(SS, 500)), pair, 20).cost).toBeGreaterThanOrEqual(0);
+    expect(WebSystem.energyFor(holding(skill(SS, 500)), pair, 20).cost).toBeLessThanOrEqual(WebSystem.energyFor(risen, pair, 20).cost);
     expect(WebSystem.clockFactor(holding(skill(SS, 500)), pair)).toBeGreaterThan(0);
   });
 
