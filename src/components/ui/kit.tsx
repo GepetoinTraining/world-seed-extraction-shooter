@@ -16,6 +16,7 @@ import { Card, ItemComparison } from '../../render/atoms/inspect';
 import { hoverProps } from './stores';
 import { TERMINAL_GENRE, cssVariables } from './tokens';
 import './kit.css';
+import { said } from '../../logic/systems/SheetWords';
 
 // The one theme reaches the DOM here, once.
 const STYLE_ID = 'ws-tokens';
@@ -192,7 +193,7 @@ export const Bar: React.FC<{ label?: string; value: number; max: number; tone?: 
           <span className={`ws-bar__fill ws-bar__fill--${tone}`} style={{ width: `${stepped}%` }} />
           <span className="ws-bar__ticks" />
         </span>
-        <span className="ws-bar__value">{text ?? `${Math.ceil(value)}/${max}`}</span>
+        <span className="ws-bar__value">{text ?? `${Math.ceil(value)}/${said(max)}`}</span>
       </div>
     );
   };

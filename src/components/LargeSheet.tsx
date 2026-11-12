@@ -35,6 +35,7 @@ import { Bar, Button, ItemSprite, Kbd, Panel, PortraitView, RankMark, SpriteView
 import { isTypingTarget } from '../logic/systems/FieldInput';
 import { goalWords, useWebView } from './TechWebView';
 import { DowntimeActs } from '../logic/systems/DowntimeActs';
+import { said } from '../logic/systems/SheetWords';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -175,12 +176,12 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
       </Section>
 
       <Section word="HEALTH, ENERGY, AETHER">
-        <Bar label="HEALTH" value={vitals.health.now} max={vitals.health.max} tone="proof" text={`${Math.round(vitals.health.now)} of ${vitals.health.max}`} />
+        <Bar label="HEALTH" value={vitals.health.now} max={vitals.health.max} tone="proof" text={`${Math.round(vitals.health.now)} of ${said(vitals.health.max)}`} />
         <div style={{ height: 4 }} />
-        <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${vitals.energy.max}`} />
+        <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${said(vitals.energy.max)}`} />
         {vitals.aether.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>No aether held. Gathering gives it, an element at a time.</div>}
         {vitals.aether.map(a => (
-          <Line key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${a.held} of ${a.max}`} />
+          <Line key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
         ))}
         <Line word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} this rest`} feeds="Endurance lets a body take one more for every five points over its floor." />
       </Section>

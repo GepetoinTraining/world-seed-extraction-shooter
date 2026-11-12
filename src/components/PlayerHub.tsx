@@ -31,6 +31,7 @@ import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
 import { ISignedPayload } from '../entities/identity/certificateSystem';
 import { MASTERY_RUNGS, WebSystem } from '../../shared/logic/systems/WebSystem';
 import { WebBank } from '../../shared/logic/content/WebBank';
+import { foldForming } from '../logic/systems/SheetWords';
 
 /** The groups are the shared rules' (2.13); a sheet draws each by its word and its place, in this order. */
 export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = Object.fromEntries(GROUP_ORDER.map(g => [GROUP_WORDS[g], GROUPS[g]]));
@@ -133,10 +134,10 @@ export const HandsPanel: React.FC = () => {
       {sheet.forming.length > 0 && (
         <>
           <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>FORMING. IT SETTLES AT A REST, OR IT DOESN'T.</div>
-          {sheet.forming.map(row => (
-            <div key={row.name} className="ws-row ws-small" style={{ padding: '2px 0' }}>
-              {/* D32: which eye is forming would say what the unread piece was */}
-              <span style={{ minWidth: 0 }}>{/identify/.test(row.tool) ? 'the eye' : row.worked ? `${row.tool} on ${row.worked}` : row.tool}</span>
+          {/* D32: which eye is forming would say what the unread piece was, so rows that read alike are one (SheetWords) */}
+          {foldForming(sheet.forming).map(row => (
+            <div key={row.said} className="ws-row ws-small" style={{ padding: '2px 0' }}>
+              <span style={{ minWidth: 0 }}>{row.said}</span>
               <FormingFill fill={row.fill} />
             </div>
           ))}

@@ -23,6 +23,7 @@ import { WeaveSystem } from './WeaveSystem';
 import { LoreSystem } from './LoreSystem';
 import { ContactNames } from './ContactNames';
 import { Escort } from './Escort';
+import { said } from './SheetWords';
 
 export interface SheetRow { key: string; word: string; value: string; feeds: string }
 
@@ -47,7 +48,10 @@ export const SheetNumbers = {
     const hand = this.hand(player, slot);
     const handName = hand ? LoadoutSystem.shownName(hand) : 'a bare hand';
     const swing = CombatMath.isMelee(hand);
-    const hit = CombatMath.baseHit(hand, eq, at, WebSystem.handPower(player, hand), ProgressionSystem.rankOf(player));
+    // SV3: the ratings are read against a blow of the person's own rank, as a fight of equals reads them
+    const rank = ProgressionSystem.rankOf(player);
+    const broken = !!hand && !CombatMath.isUsable(hand);
+    const hit = CombatMath.baseHit(hand, eq, at, WebSystem.handPower(player, hand), rank);
     const poison = StatSystem.total(eq, 'poison_damage');
     const perSecond = 1000 / CombatMath.fireCooldownMs(hand, eq, at);
     const limit = LoadoutSystem.carryLimit(at.strength, eq);
@@ -60,22 +64,22 @@ export const SheetNumbers = {
       {
         key: 'hit', word: 'DAMAGE',
         value: `${hit} a blow, ${(Math.round(hit * perSecond * 10) / 10).toFixed(1)} a second${poison > 0 ? `, and ${poison} poison` : ''}`,
-        feeds: `The hand in use, ${slot.replace(/_/g, ' ').toLowerCase()}: ${handName}${swing ? ', swung: strength multiplies it' : ', fired'}, damage on what is worn, and what the hand's own skill adds. Before a crit or a glance.`
+        feeds: `The hand in use, ${slot.replace(/_/g, ' ').toLowerCase()}: ${handName}${broken ? ', broken: it fights as a bare hand until it is repaired' : swing ? ', swung: strength multiplies it' : ', fired'}, damage on what is worn, and what the hand's own skill adds; a second at how often it goes. Before a crit or a glance.`
       },
       {
         key: 'often', word: 'HOW OFTEN',
         value: `${perSecond.toFixed(2)} a second`,
-        feeds: `${handName}'s own rate, attack speed on everything else worn, and dexterity.`
+        feeds: `${handName}'s own rate, attack speed and haste on everything else worn (not what another hand or a tool slot wields), and dexterity. Never shorter than its draw or wind-up.`
       },
       {
         key: 'protection', word: 'PROTECTION',
-        value: `${pct(CombatMath.mitigationOf(eq))} off a blow${blow !== 1 ? `, and blows land ×${blow.toFixed(2)}` : ''}`,
-        feeds: `Physical reduction and defense on what is worn, at most ${pct(0.6)}${blow !== 1 ? '; intimidation takes some of each blow before it' : ''}. At least 1 always lands.`
+        value: `${pct(CombatMath.mitigationOf(eq, rank))} off a blow of your rank${blow !== 1 ? `, and blows land ×${blow.toFixed(2)}` : ''}`,
+        feeds: `Defense on what is worn, physical reduction counted as defense, on a curve that nears but never reaches all, against the rank of what strikes: a blow of a higher rank gets more through${blow !== 1 ? '; intimidation takes some of each blow before it' : ''}. At least 1 always lands.`
       },
       {
         key: 'dodge', word: 'DODGE',
-        value: pct(CombatMath.dodgeChance(eq, at)),
-        feeds: 'The evasion rating, from agility and what is worn, on a curve that nears but never reaches all.'
+        value: pct(CombatMath.dodgeChance(eq, at, rank)),
+        feeds: 'The evasion rating, from agility and what is worn, on a curve that nears but never reaches all, against a blow of your own rank; the blows of a higher rank are dodged less.'
       },
       {
         key: 'block', word: 'BLOCK',
@@ -89,13 +93,13 @@ export const SheetNumbers = {
       },
       {
         key: 'glance', word: 'GLANCE',
-        value: `${pct(CombatMath.glanceChance(eq, at))}, leaves ${pct(CombatMath.glanceFactor())}`,
-        feeds: 'Of a hit that does not crit. Accuracy, from dexterity and what is worn, makes it rarer.'
+        value: `${pct(CombatMath.glanceChance(eq, at, rank))}, leaves ${pct(CombatMath.glanceFactor())}`,
+        feeds: 'Of a hit that does not crit. Accuracy, from dexterity and what is worn, read at your own rank, makes it rarer.'
       },
       {
         key: 'walk', word: 'THE WALK',
-        value: `${walk.toFixed(1)} tiles a second${slowedByLoad < 1 ? `, ×${slowedByLoad} under this load` : ''}`,
-        feeds: `Agility, movement on what is worn, and each tonic drunk since the last rest (${player.tonicsSinceRest ?? 0}). A pack over 80% of the carry limit slows it in the field.`
+        value: `${walk.toFixed(1)} tiles a second${slowedByLoad < 1 ? `, ×${slowedByLoad.toFixed(2)} under this load` : ''}`,
+        feeds: `Agility and movement on what is worn, on a curve that nears twice a walk and never arrives; each heavy piece worn costs a twentieth of a walk, and a penalty its own; each tonic drunk since the last rest slows it (${player.tonicsSinceRest ?? 0}). A pack over 80% of the carry limit slows it in the field.`
       },
       {
         key: 'sight', word: 'SIGHT',
@@ -104,7 +108,7 @@ export const SheetNumbers = {
       },
       {
         key: 'carry', word: 'CARRY',
-        value: `${load.toFixed(1)} of ${limit} kg${InventorySystem.loadWord(load, limit) ? `, ${InventorySystem.loadWord(load, limit)}` : ''}`,
+        value: `${said(load)} of ${said(limit)} kg${InventorySystem.loadWord(load, limit) ? `, ${InventorySystem.loadWord(load, limit)}` : ''}`,
         feeds: `30 kg and 10 for each point of strength, the bag's own kg, and carry capacity on what is worn. What is worn weighs nothing against it.${player.currentSession ? '' : ' At home: what the next drop would carry.'}`
       }
     ];
@@ -154,7 +158,7 @@ export const SheetNumbers = {
     const s = player.currentSession;
     const person = (id: string, name: string) => ContactNames.personName({ id, npc: { name } as never }, player);
     return [
-      ...(s?.escorts ?? []).map(e => ({ name: person(e.entityId, e.name), how: e.fallen ? 'fallen, to be carried' : `walks with you, ${Math.round(e.health)} of ${e.maxHealth} health` })),
+      ...(s?.escorts ?? []).map(e => ({ name: person(e.entityId, e.name), how: e.fallen ? 'fallen, to be carried' : `walks with you, ${Math.round(e.health)} of ${said(e.maxHealth)} health` })),
       ...(s?.inventory ?? []).filter(i => Escort.isCorpse(i)).map(i => ({ name: i.bondData ? person(i.bondData.entityId, i.bondData.sheet.name) : 'someone', how: 'carried to the beacon' })),
       ...(s?.tamed ?? []).map(t => ({ name: LoadoutSystem.shownName(t.item), how: 'tamed, following for a while' }))
     ];

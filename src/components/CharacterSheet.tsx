@@ -43,6 +43,7 @@ import { DowntimeDoor } from '../logic/systems/DowntimeDoor';
 const DOWNTIME_CHECK_MS = 5_000;
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
 import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
+import { said } from '../logic/systems/SheetWords';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const TILE_SIZE = 20;
@@ -148,7 +149,7 @@ export const PackPanels = ({ session }: { session: IActiveSession }) => {
         title={`PACK — ${InventorySystem.usedCells(items, layout)}/${GRID_W * GRID_H} CELLS${full ? ' · FULL' : ''}`}
         right={
           <span className={ratio > 0.8 ? 'ws-loss' : 'ws-dim'}>
-            {currentWeight.toFixed(1)}/{maxWeight}kg{loadSaid ? ` · ${loadSaid}` : ''}
+            {said(currentWeight)}/{said(maxWeight)}kg{loadSaid ? ` · ${loadSaid}` : ''}
           </span>
         }
       >
