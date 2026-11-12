@@ -58,8 +58,8 @@ export const SheetNumbers = {
     const blow = StatSystem.blowFactor(at);
     return [
       {
-        key: 'hit', word: 'A HIT',
-        value: `${hit}${poison > 0 ? ` and ${poison} poison` : ''}`,
+        key: 'hit', word: 'DAMAGE',
+        value: `${hit} a blow, ${(Math.round(hit * perSecond * 10) / 10).toFixed(1)} a second${poison > 0 ? `, and ${poison} poison` : ''}`,
         feeds: `The hand in use, ${slot.replace(/_/g, ' ').toLowerCase()}: ${handName}${swing ? ', swung: strength multiplies it' : ', fired'}, damage on what is worn, and what the hand's own skill adds. Before a crit or a glance.`
       },
       {

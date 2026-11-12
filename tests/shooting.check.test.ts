@@ -206,3 +206,53 @@ describe('SH6: what another hand wields keeps its own rate to itself', () => {
     expect(CombatMath.fireCooldownMs(blade, wearing([['RIGHT_HAND', blade], ['RING_1', ring]]))).toBe(Math.round(1000 / 1.82));
   });
 });
+
+/**
+ * SH7, found by strafing and shooting as Pedro did ("I think it's direction, I was strafing and shooting"): the way
+ * a person faces was read from the step the walk took this frame, after the draw's pace scaled it. A draw stands
+ * (pace 0), so with a movement key held the step was nothing, and nothing read as facing up: every blow aimed by
+ * the facing (the attack key, and before SH2 a click) flew north while the person strafed. The facing comes from
+ * the keys held, whatever the draw lets the body do.
+ */
+import { walkFacing } from '../src/logic/systems/FieldInput';
+
+describe('SH7: the facing is the way the keys point, not the step the draw allowed', () => {
+  it('reads the keys\' own direction, and a frame with no keys keeps the facing it had', () => {
+    expect(walkFacing(1, 0, 'up')).toBe('right');
+    expect(walkFacing(-1, 0, 'up')).toBe('left');
+    expect(walkFacing(0, 1, 'up')).toBe('down');
+    expect(walkFacing(0, -1, 'right')).toBe('up');
+    expect(walkFacing(0, 0, 'left')).toBe('left');
+    // A diagonal reads as its side, as the step did
+    expect(walkFacing(1, -1, 'down')).toBe('up');
+  });
+  it('the field sets the facing from the keys before the draw\'s pace scales the step', () => {
+    const canvas = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
+    const keysAt = canvas.indexOf('facingRef.current = walkFacing(');
+    const paceAt = canvas.indexOf('(windupRef.current?.pace ?? 1)');
+    expect(keysAt).toBeGreaterThan(0);
+    expect(keysAt).toBeLessThan(paceAt);
+    expect(canvas).not.toMatch(/facingRef\.current = Math\.abs\(dx\) > Math\.abs\(dz\)/);
+  });
+});
+
+/**
+ * SH8, the coordinator's call after strafing as Pedro did: with SH7 fixed, the attack key fired the way the keys
+ * point, so a person strafing with the key held and the pointer resting just off a body fired along the walk, 55 to
+ * 180 degrees off the pointer. With the pointer over the field the inspect card already follows the pointer, so only
+ * empty ground fell back to the facing. Now the key aims at the pointer while the pointer rests over the field, as a
+ * click does; off the field (over the panels, or out of the window), at what the card holds or the way the keys point.
+ */
+describe('SH8: the attack key aims at the pointer while it rests over the field', () => {
+  const centre = { x: 500, y: 400 };
+  it('over the field, the pointer; off it, the card or the facing', () => {
+    expect(aimAt({ by: 'key', pointer: { x: 500, y: 300 }, onField: true, centre, facing: 'right' })).toBeCloseTo(-Math.PI / 2);
+    expect(aimAt({ by: 'key', pointer: { x: 500, y: 300 }, onField: true, centre, held: { dx: 0, dy: 50 }, facing: 'right' })).toBeCloseTo(-Math.PI / 2);
+    expect(aimAt({ by: 'key', pointer: { x: 500, y: 300 }, onField: false, centre, held: { dx: 0, dy: 50 }, facing: 'right' })).toBeCloseTo(Math.PI / 2);
+    expect(aimAt({ by: 'key', pointer: { x: 500, y: 300 }, onField: false, centre, facing: 'left' })).toBeCloseTo(Math.PI);
+  });
+  it('the field tells the aim whether the pointer rests over the ground', () => {
+    const canvas = readFileSync('src/components/WorldCanvas.tsx', 'utf8');
+    expect(canvas).toMatch(/onField: !!mouseRef\.current/);
+  });
+});

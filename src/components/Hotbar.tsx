@@ -9,6 +9,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { EquipSlotId, IItem } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
+import { CombatMath } from '../entities/combat/CombatMath';
+import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { hotbarCells, throwsLeft, wieldRefusal } from '../logic/systems/FieldInput';
 import { grabByKey, handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
 import { ItemSprite, Kbd } from './ui/kit';
@@ -35,7 +37,10 @@ export function activateHotbar(slot: EquipSlotId) {
     return;
   }
   useHotbar.getState().setActive(slot);
-  useFeed.getState().push(item ? `${LoadoutSystem.shownName(item)} in hand.` : 'Bare hands.', 'plain');
+  // What the hand deals by itself, the card's own line (`CombatMath.damageSaid`); a tool or a guard in a tool slot says only its name
+  const rank = ProgressionSystem.rankOf(st.player);
+  const deals = !item || (item.isIdentified !== false && CombatMath.firedByHand(item)) ? CombatMath.damageSaid(item, rank, item ? LoadoutSystem.visibleItemStats(item, st.player).damage ?? 0 : 0) : '';
+  useFeed.getState().push(item ? `${LoadoutSystem.shownName(item)} in hand${deals ? `: ${deals}` : ''}.` : `Bare hands: ${deals}.`, 'plain');
 }
 
 /** The hand is busy: drains in steps, and with reduced motion simply stands until it is done. */
@@ -80,7 +85,7 @@ export const Hotbar: React.FC = () => {
               type="button"
               data-drop-slot={cell.slot}
               {...(item ? hoverProps(item) : {})}
-              aria-label={`${cell.slot.replace('_', ' ')}: ${item ? LoadoutSystem.shownName(item) : 'empty'}${cell.digit ? `, key ${cell.digit}` : ''}`}
+              aria-label={`${cell.slot.replace('_', ' ')}: ${item ? LoadoutSystem.shownName(item) : 'empty'}${item && item.isIdentified !== false && CombatMath.firedByHand(item) ? `, ${CombatMath.damageSaid(item, item.rank, LoadoutSystem.visibleItemStats(item).damage ?? 0)}` : ''}${cell.digit ? `, key ${cell.digit}` : ''}`}
               aria-pressed={cell.group === 'BELT' ? undefined : isActive}
               onPointerDown={e => {
                 // U23: a pouch that holds something gives its last piece to the drag; an empty one drags itself

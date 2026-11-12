@@ -47,10 +47,16 @@ export class CombatMath {
     return dur === undefined || dur > 0;
   }
 
-  /** Damage of one player projectile/swing with this weapon. */
-  static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState, rank: string = 'F'): number {
+  /**
+   * A piece's own damage, one blow (Pedro, 2026-11-12: "You do realize you guys built a whole rpg extraction shooter and
+   * forgot the stat "damage" on weapons?"). The ONE source of what a hand deals by itself: the fight (`weaponDamage`),
+   * the card, the hotbar and the sheet all read it, so what is shown is what lands. Derived, never stored, so a piece
+   * minted before the law and one a standing world minted read by the same door. A piece's added `damage` line, and
+   * every other worn piece's, are added to it by `weaponDamage`.
+   */
+  static ownBlow(weapon: IItem | undefined, rank: string = 'F'): number {
     // C14: a stone thrown lands by how hard it is, and a bare hand by what a bare hand does: half a plain weapon of its body's rank (part 3)
-    const base = isThrowable(weapon) ? thrownDamage(weapon!)
+    return isThrowable(weapon) ? thrownDamage(weapon!)
       : !this.isUsable(weapon) ? Math.round(UNARMED_DAMAGE * bodyScale(rank))
       // The rarity rescale: a fifth of the piece's power, with no bare constant beside it (1.2). A piece a
       // standing world minted keeps the blow it was stamped with (call 18)
@@ -58,7 +64,29 @@ export class CombatMath {
       // into blows, so a slow kind hits harder each blow and a quick one lighter
       : weapon!.pieceLaw !== undefined ? Math.round(PieceLaw.blowOf(weapon!.itemPower || 0) / Math.max(0.1, weapon!.stats?.attack_speed || 1))
       : Math.round(6 + (weapon!.itemPower || 0) * 0.08);
-    return Math.max(1, base + StatSystem.total(equipment, 'damage'));
+  }
+
+  /** A hand's own rate, blows a second: the piece's, or a bare hand's. */
+  static ownRate(weapon: IItem | undefined): number {
+    return this.isUsable(weapon) ? weapon!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
+  }
+
+  /** Is this fired by a hand: a weapon, a tool, or a stone to throw? Such a piece says what it deals. */
+  static firedByHand(item: IItem | undefined): boolean {
+    return !!item && (item.slot === SlotType.MAIN_HAND || item.slot === SlotType.TOOL || (item.tags || []).includes('tool') || isThrowable(item));
+  }
+
+  /** A hand's damage as it is read: its own blow and `extra` (a damage line of its own), and that at its own rate a second. */
+  static damageSaid(weapon: IItem | undefined, rank: string = 'F', extra: number = 0): string {
+    const blow = Math.max(1, this.ownBlow(weapon, rank) + extra);
+    // A tenth is as fine as the card reads; the fight keeps the whole figure
+    const tenth = (n: number) => { const r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };
+    return `${tenth(blow)} ${!weapon || isThrowable(weapon) ? 'a throw' : 'a blow'}, ${tenth(blow * this.ownRate(weapon))} a second`;
+  }
+
+  /** Damage of one player projectile/swing with this weapon: its own blow and every `damage` line worn. */
+  static weaponDamage(weapon: IItem | undefined, equipment?: IEquipmentState, rank: string = 'F'): number {
+    return Math.max(1, this.ownBlow(weapon, rank) + StatSystem.total(equipment, 'damage'));
   }
 
   /**
@@ -119,7 +147,7 @@ export class CombatMath {
 
   /** Milliseconds between shots/swings. */
   static fireCooldownMs(weapon: IItem | undefined, equipment?: IEquipmentState, attributes?: IAttributes): number {
-    const own = this.isUsable(weapon) ? weapon!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
+    const own = this.ownRate(weapon);
     // The hand's own rate, and what everything else on the body adds to it
     const onBody = StatSystem.worn(equipment).some(i => i.id === weapon?.id);
     // SH6: a weapon or a tool another hand wields keeps its own rate to itself; it adds nothing to this hand's

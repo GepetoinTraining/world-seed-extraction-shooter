@@ -16,6 +16,7 @@ import { QUALITY_NAMES, qualityBand } from '../../../shared/render/atoms/atoms';
 import { Escort } from '../../logic/systems/Escort';
 import { LAYER } from './world';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { CombatMath } from '../../entities/combat/CombatMath';
 import { setBonusText } from '../../../shared/entities/hub/template';
 import { IRoomState, roomAdditions } from '../../../shared/entities/hub/room';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
@@ -331,7 +332,11 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     return { title: item.name, rows: [['Weight', `${item.weight} kg`], ['Carried', 'they come back on the other side']], needs: [], canAct: false, compact: compact(item.name, `${item.weight} kg`) };
   }
   const title = LoadoutSystem.shownName(item);
-  const rows: [string, string][] = [item.type === ItemType.GEAR && item.pieceLaw !== undefined ? ['Step', stepWords(item)] : ['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
+  // D19: what the sheet may see of the piece's own lines
+  const visible = LoadoutSystem.visibleItemStats(item, player);
+  // What a hand fires says first what it deals: its blow with its own damage line folded in, one number (`CombatMath.ownBlow`)
+  const fired = CombatMath.firedByHand(item);
+  const rows: [string, string][] = [...(fired ? [['Damage', CombatMath.damageSaid(item, String(item.rank), visible.damage ?? 0)] as [string, string]] : []), item.type === ItemType.GEAR && item.pieceLaw !== undefined ? ['Step', stepWords(item)] : ['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
   const q = (item as any).quality as number | undefined;
   // Wave 10D (one quality law): everything sits on the gear scale now. Gear
   // always says its roll; a commodity at exactly 0 took no roll and says
@@ -356,10 +361,10 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   // D19: the sheet is BLIND to unstudied affixes — their numbers never show,
   // while the item acts with them regardless. 10E made study real: a studied
   // affix shows exactly its banked record, negative offsets included.
-  const visible = LoadoutSystem.visibleItemStats(item, player);
   const mental = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
   Object.entries(visible).forEach(([k, v]) => {
     if (['durability', 'maxDurability', 'weight'].includes(k)) return;
+    if (fired && k === 'damage') return; // folded into the first line
     // D22: a mental stat on gear is a dead line — it never reaches the mind
     if (mental.has(k)) rows.push([k.replace(/_/g, ' '), `${v} — asleep. Gear doesn't think.`]);
     else rows.push([k.replace(/_/g, ' '), shown(v)]);

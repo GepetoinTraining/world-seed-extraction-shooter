@@ -65,7 +65,7 @@ import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
 import { drawSpeech } from '../render/atoms/speech';
 import { installGibberishFace } from '../render/atoms/gibberishFace';
-import { AimedBy, FOCUS_ENERGY_COST, InteractPick, aimAt, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
+import { AimedBy, FOCUS_ENERGY_COST, InteractPick, aimAt, walkFacing, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
@@ -389,7 +389,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     // SH5: only a body a blow lands on; a tree the cursor rests on is not aimed at
     const target = near.find(n => n.id === inspectedIdRef.current && landsOn(n));
     return aimAt({
-      by, pointer: aimRef.current ?? undefined, centre: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      by, pointer: aimRef.current ?? undefined, onField: !!mouseRef.current, centre: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
       held: target ? { dx: target.position.x - playerPos.x, dy: target.position.y - playerPos.z } : undefined, facing: facingRef.current
     });
   };
@@ -852,6 +852,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (atRest) { dx = 0; dz = 0; } // D79: a character at rest stays where it lay down
 
       if (dx !== 0 || dz !== 0) {
+        // SH7: the facing is the way the keys point, read before a draw's pace (0) scales the step to nothing
+        facingRef.current = walkFacing(dx, dz, facingRef.current);
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
         const walker = usePlayerStore.getState().player;
@@ -878,7 +880,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           }
         }
 
-        facingRef.current = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'down' : 'up');
         movingRef.current = true;
         // A full stride is ~560ms whatever the cycle: 4 phases step quicker than 2
         if (now - stepRef.current.at > 560 / WALK_PHASES) {

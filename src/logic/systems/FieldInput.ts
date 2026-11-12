@@ -67,11 +67,24 @@ const FACING_ANGLE: Record<Facing, number> = { right: 0, down: Math.PI / 2, left
  * One begun by the attack key flies at what the inspect card holds (`held`, its offset from the person), or the
  * way its holder faces. A pointer never moved over the field aims as the key does. `centre` is where the person
  * stands on the screen, which the camera keeps at the middle of the window.
+ * SH8, the coordinator's call after strafing as Pedro did: the attack key, too, flies at the pointer while the pointer
+ * rests over the field (`onField`), as the inspect card already follows it there; off the field, at the card or the facing.
  */
-export function aimAt(s: { by: AimedBy; pointer?: { x: number; y: number }; centre: { x: number; y: number }; held?: { dx: number; dy: number }; facing: Facing }): number {
-  if (s.by === 'pointer' && s.pointer) return Math.atan2(s.pointer.y - s.centre.y, s.pointer.x - s.centre.x);
+export function aimAt(s: { by: AimedBy; pointer?: { x: number; y: number }; onField?: boolean; centre: { x: number; y: number }; held?: { dx: number; dy: number }; facing: Facing }): number {
+  if ((s.by === 'pointer' || s.onField) && s.pointer) return Math.atan2(s.pointer.y - s.centre.y, s.pointer.x - s.centre.x);
   if (s.held) return Math.atan2(s.held.dy, s.held.dx);
   return FACING_ANGLE[s.facing];
+}
+
+/**
+ * SH7, found by strafing and shooting as Pedro did ("I think it's direction, I was strafing and shooting"): the way a
+ * person faces is the way the movement keys point (`dx`, `dz` from the keys, before anything scales the step), the
+ * larger of the two deciding as the step did. A frame with no key keeps the facing it had. Read from the step after
+ * the draw's pace (0) had scaled it, every facing came out as up while a key was held during a draw.
+ */
+export function walkFacing(dx: number, dz: number, was: Facing): Facing {
+  if (dx === 0 && dz === 0) return was;
+  return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'down' : 'up');
 }
 
 /** From one blow's start to the next's: the hand's rate, and never shorter than the wind-up. */
