@@ -2237,7 +2237,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       SessionJournal.record('INTERACT', { kind: 'TRY', targetId: entity.id, rollKey, d100: roll.d100, bar: roll.bar, outcome: roll.outcome });
       const held = hand.tool ? LoadoutSystem.shownName(hand.tool) : 'your hands';
       if (roll.outcome === 'success' || roll.outcome === 'major_win') {
-        if (roll.outcome === 'major_win') feed(`${hand.tool ? `The ${held}` : 'Your hands'} find the grain of ${name}. It gives twice what it should.`, 'signal');
+        if (roll.outcome === 'major_win') feed(`${hand.tool ? `The ${held} finds` : 'Your hands find'} the grain of ${name}. It gives twice what it should.`, 'signal');
         takeFrom(entity, def, hand.pair, effort, roll.outcome === 'major_win' ? 2 : 1);
         return;
       }

@@ -211,6 +211,8 @@ describe('ML: the try, in the field', () => {
     forced('major_win');
     usePlayerStore.getState().performInteraction(`int_try_${e.id}`, e.id);
     expect(pack().filter(i => i.universalDefinitionId === iron().id).length).toBe(once * 2);
+    // Seen in the window: the line read "The Claim Pick find the grain"
+    expect(fed()).toMatch(/The .+ finds the grain of /);
   });
 
   it('a failure wears the tool and leaves the place as it was', () => {
