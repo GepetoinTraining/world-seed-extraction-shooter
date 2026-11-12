@@ -6,6 +6,7 @@
  */
 import type { IDoorMessage, IDoorRequest } from './door';
 import { LOOT_SCHEMA } from '../logic/theme/LootLaw';
+import { MINT_SCHEMA } from '../logic/theme/writing/MintAdditions';
 import type { IWorldSummary } from '../logic/theme/WorldGrowth';
 import { THEME_SCHEMA, LINE_SCHEMA, STRIKE_REACHES, STRIKE_SWEEPS, STRIKE_HOLLOWS, VOLLEYS, BIOMES, COST_BANDS, EFFECTS, DELIVERIES, GEAR_KINDS, LINE_FEATURES, LOOK_COLORS, LOOK_SHAPES, LOOK_SIZES, PASSIVE_STATS, RANKS, REQUIRED_TREES, SIZES, SKILL_GRANTS, STAT_BANDS, TRIGGERS } from '../logic/theme/ThemeTypes';
 import type { IGrowthAsk, ILineAsk } from '../logic/theme/CreatureLines';
@@ -625,6 +626,30 @@ export function buildLootRequest(ask: unknown): IDoorRequest {
     // One table to a creature: a world of thirty creatures is a long answer
     kind: 'loot', system: LOOT_SYSTEM, schema: LOOT_SCHEMA, maxTokens: 12000,
     messages: [{ role: 'user', content: `The world, and what it offers: ${JSON.stringify(ask)}` }]
+  };
+}
+
+/** IB: what a minting adds. Words only; the law judges them and the formula sizes them. */
+const BASES_SYSTEM = `You are adding to a world as it is minted: the nouns its people find and wear, and things its ground holds.
+
+"rolls" are slots of gear rolled for this world. Each names its slot (a kind of gear: a blade, a chest piece, a ring, a pick) and "offered", the bases that slot already has, by id. For each roll, answer with its "roll" number and either:
+- "use": one offered id, when this world needs no other noun for that slot. Leave the other fields empty.
+- or "use" empty, and a new base: "name", the noun in one to four plain words of this world, never a name already offered or standing; "blurb", one dry line of what it is; "tags", registry words that say what it is made of or how it is held, or none; "size", a size word or empty.
+Prefer new bases: a world should come away with many nouns of its own. Two rolls of one slot are two different nouns.
+
+Then "materials": at least "atLeast" new things to gather that this world's ground holds and "standing" does not name, each with "name", "blurb", "tags" (registry words), "rank", "form" (how it grows or lies), "verb" (how it is taken: by hand, chopped or mined), "weight", "worth", and "habitat", the kinds of ground it lies on. Between them, cover every kind of ground in "grounds".
+
+You never write numbers, prices, stats or what a thing does: a formula sizes all of it. If "refused" is given, it says what did not stand last time: mend it, and answer only the rolls asked.
+
+Registry words:
+${REGISTRY}`;
+
+/** IB: one ask for a whole minting, so a world costs few calls. Answers stand before `MintAdditions.judge`. */
+export function buildBasesRequest(ask: unknown): IDoorRequest {
+  return {
+    // Forty-two rolls and five materials, a short answer each
+    kind: 'bases', system: BASES_SYSTEM, schema: MINT_SCHEMA, maxTokens: 16000,
+    messages: [{ role: 'user', content: `The world, its rolls and what each is offered: ${JSON.stringify(ask)}` }]
   };
 }
 

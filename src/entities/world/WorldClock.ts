@@ -134,6 +134,19 @@ export class WorldClock {
     return { phase: 'SCAN', generation: cycle + 1, msLeft: upMs + offMs + scanMs - into, next: 'UP', warning: 'NONE', canDeploy: false, canSurvey: true };
   }
 
+  /**
+   * RG: the moment a turn (a generation) begins. A clocked world's turn begins as its gate boots, after the
+   * gate's up time and its dark, so nothing waiting on the next turn is back inside the visit it was taken in.
+   * The tutorial's turns are whole cycles from `turnsFrom`; a world outside the clock with none never turns.
+   */
+  static turnStartsAt(world: IClockedWorld, turn: number): number {
+    const cadence = world.cadence ?? this.cadenceFor(world.size);
+    const period = cadence.upMs + cadence.offMs + cadence.scanMs;
+    if (world.isDebug) return world.turnsFrom === undefined ? Infinity : world.turnsFrom + turn * period;
+    if (turn <= 0) return world.createdAt;
+    return world.createdAt + (turn - 1) * period + cadence.upMs + cadence.offMs;
+  }
+
   /** The whole cycle in the order it runs, as shares, and where in it the world stands. A simulation has none. */
   static cycleAt(world: IClockedWorld, now: number): IWorldCycle | null {
     if (world.isDebug) return null;

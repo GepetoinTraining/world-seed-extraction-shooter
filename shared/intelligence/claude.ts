@@ -31,11 +31,13 @@ export const MODEL_FOR: Record<DoorKind, string> = {
   // Pedro: "the model writes the NPC, the web is resolved backwards"
   chain: 'claude-haiku-5-5',
   // A theme's loot tables are content, written beside the theme, so they take the theme's model (decided; Pedro may overrule)
-  loot: 'claude-sonnet-5-5'
+  loot: 'claude-sonnet-5-5',
+  // Pedro, after his run: "make the function that calls up sonnet and asks it, according to the slot rolled and the available bases"
+  bases: 'claude-sonnet-5-5'
 };
 
 /** How hard each kind thinks. A talk answers quickly; a world is worth thinking about. */
-const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low', loot: 'medium' };
+const EFFORT_FOR: Record<DoorKind, 'low' | 'medium' | 'high'> = { talk: 'low', theme: 'high', theme_large: 'high', rest: 'medium', window: 'medium', creation: 'low', kami_talk: 'low', kami_set: 'medium', kami_persona: 'low', npc_talk: 'low', npc_goal: 'low', bargain: 'low', chain: 'low', loot: 'medium', bases: 'medium' };
 
 /** Dollars per million tokens. Batches are half. */
 /** Writing to the cache costs a quarter more than plain input, for what it saves on every read after. */
@@ -48,6 +50,15 @@ const RATES: Record<string, { input: number; output: number; cacheRead: number }
 };
 /** Rough, and on the safe side: a ceiling, never a bill. */
 const CHARS_PER_TOKEN = 3;
+
+/** The most a request could cost, in dollars, at the rates above: every token it may write billed, and its input counted high. */
+export const ceilingOf = (request: IDoorRequest, batched: boolean): number => {
+  const rate = RATES[MODEL_FOR[request.kind]];
+  if (!rate) return 0;
+  const chars = request.system.length + request.messages.reduce((n, m) => n + m.content.length, 0);
+  const usd = ((chars / CHARS_PER_TOKEN) * rate.input + request.maxTokens * rate.output) / 1_000_000;
+  return batched ? usd / 2 : usd;
+};
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 /** Haiku has no server-side fallback. A declined creation falls to the bank's floor instead, and a declined round still rolls. */
@@ -84,11 +95,7 @@ export class ClaudeProvider implements IIntelligenceProvider {
   }
 
   ceiling(request: IDoorRequest, batched: boolean): number {
-    const rate = RATES[MODEL_FOR[request.kind]];
-    if (!rate) return 0;
-    const chars = request.system.length + request.messages.reduce((n, m) => n + m.content.length, 0);
-    const usd = ((chars / CHARS_PER_TOKEN) * rate.input + request.maxTokens * rate.output) / 1_000_000;
-    return batched ? usd / 2 : usd;
+    return ceilingOf(request, batched);
   }
 
   private params(request: IDoorRequest) {

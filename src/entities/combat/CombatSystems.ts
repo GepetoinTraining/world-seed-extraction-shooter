@@ -12,6 +12,7 @@ import { IStatusPlan, StatusClock } from '../../../shared/logic/systems/EffectSy
 import { bodyRadiusPx, covers, pushFrom } from '../../../shared/entities/combat/Shapes';
 import { bodyPoise, feltHit } from '../../../shared/logic/theme/ThemeFormula';
 import { WorldGenerator } from '../../../shared/entities/world/WorldGenerator';
+import { laidKind } from '../../../shared/entities/mob/BodyLaw';
 
 /** The fight's shapes: a swing as it lands. `inner` and `half` are its hole and its half-width; a swing that names none is the old arc. */
 export interface IMeleeArc {
@@ -133,7 +134,9 @@ export class CombatSystem {
         xpReward: { amount: xpAmount, sourceRank: mob.rank, sourceRarity: mob.rarity }
       });
 
-      const def = MOB_DEFINITIONS[mob.definitionId];
+      // GS3: a body on a ground that ranks it leaves what it leaves at the rank it stood at
+      const kind = MOB_DEFINITIONS[mob.definitionId];
+      const def = kind ? laidKind(kind, mob) : undefined;
       if (def) {
         const rollKey = SessionJournal.rollKey('loot', mob.id);
         const origin = chunks[chunkKey];
@@ -148,7 +151,7 @@ export class CombatSystem {
         // The lore pass, call 6: a creature with a mind leaves a fragment "sometimes", in a world pinned to it
         if (MonsterMind.holds(def) && LoreDrops.fragment('creature', rollKey, opts.groundVersion)) loot.push(LootTable.loreFragment(rollKey, (def as { themeId?: string }).themeId));
         const onTable = LootTable.creatureRoll(def, rollKey);
-        SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id), ...(onTable ? { table: onTable } : {}) });
+        SessionJournal.record('KILL', { mobId: mob.id, defId: mob.definitionId, rollKey, drops: loot.map(l => l.id), ...(onTable ? { table: onTable } : {}), ...(def !== kind ? { laidAt: def.rank } : {}) });
         if (loot.length > 0) {
           spawnedLoot.push({ position: mob.position, items: loot });
           events.push({ type: 'LOOT_SPAWN', position: mob.position, loot });

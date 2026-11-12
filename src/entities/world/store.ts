@@ -25,6 +25,10 @@ import { Leaders } from '../../../shared/entities/world/Leaders';
 import { Territory } from '../../../shared/entities/world/Territory';
 import { Wards } from '../../../shared/entities/world/Wards';
 import { ChestStore, ChestSystem, IChestRecord, emptyChestRecord } from '../../../shared/entities/world/ChestSystem';
+import { GroundReturn, GroundStore, IGroundRecord, emptyGroundRecord } from '../../../shared/entities/world/GroundReturn';
+import { IWorldEntity } from '../../../shared/entities/world/types';
+import { GameClock } from '../../logic/time/GameClock';
+import { MintAdditionsWriter } from '../../logic/theme/writing/MintAdditionsWriter';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
@@ -53,6 +57,12 @@ interface WorldState extends IWorldView {
   /** What has been taken from the open world, kept beside it. Null where a world has no cycles to refill on. */
   chestRecord: IChestRecord | null;
   reportChestLooted: (chestId: string) => void;
+  /** RG: what has been taken from the open world's ground, kept beside it. Null where a world has no turns to give back on. */
+  groundRecord: IGroundRecord | null;
+  /** RG: a place the land laid was taken from, and this much is left. The place stands as the record says. */
+  reportGroundTaken: (entityId: string, left: number) => void;
+  /** RG: every loaded place whose turn has come by the game's clock stands again, rolled anew. Nothing else runs. */
+  sweepGround: (now?: number) => void;
   reportFell: (entityId: string, definitionId?: string) => void;
   /** D65: a body taken alive: off its count, and onto this register. It hands the register back. */
   reportCaptured: (entityId: string, definitionId: string, to: IKoseki) => IKoseki;
@@ -95,6 +105,52 @@ interface WorldState extends IWorldView {
 
 // What chunks are built from, kept for as long as the world is open.
 let generationContext: IGenerationContext | null = null;
+
+/** RG: the open world's card, what its chunks are built from, and the turn the game's clock says it is. */
+const openCard = (): IWorldCard | undefined => {
+  const { availableWorlds, activeWorldId } = useWorldStore.getState();
+  return availableWorlds.find(w => w.id === activeWorldId);
+};
+const contextOf = (card: IWorldCard): IGenerationContext =>
+  generationContext ?? ContentRegistry.contextFor(ContentRegistry.standing(card.themeId), card.difficulty);
+const turnOf = (card: IWorldCard, now = GameClock.now()): number => WorldClock.momentAt(card, now).generation;
+
+/** RG: lays the ground record over loaded places. `due` alone: only those whose turn has come; else the ones named. */
+function layGround(now: number, only?: string[]): void {
+  const { groundRecord, currentMap } = useWorldStore.getState();
+  const card = openCard();
+  if (!groundRecord || !currentMap || !card) return;
+  const turn = turnOf(card, now);
+  const context = contextOf(card);
+  let chunks = currentMap.chunks;
+  for (const id of only ?? Object.keys(groundRecord.taken)) {
+    const key = GroundReturn.chunkKeyOf(id);
+    const chunk = key ? chunks[key] : undefined;
+    const at = chunk ? chunk.entities.findIndex(e => e.id === id) : -1;
+    if (!chunk || at < 0) continue;
+    const place = chunk.entities[at];
+    // Unnamed, only what is waiting and whose turn has come: nothing else changes, so nothing else is drawn again
+    if (!only && !(place.returning && turn >= place.returning.turn)) continue;
+    const standing: IWorldEntity = GroundReturn.standing(currentMap.seed, place, chunk.biome, groundRecord, turn, context, t => WorldClock.turnStartsAt(card, t));
+    const entities = [...chunk.entities];
+    entities[at] = standing;
+    chunks = { ...chunks, [key!]: { ...chunk, entities } };
+  }
+  if (chunks !== currentMap.chunks) useWorldStore.setState({ currentMap: { ...currentMap, chunks } });
+}
+
+/** RG: another player's taking, live, in the world this person is in: merged by the later taking, and laid. */
+LiveClient.on(event => {
+  const { activeWorldId, groundRecord } = useWorldStore.getState();
+  if (!activeWorldId || !groundRecord) return;
+  const doc = event.docs.find(d => d.id === GroundStore.docId(activeWorldId));
+  if (!doc) return;
+  let remote: IGroundRecord;
+  try { remote = JSON.parse(doc.dataText) as IGroundRecord; } catch { return; }
+  if (!remote?.taken) return;
+  useWorldStore.setState({ groundRecord: GroundReturn.merge(groundRecord, remote) });
+  layGround(GameClock.now(), Object.keys(remote.taken));
+});
 
 /**
  * What this session's fights said, and nothing else about the record. The database's
@@ -149,6 +205,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         case 'ADOPT_RECORD': world.adoptRecord(change.worldId, change.record); break;
         case 'APPLY_SURVEY': world.applySurvey(change.survey); break;
         case 'CHEST_RECORD': set({ chestRecord: change.record }); break;
+        case 'GROUND_TAKEN': world.reportGroundTaken(change.entityId, change.left); break;
         case 'STORE_TAKEN': world.reportStoreTaken(change.structureId, change.count); break;
         case 'CHEST_LOOTED': world.reportChestLooted(change.chestId); break;
         case 'LEFT': world.reportLeft(change.entityId); break;
@@ -178,6 +235,21 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     if (LiveClient.isLive(activeWorldId)) return;
     void ChestStore.save(activeWorldId, next);
   },
+  groundRecord: null,
+  reportGroundTaken: (entityId, left) => {
+    const { groundRecord, activeWorldId, currentMap } = get();
+    const card = openCard();
+    if (!groundRecord || !activeWorldId || !currentMap || !card) return;
+    const key = GroundReturn.chunkKeyOf(entityId);
+    const place = key ? currentMap.chunks[key]?.entities.find(e => e.id === entityId) : undefined;
+    if (!place) return;
+    const next = GroundReturn.took(groundRecord, place, left, turnOf(card));
+    if (next === groundRecord) return;
+    set({ groundRecord: next });
+    layGround(GameClock.now(), [entityId]);
+    void GroundStore.save(activeWorldId, next).catch(e => console.error('[WORLD] What was taken from the ground did not land:', e));
+  },
+  sweepGround: (now = GameClock.now()) => layGround(now),
   reportBroke: (structureId) => {
     Wards.broke(Wards.live(), structureId, Date.now());
   },
@@ -332,7 +404,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         if (HostedLink.is(worldCard.id) && playing) LiveClient.join({ worldUid: worldCard.id, uid: playing });
         else LiveClient.leave();
         // --- HOOKED UP: CALL SERVICE ---
-        const moment = WorldClock.momentAt(worldCard, Date.now());
+        // The server's clock is the clock (D135): a world's turn is read off the game's, never the device's
+        const moment = WorldClock.momentAt(worldCard, GameClock.now());
         const lineWorld = { seed: worldCard.seed, themeId: worldCard.themeId };
         const before = await DirectorStore.load(worldCard.id);
         const caught = await DirectorStore.catchUp(worldCard.id, moment.generation, lineWorld);
@@ -340,17 +413,25 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         set({ directorRecord: director, generation: moment.generation });
         // D49: a minted world dreams as it was pinned; the tutorial, never minted, as its hub stands now
         const dreams = Tutorial.dreams(worldCard, SHELF_STATE.magicUnlocked);
-        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, dreams);
+        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, dreams, worldCard.groundVersion, worldCard.deathPenalty);
 
         // A world that never turns has no cycle to refill on, so it keeps no record. The tutorial turns (Pedro's own
         // run, 2026-11-10: "the chests always respawn", "the NPC are extracted and respawn"), so it keeps one like any other
         const keeps = WorldClock.turns(worldCard);
         const chestRecord = keeps ? await ChestStore.load(worldCard.id).catch(() => emptyChestRecord()) : null;
         const populationRecord = keeps ? await PopulationStore.load(worldCard.id).catch(() => emptyPopulationRecord()) : null;
-        set({ chestRecord, populationRecord });
+        // RG: what was taken from the ground comes back on the world's turns, the tutorial's too
+        const groundRecord = keeps ? await GroundStore.load(worldCard.id).catch(() => emptyGroundRecord()) : null;
+        set({ chestRecord, populationRecord, groundRecord });
         const cadence = worldCard.cadence ?? WorldClock.cadenceFor(worldCard.size);
         // C24: the land is laid by the ground the world pinned, as its people are read through the web it pinned
-        const context: IGenerationContext = { ...instance.context, webVersion: worldCard.webVersion, groundVersion: worldCard.groundVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs };
+        // IB: what its minting added, from the ground it was laid on: found pieces take their nouns from its own bases,
+        // and its land holds its own materials beside its pack's. A world laid before adds nothing
+        const minted = await MintAdditionsWriter.enter(worldCard).catch(() => []);
+        const context: IGenerationContext = {
+          ...instance.context, webVersion: worldCard.webVersion, groundVersion: worldCard.groundVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs,
+          ...(minted.length > 0 ? { resourceDefinitions: [...instance.context.resourceDefinitions, ...minted] } : {})
+        };
         generationContext = {
           ...context,
           lay: chunk => {
@@ -359,6 +440,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
             if (living) Population.layOver(worldCard.seed, chunk, living, moment.generation, generationContext ?? context);
             const held = get().chestRecord;
             if (held) ChestSystem.layOver(worldCard.seed, chunk, held, moment.generation);
+            // RG: then what was taken from the ground, read at the turn it is now, since a chunk may be built long after the opening
+            const ground = get().groundRecord;
+            if (ground) GroundReturn.layOver(worldCard.seed, chunk, ground, WorldClock.momentAt(worldCard, GameClock.now()).generation, generationContext ?? context, t => WorldClock.turnStartsAt(worldCard, t));
           }
         };
         const map = instance.mapData;
@@ -450,7 +534,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     Wards.reset();
     generationContext = null;
     DreamingSystem.deactivate();
-    set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null });
+    set({ activeWorldId: null, currentMap: null, reconMode: true, selectedDropZone: null, groundRecord: null });
   },
 
   updateEntity: (entityId, patch) => {

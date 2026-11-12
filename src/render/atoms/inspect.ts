@@ -28,6 +28,7 @@ import { WorldClock } from '../../entities/world/WorldClock';
 import { SkillNames } from '../../logic/systems/SkillNames';
 import { statWord } from '../../logic/systems/StatWords';
 import { said as sayNumber } from '../../logic/systems/SheetWords';
+import { GameClock } from '../../logic/time/GameClock';
 
 export interface Card {
   title: string;
@@ -44,6 +45,17 @@ export interface InspectContext {
   /** D27: what it takes to read a person's sheet back. */
   worldSeed?: string;
   webVersion?: number;
+  /** The game's clock, read when absent: what a place coming back says is how long until its turn. */
+  now?: number;
+}
+
+/** RG: what a spent place says to whoever walks up to it, in words: that it comes back, and when. */
+function returnsSaid(e: IWorldEntity, def: any, now: number): string {
+  if (e.returning) {
+    const left = e.returning.at !== undefined && Number.isFinite(e.returning.at) ? e.returning.at - now : NaN;
+    return Number.isFinite(left) && left > 0 ? `Spent. Comes back when the gate turns, in ${WorldClock.say(left)}` : 'Spent. Comes back when the gate turns';
+  }
+  return def?.regrowMs ? 'Spent, will return' : 'Spent, never returns';
 }
 
 const COMPACT_MAX = 36;
@@ -70,7 +82,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   const canAct = InteractionEngine.getAvailableInteractions(ctx.player, e, ctx.dist).some(o => o.type === InteractionType.HARVEST);
 
   const needs: string[] = [];
-  if (uses <= 0) needs.push(def?.regrowMs ? 'Spent, will return' : 'Spent, never returns');
+  if (uses <= 0) needs.push(returnsSaid(e, def, ctx.now ?? GameClock.now()));
   else if (config) {
     const required: string[] = config.requiredToolTags;
     if (required.length > 0) {
@@ -87,7 +99,10 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   if (level <= 0) rows.push(['Known', 'Nothing yet. Study it to learn']);
   else {
     rows.push(['Rank', String(def.rank)]);
-    if (def.uses) rows.push(['Left', `${Math.max(0, uses)} of ${def.uses}`]);
+    // RG: a place that came back may hold more than its kind's own
+    if (def.uses) rows.push(['Left', uses > def.uses ? `${uses}, more than most` : `${Math.max(0, uses)} of ${def.uses}`]);
+    // RG: a place that came back was rolled anew, and says what it came back as
+    if (e.quality !== undefined && Math.abs(e.quality) <= 1) rows.push(['Quality', `${QUALITY_NAMES[qualityBand(e.quality)]} ${e.quality >= 0 ? '+' : ''}${Math.round(e.quality * 100)}%`]);
     if (config) {
       // D27: working without the skill costs more, and the card says so
       const { cost, winging } = WebSystem.energyFor(ctx.player, WebSystem.pairOfHarvest(ctx.player, def), config.energyCost);
@@ -100,7 +115,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
 
   const title = ContactNames.of(e, ctx.level, ctx.player);
   const lacksTool = needs.some(n => n.startsWith('Needs'));
-  const tail = canAct ? 'ready' : uses <= 0 ? 'spent' : lacksTool ? (needs[0].includes('ower') ? 'weak tool' : 'needs tool') : 'too far';
+  const tail = canAct ? 'ready' : uses <= 0 ? (e.returning ? 'comes back' : 'spent') : lacksTool ? (needs[0].includes('ower') ? 'weak tool' : 'needs tool') : 'too far';
   return { title, rows, needs, canAct, compact: compact(title, tail) };
 }
 

@@ -48,8 +48,13 @@ export function rerunDrops(actions: IAction[], find: IRerunFinder): IRolled {
     if (a.type === 'KILL') {
       const def = find.mob(table.themeId, String(a.data!.defId ?? ''));
       if (!def) { unchecked++; continue; }
-      if (def.rank !== rank) return { rolls, unchecked, wrong: { seq: a.seq, why: `A ${a.data!.defId} is rank ${def.rank} here, and the drop was rolled at ${rank}.` } };
-      rank = def.rank;
+      // GS3: on a ground that ranks its bodies a body stands at its ground's rank, which the hub does not hold, as it
+      // does not hold a chest's: the drop is rerun at the rank the body is said to have stood at, and must have rolled there
+      const laidAt = a.data!.laidAt;
+      if (typeof laidAt === 'string') {
+        if (laidAt !== rank) return { rolls, unchecked, wrong: { seq: a.seq, why: `A ${a.data!.defId} stood at rank ${laidAt}, and the drop was rolled at ${rank}.` } };
+      } else if (def.rank !== rank) return { rolls, unchecked, wrong: { seq: a.seq, why: `A ${a.data!.defId} is rank ${def.rank} here, and the drop was rolled at ${rank}.` } };
+      else rank = def.rank;
     }
     // A chest's rank is its world's, which the hub does not hold: the drop is rerun at the rank it names
     const lines = LootLaw.roll(table, rank, a.data!.rollKey, lootItemsOf(pack));

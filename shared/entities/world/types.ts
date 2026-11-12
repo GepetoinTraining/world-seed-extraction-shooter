@@ -160,6 +160,10 @@ export interface IWorldEntity {
   // Wave 2.2: extractable nodes
   usesRemaining?: number;   // veins deplete; flora has 1 use
   regrowAt?: number;        // flora only: when the node comes back (epoch ms)
+  /** RG: a place the land laid, taken, and coming back: on which turn of its gate, and when that turn begins by the game's clock. */
+  returning?: { turn: number; at?: number };
+  /** RG: a place that came back was rolled anew, its quality with it, on the gear's scale; what is taken from it carries it. */
+  quality?: number;
 
   // Wave 2.3: containers (chests in ruins)
   // Wave 3.3: `items` = explicit contents (ground caches, overflow); when set,

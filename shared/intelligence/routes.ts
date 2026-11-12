@@ -5,7 +5,7 @@
  */
 import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
 import { SETTINGS, type DoorSetting } from './setting';
-import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildLootRequest, buildNpcGoalRequest, buildNpcMeetRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
+import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildBasesRequest, buildLootRequest, buildNpcGoalRequest, buildNpcMeetRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
 import { askChainInParts } from './parts';
 
 /** An answer: a JSON body, or lines written as they come, ending with the last one. */
@@ -72,6 +72,9 @@ export async function routeDoor(door: IntelligenceDoor, method: string, path: st
       return json(200, await askChainInParts(door, body.ask ?? {}));
     case '/loot':
       return json(200, await door.ask(buildLootRequest(body.ask ?? {})));
+    case '/world/bases':
+      // IB: what a minting adds, in one ask
+      return json(200, await door.ask(buildBasesRequest(body.ask ?? {})));
     case '/world/pass':
       if (!isWorldPass(body.pass)) return json(200, { status: 'REFUSED', reason: 'A world is written in no such pass.' });
       return json(200, await door.ask(buildWorldPassRequest(body.pass, body.ask ?? {}, body.draft ?? {})));

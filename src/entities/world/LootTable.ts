@@ -18,14 +18,15 @@ import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { BiomeType } from '../../../shared/entities/world/types';
 import { DreamingSystem, IAffixPool } from '../../../shared/entities/world/Dreaming';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
-import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
-import { JUNK_CHANCE } from '../../../shared/logic/theme/ThemeFormula';
+import { RESOURCE_DEFINITIONS, ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
+import { JUNK_CHANCE, RANKED_FROM_GROUND } from '../../../shared/logic/theme/ThemeFormula';
 import { LootBook } from '../../logic/theme/LootBook';
 import { IDropLine, LootLaw, lootItemsOf } from '../../../shared/logic/theme/LootLaw';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { creatureIdOf } from '../../../shared/logic/theme/ThemeCompiler';
 import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
 import { RANKS } from '../../../shared/logic/theme/ThemeTypes';
+import { MINT_ADDITIONS_FROM_GROUND, MintAdditions, WorldBases } from '../../../shared/logic/theme/writing/MintAdditions';
 
 /** A drop rolled on a theme's table (LootLaw.ts): which table, at what rank, what it said. The journal keeps it, so a hub can roll it again (D134). */
 export interface ITableRoll {
@@ -75,6 +76,20 @@ export interface ILootContext {
 export class LootTable {
 
   /**
+   * IB: a found piece. From `MINT_ADDITIONS_FROM_GROUND` it rolls its slot, then its noun among its own world's bases
+   * of that slot (its pack's, and what its minting added), in place of one in every base every theme holds. A world
+   * laid before, or a line that names its piece, finds as it always did.
+   */
+  static found(rank: UniversalRank, rng: SeededRNG, pool: IAffixPool | undefined, ground: { groundVersion?: number } & IFoundLaw, baseId?: string): IItem {
+    const bases = WorldBases.active();
+    if (!baseId && bases && (ground.groundVersion ?? 1) >= MINT_ADDITIONS_FROM_GROUND) {
+      const base = MintAdditions.pick(bases, rng);
+      if (base) return ItemFactory.createFromTemplate(base, false, rng, pool, rank, ground);
+    }
+    return ItemFactory.createItem(rank, false, rng, undefined, baseId, pool, ground);
+  }
+
+  /**
    * The roll on a table, when this source's theme holds one that fits it; none means the old
    * code's drop. Whole numbers only, so the hub lands where this did.
    */
@@ -90,14 +105,16 @@ export class LootTable {
   }
 
   /** What a table's lines mint, each piece from its own keyed stream, so one never moves another. */
-  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number, found: IFoundLaw = {}): IItem[] {
+  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number, found: IFoundLaw = {}, gearAtMost = Infinity): IItem[] {
     const out: IItem[] = [];
+    let gear = 0;
     roll.lines.forEach((d, i) => {
       for (let n = 0; n < d.count; n++) {
         const own = Rng.fromKey(`${rollKey}:drop:${d.line}:${n}`);
         // The rarity rescale: a found piece takes the rank of where it came from, never its kind's
         const rank = (newLaw(groundVersion) ? roll.at?.[i] ?? roll.rank : d.rank) as UniversalRank;
-        if (d.what === 'gear') { out.push(ItemFactory.createItem(rank, false, own, undefined, d.id, pool, { ...groundOf(groundVersion), ...found })); continue; }
+        // GS: a chest of a ground that holds one piece mints the first its table names; IB: by its slot, among its world's bases
+        if (d.what === 'gear') { if (gear++ < gearAtMost) out.push(LootTable.found(rank, own, pool, { ...groundOf(groundVersion), ...found }, d.id || undefined)); continue; }
         const def = RESOURCE_DEFINITIONS[d.id];
         if (def) out.push(ItemFactory.createResourceItem(def, own));
       }
@@ -182,14 +199,14 @@ export class LootTable {
     // Biological mobs drop scrap/materials
     if (mobDef.tags.includes('biological')) {
       if (rng.next() < 0.6 * effectiveMF) {
-        loot.push(ItemFactory.createItem(UniversalRank.F, false, rng, undefined, undefined, pool, ground));
+        loot.push(LootTable.found(UniversalRank.F, rng, pool, ground));
       }
     }
 
     // Mechanical mobs drop tech components
     if (mobDef.tags.includes('mechanical')) {
       if (rng.next() < 0.5 * effectiveMF) {
-        const item = ItemFactory.createItem(UniversalRank.E, false, rng, undefined, undefined, pool, ground);
+        const item = LootTable.found(UniversalRank.E, rng, pool, ground);
         item.name = 'Salvaged Component';
         loot.push(item);
       }
@@ -204,13 +221,13 @@ export class LootTable {
 
     if (rng.next() < gearChance) {
       // Gear drops at mob's rank, unidentified
-      const item = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+      const item = LootTable.found(mobDef.rank, rng, pool, ground);
       loot.push(item);
     }
 
     // Elites get a second roll
     if (mobDef.tags.includes('elite') && rng.next() < gearChance * 0.5) {
-      const bonusItem = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+      const bonusItem = LootTable.found(mobDef.rank, rng, pool, ground);
       loot.push(bonusItem);
     }
 
@@ -220,13 +237,13 @@ export class LootTable {
     
     if (mobDef.tags.includes('boss')) {
       // Guaranteed rank-appropriate gear
-      const bossLoot = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+      const bossLoot = LootTable.found(mobDef.rank, rng, pool, ground);
       if (legacy) bossLoot.rarity = Rarity.EPIC; // Bosses always drop at least Epic
       loot.push(bossLoot);
 
       // Chance for Legendary. Under the rarity rescale, a boss's own piece (ownPieces), on a stream of its own
       if (legacy && rng.next() < 0.25 * effectiveMF) {
-        const legendary = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+        const legendary = LootTable.found(mobDef.rank, rng, pool, ground);
         legendary.rarity = Rarity.LEGENDARY;
         if (earnedName) legendary.name = `${earnedName}'s ${legendary.name}`;
         loot.push(legendary);
@@ -234,7 +251,7 @@ export class LootTable {
 
       // Small chance for Knowledge Tome
       if (rng.next() < 0.10 * effectiveMF) {
-        const tome = ItemFactory.createItem(mobDef.rank, false, rng, undefined, undefined, pool, ground);
+        const tome = LootTable.found(mobDef.rank, rng, pool, ground);
         const subject = earnedName ?? 'Something Unnamed';
         tome.name = `Tome of ${subject}`;
         tome.description = `Contains forbidden knowledge about ${subject}. Studying this grants Lore XP.`;
@@ -250,14 +267,14 @@ export class LootTable {
     if (mobDef.tags.includes('god') || mobDef.tags.includes('titan')) {
       // Multiple high-rank items
       for (let i = 0; i < 3; i++) {
-        const godLoot = ItemFactory.createItem(legacy ? UniversalRank.S : mobDef.rank, false, rng, undefined, undefined, pool, ground);
+        const godLoot = LootTable.found(legacy ? UniversalRank.S : mobDef.rank, rng, pool, ground);
         if (legacy) godLoot.rarity = Rarity.LEGENDARY;
         loot.push(godLoot);
       }
 
       // Artifact-tier item. Under the rarity rescale, the titan's or the god's own piece (ownPieces)
       if (legacy) {
-        const artifact = ItemFactory.createItem(UniversalRank.SSS, false, rng, undefined, undefined, pool, ground);
+        const artifact = LootTable.found(UniversalRank.SSS, rng, pool, ground);
         artifact.rarity = Rarity.ARTIFACT;
         artifact.name = `Relic of ${earnedName ?? 'Something Unnamed'}`;
         artifact.description = 'An item of impossible origin. Reality bends around it.';
@@ -310,7 +327,7 @@ export class LootTable {
     const own = Rng.fromKey(`${rollKey}:own`);
     if (kind === 'boss' && own.next() >= 0.25 * effectiveMF) return [];
     const traits = [...((body?.bonusHealth ?? 0) > 0 ? ['max_health'] : []), ...((body?.bonusDamage ?? 0) > 0 ? ['damage'] : [])];
-    return [ItemFactory.createItem(mobDef.rank, false, own, undefined, undefined, pool, { ...ground, whose: { name: earnedName ?? mobDef.name, kind }, traits })];
+    return [LootTable.found(mobDef.rank, own, pool, { ...ground, whose: { name: earnedName ?? mobDef.name, kind }, traits })];
   }
 
   /** A land deed: the game's own rule, not a table's, on the drop's own stream. */
@@ -452,27 +469,57 @@ export class LootTable {
     const law: IFoundLaw = newLaw(groundVersion) ? { odds: PieceLaw.oddsOf({ luck, tags: [] }), pairsOpen: found.pairsOpen } : {};
     const ground = { ...groundOf(groundVersion), ...law };
 
+    // GS (2.5, the coordinator's call): from its ground on, a chest holds one piece of gear, and goods
+    const holdsOne = (groundVersion ?? 1) >= RANKED_FROM_GROUND;
+
     // A theme's own table for a chest in this land, when the dreamed world has one
     const onTable = this.chestRoll(chestRank, rollKey, biome);
-    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion, law);
+    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion, law, holdsOne ? 1 : Infinity);
 
     // Chests always have 2-5 items
     const count = 2 + Math.floor(rng.next() * 4);
 
+    if (holdsOne) {
+      // The one piece, at the chest's rank or one under as before; what else it holds is the land's own materials, at or
+      // under its rank. A valuable (coin) and a fragment are its own rolls, beside this, as they always were
+      const itemRank = rng.next() < 0.7 ? chestRank : this.rankBelow(chestRank);
+      loot.push(ItemFactory.createItem(itemRank, false, rng, undefined, undefined, pool, ground));
+      const goods = this.landGoods(chestRank, biome);
+      if (goods.length > 0) for (let i = 1; i < count; i++) loot.push(ItemFactory.createResourceItem(goods[rng.int(0, goods.length)], rng));
+      return loot;
+    }
+
     for (let i = 0; i < count; i++) {
       // Each item can be chest rank or one below
       const itemRank = rng.next() < 0.7 ? chestRank : this.rankBelow(chestRank);
-      loot.push(ItemFactory.createItem(itemRank, false, rng, undefined, undefined, pool, ground));
+      loot.push(LootTable.found(itemRank, rng, pool, ground));
     }
 
     // Chance for bonus rare item
     if (rng.next() < 0.2 * magicFind) {
-      const bonus = ItemFactory.createItem(chestRank, false, rng, undefined, undefined, pool, ground);
+      const bonus = LootTable.found(chestRank, rng, pool, ground);
       if (!newLaw(groundVersion)) bonus.rarity = Rarity.RARE;
       loot.push(bonus);
     }
 
     return loot;
+  }
+
+  /**
+   * What a chest holds beside its one piece (GS, 2.5's "and goods"): its world's own materials that lie on this land,
+   * at or under the chest's rank; any of its materials at that rank where the land holds none. Never junk, a valuable
+   * (its own roll) or a very rare find. Sorted by the pack's key, so a pick is the same pick everywhere.
+   */
+  private static landGoods(chestRank: UniversalRank, biome?: BiomeType): ResourceDef[] {
+    const pack = ContentRegistry.get(LootBook.entered() ?? ContentRegistry.defaultThemeId());
+    if (!pack) return [];
+    const at = RANKS.indexOf(chestRank as typeof RANKS[number]);
+    const own = lootItemsOf(pack).material
+      .filter(m => RANKS.indexOf(m.rank) <= at)
+      .map(m => RESOURCE_DEFINITIONS[m.id])
+      .filter(d => !!d && !d.junk && !d.anchor && !d.rareFind);
+    const here = biome ? own.filter(d => d.habitat?.includes(biome)) : own;
+    return here.length > 0 ? here : own;
   }
 
   private static rankBelow(rank: UniversalRank): UniversalRank {

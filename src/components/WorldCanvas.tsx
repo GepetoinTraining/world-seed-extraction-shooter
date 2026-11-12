@@ -939,6 +939,25 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
       }
 
+      // Wave 2.2: REGROW SWEEP (every 2s). Before the frame reads its chunks: the creatures' copies written back at
+      // the frame's end were taken before it, and a change made in between was lost in any chunk something walks in (RG)
+      const sweptMap = useWorldStore.getState().currentMap;
+      if (sweptMap && now - lastRegrowSweep.current > 2000) {
+        lastRegrowSweep.current = now;
+        // RG: in a world that turns, a place whose turn has come by the game's clock stands again, rolled anew
+        useWorldStore.getState().sweepGround();
+        // A world that keeps no record: depleted flora comes back, as it always did
+        Object.values(sweptMap.chunks).forEach(chunk => {
+          chunk.entities.forEach(e => {
+            if (e.regrowAt && e.regrowAt <= now && (e.usesRemaining ?? 0) <= 0) {
+              const def = RESOURCE_DEFINITIONS[e.definitionId];
+              useWorldStore.getState().updateEntity(e.id, { usesRemaining: def?.uses ?? 1, regrowAt: undefined });
+              console.log(`[WORLD] ${def?.name || e.definitionId} regrew.`);
+            }
+          });
+        });
+      }
+
       // B. Entity & Combat Logic
       const liveSession = usePlayerStore.getState().player.currentSession;
       const liveMap = useWorldStore.getState().currentMap;
@@ -1021,20 +1040,6 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (windupRef.current && now >= windupRef.current.until) releaseRef.current(now);
       // Line 72: a held button fires at the weapon's own rate, whatever the weapon
       if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held && !atRest) fireRef.current(now, firingRef.current.mouse ? 'pointer' : 'key');
-
-      // Wave 2.2: REGROW SWEEP (every 2s) — depleted flora comes back
-      if (now - lastRegrowSweep.current > 2000) {
-        lastRegrowSweep.current = now;
-        Object.values(liveMap.chunks).forEach(chunk => {
-          chunk.entities.forEach(e => {
-            if (e.regrowAt && e.regrowAt <= now && (e.usesRemaining ?? 0) <= 0) {
-              const def = RESOURCE_DEFINITIONS[e.definitionId];
-              useWorldStore.getState().updateEntity(e.id, { usesRemaining: def?.uses ?? 1, regrowAt: undefined });
-              console.log(`[WORLD] ${def?.name || e.definitionId} regrew.`);
-            }
-          });
-        });
-      }
 
       // AI Tick — the map goes along so terrain can refuse an enemy's step
       const liveEquipment = usePlayerStore.getState().player.equipment;

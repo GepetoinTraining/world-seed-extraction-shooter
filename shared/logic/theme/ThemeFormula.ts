@@ -65,6 +65,12 @@ export const CREATURE_COOLDOWN_MS = 2000;
 export const CREATURE_WINDUP_MS = 450;
 /** From this ground (`GROUND_VERSION`) a world lays its bodies by this law; a world that stands before it keeps them as written. */
 export const BODIES_FROM_GROUND = 5;
+/**
+ * From this ground (GS, the coordinator's calls after Pedro's "the scaling seems off"): ground above a world's own rank
+ * runs on, each further rank as likely as a find going one step deeper (call 15); a body takes the rank of the ground it
+ * stands on, as a piece takes the rank of where it came from; and a chest holds one piece of gear, and goods (2.5).
+ */
+export const RANKED_FROM_GROUND = 6;
 
 /** A person's health: 100 at F, doubled a rank, a tenth more for each point of constitution over its rank's floor, divided under it. */
 export const personHealth = (rank: ThemeRank | UniversalRank | string, constitution: number): number => {
@@ -305,6 +311,19 @@ export const harvestNumbers = (verb: string, rank: ThemeRank) => ({
   baseTimeSeconds: verb === 'hands' ? 1 : 2.5 + rankStep(rank) * 0.5,
   minToolPower: verb === 'hands' ? 0 : 5 + rankStep(rank) * 8
 });
+
+/**
+ * HOW LONG THE GROUND TAKES TO GIVE BACK (RG, Pedro, 2026-11-12: "The worlds need to regenerate the materials,
+ * even the tutorial one"). Counted in turns of the world's gate, so a place stripped in one visit is never
+ * full again in that visit and never bare for good: one turn, and one more for every fourfold of how hard
+ * the thing is to take. Hardness is the formula's own reading of a material's words (its form and its rank,
+ * `materialNumbers`), so what a hand picks comes back sooner than what lies, and what lies sooner than what
+ * is mined; no name is read. At F a fruit, a grain or a shrub waits one turn, a tree, sand or a pebble two,
+ * a rock or a vein three, and a vein at D four. The fourfold is the coordinator's call (RG2), open to strike.
+ */
+export const GROUND_RETURN_STEP = 4;
+export const groundReturnTurns = (hardness: number): number =>
+  1 + Math.floor(Math.log(Math.max(1, hardness)) / Math.log(GROUND_RETURN_STEP) + 1e-9);
 
 export const goodNumbers = (g: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG }) => ({
   weight: WEIGHT_KG[g.weight],
