@@ -14,7 +14,12 @@ import type { IHubPort } from '../hub/hubView';
 import { offerPort, portOf } from '../storePorts';
 import { ChestSystem } from '../../../shared/entities/world/ChestSystem';
 import { LiveClient } from '../../logic/live/LiveClient';
-import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { RESOURCE_DEFINITIONS, ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
+import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
+import { slipWear } from '../../../shared/logic/theme/WearLaw';
+import { StudyDoor } from '../../logic/systems/StudyDoor';
+import { FieldStudy } from '../../logic/systems/FieldStudy';
+import { inspectEntity } from '../../render/atoms/inspect';
 import { LootTable } from '../world/LootTable';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
@@ -64,6 +69,8 @@ import { SkillNames } from '../../logic/systems/SkillNames';
 
 /** Chests whose live claim won, opening now (LiveClient.chests). */
 const claimedChests = new Set<string>();
+/** ML: how many times each place has been tried this session, so every try rolls its own and a reload rolls nothing new. */
+const placeTries = new Map<string, number>();
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 
@@ -2052,6 +2059,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     // Pedro: experience pays in the world, once, at the taking, by the risk of what still stands near it.
     // A chest's rarity is its chunk's: richer loot, and no more danger, so it pays by rank alone.
+    // ML: a tool worn by a try, wherever it is carried: in a slot it wears as any slot does, in the pack by itself
+    const wearCarried = (itemId: string, amount: number) => {
+      const slot = Object.entries(get().player.equipment?.slots ?? {}).find(([, id]) => id === itemId)?.[0] as EquipSlotId | undefined;
+      if (slot) { get().wearSlot(slot, amount); return; }
+      set(s => s.player.currentSession ? ({
+        player: { ...s.player, currentSession: { ...s.player.currentSession, inventory: s.player.currentSession.inventory.map(i =>
+          i.id === itemId && i.stats?.durability !== undefined ? { ...i, stats: { ...i.stats, durability: Math.max(0, i.stats.durability - amount) } } : i) } }
+      }) : s);
+    };
+
     const payForRisk = (target: { rank: UniversalRank; rarity?: Rarity }, share: number): number => {
       const at = entity!.position;
       const threats = Object.values(world.currentMap?.chunks ?? {}).flatMap(c => c.entities)
@@ -2130,26 +2147,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    if (interactionId.startsWith('int_harvest_')) {
-      const def = RESOURCE_DEFINITIONS[entity.definitionId];
-      if (!def?.harvestConfig) return;
-      if ((entity.usesRemaining ?? 1) <= 0) return;
-      // D27: a tool on a material mints from that pair. Winging it costs more.
-      const pair = WebSystem.pairOfHarvest(get().player, def);
-      const effort = WebSystem.energyFor(get().player, pair, def.harvestConfig.energyCost);
-      if (!spendEnergy(effort.cost)) return;
-
+    /**
+     * What comes away from a place: what a try that lands does (ML), and a loose stone picked up. The
+     * energy is paid before this, by whoever asked for it.
+     */
+    const takeFrom = (entity: IWorldEntity, def: ResourceDef, pair: ISkillPair | null, effort: { winging: boolean }) => {
       const usesLeft = (entity.usesRemaining ?? 1) - 1;
       const rollKey = SessionJournal.rollKey('harvest', `${entity.id}:${usesLeft}`);
       const rng = Rng.fromKey(rollKey);
-      const [minY, maxY] = def.yieldPerUse ?? [1, 1];
-      const quantity = rng.int(minY, maxY + 1);
+      // ML18: what is taken is the material and the hand's skill by one rule, with no dice in it
+      const quantity = ExtractLaw.yieldOf(def, pair ? get().player.bank.universalSkills[pair.id] : undefined);
       // Wave 10E (the Dreaming): in a pinned world a harvest may carry a banked
       // affix — the material remembers what the Seed dreamed into it.
-      const dream = DreamingSystem.active();
       const biome = biomeAt(entity.position);
+      // ML18: what the Seed dreamed into this material on this ground is settled, the same on every piece taken here
+      const dreamAffix = biome ? DreamingSystem.materialAffixOf(def.id, biome) : null;
       const items = Array.from({ length: quantity }, () => {
-        const dreamAffix = dream && biome ? DreamingSystem.materialAffixFor(dream.pack, biome, def.id, rng) : null;
         // RG: a place that came back was rolled anew, its quality with it, and what is taken from it carries it
         return ItemFactory.createResourceItem(def, rng, { ...(entity.quality !== undefined ? { quality: entity.quality } : {}), ...(dreamAffix ? { dreamAffix } : {}) });
       });
@@ -2188,6 +2201,77 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         const turns = GroundReturn.waitOf(def);
         feed(`${def.name} is spent here. It comes back ${turns === 1 ? 'when the gate next turns' : `in ${turns} turns of the gate`}.`, 'plain');
       } else if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
+    };
+
+    if (interactionId.startsWith('int_harvest_')) {
+      const def = RESOURCE_DEFINITIONS[entity.definitionId];
+      if (!def?.harvestConfig) return;
+      if ((entity.usesRemaining ?? 1) <= 0) return;
+      // D27: a tool on a material mints from that pair. Winging it costs more.
+      const pair = WebSystem.pairOfHarvest(get().player, def);
+      const effort = WebSystem.energyFor(get().player, pair, def.harvestConfig.energyCost);
+      if (!spendEnergy(effort.cost)) return;
+      takeFrom(entity, def, pair, effort);
+      return;
+    }
+
+    // ------------------------------------------------------------------
+    // ML: THE HAND ON A PLACE. Pedro: "the right click studies or inspects or tries to use the tool, rank + rarity give
+    // the roll, on success you can extract". A try is paid, rolled (ExtractLaw) and answered four ways, his ruling for
+    // study kept: a failure damages (the tool wears, the place stands), a major failure loses (the place is spoiled
+    // until it comes back, and the tool wears).
+    // ------------------------------------------------------------------
+    if (interactionId.startsWith('int_try_')) {
+      const def = RESOURCE_DEFINITIONS[entity.definitionId];
+      if (!def?.harvestConfig || (entity.usesRemaining ?? 1) <= 0) return;
+      const knows = WebSystem.knowledgeReader(get().player);
+      const name = ContactNames.of(entity, knows, get().player);
+      const hand = ExtractLaw.hand(get().player, def);
+      if (!hand) { feed(`${name}: it wants a tool you do not carry.`, 'loss'); return; }
+      const effort = WebSystem.energyFor(get().player, hand.pair, def.harvestConfig.energyCost);
+      if (!spendEnergy(effort.cost)) return;
+      const tries = (placeTries.get(entity.id) ?? 0) + 1;
+      placeTries.set(entity.id, tries);
+      const rollKey = SessionJournal.rollKey('try', `${entity.id}:${entity.usesRemaining ?? 1}:${tries}`);
+      const roll = ExtractLaw.roll(get().player, def, rollKey);
+      if (!roll) return;
+      SessionJournal.record('INTERACT', { kind: 'TRY', targetId: entity.id, rollKey, d100: roll.d100, bar: roll.bar, outcome: roll.outcome });
+      const held = hand.tool ? LoadoutSystem.shownName(hand.tool) : 'your hands';
+      // ML18: the roll decides only whether it comes away; what comes away is the skill's, the same every time
+      if (roll.outcome === 'success' || roll.outcome === 'major_win') {
+        takeFrom(entity, def, hand.pair, effort);
+        return;
+      }
+      // A failure damages: what was tried with wears. A bare hand has nothing to wear.
+      if (hand.tool) wearCarried(hand.tool.id, slipWear(hand.tool.stats?.maxDurability ?? 100));
+      if (roll.outcome === 'failure') {
+        feed(hand.tool
+          ? `The ${held} slips on ${name}. It wears, and ${name} stands as it was.`
+          : `Your hands slip on ${name}. It stands as it was.`, 'loss');
+        return;
+      }
+      // A major failure loses: the place is spoiled until it comes back
+      const ground = !!wp.view().groundRecord && GroundReturn.isPlace(entity.id);
+      if (ground) wp.apply({ kind: 'GROUND_TAKEN', entityId: entity.id, left: 0 });
+      else if (def.regrowMs) wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { usesRemaining: 0, regrowAt: Date.now() + def.regrowMs } });
+      else wp.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
+      const turns = GroundReturn.waitOf(def);
+      feed(`${hand.tool ? `The ${held} bites wrong` : 'Your hands tear at it'}, and ${name} is spoiled. ${
+        ground ? `It comes back ${turns === 1 ? 'when the gate next turns' : `in ${turns} turns of the gate`}.` : def.regrowMs ? 'It will grow back.' : 'It will not come back.'}`, 'loss');
+      return;
+    }
+
+    // ML: a look. What can be told of it by looking, said in words: nothing is spent, nothing is learned
+    if (interactionId.startsWith('int_inspect_')) {
+      const card = inspectEntity(entity, { player: get().player, dist: 0, level: WebSystem.knowledgeReader(get().player) });
+      const rows = card.rows.map(([k, v]) => `${k}: ${v}.`).join(' ');
+      feed(`${card.title}. ${rows}${card.needs.length > 0 ? ` ${card.needs.join('. ')}.` : ''}`, 'plain');
+      return;
+    }
+
+    // ML: a sitting with the place, as any study is (D118): paid, timed, rolled, and resolved at a rest
+    if (interactionId.startsWith('int_studyplace_')) {
+      StudyDoor.start(FieldStudy.target(entity, get().player), playerPort, hp);
       return;
     }
 

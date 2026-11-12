@@ -10,6 +10,9 @@ import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUT
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { Spread, SpreadBook, formOf } from '../../../shared/entities/world/Spread';
+import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
+import { isLooseStone } from '../../../shared/entities/item/Throwable';
 import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { QUALITY_NAMES, qualityBand } from '../../../shared/render/atoms/atoms';
@@ -90,12 +93,16 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
         required.some(t => i.toolData?.toolTags.includes(t) || (i.tags || []).includes(t) || i.name.toLowerCase().includes(t)));
       const best = tools.reduce((n, t) => Math.max(n, toolPower(t)), 0);
       if (tools.length === 0) needs.push(level >= 1 ? `Needs ${words(required)}` : 'Needs a tool');
-      else if (best < config.minToolPower) needs.push(level >= 1 ? `Needs power ${config.minToolPower}, yours ${best}` : 'Needs a stronger tool');
+      // ML: a weaker tool may still try a stone that is a pebble to pick up; anything else is the try's, and its odds say how it stands
+      else if (best < config.minToolPower && isLooseStone(def)) needs.push(level >= 1 ? `Needs power ${config.minToolPower}, yours ${best}` : 'Needs a stronger tool');
     }
     if (ctx.dist >= HARVEST_RANGE) needs.push('Move closer');
   }
 
   const rows: [string, string][] = [];
+  // ML: a variant's marks are plain to see, known or not, and said in words as well as drawn
+  const spread = SpreadBook.of(e.definitionId);
+  if (spread.base && spread.marks.length > 0) rows.push(['Looks', `Like any ${formOf(def) ?? 'other of its kind'}, but with ${Spread.said(spread.marks)}`]);
   if (level <= 0) rows.push(['Known', 'Nothing yet. Study it to learn']);
   else {
     rows.push(['Rank', String(def.rank)]);
@@ -107,6 +114,9 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
       // D27: working without the skill costs more, and the card says so
       const { cost, winging } = WebSystem.energyFor(ctx.player, WebSystem.pairOfHarvest(ctx.player, def), config.energyCost);
       rows.push(['Cost', `${cost} energy, ${config.baseTimeSeconds}s${winging ? ', winging it' : ''}`]);
+      // ML: how often this hand takes it, once the person knows what it is
+      const hand = isLooseStone(def) ? null : ExtractLaw.hand(ctx.player, def);
+      if (hand) rows.push(['Odds', `${hand.tool ? `The ${LoadoutSystem.shownName(hand.tool)} takes` : 'Your hands take'} it about ${ExtractLaw.oddsOf(hand, def)} times in 100`]);
     }
   }
   if (level >= 2) {

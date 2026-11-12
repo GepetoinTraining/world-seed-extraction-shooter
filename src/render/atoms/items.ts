@@ -7,6 +7,7 @@
 
 import { ICognitiveFrame, IItem, ItemType } from '../../../shared/types';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { SpreadBook, formOf } from '../../../shared/entities/world/Spread';
 import { Role, STEPS, Sprite, gearMaterial, hashBytes, itemArt, materialFromProps } from '../../../shared/render/atoms/atoms';
 import { templateThumb } from './room';
 
@@ -126,7 +127,10 @@ export function itemArtFor(item: IItem): Sprite {
   }
   const def = RESOURCE_DEFINITIONS[item.universalDefinitionId] as any;
   const material = def?.materialProps ? materialFromProps(def.materialProps) : gearMaterial(item.tags || []);
+  // ML: a material of the ground is drawn as the piece it is, with its variant's marks
+  const form = def ? formOf(def) ?? undefined : undefined;
   return itemArt({
+    ...(form ? { form, marks: SpreadBook.drawOf(def.id).marks } : {}),
     wCells: item.dimensions?.width || 1,
     hCells: item.dimensions?.height || 1,
     tags: item.tags || [],

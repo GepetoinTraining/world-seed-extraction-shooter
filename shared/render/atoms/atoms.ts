@@ -11,6 +11,7 @@
 import { fnv1a } from '../../logic/rng/DeterministicRNG';
 import { hash2 } from '../../logic/rng/noise';
 import { IThemeLook, LOOK_COLORS } from '../../logic/theme/ThemeTypes';
+import type { IMark } from '../../entities/world/Spread';
 
 export { hash2 };
 
@@ -506,6 +507,54 @@ export const mirrorSprite = (s: Sprite): Sprite => {
 };
 
 // ---------------------------------------------------------------------------
+// MARKS (ML): what tells a variant from its base, cut into or added to the outline, never a hue.
+// ---------------------------------------------------------------------------
+
+/** Sixteen ways round from the top, in thousandths, so a mark lands on the same atom on every machine. */
+const MARK_WAYS: [number, number][] = [
+  [0, -1000], [383, -924], [707, -707], [924, -383], [1000, 0], [924, 383], [707, 707], [383, 924],
+  [0, 1000], [-383, 924], [-707, 707], [-924, 383], [-1000, 0], [-924, -383], [-707, -707], [-383, -924]
+];
+
+/**
+ * A variant's marks on its base's ink (ML). Each is found where its way from the middle of the ink last meets the
+ * outline: a notch is bitten out there; a knob is added there, half outside it; a spur is drawn out from it. Where the
+ * outline runs against the edge of the drawing and an added mark would not show, it is bitten instead.
+ */
+export function applyMarks(k: Ink, marks: IMark[] | undefined): Ink {
+  if (!marks || marks.length === 0) return k;
+  let sx = 0, sy = 0, n = 0;
+  for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) if (k.body[y * D + x]) { sx += x; sy += y; n++; }
+  if (n === 0) return k;
+  const cx = Math.round(sx / n), cy = Math.round(sy / n);
+  for (const mark of marks) {
+    const [dx, dy] = MARK_WAYS[((mark.at % 16) + 16) % 16];
+    let ox = -1, oy = -1;
+    for (let t = 0; t <= D * 2; t++) {
+      const x = cx + Math.round((dx * t) / 2000), y = cy + Math.round((dy * t) / 2000);
+      if (x < 0 || y < 0 || x >= D || y >= D) break;
+      if (k.body[y * D + x]) { ox = x; oy = y; }
+    }
+    if (ox < 0) {
+      // The way passes between the parts of a sparse thing: the nearest inked atom to where it would have met it
+      const tx = cx + Math.round((dx * 16) / 1000), ty = cy + Math.round((dy * 16) / 1000);
+      let best = Infinity;
+      for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+        if (!k.body[y * D + x]) continue;
+        const d = (x - tx) * (x - tx) + (y - ty) * (y - ty);
+        if (d < best) { best = d; ox = x; oy = y; }
+      }
+    }
+    const r = 4 + 2 * Math.max(1, mark.size);
+    const room = Math.min(ox, oy, D - 1 - ox, D - 1 - oy) >= r;
+    if (mark.kind === 'notch' || !room) k.disc(ox, oy, r, 0);
+    else if (mark.kind === 'knob') k.disc(ox + Math.round((dx * r) / 2000), oy + Math.round((dy * r) / 2000), r - 1);
+    else k.line(ox, oy, ox + Math.round((dx * r * 8) / 5000), oy + Math.round((dy * r * 8) / 5000), 1 + Math.max(1, mark.size));
+  }
+  return k;
+}
+
+// ---------------------------------------------------------------------------
 // RESOURCES: form from tags, fill from real material numbers.
 // ---------------------------------------------------------------------------
 
@@ -586,9 +635,13 @@ function shoot(stump: Sprite): Sprite {
   return { w: stump.w, h: stump.h, data };
 }
 
-/** The standing tree, trunk and crown composed: crown in life, trunk in matter. `returns`: a stump that comes back (RG). */
-export function treeSprite(def: any, uses: number, full: number, variant = 0, returns = false): Sprite {
+/**
+ * The standing tree, trunk and crown composed: crown in life, trunk in matter. `returns`: a stump that comes back (RG).
+ * ML: a variant wears its base's crown (`shape`) with its own marks cut into it; its stump is a stump like any other.
+ */
+export function treeSprite(def: any, uses: number, full: number, variant = 0, returns = false, marks: IMark[] = [], shape: any = def): Sprite {
   const seed = fnv1a(`sprite:v1:${def.id}`) + variant;
+  const shapeSeed = fnv1a(`sprite:v1:${shape.id}`) + variant;
   const { w, h } = TREE_ATOMS;
   const trunkStyle: StampStyle = uses <= 0
     ? { role: Role.MATTER, edgeStep: 2, minFill: 1, maxFill: 1, eyeStep: 3 }
@@ -596,7 +649,7 @@ export function treeSprite(def: any, uses: number, full: number, variant = 0, re
   const trunk = stamp(treeTrunkInk(uses), w, material({ density: 60, hardness: 40 }), seed, trunkStyle, h);
   if (uses <= 0) return returns ? shoot(trunk) : trunk;
   const m = knownMaterial(def.materialProps, KNOWN);
-  const crown = stamp(treeCrownInk(seed, uses, full), w, m, seed, { role: Role.LIFE, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true }, h);
+  const crown = stamp(applyMarks(treeCrownInk(shapeSeed, uses, full), marks), w, m, seed, { role: Role.LIFE, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true }, h);
   const data = new Uint8Array(trunk.data);
   for (let i = 0; i < data.length; i++) if (crown.data[i]) data[i] = crown.data[i];
   return { w: trunk.w, h: trunk.h, data };
@@ -708,29 +761,36 @@ export const worldSize = (def: any) => {
   return isTree(tags) ? 22 : tags.includes('seed') ? 10 : 12;
 };
 
-/** `returns`: a spent place that comes back (RG), told by a shape on it. Absent, what its kind says (`regrowMs`). */
-export interface WorldFormOptions { uses?: number; level?: number; affixes?: string[]; s?: number; variant?: number; returns?: boolean }
+/**
+ * `returns`: a spent place that comes back (RG), told by a shape on it. Absent, what its kind says (`regrowMs`).
+ * `base` and `marks` (ML, `SpreadBook.drawOf`): a variant is its base's own picture with its marks on the outline.
+ */
+export interface WorldFormOptions { uses?: number; level?: number; affixes?: string[]; s?: number; variant?: number; returns?: boolean; marks?: IMark[]; base?: any }
 
 /** A resource as it stands in the world, at what the player knows of it. */
 export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
   const level = o.level ?? KNOWN;
-  const tags: string[] = def.tags || [];
+  // ML: the outline is the base's, drawn as the base is at this knowledge; the fill is the material's own
+  const shape = o.base ?? def;
+  const tags: string[] = shape.tags || [];
   const seed = level <= 0 ? UNKNOWN_SEED : fnv1a(`sprite:v1:${def.id}`);
+  const shapeSeed = level <= 0 ? UNKNOWN_SEED : fnv1a(`sprite:v1:${shape.id}`);
   const m = knownMaterial(def.materialProps, level);
-  const size = o.s ?? worldSize(def);
+  const mShape = knownMaterial(shape.materialProps, level);
+  const size = o.s ?? worldSize(shape);
   const full = def.uses ?? 1;
   const uses = o.uses ?? full;
   const role = tags.includes('flora') ? Role.LIFE : Role.MATTER;
 
   let sprite: Sprite;
-  if (def.look) {
+  if (shape.look) {
     // D119: three words, and this is what they come to. Form is plain to see at any knowledge.
-    const live = stamp(LOOK_INKS[def.look.shape as IThemeLook['shape']](m, seed), size, m, seed, { role: lookRole(def.look.color), edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
+    const live = stamp(applyMarks(LOOK_INKS[shape.look.shape as IThemeLook['shape']](mShape, shapeSeed), o.marks), size, m, seed, { role: lookRole(shape.look.color), edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
     sprite = uses <= 0 ? spent(live, o.returns ?? !!def.regrowMs) : live;
   } else if (isTree(tags)) {
-    sprite = treeSprite(def, uses, full, o.variant ?? 0, o.returns ?? !!def.regrowMs);
+    sprite = treeSprite(def, uses, full, o.variant ?? 0, o.returns ?? !!def.regrowMs, o.marks, shape);
   } else {
-    const live = stamp(resourceInk(def, m, seed, level), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
+    const live = stamp(applyMarks(resourceInk(shape, mShape, shapeSeed, level), o.marks), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
     sprite = uses <= 0 ? spent(live, o.returns ?? !!def.regrowMs) : live;
   }
 
@@ -744,6 +804,41 @@ export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
 
 export function resource(def: any, s = 12): Sprite {
   return worldForm(def, { s });
+}
+
+/**
+ * WHAT COMES AWAY (ML, Pedro: "on success you can extract, but it's a different sprite from the base"). A piece taken
+ * from a place is drawn as what a hand carries off, by its form: a billet from a tree, lumps of ore from a vein, stones split
+ * from a rock, one stone from a pebble, a tied bag from sand, a bound sheaf from grain, a handful from a shrub, a cut
+ * fruit from a fruit. A variant's piece wears its own marks, so what was taken is told apart by shape too.
+ */
+export function pieceInk(form: string | undefined, m: Material, seed: number): Ink | null {
+  const k = new Ink();
+  switch (form) {
+    case 'tree': return k.rect(14, 0, 34, 47).rect(20, 3, 28, 4, 0).rect(20, 8, 28, 9, 0);
+    case 'vein': return k.rect(6, 22, 22, 36).rect(25, 10, 41, 28).rect(17, 33, 35, 44).rect(6, 22, 9, 25, 0).rect(38, 10, 41, 13, 0).rect(32, 41, 35, 44, 0);
+    case 'rock': return k.rect(3, 30, 44, 41).rect(9, 17, 29, 26).rect(31, 20, 40, 26);
+    case 'pebble': return k.disc(24, 27, 11);
+    case 'sand': return k.disc(24, 31, 14).rect(20, 8, 28, 18).disc(17, 8, 5).disc(31, 8, 5).rect(17, 15, 31, 17, 0);
+    case 'grain': {
+      [[10, 4], [24, 2], [38, 4]].forEach(([x, y]) => k.line(x, y, 24, 26, 1).line(24, 26, x, 46, 1));
+      return k.rect(17, 23, 31, 29);
+    }
+    case 'shrub': return k.disc(15, 30, 7).disc(29, 25, 7).disc(22, 39, 7).disc(35, 37, 6).line(24, 4, 24, 20, 1);
+    case 'fruit': return k.disc(17, 28, 11).disc(32, 28, 11).rect(24, 12, 25, 44, 0).line(24, 14, 30, 4, 2);
+    default: return form ? lumpInk(m, seed) : null;
+  }
+}
+
+const lumpInk = (m: Material, seed: number) => { const k = new Ink(); lump(k, 24, 24, 14, m.hardness, seed); return k; };
+
+/** A piece as it would lie on the ground or in a hand, at a size, with any marks: what the bars and the pack compare. */
+export function pieceForm(def: any, s = 12, marks: IMark[] = []): Sprite {
+  const seed = fnv1a(`sprite:v1:${def.id}`);
+  const m = materialFromProps(def.materialProps);
+  const ink = pieceInk(def.visuals?.modelId, m, seed) ?? resourceInk(def, m, seed);
+  const role = (def.tags || []).includes('flora') ? Role.LIFE : Role.MATTER;
+  return stamp(applyMarks(ink, marks), s, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -837,9 +932,12 @@ function gearInk(tags: string[]): Ink {
 }
 
 /** What fills a pack slot: gear by its class, a tree as its log, anything else as itself. */
-function glyphInk(tags: string[], m: Material, seed: number): Ink {
+function glyphInk(tags: string[], m: Material, seed: number, form?: string, marks?: IMark[]): Ink {
   const gear = ['armor', 'tool', 'melee', 'ranged', 'caster'].some(t => tags.includes(t));
   if (gear) return gearInk(tags);
+  // ML: a material taken from a place is drawn as the piece it is, with its marks
+  const piece = form ? pieceInk(form, m, seed) : null;
+  if (piece) return applyMarks(piece, marks);
   if (isTree(tags)) {
     const k = new Ink().rect(14, 0, 34, 47);
     return k.rect(20, 3, 28, 4, 0).rect(20, 8, 28, 9, 0);
@@ -888,6 +986,8 @@ export const wearLevel = (durability?: number, max?: number) => {
 export interface ItemArtInput {
   wCells: number; hCells: number; tags: string[]; material: Material; rarity: string; rank: string; seed: number;
   quality?: number; durability?: number; maxDurability?: number; identified?: boolean;
+  /** ML: a material's form, so it is drawn as the piece it is, and its marks as a variant. */
+  form?: string; marks?: IMark[];
 }
 
 /**
@@ -933,7 +1033,7 @@ export function itemArt(o: ItemArtInput): Sprite {
 
   const band = qualityBand(o.quality);
   const gw = w - 4, gh = h - 4;
-  const glyph = sampleRect(glyphInk(o.tags, o.material, o.seed).body, gw, gh);
+  const glyph = sampleRect(glyphInk(o.tags, o.material, o.seed, o.form, o.marks).body, gw, gh);
   const on = (x: number, y: number) => x >= 0 && y >= 0 && x < gw && y < gh && glyph[y * gw + x] === 1;
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
     let v: number;

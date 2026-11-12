@@ -37,6 +37,8 @@ export const FieldStudy = {
     // A person has no name until it is asked, so one never asked is studied as an unknown figure
     if (e.npc) return StudySystem.targetOfPerson({ id: e.id, name: ContactNames.personName(e, player), rank: e.rank });
     // The inspect card's own title, read with what this person knows: what can be seen of it, and nothing more
-    return StudySystem.targetOfThing({ id: e.id, name: inspectEntity(e, { player, dist: 0, level: knows }).title, rank: e.rank, tags });
+    const thing = StudySystem.targetOfThing({ id: e.id, name: inspectEntity(e, { player, dist: 0, level: knows }).title, rank: e.rank, tags });
+    // ML: a place's material is named when a sitting with it lands well (StudyDoor)
+    return e.type === EntityType.RESOURCE ? { ...thing, material: e.definitionId } : thing;
   }
 };

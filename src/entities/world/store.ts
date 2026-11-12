@@ -29,6 +29,8 @@ import { GroundReturn, GroundStore, IGroundRecord, emptyGroundRecord } from '../
 import { IWorldEntity } from '../../../shared/entities/world/types';
 import { GameClock } from '../../logic/time/GameClock';
 import { MintAdditionsWriter } from '../../logic/theme/writing/MintAdditionsWriter';
+import { SpreadBook } from '../../../shared/entities/world/Spread';
+import type { ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
 import { ICadence, IClockedWorld, SkyKind, WorldClock } from './WorldClock';
 import { SurveySystem, ISurveyEntry } from '../../logic/systems/SurveySystem';
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
@@ -131,7 +133,7 @@ function layGround(now: number, only?: string[]): void {
     const place = chunk.entities[at];
     // Unnamed, only what is waiting and whose turn has come: nothing else changes, so nothing else is drawn again
     if (!only && !(place.returning && turn >= place.returning.turn)) continue;
-    const standing: IWorldEntity = GroundReturn.standing(currentMap.seed, place, chunk.biome, groundRecord, turn, context, t => WorldClock.turnStartsAt(card, t));
+    const standing: IWorldEntity = GroundReturn.standing(currentMap.seed, place, chunk.biome, groundRecord, turn, context, t => WorldClock.turnStartsAt(card, t), chunk.difficulty);
     const entities = [...chunk.entities];
     entities[at] = standing;
     chunks = { ...chunks, [key!]: { ...chunk, entities } };
@@ -432,6 +434,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           ...instance.context, webVersion: worldCard.webVersion, groundVersion: worldCard.groundVersion, cycleMs: cadence.upMs + cadence.offMs + cadence.scanMs,
           ...(minted.length > 0 ? { resourceDefinitions: [...instance.context.resourceDefinitions, ...minted] } : {})
         };
+        // ML: which of its materials is the base of its form, and what marks each variant wears, in this world
+        SpreadBook.enter(context.resourceDefinitions as ResourceDef[], ContentRegistry.standing(worldCard.themeId));
         generationContext = {
           ...context,
           lay: chunk => {

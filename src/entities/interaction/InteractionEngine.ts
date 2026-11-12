@@ -9,6 +9,9 @@ import { MonsterMind } from '../../logic/systems/MonsterMind';
 import { TALK_ENERGY } from '../../logic/systems/TalkLaw';
 import { ContactNames } from '../../logic/systems/ContactNames';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
+import { StudySystem } from '../../logic/systems/StudySystem';
 
 /** D109: you can't talk across a distance. The same reach for a person and a monster. */
 export const TALK_REACH_TILES = 4.0;
@@ -37,7 +40,44 @@ export class InteractionEngine {
     // We assume target.definitionId maps to the Resource/Item definition
     const resourceDef = RESOURCE_DEFINITIONS[target.definitionId];
 
-    // 2. RESOURCE INTERACTIONS (Wave 2.2: bare hands allowed when no tool required)
+    // 2. RESOURCE INTERACTIONS. ML (Pedro, 2026-11-12: "the right click studies or inspects or tries to use the tool"):
+    // a place offers the try of the tool that fits it, a look at it, and a sitting with it. A loose stone is only picked up.
+    if (target.type === EntityType.RESOURCE && resourceDef?.harvestConfig && dist < 3.0 && !isLooseStone(resourceDef)) {
+      const knows = WebSystem.knowledgeReader(player);
+      const name = ContactNames.of(target, knows, player);
+      if ((target.usesRemaining ?? 1) > 0) {
+        const hand = ExtractLaw.hand(player, resourceDef);
+        if (hand) {
+          options.push({
+            id: `int_try_${target.id}`,
+            label: hand.tool ? `Try the ${LoadoutSystem.shownName(hand.tool)} on ${name}` : `Try your hands on ${name}`,
+            type: InteractionType.HARVEST,
+            icon: hand.tool ? (hand.tool.icon || '') : '',
+            // D27: the menu says what the store will charge: winging it costs more
+            energyCost: WebSystem.energyFor(player, hand.pair, resourceDef.harvestConfig.energyCost).cost,
+            timeCostSeconds: resourceDef.harvestConfig.baseTimeSeconds,
+            requirements: { toolType: ExtractLaw.asks(resourceDef)[0] },
+            consequence: { lootTableId: target.definitionId, xpTags: ['gathering', 'strength'] }
+          });
+        }
+      }
+      options.push({
+        id: `int_inspect_${target.id}`, label: `Inspect ${name}`, type: InteractionType.STUDY, icon: '',
+        energyCost: 0, timeCostSeconds: 0, requirements: {}, consequence: {}
+      });
+      // Study is always there for its energy (D118); what it is told is only what this person can see of it (S1k)
+      const shown = knows(target.definitionId) >= 1 ? [...(resourceDef.tags ?? [])] : [];
+      // A person with no bank yet (a sheet being drawn up) is asked the whole of it
+      const ask = player.bank ? StudySystem.studyAsk(player, StudySystem.targetOfThing({ id: target.id, name, rank: target.rank, tags: shown })) : { cost: 0, seconds: 0 };
+      options.push({
+        id: `int_studyplace_${target.id}`, label: `Study ${name}`, type: InteractionType.STUDY, icon: '',
+        energyCost: ask.cost, timeCostSeconds: ask.seconds,
+        requirements: {}, consequence: { knowledgeId: target.definitionId, xpTags: ['intel', 'analysis'] }
+      });
+      return options;
+    }
+
+    // 2. A LOOSE STONE (C14): picked up, as it will be thrown. No roll: a stone off the ground is not worked.
     if (target.type === EntityType.RESOURCE && resourceDef?.harvestConfig && dist < 3.0) {
       const config = resourceDef.harvestConfig;
 
@@ -206,8 +246,8 @@ export class InteractionEngine {
     }
 
     // 2. STUDY (Science)
-    // Condition: Target is ANYTHING, Player has Scanner OR High Intel
-    if (dist < 10.0) {
+    // Condition: Target is ANYTHING, Player has Scanner OR High Intel. A place has its own sitting (ML), above.
+    if (dist < 10.0 && target.type !== EntityType.RESOURCE) {
       const hasScanner = playerInventory.some(i => i.name.includes('Scanner'));
       const intel = player.attributes?.intelligence || 0;
 

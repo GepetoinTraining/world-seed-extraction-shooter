@@ -8,9 +8,8 @@
  * world's gate a place was first taken in since it last stood full, how much was left, and what it was.
  *
  * Nothing runs while nobody is there. Whoever looks next reads the place off the record and the turn the
- * game's clock says it is: still bare until its wait is up, and from the turn it came back, rolled anew,
- * keyed by the place, the world's seed and the turn it came back in. The same three give the same on any
- * machine, so a hub can check it by this file alone, and two returns of one place are two rolls.
+ * game's clock says it is: still bare until its wait is up, and from the turn it came back, holding what it
+ * held (ML17, Pedro: "once something exists it's determined"), so a hub can check it by this file alone.
  *
  * It brings back what the land laid: a tree, a find scattered on the ground, a loose stone, a rare find.
  * Chests, a leader's store and bodies have their own records and are not materials. What a person threw
@@ -29,8 +28,6 @@ import { isLooseStone } from '../item/Throwable';
 import { MaterialPropertyType } from '../economy/types';
 import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { groundReturnTurns } from '../../logic/theme/ThemeFormula';
-import { QUALITY_SPAN } from '../../logic/systems/PairCraft';
-import { Rng } from '../../logic/rng/DeterministicRNG';
 
 /** One place taken: the turn its clock started, what is left of it, and what it was then. */
 export interface ITaken {
@@ -54,8 +51,6 @@ export type PlaceRole = 'tree' | 'scatter' | 'rare' | 'loose';
 /** A place the land lays (`WorldGenerator.fillQuadrant`, `layLoose`): `ent_<qx>_<qy>_` and its role. */
 const PLACE = /^ent_(-?\d+)_(-?\d+)_(t\d+|r\d+|rare|loose\d+)$/;
 
-/** How much comes back, around what its kind holds: half again either way. The coordinator's call (RG3). */
-const HOW_MUCH_EITHER_WAY = 0.5;
 
 const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const definitionOf = (kind: string): ResourceDef | undefined => RESOURCE_DEFINITIONS[kind];
@@ -118,18 +113,14 @@ export class GroundReturn {
     }
   }
 
-  /** What comes back to a place on a turn: which kind, how much, and its quality. */
-  static rolled(seed: string, placeId: string, biome: string, turn: number, context: Pick<IGenerationContext, 'resourceDefinitions'>, was: string): { kind: string; uses: number; quality: number } {
-    const role = this.roleOf(placeId) ?? 'scatter';
-    const pool = this.poolOf(role, biome, context);
-    const rng = Rng.fromKey(`${seed}:ground:v1:${placeId}:${turn}`);
-    const def = pool.length > 0 ? rng.pick(pool) : definitionOf(was);
-    const full = Math.max(1, def?.uses ?? 1);
-    const low = Math.max(1, Math.ceil(full * (1 - HOW_MUCH_EITHER_WAY)));
-    const high = Math.max(low, full + Math.floor(full * HOW_MUCH_EITHER_WAY));
-    const uses = rng.int(low, high + 1);
-    const quality = Math.round((rng.next() * 2 - 1) * QUALITY_SPAN * 1000) / 1000;
-    return { kind: def?.id ?? was, uses, quality };
+  /**
+   * What comes back to a place (ML17, Pedro, 2026-11-12: "once something exists it's determined"): what the place
+   * held when it was taken, as much as its kind holds, with the quality it had. Nothing is rolled: the same place
+   * gives back the same thing on every return, on any machine.
+   */
+  static cameBack(taken: ITaken): { kind: string; uses: number; quality?: number } {
+    const def = definitionOf(taken.kind);
+    return { kind: taken.kind, uses: Math.max(1, def?.uses ?? 1), ...(taken.quality !== undefined ? { quality: taken.quality } : {}) };
   }
 
   /**
@@ -137,7 +128,7 @@ export class GroundReturn {
    * of what it was, saying when it comes back. Its wait up: what came back on that turn, whenever it is read.
    */
   static standing(seed: string, place: IWorldEntity, biome: string, record: IGroundRecord, turn: number,
-    context: Pick<IGenerationContext, 'resourceDefinitions'>, startsAt?: (turn: number) => number): IWorldEntity {
+    _context: Pick<IGenerationContext, 'resourceDefinitions'> & { groundVersion?: number }, startsAt?: (turn: number) => number, _landRank?: UniversalRank | string): IWorldEntity {
     const taken = record.taken[place.id];
     if (!taken) return place;
     const { regrowAt: _regrowAt, returning: _returning, quality: _quality, ...rest } = place;
@@ -149,16 +140,16 @@ export class GroundReturn {
         returning: { turn: due, ...(startsAt ? { at: startsAt(due) } : {}) }
       };
     }
-    const back = this.rolled(seed, place.id, biome, due, context, taken.kind);
-    return { ...rest, definitionId: back.kind, rank: (definitionOf(back.kind)?.rank as UniversalRank) ?? place.rank, usesRemaining: back.uses, quality: back.quality };
+    const back = this.cameBack(taken);
+    return { ...rest, definitionId: back.kind, rank: (definitionOf(back.kind)?.rank as UniversalRank) ?? place.rank, usesRemaining: back.uses, ...(back.quality !== undefined ? { quality: back.quality } : {}) };
   }
 
   /** Lays the record over a chunk as it is built. Places it does not name are left exactly as laid. */
   static layOver(seed: string, chunk: IChunk, record: IGroundRecord, turn: number,
-    context: Pick<IGenerationContext, 'resourceDefinitions'>, startsAt?: (turn: number) => number): void {
+    context: Pick<IGenerationContext, 'resourceDefinitions'> & { groundVersion?: number }, startsAt?: (turn: number) => number): void {
     if (Object.keys(record.taken).length === 0) return;
     if (!chunk.entities.some(e => record.taken[e.id])) return;
-    chunk.entities = chunk.entities.map(e => (record.taken[e.id] ? this.standing(seed, e, chunk.biome, record, turn, context, startsAt) : e));
+    chunk.entities = chunk.entities.map(e => (record.taken[e.id] ? this.standing(seed, e, chunk.biome, record, turn, context, startsAt, chunk.difficulty) : e));
   }
 
   /** Two readings of one world's ground, made one (online play): the later taking stands, in either order. */

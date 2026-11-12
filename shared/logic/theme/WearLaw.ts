@@ -47,6 +47,12 @@ export const blowWear = (maxDurability: number, ownRate: number, rank: string): 
 export const hitWear = (maxDurability: number, bodyShare: number, rank: string): number =>
   (maxDurability * Math.max(0, bodyShare)) / (RUNS_A_PIECE_LASTS * runBodyShare(rank));
 
+/**
+ * What a try that fails takes from its tool (ML, the coordinator's call on Pedro's "a failure damages"): what felling one
+ * plain creature takes from a weapon, a run's share of a piece's life, the same at every rank.
+ */
+export const slipWear = (maxDurability: number): number => maxDurability / (RUNS_A_PIECE_LASTS * RUN_PLAIN_CREATURES);
+
 /** The lines protection and the rolls before it read: a piece carrying one takes the blows, and wears by them. */
 const PROTECTION_LINES = ['defense', 'physical_reduction', 'evasion_rating', 'block_chance'] as const;
 export const protects = (item: Pick<IItem, 'stats'>): boolean =>

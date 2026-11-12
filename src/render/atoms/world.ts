@@ -11,6 +11,7 @@ import { GenreType } from '../../../shared/entities/world/definitions';
 import { BiomeType, EntityType, IMap, IWorldEntity } from '../../../shared/entities/world/types';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { SpreadBook } from '../../../shared/entities/world/Spread';
 import {
   ATOM_PX, CreatureFacing, GenreLook, KNOWN, TILE_ATOMS, Genre, Ink, Material, Role, Sprite, TRI, chest, creature, exitBeacon, grain, hash2, material,
   npcFigure, px, rankMark, ruin, spent, stamp, structureForm, worldForm
@@ -250,7 +251,10 @@ export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = 
       const uses = e.usesRemaining ?? def.uses ?? 1;
       // RG: a place coming back on its gate's turn keeps a shape that says so
       const returns = !!e.returning || !!def.regrowMs;
-      return cached(`${e.definitionId}:${uses}:${level}:${returns ? 'r' : ''}`, () => worldForm(def, { uses, level, returns }));
+      // ML: a variant is drawn as its base with its marks; what marks it wears is its world's
+      const drawn = SpreadBook.drawOf(def.id);
+      const marked = drawn.marks.map(m => `${m.kind}${m.at}.${m.size}`).join('');
+      return cached(`${e.definitionId}:${uses}:${level}:${returns ? 'r' : ''}:${marked}`, () => worldForm(def, { uses, level, returns, ...drawn }));
     }
     case EntityType.STRUCTURE: {
       const raised = e.structure;

@@ -21,6 +21,7 @@ import { RestSystem } from './RestSystem';
 import { StudySystem } from './StudySystem';
 import { Escort } from './Escort';
 import { WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem';
+import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { EYE_XP_PER_SITTING, StudyLanding } from './StudyLanding';
 
 const WAIT_ID = 'study_sitting';
@@ -107,6 +108,14 @@ export const StudyDoor = {
 
     SessionJournal.record('INTERACT', { kind: 'STUDY', target: StudySystem.keyOf(target), outcome: sitting.outcome });
     feed(StudySystem.saidOf(sitting.outcome, target), sitting.outcome === 'failure' || sitting.outcome === 'major_failure' ? 'loss' : 'proof');
+    // ML: a place sat with to good effect gives up its material's name at once, and a deep sitting what it is made of;
+    // what the sitting comes to in lore still waits for a rest
+    const material = target.material ? RESOURCE_DEFINITIONS[target.material] : undefined;
+    if (material && (sitting.outcome === 'success' || sitting.outcome === 'major_win')) {
+      const before = WebSystem.knowledgeReader(pc.view().player)(material.id);
+      pc.apply({ kind: 'SET', player: WebSystem.studied(pc.view().player, material.id, sitting.outcome === 'major_win' ? 2 : 1) });
+      if (before < 1) feed(`${target.name} is ${material.name}.`, 'proof');
+    }
     if (spent) feed(`${target.name} has given what it held. It is spent.`, 'plain');
     // The ledger is the person's own record, so it holds the key. Only what the screen showed goes to any door.
     await Ledger.append('TECH', {

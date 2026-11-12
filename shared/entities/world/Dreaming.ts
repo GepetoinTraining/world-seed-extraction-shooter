@@ -126,6 +126,15 @@ export class DreamingSystem {
    * The affix a dreamed harvest carries, or null for the common case. Pure in
    * the rng stream: the same keyed stream gives the same answer forever.
    */
+  /**
+   * ML18 (Pedro, 2026-11-12: "once something exists it's determined"): what the Seed dreamed into a material on a kind
+   * of ground is settled by the world, the ground and the material, so every piece of it taken there carries the same.
+   */
+  static materialAffixOf(defId: string, biome: string): IAffix | null {
+    if (!activeDream) return null;
+    return this.materialAffixFor(activeDream.pack, biome, defId, Rng.fromKey(`${activeDream.seed}:dream:material:v1:${biome}:${defId}`));
+  }
+
   static materialAffixFor(pack: IContentPack, biome: string, _defId: string, rng: SeededRNG): IAffix | null {
     const candidates = this.entriesFor(pack, biome)
       .filter(e => e.theme !== 'CART' && e.allowedTags.includes('resource'));
