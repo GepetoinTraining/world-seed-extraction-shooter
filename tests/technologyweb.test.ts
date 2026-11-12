@@ -1567,6 +1567,7 @@ describe('the Agent tab shows what has been earned, and hides what the law hides
   });
 
   it('the skills tab reads names, not raw ids', () => {
-    expect(source('components/PlayerHub.tsx')).toMatch(/WebSystem\.nameOf\(/);
+    // GV: a skill's shown name goes through SkillNames, never its tag list
+    expect(source('components/PlayerHub.tsx')).toMatch(/SkillNames\.nameOf\(/);
   });
 });

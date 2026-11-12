@@ -74,6 +74,7 @@ import { MinimapView } from './ui/MinimapView';
 import { fieldMinimap } from '../render/atoms/minimap';
 import { Hotbar, activateHotbar } from './Hotbar';
 import { levelLine } from './ui/levelLine';
+import { SkillNames } from '../logic/systems/SkillNames';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -607,7 +608,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (useReceipt.getState().receipt?.outcome === 'EXTRACTED') {
         useReceipt.getState().show({
           outcome: 'EXTRACTED', haul, haulValue, ...shownOf, tax, levy,
-          settled: settled.map(s => WebSystem.nameOf(s.id)),
+          settled: settled.map(s => SkillNames.nameOf(s.id)),
           worldName: card?.name ?? 'UNKNOWN',
           durationMs: signed?.payload.durationMs ?? (Date.now() - startedAt),
           actionCount: signed?.payload.actionCount ?? 0,

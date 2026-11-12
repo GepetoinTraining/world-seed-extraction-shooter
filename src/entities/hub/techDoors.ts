@@ -24,6 +24,7 @@ import {
 } from './hubTech';
 import { RoomVerdict, answersTag, tagDefaultMaterial, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS } from '../../../shared/entities/hub/room';
 import { ITemplate, ITemplateSheet, SYSTEM_TEMPLATES, defaultSheet } from '../../../shared/entities/hub/template';
+import { SkillNames } from '../../logic/systems/SkillNames';
 
 /** What one pass may ask of the door for one person. It guards the bill and caps no content: what is over it waits. */
 const CHAIN_ROUNDS_PER_PASS = 3;
@@ -90,7 +91,7 @@ export function techDoors(set: (partial: any) => void, get: () => IStoreSide & I
     const opened = openedChainStations(tech);
     if (opened.length > 0) absorbWebBatch({ runId: 'chain', model: 'chain', ranAt: 0, stations: opened });
     for (const event of events) {
-      const name = WebSystem.nameOf(event.skillId);
+      const name = SkillNames.nameOf(event.skillId);
       await Ledger.append('TECH', { kind: 'FIRST', skillId: event.skillId, name, hubId, rung: 0, by: event.by });
       useFeed.getState().push(`The hub has reached ${name}, through ${event.by}.`, 'proof');
     }

@@ -16,6 +16,7 @@ import { WebBank } from '../../shared/logic/content/WebBank';
 import { WebSystem } from '../../shared/logic/systems/WebSystem';
 import { ArmedButton, Bar, Modal, Row } from './ui/kit';
 import { useFeed } from './ui/stores';
+import { SkillNames } from '../logic/systems/SkillNames';
 
 const RANK_WORDS: Record<CraftRank, string> = { APPRENTICE: 'APPRENTICE', JOURNEYMAN: 'JOURNEYMAN', MASTER: 'MASTER' };
 
@@ -47,7 +48,7 @@ export const ApprenticeWindow: React.FC<{ npcId: string; onClose: () => void }> 
       <div className="ws-list" style={{ marginBottom: 10 }}>
         {mine.map(c => (
           <div key={c.id} style={{ padding: '4px 0' }}>
-            <Row title={c.name} right={RANK_WORDS[c.rank]} sub={ApprenticeRoad.canCraft(c) ? `${WebSystem.nameOf(c.skill.id)}, ${WebSystem.masteryOf(c.skill).rungName}` : `${c.done.length} of ${keepers.length} benches done`} />
+            <Row title={c.name} right={RANK_WORDS[c.rank]} sub={ApprenticeRoad.canCraft(c) ? `${SkillNames.nameOf(c.skill.id)}, ${WebSystem.masteryOf(c.skill).rungName}` : `${c.done.length} of ${keepers.length} benches done`} />
             {c.rank === 'APPRENTICE' && <Bar label="TERM" value={c.progress} max={100} text={`${Math.floor(c.progress)}%`} />}
           </div>
         ))}

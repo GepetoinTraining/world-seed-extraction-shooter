@@ -24,6 +24,7 @@ import { ProgressionSystem } from '../../../shared/entities/player/systems/Progr
 import { StudySystem } from './StudySystem';
 import { LoreSystem } from './LoreSystem';
 import { IHubTech, hubStations, hubTreeOf } from '../../entities/hub/hubTech';
+import { SkillNames } from './SkillNames';
 
 export type MapKind = 'thing' | 'skill' | 'station';
 /** Held by this person; still forming in their hands; reached by the hub; or not known at all. */
@@ -227,7 +228,7 @@ function read(player: IPlayer, ctx: IMapContext) {
     for (const s of skills.values()) {
       const state: MapState = heldIds.has(s.id) ? 'yours' : formingIds.has(s.id) ? 'forming' : hubIds.has(s.id) ? 'hub' : 'unknown';
       const name = state === 'unknown' ? undefined
-        : player.skillWords?.[s.id]?.name ?? ctx.web.nodes[s.id]?.name ?? WebSystem.nameOf(s.id, pack);
+        : SkillNames.nameOf(s.id, player.skillWords?.[s.id]?.name ?? ctx.web.nodes[s.id]?.name, pack);
       const found = WebSystem.categoryOf(s.tags, hub, [], pack);
       all.push({
         id: `skill:${s.id}`, kind: 'skill', ref: s.id, state, rank: s.rank, tags: s.tags,

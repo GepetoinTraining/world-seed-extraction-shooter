@@ -22,6 +22,7 @@ import { WebMap } from '../logic/systems/WebMap';
 import { DowntimeActs } from '../logic/systems/DowntimeActs';
 import { DowntimeDoor } from '../logic/systems/DowntimeDoor';
 import { Button, Modal, Panel } from './ui/kit';
+import { SkillNames } from '../logic/systems/SkillNames';
 
 export const DowntimePanel: React.FC<{ place: DowntimePlace; onDone?: () => void }> = ({ place, onDone }) => {
   const player = usePlayerStore(s => s.player);
@@ -84,7 +85,7 @@ export const DowntimePanel: React.FC<{ place: DowntimePlace; onDone?: () => void
       </Panel>
       <Panel title="WRITE OUT WHAT YOUR HANDS KNOW">
         {skills.length === 0 ? <div className="ws-dim ws-small">Nothing held yet.</div> : skills.map(s => (
-          <Button key={s.id} tone="quiet" disabled={full} onClick={() => add({ kind: 'WRITE', skillId: s.id })}>{(player.skillWords?.[s.id]?.name ?? WebSystem.nameOf(s.id)).toUpperCase()}</Button>
+          <Button key={s.id} tone="quiet" disabled={full} onClick={() => add({ kind: 'WRITE', skillId: s.id })}>{(SkillNames.nameOf(s.id, player.skillWords?.[s.id]?.name)).toUpperCase()}</Button>
         ))}
       </Panel>
       <Button tone="quiet" disabled={full} onClick={() => add({ kind: 'REST' })}>ADD A REST</Button>

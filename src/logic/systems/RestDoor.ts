@@ -19,6 +19,7 @@ import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { IDreamResult, INN_FEE, RestPlace, RestSystem } from './RestSystem';
 import { LoreSystem } from './LoreSystem';
 import { PROCESS_FAMILIES, ProcessFamily } from '../../../shared/logic/systems/ProcessSystem';
+import { SkillNames } from './SkillNames';
 
 let waking = false;
 const feed =(text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
@@ -114,7 +115,7 @@ export const RestDoor = {
     const studied = queue.studied as { id: string }[];
     // D118: gifts also cost lore. What it cannot reach stays owed, and the person is told.
     for (const g of LoreSystem.giftsWaiting(player)) {
-      feed(`${WebSystem.nameOf(g.id)} is owed a gift. It waits on ${g.price} lore; you hold ${LoreSystem.held(player)}.`, 'plain');
+      feed(`${SkillNames.nameOf(g.id)} is owed a gift. It waits on ${g.price} lore; you hold ${LoreSystem.held(player)}.`, 'plain');
     }
     if (skills.length === 0 && weaves.length === 0 && gifts.length === 0 && studied.length === 0 && !LoreSystem.worthFiling(player)) return;
 
@@ -142,7 +143,7 @@ export const RestDoor = {
     }
     if (out.status !== 'PENDING' && studied.length > 0) feed('What you studied waits. Nothing is lost; it comes to something at a rest the dream can reach.', 'plain');
     // A gift the log could pay for went into the batch, so the line above it never named it.
-    if (out.status !== 'PENDING') for (const g of gifts) feed(`${WebSystem.nameOf(g.id)} is owed a gift. It waits for a rest the dream can reach.`, 'plain');
+    if (out.status !== 'PENDING') for (const g of gifts) feed(`${SkillNames.nameOf(g.id)} is owed a gift. It waits for a rest the dream can reach.`, 'plain');
   },
 
   /** Bring back what was filed, if it is ready: judged by the law, signed, and applied. */
@@ -181,7 +182,7 @@ export const RestDoor = {
       }
     }
     for (const s of out.data.skills) feed(`${s.name}: ${s.flavor}`, 'signal');
-    for (const g of out.data.gifts ?? []) feed(`${WebSystem.nameOf(g.skill)} gave you ${g.name}. ${g.blurb}`, 'proof');
+    for (const g of out.data.gifts ?? []) feed(`${SkillNames.nameOf(g.skill)} gave you ${g.name}. ${g.blurb}`, 'proof');
     // The lore pass: what a sitting gave, by kind; a misreading reads as lore of its category, and high
     for (const w of said) feed(LoreSystem.saidOf(w.name, w.line, w.lore), 'proof');
     for (const t of out.data.taught ?? []) feed(`You woke knowing ${t.name}. ${t.flavor}`, 'proof');

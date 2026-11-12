@@ -58,6 +58,7 @@ import { TagLaw } from '../../../shared/logic/content/TagLaw';
 import { CreationSystem, ICreationSheet } from '../../logic/systems/CreationSystem';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 import type { IPlayerPort, PlayerChange } from './playerView';
+import { SkillNames } from '../../logic/systems/SkillNames';
 
 /** Chests whose live claim won, opening now (LiveClient.chests). */
 const claimedChests = new Set<string>();
@@ -380,7 +381,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const res = CircleSystem.fill(get().player, skillId);
     if (!res.ok) { feed(res.reason!, 'loss'); return false; }
     set({ player: res.player });
-    if (res.owed) feed(CircleSystem.standsLine(WebSystem.nameOf(skillId), CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])), 'proof');
+    if (res.owed) feed(CircleSystem.standsLine(SkillNames.nameOf(skillId), CircleSystem.circlesOf(res.player.bank.universalSkills[skillId])), 'proof');
     return true;
   },
 
@@ -601,14 +602,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const newBag = target === 'BAG' ? LoadoutSystem.carryOf(item) : LoadoutSystem.bagCapacityBonus(equipment);
       const limit = InventorySystem.maxCarryWeight(player.attributes.strength) + newBag + StatSystem.total(equipment, 'carry_capacity');
       const weight = InventorySystem.totalWeight(inv) + InventorySystem.totalWeight([holder]);
-      if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. The harness holds ${shown(holder)} still.` });
+      if (weight > limit) return say({ ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${limit} kg. ${shown(holder)} stays where it is worn.` });
       const occ = InventorySystem.buildOccupancy(inv, layout);
       const here = oldPlace && (() => {
         const { w, h } = InventorySystem.footprint(holder, oldPlace.rotated);
         return InventorySystem.canPlaceAt(occ, w, h, oldPlace.x, oldPlace.y) ? oldPlace : null;
       })();
       const place = here || InventorySystem.autoPlace(inv, layout, holder);
-      if (!place) return say({ ok: false, reason: `The pack refuses ${shown(holder)}: no room in the grid. The harness holds it still.` });
+      if (!place) return say({ ok: false, reason: `The pack refuses ${shown(holder)}: no room in the pack. It stays where it is worn.` });
       layout[holder.id] = place;
       set(s => {
         const eq = s.player.equipment!;
@@ -792,7 +793,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const maxW = InventorySystem.maxCarryWeight(player.attributes.strength) + bagBonus;
       const weight = InventorySystem.totalWeight(session.inventory) + InventorySystem.totalWeight(coming);
       if (weight > maxW) {
-        const v = { ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${maxW} kg. The harness holds ${shown(item)} still.` };
+        const v = { ok: false, reason: `The pack refuses the weight: ${weight.toFixed(1)} of ${maxW} kg. ${shown(item)} stays where it is worn.` };
         feed(v.reason, 'loss');
         return v;
       }
@@ -801,7 +802,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       for (const c of coming) {
         const place = InventorySystem.autoPlace(inv, layout, c);
         if (!place) {
-          const v = { ok: false, reason: `The pack refuses ${shown(c)}: no room in the grid. The harness holds it still.` };
+          const v = { ok: false, reason: `The pack refuses ${shown(c)}: no room in the pack. It stays where it is worn.` };
           feed(v.reason, 'loss');
           return v;
         }
@@ -942,7 +943,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const teaches = WebSystem.reverseEngineer(item).designs.filter(d => !get().player.bank.universalSkills[d.skillId]);
     if (teaches.length > 0) {
       set(s => ({ player: teaches.reduce((p, d) => WebSystem.accrueFromStudy(p, { id: d.skillId, tags: d.tags }, rankIndexOf(item.rank)), s.player) }));
-      feed(`Taking ${item.name} apart in your head: ${teaches.map(d => WebSystem.nameOf(d.skillId)).join(', ')}. It will settle, or it won't.`, 'signal');
+      feed(`Taking ${item.name} apart in your head: ${teaches.map(d => SkillNames.nameOf(d.skillId)).join(', ')}. It will settle, or it won't.`, 'signal');
     }
     return { ok: true };
   },
@@ -2367,7 +2368,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { rung } = WebSystem.masteryOf(held);
     if (rung > rungBefore && rungBefore >= 0) {
       set(s => ({ player: WebSystem.revealByMastery(s.player, skillId) }));
-      feed(`${WebSystem.nameOf(skillId)}: ${MASTERY_RUNGS[rung]}. The material reads further.`, 'proof');
+      feed(`${SkillNames.nameOf(skillId)}: ${MASTERY_RUNGS[rung]}. The material reads further.`, 'proof');
     }
   },
 
@@ -2383,7 +2384,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     if (!get().player.skillProgress?.[pair.id]) {
       // N13: only a road that charged more for the first try says so
-      feed(FieldWords.winging(WebSystem.nameOf(pair.id), costly), 'signal');
+      feed(FieldWords.winging(SkillNames.nameOf(pair.id), costly), 'signal');
     }
     set(s => ({ player: WebSystem.accrue(s.player, pair, rank) }));
   },

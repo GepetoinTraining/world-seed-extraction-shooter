@@ -13,6 +13,7 @@ import { Ledger } from '../ledger/Ledger';
 import { GameClock } from '../time/GameClock';
 import { LorePiece } from './LorePiece';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { SkillNames } from './SkillNames';
 
 const WAIT_ID = 'lore_writing';
 let writing: string | null = null;
@@ -33,7 +34,7 @@ export const LoreWriteDoor = {
     writing = skillId;
     const startedAt = Date.now();
     useWaits.getState().begin({ id: WAIT_ID, label: 'WRITING', startedAt, until: startedAt + seconds * 1000 });
-    feed(`Writing out ${WebSystem.nameOf(skillId)}. A sheet of paper, ${cost} energy, ${seconds}s.`, 'signal');
+    feed(`Writing out ${SkillNames.nameOf(skillId)}. A sheet of paper, ${cost} energy, ${seconds}s.`, 'signal');
     timer = setTimeout(() => { void LoreWriteDoor.finish(pc, hp); }, seconds * 1000);
     return { ok: true, seconds };
   },

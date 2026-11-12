@@ -36,6 +36,7 @@ import { SkillSay } from '../logic/systems/SkillSay';
 import { SheetNumbers } from '../logic/systems/SheetNumbers';
 import { hubTreeOf } from '../entities/hub/hubTech';
 import { useHotbar } from './ui/stores';
+import { SkillNames } from '../logic/systems/SkillNames';
 
 /** The groups are the shared rules' (2.13); a sheet draws each by its word and its place, in this order. */
 export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = Object.fromEntries(GROUP_ORDER.map(g => [GROUP_WORDS[g], GROUPS[g]]));
@@ -185,14 +186,14 @@ export const HandsPanel: React.FC<{ full?: boolean }> = ({ full = false }) => {
 // SKILLS: grown by use; the rank is effectiveness against the task (D6)
 // ---------------------------------------------------------------------------
 
-const SkillsTab: React.FC = () => {
+export const SkillsTab: React.FC = () => {
   const { player } = usePlayerStore();
   const [query, setQuery] = useState('');
   const skills = player.bank.universalSkills || {};
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return Object.entries(skills)
-      .filter(([id]) => WebSystem.nameOf(id).toLowerCase().includes(q))
+      .filter(([id]) => SkillNames.nameOf(id).toLowerCase().includes(q))
       .sort((a, b) => b[1].level - a[1].level);
   }, [skills, query]);
 
@@ -213,11 +214,10 @@ const SkillsTab: React.FC = () => {
                 <RankMark rank={rank} scale={2} />
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span className="t" style={{ display: 'block', textTransform: 'uppercase' }}>
-                    {player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id)}
+                    {SkillNames.nameOf(skill.id, player.skillWords?.[skill.id]?.name)}
                   </span>
                   <span className="s">
-                    base {skill.level}
-                    {skill.origin ? ` · born of ${skill.origin.triggerAction}` : ''}
+                    level {skill.level}
                   </span>
                 </span>
               </span>

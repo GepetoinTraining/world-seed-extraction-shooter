@@ -238,6 +238,7 @@ export const craftName = (recipeId: string): string =>
 /** The game's day (D135): the Unix day, read from the game's clock and not the browser's. */
 export { worldDay } from './worldDay';
 import { worldDay } from './worldDay';
+import { SkillNames } from '../../logic/systems/SkillNames';
 
 /** The one thing anyone can ask to have raised that is not a station on the web. */
 const BUILDING_HOUSE = 'house';
@@ -1627,7 +1628,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       hubDoc: get().hubDoc() ?? undefined
     });
     await Ledger.append('TECH', { kind: 'LORE_HANDED_IN', hubId: activeHubId, questId, skillId: item.lorePiece!.skillId, writtenBy: item.lorePiece!.by.uid, consumedIds: [item.id] });
-    useFeed.getState().push(`${askerName} pays ${pay.toLocaleString()} G. The hub's web now holds ${WebSystem.nameIn(item.lorePiece!.skillId, get().web)}, and the ${hubStations(get().tech).find(s => s.id === quest.lore!.stationId)?.name ?? 'workshop'} can be worked.`, 'proof');
+    useFeed.getState().push(`${askerName} pays ${pay.toLocaleString()} G. The hub's web now holds ${SkillNames.nameIn(item.lorePiece!.skillId, get().web)}, and the ${hubStations(get().tech).find(s => s.id === quest.lore!.stationId)?.name ?? 'workshop'} can be worked.`, 'proof');
     await get().saveHubState();
     return { ok: true };
   },
@@ -1824,14 +1825,14 @@ export const useHubStore = create<HubState>((set, get) => ({
     const hubId = get().activeHubId;
     const lore = { ...pc.view().player.bank.lore };
     for (const skillId of firsts) {
-      const name = WebSystem.nameIn(skillId, web);
+      const name = SkillNames.nameIn(skillId, web);
       await Ledger.append('TECH', { kind: 'FIRST', skillId, name, hubId, rung: 0 });
       const topic = `First in this hub: ${name}`;
       lore[topic] = lore[topic] ?? { topic, xp: 0, level: 1, dateDiscovered: Date.now() };
       useFeed.getState().push(`First in this hub to reach ${name}. The bank has it signed.`, 'proof');
     }
     for (const { id, rung } of records) {
-      await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: WebSystem.nameIn(id, web), hubId, rung });
+      await Ledger.append('TECH', { kind: 'RUNG', skillId: id, name: SkillNames.nameIn(id, web), hubId, rung });
     }
     pc.apply({ kind: 'LORE', lore });
     await get().saveHubState();

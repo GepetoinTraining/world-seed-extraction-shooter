@@ -40,6 +40,7 @@ import { goalWords, useWebView } from './TechWebView';
 import { DowntimeActs } from '../logic/systems/DowntimeActs';
 import { said } from '../logic/systems/SheetWords';
 import { OriginBank } from '../logic/content/OriginBank';
+import { SkillNames } from '../logic/systems/SkillNames';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -287,7 +288,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
             <div key={skill.id} className="ws-row ws-small" style={{ padding: '2px 0' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <RankMark rank={ProgressionSystem.skillRankOf(skill)} scale={1} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id)}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{SkillNames.nameOf(skill.id, player.skillWords?.[skill.id]?.name)}</span>
               </span>
               <span className="ws-dim" style={{ flexShrink: 0 }}>level {skill.level}</span>
             </div>

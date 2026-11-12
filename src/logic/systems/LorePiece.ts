@@ -19,6 +19,7 @@ import { ProgressionSystem, RANK_ORDER } from '../../../shared/entities/player/s
 import { LORE_RANK_GROWTH } from '../../../shared/logic/systems/LoreConstants';
 import { Verdict } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { StudySystem } from './StudySystem';
+import { SkillNames } from './SkillNames';
 
 /** What a written piece is worth at rank F: what a trade's note sells for on the shelf (ProcessSystem.tradeNote). */
 export const LORE_PIECE_VALUE = 60;
@@ -39,7 +40,7 @@ type Piece = IItem & { lorePiece?: ILorePieceRecord };
 export const LorePiece = {
   /** The skill as something to sit with: its own tags, on its own tree. What writing it out asks is what that sitting asks. */
   targetOf(skill: Pick<ISkillState, 'id' | 'tags'>): IStudyTarget {
-    return StudySystem.targetOfThing({ id: skill.id, name: WebSystem.nameOf(skill.id), tags: skill.tags });
+    return StudySystem.targetOfThing({ id: skill.id, name: SkillNames.nameOf(skill.id), tags: skill.tags });
   },
 
   /** A sheet to write on: anything of the registered paper material that is not itself written. */
@@ -84,7 +85,7 @@ export const LorePiece = {
     if (!skill || !sheet) throw new Error('LorePiece.write: ask canWrite first');
     const { cost, seconds } = this.ask(player, skill, hub);
     const rank = Math.max(0, skill.rank ?? 0);
-    const name = player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id);
+    const name = SkillNames.nameOf(skill.id, player.skillWords?.[skill.id]?.name);
     const record: ILorePieceRecord = { skillId: skill.id, tags: skill.tags, rank, by, at };
     const item: Piece = {
       // The sheet it was written on is used once, so its id makes the piece's

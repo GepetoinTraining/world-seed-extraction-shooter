@@ -17,6 +17,7 @@ import { INN_FEE, RestSystem } from './RestSystem';
 import { WebMap } from './WebMap';
 import type { IHubTech } from '../../entities/hub/hubTech';
 import { hubTreeOf } from '../../entities/hub/hubTech';
+import { SkillNames } from './SkillNames';
 
 export interface IActsContext {
   place: DowntimePlace;
@@ -81,7 +82,7 @@ export const DowntimeActs = {
           }
           case 'WRITE': {
             const out = LorePiece.write(player, act.skillId, ctx.who(player), end, ctx.hub);
-            return { player: out.player, said: `You wrote out ${WebSystem.nameOf(act.skillId)} on a sheet of paper (${out.cost} energy). ${out.item.name} is in your vault; your hands still know it.` };
+            return { player: out.player, said: `You wrote out ${SkillNames.nameOf(act.skillId)} on a sheet of paper (${out.cost} energy). ${out.item.name} is in your vault; your hands still know it.` };
           }
           case 'REST': {
             const paid = ctx.place === 'INN' ? { ...player, bank: { ...player.bank, gold: player.bank.gold - INN_FEE } } : player;
@@ -99,7 +100,7 @@ export const DowntimeActs = {
   wordOf(act: IDowntimeAct): string {
     switch (act.kind) {
       case 'STUDY': return `sitting with ${act.target.name}`;
-      case 'WRITE': return `writing out ${WebSystem.nameOf(act.skillId)}`;
+      case 'WRITE': return `writing out ${SkillNames.nameOf(act.skillId)}`;
       case 'REST': return 'a rest';
     }
   },

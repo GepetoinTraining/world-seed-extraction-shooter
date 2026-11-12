@@ -19,16 +19,11 @@ import { DELIVERIES, EFFECTS, PASSIVE_STATS } from '../../../shared/logic/theme/
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from './CircleSystem';
 import { LoreSystem } from './LoreSystem';
 import { said } from './SheetWords';
+import { SkillNames, listed, sayOf } from './SkillNames';
 
 type Pack = ReturnType<typeof WebBank.current>;
 type Web = Parameters<typeof WebSystem.earnedSheet>[2];
 
-const DOING_KINDS = ['tool', 'trade', 'action'] as const;
-const WORKED_KINDS = ['family', 'material', 'element'] as const;
-
-/** A tag as a player says it: the registry's word, or the tag itself as plain words. */
-const sayOf = (pack: Pack, tag: string): string => pack.tags.find(t => t.tag === tag)?.say ?? tag.replace(/_/g, ' ');
-const listed = (words: string[]): string => words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const unique = (words: string[]) => [...new Set(words)];
 
@@ -80,12 +75,9 @@ export interface FormingSay {
 }
 
 export const SkillSay = {
-  /** What a skill is, from its tags: "Shooting beasts and devices", "Sawing plants and wood", "Berries, by hand". */
+  /** What a skill is, from its tags (SkillNames, the one place a skill is named). */
   whatItIs(tags: string[], pack: Pack = WebBank.current()): string {
-    const doing = unique(tags.filter(t => WebBank.hasKind(pack, t, [...DOING_KINDS])).map(t => sayOf(pack, t)));
-    const worked = unique(tags.filter(t => WebBank.hasKind(pack, t, [...WORKED_KINDS])).map(t => sayOf(pack, t)));
-    if (doing.length === 0) return worked.length ? `${capital(listed(worked))}, by hand` : 'Work by hand';
-    return capital([listed(doing), listed(worked)].filter(Boolean).join(' '));
+    return SkillNames.whatItIs(tags, pack);
   },
 
   /** An identify skill forming names nothing (D32): which eye would say what the unread piece was. */
@@ -140,7 +132,7 @@ export const SkillSay = {
       return {
         id: row.id,
         // Q47: a skill nobody has named reads as what it is, never as its tag list
-        name: WebSystem.isTagListName(row.id, row.name, pack) ? what : row.name,
+        name: SkillNames.nameOf(row.id, row.name, pack),
         rank: row.rank,
         level: row.level,
         flavor: row.flavor,
