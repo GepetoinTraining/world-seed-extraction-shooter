@@ -306,6 +306,19 @@ export const harvestNumbers = (verb: string, rank: ThemeRank) => ({
   minToolPower: verb === 'hands' ? 0 : 5 + rankStep(rank) * 8
 });
 
+/**
+ * HOW LONG THE GROUND TAKES TO GIVE BACK (RG, Pedro, 2026-11-12: "The worlds need to regenerate the materials,
+ * even the tutorial one"). Counted in turns of the world's gate, so a place stripped in one visit is never
+ * full again in that visit and never bare for good: one turn, and one more for every fourfold of how hard
+ * the thing is to take. Hardness is the formula's own reading of a material's words (its form and its rank,
+ * `materialNumbers`), so what a hand picks comes back sooner than what lies, and what lies sooner than what
+ * is mined; no name is read. At F a fruit, a grain or a shrub waits one turn, a tree, sand or a pebble two,
+ * a rock or a vein three, and a vein at D four. The fourfold is the coordinator's call (RG2), open to strike.
+ */
+export const GROUND_RETURN_STEP = 4;
+export const groundReturnTurns = (hardness: number): number =>
+  1 + Math.floor(Math.log(Math.max(1, hardness)) / Math.log(GROUND_RETURN_STEP) + 1e-9);
+
 export const goodNumbers = (g: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG }) => ({
   weight: WEIGHT_KG[g.weight],
   dimensions: FOOTPRINT[g.weight],

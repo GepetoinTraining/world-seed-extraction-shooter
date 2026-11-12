@@ -226,7 +226,7 @@ const cartSprite = (loaded: boolean) => {
 
 export interface EntityPose { facing?: CreatureFacing; frame?: number }
 
-type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart' | 'structure'> & Partial<Pick<IWorldEntity, 'escort'>>;
+type SpriteEntity = Pick<IWorldEntity, 'id' | 'type' | 'definitionId' | 'usesRemaining' | 'container' | 'cart' | 'structure'> & Partial<Pick<IWorldEntity, 'escort' | 'returning'>>;
 
 /** Q16: a person who fell lies on their side: the same figure, turned, so it reads by shape. */
 const lying = (s: Sprite): Sprite => {
@@ -248,7 +248,9 @@ export function entitySprite(e: SpriteEntity, level = KNOWN, pose: EntityPose = 
       const def = RESOURCE_DEFINITIONS[e.definitionId];
       if (!def) return null;
       const uses = e.usesRemaining ?? def.uses ?? 1;
-      return cached(`${e.definitionId}:${uses}:${level}`, () => worldForm(def, { uses, level }));
+      // RG: a place coming back on its gate's turn keeps a shape that says so
+      const returns = !!e.returning || !!def.regrowMs;
+      return cached(`${e.definitionId}:${uses}:${level}:${returns ? 'r' : ''}`, () => worldForm(def, { uses, level, returns }));
     }
     case EntityType.STRUCTURE: {
       const raised = e.structure;

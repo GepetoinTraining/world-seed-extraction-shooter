@@ -15,6 +15,7 @@ import type { IDirectorRecord } from '../../../shared/entities/world/Director';
 import type { IPopulationRecord } from '../../../shared/entities/world/Population';
 import type { IKoseki } from '../../../shared/entities/world/Koseki';
 import type { IChestRecord } from '../../../shared/entities/world/ChestSystem';
+import type { IGroundRecord } from '../../../shared/entities/world/GroundReturn';
 import type { ICadence, IClockedWorld, SkyKind } from './WorldClock';
 
 export interface IWorldCard extends IClockedWorld {
@@ -66,6 +67,8 @@ export interface IWorldView {
   directorRecord: IDirectorRecord | null;
   populationRecord: IPopulationRecord | null;
   chestRecord: IChestRecord | null;
+  /** RG: what has been taken from the open world's ground. Null, or absent, where a world has no turns to give back on. */
+  groundRecord?: IGroundRecord | null;
 }
 
 /** Every change a system may ask of the world. The store applies them in order. */
@@ -89,7 +92,9 @@ export type WorldChange =
   /** A person walked or was carried out of the world: they do not stand in it again. */
   | { kind: 'LEFT'; entityId: string }
   /** The open world's chest record, as a live room holds it. */
-  | { kind: 'CHEST_RECORD'; record: IChestRecord };
+  | { kind: 'CHEST_RECORD'; record: IChestRecord }
+  /** RG: a place the land laid was taken from, and this much of it is left. */
+  | { kind: 'GROUND_TAKEN'; entityId: string; left: number };
 
 /**
  * The world as a system takes it: a fresh view each time it reads, and the one door its changes go

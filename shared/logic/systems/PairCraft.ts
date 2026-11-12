@@ -40,7 +40,7 @@ export const MAKE_NO_BENCH = 5;
 /** How far from what was asked makes it lost, or better than it should be. */
 export const MAKE_MAJOR_MARGIN = 10;
 /** The span a thing's quality is rolled in when it is made (the factory's own): crude is its foot, fine its head. */
-const QUALITY_SPAN = 0.2;
+export const QUALITY_SPAN = 0.2;
 
 const OUTCOME_LADDER: StudyOutcome[] = ['major_failure', 'failure', 'success', 'major_win'];
 

@@ -573,15 +573,28 @@ function treeTrunkInk(uses: number): Ink {
 
 export const TREE_ATOMS = { w: 16, h: 24 };
 
-/** The standing tree, trunk and crown composed: crown in life, trunk in matter. */
-export function treeSprite(def: any, uses: number, full: number, variant = 0): Sprite {
+/** RG: a felled tree that comes back shows a shoot rising from its stump: a stem, and a leaf to each side, by shape. */
+function shoot(stump: Sprite): Sprite {
+  const data = new Uint8Array(stump.data);
+  let top = stump.h;
+  for (let y = 0; y < stump.h && top === stump.h; y++) for (let x = 0; x < stump.w; x++) if (data[y * stump.w + x]) { top = y; break; }
+  const cx = stump.w >> 1;
+  const put = (x: number, y: number) => { if (x >= 0 && y >= 0 && x < stump.w && y < stump.h) data[y * stump.w + x] = px(Role.LIFE, 4); };
+  for (let d = 1; d <= 3; d++) put(cx, top - d);
+  put(cx - 1, top - 3);
+  put(cx + 1, top - 4);
+  return { w: stump.w, h: stump.h, data };
+}
+
+/** The standing tree, trunk and crown composed: crown in life, trunk in matter. `returns`: a stump that comes back (RG). */
+export function treeSprite(def: any, uses: number, full: number, variant = 0, returns = false): Sprite {
   const seed = fnv1a(`sprite:v1:${def.id}`) + variant;
   const { w, h } = TREE_ATOMS;
   const trunkStyle: StampStyle = uses <= 0
     ? { role: Role.MATTER, edgeStep: 2, minFill: 1, maxFill: 1, eyeStep: 3 }
     : { role: Role.MATTER, edgeStep: 2, minFill: 0, maxFill: 2 };
   const trunk = stamp(treeTrunkInk(uses), w, material({ density: 60, hardness: 40 }), seed, trunkStyle, h);
-  if (uses <= 0) return trunk;
+  if (uses <= 0) return returns ? shoot(trunk) : trunk;
   const m = knownMaterial(def.materialProps, KNOWN);
   const crown = stamp(treeCrownInk(seed, uses, full), w, m, seed, { role: Role.LIFE, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true }, h);
   const data = new Uint8Array(trunk.data);
@@ -695,7 +708,8 @@ export const worldSize = (def: any) => {
   return isTree(tags) ? 22 : tags.includes('seed') ? 10 : 12;
 };
 
-export interface WorldFormOptions { uses?: number; level?: number; affixes?: string[]; s?: number; variant?: number }
+/** `returns`: a spent place that comes back (RG), told by a shape on it. Absent, what its kind says (`regrowMs`). */
+export interface WorldFormOptions { uses?: number; level?: number; affixes?: string[]; s?: number; variant?: number; returns?: boolean }
 
 /** A resource as it stands in the world, at what the player knows of it. */
 export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
@@ -712,12 +726,12 @@ export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
   if (def.look) {
     // D119: three words, and this is what they come to. Form is plain to see at any knowledge.
     const live = stamp(LOOK_INKS[def.look.shape as IThemeLook['shape']](m, seed), size, m, seed, { role: lookRole(def.look.color), edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
-    sprite = uses <= 0 ? spent(live, !!def.regrowMs) : live;
+    sprite = uses <= 0 ? spent(live, o.returns ?? !!def.regrowMs) : live;
   } else if (isTree(tags)) {
-    sprite = treeSprite(def, uses, full, o.variant ?? 0);
+    sprite = treeSprite(def, uses, full, o.variant ?? 0, o.returns ?? !!def.regrowMs);
   } else {
     const live = stamp(resourceInk(def, m, seed, level), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
-    sprite = uses <= 0 ? spent(live, !!def.regrowMs) : live;
+    sprite = uses <= 0 ? spent(live, o.returns ?? !!def.regrowMs) : live;
   }
 
   (o.affixes || []).forEach(id => {

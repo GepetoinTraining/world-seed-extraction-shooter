@@ -30,6 +30,7 @@ import { RestSystem } from '../../logic/systems/RestSystem';
 import { FieldWords } from '../../logic/systems/FieldWords';
 import { ContactNames } from '../../logic/systems/ContactNames';
 import { isLooseStone, isThrowable } from '../../../shared/entities/item/Throwable';
+import { GroundReturn } from '../../../shared/entities/world/GroundReturn';
 import { CircleSystem } from '../../logic/systems/CircleSystem';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CartSystem } from '../world/CartSystem';
@@ -2146,7 +2147,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const biome = biomeAt(entity.position);
       const items = Array.from({ length: quantity }, () => {
         const dreamAffix = dream && biome ? DreamingSystem.materialAffixFor(dream.pack, biome, def.id, rng) : null;
-        return ItemFactory.createResourceItem(def, rng, dreamAffix ? { dreamAffix } : undefined);
+        // RG: a place that came back was rolled anew, its quality with it, and what is taken from it carries it
+        return ItemFactory.createResourceItem(def, rng, { ...(entity.quality !== undefined ? { quality: entity.quality } : {}), ...(dreamAffix ? { dreamAffix } : {}) });
       });
       const dreamt = items.filter(i => i.affixes.length > 0);
       if (dreamt.length > 0) feed(`${dreamt[0].name}: the Seed dreamed something into this one.`, 'signal');
@@ -2154,7 +2156,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       addToInventory(items);
       SessionJournal.record('HARVEST', { nodeId: entity.id, defId: def.id, rollKey, itemIds: items.map(i => i.id) });
 
-      if (usesLeft <= 0) {
+      // RG: in a world that turns, a place the land laid remembers it was taken and stands bare until its turn
+      const ground = !!wp.view().groundRecord && GroundReturn.isPlace(entity.id);
+      if (ground) {
+        wp.apply({ kind: 'GROUND_TAKEN', entityId: entity.id, left: Math.max(0, usesLeft) });
+      } else if (usesLeft <= 0) {
         if (def.regrowMs) {
           // Flora: depleted, regrows on the world clock
           wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { usesRemaining: 0, regrowAt: Date.now() + def.regrowMs } });
@@ -2175,7 +2181,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (elements.length > 0) set(s => ({ player: WeaveSystem.gather(s.player, WeaveSystem.elementOf(def.id, elements)) }));
       // C14: a loose stone is picked up, in the feed as in the prompt
       feed(`${isLooseStone(def) ? 'Picked up' : 'Harvested'} ${quantity}× ${def.name}. +${payForRisk({ rank: def.rank ?? UniversalRank.F, rarity: def.rarity }, XP_SHARE_HARVEST)} XP`, 'proof');
-      if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
+      if (usesLeft <= 0 && ground) {
+        const turns = GroundReturn.waitOf(def);
+        feed(`${def.name} is spent here. It comes back ${turns === 1 ? 'when the gate next turns' : `in ${turns} turns of the gate`}.`, 'plain');
+      } else if (usesLeft <= 0 && !def.regrowMs) feed(`${def.name} depleted. The vein runs dry.`, 'plain');
       return;
     }
 
