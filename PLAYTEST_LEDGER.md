@@ -345,6 +345,14 @@ BALANCE_RUN 2.13, call 6, made by the coordinator on Pedro's word: "A person's w
 | FT2j | What is not felt yet: an escort's bare-handed swing, a working's blow or shot (a cast, a scroll, a trigger), the old contact rule. A working is a blow on the side of its delivery (rule 7); giving it a weight belongs with what a cast is worth (call 19, part 3) | `CombatSystem` (`weight` absent) |
 | FT2k | Call 12's reach: a bare hand or a stone flies eight tiles and falls; a bow and a focus a shot's whole flight (20 tiles) | `ThemeFormula.THROW_TILES`, `CombatMath.shotRangePx` |
 
+### The grid's speed bars, a pass of their own, 2026-11-12
+
+By the coordinator, for the fight's branch: the chunk bar in `tests/grid.test.ts` failed every full parallel run (worst chunk 19 to 24 ms against 16) and passed alone at 11 ms, on this branch and on main alike. Open, Pedro's to strike.
+
+| # | What happens | Where |
+|---|---|---|
+| FT0 | The grid's three clocks (a chunk within a frame, a sector's scan, the largest world at once) moved to `tests/speed.grid.test.ts` with their limits as registered (4 and 16 ms, 500 ms, 60 ms), and `npm test` runs them alone between the parallel pass and the database's, as the database files already were. Alone and cold the chunk bar read 32 ms, because in the grid file the other bars had already worked the generator; the speed file does the same work first, untimed, and reads 12 ms. The README and HANDOVER say the three passes; the bar `tests/suites.test.ts` holds the script and the limits | `package.json`, `tests/speed.grid.test.ts`, `tests/suites.test.ts` |
+
 ## Fixed
 
 | # | What was wrong | Commit | Checked |

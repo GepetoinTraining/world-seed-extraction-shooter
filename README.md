@@ -12,6 +12,8 @@ npm run dev
 npm test
 ```
 
+`npm test` runs three passes: everything in parallel, then the grid's speed bars alone (`npx vitest run tests/speed`), then the database's own files (`npx vitest run tests/database`). The speed bars time the machine when a hundred files run beside them, and the database files load it.
+
 `npm run dev` brings up the game and its database with one command: Postgres in process (PGlite) on the folder `data/test-claude`, created on first run and never committed, so nobody installs a database to play. The first load on a browser origin that holds old saves imports them, after verifying their signatures. If the database is not answering, the game refuses to open rather than guess.
 
 One process holds a database folder at a time. A second dev server in the same checkout is told so in the game and in its log; give it its own folder with `WS_DATABASE_URL=pglite://<folder>`. A killed server loses nothing it acknowledged. A folder does not survive a power cut as a served database does: PGlite never forces a write to the disk.

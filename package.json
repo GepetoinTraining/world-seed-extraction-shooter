@@ -17,7 +17,7 @@
     "hub": "node --import tsx server/hub/main.ts",
     "hosted": "node --import tsx server/hosted/main.ts",
     "hosted:publish": "node --import tsx scripts/publish-hosted-world.ts",
-    "test": "vitest run --exclude \"tests/database*\" && vitest run tests/database",
+    "test": "vitest run --exclude \"tests/{database,speed}*\" && vitest run tests/speed && vitest run tests/database",
     "db:generate": "drizzle-kit generate --config=drizzle.config.pg.ts",
     "db:carry": "node --disable-warning=ExperimentalWarning --import tsx scripts/carry-save.ts"
   },

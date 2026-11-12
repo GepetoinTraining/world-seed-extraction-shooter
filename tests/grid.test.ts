@@ -18,10 +18,6 @@ const MIN_TREES_PER_OVERGROWTH_CHUNK = 20;
 const MIN_FOREST_QUADRANTS = 0.1;
 const MAX_FOREST_QUADRANTS = 0.6;
 const FOREST_MIN_TREES = 8;
-const CHUNK_MEDIAN_MS = 4;
-const CHUNK_WORST_MS = 16;
-const SECTOR_SCAN_MS = 500;
-const WORLD_MS = 60;
 const MIN_CHUNKS_WITH_ENEMIES = 0.9; // added after playing: whole regions had none
 const DROP_CLEAR_TILES = 12; // added after playing: a drop landed beside a guarded ruin
 const SHARES: Record<string, [number, number]> = {
@@ -356,39 +352,7 @@ describe('getting in and getting out', () => {
 });
 
 describe('it stays fast on demand', () => {
-  it('generates a chunk within a frame', () => {
-    const map = WorldGenerator.generate('speed', 32, context);
-    const times: number[] = [];
-    for (let i = 0; i < 80; i++) {
-      const t = performance.now();
-      WorldGenerator.chunkAt(map, 96 + (i % 16), 96 + Math.floor(i / 16), context);
-      times.push(performance.now() - t);
-    }
-    times.sort((a, b) => a - b);
-    const median = times[40], worst = times[79];
-    console.log(`CHUNK generation: median ${median.toFixed(2)}ms, worst ${worst.toFixed(2)}ms`);
-    expect(median).toBeLessThanOrEqual(CHUNK_MEDIAN_MS);
-    expect(worst).toBeLessThanOrEqual(CHUNK_WORST_MS);
-  });
-
-  it('scans a whole sector quickly', () => {
-    const map = WorldGenerator.generate('scan', 32, context);
-    const t = performance.now();
-    const contents = WorldGenerator.sectorContents(map, 16, 16, context);
-    const ms = performance.now() - t;
-    console.log(`SECTOR scan: ${ms.toFixed(0)}ms for ${contents.length} things`);
-    expect(ms).toBeLessThanOrEqual(SECTOR_SCAN_MS);
-  });
-
-  it('opens even the largest world at once, because nothing is built until it is needed', () => {
-    const t = performance.now();
-    const map = WorldGenerator.generate('huge', 64, context);
-    const ms = performance.now() - t;
-    console.log(`WORLD 64 sectors opened in ${ms.toFixed(0)}ms with ${Object.keys(map.sectors).length} sectors and ${Object.keys(map.chunks).length} chunks built`);
-    expect(ms).toBeLessThanOrEqual(WORLD_MS);
-    expect(Object.keys(map.chunks).length).toBe(0);
-  });
-
+  // The three clocks moved to tests/speed.grid.test.ts, which runs alone (npm test, its second pass)
   it('simulates only what a shot can reach', () => {
     const near = WorldGenerator.chunkKeysInBox(CHUNK_PX * 10 + 640, CHUNK_PX * 10 + 640, PROJECTILE_RANGE_PX + SIM_MARGIN_PX);
     expect(near.length).toBeLessThanOrEqual(4);

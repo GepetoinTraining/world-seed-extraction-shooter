@@ -18,6 +18,8 @@ npm run dev
 npm test
 ```
 
+`npm test` runs three passes: everything in parallel, then the grid's speed bars alone (`npx vitest run tests/speed`), then the database's own files (`npx vitest run tests/database`). The speed bars time the machine when a hundred files run beside them, and the database files load it.
+
 The game runs on `http://localhost:3000`. The USER/DEV toggle in the bar turns on the admin tools and the "grant deed" button in Holdings.
 
 ---
