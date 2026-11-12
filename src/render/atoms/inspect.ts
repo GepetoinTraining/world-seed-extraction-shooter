@@ -12,6 +12,7 @@ import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinition
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { Spread, SpreadBook, formOf } from '../../../shared/entities/world/Spread';
 import { DoingBook } from '../../../shared/logic/systems/MaterialDoing';
+import { KnownWorth } from '../../../shared/logic/economy/KnownWorth';
 import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
 import { isLooseStone } from '../../../shared/entities/item/Throwable';
 import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
@@ -351,6 +352,16 @@ export function stepWords(item: IItem): string {
 /** A number as a person reads it: a piece keeps its numbers whole, and the card shows two places at most. */
 const shown = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
 
+/**
+ * PR, call 7: what a thing is worth, said as a fact, and where what is known of it raised it, why. Never the sum behind
+ * it. Known is what it is made of having been known when it was taken, or a read piece's lines.
+ */
+export const worthSaid = (item: IItem): string => {
+  const lines = item.type === ItemType.GEAR && (item.pieceLaw ?? 0) >= 2 && item.isIdentified !== false && PieceLaw.linesShare(item) > 0;
+  const rose = lines || KnownWorth.inComposition(item.composition);
+  return `${sayNumber(item.value)} G${rose ? ', more now that it is known what it does' : ''}`;
+};
+
 /** The title is the name said aloud (`LoadoutSystem.shownName`), so a card and a counter agree. */
 export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
@@ -380,6 +391,8 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   // Wear is counted by the work done, so it keeps fractions; the card says whole points, and near breaking in its last third
   if (maxDurability) rows.push(['Durability', durability === 0 ? `Broken, 0 of ${maxDurability}` : `${Math.max(1, Math.round(durability))} of ${maxDurability}${durability * 3 < maxDurability ? ', near breaking' : ''}`]);
   rows.push(['Weight', `${item.weight} kg`]);
+  // PR: what it is worth, and why it is worth more where it is (Q17: a person is not goods)
+  if (!Escort.isPerson(item)) rows.push(['Worth', worthSaid(item)]);
   // ML21: a piece of a material of the ground says what the material does, once someone has needed it
   const groundDef = RESOURCE_DEFINITIONS[item.universalDefinitionId];
   if (groundDef && formOf(groundDef) && item.type !== ItemType.GEAR) rows.push(['Does', DoingBook.of(groundDef.id)?.line ?? 'Not yet known']);

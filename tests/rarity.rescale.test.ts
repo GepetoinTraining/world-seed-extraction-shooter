@@ -48,14 +48,16 @@ describe('part 1: rank comes from where the piece came from', () => {
 });
 
 describe('part 1: a rank doubles a piece, once', () => {
-  it('power is 50 x 2^step x (1 + quality), a tool a third, and worth twice the power', () => {
+  it('power is 50 x 2^step x (1 + quality), a tool a third, and worth twice the power, and its lines once read (PR17)', () => {
     for (const rank of RANKS) {
       for (const b of bases()) {
         const piece = mint(rank, `power:${rank}:${b.id}`, b.id);
         const tool = b.tags.includes('tool');
         const expected = 50 * Math.pow(2, RANKS.indexOf(rank)) * (1 + piece.quality) / (tool ? 3 : 1);
         expect(piece.itemPower).toBeCloseTo(expected, 9);
-        expect(piece.value).toBe(Math.max(1, Math.floor(expected * 2)));
+        // PR17: a read piece's lines are worth their bands' share of it as well; a plain one is twice its power
+        expect(piece.value).toBe(Math.max(1, Math.floor(expected * 2 * (1 + PieceLaw.linesShare(piece)) + 1e-9)));
+        if (piece.affixes.length === 0) expect(piece.value).toBe(Math.max(1, Math.floor(expected * 2)));
       }
     }
   });

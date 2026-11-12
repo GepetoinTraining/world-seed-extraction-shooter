@@ -22,7 +22,7 @@
 import { IAffix, IAttributes, MENTAL_ATTRIBUTES, PHYSICAL_ATTRIBUTES, Rarity, UniversalRank } from '../../types';
 import { statReading, StatReading, statSide } from '../../constants';
 import { GEAR_SHAPES, STAT_SCALE, WIDEST_VIEW_TILES, rankStep } from './ThemeFormula';
-import { GearKind, STAT_BANDS } from './ThemeTypes';
+import { BAND_SHARE, GearKind, STAT_BANDS } from './ThemeTypes';
 import { StatSystem } from '../systems/StatSystem';
 import { InventorySystem } from '../../entities/player/systems/InventorySystem';
 import {
@@ -46,7 +46,7 @@ const PAIR_STEPS = [Rarity.MAGICAL, Rarity.RARE, Rarity.EPIC] as const;
 
 export type Band = typeof STAT_BANDS[number];
 /** An affix's size as a share of one ruler (1.4): minor a twelfth, moderate a sixth, major a third. Six moderates are one ruler. */
-const BANDS: Record<Band, number> = { minor: 1 / 12, moderate: 1 / 6, major: 1 / 3 };
+const BANDS: Record<Band, number> = BAND_SHARE;
 const BAND_ORDER: readonly Band[] = ['minor', 'moderate', 'major'];
 
 /** The chance a found thing goes one step deeper (1.4): the old 60, 25, 10, 4, 1 already is q^d with q = 0.4. */
@@ -131,10 +131,12 @@ const oneKey = (stat: string) => ONE_KEY[stat] ?? stat;
 /** One affix's words, read from the bank: the one stat it gives, and the price it may ask. */
 export interface IAffixWords { gift: { stat: string; band: Band }; price?: { stat: string; band: Band } }
 type Rollable = { statModifiers?: Record<string, [number, number]>; gives?: { stat: string; band: string; downside: boolean }[] };
+/** What a piece's lines are read from (PR): its rank, its roll, its affixes, and a body's traits. */
+export interface ILinedPiece { rank: UniversalRank | string; quality?: number; affixes?: readonly Pick<IAffix, 'stats'>[]; whose?: { traits?: readonly string[] } }
 
 export const PieceLaw = {
-  /** The law a found piece carries (`IItem.pieceLaw`). */
-  VERSION: 1,
+  /** The law a found piece carries (`IItem.pieceLaw`). 2: a read piece's worth counts its lines (PR); 1 kept its power alone. */
+  VERSION: 2,
   /** The ground a world must have pinned at its mint for its finds to follow this law (GROUND_VERSION). */
   FROM_GROUND: 4,
   BANDS,
@@ -251,6 +253,32 @@ export const PieceLaw = {
     };
     if (words.price && priceBand) stats[words.price.stat] = -BANDS[priceBand] * this.ruler(words.price.stat, rank) * (1 + quality);
     return stats;
+  },
+
+  /**
+   * What a piece's lines come to, in rulers (PR, call 4): each affix's lines read back through the ruler that sized
+   * them, so a line is its gift's band (a price takes back what it added), and each trait a body's piece carries is a
+   * property at the major band. An epic piece of six moderate lines comes to one ruler: the whole rank the law sizes it.
+   */
+  linesShare(piece: ILinedPiece): number {
+    const q = 1 + (piece.quality ?? 0);
+    let share = 0;
+    for (const affix of piece.affixes ?? []) {
+      for (const [stat, value] of Object.entries(affix.stats)) {
+        const ruler = this.ruler(stat, piece.rank);
+        if (Number.isFinite(ruler) && ruler > 0 && q > 0) share += value / (ruler * q);
+      }
+    }
+    return share + (piece.whose?.traits?.length ?? 0) * BANDS.major;
+  },
+
+  /**
+   * What a found piece is worth: twice its power, and once it is read, its lines as well, each the share its band is of
+   * the piece (PR, call 4). Unread, nobody can be paid for what it holds (Q12), so it is worth its power alone.
+   */
+  worthOf(piece: ILinedPiece & { itemPower: number }, read: boolean): number {
+    const lines = read ? Math.max(0, this.linesShare(piece)) : 0;
+    return Math.max(1, Math.floor(piece.itemPower * 2 * (1 + lines) + 1e-9));
   },
 
   /** The side an affix stands on, by how its one stat is read: an amount before the name, a rating after it. */

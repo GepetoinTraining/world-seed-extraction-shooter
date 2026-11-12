@@ -182,7 +182,8 @@ export interface ICompositionStep {
  */
 export interface IComposition {
   version: number;
-  materials: { defId: string; name: string; count: number; origin: MaterialOrigin }[];
+  /** `known`: what this material does had been written when it was taken, at this band (PR, KnownWorth). */
+  materials: { defId: string; name: string; count: number; origin: MaterialOrigin; known?: 'minor' | 'moderate' | 'major' }[];
   steps: ICompositionStep[];
   /** Longest transformation path — THE POWER BUDGET. 0 = raw or world-rolled. */
   depth: number;
@@ -639,6 +640,8 @@ export interface IItem {
   farmLine?: { lotId: string; bed: number; seedItemId: string; seedName: string; plantings: number; firstOrigin: string; plantedAt: number; reapedAt: number };
   /** D115: bought from a bargain bin at this price. A counter pays no more than this for it. */
   binPrice?: number;
+  /** PR: bought over any shelf at this price. A counter pays no more than this for it, so nothing bought sells straight back for more. */
+  paid?: number;
 
   mapData?: {
     worldId: string;

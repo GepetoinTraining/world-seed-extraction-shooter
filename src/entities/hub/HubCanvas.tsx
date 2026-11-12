@@ -49,7 +49,7 @@ import { AskFor, BuyListing, CollectHeld } from '../../components/ShelfAsk';
 import { cityCamera, isInteractKey, isTypingTarget } from '../../logic/systems/FieldInput';
 import { MinimapView } from '../../components/ui/MinimapView';
 import { cityMinimap } from '../../render/atoms/minimap';
-import { inspectItem } from '../../render/atoms/inspect';
+import { inspectItem, worthSaid } from '../../render/atoms/inspect';
 import { StudySystem } from '../../logic/systems/StudySystem'; // Wave 10E (D19)
 import { useStudyReach } from '../../components/StudyPanel'; // D118
 import { ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
@@ -1301,7 +1301,7 @@ const SellModal: React.FC<{ npcId?: string; onClose: () => void }> = ({ npcId, o
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LoadoutSystem.shownName(item)}</span>
-                  <span className="ws-dim ws-small">{refused ?? `${item.value}G listed value`}</span>
+                  <span className="ws-dim ws-small">{refused ?? `Worth ${worthSaid(item)}`}</span>
                 </span>
               </span>
               {/* U14: a sale is a deliberate step */}

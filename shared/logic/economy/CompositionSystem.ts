@@ -15,6 +15,8 @@
 import { IComposition, ICompositionStep, MaterialOrigin } from '../../types';
 import { RESOURCE_DEFINITIONS, ResourceDef } from '../../entities/item/data/resourceDefinitions';
 import { MaterialPropertyType } from '../../entities/economy/types';
+import { KnownWorth } from './KnownWorth';
+import type { DoingBand } from '../systems/MaterialDoing';
 
 export const COMPOSITION_RULES_VERSION = 1;
 
@@ -35,11 +37,14 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 export class CompositionSystem {
 
-  /** The root of every chain: a raw thing, straight from its origin. */
-  static root(def: { id: string; name: string }, origin: MaterialOrigin): IComposition {
+  /**
+   * The root of every chain: a raw thing, straight from its origin. PR: its line carries what was known of it when it
+   * was taken (the band of what it does, if that was written), read now unless the caller says; null is nothing known.
+   */
+  static root(def: { id: string; name: string }, origin: MaterialOrigin, known: DoingBand | null = KnownWorth.bandOf(def.id) ?? null): IComposition {
     return {
       version: COMPOSITION_RULES_VERSION,
-      materials: [{ defId: def.id, name: def.name, count: 1, origin }],
+      materials: [{ defId: def.id, name: def.name, count: 1, origin, ...(known ? { known } : {}) }],
       steps: [],
       depth: 0,
       laborSeconds: 0,
@@ -54,10 +59,11 @@ export class CompositionSystem {
    */
   static compose(step: ICompositionStep, inputs: IComposition[], batchYield: number): IComposition {
     const yieldCount = Math.max(1, batchYield);
-    const merged = new Map<string, { defId: string; name: string; count: number; origin: MaterialOrigin }>();
+    const merged = new Map<string, IComposition['materials'][number]>();
     for (const input of inputs) {
       for (const m of input.materials) {
-        const key = `${m.defId}|${m.origin}`;
+        // PR: a piece taken known and one taken unknown stay two lines, each worth what it came to be with
+        const key = `${m.defId}|${m.origin}|${m.known ?? ''}`;
         const prior = merged.get(key);
         if (prior) prior.count += m.count;
         else merged.set(key, { ...m });
@@ -65,7 +71,7 @@ export class CompositionSystem {
     }
     const materials = [...merged.values()]
       .map(m => ({ ...m, count: round6(m.count / yieldCount) }))
-      .sort((a, b) => a.defId < b.defId ? -1 : a.defId > b.defId ? 1 : a.origin < b.origin ? -1 : 1);
+      .sort((a, b) => a.defId < b.defId ? -1 : a.defId > b.defId ? 1 : a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : (a.known ?? '') < (b.known ?? '') ? -1 : 1);
 
     const steps: ICompositionStep[] = [];
     for (const input of inputs) {
@@ -106,11 +112,12 @@ export class CompositionSystem {
   /**
    * THE PRICE LAW (10D.4, absorbing 11B): value = atoms + labor, scaled by
    * the rarity of the route. Monotonic in chain depth for fixed materials —
-   * labor never destroys value again.
+   * labor never destroys value again. PR: an atom known when it was taken is
+   * worth its band's share more (KnownWorth), in this same sum.
    */
   static priceOf(c: IComposition): number {
     const atoms = c.materials.reduce(
-      (sum, m) => sum + this.baseMaterialValue(DEF_TABLE[m.defId]) * m.count, 0);
+      (sum, m) => sum + this.baseMaterialValue(DEF_TABLE[m.defId]) * (1 + KnownWorth.share(m.known)) * m.count, 0);
     const labor = c.laborSeconds * LABOR_RATE_GOLD_PER_SECOND * this.routeMultiplier(c.depth);
     return Math.max(1, Math.ceil(atoms + labor));
   }

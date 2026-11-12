@@ -27,6 +27,7 @@ import { WeaveSystem } from './WeaveSystem';
 import { CircleSystem, IGiftWords } from './CircleSystem';
 import { ILoreWords, IRaisedWords, ITaughtWords, LoreSystem } from './LoreSystem';
 import { SkillNames } from './SkillNames';
+import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
 
 export type RestPlace = 'INN' | 'BED' | 'FIELD';
 
@@ -175,11 +176,11 @@ export class RestSystem {
     const ids = new Set(q.studies);
     const read = allInventories(skilled).filter(i => ids.has(i.id));
     let next = read.reduce((p, item) => StudySystem.reveal(p, item), skilled);
-    next = mapItems(next, ids, i => ({ ...i, isIdentified: true }));
+    next = mapItems(next, ids, i => ItemFactory.read(i));
 
     // Pedro, 2026-11-10: "after rest you see what you made". A made thing still held is read; one that is gone is let go
     const madeIds = new Set(q.made.map(m => m.id));
-    next = mapItems(next, madeIds, i => ({ ...i, isIdentified: true }));
+    next = mapItems(next, madeIds, i => ItemFactory.read(i));
     const held = allInventories(next);
     const made = q.made.flatMap(m => { const item = held.find(i => i.id === m.id); return item ? [{ ...m, item }] : []; });
 

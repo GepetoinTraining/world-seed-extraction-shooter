@@ -1489,7 +1489,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set((state) => {
           if (!state.player.currentSession) return state;
           const updatedInventory = state.player.currentSession.inventory.map(item => 
-              item.id === itemId ? { ...item, isIdentified: true } : item
+              item.id === itemId ? ItemFactory.read(item) : item
           );
           get().processAction({ tags: ['intel', 'analysis', 'ancient'], magnitude: 50 });
           return { player: { ...state.player, currentSession: { ...state.player.currentSession, inventory: updatedInventory } } };
