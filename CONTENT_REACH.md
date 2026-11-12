@@ -80,7 +80,7 @@ So the count of places is very large and the count of kinds is very small. A per
 
 A world's land is never stored. Each time a person opens a world its map is built again from the seed (`WorldGenerationService.activateWorld`), and only records lie over it: chests, the population, carts. There is no record of what was taken from the ground. So:
 
-- Within one opening, a plant that is stripped comes back after 90 seconds (grain), 2 minutes (shrub), 3 minutes (fruit) or 10 minutes (tree), the same plant, on the device's clock (`Date.now()`), and only while its chunk is loaded. A table by form sets the times (`FORM_REGROW_MS`).
+- Within one opening, a plant that is stripped comes back after 90 seconds (grain), 2 minutes (shrub), 3 minutes (fruit) or 10 minutes (tree), the same plant, on the device's clock (`Date.now()`), and only while its chunk is loaded. A table by form sets the times (`FORM_REGROW_MS`). Found while building part 2: in a chunk where creatures walk, the field undid that return in the frame it was made (ledger RGs), so there a plant came back only on a sweep when nothing in its chunk moved.
 - Within one opening, a mineral that is stripped is removed and never returns.
 - At the next opening, everything taken stands again, exactly as it was: the same kind, the same count, in the same place. A taking is forgotten. This is the "not a lot of variance": the same ground hands over the same things every visit.
 - A harvested material always has quality 0. Two takings differ only in how many fall (1 or 2 a use) and, in a world whose magic is unlocked, a dreamed affix.
