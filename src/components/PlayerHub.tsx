@@ -31,7 +31,11 @@ import { Ledger, ILedgerRow } from '../logic/ledger/Ledger';
 import { ISignedPayload } from '../entities/identity/certificateSystem';
 import { MASTERY_RUNGS, WebSystem } from '../../shared/logic/systems/WebSystem';
 import { WebBank } from '../../shared/logic/content/WebBank';
-import { foldForming } from '../logic/systems/SheetWords';
+import { said } from '../logic/systems/SheetWords';
+import { SkillSay } from '../logic/systems/SkillSay';
+import { SheetNumbers } from '../logic/systems/SheetNumbers';
+import { hubTreeOf } from '../entities/hub/hubTech';
+import { useHotbar } from './ui/stores';
 
 /** The groups are the shared rules' (2.13); a sheet draws each by its word and its place, in this order. */
 export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = Object.fromEntries(GROUP_ORDER.map(g => [GROUP_WORDS[g], GROUPS[g]]));
@@ -52,7 +56,7 @@ export const groupOfWord = (word: string): AttributeGroup => GROUP_ORDER.find(g 
 // ---------------------------------------------------------------------------
 
 const RungNotches: React.FC<{ rung: number; into: number }> = ({ rung, into }) => (
-  <span style={{ display: 'inline-flex', gap: 2, verticalAlign: 'middle' }} aria-label={`${MASTERY_RUNGS[rung]}, rung ${rung + 1} of ${MASTERY_RUNGS.length}`}>
+  <span style={{ display: 'inline-flex', gap: 2, verticalAlign: 'middle' }} aria-label={`${MASTERY_RUNGS[rung]}, step ${rung + 1} of ${MASTERY_RUNGS.length}`}>
     {MASTERY_RUNGS.map((_, i) => {
       const fill = i < rung ? 100 : i === rung ? Math.max(12, Math.round(into * 100)) : 0;
       return (
@@ -92,18 +96,27 @@ const Circles: React.FC<{ filled: number; first?: number }> = ({ filled, first =
   );
 };
 
-export const HandsPanel: React.FC = () => {
+/**
+ * SKILLS (GV, 2026-11-12). Pedro: "the way the skills come into play don't tell anyone anything". Every skill held and
+ * forming is said by `SkillSay`: what it is, and on the large sheet what it does when it comes into play, what grows it
+ * and what it still needs. The small sheet shows the same rows, short.
+ */
+export const HandsPanel: React.FC<{ full?: boolean }> = ({ full = false }) => {
   const { player, fillCircle } = usePlayerStore();
   const freeCircles = CircleSystem.free(player);
-  const { web } = useHubStore();
+  const { web, tech } = useHubStore();
+  const activeHand = useHotbar(s => s.active);
   const sheet = useMemo(() => WebSystem.earnedSheet(player, WebBank.current(), web), [player, web]);
+  const held = useMemo(() => SkillSay.held(player, web, hubTreeOf(tech), SheetNumbers.hand(player, activeHand)), [player, web, tech, activeHand]);
+  const forming = useMemo(() => SkillSay.forming(player, hubTreeOf(tech)), [player, tech]);
   return (
-    <Panel title="WHAT THE HANDS KNOW" right={<span className="ws-dim ws-small">{sheet.earned.length} held{freeCircles > 0 ? ` · ${freeCircles} to fill` : ''}</span>}>
-      {sheet.earned.length === 0 && sheet.forming.length === 0 && (
-        <div className="ws-dim ws-small">Nothing yet. Work a material with a tool, and rest.</div>
+    <Panel title="SKILLS" right={<span className="ws-dim ws-small">{held.length} known · {forming.length} forming{freeCircles > 0 ? ` · ${freeCircles} circle${freeCircles === 1 ? '' : 's'} to place` : ''}</span>}>
+      {held.length === 0 && forming.length === 0 && (
+        <div className="ws-dim ws-small">Nothing yet. Work something with a tool, then rest.</div>
       )}
+      {(full || freeCircles > 0) && held.length > 0 && <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>{SkillSay.circlesLine(player)}</div>}
       <div className="ws-list">
-        {sheet.earned.map(row => (
+        {held.map(row => (
           <div key={row.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
             <div className="ws-row" style={{ padding: 0 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -111,34 +124,40 @@ export const HandsPanel: React.FC = () => {
                 <span className="ws-bright">{row.name}</span>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="ws-dim ws-small">LV {row.level} · {row.rungName}</span>
-                <RungNotches rung={row.rung} into={row.into} />
+                <span className="ws-dim ws-small">LV {row.level} · {row.step.word}</span>
+                <RungNotches rung={row.step.at - 1} into={row.step.into} />
               </span>
             </div>
             <div className="ws-row" style={{ padding: '2px 0' }}>
-              <Circles filled={row.circles} first={CircleSystem.firstAsks(player, row.id)} />
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Circles filled={row.circles.filled} first={row.circles.first} />
+                <span className="ws-dim ws-small">{row.circles.filled} circle{row.circles.filled === 1 ? '' : 's'} · next gift at {row.circles.nextGiftAt}</span>
+              </span>
               {freeCircles > 0 && (
-                <Button tone="signal" aria-label={`Fill a circle in ${row.name}`} style={{ padding: '0 4px' }} onClick={() => fillCircle(row.id)}>+</Button>
+                <Button tone="signal" aria-label={`Put a circle in ${row.name}`} title={`Put a circle in ${row.name}`} style={{ padding: '0 4px' }} onClick={() => fillCircle(row.id)}>+</Button>
               )}
             </div>
-            {CircleSystem.giftsOf(player, row.id).map(g => (
-              <div key={g.id} className="ws-small" title={g.blurb}>{CircleSystem.say(g)}</div>
-            ))}
-            {row.flavor && <div className="ws-dim ws-small">{row.flavor}</div>}
-            {row.verbs.length > 0 && <div className="ws-small">can {row.verbs.join(', ')}</div>}
-            {row.opens.length > 0 && <div className="ws-small">opens {row.opens.join(', ')}</div>}
-            {row.firstBy && <div className="ws-dim ws-small">first in this hub: {row.firstBy}</div>}
+            {row.gifts.map(g => <div key={g} className="ws-small">GIFT · {g}</div>)}
+            {row.giftWaits && <div className="ws-signal ws-small">{row.giftWaits}</div>}
+            {full && row.flavor && <div className="ws-dim ws-small">{row.flavor}</div>}
+            {full && row.does.map(line => <div key={line} className="ws-small">{line}</div>)}
+            {full && <div className="ws-dim ws-small">{row.grows}</div>}
+            {full && row.firstBy && <div className="ws-dim ws-small">First in this hub: {row.firstBy}</div>}
           </div>
         ))}
       </div>
-      {sheet.forming.length > 0 && (
+      {forming.length > 0 && (
         <>
-          <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>FORMING. IT SETTLES AT A REST, OR IT DOESN'T.</div>
-          {/* D32: which eye is forming would say what the unread piece was, so rows that read alike are one (SheetWords) */}
-          {foldForming(sheet.forming).map(row => (
-            <div key={row.said} className="ws-row ws-small" style={{ padding: '2px 0' }}>
-              <span style={{ minWidth: 0 }}>{row.said}</span>
-              <FormingFill fill={row.fill} />
+          <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>FORMING · A REST SETTLES ONE WHEN IT IS READY, FOR LORE</div>
+          {/* D32: which eye is forming would say what the unread piece was, so every eye is one row (SkillSay.forming) */}
+          {forming.map(row => (
+            <div key={row.said} style={{ padding: '2px 0' }}>
+              <div className="ws-row ws-small" style={{ padding: 0 }}>
+                <span style={{ minWidth: 0 }}>{row.said}</span>
+                <FormingFill fill={row.fill} />
+              </div>
+              <div className="ws-dim ws-small">{row.asks} lore to learn · you hold {said(row.holds)}{row.holds < row.asks ? `, ${said(row.asks - row.holds)} short` : ''}</div>
+              {full && <div className="ws-dim ws-small">{row.grows}</div>}
             </div>
           ))}
         </>

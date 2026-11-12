@@ -23,8 +23,12 @@ import { LoadoutSystem, paperDollLayout } from '../../shared/entities/player/sys
 import { COGNITIVE_FRAMES } from '../../shared/entities/player/data/cognitiveFrames';
 import { frameMark } from '../render/atoms/items';
 import { Button, Chip, ItemSprite, Kbd, Modal, Panel, SpriteView } from './ui/kit';
+import { said } from '../logic/systems/SheetWords';
 
 const UNIT = 42; // px per layout grid unit
+
+/** A slot as a player reads it: "right hand", "ring 1", never the code's RIGHT_HAND (GV). */
+const slotWords = (slot: string) => slot.replace(/_/g, ' ').toLowerCase();
 
 // Short labels for empty cells (position is the code; the word is a courtesy)
 const SLOT_SHORT: Partial<Record<string, string>> = {
@@ -163,7 +167,7 @@ export const PaperDoll: React.FC<{ unit?: number; compact?: boolean }> = ({ unit
   return (
     <Panel
       title="THE BODY"
-      right={compact ? undefined : <span className="ws-dim ws-small">harness {LoadoutSystem.harnessWeight(equipment).toFixed(1)} kg — weighs nothing against the limit</span>}
+      right={compact ? undefined : <span className="ws-dim ws-small">worn {said(LoadoutSystem.harnessWeight(equipment))} kg — not counted against what you carry</span>}
     >
       {!compact && (
         <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>
@@ -204,8 +208,8 @@ export const PaperDoll: React.FC<{ unit?: number; compact?: boolean }> = ({ unit
                 if (!v.ok && v.reason) say(v.reason);
               }}
               aria-label={
-                frameHere ? `${cell.slot}: ${frameHere.name} (cognitive frame)` :
-                itemHere ? `${cell.slot}: ${LoadoutSystem.shownName(itemHere)}` : `${cell.slot}: empty`
+                frameHere ? `${slotWords(cell.slot)}: ${frameHere.name} (a frame)` :
+                itemHere ? `${slotWords(cell.slot)}: ${LoadoutSystem.shownName(itemHere)}` : `${slotWords(cell.slot)}: empty`
               }
               style={{
                 position: 'absolute',
@@ -273,7 +277,7 @@ const SlotPicker: React.FC<{
     .sort((a, b) => Number(b.verdict.ok) - Number(a.verdict.ok));
 
   return (
-    <Modal title={`FIT ${slot.replace('_', ' ')}`} onClose={onClose} width={480}>
+    <Modal title={`FIT ${slot.replace(/_/g, ' ')}`} onClose={onClose} width={480}>
       {worn && (
         <div
           className="ws-row ws-row--live" style={{ marginBottom: 6 }}

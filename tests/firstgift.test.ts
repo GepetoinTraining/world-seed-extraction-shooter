@@ -122,7 +122,9 @@ describe('the first gift a character takes asks one circle', () => {
   it('the sheet groups a skill\'s circles from where its first gift falls', () => {
     expect(CircleSystem.firstAsks(holding({ axe: 1 }), axe().id)).toBe(1);
     expect(CircleSystem.firstAsks(holding({ axe: 1, pick: 2 }), axe().id)).toBe(3);
-    expect(readFileSync('src/components/PlayerHub.tsx', 'utf8')).toMatch(/<Circles filled=\{row\.circles\} first=\{CircleSystem\.firstAsks\(/);
+    // GV (2026-11-12): the skills panel reads its rows from SkillSay, which asks CircleSystem.firstAsks for each
+    expect(readFileSync('src/components/PlayerHub.tsx', 'utf8')).toMatch(/<Circles filled=\{row\.circles\.filled\} first=\{row\.circles\.first\} \/>/);
+    expect(readFileSync('src/logic/systems/SkillSay.ts', 'utf8')).toMatch(/first = CircleSystem\.firstAsks\(/);
   });
 
   it('the same inputs give the same answer', () => {

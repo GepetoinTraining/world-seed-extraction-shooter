@@ -13,7 +13,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { said, foldForming } from '../src/logic/systems/SheetWords';
+import { said } from '../src/logic/systems/SheetWords';
+import { SkillSay } from '../src/logic/systems/SkillSay';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { TagLaw } from '../shared/logic/content/TagLaw';
 
 const SRC = (p: string) => readFileSync(p, 'utf8');
 
@@ -42,36 +45,35 @@ describe('SV1: what is shown is rounded by one rule; what is kept is not', () =>
 });
 
 describe('SV2: forming rows that read alike are one row', () => {
+  // GV (2026-11-12): the forming rows are said by SkillSay now, which keeps D32's fold: every eye is one row
   it('three eyes forming read as one eye, at the furthest of them', () => {
-    const rows = [
-      { name: 'Identify A', tool: 'identify', worked: 'weapon', fill: 0.2 },
-      { name: 'Identify B', tool: 'identify, scope', worked: 'armor', fill: 0.6 },
-      { name: 'Identify C', tool: 'identify', worked: '', fill: 0.4 },
-      { name: 'Chopping', tool: 'axe', worked: 'oak', fill: 0.5 }
-    ];
-    const shown = foldForming(rows);
-    expect(shown).toEqual([{ said: 'the eye', fill: 0.6 }, { said: 'axe on oak', fill: 0.5 }]);
+    const progress = (tags: string[], weight: number) => ({ id: TagLaw.skillIdOf(TagLaw.canonical(tags)), tags: TagLaw.canonical(tags), rank: 0, attempts: 1, weight });
+    const rows = [progress(['identify_weapon'], 4), progress(['identify_armor'], 12), progress(['identify_tool'], 8), progress(['axe', 'flora', 'wood'], 10)];
+    const player = { id: 'p', bank: { universalSkills: {}, loreHeld: 0 }, skillProgress: Object.fromEntries(rows.map(r => [r.id, r])) } as any;
+    const shown = SkillSay.forming(player, undefined);
+    expect(shown.map(r => r.said)).toEqual(['A trained eye', 'Chopping plants and wood']);
+    expect(shown[0].fill).toBe(Math.max(...rows.slice(0, 3).map(r => WebSystem.emergenceFill(r))));
   });
-  it('the hands panel shows the folded rows', () => {
+  it('the skills panel shows the folded rows', () => {
     const hub = SRC('src/components/PlayerHub.tsx');
-    expect(hub).toMatch(/foldForming\(sheet\.forming\)/);
+    expect(hub).toMatch(/SkillSay\.forming\(/);
   });
 });
 
-describe('SV3: every explanation under IN A FIGHT says what its reader does', () => {
+describe('SV3: every line under IN A FIGHT reads its number at the person\'s own rank', () => {
   const sheet = SRC('src/logic/systems/SheetNumbers.ts');
-  it('protection has no top, and is read on a curve against a blow of the person\'s own rank', () => {
+  it('protection has no top, and is read against a blow of the person\'s own rank', () => {
     expect(sheet).not.toMatch(/at most \$\{pct\(0\.6\)\}/);
     expect(sheet).toMatch(/CombatMath\.mitigationOf\(eq, rank\)/);
-    expect(sheet).toMatch(/nears but never reaches all/);
+    // GV: the line says what it means for the player, never the curve it is read on
+    expect(sheet).not.toMatch(/nears but never reaches/);
   });
   it('dodge and glance are read at the person\'s own rank', () => {
     expect(sheet).toMatch(/CombatMath\.dodgeChance\(eq, at, rank\)/);
     expect(sheet).toMatch(/CombatMath\.glanceChance\(eq, at, rank\)/);
   });
-  it('how often names haste and leaves out what another hand wields; the walk names its curve and heavy pieces', () => {
+  it('how often names haste; the walk names heavy gear', () => {
     expect(sheet).toMatch(/haste/);
-    expect(sheet).toMatch(/another hand/);
     expect(sheet).toMatch(/heavy/);
   });
 });

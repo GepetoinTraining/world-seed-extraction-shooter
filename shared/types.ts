@@ -280,6 +280,11 @@ export interface ITagEntry {
   tag: string;
   kind: TagKind;
   meaning: string;
+  /**
+   * How a player says it on a screen (GV, 2026-11-12): a doing word for a tool, a trade or an action ("shooting"), a
+   * plural for what is worked ("beasts"). Words only: nothing but a screen reads it, and a tag without one reads as itself.
+   */
+  say?: string;
   /** Words that mean the same thing. They can never be registered. */
   refuses?: string[];
   /** Clause 2: retired, never reused. The spelling stays on the books. */

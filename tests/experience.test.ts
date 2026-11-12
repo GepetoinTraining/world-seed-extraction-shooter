@@ -1096,9 +1096,11 @@ describe('three circles ask the rest door for an active skill or a passive bonus
   it('the sheet shows circles by shape, in threes, with a way to fill them', () => {
     const src = readFileSync('src/components/PlayerHub.tsx', 'utf8');
     // Changed on purpose 2026-11-11. Pedro: "how about first gift is one, first gift new skill is 3, so the first first is one": the first group can be one
-    expect(src).toMatch(/<Circles filled=\{row\.circles\} first=\{CircleSystem\.firstAsks\(player, row\.id\)\} \/>/);
+    // GV (2026-11-12): the skills panel reads its rows from SkillSay, which asks CircleSystem.firstAsks for each
+    expect(src).toMatch(/<Circles filled=\{row\.circles\.filled\} first=\{row\.circles\.first\} \/>/);
+    expect(readFileSync('src/logic/systems/SkillSay.ts', 'utf8')).toMatch(/CircleSystem\.firstAsks\(player, row\.id\)/);
     expect(src).toMatch(/background: i < filled \?/);
-    expect(src).toMatch(/Fill a circle in/);
+    expect(src).toMatch(/Put a circle in/);
     // Q28: the field's chip and the city's bar read one line, which says what waits
     expect(readFileSync('src/components/WorldCanvas.tsx', 'utf8')).toMatch(/levelLine\(player\)/);
     expect(readFileSync('src/components/ui/levelLine.ts', 'utf8')).toMatch(/TO FILL/);

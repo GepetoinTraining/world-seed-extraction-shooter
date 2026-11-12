@@ -1,17 +1,20 @@
 /**
- * THE LARGE CHARACTER SHEET (the interface pass, part 2, 2026-11-11). Pedro: "right now we have the
- * small character sheet and no big one". One sheet, the same in a world and at home: everything the
- * character has, each in its own place under a word. The small sheet stays the quick one; SHIFT+C or
- * its LARGE SHEET button open this over everything, and the hub's AGENT tab shows this same sheet.
+ * THE LARGE CHARACTER SHEET (the interface pass, part 2, 2026-11-11; redone as one design by GV, 2026-11-12). Pedro:
+ * "the base stats, all of them are cool, but right now the way the skills come into play don't tell anyone anything, the
+ * character sheet itself needs a passover". One sheet, the same in a world and at home, ordered by what a player opens
+ * it for: what waits to be spent; how they stand (health, energy, a fight); their attributes, each with what it does for
+ * them; their skills, each with what it does, what grows it and what it needs, beside the lore that pays for them; then
+ * what they wear and carry; then the rest. The small sheet stays the quick one; SHIFT+C or its LARGE SHEET button open
+ * this over everything, and the hub's AGENT tab shows this same sheet.
  *
- * Every derived number is read through `SheetNumbers`, which asks the rules' own functions. Nothing
- * here sums a stat. What the person may not know stays out: an unread piece's part, a lore category's
- * own key, a name not asked (D19, D32, S2a). Nothing is told by colour alone; every section is a stop
- * for TAB, and every control is a button.
+ * Every derived number is read through `SheetNumbers`, `SkillSay` or the rules' own functions; nothing here sums a stat.
+ * Every line says what a number means for the player, never how it is made (GV, `tests/game.voice.test.ts`). What the
+ * person may not know stays out: an unread piece's part, a lore category's own key, a name not asked (D19, D32, S2a).
+ * Nothing is told by colour alone; every section is a stop for TAB, and every control is a button.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { IAttributes, HEAD_BUDGET_POSITIONS } from '../../shared/types';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { HEAD_BUDGET_POSITIONS } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { ProgressionSystem, LEVELS_PER_CIRCLE, POINTS_PER_LEVEL } from '../../shared/entities/player/systems/ProgressionSystem';
@@ -36,6 +39,7 @@ import { isTypingTarget } from '../logic/systems/FieldInput';
 import { goalWords, useWebView } from './TechWebView';
 import { DowntimeActs } from '../logic/systems/DowntimeActs';
 import { said } from '../logic/systems/SheetWords';
+import { OriginBank } from '../logic/content/OriginBank';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -44,15 +48,18 @@ const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; 
   </section>
 );
 
-const Line: React.FC<{ word: string; value: React.ReactNode; feeds?: string }> = ({ word, value, feeds }) => (
+/** A number and what it means for the player, under it. */
+const Line: React.FC<{ word: string; value: React.ReactNode; says?: string }> = ({ word, value, says }) => (
   <div style={{ padding: '3px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
     <div className="ws-row" style={{ padding: 0, gap: 8 }}>
       <span className="ws-dim ws-small" style={{ letterSpacing: '0.06em', flexShrink: 0 }}>{word}</span>
       <span className="ws-bright" style={{ textAlign: 'right', minWidth: 0 }}>{value}</span>
     </div>
-    {feeds && <div className="ws-dim ws-small">{feeds}</div>}
+    {says && <div className="ws-dim ws-small">{says}</div>}
   </div>
 );
+
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
 /** The next drop's kit, at home: the one carry limit, and the load in words as well as on its bar. */
 const KitPanel: React.FC<{ zoneId: string }> = ({ zoneId }) => {
@@ -62,14 +69,14 @@ const KitPanel: React.FC<{ zoneId: string }> = ({ zoneId }) => {
   const carry = SheetNumbers.fight(player).find(r => r.key === 'carry')!;
   const kitWeight = InventorySystem.totalWeight(kit);
   const limit = LoadoutSystem.carryLimit(player.attributes.strength, player.equipment);
-  const said = InventorySystem.loadWord(kitWeight, limit);
+  const load = InventorySystem.loadWord(kitWeight, limit);
   const zone = useRef<HTMLDivElement>(null);
   useDropZone(zoneId, wholeZone(zone, { kind: 'KIT' }));
   return (
     <div ref={zone} data-drop-zone={zoneId}>
       <Panel title="LOADOUT — NEXT DROP" right={<span className="ws-dim">{carry.value}</span>}>
-        <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>Tools always ride. Drag anything else here, and it drops with you, and can be lost with you.</div>
-        {kit.length === 0 && <div className="ws-dim ws-small">Nothing marked. You would drop with empty hands.</div>}
+        <div className="ws-dim ws-small" style={{ marginBottom: 6 }}>Tools always come with you. Drag anything else here to take it: it can be lost with you.</div>
+        {kit.length === 0 && <div className="ws-dim ws-small">Nothing chosen. You would drop with empty hands.</div>}
         <div className="ws-list">
           {kit.map(item => (
             <div key={item.id} className="ws-row" {...hoverProps(item)}>
@@ -77,7 +84,7 @@ const KitPanel: React.FC<{ zoneId: string }> = ({ zoneId }) => {
                 <ItemSprite item={item} cellPx={16} />
                 <span style={{ minWidth: 0 }}>
                   <span className="t" style={{ display: 'block' }}>{LoadoutSystem.shownName(item)}</span>
-                  <span className="s">{item.weight} kg{item.tags?.includes('tool') ? ' · TOOL, ALWAYS CARRIED' : ''}</span>
+                  <span className="s">{said(item.weight)} kg{item.tags?.includes('tool') ? ' · TOOL, ALWAYS CARRIED' : ''}</span>
                 </span>
               </span>
               {!item.tags?.includes('tool') && <Button tone="quiet" onClick={() => toggleCarry(item.id)}>LEAVE HOME</Button>}
@@ -85,9 +92,9 @@ const KitPanel: React.FC<{ zoneId: string }> = ({ zoneId }) => {
           ))}
         </div>
         <div style={{ marginTop: 8 }}>
-          <Bar label="LOAD" value={kitWeight} max={limit} tone={said ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, limit)) * 100)}%${said ? ` · ${said}` : ''}`} />
+          <Bar label="LOAD" value={kitWeight} max={limit} tone={load ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, limit)) * 100)}%${load ? ` · ${load}` : ''}`} />
         </div>
-        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{carry.feeds}</div>
+        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{carry.says}</div>
       </Panel>
     </div>
   );
@@ -103,7 +110,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
   const rank = ProgressionSystem.rankOf(player);
   const progress = ProgressionSystem.levelProgress(player);
   const points = ProgressionSystem.unspent(player).total;
-  const [told, setTold] = useState<keyof IAttributes | null>(null);
+  const circles = CircleSystem.free(player);
 
   // The hand the hotbar has active is the one the field fires, so it is the one a hit is read from
   const activeHand = useHotbar(s => s.active);
@@ -119,29 +126,42 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
   const others = Object.values(player.bank.universalSkills || {}).filter(s => !earned.has(s.id)).sort((a, b) => b.level - a.level);
   const held = LoadoutSystem.itemIn(equipment, 'RIGHT_HAND');
   const worn = LoadoutSystem.itemIn(equipment, 'CHEST');
+  const creation = player.creation;
+  const origin = creation ? OriginBank.origin(creation.origin) : undefined;
+  const kit = creation?.kit ? OriginBank.kit(creation.kit) : undefined;
+  const leans = creation ? [creation.main, creation.sub].filter(Boolean).map(a => capital(a)) : [];
 
   return (
     <div data-large-sheet style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10, alignItems: 'start' }}>
-      <Section word="WHO">
+      {/* What waits to be spent comes first: it is what a level sends a player here for */}
+      <Section word={player.username.toUpperCase()} right={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={rank} scale={2} />RANK {rank}</span>}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
           <PortraitView uid={player.id} archetype={(player.archetype || 'OPERATOR') as Archetype} scale={3} />
           <SpriteView sprite={figure({ uid: player.id, archetype: (player.archetype || 'OPERATOR') as Archetype, weapon: held ? weaponClass(held.tags || []) : undefined, armor: worn ? armorClass(worn.tags || []) : undefined })} scale={4} title="You, as the field draws you" />
+          <div className="ws-small" style={{ minWidth: 0 }}>{creation?.className ?? capital((player.archetype || 'OPERATOR').replace(/_/g, ' '))}</div>
         </div>
-        <div className="ws-bright">{player.username.toUpperCase()}</div>
-        <Line word="CLASS" value={player.creation?.className ?? (player.archetype || 'OPERATOR').replace('_', ' ')} />
-        {player.creation && <Line word="MADE FROM" value={[player.creation.origin, player.creation.main, player.creation.sub].filter(Boolean).join(' · ')} />}
-        {player.creation?.kit && <Line word="KIT" value={player.creation.kit} />}
-        <Line word="GUILD" value={player.guildId ? 'a member' : 'none yet'} />
-        <Line word="CITY" value={player.ownedCityId ? 'one of your own' : 'none of your own'} />
+        <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
+        <Line word="POINTS TO SPEND" value={points > 0 ? pointsLine(player) : 'none'} says={points > 0 ? 'Spend them under ATTRIBUTES.' : undefined} />
+        <Line word="CIRCLES TO PLACE" value={String(circles)} says={circles > 0 ? 'Place them under SKILLS.' : undefined} />
+        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
+          Each level gives {POINTS_PER_LEVEL} points: one free, and one for each group of attributes. Every {LEVELS_PER_CIRCLE} levels give a circle for a skill. A new rank from the guild starts your levels again; what you built stays.
+        </div>
       </Section>
 
-      <Section word="RANK AND LEVEL" right={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={rank} scale={2} />RANK {rank}</span>}>
-        <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
-        <Line word="TO SPEND" value={points > 0 ? pointsLine(player) : 'nothing'} />
-        <Line word="CIRCLES TO FILL" value={String(CircleSystem.free(player))} />
-        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Each level grants {POINTS_PER_LEVEL} points: one free, and one for each group, spent only inside it. Every {LEVELS_PER_CIRCLE} levels bring a circle. The guild sets the rank; the level begins again there, and what you built stays.
-        </div>
+      <Section word="HEALTH AND ENERGY">
+        <Bar label="HEALTH" value={vitals.health.now} max={vitals.health.max} tone="proof" text={`${Math.round(vitals.health.now)} of ${said(vitals.health.max)}`} />
+        <div style={{ height: 4 }} />
+        <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${said(vitals.energy.max)}`} />
+        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Energy is spent on work and study, and comes back when you rest.</div>
+        {vitals.aether.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>No aether held. Gathering gives it, an element at a time.</div>}
+        {vitals.aether.map(a => (
+          <Line key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
+        ))}
+        <Line word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} until you rest`} says="Endurance lets you take more." />
+      </Section>
+
+      <Section word="IN A FIGHT">
+        {fight.filter(r => r.key !== 'walk' && r.key !== 'sight' && r.key !== 'carry').map(r => <Line key={r.key} word={r.word} value={r.value} says={r.says} />)}
       </Section>
 
       <Section word="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">{points} TO SPEND</span> : undefined}>
@@ -156,117 +176,58 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
               const base = player.baseAttributes?.[attr] ?? val;
               const fromGear = val - base;
               const point = ProgressionSystem.pointFor(player, attr);
+              const does = StatSystem.attributeWork(attr, player.attributes);
               return (
-                <div key={attr} className="ws-row" tabIndex={point ? -1 : 0} aria-label={`${attr} ${val}, base ${base}${fromGear ? `, worn ${fromGear > 0 ? '+' : ''}${fromGear}` : ''}`}
-                  onMouseEnter={() => setTold(attr)} onFocus={() => setTold(attr)} style={{ padding: '1px 0' }}>
-                  <span style={{ textTransform: 'capitalize' }}>{attr}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="ws-dim ws-small">base {base}{fromGear ? ` · worn ${fromGear > 0 ? '+' : ''}${fromGear}` : ''}</span>
-                    <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
-                    {point && (
-                      <Button tone="signal" style={{ padding: '0 4px' }} onFocus={() => setTold(attr)} aria-label={`Raise ${attr} with ${pointWord(point)}`} title={`Raise ${attr} with ${pointWord(point)}`} onClick={() => spend(attr)}>+</Button>
-                    )}
-                  </span>
+                <div key={attr} tabIndex={point ? -1 : 0} aria-label={`${attr} ${val}: ${does}`} style={{ padding: '2px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
+                  <div className="ws-row" style={{ padding: 0 }}>
+                    <span style={{ textTransform: 'capitalize' }}>{attr}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {fromGear !== 0 && <span className="ws-dim ws-small">{base} {fromGear > 0 ? '+' : '−'} {Math.abs(fromGear)} worn</span>}
+                      <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
+                      {point && (
+                        <Button tone="signal" style={{ padding: '0 4px' }} aria-label={`Raise ${attr} with ${pointWord(point)}`} title={`Raise ${attr} with ${pointWord(point)}`} onClick={() => spend(attr)}>+</Button>
+                      )}
+                    </span>
+                  </div>
+                  <div className="ws-dim ws-small">{does}</div>
                 </div>
               );
             })}
           </div>
         ))}
-        <div className="ws-dim ws-small" style={{ minHeight: '2.6em' }}>{told ? `${told.toUpperCase()}: ${StatSystem.attributeWork(told, player.attributes)}` : 'Point at or step to an attribute to read what it does for you.'}</div>
       </Section>
 
-      <Section word="HEALTH, ENERGY, AETHER">
-        <Bar label="HEALTH" value={vitals.health.now} max={vitals.health.max} tone="proof" text={`${Math.round(vitals.health.now)} of ${said(vitals.health.max)}`} />
-        <div style={{ height: 4 }} />
-        <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${said(vitals.energy.max)}`} />
-        {vitals.aether.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>No aether held. Gathering gives it, an element at a time.</div>}
-        {vitals.aether.map(a => (
-          <Line key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
-        ))}
-        <Line word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} this rest`} feeds="Endurance lets a body take one more for every five points over its floor." />
-      </Section>
-
-      <Section word="IN A FIGHT">
-        {fight.filter(r => r.key !== 'walk' && r.key !== 'sight' && r.key !== 'carry').map(r => <Line key={r.key} word={r.word} value={r.value} feeds={r.feeds} />)}
-      </Section>
-
-      <Section word="WALK, SIGHT, CARRY">
-        {fight.filter(r => r.key === 'walk' || r.key === 'sight' || r.key === 'carry').map(r => <Line key={r.key} word={r.word} value={r.value} feeds={r.feeds} />)}
-      </Section>
-
-      <Section word="STATUSES">
-        {statuses.length === 0 ? <div className="ws-dim ws-small">Nothing is working on you now.</div> : statuses.map(s => <div key={s} className="ws-small">· {s}</div>)}
-        {hidden > 0 && <div className="ws-small" style={{ marginTop: 6 }}>{hidden} piece{hidden === 1 ? '' : 's'} worn you have not read: {hidden === 1 ? 'it acts' : 'they act'}, and the sheet does not say how.</div>}
-      </Section>
-
-      <Section word="WHO WALKS WITH YOU">
-        {companions.length === 0 ? <div className="ws-dim ws-small">No one walks with you.</div> : companions.map((c, i) => <Line key={i} word={c.name.toUpperCase()} value={c.how} />)}
-      </Section>
-
-      <Section word="GOLD, AND THE NEXT REST">
-        <Line word="GOLD" value={`${player.bank.gold.toLocaleString()} G`} />
-        {waits.length === 0 ? <div className="ws-dim ws-small">Nothing waits for your next rest.</div> : waits.map(w => <Line key={w.key} word={w.word.toUpperCase()} value={String(w.count)} />)}
-      </Section>
+      <section tabIndex={0} aria-label="SKILLS" style={{ minWidth: 0 }}><HandsPanel full /></section>
 
       <Section word="LORE" right={<Button tone="quiet" onClick={() => useWebView.getState().toggle()}>THE WEB</Button>}>
-        <Line word="GENERAL" value={String(Math.round(lore.general))} feeds="Spent anywhere: on a gift, a raise, a skill learned or taught." />
-        {lore.byCategory.length === 0 && <div className="ws-dim ws-small">No lore of a category yet. Study files it under what the thing showed you.</div>}
+        <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>Lore pays for a skill to settle, a gift, and a gift raised. A study at a rest gives it.</div>
+        <Line word="GENERAL" value={String(Math.round(lore.general))} says="Spent on anything." />
+        {lore.byCategory.length === 0 && <div className="ws-dim ws-small">No lore of any one kind yet. Studying a thing gives lore of its kind, spent on skills of that kind.</div>}
         {lore.byCategory.map(k => <Line key={k.name} word={k.name.toUpperCase()} value={String(k.reads)} />)}
         {/* The design pass, part 2: what is marked on the tech web, and what the way there asks */}
         {(() => {
           const goal = goalWords(player, web, hubTech);
           return goal
-            ? <Line word="WORKING TOWARD" value={goal.name} feeds={goal.says} />
-            : <div className="ws-dim ws-small">Working toward nothing marked. THE WEB marks a goal.</div>;
+            ? <Line word="WORKING TOWARD" value={goal.name} says={goal.says} />
+            : <div className="ws-dim ws-small">Nothing marked to work toward. THE WEB marks a goal.</div>;
         })()}
       </Section>
 
-      {/* The design pass, part 5: what is stacked for while away, and what the last return said */}
-      <Section word="WHILE AWAY">
-        {player.downtime?.stack.acts.length
-          ? player.downtime.stack.acts.map((act, i) => <div key={i} className="ws-small">{i + 1}. {DowntimeActs.wordOf(act)}</div>)
-          : <div className="ws-dim ws-small">Nothing stacked. It is laid where you rest: Old Mags' at the inn, or your own bed.</div>}
-        {player.downtime?.account && (
-          <div className="ws-small" style={{ marginTop: 4 }}>
-            <div className="ws-dim">The last return said:</div>
-            {player.downtime.account.lines.map((line, i) => <div key={i}>{line}</div>)}
-          </div>
-        )}
+      <Section word="WALK, SIGHT, CARRY">
+        {fight.filter(r => r.key === 'walk' || r.key === 'sight' || r.key === 'carry').map(r => <Line key={r.key} word={r.word} value={r.value} says={r.says} />)}
       </Section>
 
-      <Section word="MASTERY OF MATERIALS">
-        {mastery.length === 0 ? <div className="ws-dim ws-small">No material handled yet. Work one with a tool, and rest.</div>
-          : mastery.map(m => <Line key={m.id} word={m.name.toUpperCase()} value={m.knows} />)}
-      </Section>
-
-      <section tabIndex={0} aria-label="WHAT THE HANDS KNOW" style={{ minWidth: 0 }}><HandsPanel /></section>
-
-      <Section word="OTHER SKILLS">
-        {others.length === 0 ? <div className="ws-dim ws-small">None but what the hands know. Skills are born from actions, not menus.</div>
-          : others.map(skill => (
-            <div key={skill.id} className="ws-row ws-small" style={{ padding: '2px 0' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                <RankMark rank={ProgressionSystem.skillRankOf(skill)} scale={1} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id)}</span>
-              </span>
-              <span className="ws-dim" style={{ flexShrink: 0 }}>level {skill.level}</span>
-            </div>
-          ))}
-      </Section>
-
-      <section tabIndex={0} aria-label="WORKINGS" style={{ minWidth: 0 }}><TheWorking /></section>
-
-      <Section word="THE BODY" span={2}>
+      <Section word="WHAT YOU WEAR" span={2}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <PaperDoll />
           <div style={{ minWidth: 200, flex: 1 }}>
-            <div className="ws-dim ws-small" style={{ letterSpacing: '0.08em' }}>THE HEAD BUDGET</div>
+            <div className="ws-dim ws-small" style={{ letterSpacing: '0.08em' }}>THE HEAD</div>
             {HEAD_BUDGET_POSITIONS.map(position => {
               const frame = LoadoutSystem.frameAt(equipment, position);
               const gear = LoadoutSystem.itemIn(equipment, position);
-              return <Line key={position} word={position} value={frame ? `${frame.name}, a frame` : gear ? LoadoutSystem.shownName(gear) : 'open'} />;
+              return <Line key={position} word={position.replace(/_/g, ' ')} value={frame ? `${frame.name}, a frame` : gear ? LoadoutSystem.shownName(gear) : 'open'} />;
             })}
-            <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Head, eyes, earring and necklace each hold gear or a frame; three frames at most. Gear never adds to the mental stats; a frame does, beside what you were dealt.</div>
+            <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Head, eyes, earring and necklace each take gear or a frame, three frames at most. Gear never adds to the mental stats (SOFTWARE); a frame does, beside what you were dealt.</div>
           </div>
         </div>
       </Section>
@@ -285,6 +246,63 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
           <section tabIndex={0} aria-label="LOADOUT, NEXT DROP" style={{ minWidth: 0 }}><KitPanel zoneId={`${zonePrefix}kit`} /></section>
         </>
       )}
+
+      <section tabIndex={0} aria-label="WORKINGS" style={{ minWidth: 0 }}><TheWorking /></section>
+
+      <Section word="ON YOU NOW">
+        {statuses.length === 0 ? <div className="ws-dim ws-small">Nothing is working on you now.</div> : statuses.map(s => <div key={s} className="ws-small">· {s}</div>)}
+        {hidden > 0 && <div className="ws-small" style={{ marginTop: 6 }}>{hidden} piece{hidden === 1 ? '' : 's'} you wear {hidden === 1 ? 'is' : 'are'} unread: {hidden === 1 ? 'it works' : 'they work'} on you, and you do not know how.</div>}
+      </Section>
+
+      <Section word="WHO WALKS WITH YOU">
+        {companions.length === 0 ? <div className="ws-dim ws-small">No one walks with you.</div> : companions.map((c, i) => <Line key={i} word={c.name.toUpperCase()} value={c.how} />)}
+      </Section>
+
+      <Section word="GOLD, AND THE NEXT REST">
+        <Line word="GOLD" value={`${player.bank.gold.toLocaleString()} G`} />
+        {waits.length === 0 ? <div className="ws-dim ws-small">Nothing waits for your next rest.</div> : waits.map(w => <Line key={w.key} word={w.word.toUpperCase()} value={String(w.count)} />)}
+      </Section>
+
+      {/* The design pass, part 5: what is stacked for while away, and what the last return said */}
+      <Section word="WHILE AWAY">
+        {player.downtime?.stack.acts.length
+          ? player.downtime.stack.acts.map((act, i) => <div key={i} className="ws-small">{i + 1}. {DowntimeActs.wordOf(act)}</div>)
+          : <div className="ws-dim ws-small">Nothing planned. Plan it where you rest: Old Mags' table at the inn, or your own bed.</div>}
+        {player.downtime?.account && (
+          <div className="ws-small" style={{ marginTop: 4 }}>
+            <div className="ws-dim">When you came back:</div>
+            {player.downtime.account.lines.map((line, i) => <div key={i}>{line}</div>)}
+          </div>
+        )}
+      </Section>
+
+      <Section word="MATERIALS YOU KNOW">
+        {mastery.length === 0 ? <div className="ws-dim ws-small">None yet. Work one with a tool, then rest.</div>
+          : mastery.map(m => <Line key={m.id} word={m.name.toUpperCase()} value={m.knows} />)}
+      </Section>
+
+      {others.length > 0 && (
+        <Section word="OLDER SKILLS">
+          {others.map(skill => (
+            <div key={skill.id} className="ws-row ws-small" style={{ padding: '2px 0' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <RankMark rank={ProgressionSystem.skillRankOf(skill)} scale={1} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.skillWords?.[skill.id]?.name ?? WebSystem.nameOf(skill.id)}</span>
+              </span>
+              <span className="ws-dim" style={{ flexShrink: 0 }}>level {skill.level}</span>
+            </div>
+          ))}
+        </Section>
+      )}
+
+      <Section word="WHERE YOU CAME FROM">
+        <Line word="CLASS" value={creation?.className ?? capital((player.archetype || 'OPERATOR').replace(/_/g, ' '))} />
+        {origin && <Line word="BEFORE" value={capital(origin.says)} />}
+        {leans.length > 0 && <Line word="LEANING" value={leans.join(', then ')} />}
+        {kit && <Line word="STARTED WITH" value={capital(kit.says)} />}
+        <Line word="GUILD" value={player.guildId ? 'a member' : 'none yet'} />
+        <Line word="CITY" value={player.ownedCityId ? 'one of your own' : 'none of your own'} />
+      </Section>
     </div>
   );
 };
@@ -311,7 +329,7 @@ export const LargeSheetOverlay: React.FC = () => {
       style={{ display: 'block', overflowY: 'auto', padding: 16, background: 'rgba(3, 3, 3, 0.94)', zIndex: 400 }}
       onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
-        <span className="ws-bright" style={{ letterSpacing: '0.12em' }}>THE CHARACTER, WHOLE</span>
+        <span className="ws-bright" style={{ letterSpacing: '0.12em' }}>CHARACTER</span>
         <Button onClick={close}>CLOSE <Kbd>SHIFT+C</Kbd> <Kbd>ESC</Kbd></Button>
       </div>
       <LargeSheet zonePrefix="large_" />

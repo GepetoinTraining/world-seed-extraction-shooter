@@ -398,8 +398,7 @@ const WhoPanel: React.FC = () => {
       <HandsPanel />
       <TheWorking />
 
-      <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>SKILLS</div>
-      {others.length === 0 && <div className="ws-dim ws-small">None but what the hands know. Skills are born from actions, not menus.</div>}
+      {others.length > 0 && <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>OLDER SKILLS</div>}
       {others.map(skill => (
         <div key={skill.id} className="ws-row ws-small" style={{ padding: '2px 0' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>

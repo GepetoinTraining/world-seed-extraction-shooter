@@ -28,6 +28,7 @@ import { CombatMath } from '../src/entities/combat/CombatMath';
 import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
 import { LoreSystem } from '../src/logic/systems/LoreSystem';
 import { SheetNumbers } from '../src/logic/systems/SheetNumbers';
+import { said } from '../src/logic/systems/SheetWords';
 
 const SRC = (p: string) => readFileSync(p, 'utf8');
 const UID = 'uid_largesheet';
@@ -46,7 +47,7 @@ const wear = (items: { item: IItem; slot: string }[]) => {
   eq = { ...eq, items: items.map(w => w.item), slots: { ...eq.slots, ...Object.fromEntries(items.map(w => [w.slot, w.item.id])) } };
   usePlayerStore.setState(s => ({ player: { ...s.player, equipment: eq } }));
 };
-const row = (rows: { key: string; value: string; feeds: string }[], key: string) => rows.find(r => r.key === key)!;
+const row = (rows: { key: string; value: string; says: string }[], key: string) => rows.find(r => r.key === key)!;
 
 beforeEach(() => {
   localStorage.clear();
@@ -54,12 +55,12 @@ beforeEach(() => {
   usePlayerStore.getState().initializeSession(CERT(UID), 'NOMAD');
 });
 
-describe('the numbers of a fight are the rules\' own, each with what feeds it', () => {
-  it('names every number the brief asks for, each with a line saying what feeds it', () => {
+describe('the numbers of a fight are the rules\' own, each with what it means for the player', () => {
+  it('names every number the brief asks for, each with a line saying what it means (GV: never what feeds it)', () => {
     const rows = SheetNumbers.fight(player());
     for (const key of ['hit', 'often', 'protection', 'dodge', 'crit', 'glance', 'walk', 'sight', 'carry']) {
       expect(row(rows, key), key).toBeDefined();
-      expect(row(rows, key).feeds.length, key).toBeGreaterThan(10);
+      expect(row(rows, key).says.length, key).toBeGreaterThan(10);
     }
   });
 
@@ -70,7 +71,7 @@ describe('the numbers of a fight are the rules\' own, each with what feeds it', 
     const p = player();
     const rows = SheetNumbers.fight(p);
     expect(row(rows, 'hit').value).toContain(String(CombatMath.baseHit(sword, p.equipment, p.attributes, 0)));
-    expect(row(rows, 'often').value).toContain((1000 / CombatMath.fireCooldownMs(sword, p.equipment, p.attributes)).toFixed(2));
+    expect(row(rows, 'often').value).toContain(said(1000 / CombatMath.fireCooldownMs(sword, p.equipment, p.attributes)));
     expect(row(rows, 'crit').value).toContain(`${Math.round(StatSystem.critChance(p.equipment, p.attributes) * 100)}%`);
     expect(row(rows, 'protection').value).toContain(`${Math.round(CombatMath.mitigationOf(p.equipment) * 100)}%`);
     expect(row(rows, 'dodge').value).toContain(`${Math.round(CombatMath.dodgeChance(p.equipment, p.attributes) * 100)}%`);

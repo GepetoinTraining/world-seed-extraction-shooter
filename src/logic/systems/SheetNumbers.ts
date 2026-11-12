@@ -25,7 +25,8 @@ import { ContactNames } from './ContactNames';
 import { Escort } from './Escort';
 import { said } from './SheetWords';
 
-export interface SheetRow { key: string; word: string; value: string; feeds: string }
+/** A number on the sheet: its word, its value, and what it means for the player (GV: never how it is made). */
+export interface SheetRow { key: string; word: string; value: string; says: string }
 
 /** A field tile, in the units the field draws in (`StatSystem`'s own sight is in these). */
 const TILE_PX = 20;
@@ -41,13 +42,12 @@ export const SheetNumbers = {
     return player.equipment ? LoadoutSystem.itemIn(player.equipment, slot) : undefined;
   },
 
-  /** The numbers of a fight, and the walk, sight and carry, each with what feeds it. */
+  /** The numbers of a fight, and the walk, sight and carry, each with what it means for the player. */
   fight(player: IPlayer, slot: EquipSlotId = 'RIGHT_HAND'): SheetRow[] {
     const eq = player.equipment;
     const at = player.attributes;
     const hand = this.hand(player, slot);
     const handName = hand ? LoadoutSystem.shownName(hand) : 'a bare hand';
-    const swing = CombatMath.isMelee(hand);
     // SV3: the ratings are read against a blow of the person's own rank, as a fight of equals reads them
     const rank = ProgressionSystem.rankOf(player);
     const broken = !!hand && !CombatMath.isUsable(hand);
@@ -60,56 +60,58 @@ export const SheetNumbers = {
     const slowedByLoad = player.currentSession ? InventorySystem.speedModifier(load, limit) : 1;
     const sightTiles = StatSystem.sightPx(eq, at) / TILE_PX;
     const blow = StatSystem.blowFactor(at);
+    // GV: each line says what the number means for the player, never how it is made; numbers whole or to one place
+    const lighter = Math.round((1 - blow) * 100);
     return [
       {
         key: 'hit', word: 'DAMAGE',
-        value: `${hit} a blow, ${(Math.round(hit * perSecond * 10) / 10).toFixed(1)} a second${poison > 0 ? `, and ${poison} poison` : ''}`,
-        feeds: `The hand in use, ${slot.replace(/_/g, ' ').toLowerCase()}: ${handName}${broken ? ', broken: it fights as a bare hand until it is repaired' : swing ? ', swung: strength multiplies it' : ', fired'}, damage on what is worn, and what the hand's own skill adds; a second at how often it goes. Before a crit or a glance.`
+        value: `${hit} a blow, ${said(hit * perSecond)} a second${poison > 0 ? `, and ${said(poison)} poison` : ''}`,
+        says: broken ? `${handName} is broken: you fight bare-handed until it is mended.` : `What ${handName === 'a bare hand' ? 'your bare hand' : `the ${handName}`} deals, before crits and glances.`
       },
       {
-        key: 'often', word: 'HOW OFTEN',
-        value: `${perSecond.toFixed(2)} a second`,
-        feeds: `${handName}'s own rate, attack speed and haste on everything else worn (not what another hand or a tool slot wields), and dexterity. Never shorter than its draw or wind-up.`
+        key: 'often', word: 'ATTACKS',
+        value: `${said(perSecond)} a second`,
+        says: 'Dexterity and haste make you quicker. A draw or a wind-up still takes its time.'
       },
       {
         key: 'protection', word: 'PROTECTION',
-        value: `${pct(CombatMath.mitigationOf(eq, rank))} off a blow of your rank${blow !== 1 ? `, and blows land ×${blow.toFixed(2)}` : ''}`,
-        feeds: `Defense on what is worn, physical reduction counted as defense, on a curve that nears but never reaches all, against the rank of what strikes: a blow of a higher rank gets more through${blow !== 1 ? '; intimidation takes some of each blow before it' : ''}. At least 1 always lands.`
+        value: `${pct(CombatMath.mitigationOf(eq, rank))} off a blow of your rank${lighter > 0 ? `, and blows land ${lighter}% lighter` : lighter < 0 ? `, and blows land ${-lighter}% harder` : ''}`,
+        says: 'From what you wear. A blow of a higher rank gets more through, and every blow does at least 1.'
       },
       {
         key: 'dodge', word: 'DODGE',
         value: pct(CombatMath.dodgeChance(eq, at, rank)),
-        feeds: 'The evasion rating, from agility and what is worn, on a curve that nears but never reaches all, against a blow of your own rank; the blows of a higher rank are dodged less.'
+        says: 'Blows of your rank that miss you outright. Agility and what you wear raise it; a higher rank lands more.'
       },
       {
         key: 'block', word: 'BLOCK',
-        value: `${pct(CombatMath.blockChance(eq))}, a block leaves ${pct(CombatMath.blockFactor())}`,
-        feeds: 'Block chance on what is worn, rolled by a blow that was not dodged.'
+        value: `${pct(CombatMath.blockChance(eq))}, letting ${pct(CombatMath.blockFactor())} through`,
+        says: 'A blow you do not dodge may be blocked by what you wear.'
       },
       {
         key: 'crit', word: 'CRIT',
-        value: `${pct(StatSystem.critChance(eq, at))}, ×${CombatMath.critMultiplier(eq).toFixed(2)}`,
-        feeds: 'Perception and crit chance on what is worn; the multiplier is the base and what is worn.'
+        value: `${pct(StatSystem.critChance(eq, at))} of hits, for ×${said(CombatMath.critMultiplier(eq))} damage`,
+        says: 'Perception and what you wear raise both.'
       },
       {
         key: 'glance', word: 'GLANCE',
-        value: `${pct(CombatMath.glanceChance(eq, at, rank))}, leaves ${pct(CombatMath.glanceFactor())}`,
-        feeds: 'Of a hit that does not crit. Accuracy, from dexterity and what is worn, read at your own rank, makes it rarer.'
+        value: `${pct(CombatMath.glanceChance(eq, at, rank))} of hits, for ${pct(CombatMath.glanceFactor())} damage`,
+        says: 'A hit that only grazes. Dexterity and what you wear make it rarer.'
       },
       {
-        key: 'walk', word: 'THE WALK',
-        value: `${walk.toFixed(1)} tiles a second${slowedByLoad < 1 ? `, ×${slowedByLoad.toFixed(2)} under this load` : ''}`,
-        feeds: `Agility and movement on what is worn, on a curve that nears twice a walk and never arrives; each heavy piece worn costs a twentieth of a walk, and a penalty its own; each tonic drunk since the last rest slows it (${player.tonicsSinceRest ?? 0}). A pack over 80% of the carry limit slows it in the field.`
+        key: 'walk', word: 'WALK',
+        value: `${walk.toFixed(1)} tiles a second${slowedByLoad < 1 ? `, ${Math.round((1 - slowedByLoad) * 100)}% slower under this load` : ''}`,
+        says: `Agility and light gear quicken it; heavy gear${(player.tonicsSinceRest ?? 0) > 0 ? ' and the tonics drunk since your rest' : ' and tonics'} slow it. A pack over 80% full slows you in the field.`
       },
       {
         key: 'sight', word: 'SIGHT',
-        value: `${Math.round(sightTiles)} tiles past the window's edge`,
-        feeds: 'Perception over its floor, and light radius on what is worn. What is seen stays on the minimap.'
+        value: `${Math.round(sightTiles)} tile${Math.round(sightTiles) === 1 ? '' : 's'} past the screen's edge`,
+        says: 'Perception and light raise it. What you have seen stays on the map.'
       },
       {
         key: 'carry', word: 'CARRY',
         value: `${said(load)} of ${said(limit)} kg${InventorySystem.loadWord(load, limit) ? `, ${InventorySystem.loadWord(load, limit)}` : ''}`,
-        feeds: `30 kg and 10 for each point of strength, the bag's own kg, and carry capacity on what is worn. What is worn weighs nothing against it.${player.currentSession ? '' : ' At home: what the next drop would carry.'}`
+        says: `Strength, your bag and what you wear raise it. What you wear does not count against it.${player.currentSession ? '' : ' At home: what you would take on the next drop.'}`
       }
     ];
   },

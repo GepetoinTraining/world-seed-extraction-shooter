@@ -313,25 +313,29 @@ export class StatSystem {
     return UPKEEP_OFF_PCT_AT_MOST * climb(over(attributes, 'leadership'));
   }
 
-  /** What an attribute does at this value, in plain words: the sheet's reading of it. */
+  /**
+   * What an attribute does for this person, in plain words: the sheets' reading of it. GV (2026-11-12): it says what the
+   * player gets, never how the number is made, and every number is whole or to one place.
+   */
   static attributeWork(attr: keyof IAttributes, attributes: IAttributes): string {
     const points = over(attributes, attr);
+    const one = (n: number) => String(Math.round(n * 10) / 10);
     switch (attr) {
-      case 'strength': return `Carry +${points * 10} kg. Melee ${signedPct(this.meleeScale(attributes) - 1)}.`;
-      case 'constitution': return `Health ${this.maxHealth(attributes)}.`;
-      case 'agility': return `Walk ${signedPct(this.paceBonus(attributes))}. Blows missed ${Math.round(100 * this.evasionRating(undefined, attributes) / (this.evasionRating(undefined, attributes) + 100))}%.`;
-      case 'dexterity': return `Rate ${signedPct(this.fireRateScale(attributes) - 1)}. Accuracy +${this.accuracyRating(undefined, attributes)}.`;
-      case 'endurance': return `Energy +${(attributes.endurance * ENERGY_PER_ENDURANCE).toFixed(1)}.`;
-      case 'intelligence': return `Skills learned ${signedPct(this.learnRate(attributes) - 1)}. Deepens recon.`;
-      case 'focus': return `Workings ${signedPct(this.castPower(attributes))}. Reserves and recon grow, ${attributes.focus} held.`;
-      case 'engineering': return `Repairs ${signedPct(this.repairFactor(attributes) - 1)}. Bench time ${signedPct(this.craftClockFactor(attributes) - 1)}.`;
-      case 'hacking': return `Beacon opens in ${(this.channelMs(BASE_CHANNEL_MS, attributes) / 1000).toFixed(1)}s. Signals read ${signedPct(this.signalEyes(attributes))}.`;
-      case 'perception': return `Telling hits ${Math.round(this.critChance(undefined, attributes) * 1000) / 10}%. Sight +${this.sightPx(undefined, attributes) / PX} tiles. Deepens recon.`;
-      case 'charisma': return `A talk lands ${Math.round(this.talkOdds(undefined, attributes) * 100)}%.`;
-      case 'intimidation': return `Blows land ${signedPct(this.blowFactor(attributes) - 1)}. Respect ${Math.round(this.talkOdds('RESPECT', attributes) * 100)}%.`;
-      case 'subterfuge': return `Quieter by ${this.noiseReduction(undefined, attributes)}. Dodges the levy ${Math.round(this.levyDodgeOdds(attributes) * 100)}%.`;
-      case 'bartering': return `The counter pays ${this.vendorOffer(100, attributes)}%. The shelf ${signedPct(this.shopPrice(1, attributes) - 1)}.`;
-      case 'leadership': return `Follows at ${this.recruitDisposition(attributes)}/100. Upkeep -${Math.round(this.upkeepDiscountPct(attributes))}%.`;
+      case 'strength': return `You carry ${points * 10} kg more, and swung weapons deal ${signedPct(this.meleeScale(attributes) - 1)}.`;
+      case 'constitution': return `Health ${Math.round(this.maxHealth(attributes))}, before what you wear.`;
+      case 'agility': return `You walk ${signedPct(this.paceBonus(attributes))} faster and dodge ${Math.round(100 * this.evasionRating(undefined, attributes) / (this.evasionRating(undefined, attributes) + 100))}% of blows.`;
+      case 'dexterity': return `You attack ${signedPct(this.fireRateScale(attributes) - 1)} faster, and your hits glance less often.`;
+      case 'endurance': return `Energy +${one(attributes.endurance * ENERGY_PER_ENDURANCE)}, and ${this.tonicsPerRest(attributes)} tonic${this.tonicsPerRest(attributes) === 1 ? '' : 's'} between rests.`;
+      case 'intelligence': return `Skills form ${signedPct(this.learnRate(attributes) - 1)} faster, and recon reaches deeper.`;
+      case 'focus': return `Workings ${signedPct(this.castPower(attributes))}, and you hold more aether. Recon reaches deeper.`;
+      case 'engineering': return `Repairs ${signedPct(this.repairFactor(attributes) - 1)}, and bench work takes ${signedPct(this.craftClockFactor(attributes) - 1)} time.`;
+      case 'hacking': return `The beacon opens in ${one(this.channelMs(BASE_CHANNEL_MS, attributes) / 1000)} s, and unread signals open to you ${signedPct(this.signalEyes(attributes))} more.`;
+      case 'perception': return `${one(this.critChance(undefined, attributes) * 100)}% of your hits crit, you see ${one(this.sightPx(undefined, attributes) / PX)} tile${this.sightPx(undefined, attributes) === PX ? '' : 's'} further, and recon reaches deeper.`;
+      case 'charisma': return `A talk lands ${Math.round(this.talkOdds(undefined, attributes) * 100)}% of the time.`;
+      case 'intimidation': return `Blows on you land ${signedPct(this.blowFactor(attributes) - 1)}, and those who want respect listen ${Math.round(this.talkOdds('RESPECT', attributes) * 100)}% of the time.`;
+      case 'subterfuge': return `You are quieter by ${one(this.noiseReduction(undefined, attributes))}, and slip the levy ${Math.round(this.levyDodgeOdds(attributes) * 100)}% of the time.`;
+      case 'bartering': return `Counters pay you ${Math.round(this.vendorOffer(100, attributes))}% of worth, and shelves ask ${signedPct(this.shopPrice(1, attributes) - 1)}.`;
+      case 'leadership': return `A person follows you from regard ${Math.round(this.recruitDisposition(attributes))} of 100, and upkeep is ${Math.round(this.upkeepDiscountPct(attributes))}% less.`;
     }
   }
 }
