@@ -17,6 +17,7 @@
  */
 
 import { RestSystem } from '../src/logic/systems/RestSystem';
+import { statWord } from '../src/logic/systems/StatWords';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const db = new Map<string, any>();
@@ -769,7 +770,7 @@ describe('line 62: study reveals it', () => {
     expect(Object.values(player().materialMastery).some(k => k.discoveredAffixes.includes(added.id))).toBe(true);
     const line = inspectItem(plank, player()).rows.find(([k]) => k === 'Affix')!;
     for (const [stat, value] of Object.entries(added.stats)) {
-      expect(line[1]).toContain(stat.replace(/_/g, ' '));
+      expect(line[1]).toContain(statWord(stat)); // GV42: the card says a stat by its word, never by its key
       expect(line[1]).toContain(String(value));
     }
   });
