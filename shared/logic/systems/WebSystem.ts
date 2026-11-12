@@ -533,7 +533,14 @@ export class WebSystem {
     return { ...player, materialMastery: { ...player.materialMastery, [defId]: { resourceId: defId, discoveredAffixes: [], ...prior, knowledgeLevel: 1 } } };
   }
 
-  /** What a graded hand reads on a material: what it goes into. */
+  /** ML: what a sitting that lands well on a place teaches of its material: its name, and from a deep one its properties. */
+  static studied(player: IPlayer, defId: string, level: number): IPlayer {
+    const prior = player.materialMastery?.[defId];
+    if ((prior?.knowledgeLevel ?? 0) >= level) return player;
+    return { ...player, materialMastery: { ...player.materialMastery, [defId]: { resourceId: defId, discoveredAffixes: [], ...prior, knowledgeLevel: level } } };
+  }
+
+    /** What a graded hand reads on a material: what it goes into. */
   static becomes(defId: string, pack: IWebPack = current()): string[] {
     const recipes = [...Object.values(RECIPE_DEFINITIONS), ...pack.recipes];
     const out = recipes

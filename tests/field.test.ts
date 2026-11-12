@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TerrainSystem, TerrainType } from '../shared/entities/world/TerrainSystem';
+import { ExtractLaw } from '../shared/logic/systems/ExtractLaw';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
 import { InteractionType, IPlayer } from '../shared/types';
 import { EntityType, IWorldEntity } from '../shared/entities/world/types';
@@ -68,9 +69,10 @@ describe('harvest gating', () => {
     expect(harvests(player([pick]), 'res_rock_small')).toHaveLength(1);
   });
 
-  it('refuses a tool that is too weak', () => {
+  // ML: a weaker tool is no longer refused outright; it is tried, and the roll's bar is measured from its rank
+  it('a tool too weak for it is still tried, and its odds say so', () => {
     const weak = { ...pick, stats: { mining_power: 1 } };
-    expect(harvests(player([weak]), 'res_rock_small')).toHaveLength(0);
+    expect(harvests(player([weak]), 'res_rock_small')).toHaveLength(1);
   });
 });
 
@@ -83,8 +85,12 @@ describe('titanium', () => {
   const rolls = (baseId: string) => Array.from({ length: 300 }, (_, i) =>
     ItemFactory.createItem(undefined, true, Rng.fromKey(`titanium:${baseId}:${i}`), 'tool', baseId));
 
-  it('stays out of reach of the Rusty Pick', () => {
-    expect(rolls('tool_pick_rusty_t1').some(canHarvest)).toBe(false);
+  // ML: the Rusty Pick may try it, but where the Tempered Pick takes it most times the Rusty one seldom does
+  it('stays out of reach of the Rusty Pick, by the odds of the try', () => {
+    const def = RESOURCE_DEFINITIONS['res_titanium_vein'];
+    const odds = (item: any) => ExtractLaw.oddsOf(ExtractLaw.hand(player([item]), def)!, def);
+    const rusty = rolls('tool_pick_rusty_t1').map(odds), tempered = rolls('tool_pick_tempered_t3').map(odds);
+    expect(Math.max(...rusty)).toBeLessThan(Math.min(...tempered));
   });
 
   it('yields to the Tempered Pick at every quality', () => {

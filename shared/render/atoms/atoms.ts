@@ -806,6 +806,41 @@ export function resource(def: any, s = 12): Sprite {
   return worldForm(def, { s });
 }
 
+/**
+ * WHAT COMES AWAY (ML, Pedro: "on success you can extract, but it's a different sprite from the base"). A piece taken
+ * from a place is drawn as what a hand carries off, by its form: a billet from a tree, lumps of ore from a vein, stones split
+ * from a rock, one stone from a pebble, a tied bag from sand, a bound sheaf from grain, a handful from a shrub, a cut
+ * fruit from a fruit. A variant's piece wears its own marks, so what was taken is told apart by shape too.
+ */
+export function pieceInk(form: string | undefined, m: Material, seed: number): Ink | null {
+  const k = new Ink();
+  switch (form) {
+    case 'tree': return k.rect(14, 0, 34, 47).rect(20, 3, 28, 4, 0).rect(20, 8, 28, 9, 0);
+    case 'vein': return k.rect(6, 22, 22, 36).rect(25, 10, 41, 28).rect(17, 33, 35, 44).rect(6, 22, 9, 25, 0).rect(38, 10, 41, 13, 0).rect(32, 41, 35, 44, 0);
+    case 'rock': return k.rect(3, 30, 44, 41).rect(9, 17, 29, 26).rect(31, 20, 40, 26);
+    case 'pebble': return k.disc(24, 27, 11);
+    case 'sand': return k.disc(24, 31, 14).rect(20, 8, 28, 18).disc(17, 8, 5).disc(31, 8, 5).rect(17, 15, 31, 17, 0);
+    case 'grain': {
+      [[10, 4], [24, 2], [38, 4]].forEach(([x, y]) => k.line(x, y, 24, 26, 1).line(24, 26, x, 46, 1));
+      return k.rect(17, 23, 31, 29);
+    }
+    case 'shrub': return k.disc(15, 30, 7).disc(29, 25, 7).disc(22, 39, 7).disc(35, 37, 6).line(24, 4, 24, 20, 1);
+    case 'fruit': return k.disc(17, 28, 11).disc(32, 28, 11).rect(24, 12, 25, 44, 0).line(24, 14, 30, 4, 2);
+    default: return form ? lumpInk(m, seed) : null;
+  }
+}
+
+const lumpInk = (m: Material, seed: number) => { const k = new Ink(); lump(k, 24, 24, 14, m.hardness, seed); return k; };
+
+/** A piece as it would lie on the ground or in a hand, at a size, with any marks: what the bars and the pack compare. */
+export function pieceForm(def: any, s = 12, marks: IMark[] = []): Sprite {
+  const seed = fnv1a(`sprite:v1:${def.id}`);
+  const m = materialFromProps(def.materialProps);
+  const ink = pieceInk(def.visuals?.modelId, m, seed) ?? resourceInk(def, m, seed);
+  const role = (def.tags || []).includes('flora') ? Role.LIFE : Role.MATTER;
+  return stamp(applyMarks(ink, marks), s, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
+}
+
 // ---------------------------------------------------------------------------
 // WORLD THINGS
 // ---------------------------------------------------------------------------
@@ -897,9 +932,12 @@ function gearInk(tags: string[]): Ink {
 }
 
 /** What fills a pack slot: gear by its class, a tree as its log, anything else as itself. */
-function glyphInk(tags: string[], m: Material, seed: number): Ink {
+function glyphInk(tags: string[], m: Material, seed: number, form?: string, marks?: IMark[]): Ink {
   const gear = ['armor', 'tool', 'melee', 'ranged', 'caster'].some(t => tags.includes(t));
   if (gear) return gearInk(tags);
+  // ML: a material taken from a place is drawn as the piece it is, with its marks
+  const piece = form ? pieceInk(form, m, seed) : null;
+  if (piece) return applyMarks(piece, marks);
   if (isTree(tags)) {
     const k = new Ink().rect(14, 0, 34, 47);
     return k.rect(20, 3, 28, 4, 0).rect(20, 8, 28, 9, 0);
@@ -948,6 +986,8 @@ export const wearLevel = (durability?: number, max?: number) => {
 export interface ItemArtInput {
   wCells: number; hCells: number; tags: string[]; material: Material; rarity: string; rank: string; seed: number;
   quality?: number; durability?: number; maxDurability?: number; identified?: boolean;
+  /** ML: a material's form, so it is drawn as the piece it is, and its marks as a variant. */
+  form?: string; marks?: IMark[];
 }
 
 /**
@@ -993,7 +1033,7 @@ export function itemArt(o: ItemArtInput): Sprite {
 
   const band = qualityBand(o.quality);
   const gw = w - 4, gh = h - 4;
-  const glyph = sampleRect(glyphInk(o.tags, o.material, o.seed).body, gw, gh);
+  const glyph = sampleRect(glyphInk(o.tags, o.material, o.seed, o.form, o.marks).body, gw, gh);
   const on = (x: number, y: number) => x >= 0 && y >= 0 && x < gw && y < gh && glyph[y * gw + x] === 1;
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
     let v: number;

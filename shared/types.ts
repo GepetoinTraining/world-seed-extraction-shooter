@@ -776,6 +776,8 @@ export interface IStudyTarget {
   junk?: boolean;
   /** Pedro: a finished product asks for a workstation for it. This is the work it asks for. */
   station?: string;
+  /** ML: a place's material, kept to name it when a sitting lands well. Like `ref`, it never goes to the door. */
+  material?: string;
 }
 
 /** One sitting, logged when it landed and answered at a dream. */

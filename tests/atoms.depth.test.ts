@@ -336,9 +336,12 @@ describe('inspect card', () => {
     console.log(`INSPECT matches the game on ${cases} cases, ${canCount} of them actionable`);
   });
 
-  it('names the tool and the power that are missing', () => {
-    const wrong = inspectEntity(node('res_titanium_vein'), { player: player(kits.weakPick), dist: 1, level: () => 2 });
-    expect(wrong.needs.join(' ')).toMatch(/power 50/);
+  // ML: a weak tool is tried, so the card says how it stands where it said the power it lacked
+  it('names the tool that is missing, and how a weak one stands', () => {
+    const weak = inspectEntity(node('res_titanium_vein'), { player: player(kits.weakPick), dist: 1, level: () => 2 });
+    const strong = inspectEntity(node('res_titanium_vein'), { player: player(kits.strongPick), dist: 1, level: () => 2 });
+    const odds = (card: { rows: [string, string][] }) => Number(/about (\d+) times/.exec(card.rows.find(([k]) => k === 'Odds')![1])![1]);
+    expect(odds(weak)).toBeLessThanOrEqual(odds(strong));
     const none = inspectEntity(node('res_tree_log'), { player: player([]), dist: 1, level: () => 2 });
     expect(none.needs.join(' ')).toMatch(/axe/);
     const far = inspectEntity(node('res_berry_bush'), { player: player([]), dist: 5, level: () => 2 });

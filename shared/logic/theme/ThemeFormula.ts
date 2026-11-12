@@ -342,6 +342,22 @@ export const spreadWeight = (rank: ThemeRank | UniversalRank | string | undefine
   return Math.pow(SPREAD_RANK_FALLOFF, ranks) * Math.pow(SPREAD_WORTH_FALLOFF, worth);
 };
 
+/**
+ * THE TRY (ML, Pedro, 2026-11-12: "the right click ... tries to use the tool, rank + rarity give the roll, on success you
+ * can extract"). A try is a roll of a hundred on the scale a sitting reads (`LoreLaw.stretchOf`), against a bar the
+ * material's rank and rarity set, measured from the rank of the hand that tries it (its tool's, or the person's own
+ * where a bare hand will do). A common thing of the hand's own rank asks the plain bar, which a bare roll beats four
+ * times in five and never misses badly; each rank the thing stands above the hand asks what a rank asks of a sitting,
+ * and each step of worth above common a little less. All three are the coordinator's calls (ML9), open to strike.
+ */
+export const EXTRACT_BAR_PLAIN = 21;
+export const EXTRACT_PER_RANK = 15;
+export const EXTRACT_PER_WORTH = 10;
+export const extractBar = (rank: ThemeRank | UniversalRank | string | undefined, rarity: string | undefined, handRank: ThemeRank | UniversalRank | string): number =>
+  EXTRACT_BAR_PLAIN
+  + (rankStep((rank ?? 'F') as ThemeRank) - rankStep(handRank as ThemeRank)) * EXTRACT_PER_RANK
+  + Math.max(0, WORTH_LADDER.indexOf(String(rarity ?? 'COMMON'))) * EXTRACT_PER_WORTH;
+
 export const goodNumbers = (g: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG }) => ({
   weight: WEIGHT_KG[g.weight],
   dimensions: FOOTPRINT[g.weight],
