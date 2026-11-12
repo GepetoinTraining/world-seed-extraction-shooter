@@ -79,7 +79,7 @@ import { ResidentDay } from '../src/entities/hub/residentDay';
 import { doorOf } from '../src/render/atoms/hub';
 import { GoldAudit } from '../src/logic/economy/GoldAudit';
 import { GoldCommit } from '../src/logic/economy/GoldCommit';
-import { TALK_ENERGY } from '../src/logic/systems/TalkLaw';
+import { WorkCost } from '../shared/logic/systems/WorkCost';
 import { MemoryStore, rememberThreat } from '../src/entities/interaction/memoryStore';
 import { MemoryLaw } from '../src/logic/memory/MemoryLaw';
 import { MeetDoor } from '../src/logic/systems/MeetDoor';
@@ -321,7 +321,8 @@ describe('line 147: convincing a person is a talk', () => {
     const entity = person();
     stage(entity);
     const option = InteractionEngine.getAvailableInteractions(player(), entity, 1).find(o => o.id.startsWith('int_talk_'))!;
-    expect(option.energyCost).toBe(5);
+    // Changed on purpose 2026-11-12 (EN): a round costs what the day's one law asks, brought down by Persuasion
+    expect(option.energyCost).toBe(WorkCost.of(player(), 'round'));
   });
 
   it('a tougher person asks more of the same words, by rank and by mind', () => {
@@ -482,11 +483,13 @@ describe('line 147: what guards a long talk\'s bill', () => {
   it('a round costs a person energy, so a day bounds a talk, and an empty day sends nothing', async () => {
     const entity = person();
     stage(entity);
-    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: 6 } } }));
+    // Changed on purpose 2026-11-12 (EN): a day holding a round and a half, so one round fits and the second does not
+    const round = WorkCost.of(player(), 'round');
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: round * 1.5 } } }));
     const door = answering(words());
     await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
     await talk().say('One.');
-    expect(player().currentSession!.energy).toBe(1);
+    expect(player().currentSession!.energy).toBeCloseTo(round / 2, 9);
     await talk().say('Two.');
     expect(door).toHaveBeenCalledTimes(1);
     expect(talk().rounds).toHaveLength(1);
@@ -1515,8 +1518,9 @@ describe('Q50: a talk shows no cost, and asking draws out what they want', () =>
     stage(entity);
     vi.spyOn(TalkLaw, 'rollOf').mockReturnValue(100);
     await talk().open({ kind: 'FIELD_PERSON', entityId: entity.id });
+    const round = WorkCost.of(player(), 'round');
     await talk().ask();
-    expect(player().currentSession!.energy).toBe(100 - TALK_ENERGY);
+    expect(player().currentSession!.energy).toBeCloseTo(100 - round, 9);
     expect(talk().log[talk().log.length - 1].text).toMatch(/gift/i);
   });
 

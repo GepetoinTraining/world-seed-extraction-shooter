@@ -29,8 +29,6 @@ import { WebBank } from '../content/WebBank';
 import { CompositionSystem } from '../economy/CompositionSystem';
 import { Rng } from '../rng/DeterministicRNG';
 
-/** What one making costs the one who makes it, whatever comes of it. */
-export const PAIR_ENERGY = 5;
 /** What is asked of a making of the maker's own rank. */
 export const MAKE_DC_BASE = 8;
 /** Each rank the thing made stands above its maker. */

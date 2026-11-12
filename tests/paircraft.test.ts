@@ -38,7 +38,8 @@ import { InventorySystem } from '../shared/entities/player/systems/InventorySyst
 import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
 import { shortIdOf } from '../shared/logic/theme/ThemeCompiler';
-import { IMaker, PAIR_ENERGY, PairCraft } from '../shared/logic/systems/PairCraft';
+import { IMaker, PairCraft } from '../shared/logic/systems/PairCraft';
+import { WorkCost } from '../shared/logic/systems/WorkCost';
 import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useWorldStore } from '../src/entities/world/store';
 import { hubPort } from '../src/entities/hub/store';
@@ -267,11 +268,13 @@ describe('set one on the other: both are used, and an unread thing lies where it
     const [a, b] = [pebble(), reed()];
     inField([a, b], { [a.id]: { x: 0, y: 0, rotated: false }, [b.id]: { x: 4, y: 2, rotated: false } });
     const before = player().currentSession!.energy;
+    // Changed on purpose 2026-11-12 (EN, Pedro: "energy is bonkers"): a making costs what the day's one law asks
+    const cost = WorkCost.make(player(), a, b);
     expect(usePlayerStore.getState().combine(a.id, b.id)).toEqual({ ok: true });
     expect(pack().some(i => i.id === a.id || i.id === b.id)).toBe(false);
     expect(pack()).toHaveLength(1);
     expect(pack()[0].isIdentified).toBe(false);
-    expect(player().currentSession!.energy).toBe(before - PAIR_ENERGY);
+    expect(player().currentSession!.energy).toBeCloseTo(before - cost, 9);
     // Where the one it was set on lay, when what came of it fits there
     const at = player().currentSession!.inventoryLayout![pack()[0].id];
     const f = InventorySystem.footprint(pack()[0], at.rotated);
@@ -282,10 +285,11 @@ describe('set one on the other: both are used, and an unread thing lies where it
   it('in the vault, at home', () => {
     const [a, b] = [iron(), iron()];
     inVault(a, b);
+    const cost = WorkCost.make(player(), a, b);
     expect(usePlayerStore.getState().combine(a.id, b.id)).toEqual({ ok: true });
     expect(stash()).toHaveLength(1);
     expect(stash()[0].isIdentified).toBe(false);
-    expect(player().energyToday).toBe(100 - PAIR_ENERGY);
+    expect(player().energyToday).toBeCloseTo(100 - cost, 9);
   });
 
   it('the feed says the same words whatever it came to, and names nothing made', () => {
@@ -305,7 +309,7 @@ describe('set one on the other: both are used, and an unread thing lies where it
   it('with no energy for it nothing is used', () => {
     const [a, b] = [pebble(), reed()];
     inField([a, b]);
-    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: PAIR_ENERGY - 1 } } }));
+    usePlayerStore.setState(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, energy: WorkCost.make(s.player, a, b) / 2 } } }));
     const out = usePlayerStore.getState().combine(a.id, b.id);
     expect(out.ok).toBe(false);
     expect(out.reason).toMatch(/energy/i);

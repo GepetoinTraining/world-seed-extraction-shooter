@@ -41,6 +41,7 @@ import { DowntimeActs } from '../logic/systems/DowntimeActs';
 import { said } from '../logic/systems/SheetWords';
 import { OriginBank } from '../logic/content/OriginBank';
 import { SkillNames } from '../logic/systems/SkillNames';
+import { WORK_DAY, WorkSay } from '../logic/systems/WorkSay';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -153,7 +154,9 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
         <Bar label="HEALTH" value={vitals.health.now} max={vitals.health.max} tone="proof" text={`${Math.round(vitals.health.now)} of ${said(vitals.health.max)}`} />
         <div style={{ height: 4 }} />
         <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${said(vitals.energy.max)}`} />
-        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Energy is spent on work and study, and comes back when you rest.</div>
+        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>{WORK_DAY}</div>
+        {/* EN: what each act of work costs, and what brings it down, as a fixed fact */}
+        {WorkSay.lines(player).map(w => <Line key={w.word} word={w.word} value={w.value} says={w.says} />)}
         {vitals.aether.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>No aether held. Gathering gives it, an element at a time.</div>}
         {vitals.aether.map(a => (
           <Line key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />

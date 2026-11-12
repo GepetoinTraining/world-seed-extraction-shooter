@@ -21,9 +21,7 @@ import { UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumber
 // ---------------------------------------------------------------------------
 
 export type FireMode = 'MELEE' | 'FOCUS' | 'SHOT';
-export type FireGate = 'FIRE' | 'WAIT' | 'IDLE' | 'NO_ENERGY';
-
-export const FOCUS_ENERGY_COST = 10;
+export type FireGate = 'FIRE' | 'WAIT' | 'IDLE';
 
 /** How what is in the hand fires. A tool swings. Everything else is the weapon's own word. */
 export function fireMode(item: IItem | undefined): FireMode {
@@ -33,11 +31,13 @@ export function fireMode(item: IItem | undefined): FireMode {
   return 'SHOT';
 }
 
-/** One question each frame: does this frame fire? A click is simply a very short hold. */
-export function fireGate(s: { held: boolean; now: number; lastShot: number; cooldownMs: number; mode: FireMode; energy: number }): FireGate {
+/**
+ * One question each frame: does this frame fire? A click is simply a very short hold. EN: a weapon's own blow takes
+ * none of the day's energy, a focus's cast included, as a bow's shot took none; the day is for work.
+ */
+export function fireGate(s: { held: boolean; now: number; lastShot: number; cooldownMs: number; mode: FireMode }): FireGate {
   if (!s.held) return 'IDLE';
   if (s.now - s.lastShot < s.cooldownMs) return 'WAIT';
-  if (s.mode === 'FOCUS' && s.energy < FOCUS_ENERGY_COST) return 'NO_ENERGY';
   return 'FIRE';
 }
 

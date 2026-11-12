@@ -6,7 +6,7 @@ import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { Capture } from '../../../shared/logic/systems/Capture';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
-import { TALK_ENERGY } from '../../logic/systems/TalkLaw';
+import { WorkCost } from '../../../shared/logic/systems/WorkCost';
 import { ContactNames } from '../../logic/systems/ContactNames';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
@@ -129,7 +129,7 @@ export class InteractionEngine {
         label: 'Set a Snare',
         type: InteractionType.PICKUP,
         icon: 'snare',
-        energyCost: Capture.SNARE_ENERGY,
+        energyCost: WorkCost.of(player, 'snare'),
         timeCostSeconds: 2.0,
         requirements: {},
         consequence: { xpTags: ['trapping'] }
@@ -144,7 +144,7 @@ export class InteractionEngine {
           label: 'Open Container',
           type: InteractionType.OPEN,
           icon: '📦',
-          energyCost: 2,
+          energyCost: WorkCost.of(player, 'open'),
           timeCostSeconds: 1.0,
           requirements: {},
           consequence: { lootTableId: 'chest', xpTags: ['scavenging'] }
@@ -176,7 +176,7 @@ export class InteractionEngine {
         label: `Talk (${ContactNames.personName(target, player)} · ${npc.disposition}/100)`,
         type: InteractionType.COMMUNE,
         icon: '',
-        energyCost: TALK_ENERGY,
+        energyCost: WorkCost.of(player, 'round'),
         timeCostSeconds: 0,
         requirements: { skillId: 'charisma' },
         consequence: { xpTags: ['social', 'charisma'] }
@@ -189,7 +189,7 @@ export class InteractionEngine {
           label: 'Secure for Extraction',
           type: InteractionType.COMMUNE,
           icon: '🤝',
-          energyCost: 5,
+          energyCost: WorkCost.of(player, 'secure'),
           timeCostSeconds: 2.0,
           requirements: {},
           consequence: { xpTags: ['social', 'rescue'] }
@@ -205,7 +205,7 @@ export class InteractionEngine {
         label: stance ? `Bargain (${stance.toLowerCase()})` : 'Bargain',
         type: InteractionType.COMMUNE,
         icon: '',
-        energyCost: TALK_ENERGY,
+        energyCost: WorkCost.of(player, 'round'),
         timeCostSeconds: 0,
         requirements: { skillId: 'charisma' },
         consequence: { xpTags: ['social', 'charisma'] }
@@ -257,7 +257,7 @@ export class InteractionEngine {
           label: 'Analyze Structure',
           type: InteractionType.STUDY,
           icon: '🔍',
-          energyCost: 2,
+          energyCost: WorkCost.of(player, 'analyze'),
           timeCostSeconds: 5.0,
           requirements: { skillId: 'analysis' },
           consequence: { knowledgeId: target.definitionId, xpTags: ['intel', 'analysis'] }

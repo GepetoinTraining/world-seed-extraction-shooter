@@ -12,12 +12,16 @@
  *  - the cost is a sitting's energy and its time, both.
  *  - what is known is every held skill in the tree, by its level and its rung.
  * The shape is not open: the house curve, falling and never arriving, with no cap and no table.
+ * Changed on purpose 2026-11-12 (EN, the coordinator's call on Pedro's "no level of skill gets it down"): the energy is
+ * now the day's one law's (`EnergyLaw`), and a rank's worth of what is known of the tree halves it, with no floor; the
+ * curve fell by half only at fifty levels of a tree. The time keeps the curve and its floor.
  */
 
 import { describe, it, expect } from 'vitest';
 import { IPlayer, ISkillState, ItemType, Rarity, SlotType, IItem, UniversalRank } from '../shared/types';
 import { WebSystem } from '../shared/logic/systems/WebSystem';
-import { IDENTIFY_BASE_SECONDS, IDENTIFY_ENERGY, IDENTIFY_FLOOR_SECONDS, StudySystem } from '../src/logic/systems/StudySystem';
+import { IDENTIFY_BASE_SECONDS, IDENTIFY_FLOOR_SECONDS, StudySystem } from '../src/logic/systems/StudySystem';
+import { EnergyLaw } from '../shared/logic/systems/EnergyLaw';
 import { ChainWeb, IChainGround, IChainRound, emptyChain } from '../shared/logic/theme/ChainWeb';
 import { emptyTech, hubTreeOf } from '../src/entities/hub/hubTech';
 
@@ -52,11 +56,11 @@ describe('a sitting costs less the more its student knows of that tree (Pedro, 2
   it('a student who holds nothing of the tree pays exactly what a sitting asks today', () => {
     expect(knowledge(newcomer)).toBe(0);
     expect(WebSystem.treeShare(0)).toBe(1);
-    // No eye at all: half again, winged. The numbers StudySystem asked before this change.
-    expect(ask(newcomer)).toEqual({ cost: Math.ceil(IDENTIFY_ENERGY * 1.5), seconds: IDENTIFY_BASE_SECONDS });
+    // No eye at all: half again, winged. The day's one law's sitting (EN).
+    expect(ask(newcomer)).toEqual({ cost: EnergyLaw.cost('sitting', null), seconds: IDENTIFY_BASE_SECONDS });
     // A schooled eye and still nothing of the tree.
-    expect(ask(student(eye(1)))).toEqual({ cost: IDENTIFY_ENERGY, seconds: StudySystem.identifySeconds(1) });
-    expect(ask(student(eye(9)))).toEqual({ cost: IDENTIFY_ENERGY, seconds: StudySystem.identifySeconds(9) });
+    expect(ask(student(eye(1)))).toEqual({ cost: EnergyLaw.cost('sitting', 0), seconds: StudySystem.identifySeconds(1) });
+    expect(ask(student(eye(9)))).toEqual({ cost: EnergyLaw.cost('sitting', 0), seconds: StudySystem.identifySeconds(9) });
   });
 
   it('what has no tree to read pays what it pays today, however much the student knows', () => {
@@ -95,7 +99,7 @@ describe('a sitting costs less the more its student knows of that tree (Pedro, 2
       expect(ask(ladder[i]).cost).toBeLessThanOrEqual(ask(ladder[i - 1]).cost);
       expect(ask(ladder[i]).seconds).toBeLessThanOrEqual(ask(ladder[i - 1]).seconds);
     }
-    // None, some, much: whole numbers on the screen, and each strictly below the last
+    // None, some, much: as the screen says them, and each strictly below the last
     const [none, some, much] = [ladder[0], ladder[3], ladder[6]].map(who => ask(who));
     expect(some.cost).toBeLessThan(none.cost);
     expect(much.cost).toBeLessThan(some.cost);
@@ -124,10 +128,10 @@ describe('a sitting costs less the more its student knows of that tree (Pedro, 2
     expect(knowledge(farther)).toBeGreaterThan(0);
   });
 
-  it('it never reaches free: energy never goes below 1, and a sitting always takes time', () => {
+  it('a sitting always takes time; its energy, with no floor, falls toward nothing (changed on purpose, EN)', () => {
     const sage = student(atLevel(known(['axe'], ['flora', 'wood'], 4000), 100_000), atLevel(known(['saw'], ['flora', 'wood'], 4000), 100_000));
-    expect(WebSystem.treeShare(knowledge(sage))).toBeGreaterThan(0);
-    expect(ask(sage).cost).toBeGreaterThanOrEqual(1);
+    expect(ask(sage).cost).toBeLessThanOrEqual(ask(woodsman).cost);
+    expect(ask(sage).cost).toBeGreaterThanOrEqual(0);
     expect(ask(sage).seconds).toBeGreaterThanOrEqual(IDENTIFY_FLOOR_SECONDS);
   });
 
@@ -211,7 +215,7 @@ describe('the tree is the hub\'s web: two roads to one concept are one tree (S1a
 
   it('with no hub web at all nothing breaks, and a newcomer still pays today\'s price', () => {
     const bare = { chain: emptyChain(), ground: GROUND };
-    expect(asks(newcomer, plant, bare)).toEqual({ cost: Math.ceil(IDENTIFY_ENERGY * 1.5), seconds: IDENTIFY_BASE_SECONDS });
+    expect(asks(newcomer, plant, bare)).toEqual({ cost: EnergyLaw.cost('sitting', null), seconds: IDENTIFY_BASE_SECONDS });
     expect(asks(smith, plant, bare)).toEqual(asks(smith, plant));
     expect(asks(newcomer, plant, hub)).toEqual(asks(newcomer, plant));
     // A hub that has written nothing hands over nothing to read

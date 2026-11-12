@@ -43,7 +43,7 @@ import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState, IWorldEntity } from '../../../shared/entities/world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from '../../../shared/entities/player/data/cognitiveFrames'; // Import definitions
-import { Capture } from '../../../shared/logic/systems/Capture';
+import { WorkCost } from '../../../shared/logic/systems/WorkCost';
 import { FieldCapture } from '../../logic/systems/FieldCapture';
 import { FieldEscort } from '../../logic/systems/FieldEscort';
 import { Escort } from '../../logic/systems/Escort';
@@ -57,7 +57,7 @@ import { InsuranceSystem } from '../../logic/systems/InsuranceSystem'; // Wave 1
 import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wave 10E: the Dreaming (10E.3)
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { IRoomState, ownerHasStationFor, roomAdditions } from '../../../shared/entities/hub/room';
-import { PAIR_ENERGY, PairCraft } from '../../../shared/logic/systems/PairCraft';
+import { PairCraft } from '../../../shared/logic/systems/PairCraft';
 import { chunkOf } from '../../../shared/entities/world/grid';
 import { deathCostsNothing } from '../../../shared/logic/systems/DeathCost';
 import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the web and the auto skill
@@ -1903,7 +1903,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const may = PairCraft.mayCombine(item, onto);
     if (!may.ok) return may;
     const left = StudySystem.energyLeft(p);
-    if (left < PAIR_ENERGY) return { ok: false, reason: `Refused: needs ${PAIR_ENERGY} energy, you hold ${Math.floor(left)}. Rest first.` };
+    // EN: what the hands know of the two things' tree brings it down; the price says nothing of what they make
+    const cost = WorkCost.make(p, item, onto);
+    if (left < cost) return { ok: false, reason: `Refused: needs ${cost} energy, you hold ${Math.floor(left)}. Rest first.` };
 
     // In the field the roll is the session's own, so a hub can roll it again; at home it is keyed by the two pieces, which are used
     const rollKey = session ? SessionJournal.rollKey('make', `${item.id}:${onto.id}`) : `make:${p.id}:${item.id}:${onto.id}`;
@@ -1928,7 +1930,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const place = lay && InventorySystem.fitsAt(items, layout, made.item, lay.x, lay.y, false, cart.gridW, cart.gridH)
         ? { x: lay.x, y: lay.y, rotated: false }
         : InventorySystem.autoPlace(items, layout, made.item, cart.gridW, cart.gridH);
-      set(s => ({ player: RestSystem.queueMade(StudySystem.pay(s.player, PAIR_ENERGY), waiting) }));
+      set(s => ({ player: RestSystem.queueMade(StudySystem.pay(s.player, cost), waiting) }));
       wp.apply({ kind: 'UPDATE_BODY', entityId: cartBody.id, patch: { cart: place
         ? { ...cart, items: [...items, made.item], layout: { ...layout, [made.item.id]: place } }
         : { ...cart, items, layout } } });
@@ -1950,7 +1952,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Where the second one lay, when what came of it fits there; otherwise wherever the pack has room
       const { w, h } = InventorySystem.footprint(made.item, false);
       const fitsThere = !!lay && InventorySystem.canPlaceAt(InventorySystem.buildOccupancy(inventory, layout), w, h, lay.x, lay.y);
-      set(s => ({ player: RestSystem.queueMade(StudySystem.pay({ ...s.player, currentSession: { ...s.player.currentSession!, inventory, inventoryLayout: layout } }, PAIR_ENERGY), waiting) }));
+      set(s => ({ player: RestSystem.queueMade(StudySystem.pay({ ...s.player, currentSession: { ...s.player.currentSession!, inventory, inventoryLayout: layout } }, cost), waiting) }));
       if (fitsThere) {
         set(s => ({ player: { ...s.player, currentSession: { ...s.player.currentSession!, inventory: [...s.player.currentSession!.inventory, made.item], inventoryLayout: { ...s.player.currentSession!.inventoryLayout, [made.item.id]: { x: lay!.x, y: lay!.y, rotated: false } } } } }));
       } else {
@@ -1977,7 +1979,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set(s => ({
         player: RestSystem.queueMade(StudySystem.pay({
           ...s.player, bank: { ...s.player.bank, stashTabs: s.player.bank.stashTabs.map((t, idx) => (idx === 0 ? { ...t, items, layout } : t)) }
-        }, PAIR_ENERGY), waiting)
+        }, cost), waiting)
       }));
     }
 
@@ -2109,6 +2111,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // STUDY (legacy path, kept)
     // ------------------------------------------------------------------
     if (interactionId === 'int_study') {
+       // EN2: it took nothing where its menu said a price; now it takes what the day's one law asks
+       if (!spendEnergy(WorkCost.of(get().player, 'analyze'))) return;
        set(state => {
          const targetDefId = entity?.definitionId ?? '';
          const updatedPlayer = MaterialScience.studyMaterial(targetDefId, state.player);
@@ -2142,7 +2146,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // D65: a snare on a body in reach. The law and the record are in FieldCapture.
     if (interactionId.startsWith('int_snare_')) {
       if (!entity) return;
-      if (!spendEnergy(Capture.SNARE_ENERGY)) return;
+      if (!spendEnergy(WorkCost.of(get().player, 'snare'))) return;
       FieldCapture.snare(entity, wp, playerPort, hp);
       return;
     }
@@ -2286,10 +2290,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // the overflow rule is for harvests and chests. A press that moves nothing costs nothing.
       if (entity.container.items && entity.container.items.length > 0) {
         const held = get().player.currentSession?.energy ?? 0;
-        if (held < 2) { spendEnergy(2); return; }
+        const cost = WorkCost.of(get().player, 'open');
+        if (held < cost) { spendEnergy(cost); return; }
         const { added: taken, rejected } = get().tryAddItems(entity.container.items);
         if (taken.length > 0) {
-          spendEnergy(2);
+          spendEnergy(cost);
           const left = entity.container.items.filter(i => !taken.some(t => t.id === i.id));
           if (left.length === 0) wp.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
           else wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container, items: left } } });
@@ -2303,7 +2308,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       const claimedNow = claimedChests.delete(entity.id);
-      if (!claimedNow && !spendEnergy(2)) return;
+      if (!claimedNow && !spendEnergy(WorkCost.of(get().player, 'open'))) return;
 
       // Played live, a chest is claimed first, in the room's queue; it opens only for the claim that
       // won, and the write is the room's, after (Pedro: "the first or best lag gets the first spot")
@@ -2369,7 +2374,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!entity.npc) return;
       const inv = get().player.currentSession?.inventory || [];
       if (inv.length === 0) return;
-      if (!spendEnergy(2)) return;
+      if (!spendEnergy(WorkCost.of(get().player, 'gift'))) return;
 
       // Give the least valuable carried item; GIFT-wanters respond strongest
       const gift = [...inv].sort((a, b) => a.value - b.value)[0];
@@ -2391,7 +2396,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     if (interactionId.startsWith('int_recruit_')) {
       if (!entity.npc || entity.escort || entity.npc.disposition < StatSystem.recruitDisposition(get().player.attributes)) return;
-      if (!spendEnergy(5)) return;
+      if (!spendEnergy(WorkCost.of(get().player, 'secure'))) return;
 
       // Q16: they walk beside you to the beacon, in the world, and fight back when engaged.
       // The bond the hub reads is written at the beacon, from the same facts (D27, Wave 11's seam).

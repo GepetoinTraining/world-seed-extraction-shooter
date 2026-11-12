@@ -17,8 +17,6 @@ import { LADDER } from './NpcAgenda';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { HARM_BANDS, IGoalAsk, IGoalWords, IMeans, IRememberWords, IRoundWords, JUDGE_BANDS, JudgeBand, PROMISE_BANDS, QUEST_SIZES, QuestSize } from '../../../shared/logic/systems/TalkTypes';
 
-/** What one round takes out of a person's day. It is the first thing that bounds a long talk. */
-export const TALK_ENERGY = 5;
 
 const BONUS_NEAR = 10;
 const BONUS_FAR = 25;

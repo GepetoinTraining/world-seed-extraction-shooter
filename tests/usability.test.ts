@@ -57,7 +57,7 @@ import { Rng } from '../shared/logic/rng/DeterministicRNG';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { inspectItem, compareItems, comparisonFor, placeCard } from '../src/render/atoms/inspect';
 import {
-  fireGate, fireMode, FOCUS_ENERGY_COST, isInteractKey, pickInteract, hotbarCells, hotbarSlotForDigit,
+  fireGate, fireMode, isInteractKey, pickInteract, hotbarCells, hotbarSlotForDigit,
   wieldRefusal, cityCamera, suggestStart, shouldSkipHubStop, draftDismissal
 } from '../src/logic/systems/FieldInput';
 import { Held, Place, probeMove, commitMove, ghostStyle, stepGhost } from '../src/logic/systems/ItemHands';
@@ -349,12 +349,12 @@ describe('line 59: a pack item moves to a chosen cell', () => {
 // -----------------------------------------------------------------------------
 
 describe('line 72: holding fires at the weapon\'s own rate; interacting has its own input', () => {
-  const heldWindow = (item: IItem | undefined, ms: number, energy = 1e6) => {
+  const heldWindow = (item: IItem | undefined, ms: number) => {
     const cooldownMs = 1000 / (item?.stats?.attack_speed || 1);
-    let last = -Infinity, shots = 0, spend = energy;
+    let last = -Infinity, shots = 0;
     for (let now = 0; now <= ms; now += 16) {
-      const gate = fireGate({ held: true, now, lastShot: last, cooldownMs, mode: fireMode(item), energy: spend });
-      if (gate === 'FIRE') { shots++; last = now; if (fireMode(item) === 'FOCUS') spend -= FOCUS_ENERGY_COST; }
+      const gate = fireGate({ held: true, now, lastShot: last, cooldownMs, mode: fireMode(item) });
+      if (gate === 'FIRE') { shots++; last = now; }
     }
     return shots;
   };
@@ -372,14 +372,16 @@ describe('line 72: holding fires at the weapon\'s own rate; interacting has its 
   });
 
   it('releasing stops it, and a click still fires exactly once', () => {
-    expect(fireGate({ held: false, now: 5000, lastShot: 0, cooldownMs: 100, mode: 'SHOT', energy: 0 })).toBe('IDLE');
-    expect(fireGate({ held: true, now: 50, lastShot: 0, cooldownMs: 100, mode: 'SHOT', energy: 0 })).toBe('WAIT');
-    expect(fireGate({ held: true, now: 100, lastShot: 0, cooldownMs: 100, mode: 'SHOT', energy: 0 })).toBe('FIRE');
+    expect(fireGate({ held: false, now: 5000, lastShot: 0, cooldownMs: 100, mode: 'SHOT' })).toBe('IDLE');
+    expect(fireGate({ held: true, now: 50, lastShot: 0, cooldownMs: 100, mode: 'SHOT' })).toBe('WAIT');
+    expect(fireGate({ held: true, now: 100, lastShot: 0, cooldownMs: 100, mode: 'SHOT' })).toBe('FIRE');
   });
 
-  it('a focus with no energy refuses rather than fires', () => {
-    const gate = fireGate({ held: true, now: 5000, lastShot: 0, cooldownMs: 100, mode: 'FOCUS', energy: FOCUS_ENERGY_COST - 1 });
-    expect(gate).toBe('NO_ENERGY');
+  // Changed on purpose 2026-11-12 (EN, the coordinator's call on Pedro's "separate the energy consumption"): a blow takes
+  // none of the day's energy, a focus's included, so a focus fires on an empty day as a bow does
+  it('a focus with no energy still fires: a blow takes none of the day', () => {
+    const gate = fireGate({ held: true, now: 5000, lastShot: 0, cooldownMs: 100, mode: 'FOCUS' });
+    expect(gate).toBe('FIRE');
   });
 
   it('a tool in the hand swings; a shield in the hand does not', () => {

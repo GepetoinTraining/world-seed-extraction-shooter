@@ -66,8 +66,10 @@ describe('a stacked sitting is a hand\'s sitting', () => {
   });
 
   it('too little energy stops it in the study law\'s own words; a piece no longer held stops it too', () => {
-    const asked = rulesAt('BED').ask(person(2, [log]), { kind: 'STUDY', target }, T0);
-    expect(asked).toEqual({ ok: false, reason: StudySystem.canStudy(person(2, [log]), target, T0).reason });
+    // Changed on purpose 2026-11-12 (EN): a day holding half of what the sitting asks, whatever the law asks now
+    const low = StudySystem.studyAsk(person(50, [log]), target).cost / 2;
+    const asked = rulesAt('BED').ask(person(low, [log]), { kind: 'STUDY', target }, T0);
+    expect(asked).toEqual({ ok: false, reason: StudySystem.canStudy(person(low, [log]), target, T0).reason });
     expect(rulesAt('BED').ask(person(50, []), { kind: 'STUDY', target }, T0)).toMatchObject({ ok: false });
   });
 });
@@ -117,7 +119,9 @@ describe('the marked goal fills a stack, and the return is said in words', () =>
     expect(DowntimeActs.fromGoal(tired, { web: { nodes: {} } })).toEqual(acts);
     const focused = { ...who, attributes: { ...who.attributes, focus: 1 + 6 * 3 } } as IPlayer;
     const many = DowntimeActs.fromGoal(focused, { web: { nodes: {} } });
-    expect(many.length).toBeLessThan(Downtime.capacity(focused.attributes));
+    // Changed on purpose 2026-11-12 (EN, ledger EN13): a sitting costs a fifth of what it did, so a rested day now reaches
+    // as far as a well-focused stack holds; it never goes past either
+    expect(many.length).toBeLessThanOrEqual(Downtime.capacity(focused.attributes));
     expect(many.reduce((sum, a) => sum + (a.kind === 'STUDY' ? StudySystem.studyAsk(focused, a.target).cost : 0), 0)).toBeLessThanOrEqual(StudySystem.energyLeft(RestSystem.wake(focused)));
   });
 

@@ -47,6 +47,7 @@ import { WebBank } from '../shared/logic/content/WebBank';
 import { bankAndSignWeb } from '../src/logic/content/BankSigning';
 import { WEB_BATCHES } from '../shared/entities/generation/packs/webBatches';
 import { WebSystem, MASTERY_RUNGS, RUNG_XP } from '../shared/logic/systems/WebSystem';
+import { EnergyLaw } from '../shared/logic/systems/EnergyLaw';
 import { NpcSheet } from '../shared/logic/systems/NpcSheet';
 import { SkillDiscovery } from '../src/entities/player/systems/SkillDiscovery';
 import { ProgressionSystem } from '../shared/entities/player/systems/ProgressionSystem';
@@ -803,16 +804,17 @@ describe('line 64: working without the skill accrues; it emerges only at a rest'
 
   it('winging it costs more than knowing it, and the card says so', () => {
     const axe = toolOf('tool_axe_field_t1', 'axe');
-    const base = defOf('res_tree_log').harvestConfig.energyCost;
+    // Changed on purpose 2026-11-12 (EN): what a taking costs is the day's one law's, the place's ask its weight
+    const base = EnergyLaw.cost('try', 0, defOf('res_tree_log').harvestConfig.energyCost);
     const id = fieldWith('res_tree_log', [axe], 1000);
     harvest(id);
-    const winged = 1000 - player().currentSession!.energy;
+    const winged = Math.round((1000 - player().currentSession!.energy) * 1000) / 1000;
     expect(winged).toBeGreaterThan(base);
 
     grantSkill(WebSystem.mint(['axe'], defOf('res_tree_log').tags).tags);
     const id2 = fieldWith('res_tree_log', [axe], 1000);
     harvest(id2);
-    expect(1000 - player().currentSession!.energy).toBe(base);
+    expect(1000 - player().currentSession!.energy).toBeCloseTo(base, 9);
 
     const entity = useWorldStore.getState().currentMap!.chunks['0,0'].entities[0];
     const known = inspectEntity(entity, { player: player(), dist: 1, level: () => 2 });

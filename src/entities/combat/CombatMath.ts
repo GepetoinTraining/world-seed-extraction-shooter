@@ -192,7 +192,7 @@ export class CombatMath {
     return !weapon || !this.isUsable(weapon) || isThrowable(weapon) ? THROW_TILES * TILE_PX : undefined;
   }
 
-  /** Magic foci fire a NOVA pattern and spend energy. */
+  /** Magic foci fire a NOVA pattern. EN: like any blow, it takes none of the day's energy. */
   static isFocus(weapon: IItem | undefined): boolean {
     return !!weapon && this.isUsable(weapon) && (weapon.tags || []).includes('magic');
   }

@@ -14,7 +14,8 @@ import { CartSystem } from '../../entities/world/CartSystem';
 import { IWorldEntity } from '../../../shared/entities/world/types';
 import type { IPlayerPort } from '../../entities/player/playerView';
 import { bodyOf, type IWorldView } from '../../entities/world/worldView';
-import { PAIR_ENERGY, PairCraft } from '../../../shared/logic/systems/PairCraft';
+import { PairCraft } from '../../../shared/logic/systems/PairCraft';
+import { WorkCost } from '../../../shared/logic/systems/WorkCost';
 
 export type Place =
   | { kind: 'PACK'; x?: number; y?: number; rotated?: boolean }
@@ -162,7 +163,8 @@ export function probeMove(player: IPlayer, held: Held, to: Place, world: IWorldV
       const may = PairCraft.mayCombine(item, onto);
       if (!may.ok) return may;
       const left = player.currentSession?.energy ?? player.energyToday ?? Infinity;
-      return left < PAIR_ENERGY ? no(`Refused: needs ${PAIR_ENERGY} energy, you hold ${Math.floor(left)}. Rest first.`) : OK;
+      const cost = WorkCost.make(player, item, onto);
+      return left < cost ? no(`Refused: needs ${cost} energy, you hold ${Math.floor(left)}. Rest first.`) : OK;
     }
   }
 }
