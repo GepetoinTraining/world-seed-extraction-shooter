@@ -19,7 +19,8 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { BASE_CRIT_MULTIPLIER, BASE_GLANCE, BLOCK_FACTOR, GLANCE_FACTOR, RATING_KNEE, UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { isThrowable, thrownDamage } from '../../../shared/entities/item/Throwable';
-import { IStrikeShape, strikeNumbers, strikeWordsOf, volleyWordOf } from '../../../shared/logic/theme/ThemeFormula';
+import { IStrikeShape, THROW_TILES, strikeNumbers, strikeWordsOf, volleyWordOf } from '../../../shared/logic/theme/ThemeFormula';
+import { TILE_PX } from '../../../shared/entities/world/grid';
 import type { Volley } from '../../../shared/logic/theme/ThemeTypes';
 
 export const UNARMED_DAMAGE = 5;
@@ -136,6 +137,11 @@ export class CombatMath {
   static volleyOf(weapon: IItem | undefined): Volley {
     if (!weapon || !this.isUsable(weapon) || isThrowable(weapon)) return 'single';
     return weapon.volley ?? volleyWordOf(weapon.tags ?? []);
+  }
+
+  /** Call 12: how far a throw flies; a bare hand or a stone throws eight tiles. Anything else flies a shot's whole flight (none). */
+  static shotRangePx(weapon: IItem | undefined): number | undefined {
+    return !weapon || !this.isUsable(weapon) || isThrowable(weapon) ? THROW_TILES * TILE_PX : undefined;
   }
 
   /** Magic foci fire a NOVA pattern and spend energy. */

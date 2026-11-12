@@ -17,7 +17,7 @@ import { WorldGenerator } from '../../../../shared/entities/world/WorldGenerator
 import { fnv1a } from '../../../../shared/logic/rng/DeterministicRNG';
 import { EffectSystem, IEffectReceipt, StatusClock } from '../../../../shared/logic/systems/EffectSystem';
 import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
-import { IStrikeShape, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
+import { IStrikeShape, SHOT_WEIGHT, creatureBlowWeight, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
 import type { Volley } from '../../../../shared/logic/theme/ThemeTypes';
 import { PERSON_RADIUS_PX, stepOutPx } from '../../../../shared/entities/combat/Shapes';
 import { BASE_WALK_TILES_PER_S } from '../../../../shared/entities/player/systems/LoadoutSystem';
@@ -216,6 +216,19 @@ export class MobAI {
   static pose(entityId: string): { facing: MobFacing; moving: boolean } | undefined {
     const mem = this.mobMemory[entityId];
     return mem ? { facing: mem.facing, moving: mem.moving } : undefined;
+  }
+
+  /**
+   * Part 2: a hit felt, heavy enough, breaks the wind-up this body stood for. What it wound up is lost and nothing
+   * lands from it; it begins again at once, so a quick hand costs it its wind-up and not its turn, and one hand
+   * cannot hold it for good. True when there was a wind-up to break.
+   */
+  static interrupt(entityId: string): boolean {
+    const mem = this.mobMemory[entityId];
+    if (!mem?.windup) return false;
+    mem.windup = undefined;
+    mem.lastAttackTime = Date.now() - ATTACK_COOLDOWN_MS;
+    return true;
   }
 
   static isActive(entityId: string): boolean {
@@ -495,6 +508,8 @@ export class MobAI {
                 // The fight's shapes: the ground it drew, aimed where it was aimed when it began
                 ...(shape ? { shape } : {}),
                 ...(ranged ? { struck: new Set<string>() } : {}),
+                // Part 2: what it weighs when it lands, so the person feels it
+                weight: ranged ? SHOT_WEIGHT : creatureBlowWeight(def ?? {}),
                 abilityId: receipt?.abilityId,
                 shooterId: entity.id,
                 // Origin is 2D { x, y }

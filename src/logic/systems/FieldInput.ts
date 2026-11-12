@@ -11,6 +11,9 @@ import { CombatMath } from '../../entities/combat/CombatMath';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { isThrowable } from '../../../shared/entities/item/Throwable';
 import { TILE_PX } from '../../../shared/entities/world/grid';
+import { DRAW_PACE, SWING_PACE, abilityNumbers, drawMs, swingWindupMs } from '../../../shared/logic/theme/ThemeFormula';
+import type { ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
+import { UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
 
 // ---------------------------------------------------------------------------
 // HOLD TO FIRE
@@ -35,6 +38,26 @@ export function fireGate(s: { held: boolean; now: number; lastShot: number; cool
   if (s.now - s.lastShot < s.cooldownMs) return 'WAIT';
   if (s.mode === 'FOCUS' && s.energy < FOCUS_ENERGY_COST) return 'NO_ENERGY';
   return 'FIRE';
+}
+
+/**
+ * The fight's rebalance, part 2: a person's blow winds up before it lands (BALANCE_RUN 2.13, call 6). A shot, a
+ * throw and a focus's own burst are drawn standing for six tenths of the hand's own cycle; a working cast from a
+ * focus is drawn standing for its own telegraph; a swing begins at half pace for a time its shape gives. All of it
+ * from the formula, and none of it shortened by a faster hand, which shortens only what comes after.
+ */
+export interface IWindup { ms: number; pace: number; kind: 'draw' | 'swing' }
+export function windupOf(item: IItem | undefined, _equipment?: IEquipmentState, _attributes?: unknown, cast?: { cost: Parameters<typeof abilityNumbers>[0]; rank: ThemeRank }): IWindup {
+  const mode = fireMode(item);
+  if (mode === 'MELEE') return { ms: swingWindupMs(CombatMath.strikeOf(item)), pace: SWING_PACE, kind: 'swing' };
+  if (mode === 'FOCUS' && cast) return { ms: abilityNumbers(cast.cost, cast.rank).telegraphMs, pace: DRAW_PACE, kind: 'draw' };
+  const own = CombatMath.isUsable(item) ? item!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
+  return { ms: drawMs(own), pace: DRAW_PACE, kind: 'draw' };
+}
+
+/** From one blow's start to the next's: the hand's rate, and never shorter than the wind-up. */
+export function cycleMs(item: IItem | undefined, equipment?: IEquipmentState, attributes?: Parameters<typeof CombatMath.fireCooldownMs>[2]): number {
+  return Math.max(CombatMath.fireCooldownMs(item, equipment, attributes), windupOf(item, equipment, attributes).ms);
 }
 
 /** Can this be taken in the hand and fired? Null means yes. Bare hands are always there. */

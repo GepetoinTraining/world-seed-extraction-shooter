@@ -48,7 +48,8 @@ export interface IEffectReceipt {
 }
 
 export interface IStatusPlan {
-  kind: 'dot' | 'slow' | 'stun' | 'ward' | 'haste' | 'weaken';
+  /** `stagger` is a hit felt (the fight's rebalance, part 2): that share of pace lost for that share of a second. */
+  kind: 'dot' | 'slow' | 'stun' | 'ward' | 'haste' | 'weaken' | 'stagger';
   magnitude: number;
   durationMs: number;
   tickMs?: number;
@@ -187,7 +188,7 @@ export const StatusClock = {
   paceScale(statuses: IActiveStatus[] | undefined): number {
     let scale = 1;
     for (const s of statuses ?? []) {
-      if (s.kind === 'slow') scale *= 1 - s.magnitude;
+      if (s.kind === 'slow' || s.kind === 'stagger') scale *= 1 - s.magnitude;
       if (s.kind === 'haste') scale *= 1 + s.magnitude;
     }
     return scale;

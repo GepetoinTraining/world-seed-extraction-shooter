@@ -12,12 +12,14 @@ export interface IProjectile {
   color: string;
   damage?: number; // Wave 4: carried from the weapon/mob that fired it
   poison?: number; // Layer 0: what the blade left on it
-  status?: { kind: 'dot' | 'slow' | 'stun' | 'ward' | 'haste' | 'weaken'; magnitude: number; durationMs: number; tickMs?: number }; // Layer 1: what it leaves behind
+  status?: { kind: 'dot' | 'slow' | 'stun' | 'ward' | 'haste' | 'weaken' | 'stagger'; magnitude: number; durationMs: number; tickMs?: number }; // Layer 1: what it leaves behind
   // Position on the previous frame, so a slow frame cannot skip over a target
   prevX?: number;
   prevY?: number;
   /** The fight's shapes: who its volley has already struck. A volley lands once on one body; its other shots stop there and do nothing. */
   struck?: Set<string>;
+  /** Part 2: what it weighs when it lands, so the body it lands on feels it. None is not felt. */
+  weight?: number;
 }
 
 const PROJECTILE_SPEED_PX = SHOT_SPEED_PX; // 10 tiles/s at 20px tiles
@@ -50,6 +52,8 @@ export interface IFiredPattern {
   status?: IProjectile['status'];
   struck?: Set<string>;
   rangePx?: number;
+  /** Part 2: what each of its shots weighs when it lands. */
+  weight?: number;
 }
 
 export class ProjectileSystem {
@@ -129,6 +133,7 @@ export class ProjectileSystem {
           poison: pattern.poison,
           status: pattern.status,
           ...(pattern.struck ? { struck: pattern.struck } : {}),
+          ...(pattern.weight !== undefined ? { weight: pattern.weight } : {}),
           prevX: b.x - Math.cos(b.angle) * back,
           prevY: b.y - Math.sin(b.angle) * back
         };

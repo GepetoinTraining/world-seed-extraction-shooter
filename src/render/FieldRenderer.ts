@@ -29,7 +29,10 @@ export const DEATH_BURST_MS = 450;
 export const HURT_EDGE_MS = 220;
 
 export interface MobPose { facing: CreatureFacing; frame: number }
-export interface FieldEffect { kind: 'hit' | 'death'; x: number; y: number; at: number; size: number }
+/** A hit flash, a death burst, or (part 2) a hit felt: which way it pushed, and whether it broke a wind-up. */
+export interface FieldEffect { kind: 'hit' | 'death' | 'stagger'; x: number; y: number; at: number; size: number; dx?: number; dy?: number; broke?: boolean }
+/** Part 2: how long a hit felt stays marked. */
+export const STAGGER_MARK_MS = 260;
 
 export interface FieldScene {
   camera: { x: number; z: number };
@@ -44,6 +47,8 @@ export interface FieldScene {
   drops: { x: number; y: number }[];
   /** The fight's shapes: a blow's ground as it lands; `inner` is its hole and `half` its half-width (none is the old arc). */
   swings: { x: number; y: number; angle: number; range: number; inner?: number; half?: number }[];
+  /** Part 2: the blow you are winding up: a draw is a line out along the aim, a swing its shape's edge filling in. */
+  windup?: { x: number; y: number; angle: number; fill: number; kind: 'draw' | 'swing'; shape?: { reachPx: number; innerPx: number; halfAngle: number } };
   /** Live facing and walk frame per mob id, from the AI. Missing means front, still. */
   mobPoses?: Record<string, MobPose>;
   /** Hit flashes and death bursts, pruned by the caller. */
@@ -291,6 +296,8 @@ export class FieldRenderer {
       for (const m of shapeMarks({ ...shape, innerPx: Math.max(shape.innerPx, shape.reachPx - 1) }, { x: s.x, y: s.y }, s.angle, 4)) ctx.fillRect(snap(m.x - ox) - 2, snap(m.y - oz) - 2, 4, 4);
     });
 
+    if (scene.windup) this.drawWindup(ctx, scene.windup, ox, oz);
+
     scene.bullets.forEach(b => {
       ctx.fillStyle = b.hostile ? this.color(Role.LOSS, 3) : this.color(Role.SIGNAL, 4);
       ctx.fillRect(snap(b.x - ox) - 2, snap(b.y - oz) - 2, 4, 4);
@@ -363,6 +370,29 @@ export class FieldRenderer {
     });
   }
 
+  /**
+   * Part 2: your own wind-up, solid like your blow, told from a creature's by being whole where theirs is broken.
+   * A draw is a line out from you along your aim with a bar across its tip that steps out as it fills; a swing is
+   * its shape's far edge, traced from one side to the other as it comes due.
+   */
+  private drawWindup(ctx: CanvasRenderingContext2D, w: NonNullable<FieldScene['windup']>, ox: number, oz: number) {
+    ctx.fillStyle = this.color(Role.SIGNAL, 4);
+    if (w.kind === 'draw') {
+      const reach = 14 + 46 * w.fill;
+      for (let d = 14; d <= reach; d += 4) ctx.fillRect(snap(w.x + Math.cos(w.angle) * d - ox) - 1, snap(w.y + Math.sin(w.angle) * d - oz) - 1, 2, 2);
+      const tx = w.x + Math.cos(w.angle) * reach, ty = w.y + Math.sin(w.angle) * reach;
+      for (const side of [-1, 1]) for (let k = 1; k <= 3; k++) {
+        const a = w.angle + side * Math.PI / 2;
+        ctx.fillRect(snap(tx + Math.cos(a) * k * 2 - ox) - 1, snap(ty + Math.sin(a) * k * 2 - oz) - 1, 2, 2);
+      }
+      return;
+    }
+    if (!w.shape) return;
+    const edge = shapeMarks({ ...w.shape, innerPx: Math.max(w.shape.innerPx, w.shape.reachPx - 1) }, { x: w.x, y: w.y }, w.angle, 5);
+    const shown = Math.ceil(edge.length * w.fill);
+    for (let i = 0; i < shown; i++) ctx.fillRect(snap(edge[i].x - ox) - 1, snap(edge[i].y - oz) - 1, 2, 2);
+  }
+
   /** Pips under a wounded enemy: count and position carry the reading, not hue. */
   private drawHealth(ctx: CanvasRenderingContext2D, e: IWorldEntity, x: number, y: number, w: number) {
     const max = (MOB_DEFINITIONS[e.definitionId]?.baseHealth ?? 0) + (e.bonusHealth ?? 0);
@@ -384,6 +414,22 @@ export class FieldRenderer {
   private drawEffect(ctx: CanvasRenderingContext2D, f: FieldEffect, now: number, ox: number, oz: number, reduced: boolean) {
     const age = now - f.at;
     const x = snap(f.x - ox), y = snap(f.y - oz);
+    if (f.kind === 'stagger') {
+      // Part 2: a hit felt is a streak behind the body, back toward what struck it; a broken wind-up adds a cross
+      if (age > STAGGER_MARK_MS) return;
+      const len = Math.hypot(f.dx ?? 0, f.dy ?? 0) || 1;
+      const ux = (f.dx ?? 0) / len, uy = (f.dy ?? 0) / len;
+      ctx.fillStyle = this.color(Role.SIGNAL, 3);
+      for (let k = 1; k <= 3; k++) ctx.fillRect(snap(x - ux * (8 + k * 5)) - 1, snap(y - uy * (8 + k * 5)) - 1, 2, 2);
+      if (f.broke) {
+        ctx.fillStyle = this.color(Role.LOSS, 4);
+        for (let k = -2; k <= 2; k++) {
+          ctx.fillRect(x + k * 2 - 1, y - 18 + k * 2 - 1, 2, 2);
+          ctx.fillRect(x + k * 2 - 1, y - 18 - k * 2 - 1, 2, 2);
+        }
+      }
+      return;
+    }
     if (f.kind === 'hit') {
       if (age > HIT_FLASH_MS) return;
       const r = snap(f.size / 2 + (reduced ? 4 : age < HIT_FLASH_MS / 2 ? 6 : 2));

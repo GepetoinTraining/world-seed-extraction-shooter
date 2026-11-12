@@ -57,6 +57,13 @@ export function shapeMarks(shape: IStrikeShape, origin: { x: number; y: number }
   return out;
 }
 
+/** A hit felt (part 2): `px` along the line from the striker through the struck. A body standing on its striker is pushed along the x axis. */
+export function pushFrom(origin: { x: number; y: number }, at: { x: number; y: number }, px: number): { dx: number; dy: number } {
+  const dx = at.x - origin.x, dy = at.y - origin.y;
+  const d = Math.hypot(dx, dy);
+  return d < 1e-6 ? { dx: px, dy: 0 } : { dx: (dx / d) * px, dy: (dy / d) * px };
+}
+
 /**
  * The shortest walk out of a shape for a body standing on its aim at `distance`: back past its reach, sideways
  * past its edge, or in under its haft. What a creature's wind-up has to leave time for.

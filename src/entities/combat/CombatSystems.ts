@@ -1,6 +1,6 @@
 import { POISON_MS, POISON_TICK_MS } from '../../../shared/logic/systems/FightNumbers';
 import { IProjectile, ProjectileSystem } from '../../../shared/entities/combat/projectileSystem';
-import { IWorldEntity, EntityType, IChunk } from '../../../shared/entities/world/types';
+import { IWorldEntity, EntityType, IChunk, IMap } from '../../../shared/entities/world/types';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { LootTable } from '../world/LootTable';
 import { MonsterMind } from '../../logic/systems/MonsterMind';
@@ -9,12 +9,16 @@ import { IItem, UniversalRank, Rarity } from '../../../shared/types';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { SessionJournal } from '../../logic/journal/SessionJournal';
 import { IStatusPlan, StatusClock } from '../../../shared/logic/systems/EffectSystem';
-import { bodyRadiusPx, covers } from '../../../shared/entities/combat/Shapes';
+import { bodyRadiusPx, covers, pushFrom } from '../../../shared/entities/combat/Shapes';
+import { bodyPoise, feltHit } from '../../../shared/logic/theme/ThemeFormula';
+import { WorldGenerator } from '../../../shared/entities/world/WorldGenerator';
 
 /** The fight's shapes: a swing as it lands. `inner` and `half` are its hole and its half-width; a swing that names none is the old arc. */
 export interface IMeleeArc {
   origin: { x: number; y: number }; angle: number; range: number; inner?: number; half?: number;
   startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string>;
+  /** Part 2: what the blow weighs, so what it lands on feels it. None is not felt (an escort's bare hand). */
+  weight?: number;
 }
 /** The arc every swing was before shapes, and an escort's still is. */
 const OLD_HALF_ANGLE = 0.75;
@@ -22,7 +26,11 @@ const OLD_HALF_ANGLE = 0.75;
 const radiusOf = (ent: IWorldEntity) => bodyRadiusPx(MOB_DEFINITIONS[ent.definitionId]?.size);
 
 export interface ICombatEvent {
-  type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG' | 'WARDED' | 'BROKE';
+  type: 'HIT' | 'KILL' | 'LOOT_SPAWN' | 'PLAYER_DAMAGE' | 'ACTION_LOG' | 'WARDED' | 'BROKE' | 'STAGGER';
+  /** Part 2: a hit felt broke the wind-up its body stood for. */
+  broke?: boolean;
+  /** Part 2: which way a hit felt pushed it, and how far. */
+  push?: { dx: number; dy: number };
   entityId?: string;
   definitionId?: string;
   displayName?: string;
@@ -64,7 +72,7 @@ export class CombatSystem {
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
     meleeArcs: IMeleeArc[],
-    opts: { magicFind?: number; groundVersion?: number; luck?: number } = {}
+    opts: { magicFind?: number; groundVersion?: number; luck?: number; map?: IMap } = {}
   ): {
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
@@ -144,6 +152,18 @@ export class CombatSystem {
 
     // 0. WHAT IS ALREADY WORKING ON THEM
     const tickNow = Date.now();
+
+    // Part 2: a hit is felt. That share of a tile pushed from the striker, that share of pace lost for that share
+    // of a second, and the wind-up it stood for broken when the blow weighs at least what the body stands
+    const felt = (mob: IWorldEntity, weight: number | undefined, from: { x: number; y: number }) => {
+      if (weight === undefined || mob.structure || (mob.health ?? 0) <= 0) return;
+      const hit = feltHit(weight, bodyPoise(MOB_DEFINITIONS[mob.definitionId]?.size));
+      const push = pushFrom(from, mob.position, hit.pushPx);
+      const to = opts.map ? WorldGenerator.resolveMove(opts.map, mob.position.x, mob.position.y, push.dx, push.dy) : { x: mob.position.x + push.dx, z: mob.position.y + push.dy };
+      mob.position = { x: to.x, y: to.z };
+      mob.statuses = StatusClock.add(mob.statuses as never, hit.pause, tickNow) as never;
+      events.push({ type: 'STAGGER', entityId: mob.id, definitionId: mob.definitionId, position: mob.position, broke: hit.breaks, push });
+    };
     allMobs.forEach(({ mob, chunkKey }) => {
       if (!mob.statuses?.length) return;
       const { damage, statuses } = StatusClock.tick(mob.statuses as never, tickNow);
@@ -183,6 +203,7 @@ export class CombatSystem {
         mob.health -= damage;
         if (bullet.poison) poisoned(mob, bullet.poison, tickNow);
         struck(mob, bullet.status, tickNow);
+        felt(mob, bullet.weight, { x: mob.position.x - Math.cos(bullet.angle), y: mob.position.y - Math.sin(bullet.angle) });
         bulletsToRemove.add(bulletIdx);
 
         events.push({
@@ -225,6 +246,7 @@ export class CombatSystem {
           mob.health -= damage;
           if (arc.poison) poisoned(mob, arc.poison, tickNow);
           struck(mob, arc.status, tickNow);
+          felt(mob, arc.weight, arc.origin);
           hitIds.add(mob.id);
 
           // ACTION: Melee Hit

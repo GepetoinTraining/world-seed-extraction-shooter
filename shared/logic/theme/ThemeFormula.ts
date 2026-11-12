@@ -501,6 +501,45 @@ export const volleyShots = (v: Volley): { delayMs: number; offset: number }[] =>
   }
 };
 
+// -------------------------------------------------------------------------
+// WIND-UPS AND A HIT FELT (the fight's rebalance, part 2; BALANCE_RUN 2.13, call 6). A person's blow winds up:
+// a shot is drawn standing, a swing begins at half pace. A hit is felt: a share of it, weight over weight and
+// poise, is that share of a tile pushed and that share of pace lost for that share of a second, and it breaks
+// a wind-up its target stood for only when its weight is at least the target's poise. Seconds, tiles and
+// weights read no rank. All guesses until played.
+// -------------------------------------------------------------------------
+
+/** A shot is drawn for this share of its weapon's own cycle, standing. A faster hand shortens what comes after it, never the draw. */
+export const DRAW_SHARE = 0.6;
+export const drawMs = (ownRate: number): number => Math.round((DRAW_SHARE * 1000) / Math.max(0.1, ownRate));
+
+/** A swing's wind-up: a moment to begin, and a little for every tile its head sweeps through. */
+const SWING_BASE_MS = 100;
+const SWING_MS_PER_TILE = 45;
+const sweptTiles = (s: IStrikeShape) => (2 * s.halfAngle * s.reachPx) / TILE_PX;
+export const swingWindupMs = (s: IStrikeShape): number => Math.round(SWING_BASE_MS + SWING_MS_PER_TILE * sweptTiles(s));
+
+/** What a body keeps of its walk while it winds up: a draw stands, a swing keeps half. */
+export const DRAW_PACE = 0;
+export const SWING_PACE = 0.5;
+
+/** A blow weighs what it takes to swing: the middling arc Pedro played weighs one, a wide sweep more, a stab less. */
+export const blowWeight = (s: IStrikeShape): number => swingWindupMs(s) / swingWindupMs(strikeNumbers({ reach: 'middling', sweep: 'arc', hollow: 'none' }));
+/** Call 12: the empty hand throws, at eight tiles and under the draw. A stone or a bare hand flies this far, and no further. */
+export const THROW_TILES = 8;
+/** A shot weighs one, whatever flung it. */
+export const SHOT_WEIGHT = 1;
+/** How firmly a body stands: its mass, the same measure as what it eats (a middling body one, a person one). */
+export const bodyPoise = (size?: string): number => APPETITE[size as keyof typeof APPETITE] ?? APPETITE.MEDIUM;
+/** A creature's blow weighs its shape's weight times the body behind it. */
+export const creatureBlowWeight = (c: { size?: string; behavior?: string }): number => blowWeight(strikeNumbers(creatureStrikeWords(c))) * bodyPoise(c.size);
+
+/** What a hit does to the body it lands on: a push, a pause (a status the clock runs), and whether it breaks what that body stood for. */
+export const feltHit = (weight: number, poise: number): { share: number; pushPx: number; pause: { kind: 'stagger'; magnitude: number; durationMs: number }; breaks: boolean } => {
+  const share = weight / Math.max(1e-9, weight + poise);
+  return { share, pushPx: share * TILE_PX, pause: { kind: 'stagger', magnitude: share, durationMs: Math.round(share * 1000) }, breaks: weight >= poise };
+};
+
 /** D77: a forced way out always takes the top band, and a scroll of it is written no lower than this rank. */
 export const FORCED_EXIT_COST = 'extreme' as const;
 export const FORCED_EXIT_FLOOR_RANK: ThemeRank = 'C';

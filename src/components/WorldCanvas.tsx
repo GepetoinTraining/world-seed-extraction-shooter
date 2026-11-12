@@ -6,7 +6,8 @@ import { useHubStore, worldDay } from '../entities/hub/store';
 import { rememberThreat } from '../entities/interaction/memoryStore';
 import { WebSystem } from '../../shared/logic/systems/WebSystem';
 import { ProjectileSystem, PatternType, IProjectile, patternOf } from '../../shared/entities/combat/projectileSystem';
-import { PERSON_RADIUS_PX, covers } from '../../shared/entities/combat/Shapes';
+import { PERSON_RADIUS_PX, covers, pushFrom } from '../../shared/entities/combat/Shapes';
+import { SHOT_WEIGHT, blowWeight, bodyPoise, feltHit } from '../../shared/logic/theme/ThemeFormula';
 import { LootTable } from '../entities/world/LootTable';
 import { Leaders } from '../../shared/entities/world/Leaders';
 import { CombatSystem } from '../entities/combat/CombatSystems';
@@ -64,7 +65,7 @@ import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
 import { drawSpeech } from '../render/atoms/speech';
 import { installGibberishFace } from '../render/atoms/gibberishFace';
-import { FOCUS_ENERGY_COST, InteractPick, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
+import { FOCUS_ENERGY_COST, InteractPick, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
@@ -81,6 +82,8 @@ const MAX_DELTA = 0.1; // Clamp frame delta (seconds) so tab-switches don't tele
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 /** How often the feed says a blow landed on nothing. */
 const WARDED_SAID_MS = 6000;
+/** Part 2: how often a broken wind-up is said, so a quick hand does not fill the feed. */
+const STAGGER_SAID_MS = 4000;
 
 // =============================================================================
 // THE CART WINDOW (Wave 10C, D16): the bed's grid, the seal, the theft log
@@ -247,6 +250,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   inspectedIdRef.current = inspected?.id ?? null;
   const lastInspectAt = useRef(0);
   const wardedSaidRef = useRef(0);
+  const staggerSaidRef = useRef(0);
   // Line 72: what the interact key would do right now, said above the hotbar
   const [prompt, setPrompt] = useState<string | null>(null);
   const promptRef = useRef<string | null>(null);
@@ -295,6 +299,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const escapeRef = useRef<() => void>(() => {});
   const interactPickRef = useRef<() => InteractPick | 'EXIT' | null>(() => null);
   const fireRef = useRef<(now: number) => void>(() => {});
+  // The fight's rebalance, part 2: the blow being wound up, begun by the button and let go by the loop when its time is up
+  const windupRef = useRef<{ startedAt: number; until: number; pace: number; kind: 'draw' | 'swing'; slot: string; weaponId?: string } | null>(null);
+  const releaseRef = useRef<(now: number) => void>(() => {});
+  /** A person stands as a middling body does (part 2): what a blow must weigh to break their draw. */
+  const PERSON_POISE = bodyPoise('MEDIUM');
 
   // What is in the hand: the hotbar's choice, read from the harness
   const activeWeapon = () => {
@@ -368,8 +377,30 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     applyPlayerReceipt(receipt, now, origin, angle);
   };
 
-  // Line 72: one shot, if the gate says so. The weapon decides how; the hand decides which.
+  // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
+  const aimFrom = (playerPos: { x: number; z: number }): number => {
+    if (firingRef.current.mouse && aimRef.current) {
+      return Math.atan2(aimRef.current.y - window.innerHeight / 2, aimRef.current.x - window.innerWidth / 2);
+    }
+    const { near } = inspectedIdRef.current ? targetsNear(playerPos.x, playerPos.z, 300) : { near: [] as IWorldEntity[] };
+    const target = near.find(n => n.id === inspectedIdRef.current);
+    return target
+      ? Math.atan2(target.position.y - playerPos.z, target.position.x - playerPos.x)
+      : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
+  };
+
+  // What a cast set on the focus asks of its draw: its band and the caster's rank (part 2: its telegraph is its draw)
+  const castWords = (cast: NonNullable<IPlayerShape['activeCast']>) => {
+    const player = usePlayerStore.getState().player;
+    const ability: IEffectAbility | undefined = cast.kind === 'weave' ? WeaveSystem.weave(cast.elements)
+      : cast.kind === 'gift' ? CircleSystem.abilityOf(player, cast.id) : ContentRegistry.ability(cast.id);
+    return ability ? { cost: ability.cost, rank: ProgressionSystem.rankOf(player) as never } : undefined;
+  };
+
+  // Line 72: one blow, if the gate says so. The weapon decides how; the hand decides which. Part 2: it winds up
+  // first (a draw standing, a swing at half pace) and the loop lets it go when its time is up (`releaseRef`).
   fireRef.current = (now: number) => {
+    if (windupRef.current) return; // the hand is already winding up
     // An empty hand reaches for a stone it carries, so what flies is one of them and is spent ("the pebbles don't lose ammo")
     const reached = reachFor(activeWeapon().item, usePlayerStore.getState().player.currentSession?.inventory ?? []);
     if (reached) usePlayerStore.getState().equipToSlot(reached.id, useHotbar.getState().active);
@@ -389,19 +420,26 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       return;
     }
     if (gate !== 'FIRE') return;
-    useHotbar.getState().fired(slot, now, CombatMath.fireCooldownMs(weapon, st.player.equipment, st.player.attributes));
+    const cast = mode === 'FOCUS' && st.player.activeCast ? castWords(st.player.activeCast) : undefined;
+    const w = windupOf(weapon, st.player.equipment, st.player.attributes, cast);
+    windupRef.current = { startedAt: now, until: now + w.ms, pace: w.pace, kind: w.kind, slot, weaponId: weapon?.id };
+    lastShotRef.current = now;
+    useHotbar.getState().fired(slot, now, cycleMs(weapon, st.player.equipment, st.player.attributes));
+  };
 
-    // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
-    let angle: number;
-    if (firingRef.current.mouse && aimRef.current) {
-      angle = Math.atan2(aimRef.current.y - window.innerHeight / 2, aimRef.current.x - window.innerWidth / 2);
-    } else {
-      const { near } = inspectedIdRef.current ? targetsNear(playerPos.x, playerPos.z, 300) : { near: [] as IWorldEntity[] };
-      const target = near.find(n => n.id === inspectedIdRef.current);
-      angle = target
-        ? Math.atan2(target.position.y - playerPos.z, target.position.x - playerPos.x)
-        : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
-    }
+  // Part 2: the wound-up blow lets go, aimed where the hand aims now. What left the hand meanwhile is not thrown.
+  releaseRef.current = (now: number) => {
+    const held = windupRef.current;
+    windupRef.current = null;
+    if (!held) return;
+    const st = usePlayerStore.getState();
+    const playerPos = st.player.currentSession?.position;
+    if (!playerPos) return;
+    const { slot, item: weapon } = activeWeapon();
+    if (slot !== held.slot || weapon?.id !== held.weaponId) return;
+    const mode = fireMode(weapon);
+    if (mode === 'FOCUS' && !st.player.activeCast && (st.player.currentSession?.energy ?? 0) < FOCUS_ENERGY_COST) return;
+    const angle = aimFrom(playerPos);
     // Line 77: keyed by the session's own count of shots, so a run replays the same
     const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon));
 
@@ -410,7 +448,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const shape = CombatMath.strikeOf(weapon);
       setActiveSwings(prev => [
         ...prev.filter(s => now - s.startTime < 300),
-        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: shape.reachPx, inner: shape.innerPx, half: shape.halfAngle, startTime: now, damage, poison }
+        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: shape.reachPx, inner: shape.innerPx, half: shape.halfAngle, startTime: now, damage, poison, weight: blowWeight(shape) }
       ]);
     } else if (mode === 'FOCUS' && st.player.activeCast) {
       // Layer 4: what the focus was set to cast, through the one door
@@ -422,17 +460,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }) : s);
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>() }
+        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT }
       ]);
     } else {
-      // Ranged (or unarmed): the hand's own volley, one shot unless its words say otherwise
+      // Ranged (or unarmed): the hand's own volley, one shot unless its words say otherwise; a throw flies eight tiles (call 12)
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>() }
+        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, rangePx: CombatMath.shotRangePx(weapon) }
       ]);
     }
 
-    lastShotRef.current = now;
     // Durability: every use costs. C14: a stone thrown is spent, and the next one carried comes to the hand
     if (isThrowable(weapon)) st.spendThrown(slot);
     else if (weapon) st.wearSlot(slot, 1);
@@ -813,7 +850,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         // Normalize so diagonals aren't faster, then scale to pixels
         const len = Math.sqrt(dx * dx + dz * dz);
         const walker = usePlayerStore.getState().player;
-        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment, walker.attributes, walker.tonicsSinceRest) * StatusClock.paceScale(walker.currentSession?.activeEffects) * dt * TILE_SIZE;
+        // Part 2: a draw stands, a swing keeps half its pace
+        const moveStep = LoadoutSystem.walkTilesPerSecond(walker.equipment, walker.attributes, walker.tonicsSinceRest) * StatusClock.paceScale(walker.currentSession?.activeEffects) * (windupRef.current?.pace ?? 1) * dt * TILE_SIZE;
         dx = (dx / len) * moveStep;
         dz = (dz / len) * moveStep;
 
@@ -945,6 +983,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       let incomingDamage = 0;
       const landedStatuses: IStatusPlan[] = [];
+      // Part 2: the heaviest thing that landed this frame, and where it came from, so the person feels it
+      let heaviest: { weight: number; from: { x: number; y: number } } | null = null;
+      const weighs = (weight: number | undefined, from: { x: number; y: number }) => {
+        if (weight !== undefined && (!heaviest || weight > heaviest.weight)) heaviest = { weight, from };
+      };
       const isAlive = (p: any) => ProjectileSystem.alive(p, now);
 
       // Layer 3: a scroll, read. It casts through the same door, and asks nothing of the reserves.
@@ -959,6 +1002,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
         }
       }
 
+      // Part 2: a wound-up blow lets go when its time is up; resting lets it fall
+      if (windupRef.current && atRest) windupRef.current = null;
+      if (windupRef.current && now >= windupRef.current.until) releaseRef.current(now);
       // Line 72: a held button fires at the weapon's own rate, whatever the weapon
       if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held && !atRest) fireRef.current(now);
 
@@ -991,6 +1037,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             if (p.shape ? covers(p.shape, p.origin, p.angle, { x: playerPos.x, y: playerPos.z }, PERSON_RADIUS_PX) : d < (p.reachPx ?? 50)) {
               lastHurtByRef.current = p.shooterId ?? lastHurtByRef.current;
               incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
+              weighs(p.weight, p.origin);
               if (p.status) landedStatuses.push(p.status);
             } else {
               // Q16: a blow aimed at someone beside you lands on them
@@ -1030,6 +1077,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           if (b.struck?.has('you')) return false;
           b.struck?.add('you');
           incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
+          weighs(b.weight ?? SHOT_WEIGHT, { x: playerPos.x - Math.cos(b.angle), y: playerPos.z - Math.sin(b.angle) });
           const firedBy = enemyPatterns.find(p => b.id.startsWith(`e_${p.shooterId}_${p.startTime}_`));
           if (firedBy) lastHurtByRef.current = firedBy.shooterId;
           if (firedBy?.status) landedStatuses.push(firedBy.status);
@@ -1046,7 +1094,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Drawn like your own swing; the same arc, so it lands once however many frames it is drawn
       if (escortSwings.length > 0) setActiveSwings(prev => [...prev.filter(sw => now - sw.startTime < 300), ...escortSwings]);
       const worldNow = useWorldStore.getState();
-      const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings, { groundVersion: worldNow.availableWorlds.find(w => w.id === worldNow.activeWorldId)?.groundVersion, luck: StatSystem.total(usePlayerStore.getState().player.equipment, 'luck_find_rarity') });
+      const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings, { groundVersion: worldNow.availableWorlds.find(w => w.id === worldNow.activeWorldId)?.groundVersion, luck: StatSystem.total(usePlayerStore.getState().player.equipment, 'luck_find_rarity'), map: liveMap });
       const survivingIds = new Set(combatResult.survivingBullets.map(b => b.id));
       playerBullets.forEach(b => {
         if (!survivingIds.has(b.id)) spentShots.current.set(b.id, now);
@@ -1072,6 +1120,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             if (innate.length > 0) usePlayerStore.setState(s => ({ player: RestSystem.queueMet(s.player, innate) }));
             if (event.definitionId) useWorldStore.getState().reportToDirector('FELL', event.definitionId, event.entityId ? { id: event.entityId, rank: ProgressionSystem.rankOf(usePlayerStore.getState().player) } : undefined);
             if (event.entityId) useWorldStore.getState().reportFell(event.entityId, event.definitionId);
+          }
+        } else if (event.type === 'STAGGER' && event.position) {
+          // Part 2: a hit felt. Pushed and paused already; what it stood for is broken when the blow weighed enough
+          const broke = !!event.broke && !!event.entityId && MobAI.interrupt(event.entityId);
+          effectsRef.current.push({ kind: 'stagger', x: event.position.x, y: event.position.y, at: now, size: 0, dx: event.push?.dx ?? 0, dy: event.push?.dy ?? 0, broke });
+          if (broke && now - staggerSaidRef.current > STAGGER_SAID_MS) {
+            staggerSaidRef.current = now;
+            feed(`${event.displayName ?? 'It'} staggers, and what it was winding up is lost.`, 'signal');
           }
         } else if (event.type === 'BROKE' && event.entityId) {
           // D93: its ward's clock starts. One person cannot be at the next before it relights
@@ -1165,6 +1221,23 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       effects = clock.statuses;
       landedStatuses.forEach(plan => { effects = StatusClock.add(effects, plan, now); });
       const hit = CombatMath.incoming(rawDamage, liveEquipment, SessionJournal.rollKey('hurt', String(hurtCountRef.current += rawDamage > 0 ? 1 : 0)), liveAttributes);
+      // Part 2: what landed is felt. A push from where it came, a pause, and a draw broken by what weighs as much as the person stands
+      const struckBy = heaviest as { weight: number; from: { x: number; y: number } } | null;
+      if (struckBy && hit.damage > 0 && !hit.dodged) {
+        const f = feltHit(struckBy.weight, PERSON_POISE);
+        effects = StatusClock.add(effects, f.pause, now);
+        const push = pushFrom(struckBy.from, { x: playerPos.x, y: playerPos.z }, f.pushPx);
+        const to = WorldGenerator.resolveMove(liveMap, playerPos.x, playerPos.z, push.dx, push.dy);
+        usePlayerStore.setState(state => state.player.currentSession
+          ? { player: { ...state.player, currentSession: { ...state.player.currentSession, position: { x: to.x, y: 0, z: to.z } } } }
+          : state);
+        const breaksDraw = f.breaks && windupRef.current?.kind === 'draw';
+        if (breaksDraw) {
+          windupRef.current = null;
+          feed('Your draw breaks under the blow.', 'loss');
+        }
+        effectsRef.current.push({ kind: 'stagger', x: to.x, y: to.z, at: now, size: 0, dx: push.dx, dy: push.dy, broke: breaksDraw });
+      }
       const warded = StatusClock.absorb(effects, hit.damage + clock.damage);
       effects = warded.statuses;
       const totalDamage = warded.damage;
@@ -1292,7 +1365,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true }))
           ],
           drops: drops.map((d: any) => d.position),
-          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range, inner: s.inner, half: s.half }))
+          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range, inner: s.inner, half: s.half })),
+          // Part 2: the blow you are winding up, aimed where you aim, filling as it comes due
+          windup: windupRef.current ? {
+            x: playerPos.x, y: playerPos.z, angle: aimFrom(playerPos), kind: windupRef.current.kind,
+            fill: Math.min(1, (now - windupRef.current.startedAt) / Math.max(1, windupRef.current.until - windupRef.current.startedAt)),
+            ...(windupRef.current.kind === 'swing' ? { shape: CombatMath.strikeOf(held) } : {})
+          } : undefined
         };
         rendererRef.current.renderer.draw(ctx, canvas.width, canvas.height, scene);
         // D114: what can talk is seen talking
