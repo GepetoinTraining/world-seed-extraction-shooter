@@ -30,7 +30,7 @@ import { ContactNames } from '../../logic/systems/ContactNames';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { WorldClock } from '../../entities/world/WorldClock';
 import { SkillNames } from '../../logic/systems/SkillNames';
-import { statWord } from '../../logic/systems/StatWords';
+import { statAmount, statWord } from '../../logic/systems/StatWords';
 import { said as sayNumber } from '../../logic/systems/SheetWords';
 import { GameClock } from '../../logic/time/GameClock';
 
@@ -317,7 +317,7 @@ export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | nul
     if (seen.has(affix.id)) continue;
     seen.add(affix.id);
     if (player && LoadoutSystem.isAffixStudied(player, affix.id)) {
-      const said = Object.entries(affix.stats).map(([k, v]) => `${v >= 0 ? '+' : ''}${sayNumber(v)} ${statWord(k)}`).join(', ');
+      const said = Object.entries(affix.stats).map(([k, v]) => `${v >= 0 ? '+' : ''}${statAmount(k, sayNumber(v))} ${statWord(k)}`).join(', ');
       rows.push(['Worked in', `${affix.name} — ${said || 'what it does is not yet known'}`]);
     } else {
       blind++;
@@ -402,13 +402,14 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     if (['durability', 'maxDurability', 'weight'].includes(k)) return;
     if (fired && k === 'damage') return; // folded into the first line
     // D22: a mental stat on gear is a dead line — it never reaches the mind
-    if (mental.has(k)) rows.push([k.replace(/_/g, ' '), `${v} — asleep. Gear doesn't think.`]);
-    else rows.push([k.replace(/_/g, ' '), shown(v)]);
+    // GV42: every stat by its own word, with its percent sign where it is counted in hundredths
+    if (mental.has(k)) rows.push([statWord(k), `${v} — asleep. Gear doesn't think.`]);
+    else rows.push([statWord(k), statAmount(k, shown(v))]);
   });
   (item.affixes || []).forEach(a => {
     if (player && LoadoutSystem.isAffixStudied(player, a.id)) {
       const said = Object.entries(a.stats)
-        .map(([k, v]) => `${v >= 0 ? '+' : ''}${shown(v)} ${statWord(k)}`).join(', ');
+        .map(([k, v]) => `${v >= 0 ? '+' : ''}${statAmount(k, shown(v))} ${statWord(k)}`).join(', ');
       rows.push(['Affix', `${a.name} — ${said || 'what it does is not yet known'}`]);
     } else {
       rows.push(['Affix', `${a.name}: not studied. It works on the piece, and you do not know how.`]);
@@ -488,7 +489,7 @@ export function compareItems(item: IItem, against: IItem, player: IPlayer | unde
     const a = here[k], b = there[k];
     const diff = (a ?? 0) - (b ?? 0);
     return {
-      stat: k.replace(/_/g, ' '),
+      stat: statWord(k),
       here: a === undefined ? '—' : trimmed(a),
       there: b === undefined ? '—' : trimmed(b),
       delta: diff === 0 ? '=' : `${diff > 0 ? '+' : '−'}${trimmed(Math.abs(diff))}`,

@@ -781,7 +781,8 @@ describe('line 62: study reveals it', () => {
     expect(usePlayerStore.getState().studyRoomAtStation(hub().rooms[lotId]).ok).toBe(true);
     expect(LoadoutSystem.isAffixStudied(player(), 'prc_walls')).toBe(true);
     const said = inspectBuiltRoom(hub().rooms[lotId], player())!.rows.map(r => r.join(' ')).join(' ');
-    expect(said).toMatch(/upkeep discount pct/);
+    // GV42: by its word and its percent sign, where it held the key
+    expect(said).toMatch(/3% less upkeep/);
     expect(said).toContain('3');
   });
 
