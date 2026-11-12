@@ -19,6 +19,10 @@ import { useHubStore } from '../entities/hub/store';
 import { IMapNode, IPlan, MAP_COLUMN, MAP_ROW, WebMap } from '../logic/systems/WebMap';
 import { Button, Kbd, Panel } from './ui/kit';
 import { isTypingTarget } from '../logic/systems/FieldInput';
+import { LorePiece } from '../logic/systems/LorePiece';
+import { LoreWriteDoor } from '../logic/systems/LoreWriteDoor';
+import { hubPort } from '../entities/hub/store';
+import { hubTreeOf } from '../entities/hub/hubTech';
 
 /** Whether the view is open over everything: from the large sheet or the study panel. */
 export const useWebView = create<{ open: boolean; toggle: () => void; close: () => void }>(set => ({
@@ -210,6 +214,17 @@ export const TechWebView: React.FC = () => {
               <div>{KIND_WORD[node.kind]}, {STATE_WORD[node.state]}.</div>
               {node.study && <div>A sitting on it asks {node.study.cost} energy and {node.study.seconds}s of you.</div>}
               {node.price !== undefined && <div>Learning it would ask {node.price} lore{node.category?.word ? `, of ${node.category.word} first, then general` : ', of its own kind first, then general'}.</div>}
+              {node.kind === 'skill' && node.state === 'yours' && (() => {
+                // The design pass, part 3: what the hands know, written out as a good to trade, sell or give
+                const can = LorePiece.canWrite(player, node.ref, hubTreeOf(tech));
+                const ask = LorePiece.ask(player, { id: node.ref, tags: node.tags ?? [] }, hubTreeOf(tech));
+                return (
+                  <>
+                    <Button tone="quiet" disabled={!can.ok} onClick={() => LoreWriteDoor.start(node.ref, playerPort, hubPort)}>WRITE IT OUT: A SHEET, {ask.cost} ENERGY</Button>
+                    {!can.ok && <div className="ws-dim">{can.reason}</div>}
+                  </>
+                );
+              })()}
               {player.webGoal?.ref === node.id
                 ? <div className="ws-dim">This is what you are working toward.</div>
                 : <Button tone="quiet" onClick={() => playerPort.apply({ kind: 'WEB_GOAL', goal: { ref: node.id, at: GameClock.now() } })}>WORK TOWARD THIS</Button>}

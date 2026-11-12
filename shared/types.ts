@@ -527,6 +527,8 @@ export interface IItem {
 
   /** The raw materials leg (D26): a trade note, whose reading opens what a process adds. */
   loreData?: { processFamily: string; tier: number };
+  /** The design pass, part 3: a held skill written out (LorePiece). Who wrote it and when; it never left its writer. */
+  lorePiece?: { skillId: string; tags: string[]; rank: number; by: { uid: string; name: string }; at: number };
 
   /** D27, Wave 11's seam: the person an Escort Bond names, enough to read their sheet back. */
   bondData?: {

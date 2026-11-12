@@ -21,6 +21,7 @@ import { RestSystem } from './RestSystem';
 import { StudySystem } from './StudySystem';
 import { Escort } from './Escort';
 import { WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem';
+import { LorePiece } from './LorePiece';
 
 const WAIT_ID = 'study_sitting';
 
@@ -123,6 +124,9 @@ export const StudyDoor = {
         for (const d of WebSystem.reverseEngineer(piece).designs) {
           if (!next.bank.universalSkills[d.skillId]) next = WebSystem.accrueFromStudy(next, { id: d.skillId, tags: d.tags }, rankIndexOf(piece.rank));
         }
+        // The design pass, part 3: a skill written out teaches the skill it carries, as a design does
+        const taught = LorePiece.teaches(piece);
+        if (taught && !next.bank.universalSkills[taught.id]) next = WebSystem.accrueFromStudy(next, taught, LorePiece.rankOf(piece));
       }
     }
     // A document that paid has given what it held, and is spent: read and then sold was one thing too many
