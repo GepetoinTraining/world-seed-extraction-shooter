@@ -126,6 +126,7 @@ describe('a rank doubles what a body holds and deals, once (calls 1 and 3)', () 
 
 describe('a world that already stands keeps its creatures as written; a new one lays them by the new law', () => {
   it('the ground moved to the version the bodies follow', () => {
+    // GS: ground 6 ranks a body by its ground, and lays it by this law all the same (tests/gear.scaling.test.ts)
     expect(GROUND_VERSION).toBeGreaterThanOrEqual(BODIES_FROM_GROUND);
   });
 
@@ -144,7 +145,7 @@ describe('a world that already stands keeps its creatures as written; a new one 
     const old = bodies(4), now = bodies(GROUND_VERSION);
     expect(old.length).toBeGreaterThan(0);
     expect(old.every(e => e.law === undefined)).toBe(true);
-    expect(now.every(e => e.law === BODIES_FROM_GROUND)).toBe(true);
+    expect(now.every(e => (e.law ?? 0) >= BODIES_FROM_GROUND)).toBe(true);
     const plain = (list: IWorldEntity[]) => list.find(e => !e.bonusHealth && e.health === bodyLawOf(compiled.mobs[e.definitionId] as any, e).baseHealth);
     expect(plain(old)).toBeDefined();
     expect(plain(now)).toBeDefined();

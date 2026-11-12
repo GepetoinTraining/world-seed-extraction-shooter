@@ -1,5 +1,5 @@
-import { bodyLawOf, laysByLaw } from '../mob/BodyLaw';
-import { BODIES_FROM_GROUND } from '../../logic/theme/ThemeFormula';
+import { bodyLawOf, laysByLaw, ranksByGround } from '../mob/BodyLaw';
+import { BODIES_FROM_GROUND, RANKED_FROM_GROUND, bodyScale } from '../../logic/theme/ThemeFormula';
 import { BiomeType, EntityType, IChunk, IMap, ISector, IWorldEntity, ScanLevel } from './types';
 import { GenreType } from './definitions';
 import { TerrainSystem } from './TerrainSystem';
@@ -9,7 +9,9 @@ import {
 } from './grid';
 import { UniversalRank, Rarity } from '../../types';
 import { Rng } from '../../logic/rng/DeterministicRNG';
-import { hash2, layerSeed, valueNoise } from '../../logic/rng/noise';
+import { hash2, layerSeed, uniformNoise, valueNoise } from '../../logic/rng/noise';
+import { PieceLaw } from '../../logic/theme/PieceLaw';
+import { deathCostsNothing } from '../../logic/systems/DeathCost';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
 import { isLooseStone } from '../item/Throwable';
 import { Director, IDirectorPool, IDirectorRecord } from './Director';
@@ -33,6 +35,8 @@ export interface IGenerationContext {
   cycleMs?: number;
   /** C24: the ground this world pinned at its mint (`GROUND_VERSION`). Absent means the first: nothing lies loose. */
   groundVersion?: number;
+  /** GS19: what a death costs in this world, its card's own word (`DeathCost`). Where it costs nothing, nothing climbs. */
+  deathPenalty?: string;
 }
 
 /**
@@ -54,9 +58,14 @@ export interface IGenerationContext {
  *                  what it holds and deals and a plain creature a quarter of a person, and says so (`IWorldEntity.law`);
  *                  a trait is a share of its body. A world standing before keeps its bodies as written. The ground is
  *                  laid as at 4.
- *   6              what a minting adds (IB): a found piece rolls its slot, then its noun among its own world's bases, its
- *                  pack's and what its minting added (`MintAdditions`), and its land holds the materials its minting added.
- *                  A world standing before finds as it did. The ground is laid as at 5.
+ *   6              two things, joined under one number (ML0): the scaling a newcomer meets (GS, `RANKED_FROM_GROUND`):
+ *                  ground above the world's own rank runs on with no top, the share at least d ranks above being 0.4^d
+ *                  (call 15), read through the rank noise's own spread so the land keeps its shape; a body takes the rank
+ *                  of the ground it stands on, its kind chosen as before; a chest holds one piece of gear, and goods.
+ *                  And what a minting adds (IB, `MINT_ADDITIONS_FROM_GROUND`): a found piece rolls its slot, then its noun
+ *                  among its own world's bases, its pack's and what its minting added (`MintAdditions`), and its land
+ *                  holds the materials its minting added. A world standing before finds as it did. Where the chests, the
+ *                  ruins and the packs stand is laid as at 5.
  */
 export const GROUND_VERSION = 6;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
@@ -87,6 +96,15 @@ const isElite = (mob: any) => (mob.tags ?? []).some((t: string) => ELITE_TAGS.in
 const ELITE_WEIGHT = 0.04;
 /** Each rank further from the chunk's own counts for this much less. */
 const RANK_FALLOFF = 0.35;
+
+/**
+ * How a body is laid on a ground: the law it stands under, the rank it stands at, and what that rank does to its kind's
+ * numbers. From `RANKED_FROM_GROUND` the rank is the ground's (GS3); before it, the kind's, as a standing world wrote it.
+ */
+const laidAt = (groundVersion: number | undefined, kindRank: UniversalRank, groundRank: UniversalRank) =>
+  ranksByGround(groundVersion)
+    ? { law: RANKED_FROM_GROUND as number | undefined, rank: groundRank, by: bodyScale(groundRank) / bodyScale(kindRank) }
+    : { law: laysByLaw(groundVersion) ? BODIES_FROM_GROUND : undefined, rank: kindRank, by: 1 };
 
 // Rolls pick by index, so definitions need an order the database cannot change.
 const byId = (a: any, b: any) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -175,7 +193,7 @@ export class WorldGenerator {
   static generate(seed: string, size: number, context?: IGenerationContext): IMap {
     const sectors: Record<string, ISector> = {};
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      if (this.sectorExists(seed, size, x, y)) sectors[`${x},${y}`] = this.sectorSummary(seed, x, y, context?.difficulty);
+      if (this.sectorExists(seed, size, x, y)) sectors[`${x},${y}`] = this.sectorSummary(seed, x, y, context?.difficulty, context?.groundVersion, context?.deathPenalty);
     }
     return { seed, width: size, height: size, gridVersion: GRID_VERSION, sectors, chunks: {}, generatedAt: Date.now() };
   }
@@ -205,8 +223,24 @@ export class WorldGenerator {
   /**
    * R4's first fault: a world's difficulty did nothing. It sets the floor now, and the
    * noise climbs at most two ranks above it, so a world said to be E is never mostly S.
+   *
+   * From `RANKED_FROM_GROUND` (GS2, call 15): no hard stop. The share of ground at least d ranks above the world's own
+   * is q^d, q the chance a find goes one step deeper (`PieceLaw.ODDS_Q`), so each further rank is as much less likely as
+   * the one before it. The same noise, read through its own spread, so the high ground stands where it stood. Its
+   * rarity is how far above the world's own it stands, on the old bands' words.
+   *
+   * GS19: risk and reward travel together. Where a death costs nothing (the world's own word, `deathCostsNothing`, the
+   * tutorial's by Q14), nothing climbs: all its ground is the world's own rank, and so its chests and its bodies.
    */
-  private static rankBand(seed: string, cx: number, cy: number, difficulty?: UniversalRank) {
+  private static rankBand(seed: string, cx: number, cy: number, difficulty?: UniversalRank, groundVersion?: number, deathPenalty?: string) {
+    if (difficulty && (groundVersion ?? 1) >= RANKED_FROM_GROUND) {
+      const order = Object.values(UniversalRank);
+      const u = Math.min(uniformNoise(layerSeed(seed, 'rank:v2'), cx, cy, RANK_PERIOD), 1 - Number.EPSILON);
+      if (deathCostsNothing(deathPenalty)) return [u, difficulty, RANK_BANDS[0][2]] as typeof RANK_BANDS[number];
+      const above = Math.floor(Math.log(1 - u) / Math.log(PieceLaw.ODDS_Q));
+      const step = Math.min(order.length - 1, order.indexOf(difficulty) + above);
+      return [u, order[step], RANK_BANDS[Math.min(above, RANK_BANDS.length - 1)][2]] as typeof RANK_BANDS[number];
+    }
     const n = valueNoise(layerSeed(seed, 'rank:v2'), cx, cy, RANK_PERIOD);
     const band = RANK_BANDS.find(([limit]) => n < limit)!;
     if (!difficulty) return band;
@@ -217,11 +251,12 @@ export class WorldGenerator {
     return [band[0], order[step], band[2]] as typeof band;
   }
 
-  static rankAt(seed: string, cx: number, cy: number, difficulty?: UniversalRank): UniversalRank {
-    return this.rankBand(seed, cx, cy, difficulty)[1];
+  /** The rank of a chunk's ground, by the world's difficulty, the ground it pinned (an older ground keeps its bands) and what a death costs there. */
+  static rankAt(seed: string, cx: number, cy: number, difficulty?: UniversalRank, groundVersion?: number, deathPenalty?: string): UniversalRank {
+    return this.rankBand(seed, cx, cy, difficulty, groundVersion, deathPenalty)[1];
   }
 
-  private static sectorSummary(seed: string, sx: number, sy: number, difficulty?: UniversalRank): ISector {
+  private static sectorSummary(seed: string, sx: number, sy: number, difficulty?: UniversalRank, groundVersion?: number, deathPenalty?: string): ISector {
     const counts: Partial<Record<BiomeType, number>> = {};
     const order = Object.values(UniversalRank);
     let top = 0;
@@ -231,7 +266,7 @@ export class WorldGenerator {
       const cx = sx * SECTOR_CHUNKS + x, cy = sy * SECTOR_CHUNKS + y;
       const biome = this.biomeAt(seed, cx, cy);
       counts[biome] = (counts[biome] || 0) + 1;
-      const [, rank, r] = this.rankBand(seed, cx, cy, difficulty);
+      const [, rank, r] = this.rankBand(seed, cx, cy, difficulty, groundVersion, deathPenalty);
       if (order.indexOf(rank) > top) { top = order.indexOf(rank); rarity = r; }
     }
     const biome = (Object.entries(counts) as [BiomeType, number][]).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
@@ -532,15 +567,18 @@ export class WorldGenerator {
           else { mx = x0 + rng.int(0, span); my = y0 + rng.int(0, span); }
         }
         if (!at) continue;
-        // The fight's law (part 3): a world of this ground lays the body by it; one standing before keeps it as written
+        // The fight's law (part 3): a world of this ground lays the body by it; one standing before keeps it as written.
+        // GS3: from its ground on, the body stands at the chunk's rank, and a leader's sheet grows with it
         const byLaw = laysByLaw(ctx.groundVersion);
-        const numbers = bodyLawOf(body.def as never, byLaw ? { law: BODIES_FROM_GROUND } : undefined);
+        const laid = laidAt(ctx.groundVersion, body.def.rank, chunk.difficulty);
+        const numbers = bodyLawOf(body.def as never, laid.law ? { law: laid.law, rank: laid.rank } : undefined);
         const variant = Director.variantOf(seed, body.id, body.def.id, body.def.name, ctx.director, ctx.directorPool, body.def.tags, body.def.generation, byLaw ? numbers : undefined);
-        const bonusHealth = (body.bonusHealth ?? 0) + variant.bonusHealth, bonusDamage = (body.bonusDamage ?? 0) + variant.bonusDamage;
+        const sheet = (n?: number) => (n === undefined ? 0 : laid.by === 1 ? n : Math.round(n * laid.by));
+        const bonusHealth = sheet(body.bonusHealth) + variant.bonusHealth, bonusDamage = sheet(body.bonusDamage) + variant.bonusDamage;
         chunk.entities.push({
           id: body.id, type: EntityType.MOB, definitionId: body.def.id, position: at,
-          rank: body.def.rank, rarity: Rarity.COMMON, isHostile: true, health: numbers.baseHealth + bonusHealth,
-          ...(byLaw ? { law: BODIES_FROM_GROUND } : {}),
+          rank: laid.rank, rarity: Rarity.COMMON, isHostile: true, health: numbers.baseHealth + bonusHealth,
+          ...(laid.law ? { law: laid.law } : {}),
           ...(variant.displayName ? { displayName: variant.displayName } : {}),
           ...(bonusHealth !== 0 || bonusDamage !== 0 ? { bonusHealth, bonusDamage } : {}),
           ...(variant.learned.length > 0 ? { learned: variant.learned } : {})
@@ -551,7 +589,7 @@ export class WorldGenerator {
 
   private static chunkFrom(seed: string, exits: { x: number; y: number }[], cx: number, cy: number, ctx: IGenerationContext, countOnly: boolean): IChunk {
     const biome = this.biomeAt(seed, cx, cy);
-    const [, rank, rarity] = this.rankBand(seed, cx, cy, ctx.difficulty);
+    const [, rank, rarity] = this.rankBand(seed, cx, cy, ctx.difficulty, ctx.groundVersion, ctx.deathPenalty);
 
     const chunk: IChunk = {
       id: `chk_${cx}_${cy}`, x: cx, y: cy, biome, difficulty: rank, rarity,
@@ -599,12 +637,14 @@ export class WorldGenerator {
       if (!at || nearDrop(at.x, at.y)) return;
       const body = id(suffix);
       const byLaw = laysByLaw(ctx.groundVersion);
-      const numbers = bodyLawOf(template, byLaw ? { law: BODIES_FROM_GROUND } : undefined);
+      // GS3: from its ground on, the body stands at the rank of this ground, its kind as the pool chose it
+      const laid = laidAt(ctx.groundVersion, template.rank, rank);
+      const numbers = bodyLawOf(template, laid.law ? { law: laid.law, rank: laid.rank } : undefined);
       const variant = countOnly ? { bonusHealth: 0, bonusDamage: 0, traits: [], learned: [] as string[], displayName: undefined } : Director.variantOf(seed, body, template.id, template.name, ctx.director, ctx.directorPool, template.tags, template.generation, byLaw ? numbers : undefined);
       push({
         id: body, type: EntityType.MOB, definitionId: template.id, position: at,
-        rank: template.rank, rarity: Rarity.COMMON, isHostile: true, health: numbers.baseHealth + variant.bonusHealth,
-        ...(byLaw ? { law: BODIES_FROM_GROUND } : {}),
+        rank: laid.rank, rarity: Rarity.COMMON, isHostile: true, health: numbers.baseHealth + variant.bonusHealth,
+        ...(laid.law ? { law: laid.law } : {}),
         ...(variant.displayName ? { displayName: variant.displayName } : {}),
         ...(variant.traits.length > 0 || variant.learned.length > 0 ? {
           bonusHealth: variant.bonusHealth, bonusDamage: variant.bonusDamage, learned: variant.learned

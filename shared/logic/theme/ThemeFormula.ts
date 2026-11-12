@@ -65,6 +65,12 @@ export const CREATURE_COOLDOWN_MS = 2000;
 export const CREATURE_WINDUP_MS = 450;
 /** From this ground (`GROUND_VERSION`) a world lays its bodies by this law; a world that stands before it keeps them as written. */
 export const BODIES_FROM_GROUND = 5;
+/**
+ * From this ground (GS, the coordinator's calls after Pedro's "the scaling seems off"): ground above a world's own rank
+ * runs on, each further rank as likely as a find going one step deeper (call 15); a body takes the rank of the ground it
+ * stands on, as a piece takes the rank of where it came from; and a chest holds one piece of gear, and goods (2.5).
+ */
+export const RANKED_FROM_GROUND = 6;
 
 /** A person's health: 100 at F, doubled a rank, a tenth more for each point of constitution over its rank's floor, divided under it. */
 export const personHealth = (rank: ThemeRank | UniversalRank | string, constitution: number): number => {

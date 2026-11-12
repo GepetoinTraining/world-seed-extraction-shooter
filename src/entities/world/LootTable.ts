@@ -18,8 +18,8 @@ import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { BiomeType } from '../../../shared/entities/world/types';
 import { DreamingSystem, IAffixPool } from '../../../shared/entities/world/Dreaming';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
-import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
-import { JUNK_CHANCE } from '../../../shared/logic/theme/ThemeFormula';
+import { RESOURCE_DEFINITIONS, ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
+import { JUNK_CHANCE, RANKED_FROM_GROUND } from '../../../shared/logic/theme/ThemeFormula';
 import { LootBook } from '../../logic/theme/LootBook';
 import { IDropLine, LootLaw, lootItemsOf } from '../../../shared/logic/theme/LootLaw';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
@@ -105,14 +105,16 @@ export class LootTable {
   }
 
   /** What a table's lines mint, each piece from its own keyed stream, so one never moves another. */
-  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number, found: IFoundLaw = {}): IItem[] {
+  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number, found: IFoundLaw = {}, gearAtMost = Infinity): IItem[] {
     const out: IItem[] = [];
+    let gear = 0;
     roll.lines.forEach((d, i) => {
       for (let n = 0; n < d.count; n++) {
         const own = Rng.fromKey(`${rollKey}:drop:${d.line}:${n}`);
         // The rarity rescale: a found piece takes the rank of where it came from, never its kind's
         const rank = (newLaw(groundVersion) ? roll.at?.[i] ?? roll.rank : d.rank) as UniversalRank;
-        if (d.what === 'gear') { out.push(LootTable.found(rank, own, pool, { ...groundOf(groundVersion), ...found }, d.id || undefined)); continue; }
+        // GS: a chest of a ground that holds one piece mints the first its table names; IB: by its slot, among its world's bases
+        if (d.what === 'gear') { if (gear++ < gearAtMost) out.push(LootTable.found(rank, own, pool, { ...groundOf(groundVersion), ...found }, d.id || undefined)); continue; }
         const def = RESOURCE_DEFINITIONS[d.id];
         if (def) out.push(ItemFactory.createResourceItem(def, own));
       }
@@ -467,12 +469,25 @@ export class LootTable {
     const law: IFoundLaw = newLaw(groundVersion) ? { odds: PieceLaw.oddsOf({ luck, tags: [] }), pairsOpen: found.pairsOpen } : {};
     const ground = { ...groundOf(groundVersion), ...law };
 
+    // GS (2.5, the coordinator's call): from its ground on, a chest holds one piece of gear, and goods
+    const holdsOne = (groundVersion ?? 1) >= RANKED_FROM_GROUND;
+
     // A theme's own table for a chest in this land, when the dreamed world has one
     const onTable = this.chestRoll(chestRank, rollKey, biome);
-    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion, law);
+    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion, law, holdsOne ? 1 : Infinity);
 
     // Chests always have 2-5 items
     const count = 2 + Math.floor(rng.next() * 4);
+
+    if (holdsOne) {
+      // The one piece, at the chest's rank or one under as before; what else it holds is the land's own materials, at or
+      // under its rank. A valuable (coin) and a fragment are its own rolls, beside this, as they always were
+      const itemRank = rng.next() < 0.7 ? chestRank : this.rankBelow(chestRank);
+      loot.push(ItemFactory.createItem(itemRank, false, rng, undefined, undefined, pool, ground));
+      const goods = this.landGoods(chestRank, biome);
+      if (goods.length > 0) for (let i = 1; i < count; i++) loot.push(ItemFactory.createResourceItem(goods[rng.int(0, goods.length)], rng));
+      return loot;
+    }
 
     for (let i = 0; i < count; i++) {
       // Each item can be chest rank or one below
@@ -488,6 +503,23 @@ export class LootTable {
     }
 
     return loot;
+  }
+
+  /**
+   * What a chest holds beside its one piece (GS, 2.5's "and goods"): its world's own materials that lie on this land,
+   * at or under the chest's rank; any of its materials at that rank where the land holds none. Never junk, a valuable
+   * (its own roll) or a very rare find. Sorted by the pack's key, so a pick is the same pick everywhere.
+   */
+  private static landGoods(chestRank: UniversalRank, biome?: BiomeType): ResourceDef[] {
+    const pack = ContentRegistry.get(LootBook.entered() ?? ContentRegistry.defaultThemeId());
+    if (!pack) return [];
+    const at = RANKS.indexOf(chestRank as typeof RANKS[number]);
+    const own = lootItemsOf(pack).material
+      .filter(m => RANKS.indexOf(m.rank) <= at)
+      .map(m => RESOURCE_DEFINITIONS[m.id])
+      .filter(d => !!d && !d.junk && !d.anchor && !d.rareFind);
+    const here = biome ? own.filter(d => d.habitat?.includes(biome)) : own;
+    return here.length > 0 ? here : own;
   }
 
   private static rankBelow(rank: UniversalRank): UniversalRank {

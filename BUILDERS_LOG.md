@@ -506,6 +506,32 @@ What one blow of a boss takes of a person of its rank, by the size of the body i
 
 - **What a minting adds (2026-11-12).** Pedro: "every minted world should add a lot of item bases, and several materials." The rule is `MintAdditions` (shared/logic/theme/writing), the asking and keeping `MintAdditionsWriter` (src/logic/theme/writing). A new kind at the door needs its entry in `DoorKind`, `MODEL_FOR`, `EFFORT_FOR` and a route; `ceilingOf` (claude.ts) says what a request can cost before it is sent. Judge a sealed pack through `bodyOf`: `ThemeLaw` reads its `writtenAt` as a number the model wrote. A found piece goes through `LootTable.found`, never `ItemFactory.createItem` straight, so it rolls its slot from ground 6. Every door in the bars is a stub: `tests/mint.additions.test.ts` shows the shape of one.
 
+- **Checking a person's gear against the law (2026-11-12).** Pedro: "the scaling seems off, check my gear please." These are the steps for checking a saved character's pieces, piece by piece.
+  - **Open a copy, never the save.** Copy the save's folder into scratch and open the copy with `openStore(folderUrl(copy))` from `server/openStore.ts` and `server/connection.ts`. Its lock sits beside the folder, so a copy taken while the game runs opens on its own.
+  - **Find the character.** It is the `characters` document whose `dataText` is `{ payload }`. Its pieces are `equipment.items` and `bank.stashTabs[0].items`. The pack is never in a save: `PlayerPersistence.persistable` drops `currentSession`.
+  - **Find what it sold.** A sold piece lies in the hub's `hub_state_world_…` document, under `vendors.<npc>.held`.
+  - **Find where each piece came from.** A run's journal is a `session_…` document in `transactions`: each `OPEN` names its chest and the ids it gave, and each `KILL` carries its table roll with the ranks in `at`.
+  - **Check the lines.** With `installShippedThemes()`:
+    - a native line is `PieceLaw.nativeLines(kind, step) x (1 + quality)`, the kind being the base found by `universalDefinitionId` in `ITEM_DEFINITIONS`;
+    - an affix is `PieceLaw.affixStats(wordsOf(bank entry), rank, quality, band)` at one of the three bands, the bank coming from `AffixBank.compile(compileTheme(FIRST_THEME_PACK).affixBatches)`;
+    - the power is `PieceLaw.power`.
+  - **Replay a chest.** Call `ContentRegistry.contextFor(theme, 'F')` and `LootBook.enter(theme)`, then `LootTable.generateChestLoot(rank, 1, '<seed>:<session>:chest:<entity>', biome, 5, luck)`, the luck being what the person wore then. It gives the very ids back, so a chest's rank is proven rather than guessed. Without the luck, the depth rolls draw differently and the stream goes its own way after the first piece.
+  - **Read a ground.** `WorldGenerator.rankAt(seed, cx, cy, difficulty)` and `biomeAt` give the ground under a chest (a quadrant `ent_<qx>_<qy>` is chunk `qx/4, qy/4`). `spawnPool` and `pickSpawn` give its guards.
+  - **What it found.** On TORTO3 nothing broke the law (GS1 to GS9). The feel came from three D pieces out of tutorial chests, with the choices behind them measured there.
+
+- **Ground 6: the land ranks by one factor, a body by its ground, a chest holds one (2026-11-12).** This is the coordinator's build on GS2, GS3, GS5 and GS8; the rows are GS10 to GS18.
+  - **The ground's rank.** A ground's rank comes from `WorldGenerator.rankBand(seed, cx, cy, difficulty, groundVersion)`. Pass the ground everywhere a rank is read: `rankAt` takes it, and Leaders, Population, `sectorSummary` and `chunkFrom` pass the context's.
+  - **The map's ground.** The map the drone reads gets its ground from `WorldGenerationService.activateWorld`'s last argument, which the world store fills from the card.
+  - **Even noise.** `uniformNoise` reads `valueNoise` through its exact spread at that place (`weightedUniformCdf`: inclusion and exclusion over the four blended corners). Use it wherever a share of places must be a share of the line; raw value noise piles toward its middle.
+  - **A death-free world.** It holds its own rank (GS19). The ground reads what a death costs from the context's `deathPenalty`, the card's own word, through `deathCostsNothing` (`shared/logic/systems/DeathCost.ts`), the same function the death reads. Pass it wherever a rank is read, beside the ground version.
+  - **A body's rank.** A body laid on a ground that ranks it carries `law: RANKED_FROM_GROUND` and the ground's rank. Its numbers are always `bodyLawOf(def, body)`; never read `def.baseHealth` for a body.
+  - **What a body leaves.** Roll its drop with `laidKind(def, body)`. The kill's journal names `laidAt`, and the hub's `rerunDrops` reruns at it.
+  - **The ground's own bars.** The speed bars pass no difficulty and so time the old path. The new path's spread is worked once per place in a cell (`spreads`, keyed by period and position) and read with sixteen corner terms. Timed beside ground 5 under the same load, a chunk costs the same, and the largest world opens about 8 ms later (58 to 60 against 50 to 51 ms).
+  - **Speed bars red under load.** They went red on the code before this change too, while the machine sat at 73% from other work. Alternate the old and the new code before reading anything into them.
+  - **The evening's replay.** The theme's pieces only: filter `ITEM_DEFINITIONS` to the theme's ids, since the tests' fixture bases stand beside them. Then `ContentRegistry.contextFor(theme, 'F')`, `LootBook.enter(theme)`, and `generateChestLoot(rank, 1, '<seed>:<session>:chest:<entity>', biome, ground, luck)`. Under ground 5 it gives his own pieces back by name and id.
+
+- **The join of the regrowth and gear-scaling branches (2026-11-12).** Both moved the ground to 6; they share it now (ML0). Ground 6 means two things at once, so a bar that wants either asks at least `RANKED_FROM_GROUND` or `MINT_ADDITIONS_FROM_GROUND`, never the version itself. This worktree had no `node_modules`; it holds one junction per package to the main checkout's, 360 of them, and its own `.vite`.
+
 ## After this pass
 
 `PLAN.md`, under "The next layer": the attributes pass, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).

@@ -413,7 +413,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         set({ directorRecord: director, generation: moment.generation });
         // D49: a minted world dreams as it was pinned; the tutorial, never minted, as its hub stands now
         const dreams = Tutorial.dreams(worldCard, SHELF_STATE.magicUnlocked);
-        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, dreams);
+        const instance = await WorldGenerationService.activateWorld(worldCard.seed, worldCard.size, worldCard.themeId, worldCard.difficulty, director, dreams, worldCard.groundVersion, worldCard.deathPenalty);
 
         // A world that never turns has no cycle to refill on, so it keeps no record. The tutorial turns (Pedro's own
         // run, 2026-11-10: "the chests always respawn", "the NPC are extracted and respawn"), so it keeps one like any other
