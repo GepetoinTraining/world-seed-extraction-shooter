@@ -52,7 +52,8 @@ describe('a skill named by its tag list (Q47)', () => {
     for (const name of [WebSystem.nameOf(c.id), tags.join(', '), [...tags].reverse().join(' and ').toUpperCase()]) {
       const verdict = CreationSystem.judge(wordsWith({ id: c.id, name }), asCreation);
       expect(verdict.ok, name).toBe(false);
-      expect(verdict.reason, name).toMatch(/tag/);
+      // GV: the reason says it in words, not the code's "tag"
+      expect(verdict.reason, name).toMatch(/named only by what it works/);
     }
   });
 

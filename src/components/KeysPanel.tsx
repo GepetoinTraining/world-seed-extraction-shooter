@@ -15,7 +15,7 @@ import { dryRun, keySkeleton } from '../../shared/intelligence/keyShape';
 import { IKeyForm, canAccept, canTest, dried, emptyForm, picked, saidWhenNoneAdded, tested, typed } from '../logic/intelligence/KeyForm';
 
 const modeLine = (s: IDoorSettingStatus | null) => {
-  if (!s) return 'THE DOOR CANNOT BE REACHED';
+  if (!s) return 'THE VOICE CANNOT BE REACHED';
   if (s.mode === 'off') return 'TURNED OFF ON THIS SERVER';
   if (s.mode === 'keyed') return `IN USE: ${s.option ?? s.provider}`;
   if (s.provider === 'local') return `IN USE: THIS MACHINE'S OWN MODEL`;
@@ -64,7 +64,7 @@ export const KeysPanel: React.FC<{ style?: React.CSSProperties }> = ({ style }) 
               {!k.inUse && (
                 <Button tone="signal" disabled={!!busy} style={{ whiteSpace: 'nowrap' }} onClick={() => work('CHOOSING', async () => {
                   const out = await VoiceClient.useHeld(k.optionId);
-                  if (!out?.ok) setNote(out?.reason ?? 'The door cannot be reached.');
+                  if (!out?.ok) setNote(out?.reason ?? 'The voice cannot be reached.');
                 })}>USE</Button>
               )}
               <Button tone="quiet" disabled={!!busy} style={{ whiteSpace: 'nowrap' }} onClick={() => work('FORGETTING', async () => { await VoiceClient.forgetKey(k.optionId); })}>FORGET</Button>
@@ -120,7 +120,7 @@ export const KeysPanel: React.FC<{ style?: React.CSSProperties }> = ({ style }) 
                 const asked = form;
                 const out = await VoiceClient.testKey(asked.optionId, asked.text);
                 setForm(current => (current && current.text === asked.text && current.optionId === asked.optionId
-                  ? tested(current, out ?? { ok: false, reason: 'The door cannot be reached.' })
+                  ? tested(current, out ?? { ok: false, reason: 'The voice cannot be reached.' })
                   : current));
               })}>2 TEST</Button>
             <Button tone="signal" primary disabled={!!busy || !canAccept(form)} title="Holds the key and puts it in use. Open once the test has passed."
@@ -129,7 +129,7 @@ export const KeysPanel: React.FC<{ style?: React.CSSProperties }> = ({ style }) 
                 setForm(null);
                 const out = await VoiceClient.useKey(accepted.optionId, accepted.text);
                 // Taken, the list above says so. Not taken, the reason is said.
-                if (!out?.ok) setNote(out?.reason ?? 'The door cannot be reached.');
+                if (!out?.ok) setNote(out?.reason ?? 'The voice cannot be reached.');
               })}>3 ACCEPT</Button>
             <Button tone="quiet" disabled={!!busy} onClick={() => setForm(null)}>CANCEL</Button>
           </div>

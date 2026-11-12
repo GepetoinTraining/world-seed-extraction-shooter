@@ -78,7 +78,7 @@ function inThePage(opening: Promise<any>): Transport {
       if (path === '/commit') return answered(200, await store.commit(asked));
       if (path === '/maintain') return answered(200, await store.maintain());
       if (path === '/record') return answered(200, await store.writeDown(String(asked.why ?? 'asked')));
-      return answered(404, { error: `No such door: ${path}` });
+      return answered(404, { error: `Nothing answers at ${path}` });
     } catch (e) {
       const name = (e as Error)?.name;
       if (name === 'StoreConflict') return answered(409, { conflict: true, error: (e as Error).message });

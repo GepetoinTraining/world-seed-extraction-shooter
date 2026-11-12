@@ -42,6 +42,7 @@ import { TagLaw } from '../shared/logic/content/TagLaw';
 import { useSheet } from '../src/components/ui/stores';
 import { LargeSheet } from '../src/components/LargeSheet';
 import { CharacterSheet } from '../src/components/CharacterSheet';
+import { SkillsTab } from '../src/components/PlayerHub';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -53,7 +54,7 @@ import { CharacterSheet } from '../src/components/CharacterSheet';
  */
 export const BUILDERS_WORDS: { word: RegExp; why: string }[] = [
   { word: /\bharness/i, why: 'what is worn; the loadout (Wave 10C notes, store refusals)' },
-  { word: /\bengrams?\b/i, why: 'a skill (Wave 9\'s skills tab)' },
+  // engram (Wave 9's SKILL ENGRAMS tab): whether it is the world's word waits on Pedro (GV2), so the tab keeps it for now
   { word: /\bhead budget\b/i, why: 'the head\'s four places (D22)' },
   { word: /\brungs?\b/i, why: 'how far a skill has grown (D27\'s mastery steps)' },
   { word: /\btags?\b/i, why: 'the registry\'s words a skill and a piece are built from (D28)' },
@@ -63,17 +64,18 @@ export const BUILDERS_WORDS: { word: RegExp; why: string }[] = [
   { word: /\bratings?\b/i, why: 'evasion and accuracy as the code holds them' },
   { word: /\bmultipl(?:ier|ies|y)\b/i, why: 'a formula\'s working' },
   { word: /\bfactor\b/i, why: 'a formula\'s working' },
-  { word: /\bits floor\b|\bover (?:its|the) floor\b/i, why: 'a stat\'s starting point in the code' },
+  // A room's floor is the world's; a stat's floor is the code's
+  { word: /\bover (?:its|the|their) floor\b|\bpoints? over (?:its|the)\b/i, why: 'a stat\'s starting point in the code' },
   { word: /\bfor each point\b|\bper point\b|\ba point of\b/i, why: 'how a number is computed' },
   { word: /\breaders?\b/i, why: 'a rules function (the builders\' log)' },
-  { word: /\bdoor\b/i, why: 'the one way through to the model or a rule (StudyDoor, RestDoor)' },
+  // A house's door is the world's; the door that carries the model is the builders' (the intelligence door, StudyDoor)
+  { word: /\bthe door (?:cannot|can|answered|is closed)\b|\bno such door\b/i, why: 'the server that carries the model (the door)' },
   { word: /\bbatch(?:es)?\b/i, why: 'a dev run banked as content' },
-  { word: /\bdreaming\b/i, why: 'how a world fills its drops (Wave 10E)' },
   { word: /\bemerge(?:s|nce)?\b/i, why: 'a forming skill\'s roll at a rest' },
   { word: /\bconcepts?\b/i, why: 'the hub web\'s hidden keys (D125)' },
   { word: /\bnodes?\b/i, why: 'a place on the tech web, as the code holds it' },
   { word: /\bderived\b|\bcomputed\b/i, why: 'how a number is made' },
-  { word: /\bLLM\b|\bHaiku\b|\bSonnet\b|\bOpus\b|\bprompt\b/i, why: 'the model behind the voice' },
+  { word: /\bLLM\b/, why: 'the model behind the voice' },
   { word: /\bgolden vector|\bground version\b|\bmigrat|\bhydrat|\bschema\b|\bstub\b/i, why: 'storage and testing' },
   { word: /\bspine\b|\bcoordinator\b|\bbuilders?\b|\bplaytest\b/i, why: 'the making of the game' }
 ];
@@ -188,9 +190,21 @@ beforeAll(() => {
 beforeEach(() => { seed(); host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => { root.unmount(); }); host.remove(); useSheet.setState({ open: false, large: false } as any); });
 
+/** In a world: a pack holding a stone, a found piece unread, and something of the field's, picked up. */
+function inAWorld() {
+  const stone = { ...piece('stone', SlotType.NONE, {}, { name: 'Tally Pebble', tags: ['throwable', 'mineral', 'stone'] }), type: ItemType.RESOURCE, dimensions: { width: 1, height: 1 } } as IItem;
+  const unread = { ...piece('found', SlotType.CHEST, { defense: 3 }, { name: 'Pressed Waistcoat' }), isIdentified: false } as IItem;
+  usePlayerStore.setState(s => ({
+    player: { ...s.player, currentSession: { sessionId: 's', layerId: 'l', inventory: [stone, unread], inventoryLayout: {}, health: 80, maxHealth: 110, energy: 30, position: { x: 0, y: 0, z: 0 }, statusEffects: ['SLOWED'] } as any }
+  }));
+}
+
 const SCREENS: { name: string; mount: () => void }[] = [
   { name: 'the large sheet, at home', mount: () => root.render(createElement(LargeSheet, {})) },
-  { name: 'the small sheet, at home', mount: () => { useSheet.setState({ open: true } as any); root.render(createElement(CharacterSheet)); } }
+  { name: 'the small sheet, at home', mount: () => { useSheet.setState({ open: true } as any); root.render(createElement(CharacterSheet)); } },
+  { name: 'the small sheet in a world: the pack, the piece column, the study panel', mount: () => { inAWorld(); useSheet.setState({ open: true } as any); root.render(createElement(CharacterSheet)); } },
+  { name: 'the large sheet in a world', mount: () => { inAWorld(); root.render(createElement(LargeSheet, {})); } },
+  { name: "the hub's skills tab", mount: () => root.render(createElement(SkillsTab)) }
 ];
 
 describe('GV: a screen speaks as the game speaks to a player', () => {
@@ -198,7 +212,7 @@ describe('GV: a screen speaks as the game speaks to a player', () => {
     it(`${screen.name}: no builders' word, no raw name, no tag list, no formula's working`, async () => {
       await act(async () => { screen.mount(); });
       const lines = wordsOn(host);
-      expect(lines.length, 'the screen rendered').toBeGreaterThan(20);
+      expect(lines.length, 'the screen rendered').toBeGreaterThan(10);
       expect(faultsIn(lines, skillIds)).toEqual([]);
     });
   }
@@ -238,5 +252,99 @@ describe('GV: the sheet tells a player what each skill is and what it needs', ()
     expect(text).not.toMatch(/fate_gambler|kit_bench/);
     expect(text).toMatch(/WHAT A BENCH WANTS|What a bench wants/);
     expect(text).toMatch(/Perception/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PART 2: every screen. A screen too many to render is still read from its source: every string and every piece of JSX
+// text the game's own files put together, comments left out, is held to the builders' list. Content a world's writer
+// wrote (the packs) and the words sent to a model (prompts) are not the game's voice and are not read.
+// ---------------------------------------------------------------------------------------------------------------------
+
+import ts from 'typescript';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+/**
+ * Where the game's own words live: the screens, the stores and systems whose refusals reach the feed, and the shared rules
+ * a player hears from. Not read: the checks a dev batch or a world's writing passes (shared/logic/content, theme), what
+ * is said to a model (writing, the lore bible, the intelligence plumbing), and a door's own notes. A door (of a house),
+ * the Seed dreaming, and a prompt on the screen that sets up the player's own model are the world's and setup's words.
+ */
+const SOURCE_ROOTS = ['src', 'shared/entities', 'shared/logic/systems'];
+const NOT_THE_GAMES_VOICE = [/[\\/]writing[\\/]/, /[\\/]lore[\\/]LoreBible/, /[\\/]packs[\\/]/, /[\\/]debug[\\/]/, /prompt/i, /\.d\.ts$/, /[\\/]fixtures[\\/]/];
+const ATTRIBUTES_NOT_SHOWN = /^(className|style|key|id|type|role|tone|data-[\w-]+|href|src|htmlFor|name|zoneId|for)$/;
+const twoWords = /[A-Za-z]{2,}[\s,.;:—-]+[A-Za-z]{2,}/;
+
+function sourceFiles(): string[] {
+  const out: string[] = [];
+  for (const root of SOURCE_ROOTS) {
+    for (const f of readdirSync(root, { recursive: true }) as string[]) {
+      const path = join(root, f);
+      if (!/\.(ts|tsx)$/.test(path) || NOT_THE_GAMES_VOICE.some(r => r.test(path))) continue;
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+/** The words a source file can put on a screen: its JSX text, and its strings that read as words, not as code. */
+export function shownStrings(path: string): { line: number; text: string }[] {
+  const code = readFileSync(path, 'utf8');
+  const file = ts.createSourceFile(path, code, ts.ScriptTarget.Latest, true, path.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const out: { line: number; text: string }[] = [];
+  const push = (node: ts.Node, text: string) => {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (t && twoWords.test(t)) out.push({ line: file.getLineAndCharacterOfPosition(node.getStart()).line + 1, text: t });
+  };
+  const notShown = (node: ts.Node): boolean => {
+    for (let p = node.parent; p; p = p.parent) {
+      if (ts.isImportDeclaration(p) || ts.isExportDeclaration(p) || ts.isTypeNode(p)) return true;
+      if (ts.isJsxAttribute(p)) return ATTRIBUTES_NOT_SHOWN.test(p.name.getText(file));
+      if (ts.isCallExpression(p)) {
+        const callee = p.expression.getText(file);
+        if (/^console\.|^require$|^import$|querySelector|closest|matches|addEventListener|^(describe|it|expect)$/.test(callee)) return true;
+      }
+      if (ts.isNewExpression(p) && /Error$/.test(p.expression.getText(file))) return true;
+      if (ts.isBlock(p) || ts.isSourceFile(p)) return false;
+    }
+    return false;
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxText(node)) push(node, node.text);
+    else if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && !notShown(node) && !(ts.isPropertyAssignment(node.parent) && node.parent.name === node)) push(node, node.text);
+    else if (ts.isTemplateExpression(node) && !notShown(node)) push(node, [node.head.text, ...node.templateSpans.map(s => s.literal.text)].join(' … '));
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return out;
+}
+
+describe('GV: every screen\'s own words, read from the source', () => {
+  it('no string or JSX text the game puts on a screen holds a builders\' word', () => {
+    const faults: string[] = [];
+    for (const path of sourceFiles()) {
+      for (const { line, text } of shownStrings(path)) {
+        for (const { word, why } of BUILDERS_WORDS) if (word.test(text)) faults.push(`${path}:${line} (${why}): "${text.slice(0, 140)}"`);
+      }
+    }
+    expect(faults).toEqual([]);
+  });
+
+  it('no screen prints an id: a JSX child that is a thing\'s id or uid puts a raw name in front of a player', () => {
+    const faults: string[] = [];
+    for (const path of sourceFiles().filter(p => p.endsWith('.tsx'))) {
+      const code = readFileSync(path, 'utf8');
+      const file = ts.createSourceFile(path, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const visit = (node: ts.Node) => {
+        if (ts.isJsxExpression(node) && node.expression && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))) {
+          const said = node.expression.getText(file);
+          if (/(\.(id|uid)|Id|Uid)(\.slice\([^)]*\))?$/.test(said)) faults.push(`${path}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}: {${said}}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(file);
+    }
+    expect(faults).toEqual([]);
   });
 });

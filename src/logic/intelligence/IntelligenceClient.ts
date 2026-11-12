@@ -26,7 +26,7 @@ async function post<T>(path: string, body: unknown): Promise<IDoorOutcome<T>> {
   try {
     return await DoorTransport.json<IDoorOutcome<T>>(path, body);
   } catch {
-    return { status: 'OFFLINE', reason: 'The door cannot be reached.' };
+    return { status: 'OFFLINE', reason: 'The voice cannot be reached.' };
   }
 }
 
@@ -35,7 +35,7 @@ export const IntelligenceClient = {
     try {
       return await DoorTransport.json('/status');
     } catch {
-      return { available: false, reason: 'The door cannot be reached.' };
+      return { available: false, reason: 'The voice cannot be reached.' };
     }
   },
   talk: (messages: IDoorMessage[], draft: Record<string, unknown>) => post('/talk', { messages, draft }),
@@ -67,7 +67,7 @@ export const IntelligenceClient = {
     try {
       await DoorTransport.lines('/kami/talk', { messages, persona }, line => line.split('\n').forEach(readLine), signal);
     } catch {
-      return { status: 'OFFLINE', reason: 'The door cannot be reached.' };
+      return { status: 'OFFLINE', reason: 'The voice cannot be reached.' };
     }
     return ended ?? { status: 'OUTAGE', reason: 'It stopped before it finished.' };
   },

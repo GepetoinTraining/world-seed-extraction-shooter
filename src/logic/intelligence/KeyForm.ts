@@ -38,7 +38,7 @@ export const canAccept = (form: IKeyForm): boolean => !!form.tested?.ok && form.
  * the game is using, and never a sentence that reads as "the game has no key".
  */
 export const saidWhenNoneAdded = (voice: { mode?: string; provider?: string; available?: boolean } | null, onPage: boolean): string => {
-  if (!voice) return 'No key has been added here, and the door cannot be reached to say what is in use.';
+  if (!voice) return 'No key has been added here, and the voice cannot be reached to say what is in use.';
   if (voice.mode === 'off') return 'No key has been added here. The voice is turned off on this server.';
   if (voice.provider === 'local') {
     return voice.available

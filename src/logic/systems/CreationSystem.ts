@@ -379,7 +379,7 @@ export class CreationSystem {
       seen.add(s.id);
       if (!s.name?.trim()) return no(`${s.id} came back with no name.`);
       // Q47: a name is the model's to write. Its tag list is not a name.
-      if (WebSystem.isTagListName(s.id, s.name)) return no(`${s.id} came back named by its tag list, "${s.name}".`);
+      if (WebSystem.isTagListName(s.id, s.name)) return no(`${s.id} came back named only by what it works, "${s.name}".`);
       if (HIDDEN.test(s.name) || HIDDEN.test(s.flavor ?? '')) return no(`${s.id} says what stays unsaid.`);
       const stray = (s.grants ?? []).find(g => !(SKILL_GRANTS as readonly string[]).includes(g));
       if (stray) return no(`${s.id} grants "${stray}", and the game has no such thing.`);

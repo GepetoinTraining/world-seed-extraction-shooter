@@ -309,7 +309,7 @@ export const TemplateStudio: React.FC<{ onClose: () => void }> = ({ onClose }) =
             </div>
             <Button tone="signal" disabled={!name.trim()} onClick={() => void mint()}>MINT TEMPLATE</Button>
             <span className="ws-dim ws-small">
-              An invalid plan cannot be minted: the same law that refuses the builder refuses the pen.
+              A plan that could not stand cannot be minted: what refuses a wall here refuses it on paper too.
             </span>
           </div>
         </div>

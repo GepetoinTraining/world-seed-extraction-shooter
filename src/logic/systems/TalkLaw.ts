@@ -169,7 +169,7 @@ export const TalkLaw = {
   },
 
   judgeRound(words: Partial<IRoundWords> | null | undefined, ctx: { alignment?: string; hidden: string[] }): IRoundVerdict {
-    if (!words || !inBand(JUDGE_BANDS, words.band)) return { ok: false, reason: 'It said no band the law knows.' };
+    if (!words || !inBand(JUDGE_BANDS, words.band)) return { ok: false, reason: 'It said no band the game knows.' };
     if (!validMeans(words.asked)) return { ok: false, reason: 'It did not say what was asked.' };
     if (typeof words.reply !== 'string' || !words.reply.trim()) return { ok: false, reason: 'It came back with nothing to say.' };
     const wants = typeof words.wants === 'string' ? words.wants.trim() : '';
@@ -216,7 +216,7 @@ export const TalkLaw = {
       if (!ask.questTags.includes(quest.tag)) return { ok: false, reason: `${quest.tag} is no word the hub knows.` };
       if (!inBand(QUEST_SIZES, quest.size)) return { ok: false, reason: 'A quest says small, fair or large.' };
       if (typeof quest.text !== 'string' || !quest.text.trim()) return { ok: false, reason: 'A quest says what it wants.' };
-      if (/\d/.test(quest.text)) return { ok: false, reason: 'A quest writes no numbers: the formula does.' };
+      if (/\d/.test(quest.text)) return { ok: false, reason: 'A quest writes no numbers: the game does.' };
     }
     return {
       ok: true,

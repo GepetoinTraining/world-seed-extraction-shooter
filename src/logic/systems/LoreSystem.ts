@@ -321,7 +321,7 @@ export class LoreSystem {
       if (stray) return no(`${words.name} grants "${stray}", and the game has no such thing.`);
       const tags = TagLaw.canonical(words.tags);
       const id = TagLaw.skillIdOf(tags);
-      if (!WebSystem.isLawfulId(id)) return no(`${words.name}: "${id}" is not a skill the law can hold.`);
+      if (!WebSystem.isLawfulId(id)) return no(`${words.name}: "${id}" is not a skill anyone can hold.`);
       if (player.bank.universalSkills[id]) return no(`${words.name} is a skill they already hold.`);
       if (teaching.has(id)) return no(`${words.name} was taught twice.`);
       teaching.add(id);

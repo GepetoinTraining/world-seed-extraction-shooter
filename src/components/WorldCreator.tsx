@@ -96,7 +96,7 @@ export const WorldCreator: React.FC<WorldCreatorProps> = ({ opened, onClose, onC
           ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, usd: usage.usd } : undefined);
         const banked = await ThemeStore.bank(pack);
         if (!banked.ok) {
-          setError(banked.reason ?? 'The law refused what was written.');
+          setError(banked.reason ?? 'What was written did not hold together.');
           setCreating(false);
           return;
         }

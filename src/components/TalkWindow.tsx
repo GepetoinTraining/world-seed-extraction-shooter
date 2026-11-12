@@ -79,7 +79,7 @@ export const TalkWindow: React.FC = () => {
         <MeterTrack value={meter} lines={lines} />
 
         {goal && (
-          <Panel title="WHAT THEY ARE AFTER" right={<Chip title="The rung of the needs ladder they stand on">{goal.need}</Chip>}>
+          <Panel title="WHAT THEY ARE AFTER" right={<Chip title="What they need most, right now">{goal.need}</Chip>}>
             <span className="ws-small">{goal.text}</span>
             {onTheBoard && <div className="ws-small" style={{ marginTop: 4 }}><b>ON THE BOARD: </b>{onTheBoard}</div>}
           </Panel>

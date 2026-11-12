@@ -247,7 +247,7 @@ const TheBooks: React.FC = () => {
           <div className="ws-dim ws-small">Last week, with {guild.lastWeek.tax.toLocaleString()} G of the general tax in:</div>
           {guild.lastWeek.shops.map(shop => (
             <div key={shop.npcId} className="ws-row">
-              <span className="ws-small" style={{ minWidth: 0 }}>{HUB_NPCS[shop.npcId]?.name ?? shop.npcId}: took {shop.earned.toLocaleString()} G, paid out {shop.counter.toLocaleString()} G, wages {shop.pay.toLocaleString()} G, lost {shop.loss.toLocaleString()} G coming apart</span>
+              <span className="ws-small" style={{ minWidth: 0 }}>{HUB_NPCS[shop.npcId]?.name ?? 'A keeper'}: took {shop.earned.toLocaleString()} G, paid out {shop.counter.toLocaleString()} G, wages {shop.pay.toLocaleString()} G, lost {shop.loss.toLocaleString()} G coming apart</span>
               <span className="ws-small">{shop.toKeeper > 0 ? `the Hall covered ${shop.toKeeper.toLocaleString()} G` : `${shop.toGuild.toLocaleString()} G over`}</span>
             </div>
           ))}

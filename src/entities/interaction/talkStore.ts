@@ -136,7 +136,7 @@ const THE_STRANGER = 'The stranger';
 /** What the door's answer means to someone standing there. */
 const SAID_WHEN_SILENT: Record<string, string> = {
   NO_KEY: 'No voice on this server: rounds still roll, on the words alone.',
-  OFFLINE: 'The door cannot be reached: rounds still roll, on the words alone.',
+  OFFLINE: 'The voice cannot be reached: the talk goes on, on your words alone.',
   OVER_LIMIT: 'This talk has spent what a talk may spend: rounds still roll, on the words alone.',
   BUSY: 'They are slow to answer just now: the round rolled without it.',
   REFUSED: 'That got no answer: the round rolled without it.'

@@ -34,7 +34,7 @@ export const LootWriter = {
     const stood = new Set<string>();
     for (let attempt = 0; attempt < LOOT_TRIES; attempt++) {
       const out = await door(lootAskOf(pack, refused));
-      if (out.status !== 'OK' || out.data === undefined) return { ok: false, banked: 0, reason: out.reason ?? `The door answered ${out.status}.` };
+      if (out.status !== 'OK' || out.data === undefined) return { ok: false, banked: 0, reason: out.reason ?? `The voice answered ${out.status}.` };
       const shape = schemaProblem(LOOT_SCHEMA, out.data);
       if (shape) { refused = shape; continue; }
       const words = (out.data as { tables: ILootWords[] }).tables;

@@ -38,7 +38,7 @@ export const MeetLaw = {
    */
   judge(words: Partial<IMeetWords> | null | undefined, ask: Pick<IMeetAsk, 'id'>): { ok: boolean; reason?: string; outcome?: IMeetOutcome } {
     if (!words || words.id !== ask.id) return { ok: false, reason: 'It answered some other meeting.' };
-    if (!inBand(words.a?.band) || !inBand(words.b?.band)) return { ok: false, reason: 'It said no band the law knows.' };
+    if (!inBand(words.a?.band) || !inBand(words.b?.band)) return { ok: false, reason: 'It said no band the game knows.' };
     const lines = (Array.isArray(words.lines) ? words.lines : [])
       .filter((l): l is IMeetLine => !!l && (l.by === 'a' || l.by === 'b') && typeof l.text === 'string')
       .map(l => ({ by: l.by, text: l.text.trim() }))

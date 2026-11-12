@@ -140,7 +140,7 @@ export const TemplateApplyModal: React.FC<{ lot: IPlayerLot; onClose: () => void
                 )}
                 {bill.tagLines.length > 0 && (
                   <span className="ws-dim ws-small">
-                    The shell also asks, by tag: {bill.tagLines.map(l => `${l.count} ${l.tag}`).join(', ')}.
+                    The shell also asks for: {bill.tagLines.map(l => `${l.count} ${l.tag}`).join(', ')}.
                   </span>
                 )}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

@@ -31,7 +31,7 @@ const SEAT_SHORT: Record<string, string> = {
 };
 
 const modeLine = (s: IDoorSettingStatus | null) => {
-  if (!s) return 'THE DOOR CANNOT BE REACHED';
+  if (!s) return 'THE VOICE CANNOT BE REACHED';
   if (s.mode === 'off') return 'TURNED OFF ON THIS SERVER';
   if (s.mode === 'keyed') return `A KEY · ${s.option ?? s.provider}`;
   if (s.provider === 'local') return `THIS MACHINE · ${s.model ?? 'no model chosen'}`;
@@ -156,7 +156,7 @@ export const VoicePanel: React.FC<{ style?: React.CSSProperties; titled?: boolea
                       const sent = key;
                       setKey('');
                       const out = await VoiceClient.useKey(option.id, sent);
-                      setNote(out?.ok ? `${option.name} answers.` : (out?.reason ?? 'The door cannot be reached.'));
+                      setNote(out?.ok ? `${option.name} answers.` : (out?.reason ?? 'The voice cannot be reached.'));
                     })}>USE THIS KEY</Button>
                   </div>
                 )}

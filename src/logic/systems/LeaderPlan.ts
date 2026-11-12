@@ -39,7 +39,7 @@ export class LeaderPlan {
     for (const d of asked) {
       const verb = says(d?.verb);
       if (!(VERBS as readonly string[]).includes(verb)) {
-        verdict.refused.push({ verb, reason: `"${verb}" has no reader, so ${leader.id} cannot do it.` });
+        verdict.refused.push({ verb, reason: `"${verb}" is nothing a leader does, so ${leader.id} cannot do it.` });
       } else if (!allowed.includes(verb as Verb)) {
         verdict.refused.push({ verb, reason: `"${verb}" is not something what ${leader.id} is can do.` });
       } else {

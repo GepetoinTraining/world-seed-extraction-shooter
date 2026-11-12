@@ -106,8 +106,8 @@ const ImportRefusals: React.FC<{ report: IImportReport; onDone: () => void }> = 
         {report.imported} documents moved into the bank's books and proved themselves. What is listed here failed its proof. It stayed in this browser, untouched.
       </p>
       <div className="ws-list" style={{ maxHeight: 280, overflow: 'auto' }}>
-        {report.refused.map(r => (
-          <div key={r.id} className="ws-row ws-small"><span className="ws-loss" style={{ wordBreak: 'break-all' }}>{r.id}</span>&nbsp;{r.reason}</div>
+        {report.refused.map((r, i) => (
+          <div key={r.id} className="ws-row ws-small"><span className="ws-loss">Record {i + 1}</span>&nbsp;{r.reason}</div>
         ))}
         {report.notes.map(n => <div key={n} className="ws-row ws-small ws-dim">{n}</div>)}
       </div>
