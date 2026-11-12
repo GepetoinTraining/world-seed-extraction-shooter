@@ -33,6 +33,7 @@ import { useDropZone, wholeZone } from './ui/hands';
 import { hoverProps, useHotbar, useSheet } from './ui/stores';
 import { Bar, Button, ItemSprite, Kbd, Panel, PortraitView, RankMark, SpriteView } from './ui/kit';
 import { isTypingTarget } from '../logic/systems/FieldInput';
+import { useWebView } from './TechWebView';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -204,7 +205,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
         {waits.length === 0 ? <div className="ws-dim ws-small">Nothing waits for your next rest.</div> : waits.map(w => <Line key={w.key} word={w.word.toUpperCase()} value={String(w.count)} />)}
       </Section>
 
-      <Section word="LORE">
+      <Section word="LORE" right={<Button tone="quiet" onClick={() => useWebView.getState().toggle()}>THE WEB</Button>}>
         <Line word="GENERAL" value={String(Math.round(lore.general))} feeds="Spent anywhere: on a gift, a raise, a skill learned or taught." />
         {lore.byCategory.length === 0 && <div className="ws-dim ws-small">No lore of a category yet. Study files it under what the thing showed you.</div>}
         {lore.byCategory.map(k => <Line key={k.name} word={k.name.toUpperCase()} value={String(k.reads)} />)}

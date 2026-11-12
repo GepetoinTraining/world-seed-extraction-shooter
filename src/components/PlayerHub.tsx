@@ -15,6 +15,7 @@ import { InventorySystem } from '../../shared/entities/player/systems/InventoryS
 import { LoadoutSystem } from '../../shared/entities/player/systems/LoadoutSystem';
 import { PaperDoll } from './PaperDoll';
 import { LargeSheet } from './LargeSheet';
+import { TechWebView } from './TechWebView';
 import { EquipSlotId, IAttributes, IItem, ItemType, SlotType, HEAD_BUDGET_POSITIONS } from '../../shared/types';
 import { STASH_COLS, StashFilter, StashGrid, StashKind, StashSortKey } from '../entities/player/systems/StashGrid';
 import { ItemGrid } from './ui/ItemGrid';
@@ -454,6 +455,7 @@ export const PlayerHub = () => {
         tabs={[
           { id: 'agent', label: 'AGENT' },
           { id: 'skills', label: 'SKILLS' },
+          { id: 'web', label: 'THE WEB' },
           { id: 'stash', label: 'STASH' },
           { id: 'ledger', label: 'LEDGER' }
         ]}
@@ -462,6 +464,7 @@ export const PlayerHub = () => {
       />
       {bankTab === 'agent' && <LargeSheet />}
       {bankTab === 'skills' && <SkillsTab />}
+      {bankTab === 'web' && <TechWebView />}
       {bankTab === 'stash' && <StashTab />}
       {bankTab === 'ledger' && <LedgerTab />}
     </div>

@@ -36,6 +36,7 @@ import { ItemGrid } from './ui/ItemGrid';
 import { dropByKey, useDropZone, useHands, wholeZone } from './ui/hands';
 import { GROUND_REACH } from '../logic/systems/ItemHands';
 import { LargeSheetOverlay } from './LargeSheet';
+import { TechWebOverlay, useWebView } from './TechWebView';
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
 import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
 
@@ -485,5 +486,6 @@ export const CharacterSheet: React.FC = () => {
   }, []);
 
   const large = useSheet(s => s.large);
-  return <>{open && <SheetBody />}{large && <LargeSheetOverlay />}</>;
+  const webOpen = useWebView(s => s.open);
+  return <>{open && <SheetBody />}{large && <LargeSheetOverlay />}{webOpen && <TechWebOverlay />}</>;
 };

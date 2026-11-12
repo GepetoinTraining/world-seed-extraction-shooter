@@ -10,7 +10,7 @@ import { EquipSlotId, IItem } from '../../../shared/types';
 // --- WHICH SCREEN (replaces App-local state so dialogue can navigate) ---
 
 export type AppView = 'HUB' | 'MISSIONS' | 'RECON' | 'BANK' | 'HOLDINGS' | 'ADMIN' | 'TUNING';
-export type BankTab = 'agent' | 'skills' | 'stash' | 'ledger';
+export type BankTab = 'agent' | 'skills' | 'web' | 'stash' | 'ledger';
 
 interface ViewState {
   view: AppView;
