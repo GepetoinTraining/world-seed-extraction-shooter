@@ -81,7 +81,7 @@ export const StudyPanel: React.FC = () => {
       <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', marginBottom: 2 }}>STUDY</div>
       <div className="ws-row ws-small" style={{ padding: '2px 0' }}>
         <span>GENERAL LORE <span className="ws-bright">{LoreSystem.held(player).toLocaleString()}</span></span>
-        <span className="ws-dim">{waiting > 0 ? `${waiting} waiting on a dream` : 'nothing waiting'}</span>
+        <span className="ws-dim">{waiting > 0 ? `${waiting} to settle at your next rest` : 'nothing to settle'}</span>
       </div>
       {/* The design pass, part 1: the web to plan lore by, from where lore is spent */}
       <Button tone="quiet" onClick={() => useWebView.getState().toggle()}>THE TECH WEB</Button>
@@ -97,7 +97,7 @@ export const StudyPanel: React.FC = () => {
       )}
       {/* Q26: what a sitting spends, beside what is held */}
       <Bar label="ENERGY" value={RestSystem.energyHeld(player)} max={StatSystem.maxEnergyOf(player)} tone="proof" text={`${Math.floor(RestSystem.energyHeld(player))} / ${Math.floor(StatSystem.maxEnergyOf(player))}`} />
-      <div className="ws-dim ws-small" style={{ padding: '2px 0' }}>A sitting can go badly. Typed words take {typedAsk.cost} energy and {typedAsk.seconds}s; each thing below says its own.</div>
+      <div className="ws-dim ws-small" style={{ padding: '2px 0' }}>A study can go badly. A word you type costs {typedAsk.cost} energy and {typedAsk.seconds} s to study; each thing below shows its own.</div>
       <form
         style={{ display: 'flex', gap: 4, margin: '2px 0 4px' }}
         onSubmit={e => {

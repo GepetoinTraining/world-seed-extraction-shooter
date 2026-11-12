@@ -105,7 +105,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           <div style={{ textAlign: 'center', padding: '8px 0' }}>
             <div className="ws-proof" style={{ fontSize: 'var(--ws-font-title)', letterSpacing: '0.25em' }}>IDENTITY MINTED</div>
             <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-              This face is computed from your certificate. Nobody chose it. Nobody can take it.
+              This face comes from your certificate. Nobody chose it. Nobody can take it.
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 20, alignItems: 'flex-end', margin: '10px 0' }}>
@@ -114,7 +114,6 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           </div>
           <div style={{ textAlign: 'center' }} className="ws-small">
             <div className="ws-bright">{certificate.metadata.displayName.toUpperCase()}</div>
-            <div className="ws-dim" style={{ wordBreak: 'break-all' }}>{certificate.metadata.uid}</div>
             {made?.className && <div className="ws-bright" style={{ marginTop: 6 }}>{made.className.toUpperCase()}</div>}
             {focus && (
               <div style={{ marginTop: 6 }}>
@@ -226,7 +225,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
                       {entry.certificate.metadata.displayName.toUpperCase()}
                     </span>
                     <span className="ws-dim ws-small" style={{ display: 'block' }}>
-                      {(entry.archetype || 'OPERATOR').replace('_', ' ')} · {uid.slice(0, 16)}…
+                      {(entry.archetype || 'OPERATOR').replace(/_/g, ' ')}
                     </span>
                   </span>
                 </button>

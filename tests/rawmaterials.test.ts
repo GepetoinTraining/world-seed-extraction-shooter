@@ -693,7 +693,7 @@ describe('found in play (the fresh origin): small truths the first bars missed',
     room.shellInherited = [{ id: 'res_rui_vaultaged', name: 'Vault-Aged', type: 'PREFIX', stats: {}, tier: 1 }];
     usePlayerStore.setState(s => ({ player: StudySystem.revealAffixes(s.player, 'furniture', room.shellInherited!) }));
     const said = inspectBuiltRoom(room, player())!.rows.map(r => r.join(' ')).join(' ');
-    expect(said).toMatch(/not yet written/);
+    expect(said).toMatch(/not yet known/); // GV: was "named by the bank; its effect is not yet written"
   });
 
   it('a material picker names the definition, not whichever item came first, and says raw', () => {
@@ -713,7 +713,7 @@ describe('line 62: what a step added stays unknown', () => {
     const added = additionsOf(plank)[0];
     const card = inspectItem(plank, player());
     const line = card.rows.find(([k]) => k === 'Affix')!;
-    expect(line[1]).toMatch(/unstudied/);
+    expect(line[1]).toMatch(/not studied/); // GV: "you have not studied", "not studied"
     for (const stat of Object.keys(added.stats)) expect(line[1]).not.toContain(stat.replace(/_/g, ' '));
   });
 
@@ -731,7 +731,7 @@ describe('line 62: what a step added stays unknown', () => {
     room.shellInherited = [addition('prc_blind', { upkeep_discount_pct: 3 })];
     const card = inspectBuiltRoom(room, player());
     const said = card!.rows.map(r => r.join(' ')).join(' ');
-    expect(said).toMatch(/unstudied/);
+    expect(said).toMatch(/not studied/); // GV: "you have not studied"
     expect(said).not.toMatch(/upkeep discount|\+3/);
   });
 
@@ -740,7 +740,7 @@ describe('line 62: what a step added stays unknown', () => {
     const said = card!.rows.map(r => r.join(' ')).join(' ');
     expect(said).toMatch(/Hardwood Log/);
     expect(said).toMatch(/raw/i);
-    expect(said).not.toMatch(/unstudied/);
+    expect(said).not.toMatch(/not studied/);
   });
 });
 

@@ -25,6 +25,9 @@ import { SurveySystem } from '../../logic/systems/SurveySystem';
 import { ContactNames } from '../../logic/systems/ContactNames';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { WorldClock } from '../../entities/world/WorldClock';
+import { SkillNames } from '../../logic/systems/SkillNames';
+import { statWord } from '../../logic/systems/StatWords';
+import { said as sayNumber } from '../../logic/systems/SheetWords';
 
 export interface Card {
   title: string;
@@ -130,7 +133,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
       // D27: you learn what someone is good at by talking to them
       if (npc && npc.attempts > 0 && ctx.worldSeed) {
         const sheet = NpcSheet.read(ctx.worldSeed, e, ctx.webVersion);
-        const names = Object.keys(sheet.skills ?? {}).map(id => WebSystem.nameOf(id));
+        const names = Object.keys(sheet.skills ?? {}).map(id => SkillNames.nameOf(id));
         if (names.length > 0) rows.push(['Hands', names.join(', ')]);
         if (sheet.alignment) rows.push(['Alignment', sheet.alignment]);
       }
@@ -285,13 +288,13 @@ export function inspectBuiltRoom(room: IRoomState, player?: IPlayer): Card | nul
     if (seen.has(affix.id)) continue;
     seen.add(affix.id);
     if (player && LoadoutSystem.isAffixStudied(player, affix.id)) {
-      const said = Object.entries(affix.stats).map(([k, v]) => `${v >= 0 ? '+' : ''}${v} ${k.replace(/_/g, ' ')}`).join(', ');
-      rows.push(['Worked in', `${affix.name} — ${said || 'named by the bank; its effect is not yet written'}`]);
+      const said = Object.entries(affix.stats).map(([k, v]) => `${v >= 0 ? '+' : ''}${sayNumber(v)} ${statWord(k)}`).join(', ');
+      rows.push(['Worked in', `${affix.name} — ${said || 'what it does is not yet known'}`]);
     } else {
       blind++;
     }
   }
-  if (blind > 0) rows.push(['Worked in', `${blind} unstudied. ${blind === 1 ? 'It does its work' : 'They do their work'}; the sheet can't see ${blind === 1 ? 'it' : 'them'}.`]);
+  if (blind > 0) rows.push(['Worked in', `${blind} you have not studied: ${blind === 1 ? 'it works' : 'they work'} on the piece, and you do not know how.`]);
   const title = planned?.title ?? `${name} walls`;
   return { title, rows, needs: [], canAct: false, compact: planned?.compact ?? compact(title, raw ? 'raw' : 'worked') };
 }
@@ -373,10 +376,10 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   (item.affixes || []).forEach(a => {
     if (player && LoadoutSystem.isAffixStudied(player, a.id)) {
       const said = Object.entries(a.stats)
-        .map(([k, v]) => `${v >= 0 ? '+' : ''}${shown(v)} ${k.replace(/_/g, ' ')}`).join(', ');
-      rows.push(['Affix', `${a.name} — ${said || 'named by the bank; its effect is not yet written'}`]);
+        .map(([k, v]) => `${v >= 0 ? '+' : ''}${shown(v)} ${statWord(k)}`).join(', ');
+      rows.push(['Affix', `${a.name} — ${said || 'what it does is not yet known'}`]);
     } else {
-      rows.push(['Affix', `${a.name} — unstudied. It does its work; the sheet can't see it.`]);
+      rows.push(['Affix', `${a.name}: not studied. It works on the piece, and you do not know how.`]);
     }
   });
   // Wave 10E (D21): the magic says what it keeps, plainly
@@ -398,10 +401,10 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   // made of — its atoms and its chain, labor and all — and the card says so.
   const comp = item.composition;
   if (comp && comp.steps.length > 0) {
-    const fmtCount = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+    const fmtCount = (n: number) => sayNumber(n);
     rows.push(['Made of', comp.materials.map(m => `${fmtCount(m.count)} ${m.name}`).join(', ')]);
     rows.push(['Chain', comp.steps.map(s => `${s.name}${s.facility === null ? ' (no bench)' : ''}`).join(' → ')]);
-    rows.push(['Labor', `${Math.round(comp.laborSeconds)}s on the record, depth ${comp.depth}`]);
+    rows.push(['Labor', `${Math.round(comp.laborSeconds)} s of work`]);
   } else if (comp && comp.materials[0]) {
     const origin = comp.materials[0].origin;
     const said = origin === 'HARVEST' ? 'Taken from the world'
@@ -409,7 +412,7 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
       : origin === 'SALVAGE' ? 'Torn back out of a wall'
       : origin === 'CONSTRUCTION' ? 'Minted by a finished shell'
       : origin === 'IMPROVISATION' ? 'Lashed together in the field'
-      : 'Rolled by the world itself';
+      : 'Made by the world itself';
     rows.push(['Origin', said]);
   }
   return { title, rows, needs: [], canAct: false, compact: compact(title, String(item.rank)) };
