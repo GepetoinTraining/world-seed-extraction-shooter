@@ -38,6 +38,9 @@ export interface IIncomingHit { damage: number; dodged: boolean; blocked: boolea
  */
 const curve = (rating: number, against: string = 'F'): number => rating / (Math.abs(rating) + RATING_KNEE * bodyScale(against));
 
+/** A tool, read as the loadout reads one: its slot, its working, or its word. */
+const isTool = (item: IItem): boolean => item.slot === SlotType.TOOL || !!item.toolData || (item.tags || []).includes('tool');
+
 export class CombatMath {
 
   /** Is this item usable as a weapon right now? (broken = no) */
@@ -56,14 +59,18 @@ export class CombatMath {
    */
   static ownBlow(weapon: IItem | undefined, rank: string = 'F'): number {
     // C14: a stone thrown lands by how hard it is, and a bare hand by what a bare hand does: half a plain weapon of its body's rank (part 3)
-    return isThrowable(weapon) ? thrownDamage(weapon!)
-      : !this.isUsable(weapon) ? Math.round(UNARMED_DAMAGE * bodyScale(rank))
-      // The rarity rescale: a fifth of the piece's power, with no bare constant beside it (1.2). A piece a
-      // standing world minted keeps the blow it was stamped with (call 18)
-      // The fight's law (part 3): a plain weapon deals a fifth of its power a second, whatever its pace; its own rate cuts it
-      // into blows, so a slow kind hits harder each blow and a quick one lighter
-      : weapon!.pieceLaw !== undefined ? Math.round(PieceLaw.blowOf(weapon!.itemPower || 0) / Math.max(0.1, weapon!.stats?.attack_speed || 1))
+    const bare = Math.round(UNARMED_DAMAGE * bodyScale(rank));
+    if (isThrowable(weapon)) return thrownDamage(weapon!);
+    if (!this.isUsable(weapon)) return bare;
+    // The rarity rescale: a fifth of the piece's power, with no bare constant beside it (1.2). A piece a
+    // standing world minted keeps the blow it was stamped with (call 18)
+    // The fight's law (part 3): a plain weapon deals a fifth of its power a second, whatever its pace; its own rate cuts it
+    // into blows, so a slow kind hits harder each blow and a quick one lighter
+    const own = weapon!.pieceLaw !== undefined ? Math.round(PieceLaw.blowOf(weapon!.itemPower || 0) / Math.max(0.1, weapon!.stats?.attack_speed || 1))
       : Math.round(6 + (weapon!.itemPower || 0) * 0.08);
+    // GS5, the coordinator's call: a tool holds a third of a piece's power, so its own blow fell under the bare hand
+    // holding it (3 against 5 at F). A tool swung never hits softer than that hand
+    return isTool(weapon!) ? Math.max(own, bare) : own;
   }
 
   /** A hand's own rate, blows a second: the piece's, or a bare hand's. */
