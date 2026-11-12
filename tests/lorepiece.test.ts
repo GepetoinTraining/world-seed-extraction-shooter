@@ -21,6 +21,7 @@ import { WebSystem } from '../shared/logic/systems/WebSystem';
 import { LoreLaw } from '../shared/logic/systems/LoreLaw';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { LorePiece, LORE_PIECE_VALUE } from '../src/logic/systems/LorePiece';
+import { loreTeachPrice } from '../shared/logic/systems/LoreConstants';
 
 const skill = (tool: string[] | null, worked: string[], xp = 0, rank = 0): ISkillState => {
   const pair = WebSystem.mint(tool, worked);
@@ -126,9 +127,48 @@ describe('the doors: written at home from the web, and read through study', () =
     expect(SRC('src/logic/systems/LoreWriteDoor.ts')).toMatch(/LORE_WRITTEN/);
   });
   it('a sitting on a written piece teaches the skill it carries', () => {
-    expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/LorePiece\.teaches/);
+    expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/LorePiece\.read\(/);
   });
   it('the piece carries its record on the item contract', () => {
     expect(SRC('shared/types.ts')).toMatch(/lorePiece\?:/);
+  });
+});
+
+/**
+ * Pedro, 2026-11-11, of skills a character is forming: "they don't count, they don't do anything yet, and you need to have
+ * lore as a resource to actually be able to rollover a dream and learn them". So a piece read never hands its skill over:
+ * it gives its lore by the lore rule, and makes the skill it carries ready to settle; a rest then asks the skill's price in
+ * lore as it does for any forming skill, and waits, saying so, when the reader holds too little.
+ */
+describe('reading a piece makes its skill ready to settle, for its price in lore', () => {
+  const SRC2 = (p: string) => require('node:fs').readFileSync(p, 'utf8') as string;
+  const { item } = LorePiece.write(writer(), AXE.id, WRITER, 77);
+  const reader = (lore: number) => person([], [item], { bank: { universalSkills: {}, stashTabs: [{ name: 'tab', items: [item] }], loreHeld: lore, gold: 0 } } as Partial<IPlayer>);
+
+  it('reading never hands the skill over: it is forming, and ready', () => {
+    const read = LorePiece.read(reader(0), item);
+    expect(read.bank.universalSkills[AXE.id]).toBeUndefined();
+    expect(read.skillProgress![AXE.id]).toMatchObject({ id: AXE.id, tags: AXE.tags, ready: true });
+  });
+
+  it('at a rest it settles for its price when the reader holds the lore', () => {
+    const out = WebSystem.rest(LorePiece.read(reader(100), item));
+    expect(out.emerged.map(s => s.id)).toEqual([AXE.id]);
+    expect(out.player.bank.loreHeld).toBe(100 - loreTeachPrice(0));
+    expect(out.player.skillProgress![AXE.id]).toBeUndefined();
+  });
+
+  it('with too little it waits, still ready, and the rest says so in its own words', () => {
+    const out = WebSystem.rest(LorePiece.read(reader(10), item));
+    expect(out.emerged).toEqual([]);
+    expect(out.wanting).toEqual([{ id: AXE.id, price: loreTeachPrice(0), held: 10 }]);
+    expect(out.player.bank.universalSkills[AXE.id]).toBeUndefined();
+    expect(out.player.skillProgress![AXE.id].ready).toBe(true);
+    expect(SRC2('src/logic/systems/RestDoor.ts')).toMatch(/was ready to settle, and it wants/);
+  });
+
+  it('a reader who already holds the skill gains nothing toward it', () => {
+    const holder = person([AXE], [item]);
+    expect(LorePiece.read(holder, item)).toBe(holder);
   });
 });

@@ -107,6 +107,19 @@ export const LorePiece = {
     return record ? { id: record.skillId, tags: record.tags } : null;
   },
 
+  /**
+   * A piece read, and paid for (a fair reading or better). Pedro, 2026-11-11, of forming skills: "they don't count, they don't
+   * do anything yet, and you need to have lore as a resource to actually be able to rollover a dream and learn them". So the
+   * skill it carries is not handed over: it is forming, and ready, and the next rest settles it for its price in lore
+   * (`WebSystem.rest`), or keeps it, saying so, while the reader holds too little. A reader who holds it already gains nothing.
+   */
+  read(player: IPlayer, item: IItem): IPlayer {
+    const taught = this.teaches(item);
+    if (!taught || player.bank.universalSkills?.[taught.id]) return player;
+    const next = WebSystem.accrueFromStudy(player, taught, this.rankOf(item));
+    return { ...next, skillProgress: { ...next.skillProgress, [taught.id]: { ...next.skillProgress![taught.id], ready: true } } };
+  },
+
   /** The rank index a piece was written at. */
   rankOf(item: IItem): number {
     return (item as Piece).lorePiece?.rank ?? ProgressionSystem.rankIndex(item.rank);

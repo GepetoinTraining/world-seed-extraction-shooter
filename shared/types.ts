@@ -407,6 +407,8 @@ export interface ISkillProgress {
   rank: number;
   attempts: number;
   weight: number;
+  /** The design pass, part 3: read from a written piece, so it settles at the next rest whose lore can pay its price. */
+  ready?: boolean;
 }
 
 /** One credit: who, when. */
