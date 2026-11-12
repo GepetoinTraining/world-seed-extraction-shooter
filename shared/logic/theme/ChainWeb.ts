@@ -199,6 +199,20 @@ export const ChainWeb = {
     const ownTags = new Set([...chain.tags, ...round.tags].map(t => t.tag));
     const known = (tag: string) => ownTags.has(tag) || registered(tag);
     const unknown = (tags: string[]) => tags.find(t => !known(t));
+    // CT1: every word nobody registered, each once, with what carries it. A refusal that named only the first it met
+    // was mended one word at a time, and a round was refused three times running in the live trial of 2026-11-12.
+    const strangers = (): string => {
+      const by = new Map<string, string[]>();
+      const note = (key: string, words: (string | undefined)[]) => {
+        for (const w of words) if (w && !known(w)) { const keys = by.get(w) ?? []; if (!keys.includes(key)) by.set(w, [...keys, key]); }
+      };
+      for (const m of round.materials) note(m.key, m.tags ?? []);
+      for (const s of round.stations) note(s.key, [...(s.tool ?? []), ...(s.material ?? []), ...(s.bill ?? []).map(b => b.tag)]);
+      for (const g of round.goods) note(g.key, [g.trade, ...(g.tags ?? [])]);
+      for (const g of round.gear) note(g.key, [...(g.tags ?? []), ...(g.works ?? [])]);
+      const said = [...by].map(([word, keys]) => `"${word}" (${keys.join(', ')})`);
+      return `${said.length === 1 ? 'this word is' : 'these words are'} not registered: ${said.join(', ')}. For each, use a word that is registered, or register it in "tags".`;
+    };
     for (const t of round.tags) if (!TagLaw.isCanonicalSpelling(t.tag)) return no(`"${t.tag}" is not the normal spelling of a tag.`);
 
     const taken = new Set([...thingKeys(chain, ground), ...ground.stations.map(s => s.key), ...chain.stations.map(s => s.key)]);
@@ -215,7 +229,7 @@ export const ChainWeb = {
       if (!has(RANKS, m.rank) || !has(MATERIAL_FORMS, m.form) || !has(HARVEST_VERBS, m.verb) || !has(WEIGHTS, m.weight) || !has(WORTHS, m.worth)) return no(`${m.key} is outside the bands.`);
       if (m.habitat.length === 0 || !m.habitat.every(b => has(BIOMES, b))) return no(`${m.key} lies nowhere a world has.`);
       const t = unknown(m.tags);
-      if (t) return no(`${m.key} is tagged "${t}", which is not registered.`);
+      if (t) return no(strangers());
       const look = lookRefusal(m.key, m.look);
       if (look) return no(look);
     }
@@ -224,7 +238,7 @@ export const ChainWeb = {
       if (!s.name?.trim()) return no(`station ${s.key} has no name.`);
       if (s.tool.length === 0 || s.material.length === 0) return no(`${s.key} connects no tool or no material (D25).`);
       const t = unknown([...s.tool, ...s.material, ...s.bill.map(b => b.tag)]);
-      if (t) return no(`${s.key} names "${t}", which is not registered.`);
+      if (t) return no(strangers());
     }
     const stepsOf = new Map<string, number>();
     for (const item of [...ground.things, ...chain.materials, ...chain.goods, ...chain.gear, ...round.materials, ...round.goods, ...round.gear]) stepsOf.set(item.key, rankStep(item.rank));
@@ -232,10 +246,10 @@ export const ChainWeb = {
       if (!claim(g.key)) return no(`good "${g.key}" needs its own plain key.`);
       if (!g.name?.trim()) return no(`good ${g.key} has no name.`);
       if (!has(RANKS, g.rank) || !has(WEIGHTS, g.weight)) return no(`${g.key} is outside the bands.`);
-      if (!known(g.trade)) return no(`${g.key} grows the trade "${g.trade}", which is not registered.`);
+      if (!known(g.trade)) return no(strangers());
       if (g.from.length === 0) return no(`${g.key} is made from nothing.`);
       const t = unknown(g.tags);
-      if (t) return no(`${g.key} is tagged "${t}", which is not registered.`);
+      if (t) return no(strangers());
       const look = lookRefusal(g.key, g.look);
       if (look) return no(look);
     }
@@ -243,7 +257,7 @@ export const ChainWeb = {
       if (!claim(g.key)) return no(`gear "${g.key}" needs its own plain key.`);
       if (!has(RANKS, g.rank) || !has(GEAR_KINDS, g.kind)) return no(`${g.key} is outside the bands.`);
       const t = unknown([...g.tags, ...g.works]);
-      if (t) return no(`${g.key} names "${t}", which is not registered.`);
+      if (t) return no(strangers());
       if (g.craftAt !== 'none' && g.from.length === 0) return no(`${g.key} can be made, from nothing.`);
       const look = lookRefusal(g.key, g.look);
       if (look) return no(look);
