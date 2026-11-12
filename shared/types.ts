@@ -847,6 +847,8 @@ export interface ISkillGift {
   raises?: number;
   /** The character's very first gift, which asked one circle (Pedro, 2026-11-11: "so the first first is one"). Its skill counts on in threes from there. */
   first?: boolean;
+  /** TQ: given by the voice for the first order's ask, not by the skill's circles, so the circles never count it. */
+  given?: 'voice';
 }
 
 /** TQ: one of the tutorial's five tasks, in Pedro's order. */
@@ -858,6 +860,10 @@ export interface IFirstOrderRecord {
   felled: number;
   /** When each task was done; unset, not yet. */
   done: Partial<Record<FirstTask, number>>;
+  /** The reward: one free point, given once, when the fifth is done. */
+  rewardedAt?: number;
+  /** The one ask of the voice, once answered: what was sent, the gift, and what the voice said. Unset, it waits. */
+  ask?: { message: string; answeredAt: number; giftId: string; skillId: string; line: string };
 }
 
 export interface ISkillState {

@@ -44,7 +44,7 @@ const DONE_LINES: Record<FirstTask, string> = {
   CHEST: 'First order: a chest opened.',
   MATERIAL: 'First order: material taken.',
   PERSON: 'First order: someone brought out.',
-  OUT: 'First order done. Every other world keeps what falls with you.'
+  OUT: 'First order done. A free point waits on your sheet, and the voice will hear one ask of you. Every other world keeps what falls with you.'
 };
 
 export interface IFirstOrderRow {
@@ -97,7 +97,9 @@ export const FirstOrder = {
     if (task === 'OUT' && !FIRST_TASKS.filter(t => t !== 'OUT').every(t => this.isDone(record, t))) return unchanged;
     const next: IFirstOrderRecord = { ...record, done: { ...record.done, [task]: at } };
     if (task !== 'OUT') return { player: { ...player, firstOrder: next }, ticked: true, sealed: false };
-    return { player: { ...player, firstOrder: next, tutorialSealedAt: at }, ticked: true, sealed: true };
+    // Call 7: the reward, once: one free point, placed through the door points already use, and the ask (`VoiceGift`)
+    const rewarded: IFirstOrderRecord = { ...next, rewardedAt: at };
+    return { player: { ...player, firstOrder: rewarded, tutorialSealedAt: at, attributePoints: (player.attributePoints ?? 0) + 1 }, ticked: true, sealed: true };
   },
 
   /** The list the field shows, in his order. */

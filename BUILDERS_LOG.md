@@ -553,6 +553,8 @@ What one blow of a boss takes of a person of its rank, by the size of the body i
   - **The lane.** `FirstOrderLane.pieces(map, context, person)` is laid by the world store's `lay` hook before the records, so the chest and population records hold over it. Its ids start `fo_<hash of the person>`; its chest ends `_chest` so the chest record keeps it. A bar that opens the tutorial must give its card a start of now (`Tutorial.card(now, now)`): a start of 0 folds some 49,000 cycles of population and takes most of a minute.
   - **Offering it.** Read worlds through `Tutorial.offered(cards, player)` wherever a list is shown or a world is chosen; the door into a world refuses what it leaves out.
   - **A closed window.** `PlayerPersistence.persistable` keeps `leftDive` while a session is open; `LeftDive.settle` runs in `StartupSequence` right after the migrations. A session carries `deathPenalty` (from the card, through the DIVE change) and `droppedAt` (from the drop).
+  - **The reward.** The point lands in `FirstOrder.tick` at the fifth. The ask is `VoiceGiftDoor.ask(text, playerPort)`: `VoiceGift.askOf` builds what the voice hears, `judge` holds the answer, `give` lands it with the law's size (`valueOf`, `VOICE_GIFT_COST`). The door kind is `kami_gift` (Haiku); a new kind needs `door.ts`, `claude.ts` (model, effort, no-fallback list) and a route. A bar stubs `IntelligenceClient.askGift`.
+  - **Gifts the circles do not count.** A gift marked `given` stands beside the circles' ones. Count a skill's gifts for what the circles owe or what lore a gift asks through `CircleSystem.circleGiftsOf`; `giftsOf` is every gift, for what a skill has and what acts.
 
 ## After this pass
 

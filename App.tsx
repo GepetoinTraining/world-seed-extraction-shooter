@@ -7,6 +7,7 @@ import { HubCanvas } from './src/entities/hub/HubCanvas';
 import { MissionControl } from './src/components/MissionControl';
 import { ReconView, closeRecon } from './src/components/ReconView';
 import { MaintenanceNotice } from './src/components/MaintenanceNotice';
+import { FirstOrderReward } from './src/components/FirstOrderReward';
 import { PlayerHub } from './src/components/PlayerHub';
 import { IdentityGate } from './src/components/IdentityGate';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -365,6 +366,8 @@ const App: React.FC = () => {
       <ErrorBoundary>
         <TerminalBar devMode={devMode} onDevMode={setDevMode} />
         <MaintenanceNotice />
+        {/* TQ: the first order's reward, at home: the free point waiting, and one ask of the voice */}
+        <FirstOrderReward />
         <div style={{ flex: 1, minHeight: 0, overflow: view === 'HUB' || view === 'RECON' || (view === 'TUNING' && !devMode) ? 'hidden' : 'auto' }}>
           {(view === 'HUB' || (view === 'TUNING' && !devMode)) && <HubCanvas />}
           {(view === 'MISSIONS' || (view === 'RECON' && !currentMap)) && <MissionControl />}

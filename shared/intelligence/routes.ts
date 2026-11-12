@@ -5,8 +5,11 @@
  */
 import { IntelligenceDoor, TALK_MESSAGE_LIMIT, type IDoorMessage } from './door';
 import { SETTINGS, type DoorSetting } from './setting';
-import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildKamiSetRequest, buildKamiTalkRequest, buildBasesRequest, buildLootRequest, buildNpcGoalRequest, buildNpcMeetRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
+import { buildBargainRequest, buildCreationRequest, buildKamiPersonaRequest, buildVoiceGiftRequest, buildKamiSetRequest, buildKamiTalkRequest, buildBasesRequest, buildLootRequest, buildNpcGoalRequest, buildNpcMeetRequest, buildNpcTalkRequest, buildRestRequest, buildTalkRequest, buildThemeRequest, buildWorldPassRequest, isWorldPass, WINDOW_REQUESTS } from './prompts';
 import { askChainInParts } from './parts';
+
+/** TQ: the first order's ask is one short message (Pedro: "one short tweet"). */
+export const VOICE_GIFT_CHARACTERS = 280;
 
 /** An answer: a JSON body, or lines written as they come, ending with the last one. */
 export type DoorAnswer =
@@ -15,7 +18,7 @@ export type DoorAnswer =
 
 const json = (status: number, value: unknown): DoorAnswer => ({ status, json: value });
 
-/** `path` is what follows the mount: /status, /machine, /options, /talk, /theme, /world/pass, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /npc/talk, /npc/goal, /npc/bargain, /npc/meet, /rest/file, /rest/collect, /window/file, /window/collect, and the voice's /machine/try, /local/choose, /local/pull, /key, /auto. */
+/** `path` is what follows the mount: /status, /machine, /options, /talk, /theme, /world/pass, /creation, /chain, /kami/persona, /kami/talk, /kami/set, /kami/gift, /npc/talk, /npc/goal, /npc/bargain, /npc/meet, /rest/file, /rest/collect, /window/file, /window/collect, and the voice's /machine/try, /local/choose, /local/pull, /key, /auto. */
 export async function routeDoor(door: IntelligenceDoor, method: string, path: string, body: any, given?: DoorSetting): Promise<DoorAnswer> {
   if (path === '/status') return json(200, await door.status());
   const setting = given ?? SETTINGS.get(door);
@@ -91,6 +94,12 @@ export async function routeDoor(door: IntelligenceDoor, method: string, path: st
       };
     case '/kami/set':
       return json(200, await door.ask(buildKamiSetRequest(conversation, body.ask ?? {}, body.persona)));
+    case '/kami/gift': {
+      // TQ: one short message, at most a tweet; nothing longer is carried
+      const said = String(body.ask?.said ?? '');
+      if (!said.trim() || said.length > VOICE_GIFT_CHARACTERS) return json(200, { status: 'REFUSED', reason: `One short message: ${VOICE_GIFT_CHARACTERS} characters at most.` });
+      return json(200, await door.ask(buildVoiceGiftRequest(body.ask ?? {})));
+    }
     case '/kami/persona':
       return json(200, await door.ask(buildKamiPersonaRequest(String(body.seed ?? ''))));
     case '/npc/talk':

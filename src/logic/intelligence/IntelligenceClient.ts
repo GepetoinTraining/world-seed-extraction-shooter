@@ -45,6 +45,8 @@ export const IntelligenceClient = {
   grantSkills: <T>(ask: unknown) => post<T>('/creation', { ask }),
   setKami: <T>(messages: IDoorMessage[], ask: unknown, persona?: string) => post<T>('/kami/set', { messages, ask, persona }),
   writeKamiPersona: (seed: string) => post('/kami/persona', { seed }),
+  /** TQ: the first order's one ask of the voice. A person waits on it. */
+  askGift: <T>(ask: unknown) => post<T>('/kami/gift', { ask }),
   resolveChain: <T>(ask: unknown) => post<T>('/chain', { ask }),
   writeLoot: <T>(ask: unknown) => post<T>('/loot', { ask }),
   writeBases: <T>(ask: unknown) => post<T>('/world/bases', { ask }),

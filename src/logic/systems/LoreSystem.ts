@@ -137,7 +137,7 @@ export class LoreSystem {
 
   /** A skill's next gift. Rarer costs more, and so does each one after the first. */
   static giftPrice(player: IPlayer, skill: ISkillState, extra = 0): number {
-    const held = CircleSystem.giftsOf(player, skill.id).length + extra;
+    const held = CircleSystem.circleGiftsOf(player, skill.id).length + extra;
     return Math.round(LORE_GIFT_PRICE * growth(ProgressionSystem.skillRarity(skill)) * (1 + held));
   }
 

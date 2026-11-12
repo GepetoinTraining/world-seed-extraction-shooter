@@ -79,9 +79,9 @@ export class CircleSystem {
     return { ok: true, player: next, owed: this.owedTo(next, { ...skill, circles }) > this.owedTo(player, skill) };
   }
 
-  /** Does this character hold any gift at all? A save from before that does is never made cheaper. */
+  /** Does this character hold any gift the circles gave? A save from before that does is never made cheaper. The voice's (TQ) is not one. */
   static holdsAGift(player: IPlayer): boolean {
-    return Object.values(player.skillGifts ?? {}).some(gifts => gifts.length > 0);
+    return Object.values(player.skillGifts ?? {}).some(gifts => gifts.some(g => !g.given));
   }
 
   /**
@@ -105,10 +105,15 @@ export class CircleSystem {
     return player.skillGifts?.[skillId] ?? [];
   }
 
+  /** TQ: what a skill's circles gave, which is what they count: a gift from the voice stands beside them and is not one. */
+  static circleGiftsOf(player: IPlayer, skillId: string): ISkillGift[] {
+    return this.giftsOf(player, skillId).filter(g => !g.given);
+  }
+
   /** A first gift at one counts every later one on in threes from it: one, four, seven; any other skill three, six, nine. */
   private static owedTo(player: IPlayer, skill: ISkillState): number {
     const ahead = CIRCLES_FOR_A_GIFT - this.firstAsks(player, skill.id);
-    return Math.max(0, Math.floor((this.circlesOf(skill) + ahead) / CIRCLES_FOR_A_GIFT) - this.giftsOf(player, skill.id).length);
+    return Math.max(0, Math.floor((this.circlesOf(skill) + ahead) / CIRCLES_FOR_A_GIFT) - this.circleGiftsOf(player, skill.id).length);
   }
 
   /** What the rest door asks about. It says what the skill is, and nothing else about the person. */
@@ -176,7 +181,7 @@ export class CircleSystem {
       const gift: ISkillGift = g.kind === 'active'
         ? { id, kind: 'active', name: g.name, blurb: g.blurb, elements: g.elements, delivery: g.delivery, effect: g.effect, cost: g.cost }
         : { id, kind: 'passive', name: g.name, blurb: g.blurb, stat: g.stat, value: this.passiveValue(player.id, id, g, skill) };
-      skillGifts[g.skill] = [...held, g.skill === firstSkill && held.length === 0 ? { ...gift, first: true } : gift];
+      skillGifts[g.skill] = [...held, g.skill === firstSkill && held.every(h => h.given) ? { ...gift, first: true } : gift];
     }
     return this.withPassives({ ...player, skillGifts });
   }
