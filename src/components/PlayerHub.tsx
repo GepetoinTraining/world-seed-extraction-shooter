@@ -8,7 +8,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { ATTRIBUTE_GROUPS as GROUPS, GROUP_ORDER, GROUP_WORDS, AttributeGroup, LEVELS_PER_CIRCLE, POINTS_PER_LEVEL, ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
-import { StatSystem } from '../../shared/logic/systems/StatSystem';
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../logic/systems/CircleSystem';
 import { VendorSystem } from '../logic/systems/VendorSystem';
 import { InventorySystem } from '../../shared/entities/player/systems/InventorySystem';
@@ -280,7 +279,7 @@ export const VaultGrid: React.FC<{
 
 export const StashTab: React.FC = () => {
   const { player, toggleCarry, trashItem, arrangeStash } = usePlayerStore();
-  const { sellToVendor } = useHubStore();
+  const { sellToVendor, offerFor } = useHubStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<StashFilter>({ text: '', kind: 'ALL' });
   const stash = player.bank.stashTabs[0]?.items || [];
@@ -359,10 +358,11 @@ export const StashTab: React.FC = () => {
                 ) : (
                   <ArmedButton
                     tone="proof"
-                    confirmLabel={`SELL FOR ${StatSystem.vendorOffer(selected.value, player.attributes)}G: SURE?`}
+                    confirmLabel={`SELL FOR ${offerFor(selected)}G: SURE?`}
                     onConfirm={() => { void sellToVendor(selected.id); setSelectedId(null); }}
                   >
-                    SELL {StatSystem.vendorOffer(selected.value, player.attributes)}G
+                    {/* PR: what the counter pays, the same number it pays */}
+                    SELL {offerFor(selected)}G
                   </ArmedButton>
                 )}
                 <ArmedButton

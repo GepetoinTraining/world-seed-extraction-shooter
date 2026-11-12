@@ -33,6 +33,7 @@ import {
 } from '../../../shared/entities/hub/room';
 import { ITemplate, ITemplateSheet, defaultSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from '../../../shared/entities/hub/template';
 import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
+import { KnownWorth } from '../../../shared/logic/economy/KnownWorth';
 import { MintRegistry } from '../../../shared/logic/economy/MintRegistry';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { SHELF } from '../../../shared/logic/theme/shelf';
@@ -726,8 +727,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   offerFor: (item, npcId = COUNTER_NPC) => {
     const offer = StatSystem.vendorOffer(item.value, pc.view().player.attributes);
     const asked = Math.ceil(offer * VendorSystem.choiceFactor(get().vendors[npcId], item.universalDefinitionId, worldDay()));
-    // Bought from a bargain bin: the counter pays no more than the deal did, or a bin and a counter would print coin for anyone standing between them
-    return item.binPrice !== undefined ? Math.min(asked, item.binPrice) : asked;
+    // Bought over any shelf, or from a bargain bin: the counter pays no more than it cost, or a shelf and a counter would print coin for anyone standing between them (PR12)
+    return Math.min(asked, item.paid ?? Infinity, item.binPrice ?? Infinity);
   },
 
   closeWeeks: async (day) => {
@@ -1071,7 +1072,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     if (player.bank.gold < price) return null;
     const today = worldDay();
     const taken = VendorSystem.takeOwn(VendorSystem.normal(vendors[traderId]), row.item.id);
-    const boughtItem = row.deal ? { ...row.item, binPrice: price } : row.item;
+    const boughtItem = { ...(row.deal ? { ...row.item, binPrice: price } : row.item), paid: price };
     pc.apply({ kind: 'GOLD', delta: -price }, { kind: 'STASH_ADD', items: [boughtItem] });
     // A master has a purse of their own (D115): what they take is theirs
     const master = get().craftsmen.find(c => c.id === traderId);
@@ -2804,7 +2805,8 @@ export const useHubStore = create<HubState>((set, get) => ({
         ...WebBank.current().materials.filter(m => m.shelfPrice).map(material => {
           const rng = Rng.fromKey(`${hubId}:shop:${week}:web_material:${material.id}`);
           const item = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[material.id] as any, rng, { origin: 'PURCHASE' });
-          return { id: `listing_web_${material.id}`, item, price: material.shelfPrice!, vendorId: 'vendor_sys', stock: rng.int(3, 10) };
+          // PR: what its batch asked, and what is known of it once its doing is written, as its worth is
+          return { id: `listing_web_${material.id}`, item, price: KnownWorth.of(material.shelfPrice!, item.composition?.materials[0]?.known), vendorId: 'vendor_sys', stock: rng.int(3, 10) };
         }),
         ...SHELF.consumables.map((defId, i) => {
           const rng = Rng.fromKey(`${hubId}:shop:${week}:consumable:${i}`);
@@ -2888,12 +2890,17 @@ export const useHubStore = create<HubState>((set, get) => ({
     const unit: IItem = {
       ...listing.item,
       id: `itm_${unitRng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${unitRng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
-      composition: CompositionSystem.root({ id: listing.item.universalDefinitionId, name: listing.item.name }, 'PURCHASE')
+      // PR: bought, it is what it was when it went on the shelf, known or not
+      composition: CompositionSystem.root({ id: listing.item.universalDefinitionId, name: listing.item.name }, 'PURCHASE', listing.item.composition?.materials[0]?.known ?? null)
     };
     // What the vendor bought in is the same piece going out: it keeps its id and its story
-    const purchasedItem = listing.deal
-      ? { ...listing.item, binPrice: price, composition: unit.composition }
-      : listing.held ? listing.item : unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit;
+    const purchasedItem = {
+      ...(listing.deal
+        ? { ...listing.item, binPrice: price, composition: unit.composition }
+        : listing.held ? listing.item : unit.type === ItemType.GEAR ? MintRegistry.claim(unit) : unit),
+      // PR12: what it cost, which no counter pays more than
+      paid: price
+    };
 
     pc.apply({ kind: 'GOLD', delta: -price }, { kind: 'STASH_ADD', items: [purchasedItem] });
     // Wave 5.1: conservation — the system vendor's take belongs to the hub

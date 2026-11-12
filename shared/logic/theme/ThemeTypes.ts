@@ -76,6 +76,11 @@ export const CONSUMABLE_KINDS = ['heal', 'scroll', 'energy'] as const;
 export const MATERIAL_RESTORES = ['none', 'energy'] as const;
 
 export const STAT_BANDS = ['minor', 'moderate', 'major'] as const;
+/**
+ * A band's size as a share of one ruler (BALANCE_RUN 1.4): minor a twelfth, moderate a sixth, major a third; six moderates
+ * are one ruler. The piece law sizes an affix by it, and what is known of a thing is worth the same share (PR, KnownWorth).
+ */
+export const BAND_SHARE: Record<typeof STAT_BANDS[number], number> = { minor: 1 / 12, moderate: 1 / 6, major: 1 / 3 };
 
 /** The catalog's vocabulary for what an ability is (Layer 1). */
 export const DELIVERIES = ['self', 'touch', 'melee', 'ranged', 'area', 'aura'] as const;

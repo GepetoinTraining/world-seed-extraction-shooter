@@ -13,6 +13,7 @@ import { SeededRNG, Rng } from '../../logic/rng/DeterministicRNG';
 import { ResourceDef } from './data/resourceDefinitions';
 import { MaterialPropertyType } from '../economy/types';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
+import { KnownWorth } from '../../logic/economy/KnownWorth';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { cartBearsAt, cartFolded, cartNumbers, rankStep } from '../../logic/theme/ThemeFormula';
 
@@ -130,7 +131,8 @@ export class ItemFactory {
       rarity,
       quality,
       level: this.getLevelForRank(at),
-      value: Math.max(1, Math.floor(power * 2)),
+      // PR: twice its power, and once read its lines as well
+      value: PieceLaw.worthOf({ itemPower: power, rank: at, quality, affixes, whose }, isIdentified),
       itemPower: power,
       pieceLaw: PieceLaw.VERSION,
       ...(whose ? { whose } : {}),
@@ -384,6 +386,15 @@ export class ItemFactory {
   }
 
   /**
+   * A piece read (PR, call 4): its lines are known now, so a found piece of the law that counts them is worth them from
+   * here on. Anything else is read and worth what it was.
+   */
+  static read(item: IItem): IItem {
+    const counted = item.type === ItemType.GEAR && (item.pieceLaw ?? 0) >= 2;
+    return { ...item, isIdentified: true, ...(counted ? { value: PieceLaw.worthOf(item, true) } : {}) };
+  }
+
+  /**
    * Wave 2.2: mint a RESOURCE item from its definition (not random gear).
    * Weight derives from material DENSITY (primordial: properties drive physics);
    * the def's hand-set weight is the fallback.
@@ -407,6 +418,8 @@ export class ItemFactory {
     // The raw materials leg (D26): what a step added, and what its components
     // carried, ride the good and name it. A worked good says it was worked.
     const worked = opts?.affixes ?? [];
+    // PR: what this material does, if it has been written, is worth its band's share more, and its line says so for good
+    const known = KnownWorth.bandOf(def.id) ?? null;
 
     const item: IItem = {
       id: `itm_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`,
@@ -421,7 +434,7 @@ export class ItemFactory {
       rarity: def.rarity ?? Rarity.COMMON,
       quality,
       level: 1,
-      value: def.worth ?? CompositionSystem.baseMaterialValue(def, quality),
+      value: KnownWorth.of(def.worth ?? CompositionSystem.baseMaterialValue(def, quality), known),
       itemPower: 0,
       tags: [...(def.tags ?? [])],
       affixes: worked.length > 0 ? worked : dreamAffix ? [dreamAffix] : [],
@@ -433,7 +446,7 @@ export class ItemFactory {
       history: { dropDate: Date.now(), killCount: 0 },
       isIdentified: true,
       ...((def as { casts?: string }).casts ? { casts: (def as { casts?: string }).casts } : {}),
-      composition: CompositionSystem.root({ id: def.id, name: def.name }, opts?.origin ?? 'HARVEST')
+      composition: CompositionSystem.root({ id: def.id, name: def.name }, opts?.origin ?? 'HARVEST', known)
     };
     return item;
   }

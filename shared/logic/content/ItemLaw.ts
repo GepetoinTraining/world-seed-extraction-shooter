@@ -96,7 +96,8 @@ export const ItemLaw = {
         set('level', LEVEL[it.rank] ?? 1);
         const power = PieceLaw.power(it.rank, out.quality, base.tags.includes('tool'));
         set('itemPower', power);
-        set('value', Math.max(1, Math.floor(power * 2)));
+        // PR: a read piece of the law that counts its lines is worth them; an older one, its power alone
+        set('value', PieceLaw.worthOf({ ...out, itemPower: power }, it.pieceLaw >= 2 && it.isIdentified !== false));
         set('rarity', PieceLaw.wordOf({ affixes: it.affixes ?? [], whose: it.whose }));
         return { ok: true, checked: true, item: out, changes };
       }
