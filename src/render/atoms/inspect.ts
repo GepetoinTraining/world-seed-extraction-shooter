@@ -10,6 +10,7 @@ import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUT
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
+import { Spread, SpreadBook, formOf } from '../../../shared/entities/world/Spread';
 import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { QUALITY_NAMES, qualityBand } from '../../../shared/render/atoms/atoms';
@@ -93,6 +94,9 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   }
 
   const rows: [string, string][] = [];
+  // ML: a variant's marks are plain to see, known or not, and said in words as well as drawn
+  const spread = SpreadBook.of(e.definitionId);
+  if (spread.base && spread.marks.length > 0) rows.push(['Looks', `Like any ${formOf(def) ?? 'other of its kind'}, but with ${Spread.said(spread.marks)}`]);
   if (level <= 0) rows.push(['Known', 'Nothing yet. Study it to learn']);
   else {
     rows.push(['Rank', String(def.rank)]);

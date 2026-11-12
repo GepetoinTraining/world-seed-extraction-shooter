@@ -13,6 +13,7 @@ import { hash2, layerSeed, uniformNoise, valueNoise } from '../../logic/rng/nois
 import { PieceLaw } from '../../logic/theme/PieceLaw';
 import { deathCostsNothing } from '../../logic/systems/DeathCost';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { Spread } from './Spread';
 import { isLooseStone } from '../item/Throwable';
 import { Director, IDirectorPool, IDirectorRecord } from './Director';
 import { Leaders, isRosterElite } from './Leaders';
@@ -66,8 +67,12 @@ export interface IGenerationContext {
  *                  among its own world's bases, its pack's and what its minting added (`MintAdditions`), and its land
  *                  holds the materials its minting added. A world standing before finds as it did. Where the chests, the
  *                  ruins and the packs stand is laid as at 5.
+ *   7              the spread (ML, `SPREAD_FROM_GROUND`): where the land lays a form (a tree, a vein, a grain), any
+ *                  material of that form its land holds may stand, its pack's or what its minting added, rolled from the
+ *                  seed and the place and weighed by the formula, so the forest draws every timber its land holds.
+ *                  Where everything stands, and in what order it is laid, is as at 6.
  */
-export const GROUND_VERSION = 6;
+export const GROUND_VERSION = 7;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
 const LOOSE_STONE_CHANCE = 0.5;
 const LOOSE_STONES_TOGETHER = 2;
@@ -694,19 +699,23 @@ export class WorldGenerator {
       });
     };
 
+    // ML: from its ground on, a place the land lays as a form stands as any of that form its land holds, on its own roll
+    const spreads = Spread.spreads(ctx.groundVersion);
+    const spread = (suffix: string, laid: any) => (spreads ? Spread.pick(seed, id(suffix), laid, pool, rank) : laid);
+
     const tree = pool.find(isTimber);
     const woodland = valueNoise(layerSeed(seed, 'forest:v2'), qx, qy, FOREST_PERIOD);
     if (tree && woodland > 0.5) {
       const count = rng.int(9, 19);
       for (let i = 0; i < count; i++) {
         const [tx, ty] = tile();
-        resource(`t${i}`, tree, tx, ty);
+        resource(`t${i}`, spread(`t${i}`, tree), tx, ty);
       }
     }
     const scatter = rng.int(1, 5);
     for (let i = 0; i < scatter && pool.length > 0; i++) {
       const [tx, ty] = tile();
-      resource(`r${i}`, rng.pick(pool), tx, ty);
+      resource(`r${i}`, spread(`r${i}`, rng.pick(pool)), tx, ty);
     }
     // A plant that refills energy stands outside that table, on a roll of its own, so a
     // pack without one generates exactly what it always did.

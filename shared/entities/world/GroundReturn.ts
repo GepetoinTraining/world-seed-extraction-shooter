@@ -31,6 +31,7 @@ import { VectorNamespace, VectorStore } from '../data/VectorStore';
 import { groundReturnTurns } from '../../logic/theme/ThemeFormula';
 import { QUALITY_SPAN } from '../../logic/systems/PairCraft';
 import { Rng } from '../../logic/rng/DeterministicRNG';
+import { Spread } from './Spread';
 
 /** One place taken: the turn its clock started, what is left of it, and what it was then. */
 export interface ITaken {
@@ -118,12 +119,18 @@ export class GroundReturn {
     }
   }
 
-  /** What comes back to a place on a turn: which kind, how much, and its quality. */
-  static rolled(seed: string, placeId: string, biome: string, turn: number, context: Pick<IGenerationContext, 'resourceDefinitions'>, was: string): { kind: string; uses: number; quality: number } {
+  /**
+   * What comes back to a place on a turn: which kind, how much, and its quality. ML: from the spread's ground, a tree or
+   * a scattered find is its role's pick and then the spread's, as the land lays it, keyed by the turn it came back in.
+   */
+  static rolled(seed: string, placeId: string, biome: string, turn: number, context: Pick<IGenerationContext, 'resourceDefinitions'> & { groundVersion?: number },
+    was: string, landRank: UniversalRank | string = UniversalRank.F): { kind: string; uses: number; quality: number } {
     const role = this.roleOf(placeId) ?? 'scatter';
     const pool = this.poolOf(role, biome, context);
     const rng = Rng.fromKey(`${seed}:ground:v1:${placeId}:${turn}`);
-    const def = pool.length > 0 ? rng.pick(pool) : definitionOf(was);
+    const laid = pool.length > 0 ? rng.pick(pool) : definitionOf(was);
+    const spreads = !!laid && Spread.spreads(context.groundVersion) && (role === 'tree' || role === 'scatter');
+    const def = spreads ? Spread.pick(seed, placeId, laid!, this.poolOf('scatter', biome, context), landRank, turn) : laid;
     const full = Math.max(1, def?.uses ?? 1);
     const low = Math.max(1, Math.ceil(full * (1 - HOW_MUCH_EITHER_WAY)));
     const high = Math.max(low, full + Math.floor(full * HOW_MUCH_EITHER_WAY));
@@ -137,7 +144,7 @@ export class GroundReturn {
    * of what it was, saying when it comes back. Its wait up: what came back on that turn, whenever it is read.
    */
   static standing(seed: string, place: IWorldEntity, biome: string, record: IGroundRecord, turn: number,
-    context: Pick<IGenerationContext, 'resourceDefinitions'>, startsAt?: (turn: number) => number): IWorldEntity {
+    context: Pick<IGenerationContext, 'resourceDefinitions'> & { groundVersion?: number }, startsAt?: (turn: number) => number, landRank?: UniversalRank | string): IWorldEntity {
     const taken = record.taken[place.id];
     if (!taken) return place;
     const { regrowAt: _regrowAt, returning: _returning, quality: _quality, ...rest } = place;
@@ -149,16 +156,16 @@ export class GroundReturn {
         returning: { turn: due, ...(startsAt ? { at: startsAt(due) } : {}) }
       };
     }
-    const back = this.rolled(seed, place.id, biome, due, context, taken.kind);
+    const back = this.rolled(seed, place.id, biome, due, context, taken.kind, landRank);
     return { ...rest, definitionId: back.kind, rank: (definitionOf(back.kind)?.rank as UniversalRank) ?? place.rank, usesRemaining: back.uses, quality: back.quality };
   }
 
   /** Lays the record over a chunk as it is built. Places it does not name are left exactly as laid. */
   static layOver(seed: string, chunk: IChunk, record: IGroundRecord, turn: number,
-    context: Pick<IGenerationContext, 'resourceDefinitions'>, startsAt?: (turn: number) => number): void {
+    context: Pick<IGenerationContext, 'resourceDefinitions'> & { groundVersion?: number }, startsAt?: (turn: number) => number): void {
     if (Object.keys(record.taken).length === 0) return;
     if (!chunk.entities.some(e => record.taken[e.id])) return;
-    chunk.entities = chunk.entities.map(e => (record.taken[e.id] ? this.standing(seed, e, chunk.biome, record, turn, context, startsAt) : e));
+    chunk.entities = chunk.entities.map(e => (record.taken[e.id] ? this.standing(seed, e, chunk.biome, record, turn, context, startsAt, chunk.difficulty) : e));
   }
 
   /** Two readings of one world's ground, made one (online play): the later taking stands, in either order. */

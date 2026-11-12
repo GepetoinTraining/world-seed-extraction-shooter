@@ -325,6 +325,23 @@ export const GROUND_RETURN_STEP = 4;
 export const groundReturnTurns = (hardness: number): number =>
   1 + Math.floor(Math.log(Math.max(1, hardness)) / Math.log(GROUND_RETURN_STEP) + 1e-9);
 
+/**
+ * THE SPREAD (ML, Pedro, 2026-11-12: "we need to add the spread of materials inside every world"). Where a land lays a
+ * form (a tree, a vein, a grain), every material of that form it holds may stand there, each as often as this weight
+ * says against the others: a rank further from the ground's own counts for as much less as a creature does
+ * (`WorldGenerator.pickSpawn`), and each step of worth above common for a golden part less. A common thing of the
+ * ground's rank weighs one. No kind is ever weighed to nothing, so how many a land holds has no ceiling.
+ * Both falloffs are the coordinator's calls (ML2), open to strike.
+ */
+export const SPREAD_RANK_FALLOFF = 0.35;
+export const SPREAD_WORTH_FALLOFF = 1 / (((1 + Math.sqrt(5)) / 2) ** 2);
+const WORTH_LADDER = ['COMMON', 'UNCOMMON', 'MAGICAL', 'RARE', 'EPIC', 'LEGENDARY', 'ARTIFACT'];
+export const spreadWeight = (rank: ThemeRank | UniversalRank | string | undefined, rarity: string | undefined, landRank: ThemeRank | UniversalRank | string): number => {
+  const ranks = Math.abs(rankStep((rank ?? 'F') as ThemeRank) - rankStep(landRank as ThemeRank));
+  const worth = Math.max(0, WORTH_LADDER.indexOf(String(rarity ?? 'COMMON')));
+  return Math.pow(SPREAD_RANK_FALLOFF, ranks) * Math.pow(SPREAD_WORTH_FALLOFF, worth);
+};
+
 export const goodNumbers = (g: { rank: ThemeRank; weight: keyof typeof WEIGHT_KG }) => ({
   weight: WEIGHT_KG[g.weight],
   dimensions: FOOTPRINT[g.weight],
