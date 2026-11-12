@@ -1,3 +1,4 @@
+import { NOISE_SCALE } from '../../../../shared/logic/systems/FightNumbers';
 import { MonsterMind } from '../../../logic/systems/MonsterMind';
 import { GenreType } from '../../../../shared/types';
 import { IChunk, IMap, EntityType, IWorldEntity } from '../../../../shared/entities/world/types';
@@ -20,7 +21,6 @@ import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry'
 // World scale: 1 tile = 20px. All distances below are in PIXELS.
 const PX = 20;
 /** How much noise reduction it takes to halve the distance you are noticed from. A guess until Wave 12. */
-const NOISE_SCALE = 20;
 /** R4: nothing lands without a wind-up you can see. Guesses until Wave 12. */
 const STRIKE_WINDUP_MS = 450;
 const ATTACK_COOLDOWN_MS = 2000;

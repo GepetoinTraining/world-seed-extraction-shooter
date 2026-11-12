@@ -86,7 +86,8 @@ export class DreamingSystem {
       type: e.type,
       allowedTags: [...e.allowedTags],
       statModifiers: { ...(e.statModifiers ?? {}) },
-      tier: e.tier
+      tier: e.tier,
+      ...(e.gives ? { gives: e.gives.map(g => ({ ...g })) } : {})
     };
   }
 

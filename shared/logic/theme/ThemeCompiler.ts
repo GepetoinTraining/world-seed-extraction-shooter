@@ -298,14 +298,16 @@ export function compileTheme(pack: IThemePack, known?: Map<string, string>): ICo
         runId: `theme_${sid}_names`, kind: 'NAMES', model: pack.model, ranAt: pack.writtenAt,
         names: pack.affixes.map(a => ({
           id: aid(a.key), name: a.name, type: a.type, theme: a.biome || 'GLOBAL',
-          allowedTags: a.allowedTags, tier: a.tier, themeId: pack.themeId
+          allowedTags: a.allowedTags, tier: a.tier ?? 1, themeId: pack.themeId
         }))
       },
       {
         runId: `theme_${sid}_effects`, kind: 'EFFECTS', model: pack.model, ranAt: pack.writtenAt,
         effects: pack.affixes.map(a => ({
           id: aid(a.key),
-          statModifiers: Object.fromEntries(a.gives.map(g => [g.stat, affixRange(g.stat, g.band, a.tier, g.downside)]))
+          // The old law's ranges stay for standing worlds; the rarity rescale sizes a piece from the words
+          statModifiers: Object.fromEntries(a.gives.map(g => [g.stat, affixRange(g.stat, g.band, a.tier ?? 1, g.downside)])),
+          gives: a.gives.map(g => ({ stat: g.stat, band: g.band, downside: g.downside }))
         }))
       }
     ];

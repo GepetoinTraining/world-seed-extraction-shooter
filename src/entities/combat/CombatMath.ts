@@ -16,23 +16,20 @@ import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
 import { IAttributes, IEquipmentState, IItem } from '../../../shared/types';
 import { IMobDefinition } from '../../../shared/entities/mob/types';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { BASE_CRIT_MULTIPLIER, BASE_GLANCE, BLOCK_FACTOR, GLANCE_FACTOR, RATING_KNEE, UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { isThrowable, thrownDamage } from '../../../shared/entities/item/Throwable';
 
 export const UNARMED_DAMAGE = 5;
-export const UNARMED_SHOTS_PER_SEC = 1.0;
+export { UNARMED_SHOTS_PER_SEC };
 export const MAX_MITIGATION = 0.6;
 /** Layer 0's odds. Guesses until Wave 12. */
-const BASE_GLANCE = 0.2;
-const GLANCE_FACTOR = 0.5;
-const BASE_CRIT_MULTIPLIER = 1.5;
-const BLOCK_FACTOR = 0.5;
 
 export interface IOutgoingHit { damage: number; crit: boolean; glance: boolean; poison: number }
 export interface IIncomingHit { damage: number; dodged: boolean; blocked: boolean }
 
 /** A rating's pull, approaching but never reaching one, and able to go negative. */
-const curve = (rating: number): number => rating / (Math.abs(rating) + 100);
+const curve = (rating: number): number => rating / (Math.abs(rating) + RATING_KNEE);
 
 export class CombatMath {
 

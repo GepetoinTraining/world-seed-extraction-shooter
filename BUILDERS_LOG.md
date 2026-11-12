@@ -411,6 +411,19 @@ Pedro found these in play on 2026-10-31. **All three are fixed at b5cd6ea; the d
 - **A theme-compiled base knows its noun (`ItemDefinition.kind`); the test fixture's hand-written bases do not.** A bar about what a kind carries must find a base by `kind` and install the shipped theme (`installShippedThemes()`), or it reads a fixture base and gets nothing. A hand base is moved from the rank it was written at by the same law.
 - **In the hidden window the menu has not installed the themes.** A page script that mints must `await mod('/src/logic/theme/installOnLoad.ts')` first, or every pick of a base is empty.
 
+- **The rarity rescale, part 2, the affix law (2026-11-12).** `ItemFactory.foundAffixes` is the one place a found piece's properties are drawn: `PieceLaw.rollDepth` (chance `PieceLaw.depthChance(odds)` a step, 0.4 at plain odds, stopping at one until the unlock), `PieceLaw.ladder`, then picks from the pool by the side `statSide` gives the affix's one stat (`PieceLaw.wordsOf`), a stat once a piece, sized by `PieceLaw.affixStats`. An affix's words (`gives`) now ride the bank's EFFECTS batch onto `IBankedAffix` and `AffixDefinition`, so a piece is sized from words; the old ranges stay for standing worlds. The find's law (`IFoundLaw`: odds, pairsOpen, and depth, band, quality for a set piece) is the last argument of `createFromTemplate` and rides `createItem`'s options. `LootTable.generateLoot` and `generateChestLoot` take the finder's luck after the ground version.
+- **The ruler and its bar.** `PieceLaw.reference(stat, rank)` is each stat's plain reference by its own reader, and `RULER_FACTOR` (0.2181) is solved, not chosen, by `tests/kit.measure.test.ts`: it bisects the factor so the expected epic kit's figure (holds times deals a second over a plain kit, through `CombatMath` and `StatSystem`) meets x 4 on the geometric mean of ranks F, C and S, prints `[KIT]` lines, and fails if the law's factor drifts 1% from the solve or a rank leaves x 3.84 to x 4.33. When the fight's rebalance moves a body, read the `[KIT]` line and set the new factor. Its third test checks each fight reference against the real reader by a small lift.
+
+| A blade, quality 0 | F | C | S |
+|---|---|---|---|
+| Common: power, blow | 50, 10 | 400, 80 | 3,200, 640 |
+| Common: its own lines | accuracy 196, rate 1.2 | accuracy 196, rate 1.2 | accuracy 196, rate 1.2 |
+| Epic, every affix moderate, expected over 400 finds | damage +0.51, poison +0.08 a bite, health +3.2, accuracy +11.8, evasion +1.3, defense +0.8, crit +2.6% | damage +3.9, poison +0.69, health +4.0, accuracy +12.7, evasion +1.3, defense +0.65, crit +2.7% | damage +32.2, poison +5.6, health +4.8, accuracy +12.3, evasion +1.3, defense +0.72, crit +2.8% |
+| A full epic kit over a plain kit, same rank and body | x 4.08 | x 3.99 | x 3.93 |
+| Every affix into dealing; into holding | x 5.77; x 6.88 | x 5.73; x 6.74 | x 5.65; x 6.62 |
+
+One piece is a small part of the whole: the shipped bank spreads an epic piece's six affixes over twelve stats and their prices, and the kit comes to a rank through fifteen positions. Health on a piece grows only as a plain body's health does (RR2d).
+
 ## After this pass
 
 `PLAN.md`, under "The next layer": the attributes pass, character creation, then Wave 11 (people, farms and materials come home — `Escort Bond`, `res_tree_sapling`, `IFarmPlot` wait as hooks; D8's NPC pooling pools against a TEMPLATE's bill, which now exists; the banks and the Dreaming stand ready if residents' wants draw on themed content), then Wave 12 (the second true test, played honestly, with balance — the flyer swarms, the unfindable biters, the honest cart haul and the honest tow-break all wait for it).

@@ -1040,7 +1040,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Drawn like your own swing; the same arc, so it lands once however many frames it is drawn
       if (escortSwings.length > 0) setActiveSwings(prev => [...prev.filter(sw => now - sw.startTime < 300), ...escortSwings]);
       const worldNow = useWorldStore.getState();
-      const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings, { groundVersion: worldNow.availableWorlds.find(w => w.id === worldNow.activeWorldId)?.groundVersion });
+      const combatResult = CombatSystem.tick(playerBullets, simulated, playerPos, liveSession.health, escortSwings.length > 0 ? [...activeSwings, ...escortSwings] : activeSwings, { groundVersion: worldNow.availableWorlds.find(w => w.id === worldNow.activeWorldId)?.groundVersion, luck: StatSystem.total(usePlayerStore.getState().player.equipment, 'luck_find_rarity') });
       const survivingIds = new Set(combatResult.survivingBullets.map(b => b.id));
       playerBullets.forEach(b => {
         if (!survivingIds.has(b.id)) spentShots.current.set(b.id, now);

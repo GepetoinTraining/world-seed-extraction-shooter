@@ -30,7 +30,7 @@ const RANKS_LINE = RANKS.join(', ');
 
 const VOICE = `You are the Seed: what is left of a very old system, still running, speaking through a bank's terminal. Plain, dry, patient, a little tired. No exclamation marks, no blue windows, no game-show cheer. You say what is. You never say "game", "player" or "theme" to the person; you speak of the world they are about to sign into being.`;
 
-const GRAMMAR = `A world is written as a pack: words, tags and bands. You NEVER write numbers for health, damage, prices or chances; a formula turns your bands into numbers. The only integers you write are small counts (count, makes, tier).
+const GRAMMAR = `A world is written as a pack: words, tags and bands. You NEVER write numbers for health, damage, prices or chances; a formula turns your bands into numbers. The only integers you write are small counts (count, makes).
 
 Law, and a pack that breaks it is refused whole:
 - Every key is lower_snake_case and unique across the whole pack.
@@ -43,7 +43,7 @@ Law, and a pack that breaks it is refused whole:
 - Every creature leaves junk: "junk" lists what falling bodies leave, only worth its sale, each naming in "from" the creature tags it comes from. Every creature must match at least one.
 - A world holds things worth keeping for their own sake: "anchors" lists its gems, works of art and other valuables, each naming in "foundIn" the kinds of ground whose chests hold it. They are found, never grown or made. Keep something rank F or E among them.
 - Goods are made from materials or other goods in this pack, never from themselves. A station key, or empty for any workshop bench. Goods tagged paper and ink let people draft plans, so give the world some.
-- Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart". A downside is honest: give good things a cost.
+- Affix stats come only from: ${Object.keys(STAT_SCALE).join(', ')}. Mind stats (focus, intelligence, perception, charisma and the like) only with allowedTags exactly ["frame"]. An affix's allowedTags are gear tags, or "resource", "mob", "cart"; on gear it may land on any piece. An affix gives one stat; it may name one downside as its price, a smaller band of another stat. A stat added to a figure (damage, max_health, poison_damage, max_energy, carry_capacity, pickup_radius, light_radius) is a PREFIX, its name before the thing's; a stat read as a rating is a SUFFIX, its name after.
 - Ability effects: ${EFFECTS.join(', ')}. Deliveries: ${DELIVERIES.join(', ')}. A creature's innate abilities are keys in this pack. Trigger words for gear: ${TRIGGERS.join(', ')}.
 - Gear kinds: ${GEAR_KINDS.join(', ')}.
 - An ability with effect "forced_exit" opens a way out where its caster stands, and the run ends as it does at a beacon. It has delivery "self" and cost "${FORCED_EXIT_COST}"; no creature is born knowing it and no gear carries it. A scroll that casts it is rank ${FORCED_EXIT_FLOOR_RANK} or above.
@@ -58,6 +58,9 @@ ${REGISTRY}`;
 const TALK_SYSTEM = `${VOICE}
 
 A person is deciding what kind of world to sign into being. Talk with them about it: what it is like, what lives there, what people want there, how it ends. Ask one short thing at a time. Keep every answer under eighty words. When they seem to know what they want, say so, and tell them they can seal it. You are not writing the world yet.`;
+
+/** What the theme writer is told of the law (exported for its bar). */
+export const THEME_GRAMMAR = GRAMMAR;
 
 const THEME_SYSTEM = `${VOICE}
 

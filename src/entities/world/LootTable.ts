@@ -8,7 +8,7 @@
  * - Bosses always drop SOMETHING good
  */
 
-import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
+import { ItemFactory, IFoundLaw } from '../../../shared/entities/item/ItemFactory';
 import { SeededRNG, Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { IItem, ItemType, UniversalRank, Rarity } from '../../../shared/types';
 import { LORE_FRAGMENTS } from '../lore/LoreBible';
@@ -48,6 +48,18 @@ function dreamPool(biome?: BiomeType): IAffixPool | undefined {
   return dream && biome ? DreamingSystem.rollPoolFor(dream.pack, biome) : undefined;
 }
 
+/**
+ * The rarity rescale: what a find may hold, and whether pairs are open. A world that dreams (its hub unlocked
+ * magic) rolls its pinned dream with pairs open; one that does not still holds its theme's words, for one lone
+ * property at most: an uncommon piece is technological and needs no magic (call 13).
+ */
+function foundPool(biome: BiomeType | undefined, themeId: string | undefined): { pool?: IAffixPool; pairsOpen: boolean } {
+  const dream = DreamingSystem.active();
+  if (dream) return { pool: biome ? DreamingSystem.rollPoolFor(dream.pack, biome) : undefined, pairsOpen: true };
+  const pack = ContentRegistry.dreamPack(themeId ?? LootBook.entered() ?? ContentRegistry.defaultThemeId());
+  return { pool: pack ? DreamingSystem.rollPoolFor(pack, biome ?? 'GLOBAL') : undefined, pairsOpen: false };
+}
+
 export interface ILootContext {
   // Where the mob died (for deed generation)
   chunkX: number;
@@ -78,14 +90,14 @@ export class LootTable {
   }
 
   /** What a table's lines mint, each piece from its own keyed stream, so one never moves another. */
-  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number): IItem[] {
+  static mint(roll: ITableRoll, rollKey: string, pool?: IAffixPool, groundVersion?: number, found: IFoundLaw = {}): IItem[] {
     const out: IItem[] = [];
     roll.lines.forEach((d, i) => {
       for (let n = 0; n < d.count; n++) {
         const own = Rng.fromKey(`${rollKey}:drop:${d.line}:${n}`);
         // The rarity rescale: a found piece takes the rank of where it came from, never its kind's
         const rank = (newLaw(groundVersion) ? roll.at?.[i] ?? roll.rank : d.rank) as UniversalRank;
-        if (d.what === 'gear') { out.push(ItemFactory.createItem(rank, false, own, undefined, d.id, pool, groundOf(groundVersion))); continue; }
+        if (d.what === 'gear') { out.push(ItemFactory.createItem(rank, false, own, undefined, d.id, pool, { ...groundOf(groundVersion), ...found })); continue; }
         const def = RESOURCE_DEFINITIONS[d.id];
         if (def) out.push(ItemFactory.createResourceItem(def, own));
       }
@@ -137,22 +149,26 @@ export class LootTable {
     context?: ILootContext,
     rollKey?: string,
     earnedName?: string,
-    groundVersion?: number
+    groundVersion?: number,
+    luck = 0
   ): IItem[] {
     // Wave 1.3: every drop derives from a journaled key. Same key -> same loot.
     const rng = Rng.fromKey(rollKey || `unkeyed:loot:${Date.now()}:${Math.random()}`);
     if (!rollKey) console.warn('[LOOT] Unkeyed loot roll - not replayable.');
     const loot: IItem[] = [];
     const effectiveMF = magicFind * (context?.quantityBonus || 1.0);
-    const pool = dreamPool(context?.biome);
-    const ground = groundOf(groundVersion);
+    // The rarity rescale: the body it fell from and the finder's luck move the odds of depth (PieceLaw.oddsOf)
+    const found = foundPool(context?.biome, (mobDef as { themeId?: string }).themeId);
+    const pool = newLaw(groundVersion) ? found.pool : dreamPool(context?.biome);
+    const law: IFoundLaw = newLaw(groundVersion) ? { odds: PieceLaw.oddsOf({ luck, tags: mobDef.tags }), pairsOpen: found.pairsOpen } : {};
+    const ground = { ...groundOf(groundVersion), ...law };
     // Under the rescale a step is read off what a piece holds, never written on it by hand
     const legacy = !newLaw(groundVersion);
 
     // A theme's own table, when it has one for this creature: the model's words, the law's numbers
     const onTable = this.creatureRoll(mobDef, rollKey);
     if (onTable && rollKey) {
-      loot.push(...this.mint(onTable, rollKey, pool, groundVersion));
+      loot.push(...this.mint(onTable, rollKey, pool, groundVersion, law));
       loot.push(...this.deedsFor(mobDef, rng, effectiveMF, context, rollKey));
       return loot;
     }
@@ -407,15 +423,17 @@ export class LootTable {
   /**
    * Generate loot for a chest/container
    */
-  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string, biome?: BiomeType, groundVersion?: number): IItem[] {
+  static generateChestLoot(chestRank: UniversalRank, magicFind: number = 1.0, rollKey?: string, biome?: BiomeType, groundVersion?: number, luck = 0): IItem[] {
     const rng = Rng.fromKey(rollKey || `unkeyed:chest:${Date.now()}:${Math.random()}`);
     const loot: IItem[] = [];
-    const pool = dreamPool(biome);
-    const ground = groundOf(groundVersion);
+    const found = foundPool(biome, undefined);
+    const pool = newLaw(groundVersion) ? found.pool : dreamPool(biome);
+    const law: IFoundLaw = newLaw(groundVersion) ? { odds: PieceLaw.oddsOf({ luck, tags: [] }), pairsOpen: found.pairsOpen } : {};
+    const ground = { ...groundOf(groundVersion), ...law };
 
     // A theme's own table for a chest in this land, when the dreamed world has one
     const onTable = this.chestRoll(chestRank, rollKey, biome);
-    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion);
+    if (onTable && rollKey) return this.mint(onTable, rollKey, pool, groundVersion, law);
 
     // Chests always have 2-5 items
     const count = 2 + Math.floor(rng.next() * 4);

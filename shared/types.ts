@@ -211,6 +211,11 @@ export interface IBankedAffix {
   allowedTags: string[];
   tier: number;
   statModifiers?: Record<string, [number, number]>;
+  /**
+   * The rarity rescale: the writer's words for what it gives (a stat, a band, whether it is a downside), so a
+   * piece of the new law is sized from words by the ruler (PieceLaw). Absent on what was banked before.
+   */
+  gives?: { stat: string; band: 'minor' | 'moderate' | 'major'; downside: boolean }[];
   /** D53: the world theme this entry belongs to. Absent means it answers every shelf. */
   themeId?: string;
 }
@@ -222,7 +227,7 @@ export interface IAffixBatch {
   model: string;   // who ran the batch, on the record
   ranAt: number;
   names?: Omit<IBankedAffix, 'statModifiers'>[];
-  effects?: { id: string; statModifiers: Record<string, [number, number]> }[];
+  effects?: { id: string; statModifiers: Record<string, [number, number]>; gives?: { stat: string; band: 'minor' | 'moderate' | 'major'; downside: boolean }[]; }[];
 }
 
 /**
@@ -462,6 +467,11 @@ export interface IAffix {
   type: 'PREFIX' | 'SUFFIX';
   stats: Record<string, number>;
   tier: number;
+  /**
+   * The rarity rescale: where the name stands when its writer wrote it for the other side. The side it counts on is
+   * its stat's reader's (`type`); the words stay where they were written, so an old "of the Keeping" still follows.
+   */
+  nameAt?: 'PREFIX' | 'SUFFIX';
 }
 
 export interface IHarvestConfig {

@@ -241,7 +241,11 @@ export interface IThemeAffix {
   allowedTags: string[];
   /** Empty for anywhere, or the biome whose dream it belongs to. */
   biome: string;
-  tier: number;
+  /**
+   * Retired by the rarity rescale (1.5, "Yes, rank is tier"): an affix's tier is the rank of the piece it sits on.
+   * The writer is no longer asked for it; a pack written before keeps it, and only a standing world's old ranges read it.
+   */
+  tier?: number;
   gives: { stat: string; band: typeof STAT_BANDS[number]; downside: boolean }[];
 }
 
@@ -399,7 +403,7 @@ export const THEME_SCHEMA: Record<string, unknown> = obj({
   }),
   consumables: list({ key: str, name: str, blurb: str, kind: oneOf(CONSUMABLE_KINDS), rank: oneOf(RANKS), tags: strs, casts: str, onShelf: { type: 'boolean' } }),
   affixes: list({
-    key: str, name: str, type: oneOf(['PREFIX', 'SUFFIX']), allowedTags: strs, biome: str, tier: count,
+    key: str, name: str, type: oneOf(['PREFIX', 'SUFFIX']), allowedTags: strs, biome: str,
     gives: list({ stat: str, band: oneOf(STAT_BANDS), downside: { type: 'boolean' } })
   }),
   abilities: list({ key: str, name: str, blurb: str, elements: strs, delivery: oneOf(DELIVERIES), effect: oneOf(EFFECTS), cost: oneOf(COST_BANDS) }),

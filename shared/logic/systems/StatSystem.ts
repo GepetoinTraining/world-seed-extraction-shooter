@@ -43,7 +43,7 @@ export const STAT_READERS: Record<string, string> = {
   noise_reduction: 'MobAI.tick',
   movement_speed: 'LoadoutSystem.walkTilesPerSecond',
   movement_speed_penalty: 'LoadoutSystem.walkTilesPerSecond',
-  luck_find_rarity: 'CombatSystem.tick',
+  luck_find_rarity: 'PieceLaw.oddsOf',
   field_analysis_speed: 'StudySystem.identifyAsk',
   mining_power: 'InteractionEngine',
   chopping_power: 'InteractionEngine',

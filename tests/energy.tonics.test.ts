@@ -132,8 +132,9 @@ describe('energy on gear reads no rank', () => {
     } as never;
     let seen = 0;
     for (let i = 0; i < 200 && seen < 3; i++) {
-      const low = ItemFactory.createFromTemplate(base(UniversalRank.F), true, new SeededRNG(`day_${i}`), pool);
-      const high = ItemFactory.createFromTemplate(base(UniversalRank.S), true, new SeededRNG(`day_${i}`), pool);
+      // The rarity rescale: a piece goes deep only once the unlock opens pairs, and health, an amount, stands before the name
+      const low = ItemFactory.createFromTemplate(base(UniversalRank.F), true, new SeededRNG(`day_${i}`), pool, undefined, { depth: 3, pairsOpen: true });
+      const high = ItemFactory.createFromTemplate(base(UniversalRank.S), true, new SeededRNG(`day_${i}`), pool, undefined, { depth: 3, pairsOpen: true });
       if (!low.stats?.max_energy || !low.stats?.max_health) continue;
       seen++;
       expect(high.stats!.max_energy).toBe(low.stats.max_energy);

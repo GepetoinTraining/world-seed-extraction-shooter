@@ -1,3 +1,4 @@
+import { POISON_MS, POISON_TICK_MS } from '../../../shared/logic/systems/FightNumbers';
 import { IProjectile, ProjectileSystem } from '../../../shared/entities/combat/projectileSystem';
 import { IWorldEntity, EntityType, IChunk } from '../../../shared/entities/world/types';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
@@ -31,8 +32,6 @@ export interface ICombatEvent {
 }
 
 /** How long poison keeps working after the hit, and how often it bites. Guesses until Wave 12. */
-const POISON_MS = 3000;
-const POISON_TICK_MS = 1000;
 
 const poisoned = (mob: IWorldEntity, perTick: number, now: number) => {
   mob.statuses = StatusClock.add(mob.statuses as never, { kind: 'dot', magnitude: perTick, durationMs: POISON_MS, tickMs: POISON_TICK_MS }, now) as never;
@@ -54,7 +53,7 @@ export class CombatSystem {
     playerPos: { x: number; y: number; z: number },
     playerHealth: number,
     meleeArcs: { origin: { x: number; y: number }; angle: number; range: number; startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string> }[],
-    opts: { magicFind?: number; groundVersion?: number } = {}
+    opts: { magicFind?: number; groundVersion?: number; luck?: number } = {}
   ): {
     events: ICombatEvent[]; 
     updatedChunks: Record<string, IChunk>;
@@ -112,7 +111,7 @@ export class CombatSystem {
           biome: origin.biome,
           magicFind: opts.magicFind ?? 1.0,
           quantityBonus: 1.0
-        } : undefined, rollKey, mob.displayName, opts.groundVersion);
+        } : undefined, rollKey, mob.displayName, opts.groundVersion, opts.luck ?? 0);
         // The lore pass, call 6: a creature with a mind leaves a fragment "sometimes", in a world pinned to it
         if (MonsterMind.holds(def) && LoreDrops.fragment('creature', rollKey, opts.groundVersion)) loot.push(LootTable.loreFragment(rollKey, (def as { themeId?: string }).themeId));
         const onTable = LootTable.creatureRoll(def, rollKey);

@@ -107,8 +107,11 @@ export class AffixBank {
       if (batch.kind === 'NAMES') {
         entries = [...entries, ...(batch.names ?? []).map(n => ({ ...n }))];
       } else {
-        const byId = new Map((batch.effects ?? []).map(e => [e.id, e.statModifiers]));
-        entries = entries.map(e => byId.has(e.id) ? { ...e, statModifiers: byId.get(e.id) } : e);
+        const byId = new Map((batch.effects ?? []).map(e => [e.id, e]));
+        entries = entries.map(e => {
+          const effect = byId.get(e.id);
+          return effect ? { ...e, statModifiers: effect.statModifiers, ...(effect.gives ? { gives: effect.gives.map(g => ({ ...g })) } : {}) } : e;
+        });
       }
       folded.push({ runId: batch.runId, kind: batch.kind, model: batch.model, ranAt: batch.ranAt });
     }

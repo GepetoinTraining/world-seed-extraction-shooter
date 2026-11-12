@@ -1,7 +1,9 @@
-import { IItem, IAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin, MENTAL_ATTRIBUTES, ROOM_ACTING_STATS } from '../../types';
+import { IItem, IAffix, IBankedAffix, IComposition, ItemType, SlotType, UniversalRank, Rarity, MaterialOrigin, MENTAL_ATTRIBUTES, ROOM_ACTING_STATS } from '../../types';
 import { LoadoutSystem } from '../player/systems/LoadoutSystem';
 import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from './data/itemDefinitions';
 import { AffixDefinition } from './data/affixDefinitions';
+import { SHELF_STATE } from '../../logic/theme/shelf';
+import type { IAffixWords, Band } from '../../logic/theme/PieceLaw';
 import { AffixBank } from '../../logic/content/AffixBank';
 import { IAffixPool } from '../world/Dreaming';
 import { RANK_MULTIPLIERS, readsRank } from '../../constants';
@@ -13,6 +15,18 @@ import { MaterialPropertyType } from '../economy/types';
 import { CompositionSystem } from '../../logic/economy/CompositionSystem';
 import { MintRegistry } from '../../logic/economy/MintRegistry';
 import { cartBearsAt, cartFolded, cartNumbers, rankStep } from '../../logic/theme/ThemeFormula';
+
+/**
+ * How a found piece is drawn under the rarity rescale. `odds` is the body's and the finder's (PieceLaw.oddsOf);
+ * `pairsOpen` is whether the hub's magic unlock opened pairs (absent: the hub's own shelf state). `depth`, `band`
+ * and `quality` set what is otherwise rolled: a boss's own piece, or the kit the ruler is solved on.
+ */
+export interface IFoundLaw { odds?: number; pairsOpen?: boolean; depth?: number; band?: Band; quality?: number }
+
+/** What an affix may be written for that is not a piece of gear (ThemeLaw's scope words). */
+const SCOPE_WORDS = new Set(['resource', 'mob', 'frame', 'cart', 'charm', 'scroll']);
+const MIND = new Set<string>(MENTAL_ATTRIBUTES as readonly string[]);
+type Rollable = AffixDefinition | IBankedAffix;
 
 export class ItemFactory {
 
@@ -27,7 +41,7 @@ export class ItemFactory {
    *               world passes its pinned bank's biome pool; absent, the
    *               purged legacy pool rolls (old worlds keep their dream).
    */
-  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string, pool?: IAffixPool, opts?: { groundVersion?: number }): IItem {
+  static createItem(targetRank?: UniversalRank, isIdentified: boolean = false, rng?: SeededRNG, category?: 'weapon' | 'armor' | 'tool', baseId?: string, pool?: IAffixPool, opts?: { groundVersion?: number } & IFoundLaw): IItem {
     if (!rng) {
       console.warn('[FACTORY] Unkeyed item mint — roll is not replayable. Pass an Rng.fromKey stream.');
       rng = Rng.fromKey(`unkeyed:${Date.now()}:${Math.random()}`);
@@ -48,7 +62,7 @@ export class ItemFactory {
     // The rarity rescale: a kind is a noun, so any kind is found at the rank of where it came from.
     // A world pinned before the law's ground gives what it gave (GROUND_VERSION); hub mints have no ground.
     if ((opts?.groundVersion ?? PieceLaw.FROM_GROUND) >= PieceLaw.FROM_GROUND) {
-      return this.createFromTemplate(pinned ?? rng.pick(allBases), isIdentified, rng, pool, targetRank);
+      return this.createFromTemplate(pinned ?? rng.pick(allBases), isIdentified, rng, pool, targetRank, opts);
     }
 
     let template: ItemDefinition;
@@ -75,11 +89,11 @@ export class ItemFactory {
    * word only when nothing says), a rank doubles it once, quality is the one roll and moves every number
    * on it, and its step is read off what it holds. Nothing numeric is rounded onto it.
    */
-  static createFromTemplate(template: ItemDefinition, isIdentified: boolean, rng: SeededRNG, pool?: IAffixPool, rank?: UniversalRank): IItem {
+  static createFromTemplate(template: ItemDefinition, isIdentified: boolean, rng: SeededRNG, pool?: IAffixPool, rank?: UniversalRank, law: IFoundLaw = {}): IItem {
     const at = rank ?? template.rank ?? UniversalRank.F;
     const step = Math.max(0, rankStep(at));
-    const depth = this.rollRarity(rng);
-    const quality = (rng.next() * 0.4) - 0.2;
+    const rolledQuality = (rng.next() * 0.4) - 0.2;
+    const quality = law.quality ?? rolledQuality;
 
     const stats: Record<string, number> = {};
     const native = template.kind ? PieceLaw.nativeLines(template.kind, step)
@@ -87,7 +101,7 @@ export class ItemFactory {
       : template.implicits.map(l => ({ stat: l.stat, value: (l.value ?? ((l.min ?? 0) + (l.max ?? 0)) / 2) * PieceLaw.rankFactor(l.stat, at) / PieceLaw.rankFactor(l.stat, template.rank ?? at) }));
     for (const l of native) stats[l.stat] = (stats[l.stat] ?? 0) + l.value * (1 + quality);
 
-    const affixes = this.foundAffixes(template, depth, at, quality, rng, pool);
+    const affixes = this.foundAffixes(template, at, quality, rng, pool, law);
     for (const a of affixes) for (const [key, val] of Object.entries(a.stats)) stats[key] = (stats[key] ?? 0) + val;
 
     const power = PieceLaw.power(at, quality, template.tags.includes('tool'));
@@ -136,29 +150,45 @@ export class ItemFactory {
   }
 
   /**
-   * What a found piece holds. Part 1 of the rescale keeps today's odds of how deep a find goes and today's
-   * counts; each value is the banked roll, doubled a rank where the stat is an amount, times (1 + quality).
+   * What a found piece holds (the affix law, part 2). How deep it goes is drawn with chance q^d, the odds moved by
+   * the body it came from and the finder's luck, and stops at one lone property until the hub's magic unlock opens
+   * pairs (call 13). Then one on either side, or pairs. Any affix may land on any piece ("Any stat, any piece"),
+   * save what is written only for a scope (a creature, a material, a frame; a cart's own only on a cart). Its side
+   * is its stat's reader's, never the writer's word; a stat sits once on a piece; and each is sized by the ruler.
    */
-  private static foundAffixes(template: ItemDefinition, depth: Rarity, rank: UniversalRank, quality: number, rng: SeededRNG, pool?: IAffixPool): IAffix[] {
+  private static foundAffixes(template: ItemDefinition, rank: UniversalRank, quality: number, rng: SeededRNG, pool: IAffixPool | undefined, law: IFoundLaw): IAffix[] {
+    const pairsOpen = law.pairsOpen ?? SHELF_STATE.magicUnlocked;
+    const rolled = law.depth ?? PieceLaw.rollDepth(rng, law.odds ?? 1, pairsOpen);
+    const depth = pairsOpen ? rolled : Math.min(rolled, 1);
+    const [prefixes, suffixes] = PieceLaw.ladder(depth, () => rng.next());
+    if (prefixes + suffixes === 0) return [];
+
     const source = pool ?? AffixBank.legacyPool();
-    const counts: Partial<Record<Rarity, [number, number]>> = {
-      [Rarity.RARE]: [1, 1], [Rarity.EPIC]: [2, 2], [Rarity.LEGENDARY]: [3, 3]
-    };
-    const [prefixes, suffixes] = depth === Rarity.UNCOMMON ? (rng.next() > 0.5 ? [1, 0] : [0, 1]) : counts[depth] ?? [0, 0];
+    const landsHere = (tags: readonly string[]) => tags.some(t => !SCOPE_WORDS.has(t)) || tags.some(t => t === 'cart' && template.tags.includes('cart'));
+    const open = [...source.prefixes, ...source.suffixes]
+      .map(def => ({ def, words: PieceLaw.wordsOf(def) }))
+      .filter((c): c is { def: Rollable; words: IAffixWords } => !!c.words && landsHere(c.def.allowedTags) && !MIND.has(c.words.gift.stat))
+      .sort((a, b) => (a.def.id < b.def.id ? -1 : a.def.id > b.def.id ? 1 : 0));
+
     const affixes: IAffix[] = [];
-    type Rollable = AffixDefinition | import('../../types').IBankedAffix;
-    const pick = (list: Rollable[]) => {
-      const open = list.filter(def => def.allowedTags.some(tag => template.tags.includes(tag)) && !affixes.some(a => a.id === def.id));
-      if (open.length === 0) return;
-      const choice = rng.pick(open);
-      const stats: Record<string, number> = {};
-      for (const [key, [min, max]] of Object.entries(choice.statModifiers ?? {})) {
-        stats[key] = (min + rng.next() * (max - min)) * PieceLaw.rankFactor(key, rank) * (1 + quality);
-      }
-      affixes.push({ id: choice.id, name: (choice as AffixDefinition).nameTemplate ?? (choice as import('../../types').IBankedAffix).name, type: choice.type, stats, tier: 1 });
+    const held = new Set<string>();
+    const pick = (side: 'PREFIX' | 'SUFFIX') => {
+      const choices = open.filter(c => PieceLaw.sideOf(c.words) === side && !held.has(c.words.gift.stat) && !affixes.some(a => a.id === c.def.id));
+      if (choices.length === 0) return;
+      const { def, words } = rng.pick(choices);
+      held.add(words.gift.stat);
+      affixes.push({
+        id: def.id,
+        name: (def as AffixDefinition).nameTemplate ?? (def as IBankedAffix).name,
+        type: side,
+        stats: PieceLaw.affixStats(words, rank, quality, law.band),
+        ...(def.type !== side ? { nameAt: def.type } : {}),
+        // "Yes, rank is tier": an affix's tier is the rank of the piece it sits on, F = 1
+        tier: Math.max(0, rankStep(rank)) + 1
+      });
     };
-    for (let i = 0; i < prefixes; i++) pick(source.prefixes);
-    for (let i = 0; i < suffixes; i++) pick(source.suffixes);
+    for (let i = 0; i < prefixes; i++) pick('PREFIX');
+    for (let i = 0; i < suffixes; i++) pick('SUFFIX');
     return affixes;
   }
 
@@ -518,8 +548,8 @@ export class ItemFactory {
    * quality word at all. A prefix on a name that begins "The" goes after it: "The Heavy Repossessor".
    */
   static nameOf(baseName: string, affixes: IAffix[]): string {
-    const prefix = affixes.find(a => a.type === 'PREFIX')?.name;
-    const suffix = affixes.find(a => a.type === 'SUFFIX')?.name;
+    const prefix = affixes.find(a => (a.nameAt ?? a.type) === 'PREFIX')?.name;
+    const suffix = affixes.find(a => (a.nameAt ?? a.type) === 'SUFFIX')?.name;
     let name = baseName;
     if (prefix) name = /^The\s/.test(name) ? `The ${prefix} ${name.slice(4)}` : `${prefix} ${name}`;
     if (suffix) name = `${name} ${suffix}`;
