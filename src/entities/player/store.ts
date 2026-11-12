@@ -118,7 +118,7 @@ interface PlayerState {
   fillCircle: (skillId: string) => boolean;
   spendAttributePoint: (attribute: keyof IAttributes) => boolean;
   setView: (view: 'BANK' | 'SESSION') => void;
-  diveIntoLayer: (layerId?: string) => void;
+  diveIntoLayer: (layerId?: string, penalty?: string) => void;
   // Wave 10C (D21): the death path returns what fell and what the magic kept
   emergencyJackOut: (penalty?: 'NONE' | 'INVENTORY_LOSS' | 'XP_LOSS' | 'PERMADEATH') => { lost: IItem[]; kept: { item: IItem; by: string }[] };
   movePlayer: (direction: 'W' | 'A' | 'S' | 'D') => void;
@@ -298,7 +298,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         case 'PRACTICE_TRADE': store.practiceTrade(change.family); break;
         case 'LORE': set(s => ({ player: { ...s.player, bank: { ...s.player.bank, lore: change.lore } } })); break;
         case 'GAIN_SKILL_XP': store.gainSkillXp(change.skillId, change.amount, change.tags, change.context); break;
-        case 'DIVE': store.diveIntoLayer(change.layerId); break;
+        case 'DIVE': store.diveIntoLayer(change.layerId, change.penalty); break;
         case 'DROP_ITEM': store.dropItem(change.itemId, { quiet: change.quiet, count: change.count }); break;
         case 'TOGGLE_CARRY': store.toggleCarry(change.itemId); break;
         case 'DOWNTIME': set(s => {
@@ -1348,7 +1348,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setView: (view) => set({ view }),
 
-  diveIntoLayer: (layerId = 'layer-01-fantasy') => {
+  diveIntoLayer: (layerId = 'layer-01-fantasy', penalty) => {
     const { player } = get();
     if (player.currentSession) return;
 
@@ -1379,6 +1379,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           // Wave 10C: the harness rides too — anything equipped LATER, in the
           // field, is haul and gets taxed on the way home like the pack's
           kitItemIds: [...fieldKit.map(i => i.id), ...(state.player.equipment?.items.map(i => i.id) ?? [])],
+          // TQ (call 9): what a death costs where this dive goes, for a window closed on it
+          ...(penalty ? { deathPenalty: penalty } : {}),
           inventoryLayout: InventorySystem.placeAll(fieldKit),
           health: StatSystem.maxHealth(state.player.attributes, state.player.equipment, ProgressionSystem.rankOf(state.player)),
           maxHealth: StatSystem.maxHealth(state.player.attributes, state.player.equipment, ProgressionSystem.rankOf(state.player)),

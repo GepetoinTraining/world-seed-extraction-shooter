@@ -67,7 +67,7 @@ async function enterWorld(worldId: string, world: IWorldPort, pc: IPlayerPort, h
     world.apply({ kind: 'DROP_COUNTED', worldId });
   }
   world.apply({ kind: 'APPLY_SURVEY', survey: pc.view().player.survey?.[worldId] });
-  pc.apply({ kind: 'DIVE', layerId: card.seed });
+  pc.apply({ kind: 'DIVE', layerId: card.seed, penalty: card.deathPenalty });
 
   // Wave 1.2: open the session journal with the claim's baseHash
   const { player } = pc.view();

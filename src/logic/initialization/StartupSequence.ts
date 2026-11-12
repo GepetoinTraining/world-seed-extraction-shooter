@@ -142,6 +142,11 @@ console.log('[BOOT] Refreshing World List...');
            // D118: and lore already read is held as a resource, once
            const { LoreSystem } = await import('../systems/LoreSystem');
            usePlayerStore.setState({ player: LoreSystem.migrate(ProgressionSystem.migrate(WebSystem.migrate(LoadoutSystem.migrate(result.player)))) });
+           // TQ (call 9): a dive the window closed on is settled now, as a death there would be, and saved
+           const { LeftDive } = await import('../systems/LeftDive');
+           if (LeftDive.settle(usePlayerStore.getState().player, penalty => usePlayerStore.getState().emergencyJackOut(penalty as never), player => usePlayerStore.setState({ player }))) {
+             await PlayerPersistence.flush('left dive', usePlayerStore.getState().player);
+           }
            // D72: nobody is locked out of a pocket world, once
            const { WorldDeedDoor } = await import('../systems/WorldDeedDoor');
            await WorldDeedDoor.grantOnLoad(playerPort);

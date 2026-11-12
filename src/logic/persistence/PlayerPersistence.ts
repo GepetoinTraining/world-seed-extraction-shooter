@@ -19,6 +19,7 @@ import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import type { IPlayerPort } from '../../entities/player/playerView';
 import { useIdentityStore } from '../../entities/identity/store';
 import { refusedAvatarId } from './BrowserImport';
+import { LeftDive } from '../systems/LeftDive';
 
 const AUTOSAVE_DEBOUNCE_MS = 10_000;
 
@@ -34,9 +35,12 @@ export class PlayerPersistence {
   /** The player the autosave reads, as the boot handed it. */
   private static watched: Pick<IPlayerPort, 'view' | 'watch'> | null = null;
 
-  /** The persistent half of the player: the session never goes in the bank doc. */
+  /**
+   * The persistent half of the player: the session never goes in the bank doc as one. TQ (call 9): a dive in progress is
+   * kept beside it as the dive left behind, so a window closed on it is settled at the next start (`LeftDive`).
+   */
   static persistable(player: IPlayer): IPlayer {
-    return { ...player, energyToday: player.currentSession?.energy ?? player.energyToday, currentSession: undefined };
+    return { ...player, energyToday: player.currentSession?.energy ?? player.energyToday, currentSession: undefined, leftDive: player.currentSession ? LeftDive.keep(player) : player.leftDive };
   }
 
   static persistableJson(player: IPlayer): string {

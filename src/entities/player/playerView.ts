@@ -56,7 +56,7 @@ export type PlayerChange =
   | { kind: 'WORK_ON'; pair: ISkillPair; rank: number; xp: number; costly?: boolean }
   | { kind: 'PRACTICE_TRADE'; family: ProcessFamily }
   | { kind: 'GAIN_SKILL_XP'; skillId: string; amount: number; tags: string[]; context?: IActionContext }
-  | { kind: 'DIVE'; layerId?: string }
+  | { kind: 'DIVE'; layerId?: string; penalty?: string }
   | { kind: 'DROP_ITEM'; itemId: string; quiet?: boolean; count?: number }
   | { kind: 'TOGGLE_CARRY'; itemId: string }
   /** What on the tech web the character works toward, or nothing (the design pass, part 2). */

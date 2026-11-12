@@ -633,7 +633,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           ...state.player,
           currentSession: {
             ...state.player.currentSession,
-            position: { x: target.x, y: 0, z: target.z }
+            position: { x: target.x, y: 0, z: target.z },
+            // TQ (call 9): from here something is risked, and a window closed on it is settled as a death here
+            droppedAt: Date.now()
           }
         }
       };

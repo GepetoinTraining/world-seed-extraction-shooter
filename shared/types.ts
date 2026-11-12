@@ -946,6 +946,10 @@ export interface IActiveSession {
   equipped?: IEquippedSlots;
   // Wave 10C (D16): the cart entity this agent is towing, if any
   towingCartId?: string;
+  /** TQ (call 9): what a death costs in the world this dive went into, its card's word, read when a closed window is settled. */
+  deathPenalty?: string;
+  /** TQ (call 9): when the person went down on the ground; unset, the dive is still in recon and nothing is risked. */
+  droppedAt?: number;
   health: number;
   maxHealth: number;
   energy: number;
@@ -1070,6 +1074,8 @@ export interface IPlayer {
   rest?: { until: number; place: 'INN' | 'BED' | 'FIELD'; startedAt?: number };
   /** Q2, Q14: when this character sealed a run out of the tutorial, its first order. Unset, the order stands. */
   tutorialSealedAt?: number;
+  /** TQ (call 9): a dive the window closed on, kept by the save, settled at the next start as a death there would be (`LeftDive`). */
+  leftDive?: { session: IActiveSession; penalty: string };
   /** D68: what this character has scanned, per world and sector. Theirs, wherever they go (D81). */
   survey?: Record<string, Record<string, {
     level: number;
