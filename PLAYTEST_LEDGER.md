@@ -629,6 +629,37 @@ A plain run, from the drop at (168970, 168970) to the beacon 186 tiles away, cou
 | EN13 | For the lore pass, not built: a day spent only sitting now holds 18 sittings with no eye (27 with one) where it held 3 (5). Downtime's stack is bounded by focus (`Downtime.capacity`), so a rest's queue is unchanged, but sittings by hand are bounded only by the day, so lore a day can grow up to about five and a half times for someone who only studies. The lore pass (Pedro's ruling on the roll of a hundred) should weigh it | `StudySystem.studyAsk`, `LoreSystem` |
 | EN14 | Old saves are not carried and need nothing: no stored shape changed, a cost is read at the act, and a day's energy in a save is a number that stays. A rest is shorter for the same work, since its length reads what was spent (`RestSystem.restMs`) | |
 
+Part 3, the same measure after the build (`122de4d`), in the hidden window on two more fresh characters made with no key, the focus kit (52.1 energy) and the tools kit (50.6). The tutorial is one world for every character on a machine, and the places along Part 1's line were still spent (they come back when its gate turns), so each run went down a parallel line 30 tiles to one side, by the same rule: every place on the way that the kit's hands can try, in the order met, until the pack refuses.
+
+What each act costs now, and what a full pool of 52.1 pays for with no skill:
+
+| Act | No skill | Its skill at level 1 | Level 5 | Level 10 | A pool pays | Seen |
+|---|---|---|---|---|---|---|
+| A focus's shot | 0 | | | | without end | window: eight presses on a day of 0.4, each a burst, none refused, the day still 0.4 |
+| A try with a tool, rank F | 1.6 | 1.1 | 0.4 | 0.1 | 32 | window: "Try the Clerk's Hatchet on Compound Oak · 1.6 energy" at no skill, then 1.1, 0.4, 0.1; each press took what its line said |
+| A try by hand, rank F | 0.5 | 0.4 | 0.1 | free | 104 | window: "Try your hands on Vault Stone", the same four, the last "free" |
+| A sitting with no eye | 2.7, less for what is known of its tree | | | | 19 | window: "Study Collateral Iron · 2.2 energy · 11s" (one tag of the tree known at level 1), taken 2.2 |
+| A round of talk, a name, a want, a bargain | 1.4 | 0.9 | 0.4 | 0.1 | 37 | window: the menu "Talk (Unknown Figure · 30/100) · 1.4 energy", the talk's chip "1.4 energy a round", both buttons' notes; a name asked took 1.4, a round said took 1.4 |
+| A chest or a cache opened | 0.5 | 0.4 | 0.1 | 0 | 104 | window: 0.5 in the run, and the interact prompt "Open Container · 0.5 energy" |
+| Crafting by two, nothing of its tree known | 0.9 | | | | 57 | bars |
+| A snare | 0.8 | 0.5 | 0.2 | 0.1 | 65 | bars |
+| A gift; someone secured | 0.5; 1.4 | 0.4; 0.9 | | | | bars, and the sheet |
+| Analyze Structure | 0.5 | 0.4 | 0.1 | 0 | | window: its menu line 0.5; its spend by the bars |
+
+| Run | Acts | Energy now | Pools | On main |
+|---|---|---|---|---|
+| Focus kit, every place its hands could try on a line 30 tiles east (no ore there and no pick found, so the pack never filled) | 25 tries by hand and 1 chest | 11.7 | 0.22 | 106 for its 19 tries and a chest (2.1) |
+| Focus kit, its fight on the way | every shot | 0 | 0 | 140 for 14 shots (2.7) |
+| Tools kit, until the pack refused, on a line 30 tiles west | 15 tries: 2 by hand, 13 with the pick on iron (the Seed gave no ore skill this time, so each was winged) | 21.6 | 0.43 | 114 for 19 hatchet tries (2.25) |
+| Tools kit, worked on past a full pack over every place on the line | 484 tries, 394 of them on trees | 361.5 | 7.1 | 1,646 for 378 tries (33) |
+| The person turned and secured, by the count's 8 asks and 1 | 9 | 12.6 | 0.25 | 45 (0.9) |
+| The day's two sittings, no eye | 2 | 5.4 | 0.1 | 30 (0.6) |
+
+| # | What | Where |
+|---|---|---|
+| EN15 | Seen in the hidden window after the build: the large sheet's HEALTH AND ENERGY with the day's line and a line for each act ("A ROUND OF TALK 1.4 energy. Persuasion brings it down. Asking a name or a want costs the same.", "OPENING A CHEST 0.5 energy. Scavenging brings it down.", "A SNARE 0.8 energy. Trapping brings it down.", "BRINGING SOMEONE ALONG 1.4 energy. Escort brings it down.", "ANALYZING A STRUCTURE 0.5 energy. Appraisal brings it down."); the focus firing on an empty day; every cost in the tables above, said where offered and taken exactly. Seen in play, not set: Felling climbed from level 1 to 4 by itself over the tools run's 394 tries on trees, so its try fell from 1.1 to 0.5 on the way. A gift reads the same skill as a round of talk (both train Persuasion) | hidden window |
+| EN16 | Not seen on screen: a snare set (no snare carried), crafting by two (Part 1 measured it through the store's door; after, by the bars only), a gift, someone secured, Analyze Structure pressed, the downtime plan, the web's view, a person studied in town, the small sheet, and a talk carried to its end (the character fell to the tutorial's creatures while waiting for the reply, which costs nothing there). The person's turning and the day's sittings in the run table are the count's, priced by what was seen | |
+
 ## Fixed
 
 | # | What was wrong | Commit | Checked |
