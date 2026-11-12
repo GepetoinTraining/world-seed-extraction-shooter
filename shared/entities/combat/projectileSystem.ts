@@ -20,6 +20,8 @@ export interface IProjectile {
   struck?: Set<string>;
   /** Part 2: what it weighs when it lands, so the body it lands on feels it. None is not felt. */
   weight?: number;
+  /** SH3: the blow it carries glanced when it was let go, so where it lands says so. */
+  glance?: boolean;
 }
 
 const PROJECTILE_SPEED_PX = SHOT_SPEED_PX; // 10 tiles/s at 20px tiles
@@ -54,6 +56,8 @@ export interface IFiredPattern {
   rangePx?: number;
   /** Part 2: what each of its shots weighs when it lands. */
   weight?: number;
+  /** SH3: the blow glanced when it was let go. */
+  glance?: boolean;
 }
 
 export class ProjectileSystem {
@@ -134,6 +138,7 @@ export class ProjectileSystem {
           status: pattern.status,
           ...(pattern.struck ? { struck: pattern.struck } : {}),
           ...(pattern.weight !== undefined ? { weight: pattern.weight } : {}),
+          ...(pattern.glance ? { glance: true } : {}),
           prevX: b.x - Math.cos(b.angle) * back,
           prevY: b.y - Math.sin(b.angle) * back
         };

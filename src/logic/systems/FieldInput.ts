@@ -13,6 +13,7 @@ import { isThrowable } from '../../../shared/entities/item/Throwable';
 import { TILE_PX } from '../../../shared/entities/world/grid';
 import { DRAW_PACE, SWING_PACE, abilityNumbers, drawMs, swingWindupMs } from '../../../shared/logic/theme/ThemeFormula';
 import type { ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
+import type { Facing } from '../../../shared/render/atoms/people';
 import { UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,24 @@ export function windupOf(item: IItem | undefined, _equipment?: IEquipmentState, 
   if (mode === 'FOCUS' && cast) return { ms: abilityNumbers(cast.cost, cast.rank).telegraphMs, pace: DRAW_PACE, kind: 'draw' };
   const own = CombatMath.isUsable(item) ? item!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
   return { ms: drawMs(own), pace: DRAW_PACE, kind: 'draw' };
+}
+
+/** What began a blow: a press on the ground, or the attack key. */
+export type AimedBy = 'pointer' | 'key';
+const FACING_ANGLE: Record<Facing, number> = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+
+/**
+ * SH2, found by shooting as Pedro did after his run on 854bcce ("EITHER there's a HUGE bug on the shooting or
+ * accuracy is a bitch"): where a wound-up blow lets go. One begun by the pointer flies at the pointer as it stands
+ * when the blow lets go, whether its button is still held or not, since a click is let go long before a draw ends.
+ * One begun by the attack key flies at what the inspect card holds (`held`, its offset from the person), or the
+ * way its holder faces. A pointer never moved over the field aims as the key does. `centre` is where the person
+ * stands on the screen, which the camera keeps at the middle of the window.
+ */
+export function aimAt(s: { by: AimedBy; pointer?: { x: number; y: number }; centre: { x: number; y: number }; held?: { dx: number; dy: number }; facing: Facing }): number {
+  if (s.by === 'pointer' && s.pointer) return Math.atan2(s.pointer.y - s.centre.y, s.pointer.x - s.centre.x);
+  if (s.held) return Math.atan2(s.held.dy, s.held.dx);
+  return FACING_ANGLE[s.facing];
 }
 
 /** From one blow's start to the next's: the hand's rate, and never shorter than the wind-up. */

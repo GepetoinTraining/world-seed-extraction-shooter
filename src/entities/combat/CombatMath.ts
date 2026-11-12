@@ -13,7 +13,7 @@
  */
 
 import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
-import { IAttributes, IEquipmentState, IItem } from '../../../shared/types';
+import { IAttributes, IEquipmentState, IItem, SlotType } from '../../../shared/types';
 import { IMobDefinition } from '../../../shared/entities/mob/types';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { BASE_CRIT_MULTIPLIER, BASE_GLANCE, BLOCK_FACTOR, GLANCE_FACTOR, RATING_KNEE, UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
@@ -122,8 +122,12 @@ export class CombatMath {
     const own = this.isUsable(weapon) ? weapon!.stats?.attack_speed || 1.0 : UNARMED_SHOTS_PER_SEC;
     // The hand's own rate, and what everything else on the body adds to it
     const onBody = StatSystem.worn(equipment).some(i => i.id === weapon?.id);
+    // SH6: a weapon or a tool another hand wields keeps its own rate to itself; it adds nothing to this hand's
+    const wieldedElsewhere = StatSystem.worn(equipment)
+      .filter(i => i.id !== weapon?.id && (i.slot === SlotType.MAIN_HAND || i.slot === SlotType.TOOL))
+      .reduce((sum, i) => sum + (i.stats?.attack_speed ?? 0), 0);
     // An old piece's added rate rides `attack_speed`; the rarity rescale's is `haste`
-    const others = StatSystem.total(equipment, 'attack_speed') - (onBody ? weapon!.stats?.attack_speed ?? 0 : 0) + StatSystem.total(equipment, 'haste');
+    const others = StatSystem.total(equipment, 'attack_speed') - (onBody ? weapon!.stats?.attack_speed ?? 0 : 0) - wieldedElsewhere + StatSystem.total(equipment, 'haste');
     return Math.round(1000 / Math.max(0.1, (own + others) * StatSystem.fireRateScale(attributes)));
   }
 

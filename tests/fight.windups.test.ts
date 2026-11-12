@@ -130,11 +130,11 @@ describe('a hit is felt: a push, a pause, a mark and words', () => {
     expect(feltHit(1000, 1).pushPx).toBeGreaterThan(0.99 * TILE_PX);
   });
 
-  it('a heavier sweep weighs more than a blade, a stab less; a shot weighs one; a bigger body stands firmer', () => {
+  it('a heavier sweep weighs more than a blade, a stab less; a shot weighs half the blade (SH1); a bigger body stands firmer', () => {
     expect(blowWeight(shape('middling', 'arc'))).toBeCloseTo(1);
     expect(blowWeight(shape('middling', 'wide'))).toBeGreaterThan(1);
     expect(blowWeight(shape('long', 'thrust'))).toBeLessThan(1);
-    expect(SHOT_WEIGHT).toBe(1);
+    expect(SHOT_WEIGHT).toBe(1 / 2); // SH1: half the middling blow
     expect(bodyPoise('LARGE')).toBeGreaterThan(bodyPoise('MEDIUM'));
     expect(bodyPoise('MEDIUM')).toBeGreaterThan(bodyPoise('TINY'));
     expect(bodyPoise(undefined)).toBe(bodyPoise('MEDIUM'));

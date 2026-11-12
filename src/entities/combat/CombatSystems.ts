@@ -19,7 +19,18 @@ export interface IMeleeArc {
   startTime: number; damage?: number; poison?: number; status?: IStatusPlan; hitIds?: Set<string>;
   /** Part 2: what the blow weighs, so what it lands on feels it. None is not felt (an escort's bare hand). */
   weight?: number;
+  /** SH3: the blow glanced when it was let go. */
+  glance?: boolean;
 }
+/**
+ * SH4: how near a shot must pass a body's middle to land. A shot is drawn 4 px across, so it lands on any part of a
+ * body it is drawn over: the body's drawn half-width (`bodyRadiusPx`) and the shot's own. Never less than the 20 px
+ * the field has always given, so nothing small is harder to hit than it was; a gigantic body (64 px across) or a
+ * colossal one (96) is now struck where a shot is seen to cross it.
+ */
+export const SHOT_LANDS_PX = 20;
+const SHOT_HALF_PX = 2;
+export const shotLandsWithinPx = (size?: string): number => Math.max(SHOT_LANDS_PX, bodyRadiusPx(size) + SHOT_HALF_PX);
 /** The arc every swing was before shapes, and an escort's still is. */
 const OLD_HALF_ANGLE = 0.75;
 /** How much ground a body takes: half its drawn width, by its size word (a post or a structure is a middling one). */
@@ -31,6 +42,8 @@ export interface ICombatEvent {
   broke?: boolean;
   /** Part 2: which way a hit felt pushed it, and how far. */
   push?: { dx: number; dy: number };
+  /** SH3: the blow that landed glanced, so half of it landed. */
+  glance?: boolean;
   entityId?: string;
   definitionId?: string;
   displayName?: string;
@@ -56,9 +69,10 @@ const poisoned = (mob: IWorldEntity, perTick: number, now: number) => {
   mob.statuses = StatusClock.add(mob.statuses as never, { kind: 'dot', magnitude: perTick, durationMs: POISON_MS, tickMs: POISON_TICK_MS }, now) as never;
 };
 
-/** D93: what a blow lands on. A body, or something a leader raised that stands to be broken. */
-const isTarget = (ent: IWorldEntity) =>
+/** D93: what a blow lands on. A body, or something a leader raised that stands to be broken. SH5: the attack key aims only at such a thing. */
+export const landsOn = (ent: Pick<IWorldEntity, 'type' | 'structure'>) =>
   ent.type === EntityType.MOB || (ent.type === EntityType.STRUCTURE && !!ent.structure && ent.structure.brokenAt === undefined);
+const isTarget = landsOn;
 
 const struck = (mob: IWorldEntity, status: IStatusPlan | undefined, now: number) => {
   if (status) mob.statuses = StatusClock.add(mob.statuses as never, status, now) as never;
@@ -182,8 +196,8 @@ export class CombatSystem {
       for (const { mob, chunkKey } of allMobs) {
         if (!mob.health || mob.health <= 0) continue;
 
-        // px: mob radius (12) + bullet radius + grace
-        if (ProjectileSystem.sweptDistance(bullet, mob.position.x, mob.position.y) >= 20) continue;
+        // SH4: any part of the body the shot is drawn over, never under 20 px
+        if (ProjectileSystem.sweptDistance(bullet, mob.position.x, mob.position.y) >= shotLandsWithinPx(MOB_DEFINITIONS[mob.definitionId]?.size)) continue;
 
         // The fight's shapes: a volley lands once on one body. Its other shots stop there and do nothing
         if (bullet.struck?.has(mob.id)) {
@@ -216,7 +230,7 @@ export class CombatSystem {
           }
         });
 
-        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
+        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position, ...(bullet.glance ? { glance: true } : {}) });
 
         if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         break; // a projectile is spent on its first target
@@ -260,7 +274,7 @@ export class CombatSystem {
             }
           });
 
-          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
+          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position, ...(arc.glance ? { glance: true } : {}) });
 
           if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         }

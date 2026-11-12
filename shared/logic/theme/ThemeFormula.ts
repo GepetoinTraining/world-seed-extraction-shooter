@@ -592,8 +592,12 @@ export const SWING_PACE = 0.5;
 export const blowWeight = (s: IStrikeShape): number => swingWindupMs(s) / swingWindupMs(strikeNumbers({ reach: 'middling', sweep: 'arc', hollow: 'none' }));
 /** Call 12: the empty hand throws, at eight tiles and under the draw. A stone or a bare hand flies this far, and no further. */
 export const THROW_TILES = 8;
-/** A shot weighs one, whatever flung it. */
-export const SHOT_WEIGHT = 1;
+/**
+ * A shot weighs half the middling blow (which weighs one), whatever flung it (SH1). So it is felt by every body
+ * it lands on, and breaks the wind-up only of a body that stands at less than a person: only a blow struck in
+ * reach breaks a person's draw, since closing the distance is how speed beats a shooter.
+ */
+export const SHOT_WEIGHT = 1 / 2;
 /** How firmly a body stands: its mass, the same measure as what it eats (a middling body one, a person one). */
 export const bodyPoise = (size?: string): number => APPETITE[size as keyof typeof APPETITE] ?? APPETITE.MEDIUM;
 /** A creature's blow weighs its shape's weight times the body behind it. */

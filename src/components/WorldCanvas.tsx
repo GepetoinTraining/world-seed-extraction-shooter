@@ -10,7 +10,7 @@ import { PERSON_RADIUS_PX, covers, pushFrom } from '../../shared/entities/combat
 import { SHOT_WEIGHT, blowWeight, bodyPoise, feltHit, rankStep } from '../../shared/logic/theme/ThemeFormula';
 import { LootTable } from '../entities/world/LootTable';
 import { Leaders } from '../../shared/entities/world/Leaders';
-import { CombatSystem } from '../entities/combat/CombatSystems';
+import { CombatSystem, landsOn } from '../entities/combat/CombatSystems';
 import { applyKillRewards } from '../entities/combat/killRewards';
 import { FieldCapture } from '../logic/systems/FieldCapture';
 import { FieldEscort } from '../logic/systems/FieldEscort';
@@ -65,7 +65,7 @@ import { talkFrom, useTalk } from '../entities/interaction/talkStore';
 import { MonsterMind } from '../logic/systems/MonsterMind';
 import { drawSpeech } from '../render/atoms/speech';
 import { installGibberishFace } from '../render/atoms/gibberishFace';
-import { FOCUS_ENERGY_COST, InteractPick, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
+import { AimedBy, FOCUS_ENERGY_COST, InteractPick, aimAt, cycleMs, windupOf, fireGate, fireMode, hotbarSlotForDigit, isInteractKey, isTypingTarget, pickInteract, reachFor } from '../logic/systems/FieldInput';
 import { ItemGrid } from './ui/ItemGrid';
 import { useHands } from './ui/hands';
 import { PlacedCard } from './ui/HoverLayer';
@@ -84,6 +84,8 @@ const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain
 const WARDED_SAID_MS = 6000;
 /** Part 2: how often a broken wind-up is said, so a quick hand does not fill the feed. */
 const STAGGER_SAID_MS = 4000;
+/** SH3: how often the field says a blow of yours glanced, so a run of them is said once. */
+const GLANCE_SAID_MS = 4000;
 
 // =============================================================================
 // THE CART WINDOW (Wave 10C, D16): the bed's grid, the seal, the theft log
@@ -251,6 +253,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const lastInspectAt = useRef(0);
   const wardedSaidRef = useRef(0);
   const staggerSaidRef = useRef(0);
+  const glanceSaidRef = useRef(0);
   // Line 72: what the interact key would do right now, said above the hotbar
   const [prompt, setPrompt] = useState<string | null>(null);
   const promptRef = useRef<string | null>(null);
@@ -298,9 +301,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const interactRef = useRef<() => void>(() => {});
   const escapeRef = useRef<() => void>(() => {});
   const interactPickRef = useRef<() => InteractPick | 'EXIT' | null>(() => null);
-  const fireRef = useRef<(now: number) => void>(() => {});
+  const fireRef = useRef<(now: number, by?: AimedBy) => void>(() => {});
   // The fight's rebalance, part 2: the blow being wound up, begun by the button and let go by the loop when its time is up
-  const windupRef = useRef<{ startedAt: number; until: number; pace: number; kind: 'draw' | 'swing'; slot: string; weaponId?: string } | null>(null);
+  // SH2: and what began it, the pointer or the attack key, so its release is aimed the same way
+  const windupRef = useRef<{ startedAt: number; until: number; pace: number; kind: 'draw' | 'swing'; slot: string; weaponId?: string; by: AimedBy } | null>(null);
   const releaseRef = useRef<(now: number) => void>(() => {});
   /** A person stands as a middling body does (part 2): what a blow must weigh to break their draw. */
   const PERSON_POISE = bodyPoise('MEDIUM');
@@ -378,16 +382,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     applyPlayerReceipt(receipt, now, origin, angle);
   };
 
-  // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face.
-  const aimFrom = (playerPos: { x: number; z: number }): number => {
-    if (firingRef.current.mouse && aimRef.current) {
-      return Math.atan2(aimRef.current.y - window.innerHeight / 2, aimRef.current.x - window.innerWidth / 2);
-    }
-    const { near } = inspectedIdRef.current ? targetsNear(playerPos.x, playerPos.z, 300) : { near: [] as IWorldEntity[] };
-    const target = near.find(n => n.id === inspectedIdRef.current);
-    return target
-      ? Math.atan2(target.position.y - playerPos.z, target.position.x - playerPos.x)
-      : { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[facingRef.current];
+  // The pointer aims; the keyboard aims at what the inspect card holds, or the way you face. SH2: a blow begun
+  // by the pointer is aimed by the pointer when it lets go, whether its button is still held or not (`aimAt`).
+  const aimFrom = (playerPos: { x: number; z: number }, by: AimedBy = firingRef.current.mouse ? 'pointer' : 'key'): number => {
+    const { near } = by === 'key' && inspectedIdRef.current ? targetsNear(playerPos.x, playerPos.z, 300) : { near: [] as IWorldEntity[] };
+    // SH5: only a body a blow lands on; a tree the cursor rests on is not aimed at
+    const target = near.find(n => n.id === inspectedIdRef.current && landsOn(n));
+    return aimAt({
+      by, pointer: aimRef.current ?? undefined, centre: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      held: target ? { dx: target.position.x - playerPos.x, dy: target.position.y - playerPos.z } : undefined, facing: facingRef.current
+    });
   };
 
   // What a cast set on the focus asks of its draw: its band and the caster's rank (part 2: its telegraph is its draw)
@@ -400,7 +404,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
   // Line 72: one blow, if the gate says so. The weapon decides how; the hand decides which. Part 2: it winds up
   // first (a draw standing, a swing at half pace) and the loop lets it go when its time is up (`releaseRef`).
-  fireRef.current = (now: number) => {
+  fireRef.current = (now: number, by: AimedBy = 'key') => {
     if (windupRef.current) return; // the hand is already winding up
     // An empty hand reaches for a stone it carries, so what flies is one of them and is spent ("the pebbles don't lose ammo")
     const reached = reachFor(activeWeapon().item, usePlayerStore.getState().player.currentSession?.inventory ?? []);
@@ -423,7 +427,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (gate !== 'FIRE') return;
     const cast = mode === 'FOCUS' && st.player.activeCast ? castWords(st.player.activeCast) : undefined;
     const w = windupOf(weapon, st.player.equipment, st.player.attributes, cast);
-    windupRef.current = { startedAt: now, until: now + w.ms, pace: w.pace, kind: w.kind, slot, weaponId: weapon?.id };
+    windupRef.current = { startedAt: now, until: now + w.ms, pace: w.pace, kind: w.kind, slot, weaponId: weapon?.id, by };
     lastShotRef.current = now;
     useHotbar.getState().fired(slot, now, cycleMs(weapon, st.player.equipment, st.player.attributes));
   };
@@ -440,16 +444,16 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (slot !== held.slot || weapon?.id !== held.weaponId) return;
     const mode = fireMode(weapon);
     if (mode === 'FOCUS' && !st.player.activeCast && (st.player.currentSession?.energy ?? 0) < FOCUS_ENERGY_COST) return;
-    const angle = aimFrom(playerPos);
+    const angle = aimFrom(playerPos, held.by);
     // Line 77: keyed by the session's own count of shots, so a run replays the same
-    const { damage, poison } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon), ProgressionSystem.rankOf(st.player));
+    const { damage, poison, glance } = CombatMath.outgoing(weapon, st.player.equipment, SessionJournal.rollKey('shot', String(shotCountRef.current++)), st.player.attributes, WebSystem.handPower(st.player, weapon), ProgressionSystem.rankOf(st.player));
 
     if (mode === 'MELEE') {
       // The fight's shapes: the held kind's own ground, swung, struck and drawn as one (CombatSystem, FieldRenderer)
       const shape = CombatMath.strikeOf(weapon);
       setActiveSwings(prev => [
         ...prev.filter(s => now - s.startTime < 300),
-        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: shape.reachPx, inner: shape.innerPx, half: shape.halfAngle, startTime: now, damage, poison, weight: blowWeight(shape) }
+        { origin: { x: playerPos.x, y: playerPos.z }, angle, range: shape.reachPx, inner: shape.innerPx, half: shape.halfAngle, startTime: now, damage, poison, weight: blowWeight(shape), ...(glance ? { glance } : {}) }
       ]);
     } else if (mode === 'FOCUS' && st.player.activeCast) {
       // Layer 4: what the focus was set to cast, through the one door
@@ -461,13 +465,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       }) : s);
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT }
+        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, ...(glance ? { glance } : {}) }
       ]);
     } else {
       // Ranged (or unarmed): the hand's own volley, one shot unless its words say otherwise; a throw flies eight tiles (call 12)
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, rangePx: CombatMath.shotRangePx(weapon) }
+        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, rangePx: CombatMath.shotRangePx(weapon), ...(glance ? { glance } : {}) }
       ]);
     }
 
@@ -1012,7 +1016,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (windupRef.current && atRest) windupRef.current = null;
       if (windupRef.current && now >= windupRef.current.until) releaseRef.current(now);
       // Line 72: a held button fires at the weapon's own rate, whatever the weapon
-      if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held && !atRest) fireRef.current(now);
+      if ((firingRef.current.mouse || firingRef.current.key) && !useHands.getState().held && !atRest) fireRef.current(now, firingRef.current.mouse ? 'pointer' : 'key');
 
       // Wave 2.2: REGROW SWEEP (every 2s) — depleted flora comes back
       if (now - lastRegrowSweep.current > 2000) {
@@ -1120,6 +1124,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             x: event.position.x, y: event.position.y, at: now, size
           });
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
+          // SH3: half of a blow that glanced landed, and the field says so, once in a run of them
+          if (event.type === 'HIT' && event.glance && now - glanceSaidRef.current > GLANCE_SAID_MS) {
+            glanceSaidRef.current = now;
+            feed('It glances: half of the blow lands.', 'plain');
+          }
           if (event.type === 'HIT' && event.entityId) void rememberThreat(useWorldStore.getState().currentMap?.seed ?? '', event.entityId, usePlayerStore.getState().player.id, worldDay());
           if (event.type === 'KILL' && event.xpReward) {
             feed(`${event.displayName ?? 'Contact'} down. +${event.xpReward.amount} XP`, 'signal');
@@ -1376,7 +1385,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range, inner: s.inner, half: s.half })),
           // Part 2: the blow you are winding up, aimed where you aim, filling as it comes due
           windup: windupRef.current ? {
-            x: playerPos.x, y: playerPos.z, angle: aimFrom(playerPos), kind: windupRef.current.kind,
+            x: playerPos.x, y: playerPos.z, angle: aimFrom(playerPos, windupRef.current.by), kind: windupRef.current.kind,
             fill: Math.min(1, (now - windupRef.current.startedAt) / Math.max(1, windupRef.current.until - windupRef.current.startedAt)),
             ...(windupRef.current.kind === 'swing' ? { shape: CombatMath.strikeOf(held) } : {})
           } : undefined
@@ -1523,7 +1532,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     setMenuPosition(null);
     aimRef.current = { x: e.clientX, y: e.clientY };
     firingRef.current.mouse = true;
-    fireRef.current(Date.now());
+    fireRef.current(Date.now(), 'pointer');
   };
 
   // Line 75: drawn a few times a second from what this session has seen, never with the frame
