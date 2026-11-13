@@ -1016,6 +1016,16 @@ export interface IMaterialKnowledge {
   discoveredAffixes: string[];
 }
 
+/** UXC, part 3: what a note can be about: a property worked into a piece, a piece not read, a material, a creature, a person. */
+export type NoteKind = 'affix' | 'piece' | 'material' | 'creature' | 'person';
+
+/** UXC, part 3: one player's guess about one unknown, in their own words, shaped short. */
+export interface IPlayerNote {
+  kind: NoteKind;
+  note: string;
+  at: number;
+}
+
 // NEW: The "Float Memory" System
 export interface ICognitiveFrame {
   id: string;
@@ -1071,6 +1081,11 @@ export interface IPlayer {
    * them (`ContactNames.personKey`). Knowledge of this character's own, kept between drops.
    */
   namesKnown?: Record<string, true>;
+  /**
+   * UXC, part 3 (Pedro: "button + voice"): what this character's player said of things they did not know, each shaped
+   * into one short note, keyed by what it is about (`NoteKeys`). Their guesses, never facts; kept when the truth is learned.
+   */
+  notes?: Record<string, IPlayerNote>;
   /** What each skill's circles have earned, by skill id. Its numbers were rolled here, never by a model. */
   skillGifts?: Record<string, ISkillGift[]>;
   /** D51: what is left of today's energy between sessions. Undefined means a full day. */
