@@ -49,7 +49,7 @@
  * different one says the history under the head was written over, which is a challenge.
  */
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import type { SqlStore } from '../../shared/SqlStore';
+import type { IStore } from '../store';
 import { StoreConflict } from '../../shared/SqlStore';
 import type { CommitOp, IWireDoc } from '../../shared/entities/data/wire';
 import { signedText } from '../../shared/entities/identity/signedText';
@@ -213,7 +213,7 @@ export class Hub {
   /** Measured against when the handle does not exist, so a wrong handle takes as long as a wrong password. */
   private readonly decoy = randomBytes(16);
 
-  constructor(/** @internal */ readonly store: SqlStore, readonly key: IHubKey, private readonly options: IHubOptions) {
+  constructor(/** @internal */ readonly store: IStore, readonly key: IHubKey, private readonly options: IHubOptions) {
     this.now = options.now ?? Date.now;
   }
 

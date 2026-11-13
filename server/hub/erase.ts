@@ -20,6 +20,10 @@
  * its way when the account was deleted can still land after (coldStore.ts), so what was deleted is
  * remembered by id until a later maintenance looks at the record again and finds none of it: only
  * then is the note itself deleted, here and there. With no record, nothing is remembered.
+ *
+ * WHERE THE STORE IS TURSO ALONE (tursoStore.ts) there is no second copy: the store is the record. The
+ * same ids go in one request on the store itself, whole or not at all, nothing is remembered, and the
+ * answer says NONE, as for any hub that keeps no record apart from its store.
  */
 import { sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
@@ -56,10 +60,16 @@ const parts = <T>(list: T[], size = IDS_PER_ASK): T[][] => {
 const marks = (n: number) => Array.from({ length: n }, () => '?').join(', ');
 const noteId = (accountKey: string) => `hub_erase_${createHash('sha256').update(accountKey).digest('hex').slice(0, 32)}`;
 
+/** Ids taken out of the database under a store, whole or not at all: what a store on Turso does for itself (tursoStore.ts). */
+export interface IEraseHere {
+  erase(docs: string[], chains: string[]): Promise<{ rows: number; documents: number }>;
+}
+
 export class Eraser {
   constructor(
     private readonly hub: Hub,
-    private readonly database: IDatabase,
+    /** The Postgres under the store, or a store that takes ids out itself. */
+    private readonly here: IDatabase | IEraseHere,
     private readonly record: IRecordConfig,
     private readonly openDoor: (config: { url: string; authToken?: string }) => Promise<IColdDoor> = openColdDoor
   ) {}
@@ -90,8 +100,9 @@ export class Eraser {
 
   /** Out of this hub's own database, whole or not at all. Returns how much went. */
   private async eraseHere(docs: string[], chains: string[]): Promise<{ rows: number; documents: number }> {
+    if ('erase' in this.here) return this.here.erase(docs, chains);
     const list = (ids: string[]) => sql.join(ids.map(id => sql`${id}`), sql`, `);
-    return this.database.db.transaction(async (tx: any) => {
+    return this.here.db.transaction(async (tx: any) => {
       let rows = 0;
       let documents = 0;
       for (const ids of parts(chains)) {
