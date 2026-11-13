@@ -13,6 +13,7 @@ import { IItem, IPlayer, ISkillGift, ISkillState } from '../../../shared/types';
 import { IHubTree, MASTERY_RUNGS, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { WebBank } from '../../../shared/logic/content/WebBank';
 import { LoreLaw } from '../../../shared/logic/systems/LoreLaw';
+import { DescriptionLaw } from '../../../shared/logic/systems/DescriptionLaw';
 import { LEVELS_PER_CIRCLE } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { DELIVERIES, EFFECTS, PASSIVE_STATS } from '../../../shared/logic/theme/ThemeTypes';
@@ -80,9 +81,9 @@ export const SkillSay = {
     return SkillNames.whatItIs(tags, pack);
   },
 
-  /** An identify skill forming names nothing (D32): which eye would say what the unread piece was. */
+  /** An identify skill forming names nothing (D32): which eye would say what the unread piece was. One rule with the sheet's. */
   isEye(tags: string[]): boolean {
-    return tags.some(t => t.startsWith('identify'));
+    return DescriptionLaw.isEye(tags);
   },
 
   /** The lore a thing of these tags can draw on: general, and its own kind unless a misreading locks it. */

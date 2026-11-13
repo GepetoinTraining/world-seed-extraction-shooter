@@ -431,7 +431,12 @@ export class WebSystem {
   static handPower(player: IPlayer, weapon: IItem | undefined): number {
     const tags = weapon?.tags ?? [];
     return this.heldSkills(player.bank.universalSkills).reduce((best, skill) =>
-      skill.tags.length > 0 && skill.tags.every(t => tags.includes(t)) ? Math.max(best, this.skillPower(skill)) : best, 0);
+      this.fits(skill, tags) ? Math.max(best, this.skillPower(skill)) : best, 0);
+  }
+
+  /** Whether a skill answers to a thing: it has words, and every one of them is on the thing. The fight reads a weapon so. */
+  static fits(skill: Pick<ISkillState, 'tags'>, thingTags: readonly string[]): boolean {
+    return skill.tags.length > 0 && skill.tags.every(t => thingTags.includes(t));
   }
 
   // -------------------------------------------------------------------------
