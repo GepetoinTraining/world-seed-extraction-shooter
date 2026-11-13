@@ -36,6 +36,8 @@ import { SheetNumbers } from '../logic/systems/SheetNumbers';
 import { hubTreeOf } from '../entities/hub/hubTech';
 import { useHotbar } from './ui/stores';
 import { SkillNames } from '../logic/systems/SkillNames';
+import { DescriptionLaw } from '../../shared/logic/systems/DescriptionLaw';
+import { Described, SheetLine } from './SheetLine';
 
 /** The groups are the shared rules' (2.13); a sheet draws each by its word and its place, in this order. */
 export const ATTRIBUTE_GROUPS: Record<string, (keyof IAttributes)[]> = Object.fromEntries(GROUP_ORDER.map(g => [GROUP_WORDS[g], GROUPS[g]]));
@@ -98,8 +100,10 @@ const Circles: React.FC<{ filled: number; first?: number }> = ({ filled, first =
 
 /**
  * SKILLS (GV, 2026-11-12). Pedro: "the way the skills come into play don't tell anyone anything". Every skill held and
- * forming is said by `SkillSay`: what it is, and on the large sheet what it does when it comes into play, what grows it
- * and what it still needs. The small sheet shows the same rows, short.
+ * forming is said by `SkillSay`: what it is, and what it does when it comes into play, what grows it and what it still needs.
+ * UXS (2026-11-12): numbers first, on both sheets. A skill's line is its name, level, step, circles and gifts; what it does
+ * and what grows it is its description, opened behind it, and it opens for the skill held (`DescriptionLaw.itself`). One
+ * forming is not found yet, so its own description is not known. The large sheet says what a circle is on its own line.
  */
 export const HandsPanel: React.FC<{ full?: boolean }> = ({ full = false }) => {
   const { player, fillCircle } = usePlayerStore();
@@ -114,10 +118,12 @@ export const HandsPanel: React.FC<{ full?: boolean }> = ({ full = false }) => {
       {held.length === 0 && forming.length === 0 && (
         <div className="ws-dim ws-small">Nothing yet. Work something with a tool, then rest.</div>
       )}
-      {(full || freeCircles > 0) && held.length > 0 && <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>{SkillSay.circlesLine(player)}</div>}
+      {!full && freeCircles > 0 && held.length > 0 && <SheetLine word="CIRCLES TO PLACE" value={String(freeCircles)} says={SkillSay.circlesLine(player)} />}
       <div className="ws-list">
         {held.map(row => (
-          <div key={row.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
+          <Described key={row.id} word={row.name} root={row.root} mark={{ 'data-skill': row.id }}
+            says={[row.flavor, ...row.does, row.grows, row.firstBy && `First in this hub: ${row.firstBy}`]}
+            style={{ padding: '4px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
             <div className="ws-row" style={{ padding: 0 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <RankMark rank={row.rank} scale={1} />
@@ -138,27 +144,24 @@ export const HandsPanel: React.FC<{ full?: boolean }> = ({ full = false }) => {
               )}
             </div>
             {row.gifts.map(g => <div key={g} className="ws-small">GIFT · {g}</div>)}
-            {row.giftWaits && <div className="ws-signal ws-small">{row.giftWaits}</div>}
-            {full && row.flavor && <div className="ws-dim ws-small">{row.flavor}</div>}
-            {full && row.does.map(line => <div key={line} className="ws-small">{line}</div>)}
-            {full && <div className="ws-dim ws-small">{row.grows}</div>}
-            {full && row.firstBy && <div className="ws-dim ws-small">First in this hub: {row.firstBy}</div>}
-          </div>
+            {row.giftWaits && <SheetLine word="A GIFT AT YOUR NEXT REST" value={`${row.giftWaits.asks} lore · you hold ${said(row.giftWaits.holds)}`} />}
+          </Described>
         ))}
       </div>
       {forming.length > 0 && (
         <>
-          <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>FORMING · A REST SETTLES ONE WHEN IT IS READY, FOR LORE</div>
+          <Described word="FORMING" says="A rest settles one when it is ready, for lore." style={{ margin: '8px 0 2px' }}>
+            <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em' }}>FORMING</div>
+          </Described>
           {/* D32: which eye is forming would say what the unread piece was, so every eye is one row (SkillSay.forming) */}
           {forming.map(row => (
-            <div key={row.said} style={{ padding: '2px 0' }}>
+            <Described key={row.said} word={row.said} says={row.grows} root={row.root} mark={{ 'data-forming': row.said }} style={{ padding: '2px 0' }}>
               <div className="ws-row ws-small" style={{ padding: 0 }}>
                 <span style={{ minWidth: 0 }}>{row.said}</span>
                 <FormingFill fill={row.fill} />
               </div>
               <div className="ws-dim ws-small">{row.asks} lore to learn · you hold {said(row.holds)}{row.holds < row.asks ? `, ${said(row.asks - row.holds)} short` : ''}</div>
-              {full && <div className="ws-dim ws-small">{row.grows}</div>}
-            </div>
+            </Described>
           ))}
         </>
       )}
@@ -166,9 +169,9 @@ export const HandsPanel: React.FC<{ full?: boolean }> = ({ full = false }) => {
         <>
           <div className="ws-dim ws-small" style={{ letterSpacing: '0.1em', margin: '8px 0 2px' }}>THE HUB CAN RAISE</div>
           {sheet.opens.map(station => (
-            <div key={station.id} className="ws-small" style={{ padding: '1px 0' }}>
-              {station.name}{station.description ? <span className="ws-dim"> — {station.description}</span> : null}
-            </div>
+            <Described key={station.id} word={station.name} says={station.description} root={DescriptionLaw.bench(station.id)} style={{ padding: '1px 0' }}>
+              <div className="ws-small">{station.name}</div>
+            </Described>
           ))}
         </>
       )}

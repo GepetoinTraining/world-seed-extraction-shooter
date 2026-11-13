@@ -114,6 +114,8 @@ The button can stay as "send now", or go.
 - keeps a line of people waiting to talk in the database, as one line;
 - holds a player whose socket closed in their place and their lines for 5 seconds, so a socket the host closed costs nothing if the browser is back within that.
 
+On the host its store is Turso alone (Pedro, 2026-11-13: "Yes, Turso only"; `DEPLOY.md`, "Turso alone"). There is no Postgres to nudge through, so instances hear each other on a beat: an event or a line change reaches a player on another instance within about a second, and another instance's player walking is seen at most about three seconds late, at points two seconds apart, which `Presence.ts` slides between as it does for any late word. Two players on one instance see each other as before. Nothing in the game changes for it.
+
 **GAME, change 1.** `LiveClient.join` subscribes with `since: 0` the first time, which asks for every event the world ever had. A first join reads the documents themselves through `/live/get` and `/live/query`, so it needs none of them:
 
 ```ts
@@ -163,7 +165,7 @@ Mounted at `/api/hub`. A `POST` takes JSON only. A signed-in route takes the `ws
 | `GET /clock` | anyone | |
 | `POST /sessions/clerk` | someone Clerk signed in | **new**: `{ token }`, sets the hub's cookie. The site's page calls it, not the game |
 | `POST /accounts`, `POST /sessions` | anyone | 403 when `accounts` is `clerk` |
-| `GET /session`, `POST /session/end` | signed in | |
+| `GET /session`, `POST /session/end` | signed in | `account.key` added to `GET /session`: the account's own key |
 | `GET /account` | signed in | **new** |
 | `POST /account/delete` | signed in | **new** |
 | `POST /characters/nonce` | signed in | |
@@ -179,6 +181,7 @@ Mounted at `/api/hub`. A `POST` takes JSON only. A signed-in route takes the `ws
 | `GET /live/socket?uid=` (upgrade) | let into our world | `since: 'now'` accepted |
 | `GET /maintenance` | the host's scheduled call only | **new**: writes down to the record |
 | `POST /clerk` | Clerk only | **new**: Clerk's signed word that an account was deleted there |
+| `GET /dev/state`, `/dev/tables`, `/dev/rows`, `/dev/row`, `/dev/find` | an account on the host's `WS_DEV_ACCOUNTS` only | **new**: the developers' view of the data, read only (`DEPLOY.md`, "The developers' view"). The game never calls these, and needs nothing for them |
 
 ## 9. What is not built, so nobody plumbs toward it yet
 
@@ -194,9 +197,12 @@ When they come they hang off the same account and the same character registratio
 
 Everything here passes on a database in memory and real local servers. None of it has run on Vercel, against a Clerk instance, against a served Postgres or against Turso itself, because that needs accounts only Pedro can open:
 
-- that Vercel hands `api/hub.ts`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`;
-- that Vercel builds the function from these TypeScript files as they are;
+- that Vercel hands `api/hub.js`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`;
+- that Vercel builds and runs the function. The first deployment (2026-11-13) showed it does NOT run these TypeScript files as they are: plain Node could not find `server/hub/app`. The hub is now built into one file first (`scripts/build-hub.ts`, `DEPLOY.md`); that the host runs that file has not been seen yet;
 - Clerk's own form on the site's first page (`landing/landing.js`), which was written from Clerk's documentation and never loaded;
-- the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
+- the page's headers on the host: `vercel.json`'s fixed ones, and the content policy `npm run build:site` writes into each landing page (`DEPLOY.md`, "The page's headers");
+- the settings read from the names the host's integrations write (`server/hub/settings.ts`), which were read on the providers' pages and never on the host itself;
+- the store on Turso alone (`server/tursoStore.ts`) and its word between instances read on a beat (`server/live/tursoLive.ts`): proved over Turso's stand-in, with two instances sharing one world, and run against a Turso test database of Pedro's (the ledger's HT rows say what that showed), never on the host's own database;
+- for whoever names a Postgres instead: the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
 
 The first preview deployment settles the first two in a minute: `GET /api/hub/health` must answer.

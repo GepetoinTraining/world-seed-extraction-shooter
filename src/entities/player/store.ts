@@ -45,6 +45,7 @@ import { CartOverlay, IPlacedCart } from '../world/CartOverlay';
 import { EntityType, ICartState, IWorldEntity } from '../../../shared/entities/world/types';
 import { MaterialScience } from '../world/MaterialScience';
 import { COGNITIVE_FRAMES } from '../../../shared/entities/player/data/cognitiveFrames'; // Import definitions
+import { withTotals } from './systems/Totals'; // UXS: what the attributes add up to, one pure function the sheet's preview asks too
 import { WorkCost } from '../../../shared/logic/systems/WorkCost';
 import { FieldCapture } from '../../logic/systems/FieldCapture';
 import { FieldEscort } from '../../logic/systems/FieldEscort';
@@ -445,36 +446,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   recalcAttributes: () => {
-    set(state => {
-      const { baseAttributes, equipment } = state.player;
-      const newAttributes = { ...baseAttributes };
-
-      // D22: frames apply from their head-budget positions (legacy floatMemory
-      // only when no equipment exists yet — migration brings it in)
-      const worn: ICognitiveFrame[] = equipment
-        ? HEAD_BUDGET_POSITIONS.map(p => equipment.frames[p]).filter(Boolean).map(id => COGNITIVE_FRAMES[id!]).filter(Boolean)
-        : (state.player.floatMemory.filter(Boolean) as ICognitiveFrame[]);
-
-      worn.forEach(frame => {
-        Object.entries(frame.modifiers).forEach(([key, val]) => {
-          if (key in newAttributes) {
-            (newAttributes as any)[key] += val;
-          }
-        });
-      });
-
-      // Clamp values (Min 1)
-      Object.keys(newAttributes).forEach(k => {
-        if ((newAttributes as any)[k] < 1) (newAttributes as any)[k] = 1;
-      });
-
-      // The legacy mirror: old readers see the worn frames, in budget order
-      const mirror = [worn[0] ?? null, worn[1] ?? null, worn[2] ?? null] as [ICognitiveFrame | null, ICognitiveFrame | null, ICognitiveFrame | null];
-
-      return {
-        player: CircleSystem.withPassives({ ...state.player, attributes: newAttributes, floatMemory: mirror })
-      };
-    });
+    set(state => ({ player: withTotals(state.player) }));
   },
 
   // --- THE SLOT TREE (Wave 10C): one door on, one door off ---

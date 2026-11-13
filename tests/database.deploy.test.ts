@@ -14,8 +14,12 @@
  * These bars stand on real HTTP servers and sockets over stores in memory. Clerk and Turso are
  * stood in for: a key pair made here signs what Clerk would, and the record's double answers as
  * Turso does (tests/fixtures/record-double.ts).
+ *
+ * The hub's store has two bodies, and what a host runs is held on both: Postgres, with the record
+ * written down to Turso, and Turso alone, with no Postgres anywhere (server/tursoStore.ts), its
+ * instances hearing each other on a beat (server/live/tursoLive.ts).
  */
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -24,9 +28,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqlStore } from '../shared/SqlStore';
-import type { IDatabase } from '../shared/dbShared';
 import { oneWriterAtATime, openDatabase } from '../server/connection';
-import { openLive, recordConfig } from '../server/record';
+import type { IStore } from '../server/store';
+import { openBody, type IBody } from '../server/hub/body';
+import { tursoLines } from '../server/live/tursoLive';
+import { openTursoStore } from '../server/tursoStore';
+import { startDouble, type IDouble } from './fixtures/turso-double';
 import { Hub, mintOf } from '../server/hub/Hub';
 import { makeHubKey } from '../server/hub/keys';
 import { createHubHandler } from '../server/hub/http';
@@ -35,8 +42,8 @@ import { appPathOf, createHubApp } from '../server/hub/app';
 import { clerkConfigFrom, clerkFrontendHost, readClerkToken, readClerkWebhook, type IClerkConfig } from '../server/hub/clerk';
 import { Eraser } from '../server/hub/erase';
 import { LiveRoom, type LiveAccess } from '../server/live/room';
-import { LocalWire } from '../server/live/bus';
-import { memoryLines, tableLines } from '../server/live/lines';
+import { LocalWire, type ILiveBus } from '../server/live/bus';
+import { memoryLines, tableLines, type ILineBook } from '../server/live/lines';
 import { TalkLine, emptyLine } from '../shared/logic/live/TalkLine';
 import { signedText } from '../shared/entities/identity/signedText';
 import { addressOf } from '../shared/logic/time/RadixClock';
@@ -107,22 +114,36 @@ async function makeCharacter(uid: string) {
   return { uid, certificate: { metadata: { uid, displayName: 'TESTER', createdAt: 1 }, publicKeyJWK }, sign, row };
 }
 
+// --- the Turso stand-in, one for the file, emptied where a bar needs it ------------------------
+
+let turso: IDouble;
+beforeAll(async () => { turso = await startDouble(); }, 30_000);
+afterAll(async () => { await turso?.stop(); });
+
+/** The two bodies of the hub's store, as a host opens them (server/hub/body.ts). */
+const BODIES: { name: string; url: () => Promise<string>; again: () => string; record: string }[] = [
+  { name: 'Postgres', url: async () => 'pglite://memory', again: () => 'pglite://memory', record: 'NO_RECORD' },
+  // `url` empties the stand-in; `again` is a second store on what stands
+  { name: 'Turso alone', url: async () => { await turso.reset(); return turso.url; }, again: () => turso.url, record: 'IN_STORE' }
+];
+
 // --- a hub behind a real server -----------------------------------------------------------------
 
-interface IStand { origin: string; server: Server; hub: Hub; store: SqlStore; database: IDatabase; eraser: Eraser; clerk: IClerkConfig; maintained: number; close: () => Promise<void> }
+interface IStand { origin: string; server: Server; hub: Hub; store: IStore; body: IBody; eraser: Eraser; clerk: IClerkConfig; maintained: number; close: () => Promise<void> }
 
 async function standHub(options: { env?: NodeJS.ProcessEnv; clerk?: IClerkConfig | null; url?: string } = {}): Promise<IStand> {
   const env = options.env ?? {};
-  const { store, database } = await openLive(options.url ?? 'pglite://memory', env, { say: () => undefined } as any);
+  const body = await openBody(options.url ?? 'pglite://memory', env, { say: () => undefined });
+  const { store } = body;
   const clerk = options.clerk === undefined ? clerkConfig() : options.clerk;
   const hub = new Hub(store, makeHubKey(), { publicUrl: 'https://hub.test', now: () => NOW, accounts: clerk ? 'clerk' : 'builtin' });
-  const eraser = new Eraser(hub, database, recordConfig(env));
+  const eraser = new Eraser(hub, body.eraseHere, body.record);
   const stand = { maintained: 0 } as IStand;
-  const handler = createHubHandler(hub, { clerk, eraser, cronSecret: 'the-hosts-word', maintain: async () => { stand.maintained++; return { record: [(await store.maintain()).record?.status ?? 'NO_RECORD'], erasuresWaiting: await eraser.sweep() }; } });
+  const handler = createHubHandler(hub, { clerk, eraser, cronSecret: 'the-hosts-word', maintain: async () => { stand.maintained++; return { record: [await body.maintain()], erasuresWaiting: await eraser.sweep() }; } });
   const server = createServer((req, res) => void handler(req, res, hubPathOf(req.url)));
   await new Promise<void>(r => server.listen(0, '127.0.0.1', () => r()));
   return Object.assign(stand, {
-    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server, hub, store, database, eraser, clerk: clerk as IClerkConfig,
+    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server, hub, store, body, eraser, clerk: clerk as IClerkConfig,
     close: async () => { await new Promise<void>(r => server.close(() => r())); await store.close(); }
   });
 }
@@ -199,9 +220,9 @@ describe('accounts by e-mail and password: what Clerk signs is read with a key a
   });
 });
 
-describe('the hub we launch: signing in, a character\'s birth, and everything deleted', () => {
+describe.each(BODIES)('the hub we launch, its store on $name: signing in, a character\'s birth, and everything deleted', ({ url, again, record }) => {
   let stand: IStand;
-  beforeEach(async () => { stand = await standHub(); });
+  beforeEach(async () => { stand = await standHub({ url: await url() }); });
   afterEach(async () => { await stand.close(); });
 
   it('someone Clerk signed in gets this hub\'s own session in its cookie, and an account from that moment', async () => {
@@ -227,7 +248,7 @@ describe('the hub we launch: signing in, a character\'s birth, and everything de
   });
 
   it('a hub that keeps its own accounts has no Clerk door, and says which it is', async () => {
-    const own = await standHub({ clerk: null });
+    const own = await standHub({ clerk: null, url: again() });
     try {
       const me = visitor(own.origin);
       expect((await me.call('/where')).body).toMatchObject({ accounts: 'builtin' });
@@ -331,7 +352,7 @@ describe('the hub we launch: signing in, a character\'s birth, and everything de
     expect((await me.call('/maintenance')).status).toBe(401);
     expect((await me.call('/maintenance', undefined, { Authorization: 'Bearer a-guess' })).status).toBe(401);
     expect(stand.maintained).toBe(0);
-    expect(await me.call('/maintenance', undefined, { Authorization: 'Bearer the-hosts-word' })).toMatchObject({ status: 200, body: { ok: true, record: ['NO_RECORD'], erasuresWaiting: 0 } });
+    expect(await me.call('/maintenance', undefined, { Authorization: 'Bearer the-hosts-word' })).toMatchObject({ status: 200, body: { ok: true, record: [record], erasuresWaiting: 0 } });
     expect(stand.maintained).toBe(1);
   });
 });
@@ -432,13 +453,42 @@ describe('an account deleted here is deleted on the record', () => {
 // SEVERAL INSTANCES, ONE ROOM
 // ================================================================================================
 
-describe('online play on two instances: one world, one order, one line', () => {
+/**
+ * What two instances share, per body. On Postgres: one database, and a wire for the nudge between them.
+ * On Turso alone: two stores of their own on one database, each hearing the other on a beat read from
+ * the table (tursoLive.ts), its timings shortened here so a bar takes moments.
+ */
+interface IInstances { parts: { store: IStore; bus: ILiveBus; lines: ILineBook }[]; close: () => Promise<void> }
+const TWO_INSTANCES: { name: string; open: () => Promise<IInstances> }[] = [
+  {
+    name: 'Postgres, nudged between instances',
+    open: async () => {
+      const database = await openDatabase('pglite://memory');
+      const store = new SqlStore(database);
+      const wire = new LocalWire();
+      // One store and one table of lines, as two instances have one database; each its own end of the wire
+      const lines = await tableLines(database);
+      return { parts: [0, 1].map(() => ({ store, bus: wire.join(), lines })), close: () => store.close() };
+    }
+  },
+  {
+    name: 'Turso alone, read on a beat',
+    open: async () => {
+      await turso.reset();
+      const bodies = [await openBody(turso.url, {}), await openBody(turso.url, {})];
+      const parts = [];
+      for (const body of bodies) parts.push({ store: body.store, bus: await body.bus({ beatMs: 25, paceMs: 60, aliveMs: 400, staleMs: 1500 }), lines: await body.lines() });
+      return { parts, close: async () => { for (const body of bodies) await body.store.close(); } };
+    }
+  }
+];
+
+describe.each(TWO_INSTANCES)('online play on two instances, $name: one world, one order, one line', ({ open: openInstances }) => {
   const WORLD = 'world_live_1';
   const doc = (id: string, data: unknown, at = 1) => ({ id, namespace: 'territories', dataText: JSON.stringify(data), metadata: { createdAt: at, updatedAt: at, version: 1 } });
   const access: LiveAccess = async (_token, uid) => (uid.startsWith('ws_') ? { ok: true, worldUid: WORLD } : { ok: false, status: 401, reason: 'Sign in to the hub first.' });
 
-  let database: IDatabase;
-  let store: SqlStore;
+  let instances: IInstances;
   let sides: { room: LiveRoom; server: Server; origin: string }[];
   const open: WebSocket[] = [];
 
@@ -457,14 +507,11 @@ describe('online play on two instances: one world, one order, one line', () => {
   const where = (place: string) => ({ where: { place, x: 1, z: 2, facing: 'down', moving: false, t: 10, name: 'Someone', archetype: 'NOMAD' } });
 
   beforeEach(async () => {
-    database = await openDatabase('pglite://memory');
-    store = new SqlStore(database);
-    const wire = new LocalWire();
-    // One store and one table of lines, as two instances have one database; each its own end of the wire
-    const lines = await tableLines(database);
+    instances = await openInstances();
     sides = [];
     for (let i = 0; i < 2; i++) {
-      const room = new LiveRoom(store, access, Date.now, { bus: wire.join(), lines, holdMs: 400, beatMs: 0 });
+      const { store, bus, lines } = instances.parts[i];
+      const room = new LiveRoom(store, access, Date.now, { bus, lines, holdMs: 400, beatMs: 0 });
       const server = createServer((req, res) => {
         const path = (req.url ?? '/').split('?')[0];
         if (path.startsWith('/api/hub/live')) return void room.http(req, res, path.slice('/api/hub/live'.length), 't');
@@ -479,7 +526,7 @@ describe('online play on two instances: one world, one order, one line', () => {
   afterEach(async () => {
     for (const ws of open.splice(0)) { try { ws.close(); } catch { /* closed already */ } }
     for (const side of sides) { await side.room.close(); side.server.closeAllConnections(); await new Promise<void>(r => side.server.close(() => r())); }
-    await store.close();
+    await instances.close();
   });
 
   it('what lands on one instance is told to a socket on the other, by number, and a first join may ask for none of what came before', async () => {
@@ -598,10 +645,12 @@ describe('online play on two instances: one world, one order, one line', () => {
 });
 
 describe('where the room keeps its lines', () => {
-  it('the table and the memory keep the same law: one change whole, an emptied line gone, lines found by where they are', async () => {
+  it('the tables and the memory keep the same law: one change whole, an emptied line gone, lines found by where they are', async () => {
     const database = await openDatabase('pglite://memory');
+    await turso.reset();
+    const onTurso = await openTursoStore({ url: turso.url });
     try {
-      for (const book of [memoryLines(), await tableLines(database)]) {
+      for (const book of [memoryLines(), await tableLines(database), await tursoLines(onTurso)]) {
         const key = 'w|field|npc_smith';
         expect(await book.read(key)).toEqual(emptyLine());
         const asked = await book.change(key, l => TalkLine.ask(l, 'ws_alder', [], 5).line);
@@ -622,6 +671,7 @@ describe('where the room keeps its lines', () => {
       expect(rows[0].n).toBe(0);
     } finally {
       await database.close();
+      await onTurso.close();
     }
   });
 });
@@ -663,6 +713,28 @@ describe('the hub as one function', () => {
       server.closeAllConnections();
       await new Promise<void>(r => server.close(() => r()));
       await app.close();
+    }
+
+    // The same, its store on Turso alone: no Postgres anywhere, and the daily call has nothing to write down
+    await turso.reset();
+    const alone = createHubApp({ databaseUrl: turso.url, key: makeHubKey(), publicUrl: 'https://hub.test', env: { ...clerkEnv(), CRON_SECRET: 'the-hosts-word', WS_RECORD: '1', TURSO_DATABASE_URL: 'http://127.0.0.1:9' } });
+    const host = createServer((req, res) => void alone.handle(req, res));
+    host.on('upgrade', (req, raw) => alone.upgrade(req, raw));
+    await new Promise<void>(r => host.listen(0, '127.0.0.1', () => r()));
+    const there = `http://127.0.0.1:${(host.address() as AddressInfo).port}`;
+    try {
+      expect(await (await fetch(`${there}/api/hub/health`)).json()).toMatchObject({ ok: true, service: 'worldseed-hub', hub: { url: 'https://hub.test', accounts: 'clerk' } });
+      expect((await fetch(`${there}/api/hub/live/get?uid=ws_a`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(401);
+      // WS_RECORD names a record that does not answer, and it does not matter: on Turso the store is its own record
+      expect(await (await fetch(`${there}/api/hub/maintenance`, { headers: { Authorization: 'Bearer the-hosts-word' } })).json()).toMatchObject({ ok: true, record: ['IN_STORE'], erasuresWaiting: 0 });
+      // Its tables are its own, by name, and the record's are not there
+      const tables = (await turso.sql(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)).map(r => String(r[0]));
+      expect(tables.filter(t => !t.startsWith('store_'))).toEqual([]);
+      expect(tables).toEqual(expect.arrayContaining(['store_documents', 'store_ledger_rows', 'store_treasuries', 'store_commits', 'store_live_lines', 'store_live_places', 'store_migrations']));
+    } finally {
+      host.closeAllConnections();
+      await new Promise<void>(r => host.close(() => r()));
+      await alone.close();
     }
 
     const broken = createHubApp({ problem: 'WS_HUB_DATABASE_URL is not set: this hub has no store to check against.' });

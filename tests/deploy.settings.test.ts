@@ -1,0 +1,279 @@
+// @vitest-environment node
+/**
+ * THE HUB'S SETTINGS, WORKED OUT FROM WHAT THE HOST ALREADY GIVES (Pedro, 2026-11-13: "we need to set
+ * up how to work these out right?"). The first deployment's host held two settings, both Turso's, and
+ * the hub would have said only the first thing it lacked. So:
+ *
+ *   - what the host's own integrations write is read when the hub's own name is not set: the
+ *     Postgres integration's two addresses, and the host's own name for the production address.
+ *     The names were read on the providers' pages (PLAYTEST_LEDGER.md, HD rows);
+ *   - every missing setting is said at once, by name, and never a value;
+ *   - which name a setting was read from goes to the log, and never its value;
+ *   - a signing key is made in the owner's own terminal (`npm run hub:key`), printed and nowhere written.
+ */
+import { describe, it, expect } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { createPublicKey, generateKeyPairSync } from 'node:crypto';
+import { clerkConfigFrom } from '../server/hub/clerk';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { hubConfigFrom } from '../server/hub/function';
+import { hubAppConfigFrom } from '../server/hub/app';
+import { makeHubKey } from '../server/hub/keys';
+import { settingsLine, settingsRead } from '../server/hub/settings';
+
+const root = resolve(import.meta.dirname, '..');
+const pem = () => generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const clerkPublic = () => generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'pem' }).toString();
+const PUBLISHABLE = `pk_test_${Buffer.from('clerk.hub.test$').toString('base64')}`;
+
+/** What Neon's integration and the host itself would write, with values no bar could mistake for another's. */
+const HOST = {
+  DATABASE_URL: 'postgres://pooled-user:pooled-word-1234@pooled.host.test/hub',
+  DATABASE_URL_UNPOOLED: 'postgres://direct-user:direct-word-5678@direct.host.test/hub',
+  VERCEL_PROJECT_PRODUCTION_URL: 'world-seed.host.test'
+};
+
+describe('the settings, worked out from what the host already gives', () => {
+  it('says every missing setting at once, by name, and never a value', () => {
+    const out = hubConfigFrom({});
+    expect('problem' in out).toBe(true);
+    if (!('problem' in out)) return;
+    expect(out.missing).toEqual(['WS_HUB_DATABASE_URL', 'WS_HUB_KEY', 'WS_PUBLIC_URL']);
+    expect(out.problem).toMatch(/WS_HUB_DATABASE_URL is not set/);
+    expect(out.problem).toMatch(/WS_HUB_KEY is not set/);
+    expect(out.problem).toMatch(/WS_PUBLIC_URL is not set/);
+    // It says where the host would have written each, so one look says what is left to do
+    expect(out.problem).toMatch(/DATABASE_URL/);
+    expect(out.problem).toMatch(/VERCEL_PROJECT_PRODUCTION_URL/);
+    expect(out.problem).toMatch(/npm run hub:key/);
+
+    // A key that does not read is said beside what is missing, and its text is never repeated
+    const broken = hubConfigFrom({ WS_HUB_KEY: 'not-a-key-but-a-secret-all-the-same' });
+    expect('problem' in broken && broken.missing).toEqual(['WS_HUB_DATABASE_URL', 'WS_PUBLIC_URL']);
+    expect('problem' in broken && broken.unreadable).toEqual(['WS_HUB_KEY']);
+    expect('problem' in broken && broken.problem).not.toContain('not-a-key-but-a-secret');
+  });
+
+  it('reads what the host\'s integrations write when the hub\'s own name is not set, and its own name wins', () => {
+    const key = pem();
+    const fromHost = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: key });
+    expect('problem' in fromHost).toBe(false);
+    if ('problem' in fromHost) return;
+    expect(fromHost.databaseUrl).toBe(HOST.DATABASE_URL);
+    expect(fromHost.liveListenUrl).toBe(HOST.DATABASE_URL_UNPOOLED);
+    // The host gives the address without its scheme
+    expect(fromHost.publicUrl).toBe('https://world-seed.host.test');
+    expect(fromHost.key.id).toBe(makeHubKey(key).id);
+
+    const own = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: key, WS_HUB_DATABASE_URL: 'pglite://memory', WS_PUBLIC_URL: 'https://chosen.test/', WS_LIVE_LISTEN_URL: 'postgres://own-listen.test/hub' });
+    if ('problem' in own) throw new Error(own.problem);
+    expect(own.databaseUrl).toBe('pglite://memory');
+    expect(own.publicUrl).toBe('https://chosen.test');
+    expect(own.liveListenUrl).toBe('postgres://own-listen.test/hub');
+    // A name set to nothing but spaces is not set
+    const blank = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: key, WS_HUB_DATABASE_URL: '  ' });
+    if ('problem' in blank) throw new Error(blank.problem);
+    expect(blank.databaseUrl).toBe(HOST.DATABASE_URL);
+  });
+
+  it('reads the direct address for the word between instances only beside the store it came with', () => {
+    const key = pem();
+    // The store named by the hub's own name: the host's direct address may be another database's
+    const elsewhere = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: key, WS_HUB_DATABASE_URL: 'postgres://another.test/hub' });
+    if ('problem' in elsewhere) throw new Error(elsewhere.problem);
+    expect(elsewhere.liveListenUrl).toBeUndefined();
+    // The world's documents kept apart: the word between instances is about that database, not this one
+    const apart = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: key, WS_LIVE_DATABASE_URL: 'postgres://live.test/world' });
+    if ('problem' in apart) throw new Error(apart.problem);
+    expect(apart.liveListenUrl).toBeUndefined();
+    expect(apart.liveDatabaseUrl).toBe('postgres://live.test/world');
+  });
+
+  it('names where each setting was read from, for the log, and holds no value', () => {
+    const key = pem();
+    const env = { ...HOST, WS_HUB_KEY: key, TURSO_DATABASE_URL: 'libsql://record.test', TURSO_AUTH_TOKEN: 'turso-token-abcdef', CRON_SECRET: 'cron-word-0123456789' };
+    const read = settingsRead(env);
+    const of = (name: string) => read.find(s => s.name === name);
+    expect(of('WS_HUB_DATABASE_URL')).toMatchObject({ set: true, from: 'DATABASE_URL' });
+    expect(of('WS_LIVE_LISTEN_URL')).toMatchObject({ set: true, from: 'DATABASE_URL_UNPOOLED' });
+    expect(of('WS_PUBLIC_URL')).toMatchObject({ set: true, from: 'VERCEL_PROJECT_PRODUCTION_URL' });
+    expect(of('WS_HUB_KEY')).toMatchObject({ set: true, from: 'WS_HUB_KEY' });
+    expect(of('CLERK_JWT_KEY')).toMatchObject({ set: false, from: null });
+    expect(of('WS_DEV_ACCOUNTS')).toMatchObject({ set: false });
+    for (const s of read) expect(Object.keys(s).sort()).toEqual(['from', 'name', 'needed', 'set', 'what']);
+
+    const line = settingsLine(env);
+    expect(line).toMatch(/WS_HUB_DATABASE_URL \(from DATABASE_URL\)/);
+    expect(line).toMatch(/WS_PUBLIC_URL \(from VERCEL_PROJECT_PRODUCTION_URL\)/);
+    expect(line).toMatch(/Not set: .*CLERK_JWT_KEY/);
+    for (const value of [...Object.values(HOST), key.trim().split('\n')[1], 'turso-token-abcdef', 'cron-word-0123456789', 'libsql://record.test', 'world-seed.host.test']) {
+      expect(line).not.toContain(value);
+    }
+  });
+
+  it('the store is Turso when Turso\'s two names are set and no Postgres is named (Pedro, 2026-11-13: "Yes, Turso only")', () => {
+    const key = pem();
+    const TURSO = { TURSO_DATABASE_URL: 'libsql://store-pedro.turso.test', TURSO_AUTH_TOKEN: 'turso-token-0123456789' };
+    const alone = hubAppConfigFrom({ ...TURSO, WS_HUB_KEY: key, VERCEL_PROJECT_PRODUCTION_URL: HOST.VERCEL_PROJECT_PRODUCTION_URL });
+    if ('problem' in alone) throw new Error(alone.problem);
+    expect(alone.databaseUrl).toBe(TURSO.TURSO_DATABASE_URL);
+    expect(alone.databaseToken).toBe(TURSO.TURSO_AUTH_TOKEN);
+    // No Postgres anywhere: nothing to listen on
+    expect(alone.liveListenUrl).toBeUndefined();
+    expect(settingsRead({ ...TURSO }).find(s => s.name === 'WS_HUB_DATABASE_URL')).toMatchObject({ set: true, from: 'TURSO_DATABASE_URL' });
+    expect(settingsLine({ ...TURSO, WS_HUB_KEY: key })).toMatch(/WS_HUB_DATABASE_URL \(from TURSO_DATABASE_URL\)/);
+    expect(settingsLine({ ...TURSO, WS_HUB_KEY: key })).not.toContain('turso-token-0123456789');
+
+    // A Postgres named is the store, and Turso stays what it was beside it
+    const named = hubAppConfigFrom({ ...TURSO, ...HOST, WS_HUB_KEY: key });
+    if ('problem' in named) throw new Error(named.problem);
+    expect(named.databaseUrl).toBe(HOST.DATABASE_URL);
+    expect(named.databaseToken).toBeUndefined();
+
+    // The hub's own name still wins, and may itself be a Turso address, taking Turso's token when one is set
+    const own = hubAppConfigFrom({ ...TURSO, ...HOST, WS_HUB_KEY: key, WS_HUB_DATABASE_URL: 'libsql://another.turso.test' });
+    if ('problem' in own) throw new Error(own.problem);
+    expect(own.databaseUrl).toBe('libsql://another.turso.test');
+    expect(own.databaseToken).toBe(TURSO.TURSO_AUTH_TOKEN);
+    const local = hubAppConfigFrom({ WS_HUB_KEY: key, WS_PUBLIC_URL: 'https://hub.test', WS_HUB_DATABASE_URL: 'http://127.0.0.1:5911' });
+    if ('problem' in local) throw new Error(local.problem);
+    expect(local.databaseToken).toBeUndefined();
+  });
+
+  it('says what is missing for the store actually chosen, and names no provider as the one expected', () => {
+    // Turso's address without its token: the token is what is missing, and nothing about a Postgres
+    const half = hubConfigFrom({ TURSO_DATABASE_URL: 'libsql://store-pedro.turso.test', WS_HUB_KEY: pem(), WS_PUBLIC_URL: 'https://hub.test' });
+    expect('problem' in half && half.missing).toEqual(['TURSO_AUTH_TOKEN']);
+    expect('problem' in half && half.problem).toMatch(/TURSO_AUTH_TOKEN is not set/);
+    expect('problem' in half && half.problem).not.toContain('libsql://store-pedro');
+
+    // Nothing set: the store's sentence says what kind of thing is missing and every name read, and names no provider as the one expected
+    const none = hubConfigFrom({});
+    if (!('problem' in none)) throw new Error('A hub with nothing set opened.');
+    // The store's sentence is said first, before the key's
+    const sentence = none.problem.slice(0, none.problem.indexOf('WS_HUB_KEY is not set'));
+    expect(sentence).toMatch(/^WS_HUB_DATABASE_URL is not set/);
+    for (const name of ['DATABASE_URL', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN']) expect(sentence).toContain(name);
+    expect(sentence).toMatch(/database/);
+    // Pedro, 2026-11-13: "not neon, I'm not going to dabble in neon". No brand is said as the default, here or anywhere the hub says what is missing
+    const brand = /Neon|Turso's|Supabase|Vercel Postgres|integration/;
+    expect(sentence).not.toMatch(brand);
+    expect(none.problem).not.toMatch(/Neon/);
+    expect('problem' in half && half.problem).not.toMatch(/Neon|Turso's/);
+    // Nor in what each setting is said to be for, which the log and a developers' view show
+    for (const s of settingsRead({})) expect(s.what, s.name).not.toMatch(/Neon/);
+  });
+
+  it('Clerk named by half is said with the rest, and the publishable key Clerk\'s integration writes is read', () => {
+    // Connecting Clerk's integration writes its publishable key; the public key that reads its tokens is pasted by hand
+    const half = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: pem(), NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+    expect('problem' in half && half.missing).toEqual(['CLERK_JWT_KEY']);
+    expect('problem' in half && half.problem).toMatch(/CLERK_JWT_KEY is not set/);
+    // Said beside everything else the hub lacks
+    const both = hubAppConfigFrom({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+    expect('problem' in both && both.missing).toEqual(['WS_HUB_DATABASE_URL', 'WS_HUB_KEY', 'WS_PUBLIC_URL', 'CLERK_JWT_KEY']);
+    const unreadable = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: pem(), CLERK_JWT_KEY: 'not a public key', CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+    expect('problem' in unreadable && unreadable.unreadable).toEqual(['CLERK_JWT_KEY']);
+
+    const whole = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: pem(), CLERK_JWT_KEY: clerkPublic(), NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+    expect('problem' in whole).toBe(false);
+    expect(settingsRead({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE }).find(s => s.name === 'CLERK_PUBLISHABLE_KEY')).toMatchObject({ set: true, from: 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY' });
+  });
+});
+
+describe('a key pasted into a host\'s settings, whatever became of its line ends', () => {
+  // Pedro pasted Clerk's public key on the host himself, and the hub could not read it: a PEM pasted into a
+  // one-line field loses its line ends, to spaces, to nothing, or to the two characters \ and n
+  const mangled = (pem: string): [string, string][] => {
+    const lines = pem.trim();
+    return [
+      ['as it was', lines],
+      ['one line, spaces between', lines.replace(/\n/g, ' ')],
+      ['one line, nothing between', lines.replace(/\n/g, '')],
+      ['line ends written as \\n', lines.replace(/\n/g, '\\n')],
+      ['Windows line ends', lines.replace(/\n/g, '\r\n')],
+      ['spaces and a stray tab, with the line ends gone', lines.replace(/\n/g, '  \t')]
+    ];
+  };
+  const SETTINGS = { WS_HUB_DATABASE_URL: 'pglite://memory', WS_PUBLIC_URL: 'https://hub.test' };
+
+  it('the hub\'s own key reads in every one of those shapes, as the very key it was', () => {
+    const key = pem();
+    const id = makeHubKey(key).id;
+    for (const [how, text] of mangled(key)) {
+      const out = hubConfigFrom({ ...SETTINGS, WS_HUB_KEY: text });
+      if ('problem' in out) throw new Error(`${how}: ${out.problem}`);
+      expect(out.key.id, how).toBe(id);
+    }
+  });
+
+  it('Clerk\'s public key reads in every one of those shapes, as the very key it was', () => {
+    const publicPem = clerkPublic();
+    const want = createPublicKey(publicPem).export({ type: 'spki', format: 'der' }).toString('base64');
+    for (const [how, text] of mangled(publicPem)) {
+      const out = hubAppConfigFrom({ ...SETTINGS, WS_HUB_KEY: pem(), CLERK_JWT_KEY: text, CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+      if ('problem' in out) throw new Error(`${how}: ${out.problem}`);
+      const read = clerkConfigFrom({ CLERK_JWT_KEY: text, CLERK_PUBLISHABLE_KEY: PUBLISHABLE }, 'https://hub.test');
+      if (!read || 'problem' in read) throw new Error(`${how}: not read`);
+      expect(read.publicKey.export({ type: 'spki', format: 'der' }).toString('base64'), how).toBe(want);
+    }
+  });
+
+  it('a wrong text is still refused by name, and never repeated: no markers, markers around what is not a key, half a key', () => {
+    const key = pem().trim();
+    const publicPem = clerkPublic().trim();
+    const body = (text: string) => text.split('\n').slice(1, -1).join('');
+    const wrongs = [
+      'not-a-key-but-a-secret-all-the-same',
+      '-----BEGIN PRIVATE KEY----- bm90IGEga2V5IGF0IGFsbA== -----END PRIVATE KEY-----',
+      `-----BEGIN PRIVATE KEY----- ${body(key).slice(0, 20)} -----END PRIVATE KEY-----`,
+      body(key)
+    ];
+    for (const wrong of wrongs) {
+      const out = hubConfigFrom({ ...SETTINGS, WS_HUB_KEY: wrong });
+      expect('problem' in out && out.unreadable, wrong).toEqual(['WS_HUB_KEY']);
+      expect('problem' in out && out.problem).toMatch(/WS_HUB_KEY cannot be read as a key/);
+      for (const part of wrong.split(/\s+/).filter(p => p.length >= 16)) expect('problem' in out && out.problem).not.toContain(part);
+    }
+    const clerkWrongs = ['not a public key', '-----BEGIN PUBLIC KEY----- bm90IGEga2V5IGF0IGFsbA== -----END PUBLIC KEY-----', body(publicPem)];
+    for (const wrong of clerkWrongs) {
+      const out = hubAppConfigFrom({ ...SETTINGS, WS_HUB_KEY: pem(), CLERK_JWT_KEY: wrong, CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+      expect('problem' in out && out.unreadable, wrong).toEqual(['CLERK_JWT_KEY']);
+      expect('problem' in out && out.problem).toMatch(/CLERK_JWT_KEY is not a public key this hub can read/);
+      for (const part of wrong.split(/\s+/).filter(p => p.length >= 16)) expect('problem' in out && out.problem).not.toContain(part);
+    }
+  });
+});
+
+describe('a signing key made in the owner\'s own terminal', () => {
+  const tsx = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
+  const run = (cwd: string) => spawnSync(process.execPath, ['--import', tsx, resolve(root, 'scripts', 'hub-key.ts')], { cwd, encoding: 'utf8', timeout: 60_000 });
+
+  it('is printed whole, reads as the key a hub signs with, is new each time, and is written nowhere', () => {
+    expect(JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).scripts['hub:key']).toBe('node --import tsx scripts/hub-key.ts');
+    const here = mkdtempSync(join(tmpdir(), 'ws-hub-key-'));
+    try {
+      const first = run(here);
+      const second = run(here);
+      expect(first.status, first.stderr).toBe(0);
+      const pemOf = (out: string) => out.match(/-----BEGIN PRIVATE KEY-----[\s\S]+?-----END PRIVATE KEY-----/)?.[0] ?? '';
+      const one = pemOf(first.stdout);
+      expect(one).not.toBe('');
+      const key = makeHubKey(one);
+      // It says which hub this key makes, so the owner can see it took once deployed
+      expect(first.stdout).toContain(key.id);
+      expect(first.stdout).toMatch(/WS_HUB_KEY/);
+      expect(pemOf(second.stdout)).not.toBe(one);
+      // And a fresh text for the scheduled call's secret, fit for a header
+      expect(first.stdout).toMatch(/CRON_SECRET/);
+      expect(first.stdout).toMatch(/\b[0-9a-f]{64}\b/);
+      expect(readdirSync(here)).toEqual([]);
+    } finally {
+      rmSync(here, { recursive: true, force: true });
+    }
+  }, 120_000);
+});

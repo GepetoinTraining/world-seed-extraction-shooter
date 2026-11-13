@@ -1,7 +1,8 @@
 /**
  * THE HUB, as deployed (DEPLOY.md): accounts, sessions, a person's characters, and the receipts it
- * checks. It runs nobody's play. Everything it keeps is in its own store, the same SqlStore the game
- * uses, so its record goes to Turso through the same keeper:
+ * checks. It runs nobody's play. Everything it keeps is in its own store: the same SqlStore the game
+ * uses, its record going to Turso through the same keeper, or, on a function host with no Postgres,
+ * the same law on Turso alone (server/tursoStore.ts), which is its own record:
  *
  *   hub_account_{handle}    an account: the handle as written, a salted scrypt hash. On a hub whose
  *                           accounts are Clerk's (clerk.ts) it is hub_account_clerk_{id}: that id
@@ -49,7 +50,7 @@
  * different one says the history under the head was written over, which is a challenge.
  */
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import type { SqlStore } from '../../shared/SqlStore';
+import type { IStore } from '../store';
 import { StoreConflict } from '../../shared/SqlStore';
 import type { CommitOp, IWireDoc } from '../../shared/entities/data/wire';
 import { signedText } from '../../shared/entities/identity/signedText';
@@ -213,7 +214,7 @@ export class Hub {
   /** Measured against when the handle does not exist, so a wrong handle takes as long as a wrong password. */
   private readonly decoy = randomBytes(16);
 
-  constructor(/** @internal */ readonly store: SqlStore, readonly key: IHubKey, private readonly options: IHubOptions) {
+  constructor(/** @internal */ readonly store: IStore, readonly key: IHubKey, private readonly options: IHubOptions) {
     this.now = options.now ?? Date.now;
   }
 

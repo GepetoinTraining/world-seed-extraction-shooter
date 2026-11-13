@@ -45,17 +45,21 @@
  *   - a line is kept in the room's own table (lines.ts), and each instance tells its own of a change;
  *   - a socket the host closed on its timer comes back a moment later, perhaps elsewhere, so a
  *     player whose socket closed is held in their place and their lines for `holdMs` first.
+ *
+ * WHERE THERE IS NO POSTGRES (a hub on Turso alone, HT3), there is nothing to nudge through: the word
+ * between instances is the store's own tables read on a beat (tursoLive.ts). It reads what this room
+ * stands on (`watched`, `standing`), and says to it what a nudge would have said.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
-import type { SqlStore } from '../../shared/SqlStore';
+import type { IStore } from '../store';
 import type { CommitOp, ICommitRequest, IWireDoc, IWireQuery } from '../../shared/entities/data/wire';
 import { acceptSocket, type ISocket } from './socket';
 import { isShared, type ChestIntent } from '../../shared/logic/live/shared';
 import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../shared/entities/world/ChestSystem';
 import { isWhere, whereOf } from '../../shared/logic/live/Presence';
 import { TalkLine, emptyLine, type ILine } from '../../shared/logic/live/TalkLine';
-import { soloBus, type ILiveBus } from './bus';
+import { soloBus, type ILiveBus, type IStanding } from './bus';
 import { memoryLines, type ILineBook } from './lines';
 
 /** One shape, ok or not: this project compiles without strict null checks, where a union on `ok` does not narrow. */
@@ -95,6 +99,9 @@ export class LiveRoom {
   private readonly places = new Map<ISocket, string>();
   /** Each open socket's player, as checked when it opened. */
   private readonly players = new Map<ISocket, string>();
+  /** Each open socket's world, and what its player last said of where they stand: what a beat-read word reads (bus.ts). */
+  private readonly worldOf = new Map<ISocket, string>();
+  private readonly lastSaid = new Map<ISocket, Record<string, unknown>>();
   /** The last event this instance told its own sockets of, by world. */
   private readonly told = new Map<string, number>();
   private readonly catching = new Map<string, Promise<void>>();
@@ -102,7 +109,7 @@ export class LiveRoom {
   private readonly seen = new Map<string, ILine>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Players whose socket closed, held a moment in case it comes back. */
-  private readonly holds = new Map<string, { place: string; timer: ReturnType<typeof setTimeout> }>();
+  private readonly holds = new Map<string, { world: string; uid: string; place: string; where?: Record<string, unknown>; timer: ReturnType<typeof setTimeout> }>();
   private beat: ReturnType<typeof setInterval> | null = null;
   private closed = false;
   private readonly bus: ILiveBus;
@@ -111,12 +118,38 @@ export class LiveRoom {
   private readonly beatMs: number;
   private readonly stopHearing: () => void;
 
-  constructor(private readonly store: SqlStore, private readonly access: LiveAccess, private readonly now: () => number = Date.now, parts: ILiveParts = {}) {
+  constructor(private readonly store: IStore, private readonly access: LiveAccess, private readonly now: () => number = Date.now, parts: ILiveParts = {}) {
     this.bus = parts.bus ?? soloBus();
     this.lines = parts.lines ?? memoryLines();
     this.holdMs = parts.holdMs ?? 0;
     this.beatMs = parts.beatMs ?? BEAT_MS;
     this.stopHearing = this.bus.hear(word => this.heard(word));
+    this.bus.follow?.({ watched: () => this.watched(), standing: world => this.standing(world) });
+  }
+
+  /**
+   * The worlds this instance has players in (listening, standing somewhere, or held), and those where it still
+   * knows of a line someone waits in, until it hears that line emptied.
+   */
+  watched(): string[] {
+    const worlds = new Set<string>();
+    for (const [world, sockets] of this.listening) if (sockets.size > 0) worlds.add(world);
+    for (const socket of this.places.keys()) { const world = this.worldOf.get(socket); if (world) worlds.add(world); }
+    for (const held of this.holds.values()) worlds.add(held.world);
+    for (const key of this.seen.keys()) worlds.add(key.slice(0, key.indexOf('|')));
+    return [...worlds];
+  }
+
+  /** Where this instance's own players stand in a world, as they last said it, those held a moment among them. */
+  standing(world: string): IStanding[] {
+    const out: IStanding[] = [];
+    for (const [socket, place] of this.places) {
+      const said = this.lastSaid.get(socket);
+      const uid = this.players.get(socket);
+      if (this.worldOf.get(socket) === world && said && uid) out.push({ uid, place, where: said });
+    }
+    for (const held of this.holds.values()) if (held.world === world && held.where) out.push({ uid: held.uid, place: held.place, where: held.where, held: true });
+    return out;
   }
 
   private doc(id: string, data: object): IWireDoc {
@@ -316,6 +349,7 @@ export class LiveRoom {
     const worldUid = may.worldUid;
     const uid = url.searchParams.get('uid') ?? '';
     this.players.set(socket, uid);
+    this.worldOf.set(socket, worldUid);
     socket.onMessage(async text => {
       let asked: { subscribe?: string; since?: number | string; where?: unknown; gone?: unknown; talk?: unknown };
       try { asked = JSON.parse(text); } catch { return socket.send(JSON.stringify({ refused: 'That is not JSON.' })); }
@@ -342,7 +376,10 @@ export class LiveRoom {
     });
     socket.onClose(() => {
       const place = this.places.get(socket);
+      const where = this.lastSaid.get(socket);
       this.places.delete(socket);
+      this.lastSaid.delete(socket);
+      this.worldOf.delete(socket);
       this.listening.get(worldUid)?.delete(socket);
       this.players.delete(socket);
       if (place === undefined || this.closed) return;
@@ -352,7 +389,8 @@ export class LiveRoom {
       const key = holdKey(worldUid, uid);
       const timer = setTimeout(() => { this.holds.delete(key); if (!this.closed) this.quietly(this.away(worldUid, uid, place, null)); }, this.holdMs);
       (timer as { unref?: () => void }).unref?.();
-      this.holds.set(key, { place, timer });
+      // Held where they stood, so another instance reading this one still finds them there
+      this.holds.set(key, { world: worldUid, uid, place, where, timer });
     });
   }
 
@@ -395,6 +433,7 @@ export class LiveRoom {
     this.quietly(this.back(worldUid, uid, said.place));
     this.places.set(socket, said.place);
     const where = { ...said, uid };
+    this.lastSaid.set(socket, where);
     this.tellPlace(worldUid, said.place, socket, { where });
     this.bus.say({ p: { world: worldUid, place: said.place, where } });
   }
@@ -415,6 +454,7 @@ export class LiveRoom {
     const was = this.places.get(socket);
     if (was === undefined) return;
     this.places.delete(socket);
+    this.lastSaid.delete(socket);
     await this.away(worldUid, uid, was, socket);
   }
 

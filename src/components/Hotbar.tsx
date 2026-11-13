@@ -14,7 +14,7 @@ import { ProgressionSystem } from '../../shared/entities/player/systems/Progress
 import { hotbarCells, throwsLeft, wieldRefusal } from '../logic/systems/FieldInput';
 import { grabByKey, handsJustDropped, pressItem, slotZone, useDropZone } from './ui/hands';
 import { ItemSprite, Kbd } from './ui/kit';
-import { hoverProps, useFeed, useHotbar, useSheet } from './ui/stores';
+import { handHoverProps, hoverProps, useFeed, useHotbar, useSheet } from './ui/stores';
 
 const CELL = 44;
 const NOTHING_CARRIED: IItem[] = [];
@@ -84,7 +84,8 @@ export const Hotbar: React.FC = () => {
             <button
               type="button"
               data-drop-slot={cell.slot}
-              {...(item ? hoverProps(item) : {})}
+              // UXC, part 2 (Pedro: "yes"): a hand answers with its own numbers, held or bare; a pouch with what rides it
+              {...(cell.group === 'BELT' ? (item ? hoverProps(item) : {}) : handHoverProps(cell.slot))}
               aria-label={`${cell.slot.replace('_', ' ')}: ${item ? LoadoutSystem.shownName(item) : 'empty'}${item && item.isIdentified !== false && CombatMath.firedByHand(item) ? `, ${CombatMath.damageSaid(item, item.rank, LoadoutSystem.visibleItemStats(item).damage ?? 0)}` : ''}${cell.digit ? `, key ${cell.digit}` : ''}`}
               aria-pressed={cell.group === 'BELT' ? undefined : isActive}
               onPointerDown={e => {
@@ -125,7 +126,7 @@ export const Hotbar: React.FC = () => {
               }}
             >
               {item
-                ? <ItemSprite item={item} cellPx={Math.floor((CELL - 8) / Math.max(item.dimensions?.width ?? 1, item.dimensions?.height ?? 1))} />
+                ? <ItemSprite item={item} noHover cellPx={Math.floor((CELL - 8) / Math.max(item.dimensions?.width ?? 1, item.dimensions?.height ?? 1))} />
                 : <span className="ws-dim" style={{ fontSize: 'var(--ws-font-small)', lineHeight: 1 }}>{shortOf(cell.slot)}</span>}
               {cell.digit && (
                 <span style={{ position: 'absolute', left: 1, top: 1, lineHeight: 1 }}><Kbd>{cell.digit}</Kbd></span>

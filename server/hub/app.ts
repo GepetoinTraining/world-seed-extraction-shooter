@@ -1,6 +1,6 @@
 /**
  * THE HUB, WHOLE, AS A FUNCTION HOST RUNS IT (DEPLOY.md). One composition for every place it runs:
- * the function on Vercel (`api/hub.ts`), and the local stand-ins (`npm run hub`, `npm run hosted`).
+ * the function on Vercel (`entry.ts`, built for `api/hub.js`), and the local stand-ins (`npm run hub`, `npm run hosted`).
  * It answers plain requests and takes the socket's upgrade, so the checks and online play are one
  * deployment and nothing has to stay running between requests.
  *
@@ -14,7 +14,12 @@
  * of them between requests, so nothing here is kept in an instance but what it can read again:
  * the store, the room's working table, and the word between instances (live/bus.ts).
  *
- *   WS_HUB_DATABASE_URL    the served Postgres (pooled is fine)
+ * THE STORE HAS TWO BODIES (body.ts). On Turso alone (Pedro, 2026-11-13: "Yes, Turso only"), with
+ * no Postgres anywhere: the store is its own record, and the word between instances is the store read
+ * on a beat (live/tursoLive.ts). On a Postgres, as before.
+ *
+ *   WS_HUB_DATABASE_URL    the store: Turso's address (TURSO_DATABASE_URL and TURSO_AUTH_TOKEN, as Turso's
+ *                          integration writes them, are read when no Postgres is named), or a served Postgres
  *   WS_HUB_KEY             the hub's signing key, PKCS#8 PEM
  *   WS_PUBLIC_URL          the hub's own address
  *   WS_LIVE_DATABASE_URL   the hosted world's shared documents, if kept apart. Left out, they share the hub's database
@@ -23,23 +28,28 @@
  *                          a live database kept apart has a record of its own (TURSO_LIVE_DATABASE_URL), or none
  *   CRON_SECRET            what the scheduled call carries
  *   CLERK_…                accounts by e-mail and password (clerk.ts); left out, the hub keeps its own
+ *
+ * Where one of these is not set, the name a host's integration writes for the same thing is read
+ * (settings.ts): a connected Postgres's two addresses, the host's own production address, Clerk's key.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { openLive, recordConfig } from '../record';
+import { openBody } from './body';
 import { Hub, type IRefusal } from './Hub';
 import type { IHubKey } from './keys';
 import { createHubHandler, send, tokenOf } from './http';
-import { hubConfigFrom } from './function';
+import { hubConfigFrom, notSetUp, type IConfigProblem } from './function';
+import { settingsRead, withHostNames } from './settings';
 import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
+import { DevView } from './dev';
 import { LiveRoom, type LiveAccess } from '../live/room';
-import { postgresBus, soloBus } from '../live/bus';
-import { tableLines } from '../live/lines';
 
 export interface IHubAppConfig {
   databaseUrl: string;
+  /** Turso's token, where the store is on Turso. */
+  databaseToken?: string;
   key: IHubKey;
   publicUrl: string;
   liveDatabaseUrl?: string;
@@ -48,15 +58,43 @@ export interface IHubAppConfig {
   env?: NodeJS.ProcessEnv;
 }
 
-export function hubAppConfigFrom(env: NodeJS.ProcessEnv): IHubAppConfig | { problem: string } {
+/**
+ * A host's environment, read once per instance: the hub's own names, or what the host's integrations
+ * write for the same thing (settings.ts). Everything it lacks is said at once, Clerk's with the rest.
+ */
+export function hubAppConfigFrom(env: NodeJS.ProcessEnv): IHubAppConfig | IConfigProblem {
   const base = hubConfigFrom(env);
-  if ('problem' in base) return base;
+  const read = withHostNames(env);
+  const clerk = clerkProblem(read, 'problem' in base ? 'https://hub.invalid' : base.publicUrl);
+  if ('problem' in base || clerk) {
+    const said = 'problem' in base ? base : { problem: '', missing: [], unreadable: [] };
+    return {
+      problem: [said.problem, clerk?.said].filter(Boolean).join(' '),
+      missing: [...(said.missing ?? []), ...(clerk?.missing ? [clerk.missing] : [])],
+      unreadable: [...(said.unreadable ?? []), ...(clerk?.unreadable ? [clerk.unreadable] : [])]
+    };
+  }
   return {
     ...base,
-    ...(env.WS_LIVE_DATABASE_URL?.trim() ? { liveDatabaseUrl: env.WS_LIVE_DATABASE_URL.trim() } : {}),
-    ...(env.WS_LIVE_LISTEN_URL?.trim() ? { liveListenUrl: env.WS_LIVE_LISTEN_URL.trim() } : {}),
+    ...(read.WS_LIVE_DATABASE_URL?.trim() ? { liveDatabaseUrl: read.WS_LIVE_DATABASE_URL.trim() } : {}),
+    ...(read.WS_LIVE_LISTEN_URL?.trim() ? { liveListenUrl: read.WS_LIVE_LISTEN_URL.trim() } : {}),
     env
   };
+}
+
+/**
+ * Clerk named by half. A publishable key with no public key to read Clerk's tokens would leave this
+ * hub keeping accounts of its own behind a page that shows Clerk's form, so it is said like a missing
+ * setting. Connecting Clerk's integration writes the publishable key; the public key is pasted by hand.
+ */
+function clerkProblem(env: NodeJS.ProcessEnv, publicUrl: string): { said: string; missing?: string; unreadable?: string } | null {
+  const jwt = env.CLERK_JWT_KEY?.trim();
+  const publishable = env.CLERK_PUBLISHABLE_KEY?.trim();
+  if (!jwt && !publishable) return null;
+  if (!jwt) return { missing: 'CLERK_JWT_KEY', said: 'CLERK_JWT_KEY is not set, though a publishable key is: this hub would keep accounts of its own behind a page that shows Clerk\'s form. It is the PEM Clerk shows as its JWT public key (its dashboard, API keys).' };
+  const found = clerkConfigFrom(env, publicUrl);
+  if (found && 'problem' in found) return publishable ? { unreadable: 'CLERK_JWT_KEY', said: found.problem } : { missing: 'CLERK_PUBLISHABLE_KEY', said: found.problem };
+  return null;
 }
 
 const LIVE = '/live';
@@ -83,27 +121,29 @@ export function appPathOf(url: string | undefined): string {
 
 const isServed = (url: string) => /^postgres(ql)?:\/\//.test(url);
 
-export function createHubApp(config: IHubAppConfig | { problem: string }) {
+export function createHubApp(config: IHubAppConfig | IConfigProblem) {
   const open = async () => {
     if ('problem' in config) throw new Error(config.problem);
     const env = config.env ?? process.env;
-    const found = clerkConfigFrom(env, config.publicUrl);
+    const found = clerkConfigFrom(withHostNames(env), config.publicUrl);
     if (found && 'problem' in found) throw new Error(found.problem);
     const clerk = found as IClerkConfig | null;
 
-    const own = await openLive(config.databaseUrl, env);
+    const own = await openBody(config.databaseUrl, env, { token: config.databaseToken });
     const hub = new Hub(own.store, config.key, { publicUrl: config.publicUrl, accounts: clerk ? 'clerk' : 'builtin' });
-    const eraser = new Eraser(hub, own.database, recordConfig(env));
+    const eraser = new Eraser(hub, own.eraseHere, own.record);
 
     // One database carries both unless the world's documents are kept apart. Two stores cannot share one
     // record: its write-downs are one chain with one head, and each would take the other's for a save it never came from.
     const liveUrl = config.liveDatabaseUrl && config.liveDatabaseUrl !== config.databaseUrl ? config.liveDatabaseUrl : null;
+    const liveToken = env.TURSO_LIVE_AUTH_TOKEN?.trim() || config.databaseToken || env.TURSO_AUTH_TOKEN?.trim() || undefined;
     const live = liveUrl
-      ? await openLive(liveUrl, { ...env, TURSO_DATABASE_URL: env.TURSO_LIVE_DATABASE_URL, TURSO_AUTH_TOKEN: env.TURSO_LIVE_AUTH_TOKEN ?? env.TURSO_AUTH_TOKEN })
+      ? await openBody(liveUrl, { ...env, TURSO_DATABASE_URL: env.TURSO_LIVE_DATABASE_URL, TURSO_AUTH_TOKEN: env.TURSO_LIVE_AUTH_TOKEN ?? env.TURSO_AUTH_TOKEN }, { token: liveToken })
       : own;
 
-    const listenUrl = config.liveListenUrl ?? (isServed(liveUrl ?? config.databaseUrl) ? liveUrl ?? config.databaseUrl : null);
-    const bus = listenUrl ? await postgresBus(listenUrl) : soloBus();
+    // Only a served Postgres has a word to listen on; on Turso the word is the store, read on a beat
+    const listenUrl = live.kind === 'postgres' ? config.liveListenUrl ?? (isServed(liveUrl ?? config.databaseUrl) ? liveUrl ?? config.databaseUrl : null) : null;
+    const bus = await live.bus({ listenUrl });
 
     // Who may: the hub's own word (HostedWorld.connect), asked here and taken for a little while
     const hosted = new HostedWorld(hub);
@@ -122,14 +162,20 @@ export function createHubApp(config: IHubAppConfig | { problem: string }) {
       heard.set(key, { until: now + LIVE_WORD_MS, answer });
       return answer;
     };
-    const room = new LiveRoom(live.store, access, Date.now, { bus, lines: await tableLines(live.database), holdMs: HOLD_MS });
+    // On Turso the word is read on a beat, which also tells the room of every event: the room needs no beat of its own
+    const room = new LiveRoom(live.store, access, Date.now, { bus, lines: await live.lines(), holdMs: HOLD_MS, ...(live.kind === 'turso' ? { beatMs: 0 } : {}) });
 
     const maintain = async () => {
       const record: string[] = [];
-      for (const store of liveUrl ? [own.store, live.store] : [own.store]) record.push((await store.maintain()).record?.status ?? 'NO_RECORD');
+      for (const body of liveUrl ? [own, live] : [own]) record.push(await body.maintain());
       return { record, erasuresWaiting: await eraser.sweep() };
     };
-    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined });
+    // The developers' view, for the accounts the host names in WS_DEV_ACCOUNTS and nobody else (dev.ts). A local
+    // stand-in gives the hub its store, key and address directly when no setting names them, and the view says so
+    const given = Object.fromEntries(settingsRead(env).filter(s => s.needed && !s.set).map(s => [s.name, 'given to this server directly (its own default, or a key from a file)']));
+    // It reads through the body of the store it opened, Turso's or a Postgres's, and says how the instances hear each other
+    const dev = new DevView({ hub, store: own.dev(), live: live.between(listenUrl), env, given });
+    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev });
     return {
       hub, room, handler, eraser,
       close: async () => {
@@ -148,6 +194,7 @@ export function createHubApp(config: IHubAppConfig | { problem: string }) {
     ready,
 
     async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+      if ('problem' in config) return notSetUp(res, config);
       const path = appPathOf(req.url);
       let parts: Awaited<ReturnType<typeof open>>;
       try {

@@ -7,6 +7,8 @@
 import React from 'react';
 import { Busy, Button, ItemSprite, Panel, SealView } from './ui/kit';
 import { IReceiptView, useReceipt } from './ui/stores';
+import { FightRecordButton } from './FightRecordView';
+import { useFightRecord } from '../logic/systems/FightRecord';
 
 const fmtMs = (ms: number) => {
   const s = Math.floor(ms / 1000);
@@ -24,6 +26,8 @@ export const ReceiptView: React.FC<{ receipt: IReceiptView; clear: () => void }>
 
   const died = receipt.outcome === 'DIED';
   const unread = receipt.unread ?? 0;
+  // ux-fight: the dive's fight, kept until the next dive begins, so a fall can be read back
+  const fought = useFightRecord(s => s.entries.length) > 0;
   const tone = died ? 'loss' : 'proof';
 
   return (
@@ -127,7 +131,8 @@ export const ReceiptView: React.FC<{ receipt: IReceiptView; clear: () => void }>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 12 }}>
+          {fought && <FightRecordButton />}
           <Button tone={tone} primary onClick={clear} autoFocus>
             {receipt.spared ? 'BACK TO THE CITY' : died ? 'ACKNOWLEDGE THE LOSS' : 'CLOSE THE VAULT'}
           </Button>

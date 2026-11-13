@@ -9,7 +9,9 @@
  *
  * THE NETWORK DRIVER, NEVER THE FILE ONE. `@libsql/client/http` loads no native module.
  * The same package's file path is what crashed the old server (N16), so a `file:` URL is
- * refused here before the driver sees it. This is the only file that imports it.
+ * refused here before the driver sees it. This is the only file that imports it: the hub's
+ * store on Turso (tursoStore.ts) opens its client here too (`openNetworkClient`), with the
+ * same deadlines and the same asking again over a dropped connection.
  *
  * WHOLE AND ONCE. A write-down names the one before it and carries a hash of everything
  * it covers. It goes up as one batch: its manifest, then every row, each asking for the
@@ -129,7 +131,7 @@ export function assertNetworkUrl(url: string): void {
   }
 }
 
-function dropped(e: unknown): boolean {
+export function dropped(e: unknown): boolean {
   for (let at: any = e; at; at = at.cause) if (DROPPED.has(at.code)) return true;
   return false;
 }
@@ -145,7 +147,7 @@ function tooMuch(e: unknown): boolean {
 }
 
 /** A refused connection or a server's error is an answer, and goes straight back. Only a dropped connection goes out again. */
-async function askAgainIfDropped<T>(ask: () => Promise<T>): Promise<T> {
+export async function askAgainIfDropped<T>(ask: () => Promise<T>): Promise<T> {
   for (let tries = 1; ; tries++) {
     try {
       return await ask();
@@ -155,8 +157,25 @@ async function askAgainIfDropped<T>(ask: () => Promise<T>): Promise<T> {
   }
 }
 
-type Client = import('@libsql/client/http').Client;
+export type Client = import('@libsql/client/http').Client;
 type Statement = { sql: string; args: any[] };
+
+/**
+ * A client of the network driver, and only that one: a URL that is not libsql:// or http(s):// is
+ * refused before the driver sees it, and every request has its deadline (`requestDeadlineMs`).
+ */
+export async function openNetworkClient(config: IColdConfig): Promise<Client> {
+  assertNetworkUrl(config.url);
+  const { createClient } = await import('@libsql/client/http');
+  return createClient({
+    url: config.url,
+    authToken: config.authToken,
+    fetch: async (input: any, init?: any) => {
+      const bytes = input instanceof Request ? (await input.clone().arrayBuffer()).byteLength : typeof init?.body === 'string' ? Buffer.byteLength(init.body) : 0;
+      return fetch(input, { ...init, signal: AbortSignal.timeout(requestDeadlineMs(bytes)) });
+    }
+  });
+}
 
 const stage = (table: RecordTableName) => `cold_stage_${table}`;
 const list = (columns: string[]) => columns.join(', ');
@@ -191,16 +210,7 @@ function applyStatement(table: RecordTableName, id: string): Statement {
 }
 
 export async function openColdDoor(config: IColdConfig): Promise<IColdDoor> {
-  assertNetworkUrl(config.url);
-  const { createClient } = await import('@libsql/client/http');
-  const client: Client = createClient({
-    url: config.url,
-    authToken: config.authToken,
-    fetch: async (input: any, init?: any) => {
-      const bytes = input instanceof Request ? (await input.clone().arrayBuffer()).byteLength : typeof init?.body === 'string' ? Buffer.byteLength(init.body) : 0;
-      return fetch(input, { ...init, signal: AbortSignal.timeout(requestDeadlineMs(bytes)) });
-    }
-  });
+  const client = await openNetworkClient(config);
 
   // Applied on first need, and asked again after a failure: an outage at the start is not the end of it.
   let migrated: Promise<void> | null = null;

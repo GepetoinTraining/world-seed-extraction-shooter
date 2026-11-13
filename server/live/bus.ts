@@ -22,7 +22,24 @@ export interface ILiveBus {
   say(word: object): void;
   /** What the others say. `{ again: true }` after this instance could not hear for a while. */
   hear(fn: (word: any) => void): () => void;
+  /**
+   * A word that is a table read on a beat (live/tursoLive.ts, where there is no Postgres to nudge
+   * through) does not carry what is said: it reads what the room stands on, each beat. The room hands
+   * it this view once. A bus that carries words leaves this out.
+   */
+  follow?(room: ILiveRoomView): void;
   close(): Promise<void>;
+}
+
+/** One of this instance's own players, where they last said they stand. `held`: their socket closed a moment ago. */
+export interface IStanding { uid: string; place: string; where: Record<string, unknown>; held?: boolean }
+
+/** What a beat-read word asks of the room it serves. */
+export interface ILiveRoomView {
+  /** The worlds this instance has players in: listening, standing somewhere, or held a moment after their socket closed. */
+  watched(): string[];
+  /** Where this instance's own players stand in a world, those held after their socket closed among them. */
+  standing(world: string): IStanding[];
 }
 
 const newId = () => randomBytes(6).toString('hex');

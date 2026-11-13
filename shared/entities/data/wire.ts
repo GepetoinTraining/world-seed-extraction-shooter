@@ -62,7 +62,8 @@ export interface IWireSearch {
 export interface IHealth {
   ok: boolean;
   service?: 'worldseed-db';
-  dialect?: 'postgres';
+  /** Postgres everywhere the game runs; Turso only for a hub a function host runs (server/tursoStore.ts). */
+  dialect?: 'postgres' | 'turso';
   reason?: string;
   /** An old save with no database beside it: a person can carry it over from where they stand. */
   canCarry?: boolean;

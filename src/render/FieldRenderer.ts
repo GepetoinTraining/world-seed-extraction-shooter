@@ -19,6 +19,7 @@ import { textScale } from '../logic/settings/store';
 import { shapeMarks } from '../../shared/entities/combat/Shapes';
 import { volleyShots } from '../../shared/logic/theme/ThemeFormula';
 import type { Volley } from '../../shared/logic/theme/ThemeTypes';
+import { AtomRect, markWeight, pipsLeft, PIPS, shotMarks, swingFill, tickRing } from './BlowMarks';
 
 const QUADRANT_ATOMS = QUADRANT_TILES * TILE_ATOMS;
 const MAX_QUADRANTS_PER_FRAME = 3;
@@ -31,7 +32,7 @@ export const HURT_EDGE_MS = 220;
 
 export interface MobPose { facing: CreatureFacing; frame: number }
 /** A hit flash, a death burst, or (part 2) a hit felt: which way it pushed, and whether it broke a wind-up. */
-export interface FieldEffect { kind: 'hit' | 'death' | 'stagger'; x: number; y: number; at: number; size: number; dx?: number; dy?: number; broke?: boolean }
+export interface FieldEffect { kind: 'hit' | 'death' | 'stagger'; x: number; y: number; at: number; size: number; dx?: number; dy?: number; broke?: boolean; step?: number }
 /** Part 2: how long a hit felt stays marked. */
 export const STAGGER_MARK_MS = 260;
 
@@ -44,10 +45,11 @@ export interface FieldScene {
   chunks: IChunk[];
   /** Online play: everyone else in this place, already slid to where they are drawn (Presence.ts). */
   others?: IOther[];
-  bullets: { x: number; y: number; hostile: boolean }[];
+  /** ux-fight: each shot with the step of the blow it carries (`BlowMarks.blowStep`, against the person's own rank) and the way it flies. */
+  bullets: { x: number; y: number; hostile: boolean; step?: number; angle?: number }[];
   drops: { x: number; y: number }[];
   /** The fight's shapes: a blow's ground as it lands; `inner` is its hole and `half` its half-width (none is the old arc). */
-  swings: { x: number; y: number; angle: number; range: number; inner?: number; half?: number }[];
+  swings: { x: number; y: number; angle: number; range: number; inner?: number; half?: number; step?: number }[];
   /** Part 2: the blow you are winding up: a draw is a line out along the aim, a swing its shape's edge filling in. */
   windup?: { x: number; y: number; angle: number; fill: number; kind: 'draw' | 'swing'; shape?: { reachPx: number; innerPx: number; halfAngle: number } };
   /** Live facing and walk frame per mob id, from the AI. Missing means front, still. */
@@ -288,26 +290,44 @@ export class FieldRenderer {
       ctx.fillRect(x - 2, y - 4, 4, 8);
     });
 
-    // The fight's shapes: your blow's whole ground, solid, as it lands. What it covers is what it struck
+    // The fight's shapes: your blow's whole ground, solid, as it lands. What it covers is what it struck.
+    // ux-fight: its fill marks are as heavy as the blow (`BlowMarks.swingFill`): a heavier blow, heavier marks; a much
+    // lighter one, fewer; one past the heaviest, a dot for each further doubling, in from its far edge along its aim
     scene.swings.forEach(s => {
       ctx.fillStyle = this.color(Role.SIGNAL, 4);
       const shape = { reachPx: s.range, innerPx: s.inner ?? 0, halfAngle: s.half ?? 0.75 };
-      for (const m of shapeMarks(shape, { x: s.x, y: s.y }, s.angle, 8)) ctx.fillRect(snap(m.x - ox) - 1, snap(m.y - oz) - 1, 2, 2);
+      const fill = swingFill(s.step ?? 0);
+      const side = fill.atoms * ATOM_PX, back = Math.floor(fill.atoms / 2) * ATOM_PX;
+      shapeMarks(shape, { x: s.x, y: s.y }, s.angle, fill.spacingPx).forEach((m, i) => {
+        if (i % fill.keepEvery === 0) ctx.fillRect(snap(m.x - ox) - back, snap(m.y - oz) - back, side, side);
+      });
       ctx.fillStyle = this.color(Role.SIGNAL, 3);
       for (const m of shapeMarks({ ...shape, innerPx: Math.max(shape.innerPx, shape.reachPx - 1) }, { x: s.x, y: s.y }, s.angle, 4)) ctx.fillRect(snap(m.x - ox) - 2, snap(m.y - oz) - 2, 4, 4);
+      const over = markWeight(s.step ?? 0).over;
+      for (let k = 0; k < over; k++) {
+        const d = s.range - 8 - k * 4 * ATOM_PX;
+        ctx.fillRect(snap(s.x + Math.cos(s.angle) * d - ox) - 1, snap(s.y + Math.sin(s.angle) * d - oz) - 1, ATOM_PX, ATOM_PX);
+      }
     });
 
     if (scene.windup) this.drawWindup(ctx, scene.windup, ox, oz);
 
+    // ux-fight: a shot is drawn as large as the blow it carries, a person's whole and a creature's broken (`BlowMarks`).
+    // Only the drawing: where it lands is decided where it always was. The colour roles stay as a second cue
     scene.bullets.forEach(b => {
       ctx.fillStyle = b.hostile ? this.color(Role.LOSS, 3) : this.color(Role.SIGNAL, 4);
-      ctx.fillRect(snap(b.x - ox) - 2, snap(b.y - oz) - 2, 4, 4);
+      this.fillAtoms(ctx, snap(b.x - ox), snap(b.y - oz), shotMarks(b.step ?? 0, b.hostile, b.angle ?? 0));
     });
 
     visible.forEach(e => this.drawTelegraph(ctx, e, ox, oz, now));
     (scene.effects ?? []).forEach(f => this.drawEffect(ctx, f, now, ox, oz, !!scene.reducedMotion));
     if (scene.darkness) this.drawDark(ctx, width, height, scene.darkness);
     if (scene.hurtAt && now - scene.hurtAt < HURT_EDGE_MS) this.drawHurtEdge(ctx, width, height, now - scene.hurtAt, !!scene.reducedMotion);
+  }
+
+  /** Atoms about a point on the atom grid. */
+  private fillAtoms(ctx: CanvasRenderingContext2D, x: number, y: number, rects: AtomRect[]) {
+    for (const r of rects) ctx.fillRect(x + r.x * ATOM_PX, y + r.y * ATOM_PX, r.w * ATOM_PX, r.h * ATOM_PX);
   }
 
   /** Night is how far you can see, so it reads in grayscale. */
@@ -397,10 +417,9 @@ export class FieldRenderer {
   /** Pips under a wounded enemy: count and position carry the reading, not hue. */
   private drawHealth(ctx: CanvasRenderingContext2D, e: IWorldEntity, x: number, y: number, w: number) {
     const max = bodyLawOf(MOB_DEFINITIONS[e.definitionId], e).baseHealth + (e.bonusHealth ?? 0);
-    const health = e.health ?? 0;
-    if (max <= 0 || health >= max || health <= 0) return;
-    const pips = 5;
-    const left = Math.max(1, Math.ceil((health / max) * pips));
+    const left = pipsLeft(e.health ?? 0, max);
+    if (left === null) return;
+    const pips = PIPS;
     const total = pips * 6 - 2;
     const x0 = snap(x + w / 2 - total / 2), y0 = y - 6;
     ctx.fillStyle = '#050505';
@@ -433,12 +452,20 @@ export class FieldRenderer {
     }
     if (f.kind === 'hit') {
       if (age > HIT_FLASH_MS) return;
+      // ux-fight: the brackets are as heavy as what landed (`BlowMarks.markWeight`), so a large hit is told from a small
+      // one on any body, however many pips it holds; past the heaviest, a tick for each further doubling around them
+      const weight = markWeight(f.step ?? 0);
+      const t = weight.atoms * ATOM_PX, arm = 4 + t;
       const r = snap(f.size / 2 + (reduced ? 4 : age < HIT_FLASH_MS / 2 ? 6 : 2));
       ctx.fillStyle = this.color(Role.LOSS, 4);
       [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {
-        ctx.fillRect(x + sx * r - (sx > 0 ? 6 : 0), y + sy * r - (sy > 0 ? 2 : 0), 6, 2);
-        ctx.fillRect(x + sx * r - (sx > 0 ? 2 : 0), y + sy * r - (sy > 0 ? 6 : 0), 2, 6);
+        ctx.fillRect(x + sx * r - (sx > 0 ? arm : 0), y + sy * r - (sy > 0 ? t : 0), arm, t);
+        ctx.fillRect(x + sx * r - (sx > 0 ? t : 0), y + sy * r - (sy > 0 ? arm : 0), t, arm);
       });
+      if (weight.over > 0) {
+        const reach = Math.ceil(r / ATOM_PX);
+        this.fillAtoms(ctx, x, y, tickRing(weight.over, { lo: -reach, hi: reach - 1 }));
+      }
       return;
     }
     if (age > DEATH_BURST_MS) return;

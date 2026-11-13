@@ -51,6 +51,8 @@ export const IntelligenceClient = {
   writeLoot: <T>(ask: unknown) => post<T>('/loot', { ask }),
   writeBases: <T>(ask: unknown) => post<T>('/world/bases', { ask }),
   writeDoing: <T>(ask: unknown) => post<T>('/material/doing', { ask }),
+  /** UXC: a player's spoken guess, shaped into one short note. A person waits on it. */
+  shapeNote: <T = { note: string }>(ask: unknown) => post<T>('/note', { ask }),
 
   // D113, D114, D116: a person waits on each of these. The id is what the door's spend limit counts against.
   npcTalk: <T>(talkId: string, ask: unknown) => post<T>('/npc/talk', { talkId, ask }),

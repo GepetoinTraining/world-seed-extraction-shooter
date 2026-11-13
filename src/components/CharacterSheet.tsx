@@ -42,9 +42,12 @@ import { DowntimeDoor } from '../logic/systems/DowntimeDoor';
 /** How often the stack is walked while the player is here. The walk reads the game's clock, so how often changes nothing it does. */
 const DOWNTIME_CHECK_MS = 5_000;
 import { ArmedButton, Bar, Button, Chip, Kbd, Panel, RankMark } from './ui/kit';
-import { useAppView, useFeed, useSheet, useWaits } from './ui/stores';
+import { useAppView, useFeed, useHotbar, useSheet, useWaits } from './ui/stores';
 import { said } from '../logic/systems/SheetWords';
 import { SkillNames } from '../logic/systems/SkillNames';
+import { DescriptionLaw } from '../../shared/logic/systems/DescriptionLaw';
+import { Moved, PointPlus, PointPreview, PreviewList, Told, useKnown } from './SheetLine';
+import { SheetNumbers } from '../logic/systems/SheetNumbers';
 
 const feed = (text: string, tone: 'plain' | 'signal' | 'proof' | 'loss' = 'plain') => useFeed.getState().push(text, tone);
 const TILE_SIZE = 20;
@@ -352,8 +355,19 @@ const WhoPanel: React.FC = () => {
   const rank = ProgressionSystem.rankOf(player);
   const progress = ProgressionSystem.levelProgress(player);
   const points = ProgressionSystem.unspent(player).total;
-  // D52: what an attribute does, in a line of its own that holds its place
+  // D52: what an attribute does, in a line of its own that holds its place. UXS: it is the attribute's description, shown
+  // while the pointer rests on it or after a click, and only for someone holding what describes it (`DescriptionLaw`): the
+  // web roots no attribute (Pedro, 2026-11-07), so it is a gap, and opens on the nearest rule there is, a schooled eye
   const [told, setTold] = useState<keyof IAttributes | null>(null);
+  const [kept, setKept] = useState<keyof IAttributes | null>(null);
+  const known = useKnown(DescriptionLaw.GAP);
+  const shown = told ?? kept;
+  const keep = (attr: keyof IAttributes) => { setKept(k => (k === attr ? null : attr)); setTold(null); };
+  // UXS: a + waiting for its second press shows, in the same place, every number the point would move
+  const [armed, setArmed] = useState<keyof IAttributes | null>(null);
+  const activeHand = useHotbar(s => s.active);
+  const moved = useMemo(() => (armed ? SheetNumbers.ifSpent(player, armed, activeHand) : []), [player, armed, activeHand]);
+  const preview = useMemo(() => (armed ? new Map(moved.map(m => [m.key, m])) : null), [armed, moved]);
   const held = useMemo(() => new Set(WebSystem.earnedSheet(player, WebBank.current(), useHubStore.getState().web).earned.map(r => r.id)), [player.bank.universalSkills, player.skillProgress]);
   const others = Object.values(player.bank.universalSkills || {})
     .filter(s => !held.has(s.id))
@@ -370,6 +384,7 @@ const WhoPanel: React.FC = () => {
       <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
       {points > 0 && <div style={{ margin: '4px 0' }}><Chip tone="signal">TO SPEND: {pointsLine(player)}</Chip></div>}
 
+      <PointPreview.Provider value={preview}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', columnGap: 10, margin: '6px 0' }}>
         {Object.entries(ATTRIBUTE_GROUPS).map(([group, attrs]) => (
           <div key={group} style={{ minWidth: 0 }}>
@@ -379,12 +394,17 @@ const WhoPanel: React.FC = () => {
               {plusSays(player, groupOfWord(group)) && <div className="ws-signal ws-small">{plusSays(player, groupOfWord(group))}</div>}
             </div>
             {attrs.map(attr => (
-              <div key={attr} className="ws-small" title={`${attr}: ${StatSystem.attributeWork(attr, player.attributes)}`} onMouseEnter={() => setTold(attr)} onMouseLeave={() => setTold(null)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+              <div key={attr} className="ws-small" data-described={attr} role="button" tabIndex={0} aria-expanded={shown === attr}
+                onMouseEnter={() => setTold(attr)} onMouseLeave={() => setTold(null)}
+                onClick={e => { if ((e.target as HTMLElement).closest('button')) return; keep(attr); }}
+                onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); keep(attr); } }}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, cursor: 'help' }}>
                 <span className="ws-dim">{attr === 'intimidation' ? 'IMD' : attr.slice(0, 3).toUpperCase()}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span className="ws-bright">{player.attributes[attr] || 0}</span>
+                  <span className="ws-bright">{player.attributes[attr] || 0}<Moved k={`attr:${attr}`} /></span>
                   {ProgressionSystem.pointFor(player, attr) && (
-                    <Button tone="signal" aria-label={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} title={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} style={{ padding: '0 4px' }} onClick={() => spendAttributePoint(attr)}>+</Button>
+                    <PointPlus attr={attr} aria-label={`Raise ${attr} with ${pointWord(ProgressionSystem.pointFor(player, attr)!)}`} armed={armed === attr}
+                      onArm={() => setArmed(attr)} onDisarm={() => setArmed(a => (a === attr ? null : a))} onSpend={() => { spendAttributePoint(attr); setArmed(null); }} />
                   )}
                 </span>
               </div>
@@ -392,8 +412,11 @@ const WhoPanel: React.FC = () => {
           </div>
         ))}
       </div>
-      <div className="ws-dim ws-small" style={{ minHeight: '2.6em', marginBottom: 4 }}>
-        {told ? `${told.toUpperCase()}: ${StatSystem.attributeWork(told, player.attributes)}` : 'Point at an attribute to read what it does for you.'}
+      </PointPreview.Provider>
+      <div className="ws-small" style={{ minHeight: '2.6em', marginBottom: 4 }}>
+        {armed && <PreviewList attr={armed} moved={moved} />}
+        {!armed && shown && <div className="ws-dim" style={{ letterSpacing: '0.06em' }}>{shown.toUpperCase()}</div>}
+        {!armed && shown && <Told known={known} says={[StatSystem.attributeWork(shown, player.attributes)]} />}
       </div>
 
       <HandsPanel />

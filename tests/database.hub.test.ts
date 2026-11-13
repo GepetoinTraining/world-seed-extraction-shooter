@@ -5,14 +5,16 @@
  * browser makes them, signing the same text (`signedText`), so a row the game signs is a row the
  * hub can check.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { createServer, Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SqlStore } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
+import type { IStore } from '../server/store';
+import { openTursoStore } from '../server/tursoStore';
+import { startDouble, type IDouble } from './fixtures/turso-double';
 import { Hub } from '../server/hub/Hub';
 import { makeHubKey, verifyStatement } from '../server/hub/keys';
 import { createHubHandler } from '../server/hub/http';
@@ -61,14 +63,28 @@ async function makeCharacter(uid: string) {
   return { uid, certificate, sign, row, linked };
 }
 
-describe('the hub', () => {
-  let store: SqlStore;
+/**
+ * The hub's law holds on either body of its store: Postgres, where the game's own store runs, and
+ * Turso alone, which a function host runs it on with no Postgres anywhere (server/tursoStore.ts),
+ * here over Turso's stand-in, emptied before each bar.
+ */
+let double: IDouble;
+beforeAll(async () => { double = await startDouble(); }, 30_000);
+afterAll(async () => { await double?.stop(); });
+
+const BODIES: { name: string; open: () => Promise<IStore> }[] = [
+  { name: 'Postgres in memory', open: () => openStore('pglite://memory') },
+  { name: 'Turso over its stand-in', open: async () => { await double.reset(); return openTursoStore({ url: double.url }); } }
+];
+
+describe.each(BODIES)('the hub, its store on $name', ({ open }) => {
+  let store: IStore;
   let hub: Hub;
   let clock: number;
   const key = makeHubKey();
 
   beforeEach(async () => {
-    store = await openStore('pglite://memory');
+    store = await open();
     clock = 1_800_000_000_000;
     hub = new Hub(store, key, { publicUrl: 'https://hub.test', now: () => clock });
   });
