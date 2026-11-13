@@ -81,7 +81,7 @@ export const Told: React.FC<{ known: boolean; says: readonly string[] }> = ({ kn
   </div>
 ) : (
   <div data-told="unknown" className="ws-dim ws-small" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0 4px' }}>
-    <span data-mark aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 12, height: 12, border: '1px dashed var(--ws-text-dim)', fontSize: 9, lineHeight: 1, flexShrink: 0 }}>?</span>
+    <span data-mark aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, border: '1px dashed var(--ws-text-dim)', lineHeight: 1, flexShrink: 0 }}>?</span>
     <span>{NOT_KNOWN}</span>
   </div>
 );
