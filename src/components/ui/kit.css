@@ -183,6 +183,9 @@
 .ws-card__corner { display: flex; align-items: center; gap: 6px; }
 .ws-card__key { color: var(--ws-text-dim); font-size: var(--ws-font-small); white-space: nowrap; letter-spacing: 0.06em; }
 .ws-card__more { margin-top: 4px; padding-top: 3px; border-top: 2px dashed var(--ws-void-4); display: flex; justify-content: space-between; gap: 8px; color: var(--ws-text-dim); font-size: var(--ws-font-small); letter-spacing: 0.06em; }
+/* UXC part 3: the player's own words stand slanted, under what they are about; the buttons that hear them sit last */
+.ws-card__mine .v { font-style: italic; }
+.ws-card__notes { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .ws-card__need { color: var(--ws-loss-3); font-size: var(--ws-font-small); margin-top: 4px; }
 .ws-card__ready { color: var(--ws-signal-3); font-size: var(--ws-font-small); margin-top: 4px; }
 

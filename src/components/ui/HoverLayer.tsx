@@ -13,6 +13,7 @@ import { CardView, CompareView, RankMark } from './kit';
 import { useHands } from './hands';
 import { useHover } from './stores';
 import { useCardKeys } from './cardKeys';
+import { installNoteSpeaker } from './noteListen';
 
 const SETTLE_CHECK_MS = 200;
 
@@ -55,6 +56,9 @@ export const HoverLayer: React.FC = () => {
   const skills = usePlayerStore(s => s.player.bank?.universalSkills);
   const activeCast = usePlayerStore(s => s.player.activeCast);
   const carried = usePlayerStore(s => s.player.currentSession?.inventory);
+
+  // UXC, part 3: once the game is up, a card's note button and its key reach the door
+  useEffect(() => installNoteSpeaker(), []);
 
   // A thing can leave the screen under the pointer, and then it sends no leave.
   useEffect(() => {

@@ -12,9 +12,10 @@ import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '
 import { Archetype, portrait } from '../../../shared/render/atoms/people';
 import { itemArtFor } from '../../render/atoms/items';
 import { IItem } from '../../../shared/types';
-import { Card, ItemComparison, cardText, firstLayer, secondLayer } from '../../render/atoms/inspect';
+import { Card, ICardUnknown, ItemComparison, cardText, firstLayer, secondLayer } from '../../render/atoms/inspect';
 import { hoverProps } from './stores';
-import { cardId, holdCardKeys, useCardKeys } from './cardKeys';
+import { canSpeakNotes, cardId, holdCardKeys, noteTarget, speakNote, useCardKeys } from './cardKeys';
+import { Transcribers } from '../../logic/systems/Transcriber';
 import { TERMINAL_GENRE, cssVariables } from './tokens';
 import './kit.css';
 import { said } from '../../logic/systems/SheetWords';
@@ -272,9 +273,37 @@ export const Row: React.FC<{ title: React.ReactNode; sub?: React.ReactNode; righ
     </div>
   );
 
+/** UXC, part 3: the rows that are the player's own words, set in their own shape (slanted), as well as by place and word. */
+const MINE = new Set(['Your note', 'You guessed']);
+
 const CardLine: React.FC<{ line: [string, string] }> = ({ line: [k, v] }) => (
-  <div className="ws-card__row"><span className="k">{k}</span><span className="v">{v}</span></div>
+  <div className={`ws-card__row${MINE.has(k) ? ' ws-card__mine' : ''}`}><span className="k">{k}</span><span className="v">{v}</span></div>
 );
+
+/**
+ * UXC, part 3 (Pedro: "button + voice"): a button for each unknown on the card, and the key N on the one it would take.
+ * Where nothing can hear (no recognizer in this browser, or the game's speaker not up), the button says so and waits.
+ */
+const NoteControls: React.FC<{ unknowns: ICardUnknown[] }> = ({ unknowns }) => {
+  const underway = useCardKeys(s => s.note);
+  const ready = Transcribers.current().ready();
+  const reason = 'reason' in ready ? ready.reason : !canSpeakNotes() ? 'Notes are heard in the game itself.' : null;
+  const target = noteTarget(unknowns);
+  return (
+    <div className="ws-card__notes">
+      {unknowns.map(u => {
+        const mine = underway?.key === u.key;
+        const label = reason ?? (mine ? (underway!.phase === 'listening' ? 'LISTENING. SPEAK NOW' : 'WRITING YOUR NOTE')
+          : `${u.noted ? 'SPEAK AGAIN' : 'SPEAK A NOTE'}${unknowns.length > 1 ? ` ON ${u.about.toUpperCase()}` : ''}`);
+        return (
+          <Button key={u.key} tone="quiet" disabled={!!reason || !!underway} aria-busy={mine} onClick={() => speakNote(u)}>
+            {label}{!reason && !underway && u === target ? <> <Kbd>N</Kbd></> : null}
+          </Button>
+        );
+      })}
+    </div>
+  );
+};
 
 /**
  * The one inspect card, rendered. Data comes from render/atoms/inspect. UXC, part 1 (Pedro: "yup"): the first layer
@@ -285,8 +314,9 @@ export const CardView: React.FC<{ card: Card; right?: React.ReactNode; children?
   const deep = useCardKeys(s => s.deep);
   const id = useMemo(cardId, []);
   const text = cardText(card);
+  const unknownKey = (card.unknowns ?? []).map(u => `${u.key}:${u.noted ? 1 : 0}`).join('|');
   useEffect(() => holdCardKeys(), []);
-  useEffect(() => { useCardKeys.getState().raise({ id, text }); }, [id, text]);
+  useEffect(() => { useCardKeys.getState().raise({ id, text, unknowns: card.unknowns }); }, [id, text, unknownKey]);
   useEffect(() => () => useCardKeys.getState().drop(id), [id]);
   const first = firstLayer(card);
   const second = secondLayer(card);
@@ -310,6 +340,7 @@ export const CardView: React.FC<{ card: Card; right?: React.ReactNode; children?
       )}
       {card.needs.map((n, i) => <div key={i} className="ws-card__need">{n}</div>)}
       {card.canAct && card.needs.length === 0 && <div className="ws-card__ready">Ready</div>}
+      {(card.unknowns?.length ?? 0) > 0 && <NoteControls unknowns={card.unknowns!} />}
       {children}
     </div>
   );

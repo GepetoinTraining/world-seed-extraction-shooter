@@ -254,8 +254,9 @@ describe('line 89: one door', () => {
   it('a rest uses the model Pedro chose, one constant per kind (D44)', () => {
     expect(MODEL_FOR.rest).toBe('claude-sonnet-5-5');
     // 'loot' joined 2026-11-04: a theme's loot tables, written beside it (LootLaw.ts); 'bases' 2026-11-12: what a minting adds (IB)
-    // 'doing' joined 2026-11-12: what one material does, written once (ML21); 'kami_gift' 2026-11-12: the first order's one ask of the voice (TQ17)
-    expect(Object.keys(MODEL_FOR).sort()).toEqual(['bargain', 'bases', 'chain', 'creation', 'doing', 'kami_gift', 'kami_persona', 'kami_set', 'kami_talk', 'loot', 'npc_goal', 'npc_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
+    // 'doing' joined 2026-11-12: what one material does, written once (ML21); 'kami_gift' 2026-11-12: the first order's one ask of the voice (TQ17);
+    // 'note' 2026-11-12: a player's spoken guess shaped into one short note (UXC, Pedro: "button + voice")
+    expect(Object.keys(MODEL_FOR).sort()).toEqual(['bargain', 'bases', 'chain', 'creation', 'doing', 'kami_gift', 'kami_persona', 'kami_set', 'kami_talk', 'loot', 'note', 'npc_goal', 'npc_talk', 'rest', 'talk', 'theme', 'theme_large', 'window']);
   });
 
   it('only a large world\'s theme is written on Opus (D118)', () => {

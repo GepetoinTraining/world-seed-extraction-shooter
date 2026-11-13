@@ -7,33 +7,62 @@
  * - CTRL+C: the card that came up last is copied as plain text (`cardText`), both layers, in the order it is drawn.
  *   The key stays the page's while text is selected or a field is being typed in, or when no card is up.
  *
+ * - N (part 3, Pedro: "button + voice"): the card that came up last hears a note on what it does not know.
+ *
  * The listeners stand while at least one card is up (`holdCardKeys`), so a screen with no card hears nothing new.
  */
 
 import { create } from 'zustand';
 import { useFeed } from './stores';
+import type { ICardUnknown } from '../../render/atoms/inspect';
 
-/** What a card on screen offers the keys: its text to copy. */
-export interface ICardUp { id: number; text: string }
+/** What a card on screen offers the keys: its text to copy, and the unknowns a note may be spoken on (part 3). */
+export interface ICardUp { id: number; text: string; unknowns?: ICardUnknown[] }
+
+/** UXC, part 3: a note being spoken, and how far it has come. */
+export interface INoteUnderway { key: string; phase: 'listening' | 'writing' }
 
 interface CardKeysState {
   /** ALT is held: every card shows its second layer. */
   deep: boolean;
   /** The cards on screen, the one that came up last at the end. */
   up: ICardUp[];
+  /** UXC, part 3: the one note being spoken now, if any. */
+  note: INoteUnderway | null;
   setDeep: (deep: boolean) => void;
   /** A card came up, or what it says changed: it is the one that came up last. */
   raise: (card: ICardUp) => void;
   drop: (id: number) => void;
+  setNote: (note: INoteUnderway | null) => void;
 }
 
 export const useCardKeys = create<CardKeysState>((set, get) => ({
   deep: false,
   up: [],
+  note: null,
   setDeep: deep => { if (get().deep !== deep) set({ deep }); },
   raise: card => set(s => ({ up: [...s.up.filter(c => c.id !== card.id), card] })),
-  drop: id => set(s => (s.up.some(c => c.id === id) ? { up: s.up.filter(c => c.id !== id) } : s))
+  drop: id => set(s => (s.up.some(c => c.id === id) ? { up: s.up.filter(c => c.id !== id) } : s)),
+  setNote: note => set({ note })
 }));
+
+/** UXC, part 3: N speaks on the first unknown with no note yet, or on the first when every one has one. */
+export const NOTE_KEY = 'n';
+export const noteTarget = (unknowns: ICardUnknown[] | undefined): ICardUnknown | undefined =>
+  unknowns?.find(u => !u.noted) ?? unknowns?.[0];
+
+/**
+ * Who speaks a note when the button or the key asks. The card knows no store and no door, so the game sets this once it
+ * is up (`installNoteSpeaker` in `noteListen.ts`); until then the card's button says nothing can be heard here.
+ */
+let speaker: ((unknown: ICardUnknown) => void) | null = null;
+export function setNoteSpeaker(speak: ((unknown: ICardUnknown) => void) | null): void { speaker = speak; }
+export const canSpeakNotes = () => speaker !== null;
+export function speakNote(unknown: ICardUnknown): boolean {
+  if (!speaker || useCardKeys.getState().note) return false;
+  speaker(unknown);
+  return true;
+}
 
 let nextCardId = 0;
 /** A card's own place among the cards up. */
@@ -77,14 +106,6 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Keys the card answers beyond its own two: part 3's note key joins here. */
-const extra: ((e: KeyboardEvent) => boolean)[] = [];
-/** A key a card answers while it is up. Returns true when the key was taken. */
-export function onCardKey(handler: (e: KeyboardEvent) => boolean): () => void {
-  extra.push(handler);
-  return () => { const at = extra.indexOf(handler); if (at >= 0) extra.splice(at, 1); };
-}
-
 const onKeyDown = (e: KeyboardEvent) => {
   const anyUp = useCardKeys.getState().up.length > 0;
   if (e.key === 'Alt') {
@@ -102,8 +123,10 @@ const onKeyDown = (e: KeyboardEvent) => {
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
-  for (const handler of extra) {
-    if (handler(e)) { e.preventDefault(); e.stopPropagation(); return; }
+  // UXC, part 3: N speaks a note on the card's unknown
+  if (e.key.toLowerCase() === NOTE_KEY && !e.shiftKey) {
+    const target = noteTarget(topCard()?.unknowns);
+    if (target && speakNote(target)) { e.preventDefault(); e.stopPropagation(); }
   }
 };
 

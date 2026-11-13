@@ -6,7 +6,8 @@
 
 import { bodyLawOf } from '../../../shared/entities/mob/BodyLaw';
 import { PieceLaw } from '../../../shared/logic/theme/PieceLaw';
-import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES } from '../../../shared/types';
+import { EquipSlotId, IItem, IPlayer, InteractionType, ItemType, MENTAL_ATTRIBUTES, NoteKind } from '../../../shared/types';
+import { NoteKeys, PlayerNote } from '../../logic/systems/PlayerNote';
 import { InteractionEngine } from '../../entities/interaction/InteractionEngine';
 import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
@@ -60,9 +61,24 @@ export interface Card {
   needs: string[];
   canAct: boolean;
   compact: string;
+  /** UXC, part 3: what on this card the player does not know, each of which they may speak a note on. */
+  unknowns?: ICardUnknown[];
 }
 
+/** UXC, part 3: an unknown a card offers a note on: where the note is kept, what kind of thing, a name for the button, and whether a note is spoken. */
+export interface ICardUnknown { key: string; kind: NoteKind; about: string; noted: boolean }
+
 type Line = [string, string];
+
+/**
+ * UXC, part 3 (Pedro: "button + voice"): a player's note on an unknown. Up top, right under the unknown it is about,
+ * as their own words: by its place, the word "Your note" and quotation marks, never a hue. Once what is true replaces
+ * it, it is kept one step behind as what they guessed, so the guess can be set against the truth.
+ */
+const yourNote = (note: string): Line => ['Your note', `"${note}"`];
+const yourGuess = (note: string, of?: string): Line => ['You guessed', of ? `${of}: "${note}"` : `"${note}"`];
+const unknown = (player: Pick<IPlayer, 'notes'> | undefined, key: string, kind: NoteKind, about: string): ICardUnknown =>
+  ({ key, kind, about, noted: !!PlayerNote.of(player, key) });
 
 /** The rows a card shows before the key is held. */
 export const firstLayer = (card: Card): Line[] => card.rows.slice(0, card.glance ?? card.rows.length);
@@ -147,11 +163,23 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   // ML: a variant's marks are plain to see, known or not, and said in words as well as drawn
   const spread = SpreadBook.of(e.definitionId);
   if (spread.base && spread.marks.length > 0) rows.push(['Looks', `Like any ${formOf(def) ?? 'other of its kind'}, but with ${Spread.said(spread.marks)}`]);
-  if (level <= 0) rows.push(['Known', 'Nothing yet. Study it to learn']);
-  else {
+  // UXC, part 3: a material not known, or whose doing is not, takes the player's note under where it says so
+  const noteKey = NoteKeys.material(e.definitionId);
+  const note = PlayerNote.of(ctx.player, noteKey);
+  const unknowns: ICardUnknown[] = [];
+  const unknownHere = () => { if (note) rows.push(yourNote(note)); unknowns.push(unknown(ctx.player, noteKey, 'material', 'this material')); };
+  if (level <= 0) {
+    rows.push(['Known', 'Nothing yet. Study it to learn']);
+    unknownHere();
+  } else {
     rows.push(['Rank', String(def.rank)]);
     // ML21: what it does, once someone has needed it; until then it is not yet known
-    if (formOf(def)) rows.push(['Does', DoingBook.of(def.id)?.line ?? 'Not yet known']);
+    if (formOf(def)) {
+      const doing = DoingBook.of(def.id)?.line;
+      rows.push(['Does', doing ?? 'Not yet known']);
+      if (!doing) unknownHere();
+      else if (note) deep.push(yourGuess(note));
+    }
     // RG: a place that came back may hold more than its kind's own
     if (def.uses) rows.push(['Left', uses > def.uses ? `${uses}, more than most` : `${Math.max(0, uses)} of ${def.uses}`]);
     // RG: a place that came back was rolled anew, and says what it came back as
@@ -173,17 +201,21 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   const title = ContactNames.of(e, ctx.level, ctx.player);
   const lacksTool = needs.some(n => n.startsWith('Needs'));
   const tail = canAct ? 'ready' : uses <= 0 ? (e.returning ? 'comes back' : 'spent') : lacksTool ? (needs[0].includes('ower') ? 'weak tool' : 'needs tool') : 'too far';
-  return { title, ...layered(rows, deep), needs, canAct, compact: compact(title, tail) };
+  return { title, ...layered(rows, deep), needs, canAct, compact: compact(title, tail), ...(unknowns.length > 0 ? { unknowns } : {}) };
 }
 
-function inspectMob(e: IWorldEntity): Card {
+function inspectMob(e: IWorldEntity, player?: IPlayer): Card {
   const def = MOB_DEFINITIONS[e.definitionId] as any;
   const title = ContactNames.of(e, () => 0); // D60: def.name is never shown
   const max = bodyLawOf(def, e).baseHealth + (e.bonusHealth ?? 0);
   const health = e.health ?? max;
+  // UXC, part 3: a creature that has earned no name is unknown, and the player's note on its kind stands first
+  const noteKey = NoteKeys.creature(e.definitionId);
+  const note = PlayerNote.of(player, noteKey);
+  const named = !!e.displayName;
   // UXC: up top, how strong, how hurt, what it will do and whether blows land; beneath, its size and the ground it holds
-  const rows: Line[] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
-  const deep: Line[] = [];
+  const rows: Line[] = [...(!named && note ? [yourNote(note)] : []), ['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
+  const deep: Line[] = named && note ? [yourGuess(note)] : [];
   if (def?.size) deep.push(['Size', String(def.size)]);
   if (def?.behavior) rows.push(['Behavior', String(def.behavior)]);
   if (e.bargain) rows.push(['Stance', e.bargain.stance.toLowerCase()]);
@@ -192,7 +224,8 @@ function inspectMob(e: IWorldEntity): Card {
     rows.push(['Warded', e.warded ? `by ${e.ward.slots.length} anchors` : 'no longer']);
     deep.push(['Holds', `${e.holding?.chunks.length ?? 0} chunks`]);
   } else if (e.heldBy) deep.push(['Answers to', 'whoever holds this ground']);
-  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`) };
+  const unknowns = named ? [] : [unknown(player, noteKey, 'creature', 'this creature')];
+  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`), ...(unknowns.length > 0 ? { unknowns } : {}) };
 }
 
 function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
@@ -205,9 +238,14 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
       if (e.escort?.fallen) {
         return { title, rows: [['Down', 'carried out, they come back on the other side']], needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'carry' : 'too far') };
       }
+      // UXC, part 3: a person whose name was never told is unknown, and the player's note on them stands first
+      const noteKey = NoteKeys.person(e);
+      const note = PlayerNote.of(ctx.player, noteKey);
+      const nameless = !!npc?.name && !ContactNames.knowsName(ctx.player, e);
       // UXC: up top, how they regard you and what they want; beneath, what talking has taught of them
-      const rows: Line[] = npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] : [];
-      const deep: Line[] = [];
+      const rows: Line[] = [...(nameless && note ? [yourNote(note)] : []), ...(npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] as Line[] : [])];
+      const deep: Line[] = !nameless && note ? [yourGuess(note)] : [];
+      const unknowns = nameless ? [unknown(ctx.player, noteKey, 'person', 'this person')] : [];
       // D27: you learn what someone is good at by talking to them
       if (npc && npc.attempts > 0 && ctx.worldSeed) {
         const sheet = NpcSheet.read(ctx.worldSeed, e, ctx.webVersion);
@@ -215,7 +253,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
         if (names.length > 0) deep.push(['Hands', names.join(', ')]);
         if (sheet.alignment) deep.push(['Alignment', sheet.alignment]);
       }
-      return { title, ...layered(rows, deep), needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'talk' : 'too far') };
+      return { title, ...layered(rows, deep), needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'talk' : 'too far'), ...(unknowns.length > 0 ? { unknowns } : {}) };
     }
     case EntityType.CONTAINER: {
       const looted = !!e.container?.looted;
@@ -263,7 +301,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
 
 export function inspectEntity(e: IWorldEntity, ctx: InspectContext): Card {
   if (e.type === EntityType.RESOURCE) return inspectResource(e, ctx);
-  if (e.type === EntityType.MOB) return inspectMob(e);
+  if (e.type === EntityType.MOB) return inspectMob(e, ctx.player);
   return inspectOther(e, ctx);
 }
 
@@ -415,8 +453,14 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   if ((item as any).templateData) return inspectTemplate(item);
   if (item.mapData) return inspectMap(item);
   if (item.worldDeedData) return inspectWorldDeed(item);
+  // UXC, part 3: a piece not read takes the player's note on this very piece
+  const pieceKey = NoteKeys.piece(item.id);
+  const pieceNote = PlayerNote.of(player, pieceKey);
   if (item.isIdentified === false) {
-    return { title: 'Unidentified Signal', rows: [['Known', 'Nothing yet']], needs: [], canAct: false, compact: 'Unidentified Signal' };
+    return {
+      title: 'Unidentified Signal', rows: [['Known', 'Nothing yet'], ...(pieceNote ? [yourNote(pieceNote)] : [])], needs: [], canAct: false, compact: 'Unidentified Signal',
+      unknowns: [unknown(player, pieceKey, 'piece', 'this piece')]
+    };
   }
   // Q16: a person carried out. Their weight is all there is to read; what they carry is their own.
   if (Escort.isCorpse(item)) {
@@ -445,9 +489,20 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   rows.push(['Weight', `${item.weight} kg`]);
   // PR: what it is worth, and why it is worth more where it is (Q17: a person is not goods)
   if (!Escort.isPerson(item)) rows.push(['Worth', worthSaid(item)]);
+  const unknowns: ICardUnknown[] = [];
   // ML21: a piece of a material of the ground says what the material does, once someone has needed it
   const groundDef = RESOURCE_DEFINITIONS[item.universalDefinitionId];
-  if (groundDef && formOf(groundDef) && item.type !== ItemType.GEAR) rows.push(['Does', DoingBook.of(groundDef.id)?.line ?? 'Not yet known']);
+  if (groundDef && formOf(groundDef) && item.type !== ItemType.GEAR) {
+    const doing = DoingBook.of(groundDef.id)?.line;
+    const materialKey = NoteKeys.material(groundDef.id);
+    const materialNote = PlayerNote.of(player, materialKey);
+    rows.push(['Does', doing ?? 'Not yet known']);
+    // UXC, part 3: the same note as on the place it came from
+    if (!doing) {
+      if (materialNote) rows.push(yourNote(materialNote));
+      unknowns.push(unknown(player, materialKey, 'material', 'this material'));
+    } else if (materialNote) deep.push(yourGuess(materialNote));
+  }
   // D27: a handled hand reads what a material plainly is
   const knowledge = player?.materialMastery[item.universalDefinitionId];
   if ((knowledge?.knowledgeLevel ?? 0) >= 2) {
@@ -473,16 +528,24 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   });
   let blind = false;
   (item.affixes || []).forEach(a => {
+    const affixKey = NoteKeys.affix(a.id);
+    const affixNote = PlayerNote.of(player, affixKey);
     if (player && LoadoutSystem.isAffixStudied(player, a.id)) {
       const said = Object.entries(a.stats)
         .map(([k, v]) => `${v >= 0 ? '+' : ''}${statAmount(k, shown(v))} ${statWord(k)}`).join(', ');
       rows.push(['Affix', `${a.name} — ${said || 'what it does is not yet known'}`]);
+      if (affixNote) deep.push(yourGuess(affixNote, a.name));
     } else {
       // UXC: the few words up top, and what they mean said once beneath
       rows.push(['Affix', `${a.name}: not studied`]);
       blind = true;
+      // UXC, part 3: the player's note on this affix, wherever it is met
+      if (affixNote) rows.push(yourNote(affixNote));
+      if (!unknowns.some(u => u.key === affixKey)) unknowns.push(unknown(player, affixKey, 'affix', a.name));
     }
   });
+  // UXC, part 3: a piece once unread keeps what was guessed of it, behind what is now read
+  if (pieceNote) deep.push(yourGuess(pieceNote));
   if (blind) deep.push(['Not studied', 'It works on the piece, and you do not know how.']);
   // Wave 10E (D21): the magic says what it keeps, plainly
   if (item.charmData) {
@@ -517,7 +580,7 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
       : 'Made by the world itself';
     deep.push(['Origin', said]);
   }
-  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, String(item.rank)) };
+  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, String(item.rank)), ...(unknowns.length > 0 ? { unknowns } : {}) };
 }
 
 // ---------------------------------------------------------------------------
