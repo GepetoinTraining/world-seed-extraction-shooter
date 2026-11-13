@@ -289,6 +289,8 @@ The ceiling is mostly the answer's room (`maxTokens`) at the output rate; real a
 
 Every family that adds a door kind or changes a system text waits for ux-cards' join: ux-cards is adding a kind (the spoken note) in the same five door files.
 
+**Since 2026-11-13:** the UX joins are in main (`2f1b6d6`), and families 1 and 2 are built on this branch (ledger CP18 to CP28, Fixed CP25f): a world's people are named from its own pieces from ground 8, the relics are gone, the copies are read from one table, and the four base stations are the game's own. Families 3 to 10 still wait on Pedro's reading of CP2 to CP13, and on leave to change a system text or a schema, which the two built families did not need.
+
 ### 5.2 The design calls, as I would make them
 
 Each is an open row in `PLAYTEST_LEDGER.md` under the same number, for Pedro to strike.
