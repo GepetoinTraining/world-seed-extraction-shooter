@@ -24,9 +24,14 @@ import { LoreSystem } from './LoreSystem';
 import { ContactNames } from './ContactNames';
 import { Escort } from './Escort';
 import { said } from './SheetWords';
+import { DescriptionLaw, DescriptionRoot } from '../../../shared/logic/systems/DescriptionLaw';
 
-/** A number on the sheet: its word, its value, and what it means for the player (GV: never how it is made). */
-export interface SheetRow { key: string; word: string; value: string; says: string }
+/**
+ * A number on the sheet: its word, its value, and what it means for the player (GV: never how it is made). UXS: `says` is
+ * the line's description, opened behind it; `root` is what describes it (`DescriptionLaw`); `n` the numbers its value
+ * states, in order, so a point's preview can say which way each moves.
+ */
+export interface SheetRow { key: string; word: string; value: string; says: string; n: number[]; root: DescriptionRoot }
 
 /** A field tile, in the units the field draws in (`StatSystem`'s own sight is in these). */
 const TILE_PX = 20;
@@ -62,56 +67,70 @@ export const SheetNumbers = {
     const blow = StatSystem.blowFactor(at);
     // GV: each line says what the number means for the player, never how it is made; numbers whole or to one place
     const lighter = Math.round((1 - blow) * 100);
+    // UXS: the hand's lines are read from what is in it, so a skill that answers to it describes them; the rest are gaps
+    const fromHand = DescriptionLaw.on(hand?.tags ?? []);
+    const gap = DescriptionLaw.GAP;
+    const share = (x: number) => Math.round(x * 100);
     return [
       {
         key: 'hit', word: 'DAMAGE',
         value: `${hit} a blow, ${said(hit * perSecond)} a second${poison > 0 ? `, and ${said(poison)} poison` : ''}`,
-        says: broken ? `${handName} is broken: you fight bare-handed until it is mended.` : `What ${handName === 'a bare hand' ? 'your bare hand' : `the ${handName}`} deals, before crits and glances.`
+        says: broken ? `${handName} is broken: you fight bare-handed until it is mended.` : `What ${handName === 'a bare hand' ? 'your bare hand' : `the ${handName}`} deals, before crits and glances.`,
+        n: [hit, hit * perSecond, poison], root: fromHand
       },
       {
         key: 'often', word: 'ATTACKS',
         value: `${said(perSecond)} a second`,
-        says: 'Dexterity and haste make you quicker. A draw or a wind-up still takes its time.'
+        says: 'Dexterity and haste make you quicker. A draw or a wind-up still takes its time.',
+        n: [perSecond], root: fromHand
       },
       {
         key: 'protection', word: 'PROTECTION',
         value: `${pct(CombatMath.mitigationOf(eq, rank))} off a blow of your rank${lighter > 0 ? `, and blows land ${lighter}% lighter` : lighter < 0 ? `, and blows land ${-lighter}% harder` : ''}`,
-        says: 'From what you wear. A blow of a higher rank gets more through, and every blow does at least 1.'
+        says: 'From what you wear. A blow of a higher rank gets more through, and every blow does at least 1.',
+        n: [share(CombatMath.mitigationOf(eq, rank)), lighter], root: gap
       },
       {
         key: 'dodge', word: 'DODGE',
         value: pct(CombatMath.dodgeChance(eq, at, rank)),
-        says: 'Blows of your rank that miss you outright. Agility and what you wear raise it; a higher rank lands more.'
+        says: 'Blows of your rank that miss you outright. Agility and what you wear raise it; a higher rank lands more.',
+        n: [share(CombatMath.dodgeChance(eq, at, rank))], root: gap
       },
       {
         key: 'block', word: 'BLOCK',
         value: `${pct(CombatMath.blockChance(eq))}, letting ${pct(CombatMath.blockFactor())} through`,
-        says: 'A blow you do not dodge may be blocked by what you wear.'
+        says: 'A blow you do not dodge may be blocked by what you wear.',
+        n: [share(CombatMath.blockChance(eq)), share(CombatMath.blockFactor())], root: gap
       },
       {
         key: 'crit', word: 'CRIT',
         value: `${pct(StatSystem.critChance(eq, at))} of hits, for ×${said(CombatMath.critMultiplier(eq))} damage`,
-        says: 'Perception and what you wear raise both.'
+        says: 'Perception and what you wear raise both.',
+        n: [share(StatSystem.critChance(eq, at)), CombatMath.critMultiplier(eq)], root: gap
       },
       {
         key: 'glance', word: 'GLANCE',
         value: `${pct(CombatMath.glanceChance(eq, at, rank))} of hits, for ${pct(CombatMath.glanceFactor())} damage`,
-        says: 'A hit that only grazes. Dexterity and what you wear make it rarer.'
+        says: 'A hit that only grazes. Dexterity and what you wear make it rarer.',
+        n: [share(CombatMath.glanceChance(eq, at, rank)), share(CombatMath.glanceFactor())], root: gap
       },
       {
         key: 'walk', word: 'WALK',
         value: `${walk.toFixed(1)} tiles a second${slowedByLoad < 1 ? `, ${Math.round((1 - slowedByLoad) * 100)}% slower under this load` : ''}`,
-        says: `Agility and light gear quicken it; heavy gear${(player.tonicsSinceRest ?? 0) > 0 ? ' and the tonics drunk since your rest' : ' and tonics'} slow it. A pack over 80% full slows you in the field.`
+        says: `Agility and light gear quicken it; heavy gear${(player.tonicsSinceRest ?? 0) > 0 ? ' and the tonics drunk since your rest' : ' and tonics'} slow it. A pack over 80% full slows you in the field.`,
+        n: [walk, share(1 - slowedByLoad)], root: gap
       },
       {
         key: 'sight', word: 'SIGHT',
         value: `${Math.round(sightTiles)} tile${Math.round(sightTiles) === 1 ? '' : 's'} past the screen's edge`,
-        says: 'Perception and light raise it. What you have seen stays on the map.'
+        says: 'Perception and light raise it. What you have seen stays on the map.',
+        n: [sightTiles], root: gap
       },
       {
         key: 'carry', word: 'CARRY',
         value: `${said(load)} of ${said(limit)} kg${InventorySystem.loadWord(load, limit) ? `, ${InventorySystem.loadWord(load, limit)}` : ''}`,
-        says: `Strength, your bag and what you wear raise it. What you wear does not count against it.${player.currentSession ? '' : ' At home: what you would take on the next drop.'}`
+        says: `Strength, your bag and what you wear raise it. What you wear does not count against it.${player.currentSession ? '' : ' At home: what you would take on the next drop.'}`,
+        n: [load, limit], root: gap
       }
     ];
   },
