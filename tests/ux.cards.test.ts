@@ -34,6 +34,25 @@ import { CardView } from '../src/components/ui/kit';
 import { HoverLayer } from '../src/components/ui/HoverLayer';
 import { useHover } from '../src/components/ui/stores';
 import { useCardKeys } from '../src/components/ui/cardKeys';
+import { CombatMath } from '../src/entities/combat/CombatMath';
+import { StatSystem } from '../shared/logic/systems/StatSystem';
+import { WebSystem } from '../shared/logic/systems/WebSystem';
+import { EffectSystem } from '../shared/logic/systems/EffectSystem';
+import { WeaveSystem } from '../src/logic/systems/WeaveSystem';
+import { ProgressionSystem } from '../shared/entities/player/systems/ProgressionSystem';
+import { LoadoutSystem } from '../shared/entities/player/systems/LoadoutSystem';
+import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
+import { FIRST_THEME_PACK } from '../shared/logic/theme/boot';
+import { cycleMs, fireMode, windupOf } from '../src/logic/systems/FieldInput';
+import { isThrowable } from '../shared/entities/item/Throwable';
+import { TILE_PX } from '../shared/entities/world/grid';
+import { PROJECTILE_RANGE_PX } from '../shared/entities/combat/projectileSystem';
+import { THROW_TILES, volleyShots } from '../shared/logic/theme/ThemeFormula';
+import { SkillNames } from '../src/logic/systems/SkillNames';
+import { said as sayNumber } from '../src/logic/systems/SheetWords';
+import { inspectHand, inspectSkill } from '../src/render/atoms/inspect';
+import { Hotbar } from '../src/components/Hotbar';
+import { IEquipmentState, ISkillState } from '../shared/types';
 
 installShippedThemes();
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -285,5 +304,193 @@ describe('UXC part 1: the held key, on the card itself', () => {
       expect(written).toEqual([]);
       expect(e.defaultPrevented).toBe(false);
     });
+  });
+});
+
+// =============================================================================
+// Part 2. Each skill answers with its own numbers. Pedro: "yes". His earlier words on the sheet: "the way the skills
+// come into play don't tell anyone anything". In the game this comes from, attack numbers left the sheet and each
+// skill shows its own. A card for a hand in use and for a held skill: what its blow or act comes to now with what is
+// held and worn, what it costs, its reach or shape, what grows it. Every number read through the rules' own functions;
+// numbers up top, any sentence beneath. The hotbar's slots answer with it.
+// =============================================================================
+
+const compiled = () => ContentRegistry.compiled(FIRST_THEME_PACK.themeId)!;
+const allGear = () => [...Object.values(compiled().items).flat(), ...compiled().craftedGear] as any[];
+const mintGear = (def: any, key: string): IItem => ItemFactory.createFromTemplate(def, true, Rng.fromKey(key));
+/** The first piece of the pack that fires this way, minted. */
+const pieceThat = (test: (i: IItem) => boolean, key: string): IItem => {
+  for (const def of allGear()) {
+    const i = mintGear(def, `${key}:${def.universal_name}`);
+    if (i.isIdentified !== false && test(i)) return i;
+  }
+  throw new Error(`no piece for ${key}`);
+};
+const wearing = (pairs: [string, IItem][]): IEquipmentState => ({ slots: Object.fromEntries(pairs.map(([s, i]) => [s, i.id])), items: pairs.map(p => p[1]), frames: {}, protected: [] } as unknown as IEquipmentState);
+const holding = (pairs: [string, IItem][], over: Partial<IPlayer> = {}): IPlayer => ({ ...usePlayerStore.getState().player, equipment: wearing(pairs), ...over });
+const pctOf = (share: number) => `${Math.round(share * 100)}%`;
+const row = (card: Card, k: string) => card.rows.find(([key]) => key === k)?.[1];
+const swinging = (i: IItem) => fireMode(i) === 'MELEE' && !(i.tags ?? []).includes('tool');
+const nameOf = (i: IItem) => LoadoutSystem.shownName(i);
+const withSkills = (skills: Record<string, ISkillState>) => ({ bank: { ...usePlayerStore.getState().player.bank, universalSkills: skills } });
+
+describe('UXC part 2: a hand in use answers with its own numbers', () => {
+  it('its blow is the fight\'s own: the hit before crits and glances, at the hand\'s real pace, before armour', () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const p = holding([['RIGHT_HAND', w]]);
+    const rank = ProgressionSystem.rankOf(p);
+    const hit = CombatMath.baseHit(w, p.equipment, p.attributes, WebSystem.handPower(p, w), rank);
+    const perSecond = 1000 / cycleMs(w, p.equipment, p.attributes);
+    const card = inspectHand(p, 'RIGHT_HAND');
+    expect(card.title).toBe(nameOf(w));
+    expect(row(card, 'Blow')).toBe(`${sayNumber(hit)} a blow, ${sayNumber(hit * perSecond)} a second, before armour`);
+    expect(row(card, 'Crit')).toBe(`${pctOf(StatSystem.critChance(p.equipment, p.attributes))} of hits, ×${sayNumber(CombatMath.critMultiplier(p.equipment))}`);
+    expect(row(card, 'Glance')).toBe(`${pctOf(CombatMath.glanceChance(p.equipment, p.attributes, rank))} of hits, for ${pctOf(CombatMath.glanceFactor())}`);
+    expect(row(card, 'Wind-up')).toBe(`${sayNumber(windupOf(w, p.equipment, p.attributes).ms / 1000)} s`);
+    expect(row(card, 'Cost')).toBe('none of the day\'s energy');
+  });
+
+  it('a swing says how far and how wide its kind strikes, and a haft says what it misses close', () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const shape = CombatMath.strikeOf(w);
+    const reach = row(inspectHand(holding([['RIGHT_HAND', w]]), 'RIGHT_HAND'), 'Reach')!;
+    expect(reach).toContain(`${sayNumber(shape.reachPx / TILE_PX)} tiles`);
+    expect(reach).toContain(`${Math.round((shape.halfAngle * 2 * 180) / Math.PI)}° wide`);
+    // The pinned pack's hafted pieces are its tools, which swing as well
+    const haft = pieceThat(i => fireMode(i) === 'MELEE' && CombatMath.strikeOf(i).innerPx > 0, 'uxc:haft');
+    expect(row(inspectHand(holding([['RIGHT_HAND', haft]]), 'RIGHT_HAND'), 'Reach')).toContain(`nothing within ${sayNumber(CombatMath.strikeOf(haft).innerPx / TILE_PX)} tiles`);
+  });
+
+  it('a shot says how many leave the hand and how far they fly; a bare hand throws', () => {
+    const bow = pieceThat(i => fireMode(i) === 'SHOT' && !isThrowable(i), 'uxc:shot');
+    const shots = volleyShots(CombatMath.volleyOf(bow)).length;
+    expect(row(inspectHand(holding([['RIGHT_HAND', bow]]), 'RIGHT_HAND'), 'Reach')).toBe(`${shots === 1 ? 'one shot' : `${shots} shots`}, ${sayNumber(PROJECTILE_RANGE_PX / TILE_PX)} tiles`);
+    const bare = inspectHand(holding([]), 'RIGHT_HAND');
+    expect(bare.title).toBe('Bare hand');
+    expect(row(bare, 'Reach')).toBe(`one throw, ${THROW_TILES} tiles`);
+  });
+
+  it('a stone in the hand spends itself, and says how many are left to throw', () => {
+    const def = Object.values(RESOURCE_DEFINITIONS).find(d => isThrowable(ItemFactory.createResourceItem(d as never, Rng.fromKey('uxc:try'))))!;
+    const stone = ItemFactory.createResourceItem(def as never, Rng.fromKey('uxc:stone'));
+    const carried = [ItemFactory.createResourceItem(def as never, Rng.fromKey('uxc:stone2'))];
+    const p = holding([['RIGHT_HAND', stone]], { currentSession: { ...(usePlayerStore.getState().player.currentSession ?? {}), inventory: carried } as never });
+    expect(row(inspectHand(p, 'RIGHT_HAND'), 'Cost')).toBe('the stone itself, 2 to throw');
+  });
+
+  it('the skill that reads on the hand says its level and its share of the blow; with none, it says none does', () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const tag = (w.tags ?? []).find(t => t !== 'weapon' && t !== 'melee') ?? 'melee';
+    const skill: ISkillState = { ...WebSystem.freshSkill(`skill_uxc_${tag}`, [tag], 0), level: 7 };
+    const p = holding([['RIGHT_HAND', w]], withSkills({ [skill.id]: skill }));
+    expect(row(inspectHand(p, 'RIGHT_HAND'), 'Grows')).toBe(`${SkillNames.nameOf(skill.id)}, level 7: +${Math.round(WebSystem.skillPower(skill) * 100)}%`);
+    const none = holding([['RIGHT_HAND', w]], withSkills({}));
+    expect(row(inspectHand(none, 'RIGHT_HAND'), 'Grows')).toBe('no skill you hold reads on it');
+  });
+
+  it('numbers stand up top; what they mean is said beneath, in sentences', () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const card = inspectHand(holding([['RIGHT_HAND', w]]), 'RIGHT_HAND');
+    for (const [k, v] of firstLayer(card)) expect(v, k).not.toMatch(/\.$/);
+    expect(secondLayer(card).length).toBeGreaterThan(0);
+    for (const [k, v] of secondLayer(card)) expect(v, k).toMatch(/\.$/);
+  });
+
+  it('a piece not read answers with its own card and gives away nothing', () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const card = inspectHand(holding([['RIGHT_HAND', { ...w, isIdentified: false } as IItem]]), 'RIGHT_HAND');
+    expect(card.title).toBe('Unidentified Signal');
+    expect(card.rows.some(([k]) => k === 'Blow')).toBe(false);
+  });
+
+  it('a focus set to a working says what the working does, what it draws and how long it is drawn', () => {
+    const focus = pieceThat(i => fireMode(i) === 'FOCUS', 'uxc:focus');
+    const theme = ContentRegistry.get(FIRST_THEME_PACK.themeId)!;
+    const elements = [...new Set(theme.abilities.flatMap(a => a.elements))].slice(0, 2);
+    const p = holding([['RIGHT_HAND', focus]], { activeCast: { kind: 'weave', elements } });
+    const rank = ProgressionSystem.rankOf(p);
+    const ability = WeaveSystem.weave(elements);
+    const card = inspectHand(p, 'RIGHT_HAND');
+    const caster = { rank, power: StatSystem.castPower(p.attributes) };
+    const [low, high] = EffectSystem.magnitudeRange(ability, caster);
+    expect(row(card, 'Casts')).toBe(ability.name);
+    expect(row(card, 'Does')).toBe(`${low} to ${high}`);
+    expect(row(card, 'Cost')).toBe(`${WeaveSystem.aetherPerElement(ability, rank)} aether of each: ${ability.elements.join(', ')}`);
+    // The range is the cast's own: every roll lands inside it
+    for (let n = 0; n < 40; n++) {
+      const m = EffectSystem.resolve(ability, caster, `uxc:${n}`).magnitude;
+      expect(m).toBeGreaterThanOrEqual(low);
+      expect(m).toBeLessThanOrEqual(high);
+    }
+  });
+});
+
+describe('UXC part 2: a held skill answers with its own numbers', () => {
+  it('its level, its share of a blow with a weapon it fits, and its circles; what grows it beneath', () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const tag = (w.tags ?? []).find(t => t !== 'weapon' && t !== 'melee') ?? 'melee';
+    const skill: ISkillState = { ...WebSystem.freshSkill(`skill_uxc_${tag}`, [tag], 0), level: 4, circles: 2 };
+    const p = holding([['RIGHT_HAND', w]], withSkills({ [skill.id]: skill }));
+    const card = inspectSkill(p, skill.id, w)!;
+    expect(card.title).toBe(SkillNames.nameOf(skill.id));
+    expect(row(card, 'Level')).toBe(`4, rank ${ProgressionSystem.skillRankOf(skill)}`);
+    expect(row(card, 'On blows')).toBe(`+${Math.round(WebSystem.skillPower(skill) * 100)}%, ${nameOf(w)}`);
+    expect(row(card, 'Circles')).toMatch(/^2, a gift at \d+$/);
+    expect(keys(secondLayer(card))).toContain('Grows');
+    expect(inspectSkill(p, 'skill_not_held')).toBeNull();
+  });
+
+  it('a skill that gathers says what it takes off a try, against untrained', () => {
+    const ore = RESOURCE_DEFINITIONS['res_iron_vein'] as any;
+    const pair = WebSystem.mint(['mining', 'pickaxe', 'tool'], ore.tags ?? []);
+    const skill: ISkillState = { ...WebSystem.freshSkill(pair.id, pair.tags, 0), level: 6 };
+    const p = holding([], withSkills({ [skill.id]: skill }));
+    const untrained = { ...p, bank: { ...p.bank, universalSkills: {} } };
+    const energy = Math.round((1 - WebSystem.energyFor(p, pair, 100).cost / WebSystem.energyFor(untrained, pair, 100).cost) * 100);
+    const time = Math.round((1 - WebSystem.clockFactor(p, pair) / WebSystem.clockFactor(untrained, pair)) * 100);
+    expect(row(inspectSkill(p, skill.id)!, 'Work')).toBe(`${energy}% less energy, ${time}% less time than untrained`);
+  });
+});
+
+describe('UXC part 2: the hotbar\'s slots answer with it', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+  });
+  afterEach(async () => {
+    await act(async () => { root.unmount(); });
+    host.remove();
+    useHover.getState().clear();
+  });
+
+  it('a hand\'s slot, held or bare, opens the hand\'s card, by the pointer or the keyboard', async () => {
+    const w = pieceThat(swinging, 'uxc:melee');
+    const before = usePlayerStore.getState().player;
+    usePlayerStore.setState(s => ({ player: { ...s.player, equipment: wearing([['RIGHT_HAND', w]]) } }));
+    try {
+      await act(async () => { root.render(createElement('div', null, createElement(Hotbar), createElement(HoverLayer))); });
+      const cell = (slot: string) => host.querySelector(`[data-drop-slot="${slot}"]`) as HTMLButtonElement;
+      const title = () => host.querySelector('.ws-card__title span')?.textContent;
+      await act(async () => { cell('RIGHT_HAND').focus(); });
+      expect(title()).toBe(nameOf(w));
+      expect([...host.querySelectorAll('.ws-card__row .k')].map(k => k.textContent)).toContain('Blow');
+      await act(async () => { cell('LEFT_HAND').focus(); });
+      expect(title()).toBe('Bare hand');
+    } finally {
+      usePlayerStore.setState({ player: before });
+    }
+  });
+
+  it('the hotbar reads the hand\'s card, and draws the piece inside it without a card of its own', () => {
+    const bar = SRC('src/components/Hotbar.tsx');
+    expect(bar).toMatch(/handHoverProps\(cell\.slot\)/);
+    expect(bar).toMatch(/<ItemSprite[^>]*noHover/);
+  });
+
+  it('the sheets are left as they were: they are another session\'s', () => {
+    for (const f of ['src/components/LargeSheet.tsx', 'src/components/CharacterSheet.tsx', 'src/components/PlayerHub.tsx']) expect(SRC(f)).not.toMatch(/inspectHand|inspectSkill/);
   });
 });

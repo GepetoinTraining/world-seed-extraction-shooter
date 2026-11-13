@@ -7,7 +7,8 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../../entities/player/store';
-import { AnchorRect, comparisonFor, inspectItem, placeCard } from '../../render/atoms/inspect';
+import { AnchorRect, comparisonFor, inspectHand, inspectItem, placeCard } from '../../render/atoms/inspect';
+import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { CardView, CompareView, RankMark } from './kit';
 import { useHands } from './hands';
 import { useHover } from './stores';
@@ -42,12 +43,18 @@ export const PlacedCard: React.FC<{ anchor: AnchorRect; layoutKey: string; child
 
 export const HoverLayer: React.FC = () => {
   const item = useHover(s => s.item);
+  const hand = useHover(s => s.hand);
   const el = useHover(s => s.el);
   const clear = useHover(s => s.clear);
   const holding = useHands(s => !!s.held);
   // The card only asks the store about what can change what it says.
   const mastery = usePlayerStore(s => s.player.materialMastery);
   const equipment = usePlayerStore(s => s.player.equipment);
+  // UXC, part 2: what a hand's card reads beyond the piece: the body, the skills, the cast set, the stones carried
+  const attributes = usePlayerStore(s => s.player.attributes);
+  const skills = usePlayerStore(s => s.player.bank?.universalSkills);
+  const activeCast = usePlayerStore(s => s.player.activeCast);
+  const carried = usePlayerStore(s => s.player.currentSession?.inventory);
 
   // A thing can leave the screen under the pointer, and then it sends no leave.
   useEffect(() => {
@@ -62,10 +69,27 @@ export const HoverLayer: React.FC = () => {
     return { card: inspectItem(item, player), compare: comparisonFor(item, player) };
   }, [item, mastery, equipment]);
 
-  if (!item || !el || !card || holding || !el.isConnected) return null;
+  const handCard = useMemo(() => {
+    if (!hand) return null;
+    const player = usePlayerStore.getState().player;
+    const piece = player.equipment ? LoadoutSystem.itemIn(player.equipment, hand) : undefined;
+    return { card: inspectHand(player, hand), piece };
+  }, [hand, mastery, equipment, attributes, skills, activeCast, carried]);
+
+  if (!el || holding || !el.isConnected) return null;
   const r = el.getBoundingClientRect();
+  const anchor = { left: r.left, top: r.top, width: r.width, height: r.height };
+  if (hand && handCard) {
+    const piece = handCard.piece;
+    return (
+      <PlacedCard anchor={anchor} layoutKey={`hand:${hand}:${handCard.card.rows.length}`}>
+        <CardView card={handCard.card} right={!piece || piece.isIdentified === false ? undefined : <RankMark rank={String(piece.rank)} scale={2} />} />
+      </PlacedCard>
+    );
+  }
+  if (!item || !card) return null;
   return (
-    <PlacedCard anchor={{ left: r.left, top: r.top, width: r.width, height: r.height }} layoutKey={`${item.id}:${card.compare ? 1 : 0}`}>
+    <PlacedCard anchor={anchor} layoutKey={`${item.id}:${card.compare ? 1 : 0}`}>
       <CardView card={card.card} right={item.isIdentified === false ? undefined : <RankMark rank={String(item.rank)} scale={2} />}>
         {card.compare && <CompareView compare={card.compare} />}
       </CardView>

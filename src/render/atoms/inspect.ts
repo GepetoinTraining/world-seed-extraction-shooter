@@ -14,7 +14,18 @@ import { Spread, SpreadBook, formOf } from '../../../shared/entities/world/Sprea
 import { DoingBook } from '../../../shared/logic/systems/MaterialDoing';
 import { KnownWorth } from '../../../shared/logic/economy/KnownWorth';
 import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
-import { isLooseStone } from '../../../shared/entities/item/Throwable';
+import { isLooseStone, isThrowable } from '../../../shared/entities/item/Throwable';
+import { TILE_PX } from '../../../shared/entities/world/grid';
+import { PROJECTILE_RANGE_PX } from '../../../shared/entities/combat/projectileSystem';
+import { EffectSystem, IEffectAbility } from '../../../shared/logic/systems/EffectSystem';
+import { StatSystem } from '../../../shared/logic/systems/StatSystem';
+import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
+import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
+import { volleyShots } from '../../../shared/logic/theme/ThemeFormula';
+import { blowWear } from '../../../shared/logic/theme/WearLaw';
+import { WeaveSystem } from '../../logic/systems/WeaveSystem';
+import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../../logic/systems/CircleSystem';
+import { cycleMs, fireMode, reachFor, throwsLeft, wieldRefusal, windupOf } from '../../logic/systems/FieldInput';
 import { CRAFTED_DEFINITIONS } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { QUALITY_NAMES, qualityBand } from '../../../shared/render/atoms/atoms';
@@ -24,13 +35,13 @@ import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSy
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { setBonusText } from '../../../shared/entities/hub/template';
 import { IRoomState, roomAdditions } from '../../../shared/entities/hub/room';
-import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { MASTERY_RUNGS, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { NpcSheet } from '../../../shared/logic/systems/NpcSheet';
 import { SurveySystem } from '../../logic/systems/SurveySystem';
 import { ContactNames } from '../../logic/systems/ContactNames';
 import { WorldDeed } from '../../logic/systems/WorldDeed';
 import { WorldClock } from '../../entities/world/WorldClock';
-import { SkillNames } from '../../logic/systems/SkillNames';
+import { SkillNames, listed } from '../../logic/systems/SkillNames';
 import { statAmount, statWord } from '../../logic/systems/StatWords';
 import { said as sayNumber } from '../../logic/systems/SheetWords';
 import { GameClock } from '../../logic/time/GameClock';
@@ -507,6 +518,147 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     deep.push(['Origin', said]);
   }
   return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, String(item.rank)) };
+}
+
+// ---------------------------------------------------------------------------
+// A SKILL'S OWN NUMBERS (UXC, part 2). Pedro: "yes". His earlier words on the sheet: "the way the skills come into
+// play don't tell anyone anything". In the game this comes from, attack numbers left the sheet and each skill shows
+// its own. A hand in use and a held skill each have a card: what the blow or the act comes to now with what is held
+// and worn, what it costs, its reach or shape, and what grows it. Every number is the rules' own answer, asked as the
+// field asks it; numbers stand up top, and what they mean is said beneath in sentences.
+// ---------------------------------------------------------------------------
+
+const pctSaid = (share: number) => `${Math.round(share * 100)}%`;
+const tilesSaid = (px: number) => sayNumber(px / TILE_PX);
+const degreesOf = (halfAngle: number) => Math.round((halfAngle * 2 * 180) / Math.PI);
+const countSaid = (n: number, one: string, many: string) => (n === 1 ? `one ${one}` : `${n} ${many}`);
+const capitalized = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** What the focus is set to cast, read as the field reads it when it lets a cast go (`castFromFocus`). */
+function castOf(player: IPlayer): IEffectAbility | undefined {
+  const cast = player.activeCast;
+  if (!cast) return undefined;
+  if (cast.kind === 'weave') return cast.elements.length > 0 ? WeaveSystem.weave(cast.elements) : undefined;
+  if (cast.kind === 'gift') return CircleSystem.abilityOf(player, cast.id);
+  return ContentRegistry.ability(cast.id);
+}
+
+/**
+ * UXC, part 2: the card of a hand in use, the hotbar's own. What it deals now, a blow and a second at the pace the field
+ * fires it (`cycleMs`), before armour; how often a hit crits or glances; how long it winds up; how far and how wide it
+ * reaches, or how many shots leave it and how far they fly; what a blow costs; the skill that reads on it. An empty hand
+ * that carries a stone throws one, as the field has it reach for it (`reachFor`). A piece not read, or one that only
+ * guards, answers with its own card: what it would deal would say what it is (D19, D32).
+ * After the join with the sheet's branch, the second layer is where the law of when a description may open would be
+ * asked (ledger UXC13); a hand's own card is always the skill's own, so today it always opens.
+ */
+export function inspectHand(player: IPlayer, slot: EquipSlotId): Card {
+  const eq = player.equipment;
+  const held = eq ? LoadoutSystem.itemIn(eq, slot) : undefined;
+  if (held && (held.isIdentified === false || wieldRefusal(held))) return inspectItem(held, player);
+  const carried = player.currentSession?.inventory ?? [];
+  const reached = reachFor(held, carried);
+  const hand = held ?? reached;
+  const at = player.attributes;
+  const rank = ProgressionSystem.rankOf(player);
+  const mode = fireMode(hand);
+  const cast = mode === 'FOCUS' ? castOf(player) : undefined;
+  const title = held ? LoadoutSystem.shownName(held) : 'Bare hand';
+  const rows: Line[] = [];
+  const deep: Line[] = [];
+
+  if (cast) {
+    // The focus lets its working go instead of a blow: what the working comes to, as `EffectSystem.resolve` rolls it
+    const caster = { rank, power: StatSystem.castPower(at) };
+    const [low, high] = EffectSystem.magnitudeRange(cast, caster);
+    const reach = EffectSystem.resolve(cast, caster, 'card').reachPx;
+    rows.push(['Casts', cast.name], ['Does', `${low} to ${high}`]);
+    rows.push(['Wind-up', `${sayNumber(windupOf(hand, eq, at, { cost: cast.cost, rank: rank as never }).ms / 1000)} s`]);
+    // Where it lands, as the field lets it go (`applyPlayerReceipt`): a shot, a reach, or a ring of shots
+    rows.push(['Reach', cast.delivery === 'ranged' ? `one shot, ${tilesSaid(PROJECTILE_RANGE_PX)} tiles`
+      : cast.delivery === 'melee' || cast.delivery === 'touch' ? `${tilesSaid(reach)} tiles`
+      : `${countSaid(volleyShots('ring').length, 'shot', 'shots')} all around, ${tilesSaid(PROJECTILE_RANGE_PX)} tiles`]);
+    rows.push(['Cost', `${WeaveSystem.aetherPerElement(cast, rank)} aether of each: ${cast.elements.join(', ')}`]);
+    deep.push(['Working', `${capitalized(cast.effect.replace(/_/g, ' '))}, delivered ${cast.delivery}, drawn from what you hold of each element.`]);
+  } else {
+    const hit = CombatMath.baseHit(hand, eq, at, WebSystem.handPower(player, hand), rank);
+    const perSecond = 1000 / cycleMs(hand, eq, at);
+    const poison = StatSystem.total(eq, 'poison_damage');
+    rows.push(['Blow', `${sayNumber(hit)} a blow, ${sayNumber(hit * perSecond)} a second, before armour`]);
+    if (poison > 0) rows.push(['Poison', `${sayNumber(poison)} a hit`]);
+    rows.push(['Crit', `${pctSaid(StatSystem.critChance(eq, at))} of hits, ×${sayNumber(CombatMath.critMultiplier(eq))}`]);
+    rows.push(['Glance', `${pctSaid(CombatMath.glanceChance(eq, at, rank))} of hits, for ${pctSaid(CombatMath.glanceFactor())}`]);
+    const windup = windupOf(hand, eq, at);
+    rows.push(['Wind-up', `${sayNumber(windup.ms / 1000)} s`]);
+    if (mode === 'MELEE') {
+      const shape = CombatMath.strikeOf(hand);
+      rows.push(['Reach', `${tilesSaid(shape.reachPx)} tiles, ${degreesOf(shape.halfAngle)}° wide${shape.innerPx > 0 ? `, nothing within ${tilesSaid(shape.innerPx)} tiles` : ''}`]);
+    } else {
+      const throwing = !hand || isThrowable(hand);
+      const shots = volleyShots(CombatMath.volleyOf(hand)).length;
+      rows.push(['Reach', `${throwing ? countSaid(shots, 'throw', 'throws') : countSaid(shots, 'shot', 'shots')}, ${tilesSaid(CombatMath.shotRangePx(hand) ?? PROJECTILE_RANGE_PX)} tiles`]);
+    }
+    // EN5: a blow takes none of the day's energy; a stone thrown is spent, and a piece wears by the blow (`WearLaw`)
+    if (isThrowable(held)) rows.push(['Cost', `the stone itself, ${throwsLeft(held, carried)} to throw`]);
+    else if (reached) rows.push(['Cost', `a stone carried, ${throwsLeft(undefined, carried, true)} to throw`]);
+    else rows.push(['Cost', 'none of the day\'s energy']);
+    if (held && held.stats?.maxDurability) rows.push(['Wear', `${sayNumber(blowWear(held.stats.maxDurability, CombatMath.ownRate(held), String(held.rank)))} a blow`]);
+    if (held && toolPower(held) > 0) rows.push(['Works', `power ${sayNumber(toolPower(held))}`]);
+
+    deep.push(['Blow', 'What lands before a crit, a glance or the armour it meets. Every blow does at least 1.']);
+    deep.push(['Wind-up', windup.kind === 'swing' ? 'Swung at half pace before the blow lands; a quicker hand shortens only what comes after.' : 'Drawn standing before it lets go; a quicker hand shortens only what comes after.']);
+    deep.push(['Cost', isThrowable(hand) ? 'A stone thrown is spent, and the next one carried comes to the hand.' : 'A blow takes none of the day\'s energy; the day is for work.']);
+    if (held && toolPower(held) > 0) deep.push(['Works', 'What a try costs and how often it takes is on the place\'s own card.']);
+  }
+
+  // What grows it: the strongest skill the hand answers to, the one the fight reads (`WebSystem.handSkill`)
+  const skill = WebSystem.handSkill(player, hand);
+  rows.push(['Grows', skill ? `${SkillNames.nameOf(skill.id)}, level ${skill.level}: +${Math.round(WebSystem.skillPower(skill) * 100)}%` : 'no skill you hold reads on it']);
+  deep.push(['Grows', skill ? 'Only the strongest skill the hand answers to adds to its blow, and it grows as you use it.' : 'A skill reads on a hand only when every word of it is on the piece.']);
+  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, 'in hand') };
+}
+
+/**
+ * UXC, part 2: the card of a held skill. Its level and rank, its step, what it adds to a blow with a weapon it fits (or
+ * the hand's, when the hand fits), what it takes off a try against untrained where it gathers, its circles and gifts;
+ * beneath, what grows it and what it lets you do. Null when the skill is not held. A sheet calls it with the skill's id
+ * and the hand in use (ledger UXC12).
+ */
+export function inspectSkill(player: IPlayer, skillId: string, hand?: IItem): Card | null {
+  const skill = player.bank?.universalSkills?.[skillId];
+  if (!skill) return null;
+  const tags = skill.tags ?? [];
+  const title = SkillNames.nameOf(skillId);
+  const row = WebSystem.earnedSheet(player).earned.find(r => r.id === skillId);
+  const mastery = WebSystem.masteryOf(skill);
+  const rows: Line[] = [['Level', `${skill.level}, rank ${ProgressionSystem.skillRankOf(skill)}`], ['Step', `${capitalized(mastery.rungName)}, ${mastery.rung + 1} of ${MASTERY_RUNGS.length}`]];
+  const deep: Line[] = [];
+  // The fight reads a skill only when every word of it is on the weapon (`WebSystem.handPower`)
+  const power = Math.round(WebSystem.skillPower(skill) * 100);
+  const fits = !!hand && tags.length > 0 && tags.every(t => (hand.tags ?? []).includes(t));
+  const worked = WebSystem.materialIdentity(tags);
+  if (fits) rows.push(['On blows', `+${power}%, ${LoadoutSystem.shownName(hand!)}`]);
+  else if (worked.length === 0) rows.push(['On blows', `+${power}% with a weapon it fits`]);
+  // Only what is gathered asks a skill's price in energy and time: the work's own price, asked with it and without it
+  if (WebSystem.materialsOf(tags).length > 0) {
+    const pair = { id: skillId, tags };
+    const untrained = { ...player, bank: { ...player.bank, universalSkills: {} } };
+    const energy = 1 - WebSystem.energyFor(player, pair, 100).cost / WebSystem.energyFor(untrained, pair, 100).cost;
+    const time = 1 - WebSystem.clockFactor(player, pair) / WebSystem.clockFactor(untrained, pair);
+    rows.push(['Work', `${Math.round(energy * 100)}% less energy, ${Math.round(time * 100)}% less time than untrained`]);
+  }
+  const circles = CircleSystem.circlesOf(skill);
+  let nextGiftAt = CircleSystem.firstAsks(player, skillId);
+  while (nextGiftAt <= circles) nextGiftAt += CIRCLES_FOR_A_GIFT;
+  rows.push(['Circles', `${circles}, a gift at ${nextGiftAt}`]);
+  const gifts = CircleSystem.giftsOf(player, skillId).map(g => g.name);
+  if (gifts.length > 0) rows.push(['Gifts', gifts.join(', ')]);
+
+  deep.push(['Grows', `With use: ${SkillNames.whatItIs(tags).toLowerCase()}.`]);
+  if (row && row.verbs.length > 0) deep.push(['Lets you', `${capitalized(listed(row.verbs))}.`]);
+  if (row && row.opens.length > 0) deep.push(['Opens', `Your hub can raise ${listed(row.opens)}.`]);
+  if (row?.flavor) deep.push(['Said of it', row.flavor.trim().replace(/([^.!?])$/, '$1.')]);
+  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, `level ${skill.level}`) };
 }
 
 // ---------------------------------------------------------------------------
