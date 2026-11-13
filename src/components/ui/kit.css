@@ -186,6 +186,7 @@
 /* UXC part 3: the player's own words stand slanted, under what they are about; the buttons that hear them sit last */
 .ws-card__mine .v { font-style: italic; }
 .ws-card__notes { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+.ws-card__unheard { flex-basis: 100%; font-size: var(--ws-font-small); white-space: normal; }
 .ws-card__need { color: var(--ws-loss-3); font-size: var(--ws-font-small); margin-top: 4px; }
 .ws-card__ready { color: var(--ws-signal-3); font-size: var(--ws-font-small); margin-top: 4px; }
 

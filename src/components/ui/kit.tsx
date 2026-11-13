@@ -286,6 +286,7 @@ const CardLine: React.FC<{ line: [string, string] }> = ({ line: [k, v] }) => (
  */
 const NoteControls: React.FC<{ unknowns: ICardUnknown[] }> = ({ unknowns }) => {
   const underway = useCardKeys(s => s.note);
+  const unheard = useCardKeys(s => s.unheard);
   const ready = Transcribers.current().ready();
   const reason = 'reason' in ready ? ready.reason : !canSpeakNotes() ? 'Notes are heard in the game itself.' : null;
   const target = noteTarget(unknowns);
@@ -296,9 +297,13 @@ const NoteControls: React.FC<{ unknowns: ICardUnknown[] }> = ({ unknowns }) => {
         const label = reason ?? (mine ? (underway!.phase === 'listening' ? 'LISTENING. SPEAK NOW' : 'WRITING YOUR NOTE')
           : `${u.noted ? 'SPEAK AGAIN' : 'SPEAK A NOTE'}${unknowns.length > 1 ? ` ON ${u.about.toUpperCase()}` : ''}`);
         return (
-          <Button key={u.key} tone="quiet" disabled={!!reason || !!underway} aria-busy={mine} onClick={() => speakNote(u)}>
-            {label}{!reason && !underway && u === target ? <> <Kbd>N</Kbd></> : null}
-          </Button>
+          <React.Fragment key={u.key}>
+            <Button tone="quiet" disabled={!!reason || !!underway} aria-busy={mine} onClick={() => speakNote(u)}>
+              {label}{!reason && !underway && u === target ? <> <Kbd>N</Kbd></> : null}
+            </Button>
+            {/* Why the last try made no note, in its own sentence, under the button that asked (never by a hue) */}
+            {unheard?.key === u.key && !underway && <div className="ws-card__unheard" role="status">{unheard.reason}</div>}
+          </React.Fragment>
         );
       })}
     </div>

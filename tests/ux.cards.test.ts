@@ -525,7 +525,7 @@ import { MODEL_FOR } from '../shared/intelligence/claude';
 import { buildNoteRequest } from '../shared/intelligence/prompts';
 import { IntelligenceClient } from '../src/logic/intelligence/IntelligenceClient';
 import { NOTE_CHARACTERS, NoteKeys, PlayerNote } from '../src/logic/systems/PlayerNote';
-import { BrowserTranscriber, FixedTranscriber, ITranscriber, Transcribers } from '../src/logic/systems/Transcriber';
+import { BrowserTranscriber, CANNOT_HEAR, FixedTranscriber, ITranscriber, LISTEN_MS, Transcribers } from '../src/logic/systems/Transcriber';
 import { NoteDoor } from '../src/logic/systems/NoteDoor';
 import { ContactNames } from '../src/logic/systems/ContactNames';
 import { playerPort } from '../src/entities/player/store';
@@ -664,6 +664,64 @@ describe('UXC part 3: the one seam for speech', () => {
     expect('reason' in out && out.reason).toMatch(/microphone/i);
   });
 
+  // Pedro's answer to "Which turns the spoken note into text?": "Browser's own". It is the transcriber, not a stand-in
+  it('the browser\'s own recognizer is the one that stands, by Pedro\'s answer', () => {
+    expect(Transcribers.current()).toBeInstanceOf(BrowserTranscriber);
+  });
+
+  /** A recognizer that fails with this code, as a browser reports it. */
+  const failing = (code: string) => class { lang = ''; onresult: any; onerror: any; onend: any; start() { setTimeout(() => { this.onerror?.({ error: code }); this.onend?.(); }, 0); } stop() {} abort() {} };
+  const reasonFor = async (code: string) => {
+    (window as any).SpeechRecognition = failing(code);
+    const out = await new BrowserTranscriber().listen();
+    expect(out.ok, code).toBe(false);
+    return 'reason' in out ? out.reason : '';
+  };
+
+  it('every way it can fail is its own plain sentence, and none is silent', async () => {
+    const codes = ['not-allowed', 'service-not-allowed', 'network', 'audio-capture', 'no-speech', 'language-not-supported', 'aborted'];
+    const said = new Map<string, string>();
+    for (const code of codes) said.set(code, await reasonFor(code));
+    // Each its own sentence, and none the same as a browser with no recognizer at all
+    expect(new Set([...said.values(), CANNOT_HEAR]).size).toBe(codes.length + 1);
+    for (const [code, reason] of said) expect(reason, code).toMatch(/^[A-Z].*\.$/);
+    // The player refused the microphone
+    expect(said.get('not-allowed')).toMatch(/microphone/i);
+    expect(said.get('not-allowed')).toMatch(/refused/i);
+    // The recognizer is there and its service does not answer: a build without its maker's speech service
+    expect(said.get('network')).toMatch(/speech service/i);
+    expect(said.get('network')).not.toMatch(/microphone/i);
+    expect(said.get('service-not-allowed')).toMatch(/speech service/i);
+    // A code no one wrote a sentence for is still said, with its own word
+    expect(await reasonFor('bad-grammar')).toMatch(/bad-grammar/);
+  });
+
+  it('a service that never answers ends the listening and says so', async () => {
+    vi.useFakeTimers();
+    try {
+      (window as any).SpeechRecognition = class { lang = ''; onresult: any; onerror: any; onend: any; start() {} stop() {} abort() {} };
+      const heard = new BrowserTranscriber().listen();
+      await vi.advanceTimersByTimeAsync(LISTEN_MS + 10_000);
+      const out = await heard;
+      expect(out.ok).toBe(false);
+      expect('reason' in out && out.reason).toMatch(/speech service/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('it listens in the browser\'s own language', async () => {
+    let lang = '';
+    (window as any).SpeechRecognition = class { lang = ''; onresult: any; onerror: any; onend: any; start() { lang = this.lang; setTimeout(() => { this.onresult?.({ results: [[{ transcript: 'brilha' }]] }); this.onend?.(); }, 0); } stop() {} abort() {} };
+    const spy = vi.spyOn(navigator, 'language', 'get').mockReturnValue('pt-BR');
+    try {
+      await new BrowserTranscriber().listen();
+      expect(lang).toBe('pt-BR');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('one seam: the game asks whichever transcriber stands, and a check sets one that returns fixed text', () => {
     const before = Transcribers.current();
     const fixed = new FixedTranscriber('it hums');
@@ -768,6 +826,27 @@ describe('UXC part 3: on the card', () => {
     it('the note is the player\'s by position and a word, never by a hue', () => {
       const css = SRC('src/components/ui/kit.css');
       expect(css).not.toMatch(/ws-card__mine[^}]*color/);
+    });
+
+    it('a hearing that fails is said on the card, under its button, in its own sentence; no note is made, and the next try clears it', async () => {
+      const refused = 'The microphone was refused. Allow it for this page to speak a note.';
+      Transcribers.use({ ready: () => ({ ok: true }), listen: async () => ({ ok: false, reason: refused }) });
+      const spy = vi.spyOn(IntelligenceClient, 'shapeNote');
+      await mountCard();
+      await act(async () => { noteButton().click(); await new Promise(r => setTimeout(r, 0)); });
+      const said = host.querySelector('.ws-card__unheard');
+      expect(said?.textContent).toBe(refused);
+      // It stands under the button it answers
+      expect(noteButton().compareDocumentPosition(said!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(spy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().player.notes?.[NoteKeys.affix(SECRET_AFFIX.id)]).toBeUndefined();
+      // Said by words, never by a hue
+      expect(SRC('src/components/ui/kit.css')).not.toMatch(/ws-card__unheard[^}]*color/);
+      // A new try takes it away, whatever it then says
+      Transcribers.use(new FixedTranscriber('it burns stuff'));
+      spy.mockResolvedValue({ status: 'OK', data: { note: 'Burns stuff' } });
+      await act(async () => { noteButton().click(); await new Promise(r => setTimeout(r, 0)); });
+      expect(host.querySelector('.ws-card__unheard')).toBeNull();
     });
   });
 });

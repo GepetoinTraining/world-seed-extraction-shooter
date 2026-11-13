@@ -18,6 +18,7 @@ const WAIT_ID = 'note';
 export async function speak(unknown: ICardUnknown, pc: Pick<IPlayerPort, 'view' | 'apply'>): Promise<void> {
   const keys = useCardKeys.getState();
   if (keys.note) return;
+  keys.setUnheard(null);
   keys.setNote({ key: unknown.key, phase: 'listening' });
   useWaits.getState().begin({ id: WAIT_ID, label: `Listening for your note on ${unknown.about}`, startedAt: Date.now() });
   try {
@@ -28,7 +29,12 @@ export async function speak(unknown: ICardUnknown, pc: Pick<IPlayerPort, 'view' 
       }
     });
     if (out.ok) useFeed.getState().push(`Your note on ${unknown.about}: "${out.note}"`, 'proof');
-    else useFeed.getState().push(out.reason ?? 'Nothing was kept.', 'loss');
+    else {
+      // Said on the card, under the button that asked, and in the feed; the note is simply not made
+      const reason = out.reason ?? 'Nothing was kept.';
+      useCardKeys.getState().setUnheard({ key: unknown.key, reason });
+      useFeed.getState().push(reason, 'loss');
+    }
   } finally {
     useCardKeys.getState().setNote(null);
     useWaits.getState().end(WAIT_ID);

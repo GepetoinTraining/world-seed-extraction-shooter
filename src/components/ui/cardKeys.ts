@@ -29,21 +29,26 @@ interface CardKeysState {
   up: ICardUp[];
   /** UXC, part 3: the one note being spoken now, if any. */
   note: INoteUnderway | null;
+  /** UXC, part 3: why the last try on this unknown made no note, in its own sentence, until the next try. */
+  unheard: { key: string; reason: string } | null;
   setDeep: (deep: boolean) => void;
   /** A card came up, or what it says changed: it is the one that came up last. */
   raise: (card: ICardUp) => void;
   drop: (id: number) => void;
   setNote: (note: INoteUnderway | null) => void;
+  setUnheard: (unheard: { key: string; reason: string } | null) => void;
 }
 
 export const useCardKeys = create<CardKeysState>((set, get) => ({
   deep: false,
   up: [],
   note: null,
+  unheard: null,
   setDeep: deep => { if (get().deep !== deep) set({ deep }); },
   raise: card => set(s => ({ up: [...s.up.filter(c => c.id !== card.id), card] })),
   drop: id => set(s => (s.up.some(c => c.id === id) ? { up: s.up.filter(c => c.id !== id) } : s)),
-  setNote: note => set({ note })
+  setNote: note => set({ note }),
+  setUnheard: unheard => set({ unheard })
 }));
 
 /** UXC, part 3: N speaks on the first unknown with no note yet, or on the first when every one has one. */

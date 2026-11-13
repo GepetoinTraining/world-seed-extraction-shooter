@@ -1,16 +1,19 @@
 /**
  * SPEECH TO TEXT, BEHIND ONE SEAM (UXC, part 3). Pedro wants a note spoken: "button + voice" send to "whisper or haiku".
  * Claude models take text and images, not sound (the models overview page, read 2026-11-12), so a transcriber stands
- * before the quick model, and which one is Pedro's call, asked and not yet answered: a Whisper model run in the browser
- * (a package and a model download, neither of which this branch may add) or the browser's own recognizer.
+ * before the quick model. Which one was his call, and he answered it: asked "Which turns the spoken note into text?",
+ * he said "Browser's own". So the browser's own recognizer (`SpeechRecognition`, `webkitSpeechRecognition`) is THE
+ * transcriber, not a stand-in: no Whisper, no package, no model download.
  *
- * So the game asks one interface for text and never knows what stands behind it (`Transcribers.current()`). Built behind
- * it: the browser's own recognizer where the browser has one; where it has none, it says in words that this browser
- * cannot hear yet. A check or a bar sets one that returns fixed text (`FixedTranscriber`): no microphone is ever opened
- * in a hidden window. A Whisper transcriber, if Pedro picks it, is one more class here and one `Transcribers.use`.
+ * The game still asks one interface for text (`Transcribers.current()`), so a check or a bar sets one that returns fixed
+ * text (`FixedTranscriber`) and no microphone is ever opened in a hidden window.
  *
- * Note for that call: in Chrome the browser's own recognizer sends the sound to the browser maker's speech service; that
- * is the browser's doing, not a call of ours, and the ledger's UXC rows say so for that call.
+ * Every way the browser's recognizer can fail is its own plain sentence, said on the card, and the note is simply not
+ * made: no recognizer in this browser; the microphone refused; a recognizer whose speech service does not answer (a
+ * Chromium build without its maker's keys reports a network or service error, and Pedro's own play window is a
+ * Chromium app window, so he may meet that one first); and the rest the browser reports. It listens in the browser's
+ * own language (ledger UXC29). In Chrome the sound is sent to the browser maker's speech service to be recognized: the
+ * browser's doing, never our door's, written down for the site's words about players' data (UXC30).
  */
 
 export type Heard = { ok: true; text: string } | { ok: false; reason: string };
@@ -24,18 +27,27 @@ export interface ITranscriber {
 
 /** The longest one listening holds the microphone open, the coordinator's call: a guess is a breath or two. */
 export const LISTEN_MS = 15_000;
+/** How long a recognizer told to stop may take to end before its silence is read as a service that does not answer. */
+const STOP_GRACE_MS = 3_000;
 
 export const CANNOT_HEAR = 'This browser cannot hear yet.';
+export const NO_ANSWER = 'This browser\'s speech service did not answer, so nothing was heard.';
 
-/** What the browser's recognizer said went wrong, in a player's words. */
+/**
+ * What the browser's recognizer reports, each in its own sentence a player reads on the card. `network` is what a
+ * Chromium build without its maker's speech service says; `service-not-allowed` is the browser or its settings
+ * refusing this page the service, which is not the player refusing the microphone (`not-allowed`).
+ */
 const REFUSALS: Record<string, string> = {
-  'not-allowed': 'The microphone was not allowed. Allow it for this page to speak a note.',
-  'service-not-allowed': 'The microphone was not allowed. Allow it for this page to speak a note.',
-  'no-speech': 'Nothing was heard.',
+  'not-allowed': 'The microphone was refused. Allow it for this page to speak a note.',
+  'service-not-allowed': 'This browser does not let this page use its speech service.',
+  network: 'This browser\'s speech service could not be reached. A browser built without its maker\'s speech service cannot turn speech into text.',
   'audio-capture': 'No microphone was found.',
-  network: 'The browser\'s recognizer could not be reached.',
-  aborted: 'Listening was stopped.'
+  'no-speech': 'Nothing was heard.',
+  'language-not-supported': 'This browser\'s speech service does not take the language the browser is set to.',
+  aborted: 'Listening was stopped before anything was heard.'
 };
+const refusalOf = (code: string): string => REFUSALS[code] ?? `The browser could not hear, and said only "${code}".`;
 
 type RecognizerClass = new () => {
   lang: string; interimResults?: boolean; maxAlternatives?: number; continuous?: boolean;
@@ -51,6 +63,9 @@ const recognizerClass = (): RecognizerClass | undefined => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 };
 
+/** The language a note is heard in: the browser's own (ledger UXC29, the coordinator's call), and English where it says none. */
+export const listenLanguage = (): string => (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
+
 /** The browser's own recognizer, in the language the browser is set to, once, until the player stops speaking. */
 export class BrowserTranscriber implements ITranscriber {
   ready(): { ok: true } | { ok: false; reason: string } {
@@ -62,30 +77,35 @@ export class BrowserTranscriber implements ITranscriber {
     if (!Recognizer) return Promise.resolve({ ok: false, reason: CANNOT_HEAR });
     return new Promise<Heard>(resolve => {
       const rec = new Recognizer();
-      rec.lang = (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
+      rec.lang = listenLanguage();
       rec.interimResults = false;
       rec.maxAlternatives = 1;
       rec.continuous = false;
       let text = '';
       let refused: string | null = null;
       let done = false;
+      const timers: ReturnType<typeof setTimeout>[] = [];
       const finish = () => {
         if (done) return;
         done = true;
-        clearTimeout(timer);
+        timers.forEach(clearTimeout);
         resolve(text.trim() ? { ok: true, text: text.trim() } : { ok: false, reason: refused ?? REFUSALS['no-speech'] });
       };
       rec.onresult = e => {
         for (let i = 0; i < e.results.length; i++) text += `${text ? ' ' : ''}${e.results[i][0]?.transcript ?? ''}`;
       };
-      rec.onerror = e => { refused = REFUSALS[e.error] ?? `The browser could not hear: ${e.error}.`; };
+      rec.onerror = e => { refused = refusalOf(e.error); };
       rec.onend = finish;
-      const timer = setTimeout(() => { try { rec.stop(); } catch { finish(); } }, LISTEN_MS);
+      // Listening ends at its time; a recognizer that does not end when told is a service that did not answer
+      timers.push(setTimeout(() => {
+        try { rec.stop(); } catch { /* ended already */ }
+        timers.push(setTimeout(() => { refused = refused ?? NO_ANSWER; finish(); }, STOP_GRACE_MS));
+      }, LISTEN_MS));
       signal?.addEventListener('abort', () => { refused = REFUSALS.aborted; try { rec.abort(); } catch { finish(); } });
       try {
         rec.start();
       } catch (e) {
-        refused = `The browser could not hear: ${(e as Error).message}.`;
+        refused = `The browser could not start listening: ${(e as Error).message}.`;
         finish();
       }
     });
