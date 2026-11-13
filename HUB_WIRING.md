@@ -197,6 +197,8 @@ Everything here passes on a database in memory and real local servers. None of i
 - that Vercel hands `api/hub.js`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`;
 - that Vercel builds and runs the function. The first deployment (2026-11-13) showed it does NOT run these TypeScript files as they are: plain Node could not find `server/hub/app`. The hub is now built into one file first (`scripts/build-hub.ts`, `DEPLOY.md`); that the host runs that file has not been seen yet;
 - Clerk's own form on the site's first page (`landing/landing.js`), which was written from Clerk's documentation and never loaded;
+- the page's headers on the host: `vercel.json`'s fixed ones, and the content policy `npm run build:site` writes into each landing page (`DEPLOY.md`, "The page's headers");
+- the settings read from the names the host's integrations write (`server/hub/settings.ts`), which were read on the providers' pages and never on the host itself;
 - the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
 
 The first preview deployment settles the first two in a minute: `GET /api/hub/health` must answer.

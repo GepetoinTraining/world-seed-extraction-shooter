@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { folderUrl } from '../connection';
 import { hubKeyFrom } from '../hub/keys';
 import { createHubApp } from '../hub/app';
-import { clerkFrontendHost } from '../hub/clerk';
+import { clerkHostOf } from '../hub/pagePolicy';
 import { createHubListener } from '../hub/server';
 import { createIntelligenceHandler, chooseProvider } from '../intelligence';
 import { IntelligenceDoor } from '../../shared/intelligence/door';
@@ -47,7 +47,7 @@ const key = hubKeyFrom(process.env, join(root, 'data', 'hosted-key.pem'), line =
 
 const app = createHubApp({ databaseUrl, key, publicUrl, liveDatabaseUrl: process.env.WS_LIVE_DATABASE_URL, liveListenUrl: process.env.WS_LIVE_LISTEN_URL });
 const site = existsSync(join(root, 'dist-site', 'index.html')) ? join(root, 'dist-site') : join(root, 'landing');
-const clerkHost = process.env.CLERK_PUBLISHABLE_KEY ? clerkFrontendHost(process.env.CLERK_PUBLISHABLE_KEY.trim()) : null;
+const clerkHost = clerkHostOf(process.env);
 const pages = createHubListener({ api: (req, res) => app.handle(req, res), landingDir: site, pages: ['/play/'], clerkHost });
 
 // Our key, from this process's own environment only: no .env is read here

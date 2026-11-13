@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { folderUrl } from '../connection';
 import { hubKeyFrom } from './keys';
 import { createHubApp } from './app';
-import { clerkFrontendHost } from './clerk';
+import { clerkHostOf } from './pagePolicy';
 import { createHubListener } from './server';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -33,7 +33,7 @@ const key = hubKeyFrom(process.env, join(root, 'data', 'hub-key.pem'), line => c
 const app = createHubApp({ databaseUrl, key, publicUrl, liveDatabaseUrl: process.env.WS_LIVE_DATABASE_URL, liveListenUrl: process.env.WS_LIVE_LISTEN_URL });
 // The built site when there is one (npm run build:site: the landing page, and the game at /play/), else the landing page alone
 const site = existsSync(join(root, 'dist-site', 'index.html')) ? join(root, 'dist-site') : join(root, 'landing');
-const clerkHost = process.env.CLERK_PUBLISHABLE_KEY ? clerkFrontendHost(process.env.CLERK_PUBLISHABLE_KEY.trim()) : null;
+const clerkHost = clerkHostOf(process.env);
 const server = createServer(createHubListener({ api: (req, res) => app.handle(req, res), landingDir: site, pages: ['/play/'], clerkHost }));
 server.on('upgrade', (req, raw) => app.upgrade(req, raw));
 server.listen(port, host, () => console.log(`[HUB] ${key.id} answers on http://${host}:${port} as ${publicUrl} (${databaseUrl.split(':')[0]}), the function's local stand-in`));

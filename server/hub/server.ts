@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { send } from './http';
+import { hostHeaders, pageHeaders } from './pagePolicy';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -14,28 +15,8 @@ const MIME: Record<string, string> = {
   '.ps1': 'text/plain; charset=utf-8', '.sh': 'text/plain; charset=utf-8'
 };
 
-/**
- * The landing page loads only its own files and posts only to its own hub. Where the hub's accounts
- * are Clerk's (clerk.ts), the page also loads Clerk's script from that instance's own address and
- * talks to it, and Clerk's sign-up form brings its own styles, pictures and bot check.
- */
-const pageHeaders = (clerkHost?: string | null): Record<string, string> => {
-  const clerk = clerkHost ? ` https://${clerkHost}` : '';
-  return {
-    'Content-Security-Policy': [
-      "default-src 'self'",
-      `script-src 'self'${clerk}${clerk ? ' https://challenges.cloudflare.com' : ''}`,
-      `style-src 'self'${clerk ? " 'unsafe-inline'" : ''}`,
-      `img-src 'self' data:${clerk ? ' https://img.clerk.com' : ''}`,
-      `connect-src 'self'${clerk}`,
-      ...(clerk ? ['frame-src https://challenges.cloudflare.com', "worker-src 'self' blob:"] : []),
-      "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'"
-    ].join('; '),
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-Frame-Options': 'DENY'
-  };
-};
+// What a page may load and who may frame it: pagePolicy.ts, the same function the built site's pages
+// are written with, so the stand-in and the host cannot drift.
 
 export interface IHubListenerParts {
   api: (req: IncomingMessage, res: ServerResponse, path: string) => Promise<void>;
@@ -49,6 +30,7 @@ export interface IHubListenerParts {
 export function createHubListener({ api, landingDir, pages = [], clerkHost }: IHubListenerParts) {
   const root = resolve(landingDir);
   const PAGE_HEADERS = pageHeaders(clerkHost);
+  const GAME_HEADERS = hostHeaders();
   return (req: IncomingMessage, res: ServerResponse) => {
     let path: string;
     try {
@@ -72,9 +54,9 @@ export function createHubListener({ api, landingDir, pages = [], clerkHost }: IH
     if (!inside) return send(res, 404, { ok: false, reason: 'Nothing here.' });
     res.statusCode = 200;
     res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream');
-    // The landing page's strict policy; the game sets its own needs (WebAssembly for its store)
-    if (!page) for (const [k, v] of Object.entries(PAGE_HEADERS)) res.setHeader(k, v);
-    else { res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer'); }
+    // The landing page's strict policy; the game sets its own needs (WebAssembly for its store) and gets what
+    // the host gives every address (vercel.json): no framing, no sniffing, no referrer
+    for (const [k, v] of Object.entries(page ? GAME_HEADERS : PAGE_HEADERS)) res.setHeader(k, v);
     if (req.method === 'HEAD') return void res.end();
     createReadStream(file).pipe(res);
   };
