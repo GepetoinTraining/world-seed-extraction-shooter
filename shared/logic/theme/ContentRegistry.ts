@@ -159,6 +159,9 @@ export class ContentRegistry {
     const mobs = own(Object.values(MOB_DEFINITIONS) as { themeId?: string }[]);
     const resources = own(Object.values(RESOURCE_DEFINITIONS) as { themeId?: string }[]);
     const context: IGenerationContext = { mobDefinitions: mobs, resourceDefinitions: resources, difficulty: difficulty as UniversalRank | undefined, themeId };
+    // CP8: the pieces its names are made of, where its pack kept them; its ground decides whether they are read
+    const names = this.get(themeId)?.names;
+    if (names) context.names = names;
     if (director && director.generation > 0) {
       context.director = director;
       const compiled = this.compiled(themeId);

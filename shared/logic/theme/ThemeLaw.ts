@@ -292,6 +292,15 @@ export class ThemeLaw {
       }
     }
 
+    // CP8: optional, so a pack written before they were kept stands as it was. Held as the ground pass holds them
+    if (pack.names !== undefined) {
+      const n = pack.names;
+      const piecesOk = (xs: unknown) => Array.isArray(xs) && xs.length > 0 && xs.every(x => typeof x === 'string' && /^[A-Za-z]+$/.test(x));
+      if (!n || typeof n !== 'object' || !piecesOk(n.prefixes) || !piecesOk(n.suffixes)) {
+        return no('its names are made of prefixes and suffixes, each a sound in plain letters, and neither list may be empty.');
+      }
+    }
+
     // CAN IT BE PLAYED? Line 45's question, asked of a world before it exists.
     if (pack.creatures.length === 0) return no('nothing lives there.');
     if (!pack.creatures.some(c => c.rank === 'F' || c.rank === 'E')) return no('nothing there is small enough to start on.');

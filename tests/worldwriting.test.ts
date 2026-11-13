@@ -386,6 +386,9 @@ describe('a world, written in passes', () => {
     const all = [...added.map(x => x.name), out.body.name, ...out.body.regions.map(r => r.name)];
     expect(new Set(all).size).toBe(all.length);
     expect(added.find(x => x.blurb === 'a hollow crawler that hunts by the shake of the ground')).toBeDefined();
+    // CP8: the pieces are kept with the world it hands back, so its people are named from the same sounds
+    expect(out.body.names!.prefixes).toEqual(expect.arrayContaining(['Gray', 'Hollow', 'Still', 'Pale']));
+    expect(out.body.names!.suffixes).toEqual(expect.arrayContaining(['crawler', 'moth', 'glass', 'drift']));
   });
 
   it('every band is rolled by code from the seed: the same seed writes the same world, another seed rolls again', async () => {
@@ -737,6 +740,11 @@ describe('C17: what a person reads is plain words, and names come from the world
     const prefixes = ['Gray', ...MORE_PREFIXES], suffixes = ['moth', ...MORE_SUFFIXES];
     const made = new Set(prefixes.flatMap(p => suffixes.map(s => `${p}${s}`)));
     for (const name of drawn) expect(made.has(name), name).toBe(true);
+    // CP8: what the world keeps is every piece it drew from, the grown ones with the first
+    const kept = out.body!.names!;
+    const fromKept = new Set(kept.prefixes.flatMap(p => kept.suffixes.map(s => `${p}${s}`)));
+    for (const name of drawn) expect(fromKept.has(name), name).toBe(true);
+    expect(kept.prefixes.length).toBeGreaterThan(1);
     const tight = buildWorldPassRequest('ground', { pass: 'ground' }, {}).tight as any;
     expect(fits(tight.properties.prefixes, ['Orchard-'])).not.toBeNull();
     expect(fits(tight.properties.suffixes, ['scape'])).toBeNull();

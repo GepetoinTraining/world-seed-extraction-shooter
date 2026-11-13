@@ -17,6 +17,7 @@ import { Spread } from './Spread';
 import { isLooseStone } from '../item/Throwable';
 import { Director, IDirectorPool, IDirectorRecord } from './Director';
 import { Leaders, isRosterElite } from './Leaders';
+import { IWorldNamePieces, PeopleNames } from './PeopleNames';
 
 export interface IGenerationContext {
   mobDefinitions: any[];
@@ -38,6 +39,8 @@ export interface IGenerationContext {
   groundVersion?: number;
   /** GS19: what a death costs in this world, its card's own word (`DeathCost`). Where it costs nothing, nothing climbs. */
   deathPenalty?: string;
+  /** CP8: the pieces this world's names are made of, from its pack. Its people are named from them from ground 8. */
+  names?: IWorldNamePieces;
 }
 
 /**
@@ -71,8 +74,11 @@ export interface IGenerationContext {
  *                  material of that form its land holds may stand, its pack's or what its minting added, rolled from the
  *                  seed and the place and weighed by the formula, so the forest draws every timber its land holds.
  *                  Where everything stands, and in what order it is laid, is as at 6.
+ *   8              a world's people are named from its own name pieces (CP8, `NAMED_FROM_GROUND`), where its pack keeps
+ *                  them; a pack with none names them as before. Nothing else moves: everything stands, and is laid in
+ *                  the order, as at 7, and the floor's two picks are still drawn so no roll after them shifts.
  */
-export const GROUND_VERSION = 7;
+export const GROUND_VERSION = 8;
 /** How often a quadrant with no stone of its own is given some, and how many lie together at most. Guesses until Wave 12. */
 const LOOSE_STONE_CHANCE = 0.5;
 const LOOSE_STONES_TOGETHER = 2;
@@ -147,8 +153,6 @@ const RANK_BANDS: [number, UniversalRank, Rarity][] = [
   [1.01, UniversalRank.S, Rarity.ARTIFACT]
 ];
 
-const FIRST_NAMES = ['Kael', 'Vector', 'Sera', 'Io', 'Null', 'Cassin', 'Orrin', 'Vesta'];
-const SURNAMES = ['Steelweave', 'Basalt', 'Error', 'Null', 'Gantry', 'Mireforge', 'Siltvane'];
 const TEMPERAMENTS = ['AGGRESSIVE', 'COWARD', 'TERRITORIAL', 'PASSIVE', 'OPPORTUNIST'] as const;
 const OBJECTIVES = ['SURVIVE', 'HOARD', 'WITNESS', 'PROTECT_ASSET'] as const;
 const WANTS = ['GOLD', 'GIFT', 'RESPECT'] as const;
@@ -536,10 +540,13 @@ export class WorldGenerator {
     }), context);
   }
 
-  /** TQ: a person's name from the same names the land gives its people, keyed by who they are. */
-  static personName(key: string): string {
-    const rng = Rng.fromKey(`${key}:name`);
-    return `${rng.pick(FIRST_NAMES)} ${rng.pick(SURNAMES)}`;
+  /**
+   * TQ: a person's name from the same names the land gives its people, keyed by who they are. CP8: from the world's
+   * own pieces where its ground and its pack name them so (`PeopleNames`); else the floor, drawn as it always was.
+   */
+  static personName(key: string, context?: Pick<IGenerationContext, 'groundVersion' | 'names'>): string {
+    const floor = PeopleNames.floor(Rng.fromKey(`${key}:name`));
+    return PeopleNames.ownNames(context?.groundVersion, context?.names) ? PeopleNames.draw(key, context!.names!) : floor;
   }
 
   /**
@@ -751,10 +758,13 @@ export class WorldGenerator {
       const at = field.place(nx, ny);
       if (at) {
         const temperament = rng.pick([...TEMPERAMENTS]);
+        // CP8: the floor's two picks are drawn whatever the name, so every roll after them falls as at ground 7
+        const floor = PeopleNames.floor(rng);
+        const who = id('npc');
         push({
-          id: id('npc'), type: EntityType.NPC, definitionId: 'npc_survivor', position: at, rank, rarity, isHostile: false,
+          id: who, type: EntityType.NPC, definitionId: 'npc_survivor', position: at, rank, rarity, isHostile: false,
           npc: {
-            name: `${rng.pick(FIRST_NAMES)} ${rng.pick(SURNAMES)}`,
+            name: PeopleNames.ownNames(ctx.groundVersion, ctx.names) ? PeopleNames.draw(`${seed}:${who}`, ctx.names) : floor,
             temperament, objective: rng.pick([...OBJECTIVES]), want: rng.pick([...WANTS]),
             // Passive folk start warmer; aggressive ones colder
             disposition: temperament === 'PASSIVE' ? 50 : temperament === 'AGGRESSIVE' ? 10 : 30,

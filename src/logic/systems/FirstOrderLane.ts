@@ -131,7 +131,7 @@ export const FirstOrderLane = {
       task: 'PERSON',
       entity: {
         id, type: EntityType.NPC, definitionId: 'npc_survivor', position: at(SHARE.PERSON), ...base, isHostile: false,
-        npc: { name: WorldGenerator.personName(id), temperament: 'PASSIVE', objective: 'SURVIVE', want: 'GIFT', disposition: 50, attempts: 0 }
+        npc: { name: WorldGenerator.personName(id, context), temperament: 'PASSIVE', objective: 'SURVIVE', want: 'GIFT', disposition: 50, attempts: 0 }
       }
     });
     return out;

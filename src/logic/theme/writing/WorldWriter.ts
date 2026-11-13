@@ -846,6 +846,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     if (failed) return failed;
   }
 
+  // CP8: the pieces every name here was drawn from are kept with the world, so its people are named from them too
+  d.body.names = d.names.pieces();
   const verdict = ThemeLaw.validate(d.body, tag => d.known(tag));
   if (!verdict.ok) return { ok: false, reason: verdict.reason ?? 'The law refused it.', usage, passes };
   return { ok: true, body: d.body, usage, passes };
