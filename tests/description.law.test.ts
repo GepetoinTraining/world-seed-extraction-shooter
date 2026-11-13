@@ -153,7 +153,11 @@ describe('the law is pure and holds no table', () => {
   });
 
   it('the fight\'s reading of a weapon and the law\'s are one predicate', () => {
-    expect(readFileSync('shared/logic/systems/WebSystem.ts', 'utf8')).toMatch(/handPower[\s\S]{0,400}this\.fits\(/);
+    // Joined with the card's branch: the fight reads the hand through `handSkill`, so a card can name the skill
+    // a blow reads, and `handSkill` is what asks `fits`. The chain is held link by link.
+    const web = readFileSync('shared/logic/systems/WebSystem.ts', 'utf8');
+    expect(web).toMatch(/static handPower[\s\S]{0,200}this\.handSkill\(/);
+    expect(web).toMatch(/static handSkill[\s\S]{0,400}this\.fits\(/);
     expect(code()).toMatch(/WebSystem\.fits\(/);
   });
 });
