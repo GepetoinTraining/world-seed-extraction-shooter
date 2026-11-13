@@ -22,10 +22,13 @@ export interface IMeleeArc {
   weight?: number;
   /** SH3: the blow glanced when it was let go. */
   glance?: boolean;
+  /** ux-fight: swung by someone beside the person (Q16), so the fight's record says whose blow it was. */
+  beside?: boolean;
 }
 /**
- * SH4: how near a shot must pass a body's middle to land. A shot is drawn 4 px across, so it lands on any part of a
- * body it is drawn over: the body's drawn half-width (`bodyRadiusPx`) and the shot's own. Never less than the 20 px
+ * SH4: how near a shot must pass a body's middle to land. A shot was drawn 4 px across, so it landed on any part of a
+ * body it was drawn over. ux-fight draws a shot as large as its blow (6 to 16 px, `BlowMarks`) and changes none of
+ * this: a large shot can be drawn over a body's edge that it passes without landing (ledger UXF3). The reach is: the body's drawn half-width (`bodyRadiusPx`) and the shot's own. Never less than the 20 px
  * the field has always given, so nothing small is harder to hit than it was; a gigantic body (64 px across) or a
  * colossal one (96) is now struck where a shot is seen to cross it.
  */
@@ -45,6 +48,10 @@ export interface ICombatEvent {
   push?: { dx: number; dy: number };
   /** SH3: the blow that landed glanced, so half of it landed. */
   glance?: boolean;
+  /** ux-fight, for the fight's record: how a blow came (a shot or a swing), whether it was what already works on the body, and whether someone beside the person swung it. */
+  by?: 'shot' | 'swing';
+  working?: boolean;
+  beside?: boolean;
   entityId?: string;
   definitionId?: string;
   displayName?: string;
@@ -187,7 +194,7 @@ export class CombatSystem {
       mob.statuses = statuses as never;
       if (damage > 0 && !mob.warded) {
         mob.health = (mob.health ?? 0) - damage;
-        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position });
+        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, displayName: mob.displayName, damage, position: mob.position, working: true });
         if (mob.health <= 0) resolveDefeat(mob, chunkKey);
       }
     });
@@ -212,7 +219,7 @@ export class CombatSystem {
         // D93: while its anchors stand the blow lands on nothing. It is spent, and it says so
         if (mob.warded) {
           bulletsToRemove.add(bulletIdx);
-          events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, position: mob.position });
+          events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, displayName: mob.displayName, position: mob.position, by: 'shot' });
           break;
         }
 
@@ -233,7 +240,7 @@ export class CombatSystem {
           }
         });
 
-        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position, ...(bullet.glance ? { glance: true } : {}) });
+        events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, displayName: mob.displayName, damage, position: mob.position, by: 'shot', ...(bullet.glance ? { glance: true } : {}) });
 
         if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         break; // a projectile is spent on its first target
@@ -256,7 +263,7 @@ export class CombatSystem {
         if (covers(shape, arc.origin, arc.angle, mob.position, radiusOf(mob))) {
           if (mob.warded) {
             hitIds.add(mob.id);
-            events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, position: mob.position });
+            events.push({ type: 'WARDED', entityId: mob.id, definitionId: mob.definitionId, displayName: mob.displayName, position: mob.position, by: 'swing', ...(arc.beside ? { beside: true } : {}) });
             return;
           }
           const damage = arc.damage ?? 50; // Wave 4: the weapon decides
@@ -277,7 +284,7 @@ export class CombatSystem {
             }
           });
 
-          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, damage, position: mob.position, ...(arc.glance ? { glance: true } : {}) });
+          events.push({ type: 'HIT', entityId: mob.id, definitionId: mob.definitionId, displayName: mob.displayName, damage, position: mob.position, by: 'swing', ...(arc.glance ? { glance: true } : {}), ...(arc.beside ? { beside: true } : {}) });
 
           if (mob.health <= 0) resolveDefeat(mob, chunkKey);
         }

@@ -34,25 +34,30 @@ const hoverOwners = new WeakMap<HTMLElement, IItem>();
 
 interface HoverState {
   item: IItem | null;
+  /** UXC, part 2: a hand in use, whose card is its own numbers rather than its piece's. */
+  hand: EquipSlotId | null;
   el: HTMLElement | null;
   show: (item: IItem, el: HTMLElement) => void;
+  showHand: (slot: EquipSlotId, el: HTMLElement) => void;
   hide: (el: HTMLElement) => void;
   clear: () => void;
 }
 
 export const useHover = create<HoverState>((set, get) => ({
   item: null,
+  hand: null,
   el: null,
-  show: (item, el) => { hoverOwners.set(el, item); set({ item, el }); },
+  show: (item, el) => { hoverOwners.set(el, item); set({ item, hand: null, el }); },
+  showHand: (hand, el) => set({ item: null, hand, el }),
   hide: el => {
     if (get().el !== el) return;
     for (let up = el.parentElement; up; up = up.parentElement) {
       const owner = hoverOwners.get(up);
-      if (owner) { set({ item: owner, el: up }); return; }
+      if (owner) { set({ item: owner, hand: null, el: up }); return; }
     }
-    set({ item: null, el: null });
+    set({ item: null, hand: null, el: null });
   },
-  clear: () => set({ item: null, el: null })
+  clear: () => set({ item: null, hand: null, el: null })
 }));
 
 /** Spread on anything that shows an item: the pointer and the keyboard both open the card. */
@@ -60,6 +65,14 @@ export const hoverProps = (item: IItem) => ({
   onMouseEnter: (e: { currentTarget: EventTarget }) => useHover.getState().show(item, e.currentTarget as HTMLElement),
   onMouseLeave: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement),
   onFocus: (e: { currentTarget: EventTarget }) => useHover.getState().show(item, e.currentTarget as HTMLElement),
+  onBlur: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement)
+});
+
+/** UXC, part 2: spread on a hand's slot. The pointer and the keyboard both open the hand's own card. */
+export const handHoverProps = (slot: EquipSlotId) => ({
+  onMouseEnter: (e: { currentTarget: EventTarget }) => useHover.getState().showHand(slot, e.currentTarget as HTMLElement),
+  onMouseLeave: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement),
+  onFocus: (e: { currentTarget: EventTarget }) => useHover.getState().showHand(slot, e.currentTarget as HTMLElement),
   onBlur: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement)
 });
 

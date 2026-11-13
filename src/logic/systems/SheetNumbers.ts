@@ -11,7 +11,7 @@
  */
 
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
-import { EquipSlotId, IItem, IPlayer } from '../../../shared/types';
+import { EquipSlotId, IAttributes, IItem, IPlayer } from '../../../shared/types';
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
@@ -24,9 +24,32 @@ import { LoreSystem } from './LoreSystem';
 import { ContactNames } from './ContactNames';
 import { Escort } from './Escort';
 import { said } from './SheetWords';
+import { DescriptionLaw, DescriptionRoot } from '../../../shared/logic/systems/DescriptionLaw';
+import { withTotals } from '../../entities/player/systems/Totals';
 
-/** A number on the sheet: its word, its value, and what it means for the player (GV: never how it is made). */
-export interface SheetRow { key: string; word: string; value: string; says: string }
+/**
+ * A number on the sheet: its word, its value, and what it means for the player (GV: never how it is made). UXS: `says` is
+ * the line's description, opened behind it; `root` is what describes it (`DescriptionLaw`); `n` the numbers its value
+ * states, in order, so a point's preview can say which way each moves.
+ */
+export interface SheetRow { key: string; word: string; value: string; says: string; n: number[]; root: DescriptionRoot }
+
+/** A number on the sheet's first level, as a point's preview reads it: keyed as the sheet keys its line. */
+export interface ISheetNumber { key: string; word: string; value: string; n: number[] }
+
+/** A number a point would move: what it is, what it would be, and which way its numbers go (both: some up, some down). */
+export interface IMoved { key: string; word: string; now: string; then: string; way: 'up' | 'down' | 'both' }
+
+/** Which way a line's numbers go, read in order. */
+const wayOf = (now: number[], then: number[]): IMoved['way'] => {
+  let up = false;
+  let down = false;
+  for (let i = 0; i < Math.min(now.length, then.length); i++) {
+    if (then[i] > now[i]) up = true;
+    else if (then[i] < now[i]) down = true;
+  }
+  return up && !down ? 'up' : down && !up ? 'down' : 'both';
+};
 
 /** A field tile, in the units the field draws in (`StatSystem`'s own sight is in these). */
 const TILE_PX = 20;
@@ -62,58 +85,108 @@ export const SheetNumbers = {
     const blow = StatSystem.blowFactor(at);
     // GV: each line says what the number means for the player, never how it is made; numbers whole or to one place
     const lighter = Math.round((1 - blow) * 100);
+    // UXS: the hand's lines are read from what is in it, so a skill that answers to it describes them; the rest are gaps
+    const fromHand = DescriptionLaw.on(hand?.tags ?? []);
+    const gap = DescriptionLaw.GAP;
+    const share = (x: number) => Math.round(x * 100);
     return [
       {
         key: 'hit', word: 'DAMAGE',
         value: `${hit} a blow, ${said(hit * perSecond)} a second${poison > 0 ? `, and ${said(poison)} poison` : ''}`,
-        says: broken ? `${handName} is broken: you fight bare-handed until it is mended.` : `What ${handName === 'a bare hand' ? 'your bare hand' : `the ${handName}`} deals, before crits and glances.`
+        says: broken ? `${handName} is broken: you fight bare-handed until it is mended.` : `What ${handName === 'a bare hand' ? 'your bare hand' : `the ${handName}`} deals, before crits and glances.`,
+        n: [hit, hit * perSecond, poison], root: fromHand
       },
       {
         key: 'often', word: 'ATTACKS',
         value: `${said(perSecond)} a second`,
-        says: 'Dexterity and haste make you quicker. A draw or a wind-up still takes its time.'
+        says: 'Dexterity and haste make you quicker. A draw or a wind-up still takes its time.',
+        n: [perSecond], root: fromHand
       },
       {
         key: 'protection', word: 'PROTECTION',
         value: `${pct(CombatMath.mitigationOf(eq, rank))} off a blow of your rank${lighter > 0 ? `, and blows land ${lighter}% lighter` : lighter < 0 ? `, and blows land ${-lighter}% harder` : ''}`,
-        says: 'From what you wear. A blow of a higher rank gets more through, and every blow does at least 1.'
+        says: 'From what you wear. A blow of a higher rank gets more through, and every blow does at least 1.',
+        n: [share(CombatMath.mitigationOf(eq, rank)), lighter], root: gap
       },
       {
         key: 'dodge', word: 'DODGE',
         value: pct(CombatMath.dodgeChance(eq, at, rank)),
-        says: 'Blows of your rank that miss you outright. Agility and what you wear raise it; a higher rank lands more.'
+        says: 'Blows of your rank that miss you outright. Agility and what you wear raise it; a higher rank lands more.',
+        n: [share(CombatMath.dodgeChance(eq, at, rank))], root: gap
       },
       {
         key: 'block', word: 'BLOCK',
         value: `${pct(CombatMath.blockChance(eq))}, letting ${pct(CombatMath.blockFactor())} through`,
-        says: 'A blow you do not dodge may be blocked by what you wear.'
+        says: 'A blow you do not dodge may be blocked by what you wear.',
+        n: [share(CombatMath.blockChance(eq)), share(CombatMath.blockFactor())], root: gap
       },
       {
         key: 'crit', word: 'CRIT',
         value: `${pct(StatSystem.critChance(eq, at))} of hits, for ×${said(CombatMath.critMultiplier(eq))} damage`,
-        says: 'Perception and what you wear raise both.'
+        says: 'Perception and what you wear raise both.',
+        n: [share(StatSystem.critChance(eq, at)), CombatMath.critMultiplier(eq)], root: gap
       },
       {
         key: 'glance', word: 'GLANCE',
         value: `${pct(CombatMath.glanceChance(eq, at, rank))} of hits, for ${pct(CombatMath.glanceFactor())} damage`,
-        says: 'A hit that only grazes. Dexterity and what you wear make it rarer.'
+        says: 'A hit that only grazes. Dexterity and what you wear make it rarer.',
+        n: [share(CombatMath.glanceChance(eq, at, rank)), share(CombatMath.glanceFactor())], root: gap
       },
       {
         key: 'walk', word: 'WALK',
         value: `${walk.toFixed(1)} tiles a second${slowedByLoad < 1 ? `, ${Math.round((1 - slowedByLoad) * 100)}% slower under this load` : ''}`,
-        says: `Agility and light gear quicken it; heavy gear${(player.tonicsSinceRest ?? 0) > 0 ? ' and the tonics drunk since your rest' : ' and tonics'} slow it. A pack over 80% full slows you in the field.`
+        says: `Agility and light gear quicken it; heavy gear${(player.tonicsSinceRest ?? 0) > 0 ? ' and the tonics drunk since your rest' : ' and tonics'} slow it. A pack over 80% full slows you in the field.`,
+        n: [walk, share(1 - slowedByLoad)], root: gap
       },
       {
         key: 'sight', word: 'SIGHT',
         value: `${Math.round(sightTiles)} tile${Math.round(sightTiles) === 1 ? '' : 's'} past the screen's edge`,
-        says: 'Perception and light raise it. What you have seen stays on the map.'
+        says: 'Perception and light raise it. What you have seen stays on the map.',
+        n: [sightTiles], root: gap
       },
       {
         key: 'carry', word: 'CARRY',
         value: `${said(load)} of ${said(limit)} kg${InventorySystem.loadWord(load, limit) ? `, ${InventorySystem.loadWord(load, limit)}` : ''}`,
-        says: `Strength, your bag and what you wear raise it. What you wear does not count against it.${player.currentSession ? '' : ' At home: what you would take on the next drop.'}`
+        says: `Strength, your bag and what you wear raise it. What you wear does not count against it.${player.currentSession ? '' : ' At home: what you would take on the next drop.'}`,
+        n: [load, limit], root: gap
       }
     ];
+  },
+
+  /**
+   * UXS: every number on the sheet's first level, flat and keyed as the sheet keys its lines: each attribute, the maxima of
+   * health and energy, each aether held against what it can hold, the tonics, and every line of a fight and the walk.
+   * Read only through the functions above, so the preview reads what the sheet shows.
+   */
+  lines(player: IPlayer, slot: EquipSlotId = 'RIGHT_HAND'): ISheetNumber[] {
+    const v = this.vitals(player);
+    const attrs = (Object.keys(player.attributes) as (keyof IAttributes)[]).map(a => {
+      const val = player.attributes[a] ?? 0;
+      return { key: `attr:${a}`, word: a.toUpperCase(), value: String(val), n: [val] };
+    });
+    return [
+      ...attrs,
+      { key: 'health', word: 'HEALTH', value: said(v.health.max), n: [v.health.max] },
+      { key: 'energy', word: 'ENERGY', value: said(v.energy.max), n: [v.energy.max] },
+      ...v.aether.map(a => ({ key: `aether:${a.element}`, word: `AETHER · ${a.element.toUpperCase()}`, value: `${said(a.held)} of ${said(a.max)}`, n: [a.held, a.max] })),
+      { key: 'tonics', word: 'TONICS', value: `${v.tonics.drunk} of ${v.tonics.perRest} until you rest`, n: [v.tonics.drunk, v.tonics.perRest] },
+      ...this.fight(player, slot).map(r => ({ key: r.key, word: r.word, value: r.value, n: r.n }))
+    ];
+  },
+
+  /**
+   * UXS, on Pedro's "yup" to "+ first shows what the point would change, a second press spends": every number on the sheet
+   * a point on this attribute would move, read by the rules on a copy of the character with the point spent, by the spend's
+   * own rule and the store's own totals. Pure: the character is not touched. Nothing to spend, nothing to show.
+   */
+  ifSpent(player: IPlayer, attr: keyof IAttributes, slot: EquipSlotId = 'RIGHT_HAND'): IMoved[] {
+    const spent = ProgressionSystem.spendPoint(player, attr);
+    if (!spent) return [];
+    const then = new Map<string, ISheetNumber>(this.lines(withTotals(spent.player), slot).map(l => [l.key, l]));
+    return this.lines(player, slot).flatMap((l): IMoved[] => {
+      const t = then.get(l.key);
+      return t && t.value !== l.value ? [{ key: l.key, word: l.word, now: l.value, then: t.value, way: wayOf(l.n, t.n) }] : [];
+    });
   },
 
   /** Health, energy and aether, each against its maximum, and the tonics a body takes between rests. */

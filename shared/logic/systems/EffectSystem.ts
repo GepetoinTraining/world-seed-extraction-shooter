@@ -74,11 +74,22 @@ const DOT_TICK_MS = 500;
 
 export class EffectSystem {
 
+  /** What a casting comes to at this roll: the formula's number, the roll, the caster's power and share. */
+  private static magnitudeAt(ability: IEffectAbility, caster: IEffectCaster, roll: number): number {
+    const numbers = abilityNumbers(ability.cost, caster.rank as ThemeRank, !!caster.standing, ability.effect);
+    return Math.max(1, Math.round(numbers.magnitude * roll * (1 + (caster.power ?? 0)) * (caster.share ?? 1)));
+  }
+
+  /** UXC, part 2: the least and the most a casting can come to, the very sum `resolve` rolls inside, for a card to say. */
+  static magnitudeRange(ability: IEffectAbility, caster: IEffectCaster): [number, number] {
+    return [this.magnitudeAt(ability, caster, 1 - ROLL_SPREAD), this.magnitudeAt(ability, caster, 1 + ROLL_SPREAD)];
+  }
+
   static resolve(ability: IEffectAbility, caster: IEffectCaster, key: string): IEffectReceipt {
     const numbers = abilityNumbers(ability.cost, caster.rank as ThemeRank, !!caster.standing, ability.effect);
     const rng = Rng.fromKey(`effect:${ability.id}:${key}`);
     const roll = 1 - ROLL_SPREAD + rng.next() * ROLL_SPREAD * 2;
-    const magnitude = Math.max(1, Math.round(numbers.magnitude * roll * (1 + (caster.power ?? 0)) * (caster.share ?? 1)));
+    const magnitude = this.magnitudeAt(ability, caster, roll);
     const receipt: IEffectReceipt = {
       abilityId: ability.id, key,
       effect: ability.effect, delivery: ability.delivery, elements: ability.elements,

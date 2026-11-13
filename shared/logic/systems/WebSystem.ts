@@ -427,11 +427,26 @@ export class WebSystem {
     return 1 - climb(Math.max(0, knowledge));
   }
 
-  /** The strongest held skill the weapon in the hand answers to: every tag of the skill is on the weapon. */
+  /** What the strongest held skill the weapon in the hand answers to adds to its blow: every tag of the skill is on the weapon. */
   static handPower(player: IPlayer, weapon: IItem | undefined): number {
+    const skill = this.handSkill(player, weapon);
+    return skill ? this.skillPower(skill) : 0;
+  }
+
+  /** UXC, part 2: which skill that is, so a card can name the skill a blow reads. None held fits: undefined. */
+  static handSkill(player: IPlayer, weapon: IItem | undefined): ISkillState | undefined {
     const tags = weapon?.tags ?? [];
-    return this.heldSkills(player.bank.universalSkills).reduce((best, skill) =>
-      skill.tags.length > 0 && skill.tags.every(t => tags.includes(t)) ? Math.max(best, this.skillPower(skill)) : best, 0);
+    let best: ISkillState | undefined;
+    for (const skill of this.heldSkills(player.bank?.universalSkills ?? {})) {
+      if (!this.fits(skill, tags)) continue;
+      if (!best || this.skillPower(skill) > this.skillPower(best)) best = skill;
+    }
+    return best;
+  }
+
+  /** Whether a skill answers to a thing: it has words, and every one of them is on the thing. The fight reads a weapon so. */
+  static fits(skill: Pick<ISkillState, 'tags'>, thingTags: readonly string[]): boolean {
+    return skill.tags.length > 0 && skill.tags.every(t => thingTags.includes(t));
   }
 
   // -------------------------------------------------------------------------

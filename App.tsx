@@ -28,6 +28,7 @@ import { HoverLayer } from './src/components/ui/HoverLayer';
 import { isTypingTarget } from './src/logic/systems/FieldInput';
 import { ReceiptScreen } from './src/components/ReceiptScreen';
 import { FeedView } from './src/components/FeedView';
+import { FightRecordOverlay } from './src/components/FightRecordView';
 import { RestDoor } from './src/logic/systems/RestDoor';
 import { ScanDoor } from './src/logic/systems/ScanDoor';
 import { RecordDoor } from './src/logic/systems/RecordDoor';
@@ -352,6 +353,7 @@ const App: React.FC = () => {
           <FeedView />
           <WaitStrip />
           <ReceiptScreen />
+          <FightRecordOverlay />
           <CharacterSheet />
           <HoverLayer />
           <HandsLayer />
@@ -380,6 +382,7 @@ const App: React.FC = () => {
         <FeedView />
         <WaitStrip />
         <ReceiptScreen />
+        <FightRecordOverlay />
         <CharacterSheet />
         <HoverLayer />
         <HandsLayer />
