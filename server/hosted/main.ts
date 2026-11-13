@@ -13,7 +13,7 @@
  * database unless WS_LIVE_DATABASE_URL names another, which then keeps a record of its own
  * (TURSO_LIVE_DATABASE_URL) or none: two stores cannot share one record.
  *
- * The same hub runs on a function host with nothing kept running (api/hub.ts, DEPLOY.md). This
+ * The same hub runs on a function host with nothing kept running (server/hub/entry.ts, DEPLOY.md). This
  * process is its stand-in on one machine, and the way anyone else runs a hub of their own.
  *
  *   npm run hosted

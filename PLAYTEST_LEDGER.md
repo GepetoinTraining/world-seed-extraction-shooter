@@ -931,3 +931,15 @@ What each act costs now, and what a full pool of 52.1 pays for with no skill:
 | T3 | Pedro: many waits felt like the game froze | this branch | Bars (`tests/timer.test.ts`); played on a test avatar: world card ribbon, exit wait 40% to 100% to the receipt, lock and identify bars with the sheet shut and open, body effects, city bench job and its ready line, rest and batch chips, grayscale looked at. By bar only: reduced-motion block, the AI waits (no key here). The rest bar in the field was played with a set state, not a real field rest |
 | T4 | A boot that threw an error counted forever with nothing said | this branch | Played: a broken save stops the clock, says why, and offers another avatar |
 | N1 | Found by the conservation bar: two caches left in one millisecond shared an id, and taking one took both | b5cd6ea | Bar |
+
+### Found on the first deployment, 2026-11-13
+
+Pedro deployed main (`d27d8a3`) and sent its address, `https://world-seed-extraction-shooter.vercel.app/`. The page and the game were served; every address under `/api/hub` answered the host's own 500. The host's log, read on his word ("Approved"): `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/var/task/server/hub/app' imported from /var/task/api/hub.js`.
+
+| # | What was built | Commit | Checked |
+|---|---|---|---|
+| HF1 | The host compiles each file alone and runs the result as plain Node, which finds an import only when its address is written whole; nothing under `server/` or `shared/` writes one that way, and every bar the hub had ran under tsx, so none could see it. The hub is now built into ONE file first (`scripts/build-hub.ts`, to `dist-hub/hub.mjs`), `api/hub.js` hands that to the host, and `server/hub/entry.ts` is what `api/hub.ts` was | this branch | Bars (`tests/deploy.function.test.ts`): built, it loads under plain `node`, gives the hub's own 503 naming the missing setting, and with a store answers 200, which also proves it finds its migrations from `dist-hub/`. NOT yet seen on the host |
+| HF2 | A signing key the host's secret store mangled would have killed the function as it loaded, the same death with another cause. `hubConfigFrom` says it as a problem (503), and reads a key whose line ends arrived as the two characters `
+` | this branch | Bar |
+| HF3 | OPEN, my call: the one file is built with Vite's own server build, which is already a dependency, so no package is added. The step is named twice, as `vercel-build` (the host's own step before a function) and inside `build:site`, because I could not confirm the host's order between the site and a function | this branch | The build's output read: nothing of ours left as an import; `drizzle-orm`, `zustand` and Node's own stay imports, and `pg`, `@electric-sql/pglite`, `@libsql/client/http` are asked for by name when a store opens |
+| HF4 | OPEN, not done here: the page on the host carries no content policy and no framing rule (`vercel.json` has no `headers`; the local stand-in's are in `server/hub/server.ts`); Clerk's form has not been seen loaded; which settings the host holds was not read | | Read from outside on 2026-11-13 |

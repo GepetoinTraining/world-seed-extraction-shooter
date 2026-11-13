@@ -3,7 +3,7 @@
   "buildCommand": "npm run build:site",
   "outputDirectory": "dist-site",
   "functions": {
-    "api/hub.ts": { "includeFiles": "drizzle/**", "maxDuration": 300 }
+    "api/hub.js": { "includeFiles": "drizzle/**", "maxDuration": 300 }
   },
   "rewrites": [
     { "source": "/api/hub/:path*", "destination": "/api/hub?__path=:path*" },

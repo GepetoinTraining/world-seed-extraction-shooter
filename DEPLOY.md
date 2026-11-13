@@ -14,7 +14,7 @@ The domain is configuration everywhere: nothing in the code names one.
 - its time is the hub's, read from the hub's signed clock and counted on the browser's steady counter (`GameClock`);
 - its session with the hub rides in a cookie the page's scripts cannot read.
 
-**The hub, as stateless functions.** One composition (`server/hub/app.ts`), which a host such as Vercel runs on demand (`api/hub.ts`, `vercel.json`): it answers plain requests and takes the socket's upgrade, so the checks and online play are one deployment and nothing stays running between requests. Nothing outlives a call but the store: a proof's one-time text is signed by the hub and carries its own account and expiry, and wrong passwords are counted in the store, so any instance answers the same. It computes nothing of play. It:
+**The hub, as stateless functions.** One composition (`server/hub/app.ts`), which a host such as Vercel runs on demand (`server/hub/entry.ts`, built into one file that `api/hub.js` hands the host; `vercel.json`): it answers plain requests and takes the socket's upgrade, so the checks and online play are one deployment and nothing stays running between requests. Nothing outlives a call but the store: a proof's one-time text is signed by the hub and carries its own account and expiry, and wrong passwords are counted in the store, so any instance answers the same. It computes nothing of play. It:
 
 - holds accounts and sessions;
 - registers a player's characters, answering with a statement it signs with its key and its time (D134's anchor);
@@ -31,7 +31,7 @@ Pedro asked for the stack to be analyzed and a deployment chosen: "browser local
 | Piece | Where |
 |---|---|
 | The landing page and the game (`dist-site/`) | Vercel's static hosting; the save is in the player's browser |
-| The hub's checks, and online play with its socket | one Vercel Function, `api/hub.ts` |
+| The hub's checks, and online play with its socket | one Vercel Function, `api/hub.js` (the hub built into one file, `npm run build:hub`) |
 | The store, and the word between function instances | one served Postgres |
 | The record | Turso, through the keeper, written down by a scheduled call |
 | Accounts | Clerk: an e-mail and a password |
@@ -72,7 +72,9 @@ Not done: it needs accounts only Pedro can open. In order:
 4. The hub's signing key: Ed25519, PKCS#8 PEM. `npm run hub` makes one at `data/hub-key.pem` the first time it runs; a deployed hub is given its own and keeps it, since a hub whose key changes cannot stand behind what it signed.
 5. The Vercel project, from this repository, with the settings in the table under Configuration.
 6. In Clerk, a webhook to `https://<the address>/api/hub/clerk` for `user.deleted`, and its signing secret into `CLERK_WEBHOOK_SECRET`.
-7. `GET https://<the address>/api/hub/health` must answer. That proves the function builds and the rewrite reaches it, neither of which has been seen yet.
+7. `GET https://<the address>/api/hub/health` must answer, and with the hub's own word: `ok: true`, or a 503 that names the setting it lacks. The host's own 500 (`FUNCTION_INVOCATION_FAILED`) means the function died as it loaded, before it read any setting.
+
+**What the first deployment showed (2026-11-13).** The site built and was served. Every address under `/api/hub` answered the host's own 500: `Cannot find module '/var/task/server/hub/app'`. The host compiles each file alone and runs the result as plain Node, and plain Node finds an import only when its address is written whole, which nothing under `server/` or `shared/` does. So the hub is built into one file first (`scripts/build-hub.ts`, to `dist-hub/hub.mjs`; `npm run build:site` does it too, and `vercel-build` names it for the host's own step before a function), and `api/hub.js` hands that to the host. `tests/deploy.function.test.ts` runs it the way the host does. Whether the host now builds and runs it has not been seen: the next deployment shows it.
 
 The address is inside everything the hub signs (`issuer`), so it is chosen before real players register. A `vercel.app` address serves for testing. Vercel's Hobby plan is for non-commercial use, closes sockets every 300 seconds and runs a scheduled call once a day; the project moves to Pro before any money is taken.
 

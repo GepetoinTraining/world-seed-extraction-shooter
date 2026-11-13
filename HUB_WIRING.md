@@ -194,8 +194,8 @@ When they come they hang off the same account and the same character registratio
 
 Everything here passes on a database in memory and real local servers. None of it has run on Vercel, against a Clerk instance, against a served Postgres or against Turso itself, because that needs accounts only Pedro can open:
 
-- that Vercel hands `api/hub.ts`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`;
-- that Vercel builds the function from these TypeScript files as they are;
+- that Vercel hands `api/hub.js`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`;
+- that Vercel builds and runs the function. The first deployment (2026-11-13) showed it does NOT run these TypeScript files as they are: plain Node could not find `server/hub/app`. The hub is now built into one file first (`scripts/build-hub.ts`, `DEPLOY.md`); that the host runs that file has not been seen yet;
 - Clerk's own form on the site's first page (`landing/landing.js`), which was written from Clerk's documentation and never loaded;
 - the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
 

@@ -2,7 +2,7 @@
  * THE HUB AS A FUNCTION (Pedro, 2026-11-04: "we don't compute anything, we check receipts... vercel
  * and players are computing view workers"). One stateless request handler over the hub's own
  * routes, and how a host's environment is read. What a host runs is app.ts, which puts online play,
- * the scheduled call and the accounts beside these routes (`api/hub.ts`). Nothing here outlives a
+ * the scheduled call and the accounts beside these routes (`entry.ts`, built for `api/hub.js`). Nothing here outlives a
  * call but the store's connection, which an instance opens once and reuses while it is warm.
  *
  * WS_HUB_DATABASE_URL   the served Postgres (postgres://…); a folder (pglite://…) for the local stand-in
@@ -29,7 +29,16 @@ export function hubConfigFrom(env: NodeJS.ProcessEnv): IHubFunctionConfig | { pr
   if (!env.WS_HUB_KEY?.trim()) return { problem: 'WS_HUB_KEY is not set: this hub has no key to sign with.' };
   const publicUrl = env.WS_PUBLIC_URL?.trim().replace(/\/+$/, '');
   if (!publicUrl) return { problem: 'WS_PUBLIC_URL is not set: this hub does not know its own address.' };
-  return { databaseUrl, key: makeHubKey(env.WS_HUB_KEY.trim()), publicUrl };
+  // A host's secret store may keep a key on one line, its line ends arriving as the two characters \ and n.
+  // A key that cannot be read is said like any other missing setting: thrown here, it would kill the
+  // function as it loads, and the host would answer for the hub with nothing a person can act on.
+  let key: IHubKey;
+  try {
+    key = makeHubKey(env.WS_HUB_KEY.trim().replace(/\\n/g, '\n'));
+  } catch (e) {
+    return { problem: `WS_HUB_KEY cannot be read as a key (it is the PKCS#8 PEM text, whole, with its first and last lines): ${e instanceof Error ? e.message : String(e)}` };
+  }
+  return { databaseUrl, key, publicUrl };
 }
 
 /** A handler for one hub, its store opened on first need and kept while the instance is warm. */

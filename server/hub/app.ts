@@ -1,6 +1,6 @@
 /**
  * THE HUB, WHOLE, AS A FUNCTION HOST RUNS IT (DEPLOY.md). One composition for every place it runs:
- * the function on Vercel (`api/hub.ts`), and the local stand-ins (`npm run hub`, `npm run hosted`).
+ * the function on Vercel (`entry.ts`, built for `api/hub.js`), and the local stand-ins (`npm run hub`, `npm run hosted`).
  * It answers plain requests and takes the socket's upgrade, so the checks and online play are one
  * deployment and nothing has to stay running between requests.
  *
