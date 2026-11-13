@@ -40,20 +40,20 @@ server.listen(0, '127.0.0.1', async () => {
 });
 `;
 
-/** The settings a process is given, with everything of the hub's and every loader taken out. */
+/** The settings a process is given, with everything of the hub's, every name a host's integration writes, and every loader taken out. */
 function hostEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (/^(WS_|CLERK_|TURSO_|CRON_SECRET|NODE_OPTIONS|VITEST|VITE_)/.test(name)) continue;
+    if (/^(WS_|CLERK_|TURSO_|CRON_SECRET|DATABASE_URL|VERCEL|NEXT_PUBLIC_|NODE_OPTIONS|VITEST|VITE_)/.test(name)) continue;
     env[name] = value;
   }
   return { ...env, ...extra };
 }
 
-function ask(extra: Record<string, string>): { status: number | null; stderr: string; answers: { path: string; status: number; body: any }[] } {
+function ask(extra: Record<string, string>): { status: number | null; stdout: string; stderr: string; answers: { path: string; status: number; body: any }[] } {
   const ran = spawnSync(process.execPath, ['--input-type=module', '-e', ASK], { cwd: root, env: hostEnv(extra), encoding: 'utf8', timeout: 90_000 });
   const line = ran.stdout.split('\n').find(l => l.startsWith('ANSWERS '));
-  return { status: ran.status, stderr: ran.stderr, answers: line ? JSON.parse(line.slice('ANSWERS '.length)) : [] };
+  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr, answers: line ? JSON.parse(line.slice('ANSWERS '.length)) : [] };
 }
 
 describe('the hub\'s function as the host loads it', () => {
@@ -86,8 +86,27 @@ describe('the hub\'s function as the host loads it', () => {
     for (const answer of ran.answers) {
       expect(answer.status).toBe(503);
       expect(answer.body).toMatchObject({ ok: false });
+      // Every setting it lacks, at once: one look at /health is the whole list of what is left to do
       expect(answer.body.reason).toMatch(/WS_HUB_DATABASE_URL is not set/);
+      expect(answer.body.reason).toMatch(/WS_HUB_KEY is not set/);
+      expect(answer.body.reason).toMatch(/WS_PUBLIC_URL is not set/);
+      expect(answer.body.settings).toEqual({ missing: ['WS_HUB_DATABASE_URL', 'WS_HUB_KEY', 'WS_PUBLIC_URL'], unreadable: [] });
     }
+  }, 120_000);
+
+  it('reads the names the host\'s integrations write, and says in its log which it read, never a value', () => {
+    const key = pem();
+    const ran = ask({ DATABASE_URL: 'pglite://memory', VERCEL_PROJECT_PRODUCTION_URL: 'hub.test', WS_HUB_KEY: key });
+    expect(ran.status, ran.stderr).toBe(0);
+    for (const answer of ran.answers) {
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect(answer.body).toMatchObject({ ok: true, hub: { url: 'https://hub.test' } });
+    }
+    const said = ran.stdout.split('\n').find(l => l.startsWith('[HUB] Settings'));
+    expect(said).toMatch(/WS_HUB_DATABASE_URL \(from DATABASE_URL\)/);
+    expect(said).toMatch(/WS_PUBLIC_URL \(from VERCEL_PROJECT_PRODUCTION_URL\)/);
+    expect(ran.stdout + ran.stderr).not.toContain(key.trim().split('\n')[1]);
+    expect(said).not.toContain('pglite://memory');
   }, 120_000);
 
   it('answers with a store, finding its migrations from where it is built to', () => {

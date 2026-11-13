@@ -23,6 +23,9 @@
  *                          a live database kept apart has a record of its own (TURSO_LIVE_DATABASE_URL), or none
  *   CRON_SECRET            what the scheduled call carries
  *   CLERK_…                accounts by e-mail and password (clerk.ts); left out, the hub keeps its own
+ *
+ * Where one of these is not set, the name a host's integration writes for the same thing is read
+ * (settings.ts): a connected Postgres's two addresses, the host's own production address, Clerk's key.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -30,7 +33,8 @@ import { openLive, recordConfig } from '../record';
 import { Hub, type IRefusal } from './Hub';
 import type { IHubKey } from './keys';
 import { createHubHandler, send, tokenOf } from './http';
-import { hubConfigFrom } from './function';
+import { hubConfigFrom, notSetUp, type IConfigProblem } from './function';
+import { withHostNames } from './settings';
 import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
@@ -48,15 +52,43 @@ export interface IHubAppConfig {
   env?: NodeJS.ProcessEnv;
 }
 
-export function hubAppConfigFrom(env: NodeJS.ProcessEnv): IHubAppConfig | { problem: string } {
+/**
+ * A host's environment, read once per instance: the hub's own names, or what the host's integrations
+ * write for the same thing (settings.ts). Everything it lacks is said at once, Clerk's with the rest.
+ */
+export function hubAppConfigFrom(env: NodeJS.ProcessEnv): IHubAppConfig | IConfigProblem {
   const base = hubConfigFrom(env);
-  if ('problem' in base) return base;
+  const read = withHostNames(env);
+  const clerk = clerkProblem(read, 'problem' in base ? 'https://hub.invalid' : base.publicUrl);
+  if ('problem' in base || clerk) {
+    const said = 'problem' in base ? base : { problem: '', missing: [], unreadable: [] };
+    return {
+      problem: [said.problem, clerk?.said].filter(Boolean).join(' '),
+      missing: [...(said.missing ?? []), ...(clerk?.missing ? [clerk.missing] : [])],
+      unreadable: [...(said.unreadable ?? []), ...(clerk?.unreadable ? [clerk.unreadable] : [])]
+    };
+  }
   return {
     ...base,
-    ...(env.WS_LIVE_DATABASE_URL?.trim() ? { liveDatabaseUrl: env.WS_LIVE_DATABASE_URL.trim() } : {}),
-    ...(env.WS_LIVE_LISTEN_URL?.trim() ? { liveListenUrl: env.WS_LIVE_LISTEN_URL.trim() } : {}),
+    ...(read.WS_LIVE_DATABASE_URL?.trim() ? { liveDatabaseUrl: read.WS_LIVE_DATABASE_URL.trim() } : {}),
+    ...(read.WS_LIVE_LISTEN_URL?.trim() ? { liveListenUrl: read.WS_LIVE_LISTEN_URL.trim() } : {}),
     env
   };
+}
+
+/**
+ * Clerk named by half. A publishable key with no public key to read Clerk's tokens would leave this
+ * hub keeping accounts of its own behind a page that shows Clerk's form, so it is said like a missing
+ * setting. Connecting Clerk's integration writes the publishable key; the public key is pasted by hand.
+ */
+function clerkProblem(env: NodeJS.ProcessEnv, publicUrl: string): { said: string; missing?: string; unreadable?: string } | null {
+  const jwt = env.CLERK_JWT_KEY?.trim();
+  const publishable = env.CLERK_PUBLISHABLE_KEY?.trim();
+  if (!jwt && !publishable) return null;
+  if (!jwt) return { missing: 'CLERK_JWT_KEY', said: 'CLERK_JWT_KEY is not set, though a publishable key is: this hub would keep accounts of its own behind a page that shows Clerk\'s form. It is the PEM Clerk shows as its JWT public key (its dashboard, API keys).' };
+  const found = clerkConfigFrom(env, publicUrl);
+  if (found && 'problem' in found) return publishable ? { unreadable: 'CLERK_JWT_KEY', said: found.problem } : { missing: 'CLERK_PUBLISHABLE_KEY', said: found.problem };
+  return null;
 }
 
 const LIVE = '/live';
@@ -83,11 +115,11 @@ export function appPathOf(url: string | undefined): string {
 
 const isServed = (url: string) => /^postgres(ql)?:\/\//.test(url);
 
-export function createHubApp(config: IHubAppConfig | { problem: string }) {
+export function createHubApp(config: IHubAppConfig | IConfigProblem) {
   const open = async () => {
     if ('problem' in config) throw new Error(config.problem);
     const env = config.env ?? process.env;
-    const found = clerkConfigFrom(env, config.publicUrl);
+    const found = clerkConfigFrom(withHostNames(env), config.publicUrl);
     if (found && 'problem' in found) throw new Error(found.problem);
     const clerk = found as IClerkConfig | null;
 
@@ -148,6 +180,7 @@ export function createHubApp(config: IHubAppConfig | { problem: string }) {
     ready,
 
     async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+      if ('problem' in config) return notSetUp(res, config);
       const path = appPathOf(req.url);
       let parts: Awaited<ReturnType<typeof open>>;
       try {

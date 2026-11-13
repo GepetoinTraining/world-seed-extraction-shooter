@@ -64,15 +64,20 @@ Pedro, 2026-11-12: "we need to have account and password for players to delete t
 
 ### Putting it on Vercel
 
-Not done: it needs accounts only Pedro can open. In order:
+Pedro, 2026-11-13: "we need to set up how to work these out right?". The project exists and is deployed; what it holds is Turso's two settings. What is left, in order, each marked as **one click** in the host, **a paste** into the project's Environment Variables, or **nothing**, because the hub reads it by itself (`server/hub/settings.ts`). The hub's own name always wins over a host's, so any step can be done by hand instead. A setting is entered for Production, and for Preview too if previews are to answer; a change reaches only the next deployment, so the last steps deploy again and look.
 
-1. A Clerk application for this game. E-mail and password on, username on and required. In the session token, one more claim: `{ "handle": "{{user.username}}" }`. Let users delete their own account.
-2. A Postgres (Neon through Vercel's marketplace is the least to set up). Two addresses from it: the pooled one, and the direct one for the word between instances. On Neon's free plan the database sleeps after five idle minutes; it wakes on the next request, and an instance that lost its listening connection takes it up again.
-3. A database on Turso for the record, and a token.
-4. The hub's signing key: Ed25519, PKCS#8 PEM. `npm run hub` makes one at `data/hub-key.pem` the first time it runs; a deployed hub is given its own and keeps it, since a hub whose key changes cannot stand behind what it signed.
-5. The Vercel project, from this repository, with the settings in the table under Configuration.
-6. In Clerk, a webhook to `https://<the address>/api/hub/clerk` for `user.deleted`, and its signing secret into `CLERK_WEBHOOK_SECRET`.
-7. `GET https://<the address>/api/hub/health` must answer, and with the hub's own word: `ok: true`, or a 503 that names the setting it lacks. The host's own 500 (`FUNCTION_INVOCATION_FAILED`) means the function died as it loaded, before it read any setting.
+1. **The store, and the word between instances: one click.** In the project, Storage, connect a Postgres (Neon, through the marketplace integration the team already has), with no custom prefix. Neon's integration writes `DATABASE_URL`, its pooled address, and `DATABASE_URL_UNPOOLED`, its direct one (Neon's page, "Connecting with the Vercel-Managed Integration"). The hub reads the first as `WS_HUB_DATABASE_URL` and the second as `WS_LIVE_LISTEN_URL`, the direct one only when the store itself came from `DATABASE_URL` and the world's documents are not kept apart. With a custom prefix the names change, and the hub's own names are pasted instead. On Neon's free plan the database sleeps after five idle minutes; it wakes on the next request, and an instance that lost its listening connection takes it up again.
+2. **The address: nothing, for now.** Vercel gives every deployment `VERCEL_PROJECT_PRODUCTION_URL`, the production domain without its scheme, set even in a preview, while the project's "Enable access to System Environment Variables" is on (Vercel's page, "System environment variables"). The hub reads it as `https://` and that domain when `WS_PUBLIC_URL` is not set. **Paste `WS_PUBLIC_URL` once the domain is chosen, before real players register**: the address is inside everything the hub signs, and Vercel's value moves by itself to the shortest custom domain the day one is added.
+3. **The hub's key: a paste.** In your own terminal, in your own checkout: `npm run hub:key`. It prints a new key and writes it nowhere. Paste all of it, the BEGIN and END lines included, into `WS_HUB_KEY`, as a Secret, and keep a copy somewhere safe: a hub whose key changes cannot stand behind what it signed. It names the hub that key makes, and `/api/hub/health` names the same once it is deployed. (`npm run hub` still makes one at `data/hub-key.pem` for a local test.)
+4. **The record: a paste.** Turso's integration has written `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` already. The record is asked for, never assumed (`server/record.ts`): `WS_RECORD` = `1`.
+5. **The scheduled call: a paste.** `CRON_SECRET`: the fresh text `npm run hub:key` printed under the key, or any 16 or more letters and digits with no line break. Vercel sends it by itself on the daily call to `/api/hub/maintenance`, on the production deployment only (Vercel's page, "Managing Cron Jobs").
+6. **Accounts: one click, then three pastes.**
+   - Connect Clerk's integration to the project. It makes the application and writes `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` (Clerk's page, "Integrate Clerk through the Vercel Marketplace"); the hub reads the first as `CLERK_PUBLISHABLE_KEY` and the second as it is. Clerk's development instance goes to Preview and Development, its production instance to Production. A production instance needs a domain you own (Clerk's page, "Deploy your Clerk app to production"), so on a `vercel.app` address the site runs on the development instance's keys.
+   - In Clerk's dashboard: e-mail and password on, username on and required; in the session token one more claim, `{ "handle": "{{user.username}}" }`; let users delete their own account.
+   - Paste `CLERK_JWT_KEY`: the PEM Clerk shows as its JWT public key (API keys). Until it is there the hub refuses and says so, because a publishable key without it is a hub half on Clerk.
+   - In Clerk, a webhook to `https://<the address>/api/hub/clerk` for `user.deleted`; paste its signing secret into `CLERK_WEBHOOK_SECRET`.
+7. **Deploy again: one click.** Deployments, the latest, Redeploy.
+8. **Look: nothing to set.** `GET https://<the address>/api/hub/health` answers with the hub's own word: `ok: true`, or a 503 whose reason says every setting still missing or unreadable at once, with their names in `settings.missing` and `settings.unreadable`. The function's log says at each start which name each setting was read from (`[HUB] Settings: WS_HUB_DATABASE_URL (from DATABASE_URL), …`), never a value. The host's own 500 (`FUNCTION_INVOCATION_FAILED`) means the function died as it loaded, before it read any setting.
 
 **What the first deployment showed (2026-11-13).** The site built and was served. Every address under `/api/hub` answered the host's own 500: `Cannot find module '/var/task/server/hub/app'`. The host compiles each file alone and runs the result as plain Node, and plain Node finds an import only when its address is written whole, which nothing under `server/` or `shared/` does. So the hub is built into one file first (`scripts/build-hub.ts`, to `dist-hub/hub.mjs`; `npm run build:site` does it too, and `vercel-build` names it for the host's own step before a function), and `api/hub.js` hands that to the host. `tests/deploy.function.test.ts` runs it the way the host does. Whether the host now builds and runs it has not been seen: the next deployment shows it.
 
@@ -149,21 +154,23 @@ Pedro: the player and the hub "need to have the same reading done at different t
 
 ## Configuration
 
-| Name | Where | What |
-|---|---|---|
-| `WS_HUB_DATABASE_URL` | hub | the served Postgres (`postgres://…`); `npm run hub` defaults to a folder at `data/hub-test` |
-| `WS_HUB_KEY` | hub | its signing key (PKCS#8 PEM, Ed25519), from the host's secret store. `npm run hub` makes one into `data/hub-key.pem` when none is named |
-| `WS_PUBLIC_URL` | hub | its own address, named in what it signs |
-| `WS_RECORD`, `TURSO_*` | hub | the record, as before |
-| `WS_LIVE_LISTEN_URL` | hub | a direct (not pooled) connection to the database, for the word between instances. Left out, the database's own address is used |
-| `WS_LIVE_DATABASE_URL` | hub | the hosted world's shared documents, if kept apart from the hub's own; then `TURSO_LIVE_DATABASE_URL` for their record, or none |
-| `CRON_SECRET` | hub | what the host's scheduled call carries. Vercel sends it by itself once it is set |
-| `CLERK_JWT_KEY` | hub | Clerk's public key for this application, PEM (dashboard, API keys, JWKS public key). Naming it is what makes this hub's accounts Clerk's |
-| `CLERK_PUBLISHABLE_KEY` | hub | what the landing page loads Clerk with; public by design |
-| `CLERK_WEBHOOK_SECRET` | hub | the signing secret of the webhook to `/api/hub/clerk` |
-| `CLERK_SECRET_KEY` | hub | to delete the account at Clerk when its player asks the hub to |
-| `CLERK_AUTHORIZED_PARTIES` | hub | the origins a Clerk token may come from; the hub's own address when left out |
-| `VITE_WS_STORE=browser` | game build | set by `npm run build:site`: the save lives in the browser |
+Every name the hub reads is in `server/hub/settings.ts`, with the names a host writes for the same thing. On a function host the hub reads those when its own is not set; the local stand-ins (`npm run hub`, `npm run hosted`) do not, so a test on this machine never finds a database because a shell happened to name one.
+
+| Name | Where | Read also from, on the host | What |
+|---|---|---|---|
+| `WS_HUB_DATABASE_URL` | hub | `DATABASE_URL` (Neon's integration, pooled) | the served Postgres (`postgres://…`); `npm run hub` defaults to a folder at `data/hub-test` |
+| `WS_HUB_KEY` | hub | | its signing key (PKCS#8 PEM, Ed25519), from the host's secret store; `npm run hub:key` prints one. `npm run hub` makes one into `data/hub-key.pem` when none is named |
+| `WS_PUBLIC_URL` | hub | `VERCEL_PROJECT_PRODUCTION_URL` (Vercel, as `https://` and that domain) | its own address, named in what it signs |
+| `WS_RECORD`, `TURSO_*` | hub | | the record, as before. `TURSO_*` are Turso's integration's own names |
+| `WS_LIVE_LISTEN_URL` | hub | `DATABASE_URL_UNPOOLED` (Neon's integration, direct), only beside a store read from `DATABASE_URL` | a direct (not pooled) connection to the database, for the word between instances. Left out, the database's own address is used |
+| `WS_LIVE_DATABASE_URL` | hub | | the hosted world's shared documents, if kept apart from the hub's own; then `TURSO_LIVE_DATABASE_URL` for their record, or none |
+| `CRON_SECRET` | hub | | what the host's scheduled call carries. Vercel sends it by itself once it is set |
+| `CLERK_JWT_KEY` | hub | | Clerk's public key for this application, PEM (dashboard, API keys, JWKS public key). Naming it is what makes this hub's accounts Clerk's; a publishable key without it is refused as half set |
+| `CLERK_PUBLISHABLE_KEY` | hub, site build | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (Clerk's integration) | what the landing page loads Clerk with; public by design |
+| `CLERK_WEBHOOK_SECRET` | hub | | the signing secret of the webhook to `/api/hub/clerk` |
+| `CLERK_SECRET_KEY` | hub | (Clerk's integration writes this name) | to delete the account at Clerk when its player asks the hub to |
+| `CLERK_AUTHORIZED_PARTIES` | hub | | the origins a Clerk token may come from; the hub's own address when left out |
+| `VITE_WS_STORE=browser` | game build | | set by `npm run build:site`: the save lives in the browser |
 
 ## A local test of the whole thing
 

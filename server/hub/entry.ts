@@ -11,8 +11,13 @@
  */
 import { createServer } from 'node:http';
 import { createHubApp, hubAppConfigFrom } from './app';
+import { settingsLine } from './settings';
 
-const app = createHubApp(hubAppConfigFrom(process.env));
+// Which name each setting was read from, the hub's own or the host's, said once per instance and never a value
+console.log(settingsLine(process.env));
+const config = hubAppConfigFrom(process.env);
+if ('problem' in config) console.warn(`[HUB] Not set up: ${config.problem}`);
+const app = createHubApp(config);
 
 const server = createServer((req, res) => void app.handle(req, res));
 server.on('upgrade', (req, raw) => app.upgrade(req, raw));

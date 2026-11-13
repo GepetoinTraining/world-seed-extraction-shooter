@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:site": "node --import tsx scripts/build-site.ts",
     "build:hub": "node --import tsx scripts/build-hub.ts",
+    "hub:key": "node --import tsx scripts/hub-key.ts",
     "vercel-build": "npm run build:hub",
     "preview": "vite preview",
     "typecheck": "tsc -b",
