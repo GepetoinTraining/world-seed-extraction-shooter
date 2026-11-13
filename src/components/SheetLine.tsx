@@ -15,7 +15,7 @@
  * which way it goes. The second press spends. The focus leaving the + puts it away, and so does ESC.
  */
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { DescriptionLaw, DescriptionRoot } from '../../shared/logic/systems/DescriptionLaw';
 import { usePlayerStore } from '../entities/player/store';
 import type { IMoved } from '../logic/systems/SheetNumbers';
@@ -39,18 +39,25 @@ export const Moved: React.FC<{ k?: string }> = ({ k }) => {
   );
 };
 
-/** Every number a point would move, in one place under its +: what it is, and what it would be. */
-export const PreviewList: React.FC<{ attr: string; moved: readonly IMoved[] }> = ({ attr, moved }) => (
-  <div data-preview={attr} className="ws-small" style={{ border: '1px dashed var(--ws-void-4)', padding: '2px 6px', margin: '2px 0 4px' }}>
-    <div className="ws-dim" style={{ letterSpacing: '0.06em' }}>IF YOU SPEND IT</div>
-    {moved.map(m => (
-      <div key={m.key} className="ws-row" style={{ padding: 0, gap: 8 }}>
-        <span className="ws-dim" style={{ flexShrink: 0 }}>{m.word}</span>
-        <span style={{ textAlign: 'right', minWidth: 0 }}>{m.now} <span role="img" aria-label={WAY_WORD[m.way]}>{WAY_MARK[m.way]}</span> {m.then}</span>
-      </div>
-    ))}
-  </div>
-);
+/**
+ * Every number a point would move, in one place under its +: what it is, and what it would be. It brings itself into view
+ * when it appears: on the small sheet its place is under the attributes, below what the panel shows at once.
+ */
+export const PreviewList: React.FC<{ attr: string; moved: readonly IMoved[] }> = ({ attr, moved }) => {
+  const at = useRef<HTMLDivElement>(null);
+  useEffect(() => { at.current?.scrollIntoView?.({ block: 'nearest' }); }, [attr]);
+  return (
+    <div ref={at} data-preview={attr} className="ws-small" style={{ border: '1px dashed var(--ws-void-4)', padding: '2px 6px', margin: '2px 0 4px' }}>
+      <div className="ws-dim" style={{ letterSpacing: '0.06em' }}>IF YOU SPEND IT</div>
+      {moved.map(m => (
+        <div key={m.key} className="ws-row" style={{ padding: 0, gap: 8 }}>
+          <span className="ws-dim" style={{ flexShrink: 0 }}>{m.word}</span>
+          <span style={{ textAlign: 'right', minWidth: 0 }}>{m.now} <span role="img" aria-label={WAY_WORD[m.way]}>{WAY_MARK[m.way]}</span> {m.then}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 /**
  * A + in two presses. The first shows what the point would move (the parent lists it); the second spends. The focus leaving
