@@ -165,7 +165,7 @@ Mounted at `/api/hub`. A `POST` takes JSON only. A signed-in route takes the `ws
 | `GET /clock` | anyone | |
 | `POST /sessions/clerk` | someone Clerk signed in | **new**: `{ token }`, sets the hub's cookie. The site's page calls it, not the game |
 | `POST /accounts`, `POST /sessions` | anyone | 403 when `accounts` is `clerk` |
-| `GET /session`, `POST /session/end` | signed in | |
+| `GET /session`, `POST /session/end` | signed in | `account.key` added to `GET /session`: the account's own key |
 | `GET /account` | signed in | **new** |
 | `POST /account/delete` | signed in | **new** |
 | `POST /characters/nonce` | signed in | |
@@ -181,6 +181,7 @@ Mounted at `/api/hub`. A `POST` takes JSON only. A signed-in route takes the `ws
 | `GET /live/socket?uid=` (upgrade) | let into our world | `since: 'now'` accepted |
 | `GET /maintenance` | the host's scheduled call only | **new**: writes down to the record |
 | `POST /clerk` | Clerk only | **new**: Clerk's signed word that an account was deleted there |
+| `GET /dev/state`, `/dev/tables`, `/dev/rows`, `/dev/row`, `/dev/find` | an account on the host's `WS_DEV_ACCOUNTS` only | **new**: the developers' view of the data, read only (`DEPLOY.md`, "The developers' view"). The game never calls these, and needs nothing for them |
 
 ## 9. What is not built, so nobody plumbs toward it yet
 

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>World Seed: the data, for developers</title>
+  <meta name="theme-color" content="#050505">
+  <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/landing.css">
+  <script src="/dev/dev.js" defer></script>
+</head>
+<body class="dev">
+  <header class="top">
+    <a class="brand" href="/" aria-label="World Seed, home"><img src="/brand/logo.svg" alt="World Seed" width="142" height="56"></a>
+    <nav class="top-nav" aria-label="On this page">
+      <a href="#state">State</a>
+      <a href="#data">Data</a>
+      <a href="#find">Find</a>
+    </nav>
+  </header>
+
+  <main class="dev-main">
+    <section class="band" aria-labelledby="who-title">
+      <p class="kicker">For developers</p>
+      <h1 id="who-title">The data, as this hub holds it</h1>
+      <p id="who-said" class="said" role="status" aria-live="polite">Asking this hub…</p>
+      <div id="who-key" class="card ruled" hidden>
+        <p>Your account key is <code id="key-text"></code>.</p>
+        <p class="hint">This view opens only for accounts on the list this hub's host holds, in the setting <code>WS_DEV_ACCOUNTS</code> (account keys separated by commas). Whoever runs the hub puts a key there, deploys again, and the view opens for that account. The list is the operator's to keep short: what is here is players' data.</p>
+      </div>
+    </section>
+
+    <div id="dev-body" hidden>
+      <section class="band" id="state" aria-labelledby="state-title">
+        <p class="kicker">The state of things</p>
+        <h2 id="state-title">Settings, database, record, counts</h2>
+        <div class="dev-grid">
+          <div class="card ruled">
+            <h2>Settings, by name</h2>
+            <ul class="marks dev-marks" id="settings-list"></ul>
+            <p class="hint">Only names: no value of a setting ever leaves the hub.</p>
+          </div>
+          <div class="card ruled">
+            <h2>Database, record, scheduled call</h2>
+            <ul class="marks dev-marks" id="db-list"></ul>
+          </div>
+        </div>
+        <div class="card ruled dev-counts">
+          <h2>What this hub holds</h2>
+          <table class="dev-table" id="counts"></table>
+        </div>
+      </section>
+
+      <section class="band" id="data" aria-labelledby="data-title">
+        <p class="kicker">The data itself</p>
+        <h2 id="data-title">Tables and collections</h2>
+        <div id="table-list"></div>
+        <h3 class="dev-sub" id="rows-title">Rows</h3>
+        <p id="rows-said" class="said" role="status" aria-live="polite">Choose a table or a collection above.</p>
+        <div class="dev-scroll"><table class="dev-table" id="rows-table"></table></div>
+        <p class="choice">
+          <button type="button" id="newer" disabled>← Newer</button>
+          <button type="button" id="older" disabled>Older →</button>
+        </p>
+        <h3 class="dev-sub">One row, whole</h3>
+        <p id="row-said" class="said" role="status" aria-live="polite">Open a row from a list.</p>
+        <pre id="row-text" class="dev-pre"></pre>
+      </section>
+
+      <section class="band" id="find" aria-labelledby="find-title">
+        <p class="kicker">Find</p>
+        <h2 id="find-title">By an account's, a character's or a world's id</h2>
+        <form id="find-form" class="card ruled dev-find" autocomplete="off" novalidate>
+          <label>An id, at least three characters
+            <input name="id" spellcheck="false" autocomplete="off">
+          </label>
+          <button type="submit" class="primary">Find</button>
+        </form>
+        <div id="find-out"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <img src="/brand/mark.svg" alt="" width="22" height="28">
+    <p class="said">Read only. Nothing on this page writes, and every read is in the hub's log with who asked.</p>
+  </footer>
+</body>
+</html>

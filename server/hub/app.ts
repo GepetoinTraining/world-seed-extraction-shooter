@@ -39,10 +39,11 @@ import { Hub, type IRefusal } from './Hub';
 import type { IHubKey } from './keys';
 import { createHubHandler, send, tokenOf } from './http';
 import { hubConfigFrom, notSetUp, type IConfigProblem } from './function';
-import { withHostNames } from './settings';
+import { settingsRead, withHostNames } from './settings';
 import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
+import { DevView } from './dev';
 import { LiveRoom, type LiveAccess } from '../live/room';
 
 export interface IHubAppConfig {
@@ -169,7 +170,12 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
       for (const body of liveUrl ? [own, live] : [own]) record.push(await body.maintain());
       return { record, erasuresWaiting: await eraser.sweep() };
     };
-    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined });
+    // The developers' view, for the accounts the host names in WS_DEV_ACCOUNTS and nobody else (dev.ts). A local
+    // stand-in gives the hub its store, key and address directly when no setting names them, and the view says so
+    const given = Object.fromEntries(settingsRead(env).filter(s => s.needed && !s.set).map(s => [s.name, 'given to this server directly (its own default, or a key from a file)']));
+    // It reads through the body of the store it opened, Turso's or a Postgres's, and says how the instances hear each other
+    const dev = new DevView({ hub, store: own.dev(), live: live.between(listenUrl), env, given });
+    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev });
     return {
       hub, room, handler, eraser,
       close: async () => {

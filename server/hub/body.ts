@@ -11,9 +11,8 @@
  *                             is its own record; taken out in one request; lines in its own table, changed
  *                             by version; the word between instances is the store read on a beat
  *
- * The developers' view (server/hub/dev.ts, on its own branch) reads the Postgres under the store raw
- * (`database`). On Turso there is none; at the join it reads `TursoStore.client` the same way, over the
- * store_ tables (HT14).
+ * And the developers' view (server/hub/dev.ts) reads each through its own body of `IDevStore`
+ * (devStorePostgres.ts, devStoreTurso.ts), so its routes and page never know which is underneath (HT21).
  */
 import type { IDatabase } from '../../shared/dbShared';
 import { openLive, recordConfig, type IKeeperOptions, type IRecordConfig } from '../record';
@@ -22,7 +21,11 @@ import type { IStore } from '../store';
 import type { IEraseHere } from './erase';
 import { postgresBus, soloBus, type ILiveBus } from '../live/bus';
 import { tableLines, type ILineBook } from '../live/lines';
-import { instanceId, tursoBus, tursoLines, type ITursoLiveTiming } from '../live/tursoLive';
+import { instanceId, tursoBus, tursoLines, TURSO_LIVE, type ITursoLiveTiming } from '../live/tursoLive';
+import type { IDevStore } from './devStore';
+import { PostgresDevStore } from './devStorePostgres';
+import { TursoDevStore } from './devStoreTurso';
+import type { IDevLive } from './dev';
 
 export interface IBody {
   kind: 'postgres' | 'turso';
@@ -38,6 +41,10 @@ export interface IBody {
   lines(): Promise<ILineBook>;
   /** The word between instances. On Postgres, through `listenUrl` when it is a served database; on Turso, read on a beat. */
   bus(options?: { listenUrl?: string | null } & Partial<ITursoLiveTiming>): Promise<ILiveBus>;
+  /** What the developers' view reads, whatever the store is (devStore.ts). */
+  dev(): IDevStore;
+  /** How this body's instances hear each other, in the developers' view's words. */
+  between(listenUrl?: string | null): IDevLive;
 }
 
 export interface IBodyOptions extends IKeeperOptions {
@@ -60,7 +67,9 @@ export async function openBody(url: string, env: NodeJS.ProcessEnv = process.env
       record: { on: false },
       maintain: async () => { await store.maintain(); return 'IN_STORE'; },
       lines: () => tursoLines(store, instance),
-      bus: (timing = {}) => tursoBus(store, { ...timing, id: instance })
+      bus: (timing = {}) => tursoBus(store, { ...timing, id: instance }),
+      dev: () => new TursoDevStore(store),
+      between: () => ({ word: 'beat', ...TURSO_LIVE })
     };
   }
   const { store, database } = await openLive(url, env, options);
@@ -72,6 +81,8 @@ export async function openBody(url: string, env: NodeJS.ProcessEnv = process.env
     database,
     maintain: async () => (await store.maintain()).record?.status ?? 'NO_RECORD',
     lines: () => tableLines(database),
-    bus: async ({ listenUrl } = {}) => (listenUrl ? postgresBus(listenUrl) : soloBus())
+    bus: async ({ listenUrl } = {}) => (listenUrl ? postgresBus(listenUrl) : soloBus()),
+    dev: () => new PostgresDevStore(store, database),
+    between: listenUrl => ({ word: listenUrl ? 'listen' : 'alone' })
   };
 }

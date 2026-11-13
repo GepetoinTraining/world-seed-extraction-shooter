@@ -43,6 +43,8 @@ import type { IStore } from './store';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'turso');
+/** Where the store's own migrations are, for a reader that says how far a database has come (hub/devStoreTurso.ts). Found from this file, which stays one folder under the root when the hub is built into one file. */
+export const STORE_MIGRATIONS = MIGRATIONS;
 
 /** Every table this store makes. None is a name the record uses (server/recordRows.ts, drizzle/cold). */
 export const STORE_TABLES = ['store_documents', 'store_ledger_rows', 'store_treasuries', 'store_commits', 'store_live_lines', 'store_live_places', 'store_migrations'] as const;

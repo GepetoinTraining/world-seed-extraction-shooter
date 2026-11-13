@@ -18,6 +18,7 @@ import { HubPool } from './pool';
 import { HostedWorld } from './hosted';
 import { deleteClerkUser, readClerkToken, readClerkWebhook, type IClerkConfig } from './clerk';
 import type { Eraser } from './erase';
+import type { DevView } from './dev';
 
 /** What a deployed hub adds to the routes: who keeps its accounts, how one is deleted, and its scheduled call. */
 export interface IHubHandlerParts {
@@ -29,7 +30,19 @@ export interface IHubHandlerParts {
   maintain?: () => Promise<Record<string, unknown>>;
   /** What the scheduled call must carry (`Authorization: Bearer …`), from the host's secret store. */
   cronSecret?: string;
+  /** The developers' view of the data (dev.ts), for the accounts on the host's list and nobody else. */
+  dev?: DevView;
 }
+
+/** What an address that does not exist answers. A developers' route answers anyone not on the list the same, byte for byte. */
+const noSuchRoute = (res: ServerResponse) => send(res, 404, { ok: false, reason: 'No such route on this hub.' });
+
+/** The asked query, without what a host's rewrite carries beside it (vercel.json). */
+const queryOf = (req: IncomingMessage) => {
+  const query = new URL(req.url ?? '/', 'http://hub.invalid').searchParams;
+  query.delete('__path');
+  return query;
+};
 
 /** A request body larger than this is refused unread. Receipts come in batches well under it. */
 export const HUB_BODY_BYTES = 4 * 1024 * 1024;
@@ -102,10 +115,21 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
       if (path === '/maintenance') {
         if (!parts.maintain || !parts.cronSecret) return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
         if (!sameText(req.headers.authorization ?? '', `Bearer ${parts.cronSecret}`)) return send(res, 401, { ok: false, reason: 'That call does not carry this hub\'s word.' });
+        // When it last came, for the developers' view, noted before the write-down so the write-down carries it
+        await hub.commit([{ kind: 'put', doc: hub.doc('hub_maintenance', { type: 'hub_maintenance', at: hub.now() }) }])
+          .catch(e => console.warn('[HUB] The scheduled call could not note its run, and runs on:', e instanceof Error ? e.message : e));
         return send(res, 200, { ok: true, ...(await parts.maintain()) });
       }
 
       const token = tokenOf(req);
+
+      // The developers' view (dev.ts): read only, and for anyone not on the host's list an address that does not exist
+      if (req.method === 'GET' && (path === '/dev' || path.startsWith('/dev/'))) {
+        const account = parts.dev ? await hub.session(token) : null;
+        if (!parts.dev || !parts.dev.allows(account)) return noSuchRoute(res);
+        const out = await parts.dev.read(account, path.slice('/dev'.length), queryOf(req));
+        return out ? send(res, out.status, out.body) : noSuchRoute(res);
+      }
 
       if (req.method === 'GET') {
         if (path === '/health') return send(res, 200, { ok: true, service: 'worldseed-hub', hub: { id: hub.id, publicKeyPem: hub.key.publicKeyPem, url: hub.publicUrl, accounts: hub.accounts }, time: Date.now() });
@@ -118,14 +142,15 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
         if (path === '/clock') return send(res, 200, { ok: true, statement: hub.clock() });
         if (path === '/session') {
           const account = await hub.session(token);
-          return account ? send(res, 200, { ok: true, account: { handle: account.handle } }) : send(res, 401, { ok: false, status: 401, reason: 'Sign in first.' });
+          // The account's own key, which is what the host's list of developers names (dev.ts)
+          return account ? send(res, 200, { ok: true, account: { handle: account.handle, key: account.key } }) : send(res, 401, { ok: false, status: 401, reason: 'Sign in first.' });
         }
         if (path === '/characters') return answer(res, await hub.characters(token));
         if (path.startsWith('/record/')) return answer(res, await hub.record(token, decodeURIComponent(path.slice('/record/'.length))));
         if (path === '/pool') return answer(res, await pool.members(token));
         if (path.startsWith('/jobs/')) return answer(res, await pool.get(token, decodeURIComponent(path.slice('/jobs/'.length))));
         if (path === '/hosted') return answer(res, await hosted.describe());
-        return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
+        return noSuchRoute(res);
       }
 
       if (req.method !== 'POST') return send(res, 405, { ok: false, reason: 'GET or POST only.' });
@@ -207,7 +232,7 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
         case '/jobs/done': return answer(res, await pool.done(token, body.jobId, body.outcome));
         case '/jobs/withdraw': return answer(res, await pool.withdraw(token, body.jobId));
         case '/hosted/connect': return answer(res, await hosted.connect(token, body.uid));
-        default: return send(res, 404, { ok: false, reason: 'No such route on this hub.' });
+        default: return noSuchRoute(res);
       }
     } catch (e) {
       console.error('[HUB] A request failed:', e);
