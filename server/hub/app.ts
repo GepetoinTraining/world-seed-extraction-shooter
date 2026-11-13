@@ -34,10 +34,11 @@ import { Hub, type IRefusal } from './Hub';
 import type { IHubKey } from './keys';
 import { createHubHandler, send, tokenOf } from './http';
 import { hubConfigFrom, notSetUp, type IConfigProblem } from './function';
-import { withHostNames } from './settings';
+import { settingsRead, withHostNames } from './settings';
 import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
+import { DevView } from './dev';
 import { LiveRoom, type LiveAccess } from '../live/room';
 import { postgresBus, soloBus } from '../live/bus';
 import { tableLines } from '../live/lines';
@@ -161,7 +162,11 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
       for (const store of liveUrl ? [own.store, live.store] : [own.store]) record.push((await store.maintain()).record?.status ?? 'NO_RECORD');
       return { record, erasuresWaiting: await eraser.sweep() };
     };
-    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined });
+    // The developers' view, for the accounts the host names in WS_DEV_ACCOUNTS and nobody else (dev.ts). A local
+    // stand-in gives the hub its store, key and address directly when no setting names them, and the view says so
+    const given = Object.fromEntries(settingsRead(env).filter(s => s.needed && !s.set).map(s => [s.name, 'given to this server directly (its own default, or a key from a file)']));
+    const dev = new DevView({ hub, database: own.database, env, given });
+    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev });
     return {
       hub, room, handler, eraser,
       close: async () => {

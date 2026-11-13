@@ -379,6 +379,44 @@ input:focus-visible { outline: 2px solid var(--signal-3); outline-offset: 2px; }
 .loss button { align-self: flex-start; }
 .loss .said { margin: 0; min-height: 0; }
 
+/* --- the developers' page (/dev/): the same machine, read as a ledger ------------------------- */
+
+.dev-main { position: relative; z-index: 1; }
+.dev h1 { font-size: clamp(1.75rem, 3.4vw, 2.625rem); line-height: 1.12; }
+.dev .band:first-child { padding-top: clamp(2rem, 5vw, 3.5rem); }
+.dev code, .dev-table, .dev-pre, .dev-list button, .link { font-family: var(--mono); }
+.dev code { font-size: 0.875em; color: var(--bright); overflow-wrap: anywhere; }
+#who-key { margin-top: 1rem; max-width: 44rem; }
+#key-text { font-size: 1rem; padding: 0.1rem 0.35rem; border: 1px solid var(--rule-strong); }
+
+.dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1rem; margin-top: 1.75rem; }
+.dev-counts { margin-top: 1rem; }
+.dev-marks li { align-items: flex-start; line-height: 1.5; padding: 0.3rem 0; border-bottom: 1px solid var(--rule); }
+.dev-marks li:last-child { border-bottom: 0; }
+.dev-marks .mark { margin-top: 0.45em; }
+.dev-marks .hint { font-size: 0.875rem; }
+.dev-sub { margin: 1.75rem 0 0.6rem; font: 0.8125rem var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+
+.dev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dev-list.dev-column { flex-direction: column; gap: 0.35rem; color: var(--dim); font-size: 0.875rem; }
+.dev-list button { font-size: 0.8125rem; font-weight: 400; padding: 0.4rem 0.65rem; }
+
+.dev-scroll { overflow-x: auto; max-width: 100%; }
+.dev-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.dev-table th, .dev-table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; }
+.dev-table th { color: var(--dim); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.dev-table td { color: var(--body); }
+
+/* An id that opens its row: underlined like a link, so it is told by shape and not by color */
+.link { background: none; border: 0; padding: 0; color: var(--bright); font-size: inherit; font-weight: 400; text-align: left; text-decoration: underline; text-decoration-color: var(--ghost); text-underline-offset: 3px; cursor: pointer; overflow-wrap: anywhere; }
+.link:hover { text-decoration-color: var(--signal-3); }
+
+.dev-pre { margin: 0; min-height: 4rem; max-height: 40rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; background: var(--void-0); border: 1px solid var(--rule); color: var(--bright); font-size: 0.8125rem; line-height: 1.5; }
+.dev-pre:empty { display: none; }
+.dev-find { max-width: 30rem; margin-top: 1.5rem; }
+.dev-find button { align-self: flex-start; }
+#find-out { margin-top: 1rem; }
+
 /* --- the foot -------------------------------------------------------------------------------- */
 
 .foot {

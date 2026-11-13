@@ -78,6 +78,7 @@ Pedro, 2026-11-13: "we need to set up how to work these out right?". The project
    - In Clerk, a webhook to `https://<the address>/api/hub/clerk` for `user.deleted`; paste its signing secret into `CLERK_WEBHOOK_SECRET`.
 7. **Deploy again: one click.** Deployments, the latest, Redeploy.
 8. **Look: nothing to set.** `GET https://<the address>/api/hub/health` answers with the hub's own word: `ok: true`, or a 503 whose reason says every setting still missing or unreadable at once, with their names in `settings.missing` and `settings.unreadable`. The function's log says at each start which name each setting was read from (`[HUB] Settings: WS_HUB_DATABASE_URL (from DATABASE_URL), …`), never a value. The host's own 500 (`FUNCTION_INVOCATION_FAILED`) means the function died as it loaded, before it read any setting.
+9. **The developers' view: a paste, after the first sign-in.** Sign in on the site, then open `/dev/`. It says the account is not on the list and shows its account key (`clerk_` and Clerk's id for it). Paste that key into `WS_DEV_ACCOUNTS` (several are separated by commas) and deploy again; `/dev/` then shows the data (below, "The developers' view"). The list is the operator's to keep short: what the view shows is players' data.
 
 **What the first deployment showed (2026-11-13).** The site built and was served. Every address under `/api/hub` answered the host's own 500: `Cannot find module '/var/task/server/hub/app'`. The host compiles each file alone and runs the result as plain Node, and plain Node finds an import only when its address is written whole, which nothing under `server/` or `shared/` does. So the hub is built into one file first (`scripts/build-hub.ts`, to `dist-hub/hub.mjs`; `npm run build:site` does it too, and `vercel-build` names it for the host's own step before a function), and `api/hub.js` hands that to the host. `tests/deploy.function.test.ts` runs it the way the host does. Whether the host now builds and runs it has not been seen: the next deployment shows it.
 
@@ -134,8 +135,22 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 | `POST /sessions/clerk` | someone Clerk signed in | `{ token }`: this hub's own session, in its cookie. On a hub whose accounts are Clerk's, `/accounts` and `/sessions` answer 403 |
 | `GET /account` | signed in | what this hub holds of the account, in counts |
 | `POST /account/delete` | signed in | `{ confirm: handle }`: everything this hub holds of the account, deleted, and the sign-in at Clerk with it |
-| `GET /maintenance` | the host's scheduled call | the write-down to the record, and erasures waiting on it; carries `CRON_SECRET` |
+| `GET /maintenance` | the host's scheduled call | the write-down to the record, and erasures waiting on it; carries `CRON_SECRET`. Notes when it came, for the developers' view |
 | `POST /clerk` | Clerk | its signed word that an account was deleted there |
+| `GET /dev/state`, `/dev/tables`, `/dev/rows`, `/dev/row`, `/dev/find` | an account on `WS_DEV_ACCOUNTS` | the developers' view of the data, read only (below). To anyone else, an address that does not exist |
+
+`GET /session` also answers the account's own key (`account.key`), which is what `WS_DEV_ACCOUNTS` names.
+
+## The developers' view
+
+Pedro, 2026-11-13: "I think we should protected route and actually be able to see the DB and check the state of things... like a view from the data side as devs". A page at `/dev/` (`landing/dev/`, in the site's own look) over read-only routes in the hub's handler (`server/hub/dev.ts`).
+
+- **Who may.** A signed-in account whose key is on the list the host holds, `WS_DEV_ACCOUNTS`. Anyone else, signed in or not, gets exactly what an address that does not exist gets. With the list empty, nobody may. The page itself is a static file, so it can say "not on the list" and show the signed-in person their own account key: that is how the owner learns what to put there.
+- **The state of things** (`/dev/state`): every setting by name, set or not and which name it was read from; whether the database answers and how many of this build's migrations it has; the record's state, what is not on it yet and its last write-down read back whole; when the scheduled call last came; erasures still waiting; how many accounts, sessions, characters, ledger rows, worlds, cities, people, themes, kinds, loot tables, pool members, jobs, lines and live events the hub holds, with the latest of each.
+- **The data itself**: every table, and every collection of the documents and the ledger, with counts (`/dev/tables`); a table's or a collection's rows newest first, fifty to a page (`/dev/rows?table=&namespace=&type=&owner=&page=&size=`); one row opened whole, its text read as JSON (`/dev/row?table=&id=`); and what the hub holds of an account, a character or a world, by its id (`/dev/find?id=`).
+- **Never shown**, by any route: a password's hash or salt, a session's token, a one-time text, the hub's key, any setting's value. The store keeps no token and no one-time text as written, only their hashes, inside the ids `hub_session_…` and `hub_nonce_…`; those are shown by a short mark and never opened. The rest is hidden on the server: by a rule on names (a password, a secret, a token, a salt, a key that is private or an API's, and the like), by a list kept per kind of document (an account's hash and salt), and, over everything a route answers, every text a secret setting holds and anything shaped as a private key or a provider's secret. What was hidden says `‹hidden›` where it stood.
+- **Each read** answers `Cache-Control: no-store` and is written to the function's log with who asked and for what (`[DEV] alder (clerk_…) read /dev/rows table=documents …`), never the rows.
+- **Limits, on purpose.** It writes nothing. No box to type SQL into: the provider's own console already shows the raw database, and this view is for what the hub means by its rows. No bulk export. Players' rows are players' data: **the list of developer accounts is the operator's to keep short.**
 
 ## Time (D135)
 
@@ -172,6 +187,7 @@ Every name the hub reads is in `server/hub/settings.ts`, with the names a host w
 | `CLERK_WEBHOOK_SECRET` | hub | | the signing secret of the webhook to `/api/hub/clerk` |
 | `CLERK_SECRET_KEY` | hub | (Clerk's integration writes this name) | to delete the account at Clerk when its player asks the hub to |
 | `CLERK_AUTHORIZED_PARTIES` | hub | | the origins a Clerk token may come from; the hub's own address when left out |
+| `WS_DEV_ACCOUNTS` | hub | | the account keys that may open the developers' view, separated by commas; empty, nobody |
 | `VITE_WS_STORE=browser` | game build | | set by `npm run build:site`: the save lives in the browser |
 
 ## A local test of the whole thing

@@ -33,6 +33,8 @@ import { DatabaseUnavailable, type IDatabase, type IOpenOptions } from '../share
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = resolve(here, '..', 'drizzle', 'pg');
+/** Where the served database's migrations are, for a reader that says how far a database has come (server/hub/dev.ts). */
+export const MIGRATIONS_FOLDER = MIGRATIONS;
 
 /** The local door for a folder on this machine. */
 export const folderUrl = (folder: string) => `pglite://${resolve(folder).replace(/\\/g, '/')}`;
