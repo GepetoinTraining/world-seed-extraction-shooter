@@ -35,12 +35,41 @@ import { statAmount, statWord } from '../../logic/systems/StatWords';
 import { said as sayNumber } from '../../logic/systems/SheetWords';
 import { GameClock } from '../../logic/time/GameClock';
 
+/**
+ * UXC, part 1 (Pedro: "yup"): a card reads in two layers. The first is short, what the thing is and what is read at a
+ * glance; the second is added beneath it while ALT is held, and never reorders, replaces or hides a row of the first.
+ * `rows` holds both, the first then the second, in the one order the card is drawn and copied in; `glance` says where
+ * the first ends. Absent, every row stands on the first layer.
+ */
 export interface Card {
   title: string;
   rows: [string, string][];
+  /** How many of `rows` stand on the first layer. The rest are the second, beneath. Absent: all of them. */
+  glance?: number;
   needs: string[];
   canAct: boolean;
   compact: string;
+}
+
+type Line = [string, string];
+
+/** The rows a card shows before the key is held. */
+export const firstLayer = (card: Card): Line[] => card.rows.slice(0, card.glance ?? card.rows.length);
+/** The rows added beneath while the key is held. */
+export const secondLayer = (card: Card): Line[] => card.rows.slice(card.glance ?? card.rows.length);
+
+/** One card from its two layers: the first, then the second, and where one ends. */
+const layered = (first: Line[], second: Line[]): Pick<Card, 'rows' | 'glance'> => ({ rows: [...first, ...second], glance: first.length });
+
+/**
+ * UXC, part 1: the card as plain text, for CTRL+C. Its title, the first layer, a rule, the second, then what it needs:
+ * the order the card is drawn in, so the same card always copies the same.
+ */
+export function cardText(card: Card): string {
+  const said = ([k, v]: Line) => `${k}: ${v}`;
+  const deep = secondLayer(card);
+  const ready = card.canAct && card.needs.length === 0 ? ['Ready'] : [];
+  return [card.title, ...firstLayer(card).map(said), ...(deep.length > 0 ? ['--', ...deep.map(said)] : []), ...card.needs, ...ready].join('\n');
 }
 
 export interface InspectContext {
@@ -101,7 +130,9 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
     if (ctx.dist >= HARVEST_RANGE) needs.push('Move closer');
   }
 
-  const rows: [string, string][] = [];
+  // UXC: up top, what it is and what a try asks; beneath, how fine this one is and what its matter is
+  const rows: Line[] = [];
+  const deep: Line[] = [];
   // ML: a variant's marks are plain to see, known or not, and said in words as well as drawn
   const spread = SpreadBook.of(e.definitionId);
   if (spread.base && spread.marks.length > 0) rows.push(['Looks', `Like any ${formOf(def) ?? 'other of its kind'}, but with ${Spread.said(spread.marks)}`]);
@@ -113,7 +144,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
     // RG: a place that came back may hold more than its kind's own
     if (def.uses) rows.push(['Left', uses > def.uses ? `${uses}, more than most` : `${Math.max(0, uses)} of ${def.uses}`]);
     // RG: a place that came back was rolled anew, and says what it came back as
-    if (e.quality !== undefined && Math.abs(e.quality) <= 1) rows.push(['Quality', `${QUALITY_NAMES[qualityBand(e.quality)]} ${e.quality >= 0 ? '+' : ''}${Math.round(e.quality * 100)}%`]);
+    if (e.quality !== undefined && Math.abs(e.quality) <= 1) deep.push(['Quality', `${QUALITY_NAMES[qualityBand(e.quality)]} ${e.quality >= 0 ? '+' : ''}${Math.round(e.quality * 100)}%`]);
     if (config) {
       // D27: working without the skill costs more, and the card says so
       const { cost, winging } = WebSystem.energyFor(ctx.player, WebSystem.pairOfHarvest(ctx.player, def), config.energyCost);
@@ -125,13 +156,13 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
     }
   }
   if (level >= 2) {
-    Object.entries(def.materialProps || {}).forEach(([k, v]) => rows.push([PROPERTY_NAMES[k] || k, String(v)]));
+    Object.entries(def.materialProps || {}).forEach(([k, v]) => deep.push([PROPERTY_NAMES[k] || k, String(v)]));
   }
 
   const title = ContactNames.of(e, ctx.level, ctx.player);
   const lacksTool = needs.some(n => n.startsWith('Needs'));
   const tail = canAct ? 'ready' : uses <= 0 ? (e.returning ? 'comes back' : 'spent') : lacksTool ? (needs[0].includes('ower') ? 'weak tool' : 'needs tool') : 'too far';
-  return { title, rows, needs, canAct, compact: compact(title, tail) };
+  return { title, ...layered(rows, deep), needs, canAct, compact: compact(title, tail) };
 }
 
 function inspectMob(e: IWorldEntity): Card {
@@ -139,14 +170,18 @@ function inspectMob(e: IWorldEntity): Card {
   const title = ContactNames.of(e, () => 0); // D60: def.name is never shown
   const max = bodyLawOf(def, e).baseHealth + (e.bonusHealth ?? 0);
   const health = e.health ?? max;
-  const rows: [string, string][] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
-  if (def?.size) rows.push(['Size', String(def.size)]);
+  // UXC: up top, how strong, how hurt, what it will do and whether blows land; beneath, its size and the ground it holds
+  const rows: Line[] = [['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
+  const deep: Line[] = [];
+  if (def?.size) deep.push(['Size', String(def.size)]);
   if (def?.behavior) rows.push(['Behavior', String(def.behavior)]);
   if (e.bargain) rows.push(['Stance', e.bargain.stance.toLowerCase()]);
   // D93: what a person can tell from looking. Its ground, and that blows are landing on nothing
-  if (e.ward) rows.push(['Holds', `${e.holding?.chunks.length ?? 0} chunks`], ['Warded', e.warded ? `by ${e.ward.slots.length} anchors` : 'no longer']);
-  else if (e.heldBy) rows.push(['Answers to', 'whoever holds this ground']);
-  return { title, rows, needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`) };
+  if (e.ward) {
+    rows.push(['Warded', e.warded ? `by ${e.ward.slots.length} anchors` : 'no longer']);
+    deep.push(['Holds', `${e.holding?.chunks.length ?? 0} chunks`]);
+  } else if (e.heldBy) deep.push(['Answers to', 'whoever holds this ground']);
+  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`) };
 }
 
 function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
@@ -159,15 +194,17 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
       if (e.escort?.fallen) {
         return { title, rows: [['Down', 'carried out, they come back on the other side']], needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'carry' : 'too far') };
       }
-      const rows: [string, string][] = npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] : [];
+      // UXC: up top, how they regard you and what they want; beneath, what talking has taught of them
+      const rows: Line[] = npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] : [];
+      const deep: Line[] = [];
       // D27: you learn what someone is good at by talking to them
       if (npc && npc.attempts > 0 && ctx.worldSeed) {
         const sheet = NpcSheet.read(ctx.worldSeed, e, ctx.webVersion);
         const names = Object.keys(sheet.skills ?? {}).map(id => SkillNames.nameOf(id));
-        if (names.length > 0) rows.push(['Hands', names.join(', ')]);
-        if (sheet.alignment) rows.push(['Alignment', sheet.alignment]);
+        if (names.length > 0) deep.push(['Hands', names.join(', ')]);
+        if (sheet.alignment) deep.push(['Alignment', sheet.alignment]);
       }
-      return { title, rows, needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'talk' : 'too far') };
+      return { title, ...layered(rows, deep), needs: canAct ? [] : ['Move closer'], canAct, compact: compact(title, canAct ? 'talk' : 'too far') };
     }
     case EntityType.CONTAINER: {
       const looted = !!e.container?.looted;
@@ -379,7 +416,11 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   const visible = LoadoutSystem.visibleItemStats(item, player);
   // What a hand fires says first what it deals: its blow with its own damage line folded in, one number (`CombatMath.ownBlow`)
   const fired = CombatMath.firedByHand(item);
-  const rows: [string, string][] = [...(fired ? [['Damage', CombatMath.damageSaid(item, String(item.rank), visible.damage ?? 0)] as [string, string]] : []), item.type === ItemType.GEAR && item.pieceLaw !== undefined ? ['Step', stepWords(item)] : ['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
+  // UXC, part 1: up top, what it is and what is read at a glance (what it deals, its step and rank, its roll and wear, what
+  // it weighs and is worth, what it does, every line and affix, what it keeps and asks); beneath, what its matter is,
+  // what it becomes, and where it came from. The calls are the coordinator's and stand as open rows (UXC1).
+  const rows: Line[] = [...(fired ? [['Damage', CombatMath.damageSaid(item, String(item.rank), visible.damage ?? 0)] as Line] : []), item.type === ItemType.GEAR && item.pieceLaw !== undefined ? ['Step', stepWords(item)] : ['Rarity', String(item.rarity)], ['Rank', String(item.rank)]];
+  const deep: Line[] = [];
   const q = (item as any).quality as number | undefined;
   // Wave 10D (one quality law): everything sits on the gear scale now. Gear
   // always says its roll; a commodity at exactly 0 took no roll and says
@@ -400,12 +441,12 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   const knowledge = player?.materialMastery[item.universalDefinitionId];
   if ((knowledge?.knowledgeLevel ?? 0) >= 2) {
     const def = (CRAFTED_DEFINITIONS[item.universalDefinitionId] ?? RESOURCE_DEFINITIONS[item.universalDefinitionId]) as any;
-    Object.entries(def?.materialProps ?? {}).forEach(([k, v]) => rows.push([PROPERTY_NAMES[k] || k, String(v)]));
+    Object.entries(def?.materialProps ?? {}).forEach(([k, v]) => deep.push([PROPERTY_NAMES[k] || k, String(v)]));
   }
   // D27: a graded hand reads what a material can become
   if (player?.materialMastery[item.universalDefinitionId]?.graded) {
     const into = WebSystem.becomes(item.universalDefinitionId);
-    if (into.length > 0) rows.push(['Becomes', into.join(', ')]);
+    if (into.length > 0) deep.push(['Becomes', into.join(', ')]);
   }
   // D19: the sheet is BLIND to unstudied affixes — their numbers never show,
   // while the item acts with them regardless. 10E made study real: a studied
@@ -419,15 +460,19 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
     if (mental.has(k)) rows.push([statWord(k), `${v} — asleep. Gear doesn't think.`]);
     else rows.push([statWord(k), statAmount(k, shown(v))]);
   });
+  let blind = false;
   (item.affixes || []).forEach(a => {
     if (player && LoadoutSystem.isAffixStudied(player, a.id)) {
       const said = Object.entries(a.stats)
         .map(([k, v]) => `${v >= 0 ? '+' : ''}${statAmount(k, shown(v))} ${statWord(k)}`).join(', ');
       rows.push(['Affix', `${a.name} — ${said || 'what it does is not yet known'}`]);
     } else {
-      rows.push(['Affix', `${a.name}: not studied. It works on the piece, and you do not know how.`]);
+      // UXC: the few words up top, and what they mean said once beneath
+      rows.push(['Affix', `${a.name}: not studied`]);
+      blind = true;
     }
   });
+  if (blind) deep.push(['Not studied', 'It works on the piece, and you do not know how.']);
   // Wave 10E (D21): the magic says what it keeps, plainly
   if (item.charmData) {
     rows.push(['Keeps', `${item.charmData.slots} slot${item.charmData.slots === 1 ? '' : 's'}, ${item.charmData.chosen ? 'your choosing' : 'not your choosing'} — ${item.charmData.uses} use${item.charmData.uses === 1 ? '' : 's'} left`]);
@@ -448,9 +493,9 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
   const comp = item.composition;
   if (comp && comp.steps.length > 0) {
     const fmtCount = (n: number) => sayNumber(n);
-    rows.push(['Made of', comp.materials.map(m => `${fmtCount(m.count)} ${m.name}`).join(', ')]);
-    rows.push(['Chain', comp.steps.map(s => `${s.name}${s.facility === null ? ' (no bench)' : ''}`).join(' → ')]);
-    rows.push(['Labor', `${Math.round(comp.laborSeconds)} s of work`]);
+    deep.push(['Made of', comp.materials.map(m => `${fmtCount(m.count)} ${m.name}`).join(', ')]);
+    deep.push(['Chain', comp.steps.map(s => `${s.name}${s.facility === null ? ' (no bench)' : ''}`).join(' → ')]);
+    deep.push(['Labor', `${Math.round(comp.laborSeconds)} s of work`]);
   } else if (comp && comp.materials[0]) {
     const origin = comp.materials[0].origin;
     const said = origin === 'HARVEST' ? 'Taken from the world'
@@ -459,9 +504,9 @@ export function inspectItem(item: IItem, player?: IPlayer): Card {
       : origin === 'CONSTRUCTION' ? 'Minted by a finished shell'
       : origin === 'IMPROVISATION' ? 'Lashed together in the field'
       : 'Made by the world itself';
-    rows.push(['Origin', said]);
+    deep.push(['Origin', said]);
   }
-  return { title, rows, needs: [], canAct: false, compact: compact(title, String(item.rank)) };
+  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, String(item.rank)) };
 }
 
 // ---------------------------------------------------------------------------

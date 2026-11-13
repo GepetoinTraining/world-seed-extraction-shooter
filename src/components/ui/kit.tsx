@@ -12,8 +12,9 @@ import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '
 import { Archetype, portrait } from '../../../shared/render/atoms/people';
 import { itemArtFor } from '../../render/atoms/items';
 import { IItem } from '../../../shared/types';
-import { Card, ItemComparison } from '../../render/atoms/inspect';
+import { Card, ItemComparison, cardText, firstLayer, secondLayer } from '../../render/atoms/inspect';
 import { hoverProps } from './stores';
+import { cardId, holdCardKeys, useCardKeys } from './cardKeys';
 import { TERMINAL_GENRE, cssVariables } from './tokens';
 import './kit.css';
 import { said } from '../../logic/systems/SheetWords';
@@ -271,18 +272,48 @@ export const Row: React.FC<{ title: React.ReactNode; sub?: React.ReactNode; righ
     </div>
   );
 
-/** The one inspect card, rendered. Data comes from render/atoms/inspect. */
-export const CardView: React.FC<{ card: Card; right?: React.ReactNode; children?: React.ReactNode }> = ({ card, right, children }) => (
-  <div className="ws-ui ws-card">
-    <div className="ws-card__title"><span>{card.title}</span>{right}</div>
-    {card.rows.map(([k, v], i) => (
-      <div key={i} className="ws-card__row"><span className="k">{k}</span><span className="v">{v}</span></div>
-    ))}
-    {card.needs.map((n, i) => <div key={i} className="ws-card__need">{n}</div>)}
-    {card.canAct && card.needs.length === 0 && <div className="ws-card__ready">Ready</div>}
-    {children}
-  </div>
+const CardLine: React.FC<{ line: [string, string] }> = ({ line: [k, v] }) => (
+  <div className="ws-card__row"><span className="k">{k}</span><span className="v">{v}</span></div>
 );
+
+/**
+ * The one inspect card, rendered. Data comes from render/atoms/inspect. UXC, part 1 (Pedro: "yup"): the first layer
+ * always; while ALT is held, a rule line and the second layer beneath it, so no row of the first ever moves. The corner
+ * names the key whenever there is something beneath. Every card up answers CTRL+C (`cardKeys`).
+ */
+export const CardView: React.FC<{ card: Card; right?: React.ReactNode; children?: React.ReactNode }> = ({ card, right, children }) => {
+  const deep = useCardKeys(s => s.deep);
+  const id = useMemo(cardId, []);
+  const text = cardText(card);
+  useEffect(() => holdCardKeys(), []);
+  useEffect(() => { useCardKeys.getState().raise({ id, text }); }, [id, text]);
+  useEffect(() => () => useCardKeys.getState().drop(id), [id]);
+  const first = firstLayer(card);
+  const second = secondLayer(card);
+  return (
+    <div className="ws-ui ws-card">
+      <div className="ws-card__title">
+        <span>{card.title}</span>
+        {(second.length > 0 || right) && (
+          <span className="ws-card__corner">
+            {second.length > 0 && <span className="ws-card__key"><Kbd>ALT</Kbd> {deep ? 'held' : 'more'}</span>}
+            {right}
+          </span>
+        )}
+      </div>
+      {first.map((line, i) => <CardLine key={`a${i}`} line={line} />)}
+      {deep && second.length > 0 && (
+        <>
+          <div className="ws-card__more" role="separator"><span>MORE</span><span><Kbd>CTRL+C</Kbd> copies this card</span></div>
+          {second.map((line, i) => <CardLine key={`b${i}`} line={line} />)}
+        </>
+      )}
+      {card.needs.map((n, i) => <div key={i} className="ws-card__need">{n}</div>)}
+      {card.canAct && card.needs.length === 0 && <div className="ws-card__ready">Ready</div>}
+      {children}
+    </div>
+  );
+};
 
 /** The comparison reads by column and by mark. Up and down are shapes; no hue says better. */
 export const CompareView: React.FC<{ compare: ItemComparison }> = ({ compare }) => (

@@ -11,6 +11,7 @@ import { AnchorRect, comparisonFor, inspectItem, placeCard } from '../../render/
 import { CardView, CompareView, RankMark } from './kit';
 import { useHands } from './hands';
 import { useHover } from './stores';
+import { useCardKeys } from './cardKeys';
 
 const SETTLE_CHECK_MS = 200;
 
@@ -18,11 +19,13 @@ const SETTLE_CHECK_MS = 200;
 export const PlacedCard: React.FC<{ anchor: AnchorRect; layoutKey: string; children: React.ReactNode }> = ({ anchor, layoutKey, children }) => {
   const box = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  // UXC: the card grows beneath while ALT is held, so it is placed again, wherever it came up from
+  const deep = useCardKeys(s => s.deep);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     setAt(placeCard(anchor, { w: el.offsetWidth, h: el.offsetHeight }, { w: window.innerWidth, h: window.innerHeight }));
-  }, [layoutKey, anchor.left, anchor.top, anchor.width, anchor.height]);
+  }, [layoutKey, deep, anchor.left, anchor.top, anchor.width, anchor.height]);
   return (
     <div
       ref={box}
