@@ -107,6 +107,26 @@ describe('the page\'s headers on the host', () => {
     expect(meta).not.toContain('unsafe-inline');
   });
 
+  it('with Clerk, the policy lets in everything Clerk\'s own page says its form needs', () => {
+    // Clerk's "Content-Security-Policy (CSP) headers" page (last updated 2026-11-10, read 2026-11-13). Beside its own
+    // address and the bot check's, its abuse check (`*.protect.clerk.com`) loads a script, opens a frame, and is talked
+    // to on ports other than 443, which a source with no port does not match. Seen on the host first (HH3): the form
+    // drew, and the browser refused `https://cdn.protect.clerk.com/…/bootstrap.js`
+    const policy = pagePolicy('clerk.hub.test');
+    const parts = Object.fromEntries(policy.split('; ').map(part => [part.split(' ')[0], part.split(' ').slice(1)]));
+    expect(parts['script-src']).toEqual(['\'self\'', 'https://clerk.hub.test', 'https://challenges.cloudflare.com', 'https://*.protect.clerk.com']);
+    expect(parts['connect-src']).toEqual(['\'self\'', 'https://clerk.hub.test', 'https://*.protect.clerk.com:*']);
+    expect(parts['frame-src']).toEqual(['https://challenges.cloudflare.com', 'https://*.protect.clerk.com']);
+    expect(parts['img-src']).toEqual(['\'self\'', 'data:', 'https://img.clerk.com']);
+    expect(parts['worker-src']).toEqual(['\'self\'', 'blob:']);
+    expect(parts['style-src']).toEqual(['\'self\'', '\'unsafe-inline\'']);
+    // What that page marks as for development only stays out, and so does an inline script
+    expect(policy).not.toContain('unsafe-eval');
+    expect(parts['script-src']).not.toContain('\'unsafe-inline\'');
+    // With no Clerk, none of it
+    expect(pagePolicy(null)).not.toContain('clerk');
+  });
+
   it('the source pages carry no policy of their own, and the build writes it from the key it is given', () => {
     for (const file of readdirSync(resolve(root, 'landing'), { recursive: true }).map(String).filter(p => p.endsWith('.html'))) {
       expect(metaOf(readFileSync(resolve(root, 'landing', file), 'utf8')), file).toBeNull();

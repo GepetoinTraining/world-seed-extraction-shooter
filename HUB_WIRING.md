@@ -193,16 +193,21 @@ Pedro named these on 2026-11-12 and none has a route:
 
 When they come they hang off the same account and the same character registration as above, so nothing in sections 2 to 4 will need redoing.
 
-## 10. What is built and has not been proved on the real services
+## 10. What has been seen on the real services, and what has not
 
-Everything here passes on a database in memory and real local servers. None of it has run on Vercel, against a Clerk instance, against a served Postgres or against Turso itself, because that needs accounts only Pedro can open:
+Seen on the host on 2026-11-13, with main at `2f1b6d6` deployed (the ledger's HH rows):
 
-- that Vercel hands `api/hub.js`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`;
-- that Vercel builds and runs the function. The first deployment (2026-11-13) showed it does NOT run these TypeScript files as they are: plain Node could not find `server/hub/app`. The hub is now built into one file first (`scripts/build-hub.ts`, `DEPLOY.md`); that the host runs that file has not been seen yet;
-- Clerk's own form on the site's first page (`landing/landing.js`), which was written from Clerk's documentation and never loaded;
-- the page's headers on the host: `vercel.json`'s fixed ones, and the content policy `npm run build:site` writes into each landing page (`DEPLOY.md`, "The page's headers");
-- the settings read from the names the host's integrations write (`server/hub/settings.ts`), which were read on the providers' pages and never on the host itself;
-- the store on Turso alone (`server/tursoStore.ts`) and its word between instances read on a beat (`server/live/tursoLive.ts`): proved over Turso's stand-in, with two instances sharing one world, and run against a Turso test database of Pedro's (the ledger's HT rows say what that showed), never on the host's own database;
+- Vercel builds and runs the function: the hub is built into one file first (`scripts/build-hub.ts`, `DEPLOY.md`), and `GET /api/hub/health` answers 200;
+- the store on Turso alone opens from the function (`server/tursoStore.ts`), read from the two names Turso's integration writes (`server/hub/settings.ts`);
+- Vercel hands `api/hub.js`'s server both plain requests and the socket's upgrade through the rewrite in `vercel.json`: an upgrade with no sign-in gets the room's own refusal;
+- the page's headers: `vercel.json`'s fixed ones on every address, and the content policy `npm run build:site` writes into each landing page (`DEPLOY.md`, "The page's headers");
+- Clerk's own form drawn on the site's first page (`landing/landing.js`), on a development instance.
+
+Not seen anywhere but on a database in memory, real local servers, Turso's stand-in and a Turso test database of Pedro's:
+
+- an account made and signed in on the host, a character born on the hub's word there, a receipt checked there;
+- a socket held open by a signed-in player, two instances hearing each other on the beat (`server/live/tursoLive.ts`), and the host closing a socket on its timer;
+- a commit's time from the function to its own Turso (the ledger's HT17 is from this machine to a test database);
+- the developers' view opened by an account on `WS_DEV_ACCOUNTS`, the scheduled call with its `CRON_SECRET`, and an account's data deleted on Clerk's word: each waits on a setting only the owner enters;
+- Clerk's abuse check under the page's policy: the first policy refused its script, the policy now names it (HH3), and that has not been deployed;
 - for whoever names a Postgres instead: the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
-
-The first preview deployment settles the first two in a minute: `GET /api/hub/health` must answer.

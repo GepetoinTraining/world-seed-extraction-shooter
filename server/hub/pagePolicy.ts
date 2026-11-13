@@ -29,16 +29,26 @@ export const FIXED_PAGE_HEADERS: Readonly<Record<string, string>> = {
 /** Who may frame a page: nobody. Only a header can say it. */
 export const FRAMING_RULE = 'frame-ancestors \'none\'';
 
+/** The bot check Clerk's form shows. */
+const BOT_CHECK = 'https://challenges.cloudflare.com';
+/**
+ * Clerk's abuse check, which its form loads as a script, opens in a frame and talks to. Clerk's own
+ * page on content policies names it for all three (last updated 2026-11-10, read 2026-11-13), and says
+ * it is talked to on ports other than 443, which a source with no port does not match. HH3: the first
+ * policy left it out, and on the host the browser refused its script.
+ */
+const ABUSE_CHECK = 'https://*.protect.clerk.com';
+
 /** The landing pages' content policy, every part a meta tag can carry. */
 export function pagePolicy(clerkHost?: string | null): string {
   const clerk = clerkHost ? ` https://${clerkHost}` : '';
   return [
     'default-src \'self\'',
-    `script-src 'self'${clerk}${clerk ? ' https://challenges.cloudflare.com' : ''}`,
+    `script-src 'self'${clerk}${clerk ? ` ${BOT_CHECK} ${ABUSE_CHECK}` : ''}`,
     `style-src 'self'${clerk ? ' \'unsafe-inline\'' : ''}`,
     `img-src 'self' data:${clerk ? ' https://img.clerk.com' : ''}`,
-    `connect-src 'self'${clerk}`,
-    ...(clerk ? ['frame-src https://challenges.cloudflare.com', 'worker-src \'self\' blob:'] : []),
+    `connect-src 'self'${clerk}${clerk ? ` ${ABUSE_CHECK}:*` : ''}`,
+    ...(clerk ? [`frame-src ${BOT_CHECK} ${ABUSE_CHECK}`, 'worker-src \'self\' blob:'] : []),
     'base-uri \'none\'', 'form-action \'self\''
   ].join('; ');
 }
