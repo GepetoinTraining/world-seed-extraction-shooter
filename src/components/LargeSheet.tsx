@@ -8,13 +8,16 @@
  * this over everything, and the hub's AGENT tab shows this same sheet.
  *
  * Every derived number is read through `SheetNumbers`, `SkillSay` or the rules' own functions; nothing here sums a stat.
- * Every line says what a number means for the player, never how it is made (GV, `tests/game.voice.test.ts`). What the
+ * UXS (2026-11-12), on Pedro's "yup, and hover click opens description, description opens only if the skill to describe it
+ * is found": numbers first. A line is its word and its number; what it means is its description, opened behind it by hover
+ * or a click, and only for a character holding the skill that describes it (`SheetLine`, `DescriptionLaw`). A description
+ * says what a number means for the player, never how it is made (GV, `tests/game.voice.test.ts`). What the
  * person may not know stays out: an unread piece's part, a lore category's own key, a name not asked (D19, D32, S2a).
  * Nothing is told by colour alone; every section is a stop for TAB, and every control is a button.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import { HEAD_BUDGET_POSITIONS } from '../../shared/types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { HEAD_BUDGET_POSITIONS, IAttributes } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { ProgressionSystem, LEVELS_PER_CIRCLE, POINTS_PER_LEVEL } from '../../shared/entities/player/systems/ProgressionSystem';
@@ -42,23 +45,14 @@ import { said } from '../logic/systems/SheetWords';
 import { OriginBank } from '../logic/content/OriginBank';
 import { SkillNames } from '../logic/systems/SkillNames';
 import { WORK_DAY, WorkSay } from '../logic/systems/WorkSay';
+import { SkillSay } from '../logic/systems/SkillSay';
+import { Described, Moved, PointPlus, PointPreview, PreviewList, SheetLine } from './SheetLine';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
   <section tabIndex={0} aria-label={word} data-sheet-section={word} style={{ gridColumn: span ? `span ${span}` : undefined, minWidth: 0 }}>
     <Panel title={word} right={right}>{children}</Panel>
   </section>
-);
-
-/** A number and what it means for the player, under it. */
-const Line: React.FC<{ word: string; value: React.ReactNode; says?: string }> = ({ word, value, says }) => (
-  <div style={{ padding: '3px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
-    <div className="ws-row" style={{ padding: 0, gap: 8 }}>
-      <span className="ws-dim ws-small" style={{ letterSpacing: '0.06em', flexShrink: 0 }}>{word}</span>
-      <span className="ws-bright" style={{ textAlign: 'right', minWidth: 0 }}>{value}</span>
-    </div>
-    {says && <div className="ws-dim ws-small">{says}</div>}
-  </div>
 );
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
@@ -93,10 +87,9 @@ const KitPanel: React.FC<{ zoneId: string }> = ({ zoneId }) => {
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 8 }}>
+        <Described word="LOAD" says={carry.says} root={carry.root} style={{ marginTop: 8 }}>
           <Bar label="LOAD" value={kitWeight} max={limit} tone={load ? 'loss' : 'signal'} text={`${Math.round((kitWeight / Math.max(1, limit)) * 100)}%${load ? ` · ${load}` : ''}`} />
-        </div>
-        <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{carry.says}</div>
+        </Described>
       </Panel>
     </div>
   );
@@ -132,8 +125,13 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
   const origin = creation ? OriginBank.origin(creation.origin) : undefined;
   const kit = creation?.kit ? OriginBank.kit(creation.kit) : undefined;
   const leans = creation ? [creation.main, creation.sub].filter(Boolean).map(a => capital(a)) : [];
+  // UXS: a + waiting for its second press, and every number the point would move, read on a copy with it spent
+  const [armed, setArmed] = useState<keyof IAttributes | null>(null);
+  const moved = useMemo(() => (armed ? SheetNumbers.ifSpent(player, armed, activeHand) : []), [player, armed, activeHand]);
+  const preview = useMemo(() => (armed ? new Map(moved.map(m => [m.key, m])) : null), [armed, moved]);
 
   return (
+    <PointPreview.Provider value={preview}>
     <div data-large-sheet style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10, alignItems: 'start' }}>
       {/* What waits to be spent comes first: it is what a level sends a player here for */}
       <Section word={player.username.toUpperCase()} right={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={rank} scale={2} />RANK {rank}</span>}>
@@ -143,29 +141,30 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
           <div className="ws-small" style={{ minWidth: 0 }}>{creation?.className ?? capital((player.archetype || 'OPERATOR').replace(/_/g, ' '))}</div>
         </div>
         <Bar label={`LV ${progress.level}`} value={progress.into} max={progress.needed} tone="signal" text={`${(progress.needed - progress.into).toLocaleString()} XP to level ${progress.level + 1}`} />
-        <Line word="POINTS TO SPEND" value={points > 0 ? pointsLine(player) : 'none'} says={points > 0 ? 'Spend them under ATTRIBUTES.' : undefined} />
-        <Line word="CIRCLES TO PLACE" value={String(circles)} says={circles > 0 ? 'Place them under SKILLS.' : undefined} />
-        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          Each level gives {POINTS_PER_LEVEL} points: one free, and one for each group of attributes. Every {LEVELS_PER_CIRCLE} levels give a circle for a skill. A new rank from the guild starts your levels again; what you built stays.
-        </div>
+        <SheetLine word="POINTS TO SPEND" value={points > 0 ? pointsLine(player) : 'none'} says={[
+          points > 0 && 'Spend them under ATTRIBUTES.',
+          `Each level gives ${POINTS_PER_LEVEL} points: one free, and one for each group of attributes. Every ${LEVELS_PER_CIRCLE} levels give a circle for a skill. A new rank from the guild starts your levels again; what you built stays.`
+        ]} />
+        <SheetLine word="CIRCLES TO PLACE" value={String(circles)} says={[circles > 0 && 'Place them under SKILLS.', SkillSay.circlesLine(player)]} />
       </Section>
 
       <Section word="HEALTH AND ENERGY">
         <Bar label="HEALTH" value={vitals.health.now} max={vitals.health.max} tone="proof" text={`${Math.round(vitals.health.now)} of ${said(vitals.health.max)}`} />
         <div style={{ height: 4 }} />
-        <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${said(vitals.energy.max)}`} />
-        <div className="ws-dim ws-small" style={{ marginTop: 4 }}>{WORK_DAY}</div>
+        <Described word="ENERGY" says={WORK_DAY}>
+          <Bar label="ENERGY" value={vitals.energy.now} max={vitals.energy.max} tone="signal" text={`${Math.round(vitals.energy.now)} of ${said(vitals.energy.max)}`} />
+        </Described>
         {/* EN: what each act of work costs, and what brings it down, as a fixed fact */}
-        {WorkSay.lines(player).map(w => <Line key={w.word} word={w.word} value={w.value} says={w.says} />)}
-        {vitals.aether.length === 0 && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>No aether held. Gathering gives it, an element at a time.</div>}
+        {WorkSay.lines(player).map(w => <SheetLine key={w.word} word={w.word} value={w.value} says={w.says} root={w.root} />)}
+        {vitals.aether.length === 0 && <SheetLine word="AETHER" value="none held" says="Gathering gives it, an element at a time." />}
         {vitals.aether.map(a => (
-          <Line key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
+          <SheetLine key={a.element} k={`aether:${a.element}`} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
         ))}
-        <Line word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} until you rest`} says="Endurance lets you take more." />
+        <SheetLine k="tonics" word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} until you rest`} says="Endurance lets you take more." />
       </Section>
 
       <Section word="IN A FIGHT">
-        {fight.filter(r => r.key !== 'walk' && r.key !== 'sight' && r.key !== 'carry').map(r => <Line key={r.key} word={r.word} value={r.value} says={r.says} />)}
+        {fight.filter(r => r.key !== 'walk' && r.key !== 'sight' && r.key !== 'carry').map(r => <SheetLine key={r.key} k={r.key} word={r.word} value={r.value} says={r.says} root={r.root} />)}
       </Section>
 
       <Section word="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">{points} TO SPEND</span> : undefined}>
@@ -181,20 +180,24 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
               const fromGear = val - base;
               const point = ProgressionSystem.pointFor(player, attr);
               const does = StatSystem.attributeWork(attr, player.attributes);
+              // UXS: what an attribute does is its description; the web roots no attribute (Pedro, 2026-11-07), so it is a gap
               return (
-                <div key={attr} tabIndex={point ? -1 : 0} aria-label={`${attr} ${val}: ${does}`} style={{ padding: '2px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
+                <React.Fragment key={attr}>
+                <Described word={attr} says={does} style={{ padding: '2px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
                   <div className="ws-row" style={{ padding: 0 }}>
                     <span style={{ textTransform: 'capitalize' }}>{attr}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {fromGear !== 0 && <span className="ws-dim ws-small">{base} {fromGear > 0 ? '+' : '−'} {Math.abs(fromGear)} worn</span>}
-                      <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
+                      <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}<Moved k={`attr:${attr}`} /></span>
                       {point && (
-                        <Button tone="signal" style={{ padding: '0 4px' }} aria-label={`Raise ${attr} with ${pointWord(point)}`} title={`Raise ${attr} with ${pointWord(point)}`} onClick={() => spend(attr)}>+</Button>
+                        <PointPlus attr={attr} aria-label={`Raise ${attr} with ${pointWord(point)}`} armed={armed === attr}
+                          onArm={() => setArmed(attr)} onDisarm={() => setArmed(a => (a === attr ? null : a))} onSpend={() => { spend(attr); setArmed(null); }} />
                       )}
                     </span>
                   </div>
-                  <div className="ws-dim ws-small">{does}</div>
-                </div>
+                </Described>
+                {armed === attr && <PreviewList attr={attr} moved={moved} />}
+                </React.Fragment>
               );
             })}
           </div>
@@ -204,34 +207,34 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
       <section tabIndex={0} aria-label="SKILLS" style={{ minWidth: 0 }}><HandsPanel full /></section>
 
       <Section word="LORE" right={<Button tone="quiet" onClick={() => useWebView.getState().toggle()}>THE WEB</Button>}>
-        <div className="ws-dim ws-small" style={{ marginBottom: 4 }}>Lore pays for a skill to settle, a gift, and a gift raised. A study at a rest gives it.</div>
-        <Line word="GENERAL" value={String(Math.round(lore.general))} says="Spent on anything." />
-        {lore.byCategory.length === 0 && <div className="ws-dim ws-small">No lore of any one kind yet. Studying a thing gives lore of its kind, spent on skills of that kind.</div>}
-        {lore.byCategory.map(k => <Line key={k.name} word={k.name.toUpperCase()} value={String(k.reads)} />)}
+        <SheetLine word="GENERAL" value={String(Math.round(lore.general))} says={['Lore pays for a skill to settle, a gift, and a gift raised. A study at a rest gives it.', 'Spent on anything.']} />
+        {lore.byCategory.length === 0 && <SheetLine word="OF ONE KIND" value="none yet" says="Studying a thing gives lore of its kind, spent on skills of that kind." />}
+        {lore.byCategory.map(k => <SheetLine key={k.name} word={k.name.toUpperCase()} value={String(k.reads)} />)}
         {/* The design pass, part 2: what is marked on the tech web, and what the way there asks */}
         {(() => {
           const goal = goalWords(player, web, hubTech);
           return goal
-            ? <Line word="WORKING TOWARD" value={goal.name} says={goal.says} />
-            : <div className="ws-dim ws-small">Nothing marked to work toward. THE WEB marks a goal.</div>;
+            ? <><SheetLine word="WORKING TOWARD" value={goal.name} /><SheetLine word="THE WAY THERE" value={goal.says} /></>
+            : <SheetLine word="WORKING TOWARD" value="nothing marked" says="THE WEB marks a goal." />;
         })()}
       </Section>
 
       <Section word="WALK, SIGHT, CARRY">
-        {fight.filter(r => r.key === 'walk' || r.key === 'sight' || r.key === 'carry').map(r => <Line key={r.key} word={r.word} value={r.value} says={r.says} />)}
+        {fight.filter(r => r.key === 'walk' || r.key === 'sight' || r.key === 'carry').map(r => <SheetLine key={r.key} k={r.key} word={r.word} value={r.value} says={r.says} root={r.root} />)}
       </Section>
 
       <Section word="WHAT YOU WEAR" span={2}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <PaperDoll />
           <div style={{ minWidth: 200, flex: 1 }}>
-            <div className="ws-dim ws-small" style={{ letterSpacing: '0.08em' }}>THE HEAD</div>
+            <Described word="THE HEAD" says="Head, eyes, earring and necklace each take gear or a frame, three frames at most. Gear never adds to the mental stats (SOFTWARE); a frame does, beside what you were dealt.">
+              <div className="ws-dim ws-small" style={{ letterSpacing: '0.08em' }}>THE HEAD</div>
+            </Described>
             {HEAD_BUDGET_POSITIONS.map(position => {
               const frame = LoadoutSystem.frameAt(equipment, position);
               const gear = LoadoutSystem.itemIn(equipment, position);
-              return <Line key={position} word={position.replace(/_/g, ' ')} value={frame ? `${frame.name}, a frame` : gear ? LoadoutSystem.shownName(gear) : 'open'} />;
+              return <SheetLine key={position} word={position.replace(/_/g, ' ')} value={frame ? `${frame.name}, a frame` : gear ? LoadoutSystem.shownName(gear) : 'open'} />;
             })}
-            <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Head, eyes, earring and necklace each take gear or a frame, three frames at most. Gear never adds to the mental stats (SOFTWARE); a frame does, beside what you were dealt.</div>
           </div>
         </div>
       </Section>
@@ -255,16 +258,16 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
 
       <Section word="ON YOU NOW">
         {statuses.length === 0 ? <div className="ws-dim ws-small">Nothing is working on you now.</div> : statuses.map(s => <div key={s} className="ws-small">· {s}</div>)}
-        {hidden > 0 && <div className="ws-small" style={{ marginTop: 6 }}>{hidden} piece{hidden === 1 ? '' : 's'} you wear {hidden === 1 ? 'is' : 'are'} unread: {hidden === 1 ? 'it works' : 'they work'} on you, and you do not know how.</div>}
+        {hidden > 0 && <SheetLine word="WORN, UNREAD" value={String(hidden)} says={`${hidden === 1 ? 'It works' : 'They work'} on you, and you do not know how.`} />}
       </Section>
 
       <Section word="WHO WALKS WITH YOU">
-        {companions.length === 0 ? <div className="ws-dim ws-small">No one walks with you.</div> : companions.map((c, i) => <Line key={i} word={c.name.toUpperCase()} value={c.how} />)}
+        {companions.length === 0 ? <div className="ws-dim ws-small">No one walks with you.</div> : companions.map((c, i) => <SheetLine key={i} word={c.name.toUpperCase()} value={c.how} />)}
       </Section>
 
       <Section word="GOLD, AND THE NEXT REST">
-        <Line word="GOLD" value={`${player.bank.gold.toLocaleString()} G`} />
-        {waits.length === 0 ? <div className="ws-dim ws-small">Nothing waits for your next rest.</div> : waits.map(w => <Line key={w.key} word={w.word.toUpperCase()} value={String(w.count)} />)}
+        <SheetLine word="GOLD" value={`${player.bank.gold.toLocaleString()} G`} />
+        {waits.length === 0 ? <div className="ws-dim ws-small">Nothing waits for your next rest.</div> : waits.map(w => <SheetLine key={w.key} word={w.word.toUpperCase()} value={String(w.count)} />)}
       </Section>
 
       {/* The design pass, part 5: what is stacked for while away, and what the last return said */}
@@ -282,7 +285,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
 
       <Section word="MATERIALS YOU KNOW">
         {mastery.length === 0 ? <div className="ws-dim ws-small">None yet. Work one with a tool, then rest.</div>
-          : mastery.map(m => <Line key={m.id} word={m.name.toUpperCase()} value={m.knows} />)}
+          : mastery.map(m => <SheetLine key={m.id} word={m.name.toUpperCase()} value={m.knows} />)}
       </Section>
 
       {others.length > 0 && (
@@ -300,14 +303,15 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
       )}
 
       <Section word="WHERE YOU CAME FROM">
-        <Line word="CLASS" value={creation?.className ?? capital((player.archetype || 'OPERATOR').replace(/_/g, ' '))} />
-        {origin && <Line word="BEFORE" value={capital(origin.says)} />}
-        {leans.length > 0 && <Line word="LEANING" value={leans.join(', then ')} />}
-        {kit && <Line word="STARTED WITH" value={capital(kit.says)} />}
-        <Line word="GUILD" value={player.guildId ? 'a member' : 'none yet'} />
-        <Line word="CITY" value={player.ownedCityId ? 'one of your own' : 'none of your own'} />
+        <SheetLine word="CLASS" value={creation?.className ?? capital((player.archetype || 'OPERATOR').replace(/_/g, ' '))} />
+        {origin && <SheetLine word="BEFORE" value={capital(origin.says)} />}
+        {leans.length > 0 && <SheetLine word="LEANING" value={leans.join(', then ')} />}
+        {kit && <SheetLine word="STARTED WITH" value={capital(kit.says)} />}
+        <SheetLine word="GUILD" value={player.guildId ? 'a member' : 'none yet'} />
+        <SheetLine word="CITY" value={player.ownedCityId ? 'one of your own' : 'none of your own'} />
       </Section>
     </div>
+    </PointPreview.Provider>
   );
 };
 

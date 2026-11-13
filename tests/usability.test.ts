@@ -1136,6 +1136,10 @@ describe('line 76: one key, one sheet, field and city alike', () => {
     await press('Tab');
     // 2026-11-11, BALANCE_RUN.md 2.13 (Pedro: "4 points per level, one free point and one for each of the buckets"): the + now says which point it spends
     const raise = host.querySelector('[aria-label^="Raise strength"]') as HTMLButtonElement;
+    // Changed 2026-11-12, the sheet pass (UXS). Pedro's "yup" to "+ first shows what the point would change, a second press
+    // spends": the first press shows, and spends nothing; the second spends
+    await act(async () => { raise.focus(); raise.click(); });
+    expect(player().baseAttributes.strength).toBe(before);
     await act(async () => { raise.click(); });
     expect(player().baseAttributes.strength).toBe(before + 1);
     expect(player().attributePoints).toBe(1);

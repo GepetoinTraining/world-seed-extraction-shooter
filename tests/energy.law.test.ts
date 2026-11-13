@@ -441,11 +441,26 @@ describe('EN: the sheet says what brings each cost down, as a fixed fact', () =>
     (HTMLCanvasElement.prototype as any).getContext = () => ctx;
   });
 
-  it('the large sheet says a blow takes none of it, and names the skill behind each act of work', async () => {
+  // Changed 2026-11-12, the sheet pass (UXS). Pedro: "yup, and hover click opens description, description opens only if the
+  // skill to describe it is found". These sentences are each line's description now, behind it, opening only for the skill
+  // that describes it: an act's line for the skill the act trains, the day's line and a try's for a schooled eye (a gap,
+  // `DescriptionLaw`). The bar holds them as a character holding those skills reads them, every line opened.
+  it('the large sheet says a blow takes none of it, and names the skill behind each act of work, each line opened by what describes it', async () => {
+    usePlayerStore.setState(s => {
+      const universalSkills = { ...s.player.bank.universalSkills };
+      for (const act of ['round', 'open', 'snare', 'gift', 'secure'] as const) {
+        const pair = WorkCost.pairOf(act)!;
+        universalSkills[pair.id] = WebSystem.freshSkill(pair.id, pair.tags, 0);
+      }
+      universalSkills.skill_identify_armor = WebSystem.freshSkill('skill_identify_armor', ['identify_armor'], 0);
+      return { player: { ...s.player, bank: { ...s.player.bank, universalSkills } } };
+    });
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
     await act(async () => { root.render(createElement(LargeSheet, {})); });
+    expect(host.textContent ?? '', 'numbers first: nothing said before a line is opened').not.toMatch(/A blow takes none of it/);
+    for (const line of Array.from(host.querySelectorAll<HTMLElement>('[data-described]'))) await act(async () => { line.click(); });
     const words = host.textContent ?? '';
     expect(words).toMatch(/A blow takes none of it/);
     for (const act of ['round', 'open', 'snare', 'gift', 'secure'] as const) expect(words, act).toContain(SkillNames.nameOf(WorkCost.pairOf(act)!.id));

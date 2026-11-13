@@ -17,6 +17,13 @@
  * - a number to more than one place, which is a formula's working and not a figure.
  *
  * Part 1 renders the two character sheets. Part 2 adds every other screen to SCREENS.
+ *
+ * Changed 2026-11-12, the sheet pass (UXS). Put to Pedro: "The sheet with numbers first and each sentence one step behind".
+ * His answer: "yup, and hover click opens description, description opens only if the skill to describe it is found
+ * UAHUAHUA". A line's sentence is now its description, not on the screen until it is opened, and it opens only for a
+ * character holding the skill that describes it (`DescriptionLaw`). So the bar opens every line before it reads a screen,
+ * once with the skills that open them, and the rule it held (each line says what a number means, never how it is made)
+ * now holds for every description, opened. What a skill does and what grows it is read from its opened line.
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
@@ -148,7 +155,8 @@ const SKILLS = {
 const idOf = (tags: string[]) => TagLaw.skillIdOf(TagLaw.canonical(tags));
 const skillIds = [...SKILLS.held, ...SKILLS.forming].map(s => idOf(s.tags));
 
-function seed() {
+/** `eye`: the character also holds a schooled eye, which opens the lines the web roots nowhere yet (UXS). */
+function seed(opts: { eye?: boolean } = {}) {
   localStorage.clear();
   useIdentityStore.setState({ certificate: CERT(UID) } as any);
   usePlayerStore.getState().initializeSession(CERT(UID), 'NOMAD');
@@ -157,7 +165,7 @@ function seed() {
   eq = { ...eq, items: [bow], slots: { ...eq.slots, RIGHT_HAND: bow.id } };
   usePlayerStore.setState(s => {
     const universalSkills = { ...s.player.bank.universalSkills };
-    for (const h of SKILLS.held) {
+    for (const h of [...SKILLS.held, ...(opts.eye ? [{ tags: ['identify_armor'], level: 1, circles: 0 }] : [])]) {
       const id = idOf(h.tags);
       universalSkills[id] = { ...WebSystem.freshSkill(id, TagLaw.canonical(h.tags), 0), level: h.level, circles: h.circles };
     }
@@ -199,18 +207,31 @@ function inAWorld() {
   }));
 }
 
-const SCREENS: { name: string; mount: () => void }[] = [
+/** UXS: every line a screen can open, opened, so its description is read like the rest of the screen. */
+async function openEveryLine() {
+  for (const el of Array.from(host.querySelectorAll<HTMLElement>('[data-described]'))) {
+    if (el.getAttribute('aria-expanded') !== 'true') await act(async () => { el.click(); });
+  }
+}
+
+const SCREENS: { name: string; mount: () => void; eye?: boolean }[] = [
   { name: 'the large sheet, at home', mount: () => root.render(createElement(LargeSheet, {})) },
   { name: 'the small sheet, at home', mount: () => { useSheet.setState({ open: true } as any); root.render(createElement(CharacterSheet)); } },
   { name: 'the small sheet in a world: the pack, the piece column, the study panel', mount: () => { inAWorld(); useSheet.setState({ open: true } as any); root.render(createElement(CharacterSheet)); } },
   { name: 'the large sheet in a world', mount: () => { inAWorld(); root.render(createElement(LargeSheet, {})); } },
-  { name: "the hub's skills tab", mount: () => root.render(createElement(SkillsTab)) }
+  { name: "the hub's skills tab", mount: () => root.render(createElement(SkillsTab)) },
+  // UXS: the same screens with an eye held, so the lines the web roots nowhere open too
+  { name: 'the large sheet at home, an eye held', eye: true, mount: () => root.render(createElement(LargeSheet, {})) },
+  { name: 'the large sheet in a world, an eye held', eye: true, mount: () => { inAWorld(); root.render(createElement(LargeSheet, {})); } },
+  { name: 'the small sheet at home, an eye held', eye: true, mount: () => { useSheet.setState({ open: true } as any); root.render(createElement(CharacterSheet)); } }
 ];
 
 describe('GV: a screen speaks as the game speaks to a player', () => {
   for (const screen of SCREENS) {
-    it(`${screen.name}: no builders' word, no raw name, no tag list, no formula's working`, async () => {
+    it(`${screen.name}, every line opened: no builders' word, no raw name, no tag list, no formula's working`, async () => {
+      if (screen.eye) seed({ eye: true });
       await act(async () => { screen.mount(); });
+      await openEveryLine();
       const lines = wordsOn(host);
       expect(lines.length, 'the screen rendered').toBeGreaterThan(10);
       expect(faultsIn(lines, skillIds)).toEqual([]);
@@ -229,8 +250,11 @@ describe('GV: the sheet tells a player what each skill is and what it needs', ()
     expect(text).toMatch(/you hold 12/i);
   });
 
-  it('a held skill says what it does when it comes into play and what makes it grow', async () => {
+  // UXS: what a skill does is its description, opened from its own line; held, the skill is found, so it opens
+  it('a held skill, opened, says what it does when it comes into play and what makes it grow', async () => {
     await act(async () => { root.render(createElement(LargeSheet, {})); });
+    expect(host.textContent ?? '', 'numbers first: nothing said before it is opened').not.toMatch(/less energy/i);
+    for (const h of SKILLS.held) await act(async () => { host.querySelector<HTMLElement>(`[data-skill="${idOf(h.tags)}"]`)!.click(); });
     const text = host.textContent ?? '';
     expect(text).toMatch(/less energy/i);
     expect(text).toMatch(/grows/i);
@@ -238,12 +262,27 @@ describe('GV: the sheet tells a player what each skill is and what it needs', ()
     expect(text).toMatch(/blows? [^.]*\+\d+%/i);
   });
 
-  it('a circle and a gift are said where they are spent', async () => {
+  // UXS: a circle and a gift are named on the first level; what a circle is, is the description of the circles to place
+  it('a circle and a gift are said where they are spent, and what a circle is opens with an eye', async () => {
+    seed({ eye: true });
     await act(async () => { root.render(createElement(LargeSheet, {})); });
-    const text = host.textContent ?? '';
-    expect(text).toMatch(/circle/i);
-    expect(text).toMatch(/gift/i);
-    expect(text).toMatch(/every third/i);
+    const first = host.textContent ?? '';
+    expect(first).toMatch(/circle/i);
+    expect(first).toMatch(/gift/i);
+    expect(first).not.toMatch(/every third/i);
+    await openEveryLine();
+    expect(host.textContent ?? '').toMatch(/every third/i);
+  });
+
+  it('a description opens only with its skill: without an eye, what the web roots nowhere says it is not known', async () => {
+    await act(async () => { root.render(createElement(LargeSheet, {})); });
+    await openEveryLine();
+    const told = Array.from(host.querySelectorAll('[data-told]')).map(e => e.getAttribute('data-told'));
+    expect(told).toContain('unknown');
+    expect(told).toContain('known');
+    expect(host.textContent ?? '').not.toMatch(/every third/i);
+    // The bow's own lines open: the character holds a skill that answers to it
+    expect(host.textContent ?? '').toMatch(/What the Steel-Rule Bow deals/);
   });
 
   it('who the character is reads in words, never the creation record\'s ids', async () => {

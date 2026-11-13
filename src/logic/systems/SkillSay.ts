@@ -13,6 +13,7 @@ import { IItem, IPlayer, ISkillGift, ISkillState } from '../../../shared/types';
 import { IHubTree, MASTERY_RUNGS, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { WebBank } from '../../../shared/logic/content/WebBank';
 import { LoreLaw } from '../../../shared/logic/systems/LoreLaw';
+import { DescriptionLaw, DescriptionRoot } from '../../../shared/logic/systems/DescriptionLaw';
 import { LEVELS_PER_CIRCLE } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { DELIVERIES, EFFECTS, PASSIVE_STATS } from '../../../shared/logic/theme/ThemeTypes';
@@ -62,12 +63,16 @@ export interface HeldSay {
   grows: string;
   circles: { filled: number; first: number; nextGiftAt: number };
   gifts: string[];
-  /** A gift owed and what the rest will ask for it. */
-  giftWaits?: string;
+  /** A gift owed: what the rest will ask for it in lore, and the lore held for it (UXS: numbers, said on the line). */
+  giftWaits?: { asks: number; holds: number };
+  /** UXS: what describes this skill's line: the skill itself, held. */
+  root: DescriptionRoot;
 }
 
 export interface FormingSay {
   said: string;
+  /** UXS: what describes this line: the skill forming, which is not found until a rest settles it. */
+  root: DescriptionRoot;
   fill: number;
   grows: string;
   asks: number;
@@ -80,9 +85,9 @@ export const SkillSay = {
     return SkillNames.whatItIs(tags, pack);
   },
 
-  /** An identify skill forming names nothing (D32): which eye would say what the unread piece was. */
+  /** An identify skill forming names nothing (D32): which eye would say what the unread piece was. One rule with the sheet's. */
   isEye(tags: string[]): boolean {
-    return tags.some(t => t.startsWith('identify'));
+    return DescriptionLaw.isEye(tags);
   },
 
   /** The lore a thing of these tags can draw on: general, and its own kind unless a misreading locks it. */
@@ -142,7 +147,8 @@ export const SkillSay = {
         grows: `Grows with use: ${what.toLowerCase()}.`,
         circles: { filled: row.circles, first, nextGiftAt },
         gifts: CircleSystem.giftsOf(player, row.id).map(g => this.gift(g)),
-        ...(owed ? { giftWaits: `A gift waits for your next rest: ${price} lore, you hold ${said(this.loreFor(player, tags, hub))}.` } : {})
+        root: DescriptionLaw.itself(row.id),
+        ...(owed ? { giftWaits: { asks: price, holds: this.loreFor(player, tags, hub) } } : {})
       };
     });
   },
@@ -155,6 +161,7 @@ export const SkillSay = {
       const what = eye ? 'A trained eye' : this.whatItIs(progress.tags, pack);
       const row: FormingSay = {
         said: what,
+        root: DescriptionLaw.itself(progress.id),
         fill: WebSystem.emergenceFill(progress),
         grows: eye ? 'Forms as you try to read what you have not read.' : `Forms as you keep at it: ${what.toLowerCase()}.`,
         asks: WebSystem.learnPrice(progress.rank),
