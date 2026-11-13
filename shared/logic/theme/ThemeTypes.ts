@@ -10,6 +10,7 @@
  */
 
 import { ITagEntry } from '../../types';
+import type { IWorldNamePieces } from '../../entities/world/PeopleNames';
 
 /** Version 2 knows a line's depth (D61). Version 3 knows who leads and what a body leaves (D93, D99). Version 4 knows what holds value (D115). Version 5 asks enough affixes for three pairs (the rarity rescale). A pack sealed under an older one stands under the law it was written under. */
 export const THEME_FORMULA_VERSION = 5;
@@ -382,6 +383,11 @@ export interface IThemeBody {
   professions?: IThemeProfession[];
   /** Q1: the two terrain roles, dressed. Left out of a pack written before there was such a thing. */
   terrain?: IThemeTerrain[];
+  /**
+   * CP8: the pieces this world's names are made of, as its ground pass wrote them (and any its names pass added).
+   * Its people are named from them (`PeopleNames`). Left out of a pack written before they were kept.
+   */
+  names?: IWorldNamePieces;
 }
 
 export interface IThemePack extends IThemeBody {

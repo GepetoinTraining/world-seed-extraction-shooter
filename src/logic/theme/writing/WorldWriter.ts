@@ -19,6 +19,7 @@ import { TagLaw } from '../../../../shared/logic/content/TagLaw';
 import { cosineSimilarity } from '../../../../shared/entities/data/similarity';
 import { EmbeddingService, IEmbedder } from '../../../../shared/services/EmbeddingService';
 import { ThemeLaw } from '../../../../shared/logic/theme/ThemeLaw';
+import { namePieces } from '../../../../shared/logic/theme/NamePiece';
 import {
   BEHAVIORS, BIOMES, BUILDS, IThemeAbility, IThemeAffix, IThemeAnchor, IThemeBody, IThemeConsumable, IThemeCreature, IThemeGear, IThemeGood,
   IThemeJunk, IThemeMaterial, IThemePack, IThemeProfession, IThemeStation, IThemeTerrain, PACES, RANKS, SIZES, ThemeRank, THREATS,
@@ -113,12 +114,11 @@ class WellDry {
   constructor(readonly pieces: INamePieces) {}
 }
 
-/** A piece a name is made of, as code keeps it: letters only, a stray hyphen shed, never a code word (C17). */
-const piecesOf = (xs: string[]) => [...new Set((xs ?? [])
-  .map(x => (x ?? '').trim())
-  .filter(x => x && !/\d/.test(x) && !/_/.test(x))
-  .map(x => x.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ''))
-  .filter(Boolean))];
+/**
+ * A piece a name is made of, as code keeps it: never a code word (C17), a stray mark shed from either end. The rule is
+ * `NamePiece` in shared/, which the theme law holds a sealed pack's pieces to as well (CP29), so the two cannot drift.
+ */
+const piecesOf = (xs: string[]) => namePieces(xs);
 
 /** A name from the world's own lists: never the model's word for one thing. Unique in the world. */
 class NameWell {
@@ -846,6 +846,8 @@ export async function writeWorld(said: string, o: IWriteOptions): Promise<IWrite
     if (failed) return failed;
   }
 
+  // CP8: the pieces every name here was drawn from are kept with the world, so its people are named from them too
+  d.body.names = d.names.pieces();
   const verdict = ThemeLaw.validate(d.body, tag => d.known(tag));
   if (!verdict.ok) return { ok: false, reason: verdict.reason ?? 'The law refused it.', usage, passes };
   return { ok: true, body: d.body, usage, passes };

@@ -16,7 +16,8 @@ import { LoreLaw } from '../../../shared/logic/systems/LoreLaw';
 import { DescriptionLaw, DescriptionRoot } from '../../../shared/logic/systems/DescriptionLaw';
 import { LEVELS_PER_CIRCLE } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
-import { DELIVERIES, EFFECTS, PASSIVE_STATS } from '../../../shared/logic/theme/ThemeTypes';
+import { statWord } from '../../../shared/logic/systems/StatWords';
+import { deliveryWord, effectWord } from '../../../shared/logic/systems/EffectWords';
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from './CircleSystem';
 import { LoreSystem } from './LoreSystem';
 import { said } from './SheetWords';
@@ -34,20 +35,9 @@ const STEP_SHOWS: Record<(typeof MASTERY_RUNGS)[number], (things: string) => str
   graded: t => `what ${t} can become`, attuned: t => `what can hide in ${t}`
 };
 
-/** A gift's stat as a player reads it. Every stat a gift may raise has a word (a new one fails the build until it does). */
-const STAT_SAY: Record<(typeof PASSIVE_STATS)[number], string> = {
-  damage: 'damage', defense: 'defense', max_health: 'health', max_energy: 'energy', accuracy_rating: 'aim',
-  evasion_rating: 'dodging', attack_speed: 'attack speed', crit_chance: 'crit chance', crit_multiplier: 'crit damage',
-  block_chance: 'block chance', poison_damage: 'poison', light_radius: 'light', pickup_radius: 'reach for pickups',
-  carry_capacity: 'carry', noise_reduction: 'quiet', luck_find_rarity: 'luck', field_analysis_speed: 'reading speed'
-};
-const EFFECT_SAY: Record<(typeof EFFECTS)[number], string> = {
-  damage: 'hurts what it reaches', control: 'slows what it reaches', heal: 'mends you', buff: 'quickens you',
-  debuff: 'keeps hurting what it reaches', ward: 'wards off the next blows', rest: 'rests you', forced_exit: 'pulls you out'
-};
-const DELIVERY_SAY: Record<(typeof DELIVERIES)[number], string> = {
-  self: 'on yourself', touch: 'by touch', melee: 'up close', ranged: 'from afar', area: 'all around a spot', aura: 'all around you'
-};
+// CP16, 2026-11-13: a gift's stat is said in the one table of stat words (`StatWords`; every stat a gift may raise has
+// a word there, held by tests/stat.words.test.ts), and what a working does and how it reaches in `EffectWords`, which
+// The Working reads too. Each was a copy kept here.
 
 export interface HeldSay {
   id: string;
@@ -179,11 +169,9 @@ export const SkillSay = {
     if (g.kind === 'passive') {
       const v = g.value ?? 0;
       const amount = Math.abs(v) < 1 ? `${Math.round(v * 100)}%` : said(v);
-      return `${g.name}: ${STAT_SAY[g.stat as (typeof PASSIVE_STATS)[number]] ?? (g.stat ?? '').replace(/_/g, ' ')} ${v >= 0 ? '+' : ''}${amount}`;
+      return `${g.name}: ${statWord(g.stat ?? '')} ${v >= 0 ? '+' : ''}${amount}`;
     }
-    const act = EFFECT_SAY[g.effect as (typeof EFFECTS)[number]] ?? (g.effect ?? '').replace(/_/g, ' ');
-    const how = DELIVERY_SAY[g.delivery as (typeof DELIVERIES)[number]] ?? (g.delivery ?? '').replace(/_/g, ' ');
-    return `${g.name}: ${act}, ${how}`;
+    return `${g.name}: ${effectWord(g.effect)}, ${deliveryWord(g.delivery)}`;
   },
 
   /** What a circle and a gift are, said once where they are spent. */

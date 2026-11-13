@@ -2,6 +2,8 @@ import { ITransformationRecipe, MaterialPropertyType } from '../../../shared/ent
 import { ResourceDef } from '../../../shared/entities/item/data/resourceDefinitions';
 import { IGearRecipe } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { ItemType, UniversalRank, Rarity } from '../../../shared/types';
+// CP14: the hub's four base stations are the game's own; the fixture installs those very definitions
+import { BASE_STATIONS } from '../../../shared/entities/hub/baseStations';
 
 export const TEST_RECIPES: Record<string, ITransformationRecipe> = {
   'recipe_plank': {
@@ -272,30 +274,9 @@ export const TEST_CRAFTED: Record<string, ResourceDef> = {
   // Wave 10 (D8/D9): stations are items. A WORKSHOP shell mints its bench and a
   // VENDOR shell mints its counter when construction completes; tables are
   // crafted, carried, placed and sold like anything else.
-  'stn_bench': {
-    id: 'stn_bench', name: 'Work Bench', type: ItemType.STRUCTURE,
-    rank: UniversalRank.F, rarity: Rarity.COMMON,
-    weight: 12.0, dimensions: { width: 2, height: 1 }, icon: '🔨',
-    visuals: { modelId: 'bench', colorHex: '#a16207' },
-    materialProps: { [MaterialPropertyType.DENSITY]: 8, [MaterialPropertyType.HARDNESS]: 30 },
-    tags: ['crafted', 'station', 'wood', 'heavy']
-  },
-  'stn_counter': {
-    id: 'stn_counter', name: 'Shop Counter', type: ItemType.STRUCTURE,
-    rank: UniversalRank.F, rarity: Rarity.COMMON,
-    weight: 14.0, dimensions: { width: 3, height: 1 }, icon: '🪙',
-    visuals: { modelId: 'counter', colorHex: '#ffd700' },
-    materialProps: { [MaterialPropertyType.DENSITY]: 8, [MaterialPropertyType.HARDNESS]: 25 },
-    tags: ['crafted', 'station', 'wood', 'heavy']
-  },
-  'stn_table': {
-    id: 'stn_table', name: 'Joined Table', type: ItemType.STRUCTURE,
-    rank: UniversalRank.F, rarity: Rarity.COMMON,
-    weight: 8.0, dimensions: { width: 2, height: 2 }, icon: '🪑',
-    visuals: { modelId: 'table', colorHex: '#a16207' },
-    materialProps: { [MaterialPropertyType.DENSITY]: 5, [MaterialPropertyType.HARDNESS]: 20 },
-    tags: ['crafted', 'station', 'wood']
-  },
+  'stn_bench': BASE_STATIONS.stn_bench,
+  'stn_counter': BASE_STATIONS.stn_counter,
+  'stn_table': BASE_STATIONS.stn_table,
 
   // Wave 10B (D12/D14): the writing economy. Paper and ink pay for every plan
   // minted or copied; the scribe's table is the generalist station it happens at.
@@ -315,14 +296,7 @@ export const TEST_CRAFTED: Record<string, ResourceDef> = {
     materialProps: { [MaterialPropertyType.DENSITY]: 1.2, [MaterialPropertyType.TOXICITY]: 6 },
     tags: ['crafted', 'ink']
   },
-  'stn_scribe': {
-    id: 'stn_scribe', name: "Scribe's Table", type: ItemType.STRUCTURE,
-    rank: UniversalRank.F, rarity: Rarity.UNCOMMON,
-    weight: 9.0, dimensions: { width: 2, height: 1 }, icon: 'scribe_icon',
-    visuals: { modelId: 'scribe', colorHex: '#a16207' },
-    materialProps: { [MaterialPropertyType.DENSITY]: 6, [MaterialPropertyType.HARDNESS]: 22 },
-    tags: ['crafted', 'station', 'wood']
-  },
+  'stn_scribe': BASE_STATIONS.stn_scribe,
 
   // Wave 10D (10D.5): masonry. Stone finally answers a building bill.
   'crf_stone_block': {

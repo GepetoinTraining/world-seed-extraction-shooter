@@ -446,6 +446,24 @@ describe('line 33: stations call the one store, no duplicate logic', () => {
     expect(RECIPE_DEFINITIONS.recipe_table.outputs[0].itemId).toBe('stn_table'); // the table line exists
   });
 
+  for (const [type, station, name] of [['WORKSHOP', 'stn_bench', 'Work Bench'], ['VENDOR', 'stn_counter', 'Shop Counter']] as const) {
+    it(`CP14: as in the game, where no fixture defines it, a finished ${type} shell still mints its ${name}`, async () => {
+      const lotId = await ownedLot();
+      const held = CRAFTED_DEFINITIONS[station];
+      delete CRAFTED_DEFINITIONS[station];
+      try {
+        expect(await useHubStore.getState().buildStructure(lotId, type)).toBe(true);
+        finishJobs();
+        await useHubStore.getState().resolveBuilds();
+        const minted = stash().find(i => i.universalDefinitionId === station);
+        expect(minted, station).toBeDefined();
+        expect(minted!.name, station).toBe(name);
+      } finally {
+        CRAFTED_DEFINITIONS[station] = held;
+      }
+    });
+  }
+
   it('the counter is the shop: list and sell through the same functions', async () => {
     const lotId = await ownedLot();
     await useHubStore.getState().buildStructure(lotId, 'VENDOR');

@@ -49,8 +49,9 @@ export const canonical = (value: unknown): string => JSON.stringify(value, (_k, 
 
 /** What a model wrote, without the record kept about writing it. */
 export function bodyOf(pack: IThemeBody): IThemeBody {
-  const { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, junk, anchors, professions, terrain } = pack;
-  return { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, ...(junk ? { junk } : {}), ...(anchors ? { anchors } : {}), ...(professions ? { professions } : {}), ...(terrain ? { terrain } : {}) };
+  const { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, junk, anchors, professions, terrain, names } = pack;
+  // CP8: a world's name pieces are what it wrote, so they are its bytes; a pack with none hashes as it always did
+  return { name, premise, regions, tags, creatures, materials, stations, goods, gear, consumables, affixes, abilities, lore, ...(junk ? { junk } : {}), ...(anchors ? { anchors } : {}), ...(professions ? { professions } : {}), ...(terrain ? { terrain } : {}), ...(names ? { names } : {}) };
 }
 
 /** Computed from the bytes that matter and nothing else. Two hashes, so a collision is not a worry. */

@@ -499,18 +499,6 @@ export class LoadoutSystem {
   static towSpeedModifier(cartWeightKg: number, bearsKg = 0): number {
     return Math.max(0.4, 0.75 - Math.max(0, cartWeightKg - bearsKg) / 400);
   }
-
-  /** 10C.1: the SHOULDER piece is themed per genre — the same slot, a different coat. */
-  static themedShoulderName(genreName: string): string {
-    const THEMES: Record<string, string> = {
-      FANTASY: 'Woven Cape',
-      SCIFI: 'Pauldron Rig',
-      POSTAPOC: 'Scrap Spaulder',
-      ELDRITCH: 'Whispering Shroud',
-      RETRO: 'Padded Letterman'
-    };
-    return THEMES[genreName.toUpperCase().replace(/[^A-Z]/g, '')] ?? 'Mantle';
-  }
 }
 
 // -----------------------------------------------------------------------------

@@ -113,6 +113,15 @@ export const FirstOrder = {
     });
   },
 
+  /**
+   * CP16: the five, in his order, as one line of prose a screen says before the tutorial is entered: "fell three
+   * creatures, open a chest, ..., and walk out by the beacon". The titles above are the one place they are written.
+   */
+  inOneLine(): string {
+    const said = FIRST_TASKS.map(t => TITLES[t].charAt(0).toLowerCase() + TITLES[t].slice(1));
+    return `${said.slice(0, -1).join(', ')}, and ${said[said.length - 1]}`;
+  },
+
   hint(task: FirstTask): string {
     return HINTS[task];
   },

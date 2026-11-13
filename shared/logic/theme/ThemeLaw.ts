@@ -12,6 +12,7 @@ import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREAT
 import { statSide } from '../../constants';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
+import { isNamePiece } from './NamePiece';
 import { StatSystem } from '../systems/StatSystem';
 import { EffectSystem } from '../systems/EffectSystem';
 import { MENTAL_ATTRIBUTES } from '../../types';
@@ -289,6 +290,16 @@ export class ThemeLaw {
         if (t.role === 'skilled' && !(t.crossing && TagLaw.isCanonicalSpelling(t.crossing) && known(t.crossing))) {
           return no(`the ${t.ground} is crossed with a skill, and "${t.crossing}" is not a registered word.`);
         }
+      }
+    }
+
+    // CP8: optional, so a pack written before they were kept stands as it was. CP29: each piece is held to the very
+    // rule the ground pass keeps it by (`NamePiece`), exactly as the pass leaves it, so what the writer keeps seals
+    if (pack.names !== undefined) {
+      const n = pack.names;
+      const piecesOk = (xs: unknown) => Array.isArray(xs) && xs.length > 0 && xs.every(isNamePiece);
+      if (!n || typeof n !== 'object' || !piecesOk(n.prefixes) || !piecesOk(n.suffixes)) {
+        return no('its names are made of prefixes and suffixes, each a piece as the ground pass keeps it (no digit, no underscore, a letter at each end), and neither list may be empty.');
       }
     }
 

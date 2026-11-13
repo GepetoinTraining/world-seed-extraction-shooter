@@ -379,10 +379,7 @@ function render() {
     known.append(cell(row, def.name));
   });
 
-  const affixes = section('AFFIXES: A MARK YOU MUST LEARN TO SEE', 'The game defines these three but never rolls them. Iron Ore, at the level each one is discovered.');
-  [['aff_dense', 'Compressed', 2], ['aff_volatile', 'Volatile', 3], ['aff_arcane', 'Ley-Touched', 3]].forEach(([id, name, level]) => {
-    affixes.append(cell(spriteCanvas(worldForm(RESOURCE_DEFINITIONS['res_iron_vein'], { level: level as number, affixes: [id as string] }), base, 5), name as string));
-  });
+  // CP15, 2026-11-13: the panel of three material affixes is gone with them; the game never rolled one.
 
   // 4d. ITEM CHANNELS
   const blade = ['melee', 'one_hand', 'physical', 'blade'];

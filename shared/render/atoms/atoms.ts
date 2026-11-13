@@ -693,9 +693,10 @@ function resourceInk(def: any, m: Material, seed: number, level = KNOWN): Ink {
 }
 
 /**
- * KNOWLEDGE: 0 unknown, 1 named, 2 base properties, 3 affixes. These are the levels
- * of the game's MaterialScience. Form survives at 0 because it is plain to see; what
- * it is made of does not, so unknown things of one form share every pixel.
+ * KNOWLEDGE: 0 unknown, 1 named, 2 base properties; the game's MaterialScience counts to 3, which draws as 2.
+ * Form survives at 0 because it is plain to see; what it is made of does not, so unknown things of one form share
+ * every pixel. (CP15, 2026-11-13: the marks three material affixes drew at 3 are gone with the affixes; nothing in
+ * the game gave one. A variant's own marks are the spread's, `marks`.)
  */
 export const KNOWN = 2;
 const UNKNOWN_SEED = fnv1a('sprite:v1:unknown');
@@ -724,13 +725,6 @@ export function spent(s: Sprite, regrows: boolean): Sprite {
   }
   return { w: s.w, h: s.h, data };
 }
-
-const AFFIX_MARKS: Record<string, number[][]> = {
-  aff_dense: [[0, 0], [1, 0], [0, 1], [1, 1]],
-  aff_volatile: [[0, 0], [1, 1], [2, 0], [1, 2]],
-  aff_arcane: [[1, 0], [0, 1], [2, 1], [1, 2]]
-};
-const AFFIX_THRESHOLD: Record<string, number> = { aff_dense: 2, aff_volatile: 3, aff_arcane: 3 };
 
 /** D119: how many atoms across each size word is. */
 export const LOOK_ATOMS: Record<IThemeLook['size'], number> = { tiny: 8, small: 10, medium: 12, large: 16 };
@@ -765,7 +759,7 @@ export const worldSize = (def: any) => {
  * `returns`: a spent place that comes back (RG), told by a shape on it. Absent, what its kind says (`regrowMs`).
  * `base` and `marks` (ML, `SpreadBook.drawOf`): a variant is its base's own picture with its marks on the outline.
  */
-export interface WorldFormOptions { uses?: number; level?: number; affixes?: string[]; s?: number; variant?: number; returns?: boolean; marks?: IMark[]; base?: any }
+export interface WorldFormOptions { uses?: number; level?: number; s?: number; variant?: number; returns?: boolean; marks?: IMark[]; base?: any }
 
 /** A resource as it stands in the world, at what the player knows of it. */
 export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
@@ -793,12 +787,6 @@ export function worldForm(def: any, o: WorldFormOptions = {}): Sprite {
     const live = stamp(applyMarks(resourceInk(shape, mShape, shapeSeed, level), o.marks), size, m, seed, { role, edgeStep: 3, minFill: 1, maxFill: 4, edgeGrain: true });
     sprite = uses <= 0 ? spent(live, o.returns ?? !!def.regrowMs) : live;
   }
-
-  (o.affixes || []).forEach(id => {
-    const mark = AFFIX_MARKS[id];
-    if (!mark || level < (AFFIX_THRESHOLD[id] ?? 3)) return;
-    mark.forEach(([x, y]) => { sprite.data[y * sprite.w + x] = px(Role.PROOF, 4); });
-  });
   return sprite;
 }
 
