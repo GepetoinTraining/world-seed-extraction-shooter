@@ -5,26 +5,35 @@
  * the scheduled call and the accounts beside these routes (`entry.ts`, built for `api/hub.js`). Nothing here outlives a
  * call but the store's connection, which an instance opens once and reuses while it is warm.
  *
- * WS_HUB_DATABASE_URL   the served Postgres (postgres://…); a folder (pglite://…) for the local stand-in
+ * WS_HUB_DATABASE_URL   the store: Turso's address (libsql://…), a served Postgres (postgres://…), or a
+ *                       folder (pglite://…) for the local stand-in. Where it is not set, Turso's own two
+ *                       names are read, after a Postgres a host connected (settings.ts)
  * WS_HUB_KEY            the hub's signing key, PKCS#8 PEM, from the host's secret store
  * WS_PUBLIC_URL         the hub's own address (the domain is configuration)
- * WS_RECORD             1 to keep the record on Turso through the keeper (TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
+ * WS_RECORD             1 to keep a Postgres store's record on Turso through the keeper (TURSO_DATABASE_URL,
+ *                       TURSO_AUTH_TOKEN). A store on Turso is its own record (tursoStore.ts)
  *
  * Where the hub's own name is not set, what the host's integrations write for the same thing is
  * read (settings.ts). Everything missing is said at once, by name.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { openLiveStore } from '../record';
+import { openBody } from './body';
+import { isTursoUrl } from '../tursoStore';
 import { Hub } from './Hub';
 import { IHubKey, makeHubKey } from './keys';
 import { createHubHandler, send } from './http';
-import { lacking, withHostNames } from './settings';
+import { lacking, settingsRead, withHostNames } from './settings';
 
 export interface IHubFunctionConfig {
   databaseUrl: string;
+  /** Turso's token, where the store is on Turso. */
+  databaseToken?: string;
   key: IHubKey;
   publicUrl: string;
 }
+
+/** Said when the store is Turso's, read from its integration's name, and its token is not there. */
+export const TOKEN_LACKING = 'TURSO_AUTH_TOKEN is not set: the store is the Turso database TURSO_DATABASE_URL names, and Turso answers nothing without its token. Turso\'s integration writes both when its database is connected to the project.';
 
 /** Why this hub cannot check anything yet: every setting it lacks or cannot read, by name, in one sentence each. */
 export interface IConfigProblem {
@@ -43,6 +52,14 @@ export function hubConfigFrom(env: NodeJS.ProcessEnv): IHubFunctionConfig | ICon
 
   const databaseUrl = read.WS_HUB_DATABASE_URL?.trim();
   if (!databaseUrl) lack('WS_HUB_DATABASE_URL');
+  // A store on Turso takes Turso's token. Read from Turso's own name it must have one; named by the hub's own, it may carry
+  // none (a local stand-in asks for none), and a Turso that refuses says so when the store opens
+  const onTurso = !!databaseUrl && isTursoUrl(databaseUrl);
+  const databaseToken = onTurso ? read.TURSO_AUTH_TOKEN?.trim() || undefined : undefined;
+  if (onTurso && !databaseToken && settingsRead(env).find(s => s.name === 'WS_HUB_DATABASE_URL')?.from === 'TURSO_DATABASE_URL') {
+    missing.push('TURSO_AUTH_TOKEN');
+    said.push(TOKEN_LACKING);
+  }
   // A host's secret store may keep a key on one line, its line ends arriving as the two characters \ and n.
   // A key that cannot be read is said like any other missing setting: thrown here, it would kill the
   // function as it loads, and the host would answer for the hub with nothing a person can act on.
@@ -62,7 +79,7 @@ export function hubConfigFrom(env: NodeJS.ProcessEnv): IHubFunctionConfig | ICon
   if (!publicUrl) lack('WS_PUBLIC_URL');
 
   if (said.length > 0 || !databaseUrl || !key || !publicUrl) return { problem: said.join(' '), missing, unreadable };
-  return { databaseUrl, key, publicUrl };
+  return { databaseUrl, ...(databaseToken ? { databaseToken } : {}), key, publicUrl };
 }
 
 /** A handler for one hub, its store opened on first need and kept while the instance is warm. */
@@ -70,8 +87,8 @@ export function createHubFunction(config: IHubFunctionConfig | IConfigProblem) {
   let opening: Promise<ReturnType<typeof createHubHandler>> | null = null;
   const ready = () => {
     if ('problem' in config) return Promise.reject(new Error(config.problem));
-    return (opening ??= openLiveStore(config.databaseUrl)
-      .then(store => createHubHandler(new Hub(store, config.key, { publicUrl: config.publicUrl })))
+    return (opening ??= openBody(config.databaseUrl, process.env, { token: config.databaseToken })
+      .then(body => createHubHandler(new Hub(body.store, config.key, { publicUrl: config.publicUrl })))
       .catch(e => { opening = null; throw e; }));
   };
 

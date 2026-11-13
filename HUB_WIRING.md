@@ -114,6 +114,8 @@ The button can stay as "send now", or go.
 - keeps a line of people waiting to talk in the database, as one line;
 - holds a player whose socket closed in their place and their lines for 5 seconds, so a socket the host closed costs nothing if the browser is back within that.
 
+On the host its store is Turso alone (Pedro, 2026-11-13: "Yes, Turso only"; `DEPLOY.md`, "Turso alone"). There is no Postgres to nudge through, so instances hear each other on a beat: an event or a line change reaches a player on another instance within about a second, and another instance's player walking is seen at most about three seconds late, at points two seconds apart, which `Presence.ts` slides between as it does for any late word. Two players on one instance see each other as before. Nothing in the game changes for it.
+
 **GAME, change 1.** `LiveClient.join` subscribes with `since: 0` the first time, which asks for every event the world ever had. A first join reads the documents themselves through `/live/get` and `/live/query`, so it needs none of them:
 
 ```ts
@@ -199,6 +201,7 @@ Everything here passes on a database in memory and real local servers. None of i
 - Clerk's own form on the site's first page (`landing/landing.js`), which was written from Clerk's documentation and never loaded;
 - the page's headers on the host: `vercel.json`'s fixed ones, and the content policy `npm run build:site` writes into each landing page (`DEPLOY.md`, "The page's headers");
 - the settings read from the names the host's integrations write (`server/hub/settings.ts`), which were read on the providers' pages and never on the host itself;
-- the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
+- the store on Turso alone (`server/tursoStore.ts`) and its word between instances read on a beat (`server/live/tursoLive.ts`): proved over Turso's stand-in, with two instances sharing one world, and run against a Turso test database of Pedro's (the ledger's HT rows say what that showed), never on the host's own database;
+- for whoever names a Postgres instead: the word between instances over a real Postgres (`server/live/bus.ts`), and the turn-taking lock on its transactions (`server/connection.ts`).
 
 The first preview deployment settles the first two in a minute: `GET /api/hub/health` must answer.

@@ -5,7 +5,10 @@
  * project is deployed; the hub reads those when its own name is not set, and its own name always wins.
  *
  * Read on the providers' own pages (PLAYTEST_LEDGER.md, the HD rows say which and when):
- *   DATABASE_URL, DATABASE_URL_UNPOOLED      Neon's integration on Vercel: the pooled address and the direct one
+ *   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN     Turso's integration on Vercel: the database connected to the project.
+ *                                            The store, when no Postgres is named (Pedro, 2026-11-13: "Yes, Turso only")
+ *   DATABASE_URL, DATABASE_URL_UNPOOLED      a Postgres the host connected (Neon's integration writes these): the
+ *                                            pooled address and the direct one. Read before Turso's, as a store named
  *   VERCEL_PROJECT_PRODUCTION_URL            Vercel itself: the production domain, without its scheme, set even
  *                                            in a preview; the shortest custom domain once there is one
  *   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY        Clerk's integration on Vercel (beside CLERK_SECRET_KEY, the hub's own name)
@@ -36,13 +39,20 @@ export interface ISetting {
   host?: IHostName[];
   /** Its value is a key, a token, a password or an address that carries one. */
   secret?: boolean;
+  /** What is said of the host's names when this one is missing, in place of the list of them. */
+  lackSays?: string;
 }
 
 export const HUB_SETTINGS: readonly ISetting[] = [
   {
-    name: 'WS_HUB_DATABASE_URL', what: 'the store, a served Postgres', secret: true,
+    name: 'WS_HUB_DATABASE_URL', what: 'the store: Turso\'s address, or a served Postgres', secret: true,
     needed: 'this hub has no store to check against.',
-    host: [{ name: 'DATABASE_URL', by: 'the host\'s Postgres (Neon\'s integration, its pooled address)' }]
+    // A Postgres named is the store; with none, the Turso database connected to the project is (HT6)
+    host: [
+      { name: 'DATABASE_URL', by: 'a Postgres the host connected (its pooled address)' },
+      { name: 'TURSO_DATABASE_URL', by: 'Turso\'s integration' }
+    ],
+    lackSays: ', nor TURSO_DATABASE_URL and TURSO_AUTH_TOKEN, which Turso\'s integration writes when its database is connected to the project (a Postgres named by DATABASE_URL would be read before them)'
   },
   { name: 'WS_HUB_KEY', what: 'the hub\'s signing key, PKCS#8 PEM', secret: true, needed: 'this hub has no key to sign with. `npm run hub:key` makes one in your own terminal.' },
   {
@@ -58,9 +68,9 @@ export const HUB_SETTINGS: readonly ISetting[] = [
     }]
   },
   { name: 'WS_LIVE_DATABASE_URL', what: 'the hosted world\'s documents, when kept apart from the hub\'s', secret: true },
-  { name: 'WS_RECORD', what: '1 keeps the record on Turso' },
-  { name: 'TURSO_DATABASE_URL', what: 'the record\'s address', secret: true },
-  { name: 'TURSO_AUTH_TOKEN', what: 'the record\'s token', secret: true },
+  { name: 'WS_RECORD', what: '1 keeps a Postgres store\'s record on Turso; a store on Turso is its own record' },
+  { name: 'TURSO_DATABASE_URL', what: 'Turso\'s address: the store\'s when no Postgres is named, else the record\'s', secret: true },
+  { name: 'TURSO_AUTH_TOKEN', what: 'Turso\'s token', secret: true },
   { name: 'TURSO_LIVE_DATABASE_URL', what: 'a record of its own for the world\'s documents kept apart', secret: true },
   { name: 'TURSO_LIVE_AUTH_TOKEN', what: 'its token', secret: true },
   { name: 'CRON_SECRET', what: 'what the host\'s scheduled call carries', secret: true },
@@ -131,7 +141,7 @@ export function settingsLine(env: NodeJS.ProcessEnv): string {
 /** The sentence for a needed setting that is not set: its name, where a host would have written it, and why it matters. */
 export function lacking(name: string): string {
   const s = SETTING.get(name)!;
-  const host = s.host?.length ? `, nor ${s.host.map(h => h.name).join(' or ')}, which ${s.host[0].by} writes` : '';
+  const host = s.lackSays ?? (s.host?.length ? `, nor ${s.host.map(h => h.name).join(' or ')}, which ${s.host[0].by} writes` : '');
   return `${name} is not set${host}: ${s.needed ?? `${s.what}.`}`;
 }
 
