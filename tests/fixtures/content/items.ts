@@ -209,7 +209,7 @@ export const TEST_ITEM_DEFINITIONS: ItemDatabase = {
     },
     {
       "id": "arm_shoulder_t1",
-      "universal_name": "Mantle", // themed per genre at the shelf (D17's tree; see themedShoulderName)
+      "universal_name": "Mantle", // a world names its own; the per-genre names nothing read are gone (CP15)
       "rank": UniversalRank.F,
       "base_ip": 30,
       "slot": SlotType.SHOULDER,

@@ -29,7 +29,7 @@ import { useIdentityStore } from '../identity/store';
 import {
   IRoomState, RoomPieceKind, RoomVerdict, emptyRoom, canBuildPiece, canPlaceItem, pickBill, salvageFor, answersTag,
   ownerHasBench, roomProcessBonus, shellBillFor,
-  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, tagDefaultMaterial
+  PIECE_BILLS, PIECE_BUILD_SECONDS, SHELL_BUILD_SECONDS, SHELL_STATION, stationDefOf, tagDefaultMaterial
 } from '../../../shared/entities/hub/room';
 import { ITemplate, ITemplateSheet, defaultSheet, monoMaterialOf, setBonusFor, sizeNeedsVerdict, templateBill } from '../../../shared/entities/hub/template';
 import { CompositionSystem } from '../../../shared/logic/economy/CompositionSystem';
@@ -2098,7 +2098,8 @@ export const useHubStore = create<HubState>((set, get) => ({
         const stationDefId = job.workshopId ? undefined : job.stationId ?? SHELL_STATION[job.structureType];
         if (stationDefId) {
           // D26: a station inherits its shell. Raw walls hand on nothing: nothing was worked.
-          const station = ItemFactory.createResourceItem(CRAFTED_DEFINITIONS[stationDefId] as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION', affixes: ProcessSystem.inherit(job.inherited ?? []) });
+          // CP14: a base station is the game's own, so a shell finished where no theme wrote one still mints it
+          const station = ItemFactory.createResourceItem(stationDefOf(stationDefId) as any, Rng.fromKey(`${job.id}:station`), { origin: 'CONSTRUCTION', affixes: ProcessSystem.inherit(job.inherited ?? []) });
           addToStash([station]);
           const { Provenance } = await import('../../logic/sovereignty/Provenance');
           await Provenance.record(station, 'MINT', { origin: 'CONSTRUCTION', jobId: job.id, lotId: job.lotId, structure: job.structureType });

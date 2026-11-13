@@ -17,11 +17,8 @@ import { RestDoor } from '../logic/systems/RestDoor';
 import { ProgressionSystem } from '../../shared/entities/player/systems/ProgressionSystem';
 import { Button, Chip, Panel } from './ui/kit';
 import { hubPort } from '../entities/hub/store';
-
-const ACT_WORDS: Record<string, string> = {
-  damage: 'hurts what it reaches', control: 'slows what it reaches', heal: 'mends you', buff: 'quickens you',
-  debuff: 'keeps hurting what it reaches', ward: 'wards you against the next blows'
-};
+// CP16: what a working does is said once, where a gift's line reads it too
+import { effectWord } from '../../shared/logic/systems/EffectWords';
 
 export const TheWorking: React.FC = () => {
   const { player } = usePlayerStore();
@@ -66,7 +63,7 @@ export const TheWorking: React.FC = () => {
       {preview && receipt && (
         <div className="ws-small" style={{ marginTop: 6 }}>
           <div>{(weaveId && player.weaveNames?.[weaveId]) ?? 'It has no name until you rest.'}</div>
-          <div className="ws-dim">It {ACT_WORDS[preview.effect] ?? preview.effect}, by {preview.delivery}. It draws {WeaveSystem.aetherPerElement(preview, rank)} of each.</div>
+          <div className="ws-dim">It {effectWord(preview.effect)}, by {preview.delivery}. It draws {WeaveSystem.aetherPerElement(preview, rank)} of each.</div>
           <div style={{ marginTop: 4 }}>
             <Button tone="signal" onClick={() => setCast({ kind: 'weave', elements: picked })}>SET TO THE FOCUS</Button>
           </div>

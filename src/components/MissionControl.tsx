@@ -16,6 +16,7 @@ import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
 import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Tutorial } from '../logic/systems/Tutorial';
+import { FirstOrder } from '../logic/systems/FirstOrder';
 import { SHELF_STATE } from '../../shared/logic/theme/shelf';
 import { hubPort } from '../entities/hub/store';
 
@@ -69,7 +70,7 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
       </div>
       {tutorial && (
         <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-          {firstOrder ? 'Your first order: scan the marked block and drop on it, then fell three creatures, open a chest, take material from the ground, bring one person out, and walk out by the beacon. Once all five are done, it is behind you.' : 'Your first order is done.'}
+          {firstOrder ? `Your first order: scan the marked block and drop on it, then ${FirstOrder.inOneLine()}. Once all five are done, it is behind you.` : 'Your first order is done.'}
         </div>
       )}
       {cycle && <CycleRibbon cycle={cycle} />}

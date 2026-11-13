@@ -14,8 +14,20 @@
  * Every bar here runs with no key and spends nothing.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 
-import { UniversalRank } from '../shared/types';
+import { ItemType, UniversalRank } from '../shared/types';
+import { Rng } from '../shared/logic/rng/DeterministicRNG';
+import { EFFECTS, PASSIVE_STATS } from '../shared/logic/theme/ThemeTypes';
+import { statWord } from '../shared/logic/systems/StatWords';
+import { deliveryWord, effectWord } from '../shared/logic/systems/EffectWords';
+import { SkillSay } from '../src/logic/systems/SkillSay';
+import { LootTable } from '../src/entities/world/LootTable';
+import { FirstOrder } from '../src/logic/systems/FirstOrder';
+import { CRAFTED_DEFINITIONS } from '../shared/entities/economy/data/recipeDefinitions';
+import { BASE_STATIONS } from '../shared/entities/hub/baseStations';
+import { SHELL_STATION, STATION_FUNCTION, STATION_MIN_AREA, stationDefOf } from '../shared/entities/hub/room';
+import { ROOM_PRESETS } from '../shared/entities/hub/template';
 import { EntityType, IWorldEntity } from '../shared/entities/world/types';
 import { SECTOR_CHUNKS } from '../shared/entities/world/grid';
 import { GROUND_VERSION, IGenerationContext, WorldGenerator } from '../shared/entities/world/WorldGenerator';
@@ -143,5 +155,108 @@ describe('CP8: a world\'s people are named from its own name pieces', () => {
   it('a world with one prefix and one suffix names its people with the one word they make', () => {
     const one = { prefixes: ['Gray'], suffixes: ['moth'] };
     expect(PeopleNames.draw('k', one)).toBe('Graymoth');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// FAMILY 2: relics, copies and orphans. Plumbing only: what nothing read is gone, what was said twice is said once,
+// and the four base stations the hub mints are the game's own, no longer only the bars' fixture.
+// -----------------------------------------------------------------------------
+
+const SRC = (p: string) => readFileSync(p, 'utf8');
+/** Every file of the game's own source. */
+const gameSource = (dir = 'src'): string[] => readdirSync(dir).flatMap(name => {
+  const p = `${dir}/${name}`;
+  return statSync(p).isDirectory() ? gameSource(p) : /\.tsx?$/.test(name) ? [p] : [];
+});
+
+describe('family 2: what nothing read is gone', () => {
+  it('A15: the name generator that answered "Kael Steelweave", and the lore brief only it read', () => {
+    expect(existsSync('src/entities/identity/IdentityGenerator.ts')).toBe(false);
+    expect(SRC('src/entities/lore/LoreBible.ts')).not.toMatch(/LORE_CONTEXT|NAMING CONVENTION/);
+  });
+
+  it('A8: the three material affixes, the inspection nothing called and the marks only a bar drew; study, which is called, stays', () => {
+    const science = SRC('src/entities/world/MaterialScience.ts');
+    expect(science).not.toMatch(/MATERIAL_AFFIXES|inspectMaterial|Ley-Touched/);
+    expect(science).toMatch(/static studyMaterial/);
+    expect(SRC('shared/render/atoms/atoms.ts')).not.toMatch(/AFFIX_MARKS|AFFIX_THRESHOLD|aff_dense/);
+  });
+
+  it('A11: a shoulder piece\'s name per genre, which nothing read', () => {
+    expect(SRC('shared/entities/player/systems/LoadoutSystem.ts')).not.toMatch(/themedShoulderName|Woven Cape/);
+  });
+});
+
+describe('family 2: what was said twice is said once', () => {
+  it('F1: a gift says its stat in the one table of stat words, as it did', () => {
+    for (const stat of PASSIVE_STATS) {
+      expect(SkillSay.gift({ kind: 'passive', name: 'Gift', stat, value: 2 } as never), stat).toBe(`Gift: ${statWord(stat)} +2`);
+    }
+    expect(SRC('src/logic/systems/SkillSay.ts')).not.toMatch(/STAT_SAY|max_health: 'health'/);
+  });
+
+  it('F2: an effect is said in one table, which a gift and The Working both read', () => {
+    for (const effect of EFFECTS) {
+      expect(SkillSay.gift({ kind: 'active', name: 'Gift', effect, delivery: 'aura' } as never), effect).toBe(`Gift: ${effectWord(effect)}, ${deliveryWord('aura')}`);
+    }
+    expect(effectWord('ward')).toBe('wards off the next blows');
+    expect(deliveryWord('aura')).toBe('all around you');
+    const working = SRC('src/components/TheWorking.tsx');
+    expect(working).not.toMatch(/ACT_WORDS|hurts what it reaches/);
+    expect(working).toMatch(/effectWord\(/);
+    expect(SRC('src/logic/systems/SkillSay.ts')).not.toMatch(/hurts what it reaches/);
+  });
+
+  it('A10: the lore fragment is built in one place, and the hoard\'s and the chest\'s give what they gave', () => {
+    const hoard = LootTable.loreFragment('cp:hoard', FIRST_THEME_PACK.themeId);
+    expect({ id: hoard.id, name: hoard.name, type: hoard.type, value: hoard.value, tags: hoard.tags, description: hoard.description }).toEqual({
+      id: 'itm_b549e52743658666', name: 'Lore Fragment', type: ItemType.LORE, value: 50, tags: ['lore', 'document'],
+      description: 'Ledger stub: 40,000 G transferred to "NULL". The bank honored it. The bank always honors it.'
+    });
+    // A chest's: its words picked first on its own stream, then the piece, as the chest always drew it
+    const rng = Rng.fromKey('cp:chest');
+    const words = rng.pick(ContentRegistry.lore(FIRST_THEME_PACK.themeId, undefined));
+    const chest = LootTable.writtenPiece(rng, () => words);
+    expect({ id: chest.id, name: chest.name, type: chest.type, value: chest.value, tags: chest.tags, description: chest.description }).toEqual({
+      id: 'itm_3841f2ba12c1c8dd', name: 'Lore Fragment', type: ItemType.LORE, value: 50, tags: ['lore', 'document'],
+      description: 'Maintenance log, cycle 40,221: the branch is still open. We have stopped asking for whom.'
+    });
+    expect(gameSource().filter(f => SRC(f).includes('\'Lore Fragment\''))).toEqual(['src/entities/world/LootTable.ts']);
+    expect(SRC('src/entities/player/store.ts')).toMatch(/LootTable\.writtenPiece\(/);
+  });
+
+  it('the tutorial\'s five tasks are written once, in the first order, and both screens read them', () => {
+    expect(FirstOrder.inOneLine()).toBe('fell three creatures, open a chest, take material from the ground, bring one person out, and walk out by the beacon');
+    for (const f of ['src/components/GuildHall.tsx', 'src/components/MissionControl.tsx']) {
+      expect(SRC(f), f).not.toMatch(/open a chest/);
+      expect(SRC(f), f).toMatch(/FirstOrder\.inOneLine\(\)/);
+    }
+  });
+});
+
+describe('CP14: the four base stations are the game\'s own', () => {
+  const FOUR = ['stn_bench', 'stn_counter', 'stn_table', 'stn_scribe'] as const;
+
+  it('defined in the game, and the bars\' fixture installs those very definitions', () => {
+    for (const id of FOUR) {
+      expect(BASE_STATIONS[id].id, id).toBe(id);
+      expect(CRAFTED_DEFINITIONS[id], id).toBe(BASE_STATIONS[id]);
+    }
+    expect(SRC('tests/fixtures/content/recipes.ts')).not.toMatch(/id: 'stn_(bench|counter|table|scribe)'/);
+  });
+
+  it('every station the hub names by id has a definition, with no theme and no fixture behind it', () => {
+    const named = new Set([
+      ...Object.values(SHELL_STATION), ...Object.keys(STATION_MIN_AREA), ...Object.keys(STATION_FUNCTION),
+      ...ROOM_PRESETS.flatMap(p => p.stations.map(s => s.defId))
+    ]);
+    const held = Object.fromEntries(FOUR.map(id => [id, CRAFTED_DEFINITIONS[id]]));
+    for (const id of FOUR) delete CRAFTED_DEFINITIONS[id];
+    try {
+      for (const id of named) expect(stationDefOf(id as string), id as string).toBe(BASE_STATIONS[id as (typeof FOUR)[number]]);
+    } finally {
+      Object.assign(CRAFTED_DEFINITIONS, held);
+    }
   });
 });

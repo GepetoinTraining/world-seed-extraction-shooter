@@ -2321,13 +2321,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         const worldCard = wp.view().availableWorlds.find(w => w.id === wp.view().activeWorldId);
         const worldLore = ContentRegistry.lore(worldCard?.themeId, wp.view().directorRecord ?? undefined);
         const fragment = rng.pick(worldLore.length > 0 ? worldLore : LORE_FRAGMENTS);
-        const piece = {
-          ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
-          type: ItemType.LORE,
-          description: fragment,
-          value: 50,
-          tags: ['lore', 'document']
-        };
+        // CP16: made where every written piece is; its words were picked first on the chest's stream, as always
+        const piece = LootTable.writtenPiece(rng, () => fragment);
         // D26: in a world pinned to the additions, some fragments are a trade's own
         // notes. The choice is its own stream, so nothing above it moves.
         const trade = ProcessSystem.chestNote(DreamingSystem.active()?.pack.version, rollKey);

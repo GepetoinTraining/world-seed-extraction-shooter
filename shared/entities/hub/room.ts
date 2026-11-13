@@ -13,8 +13,9 @@
  */
 
 import { IAffix, IItem, ROOM_ACTING_STATS } from '../../types';
-import { RESOURCE_DEFINITIONS } from '../item/data/resourceDefinitions';
+import { RESOURCE_DEFINITIONS, ResourceDef } from '../item/data/resourceDefinitions';
 import { CRAFTED_DEFINITIONS } from '../economy/data/recipeDefinitions';
+import { BASE_STATIONS, BaseStationId } from './baseStations';
 
 // ---------------------------------------------------------------------------
 // THE CONTRACT
@@ -358,6 +359,14 @@ export const STATION_FUNCTION: Record<string, 'WORKSHOP' | 'VENDOR' | 'SCRIBE'> 
   stn_counter: 'VENDOR',
   stn_scribe: 'SCRIBE' // Wave 10B: the builder view opens here
 };
+
+/**
+ * CP14: a station's definition: what a theme or its growth filled, else one of the hub's four base stations, which
+ * the game defines itself (`BASE_STATIONS`). Kept beside the shared registry rather than in it, so they never stand
+ * ahead of a theme's goods in what a tag defaults to.
+ */
+export const stationDefOf = (defId: string): ResourceDef | undefined =>
+  CRAFTED_DEFINITIONS[defId] ?? BASE_STATIONS[defId as BaseStationId];
 
 export const isStation = (defId: string) => defId in STATION_MIN_AREA || CRAFTED_DEFINITIONS[defId]?.stationMinArea !== undefined;
 

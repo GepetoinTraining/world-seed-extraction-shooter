@@ -29,6 +29,7 @@ import { Tutorial } from '../logic/systems/Tutorial';
 import { ResidentFace, ResidentLines } from './TavernRoom';
 import { PopulationLine, WorkshopBlock } from './WorkshopPanel';
 import { LoreBoard } from '../logic/systems/LoreBoard';
+import { FirstOrder } from '../logic/systems/FirstOrder';
 
 type Tab = 'BOARD' | 'PEOPLE' | 'TRIAL' | 'MAPS';
 const TABS: { id: Tab; label: string }[] = [
@@ -56,7 +57,7 @@ const Board: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {firstOrder && (
         <Panel title="YOUR FIRST ORDER" tone="signal">
-          <span className="ws-small">Before anyone here can use you, go through THE TUTORIAL at the Nexus: scan the block it marks and drop on it, then fell three creatures, open a chest, take material from the ground, bring one person out, and walk out by the beacon. Nothing you bring is lost there. Everywhere else, what you carry falls with you.</span>
+          <span className="ws-small">Before anyone here can use you, go through THE TUTORIAL at the Nexus: scan the block it marks and drop on it, then {FirstOrder.inOneLine()}. Nothing you bring is lost there. Everywhere else, what you carry falls with you.</span>
         </Panel>
       )}
       {open.length === 0 && (

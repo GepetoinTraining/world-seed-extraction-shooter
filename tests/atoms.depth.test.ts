@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
 import { MOB_DEFINITIONS } from '../shared/entities/mob/data/mobDefinitions';
 import { ITEM_DEFINITIONS } from '../shared/entities/item/data/itemDefinitions';
-import { MATERIAL_AFFIXES } from '../src/entities/world/MaterialScience';
 import { InteractionEngine } from '../src/entities/interaction/InteractionEngine';
 import { ODDS_STEPS } from '../shared/logic/systems/ExtractLaw';
 import { ItemFactory } from '../shared/entities/item/ItemFactory';
@@ -186,18 +185,8 @@ describe('knowledge', () => {
     });
   });
 
-  it('shows an affix only at its discovery level', () => {
-    const iron = res('res_iron_vein');
-    Object.values(MATERIAL_AFFIXES).forEach(a => {
-      const below = worldForm(iron, { level: a.discoveryThreshold - 1 });
-      const at = worldForm(iron, { level: a.discoveryThreshold, affixes: [a.id] });
-      const hidden = worldForm(iron, { level: a.discoveryThreshold - 1, affixes: [a.id] });
-      expect(hashBytes(hidden.data), a.id).toBe(hashBytes(below.data));
-      expect(hashBytes(at.data), a.id).not.toBe(hashBytes(worldForm(iron, { level: a.discoveryThreshold }).data));
-    });
-    const marks = Object.keys(MATERIAL_AFFIXES).map(id => hashBytes(worldForm(iron, { level: 3, affixes: [id] }).data));
-    expect(new Set(marks).size).toBe(Object.keys(MATERIAL_AFFIXES).length);
-  });
+  // CP15, 2026-11-13: "shows an affix only at its discovery level" drew three material affixes nothing in the game gave
+  // (MaterialScience's, gone with them; tests/content.port.test.ts holds them gone). A variant's marks are the spread's.
 });
 
 describe('item channels', () => {

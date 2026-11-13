@@ -138,13 +138,17 @@ export class LootTable {
   static loreFragment(rollKey: string, themeId?: string): IItem {
     const rng = Rng.fromKey(`${rollKey}:lore_fragment:piece`);
     const words = ContentRegistry.lore(themeId, undefined);
-    return {
-      ...ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng),
-      type: ItemType.LORE,
-      description: rng.pick(words.length > 0 ? words : LORE_FRAGMENTS),
-      value: 50,
-      tags: ['lore', 'document']
-    };
+    return this.writtenPiece(rng, () => rng.pick(words.length > 0 ? words : LORE_FRAGMENTS));
+  }
+
+  /**
+   * CP16: a written piece, the one place one is made: the item drawn on the stream given, then its words. `say` is
+   * asked after the item is drawn, so a caller that picks its words first (a chest does) passes what it picked, and a
+   * caller that picks after (the hoard above) picks inside it: each stream falls as it always did.
+   */
+  static writtenPiece(rng: SeededRNG, say: () => string): IItem {
+    const made = ItemFactory.createResourceItem({ id: 'lore_fragment', name: 'Lore Fragment', icon: '📜', weight: 0.1, dimensions: { width: 1, height: 1 } } as any, rng);
+    return { ...made, type: ItemType.LORE, description: say(), value: 50, tags: ['lore', 'document'] };
   }
 
   /** The table roll behind a chest, in the dreamed world's theme, for the journal. */
