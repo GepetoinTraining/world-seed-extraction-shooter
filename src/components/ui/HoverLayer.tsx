@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { usePlayerStore } from '../../entities/player/store';
+import { playerPort, usePlayerStore } from '../../entities/player/store';
 import { AnchorRect, comparisonFor, inspectHand, inspectItem, placeCard } from '../../render/atoms/inspect';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { CardView, CompareView, RankMark } from './kit';
@@ -58,7 +58,7 @@ export const HoverLayer: React.FC = () => {
   const carried = usePlayerStore(s => s.player.currentSession?.inventory);
 
   // UXC, part 3: once the game is up, a card's note button and its key reach the door
-  useEffect(() => installNoteSpeaker(), []);
+  useEffect(() => installNoteSpeaker(playerPort), []);
 
   // A thing can leave the screen under the pointer, and then it sends no leave.
   useEffect(() => {

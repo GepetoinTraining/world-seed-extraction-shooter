@@ -7,20 +7,21 @@
  */
 
 import type { ICardUnknown } from '../../render/atoms/inspect';
-import { playerPort } from '../../entities/player/store';
+import type { IPlayerPort } from '../../entities/player/playerView';
 import { NoteDoor } from '../../logic/systems/NoteDoor';
 import { setNoteSpeaker, useCardKeys } from './cardKeys';
 import { useFeed, useWaits } from './stores';
 
 const WAIT_ID = 'note';
 
-export async function speak(unknown: ICardUnknown): Promise<void> {
+/** The player's port is handed in by the screen that sets the speaker: only screens, stores and the boot reach the store. */
+export async function speak(unknown: ICardUnknown, pc: Pick<IPlayerPort, 'view' | 'apply'>): Promise<void> {
   const keys = useCardKeys.getState();
   if (keys.note) return;
   keys.setNote({ key: unknown.key, phase: 'listening' });
   useWaits.getState().begin({ id: WAIT_ID, label: `Listening for your note on ${unknown.about}`, startedAt: Date.now() });
   try {
-    const out = await NoteDoor.speak(unknown, playerPort, undefined, {
+    const out = await NoteDoor.speak(unknown, pc, undefined, {
       heard: () => {
         useCardKeys.getState().setNote({ key: unknown.key, phase: 'writing' });
         useWaits.getState().begin({ id: WAIT_ID, label: 'Writing your note', startedAt: Date.now() });
@@ -34,8 +35,8 @@ export async function speak(unknown: ICardUnknown): Promise<void> {
   }
 }
 
-/** The game is up: the card's button and key now reach the door. Returns what takes it down. */
-export function installNoteSpeaker(): () => void {
-  setNoteSpeaker(u => { void speak(u); });
+/** The game is up: the card's button and key now reach the door, on this player. Returns what takes it down. */
+export function installNoteSpeaker(pc: Pick<IPlayerPort, 'view' | 'apply'>): () => void {
+  setNoteSpeaker(u => { void speak(u, pc); });
   return () => setNoteSpeaker(null);
 }

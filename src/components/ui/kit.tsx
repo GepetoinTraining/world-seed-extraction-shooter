@@ -12,7 +12,7 @@ import { Sprite, buildPalette, grayscale as grayPalette, rankMark, seal } from '
 import { Archetype, portrait } from '../../../shared/render/atoms/people';
 import { itemArtFor } from '../../render/atoms/items';
 import { IItem } from '../../../shared/types';
-import { Card, ICardUnknown, ItemComparison, cardText, firstLayer, secondLayer } from '../../render/atoms/inspect';
+import { Card, ICardUnknown, ItemComparison, NOTE_ROWS, cardText, firstLayer, secondLayer } from '../../render/atoms/inspect';
 import { hoverProps } from './stores';
 import { canSpeakNotes, cardId, holdCardKeys, noteTarget, speakNote, useCardKeys } from './cardKeys';
 import { Transcribers } from '../../logic/systems/Transcriber';
@@ -274,7 +274,7 @@ export const Row: React.FC<{ title: React.ReactNode; sub?: React.ReactNode; righ
   );
 
 /** UXC, part 3: the rows that are the player's own words, set in their own shape (slanted), as well as by place and word. */
-const MINE = new Set(['Your note', 'You guessed']);
+const MINE = new Set<string>(Object.values(NOTE_ROWS));
 
 const CardLine: React.FC<{ line: [string, string] }> = ({ line: [k, v] }) => (
   <div className={`ws-card__row${MINE.has(k) ? ' ws-card__mine' : ''}`}><span className="k">{k}</span><span className="v">{v}</span></div>

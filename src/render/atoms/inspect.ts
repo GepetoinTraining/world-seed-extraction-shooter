@@ -75,8 +75,9 @@ type Line = [string, string];
  * as their own words: by its place, the word "Your note" and quotation marks, never a hue. Once what is true replaces
  * it, it is kept one step behind as what they guessed, so the guess can be set against the truth.
  */
-const yourNote = (note: string): Line => ['Your note', `"${note}"`];
-const yourGuess = (note: string, of?: string): Line => ['You guessed', of ? `${of}: "${note}"` : `"${note}"`];
+export const NOTE_ROWS = { note: 'Your note', guess: 'You guessed' } as const;
+const yourNote = (note: string): Line => [NOTE_ROWS.note, `"${note}"`];
+const yourGuess = (note: string, of?: string): Line => [NOTE_ROWS.guess, of ? `${of}: "${note}"` : `"${note}"`];
 const unknown = (player: Pick<IPlayer, 'notes'> | undefined, key: string, kind: NoteKind, about: string): ICardUnknown =>
   ({ key, kind, about, noted: !!PlayerNote.of(player, key) });
 

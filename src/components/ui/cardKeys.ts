@@ -106,9 +106,12 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** The held key: ALT, or the right ALT that some layouts (a Brazilian one among them) report as AltGr. */
+const isAlt = (e: KeyboardEvent) => e.key === 'Alt' || e.key === 'AltGraph';
+
 const onKeyDown = (e: KeyboardEvent) => {
   const anyUp = useCardKeys.getState().up.length > 0;
-  if (e.key === 'Alt') {
+  if (isAlt(e)) {
     useCardKeys.getState().setDeep(true);
     if (anyUp) e.preventDefault();
     return;
@@ -131,7 +134,7 @@ const onKeyDown = (e: KeyboardEvent) => {
 };
 
 const onKeyUp = (e: KeyboardEvent) => {
-  if (e.key !== 'Alt') return;
+  if (!isAlt(e)) return;
   useCardKeys.getState().setDeep(false);
   // A lone ALT let go would hand the focus to the browser's menu
   if (useCardKeys.getState().up.length > 0) e.preventDefault();

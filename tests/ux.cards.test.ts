@@ -221,6 +221,14 @@ describe('UXC part 1: the held key, on the card itself', () => {
     expect(rowsShown()).toEqual(before);
   });
 
+  it('the right ALT a layout reports as AltGr holds it too', async () => {
+    await mount(inspectItem(blade(), player()));
+    await press('keydown', { key: 'AltGraph' });
+    expect(host.querySelector('.ws-card__more')).not.toBeNull();
+    await press('keyup', { key: 'AltGraph' });
+    expect(host.querySelector('.ws-card__more')).toBeNull();
+  });
+
   it('a window that loses focus lets go of the key', async () => {
     await mount(inspectItem(blade(), player()));
     await press('keydown', { key: 'Alt', altKey: true });
@@ -717,7 +725,7 @@ describe('UXC part 3: on the card', () => {
       host = document.createElement('div');
       document.body.appendChild(host);
       root = createRoot(host);
-      release = installNoteSpeaker();
+      release = installNoteSpeaker(playerPort);
       usePlayerStore.setState(s => ({ player: { ...s.player, notes: {} } }));
     });
     afterEach(async () => {
