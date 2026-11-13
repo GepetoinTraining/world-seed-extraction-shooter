@@ -36,6 +36,7 @@ import { ContentRegistry } from '../shared/logic/theme/ContentRegistry';
 import { FIRST_THEME_PACK, installShippedThemes } from '../shared/logic/theme/boot';
 import { bodyOf, sealTheme, themeIdOf } from '../shared/logic/theme/ThemeCompiler';
 import { ThemeLaw } from '../shared/logic/theme/ThemeLaw';
+import { namePieces } from '../shared/logic/theme/NamePiece';
 import { WebBank } from '../shared/logic/content/WebBank';
 import { computeGolden, FIRST_THEME_VECTORS } from '../src/entities/world/goldens';
 
@@ -155,6 +156,29 @@ describe('CP8: a world\'s people are named from its own name pieces', () => {
   it('a world with one prefix and one suffix names its people with the one word they make', () => {
     const one = { prefixes: ['Gray'], suffixes: ['moth'] };
     expect(PeopleNames.draw('k', one)).toBe('Graymoth');
+  });
+
+  // CP29: the law held the pieces to plain letters, where the pass keeps any with no digit, no underscore and a letter at
+  // each end. A world with one such piece passed every paid pass and was refused whole at the last line of the writing.
+  it('CP29: the law takes every piece the ground pass keeps, exactly as the pass leaves it', () => {
+    const kept = namePieces(['Kar\'eth', ' Vel-ar ', 'Mãe', 'Ael ith', '-Gray-', 'drowned_flat', 'moth2', '']);
+    expect(kept).toEqual(['Kar\'eth', 'Vel-ar', 'Mãe', 'Ael ith', 'Gray']);
+    const body = (names: unknown) => ({ ...bodyOf(FIRST_THEME_PACK), names } as never);
+    const sealed = ThemeLaw.validate(body({ prefixes: kept, suffixes: ['moth', 'Glint'] }), registered);
+    expect(sealed.ok, sealed.reason).toBe(true);
+    // What the pass would never leave is refused: a mark at an end, a space at an end, a code word, a number, nothing
+    for (const bad of ['-Gray', 'Gray ', 'gray_moth', 'moth2', '', ' ']) {
+      expect(ThemeLaw.validate(body({ prefixes: [bad], suffixes: ['moth'] }), registered).ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('CP29: a person is named in two words from such pieces, a space inside a piece closed up', () => {
+    const odd = { prefixes: ['Kar\'eth', 'Vel-ar', 'Mãe', 'Ael ith'], suffixes: ['moth', 'drift', 'Glint'] };
+    const names = Array.from({ length: 60 }, (_, i) => PeopleNames.draw(`cp29:${i}`, odd));
+    for (const n of names) expect(n.split(' '), n).toHaveLength(2);
+    expect(names.some(n => n.includes('Aelith'))).toBe(true);
+    expect(names.some(n => n.includes('Kar\'eth'))).toBe(true);
+    expect(PeopleNames.draw('one', { prefixes: ['Ael ith'], suffixes: ['moth'] })).toBe('Aelithmoth');
   });
 });
 

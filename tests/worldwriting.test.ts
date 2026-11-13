@@ -717,6 +717,22 @@ describe('C17: what a person reads is plain words, and names come from the world
     for (const name of [out.body!.name, ...out.body!.regions.map(r => r.name)]) expect(name, name).toMatch(/^(Chron|Ferri)( (Chron|Ferri))*(gloom|basin|cog)$/);
   });
 
+  // CP29: the law once held the kept pieces to plain letters, and refused such a world whole after every paid pass
+  it('a piece the ground pass keeps, with an apostrophe, a hyphen, an accent or a space inside, seals with its world', async () => {
+    const odd = ['Kar\'eth', 'Vel-ar', 'Mãe', 'Ael ith'];
+    const { door } = scriptedDoor({
+      ground: () => ({
+        premise: 'A moon with no air.', regions: BIOMES.map(b => ({ biome: b, blurb: 'Gray, and still.' })),
+        without: ['trees'], prefixes: odd, suffixes: ['moth', 'drift', 'glass'], words: [{ tag: 'vacuum', kind: 'descriptive', meaning: 'No air at all.' }, { tag: 'climb', kind: 'action', meaning: 'Getting up and over sheer ground.' }]
+      })
+    });
+    const out = await write(door);
+    expect(out.ok, out.reason).toBe(true);
+    expect(out.body!.names!.prefixes).toEqual(expect.arrayContaining(odd));
+    const pack = sealTheme(out.body!, 'fake', 1);
+    expect(ContentRegistry.install(pack)).toEqual({ ok: true });
+  });
+
   // Found on the real run: pieces came with hyphens ("Orchard- Mire-scape"), and a well run dry numbered a name ("Stil Mech Orch 4"),
   // then stacked its pieces ("Orcho Glint Orcho Glint Orcho Felt", C21): gibberish, Pedro 2026-11-09
   it('a name is one prefix and one suffix, never a number or a piece said twice: a well that runs dry asks the world for more', async () => {

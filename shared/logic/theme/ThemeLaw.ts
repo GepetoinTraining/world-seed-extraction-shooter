@@ -12,6 +12,7 @@ import { IThemeBody, ILineWords, BIOMES, RANKS, SIZES, BEHAVIORS, BUILDS, THREAT
 import { statSide } from '../../constants';
 import { FORCED_EXIT_FLOOR_RANK, rankStep, STAT_SCALE } from './ThemeFormula';
 import { TagLaw } from '../content/TagLaw';
+import { isNamePiece } from './NamePiece';
 import { StatSystem } from '../systems/StatSystem';
 import { EffectSystem } from '../systems/EffectSystem';
 import { MENTAL_ATTRIBUTES } from '../../types';
@@ -292,12 +293,13 @@ export class ThemeLaw {
       }
     }
 
-    // CP8: optional, so a pack written before they were kept stands as it was. Held as the ground pass holds them
+    // CP8: optional, so a pack written before they were kept stands as it was. CP29: each piece is held to the very
+    // rule the ground pass keeps it by (`NamePiece`), exactly as the pass leaves it, so what the writer keeps seals
     if (pack.names !== undefined) {
       const n = pack.names;
-      const piecesOk = (xs: unknown) => Array.isArray(xs) && xs.length > 0 && xs.every(x => typeof x === 'string' && /^[A-Za-z]+$/.test(x));
+      const piecesOk = (xs: unknown) => Array.isArray(xs) && xs.length > 0 && xs.every(isNamePiece);
       if (!n || typeof n !== 'object' || !piecesOk(n.prefixes) || !piecesOk(n.suffixes)) {
-        return no('its names are made of prefixes and suffixes, each a sound in plain letters, and neither list may be empty.');
+        return no('its names are made of prefixes and suffixes, each a piece as the ground pass keeps it (no digit, no underscore, a letter at each end), and neither list may be empty.');
       }
     }
 

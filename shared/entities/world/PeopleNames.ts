@@ -30,12 +30,16 @@ const FLOOR = {
   last: ['Steelweave', 'Basalt', 'Error', 'Null', 'Gantry', 'Mireforge', 'Siltvane']
 } as const;
 
-/** A piece as a name reads it: its first letter a capital. */
+/**
+ * A piece as a person's name reads it. A piece may hold a space inside it, as the ground pass keeps it ("Ael ith",
+ * `NamePiece`); in a person's name it is closed up ("Aelith"), so a name is two words and never more (CP29).
+ */
+const solid = (piece: string) => piece.replace(/\s+/g, '');
 const capital = (piece: string) => piece.charAt(0).toUpperCase() + piece.slice(1);
 
-/** Every word one prefix and one suffix grow into, in the lists' own order. */
+/** Every word one prefix and one suffix grow into, in the lists' own order, each once (two pieces may close up alike). */
 const wordsOf = (pieces: IWorldNamePieces): string[] =>
-  pieces.prefixes.flatMap(p => pieces.suffixes.map(s => `${capital(p)}${s.toLowerCase()}`));
+  [...new Set(pieces.prefixes.flatMap(p => pieces.suffixes.map(s => `${capital(solid(p))}${solid(s).toLowerCase()}`)))];
 
 export const PeopleNames = {
   FLOOR,
