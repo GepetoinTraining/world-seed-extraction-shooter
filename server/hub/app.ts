@@ -14,7 +14,12 @@
  * of them between requests, so nothing here is kept in an instance but what it can read again:
  * the store, the room's working table, and the word between instances (live/bus.ts).
  *
- *   WS_HUB_DATABASE_URL    the served Postgres (pooled is fine)
+ * THE STORE HAS TWO BODIES (body.ts). On Turso alone (Pedro, 2026-11-13: "Yes, Turso only"), with
+ * no Postgres anywhere: the store is its own record, and the word between instances is the store read
+ * on a beat (live/tursoLive.ts). On a Postgres, as before.
+ *
+ *   WS_HUB_DATABASE_URL    the store: Turso's address (TURSO_DATABASE_URL and TURSO_AUTH_TOKEN, as Turso's
+ *                          integration writes them, are read when no Postgres is named), or a served Postgres
  *   WS_HUB_KEY             the hub's signing key, PKCS#8 PEM
  *   WS_PUBLIC_URL          the hub's own address
  *   WS_LIVE_DATABASE_URL   the hosted world's shared documents, if kept apart. Left out, they share the hub's database
@@ -29,7 +34,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { openLive, recordConfig } from '../record';
+import { openBody } from './body';
 import { Hub, type IRefusal } from './Hub';
 import type { IHubKey } from './keys';
 import { createHubHandler, send, tokenOf } from './http';
@@ -39,11 +44,11 @@ import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
 import { LiveRoom, type LiveAccess } from '../live/room';
-import { postgresBus, soloBus } from '../live/bus';
-import { tableLines } from '../live/lines';
 
 export interface IHubAppConfig {
   databaseUrl: string;
+  /** Turso's token, where the store is on Turso. */
+  databaseToken?: string;
   key: IHubKey;
   publicUrl: string;
   liveDatabaseUrl?: string;
@@ -123,19 +128,21 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
     if (found && 'problem' in found) throw new Error(found.problem);
     const clerk = found as IClerkConfig | null;
 
-    const own = await openLive(config.databaseUrl, env);
+    const own = await openBody(config.databaseUrl, env, { token: config.databaseToken });
     const hub = new Hub(own.store, config.key, { publicUrl: config.publicUrl, accounts: clerk ? 'clerk' : 'builtin' });
-    const eraser = new Eraser(hub, own.database, recordConfig(env));
+    const eraser = new Eraser(hub, own.eraseHere, own.record);
 
     // One database carries both unless the world's documents are kept apart. Two stores cannot share one
     // record: its write-downs are one chain with one head, and each would take the other's for a save it never came from.
     const liveUrl = config.liveDatabaseUrl && config.liveDatabaseUrl !== config.databaseUrl ? config.liveDatabaseUrl : null;
+    const liveToken = env.TURSO_LIVE_AUTH_TOKEN?.trim() || config.databaseToken || env.TURSO_AUTH_TOKEN?.trim() || undefined;
     const live = liveUrl
-      ? await openLive(liveUrl, { ...env, TURSO_DATABASE_URL: env.TURSO_LIVE_DATABASE_URL, TURSO_AUTH_TOKEN: env.TURSO_LIVE_AUTH_TOKEN ?? env.TURSO_AUTH_TOKEN })
+      ? await openBody(liveUrl, { ...env, TURSO_DATABASE_URL: env.TURSO_LIVE_DATABASE_URL, TURSO_AUTH_TOKEN: env.TURSO_LIVE_AUTH_TOKEN ?? env.TURSO_AUTH_TOKEN }, { token: liveToken })
       : own;
 
-    const listenUrl = config.liveListenUrl ?? (isServed(liveUrl ?? config.databaseUrl) ? liveUrl ?? config.databaseUrl : null);
-    const bus = listenUrl ? await postgresBus(listenUrl) : soloBus();
+    // Only a served Postgres has a word to listen on; on Turso the word is the store, read on a beat
+    const listenUrl = live.kind === 'postgres' ? config.liveListenUrl ?? (isServed(liveUrl ?? config.databaseUrl) ? liveUrl ?? config.databaseUrl : null) : null;
+    const bus = await live.bus({ listenUrl });
 
     // Who may: the hub's own word (HostedWorld.connect), asked here and taken for a little while
     const hosted = new HostedWorld(hub);
@@ -154,11 +161,12 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
       heard.set(key, { until: now + LIVE_WORD_MS, answer });
       return answer;
     };
-    const room = new LiveRoom(live.store, access, Date.now, { bus, lines: await tableLines(live.database), holdMs: HOLD_MS });
+    // On Turso the word is read on a beat, which also tells the room of every event: the room needs no beat of its own
+    const room = new LiveRoom(live.store, access, Date.now, { bus, lines: await live.lines(), holdMs: HOLD_MS, ...(live.kind === 'turso' ? { beatMs: 0 } : {}) });
 
     const maintain = async () => {
       const record: string[] = [];
-      for (const store of liveUrl ? [own.store, live.store] : [own.store]) record.push((await store.maintain()).record?.status ?? 'NO_RECORD');
+      for (const body of liveUrl ? [own, live] : [own]) record.push(await body.maintain());
       return { record, erasuresWaiting: await eraser.sweep() };
     };
     const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined });
