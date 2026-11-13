@@ -28,6 +28,7 @@ import { makeHubKey } from '../server/hub/keys';
 import { createHubHandler } from '../server/hub/http';
 import { hubPathOf } from '../server/hub/function';
 import { DevView, HIDDEN } from '../server/hub/dev';
+import { PostgresDevStore } from '../server/hub/devStorePostgres';
 import { tableLines } from '../server/live/lines';
 import { signedText } from '../shared/entities/identity/signedText';
 import { addressOf } from '../shared/logic/time/RadixClock';
@@ -78,7 +79,7 @@ async function standHub(devAccounts: string): Promise<IStand> {
   const { store, database } = await openLive('pglite://memory', {}, { say: () => undefined } as any);
   const hub = new Hub(store, makeHubKey(HUB_PEM), { publicUrl: 'https://hub.test', now: () => NOW });
   const said: string[] = [];
-  const dev = new DevView({ hub, database, env: { ...ENV, WS_DEV_ACCOUNTS: devAccounts }, say: line => said.push(line) });
+  const dev = new DevView({ hub, store: new PostgresDevStore(store, database), env: { ...ENV, WS_DEV_ACCOUNTS: devAccounts }, say: line => said.push(line) });
   const handler = createHubHandler(hub, { dev, cronSecret: ENV.CRON_SECRET, maintain: async () => ({ record: ['NO_RECORD'] }) });
   const server = createServer((req, res) => void handler(req, res, hubPathOf(req.url)));
   await new Promise<void>(r => server.listen(0, '127.0.0.1', () => r()));
@@ -209,7 +210,7 @@ describe('the developers\' view of the data', () => {
   });
 
   it('says a setting this hub was given another way (a local stand-in\'s default, a key from a file) as given, not as missing', async () => {
-    const view = new DevView({ hub: stand.hub, database: stand.database, env: { WS_DEV_ACCOUNTS: 'devhand' }, given: { WS_HUB_KEY: 'given to this server directly' }, say: () => undefined });
+    const view = new DevView({ hub: stand.hub, store: new PostgresDevStore(stand.store, stand.database), env: { WS_DEV_ACCOUNTS: 'devhand' }, given: { WS_HUB_KEY: 'given to this server directly' }, say: () => undefined });
     const out = await view.read({ key: 'devhand', handle: 'devhand' }, '/state', new URLSearchParams());
     const settings = (out!.body.settings as { name: string }[]);
     expect(settings.find(s => s.name === 'WS_HUB_KEY')).toMatchObject({ set: true, from: null, given: 'given to this server directly' });

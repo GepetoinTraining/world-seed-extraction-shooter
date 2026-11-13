@@ -93,10 +93,10 @@
     counts.textContent = '';
     counts.append(el('thead', {}, el('tr', {}, el('th', {}, 'What'), el('th', {}, 'How many'), el('th', {}, 'The latest'))));
     const body = el('tbody');
-    const TABLE_OF = { ledgerRows: 'ledger_rows', lines: 'live_lines' };
     for (const [name, c] of Object.entries(state.counts || {})) {
       const words = name.replace(/([A-Z])/g, ' $1').toLowerCase();
-      const latest = c.latest ? opener(TABLE_OF[name] || 'documents', c.latest.id, `${c.latest.id}, ${when(c.latest.at)}`) : 'none';
+      // Which table the latest is in is the store's word, never this page's
+      const latest = c.latest ? opener(c.latest.table, c.latest.id, `${c.latest.id}, ${when(c.latest.at)}`) : 'none';
       body.append(el('tr', {}, el('td', {}, words), el('td', {}, String(c.count)), el('td', {}, latest)));
     }
     counts.append(body);
@@ -119,9 +119,10 @@
       list.append(ul);
     };
     const pick = (label, params) => el('button', { type: 'button', on: { click: () => rows({ ...params, page: 0 }) } }, label);
+    // Every table named here, and asked for when one is picked, is a name the store gave
     group('Tables', out.tables.map(t => pick(`${t.name}: ${plural(t.rows, 'row')}`, { table: t.name })));
-    group('Collections in documents', out.collections.map(c => pick(`${c.namespace} · ${c.type ?? '(no type)'}: ${plural(c.rows, 'row')}`, { table: 'documents', namespace: c.namespace, type: c.type })));
-    if (out.ledger.length) group('Ledger rows, by kind', out.ledger.map(l => pick(`${l.type}: ${plural(l.rows, 'row')}`, { table: 'ledger_rows', type: l.type })));
+    group('Collections of documents, by namespace and kind', out.collections.map(c => pick(`${c.namespace} · ${c.type ?? '(no type)'}: ${plural(c.rows, 'row')}`, { table: c.table, namespace: c.namespace, type: c.type })));
+    if (out.ledger.length) group('Ledger rows, by kind', out.ledger.map(l => pick(`${l.type}: ${plural(l.rows, 'row')}`, { table: l.table, type: l.type })));
   }
 
   async function rows(params) {
@@ -194,8 +195,8 @@
       target.append(el('ul', { className: 'dev-list dev-column' }, ...items.map(i => el('li', {}, i))));
     };
     list('By that id exactly', out.exact.map(e => opener(e.table, e.id, e.id)));
-    list('Documents naming it, newest first', out.documents.map(d => el('span', {}, opener('documents', d.id, d.id), ` ${d.type ?? d.namespace}, ${when(d.updatedAt)}`)));
-    list('Its newest receipts', out.ledger.newest.map(r => el('span', {}, opener('ledger_rows', r.id, r.id), ` ${r.type}, ${when(r.ts)}`)));
+    list('Documents naming it, newest first', out.documents.map(d => el('span', {}, opener(d.table, d.id, d.id), ` ${d.type ?? d.namespace}, ${when(d.updatedAt)}`)));
+    list('Its newest receipts', out.ledger.newest.map(r => el('span', {}, opener(r.table, r.id, r.id), ` ${r.type}, ${when(r.ts)}`)));
   });
 
   start();

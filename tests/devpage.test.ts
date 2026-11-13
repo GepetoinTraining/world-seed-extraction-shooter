@@ -27,7 +27,7 @@ const STATE = {
   record: { asked: true, state: 'READY', behind: 3, last: 'wd_abc' },
   scheduled: { lastRun: 1_800_000_000_000 },
   erasures: { waiting: 0, oldest: null },
-  counts: { accounts: { count: 2, latest: { id: 'hub_account_clerk_user_2abc', at: 1_800_000_000_000 } }, ledgerRows: { count: 0, latest: null } },
+  counts: { accounts: { count: 2, latest: { table: 'documents', id: 'hub_account_clerk_user_2abc', at: 1_800_000_000_000 } }, ledgerRows: { count: 0, latest: null } },
   at: 1_800_000_000_000
 };
 const TABLES = {
@@ -36,7 +36,7 @@ const TABLES = {
   collections: [{ table: 'documents', namespace: 'hub', type: 'hub_account', rows: 2, newest: 1_800_000_000_000 }],
   ledger: []
 };
-const ROWS = { ok: true, table: 'documents', page: 0, size: 50, total: 1, rows: [{ id: 'hub_account_clerk_user_2abc', namespace: 'hub', type: 'hub_account', owner: null, updatedAt: 1_800_000_000_000, bytes: 80 }] };
+const ROWS = { ok: true, table: 'documents', page: 0, size: 50, total: 1, rows: [{ table: 'documents', id: 'hub_account_clerk_user_2abc', namespace: 'hub', type: 'hub_account', owner: null, updatedAt: 1_800_000_000_000, bytes: 80 }] };
 const ROW = { ok: true, table: 'documents', row: { id: 'hub_account_clerk_user_2abc', namespace: 'hub', data: { type: 'hub_account', handle: 'alder', note: '<img src=x onerror=alert(1)>' } } };
 const FOUND = { ok: true, id: 'alder', exact: [{ table: 'documents', id: 'hub_account_clerk_user_2abc' }], documents: ROWS.rows, ledger: { rows: 0, newest: [] } };
 

@@ -39,6 +39,7 @@ import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
 import { DevView } from './dev';
+import { PostgresDevStore } from './devStorePostgres';
 import { LiveRoom, type LiveAccess } from '../live/room';
 import { postgresBus, soloBus } from '../live/bus';
 import { tableLines } from '../live/lines';
@@ -165,7 +166,7 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
     // The developers' view, for the accounts the host names in WS_DEV_ACCOUNTS and nobody else (dev.ts). A local
     // stand-in gives the hub its store, key and address directly when no setting names them, and the view says so
     const given = Object.fromEntries(settingsRead(env).filter(s => s.needed && !s.set).map(s => [s.name, 'given to this server directly (its own default, or a key from a file)']));
-    const dev = new DevView({ hub, database: own.database, env, given });
+    const dev = new DevView({ hub, store: new PostgresDevStore(own.store, own.database), env, given });
     const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev });
     return {
       hub, room, handler, eraser,
