@@ -75,6 +75,7 @@ import { fieldMinimap } from '../render/atoms/minimap';
 import { Hotbar, activateHotbar } from './Hotbar';
 import { levelLine } from './ui/levelLine';
 import { SkillNames } from '../logic/systems/SkillNames';
+import { blowStep } from '../render/BlowMarks';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -1000,6 +1001,8 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       let incomingDamage = 0;
       const landedStatuses: IStatusPlan[] = [];
+      // ux-fight: the rank every blow's drawn size is read against
+      const ownRank = ProgressionSystem.rankOf(usePlayerStore.getState().player);
       // Part 2: the heaviest thing that landed this frame, and where it came from, so the person feels it
       let heaviest: { weight: number; from: { x: number; y: number } } | null = null;
       const weighs = (weight: number | undefined, from: { x: number; y: number }) => {
@@ -1119,7 +1122,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           const size = (SIZE_ATOMS[def?.size || 'MEDIUM'] ?? 14) * ATOM_PX;
           effectsRef.current.push({
             kind: event.type === 'HIT' ? 'hit' : 'death',
-            x: event.position.x, y: event.position.y, at: now, size
+            x: event.position.x, y: event.position.y, at: now, size,
+            // ux-fight: a hit's brackets are as heavy as what landed, on the same scale as the shots
+            ...(event.type === 'HIT' ? { step: blowStep(event.damage ?? 0, ownRank) } : {})
           });
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
           // SH3: half of a blow that glanced landed, and the field says so, once in a run of them
@@ -1388,11 +1393,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           reducedMotion: reducedMotionRef.current,
           darkness: 1 - lightRef.current,
           bullets: [
-            ...combatResult.survivingBullets.map(b => ({ x: b.x, y: b.y, hostile: false })),
-            ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true }))
+            // ux-fight: drawn as large as the blow each carries, read against the person's own rank, whoever let it go
+            ...combatResult.survivingBullets.map(b => ({ x: b.x, y: b.y, hostile: false, step: blowStep(b.damage ?? 25, ownRank), angle: b.angle })),
+            ...survivingEnemyBullets.map(b => ({ x: b.x, y: b.y, hostile: true, step: blowStep(b.damage ?? 8, ownRank), angle: b.angle }))
           ],
           drops: drops.map((d: any) => d.position),
-          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range, inner: s.inner, half: s.half })),
+          swings: activeSwings.filter(s => now - s.startTime < 200).map(s => ({ x: s.origin.x, y: s.origin.y, angle: s.angle, range: s.range, inner: s.inner, half: s.half, step: blowStep(s.damage ?? 50, ownRank) })),
           // Part 2: the blow you are winding up, aimed where you aim, filling as it comes due
           windup: windupRef.current ? {
             x: playerPos.x, y: playerPos.z, angle: aimFrom(playerPos, windupRef.current.by), kind: windupRef.current.kind,
