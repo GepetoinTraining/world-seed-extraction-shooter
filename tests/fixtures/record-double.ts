@@ -19,25 +19,35 @@
  * POST /__seen answers what it has been sent since the last time it was asked: pipelines,
  * statements into staging, requests carrying a manifest, and the start of every statement.
  *
- * POST /__fault { mode } sets how it misbehaves, for bars and for play:
+ * POST /__fault { mode, match? } sets how it misbehaves, for bars and for play:
  *   none           answers
  *   refuse         answers every pipeline with a 503, and applies nothing
- *   lost-answer    applies the next pipeline holding an insert into cold_writedowns, cuts the connection, then goes to `then`
- *   late-answer    cuts the connection of the next pipeline holding an insert into cold_writedowns and keeps it for later, then goes to `then`
+ *   lost-answer    applies the next pipeline holding `match` (an insert into cold_writedowns unless named), cuts the connection, then goes to `then`
+ *   late-answer    cuts the connection of the next pipeline holding `match` and keeps it for later, then goes to `then`
  *   land           applies what late-answer kept, now. On Turso a stopped sender's batch landed 1 to 5 seconds or more after the stop
  *   land-after-has applies it just after answering the next look for one manifest
  *   drop           cuts the connection of the next `times` pipelines, and applies nothing
  *   slow           waits `ms` before each answer
+ *
+ * POST /__reset puts a new, empty database in place of the old one, so a bar can begin from nothing
+ * without starting another double. A double opened on ':memory:' keeps nothing on disk.
  */
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 
 const [, , file, portText, token] = process.argv;
 const port = Number(portText);
-const db = new DatabaseSync(file);
-db.exec('PRAGMA journal_mode=WAL');
+const openDb = () => {
+  const opened = new DatabaseSync(file);
+  if (file !== ':memory:') opened.exec('PRAGMA journal_mode=WAL');
+  return opened;
+};
+let db = openDb();
+let resets = 0;
 
-let fault: { mode: string; ms?: number; then?: string; times?: number } = { mode: 'none' };
+let fault: { mode: string; ms?: number; then?: string; times?: number; match?: string } = { mode: 'none' };
+const MANIFEST = 'INSERT INTO cold_writedowns';
+const matches = (text: string) => text.includes(fault.match ?? MANIFEST);
 let kept: any[] | null = null;
 let limits: { bytes?: number; variables?: number; answerBytes?: number } = {};
 const nothingSeen = () => ({ pipelines: 0, staged: 0, crossings: 0, statements: [] as string[] });
@@ -167,6 +177,20 @@ const server = createServer((req, res) => {
       if (fault.mode === 'land') { landKept(); fault = { mode: 'none' }; }
       return send(200, { fault });
     }
+    if (path === '/__reset') {
+      if (file === ':memory:') {
+        db.close();
+        db = openDb();
+      } else {
+        for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]) db.exec(`DROP TABLE IF EXISTS "${name}"`);
+      }
+      stored.clear();
+      kept = null;
+      fault = { mode: 'none' };
+      limits = {};
+      seen = nothingSeen();
+      return send(200, { reset: ++resets });
+    }
     if (path === '/__limit') {
       limits = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       return send(200, { limits });
@@ -199,7 +223,7 @@ const server = createServer((req, res) => {
     seen.pipelines++;
     seen.staged += (text.match(/INSERT INTO cold_stage_/g) ?? []).length;
     if (text.includes('INSERT INTO cold_writedowns')) seen.crossings++;
-    if (fault.mode === 'late-answer' && text.includes('INSERT INTO cold_writedowns')) {
+    if (fault.mode === 'late-answer' && matches(text)) {
       kept = body.requests;
       fault = { mode: fault.then ?? 'none' };
       req.socket.destroy();
@@ -212,7 +236,7 @@ const server = createServer((req, res) => {
         return { type: 'error', error: { message: (e as Error).message } };
       }
     });
-    if (fault.mode === 'lost-answer' && text.includes('INSERT INTO cold_writedowns')) {
+    if (fault.mode === 'lost-answer' && matches(text)) {
       fault = { mode: fault.then ?? 'none' };
       req.socket.destroy();
       return;

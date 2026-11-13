@@ -114,6 +114,53 @@ describe('the settings, worked out from what the host already gives', () => {
     }
   });
 
+  it('the store is Turso when Turso\'s two names are set and no Postgres is named (Pedro, 2026-11-13: "Yes, Turso only")', () => {
+    const key = pem();
+    const TURSO = { TURSO_DATABASE_URL: 'libsql://store-pedro.turso.test', TURSO_AUTH_TOKEN: 'turso-token-0123456789' };
+    const alone = hubAppConfigFrom({ ...TURSO, WS_HUB_KEY: key, VERCEL_PROJECT_PRODUCTION_URL: HOST.VERCEL_PROJECT_PRODUCTION_URL });
+    if ('problem' in alone) throw new Error(alone.problem);
+    expect(alone.databaseUrl).toBe(TURSO.TURSO_DATABASE_URL);
+    expect(alone.databaseToken).toBe(TURSO.TURSO_AUTH_TOKEN);
+    // No Postgres anywhere: nothing to listen on
+    expect(alone.liveListenUrl).toBeUndefined();
+    expect(settingsRead({ ...TURSO }).find(s => s.name === 'WS_HUB_DATABASE_URL')).toMatchObject({ set: true, from: 'TURSO_DATABASE_URL' });
+    expect(settingsLine({ ...TURSO, WS_HUB_KEY: key })).toMatch(/WS_HUB_DATABASE_URL \(from TURSO_DATABASE_URL\)/);
+    expect(settingsLine({ ...TURSO, WS_HUB_KEY: key })).not.toContain('turso-token-0123456789');
+
+    // A Postgres named is the store, and Turso stays what it was beside it
+    const named = hubAppConfigFrom({ ...TURSO, ...HOST, WS_HUB_KEY: key });
+    if ('problem' in named) throw new Error(named.problem);
+    expect(named.databaseUrl).toBe(HOST.DATABASE_URL);
+    expect(named.databaseToken).toBeUndefined();
+
+    // The hub's own name still wins, and may itself be a Turso address, taking Turso's token when one is set
+    const own = hubAppConfigFrom({ ...TURSO, ...HOST, WS_HUB_KEY: key, WS_HUB_DATABASE_URL: 'libsql://another.turso.test' });
+    if ('problem' in own) throw new Error(own.problem);
+    expect(own.databaseUrl).toBe('libsql://another.turso.test');
+    expect(own.databaseToken).toBe(TURSO.TURSO_AUTH_TOKEN);
+    const local = hubAppConfigFrom({ WS_HUB_KEY: key, WS_PUBLIC_URL: 'https://hub.test', WS_HUB_DATABASE_URL: 'http://127.0.0.1:5911' });
+    if ('problem' in local) throw new Error(local.problem);
+    expect(local.databaseToken).toBeUndefined();
+  });
+
+  it('says what is missing for the store actually chosen, and offers Turso, never Neon, as the way to one', () => {
+    // Turso's address without its token: the token is what is missing, and nothing about a Postgres
+    const half = hubConfigFrom({ TURSO_DATABASE_URL: 'libsql://store-pedro.turso.test', WS_HUB_KEY: pem(), WS_PUBLIC_URL: 'https://hub.test' });
+    expect('problem' in half && half.missing).toEqual(['TURSO_AUTH_TOKEN']);
+    expect('problem' in half && half.problem).toMatch(/TURSO_AUTH_TOKEN is not set/);
+    expect('problem' in half && half.problem).not.toContain('libsql://store-pedro');
+
+    // Nothing set: the store's sentence names Turso's integration first, and never Neon
+    const none = hubConfigFrom({});
+    if (!('problem' in none)) throw new Error('A hub with nothing set opened.');
+    // The store's sentence is said first, before the key's
+    const sentence = none.problem.slice(0, none.problem.indexOf('WS_HUB_KEY is not set'));
+    expect(sentence).toMatch(/^WS_HUB_DATABASE_URL is not set/);
+    expect(sentence).toMatch(/TURSO_DATABASE_URL/);
+    expect(sentence.indexOf('TURSO_DATABASE_URL')).toBeLessThan(sentence.indexOf(' DATABASE_URL'));
+    expect(none.problem).not.toMatch(/Neon/);
+  });
+
   it('Clerk named by half is said with the rest, and the publishable key Clerk\'s integration writes is read', () => {
     // Connecting Clerk's integration writes its publishable key; the public key that reads its tokens is pasted by hand
     const half = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: pem(), NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE });

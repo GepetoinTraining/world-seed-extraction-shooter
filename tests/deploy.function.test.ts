@@ -12,9 +12,12 @@
  *   - the file the host runs names only what plain Node can find;
  *   - built, it loads, and with no settings it gives the hub's own refusal, naming what is missing;
  *   - with a store it answers, which also proves it finds its migrations from where it is built to;
+ *   - with Turso's two names and no Postgres named, its store is on Turso alone, through the network
+ *     driver, and it finds that store's own migrations too (Pedro, 2026-11-13: "Yes, Turso only");
  *   - a key the host mangled is said as a problem, never a death at load.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { startDouble, type IDouble } from './fixtures/turso-double';
 import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -118,6 +121,41 @@ describe('the hub\'s function as the host loads it', () => {
       expect(answer.body).toMatchObject({ ok: true, service: 'worldseed-hub', hub: { url: 'https://hub.test', accounts: 'builtin' } });
     }
   }, 120_000);
+
+  describe('its store on Turso alone, as the host is set up today', () => {
+    const TOKEN = 'a-token-the-stand-in-asks-for-0123456789';
+    let turso: IDouble;
+    beforeAll(async () => { turso = await startDouble({ token: TOKEN }); }, 30_000);
+    afterAll(async () => { await turso?.stop(); });
+
+    it('opens with Turso\'s two names, the key and the address, with no Postgres named, and finds its own migrations from where it is built to', () => {
+      const key = pem();
+      const ran = ask({ TURSO_DATABASE_URL: turso.url, TURSO_AUTH_TOKEN: TOKEN, WS_HUB_KEY: key, VERCEL_PROJECT_PRODUCTION_URL: 'hub.test' });
+      expect(ran.status, ran.stderr).toBe(0);
+      for (const answer of ran.answers) {
+        expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+        expect(answer.body).toMatchObject({ ok: true, service: 'worldseed-hub', hub: { url: 'https://hub.test' } });
+      }
+      const said = ran.stdout.split('\n').find(l => l.startsWith('[HUB] Settings'));
+      expect(said).toMatch(/WS_HUB_DATABASE_URL \(from TURSO_DATABASE_URL\)/);
+      // Never a value: not the address, not the token, not the key
+      for (const value of [turso.url, TOKEN, key.trim().split('\n')[1]]) expect(ran.stdout + ran.stderr).not.toContain(value);
+    }, 120_000);
+
+    it('made its own tables on Turso, under names the record never uses', async () => {
+      const tables = (await turso.sql(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)).map(r => String(r[0]));
+      expect(tables).toEqual(expect.arrayContaining(['store_commits', 'store_documents', 'store_ledger_rows', 'store_migrations', 'store_treasuries']));
+      expect(tables.filter(t => !t.startsWith('store_'))).toEqual([]);
+    });
+
+    it('with Turso\'s address and no token, says the token is what is missing', () => {
+      const ran = ask({ TURSO_DATABASE_URL: turso.url, WS_HUB_KEY: pem(), WS_PUBLIC_URL: 'https://hub.test' });
+      expect(ran.status, ran.stderr).toBe(0);
+      expect(ran.answers[0]?.status).toBe(503);
+      expect(ran.answers[0]?.body.settings).toEqual({ missing: ['TURSO_AUTH_TOKEN'], unreadable: [] });
+      expect(ran.answers[0]?.body.reason).toMatch(/TURSO_AUTH_TOKEN is not set/);
+    }, 120_000);
+  });
 
   it('says a key the host mangled as a problem, and reads one whose line ends were flattened', () => {
     const settings = { WS_HUB_DATABASE_URL: 'pglite://memory', WS_PUBLIC_URL: 'https://hub.test' };

@@ -25,6 +25,9 @@ import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { folderUrl, openDatabase } from '../server/connection';
 import { SqlStore, StoreConflict, StoreRefusal } from '../shared/SqlStore';
 import { openStore } from '../server/openStore';
+import type { IStore } from '../server/store';
+import { openTursoStore } from '../server/tursoStore';
+import { startDouble } from './fixtures/turso-double';
 import { IWireDoc, ICommitRequest } from '../shared/entities/data/wire';
 
 const NS = { CHARACTERS: 'characters', ITEMS: 'items', WORLDS: 'worlds', TRANSACTIONS: 'transactions', CONTENT: 'content', TERRITORIES: 'territories' };
@@ -53,16 +56,16 @@ function rowDoc(uid: string, seq: number, type = 'GOLD_DELTA', data: Record<stri
 
 const headDoc = (uid: string, seq: number): IWireDoc => wire(`ledger_head_${uid}`, NS.TRANSACTIONS, { seq }, { metadata: { createdAt: 1, updatedAt: 1, ownerCertUid: uid, version: 1 } });
 
-const commit = (store: SqlStore, ops: ICommitRequest['ops'], extra: Partial<ICommitRequest> = {}) =>
+const commit = (store: IStore, ops: ICommitRequest['ops'], extra: Partial<ICommitRequest> = {}) =>
   store.commit({ commitId: randomUUID(), ops, ...extra });
 
-const put = (store: SqlStore, doc: IWireDoc) => commit(store, [{ kind: 'put', doc }]);
+const put = (store: IStore, doc: IWireDoc) => commit(store, [{ kind: 'put', doc }]);
 
 // ---------------------------------------------------------------------------
 // THE THREE DOORS
 // ---------------------------------------------------------------------------
 
-interface IDoor { name: string; open: () => Promise<{ store: SqlStore; done: () => Promise<void> }> }
+interface IDoor { name: string; dialect: string; open: () => Promise<{ store: IStore; done: () => Promise<void> }> }
 
 const dirs: string[] = [];
 const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'ws-db-')); dirs.push(d); return d; };
@@ -70,6 +73,7 @@ const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'ws-db-')); dirs.pu
 const DOORS: IDoor[] = [
   {
     name: 'Postgres on a folder (PGlite)',
+    dialect: 'postgres',
     open: async () => {
       const store = await openStore(folderUrl(join(scratch(), 'contract')));
       return { store, done: () => store.close() };
@@ -77,6 +81,7 @@ const DOORS: IDoor[] = [
   },
   {
     name: 'Postgres in memory (PGlite)',
+    dialect: 'postgres',
     open: async () => {
       const store = await openStore('pglite://memory');
       return { store, done: () => store.close() };
@@ -84,6 +89,7 @@ const DOORS: IDoor[] = [
   },
   {
     name: 'Postgres over the wire (pg driver)',
+    dialect: 'postgres',
     open: async () => {
       const db = await PGlite.create();
       const port = 15432 + Math.floor(Math.random() * 2000);
@@ -92,6 +98,16 @@ const DOORS: IDoor[] = [
       const store = await openStore(`postgres://postgres:postgres@127.0.0.1:${port}/postgres`, { poolSize: 1 });
       return { store, done: async () => { await store.close(); await server.stop(); await db.close(); } };
     }
+  },
+  {
+    // The hub's second body (server/tursoStore.ts): the same law on Turso, through the network driver, over its stand-in
+    name: 'Turso over the network (its stand-in)',
+    dialect: 'turso',
+    open: async () => {
+      const double = await startDouble();
+      const store = await openTursoStore({ url: double.url });
+      return { store, done: async () => { await store.close(); await double.stop(); } };
+    }
   }
 ];
 
@@ -99,8 +115,8 @@ afterAll(() => {
   for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }); } catch { /* a held WAL file on Windows; the OS cleans temp */ } }
 });
 
-describe.each(DOORS)('line 70: the store contract on $name', ({ open }) => {
-  let store: SqlStore;
+describe.each(DOORS)('line 70: the store contract on $name', ({ open, dialect }) => {
+  let store: IStore;
   let done: () => Promise<void>;
 
   beforeAll(async () => { ({ store, done } = await open()); }, 60_000);
@@ -113,7 +129,7 @@ describe.each(DOORS)('line 70: the store contract on $name', ({ open }) => {
   it('reports its own health and dialect', async () => {
     const health = await store.health();
     expect(health.ok).toBe(true);
-    expect(health.dialect).toBe('postgres');
+    expect(health.dialect).toBe(dialect);
   });
 
   it('returns null for what is not there, never an empty document', async () => {
