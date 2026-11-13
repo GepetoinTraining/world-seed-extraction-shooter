@@ -33,7 +33,7 @@ export interface IHubFunctionConfig {
 }
 
 /** Said when the store is Turso's, read from its integration's name, and its token is not there. */
-export const TOKEN_LACKING = 'TURSO_AUTH_TOKEN is not set: the store is the Turso database TURSO_DATABASE_URL names, and Turso answers nothing without its token. Turso\'s integration writes both when its database is connected to the project.';
+export const TOKEN_LACKING = 'TURSO_AUTH_TOKEN is not set: the store is the database TURSO_DATABASE_URL names, which answers nothing without its token. A host writes both when that database is connected to the project.';
 
 /** Why this hub cannot check anything yet: every setting it lacks or cannot read, by name, in one sentence each. */
 export interface IConfigProblem {
@@ -60,7 +60,8 @@ export function hubConfigFrom(env: NodeJS.ProcessEnv): IHubFunctionConfig | ICon
     missing.push('TURSO_AUTH_TOKEN');
     said.push(TOKEN_LACKING);
   }
-  // A host's secret store may keep a key on one line, its line ends arriving as the two characters \ and n.
+  // A host's secret store may keep a key on one line, its line ends gone to spaces, to nothing, or to the two
+  // characters \ and n: makeHubKey builds it again from its markers and base64 (keys.ts, `pemOf`).
   // A key that cannot be read is said like any other missing setting: thrown here, it would kill the
   // function as it loads, and the host would answer for the hub with nothing a person can act on.
   let key: IHubKey | undefined;
@@ -68,7 +69,7 @@ export function hubConfigFrom(env: NodeJS.ProcessEnv): IHubFunctionConfig | ICon
   if (!pem) lack('WS_HUB_KEY');
   else {
     try {
-      key = makeHubKey(pem.replace(/\\n/g, '\n'));
+      key = makeHubKey(pem);
     } catch (e) {
       unreadable.push('WS_HUB_KEY');
       // Node's own words about a bad key never quote it, so they are safe to pass on

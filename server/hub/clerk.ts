@@ -21,6 +21,7 @@
  *   CLERK_SECRET_KEY          to delete the account at Clerk when its player asks this hub to
  */
 import { createHmac, createPublicKey, timingSafeEqual, verify, type KeyObject } from 'node:crypto';
+import { pemOf } from './keys';
 
 export interface IClerkConfig {
   publicKey: KeyObject;
@@ -44,7 +45,8 @@ const CLOCK_LEEWAY_S = 10;
 /** A webhook older than this is not taken: it is someone sending an old one again. */
 const WEBHOOK_WINDOW_S = 5 * 60;
 
-const pem = (text: string) => text.trim().replace(/\\n/g, '\n');
+/** Clerk's key as the host's settings left it: built again from its markers and base64, whatever became of its line ends (keys.ts). */
+const pem = (text: string) => pemOf(text);
 
 /** Clerk, if this hub's environment names it. A key that does not read is said, not passed over. */
 export function clerkConfigFrom(env: NodeJS.ProcessEnv, publicUrl: string): IClerkConfig | { problem: string } | null {

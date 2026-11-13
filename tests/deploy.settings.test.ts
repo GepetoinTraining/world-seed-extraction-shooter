@@ -13,7 +13,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { generateKeyPairSync } from 'node:crypto';
+import { createPublicKey, generateKeyPairSync } from 'node:crypto';
+import { clerkConfigFrom } from '../server/hub/clerk';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -143,22 +144,28 @@ describe('the settings, worked out from what the host already gives', () => {
     expect(local.databaseToken).toBeUndefined();
   });
 
-  it('says what is missing for the store actually chosen, and offers Turso, never Neon, as the way to one', () => {
+  it('says what is missing for the store actually chosen, and names no provider as the one expected', () => {
     // Turso's address without its token: the token is what is missing, and nothing about a Postgres
     const half = hubConfigFrom({ TURSO_DATABASE_URL: 'libsql://store-pedro.turso.test', WS_HUB_KEY: pem(), WS_PUBLIC_URL: 'https://hub.test' });
     expect('problem' in half && half.missing).toEqual(['TURSO_AUTH_TOKEN']);
     expect('problem' in half && half.problem).toMatch(/TURSO_AUTH_TOKEN is not set/);
     expect('problem' in half && half.problem).not.toContain('libsql://store-pedro');
 
-    // Nothing set: the store's sentence names Turso's integration first, and never Neon
+    // Nothing set: the store's sentence says what kind of thing is missing and every name read, and names no provider as the one expected
     const none = hubConfigFrom({});
     if (!('problem' in none)) throw new Error('A hub with nothing set opened.');
     // The store's sentence is said first, before the key's
     const sentence = none.problem.slice(0, none.problem.indexOf('WS_HUB_KEY is not set'));
     expect(sentence).toMatch(/^WS_HUB_DATABASE_URL is not set/);
-    expect(sentence).toMatch(/TURSO_DATABASE_URL/);
-    expect(sentence.indexOf('TURSO_DATABASE_URL')).toBeLessThan(sentence.indexOf(' DATABASE_URL'));
+    for (const name of ['DATABASE_URL', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN']) expect(sentence).toContain(name);
+    expect(sentence).toMatch(/database/);
+    // Pedro, 2026-11-13: "not neon, I'm not going to dabble in neon". No brand is said as the default, here or anywhere the hub says what is missing
+    const brand = /Neon|Turso's|Supabase|Vercel Postgres|integration/;
+    expect(sentence).not.toMatch(brand);
     expect(none.problem).not.toMatch(/Neon/);
+    expect('problem' in half && half.problem).not.toMatch(/Neon|Turso's/);
+    // Nor in what each setting is said to be for, which the log and a developers' view show
+    for (const s of settingsRead({})) expect(s.what, s.name).not.toMatch(/Neon/);
   });
 
   it('Clerk named by half is said with the rest, and the publishable key Clerk\'s integration writes is read', () => {
@@ -175,6 +182,70 @@ describe('the settings, worked out from what the host already gives', () => {
     const whole = hubAppConfigFrom({ ...HOST, WS_HUB_KEY: pem(), CLERK_JWT_KEY: clerkPublic(), NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
     expect('problem' in whole).toBe(false);
     expect(settingsRead({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: PUBLISHABLE }).find(s => s.name === 'CLERK_PUBLISHABLE_KEY')).toMatchObject({ set: true, from: 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY' });
+  });
+});
+
+describe('a key pasted into a host\'s settings, whatever became of its line ends', () => {
+  // Pedro pasted Clerk's public key on the host himself, and the hub could not read it: a PEM pasted into a
+  // one-line field loses its line ends, to spaces, to nothing, or to the two characters \ and n
+  const mangled = (pem: string): [string, string][] => {
+    const lines = pem.trim();
+    return [
+      ['as it was', lines],
+      ['one line, spaces between', lines.replace(/\n/g, ' ')],
+      ['one line, nothing between', lines.replace(/\n/g, '')],
+      ['line ends written as \\n', lines.replace(/\n/g, '\\n')],
+      ['Windows line ends', lines.replace(/\n/g, '\r\n')],
+      ['spaces and a stray tab, with the line ends gone', lines.replace(/\n/g, '  \t')]
+    ];
+  };
+  const SETTINGS = { WS_HUB_DATABASE_URL: 'pglite://memory', WS_PUBLIC_URL: 'https://hub.test' };
+
+  it('the hub\'s own key reads in every one of those shapes, as the very key it was', () => {
+    const key = pem();
+    const id = makeHubKey(key).id;
+    for (const [how, text] of mangled(key)) {
+      const out = hubConfigFrom({ ...SETTINGS, WS_HUB_KEY: text });
+      if ('problem' in out) throw new Error(`${how}: ${out.problem}`);
+      expect(out.key.id, how).toBe(id);
+    }
+  });
+
+  it('Clerk\'s public key reads in every one of those shapes, as the very key it was', () => {
+    const publicPem = clerkPublic();
+    const want = createPublicKey(publicPem).export({ type: 'spki', format: 'der' }).toString('base64');
+    for (const [how, text] of mangled(publicPem)) {
+      const out = hubAppConfigFrom({ ...SETTINGS, WS_HUB_KEY: pem(), CLERK_JWT_KEY: text, CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+      if ('problem' in out) throw new Error(`${how}: ${out.problem}`);
+      const read = clerkConfigFrom({ CLERK_JWT_KEY: text, CLERK_PUBLISHABLE_KEY: PUBLISHABLE }, 'https://hub.test');
+      if (!read || 'problem' in read) throw new Error(`${how}: not read`);
+      expect(read.publicKey.export({ type: 'spki', format: 'der' }).toString('base64'), how).toBe(want);
+    }
+  });
+
+  it('a wrong text is still refused by name, and never repeated: no markers, markers around what is not a key, half a key', () => {
+    const key = pem().trim();
+    const publicPem = clerkPublic().trim();
+    const body = (text: string) => text.split('\n').slice(1, -1).join('');
+    const wrongs = [
+      'not-a-key-but-a-secret-all-the-same',
+      '-----BEGIN PRIVATE KEY----- bm90IGEga2V5IGF0IGFsbA== -----END PRIVATE KEY-----',
+      `-----BEGIN PRIVATE KEY----- ${body(key).slice(0, 20)} -----END PRIVATE KEY-----`,
+      body(key)
+    ];
+    for (const wrong of wrongs) {
+      const out = hubConfigFrom({ ...SETTINGS, WS_HUB_KEY: wrong });
+      expect('problem' in out && out.unreadable, wrong).toEqual(['WS_HUB_KEY']);
+      expect('problem' in out && out.problem).toMatch(/WS_HUB_KEY cannot be read as a key/);
+      for (const part of wrong.split(/\s+/).filter(p => p.length >= 16)) expect('problem' in out && out.problem).not.toContain(part);
+    }
+    const clerkWrongs = ['not a public key', '-----BEGIN PUBLIC KEY----- bm90IGEga2V5IGF0IGFsbA== -----END PUBLIC KEY-----', body(publicPem)];
+    for (const wrong of clerkWrongs) {
+      const out = hubAppConfigFrom({ ...SETTINGS, WS_HUB_KEY: pem(), CLERK_JWT_KEY: wrong, CLERK_PUBLISHABLE_KEY: PUBLISHABLE });
+      expect('problem' in out && out.unreadable, wrong).toEqual(['CLERK_JWT_KEY']);
+      expect('problem' in out && out.problem).toMatch(/CLERK_JWT_KEY is not a public key this hub can read/);
+      for (const part of wrong.split(/\s+/).filter(p => p.length >= 16)) expect('problem' in out && out.problem).not.toContain(part);
+    }
   });
 });
 

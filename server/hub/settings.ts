@@ -45,14 +45,15 @@ export interface ISetting {
 
 export const HUB_SETTINGS: readonly ISetting[] = [
   {
-    name: 'WS_HUB_DATABASE_URL', what: 'the store: Turso\'s address, or a served Postgres', secret: true,
+    name: 'WS_HUB_DATABASE_URL', what: 'the store: a database address (libsql:// or https://, or postgres://)', secret: true,
     needed: 'this hub has no store to check against.',
-    // A Postgres named is the store; with none, the Turso database connected to the project is (HT6)
+    // A Postgres named is the store; with none, the database TURSO_DATABASE_URL names is (HT6). No provider is
+    // said as the one expected (Pedro, 2026-11-13: "not neon, I'm not going to dabble in neon")
     host: [
-      { name: 'DATABASE_URL', by: 'a Postgres the host connected (its pooled address)' },
-      { name: 'TURSO_DATABASE_URL', by: 'Turso\'s integration' }
+      { name: 'DATABASE_URL', by: 'a database the host connected to the project (postgres://)' },
+      { name: 'TURSO_DATABASE_URL', by: 'a database the host connected to the project (libsql://)' }
     ],
-    lackSays: ', nor TURSO_DATABASE_URL and TURSO_AUTH_TOKEN, which Turso\'s integration writes when its database is connected to the project (a Postgres named by DATABASE_URL would be read before them)'
+    lackSays: ', nor DATABASE_URL, nor TURSO_DATABASE_URL with TURSO_AUTH_TOKEN, the names a host writes when a database is connected to the project'
   },
   { name: 'WS_HUB_KEY', what: 'the hub\'s signing key, PKCS#8 PEM', secret: true, needed: 'this hub has no key to sign with. `npm run hub:key` makes one in your own terminal.' },
   {
@@ -63,14 +64,14 @@ export const HUB_SETTINGS: readonly ISetting[] = [
   {
     name: 'WS_LIVE_LISTEN_URL', what: 'a direct connection, for the word between instances', secret: true,
     host: [{
-      name: 'DATABASE_URL_UNPOOLED', by: 'the host\'s Postgres (Neon\'s integration, its direct address)',
+      name: 'DATABASE_URL_UNPOOLED', by: 'the same database, its direct address',
       when: (env, fromOf) => fromOf('WS_HUB_DATABASE_URL') === 'DATABASE_URL' && !own(env, 'WS_LIVE_DATABASE_URL')
     }]
   },
   { name: 'WS_LIVE_DATABASE_URL', what: 'the hosted world\'s documents, when kept apart from the hub\'s', secret: true },
   { name: 'WS_RECORD', what: '1 keeps a Postgres store\'s record on Turso; a store on Turso is its own record' },
-  { name: 'TURSO_DATABASE_URL', what: 'Turso\'s address: the store\'s when no Postgres is named, else the record\'s', secret: true },
-  { name: 'TURSO_AUTH_TOKEN', what: 'Turso\'s token', secret: true },
+  { name: 'TURSO_DATABASE_URL', what: 'a database address (libsql://): the store\'s when no Postgres is named, else the record\'s', secret: true },
+  { name: 'TURSO_AUTH_TOKEN', what: 'that database\'s token', secret: true },
   { name: 'TURSO_LIVE_DATABASE_URL', what: 'a record of its own for the world\'s documents kept apart', secret: true },
   { name: 'TURSO_LIVE_AUTH_TOKEN', what: 'its token', secret: true },
   { name: 'CRON_SECRET', what: 'what the host\'s scheduled call carries', secret: true },

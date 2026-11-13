@@ -31,9 +31,25 @@ function fromPrivate(privateKey: KeyObject): IHubKey {
   return { id, publicKeyPem, sign: text => sign(null, Buffer.from(text, 'utf8'), privateKey).toString('base64') };
 }
 
-/** From a PKCS#8 PEM, or a fresh one. */
+/**
+ * A PEM as a host's settings may have left it. A key pasted into a one-line field loses its line ends: to
+ * spaces, to nothing, to the two characters \ and n, or to Windows' own. When its two marker lines and
+ * the base64 between them are all there, it is built again from those parts, whatever became of the white
+ * space; anything else is handed on as it came, for Node to refuse, and the refusal names the setting,
+ * never the text.
+ */
+export function pemOf(text: string): string {
+  const flat = text.trim().replace(/\\r\\n|\\n|\\r/g, '\n');
+  const found = /-----BEGIN ([A-Z0-9 ]+?)-----([\s\S]*?)-----END \1-----/.exec(flat);
+  if (!found) return flat;
+  const body = found[2].replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return flat;
+  return `-----BEGIN ${found[1]}-----\n${body.match(/.{1,64}/g)!.join('\n')}\n-----END ${found[1]}-----\n`;
+}
+
+/** From a PKCS#8 PEM, in whatever shape a host's settings left it (`pemOf`), or a fresh one. */
 export function makeHubKey(pem?: string): IHubKey {
-  if (pem) return fromPrivate(createPrivateKey(pem));
+  if (pem) return fromPrivate(createPrivateKey(pemOf(pem)));
   return fromPrivate(generateKeyPairSync('ed25519').privateKey);
 }
 

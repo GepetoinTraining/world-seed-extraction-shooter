@@ -1,7 +1,8 @@
 /**
  * THE HUB, as deployed (DEPLOY.md): accounts, sessions, a person's characters, and the receipts it
- * checks. It runs nobody's play. Everything it keeps is in its own store, the same SqlStore the game
- * uses, so its record goes to Turso through the same keeper:
+ * checks. It runs nobody's play. Everything it keeps is in its own store: the same SqlStore the game
+ * uses, its record going to Turso through the same keeper, or, on a function host with no Postgres,
+ * the same law on Turso alone (server/tursoStore.ts), which is its own record:
  *
  *   hub_account_{handle}    an account: the handle as written, a salted scrypt hash. On a hub whose
  *                           accounts are Clerk's (clerk.ts) it is hub_account_clerk_{id}: that id
