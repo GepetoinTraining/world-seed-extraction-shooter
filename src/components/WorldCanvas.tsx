@@ -76,6 +76,8 @@ import { Hotbar, activateHotbar } from './Hotbar';
 import { levelLine } from './ui/levelLine';
 import { SkillNames } from '../logic/systems/SkillNames';
 import { blowStep } from '../render/BlowMarks';
+import { FightEntry, FightRecord, ITakenBlow, useFightRecord } from '../logic/systems/FightRecord';
+import { FightRecordButton } from './FightRecordView';
 
 // --- CONSTANTS ---
 const TILE_SIZE = 20; // 1 Unit = 20 Pixels
@@ -226,7 +228,7 @@ const promptFor = (pick: InteractPick | 'EXIT'): string => {
 
 const KeyHelp: React.FC = () => (
   <div className="ws-dim ws-small" style={{ position: 'absolute', bottom: 12, right: 16, zIndex: 100, pointerEvents: 'none', background: 'rgba(3,3,3,0.72)', padding: '2px 8px', maxWidth: '30vw', textAlign: 'right' }}>
-    <Kbd>WASD</Kbd> move · <Kbd>HOLD CLICK</Kbd> or <Kbd>SPACE</Kbd> fire · <Kbd>E</Kbd> act · <Kbd>TAB</Kbd> sheet · <Kbd>Q</Kbd> read
+    <Kbd>WASD</Kbd> move · <Kbd>HOLD CLICK</Kbd> or <Kbd>SPACE</Kbd> fire · <Kbd>E</Kbd> act · <Kbd>TAB</Kbd> sheet · <Kbd>Q</Kbd> read · <Kbd>L</Kbd> record
   </div>
 );
 
@@ -236,6 +238,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
   const { performInteraction, processAction, player } = usePlayerStore();
 
   useEffect(() => { void installGibberishFace(); }, []);
+  // ux-fight: the fight's record is of this dive. A new dive begins it again; it stays after this one ends until then
+  useEffect(() => {
+    const w = useWorldStore.getState();
+    useFightRecord.getState().begin(session.sessionId, w.availableWorlds.find(c => c.id === w.activeWorldId)?.name ?? '', Date.now());
+  }, [session.sessionId]);
 
   // Local State
   const [playerPatterns, setPlayerPatterns] = useState<any[]>([]);
@@ -1001,7 +1008,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       let incomingDamage = 0;
       const landedStatuses: IStatusPlan[] = [];
-      // ux-fight: the rank every blow's drawn size is read against
+      // ux-fight: this frame's lines of the fight's record, and the rank every blow's drawn size is read against
+      const recorded: FightEntry[] = [];
+      const takenBlows: ITakenBlow[] = [];
       const ownRank = ProgressionSystem.rankOf(usePlayerStore.getState().player);
       // Part 2: the heaviest thing that landed this frame, and where it came from, so the person feels it
       let heaviest: { weight: number; from: { x: number; y: number } } | null = null;
@@ -1037,6 +1046,15 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const liveEquipment = usePlayerStore.getState().player.equipment;
       const liveAttributes = usePlayerStore.getState().player.attributes;
       const aiResult = MobAI.tick(visibleChunks, { x: playerPos.x, y: playerPos.z }, dt, liveMap, { noiseReduction: StatSystem.noiseReduction(liveEquipment, liveAttributes), light: lightRef.current, walk: LoadoutSystem.walkTilesPerSecond(liveEquipment, liveAttributes, usePlayerStore.getState().player.tonicsSinceRest) });
+      // ux-fight: the body a blow came from, named for the record
+      const bodyById = (id: string | undefined): IWorldEntity | undefined => {
+        if (!id) return undefined;
+        for (const chunk of [...Object.values(aiResult.updatedChunks), ...Object.values(visibleChunks)]) {
+          const found = chunk.entities.find(e => e.id === id);
+          if (found) return found;
+        }
+        return undefined;
+      };
       // Q16: who walks beside you, where they stand now
       const escortsStanding = FieldEscort.standing(worldPort, playerPort);
       if (aiResult.spawnedPatterns.length > 0) {
@@ -1048,6 +1066,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             if (p.shape ? covers(p.shape, p.origin, p.angle, { x: playerPos.x, y: playerPos.z }, PERSON_RADIUS_PX) : d < (p.reachPx ?? 50)) {
               lastHurtByRef.current = p.shooterId ?? lastHurtByRef.current;
               incomingDamage += p.damage ?? 10; // Wave 4.3: definition damage
+              takenBlows.push({ from: FightRecord.nameOf(bodyById(p.shooterId)), by: 'blow', figure: p.damage ?? 10 });
               weighs(p.weight, p.origin);
               rankedBy(p.rank);
               if (p.status) landedStatuses.push(p.status);
@@ -1091,6 +1110,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           incomingDamage += b.damage ?? 8; // Wave 4.3: definition damage
           weighs(b.weight ?? SHOT_WEIGHT, { x: playerPos.x - Math.cos(b.angle), y: playerPos.z - Math.sin(b.angle) });
           const firedBy = enemyPatterns.find(p => b.id.startsWith(`e_${p.shooterId}_${p.startTime}_`));
+          takenBlows.push({ from: FightRecord.nameOf(bodyById(firedBy?.shooterId)), by: 'shot', figure: b.damage ?? 8 });
           if (firedBy) lastHurtByRef.current = firedBy.shooterId;
           rankedBy(firedBy?.rank);
           if (firedBy?.status) landedStatuses.push(firedBy.status);
@@ -1103,7 +1123,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Collision-check ALL visible chunks (AI only returns the modified ones)
       // Q16: and they fight back, at whatever has engaged within their reach
       const simulated = { ...visibleChunks, ...aiResult.updatedChunks };
-      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities), worldPort, playerPort) : [];
+      const escortSwings = escortsStanding.length > 0 ? FieldEscort.swings(now, Object.values(simulated).flatMap(c => c.entities), worldPort, playerPort).map(sw => ({ ...sw, beside: true })) : [];
       // Drawn like your own swing; the same arc, so it lands once however many frames it is drawn
       if (escortSwings.length > 0) setActiveSwings(prev => [...prev.filter(sw => now - sw.startTime < 300), ...escortSwings]);
       const worldNow = useWorldStore.getState();
@@ -1126,6 +1146,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
             // ux-fight: a hit's brackets are as heavy as what landed, on the same scale as the shots
             ...(event.type === 'HIT' ? { step: blowStep(event.damage ?? 0, ownRank) } : {})
           });
+          // ux-fight: the fight's record. A creature wears no armour, so what landed is the blow as it was let go
+          const target = FightRecord.nameOf(bodyById(event.entityId) ?? (event.displayName ? { type: EntityType.MOB, displayName: event.displayName } as IWorldEntity : undefined));
+          if (event.type === 'HIT' && event.working) recorded.push({ kind: 'working', at: now, target, figure: event.damage ?? 0 });
+          else if (event.type === 'HIT') recorded.push({ kind: 'given', at: now, target, by: event.by ?? 'shot', figure: event.damage ?? 0, ...(event.glance ? { glance: true } : {}), ...(event.beside ? { beside: true } : {}) });
+          else recorded.push({ kind: 'down', at: now, target });
           if (event.type === 'HIT' && event.entityId) MobAI.provoke(event.entityId); // what ignored you stops ignoring you
           // SH3: half of a blow that glanced landed, and the field says so, once in a run of them
           if (event.type === 'HIT' && event.glance && now - glanceSaidRef.current > GLANCE_SAID_MS) {
@@ -1153,9 +1178,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           // D93: its ward's clock starts. One person cannot be at the next before it relights
           useWorldStore.getState().reportBroke(event.entityId);
           feed('A post goes down.', 'signal');
+          recorded.push({ kind: 'down', at: now, target: 'a post' });
         } else if (event.type === 'WARDED') {
           // It lands on nothing, and it is still felt
           if (event.entityId) MobAI.provoke(event.entityId);
+          recorded.push({ kind: 'held', at: now, target: FightRecord.nameOf(bodyById(event.entityId)), by: event.by ?? 'shot' });
           if (now - wardedSaidRef.current > WARDED_SAID_MS) {
             wardedSaidRef.current = now;
             feed('Nothing lands. Something on this ground is holding it up.', 'loss');
@@ -1263,6 +1290,14 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       const warded = StatusClock.absorb(effects, hit.damage + clock.damage);
       effects = warded.statuses;
       const totalDamage = warded.damage;
+      // ux-fight: the fight's record. What came at the person before armour, what got past it, what worked on them, what a ward took
+      if (takenBlows.length > 0 || clock.damage > 0) {
+        recorded.push({
+          kind: 'taken', at: now, blows: takenBlows, afterArmour: takenBlows.length > 0 ? hit.damage : 0, dodged: hit.dodged, blocked: hit.blocked,
+          working: clock.damage, ward: Math.max(0, hit.damage + clock.damage - totalDamage), took: totalDamage
+        });
+      }
+      if (recorded.length > 0) useFightRecord.getState().addAll(recorded);
       if (effects !== liveSession.activeEffects && (effects.length > 0 || (liveSession.activeEffects?.length ?? 0) > 0)) {
         usePlayerStore.setState(state => state.player.currentSession
           ? { player: { ...state.player, currentSession: { ...state.player.currentSession, activeEffects: effects } } }
@@ -1716,6 +1751,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           <Chip title="The sky where you stand. In the dark, things notice you from further away.">{gate.sky}</Chip>
           <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
             <Button tone="quiet" style={{ padding: '1px 6px', whiteSpace: 'nowrap' }} onClick={e => { (e.currentTarget as HTMLButtonElement).blur(); useSheet.getState().toggle(); }}><Kbd>TAB</Kbd> SHEET</Button>
+          </span>
+          {/* ux-fight: the fight's record, opened on purpose */}
+          <span style={{ pointerEvents: 'auto' }} onPointerDown={e => e.stopPropagation()}>
+            <FightRecordButton />
           </span>
         </div>
         <Bar label="VITALS" value={session.health} max={session.maxHealth} tone={session.health / session.maxHealth > 0.3 ? 'signal' : 'loss'} />
