@@ -11,7 +11,7 @@
  */
 
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
-import { EquipSlotId, IItem, IPlayer } from '../../../shared/types';
+import { EquipSlotId, IAttributes, IItem, IPlayer } from '../../../shared/types';
 import { CombatMath } from '../../entities/combat/CombatMath';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
@@ -25,6 +25,7 @@ import { ContactNames } from './ContactNames';
 import { Escort } from './Escort';
 import { said } from './SheetWords';
 import { DescriptionLaw, DescriptionRoot } from '../../../shared/logic/systems/DescriptionLaw';
+import { withTotals } from '../../entities/player/systems/Totals';
 
 /**
  * A number on the sheet: its word, its value, and what it means for the player (GV: never how it is made). UXS: `says` is
@@ -32,6 +33,23 @@ import { DescriptionLaw, DescriptionRoot } from '../../../shared/logic/systems/D
  * states, in order, so a point's preview can say which way each moves.
  */
 export interface SheetRow { key: string; word: string; value: string; says: string; n: number[]; root: DescriptionRoot }
+
+/** A number on the sheet's first level, as a point's preview reads it: keyed as the sheet keys its line. */
+export interface ISheetNumber { key: string; word: string; value: string; n: number[] }
+
+/** A number a point would move: what it is, what it would be, and which way its numbers go (both: some up, some down). */
+export interface IMoved { key: string; word: string; now: string; then: string; way: 'up' | 'down' | 'both' }
+
+/** Which way a line's numbers go, read in order. */
+const wayOf = (now: number[], then: number[]): IMoved['way'] => {
+  let up = false;
+  let down = false;
+  for (let i = 0; i < Math.min(now.length, then.length); i++) {
+    if (then[i] > now[i]) up = true;
+    else if (then[i] < now[i]) down = true;
+  }
+  return up && !down ? 'up' : down && !up ? 'down' : 'both';
+};
 
 /** A field tile, in the units the field draws in (`StatSystem`'s own sight is in these). */
 const TILE_PX = 20;
@@ -133,6 +151,42 @@ export const SheetNumbers = {
         n: [load, limit], root: gap
       }
     ];
+  },
+
+  /**
+   * UXS: every number on the sheet's first level, flat and keyed as the sheet keys its lines: each attribute, the maxima of
+   * health and energy, each aether held against what it can hold, the tonics, and every line of a fight and the walk.
+   * Read only through the functions above, so the preview reads what the sheet shows.
+   */
+  lines(player: IPlayer, slot: EquipSlotId = 'RIGHT_HAND'): ISheetNumber[] {
+    const v = this.vitals(player);
+    const attrs = (Object.keys(player.attributes) as (keyof IAttributes)[]).map(a => {
+      const val = player.attributes[a] ?? 0;
+      return { key: `attr:${a}`, word: a.toUpperCase(), value: String(val), n: [val] };
+    });
+    return [
+      ...attrs,
+      { key: 'health', word: 'HEALTH', value: said(v.health.max), n: [v.health.max] },
+      { key: 'energy', word: 'ENERGY', value: said(v.energy.max), n: [v.energy.max] },
+      ...v.aether.map(a => ({ key: `aether:${a.element}`, word: `AETHER · ${a.element.toUpperCase()}`, value: `${said(a.held)} of ${said(a.max)}`, n: [a.held, a.max] })),
+      { key: 'tonics', word: 'TONICS', value: `${v.tonics.drunk} of ${v.tonics.perRest} until you rest`, n: [v.tonics.drunk, v.tonics.perRest] },
+      ...this.fight(player, slot).map(r => ({ key: r.key, word: r.word, value: r.value, n: r.n }))
+    ];
+  },
+
+  /**
+   * UXS, on Pedro's "yup" to "+ first shows what the point would change, a second press spends": every number on the sheet
+   * a point on this attribute would move, read by the rules on a copy of the character with the point spent, by the spend's
+   * own rule and the store's own totals. Pure: the character is not touched. Nothing to spend, nothing to show.
+   */
+  ifSpent(player: IPlayer, attr: keyof IAttributes, slot: EquipSlotId = 'RIGHT_HAND'): IMoved[] {
+    const spent = ProgressionSystem.spendPoint(player, attr);
+    if (!spent) return [];
+    const then = new Map<string, ISheetNumber>(this.lines(withTotals(spent.player), slot).map(l => [l.key, l]));
+    return this.lines(player, slot).flatMap((l): IMoved[] => {
+      const t = then.get(l.key);
+      return t && t.value !== l.value ? [{ key: l.key, word: l.word, now: l.value, then: t.value, way: wayOf(l.n, t.n) }] : [];
+    });
   },
 
   /** Health, energy and aether, each against its maximum, and the tonics a body takes between rests. */

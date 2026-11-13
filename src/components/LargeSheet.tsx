@@ -16,8 +16,8 @@
  * Nothing is told by colour alone; every section is a stop for TAB, and every control is a button.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import { HEAD_BUDGET_POSITIONS } from '../../shared/types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { HEAD_BUDGET_POSITIONS, IAttributes } from '../../shared/types';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { ProgressionSystem, LEVELS_PER_CIRCLE, POINTS_PER_LEVEL } from '../../shared/entities/player/systems/ProgressionSystem';
@@ -46,7 +46,7 @@ import { OriginBank } from '../logic/content/OriginBank';
 import { SkillNames } from '../logic/systems/SkillNames';
 import { WORK_DAY, WorkSay } from '../logic/systems/WorkSay';
 import { SkillSay } from '../logic/systems/SkillSay';
-import { Described, SheetLine } from './SheetLine';
+import { Described, Moved, PointPlus, PointPreview, PreviewList, SheetLine } from './SheetLine';
 
 /** One place on the sheet: a TAB stop under its word, never cut, spanning columns where it needs room. */
 const Section: React.FC<{ word: string; span?: number; right?: React.ReactNode; children: React.ReactNode }> = ({ word, span, right, children }) => (
@@ -125,8 +125,13 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
   const origin = creation ? OriginBank.origin(creation.origin) : undefined;
   const kit = creation?.kit ? OriginBank.kit(creation.kit) : undefined;
   const leans = creation ? [creation.main, creation.sub].filter(Boolean).map(a => capital(a)) : [];
+  // UXS: a + waiting for its second press, and every number the point would move, read on a copy with it spent
+  const [armed, setArmed] = useState<keyof IAttributes | null>(null);
+  const moved = useMemo(() => (armed ? SheetNumbers.ifSpent(player, armed, activeHand) : []), [player, armed, activeHand]);
+  const preview = useMemo(() => (armed ? new Map(moved.map(m => [m.key, m])) : null), [armed, moved]);
 
   return (
+    <PointPreview.Provider value={preview}>
     <div data-large-sheet style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10, alignItems: 'start' }}>
       {/* What waits to be spent comes first: it is what a level sends a player here for */}
       <Section word={player.username.toUpperCase()} right={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RankMark rank={rank} scale={2} />RANK {rank}</span>}>
@@ -153,13 +158,13 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
         {WorkSay.lines(player).map(w => <SheetLine key={w.word} word={w.word} value={w.value} says={w.says} root={w.root} />)}
         {vitals.aether.length === 0 && <SheetLine word="AETHER" value="none held" says="Gathering gives it, an element at a time." />}
         {vitals.aether.map(a => (
-          <SheetLine key={a.element} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
+          <SheetLine key={a.element} k={`aether:${a.element}`} word={`AETHER · ${a.element.toUpperCase()}`} value={`${said(a.held)} of ${said(a.max)}`} />
         ))}
-        <SheetLine word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} until you rest`} says="Endurance lets you take more." />
+        <SheetLine k="tonics" word="TONICS" value={`${vitals.tonics.drunk} of ${vitals.tonics.perRest} until you rest`} says="Endurance lets you take more." />
       </Section>
 
       <Section word="IN A FIGHT">
-        {fight.filter(r => r.key !== 'walk' && r.key !== 'sight' && r.key !== 'carry').map(r => <SheetLine key={r.key} word={r.word} value={r.value} says={r.says} root={r.root} />)}
+        {fight.filter(r => r.key !== 'walk' && r.key !== 'sight' && r.key !== 'carry').map(r => <SheetLine key={r.key} k={r.key} word={r.word} value={r.value} says={r.says} root={r.root} />)}
       </Section>
 
       <Section word="ATTRIBUTES" right={points > 0 ? <span className="ws-signal">{points} TO SPEND</span> : undefined}>
@@ -177,18 +182,22 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
               const does = StatSystem.attributeWork(attr, player.attributes);
               // UXS: what an attribute does is its description; the web roots no attribute (Pedro, 2026-11-07), so it is a gap
               return (
-                <Described key={attr} word={attr} says={does} style={{ padding: '2px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
+                <React.Fragment key={attr}>
+                <Described word={attr} says={does} style={{ padding: '2px 0', borderBottom: '1px solid var(--ws-void-3)' }}>
                   <div className="ws-row" style={{ padding: 0 }}>
                     <span style={{ textTransform: 'capitalize' }}>{attr}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {fromGear !== 0 && <span className="ws-dim ws-small">{base} {fromGear > 0 ? '+' : '−'} {Math.abs(fromGear)} worn</span>}
-                      <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}</span>
+                      <span className="ws-bright" style={{ minWidth: 20, textAlign: 'right' }}>{val}<Moved k={`attr:${attr}`} /></span>
                       {point && (
-                        <Button tone="signal" style={{ padding: '0 4px' }} aria-label={`Raise ${attr} with ${pointWord(point)}`} title={`Raise ${attr} with ${pointWord(point)}`} onClick={() => spend(attr)}>+</Button>
+                        <PointPlus attr={attr} aria-label={`Raise ${attr} with ${pointWord(point)}`} armed={armed === attr}
+                          onArm={() => setArmed(attr)} onDisarm={() => setArmed(a => (a === attr ? null : a))} onSpend={() => { spend(attr); setArmed(null); }} />
                       )}
                     </span>
                   </div>
                 </Described>
+                {armed === attr && <PreviewList attr={attr} moved={moved} />}
+                </React.Fragment>
               );
             })}
           </div>
@@ -211,7 +220,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
       </Section>
 
       <Section word="WALK, SIGHT, CARRY">
-        {fight.filter(r => r.key === 'walk' || r.key === 'sight' || r.key === 'carry').map(r => <SheetLine key={r.key} word={r.word} value={r.value} says={r.says} root={r.root} />)}
+        {fight.filter(r => r.key === 'walk' || r.key === 'sight' || r.key === 'carry').map(r => <SheetLine key={r.key} k={r.key} word={r.word} value={r.value} says={r.says} root={r.root} />)}
       </Section>
 
       <Section word="WHAT YOU WEAR" span={2}>
@@ -302,6 +311,7 @@ export const LargeSheet: React.FC<{ zonePrefix?: string }> = ({ zonePrefix = '' 
         <SheetLine word="CITY" value={player.ownedCityId ? 'one of your own' : 'none of your own'} />
       </Section>
     </div>
+    </PointPreview.Provider>
   );
 };
 
