@@ -9,6 +9,7 @@ import { theme } from './src/theme';
 import { GameClock } from './src/logic/time/GameClock';
 import { StoreClient } from './shared/entities/data/StoreClient';
 import { installSettings } from './src/logic/settings/store';
+import { DoorTransport } from './src/logic/intelligence/DoorTransport';
 
 // Built for the domain (npm run build:site), the game is the page: its save is in this browser,
 // and its time is the hub's, beside it on the same domain (DEPLOY.md). Otherwise a server on this
@@ -16,9 +17,10 @@ import { installSettings } from './src/logic/settings/store';
 if (import.meta.env.VITE_WS_STORE === 'browser') {
   StoreClient.useLocal(import('./src/entities/data/BrowserStore').then(m => m.openBrowserStore()));
   GameClock.configure({ read: () => GameClock.readHub('/api/hub/clock') });
-  // The door is the page's own: the player's machine, or the player's own key, never our servers
-  void Promise.all([import('./src/logic/intelligence/PageDoor'), import('./src/logic/intelligence/KeyVault'), import('./src/logic/intelligence/DoorTransport')])
-    .then(([{ openPageDoor }, { createKeyVault, indexedDbShelf }, { DoorTransport }]) => DoorTransport.usePage(openPageDoor(), createKeyVault(indexedDbShelf())));
+  // The door is the page's own: the player's machine, or the player's own key, never our servers.
+  // Anything that asks before it is in place, its sealed key put back, waits for it.
+  DoorTransport.opening(Promise.all([import('./src/logic/intelligence/PageDoor'), import('./src/logic/intelligence/KeyVault')])
+    .then(([{ openPageDoor }, { createKeyVault, indexedDbShelf }]) => DoorTransport.usePage(openPageDoor(), createKeyVault(indexedDbShelf()))));
 }
 void GameClock.keepInStep();
 

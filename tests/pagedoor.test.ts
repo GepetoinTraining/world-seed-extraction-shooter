@@ -97,6 +97,51 @@ describe('the door in the page', () => {
   });
 });
 
+/**
+ * Pedro, 2026-11-15: "the web version didn't grab the API key". It was sealed in the browser all along;
+ * a page opened anew started with a door that held no key, and only the voice and keys panels put it back.
+ */
+describe('a page opened anew', () => {
+  const anthropicStub = () => listen((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ id: 'claude-opus-5-5', type: 'model', display_name: 'stub', created_at: '2026-01-01T00:00:00Z' }));
+  });
+  const offer = (baseUrl: string) => ({ localUrl: 'http://127.0.0.1:1', options: { keyed: [{ id: 'anthropic', name: 'Anthropic, your own key', protocol: 'anthropic' as const, baseUrl, model: 'claude-opus-5-5' }] } });
+
+  it('puts the player\'s sealed key back in its door before the game asks, with no panel opened', async () => {
+    const { shelf } = mapShelf();
+    const o = offer(await anthropicStub());
+    expect((await openPageDoor(o).answer('POST', '/key', { optionId: 'anthropic', key: 'sk-ant-player-test' })).json).toMatchObject({ ok: true });
+    await createKeyVault(shelf).keep('anthropic', 'sk-ant-player-test');
+    // The reload: a new door and the same shelf, as index.tsx does, and nothing else
+    void DoorTransport.usePage(openPageDoor(o), createKeyVault(shelf));
+    expect(await IntelligenceClient.status()).toMatchObject({ available: true, provider: 'anthropic' });
+    expect(await VoiceClient.status()).toMatchObject({ mode: 'keyed', option: 'Anthropic, your own key' });
+  });
+
+  it('a call made while the door is still loading waits for it, and never reaches for a server', async () => {
+    const { shelf } = mapShelf();
+    const o = offer(await anthropicStub());
+    await createKeyVault(shelf).keep('anthropic', 'sk-ant-player-test');
+    const reached: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, init?: any) => {
+      if (String(url).startsWith('/api/')) { reached.push(String(url)); throw new Error('no server here'); }
+      return realFetch(url, init);
+    }) as typeof fetch;
+    try {
+      let load!: () => void;
+      DoorTransport.opening(new Promise<void>(r => { load = r; }).then(() => DoorTransport.usePage(openPageDoor(o), createKeyVault(shelf))));
+      const asked = VoiceClient.status();
+      load();
+      expect(await asked).toMatchObject({ mode: 'keyed' });
+      expect(reached).toEqual([]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
 describe('the player\'s key, kept in their browser', () => {
   it('is kept sealed: what sits on the shelf never holds the key as written', async () => {
     const { held, shelf } = mapShelf();
