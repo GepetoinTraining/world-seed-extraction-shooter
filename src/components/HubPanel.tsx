@@ -10,6 +10,7 @@ import { useIdentityStore } from '../entities/identity/store';
 import { usePlayerStore } from '../entities/player/store';
 import { useHubStore } from '../entities/hub/store';
 import { PoolSection } from './PoolSection';
+import { HubLink } from '../logic/hub/HubLink';
 
 const STANDING: Record<IHubCharacter['standing'], string> = {
   GOOD: '[■] IN GOOD STANDING',
@@ -71,7 +72,13 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
       {where && !where.configured && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{where.reason}</div>}
       {where?.configured && <div className="ws-dim ws-small" style={{ marginTop: 6, overflowWrap: 'anywhere' }}>Hub: {where.url}</div>}
 
-      {where?.configured && !where.signedIn && (
+      {/* Where the account comes first it is made and signed in to on the site's first page, never here (HubLink.ts) */}
+      {where?.configured && !where.signedIn && HubLink.required() && (
+        <div className="ws-small" style={{ marginTop: 8 }}>
+          Nobody is signed in. An account is made and signed in to on <a href="/" style={{ color: 'inherit' }}>this site's first page</a>.
+        </div>
+      )}
+      {where?.configured && !where.signedIn && !HubLink.required() && (
         <form style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }} onSubmit={e => { e.preventDefault(); void account(false); }}>
           <Input label="HANDLE" autoComplete="username" value={handle} onChange={e => setHandle(e.target.value)} />
           <Input label="PASSWORD" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
@@ -87,7 +94,7 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
           <div className="ws-bright">{certificate.metadata.displayName}</div>
           {!mine && (
             <>
-              <div className="ws-small">[ ] Not registered on this hub.</div>
+              <div className="ws-small">[ ] Not registered on this hub.{HubLink.required() ? ' It is registered by itself when it is played; this asks again now.' : ''}</div>
               <Button tone="signal" primary disabled={!!busy} style={{ marginTop: 6 }} onClick={() => work('REGISTERING', async () => {
                 const out = await HubClient.register(certificate);
                 return out.ok ? 'Registered. The hub signed its word for it.' : (out.reason ?? 'Not registered.');
@@ -107,7 +114,8 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
                 const people = city ? (await HubClient.sendPeople(city)).people ?? [] : [];
                 const peopleHeld = people.filter(p => p.ok).length;
                 return `Checked. The hub now holds ${out.held} and signed for it.${rerun ? ` It reran ${rerun.rolls} drop${rerun.rolls === 1 ? '' : 's'} from ${rerun.sessions} session${rerun.sessions === 1 ? '' : 's'}${rerun.owed ? `; ${rerun.owed} still owed` : ''}.` : ''}${people.length > 0 ? ` It checked ${peopleHeld} of ${people.length} people of this city.` : ''}`;
-              })}>SEND RECEIPTS</Button>
+              })}>{HubLink.required() ? 'SEND RECEIPTS NOW' : 'SEND RECEIPTS'}</Button>
+              {HubLink.required() && <div className="ws-dim ws-small" style={{ marginTop: 4 }}>They go up by themselves as you play. This sends them now.</div>}
             </>
           )}
         </div>

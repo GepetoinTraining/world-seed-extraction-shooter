@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { Panel } from './ui/kit';
 import { HubClient, IHubWhere } from '../logic/hub/HubClient';
+import { HubLink } from '../logic/hub/HubLink';
 
 const STANDS = [
   'A hub keeps accounts and checks what a game sends it, as arithmetic.',
@@ -37,7 +38,11 @@ export const OnlinePanel: React.FC<{ style?: React.CSSProperties }> = ({ style }
             ? `Its hub is ${where.url}.${where.signedIn ? ` Signed in as ${where.signedIn}.` : ' Nobody is signed in.'}`
             : (where.reason ?? 'No hub is set for this game, so it plays on this machine alone.')}
       </div>
-      <div className="ws-small ws-dim" style={{ marginTop: 6 }}>An account on a hub is made and signed in to inside the game, under SYSTEM, THE HUB.</div>
+      <div className="ws-small ws-dim" style={{ marginTop: 6 }}>
+        {HubLink.required()
+          ? 'An account is made and signed in to on this site\'s first page. A character is registered under it as it is made, and its receipts go up by themselves.'
+          : 'An account on a hub is made and signed in to inside the game, under SYSTEM, THE HUB.'}
+      </div>
     </Panel>
   );
 };

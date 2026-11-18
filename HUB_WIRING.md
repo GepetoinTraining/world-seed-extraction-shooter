@@ -25,6 +25,16 @@ And three places whose words are now wrong: section 7.
 
 Nothing else changes for the game. Every route it already calls answers as before.
 
+**Built, 2026-11-18** (the ledger's HV10), after Pedro's "the account takes precedence, so when someone logs in again we need to serve them the data we have". All five, and section 7's words, in `src/logic/hub/HubLink.ts` and the places the table names:
+
+- **Where it applies.** Only where the game is the hub's own page (`HubLink.required()`, true in the build `npm run build:site` makes). In development and under a runner nothing is required and nothing changed: there an account is signed in to inside the game, after a character exists, so asking for one first would lock the door from the inside.
+- **1.** With nobody signed in, the gate shows SIGN IN FIRST and a way to the first page; nothing is made and nothing is played.
+- **2.** A character is registered as it is made (`HubLink.bind`), and its `issued` and `mint` are kept in this browser under `ws_hub_mints`. The choice section 3 left open is taken this way: the character is kept, the birth screen says the hub's reason and offers TRY AGAIN, and ENTER stays shut until the hub holds it, so a first row is never written without its mint. A character this browser already held is registered when it is next played; one the hub holds under another account is not played here. A hub that cannot be reached holds nobody back from a character they already have.
+- **3.** The first row names the mint when one is kept. The hub then holds the birth as `WITNESSED`; a character made before this has no mint in its first row and is held as `CLAIMED`, as section 3 says.
+- **4.** Receipts go up by themselves (`HubLink.start`, from `App.tsx` once the game is up): at the start, every three minutes, when the page is hidden, and when a session's receipt lands (`SessionJournal`). One send at a time; a challenge is the one thing passed on (`HubLink.onChallenge`, which no screen listens to yet). Not hooked: the end of a rest or of a downtime queue, which the three-minute beat covers.
+- **5.** A first join subscribes with `since: 'now'`.
+- **Beyond the five.** The select screen says who is signed in, marks each character as on the account or joining it when played, and lists the account's characters that are not on this device, with how many receipts the hub holds of each. It cannot hand one back: its key and its save are in the browser that made it. `mint` and `issued` do not travel with an avatar backup yet; a restored character asks the hub again when it is played and is answered the same statement.
+
 ## 2. Signing in happens on the site, not in the game
 
 **SERVER.** On the hub we launch, an account is an e-mail and a password kept by Clerk. The site's first page (`landing/`) shows Clerk's form, then asks the hub once for the hub's own session (`POST /api/hub/sessions/clerk`). That session is the same cookie as before: `ws_hub`, HttpOnly, `Path=/api/hub`, 30 days. It rides on every request the game makes to `/api/hub/...` with no code in the game.

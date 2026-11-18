@@ -2,7 +2,8 @@
  * CONNECT HUB TO ONLINE WORLD (Pedro, 2026-11-04: "it opens after the player has gone through
  * tutorial, from the nexus menu, and then what they see is the connect hub to online world, we
  * check their account... and serve the world to their hub"). The first thing in the game that asks
- * for an account: the tutorial and a person's own worlds need none. The hub checks the account and
+ * for an account under a runner or in development, where the tutorial and a person's own worlds need
+ * none; played from the domain, the account came before the first character (HubLink.ts). The hub checks the account and
  * this character's standing on our world, then the world joins this hub's zones, to deploy into as
  * into any. A character barred from our world is barred from that world only.
  */
@@ -14,6 +15,7 @@ import { useIdentityStore } from '../entities/identity/store';
 import { VectorStore } from '../../shared/entities/data/VectorStore';
 import { ThemeStore } from '../logic/theme/ThemeStore';
 import { HostedLink } from '../logic/live/HostedLink';
+import { HubLink } from '../logic/hub/HubLink';
 
 export const ConnectWorld: React.FC<{ onConnected: () => void }> = ({ onConnected }) => {
   const [open, setOpen] = useState(false);
@@ -49,7 +51,7 @@ const ConnectFlow: React.FC<{ onConnected: () => void }> = ({ onConnected }) => 
   return (
     <div className="ws-ui" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div className="ws-bright">{world.name}</div>
-      <div className="ws-small">A world we host for everyone. Connecting checks your account and this character's standing there, then adds it to your zones. Your own hub and your own worlds need no account, and stay as they are.</div>
+      <div className="ws-small">A world we host for everyone. Connecting checks your account and this character's standing there, then adds it to your zones. {HubLink.required() ? 'Your own hub and your own worlds stay as they are.' : 'Your own hub and your own worlds need no account, and stay as they are.'}</div>
       {!signedIn && <HubPanel />}
       {signedIn && certificate && (
         <Button tone="signal" primary disabled={busy} onClick={async () => {

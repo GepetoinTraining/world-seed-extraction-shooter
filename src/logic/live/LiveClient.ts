@@ -63,7 +63,9 @@ export const LiveClient = {
       const socket = make(url);
       me.socket = socket;
       socket.onopen = () => {
-        socket.send(JSON.stringify({ subscribe: `world:${o.worldUid}`, since: useLive.getState().seq }));
+        // A first join reads the documents themselves, so it asks for nothing that came before; a socket that comes back asks from its last number
+        const seq = useLive.getState().seq;
+        socket.send(JSON.stringify({ subscribe: `world:${o.worldUid}`, since: seq > 0 ? seq : 'now' }));
         // A new socket says where this player is at once, so the room knows their place again
         lastSaid = null;
       };

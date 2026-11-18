@@ -14,6 +14,7 @@ import { PlayerPersistence } from '../persistence/PlayerPersistence';
 import { Ledger } from '../ledger/Ledger';
 import { GoldCommit } from '../economy/GoldCommit';
 import { HomeHub } from '../persistence/HomeHub';
+import { HubLink } from '../hub/HubLink';
 import { FIRST_THEME_VECTORS, runGoldenCheck } from '../../entities/world/goldens';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
 import { FIRST_THEME_PACK } from '../../../shared/logic/theme/boot';
@@ -176,7 +177,9 @@ console.log('[BOOT] Refreshing World List...');
            await GoldCommit.commit({ player: usePlayerStore.getState().player, rows: [{ type: 'CHARACTER_GENESIS', data: {
              certUid: certificate.metadata.uid,
              username: usePlayerStore.getState().player.username,
-             gold: usePlayerStore.getState().player.bank.gold // the birthright grant (audited)
+             gold: usePlayerStore.getState().player.bank.gold, // the birthright grant (audited)
+             // Born on the hub's word (HubLink.ts): the hub holds this row as WITNESSED when it names the mint it gave
+             ...(HubLink.mintOf(certificate.metadata.uid) ? { mint: HubLink.mintOf(certificate.metadata.uid) } : {})
            } }, ...CreationDoor.genesisRows(usePlayerStore.getState().player, CreationDoor.heldSheet(certificate.metadata.uid)?.usage)] });
            CreationDoor.releaseSheet(certificate.metadata.uid);
            void CreationDoor.provenance(usePlayerStore.getState().player);

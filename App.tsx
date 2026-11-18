@@ -39,6 +39,7 @@ import { TuningPanel } from './src/components/debug/TuningPanel';
 import { installConsoleInterceptor, useLogStore } from './src/components/debug/LogStore';
 import { VoicePanel } from './src/components/VoicePanel';
 import { HubPanel } from './src/components/HubPanel';
+import { HubLink } from './src/logic/hub/HubLink';
 import { EntryView } from './src/components/EntryView';
 import { AccessibilityPanel, ConfigurationPanel } from './src/components/SettingsPanels';
 
@@ -234,6 +235,14 @@ const App: React.FC = () => {
     };
     boot();
   }, [identityState, bootStatus, gateDone]);
+
+  // Receipts go up by themselves while a character is played (HubLink.ts): quiet with no hub or nobody signed in
+  useEffect(() => {
+    if (bootStatus !== 'READY') return;
+    const uid = useIdentityStore.getState().certificate?.metadata.uid;
+    if (!uid) return;
+    return HubLink.start(uid, () => usePlayerStore.getState().player.bank.gold, () => useHubStore.getState().activeHubId);
+  }, [bootStatus]);
 
   // Q39: midnight turns the city's day while the person stays in it, not only when it is opened
   useCityDay(bootStatus === 'READY' && hubSelected && !session);

@@ -15,6 +15,7 @@ import { VectorStore, VectorNamespace } from '../../../shared/entities/data/Vect
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
 import { useIdentityStore } from '../../entities/identity/store';
 import { Ledger } from '../ledger/Ledger';
+import { HubLink } from '../hub/HubLink';
 import { sha256Hex as sha256Sync } from '../../../shared/logic/ledger/sha256';
 import { sha256Hex } from '../../../shared/logic/ledger/digest';
 
@@ -153,7 +154,8 @@ export class SessionJournal {
             receiptHash: sha256Sync(signed.signature)
           });
           const result = await unit.commit();
-          if (result.ok) return;
+          // A session's signed receipt now exists, which the hub can rerun: its receipts go up by themselves (HubLink.ts)
+          if (result.ok) { HubLink.soon(); return; }
           if (!result.conflict) throw new Error(result.reason);
         }
       });
