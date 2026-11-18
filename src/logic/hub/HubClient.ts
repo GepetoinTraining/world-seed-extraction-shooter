@@ -41,7 +41,13 @@ const ROWS_PER_SEND = 500;
 
 export interface IHubWhere { configured: boolean; url: string | null; signedIn: string | null; reason?: string }
 export interface IHubStatement { text: string; signature: string }
-export interface IHubCharacter { uid: string; displayName: string; held: number; standing: 'GOOD' | 'CHALLENGED'; issued: IHubStatement }
+export interface IHubCharacter {
+  uid: string; displayName: string; held: number; standing: 'GOOD' | 'CHALLENGED'; issued: IHubStatement;
+  /** The hash of the key it signs with now: a browser whose own key is another's has had the character taken elsewhere. */
+  key?: string;
+  /** The head its save on the hub is of, or null when the hub was never sent one. */
+  saved?: number | null;
+}
 export interface IHubOutcome { ok: boolean; status?: number | string; reason?: string; [more: string]: any }
 export interface IPoolMember { handle: string; voice: 'keyed' | 'local'; jobsDone: number; spentUsd: number; online: boolean; since: number }
 export interface IPoolJob { id: string; kind: string; path: string; body: unknown }
@@ -69,7 +75,14 @@ export const HubClient = {
   signIn: (handle: string, password: string) => call<IHubOutcome & { account?: { handle: string } }>('/sessions', { handle, password, keep: 'cookie' }),
   signOut: () => call('/session/end', {}),
   characters: () => call<IHubOutcome & { characters?: IHubCharacter[] }>('/characters'),
-  record: (uid: string) => call<IHubOutcome & { held?: number; head?: string | null; standing?: string }>(`/record/${encodeURIComponent(uid)}`),
+  record: (uid: string) => call<IHubOutcome & { held?: number; head?: string | null; standing?: string; saved?: number | null; key?: string }>(`/record/${encodeURIComponent(uid)}`),
+  nonce: () => call<IHubOutcome & { nonce?: string }>('/characters/nonce', {}),
+  /** The account takes a character to this browser: its new key becomes the character's (server/hub/Hub.ts, bringCharacter). */
+  bring: (uid: string, publicKeyJWK: JsonWebKey, proof: unknown) => call<IHubOutcome & {
+    displayName?: string; createdAt?: number; issued?: IHubStatement; mint?: string; held?: number; key?: IHubStatement | null;
+    formerKeys?: JsonWebKey[]; save?: { doc: any; seq: number } | null;
+  }>('/characters/bring', { uid, publicKeyJWK, proof }),
+  rows: (uid: string, from: number) => call<IHubOutcome & { rows?: ISignedPayload<ILedgerRow>[]; held?: number; next?: number | null }>('/characters/rows', { uid, from }),
 
   /** Registers this character under the signed-in account: its own key signs a text the hub just gave. */
   async register(certificate: IPlayerCertificate): Promise<IHubOutcome & { issued?: IHubStatement }> {
@@ -150,19 +163,29 @@ export const HubClient = {
     return { ok: true, people: answers };
   },
 
-  async sendReceipts(uid: string, readGold?: () => number): Promise<IHubOutcome & { held?: number; sent?: number; ack?: IHubStatement; challenge?: unknown; rerun?: unknown }> {
+  /**
+   * @param readSave the character itself as it stands (its signed player doc), read after the rows
+   * are listed. It goes up with the last rows, so the hub's save is of the very head it holds and
+   * the account can bring the character to another browser. Sent when there is something new, or
+   * when the hub's save is behind the head it holds.
+   */
+  async sendReceipts(uid: string, readGold?: () => number, readSave?: () => Promise<unknown | null>): Promise<IHubOutcome & { held?: number; sent?: number; ack?: IHubStatement; challenge?: unknown; rerun?: unknown; saved?: number | null }> {
     const record = await this.record(uid);
     if (!record.ok) return record;
     const before = readGold?.();
     const rows: ISignedPayload<ILedgerRow>[] = (await Ledger.list(uid)).filter(r => r.payload.seq >= (record.held ?? 0));
     const after = readGold?.();
     const reading = before !== undefined && before === after ? { gold: before } : undefined;
-    if (rows.length === 0) return { ...(await call('/receipts', { uid, rows: [] })), sent: 0 };
+    const fresh = rows.some(r => r.payload.seq > (record.held ?? 0));
+    const wantsSave = !!readSave && (fresh || record.saved !== record.held);
+    const save = wantsSave ? await readSave!().catch(() => null) : null;
+    const withSave = save ? { save } : {};
+    if (rows.length === 0) return { ...(await call('/receipts', { uid, rows: [], ...withSave })), sent: 0 };
     let last: IHubOutcome = record;
     for (let i = 0; i < rows.length; i += ROWS_PER_SEND) {
       const part = rows.slice(i, i + ROWS_PER_SEND);
       const lastPart = i + ROWS_PER_SEND >= rows.length;
-      last = await call('/receipts', { uid, rows: part, ...(await rerunExtras(part, lastPart ? reading : undefined)) });
+      last = await call('/receipts', { uid, rows: part, ...(await rerunExtras(part, lastPart ? reading : undefined)), ...(lastPart ? withSave : {}) });
       if (!last.ok) return { ...last, sent: i };
     }
     return { ...last, sent: rows.length };

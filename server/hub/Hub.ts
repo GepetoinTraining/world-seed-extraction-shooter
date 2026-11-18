@@ -121,7 +121,20 @@ export interface IReceiptExtra {
   sessions?: unknown[];
   /** Loot tables those sessions rolled on. */
   tables?: any[];
+  /** The character itself as it stands at the head sent: its signed player doc, kept so the account can bring it to another browser. */
+  save?: unknown;
 }
+
+/** A key a character signed with before the one it signs with now, and the last seq it signed. */
+interface IFormerKey { jwk: { kty: 'RSA'; n: string; e: string }; until: number; retiredAt: number }
+
+/** The key hash a statement and a list carry: the same text the birth statement hashes. */
+const keyHashOf = (jwk: { n: string; e: string }) => sha256(`${jwk.n}.${jwk.e}`);
+
+/** Rows handed back in one answer: under what a function may answer with. */
+const ROWS_PER_ANSWER = 500;
+/** A character's save is the player doc, signed: larger than this is not one. */
+const SAVE_BYTES = 3 * 1024 * 1024;
 
 /** A session row whose receipt the hub has not been sent yet. */
 interface IOwed { seq: number; sessionId: string; receiptHash: string; actionCount: number }
@@ -439,6 +452,8 @@ export class Hub {
       uid,
       account: account.key,
       displayName: String(certificate.metadata.displayName ?? ''),
+      // When it was born, by its own certificate: what a browser that brings it over writes its certificate with
+      createdAt: isNumber(certificate.metadata.createdAt) ? certificate.metadata.createdAt : this.now(),
       publicKeyJWK: { kty: 'RSA', n: certificate.publicKeyJWK.n, e: certificate.publicKeyJWK.e },
       issued,
       standing: 'GOOD' as Standing,
@@ -460,15 +475,119 @@ export class Hub {
     return row ? sha256(row.dataText) : null;
   }
 
-  async characters(token: unknown): Promise<Answer<{ characters: { uid: string; displayName: string; held: number; standing: Standing; issued: ISignedStatement; mint: string; born: 'WITNESSED' | 'CLAIMED' | null }[] }>> {
+  async characters(token: unknown): Promise<Answer<{ characters: { uid: string; displayName: string; held: number; standing: Standing; issued: ISignedStatement; mint: string; born: 'WITNESSED' | 'CLAIMED' | null; key: string; saved: number | null }[] }>> {
     const account = await this.who(token);
     if ('ok' in account) return account;
     const docs = await this.store.query({ namespace: NS, filter: { 'data.type': 'hub_character', 'data.account': account.key } });
     const characters = await Promise.all(docs.map(async d => {
       const c = JSON.parse(d.dataText);
-      return { uid: c.uid, displayName: c.displayName, held: await this.heldSeq(c.uid), standing: c.standing as Standing, issued: c.issued, mint: mintOf(c.issued), born: (c.born ?? null) as 'WITNESSED' | 'CLAIMED' | null };
+      return {
+        uid: c.uid, displayName: c.displayName, held: await this.heldSeq(c.uid), standing: c.standing as Standing, issued: c.issued, mint: mintOf(c.issued), born: (c.born ?? null) as 'WITNESSED' | 'CLAIMED' | null,
+        // Which key it signs with now, by its hash, so a browser can tell whether its own is still the one; and the head its save is of
+        key: keyHashOf(c.publicKeyJWK), saved: await this.savedSeq(c.uid)
+      };
     }));
     return { ok: true, characters };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACCOUNT IS THE ROOT OF A CHARACTER'S KEYS (Pedro, 2026-11-18: "the account takes precedence,
+  // so when someone logs in again we need to serve them the data we have", and of a key per browser:
+  // "sure, but the central node of the keys must be the account, what we then do is allow the person
+  // to export character from their idb to ours for changing where they'll play").
+  //
+  // A character's key is made in a browser and never leaves it. What makes a key the character's is
+  // this hub's word, given to the account that holds the character: the first at its birth, and a new
+  // one whenever a browser signed in to that account brings the character over. The key before it is
+  // retired at the last seq it signed, and kept, so everything it signed still reads. The character
+  // itself (its signed player doc) comes up with its receipts and is kept as its save, of the head it
+  // was sent at; a browser that brings it takes the save and every row, and plays on from there.
+  // ---------------------------------------------------------------------------
+
+  private saveId(uid: string) { return `hub_character_save_${uid}`; }
+
+  /** The head a character's save is of, or null when this hub was never sent one. */
+  private async savedSeq(uid: string): Promise<number | null> {
+    const save = await this.read<{ seq: number }>(this.saveId(uid));
+    return save ? Number(save.data.seq) : null;
+  }
+
+  /** The key a character signed a ledger row with at that seq: one it has retired, or the one it signs with now. */
+  private keyAt(character: { data: any }, seq: number): { kty: 'RSA'; n: string; e: string } {
+    const former: IFormerKey[] = character.data.formerKeys ?? [];
+    return former.find(k => seq <= k.until)?.jwk ?? character.data.publicKeyJWK;
+  }
+
+  /**
+   * A browser signed in to the account takes a character it holds: its own new key becomes the
+   * character's, by this hub's word, from the row after the last one held. The proof is signed with
+   * the new key over a one-time text, so the browser holds what it names. Asked again with the key
+   * the character already signs with, nothing changes and the same is answered: what a browser needs
+   * to write the character down (its name, its birth, its keys, its save).
+   */
+  async bringCharacter(token: unknown, uid: unknown, publicKeyJWK: any, proof: any): Promise<Answer<{
+    uid: string; displayName: string; createdAt: number; issued: ISignedStatement; mint: string; held: number;
+    key: ISignedStatement | null; formerKeys: { kty: 'RSA'; n: string; e: string }[]; save: { doc: unknown; seq: number } | null;
+  }>> {
+    const own = await this.ownCharacter(token, uid);
+    if ('ok' in own) return own;
+    const key = await this.publicKey(publicKeyJWK);
+    if (!key) return refuse(400, 'That is no key this hub can read.');
+
+    const nonce = proof?.payload?.nonce;
+    const given = this.readNonce(nonce);
+    if (!given || given.a !== own.account.key || given.until <= this.now()) return refuse(400, 'That proof was not made over a text this hub gave you. Ask for a new one.');
+    if (proof.payload.claim !== 'hub-character-key' || proof.payload.hub !== this.id || proof.certUid !== own.uid || !isNumber(proof.timestamp) || typeof proof.signature !== 'string') {
+      return refuse(400, 'That proof does not say what it is for.');
+    }
+    if (!(await this.verifies(key, proof))) return refuse(400, 'That proof was not signed by the key it names.');
+    const used = `hub_nonce_${sha256(nonce)}`;
+    const spent = await this.commit([{ kind: 'putIfAbsent', doc: this.doc(used, { type: 'hub_nonce', until: given.until }) }], used);
+    if (!spent.applied) return refuse(400, 'That text has been used already. Ask for a new one.');
+
+    const held = await this.heldSeq(own.uid);
+    const saved = await this.read<{ seq: number; doc: unknown }>(this.saveId(own.uid));
+    // Rows with no save of their head cannot be played on from: the character would stand where an older save left it
+    if (held > 0 && (!saved || Number(saved.data.seq) !== held)) {
+      return refuse(409, saved
+        ? `This hub holds this character's rows to ${held} and its save only as of ${saved.data.seq}. Open it in the browser it last played in: it sends itself, and then it can be brought here.`
+        : 'This hub holds this character\'s record, and was never sent the character itself. Open it in the browser it was made in: it sends itself, and then it can be brought here.', { held, saved: saved ? Number(saved.data.seq) : null });
+    }
+
+    const next = { kty: 'RSA' as const, n: String(publicKeyJWK.n), e: String(publicKeyJWK.e) };
+    let data = own.character.data;
+    let statement: ISignedStatement | null = data.keyIssued ?? null;
+    if (keyHashOf(next) !== keyHashOf(data.publicKeyJWK)) {
+      statement = statementOf(this.key, {
+        kind: 'worldseed-hub-character-key', hub: this.id, issuer: this.publicUrl, uid: own.uid,
+        publicKey: keyHashOf(next), was: keyHashOf(data.publicKeyJWK), from: held + 1, account: own.account.handle, at: this.now()
+      });
+      const formerKeys: IFormerKey[] = [...(data.formerKeys ?? []), { jwk: data.publicKeyJWK, until: held, retiredAt: this.now() }];
+      data = { ...data, publicKeyJWK: next, formerKeys, keyIssued: statement };
+      await this.commit([{ kind: 'put', doc: this.doc(`hub_character_${own.uid}`, data, own.character.doc.metadata.createdAt) }]);
+    }
+    return {
+      ok: true, uid: own.uid, displayName: String(data.displayName ?? ''), createdAt: isNumber(data.createdAt) ? data.createdAt : own.character.doc.metadata.createdAt,
+      issued: data.issued, mint: mintOf(data.issued), held, key: statement,
+      formerKeys: ((data.formerKeys ?? []) as IFormerKey[]).map(k => k.jwk),
+      save: saved ? { doc: saved.data.doc, seq: Number(saved.data.seq) } : null
+    };
+  }
+
+  /** A character's rows as this hub holds them, in order, from a seq on: what a browser that brings it writes down. In parts. */
+  async rowsOf(token: unknown, uid: unknown, from: unknown): Promise<Answer<{ rows: ISignedRow[]; held: number; next: number | null }>> {
+    const own = await this.ownCharacter(token, uid);
+    if ('ok' in own) return own;
+    const start = Number.isInteger(from) && (from as number) >= 1 ? (from as number) : 1;
+    const held = await this.heldSeq(own.uid);
+    const rows: ISignedRow[] = [];
+    for (let seq = start; seq <= held && rows.length < ROWS_PER_ANSWER; seq++) {
+      const kept = await this.store.get(rowId(own.uid, seq));
+      if (!kept) return refuse(500, `This hub's own chain for this character has no row at ${seq}.`);
+      rows.push(JSON.parse(kept.dataText));
+    }
+    const last = start + rows.length - 1;
+    return { ok: true, rows, held, next: last < held ? last + 1 : null };
   }
 
   private async ownCharacter(token: unknown, uid: unknown) {
@@ -481,18 +600,18 @@ export class Hub {
     return { account, character, uid };
   }
 
-  async record(token: unknown, uid: unknown): Promise<Answer<{ uid: string; held: number; head: string | null; standing: Standing }>> {
+  async record(token: unknown, uid: unknown): Promise<Answer<{ uid: string; held: number; head: string | null; standing: Standing; saved: number | null; key: string }>> {
     const own = await this.ownCharacter(token, uid);
     if ('ok' in own) return own;
     const held = await this.heldSeq(own.uid);
-    return { ok: true, uid: own.uid, held, head: await this.headHash(own.uid, held), standing: own.character.data.standing };
+    return { ok: true, uid: own.uid, held, head: await this.headHash(own.uid, held), standing: own.character.data.standing, saved: await this.savedSeq(own.uid), key: keyHashOf(own.character.data.publicKeyJWK) };
   }
 
   // ---------------------------------------------------------------------------
   // RECEIPTS
   // ---------------------------------------------------------------------------
 
-  async checkReceipts(token: unknown, uid: unknown, rows: unknown, extra: IReceiptExtra = {}): Promise<Answer<{ held: number; head: string | null; standing: Standing; ack: ISignedStatement; rerun: IRerun }>> {
+  async checkReceipts(token: unknown, uid: unknown, rows: unknown, extra: IReceiptExtra = {}): Promise<Answer<{ held: number; head: string | null; standing: Standing; ack: ISignedStatement; rerun: IRerun; saved: number | null }>> {
     const own = await this.ownCharacter(token, uid);
     if ('ok' in own) return own;
     const { character } = own;
@@ -510,8 +629,24 @@ export class Hub {
 
     const key = await this.publicKey(character.data.publicKeyJWK);
     if (!key) return refuse(500, 'The key this hub holds for that character cannot be read.');
+    // Each row by the key the character signed with at that seq: one it has retired, or the one it signs with now
+    const keys = new Map<string, CryptoKey | null>();
+    const keyOf = async (jwk: { n: string; e: string }) => {
+      const hash = keyHashOf(jwk);
+      if (!keys.has(hash)) keys.set(hash, await this.publicKey(jwk));
+      return keys.get(hash) ?? null;
+    };
     for (const row of sorted) {
-      if (!(await this.verifies(key, row))) return refuse(400, `Row ${row.payload.seq} was not signed by this character's key. Nothing in this batch was held.`);
+      const signedWith = await keyOf(this.keyAt(character, row.payload.seq));
+      if (signedWith && await this.verifies(signedWith, row)) continue;
+      // Signed with a key this character has retired: the account took it to another browser since
+      for (const former of (character.data.formerKeys ?? []) as IFormerKey[]) {
+        const old = await keyOf(former.jwk);
+        if (old && await this.verifies(old, row)) {
+          return refuse(409, `This character plays in another browser now: its account took it there after seq ${former.until}. Bring it here to play it here; what this browser added since is not held.`, { moved: true, held: await this.heldSeq(own.uid) });
+        }
+      }
+      return refuse(400, `Row ${row.payload.seq} was not signed by this character's key. Nothing in this batch was held.`);
     }
 
     let held = await this.heldSeq(own.uid);
@@ -583,7 +718,23 @@ export class Hub {
 
     const head = await this.headHash(own.uid, held);
     const ack = statementOf(this.key, { kind: 'worldseed-hub-receipt', hub: this.id, issuer: this.publicUrl, uid: own.uid, seq: held, head, gold: done.rerun.gold, at: this.now() });
-    return { ok: true, held, head, standing: done.standing, ack, rerun: done.rerun };
+    const saved = extra.save === undefined ? await this.savedSeq(own.uid) : await this.keepSave(own, key, extra.save, held);
+    return { ok: true, held, head, standing: done.standing, ack, rerun: done.rerun, saved };
+  }
+
+  /**
+   * The character itself, as it stands at the head just held: its player doc, signed by the key it
+   * signs with now. Kept whole and never read into: the hub hands it to the account's next browser
+   * as it came. One that is not the character's, or is not signed, is passed over and the receipts
+   * stand; the answer says which head the kept save is of.
+   */
+  private async keepSave(own: { uid: string; account: IAccount }, key: CryptoKey, save: unknown, held: number): Promise<number | null> {
+    const doc = save as { payload?: { id?: unknown }; signature?: unknown; certUid?: unknown; timestamp?: unknown } | null;
+    const fits = !!doc && typeof doc === 'object' && doc.certUid === own.uid && doc.payload?.id === own.uid && typeof doc.signature === 'string' && isNumber(doc.timestamp);
+    if (!fits || JSON.stringify(doc).length > SAVE_BYTES || !(await this.verifies(key, doc as { payload: unknown; timestamp: number; signature: string }))) return this.savedSeq(own.uid);
+    const kept = await this.read<Record<string, unknown>>(this.saveId(own.uid));
+    await this.commit([{ kind: 'put', doc: this.doc(this.saveId(own.uid), { type: 'hub_character_save', uid: own.uid, account: own.account.key, seq: held, at: this.now(), doc }, kept?.doc.metadata.createdAt) }]);
+    return held;
   }
 
   // ---------------------------------------------------------------------------

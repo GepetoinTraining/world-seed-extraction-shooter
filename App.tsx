@@ -241,7 +241,14 @@ const App: React.FC = () => {
     if (bootStatus !== 'READY') return;
     const uid = useIdentityStore.getState().certificate?.metadata.uid;
     if (!uid) return;
-    return HubLink.start(uid, () => usePlayerStore.getState().player.bank.gold, () => useHubStore.getState().activeHubId);
+    // The character itself goes with its receipts (its signed player doc, saved first), so the account can bring it to another browser
+    const save = async () => {
+      const { PlayerPersistence } = await import('./src/logic/persistence/PlayerPersistence');
+      const { VectorStore, VectorNamespace } = await import('./shared/entities/data/VectorStore');
+      await PlayerPersistence.flush('hub', usePlayerStore.getState().player);
+      return (await VectorStore.get<{ signature?: string }>(VectorNamespace.CHARACTERS, uid))?.data ?? null;
+    };
+    return HubLink.start(uid, () => usePlayerStore.getState().player.bank.gold, () => useHubStore.getState().activeHubId, undefined, save);
   }, [bootStatus]);
 
   // Q39: midnight turns the city's day while the person stays in it, not only when it is opened

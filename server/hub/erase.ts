@@ -88,7 +88,9 @@ export class Eraser {
     const standings = (await of('hub_world_standing')).filter(d => uids.has(String(d.data.uid)));
     const docs = [
       `hub_account_${accountKey}`, `hub_failures_${accountKey}`, `hub_pool_${accountKey}`, `hub_voice_${accountKey}`,
-      ...[characters, rolls, people, sessions, jobs, worlds, standings].flat().map(d => d.id)
+      ...[characters, rolls, people, sessions, jobs, worlds, standings].flat().map(d => d.id),
+      // Each character's save: the player doc the hub keeps so the account can bring it to another browser
+      ...characters.map(d => `hub_character_save_${d.data.uid}`)
     ];
     const chains = [
       ...uids,

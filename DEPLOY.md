@@ -131,7 +131,9 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 | `POST /characters/nonce` | signed in | a one-time text for the character's key to sign |
 | `POST /characters` | signed in | `{ certificate, proof }`: registers a character, answers the hub's signed statement |
 | `GET /characters` | signed in | this account's characters, each with its held seq and standing |
-| `POST /receipts` | signed in | `{ uid, rows, reading?, sessions?, tables? }`: signed ledger rows, checked and held, then rerun (D134 below); answers the acknowledgement, with the hub's own reading, or the challenge |
+| `POST /receipts` | signed in | `{ uid, rows, reading?, sessions?, tables?, save? }`: signed ledger rows, checked and held, then rerun (D134 below); answers the acknowledgement, with the hub's own reading, or the challenge. `save` is the character's signed player doc at that head, kept so the account can bring it to another browser |
+| `POST /characters/bring` | signed in | `{ uid, publicKeyJWK, proof }`: the account takes a character to this browser. Its new key becomes the character's, the one before is retired, and the save and the keys before come back |
+| `POST /characters/rows` | signed in | `{ uid, from }`: a character's rows as the hub holds them, 500 an answer |
 | `GET /record/<uid>` | signed in | what the hub holds for a character: its seq, head hash, standing |
 | `POST /worlds/check` | signed in | `{ manifest }`: the world check above |
 | `POST /pool/join`, `/pool/leave`, `/pool/beat` | signed in | the pool: `{ voice: 'keyed' \| 'local' }` to join |
@@ -275,6 +277,6 @@ Pedro: "we serve a postgress we socket to join them and keep it live speaking to
 - Rerunning the old code's drops, and anything else on the engines' powers and floats (D134): they wait on integer-only formulas.
 - A world certificate the hub can verify: the certificate keeps its signature but not the moment signed, and its stats change after signing, so nothing can check it today. The check ties a world to a character registered under the account instead.
 - Timers inside a day (rests, crafting jobs) still count milliseconds on `Date.now()` in the browser; they move to `GameClock.now()` in their own pass.
-- A returning account's characters, served: the hub holds a character's record, and its key and save stay in the browser that made it (`HUB_WIRING.md`, "Built, 2026-11-18"). How the key comes back is Pedro's to rule.
+- What does not come with a character brought to another browser (`HUB_WIRING.md`, "The account is the root of a character's keys"): its city's people, a world's shared documents, a session's own receipts. And nothing tells a player mid-game that their character was taken elsewhere.
 - What Pedro named on 2026-11-12 and nothing yet serves: a subscription of 5 dollars a month for a player with no key and no local model, which gives the online hub only; forum gold as the market's coin ("D2 forum gold... the easiest model"), a balance kept on the main hub; linking the marketplace on its own.
 - Goods carried between hubs, and the market itself.

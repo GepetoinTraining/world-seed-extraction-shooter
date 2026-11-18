@@ -12,6 +12,12 @@
  * plays a character with nobody signed in. A character is registered under the account as it is
  * made, and one this browser holds is registered when it is played. The select screen says what the
  * account holds on the hub, and which of its characters are on another device.
+ *
+ * THE ACCOUNT IS THE ROOT OF A CHARACTER'S KEYS (Pedro: "the central node of the keys must be the
+ * account, what we then do is allow the person to export character from their idb to ours for
+ * changing where they'll play"). A character the account holds and this browser does not is brought
+ * here (BringCharacter.ts): a key is made here, the hub makes it the character's, and its save and
+ * rows come down. One the account took to another browser since is brought back the same way.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -52,6 +58,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
   const [held, setHeld] = useState<IHubCharacter[]>([]);
   const [hubSaid, setHubSaid] = useState<IBound | null>(null);
   const [binding, setBinding] = useState(false);
+  const [brought, setBrought] = useState('');
 
   const lookAtAccount = async (): Promise<IHubCharacter[]> => {
     const w = await HubLink.where();
@@ -120,11 +127,30 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
     // another account's is not played here; a hub that cannot be reached holds nobody back.
     if (accountFirst) {
       const said = await bind(st.certificate);
-      if (said.state === 'SIGNED_OUT' || said.state === 'ANOTHERS') return;
+      if (said.state === 'SIGNED_OUT' || said.state === 'ANOTHERS' || said.state === 'ELSEWHERE') { if (said.state === 'ELSEWHERE') await lookAtAccount(); return; }
     }
     // The fix: adopt, never reinitialize. The archetype rides along for genesis only.
     ensureCharacter(st.certificate, entry.archetype || 'OPERATOR', CreationDoor.heldSheet(st.certificate.metadata.uid));
     onComplete();
+  };
+
+  /** The account takes a character to this browser: a key made here becomes the character's, and its save and rows come down. */
+  const handleBring = async (uid: string) => {
+    if (binding) return;
+    setBinding(true);
+    setHubSaid(null);
+    try {
+      const { bringCharacter } = await import('../logic/hub/BringCharacter');
+      const out = await bringCharacter(uid);
+      if (!out.ok) { setHubSaid({ state: 'REFUSED', reason: out.reason ?? 'It was not brought here.' }); return; }
+      setRoster(AvatarRoster.list());
+      setChosen(uid);
+      setMode('select');
+      await lookAtAccount();
+      setBrought(`${(out.displayName || 'It').toUpperCase()} is in this browser now, with ${out.rows} row${out.rows === 1 ? '' : 's'} of its record. It signs with a key made here; the one before is retired.`);
+    } finally {
+      setBinding(false);
+    }
   };
 
   const handleRestore = async () => {
@@ -157,6 +183,9 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
     );
   }
   const heldUids = new Set(held.map(c => c.uid));
+  const heldOf = (uid: string) => held.find(c => c.uid === uid);
+  /** The hub's save of a character is of the head it holds: it can be brought to a browser and played on from. */
+  const bringable = (c: IHubCharacter) => c.held === 0 || (c.saved !== null && c.saved !== undefined && c.saved === c.held);
   const elsewhere = held.filter(c => !roster.some(r => r.certificate.metadata.uid === c.uid));
   const bound = !accountFirst || hubSaid?.state === 'BOUND';
 
@@ -279,6 +308,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           <div className="ws-small" style={{ marginBottom: 8, whiteSpace: 'normal' }}>! {hubSaid.reason}</div>
         )}
         {binding && <div className="ws-dim ws-small" style={{ marginBottom: 8 }}>Asking this hub…</div>}
+        {brought && !binding && <div className="ws-small" style={{ marginBottom: 8, whiteSpace: 'normal' }}>[■] {brought}</div>}
         {keyMissing && (
           <div className="ws-loss ws-small" style={{ marginBottom: 8 }}>
             That avatar's private key is not on this device. Restore it from a backup, or pick another.
@@ -288,6 +318,8 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
           {roster.map(entry => {
             const uid = entry.certificate.metadata.uid;
             const active = chosen === uid;
+            // The hub's key for it is another than this browser's: the account took it to another browser since
+            const away = accountFirst && !!where?.signedIn && HubLink.isElsewhere(entry.certificate, heldOf(uid));
             return (
               <div key={uid} className="ws-row" style={active ? { background: 'var(--ws-void-2)' } : undefined}>
                 <button
@@ -308,12 +340,13 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
                     </span>
                     <span className="ws-dim ws-small" style={{ display: 'block' }}>
                       {(entry.archetype || 'OPERATOR').replace(/_/g, ' ')}
-                      {accountFirst && where?.signedIn ? (heldUids.has(uid) ? ' · [■] ON YOUR ACCOUNT' : ' · [ ] JOINS YOUR ACCOUNT WHEN PLAYED') : ''}
+                      {accountFirst && where?.signedIn ? (away ? ' · [◆] PLAYS IN ANOTHER BROWSER NOW' : heldUids.has(uid) ? ' · [■] ON YOUR ACCOUNT' : ' · [ ] JOINS YOUR ACCOUNT WHEN PLAYED') : ''}
                     </span>
                   </span>
                 </button>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {active && <Button tone="signal" primary onClick={() => handleJackIn(entry)}>JACK IN</Button>}
+                  {active && !away && <Button tone="signal" primary disabled={binding} onClick={() => handleJackIn(entry)}>JACK IN</Button>}
+                  {away && <Button tone="signal" primary disabled={binding} title="A key is made here and becomes this character's. The browser it plays in now stops being able to add to it." onClick={() => void handleBring(uid)}>BRING IT HERE</Button>}
                   <Button
                     tone="quiet"
                     title="Remove from this device's select screen. Signed records and keys remain."
@@ -332,7 +365,7 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
         </div>
         {elsewhere.length > 0 && (
           <div style={{ marginTop: 12, whiteSpace: 'normal' }}>
-            <div className="ws-bright ws-small">YOUR ACCOUNT ALSO HOLDS, NOT ON THIS DEVICE</div>
+            <div className="ws-bright ws-small">{roster.length > 0 ? 'YOUR ACCOUNT ALSO HOLDS, NOT ON THIS DEVICE' : 'YOUR ACCOUNT HOLDS, NOT ON THIS DEVICE YET'}</div>
             <div className="ws-list">
               {elsewhere.map(c => (
                 <div key={c.uid} className="ws-row">
@@ -340,13 +373,15 @@ export const IdentityGate = ({ onComplete }: { onComplete: () => void }) => {
                     <span className="ws-bright" style={{ display: 'block' }}>{(c.displayName || 'A CHARACTER').toUpperCase()}</span>
                     <span className="ws-dim ws-small" style={{ display: 'block' }}>
                       {c.held} receipt{c.held === 1 ? '' : 's'} held by this hub{c.standing === 'CHALLENGED' ? ' · [!] ITS STANDING IS CHALLENGED' : ''}
+                      {bringable(c) ? '' : ' · [ ] THE HUB WAS NOT SENT ITS LATEST SAVE'}
                     </span>
                   </span>
+                  {bringable(c) && <Button tone="signal" primary disabled={binding} title="A key is made here and becomes this character's. The browser it plays in now stops being able to add to it." onClick={() => void handleBring(c.uid)}>BRING IT HERE</Button>}
                 </div>
               ))}
             </div>
             <div className="ws-dim ws-small" style={{ marginTop: 4 }}>
-              The hub holds each one's record. Its key and its save are in the browser that made it: back it up there (SYSTEM, BACK UP THIS AVATAR), then RESTORE A BACKUP here.
+              A character sends itself to the hub as it is played. Bringing one here makes its key here and retires the one before, so it plays in one browser at a time. One the hub was not sent the latest save of is opened once more where it last played, and sends itself.
             </div>
           </div>
         )}

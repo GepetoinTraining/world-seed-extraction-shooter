@@ -105,8 +105,18 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
             <>
               <div className="ws-small">{STANDING[mine.standing]}</div>
               <div className="ws-small">The hub holds {mine.held} of this character's receipts.</div>
+              {HubLink.required() && (
+                <div className="ws-small">
+                  {mine.saved !== null && mine.saved !== undefined && mine.saved === mine.held
+                    ? '[■] The hub holds this character itself, as of its latest receipt: your account can bring it to another browser.'
+                    : '[ ] The hub does not hold this character\'s latest save yet. It goes up with the next send.'}
+                </div>
+              )}
               <Button tone="signal" primary disabled={!!busy} style={{ marginTop: 6 }} onClick={() => work('SENDING RECEIPTS', async () => {
-                const out = await HubClient.sendReceipts(certificate.metadata.uid, () => usePlayerStore.getState().player.bank.gold);
+                // Where the account comes first the character itself goes with its receipts (HubLink.sendNow)
+                const out = HubLink.required()
+                  ? await HubLink.sendNow() as Awaited<ReturnType<typeof HubClient.sendReceipts>>
+                  : await HubClient.sendReceipts(certificate.metadata.uid, () => usePlayerStore.getState().player.bank.gold);
                 if (!out.ok) return out.reason ?? 'The receipts were not checked.';
                 const rerun = out.rerun as { sessions: number; rolls: number; owed: number } | undefined;
                 // The city's people go up with the receipts: each on a chain of their own, minted by the hub
@@ -114,8 +124,8 @@ export const HubPanel: React.FC<{ titled?: boolean }> = ({ titled = true }) => {
                 const people = city ? (await HubClient.sendPeople(city)).people ?? [] : [];
                 const peopleHeld = people.filter(p => p.ok).length;
                 return `Checked. The hub now holds ${out.held} and signed for it.${rerun ? ` It reran ${rerun.rolls} drop${rerun.rolls === 1 ? '' : 's'} from ${rerun.sessions} session${rerun.sessions === 1 ? '' : 's'}${rerun.owed ? `; ${rerun.owed} still owed` : ''}.` : ''}${people.length > 0 ? ` It checked ${peopleHeld} of ${people.length} people of this city.` : ''}`;
-              })}>{HubLink.required() ? 'SEND RECEIPTS NOW' : 'SEND RECEIPTS'}</Button>
-              {HubLink.required() && <div className="ws-dim ws-small" style={{ marginTop: 4 }}>They go up by themselves as you play. This sends them now.</div>}
+              })}>{HubLink.required() ? 'SEND IT ALL TO THE HUB NOW' : 'SEND RECEIPTS'}</Button>
+              {HubLink.required() && <div className="ws-dim ws-small" style={{ marginTop: 4 }}>Receipts and the character itself go up by themselves as you play. This sends them now, for when you are about to play somewhere else.</div>}
             </>
           )}
         </div>

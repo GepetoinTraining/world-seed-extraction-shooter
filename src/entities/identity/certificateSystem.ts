@@ -33,6 +33,13 @@ export interface IPlayerCertificate {
   publicKeyJWK: JsonWebKey;
   certificatePEM: string; // The actual X.509 cert
   // Private key NEVER leaves the browser's secure storage
+  /**
+   * Keys this character signed with before the one above, oldest first. A key is made in a browser
+   * and never leaves it, so a character its account brings to another browser signs with a new one
+   * from there on, by the hub's word (server/hub/Hub.ts, bringCharacter); what the keys before it
+   * signed still reads.
+   */
+  formerKeys?: JsonWebKey[];
 }
 
 export interface ISignedPayload<T> {
@@ -298,6 +305,16 @@ export class CertificateSystem {
   // SIGNING & VERIFICATION
   // ============================================================================
 
+  /** A new key pair, made here and written nowhere yet: for a character brought to this browser. */
+  static makeKeyPair(): Promise<CryptoKeyPair> {
+    return crypto.subtle.generateKey(this.KEY_ALGORITHM, true, ['sign', 'verify']) as Promise<CryptoKeyPair>;
+  }
+
+  /** The certificate text for a character's metadata under a key pair: what a birth writes, written again for a new key. */
+  static selfSigned(metadata: ICertificateMetadata, keyPair: CryptoKeyPair): Promise<string> {
+    return this.generateSelfSignedCert(metadata, keyPair);
+  }
+
   static async signPayload<T>(
     uid: string,
     payload: T
@@ -306,7 +323,15 @@ export class CertificateSystem {
     if (!privateKey) {
       throw new Error('Private key not found. Identity may not be initialized.');
     }
+    return this.signWith(privateKey, uid, payload);
+  }
 
+  /** Signs with a key in hand, for a character: the one stored for it, or one just made and not stored yet. */
+  static async signWith<T>(
+    privateKey: CryptoKey,
+    uid: string,
+    payload: T
+  ): Promise<ISignedPayload<T>> {
     const timestamp = Date.now();
     const dataToSign = signedText(payload, timestamp);
     const encoder = new TextEncoder();
@@ -330,28 +355,17 @@ export class CertificateSystem {
     certificate: IPlayerCertificate
   ): Promise<boolean> {
     try {
-      const publicKey = await crypto.subtle.importKey(
-        'jwk',
-        certificate.publicKeyJWK,
-        this.KEY_ALGORITHM,
-        true,
-        ['verify']
-      );
-
-      const dataToVerify = signedText(signedPayload.payload, signedPayload.timestamp);
-      const encoder = new TextEncoder();
-
+      const dataToVerify = new TextEncoder().encode(signedText(signedPayload.payload, signedPayload.timestamp));
       const signatureBytes = Uint8Array.from(
         atob(signedPayload.signature),
         c => c.charCodeAt(0)
       );
-
-      return await crypto.subtle.verify(
-        this.KEY_ALGORITHM.name,
-        publicKey,
-        signatureBytes,
-        encoder.encode(dataToVerify)
-      );
+      // The key it signs with now, then each it signed with before (formerKeys): what an earlier key signed still reads
+      for (const jwk of [certificate.publicKeyJWK, ...(certificate.formerKeys ?? [])]) {
+        const publicKey = await crypto.subtle.importKey('jwk', jwk, this.KEY_ALGORITHM, true, ['verify']);
+        if (await crypto.subtle.verify(this.KEY_ALGORITHM.name, publicKey, signatureBytes, dataToVerify)) return true;
+      }
+      return false;
     } catch (e) {
       console.error('[CERT] Verification failed:', e);
       return false;
