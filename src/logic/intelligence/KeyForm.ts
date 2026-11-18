@@ -37,9 +37,16 @@ export const canAccept = (form: IKeyForm): boolean => !!form.tested?.ok && form.
  * register as being there"). The list holds only what the form added, so its empty line says what
  * the game is using, and never a sentence that reads as "the game has no key".
  */
-export const saidWhenNoneAdded = (voice: { mode?: string; provider?: string; available?: boolean } | null, onPage: boolean): string => {
+export const saidWhenNoneAdded = (voice: { mode?: string; provider?: string; available?: boolean; host?: boolean; hostWaits?: boolean } | null, onPage: boolean): string => {
   if (!voice) return 'No key has been added here, and the voice cannot be reached to say what is in use.';
   if (voice.mode === 'off') return 'No key has been added here. The voice is turned off on this server.';
+  // Played from the domain, the hub may answer on a key of its own for whoever is signed in (HostVoice.ts)
+  if (voice.hostWaits) return "No key has been added here. This hub answers with a voice of its own once you are signed in: sign in on the site's first page, and no key is needed.";
+  if (voice.host) {
+    return voice.available
+      ? "This hub's own voice is in use, and it works. No key has been added here, and none is needed."
+      : "No key has been added here, and this hub's own voice is not answering.";
+  }
   if (voice.provider === 'local') {
     return voice.available
       ? "No key has been added here. The game is using this machine's own model."

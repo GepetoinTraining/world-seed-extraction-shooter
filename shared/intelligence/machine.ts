@@ -79,6 +79,9 @@ export function seatOf(bytes: number, cards: ICard[], memory: { total: number; f
   return 'TOO_BIG';
 }
 
+/** The check's last word when no local model can run. A screen that already has a voice from elsewhere leaves it out (VoicePanel). */
+export const NEEDS_KEY_SAID = 'This machine cannot run a local model as it stands. To have a voice, insert a key: there are free ones to pick from.';
+
 const SEAT_WORDS: Record<Seat, string> = {
   CARD: 'fits on the graphics card',
   CARD_AND_MEMORY: 'spills off the card into memory, and answers slower',
@@ -184,7 +187,7 @@ export class MachineCheck {
       else if (!chosenTry.answered) says.push(`The chosen model, ${chosen}, did not answer: ${chosenTry.reason}`);
       else says.push(`The chosen model, ${chosen}, answered in ${(chosenTry.ms / 1000).toFixed(1)} s${chosenTry.heldShape ? ' and held the shape asked' : `, but ${chosenTry.reason?.toLowerCase()}`}${chosenTry.onCard !== undefined ? `, ${Math.round(chosenTry.onCard * 100)}% of it on the card` : ''}.`);
     }
-    if (verdict === 'NEEDS_KEY') says.push('This machine cannot run a local model as it stands. To have a voice, insert a key: there are free ones to pick from.');
+    if (verdict === 'NEEDS_KEY') says.push(NEEDS_KEY_SAID);
     if (verdict === 'READY') says.push('The voice runs on this machine.');
 
     return {

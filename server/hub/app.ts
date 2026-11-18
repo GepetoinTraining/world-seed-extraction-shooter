@@ -9,6 +9,7 @@
  *   /api/hub/live/socket     the socket (an upgrade)
  *   /api/hub/maintenance     the host's scheduled call: the write-down to the record, the erasures waiting on it
  *   /api/hub/clerk           Clerk's word that an account was deleted there (clerk.ts)
+ *   /api/hub/voice/…         the door's asks, answered on the host's key for a signed-in account (voice.ts)
  *
  * SEVERAL INSTANCES. A function host starts as many of these as the traffic asks and may stop any
  * of them between requests, so nothing here is kept in an instance but what it can read again:
@@ -28,6 +29,7 @@
  *                          a live database kept apart has a record of its own (TURSO_LIVE_DATABASE_URL), or none
  *   CRON_SECRET            what the scheduled call carries
  *   CLERK_…                accounts by e-mail and password (clerk.ts); left out, the hub keeps its own
+ *   ANTHROPIC_API_KEY      the hub's own voice, for whoever is signed in (voice.ts); left out, it offers none
  *
  * Where one of these is not set, the name a host's integration writes for the same thing is read
  * (settings.ts): a connected Postgres's two addresses, the host's own production address, Clerk's key.
@@ -44,6 +46,7 @@ import { HostedWorld, type IHostedManifest } from './hosted';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
 import { DevView } from './dev';
+import { hubVoiceFrom } from './voice';
 import { LiveRoom, type LiveAccess } from '../live/room';
 
 export interface IHubAppConfig {
@@ -175,7 +178,9 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
     const given = Object.fromEntries(settingsRead(env).filter(s => s.needed && !s.set).map(s => [s.name, 'given to this server directly (its own default, or a key from a file)']));
     // It reads through the body of the store it opened, Turso's or a Postgres's, and says how the instances hear each other
     const dev = new DevView({ hub, store: own.dev(), live: live.between(listenUrl), env, given });
-    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev });
+    // The hub's own voice, while the host holds a key for it (voice.ts): for whoever is signed in, counted in dollars a day
+    const voice = hubVoiceFrom(hub, env);
+    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev, voice });
     return {
       hub, room, handler, eraser,
       close: async () => {

@@ -129,14 +129,14 @@ export class IntelligenceDoor {
     return out;
   }
 
-  /** A rest's batch, filed. Over the limit, it does not go: it waits for the next rest (D44). */
-  async fileRest(id: string, request: IDoorRequest) {
+  /** A rest's batch, filed. Over the limit, it does not go: it waits for the next rest (D44). It says what it could cost, as a window's does. */
+  async fileRest(id: string, request: IDoorRequest): Promise<{ status: DoorStatus; batchId?: string; outcome?: IDoorOutcome; reason?: string; ceiling?: number }> {
     await this.provider.ready?.();
     const ceiling = this.provider.ceiling(request, true);
     if (ceiling > REST_SPEND_LIMIT_USD) {
       return { status: 'OVER_LIMIT' as DoorStatus, reason: `This batch could cost $${ceiling.toFixed(2)}, over the $${REST_SPEND_LIMIT_USD.toFixed(2)} a rest may spend.` };
     }
-    return this.provider.file(id, request);
+    return { ...(await this.provider.file(id, request)), ceiling };
   }
 
   collectRest(batchId: string): Promise<IDoorOutcome> { return this.provider.collect(batchId); }

@@ -16,9 +16,14 @@ import { installSettings } from './src/logic/settings/store';
 if (import.meta.env.VITE_WS_STORE === 'browser') {
   StoreClient.useLocal(import('./src/entities/data/BrowserStore').then(m => m.openBrowserStore()));
   GameClock.configure({ read: () => GameClock.readHub('/api/hub/clock') });
-  // The door is the page's own: the player's machine, or the player's own key, never our servers
-  void Promise.all([import('./src/logic/intelligence/PageDoor'), import('./src/logic/intelligence/KeyVault'), import('./src/logic/intelligence/DoorTransport')])
-    .then(([{ openPageDoor }, { createKeyVault, indexedDbShelf }, { DoorTransport }]) => DoorTransport.usePage(openPageDoor(), createKeyVault(indexedDbShelf())));
+  // The door is the page's own: the player's machine, or the player's own key. While the player has chosen neither,
+  // the hub beside this page answers on its own key, for whoever is signed in (HostVoice.ts)
+  void Promise.all([import('./src/logic/intelligence/PageDoor'), import('./src/logic/intelligence/KeyVault'), import('./src/logic/intelligence/DoorTransport'), import('./src/logic/intelligence/HostVoice'), import('./src/logic/intelligence/VoiceClient')])
+    .then(([{ openPageDoor }, { createKeyVault, indexedDbShelf }, { DoorTransport }, { openHostVoice }, { VoiceClient }]) => {
+      DoorTransport.usePage(openPageDoor(), createKeyVault(indexedDbShelf()), openHostVoice());
+      // A key of the player's own, or their own model, is put back before any ask is routed: it always wins
+      DoorTransport.settleAfter(VoiceClient.restore());
+    });
 }
 void GameClock.keepInStep();
 

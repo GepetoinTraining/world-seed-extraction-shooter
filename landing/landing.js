@@ -49,6 +49,8 @@
     show($('yours-section'), !!signedIn);
     show($('clerk-forms'), !signedIn && where.accounts === 'clerk');
     show($('builtin-forms'), !signedIn && where.accounts !== 'clerk');
+    // A hub that answers the model's asks itself (`voice`) says so; one that does not says the voice is the player's own
+    for (const el of document.querySelectorAll('[data-voice]')) show(el, el.dataset.voice === (where.voice ? 'hub' : 'own'));
     if (signedIn) {
       say(accountSaid, '[■]', `Signed in as ${signedIn}.`);
       await held();

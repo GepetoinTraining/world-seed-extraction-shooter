@@ -11,6 +11,7 @@ import { Button, Input, Modal, Panel } from './ui/kit';
 import { IDoorSettingStatus, IKeyedOption, IMachineReading, VoiceClient } from '../logic/intelligence/VoiceClient';
 import { DoorTransport } from '../logic/intelligence/DoorTransport';
 import { LocalSetupPanel } from './LocalSetupPanel';
+import { NEEDS_KEY_SAID } from '../../shared/intelligence/machine';
 
 const GB = 1_000_000_000;
 const size = (bytes: number) => `${(bytes / GB).toFixed(1)} GB`;
@@ -34,6 +35,8 @@ const modeLine = (s: IDoorSettingStatus | null) => {
   if (!s) return 'THE VOICE CANNOT BE REACHED';
   if (s.mode === 'off') return 'TURNED OFF ON THIS SERVER';
   if (s.mode === 'keyed') return `A KEY · ${s.option ?? s.provider}`;
+  if (s.host) return s.available ? "THIS HUB'S OWN VOICE" : "THIS HUB'S VOICE IS NOT ANSWERING";
+  if (s.hostWaits) return "SIGN IN FOR THIS HUB'S VOICE";
   if (s.provider === 'local') return `THIS MACHINE · ${s.model ?? 'no model chosen'}`;
   return s.available ? "THE SERVER'S KEY" : 'NO VOICE';
 };
@@ -64,15 +67,32 @@ export const VoicePanel: React.FC<{ style?: React.CSSProperties; titled?: boolea
   };
 
   const verdict = reading ? VERDICT_WORDS[reading.verdict] : null;
-  const needsKey = reading?.verdict === 'NEEDS_KEY';
+  // Played from the domain, the hub beside this page may answer on a key of its own (HostVoice.ts): then nothing is needed here
+  const hosted = !!status?.host && status.available;
+  const needsKey = reading?.verdict === 'NEEDS_KEY' && !hosted;
 
   return (
     <Panel title={titled ? 'THE VOICE' : undefined} right={<span className="ws-dim ws-small">{modeLine(status)}</span>} style={{ whiteSpace: 'normal', maxWidth: '100%', ...style }}>
+      {hosted && (
+        <div style={{ marginBottom: 8 }}>
+          <div className="ws-bright" style={{ letterSpacing: '0.08em' }}>[■] THIS HUB'S OWN VOICE ANSWERS</div>
+          <div className="ws-small">
+            This hub answers for the account signed in, on a key of its own. Nothing is needed here. A key of yours, or a model on this machine, is used instead once you choose one, and is never counted.
+            {status?.spent ? ` Spent today: $${status.spent.usd.toFixed(2)} of the $${status.spent.of.toFixed(2)} a day one account may.` : ''}
+          </div>
+        </div>
+      )}
+      {status?.hostWaits && (
+        <div className="ws-small" style={{ marginBottom: 8 }}>
+          This hub answers with a voice of its own once you are signed in: sign in on the site's first page, and nothing is needed here.
+        </div>
+      )}
       {!reading && <div className="ws-dim ws-small">The check on this machine could not be read.</div>}
       {reading && verdict && (
         <>
-          <div className="ws-bright" style={{ letterSpacing: '0.08em' }}>{verdict.mark} {verdict.words}</div>
-          {reading.says.map((line, i) => <div key={i} className="ws-small" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{line}</div>)}
+          <div className={hosted ? 'ws-dim' : 'ws-bright'} style={{ letterSpacing: '0.08em' }}>{hosted && reading.verdict === 'NEEDS_KEY' ? '[ ] NO MODEL ON THIS MACHINE' : `${verdict.mark} ${verdict.words}`}</div>
+          {/* With the hub's voice answering, a key is not what gives a voice, so the check's "insert a key" is left out */}
+          {reading.says.filter(line => !(hosted && line === NEEDS_KEY_SAID)).map((line, i) => <div key={i} className="ws-small" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{line}</div>)}
 
           {reading.served.length > 0 && (
             <div className="ws-list" style={{ marginTop: 8 }}>
@@ -114,8 +134,8 @@ export const VoicePanel: React.FC<{ style?: React.CSSProperties; titled?: boolea
       )}
 
       {/* Played from the domain, a model on this machine answers only once it lets this page in */}
-      {DoorTransport.isPage() && reading && reading.runtime.state !== 'RUNNING' && reading.suggested && <LocalSetupPanel model={reading.suggested.model} />}
-      {DoorTransport.isPage() && reading && reading.runtime.state === 'RUNNING' && reading.served.length === 0 && reading.suggested && <LocalSetupPanel model={reading.suggested.model} />}
+      {DoorTransport.isPage() && !hosted && reading && reading.runtime.state !== 'RUNNING' && reading.suggested && <LocalSetupPanel model={reading.suggested.model} />}
+      {DoorTransport.isPage() && !hosted && reading && reading.runtime.state === 'RUNNING' && reading.served.length === 0 && reading.suggested && <LocalSetupPanel model={reading.suggested.model} />}
 
       {busy && <div className="ws-dim ws-small" style={{ marginTop: 6 }}>{busy}…</div>}
       {note && <div className="ws-small" style={{ marginTop: 6 }}>! {note}</div>}

@@ -3,8 +3,9 @@
  * Played from the domain, the game holds its own door: the server's door (server/intelligence),
  * the same routes and the same shapes, and the same law over what comes back. It asks a model on
  * the player's machine (Ollama at 127.0.0.1, once the player has allowed this origin), or a
- * provider on the player's own key, straight from the page. Our servers make no model call and
- * carry none.
+ * provider on the player's own key, straight from the page. For those our servers make no model
+ * call and carry none. A player who has chosen neither is answered by the hub's own voice where the
+ * hub has one (HostVoice.ts, DoorTransport.ts); that never comes through this door.
  *
  * With no key and no local model it is the local mode's honest OFFLINE, and the game plays on.
  * The page cannot read the machine's card or memory; the check says what Ollama and the browser

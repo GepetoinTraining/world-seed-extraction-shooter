@@ -31,7 +31,8 @@
         <ul class="facts">
           <li>Nothing to install</li>
           <li>Your save stays with you</li>
-          <li>Your own model, or none</li>
+          <li data-voice="own">Your own model, or none</li>
+          <li data-voice="hub" hidden>A voice comes with your account</li>
         </ul>
       </div>
 
@@ -87,17 +88,20 @@
         <article class="card ruled">
           <span class="glyph" data-mark="ok" aria-hidden="true"></span>
           <h3>In your browser</h3>
-          <p>The game, your play, and your save. Nothing about a dive is sent anywhere while you are in it.</p>
+          <p data-voice="own">The game, your play, and your save. Nothing about a dive is sent anywhere while you are in it.</p>
+          <p data-voice="hub" hidden>The game, your play, and your save. While you are in a dive, nothing is sent anywhere but what the game asks the voice.</p>
         </article>
         <article class="card ruled">
           <span class="glyph" data-mark="note" aria-hidden="true"></span>
           <h3>On this hub</h3>
           <p>Your account, your character's birth, and checks: its receipts, each signed and each following the last, and your world, whose new parts must keep the game's law.</p>
+          <p data-voice="hub" hidden>And, while you use this hub's voice, what the game asks the model: it goes through here to the model's provider. This hub keeps a count of what it cost, and none of the words.</p>
         </article>
         <article class="card ruled">
           <span class="glyph" data-mark="none" aria-hidden="true"></span>
           <h3>Never here</h3>
-          <p>Your play, your save, or a model key.</p>
+          <p data-voice="own">Your play, your save, or a model key.</p>
+          <p data-voice="hub" hidden>Your play, or your save. A key of your own, if you add one, is sealed in your browser and never sent here.</p>
         </article>
       </div>
       <ul class="notes">
@@ -156,9 +160,14 @@
     <section class="band split" id="voice" aria-labelledby="voice-title">
       <div>
         <p class="kicker">The voice</p>
-        <h2 id="voice-title">It speaks through a model you choose.</h2>
+        <h2 id="voice-title"><span data-voice="own">It speaks through a model you choose.</span><span data-voice="hub" hidden>It speaks as soon as you are signed in.</span></h2>
       </div>
-      <div>
+      <div data-voice="hub" hidden>
+        <p>Signed in here, the game speaks through this hub's own voice. There is nothing to set up and no key to bring. Each account has an allowance of it for the day; past that it answers again the next day, and the game plays on meanwhile.</p>
+        <p>You can use a model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose) or your own key with a provider instead, and neither is ever counted. Either is set up inside the game, under SYSTEM, THE VOICE, which shows every step before you run it.</p>
+        <p class="hint">A key of your own is sealed in this browser and is never sent here.</p>
+      </div>
+      <div data-voice="own">
         <p>Played here, the game speaks through a model of your choosing, and plays on without one if you choose none. It can be a model on your own machine (Gemma through <a href="https://ollama.com" rel="noopener noreferrer">Ollama</a>, or any you choose), or your own key with a provider. Either is set up inside the game, under SYSTEM, THE VOICE, which shows every step before you run it.</p>
         <p class="hint">Safari, and every browser on an iPhone or iPad, cannot reach a model on your own machine, so there a key is the only way. A key is sealed in this browser and is never sent here.</p>
       </div>

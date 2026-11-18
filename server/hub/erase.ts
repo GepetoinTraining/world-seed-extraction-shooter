@@ -87,7 +87,7 @@ export class Eraser {
     const worlds = (await of('hub_world')).filter(d => uids.has(String(d.data.creator)));
     const standings = (await of('hub_world_standing')).filter(d => uids.has(String(d.data.uid)));
     const docs = [
-      `hub_account_${accountKey}`, `hub_failures_${accountKey}`, `hub_pool_${accountKey}`,
+      `hub_account_${accountKey}`, `hub_failures_${accountKey}`, `hub_pool_${accountKey}`, `hub_voice_${accountKey}`,
       ...[characters, rolls, people, sessions, jobs, worlds, standings].flat().map(d => d.id)
     ];
     const chains = [

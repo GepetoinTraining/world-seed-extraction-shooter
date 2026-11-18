@@ -23,6 +23,12 @@ export interface IDoorSettingStatus extends IProviderStatus {
   mode: DoorMode;
   /** The keyed option in use, by its name. Never the key. */
   option?: string;
+  /** Answered by a hub's own voice, on its operator's key, for the account signed in (server/hub/voice.ts). */
+  host?: boolean;
+  /** The hub beside this page has a voice of its own for whoever signs in, and nobody is signed in. */
+  hostWaits?: boolean;
+  /** What this account has spent of the hub's voice today, of what one account may, in dollars. */
+  spent?: { usd: number; of: number };
 }
 
 export class DoorSetting implements IIntelligenceProvider {
@@ -45,6 +51,11 @@ export class DoorSetting implements IIntelligenceProvider {
 
   get name(): string {
     return this.current().name;
+  }
+
+  /** What the person chose, read without asking anyone: `auto` until they pick a model of their own or a key. */
+  get chosen(): DoorMode {
+    return this.mode;
   }
 
   current(): IIntelligenceProvider {

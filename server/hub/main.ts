@@ -1,7 +1,8 @@
 /**
  * THE HUB'S LOCAL STAND-IN: the hub as a function host runs it (app.ts) behind a plain Node server, with
- * the landing page beside it, as a function host would serve them. It runs nobody's play and holds
- * no model key (DEPLOY.md).
+ * the landing page beside it, as a function host would serve them. It runs nobody's play. It holds
+ * a model key only when this process's own environment names one (ANTHROPIC_API_KEY), and then it
+ * answers the door's asks for whoever is signed in, as the deployed hub does (voice.ts, DEPLOY.md).
  *
  *   npm run hub
  *

@@ -161,7 +161,8 @@ Mounted at `/api/hub`. A `POST` takes JSON only. A signed-in route takes the `ws
 | Route | Who | New or changed |
 |---|---|---|
 | `GET /health` | anyone | `hub.accounts` added |
-| `GET /where` | anyone | `accounts`, `clerk.publishableKey` added |
+| `GET /where` | anyone | `accounts`, `clerk.publishableKey` added; `voice` added (2026-11-18): whether this hub answers the model's asks itself |
+| `GET /voice/status`, `POST /voice/<ask>` | signed in, on a hub with a voice | **new** (2026-11-18): the door's own asks, answered on the hub's key (`DEPLOY.md`, "The hub's own voice"). The game already asks it, through `DoorTransport`; nothing to plumb |
 | `GET /clock` | anyone | |
 | `POST /sessions/clerk` | someone Clerk signed in | **new**: `{ token }`, sets the hub's cookie. The site's page calls it, not the game |
 | `POST /accounts`, `POST /sessions` | anyone | 403 when `accounts` is `clerk` |

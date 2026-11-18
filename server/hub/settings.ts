@@ -83,7 +83,10 @@ export const HUB_SETTINGS: readonly ISetting[] = [
   { name: 'CLERK_SECRET_KEY', what: 'to delete an account at Clerk', secret: true },
   { name: 'CLERK_WEBHOOK_SECRET', what: 'to read Clerk\'s word that an account was deleted', secret: true },
   { name: 'CLERK_AUTHORIZED_PARTIES', what: 'the origins a Clerk token may come from' },
-  { name: 'WS_DEV_ACCOUNTS', what: 'the accounts that may open the developers\' view, comma-separated' }
+  { name: 'WS_DEV_ACCOUNTS', what: 'the accounts that may open the developers\' view, comma-separated' },
+  { name: 'ANTHROPIC_API_KEY', what: 'the hub\'s own voice, for whoever is signed in; without it the hub offers none', secret: true },
+  { name: 'WS_VOICE_ACCOUNT_DAILY_USD', what: 'dollars one account may spend on the hub\'s voice in a day (5 when not set)' },
+  { name: 'WS_VOICE_DAILY_USD', what: 'dollars the hub\'s voice may spend in a day, for everyone (25 when not set)' }
 ];
 
 const SETTING = new Map(HUB_SETTINGS.map(s => [s.name, s]));

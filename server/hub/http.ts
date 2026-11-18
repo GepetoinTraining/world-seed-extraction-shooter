@@ -19,6 +19,7 @@ import { HostedWorld } from './hosted';
 import { deleteClerkUser, readClerkToken, readClerkWebhook, type IClerkConfig } from './clerk';
 import type { Eraser } from './erase';
 import type { DevView } from './dev';
+import type { HubVoice } from './voice';
 
 /** What a deployed hub adds to the routes: who keeps its accounts, how one is deleted, and its scheduled call. */
 export interface IHubHandlerParts {
@@ -32,10 +33,15 @@ export interface IHubHandlerParts {
   cronSecret?: string;
   /** The developers' view of the data (dev.ts), for the accounts on the host's list and nobody else. */
   dev?: DevView;
+  /** The hub's own voice, on the host's key, for whoever is signed in (voice.ts). Absent, this hub offers none. */
+  voice?: HubVoice | null;
 }
 
 /** What an address that does not exist answers. A developers' route answers anyone not on the list the same, byte for byte. */
 const noSuchRoute = (res: ServerResponse) => send(res, 404, { ok: false, reason: 'No such route on this hub.' });
+
+/** Where the hub's own voice is mounted, under the hub's own mount so its session cookie rides along (voice.ts). */
+const VOICE = '/voice';
 
 /** The asked query, without what a host's rewrite carries beside it (vercel.json). */
 const queryOf = (req: IncomingMessage) => {
@@ -136,7 +142,12 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
         if (path === '/where') {
           const account = await hub.session(token);
           // The publishable key is public by design: it is what a page loads Clerk with
-          return send(res, 200, { configured: true, url: hub.publicUrl, signedIn: account?.handle ?? null, accounts: hub.accounts, ...(clerk ? { clerk: { publishableKey: clerk.publishableKey } } : {}) });
+          // `voice` says whether this hub answers the door's asks itself, for whoever is signed in (voice.ts)
+          return send(res, 200, { configured: true, url: hub.publicUrl, signedIn: account?.handle ?? null, accounts: hub.accounts, voice: !!parts.voice, ...(clerk ? { clerk: { publishableKey: clerk.publishableKey } } : {}) });
+        }
+        if (path.startsWith(`${VOICE}/`)) {
+          if (!parts.voice) return noSuchRoute(res);
+          return await parts.voice.handle(res, 'GET', path.slice(VOICE.length), {}, await hub.session(token));
         }
         if (path === '/account') return answer(res, await hub.held(token));
         if (path === '/clock') return send(res, 200, { ok: true, statement: hub.clock() });
@@ -175,6 +186,12 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
       } catch (e) {
         if (e instanceof TooLarge) return send(res, 413, { ok: false, reason: 'That is more than one request carries. Send it in parts.' });
         return send(res, 400, { ok: false, reason: 'That was not JSON.' });
+      }
+
+      // The hub's own voice: the door's asks, answered on the host's key for a signed-in account (voice.ts)
+      if (path.startsWith(`${VOICE}/`)) {
+        if (!parts.voice) return noSuchRoute(res);
+        return await parts.voice.handle(res, 'POST', path.slice(VOICE.length), body, await hub.session(token));
       }
 
       switch (path) {
@@ -236,6 +253,8 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
       }
     } catch (e) {
       console.error('[HUB] A request failed:', e);
+      // A voice's answer may already be on its way as lines: then it just ends, and the game reads that as not finished
+      if (res.headersSent) return void res.end();
       return send(res, 500, { ok: false, reason: 'The hub failed on that. Try again.' });
     }
   };

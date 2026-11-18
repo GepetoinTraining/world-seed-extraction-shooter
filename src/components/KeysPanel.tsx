@@ -18,6 +18,8 @@ const modeLine = (s: IDoorSettingStatus | null) => {
   if (!s) return 'THE VOICE CANNOT BE REACHED';
   if (s.mode === 'off') return 'TURNED OFF ON THIS SERVER';
   if (s.mode === 'keyed') return `IN USE: ${s.option ?? s.provider}`;
+  if (s.host) return s.available ? "IN USE: THIS HUB'S OWN VOICE" : "THIS HUB'S VOICE IS NOT ANSWERING";
+  if (s.hostWaits) return "SIGN IN FOR THIS HUB'S VOICE";
   if (s.provider === 'local') return `IN USE: THIS MACHINE'S OWN MODEL`;
   return s.available ? "IN USE: THE SERVER'S OWN KEY" : 'NO VOICE YET';
 };

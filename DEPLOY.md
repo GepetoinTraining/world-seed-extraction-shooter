@@ -20,7 +20,8 @@ The domain is configuration everywhere: nothing in the code names one.
 - registers a player's characters, answering with a statement it signs with its key and its time (D134's anchor);
 - checks receipts: signed ledger rows, each signature against the registered key, each row linked to the one before, each moment its own and none from a day the hub has not reached (D135). A row that differs from one it holds, or links to a different one, is a challenge;
 - checks worlds (below);
-- keeps its store on Turso, the database connected to the project, which is then its own record (`server/tursoStore.ts`, below); or on a Postgres named for it (`WS_HUB_DATABASE_URL`), with its record on Turso through the game's own keeper (`WS_RECORD=1`). Players reach neither.
+- keeps its store on Turso, the database connected to the project, which is then its own record (`server/tursoStore.ts`, below); or on a Postgres named for it (`WS_HUB_DATABASE_URL`), with its record on Turso through the game's own keeper (`WS_RECORD=1`). Players reach neither;
+- where its operator gave it a key (`ANTHROPIC_API_KEY`), answers what the game asks the model, for whoever is signed in ("The hub's own voice", below). That is the one thing it does that is not a check.
 
 `npm run hub` runs the same function locally behind a plain Node server, serving `dist-site/` (or the landing page alone, before a build): the stand-in for the host.
 
@@ -86,7 +87,8 @@ Pedro, 2026-11-13: "we need to set up how to work these out right?", and then, o
    - In Clerk, a webhook to `https://<the address>/api/hub/clerk` for `user.deleted`; paste its signing secret into `CLERK_WEBHOOK_SECRET`.
 7. **Deploy again: one click.** Deployments, the latest, Redeploy.
 8. **Look: nothing to set.** `GET https://<the address>/api/hub/health` answers with the hub's own word: `ok: true`, or a 503 whose reason says every setting still missing or unreadable at once, with their names in `settings.missing` and `settings.unreadable`. The function's log says at each start which name each setting was read from (`[HUB] Settings: WS_HUB_DATABASE_URL (from TURSO_DATABASE_URL), …`), never a value. The host's own 500 (`FUNCTION_INVOCATION_FAILED`) means the function died as it loaded, before it read any setting.
-9. **The developers' view: a paste, after the first sign-in.** Sign in on the site, then open `/dev/`. It says the account is not on the list and shows its account key (`clerk_` and Clerk's id for it). Paste that key into `WS_DEV_ACCOUNTS` (several are separated by commas) and deploy again; `/dev/` then shows the data (below, "The developers' view"). The list is the operator's to keep short: what the view shows is players' data.
+9. **The hub's own voice: a paste.** `ANTHROPIC_API_KEY`, as a Secret: the key the hub answers the game's asks with, for whoever is signed in ("The hub's own voice", below). Left out, the hub offers no voice and the game asks only a player's own key or machine, as before. Two more are there to change what it may spend, each a plain number of dollars: `WS_VOICE_ACCOUNT_DAILY_USD` (one account in a day, 5 when not set) and `WS_VOICE_DAILY_USD` (everyone together in a day, 25 when not set). `GET /api/hub/where` then answers `voice: true`. Set a spend limit on the key's own workspace at the provider as well: the hub's count is a guard, and the provider's limit is the wall.
+10. **The developers' view: a paste, after the first sign-in.** Sign in on the site, then open `/dev/`. It says the account is not on the list and shows its account key (`clerk_` and Clerk's id for it). Paste that key into `WS_DEV_ACCOUNTS` (several are separated by commas) and deploy again; `/dev/` then shows the data (below, "The developers' view"). The list is the operator's to keep short: what the view shows is players' data.
 
 **What the first deployment showed (2026-11-13).** The site built and was served. Every address under `/api/hub` answered the host's own 500: `Cannot find module '/var/task/server/hub/app'`. The host compiles each file alone and runs the result as plain Node, and plain Node finds an import only when its address is written whole, which nothing under `server/` or `shared/` does. So the hub is built into one file first (`scripts/build-hub.ts`, to `dist-hub/hub.mjs`; `npm run build:site` does it too, and `vercel-build` names it for the host's own step before a function), and `api/hub.js` hands that to the host. `tests/deploy.function.test.ts` runs it the way the host does. Whether the host now builds and runs it has not been seen: the next deployment shows it.
 
@@ -119,7 +121,7 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 |---|---|---|
 | `GET /health` | anyone | `service: worldseed-hub`, the hub's id, its public key, its address, its time |
 | `GET /clock` | anyone | the hub's time as the clock's address, signed |
-| `GET /where` | anyone | this hub's address, and who is signed in here |
+| `GET /where` | anyone | this hub's address, who is signed in here, and whether it has a voice of its own (`voice`) |
 | `POST /accounts` | anyone | `{ handle, password }`: a new account |
 | `POST /sessions` | anyone | `{ handle, password, keep? }`: signs in; with `keep: 'cookie'` the token goes into an HttpOnly, Secure, SameSite=Strict cookie and is left out of the answer |
 | `GET /session` | signed in | who this is |
@@ -145,6 +147,8 @@ On the hub, mounted at `/api/hub`. Every `POST` takes JSON only, so another site
 | `POST /account/delete` | signed in | `{ confirm: handle }`: everything this hub holds of the account, deleted, and the sign-in at Clerk with it |
 | `GET /maintenance` | the host's scheduled call | the write-down to the record, and erasures waiting on it; carries `CRON_SECRET`. Notes when it came, for the developers' view |
 | `POST /clerk` | Clerk | its signed word that an account was deleted there |
+| `GET /voice/status` | signed in, on a hub with a voice | whether the hub's voice answers, and what this account has spent of its day |
+| `POST /voice/<ask>` | signed in, on a hub with a voice | one of the door's own asks (`/creation`, `/world/pass`, `/kami/talk`, `/npc/talk` and the rest of `server/hub/voice.ts`'s list), answered on the hub's key in the door's own shape. The routes that choose a voice, read a machine or take a key are not here |
 | `GET /dev/state`, `/dev/tables`, `/dev/rows`, `/dev/row`, `/dev/find` | an account on `WS_DEV_ACCOUNTS` | the developers' view of the data, read only (below). To anyone else, an address that does not exist |
 
 `GET /session` also answers the account's own key (`account.key`), which is what `WS_DEV_ACCOUNTS` names.
@@ -197,6 +201,9 @@ Every name the hub reads is in `server/hub/settings.ts`, with the names a host w
 | `CLERK_SECRET_KEY` | hub | (Clerk's integration writes this name) | to delete the account at Clerk when its player asks the hub to |
 | `CLERK_AUTHORIZED_PARTIES` | hub | | the origins a Clerk token may come from; the hub's own address when left out |
 | `WS_DEV_ACCOUNTS` | hub | | the account keys that may open the developers' view, separated by commas; empty, nobody |
+| `ANTHROPIC_API_KEY` | hub | | the hub's own voice, for whoever is signed in; left out, it offers none |
+| `WS_VOICE_ACCOUNT_DAILY_USD` | hub | | dollars one account may spend on the hub's voice in a day; 5 when not set |
+| `WS_VOICE_DAILY_USD` | hub | | dollars the hub's voice may spend in a day, for everyone; 25 when not set |
 | `VITE_WS_STORE=browser` | game build | | set by `npm run build:site`: the save lives in the browser |
 
 ## A local test of the whole thing
@@ -210,12 +217,25 @@ Open `http://127.0.0.1:3950` for the landing page and make an account, then PLAY
 
 ## The model, from the browser
 
-Pedro: "their IDB makes the call, not our Turso or postgress". Played from the domain, the game holds its own door (`src/logic/intelligence/PageDoor.ts`): the server's door, the same routes (`server/intelligence/routes.ts`), the same shapes and the same law, asking from the page. Our servers make no model call and carry none.
+Pedro: "their IDB makes the call, not our Turso or postgress". Played from the domain, the game holds its own door (`src/logic/intelligence/PageDoor.ts`): the server's door, the same routes (`shared/intelligence/routes.ts`), the same shapes and the same law, asking from the page. For a player who brings a key or a model of their own, our servers make no model call and carry none. Since 2026-11-18 a hub may also answer on a key of its operator's ("The hub's own voice", below), and then that is what a player who brought nothing is answered by.
 
 - **A model on the player's machine.** Ollama at `127.0.0.1:11434`, once the player allows this game's origin. Chrome, Edge and Firefox (153 and later) ask the player once before a public page may reach their machine; then it works. **Safari, and every browser on iPhone and iPad, block it** as mixed content and offer no prompt (WebKit bug 171934, open), so there a key is the only way. Ollama answers a browser only from local origins by default, so the player sets `OLLAMA_ORIGINS` to this game's origin and restarts it.
 - **Setting that up**, under SYSTEM, THE VOICE, SET UP A MODEL HERE (`LocalSetup.ts`): a prompt for whatever coding agent the player has, shown whole before it is copied; a plain script per system (PowerShell; shell for macOS and Linux), shown whole, also served at `/setup/`, run only by the player; and free agents for a player with none (`server/intelligence/agents.json`, read on each vendor's page 2026-11-04). Every way allows this origin only, never `*`.
 - **A player's own key.** Anthropic (with the `anthropic-dangerous-direct-browser-access` header), Gemini, Groq, OpenRouter and Mistral answer a page (their preflights passed on 2026-11-04, though none of the four documents it); Cloudflare's does not and is not offered in the page. The key lives with the player: sealed at rest with AES-GCM under a key made in the browser as not extractable, in IndexedDB (`KeyVault.ts`). No storage holds it as written, and it never reaches our servers; a script running in this page's own origin could still ask the browser to unseal it, which is as far as any browser lets a page go.
 - **An Anthropic vault** is not used for this. A vault's credential is usable only inside a Managed Agents session, which bills our workspace: $0.08 per session-hour while running, plus the tokens (platform.claude.com pricing, read 2026-11-04). No shape of it leaves our side without a standing cost, so the call stays the player's.
+
+### The hub's own voice (2026-11-18)
+
+Pedro: "we need the anthropic key inside the pedro .env to be the one deployed, and we need the web vercel deploy to be playable". As deployed until then, a player with no key and no model on their machine had no voice, so creation fell to its floor and nothing was written for them. With `ANTHROPIC_API_KEY` set on the host, the hub answers the door's asks itself (`server/hub/voice.ts`, mounted at `/api/hub/voice`, under the hub's own cookie path so the session rides along):
+
+- **For whom.** Whoever is signed in to the hub. Nobody else is answered, and no model is asked for them.
+- **What it answers.** The door's own asks, by the door's own routes and in its own shapes (`shared/intelligence/routes.ts`): the hub builds every prompt from the game's ask and takes no prompt, model or token count from the caller, so it is no way to reach the model with words of one's own. The routes that choose a voice, read a machine or take a key are not mounted there at all.
+- **When the game asks it** (`src/logic/intelligence/DoorTransport.ts`, `HostVoice.ts`). Only while the player has chosen nothing of their own. A key of theirs, or a model on their machine once they choose it, always wins and goes straight from the page as before; the choice of voice, the machine's check and the keys are always the page's. The game learns from `GET /where` whether the hub has a voice and who is signed in. Signed out, it asks the page's own door, and the key screens say the hub's voice waits on a sign-in.
+- **What it may spend.** Every call is the operator's money. Each call's real cost (the provider's usage, at the door's rates) is added to the account's day and to the hub's, and at either limit the answer is the door's own `OVER_LIMIT`, with the reason, until the next day. A batch is counted when it is filed, at the most it could cost, and collected without being counted again. The count is two documents in the hub's store (`hub_voice_<account>`, `hub_voice_day`), so every instance reads the same; an account's goes when the account is deleted. Two calls landing together can each miss the other's cost, so a day can run a call or two over: it is a guard on the bill and not a wall, which is what a spend limit on the key's workspace at the provider is for.
+- **What it keeps.** The counts. None of the words: what the game asked and what came back pass through and are held nowhere on the hub.
+- **Not built.** Who pays: the 5 dollars a month Pedro named for a player with no key and no model has no route yet, so today every signed-in account gets the same daily allowance. Opening it to a list of accounts only, instead of to everyone signed in, is one check in `voice.ts` if it is wanted.
+
+Played through on this machine on 2026-11-18, against the real key, on the site as built (`npm run build:site`) behind `npm run hub`: an account made, the key screen reading "IN USE: THIS HUB'S OWN VOICE", a character's creation answered through `/api/hub/voice/creation` with skills that fit the kit, the character minted and standing in the city, and $0.0007 counted to the account. Not yet seen on the host.
 
 ## The pool (shared work, in turns)
 
