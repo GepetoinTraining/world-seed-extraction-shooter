@@ -39,7 +39,7 @@ import { makeHubKey } from '../server/hub/keys';
 import { createHubHandler } from '../server/hub/http';
 import { hubPathOf } from '../server/hub/function';
 import { appPathOf, createHubApp } from '../server/hub/app';
-import { clerkConfigFrom, clerkFrontendHost, readClerkToken, readClerkWebhook, type IClerkConfig } from '../server/hub/clerk';
+import { clerkConfigFrom, clerkFrontendHost, ownPages, readClerkToken, readClerkWebhook, type IClerkConfig } from '../server/hub/clerk';
 import { Eraser } from '../server/hub/erase';
 import { LiveRoom, type LiveAccess } from '../server/live/room';
 import { LocalWire, type ILiveBus } from '../server/live/bus';
@@ -193,8 +193,9 @@ describe('accounts by e-mail and password: what Clerk signs is read with a key a
     expect(refused(`${hs}.${createHmac('sha256', clerkEnv().CLERK_JWT_KEY).update(hs).digest('base64url')}`)).toMatchObject({ problem: expect.stringMatching(/not signed the way/) });
     expect(refused(clerkToken(), NOW + 5 * 60_000)).toMatchObject({ problem: expect.stringMatching(/run out/) });
     expect(refused(clerkToken({ nbf: Math.floor(NOW / 1000) + 600 }))).toMatchObject({ problem: expect.stringMatching(/not good yet/) });
-    expect(refused(clerkToken({ azp: 'https://elsewhere.test' }))).toMatchObject({ problem: expect.stringMatching(/not made for this hub/) });
-    expect(refused(clerkToken({ azp: undefined }))).toMatchObject({ problem: expect.stringMatching(/not made for this hub/) });
+    // Another site's page is named in the refusal, so the hub's operator can see which page it does not know
+    expect(refused(clerkToken({ azp: 'https://elsewhere.test' }))).toMatchObject({ problem: expect.stringMatching(/made on https:\/\/elsewhere\.test, which this hub does not know as one of its own pages/) });
+    expect(refused(clerkToken({ azp: undefined }))).toMatchObject({ problem: expect.stringMatching(/does not know as one of its own pages/) });
     expect(refused(clerkToken({ sub: '../../etc' }))).toMatchObject({ problem: expect.stringMatching(/no account/) });
     expect(refused('not.a.token.at.all')).toHaveProperty('problem');
     expect(refused(undefined)).toHaveProperty('problem');
@@ -208,6 +209,32 @@ describe('accounts by e-mail and password: what Clerk signs is read with a key a
     expect(readClerkWebhook(config, webhook({ type: 'user.deleted', data: {} }, NOW, Buffer.from('another secret').toString('base64')).headers, raw, NOW)).toHaveProperty('problem');
     expect(readClerkWebhook(config, {}, raw, NOW)).toMatchObject({ problem: 'That is not signed.' });
     expect(readClerkWebhook(clerkConfig({ CLERK_WEBHOOK_SECRET: '' }), headers, raw, NOW)).toHaveProperty('problem');
+  });
+
+  /**
+   * Pedro, 2026-11-18, signing in on the domain he had just attached to the project: "That token was not made
+   * for this hub's pages", and then "wrong flow, the account takes precedence". The hub's address was still the
+   * one pasted before the domain existed, and the host's own name for the project had moved to the new one.
+   */
+  it('a sign-in is good from every address the hub is served at: its own, the one its host names, and each one\'s www twin', () => {
+    const asHosted = { ...clerkEnv(), VERCEL_PROJECT_PRODUCTION_URL: 'worldseed.example' };
+    const hosted = clerkConfigFrom(asHosted, 'https://world-seed.vercel.app') as IClerkConfig;
+    expect([...hosted.parties].sort()).toEqual(['https://world-seed.vercel.app', 'https://worldseed.example', 'https://www.worldseed.example']);
+    // The very case: the pasted address is the old one, and the page is the new domain's www
+    expect(readClerkToken(hosted, clerkToken({ azp: 'https://www.worldseed.example' }), NOW)).toMatchObject({ userId: 'user_2abcDEF123' });
+    expect(readClerkToken(hosted, clerkToken({ azp: 'https://worldseed.example' }), NOW)).toMatchObject({ userId: 'user_2abcDEF123' });
+    expect(readClerkToken(hosted, clerkToken({ azp: 'https://world-seed.vercel.app' }), NOW)).toMatchObject({ userId: 'user_2abcDEF123' });
+    // Nobody else's: another site, a name beside it on the shared suffix, the twin of a name on that suffix
+    for (const azp of ['https://elsewhere.test', 'https://other.vercel.app', 'https://www.world-seed.vercel.app', 'https://worldseed.example.evil.test', 'http://worldseed.example']) {
+      expect(readClerkToken(hosted, clerkToken({ azp }), NOW), azp).toHaveProperty('problem');
+    }
+    // A hub named by a www address takes the bare one too; a local stand-in has no twin at all
+    expect(ownPages({}, 'https://www.worldseed.example').sort()).toEqual(['https://worldseed.example', 'https://www.worldseed.example']);
+    expect(ownPages({}, 'http://127.0.0.1:3950')).toEqual(['http://127.0.0.1:3950']);
+    expect(ownPages({}, 'http://localhost:3950')).toEqual(['http://localhost:3950']);
+    expect(ownPages({ VERCEL_PROJECT_PRODUCTION_URL: 'https://worldseed.example/' }, 'https://worldseed.example').sort()).toEqual(['https://worldseed.example', 'https://www.worldseed.example']);
+    // Named outright, the list is the operator's and nothing is added to it
+    expect((clerkConfigFrom({ ...asHosted, CLERK_AUTHORIZED_PARTIES: 'https://only.example/' }, 'https://world-seed.vercel.app') as IClerkConfig).parties).toEqual(['https://only.example']);
   });
 
   it('a hub with no Clerk named keeps its own accounts; a key that does not read is said, never passed over', () => {

@@ -46,6 +46,15 @@
           <p><button type="button" class="quiet" id="sign-out">Sign out</button></p>
         </div>
 
+        <!-- Signed in with the e-mail, and the hub did not take it: never the way to make the account again -->
+        <div id="clerk-stuck" hidden>
+          <p class="hint">Your account is there. Nothing has to be made again.</p>
+          <p class="choice">
+            <button type="button" class="primary" id="clerk-retry">Try again</button>
+            <button type="button" class="quiet" id="clerk-out">Sign out</button>
+          </p>
+        </div>
+
         <!-- This hub's accounts are an e-mail and a password, kept by Clerk -->
         <div id="clerk-forms" hidden>
           <p class="hint">An account is an e-mail and a password. The e-mail is how you get back in if the password is lost. This hub itself keeps neither: only a handle, and what your characters send it.</p>

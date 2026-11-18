@@ -37,6 +37,9 @@
   ask('/health').then(h => say($('hub-said'), h.ok ? '[■]' : '[!]', h.ok ? `This hub is ${h.hub.id}, at ${h.hub.url}.` : 'This hub did not answer as a hub.'));
 
   const accountSaid = $('account-said');
+  /** That this browser has held a sign-in here. No name, no id: only that the account comes first next time. */
+  const KNOWN = 'ws_hub_known';
+  const knownHere = () => { try { return localStorage.getItem(KNOWN) === '1'; } catch { return false; } };
   let clerk = null;
 
   // What the page shows follows one thing: who the hub says is signed in.
@@ -49,6 +52,9 @@
     show($('yours-section'), !!signedIn);
     show($('clerk-forms'), !signedIn && where.accounts === 'clerk');
     show($('builtin-forms'), !signedIn && where.accounts !== 'clerk');
+    show($('clerk-stuck'), false);
+    // This browser has been signed in here before: the next visit opens on signing in, never on making an account
+    if (signedIn) { try { localStorage.setItem(KNOWN, '1'); } catch { /* a private window keeps nothing */ } }
     // A hub that answers the model's asks itself (`voice`) says so; one that does not says the voice is the player's own
     for (const el of document.querySelectorAll('[data-voice]')) show(el, el.dataset.voice === (where.voice ? 'hub' : 'own'));
     if (signedIn) {
@@ -105,8 +111,15 @@
       try {
         const token = await clerk.session.getToken();
         const out = await ask('/sessions/clerk', { token });
-        if (!out.ok) say(accountSaid, '[!]', out.reason || `The hub answered ${out.status}.`);
-        else await render();
+        if (!out.ok) {
+          // Signed in with the e-mail, and this hub did not take it. The account exists, so the page says what
+          // happened and offers to try again or sign out; it never offers to make the account a second time
+          show($('clerk-forms'), false);
+          show($('clerk-stuck'), true);
+          say(accountSaid, '[!]', `You are signed in with your e-mail, and this hub could not take that sign-in. ${out.reason || `It answered ${out.status}.`}`);
+        } else {
+          await render();
+        }
       } finally {
         exchanging = null;
       }
@@ -136,10 +149,13 @@
     };
     $('show-sign-up').addEventListener('click', () => form('sign-up'));
     $('show-sign-in').addEventListener('click', () => form('sign-in'));
+    $('clerk-retry').addEventListener('click', () => { say(accountSaid, '[…]', 'Asking this hub again…'); void exchange(); });
+    $('clerk-out').addEventListener('click', async () => { await clerk.signOut().catch(() => undefined); location.reload(); });
     // Signed in at Clerk, here or in another tab: the hub's session follows
     clerk.addListener(({ user }) => { if (user && !where.signedIn) void exchange(); });
     if (clerk.isSignedIn && !where.signedIn) await exchange();
-    else if (!clerk.isSignedIn) form('sign-up');
+    // The account comes first: a browser that has been signed in here opens on signing in; a new one, on making an account
+    else if (!clerk.isSignedIn) form(knownHere() ? 'sign-in' : 'sign-up');
   }
 
   // ---------------------------------------------------------------------------------------------

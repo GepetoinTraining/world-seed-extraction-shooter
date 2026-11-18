@@ -16,7 +16,7 @@
  *
  *   CLERK_JWT_KEY             the instance's public key, PEM (Clerk dashboard, API keys, JWKS public key)
  *   CLERK_PUBLISHABLE_KEY     what the landing page loads Clerk with; public by design
- *   CLERK_AUTHORIZED_PARTIES  the origins a token may come from, comma-separated; this hub's own address when left out
+ *   CLERK_AUTHORIZED_PARTIES  the origins a token may come from, comma-separated; this hub's own pages when left out (`ownPages`)
  *   CLERK_WEBHOOK_SECRET      the signing secret of the endpoint at /api/hub/clerk (whsec_…)
  *   CLERK_SECRET_KEY          to delete the account at Clerk when its player asks this hub to
  */
@@ -48,6 +48,32 @@ const WEBHOOK_WINDOW_S = 5 * 60;
 /** Clerk's key as the host's settings left it: built again from its markers and base64, whatever became of its line ends (keys.ts). */
 const pem = (text: string) => pemOf(text);
 
+/**
+ * THIS HUB'S OWN PAGES, BY ORIGIN (Pedro, 2026-11-18, signing in on the domain he had just attached and
+ * being told "That token was not made for this hub's pages": "wrong flow, the account takes
+ * precedence"). A sign-in is good from every address this hub is served at, whichever one its
+ * settings happen to name: its own address, the production domain its host names for it (Vercel moves
+ * that to a custom domain the day one is attached, while `WS_PUBLIC_URL` stays what was pasted), and
+ * each one's `www.` twin, since a domain and its `www.` are one owner's and a host redirects one to
+ * the other. A name on a suffix many share (`*.vercel.app`) has no twin: `www.` of it is nobody's.
+ */
+export function ownPages(env: NodeJS.ProcessEnv, publicUrl: string): string[] {
+  const hosted = env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  const named = [publicUrl, ...(hosted ? [`https://${hosted.replace(/^https?:\/\//, '')}`] : [])];
+  const out = new Set<string>();
+  for (const one of named) {
+    let url: URL;
+    try { url = new URL(one); } catch { continue; }
+    out.add(url.origin);
+    const name = url.hostname;
+    const shared = /(^|\.)(vercel\.app|localhost)$/.test(name) || !name.includes('.') || /^[\d.]+$/.test(name) || name.includes(':');
+    if (shared) continue;
+    const twin = name.startsWith('www.') ? name.slice('www.'.length) : `www.${name}`;
+    out.add(`${url.protocol}//${twin}${url.port ? `:${url.port}` : ''}`);
+  }
+  return [...out];
+}
+
 /** Clerk, if this hub's environment names it. A key that does not read is said, not passed over. */
 export function clerkConfigFrom(env: NodeJS.ProcessEnv, publicUrl: string): IClerkConfig | { problem: string } | null {
   const key = env.CLERK_JWT_KEY?.trim();
@@ -60,7 +86,8 @@ export function clerkConfigFrom(env: NodeJS.ProcessEnv, publicUrl: string): ICle
   }
   const publishableKey = env.CLERK_PUBLISHABLE_KEY?.trim();
   if (!publishableKey) return { problem: 'CLERK_PUBLISHABLE_KEY is not set, so the landing page has nothing to load Clerk with.' };
-  const parties = (env.CLERK_AUTHORIZED_PARTIES?.trim() || publicUrl).split(',').map(p => p.trim().replace(/\/+$/, '')).filter(Boolean);
+  const named = env.CLERK_AUTHORIZED_PARTIES?.trim();
+  const parties = named ? named.split(',').map(p => p.trim().replace(/\/+$/, '')).filter(Boolean) : ownPages(env, publicUrl);
   const secret = env.CLERK_WEBHOOK_SECRET?.trim();
   return {
     publicKey,
@@ -100,7 +127,11 @@ export function readClerkToken(config: IClerkConfig, token: unknown, now: number
   if (typeof claims.exp !== 'number' || at > claims.exp + CLOCK_LEEWAY_S) return { problem: 'That sign-in has run out. Sign in again.' };
   if (typeof claims.nbf === 'number' && at < claims.nbf - CLOCK_LEEWAY_S) return { problem: 'That token is not good yet.' };
   // A token made for another site's page is not for this one
-  if (typeof claims.azp !== 'string' || !config.parties.includes(claims.azp.replace(/\/+$/, ''))) return { problem: 'That token was not made for this hub\'s pages.' };
+  if (typeof claims.azp !== 'string' || !config.parties.includes(claims.azp.replace(/\/+$/, ''))) {
+    // Said with the address, so whoever runs the hub can see which page it does not know as its own. Never the token
+    const from = typeof claims.azp === 'string' ? claims.azp.slice(0, 120) : 'no page at all';
+    return { problem: `That sign-in was made on ${from}, which this hub does not know as one of its own pages. If it is, the hub's operator adds it to CLERK_AUTHORIZED_PARTIES.` };
+  }
   if (typeof claims.sub !== 'string' || !/^[A-Za-z0-9_]+$/.test(claims.sub)) return { problem: 'That token names no account.' };
   const handle = typeof claims.handle === 'string' && claims.handle.trim() ? claims.handle.trim().slice(0, 64) : undefined;
   return { userId: claims.sub, ...(handle ? { handle } : {}) };
