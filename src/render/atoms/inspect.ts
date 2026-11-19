@@ -22,7 +22,7 @@ import { EffectSystem, IEffectAbility } from '../../../shared/logic/systems/Effe
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { ContentRegistry } from '../../../shared/logic/theme/ContentRegistry';
-import { volleyShots } from '../../../shared/logic/theme/ThemeFormula';
+import { shotsOf, volleyShots } from '../../../shared/logic/theme/ThemeFormula';
 import { blowWear } from '../../../shared/logic/theme/WearLaw';
 import { WeaveSystem } from '../../logic/systems/WeaveSystem';
 import { CIRCLES_FOR_A_GIFT, CircleSystem } from '../../logic/systems/CircleSystem';
@@ -659,8 +659,13 @@ export function inspectHand(player: IPlayer, slot: EquipSlotId): Card {
       rows.push(['Reach', `${tilesSaid(shape.reachPx)} tiles, ${degreesOf(shape.halfAngle)}° wide${shape.innerPx > 0 ? `, nothing within ${tilesSaid(shape.innerPx)} tiles` : ''}`]);
     } else {
       const throwing = !hand || isThrowable(hand);
-      const shots = volleyShots(CombatMath.volleyOf(hand)).length;
-      rows.push(['Reach', `${throwing ? countSaid(shots, 'throw', 'throws') : countSaid(shots, 'shot', 'shots')}, ${tilesSaid(CombatMath.shotRangePx(hand) ?? PROJECTILE_RANGE_PX)} tiles`]);
+      // Shots read off the piece (`ShotLaw`): the card asks the point the field flies, never a count of its own
+      const flown = CombatMath.shotOf(hand);
+      const shots = shotsOf(flown).length;
+      rows.push(['Reach', `${throwing ? countSaid(shots, 'throw', 'throws') : countSaid(shots, 'shot', 'shots')}, ${tilesSaid(flown.reachPx)} tiles`]);
+      const bend = Math.round((Math.abs(flown.curve) * 180) / Math.PI);
+      // Said only where it can be seen on the field: a bend of three degrees or more, a sway of an atom (2 px) or more
+      rows.push(['Flies', `${tilesSaid(flown.speedPx)} tiles a second${bend >= 3 ? `, bending ${bend}° ${flown.curve > 0 ? 'right' : 'left'}` : ''}${flown.swayPx >= 2 ? ', swaying' : ''}`]);
     }
     // EN5: a blow takes none of the day's energy; a stone thrown is spent, and a piece wears by the blow (`WearLaw`)
     if (isThrowable(held)) rows.push(['Cost', `the stone itself, ${throwsLeft(held, carried)} to throw`]);
@@ -671,6 +676,7 @@ export function inspectHand(player: IPlayer, slot: EquipSlotId): Card {
 
     deep.push(['Blow', 'What lands before a crit, a glance or the armour it meets. Every blow does at least 1.']);
     deep.push(['Wind-up', windup.kind === 'swing' ? 'Swung at half pace before the blow lands; a quicker hand shortens only what comes after.' : 'Drawn standing before it lets go; a quicker hand shortens only what comes after.']);
+    if (mode !== 'MELEE' && hand && !isThrowable(hand)) deep.push(['Flies', 'How its shots leave and fly is read off the piece itself: its make, its one roll and each line it holds. More shots, or faster ones, fly less far.']);
     deep.push(['Cost', isThrowable(hand) ? 'A stone thrown is spent, and the next one carried comes to the hand.' : 'A blow takes none of the day\'s energy; the day is for work.']);
     if (held && toolPower(held) > 0) deep.push(['Works', 'What a try costs and how often it takes is on the place\'s own card.']);
   }

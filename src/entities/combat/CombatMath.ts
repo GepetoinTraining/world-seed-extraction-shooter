@@ -19,7 +19,8 @@ import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { BASE_CRIT_MULTIPLIER, BASE_GLANCE, BLOCK_FACTOR, GLANCE_FACTOR, RATING_KNEE, UNARMED_SHOTS_PER_SEC } from '../../../shared/logic/systems/FightNumbers';
 import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { isThrowable, thrownDamage } from '../../../shared/entities/item/Throwable';
-import { IStrikeShape, THROW_TILES, bodyScale, strikeNumbers, strikeWordsOf, volleyWordOf } from '../../../shared/logic/theme/ThemeFormula';
+import { IShotShape, IStrikeShape, THROW_TILES, bodyScale, strikeNumbers, strikeWordsOf, volleyShape, volleyWordOf } from '../../../shared/logic/theme/ThemeFormula';
+import { pieceShot } from '../../../shared/logic/theme/ShotLaw';
 import { TILE_PX } from '../../../shared/entities/world/grid';
 import type { Volley } from '../../../shared/logic/theme/ThemeTypes';
 import { bodyLawOf } from '../../../shared/entities/mob/BodyLaw';
@@ -28,6 +29,8 @@ export const UNARMED_DAMAGE = 5;
 export { UNARMED_SHOTS_PER_SEC };
 export const MAX_MITIGATION = 0.6;
 /** Layer 0's odds. Guesses until Wave 12. */
+
+const shotsWorkedOut = new WeakMap<IItem, IShotShape>();
 
 export interface IOutgoingHit { damage: number; crit: boolean; glance: boolean; poison: number }
 export interface IIncomingHit { damage: number; dodged: boolean; blocked: boolean }
@@ -185,6 +188,19 @@ export class CombatMath {
   static volleyOf(weapon: IItem | undefined): Volley {
     if (!weapon || !this.isUsable(weapon) || isThrowable(weapon)) return 'single';
     return weapon.volley ?? volleyWordOf(weapon.tags ?? []);
+  }
+
+  /**
+   * Shots read off the piece (`ShotLaw`): the point this hand's volley flies as. A piece's is its kind's middle pushed
+   * by the piece's own words, roll and lines. A bare hand and a stone throw the plain one, eight tiles (call 12).
+   */
+  static shotOf(weapon: IItem | undefined): IShotShape {
+    const range = this.shotRangePx(weapon);
+    if (range !== undefined) return { ...volleyShape('single'), reachPx: range };
+    // Asked every frame of a draw: worked out once for each piece as the store holds it (a piece is replaced, never changed in place)
+    let shape = shotsWorkedOut.get(weapon!);
+    if (!shape) { shape = pieceShot(weapon!, this.volleyOf(weapon)); shotsWorkedOut.set(weapon!, shape); }
+    return shape;
   }
 
   /** Call 12: how far a throw flies; a bare hand or a stone throws eight tiles. Anything else flies a shot's whole flight (none). */

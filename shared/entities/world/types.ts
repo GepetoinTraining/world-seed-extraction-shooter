@@ -98,6 +98,8 @@ export interface ITelegraph {
   shape?: { reachPx: number; innerPx: number; halfAngle: number };
   /** The fight's shapes: the volley a shot will leave as, its lanes drawn before it flies. */
   volley?: string;
+  /** Shots read off what fires them: the point that volley flies as, so the lanes drawn are the lanes flown. */
+  shot?: import('../../logic/theme/ThemeFormula').IShotShape;
 }
 
 /** What a leader's ground holds, read at a chunk. Plain words, and no creature's name (D60). */

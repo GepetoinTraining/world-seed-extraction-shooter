@@ -962,6 +962,81 @@ Built at `d81febd` (ledger E1), with four kinds of gear carrying 5 to 10 energy 
 
 **The fight's shapes.** In the same message as the calls: "something for us to do is make the combat and bullet shapes, it should be bullet hellish, and meele needs reach, and it needs to have that arc, an axe has reach but doesn't hit close to the character usin (darius (lol) q), a spear can atack forward far, and wide arc... see the concept?" Read as: every kind of weapon has a shape of its own on the ground, how far it reaches, how wide it sweeps, and where it does not reach at all (an axe hits out at its edge and misses what stands against its wielder; a spear reaches far ahead); and shots come in patterns that fill the field. Today every swing is one arc, 60 px long and 0.75 rad either side, whatever is held; a shot is a single line; and two patterns, a spread and a spiral, are written and nothing fires them (`STAT_TREES.md` section 9). The fight worker's set already gives each kind its reach and arc (2.2). The shapes are the first piece of the fight's rebalance. Not started.
 
+**Shots read off what fires them.** Pedro, 2026-11-18, after a dive played unarmed read as "standing and trading blows": "the fighting needs the ... the ships... you know the old arcade game where each little thing you grab changes the bullets slightly? OUR bullets need to be that granular, on a tensor, meaning we don't choose, slight vairantions change them between the same weapon rolled twice". He could not name the game. Only the principle is taken, many small measures and each thing held moving the shot a little; none of any game's content, names or patterns.
+
+Built on branch `claude/heuristic-jang-22c816`. The rule is `shared/logic/theme/ShotLaw.ts`; the space it moves in and the one place a shot's path is worked out are in the formula (`IShotShape`, `shotsOf`, `shotAt`). Every reading below is this session's, and each is a line he can strike (ledger SV).
+
+```
+the space          a volley is one point of ten measures. Every volley there is, a person's or a creature's, is drawn,
+                   flown and landed from such a point by the same few lines
+a kind's ground    a kind keeps a middle in that space: the point its volley word names. The four words that existed
+                   (single, spread, spiral, ring) are four points, and fly exactly what they flew
+what moves a piece only the piece: each thing it carries is one push, a direction in the space times a size
+                     the kind's own words   each tag pushes a little (0.4), the same for every piece of the kind
+                     its one roll           quality turns every measure on a wave of its own length (height 0.6)
+                     each line it holds     0.6 for a moderate line, half for a minor, twice for a major, measured in
+                                            rulers of its own rank; a price pushes back; a body's own trait is a major line
+which way          nobody writes it. A direction is drawn once from the word itself (a stat's name, a tag) by the keyed
+                   generator every roll in the game comes from. So a stat pushes the same way on every piece in every
+                   world, a word a pack invents tomorrow already has its own, and no table lists a pattern for a weapon
+what it costs      shots, speed and reach are what a volley is worth. Their product, shots counting half, is held to the
+                   kind's own middle: more lanes or a longer train fly slower and less far, a faster shot less far.
+                   Fan, gap, twist, bend and sway are worth nothing either way
+what it deals      untouched. One body takes one blow from one volley, as the fight's shapes already had it, and how
+                   often a volley leaves is the piece's own rate. A second deals blow times rate, whatever the shape
+a rank             moves none of it (1.2: tiles and seconds read no rank)
+a creature         the same rule, read off its kind: its volley word's middle pushed by the words its kind is written
+                   with. Every body of a kind fires alike
+```
+
+| Measure | What it is | The middle (single, spread, spiral, ring) | One whole push | Worth |
+|---|---|---|---|---|
+| arms | lanes that leave at once | 1, 3, 3, 8 | x e^0.7, to a whole number | counts half |
+| fan | radians the lanes are shared out over; 2π is all the way round | 0.3, 0.9, 2π, 2π | x e^0.4 | none |
+| train | shots that follow one another down a lane | 1, 1, 5, 1 | x e^0.7, to a whole number | counts half |
+| gap | time between a lane's shots | 80 ms | x e^0.6 | none |
+| twist | radians each later shot of a lane is turned | 0, 0, 0.25, 0.25 | + 0.3 | none |
+| speed | how fast a shot flies | 200 px a second, ten tiles | x e^0.4 | whole |
+| reach | how far it flies | 400 px, twenty tiles | x e^0.4 | whole |
+| bend | radians its heading turns over its flight; its flight's two ends lie on its lane | none | + 0.25 | none |
+| sway | how far it swings to either side of its path | none | + 8 px | none |
+| sway length | ground one whole swing takes | 80 px | x e^0.6 | none |
+
+Two measures have no row because they already had an owner: how often a volley leaves is the piece's own rate, which its one roll already moves between 0.8 and 1.2 of its kind's, and how large a shot is drawn is the blow it carries (his ruling of 2026-11-12, `BlowMarks`).
+
+What feeds each measure: everything the piece carries feeds all ten, each through its own direction. That is the tensor: a word's direction has ten parts, the piece's pushes are summed part by part, and each measure answers its sum in the unit above.
+
+What it comes to, over 300 rolls of the first theme's bow and of its focus at each count of lines (`tests/fight.shots.test.ts` holds the laws; these figures are a reading, not a bar):
+
+| | Lanes by train | Speed, px a second | Reach, px | Bend, radians | Sway, px |
+|---|---|---|---|---|---|
+| Bow, no line | 1 or 2, about half each | 153 to 239 | 258 to 477 | -0.26 to 0.04 | 0 to 7 |
+| Bow, one line | 1 to 3 | 143 to 244 | 236 to 541 | -0.34 to 0.08 | 0 to 10 |
+| Bow, six lines | 1 to 4, a train of 2 in one of nine | 97 to 211 | 247 to 677 | -0.42 to 0.21 | 0 to 13 |
+| Focus, no line | 7 to 16 round it | 179 to 251 | 241 to 450 | -0.26 to 0.04 | 0 to 6 |
+| Focus, six lines | 4 to 27, sometimes a second ring behind the first | 100 to 233 | 226 to 592 | -0.39 to 0.15 | 0 to 12 |
+
+The calls, each his to strike:
+
+| # | The call | Why this way | Struck, it becomes |
+|---|---|---|---|
+| SV1 | The ten measures above are the space | They are what the field could already draw and land, or could with one path function: lanes, fans, trains and turns were written (`volleyShots`); speed, reach, bend and sway are a path worked out from time, as every shot already was | A measure added to `SHOT_MEASURES` and `IShotShape`; no direction already drawn moves |
+| SV2 | A direction is drawn from the word, never written | "meaning we don't choose", and his rule against a table that acts as a cap. It is still learnable: a stat's lean is the same on every piece | A written reading for each stat (accuracy tightens, haste shortens the gap), which is a table somebody keeps |
+| SV3 | Quality turns each measure on a wave, not along one line | With one line every plain bow would differ from every other in one way only. On waves two rolls a hair apart fire alike and two far apart do not, and since no point of the space is worth more, no roll flies better | One direction for quality, scaled by the roll |
+| SV4 | Each line pushes by its size in rulers | "each little thing you grab changes the bullets slightly": a line is the thing grabbed. A piece holding more stands further from its kind's middle | Lines read nothing, and only the roll moves a piece |
+| SV5 | Only the piece that fires is read | His words name the weapon. A quiver, a ring or a skill moves nothing | Every worn piece's lines pushing the hand's volley, each at a share |
+| SV6 | A kind's own tags lean it | So two kinds a model writes differ from each other before any roll, with nothing written for either | Every kind of one volley word shares one middle |
+| SV7 | What a volley is worth is shots, counting half, times speed times reach | A second lane is not worth half a flight. All of it a guess until played | Another count for shots, or sway and bend given a price |
+| SV8 | One volley still lands one blow on one body, and the blow is not split among the shots | The fight's shapes already had it so, and the card's "a blow, a second" stays true whatever the shape. More shots are more ground covered and more bodies reached, which is what speed and reach pay for | The blow shared out among the shots, each landing by itself: a fan that deals all of it only up close |
+| SV9 | A bent shot ends on its lane | His own finding after his first run was that a miss reads as a fault. A bend that leaves the aim for good would be one. So a shot bows out and comes back, and a plain piece's bow stays inside what lands | A bend that carries the shot off its lane, to be learned piece by piece |
+| SV10 | A person's wind-up draws every lane the piece will fly | So a fan, a ring or a bend is read before it leaves, as a creature's is | The one line along the aim, as before |
+| SV11 | A creature reads its kind and no body of it differs | A danger has to be learned to be stepped out of, and a creature holds no roll of its own. A leader's sheet is not read | Each body pushed by its own id or its sheet |
+| SV12 | A bare hand and a thrown stone fly the plain shot | Nothing rolled is there to read; a stone's hardness already sizes its blow | A stone's own roll and hardness pushing its throw |
+| SV13 | A working cast from a focus flies as it did | Its shape is its delivery's, from the effect door; the piece moves only its own volley | A working flown through the focus's own point |
+| SV14 | Nothing has a floor or a top but a whole count of one | His rule against caps. A piece with many lines can ring thirty lanes slowly, or fly one shot far | |
+
+Not built, and said: the shot's drawn size and what lands still disagree at the edges (ledger UXF1e), and a swaying shot widens that; a creature does not yet stand off by its own kind's reach (`MobAI` still chooses to shoot inside ten tiles; the first theme's 27 kinds now hold 23 different volleys between them, the rest sharing every word with another); the two missing edges of the triangle are untouched.
+
 # Part 3. What the tabletop engine has
 
 Pedro, 2026-11-11, on how gear and its materials should be built: "Ttrpg has the logic". And on what to read in `D:\-ttrpg-engine`: "Those + economy and extraction (fauna, flora, biome, predation and husbandry)... Should give you the gist".

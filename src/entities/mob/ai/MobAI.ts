@@ -17,7 +17,8 @@ import { WorldGenerator } from '../../../../shared/entities/world/WorldGenerator
 import { fnv1a } from '../../../../shared/logic/rng/DeterministicRNG';
 import { EffectSystem, IEffectReceipt, StatusClock } from '../../../../shared/logic/systems/EffectSystem';
 import { ContentRegistry } from '../../../../shared/logic/theme/ContentRegistry';
-import { IStrikeShape, SHOT_WEIGHT, BODIES_FROM_GROUND, burstNumbers, bursts, creatureBlowWeight, creatureShare, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
+import { creatureShot } from '../../../../shared/logic/theme/ShotLaw';
+import { IShotShape, IStrikeShape, SHOT_WEIGHT, BODIES_FROM_GROUND, burstNumbers, bursts, creatureBlowWeight, creatureShare, creatureStrikeWords, creatureVolleyOf, strikeNumbers } from '../../../../shared/logic/theme/ThemeFormula';
 import type { Volley } from '../../../../shared/logic/theme/ThemeTypes';
 import { PERSON_RADIUS_PX, stepOutPx } from '../../../../shared/entities/combat/Shapes';
 import { BASE_WALK_TILES_PER_S } from '../../../../shared/entities/player/systems/LoadoutSystem';
@@ -149,7 +150,7 @@ export class MobAI {
     /** Which way it turns past what refuses it. It keeps to one side, or it dithers at a wall. */
     aside?: 1 | -1;
     /** What it has started and not yet finished: seen, and dodged, before it lands. */
-    windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean; aim: number; shape?: IStrikeShape; volley?: Volley };
+    windup?: { until: number; startedAt: number; receipt?: IEffectReceipt; delivery: string; reachPx: number; ranged: boolean; aim: number; shape?: IStrikeShape; volley?: Volley; shot?: IShotShape };
     /** Call 14: a swift body's burst, when it ends, and when the rest after it ends. */
     burst?: { until: number; restUntil: number; restMs: number };
     readyAt: Record<string, number>;
@@ -481,6 +482,8 @@ export class MobAI {
           // The fight's shapes: its blow is a piece of ground, its shots a pattern, both read from what it is
           const blowShape = strikeNumbers(creatureStrikeWords(def ?? {}));
           const volley = creatureVolleyOf(def ?? {});
+          // Shots read off what fires them: a creature's volley is its kind's, the same for every body of it (`ShotLaw`)
+          const shot = creatureShot(def ?? {}, volley);
           // Drawn long enough to step out of at the person's walk, from where they stand now, and never quicker than a plain blow's
           const blowWindupMs = Math.max(STRIKE_WINDUP_MS, REACTION_MS + (stepOutPx(blowShape, dist, PERSON_RADIUS_PX) / ((senses.walk ?? BASE_WALK_TILES_PER_S) * PX)) * 1000);
 
@@ -503,16 +506,16 @@ export class MobAI {
               mem.readyAt[cast] = now + receipt.cooldownMs + telegraphMs;
               mem.windup = {
                 startedAt: now, until: now + telegraphMs, receipt, delivery: ability.delivery, reachPx: byHand ? blowShape.reachPx : receipt.reachPx, ranged, aim: angle,
-                ...(byHand ? { shape: blowShape } : {}), ...(ranged ? { volley } : {})
+                ...(byHand ? { shape: blowShape } : {}), ...(ranged ? { volley, shot } : {})
               };
             } else if ((decision.action === BehaviorPrimitive.ATTACK_RANGED || decision.action === BehaviorPrimitive.ATTACK_MELEE) && now - mem.lastAttackTime > ATTACK_COOLDOWN_MS) {
               const ranged = decision.action === BehaviorPrimitive.ATTACK_RANGED;
               mem.windup = {
                 startedAt: now, until: now + (ranged ? STRIKE_WINDUP_MS : blowWindupMs),
                 delivery: ranged ? 'ranged' : 'melee',
-                reachPx: ranged ? 400 : blowShape.reachPx,
+                reachPx: ranged ? shot.reachPx : blowShape.reachPx,
                 ranged, aim: angle,
-                ...(ranged ? { volley } : { shape: blowShape })
+                ...(ranged ? { volley, shot } : { shape: blowShape })
               };
             }
           }
@@ -520,7 +523,7 @@ export class MobAI {
           let health = entity.health ?? 0;
           let statuses: never[] = running;
           if (mem.windup && now >= mem.windup.until) {
-            const { receipt, ranged, reachPx, aim, shape, volley: flies } = mem.windup;
+            const { receipt, ranged, reachPx, aim, shape, volley: flies, shot: flown } = mem.windup;
             mem.windup = undefined;
             mem.lastAttackTime = now;
             if (receipt && EffectSystem.landsOnCaster(receipt.effect, receipt.delivery)) {
@@ -538,7 +541,7 @@ export class MobAI {
                 reachPx,
                 // The fight's shapes: the ground it drew, aimed where it was aimed when it began
                 ...(shape ? { shape } : {}),
-                ...(ranged ? { struck: new Set<string>() } : {}),
+                ...(ranged ? { struck: new Set<string>(), ...(flown ? { shape: flown } : {}) } : {}),
                 // Part 2: what it weighs when it lands, so the person feels it; part 3: the rank it strikes at
                 weight: ranged ? SHOT_WEIGHT : creatureBlowWeight(def ?? {}),
                 rank: entity.rank,
@@ -614,7 +617,7 @@ export class MobAI {
             statuses: statuses as never,
             telegraph: mem.windup ? {
               startedAt: mem.windup.startedAt, until: mem.windup.until, delivery: mem.windup.delivery, reachPx: mem.windup.reachPx, angle: mem.windup.aim,
-              ...(mem.windup.shape ? { shape: mem.windup.shape } : {}), ...(mem.windup.volley ? { volley: mem.windup.volley } : {})
+              ...(mem.windup.shape ? { shape: mem.windup.shape } : {}), ...(mem.windup.volley ? { volley: mem.windup.volley } : {}), ...(mem.windup.shot ? { shot: mem.windup.shot } : {})
             } : undefined,
             position: {
               x: next.x,

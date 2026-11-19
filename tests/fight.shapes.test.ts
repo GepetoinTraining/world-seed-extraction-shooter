@@ -346,6 +346,7 @@ describe("a creature's blow or volley is drawn on the ground before it lands, lo
     expect(canvas).toMatch(/covers\(p\.shape/);
     const renderer = SRC('src/render/FieldRenderer.ts');
     expect(renderer).toMatch(/t\.shape/);
-    expect(renderer).toMatch(/volleyShots\(/);
+    // Since shots are read off what fires them, the lanes drawn are the shape's own (`shotsOf`, `fight.shots.test.ts`)
+    expect(renderer).toMatch(/shotsOf\(/);
   });
 });

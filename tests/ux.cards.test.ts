@@ -54,7 +54,7 @@ import { cycleMs, fireMode, windupOf } from '../src/logic/systems/FieldInput';
 import { isThrowable } from '../shared/entities/item/Throwable';
 import { TILE_PX } from '../shared/entities/world/grid';
 import { PROJECTILE_RANGE_PX } from '../shared/entities/combat/projectileSystem';
-import { THROW_TILES, volleyShots } from '../shared/logic/theme/ThemeFormula';
+import { THROW_TILES, shotsOf, volleyShots } from '../shared/logic/theme/ThemeFormula';
 import { SkillNames } from '../src/logic/systems/SkillNames';
 import { said as sayNumber } from '../src/logic/systems/SheetWords';
 import { inspectHand, inspectSkill } from '../src/render/atoms/inspect';
@@ -378,8 +378,12 @@ describe('UXC part 2: a hand in use answers with its own numbers', () => {
 
   it('a shot says how many leave the hand and how far they fly; a bare hand throws', () => {
     const bow = pieceThat(i => fireMode(i) === 'SHOT' && !isThrowable(i), 'uxc:shot');
-    const shots = volleyShots(CombatMath.volleyOf(bow)).length;
-    expect(row(inspectHand(holding([['RIGHT_HAND', bow]]), 'RIGHT_HAND'), 'Reach')).toBe(`${shots === 1 ? 'one shot' : `${shots} shots`}, ${sayNumber(PROJECTILE_RANGE_PX / TILE_PX)} tiles`);
+    // Shots read off the piece (`ShotLaw`): the card asks the very point the field flies
+    const flown = CombatMath.shotOf(bow);
+    const shots = shotsOf(flown).length;
+    const card = inspectHand(holding([['RIGHT_HAND', bow]]), 'RIGHT_HAND');
+    expect(row(card, 'Reach')).toBe(`${shots === 1 ? 'one shot' : `${shots} shots`}, ${sayNumber(flown.reachPx / TILE_PX)} tiles`);
+    expect(row(card, 'Flies')).toContain(`${sayNumber(flown.speedPx / TILE_PX)} tiles a second`);
     const bare = inspectHand(holding([]), 'RIGHT_HAND');
     expect(bare.title).toBe('Bare hand');
     expect(row(bare, 'Reach')).toBe(`one throw, ${THROW_TILES} tiles`);

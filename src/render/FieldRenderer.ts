@@ -17,7 +17,7 @@ import { Archetype, ArmorClass, Facing, WALK_PHASES, WeaponClass, figure } from 
 import type { IOther } from '../../shared/logic/live/Presence';
 import { textScale } from '../logic/settings/store';
 import { shapeMarks } from '../../shared/entities/combat/Shapes';
-import { volleyShots } from '../../shared/logic/theme/ThemeFormula';
+import { IShotShape, shotAt, shotsOf, volleyShape } from '../../shared/logic/theme/ThemeFormula';
 import type { Volley } from '../../shared/logic/theme/ThemeTypes';
 import { AtomRect, markWeight, pipsLeft, PIPS, shotMarks, swingFill, tickRing } from './BlowMarks';
 
@@ -51,7 +51,7 @@ export interface FieldScene {
   /** The fight's shapes: a blow's ground as it lands; `inner` is its hole and `half` its half-width (none is the old arc). */
   swings: { x: number; y: number; angle: number; range: number; inner?: number; half?: number; step?: number }[];
   /** Part 2: the blow you are winding up: a draw is a line out along the aim, a swing its shape's edge filling in. */
-  windup?: { x: number; y: number; angle: number; fill: number; kind: 'draw' | 'swing'; shape?: { reachPx: number; innerPx: number; halfAngle: number } };
+  windup?: { x: number; y: number; angle: number; fill: number; kind: 'draw' | 'swing'; shape?: { reachPx: number; innerPx: number; halfAngle: number }; shot?: IShotShape };
   /** Live facing and walk frame per mob id, from the AI. Missing means front, still. */
   mobPoses?: Record<string, MobPose>;
   /** Hit flashes and death bursts, pruned by the caller. */
@@ -352,10 +352,12 @@ export class FieldRenderer {
     ctx.fillStyle = this.color(Role.THREAT, 4);
     if (t.delivery === 'ranged') {
       // The fight's shapes: every lane its volley will fly, dashed, drawn out as it comes due
-      for (const shot of volleyShots((t.volley ?? 'single') as Volley)) {
-        const a = t.angle + shot.offset;
+      // Shots read off what fires them: the lanes drawn are the lanes flown, bend and swing and all (`shotAt`)
+      const flown = t.shot ?? volleyShape((t.volley ?? 'single') as Volley);
+      for (const shot of shotsOf(flown)) {
         for (let d = 24; d < 24 + 120 * (1 - left); d += 12) {
-          ctx.fillRect(snap(x + Math.cos(a) * d) - 2, snap(y + Math.sin(a) * d) - 2, 4, 4);
+          const at = shotAt(flown, t.angle + shot.offset, d);
+          ctx.fillRect(snap(x + at.x) - 2, snap(y + at.y) - 2, 4, 4);
         }
       }
       return;
@@ -400,11 +402,20 @@ export class FieldRenderer {
     ctx.fillStyle = this.color(Role.SIGNAL, 4);
     if (w.kind === 'draw') {
       const reach = 14 + 46 * w.fill;
-      for (let d = 14; d <= reach; d += 4) ctx.fillRect(snap(w.x + Math.cos(w.angle) * d - ox) - 1, snap(w.y + Math.sin(w.angle) * d - oz) - 1, 2, 2);
-      const tx = w.x + Math.cos(w.angle) * reach, ty = w.y + Math.sin(w.angle) * reach;
-      for (const side of [-1, 1]) for (let k = 1; k <= 3; k++) {
-        const a = w.angle + side * Math.PI / 2;
-        ctx.fillRect(snap(tx + Math.cos(a) * k * 2 - ox) - 1, snap(ty + Math.sin(a) * k * 2 - oz) - 1, 2, 2);
+      // Shots read off the piece: every lane the volley will leave down, drawn along the path its shot will fly
+      // (`shotAt`), so a bow that bends or fans says so before it lets go. The first shot of each lane only
+      const lanes = w.shot ? shotsOf(w.shot).filter(s => s.delayMs === 0).map(s => s.offset) : [0];
+      for (const lane of lanes) {
+        const along = (d: number) => {
+          const at = w.shot ? shotAt(w.shot, w.angle + lane, d) : { x: Math.cos(w.angle) * d, y: Math.sin(w.angle) * d, heading: w.angle };
+          return { x: w.x + at.x, y: w.y + at.y, heading: at.heading };
+        };
+        for (let d = 14; d <= reach; d += 4) { const at = along(d); ctx.fillRect(snap(at.x - ox) - 1, snap(at.y - oz) - 1, 2, 2); }
+        const tip = along(reach);
+        for (const side of [-1, 1]) for (let k = 1; k <= 3; k++) {
+          const a = tip.heading + side * Math.PI / 2;
+          ctx.fillRect(snap(tip.x + Math.cos(a) * k * 2 - ox) - 1, snap(tip.y + Math.sin(a) * k * 2 - oz) - 1, 2, 2);
+        }
       }
       return;
     }
