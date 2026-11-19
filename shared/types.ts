@@ -1207,6 +1207,8 @@ export interface IMakeAsk {
   at: number;
   /** How many answers to it could not be read (MakeAsk.TRIES). */
   tries?: number;
+  /** Why the last answer to it could not stand. It goes with the next asking, so the same fault is not written again. */
+  refused?: string;
 }
 
 /**
@@ -1238,6 +1240,8 @@ export interface ITech {
   wanted: string;
   by: string;
   at: number;
+  /** The words its answer added to the registry, with it. The hub's web is remade with them (hubTech.ownBatches). */
+  registers?: ITagEntry[];
 }
 
 /** What a sleep's answer says of one ask. Words only: every number is the law's. */
@@ -1255,6 +1259,8 @@ export interface IMakeWords {
   trade: string;
   station: string;
   tools: string[];
+  /** New words for the registry, when it has none for what the answer must say: each a tag, a kind and a meaning. */
+  words?: { tag: string; kind: string; meaning: string }[];
 }
 
 export interface IMaterialKnowledge {

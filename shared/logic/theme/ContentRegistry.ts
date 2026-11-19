@@ -35,7 +35,8 @@ export class ContentRegistry {
 
   /** Is this word in the registry, or a word the law has retired? */
   private static registered(tag: string): boolean {
-    return WebBank.current().tags.some(t => t.tag === tag && !t.retired);
+    // What is installed, and not a hub's own words (WebBank.current): a world's pack must stand in every hub
+    return WebBank.installed().tags.some(t => t.tag === tag && !t.retired);
   }
 
   /** A word already in the registry keeps its first meaning: a later theme uses it, and does not redefine it. */
@@ -52,7 +53,7 @@ export class ContentRegistry {
     const compiled = compileTheme({ ...bodyOf(body), themeId: themeIdOf(body), formula: 1, model: 'judging', writtenAt: 0 });
     // A theme's own goods and materials are not in the tables until it is installed
     const own = new Set([...Object.keys(compiled.resources), ...Object.keys(compiled.crafted)]);
-    const webVerdict = WebBank.validateBatch(this.newWordsOnly(compiled.webBatch), WebBank.current(), own);
+    const webVerdict = WebBank.validateBatch(this.newWordsOnly(compiled.webBatch), WebBank.installed(), own);
     return webVerdict.ok ? { ok: true } : { ok: false, reason: webVerdict.reason };
   }
 

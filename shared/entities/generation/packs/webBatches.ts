@@ -339,3 +339,9 @@ export const WEB_BATCHES: IWebBatch[] = [
     ]
   }
 ];
+
+/**
+ * How many batches the game ships with, read before any world is installed (an installed world's words are pushed
+ * after these, `ContentRegistry.install`). What a hub or a world added since is everything past this count.
+ */
+export const SHIPPED_WEB_BATCHES = WEB_BATCHES.length;

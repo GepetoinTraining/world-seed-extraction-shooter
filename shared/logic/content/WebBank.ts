@@ -18,7 +18,7 @@ import {
   IItem, ITagEntry, IWebBatch, IWebMaterial, IWebPack, IWebTool, SlotType,
   TAG_KIND_IDENTITY, TagKind, UniversalRank
 } from '../../types';
-import { WEB_BATCHES } from '../../entities/generation/packs/webBatches';
+import { SHIPPED_WEB_BATCHES, WEB_BATCHES } from '../../entities/generation/packs/webBatches';
 import { AFFIX_BATCHES } from '../../entities/generation/packs/affixBatches';
 import { AFFIX_DEFINITIONS } from '../../entities/item/data/affixDefinitions';
 import { ITEM_DEFINITIONS, CRAFTED_GEAR_BASES, ItemDefinition } from '../../entities/item/data/itemDefinitions';
@@ -232,23 +232,28 @@ export class WebBank {
     for (const batch of batches) {
       const verdict = this.judge(batch, seenPrior, index);
       if (!verdict.ok) return { ok: false, reason: verdict.reason };
-      for (const entry of batch.tags ?? []) {
-        pack.tags.push({ ...entry });
-        addToIndex(index, entry);
-      }
-      for (const retire of batch.retire ?? []) {
-        const entry = pack.tags.find(e => e.tag === retire.tag)!;
-        entry.retired = { runId: batch.runId, replacedBy: retire.replacedBy, why: retire.why };
-      }
-      for (const key of ['tools', 'materials', 'goods', 'stations', 'recipes', 'designs', 'verbLinks', 'names'] as const) {
-        const entries = batch[key];
-        if (entries) for (const entry of entries) (pack[key] as unknown[]).push(entry);
-      }
-      pack.batches.push({ runId: batch.runId, model: batch.model, ranAt: batch.ranAt });
+      this.foldIn(pack, index, batch);
       pack.version = pack.batches.length;
     }
     indexes.set(pack, index);
     return { ok: true, pack };
+  }
+
+  /** One judged batch, folded into a pack and its index. */
+  private static foldIn(pack: IWebPack, index: PackIndex, batch: IWebBatch): void {
+    for (const entry of batch.tags ?? []) {
+      pack.tags.push({ ...entry });
+      addToIndex(index, entry);
+    }
+    for (const retire of batch.retire ?? []) {
+      const entry = pack.tags.find(e => e.tag === retire.tag)!;
+      entry.retired = { runId: batch.runId, replacedBy: retire.replacedBy, why: retire.why };
+    }
+    for (const key of ['tools', 'materials', 'goods', 'stations', 'recipes', 'designs', 'verbLinks', 'names'] as const) {
+      const entries = batch[key];
+      if (entries) for (const entry of entries) (pack[key] as unknown[]).push(entry);
+    }
+    pack.batches.push({ runId: batch.runId, model: batch.model, ranAt: batch.ranAt });
   }
 
   private static versions = new Map<number, IWebPack>();
@@ -264,11 +269,75 @@ export class WebBank {
     return result.pack!;
   }
 
-  /** The latest web the shipped batches make. The shipped runs must be lawful. */
-  static current(): IWebPack {
+  /**
+   * The web the game ships with and every installed world has added to: what a world pins (`version`, `packAt`) and
+   * what a new world's words are judged against. The shipped runs must be lawful.
+   */
+  static installed(): IWebPack {
     const pack = this.packAt(WEB_BATCHES.length);
     if (!pack) throw new Error(`The shipped web batches break their own law: ${this.compile(WEB_BATCHES).reason}`);
     return pack;
+  }
+
+  // ---------------------------------------------------------------------
+  // A HUB'S OWN (Pedro, 2026-11-19, of the route from "user discovers" to the hub's tech web and "then remaking of the web
+  // from the pieces": "Yes, build it"). What a hub's people came to (a townsperson's chain, a thing somebody asked to have
+  // made) reaches the web as batches of that hub's own, folded after everything installed, each judged by the same law.
+  // The web everything reads (`current`) is that fold, remade whenever the hub's pieces change. A world's pin is not
+  // moved by it: a pin counts what is installed, and a hub's own words belong to the hub.
+  // ---------------------------------------------------------------------
+
+  private static own: IWebBatch[] = [];
+  private static ownKey = '';
+  private static grown: { base: IWebPack; key: string; pack: IWebPack; refused: { runId: string; reason: string }[] } | null = null;
+
+  /** The hub's own batches, in the order they came to be. The web is remade from them the next time it is read. */
+  static adopt(batches: IWebBatch[]): void {
+    const key = batches.map(b => b.runId).join('|');
+    if (key === this.ownKey) return;
+    this.own = batches;
+    this.ownKey = key;
+    this.grown = null;
+  }
+
+  /**
+   * The web as it stands here: what is installed, and then this hub's own, remade from the pieces. A batch of the hub's
+   * that breaks the law is left out alone and named in `refusedOwn`, so one bad piece never takes the web down. A word
+   * the installed web already holds keeps its first meaning: the hub's copy of it is passed over.
+   */
+  static current(): IWebPack {
+    const base = this.installed();
+    if (this.own.length === 0) return base;
+    if (this.grown && this.grown.base === base && this.grown.key === this.ownKey) return this.grown.pack;
+    const pack: IWebPack = {
+      ...base, batches: [...base.batches], tags: [...base.tags], tools: [...base.tools], materials: [...base.materials], goods: [...base.goods],
+      stations: [...base.stations], recipes: [...base.recipes], designs: [...base.designs], verbLinks: [...base.verbLinks], names: [...base.names]
+    };
+    const index = buildIndex(pack.tags);
+    const refused: { runId: string; reason: string }[] = [];
+    for (const raw of this.own) {
+      const batch = { ...raw, tags: (raw.tags ?? []).filter(t => !index.byTag.has(t.tag)) };
+      // Everything it held is already here: nothing to add, and nothing wrong with it
+      if (raw.tags?.length && batch.tags.length === 0 && !raw.tools?.length && !raw.materials?.length && !raw.goods?.length && !raw.stations?.length && !raw.recipes?.length) continue;
+      const verdict = this.judge(batch, pack, index);
+      if (!verdict.ok) { refused.push({ runId: raw.runId, reason: verdict.reason ?? 'refused' }); continue; }
+      this.foldIn(pack, index, batch);
+    }
+    indexes.set(pack, index);
+    this.grown = { base, key: this.ownKey, pack, refused };
+    return pack;
+  }
+
+  /** The hub's own batches the law left out of the web as it stands, and why. */
+  static refusedOwn(): { runId: string; reason: string }[] {
+    this.current();
+    return this.grown?.refused ?? [];
+  }
+
+  /** Every word the web holds past what the game ships with: an installed world's, and this hub's own. */
+  static beyondShipped(): ITagEntry[] {
+    const shipped = this.packAt(SHIPPED_WEB_BATCHES)?.tags.length ?? 0;
+    return this.current().tags.slice(shipped).filter(t => !t.retired);
   }
 
   static version(): number {

@@ -167,16 +167,18 @@ export const RestDoor = {
   async settleMade(answers: IMakeWords[], asked: string[], pc: IPlayerPort, hp: IHubPort): Promise<void> {
     const ground = makeGround(hp);
     const hubId = hp.view().activeHubId;
+    // A word added under any one of the things made serves every answer of this sleep
+    const pool = answers.flatMap(a => a.words ?? []);
     for (const id of asked) {
       const before: IPlayer = pc.view().player;
       const ask = (before.makeAsks ?? []).find(a => a.id === id);
       // Taken back while it was away: nothing to answer
       if (!ask) continue;
       const words = answers.find(a => a.id === id);
-      const verdict = MakeAsk.judge(words, ask, ground);
+      const verdict = MakeAsk.judge(words, ask, ground, pool);
       if (!verdict.ok || !words) {
         console.warn(`[REST] What came back for "${ask.words}" could not be read: ${verdict.reason}`);
-        const out = MakeAsk.unread(before, id);
+        const out = MakeAsk.unread(before, id, verdict.reason);
         pc.apply({ kind: 'SET', player: out.player });
         feed(out.givenBack
           ? `Nothing you could read came of "${ask.words}". What you laid is back in your vault.`
@@ -203,8 +205,10 @@ export const RestDoor = {
         skillLevel: skillId => before.bank.universalSkills[skillId]?.level ?? 0,
         hasBench: asks => ownerHasStationFor(asks, before.id, { lots: view.lots, rooms: view.rooms, stash }),
         hasTool: word => MakeAsk.lacking(before, [word]).length === 0
-      }, { by: before.id, at: Date.now() }, view.tech?.made ?? []);
+      }, { by: before.id, at: Date.now() }, view.tech?.made ?? [], ground, pool);
       if (fresh) await hp.settleTech(tech);
+      // The hub's web was remade as the technology settled, so a word it added stands from here on
+      if (fresh) for (const word of tech.registers ?? []) feed(`A word this place did not have: ${word.tag.replace(/_/g, ' ')}. ${word.meaning}`, 'proof');
       const consumedIds = ask.parts.map(p => p.id);
       // Pedro, 2026-11-19: "Just don't make it AUTO COME TO THE LOAD OUT". What is made lies in the vault and nowhere
       // else: a tool is not put in a hand and gear is not put on. Putting it on is the person's own act

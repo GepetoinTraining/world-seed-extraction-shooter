@@ -23,6 +23,13 @@
  * the hand must hold one that answers; a tool may come out of bare hands, since the first one has to. A thing that is
  * neither is a material or a good, as before. A tool or gear comes back a piece, minted from its base like any made piece.
  *
+ * NEW WORDS (Pedro, 2026-11-19, asked whether the route from "user discovers" to the hub's tech web was set, and told a
+ * hat had been made "with an axe" because the registry had no word for a needle: "Yes, build it"). An answer may add a
+ * word to the registry when it has none for what must be said: a tag, a kind, a one-line meaning. The registry's own law
+ * judges it (`WebBank.validateBatch`: one spelling, one meaning, no variant of a word that stands). A word that stands is
+ * used and never registered again, and a word the answer registers and then does not use is dropped. The words go with
+ * the technology (`ITech.registers`), and the hub's web is remade with them.
+ *
  * WHERE IT LANDS (Pedro, 2026-11-19: "Just don't make it AUTO COME TO THE LOAD OUT... Please"). In the vault, always. A
  * made tool is never put in a hand and made gear is never put on, whether it was asked for at a sleep or made again at
  * once. What a character carries into a world is what the person chose to put on.
@@ -36,7 +43,8 @@
  * Pure, but for the one registry every making reads (`absorbTechs`).
  */
 
-import { IItem, IMakeAsk, IMakeWords, IPlayer, ITech, TagKind, UniversalRank } from '../../types';
+import { IItem, IMakeAsk, IMakeWords, IPlayer, ITagEntry, ITech, TagKind, UniversalRank } from '../../types';
+import { WebBank } from '../content/WebBank';
 import { absorbTechs, TECH_WAYS } from '../../entities/economy/data/recipeDefinitions';
 import { GEAR_SHAPES } from '../theme/ThemeFormula';
 import { GEAR_KINDS, GearKind } from '../theme/ThemeTypes';
@@ -124,12 +132,13 @@ export const MakeAsk = {
   },
 
   /** An answer nobody could read: the ask waits for another sleep, and after `TRIES` of them it is given back. */
-  unread(player: IPlayer, askId: string): { player: IPlayer; givenBack: boolean } {
+  unread(player: IPlayer, askId: string, reason?: string): { player: IPlayer; givenBack: boolean } {
     const ask = (player.makeAsks ?? []).find(a => a.id === askId);
     if (!ask) return { player, givenBack: false };
     const tries = (ask.tries ?? 0) + 1;
     if (tries >= TRIES) return { player: this.takeBack(player, askId), givenBack: true };
-    return { player: { ...player, makeAsks: (player.makeAsks ?? []).map(a => (a.id === askId ? { ...a, tries } : a)) }, givenBack: false };
+    // Why it could not stand goes with the next asking, as a chain's refused round does
+    return { player: { ...player, makeAsks: (player.makeAsks ?? []).map(a => (a.id === askId ? { ...a, tries, ...(reason ? { refused: reason } : {}) } : a)) }, givenBack: false };
   },
 
   /**
@@ -143,9 +152,12 @@ export const MakeAsk = {
     return {
       // The tools in their keeping, as the registry's tool words: gear is made by one of these or not at all
       holds: this.toolsHeld(player, ground.kindOf),
+      // What the registry has gained since the game shipped (a world's words, this hub's own), with what each means
+      words: WebBank.beyondShipped().map(t => ({ tag: t.tag, kind: t.kind, meaning: t.meaning })),
       asks: asks.map(a => ({
         id: a.id,
         wants: a.words,
+        ...(a.refused ? { refused: a.refused } : {}),
         of: billOf(a.parts).map(line => {
           const piece = a.parts.find(p => p.universalDefinitionId === line.itemId)!;
           return { name: piece.name, tags: piece.tags ?? [], rank: piece.rank, count: line.quantity };
@@ -157,7 +169,7 @@ export const MakeAsk = {
   },
 
   /** The law over one answer. Nothing a model says passes unjudged, and a broken answer changes nothing. */
-  judge(words: IMakeWords | undefined, ask: IMakeAsk, ground: IMakeGround): Verdict {
+  judge(words: IMakeWords | undefined, ask: IMakeAsk, ground: IMakeGround, pool: IMakeWords['words'] = []): Verdict {
     if (!words || words.id !== ask.id) return no('Nothing came back for it.');
     if (typeof words.makes !== 'boolean') return no('It did not say whether it could be made.');
     if (!words.line?.trim()) return no('It came back with nothing said.');
@@ -169,12 +181,24 @@ export const MakeAsk = {
     if (!words.is?.trim()) return no('It did not say what the thing is.');
     const tags = sorted(words.tags ?? []);
     if (tags.length === 0) return no('It gave the thing no words.');
+    // The words it adds stand before the registry's own law, as one batch, before anything reads them
+    const fresh = this.freshWords(words, ground, pool);
+    if (fresh.length > 0) {
+      const verdict = WebBank.validateBatch({ runId: `ask:${ask.id}`, model: 'rest', ranAt: 0, tags: fresh }, WebBank.current());
+      if (!verdict.ok) return no(verdict.reason ?? 'A word it added is not one the registry can hold.');
+    }
+    const standing = ground.kindOf;
+    ground = { ...ground, kindOf: (tag: string) => standing(tag) ?? fresh.find(f => f.tag === tag)?.kind };
     for (const tag of tags) {
       if (!ground.kindOf(tag)) return no(`"${tag}" is not a word the registry holds.`);
       if (NOT_FOR_A_MADE_THING.includes(tag)) return no(`A made thing is never "${tag}".`);
     }
     const kind = words.kind ?? '';
     if (kind && !(GEAR_KINDS as readonly string[]).includes(kind)) return no(`"${kind}" is not a kind of tool or of gear.`);
+    // A tool is what an action needs, so it says which: a tool nobody could name as the tool of anything is no tool
+    if (isToolKind(kind) && !this.saysItsWork([...GEAR_SHAPES[kind as GearKind].tags, ...tags], ground.kindOf)) {
+      return no('A tool is what an action needs, and this one does not say which. Give it the word for what it is, a tool word, adding one in "words" if the registry has none.');
+    }
     // Gear is made by a tool: an answer that makes gear and names none has not said how
     if (isGearKind(kind) && (words.tools ?? []).filter(Boolean).length === 0) return no('Gear is made by a tool, and it named none.');
     if (words.trade && ground.kindOf(words.trade) !== 'trade') return no(`"${words.trade}" is not a trade.`);
@@ -183,6 +207,29 @@ export const MakeAsk = {
       if (ground.kindOf(tool) !== 'tool') return no(`"${tool}" is not a tool the registry holds.`);
     }
     return { ok: true };
+  },
+
+  /**
+   * The words an answer adds: the ones the registry does not hold, that the answer itself uses (in the thing's words, its
+   * tools or its trade). A word that stands keeps its first meaning, and one registered and left unused is not added.
+   */
+  freshWords(words: IMakeWords, ground: Pick<IMakeGround, 'kindOf'>, pool: IMakeWords['words'] = []): ITagEntry[] {
+    const used = new Set([...(words.tags ?? []), ...(words.tools ?? []), words.trade ?? '']);
+    const seen = new Set<string>();
+    // Its own words first, then what the same sleep's other answers added: a word given once serves them all
+    return [...(words.words ?? []), ...(pool ?? [])].filter(w => {
+      if (!w?.tag || seen.has(w.tag) || !used.has(w.tag) || ground.kindOf(w.tag)) return false;
+      seen.add(w.tag);
+      return true;
+    }).map(w => ({ tag: w.tag, kind: w.kind as TagKind, meaning: (w.meaning ?? '').trim() }));
+  },
+
+  /**
+   * Whether a tool's words say what it is for: a tool word (an axe, a needle), or what kind of thing it is beyond being
+   * a tool (a snare). The words that only describe it (crafted, light) or say what it is made of do not.
+   */
+  saysItsWork(tags: string[], kindOf: IMakeGround['kindOf']): boolean {
+    return tags.some(tag => kindOf(tag) === 'tool' || (kindOf(tag) === 'class' && tag !== 'tool'));
   },
 
   /** Every piece in this person's keeping: the vault, what the body wears, and the pack when they are out. */
@@ -205,7 +252,7 @@ export const MakeAsk = {
    * The technology an answer comes to, from what was laid. Its id is minted from its three parts alone (where it is
    * worked, with what, from what into what), so the name is apart and the first to come to it names it for everyone.
    */
-  techOf(ask: IMakeAsk, words: IMakeWords, who: { by: string; at: number }): ITech {
+  techOf(ask: IMakeAsk, words: IMakeWords, who: { by: string; at: number }, registers: ITagEntry[] = []): ITech {
     const inputs = billOf(ask.parts);
     const tags = sorted(words.tags ?? []);
     const tools = sorted(words.tools ?? []);
@@ -222,7 +269,8 @@ export const MakeAsk = {
       trade: words.trade ?? '',
       // A good's own formula (ThemeFormula): ten seconds, and fifteen more a rank
       laborSeconds: 10 + rankAt(rank) * 15,
-      wanted: ask.words, by: who.by, at: who.at
+      wanted: ask.words, by: who.by, at: who.at,
+      ...(registers.length > 0 ? { registers } : {})
     };
   },
 
@@ -230,8 +278,8 @@ export const MakeAsk = {
    * A sound answer that says it can be: the technology is settled (the one already standing, if somebody came to these
    * parts first), and the thing is made of what was laid by the roll every making takes. The product comes back read.
    */
-  settle(ask: IMakeAsk, words: IMakeWords, maker: IMaker, who: { by: string; at: number }, standing: ITech[] = []): { tech: ITech; fresh: boolean; made: IMade } {
-    const written = this.techOf(ask, words, who);
+  settle(ask: IMakeAsk, words: IMakeWords, maker: IMaker, who: { by: string; at: number }, standing: ITech[] = [], ground?: Pick<IMakeGround, 'kindOf'>, pool: IMakeWords['words'] = []): { tech: ITech; fresh: boolean; made: IMade } {
+    const written = this.techOf(ask, words, who, ground ? this.freshWords(words, ground, pool) : []);
     const known = standing.find(t => t.id === written.id) ?? TECH_WAYS[written.id];
     const tech = known ?? written;
     absorbTechs([tech]);

@@ -45,7 +45,8 @@ import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { worldPort } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useFeed } from '../src/components/ui/stores';
-import { emptyTech } from '../src/entities/hub/hubTech';
+import { emptyTech, ownBatches } from '../src/entities/hub/hubTech';
+import { SHIPPED_WEB_BATCHES, WEB_BATCHES } from '../shared/entities/generation/packs/webBatches';
 import { ASK_WORDS, IMakeGround, MakeAsk, PASSIVE_KINDS, TOOL_KINDS, TRIES, isGearKind, isToolKind } from '../shared/logic/systems/MakeAsk';
 import { GEAR_KINDS } from '../shared/logic/theme/ThemeTypes';
 import { CRAFTED_GEAR_BASES } from '../shared/entities/item/data/itemDefinitions';
@@ -83,6 +84,8 @@ const harvested = (defId: string): IItem => ItemFactory.createResourceItem(RESOU
 const player = () => usePlayerStore.getState().player;
 const set = (change: (p: IPlayer) => IPlayer) => usePlayerStore.setState(s => ({ player: change(s.player) }));
 const vault = () => player().bank.stashTabs[0].items;
+/** What the body wore before any bar ran: a bar that dresses the character must not dress the next one's. */
+const WORN_AT_FIRST = usePlayerStore.getState().player.equipment;
 const inVault = (...items: IItem[]) => set(p => ({ ...p, bank: { ...p.bank, stashTabs: [{ ...p.bank.stashTabs[0], items, layout: {} }] } }));
 const feedSaid = () => useFeed.getState().lines.map(l => l.text).join(' | ');
 
@@ -140,8 +143,9 @@ beforeEach(() => {
   }
   useIdentityStore.setState({ certificate: { metadata: { uid: 'make_tester', displayName: 'TESTER', createdAt: 0 }, publicKey: {} } as never });
   useHubStore.setState({ activeHubId: 'hub_make', rooms: {}, lots: [] as never, tech: emptyTech() });
+  WebBank.adopt([]);
   set(p => ({
-    ...p, currentSession: undefined, energyToday: undefined, rest: undefined, restQueue: undefined, pendingDream: undefined, makeAsks: undefined,
+    ...p, currentSession: undefined, energyToday: undefined, rest: undefined, restQueue: undefined, pendingDream: undefined, makeAsks: undefined, equipment: WORN_AT_FIRST,
     bank: { ...p.bank, gold: 1000, universalSkills: {}, stashTabs: [{ ...p.bank.stashTabs[0], items: [], layout: {} }] }
   }));
 });
@@ -769,5 +773,242 @@ describe('a build has two parts: a tool is what an action needs, gear is passive
     const made = PairCraft.make(harvested(x), harvested(y), steady, 'k');
     expect(made.item.slot).toBe(SlotType.TOOL);
     expect(made.item.tags).toContain('snare');
+  });
+});
+
+// =============================================================================
+// Pedro, 2026-11-19: "the route from "user discovers" to hub tech web, and then remaking of the web from the pieces, is it
+// set?" It was not. "Yes, build it"
+describe('the web is remade from a hub\'s own pieces', () => {
+  const NEEDLE = { tag: 'needle', kind: 'tool' as const, meaning: 'A point with an eye, that draws a thread through what it pierces.' };
+  const batch = (runId: string, ...tags: { tag: string; kind: TagKind; meaning: string }[]) => ({ runId, model: 'test', ranAt: 0, tags });
+  const holdsWord = (tag: string) => WebBank.current().tags.some(t => t.tag === tag);
+
+  it('a hub\'s own word is folded after everything installed, and no pin moves', () => {
+    const installed = WebBank.installed();
+    const version = WebBank.version();
+    expect(WebBank.current()).toBe(installed);
+    expect(holdsWord('needle')).toBe(false);
+    WebBank.adopt([batch('hub:test:needle', NEEDLE)]);
+    expect(holdsWord('needle')).toBe(true);
+    expect(WebBank.current().tags.length).toBe(installed.tags.length + 1);
+    // What a world pins is what is installed: the hub's own words are the hub's
+    expect(WebBank.installed()).toBe(installed);
+    expect(installed.tags.some(t => t.tag === 'needle')).toBe(false);
+    expect(WebBank.version()).toBe(version);
+    expect(WebBank.current().version).toBe(version);
+    expect(WebBank.packAt(version)).toBe(installed);
+    expect(WebBank.beyondShipped().map(t => t.tag)).toContain('needle');
+    // Read twice, it is the same web; given the same pieces again, it is not remade
+    const grown = WebBank.current();
+    WebBank.adopt([batch('hub:test:needle', NEEDLE)]);
+    expect(WebBank.current()).toBe(grown);
+    WebBank.adopt([]);
+    expect(WebBank.current()).toBe(installed);
+  });
+
+  it('a piece the law will not have is left out alone and named, and the rest stands', () => {
+    const taken = WebBank.installed().tags[0];
+    WebBank.adopt([
+      batch('hub:test:needle', NEEDLE),
+      batch('hub:test:copycat', { tag: 'copycat_word', kind: 'tool', meaning: taken.meaning }),
+      batch('hub:test:Bad', { tag: 'Not A Tag', kind: 'tool', meaning: 'Spelled as nobody spells a tag.' }),
+      batch('hub:test:awl', { tag: 'awl', kind: 'tool', meaning: 'A spike in a handle, that opens a hole for a thong.' })
+    ]);
+    expect(holdsWord('needle')).toBe(true);
+    expect(holdsWord('awl')).toBe(true);
+    expect(holdsWord('copycat_word')).toBe(false);
+    expect(WebBank.refusedOwn().map(r => r.runId)).toEqual(['hub:test:copycat', 'hub:test:Bad']);
+    expect(WebBank.refusedOwn()[0].reason).toMatch(/claims a meaning another tag already holds/);
+  });
+
+  it('a word the installed web already holds keeps its first meaning: the hub\'s copy is passed over, and nothing is refused', () => {
+    const standing = WebBank.installed().tags.find(t => t.kind === 'tool')!;
+    WebBank.adopt([batch('hub:test:again', { tag: standing.tag, kind: 'tool', meaning: 'Something else entirely.' })]);
+    expect(WebBank.current().tags.filter(t => t.tag === standing.tag)).toEqual([standing]);
+    expect(WebBank.refusedOwn()).toEqual([]);
+  });
+
+  it('the shipped count was taken before any world was installed', () => {
+    expect(SHIPPED_WEB_BATCHES).toBeGreaterThan(0);
+    expect(SHIPPED_WEB_BATCHES).toBeLessThanOrEqual(WEB_BATCHES.length);
+    expect(WebBank.packAt(SHIPPED_WEB_BATCHES)!.tags.length).toBeLessThanOrEqual(WebBank.installed().tags.length);
+  });
+
+  it('a hub\'s pieces are read off what it holds, in order: its people\'s chains, then its technologies', () => {
+    const ask = laySnare();
+    const tech = MakeAsk.techOf(ask, snareWords(ask.id, { kind: 'work_tool', tags: ['needle'] }), { by: 'p1', at: 1 }, [NEEDLE]);
+    const hubTech = { ...emptyTech(), chain: { ...emptyTech().chain, tags: [{ tag: 'thatching', kind: 'trade' as const, meaning: 'Laying reed on a roof so the rain runs off it.' }] }, made: [tech] };
+    const batches = ownBatches(hubTech);
+    expect(batches.map(b => b.runId)).toEqual(['hub:chain:thatching', `hub:tech:${tech.id}:needle`]);
+    expect(batches.map(b => b.tags!.length)).toEqual([1, 1]);
+    expect(ownBatches(emptyTech())).toEqual([]);
+  });
+
+  it('every change to a hub\'s tech remakes the web: a townsperson\'s word, a technology\'s word, and another hub loaded', () => {
+    const apply = useHubStore.getState().applyTech;
+    apply({ kind: 'TECH', tech: emptyTech() });
+    apply({ kind: 'CHAIN_ROUND', residentId: 'r1', at: 0, round: { tags: [{ tag: 'thatching', kind: 'trade', meaning: 'Laying reed on a roof so the rain runs off it.' }], materials: [], stations: [], goods: [], gear: [] } });
+    expect(holdsWord('thatching')).toBe(true);
+    const ask = laySnare();
+    apply({ kind: 'TECH_SETTLED', tech: MakeAsk.techOf(ask, snareWords(ask.id, { kind: 'work_tool', tags: ['needle'] }), { by: 'p1', at: 1 }, [NEEDLE]) });
+    expect(holdsWord('needle')).toBe(true);
+    expect(ground().kindOf('needle')).toBe('tool');
+    // Another hub holds none of it
+    apply({ kind: 'TECH', tech: emptyTech() });
+    expect(holdsWord('needle')).toBe(false);
+    expect(holdsWord('thatching')).toBe(false);
+  });
+});
+
+describe('an answer may add a word the registry does not have', () => {
+  const NEEDLE = { tag: 'needle', kind: 'tool', meaning: 'A point with an eye, that draws a thread through what it pierces.' };
+  const needleWords = (id: string, over: Partial<IMakeWords> = {}) =>
+    snareWords(id, { kind: 'work_tool', name: 'Bone Needle', is: 'A sliver with an eye, for sewing.', line: 'You ground it to a point and bored the eye.', tags: ['needle'], words: [NEEDLE], ...over });
+  const hatWords = (id: string, over: Partial<IMakeWords> = {}) =>
+    snareWords(id, { kind: 'head', name: 'Reed Brim', is: 'A wide plaited hat.', line: 'You stitched the plait into a brim.', tags: ['fiber'], tools: ['needle'], words: [NEEDLE], ...over });
+
+  it('the one who answers is told how, and that most answers add none', () => {
+    const request = buildRestRequest({}, {});
+    expect(request.system).toMatch(/"words" adds a word to the registry, and only when it truly has none for what you must say/);
+    expect(request.system).toMatch(/never a tool that merely happens to be held/);
+    expect(request.system).toMatch(/Most answers add none/);
+    const words = (REST_SCHEMA.properties as any).made.items.properties.words;
+    expect(words.items.required).toEqual(['tag', 'kind', 'meaning']);
+    expect((REST_SCHEMA.properties as any).made.items.required).toContain('words');
+  });
+
+  it('the registry\'s own law judges it: one spelling, a kind there is, one meaning nobody else has', () => {
+    const ask = laySnare();
+    const judged = (word: { tag: string; kind: string; meaning: string }, tags = [word.tag]) => MakeAsk.judge(needleWords(ask.id, { tags, words: [word] }), ask, ground());
+    expect(judged(NEEDLE)).toEqual({ ok: true });
+    expect(judged({ ...NEEDLE, meaning: '' }).reason).toMatch(/needs a one-line meaning/);
+    expect(judged({ ...NEEDLE, tag: 'Bone Needle' }, ['Bone Needle']).reason).toMatch(/not the normal spelling/);
+    expect(judged({ ...NEEDLE, kind: 'gadget' }).reason).toMatch(/names no kind the law knows/);
+    expect(judged({ ...NEEDLE, meaning: WebBank.installed().tags[0].meaning }).reason).toMatch(/claims a meaning another tag already holds/);
+    // With no word added, the same thing is still refused for a word nobody holds
+    expect(MakeAsk.judge(needleWords(ask.id, { words: [] }), ask, ground()).reason).toMatch(/"needle" is not a word the registry holds/);
+  });
+
+  it('a word it adds as a tool may be the tool gear is made by; a word it adds and does not use is dropped', () => {
+    const ask = laySnare();
+    expect(MakeAsk.judge(hatWords(ask.id), ask, ground())).toEqual({ ok: true });
+    expect(MakeAsk.judge(hatWords(ask.id, { words: [{ ...NEEDLE, kind: 'family' }] }), ask, ground()).reason).toMatch(/"needle" is not a tool the registry holds/);
+    expect(MakeAsk.freshWords(needleWords(ask.id), ground()).map(w => w.tag)).toEqual(['needle']);
+    expect(MakeAsk.freshWords(needleWords(ask.id, { tags: ['fiber'] }), ground())).toEqual([]);
+    // A word that stands is used and never added again, whatever meaning the answer gave it
+    expect(MakeAsk.freshWords(needleWords(ask.id, { tags: ['fiber'], words: [{ tag: 'fiber', kind: 'material', meaning: 'Something new.' }] }), ground())).toEqual([]);
+    // Said twice, added once
+    expect(MakeAsk.freshWords(needleWords(ask.id, { words: [NEEDLE, NEEDLE] }), ground())).toHaveLength(1);
+  });
+
+  it('the words go with the technology, and a sleep is told what this place has added since', () => {
+    const ask = laySnare();
+    const { tech } = MakeAsk.settle(ask, needleWords(ask.id), steady, { by: 'p1', at: 1 }, [], ground());
+    expect(tech.registers).toEqual([NEEDLE]);
+    expect(MakeAsk.settle(laySnare(), snareWords('x'), steady, { by: 'p1', at: 1 }, [], ground()).tech.registers).toBeUndefined();
+    useHubStore.getState().applyTech({ kind: 'TECH_SETTLED', tech });
+    laySnare('a hat');
+    const said = MakeAsk.request(player(), ground()) as { words: { tag: string; kind: string; meaning: string }[] };
+    expect(said.words).toContainEqual(NEEDLE);
+  });
+
+  it('the whole road: a hat wants a needle and there is none; a needle is asked for; the hat is then made with it', async () => {
+    set(p => ({ ...p, attributes: { ...p.attributes, dexterity: 40 } as never }));
+    const sleepOn = async (id: string, words: IMakeWords) => {
+      set(p => ({ ...p, pendingDream: { batchId: `b_${id}`, asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [id] } } }));
+      vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [words] }) } as never);
+      await RestDoor.collect(playerPort, hubPort);
+    };
+    const reeds = (k: number) => Array.from({ length: k }, () => harvested(REED()));
+    const lay = (words: string, parts: IItem[]) => {
+      set(p => ({ ...p, bank: { ...p.bank, stashTabs: [{ ...p.bank.stashTabs[0], items: [...p.bank.stashTabs[0].items, ...parts] }] } }));
+      const out = MakeAsk.lay(player(), words, parts.map(i => i.id), Date.now());
+      set(() => out.player!);
+      return out.ask!;
+    };
+
+    // 1. The hat: it is made with a needle, the registry has no such word, and this person holds none
+    const hat = lay('a wide hat to keep the sun off', reeds(3));
+    await sleepOn(hat.id, hatWords(hat.id));
+    expect(feedSaid()).toContain('it could be Reed Brim, made with needle, and you hold none. What you laid is back in your vault.');
+    expect(vault()).toHaveLength(3);
+    expect(WebBank.current().tags.some(t => t.tag === 'needle')).toBe(false);
+    expect(useHubStore.getState().tech.made).toEqual([]);
+
+    // 2. The needle: a tool, out of bare hands, and the word comes with it
+    const [x, y] = loosePair();
+    const needle = lay('a needle to sew with', [harvested(x), harvested(y)]);
+    await sleepOn(needle.id, needleWords(needle.id));
+    expect(useHubStore.getState().tech.made).toMatchObject([{ name: 'Bone Needle', kind: 'work_tool', registers: [NEEDLE] }]);
+    expect(WebBank.current().tags.find(t => t.tag === 'needle')).toMatchObject({ kind: 'tool' });
+    expect(feedSaid()).toContain('A word this place did not have: needle. A point with an eye');
+    expect(vault().find(i => i.name === 'Bone Needle')?.tags).toContain('needle');
+    expect(MakeAsk.toolsHeld(player(), ground().kindOf)).toEqual(['needle']);
+
+    // 3. The hat again: the needle is held, the word stands, and the answer need not add it
+    const again = MakeAsk.lay(player(), 'a wide hat to keep the sun off', vault().filter(i => i.universalDefinitionId === REED()).map(i => i.id), Date.now() + 1);
+    set(() => again.player!);
+    expect((MakeAsk.request(player(), ground()) as { holds: string[] }).holds).toEqual(['needle']);
+    await sleepOn(again.ask!.id, hatWords(again.ask!.id, { words: [] }));
+    expect(useHubStore.getState().tech.made.map(t => t.name)).toEqual(['Bone Needle', 'Reed Brim']);
+    expect(useHubStore.getState().tech.made[1]).toMatchObject({ kind: 'head', tools: ['needle'] });
+    expect(useHubStore.getState().tech.made[1].registers).toBeUndefined();
+    expect(vault().map(i => i.name).sort()).toEqual(['Bone Needle', 'Reed Brim']);
+    // Both are in the vault, and neither was put on
+    expect(player().equipment).toEqual(WORN_AT_FIRST);
+  });
+});
+
+// Found in the real sleeps of 2026-11-19: a new tool's word written under another thing of the same answer; a needle
+// that came back with no word saying it was one; the same fault written again at the next asking
+describe('what the real answers taught the law', () => {
+  const BONE = { tag: 'plaiting_bone', kind: 'tool', meaning: 'A smooth bone or splint used to pass, press and tighten plaited fiber.' };
+
+  it('a word added under any one thing serves every answer of that sleep', async () => {
+    const ask = laySnare('a wide hat to keep the sun off');
+    const hat = snareWords(ask.id, { kind: 'head', name: 'Reed Brim', is: 'A wide plaited hat.', tags: ['fiber'], tools: ['plaiting_bone'], words: [] });
+    // Alone, the hat names a tool nobody registered
+    expect(MakeAsk.judge(hat, ask, ground()).reason).toMatch(/"plaiting_bone" is not a tool the registry holds/);
+    // With the word given under another thing of the same answer, it stands
+    expect(MakeAsk.judge(hat, ask, ground(), [BONE])).toEqual({ ok: true });
+    expect(MakeAsk.freshWords(hat, ground(), [BONE]).map(w => w.tag)).toEqual(['plaiting_bone']);
+    // At the door: the hat is asked beside another thing, whose entry carries the word; the tool is not held, so the
+    // components come back with the tool named, and the person knows what to make first
+    set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [ask.id] } } }));
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [hat, snareWords('ask_elsewhere', { words: [BONE] })] }) } as never);
+    await RestDoor.collect(playerPort, hubPort);
+    expect(feedSaid()).toContain('it could be Reed Brim, made with plaiting_bone, and you hold none.');
+    expect(player().makeAsks).toEqual([]);
+  });
+
+  it('a tool says what it is for: its tool word, or the kind of thing it is; words that only describe it do not', () => {
+    const ask = laySnare();
+    const judged = (over: Partial<IMakeWords>) => MakeAsk.judge(snareWords(ask.id, { kind: 'work_tool', ...over }), ask, ground());
+    expect(judged({ tags: ['crafted', 'improvised', 'wood', 'stone', 'one_hand'] }).reason).toMatch(/A tool is what an action needs, and this one does not say which/);
+    expect(judged({ tags: ['snare', 'fiber'] }).ok).toBe(true);
+    expect(judged({ tags: [aTool(), 'crafted'] }).ok).toBe(true);
+    expect(judged({ tags: ['needle'], words: [{ tag: 'needle', kind: 'tool', meaning: 'A point with an eye, that draws a thread through what it pierces.' }] }).ok).toBe(true);
+    // A weapon and a felling axe say it by what their kind is; a plain thing and gear are not asked
+    expect(judged({ kind: 'blade', tags: ['crafted'] }).ok).toBe(true);
+    expect(judged({ kind: 'chop_tool', tags: ['crafted'] }).ok).toBe(true);
+    expect(judged({ kind: '', tags: ['crafted'] }).ok).toBe(true);
+    expect(judged({ kind: 'ring', tags: ['crafted'], tools: [aTool()] }).ok).toBe(true);
+  });
+
+  it('why an answer could not stand goes with the next asking, and is said to the one who answers', async () => {
+    const ask = laySnare('a needle to sew with');
+    set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [ask.id] } } }));
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [snareWords(ask.id, { kind: 'work_tool', tags: ['crafted', 'wood'] })] }) } as never);
+    await RestDoor.collect(playerPort, hubPort);
+    expect(player().makeAsks![0]).toMatchObject({ tries: 1 });
+    expect(player().makeAsks![0].refused).toMatch(/does not say which/);
+    const said = MakeAsk.request(player(), ground()) as { asks: { refused?: string }[] };
+    expect(said.asks[0].refused).toMatch(/does not say which/);
+    expect(buildRestRequest({}, {}).system).toMatch(/One of "wanted" with "refused" was answered before and that answer could not stand/);
+    // An ask never refused carries no such line
+    set(p => ({ ...p, makeAsks: [] }));
+    laySnare();
+    expect('refused' in (MakeAsk.request(player(), ground()) as { asks: object[] }).asks[0]).toBe(false);
   });
 });

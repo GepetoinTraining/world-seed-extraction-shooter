@@ -9,9 +9,9 @@ import { IMakeGround } from '../../../shared/logic/systems/MakeAsk';
 import { WebBank } from '../../../shared/logic/content/WebBank';
 
 export const makeGround = (hp: IHubPort): IMakeGround => {
-  const tags = WebBank.current().tags;
   return {
-    kindOf: tag => tags.find(t => t.tag === tag && !t.retired)?.kind,
+    // Read as it stands at each asking: the web is remade when a technology settles, and the next answer must see its words
+    kindOf: tag => WebBank.current().tags.find(t => t.tag === tag && !t.retired)?.kind,
     stations: hubStations(hp.view().tech ?? emptyTech()).map(s => ({ key: s.id, name: s.name }))
   };
 };

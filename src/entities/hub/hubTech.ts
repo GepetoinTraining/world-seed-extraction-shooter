@@ -23,7 +23,7 @@
  * stands on another though no recipe says so. `askFor` is what a person's talk writes (C2).
  */
 
-import { IHubWeb, ITech, IWebNodeRecord, IWebPack, IWebStation } from '../../../shared/types';
+import { IHubWeb, ITagEntry, ITech, IWebBatch, IWebNodeRecord, IWebPack, IWebStation } from '../../../shared/types';
 import { ChainWeb, IChainGround, IChainMaterial, IChainRoute, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../../../shared/logic/theme/ChainWeb';
 import { stationNumbers } from '../../../shared/logic/theme/ThemeFormula';
 import { RANKS, ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
@@ -90,6 +90,23 @@ export interface IMaterialEntry {
 export const emptyTech = (): IHubTech => ({ chain: emptyChain(), workshops: [], asks: {}, resolving: {}, reached: [], professions: {}, ledger: [], made: [] });
 
 export const normalTech = (saved?: Partial<IHubTech>): IHubTech => ({ ...emptyTech(), ...saved });
+
+/**
+ * THE HUB'S OWN PIECES, AS BATCHES (Pedro, 2026-11-19: "the route from "user discovers" to hub tech web, and then
+ * remaking of the web from the pieces"). Nothing is kept twice: the batches are read off what the hub already holds,
+ * in the order it came to hold them, and the web is remade from them (`WebBank.adopt`, then `WebBank.current`). The
+ * words a townsperson's chain registered come first, then the words each technology's answer registered. One word to a
+ * batch, so a word the law will not have is left out alone and takes nothing with it.
+ */
+export function ownBatches(tech: Pick<IHubTech, 'chain'> & Partial<Pick<IHubTech, 'made'>>): IWebBatch[] {
+  const word = (runId: string, model: string, t: ITagEntry): IWebBatch => ({
+    runId, model, ranAt: 0, tags: [{ tag: t.tag, kind: t.kind, meaning: t.meaning, ...(t.say ? { say: t.say } : {}) }]
+  });
+  return [
+    ...tech.chain.tags.map(t => word(`hub:chain:${t.tag}`, 'chain', t)),
+    ...(tech.made ?? []).flatMap(m => (m.registers ?? []).map(t => word(`hub:tech:${m.id}:${t.tag}`, 'rest', t)))
+  ];
+}
 
 /** Everything that can be raised here: the web's own, and what a chain has written. */
 export function hubStations(tech: Pick<IHubTech, 'chain'>, pack: IWebPack = WebBank.current()): IWebStation[] {

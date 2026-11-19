@@ -87,7 +87,7 @@ const queueMeetings = async (hubId: string, meetings: IMeeting[]): Promise<void>
 };
 import { TalkLaw } from '../../logic/systems/TalkLaw';
 import { IQuestWords } from '../../../shared/logic/systems/TalkTypes';
-import { IHubTech, addToLedger, emptyTech, hubStations, normalTech, openedChainStations } from './hubTech';
+import { IHubTech, addToLedger, emptyTech, hubStations, normalTech, openedChainStations, ownBatches } from './hubTech';
 import { LoreBoard } from '../../logic/systems/LoreBoard';
 import { ChainWeb } from '../../../shared/logic/theme/ChainWeb';
 import type { HubChange, IHubPort, IHubView } from './hubView';
@@ -594,6 +594,8 @@ export const useHubStore = create<HubState>((set, get) => ({
         case 'TECH_SETTLED': if (!(tech.made ?? []).some(t => t.id === change.tech.id)) set({ tech: { ...tech, made: [...(tech.made ?? []), change.tech] } }); break;
       }
     }
+    // The web is remade from this hub's own pieces: every word its people's chains and answers registered (ownBatches)
+    WebBank.adopt(ownBatches(get().tech));
     // D119: whatever this hub's people came to by asking is made like anything else, wherever a making is read
     absorbTechs(get().tech.made ?? []);
   },
