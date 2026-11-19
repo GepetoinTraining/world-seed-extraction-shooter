@@ -596,26 +596,85 @@ const VOLLEY_BY_SIZE = { TINY: 'single', MEDIUM: 'spread', LARGE: 'ring', GIGANT
 export const creatureVolleyOf = (c: { size?: string; behavior?: string; volley?: string }): Volley =>
   (c.volley as Volley | undefined) ?? (c.behavior === 'TURRET' ? 'spiral' : VOLLEY_BY_SIZE[c.size as keyof typeof VOLLEY_BY_SIZE] ?? 'single');
 
-/** A spread: how many shots and how wide a fan. A spiral: arms, shots down each, how long between them, and how far each turns. A ring: how many. */
-const SPREAD = { shots: 3, fan: 0.6 };
-const SPIRAL = { arms: 3, shots: 5, gapMs: 80, turn: 0.25 };
-const RING_SHOTS = 8;
+/**
+ * A SHOT'S SHAPE (Pedro, 2026-11-18: "OUR bullets need to be that granular, on a tensor, meaning we don't choose").
+ * How a volley leaves and flies is one point in a space of small measures, and every volley there is, a person's
+ * or a creature's, is drawn, flown and landed from such a point by the same few lines below. A volley word is a
+ * point in it (`volleyShape`), the middle of the ground its kind keeps; what moves a piece or a creature off that
+ * middle is `ShotLaw`, which reads it from the thing itself.
+ *
+ *   arms      how many lanes leave at once                      whole, at least one
+ *   fan       radians the lanes are shared out over             2π is all the way round
+ *   train     how many shots follow one another down a lane     whole, at least one
+ *   gapMs     how long between a lane's shots
+ *   twist     radians each later shot of a lane is turned
+ *   speedPx   how fast a shot flies, pixels a second
+ *   reachPx   how far it flies before it is gone
+ *   curve     radians its heading turns over its whole flight   its flight's two ends lie on its lane
+ *   swayPx    how far it swings to either side of its path
+ *   swayLenPx how much ground one whole swing takes
+ *
+ * Two measures are not here because they already have an owner: how often a volley leaves is the piece's own rate
+ * (`attack_speed`, which its one roll moves), and how large a shot is drawn is the blow it carries (`BlowMarks`).
+ */
+export interface IShotShape {
+  arms: number; fan: number; train: number; gapMs: number; twist: number;
+  speedPx: number; reachPx: number; curve: number; swayPx: number; swayLenPx: number;
+}
 
-/** Every shot of a volley: when it leaves after the volley begins, and its angle off where the volley is aimed. */
-export const volleyShots = (v: Volley): { delayMs: number; offset: number }[] => {
-  switch (v) {
-    case 'spread':
-      return Array.from({ length: SPREAD.shots }, (_, i) => ({ delayMs: 0, offset: -SPREAD.fan / 2 + (SPREAD.fan * i) / (SPREAD.shots - 1) }));
-    case 'spiral':
-      return Array.from({ length: SPIRAL.arms * SPIRAL.shots }, (_, n) => {
-        const arm = n % SPIRAL.arms, k = Math.floor(n / SPIRAL.arms);
-        return { delayMs: k * SPIRAL.gapMs, offset: (arm * 2 * Math.PI) / SPIRAL.arms + k * SPIRAL.turn };
-      });
-    case 'ring':
-      return Array.from({ length: RING_SHOTS }, (_, i) => ({ delayMs: 0, offset: (i * 2 * Math.PI) / RING_SHOTS }));
-    default:
-      return [{ delayMs: 0, offset: 0 }];
-  }
+/** What every volley word shares until something moves it: a shot's plain flight, no bend and no swing. */
+const PLAIN_FLIGHT = { speedPx: SHOT_SPEED_PX, reachPx: PROJECTILE_RANGE_PX, curve: 0, swayPx: 0, swayLenPx: 4 * TILE_PX };
+/**
+ * The four words as points. A spread is three lanes three tenths of a radian apart; a spiral three arms all round,
+ * five shots down each, 80 ms apart, each turned a quarter radian; a ring eight all round. A single shot's fan,
+ * gap and twist are what a second lane or a second shot of it would use, were it moved to have one.
+ */
+const VOLLEY_SHAPES: Record<Volley, Pick<IShotShape, 'arms' | 'fan' | 'train' | 'gapMs' | 'twist'>> = {
+  single: { arms: 1, fan: 0.3, train: 1, gapMs: 80, twist: 0 },
+  spread: { arms: 3, fan: 0.9, train: 1, gapMs: 80, twist: 0 },
+  spiral: { arms: 3, fan: 2 * Math.PI, train: 5, gapMs: 80, twist: 0.25 },
+  ring: { arms: 8, fan: 2 * Math.PI, train: 1, gapMs: 80, twist: 0.25 }
+};
+export const volleyShape = (v: Volley): IShotShape => ({ ...(VOLLEY_SHAPES[v] ?? VOLLEY_SHAPES.single), ...PLAIN_FLIGHT });
+
+/**
+ * Every shot of a shape: when it leaves after the volley begins, and its lane's angle off where the volley is aimed.
+ * Lanes are shared out from the aim outward, one side then the other (0, +1, -1, +2, ...), each a fan over the
+ * arms apart: so one lane always flies where it is aimed, a fan of 2π closes into an even ring, and a fan a
+ * little under it leaves a gap behind.
+ */
+export const shotsOf = (s: IShotShape): { delayMs: number; offset: number }[] => {
+  const arms = Math.max(1, Math.round(s.arms)), train = Math.max(1, Math.round(s.train));
+  const apart = s.fan / arms;
+  return Array.from({ length: arms * train }, (_, n) => {
+    const arm = n % arms, k = Math.floor(n / arms);
+    const side = arm === 0 ? 0 : (arm % 2 === 1 ? 1 : -1) * Math.ceil(arm / 2);
+    return { delayMs: k * s.gapMs, offset: side * apart + k * s.twist };
+  });
+};
+
+/** Every shot of a volley word, at its middle. */
+export const volleyShots = (v: Volley): { delayMs: number; offset: number }[] => shotsOf(volleyShape(v));
+
+/** How long one shot of a shape is in the air, in seconds. */
+export const shotFlightS = (s: IShotShape): number => s.reachPx / Math.max(1e-9, s.speedPx);
+
+/**
+ * Where a shot is, `alongPx` of path from where it left, flying a lane at `lane` radians: its place from the
+ * origin, and the way it heads there. A bent shot leaves half its bend to one side of its lane and comes back to
+ * it at its flight's end, so a lane still says where its shot ends; the swing rides across whatever path that is.
+ * Drawn, flown and struck from this one place.
+ */
+export const shotAt = (s: IShotShape, lane: number, alongPx: number): { x: number; y: number; heading: number } => {
+  const d = Math.max(0, alongPx);
+  const from = lane - s.curve / 2;
+  const turn = s.curve / Math.max(1e-9, s.reachPx);
+  const heading = from + turn * d;
+  const straight = Math.abs(s.curve) < 1e-6;
+  const x = straight ? Math.cos(lane) * d : (Math.sin(heading) - Math.sin(from)) / turn;
+  const y = straight ? Math.sin(lane) * d : (Math.cos(from) - Math.cos(heading)) / turn;
+  const aside = s.swayPx === 0 ? 0 : s.swayPx * Math.sin((2 * Math.PI * d) / Math.max(1e-9, s.swayLenPx));
+  return { x: x - Math.sin(heading) * aside, y: y + Math.cos(heading) * aside, heading };
 };
 
 // -------------------------------------------------------------------------

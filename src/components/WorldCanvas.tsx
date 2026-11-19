@@ -465,13 +465,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       // Focus: a NOVA burst. EN: a blow takes none of the day's energy, a focus's as a bow's
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, ...(glance ? { glance } : {}) }
+        { type: patternOf(CombatMath.volleyOf(weapon)), shape: CombatMath.shotOf(weapon), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, ...(glance ? { glance } : {}) }
       ]);
     } else {
-      // Ranged (or unarmed): the hand's own volley, one shot unless its words say otherwise; a throw flies eight tiles (call 12)
+      // Ranged (or unarmed): the hand's own volley, read off the piece itself (`ShotLaw`); a throw flies eight tiles (call 12)
       setPlayerPatterns(prev => [
         ...prev.filter(p => ProjectileSystem.alive(p, now)),
-        { type: patternOf(CombatMath.volleyOf(weapon)), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, rangePx: CombatMath.shotRangePx(weapon), ...(glance ? { glance } : {}) }
+        { type: patternOf(CombatMath.volleyOf(weapon)), shape: CombatMath.shotOf(weapon), origin: { x: playerPos.x, y: playerPos.z }, startTime: now, angle, damage, poison, struck: new Set<string>(), weight: SHOT_WEIGHT, rangePx: CombatMath.shotRangePx(weapon), ...(glance ? { glance } : {}) }
       ]);
     }
 
@@ -1083,8 +1083,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
 
       // Projectile positions are recomputed from time every frame, so a shot
       // that has landed must be remembered or it would land again next frame.
+      // Kept for as long as the longest volley still in the air could fly: a shot read off its piece may fly longer than a plain one
+      const spentKeepMs = Math.max(2500, ...playerPatterns.filter(isAlive).map(p => ProjectileSystem.lifeMs(p)), ...enemyPatterns.filter(isAlive).map(p => ProjectileSystem.lifeMs(p)));
       spentShots.current.forEach((firedAt, id) => {
-        if (now - firedAt > 2500) spentShots.current.delete(id);
+        if (now - firedAt > spentKeepMs) spentShots.current.delete(id);
       });
 
       const playerBullets: IProjectile[] = playerPatterns.filter(isAlive).flatMap(p =>
@@ -1438,7 +1440,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           windup: windupRef.current ? {
             x: playerPos.x, y: playerPos.z, angle: aimFrom(playerPos, windupRef.current.by), kind: windupRef.current.kind,
             fill: Math.min(1, (now - windupRef.current.startedAt) / Math.max(1, windupRef.current.until - windupRef.current.startedAt)),
-            ...(windupRef.current.kind === 'swing' ? { shape: CombatMath.strikeOf(held) } : {})
+            ...(windupRef.current.kind === 'swing' ? { shape: CombatMath.strikeOf(held) } : fireMode(held) === 'FOCUS' && me.activeCast ? {} : { shot: CombatMath.shotOf(held) })
           } : undefined
         };
         rendererRef.current.renderer.draw(ctx, canvas.width, canvas.height, scene);
