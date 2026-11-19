@@ -40,6 +40,8 @@ import { installConsoleInterceptor, useLogStore } from './src/components/debug/L
 import { VoicePanel } from './src/components/VoicePanel';
 import { HubPanel } from './src/components/HubPanel';
 import { HubLink } from './src/logic/hub/HubLink';
+import { OpenWorlds } from './src/logic/live/OpenWorlds';
+import { useLive } from './src/logic/live/LiveClient';
 import { EntryView } from './src/components/EntryView';
 import { AccessibilityPanel, ConfigurationPanel } from './src/components/SettingsPanels';
 
@@ -248,7 +250,15 @@ const App: React.FC = () => {
       await PlayerPersistence.flush('hub', usePlayerStore.getState().player);
       return (await VectorStore.get<{ signature?: string }>(VectorNamespace.CHARACTERS, uid))?.data ?? null;
     };
-    return HubLink.start(uid, () => usePlayerStore.getState().player.bank.gold, () => useHubStore.getState().activeHubId, undefined, save);
+    const stopReceipts = HubLink.start(uid, () => usePlayerStore.getState().player.bank.gold, () => useHubStore.getState().activeHubId, undefined, save);
+    // Multiplayer is always on while someone is signed in (OpenWorlds.ts): the worlds open on the hub are read on a
+    // beat, and this game's own open worlds are said to be open still
+    const stopLobby = OpenWorlds.start();
+    // A world played with others that closes while this player is in it: said once, where everything else is said
+    const stopClosed = useLive.subscribe((now, was) => {
+      if (now.status === 'CLOSED' && was.status !== 'CLOSED' && now.reason) useFeed.getState().push(now.reason, 'loss');
+    });
+    return () => { stopReceipts(); stopLobby(); stopClosed(); };
   }, [bootStatus]);
 
   // Q39: midnight turns the city's day while the person stays in it, not only when it is opened

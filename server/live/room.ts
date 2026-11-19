@@ -46,6 +46,12 @@
  *   - a socket the host closed on its timer comes back a moment later, perhaps elsewhere, so a
  *     player whose socket closed is held in their place and their lines for `holdMs` first.
  *
+ * MORE WORLDS THAN OURS (server/hub/open.ts, Pedro, 2026-11-18: "unless they choose to host their own,
+ * then we tunnel theirs"). A world a player opened is kept here under its own uid, as ours is. A
+ * request and a socket name the world (`?world=`); none named is the one this hub hosts. Its host's
+ * game gives the room its start (`seed`) and takes its part back when it closes (`shut`), which is an
+ * event like any other, so every instance tells its own sockets the world closed.
+ *
  * WHERE THERE IS NO POSTGRES (a hub on Turso alone, HT3), there is nothing to nudge through: the word
  * between instances is the store's own tables read on a beat (tursoLive.ts). It reads what this room
  * stands on (`watched`, `standing`), and says to it what a nudge would have said.
@@ -55,7 +61,8 @@ import type { Duplex } from 'node:stream';
 import type { IStore } from '../store';
 import type { CommitOp, ICommitRequest, IWireDoc, IWireQuery } from '../../shared/entities/data/wire';
 import { acceptSocket, type ISocket } from './socket';
-import { isShared, type ChestIntent } from '../../shared/logic/live/shared';
+import { isShared, SHARED_FAMILIES, type ChestIntent } from '../../shared/logic/live/shared';
+import { NOT_OPEN_STATUS } from '../../shared/logic/live/open';
 import { ChestSystem, emptyChestRecord, type IChestRecord } from '../../shared/entities/world/ChestSystem';
 import { isWhere, whereOf } from '../../shared/logic/live/Presence';
 import { TalkLine, emptyLine, type ILine } from '../../shared/logic/live/TalkLine';
@@ -63,7 +70,7 @@ import { soloBus, type ILiveBus, type IStanding } from './bus';
 import { memoryLines, type ILineBook } from './lines';
 
 /** One shape, ok or not: this project compiles without strict null checks, where a union on `ok` does not narrow. */
-export type LiveAccess = (token: string, uid: string) => Promise<{ ok: boolean; worldUid?: string; status?: number; reason?: string }>;
+export type LiveAccess = (token: string, uid: string, worldUid?: string) => Promise<{ ok: boolean; worldUid?: string; status?: number; reason?: string }>;
 
 const LIVE_NS = 'live';
 const channelOf = (worldUid: string) => `world:${worldUid}`;
@@ -74,7 +81,7 @@ const eventId = (worldUid: string, seq: number) => `live_event_${worldUid}_${seq
 export const ownedBy = isShared;
 const chestsId = (worldUid: string) => `world_chests_${worldUid}`;
 
-export interface ILiveEvent { channel: string; seq: number; at: number; docs: IWireDoc[] }
+export interface ILiveEvent { channel: string; seq: number; at: number; docs: IWireDoc[]; /** The world was closed to others by its host (open.ts). */ closed?: true }
 
 export interface ILiveParts {
   /** The word between instances. One instance alone needs none. */
@@ -200,8 +207,8 @@ export class LiveRoom {
    * False means it did not land: another instance took the number first, or this very commit
    * landed before and is being asked again.
    */
-  private async landAt(worldUid: string, seq: number, commitId: string, ops: CommitOp[]): Promise<boolean> {
-    const event: ILiveEvent = { channel: channelOf(worldUid), seq, at: this.now(), docs: ops.map(op => (op as { doc: IWireDoc }).doc) };
+  private async landAt(worldUid: string, seq: number, commitId: string, ops: CommitOp[], closed = false): Promise<boolean> {
+    const event: ILiveEvent = { channel: channelOf(worldUid), seq, at: this.now(), docs: ops.map(op => (op as { doc: IWireDoc }).doc), ...(closed ? { closed: true as const } : {}) };
     const result = await this.store.commit({
       commitId,
       guardAbsent: eventId(worldUid, seq),
@@ -213,10 +220,10 @@ export class LiveRoom {
   }
 
   /** At the next number, whichever that turns out to be. Inside the queue only. */
-  private async land(worldUid: string, commitId: string, ops: CommitOp[]): Promise<{ applied: boolean }> {
+  private async land(worldUid: string, commitId: string, ops: CommitOp[], closed = false): Promise<{ applied: boolean }> {
     for (;;) {
       const seq = (await this.head(worldUid)) + 1;
-      if (await this.landAt(worldUid, seq, commitId, ops)) return { applied: true };
+      if (await this.landAt(worldUid, seq, commitId, ops, closed)) return { applied: true };
       // Nobody took that number, so the commit itself is one that landed before: applied once, as asked
       if ((await this.head(worldUid)) < seq) return { applied: false };
     }
@@ -304,6 +311,53 @@ export class LiveRoom {
     });
   }
 
+  /**
+   * A WORLD A PLAYER OPENED (server/hub/open.ts). What its players share, as its host's game holds
+   * it, is the room's start: whole, chests among them, since nobody else is in it yet. Only the
+   * world's own shared documents, each named once. Asked again under the same key, it lands once.
+   */
+  seed(worldUid: string, docs: unknown, key: string): Promise<{ ok: boolean; reason?: string }> {
+    return this.queued(async () => {
+      const list = Array.isArray(docs) ? docs as IWireDoc[] : [];
+      const seen = new Set<string>();
+      for (const doc of list) {
+        if (!doc || typeof doc.id !== 'string' || typeof doc.dataText !== 'string' || typeof doc.namespace !== 'string' || !doc.metadata || !ownedBy(worldUid, doc.id) || seen.has(doc.id)) {
+          return { ok: false, reason: 'A world is opened with its own shared documents and nothing else.' };
+        }
+        try { JSON.parse(doc.dataText); } catch { return { ok: false, reason: "One of this world's shared documents does not read." }; }
+        seen.add(doc.id);
+      }
+      // A world opened with nothing to share yet still starts its numbers, so a second opening is told from a first
+      const ops: CommitOp[] = list.map(doc => ({ kind: 'put', doc: { id: doc.id, namespace: doc.namespace, dataText: doc.dataText, metadata: { createdAt: Number(doc.metadata.createdAt) || this.now(), updatedAt: this.now(), ownerCertUid: 'SYSTEM', version: 1 } } }));
+      try {
+        await this.land(worldUid, key, ops);
+        return { ok: true };
+      } catch (e) {
+        const name = (e as Error)?.name;
+        if (name === 'StoreConflict' || name === 'StoreRefusal') return { ok: false, reason: (e as Error).message };
+        throw e;
+      }
+    });
+  }
+
+  /** A world's shared documents as they stand. */
+  async take(worldUid: string): Promise<IWireDoc[]> {
+    const docs = await Promise.all(SHARED_FAMILIES.map(family => this.store.get(`${family}${worldUid}`)));
+    return docs.filter((d): d is NonNullable<typeof d> => !!d) as IWireDoc[];
+  }
+
+  /**
+   * Its host closed it. That is the world's last event, so every instance tells its own sockets in
+   * turn, and a game still in it plays on from its own copy (LiveClient). Then the shared documents
+   * are handed back as they stand, for the host's game to keep.
+   */
+  shut(worldUid: string, key: string): Promise<IWireDoc[]> {
+    return this.queued(async () => {
+      await this.land(worldUid, key, [], true);
+      return this.take(worldUid);
+    });
+  }
+
   private tell(worldUid: string, event: ILiveEvent) {
     const text = JSON.stringify(event);
     for (const s of this.listening.get(worldUid) ?? []) s.send(text);
@@ -318,8 +372,8 @@ export class LiveRoom {
       res.end(JSON.stringify(body));
     };
     const url = new URL(req.url ?? '/', 'http://live');
-    const may = await this.access(token, url.searchParams.get('uid') ?? '');
-    if (!may.ok || !may.worldUid) return send(may.status ?? 403, { error: may.reason ?? 'Not let in.' });
+    const may = await this.access(token, url.searchParams.get('uid') ?? '', url.searchParams.get('world') ?? undefined);
+    if (!may.ok || !may.worldUid) return send(may.status ?? 403, { error: may.reason ?? 'Not let in.', ...(may.status === NOT_OPEN_STATUS ? { notOpen: true } : {}) });
     if (req.method !== 'POST') return send(405, { error: 'Online play asks by POST.' });
     let body: any;
     try {
@@ -339,7 +393,7 @@ export class LiveRoom {
   /** The socket: checked as the upgrade comes, then a channel subscribed from a number. */
   async upgrade(req: IncomingMessage, raw: Duplex, token: string) {
     const url = new URL(req.url ?? '/', 'http://live');
-    const may = await this.access(token, url.searchParams.get('uid') ?? '');
+    const may = await this.access(token, url.searchParams.get('uid') ?? '', url.searchParams.get('world') ?? undefined);
     if (!may.ok || !may.worldUid) {
       raw.end(`HTTP/1.1 ${may.status ?? 403} Refused\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${may.reason}`);
       return;

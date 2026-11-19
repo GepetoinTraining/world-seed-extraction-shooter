@@ -10,6 +10,7 @@ import { DreamingSystem } from '../../../shared/entities/world/Dreaming';
 import { LootBook } from '../../logic/theme/LootBook';
 import { LiveClient } from '../../logic/live/LiveClient';
 import { HostedLink } from '../../logic/live/HostedLink';
+import { OpenWorlds } from '../../logic/live/OpenWorlds';
 import { LootWriter } from '../../logic/theme/LootWriter';
 import { IntelligenceClient } from '../../logic/intelligence/IntelligenceClient';
 import { SharedWork } from '../../logic/hub/SharedWork';
@@ -91,6 +92,9 @@ interface WorldState extends IWorldView {
   isGenerating: boolean;
   
   refreshWorlds: () => Promise<void>;
+  /** A world this character minted, opened to others on the hub, and closed again (OpenWorlds.ts). */
+  openToOthers: (worldId: string) => Promise<{ ok: boolean; reason?: string }>;
+  closeToOthers: (worldId: string) => Promise<{ ok: boolean; reason?: string }>;
   selectWorld: (worldId: string) => Promise<void>;
   initiateRecon: (seed: string) => void; 
   scanSector: (x: number, y: number, efficiency: number) => void;
@@ -275,6 +279,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       // Played live, the fall goes in the room's queue, and the record comes back as it stands
       if (LiveClient.isLive(activeWorldId)) {
         void LiveClient.chests({ op: 'fell', guardId: entityId, cycle: generation }).then(out => {
+          // The world closed to others while this was asked: the fall is kept in this game's own copy
+          if (out === null) { const mine = get().chestRecord; if (mine && get().activeWorldId === activeWorldId) void ChestStore.save(activeWorldId, mine); return; }
           if (out?.record && get().activeWorldId === activeWorldId) set({ chestRecord: ChestSystem.merge(get().chestRecord ?? out.record, out.record) });
         });
         return;
@@ -360,7 +366,15 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       const me = meta ? { uid: meta.uid, name: meta.displayName } : undefined;
 
       // Wave 9.7: hubs are homes, not extraction zones — they never get a DEPLOY card
-      const realWorlds: IWorldCard[] = certs.filter(cert => cert.data.worldType !== 'HUB').map(cert => ({
+      // A world the hub served this game is offered while it is open there; everything else is this game's own
+      const liveOf = (id: string): IWorldCard['live'] => {
+        if (!HostedLink.is(id)) return undefined;
+        const row = OpenWorlds.rowOf(id);
+        const mark = HostedLink.markOf(id);
+        return { by: row?.by ?? (mark === 'HUB' ? 'HUB' : 'PLAYER'), host: row?.host ?? null, mine: mark === 'MINE', answering: row?.answering ?? true };
+      };
+      const realWorlds: IWorldCard[] = certs.filter(cert => cert.data.worldType !== 'HUB' && OpenWorlds.offered(cert.data.worldUid)).map(cert => ({
+          live: liveOf(cert.data.worldUid),
           id: cert.data.worldUid,
           seed: cert.data.seedHash,
           size: cert.data.size,
@@ -392,6 +406,30 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       set({ availableWorlds: [Tutorial.card(now, turnsFrom), ...realWorlds] });
   },
 
+  openToOthers: async (worldId: string) => {
+      const out = await OpenWorlds.open(worldId);
+      if (!out.ok) return out;
+      // Read from this game's own store when it was selected: from here on its shared part is the room's, which started from the same
+      const playing = useIdentityStore.getState().certificate?.metadata.uid;
+      if (get().activeWorldId === worldId && playing && LiveClient.world() !== worldId) LiveClient.join({ worldUid: worldId, uid: playing });
+      await get().refreshWorlds();
+      return out;
+  },
+
+  closeToOthers: async (worldId: string) => {
+      const out = await OpenWorlds.close(worldId);
+      // What came back is this game's own again: an open world reads it as it now stands
+      if (out.ok && get().activeWorldId === worldId && get().chestRecord) {
+        const [chestRecord, populationRecord] = await Promise.all([
+          ChestStore.load(worldId).catch(() => get().chestRecord),
+          PopulationStore.load(worldId).catch(() => get().populationRecord)
+        ]);
+        if (get().activeWorldId === worldId) set({ chestRecord, populationRecord });
+      }
+      await get().refreshWorlds();
+      return out;
+  },
+
   selectWorld: async (worldId: string) => {
       const worldCard = get().availableWorlds.find(w => w.id === worldId);
       if (!worldCard) return;
@@ -404,7 +442,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         const leaving = get().activeWorldId;
         if (leaving) landReports(leaving);
         await landing;
-        // Online play: our hosted world's shared documents are read and written in its room, before anything is read
+        // Online play: a world open on the hub has its shared documents read and written in its room, before anything is read
         const playing = useIdentityStore.getState().certificate?.metadata.uid;
         if (HostedLink.is(worldCard.id) && playing) LiveClient.join({ worldUid: worldCard.id, uid: playing });
         else LiveClient.leave();

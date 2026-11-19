@@ -10,6 +10,8 @@ import { Ledger, ILedgerRow } from '../ledger/Ledger';
 import { VectorNamespace, VectorStore } from '../../../shared/entities/data/VectorStore';
 import { LootBook } from '../theme/LootBook';
 import { PersonLedger } from '../people/PersonLedger';
+import type { IOpenManifest, IOpenWorldRow } from '../../../shared/logic/live/open';
+import type { IWireDoc } from '../../../shared/entities/data/wire';
 
 /**
  * What the hub reruns beside a batch (D134): the player's own reading of their gold at its head,
@@ -113,6 +115,13 @@ export const HubClient = {
   // THE WORLD WE HOST (server/hub/hosted.ts)
   hosted: () => call<IHubOutcome & { world?: { worldUid: string; name: string; themeId: string } }>('/hosted'),
   connectHosted: (uid: string) => call<IHubOutcome & { manifest?: { world: { worldUid: string; name: string }; certificate?: any; themes: any[] }; standing?: string }>('/hosted/connect', { uid }),
+
+  // THE LOBBY (server/hub/open.ts): every world open on the hub, and a maker opening their own
+  openWorlds: () => call<IHubOutcome & { worlds?: IOpenWorldRow[] }>('/worlds/open'),
+  enterWorld: (uid: string, worldUid: string) => call<IHubOutcome & { worldUid?: string; manifest?: IOpenManifest; by?: 'HUB' | 'PLAYER' }>('/worlds/enter', { uid, worldUid }),
+  openWorld: (uid: string, manifest: IOpenManifest, docs: IWireDoc[]) => call<IHubOutcome & { worldUid?: string; resumed?: boolean; openedAt?: number }>('/worlds/open', { uid, manifest, docs }),
+  beatWorlds: (worlds: string[]) => call<IHubOutcome & { open?: string[] }>('/worlds/beat', { worlds }),
+  closeWorld: (worldUid: string) => call<IHubOutcome & { closedAt?: number; docs?: IWireDoc[] }>('/worlds/close', { worldUid }),
 
   /**
    * Sends the rows the hub does not hold yet, in order, with the last one it holds beside them, so a

@@ -53,6 +53,11 @@ export interface IWorldCard extends IClockedWorld {
   /** Who minted it, whole, and the deed they spent. A toll's gold reads these (`Toll.ownerOf`). */
   creatorUid?: string;
   mintedWithDeed?: string;
+  /**
+   * Played with others (OpenWorlds.ts): entering it joins its room on the hub. Who keeps it open, whether that is
+   * this game, and whether its host is being heard from. Absent, the world is this browser's alone.
+   */
+  live?: { by: 'HUB' | 'PLAYER'; host: string | null; mine: boolean; answering: boolean };
 }
 
 /** One scanned sector of a person's survey of a world. */

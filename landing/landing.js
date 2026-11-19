@@ -100,7 +100,8 @@
     const host = atob(publishableKey.replace(/^pk_(test|live)_/, '')).replace(/\$$/, '');
     await script(`https://${host}/npm/@clerk/ui@1/dist/ui.browser.js`);
     await script(`https://${host}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`, { 'data-clerk-publishable-key': publishableKey });
-    await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
+    // No usage telemetry: this page's policy lets nothing out to it anyway, and asking not to try keeps the console clean
+    await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor }, telemetry: false });
     return window.Clerk;
   }
 

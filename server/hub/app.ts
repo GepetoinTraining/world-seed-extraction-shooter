@@ -5,7 +5,7 @@
  * deployment and nothing has to stay running between requests.
  *
  *   /api/hub/…               the hub's own routes (http.ts): accounts, characters, receipts, worlds, the pool
- *   /api/hub/live/…          online play on the world we host (live/room.ts): commits, claims
+ *   /api/hub/live/…          online play on a world open here, ours or a player's (live/room.ts, open.ts): commits, claims
  *   /api/hub/live/socket     the socket (an upgrade)
  *   /api/hub/maintenance     the host's scheduled call: the write-down to the record, the erasures waiting on it
  *   /api/hub/clerk           Clerk's word that an account was deleted there (clerk.ts)
@@ -37,12 +37,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { openBody } from './body';
-import { Hub, type IRefusal } from './Hub';
+import { Hub } from './Hub';
 import type { IHubKey } from './keys';
 import { createHubHandler, send, tokenOf } from './http';
 import { hubConfigFrom, notSetUp, type IConfigProblem } from './function';
 import { settingsRead, withHostNames } from './settings';
-import { HostedWorld, type IHostedManifest } from './hosted';
+import { OpenWorlds } from './open';
 import { clerkConfigFrom, type IClerkConfig } from './clerk';
 import { Eraser } from './erase';
 import { DevView } from './dev';
@@ -148,25 +148,28 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
     const listenUrl = live.kind === 'postgres' ? config.liveListenUrl ?? (isServed(liveUrl ?? config.databaseUrl) ? liveUrl ?? config.databaseUrl : null) : null;
     const bus = await live.bus({ listenUrl });
 
-    // Who may: the hub's own word (HostedWorld.connect), asked here and taken for a little while
-    const hosted = new HostedWorld(hub);
+    // Who may: the hub's own word on the world named (OpenWorlds.access), asked here and taken for a little while.
+    // The worlds open here are ours and each one a player opened (open.ts); the room keeps what each one's players share
+    let room: LiveRoom;
+    const open = new OpenWorlds(hub, {
+      seed: (worldUid, docs, key) => room.seed(worldUid, docs, key),
+      shut: (worldUid, key) => room.shut(worldUid, key),
+      take: worldUid => room.take(worldUid)
+    });
     const heard = new Map<string, { until: number; answer: Awaited<ReturnType<LiveAccess>> }>();
-    const access: LiveAccess = async (token, uid) => {
+    const access: LiveAccess = async (token, uid, worldUid) => {
       if (!token) return { ok: false, status: 401, reason: 'Sign in to the hub first.' };
-      const key = `${token}|${uid}`;
+      const key = `${token}|${uid}|${worldUid ?? ''}`;
       const now = Date.now();
       const kept = heard.get(key);
       if (kept && kept.until > now) return kept.answer;
-      const out = await hosted.connect(token, uid);
-      const answer = out.ok
-        ? { ok: true, worldUid: String((out as { manifest: IHostedManifest }).manifest.world.worldUid) }
-        : { ok: false, status: (out as IRefusal).status, reason: (out as IRefusal).reason };
+      const answer = await open.access(token, uid, worldUid);
       for (const [k, v] of heard) if (v.until <= now) heard.delete(k);
       heard.set(key, { until: now + LIVE_WORD_MS, answer });
       return answer;
     };
     // On Turso the word is read on a beat, which also tells the room of every event: the room needs no beat of its own
-    const room = new LiveRoom(live.store, access, Date.now, { bus, lines: await live.lines(), holdMs: HOLD_MS, ...(live.kind === 'turso' ? { beatMs: 0 } : {}) });
+    room = new LiveRoom(live.store, access, Date.now, { bus, lines: await live.lines(), holdMs: HOLD_MS, ...(live.kind === 'turso' ? { beatMs: 0 } : {}) });
 
     const maintain = async () => {
       const record: string[] = [];
@@ -180,7 +183,7 @@ export function createHubApp(config: IHubAppConfig | IConfigProblem) {
     const dev = new DevView({ hub, store: own.dev(), live: live.between(listenUrl), env, given });
     // The hub's own voice, while the host holds a key for it (voice.ts): for whoever is signed in, counted in dollars a day
     const voice = hubVoiceFrom(hub, env);
-    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev, voice });
+    const handler = createHubHandler(hub, { clerk, eraser, maintain, cronSecret: env.CRON_SECRET?.trim() || undefined, dev, voice, open });
     return {
       hub, room, handler, eraser,
       close: async () => {

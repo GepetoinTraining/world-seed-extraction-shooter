@@ -2299,6 +2299,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!claimedNow && ChestSystem.isChest(entity.id) && LiveClient.isLive(live.activeWorldId)) {
         const saw = live.chestRecord?.chests[entity.id]?.lootedAt ?? null;
         void LiveClient.chests({ op: 'loot', chestId: entity.id, cycle: live.generation, saw }).then(out => {
+          // The world closed to others while this was asked: opened from this game's own copy, its cost already paid
+          if (out === null) { claimedChests.add(entity.id); get().performInteraction(interactionId, targetId); return; }
           if (out?.record) wp.apply({ kind: 'CHEST_RECORD', record: out.record });
           if (out?.ok) { claimedChests.add(entity.id); get().performInteraction(interactionId, targetId); return; }
           wp.apply({ kind: 'UPDATE_BODY', entityId: entity.id, patch: { container: { ...entity.container!, looted: true } } });

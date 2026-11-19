@@ -34,7 +34,10 @@ try {
   try {
     const key = hubKeyFrom(process.env, join(root, 'data', 'hosted-key.pem'), line => console.log(line));
     const hub = new Hub(hostedStore, key, { publicUrl: process.env.WS_PUBLIC_URL ?? 'http://127.0.0.1:3960' });
-    await new HostedWorld(hub).publish({ world: { worldUid, name: cert.data.worldName, creatorCertUid: cert.data.creatorCertUid, themeId }, certificate: cert, themes: [pack] });
+    // What its minting added (MintAdditionsWriter): the same land for everyone needs the same additions
+    const mintDoc = await game.get(`mint_${worldUid}`);
+    const mint = (mintDoc && JSON.parse(mintDoc.dataText).content) || null;
+    await new HostedWorld(hub).publish({ world: { worldUid, name: cert.data.worldName, creatorCertUid: cert.data.creatorCertUid, themeId }, certificate: cert, themes: [pack], mint });
     console.log(`[HOSTED] Published ${cert.data.worldName} (${worldUid}) on theme ${themeId}.`);
   } finally {
     await hostedStore.close();

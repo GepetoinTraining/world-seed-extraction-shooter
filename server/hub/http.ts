@@ -16,6 +16,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Hub } from './Hub';
 import { HubPool } from './pool';
 import { HostedWorld } from './hosted';
+import { OpenWorlds } from './open';
 import { deleteClerkUser, readClerkToken, readClerkWebhook, type IClerkConfig } from './clerk';
 import type { Eraser } from './erase';
 import type { DevView } from './dev';
@@ -35,6 +36,8 @@ export interface IHubHandlerParts {
   dev?: DevView;
   /** The hub's own voice, on the host's key, for whoever is signed in (voice.ts). Absent, this hub offers none. */
   voice?: HubVoice | null;
+  /** The worlds open here, with the room that keeps what each one's players share (open.ts). Absent, one is made with no room. */
+  open?: OpenWorlds;
 }
 
 /** What an address that does not exist answers. A developers' route answers anyone not on the list the same, byte for byte. */
@@ -114,6 +117,8 @@ const answer = (res: ServerResponse, out: { ok: boolean; status?: number }) => {
 export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
   const pool = new HubPool(hub);
   const hosted = new HostedWorld(hub);
+  // The worlds open here (open.ts). A hub composed without a room lists and lets in, and keeps nothing a world shares
+  const open = parts.open ?? new OpenWorlds(hub);
   const clerk = parts.clerk ?? null;
   return async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
     try {
@@ -161,6 +166,7 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
         if (path === '/pool') return answer(res, await pool.members(token));
         if (path.startsWith('/jobs/')) return answer(res, await pool.get(token, decodeURIComponent(path.slice('/jobs/'.length))));
         if (path === '/hosted') return answer(res, await hosted.describe());
+        if (path === '/worlds/open') return answer(res, await open.list(token));
         return noSuchRoute(res);
       }
 
@@ -244,6 +250,11 @@ export function createHubHandler(hub: Hub, parts: IHubHandlerParts = {}) {
         case '/people': return answer(res, await hub.checkPeople(token, body.chains));
         case '/people/table': return answer(res, await hub.peopleOf(token, body.city));
         case '/worlds/check': return answer(res, await hub.checkWorld(token, body.manifest));
+        // The lobby (open.ts): a maker opens a world to others, says it is still open, closes it; anyone signed in enters one
+        case '/worlds/open': return answer(res, await open.open(token, body.uid, body.manifest, body.docs));
+        case '/worlds/beat': return answer(res, await open.beat(token, body.worlds));
+        case '/worlds/close': return answer(res, await open.close(token, body.worldUid));
+        case '/worlds/enter': return answer(res, await open.enter(token, body.uid, body.worldUid));
         case '/pool/join': return answer(res, await pool.join(token, body.voice));
         case '/pool/leave': return answer(res, await pool.leave(token));
         case '/pool/beat': return answer(res, await pool.beat(token));

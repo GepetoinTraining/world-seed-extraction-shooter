@@ -10,7 +10,9 @@ import { HubLink } from '../logic/hub/HubLink';
 
 const STANDS = [
   'A hub keeps accounts and checks what a game sends it, as arithmetic.',
-  'One hosted world can be walked by several people at once. Its chests are shared, and the first to reach one has it.'
+  'A world open on the hub can be walked by several people at once. Its chests are shared, and the first to reach one has it.',
+  'Signed in, with the first order done, the worlds open on the hub are among your zones by themselves.',
+  'A world you minted can be opened to others from its card, and closed again. The hub keeps what is shared while it is open.'
 ];
 const NOT_YET = [
   'Creatures are each player\'s own, so two people cannot fight the same one.',

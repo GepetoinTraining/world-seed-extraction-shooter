@@ -51,7 +51,7 @@ let firstRetryMs = 400;
 
 /** What came back, the way a fetch reports it. */
 interface IAnswer { ok: boolean; status: number; json: () => Promise<any> }
-type Transport = (path: string, body?: string) => Promise<IAnswer>;
+export type Transport = (path: string, body?: string) => Promise<IAnswer>;
 
 const overTheWire: Transport = (path, body) => fetch(`${base}/api/db${path}`, body === undefined
   ? { cache: 'no-store' }
@@ -100,9 +100,10 @@ interface IRoute { owns: (id: string) => boolean; transport: Transport }
 let routes: IRoute[] = [];
 const routeOf = (id: string | undefined) => (id === undefined ? undefined : routes.find(r => r.owns(id)));
 
-/** The live room's doors, over the wire, naming the character that plays. */
-export function liveTransport(origin: string, uid: string): Transport {
-  return (path, body) => fetch(`${origin}/api/hub/live${path}?uid=${encodeURIComponent(uid)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ?? '{}', credentials: 'same-origin' });
+/** The live room's doors, over the wire, naming the character that plays and the world played (none named is the hub's own). */
+export function liveTransport(origin: string, uid: string, worldUid?: string): Transport {
+  const world = worldUid ? `&world=${encodeURIComponent(worldUid)}` : '';
+  return (path, body) => fetch(`${origin}/api/hub/live${path}?uid=${encodeURIComponent(uid)}${world}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ?? '{}', credentials: 'same-origin' });
 }
 
 const closeVault = (reason: string, canCarry = false) => useVault.setState({ status: 'CLOSED', reason, canCarry });
@@ -174,6 +175,12 @@ export const StoreClient = {
   },
 
   isLocal: () => local,
+
+  /**
+   * This game's own store, whatever is routed elsewhere. A world played live whose host closed it goes
+   * on from this game's own copy (LiveClient), and what a host takes back is written here.
+   */
+  own: ((path, body) => transport(path, body)) as Transport,
 
   /** One honest look, no waiting: is our database answering? The gate asks this. */
   async health(): Promise<IHealth> {

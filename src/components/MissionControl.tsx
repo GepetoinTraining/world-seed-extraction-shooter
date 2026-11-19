@@ -11,6 +11,8 @@ import { SkyKind, WorldClock, WorldPhase } from '../entities/world/WorldClock';
 import { openRecon } from './ReconView';
 import { WorldCreator } from './WorldCreator';
 import { ConnectWorld } from './ConnectWorld';
+import { OpenWorlds, useOpenWorlds } from '../logic/live/OpenWorlds';
+import { useIdentityStore } from '../entities/identity/store';
 import { deployToWorld } from '../logic/systems/Deploy';
 import { Button, Chip, CycleRibbon, Panel } from './ui/kit';
 import { useFeed } from './ui/stores';
@@ -27,7 +29,21 @@ const GATE_WORDS: Record<WorldPhase, string> = {
 };
 const SKY_WORDS: Record<SkyKind, string> = { TURNING: 'IT TURNS', LOCKED: 'IT DOES NOT SPIN', NIGHT: 'ONLY NIGHT' };
 
-export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; onDeploy: () => void; onSurvey: () => void }) => {
+/** What a card says of a world played with others, and what its maker may do about it (OpenWorlds.ts). */
+export interface IWorldCardOnline {
+  /** This character minted it, and the lobby runs here: it can be opened to others, or closed. */
+  canHost: boolean;
+  busy: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}
+
+const liveWords = (live: NonNullable<IWorldCard['live']>): string =>
+  live.mine ? 'OPEN TO OTHERS · YOU HOST IT'
+    : live.by === 'HUB' ? 'PLAYED WITH OTHERS · THE HUB KEEPS IT OPEN'
+    : `PLAYED WITH OTHERS · ${live.host ? `${live.host.toUpperCase()} HOSTS IT` : 'A PLAYER HOSTS IT'}`;
+
+export const WorldCard = ({ world, onDeploy, onSurvey, online }: { world: IWorldCard; onDeploy: () => void; onSurvey: () => void; online?: IWorldCardOnline }) => {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -59,6 +75,9 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
         {ContentRegistry.get(world.themeId) ? `${ContentRegistry.get(world.themeId)!.name.toUpperCase()} — pinned at mint${Tutorial.dreams(world, SHELF_STATE.magicUnlocked) ? ' · IT DREAMS' : ''}` : world.packVersion ? `DREAM PACK v${world.packVersion}${world.webVersion ? ` · WEB v${world.webVersion}` : ''} — pinned at mint` : 'MINTED BEFORE THE BANKS — it dreams nothing new'}
       </div>
 
+      {/* Played with others: said in words and a mark, never by colour alone */}
+      {world.live && <div className="ws-bright ws-small" style={{ letterSpacing: '0.08em' }}>[■] {liveWords(world.live)}</div>}
+
       <div
         className={isDev || dark ? 'ws-dim' : isClosing ? 'ws-loss' : 'ws-bright'}
         style={{ fontSize: 'var(--ws-font-display)', fontWeight: 700, letterSpacing: '0.06em', margin: '6px 0 0' }}
@@ -88,7 +107,12 @@ export const WorldCard = ({ world, onDeploy, onSurvey }: { world: IWorldCard; on
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--ws-void-3)', paddingTop: 8, marginTop: isDev ? 10 : 0 }}>
         {/* Q41: the tutorial has no certificate to count visits in, so it shows no count */}
-        {tutorial ? <span /> : <span className="ws-dim ws-small">AGENTS <span className="ws-bright">{world.playerCount}</span></span>}
+        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {tutorial ? <span /> : <span className="ws-dim ws-small">AGENTS <span className="ws-bright">{world.playerCount}</span></span>}
+          {online?.canHost && (world.live?.mine
+            ? <Button onClick={online.onClose} disabled={online.busy} title="Nobody else is let in from now on, and what was shared comes back into this game. Anyone inside goes on from their own copy.">CLOSE TO OTHERS</Button>
+            : <Button onClick={online.onOpen} disabled={online.busy} title="Everyone signed in to the hub gets this world among their zones. Its chests, carts and people are shared while it is open, and kept by the hub.">OPEN TO OTHERS</Button>)}
+        </span>
         {/* D85: recon always stands to the left of the drop, and neither risks anything until the drop itself */}
         <span style={{ display: 'flex', gap: 6 }}>
           {!isDev && (
@@ -126,11 +150,37 @@ export const MissionControl = () => {
   const pushFeed = useFeed(s => s.push);
   // The online world opens once the tutorial's first order is sealed (Pedro, 2026-11-04)
   const tutorialDone = usePlayerStore(s => !Tutorial.firstOrderOpen(s.player));
+  // The lobby (OpenWorlds.ts): played from the domain, the worlds open on the hub are among the zones by themselves
+  const lobby = OpenWorlds.on();
+  const openStamp = useOpenWorlds(s => s.stamp);
+  const openRows = useOpenWorlds(s => s.rows);
+  const openNote = useOpenWorlds(s => s.note);
+  const openBusy = useOpenWorlds(s => s.busy);
+  const myUid = useIdentityStore(s => s.certificate?.metadata.uid);
+  const { openToOthers, closeToOthers } = useWorldStore();
 
   useEffect(() => {
     refreshWorlds();
+    if (lobby && tutorialDone) void OpenWorlds.sync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tutorialDone]);
+  // What is open on the hub changed: the zones are read again
+  useEffect(() => {
+    if (lobby) refreshWorlds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openStamp]);
+
+  const host = async (worldId: string, open: boolean) => {
+    const out = open ? await openToOthers(worldId) : await closeToOthers(worldId);
+    const name = availableWorlds.find(w => w.id === worldId)?.name ?? 'That world';
+    if (!out.ok) pushFeed(out.reason ?? 'The hub did not answer.', 'loss');
+    else pushFeed(open ? `${name} is open to others. Everyone signed in to the hub has it among their zones.` : `${name} is closed to others, and what was shared is back in this game.`, 'signal');
+  };
+  // What the header says of the lobby: how many worlds are open on the hub, and how many of those this player hosts
+  const mine = openRows.filter(r => r.mine).length;
+  const openCount = openRows.filter(r => r.mine || r.answering).length;
+  const lobbyWords = openCount === 0 ? 'NO WORLD IS OPEN ON THE HUB'
+    : `${openCount === 1 ? '1 WORLD' : `${openCount} WORLDS`} OPEN ON THE HUB${mine === 0 ? '' : mine === openCount ? (mine === 1 ? ' · YOU HOST IT' : ' · YOU HOST THEM') : ` · YOU HOST ${mine}`}`;
 
   const handleDeploy = async (worldId: string) => {
     const res = await deployToWorld(worldId, worldPort, playerPort, hubPort);
@@ -144,14 +194,19 @@ export const MissionControl = () => {
           EXTRACTION ZONES
         </span>
         <span style={{ display: 'flex', gap: 8 }}>
-          {tutorialDone && <ConnectWorld onConnected={() => refreshWorlds()} />}
+          {lobby
+            ? tutorialDone && <span className="ws-small ws-dim" title="Worlds open on the hub join your zones by themselves. Open one of your own with OPEN TO OTHERS on its card.">{openNote ? `[ ] ONLINE: ${openNote}` : `[■] ONLINE · ${lobbyWords}`}</span>
+            : tutorialDone && <ConnectWorld onConnected={() => refreshWorlds()} />}
           <Button tone="proof" onClick={() => setCreatorOpen(true)}>+ MINT NEW WORLD</Button>
         </span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
         {availableWorlds.map(w => (
-          <WorldCard key={w.id} world={w} onDeploy={() => handleDeploy(w.id)} onSurvey={() => void openRecon(w.id)} />
+          <WorldCard
+            key={w.id} world={w} onDeploy={() => handleDeploy(w.id)} onSurvey={() => void openRecon(w.id)}
+            online={{ canHost: lobby && tutorialDone && !Tutorial.isTutorial(w) && !!myUid && w.creatorUid === myUid, busy: openBusy !== null, onOpen: () => void host(w.id, true), onClose: () => void host(w.id, false) }}
+          />
         ))}
       </div>
 

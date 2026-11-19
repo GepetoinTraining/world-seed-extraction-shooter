@@ -21,6 +21,8 @@ export interface IHostedManifest {
   /** The world's own certificate, which a hub saves and lists as it lists any world. */
   certificate?: Record<string, unknown>;
   themes: IThemePack[];
+  /** What its minting added (MintAdditionsWriter), so every game lays the same land. */
+  mint?: Record<string, unknown> | null;
   [more: string]: unknown;
 }
 
