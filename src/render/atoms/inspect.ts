@@ -252,7 +252,7 @@ function inspectMob(e: IWorldEntity, ctx: Partial<InspectContext> = {}): Card {
   const stock = player && (e.health ?? 1) > 0 ? Husbandry.read(e, def, { player, dist: ctx.dist ?? Infinity, ownsPlot: ctx.ownsFarmPlot }) : null;
   if (def?.behavior) rows.push(['Behavior', stock?.manner || String(def.behavior)]);
   if (stock) {
-    rows.push(stock.alive ? ['Alive', stock.alive] : ['Known', 'Nothing yet. Study it to learn']);
+    if (stock.alive) rows.push(['Alive', stock.alive]);
     for (const way of stock.ways) deep.push([way.word, Husbandry.said(way)]);
   }
   if (e.bargain) rows.push(['Stance', e.bargain.stance.toLowerCase()]);

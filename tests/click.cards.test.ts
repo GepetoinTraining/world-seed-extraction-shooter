@@ -99,6 +99,12 @@ describe('before anything is known, a card says what the eye sees', () => {
   });
 });
 
+describe('no card tells anyone to go and study', () => {
+  it('the line is gone from the code that writes cards', () => {
+    expect(SRC('src/render/atoms/inspect.ts')).not.toMatch(/Study it to learn/);
+  });
+});
+
 describe('found while looking at it in the game', () => {
   it('a tool worn counts as a tool carried: the card of a tree does not ask for one a person has in its slot', () => {
     const def = Object.values(RESOURCE_DEFINITIONS).find(d => d.themeId === FIRST_THEME_PACK.themeId && ((d as { harvestConfig?: { requiredToolTags: string[] } }).harvestConfig?.requiredToolTags ?? []).length > 0)!;
@@ -112,4 +118,3 @@ describe('found while looking at it in the game', () => {
     expect(needs({ ...bare, currentSession: { inventory: [tool] } })).toEqual([]);
   });
 });
-
