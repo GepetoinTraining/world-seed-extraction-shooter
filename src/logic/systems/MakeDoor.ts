@@ -60,7 +60,8 @@ export const MakeDoor = {
       rank: ProgressionSystem.rankOf(before),
       dexterity: before.attributes?.dexterity ?? 1,
       skillLevel: id => before.bank.universalSkills[id]?.level ?? 0,
-      hasBench: asks => ownerHasStationFor(asks, before.id, { lots: view.lots, rooms: view.rooms, stash })
+      hasBench: asks => ownerHasStationFor(asks, before.id, { lots: view.lots, rooms: view.rooms, stash }),
+      hasTool: word => MakeAsk.lacking(before, [word]).length === 0
     }, GameClock.now(), view.tech?.made);
     if (!out.ok || !out.player || !out.made || !out.tech) {
       feed(out.reason ?? 'It would not come together.', 'loss');

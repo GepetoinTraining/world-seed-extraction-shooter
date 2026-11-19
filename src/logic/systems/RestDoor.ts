@@ -20,7 +20,7 @@ import { IDreamResult, INN_FEE, RestPlace, RestSystem } from './RestSystem';
 import { LoreSystem } from './LoreSystem';
 import { PROCESS_FAMILIES, ProcessFamily } from '../../../shared/logic/systems/ProcessSystem';
 import { SkillNames } from './SkillNames';
-import { MakeAsk } from '../../../shared/logic/systems/MakeAsk';
+import { MakeAsk, isGearKind, isToolKind } from '../../../shared/logic/systems/MakeAsk';
 import { makeGround } from './MakeGround';
 import { ProgressionSystem } from '../../../shared/entities/player/systems/ProgressionSystem';
 import { ownerHasStationFor } from '../../../shared/entities/hub/room';
@@ -188,20 +188,28 @@ export const RestDoor = {
         feed(`"${ask.words}": ${words.line} What you laid is back in your vault.`, 'plain');
         continue;
       }
+      // Pedro, 2026-11-19: gear is "made by a tool". Whatever tool the answer names, the hand must hold one that answers
+      const lacks = MakeAsk.lacking(before, words.tools);
+      if (lacks.length > 0) {
+        pc.apply({ kind: 'SET', player: MakeAsk.takeBack(before, id) });
+        feed(`"${ask.words}": it could be ${words.name}, made with ${lacks.join(' and ')}, and you hold none. What you laid is back in your vault.`, 'plain');
+        continue;
+      }
       const view = hp.view();
       const stash = before.bank.stashTabs.flatMap(t => t.items);
       const { tech, fresh, made } = MakeAsk.settle(ask, words, {
         rank: ProgressionSystem.rankOf(before),
         dexterity: before.attributes?.dexterity ?? 1,
         skillLevel: skillId => before.bank.universalSkills[skillId]?.level ?? 0,
-        hasBench: asks => ownerHasStationFor(asks, before.id, { lots: view.lots, rooms: view.rooms, stash })
+        hasBench: asks => ownerHasStationFor(asks, before.id, { lots: view.lots, rooms: view.rooms, stash }),
+        hasTool: word => MakeAsk.lacking(before, [word]).length === 0
       }, { by: before.id, at: Date.now() }, view.tech?.made ?? []);
       if (fresh) await hp.settleTech(tech);
       const consumedIds = ask.parts.map(p => p.id);
       pc.apply({ kind: 'SET', player: { ...before, makeAsks: (before.makeAsks ?? []).filter(a => a.id !== id) } }, { kind: 'STASH_ADD', items: [made.item] });
       await Provenance.record(made.item, 'MINT', { origin: 'IMPROVISATION', consumedIds, techId: tech.id });
       await Ledger.append('TECH', { kind: 'TECH_MADE', techId: tech.id, name: tech.name, wanted: ask.words, outcome: made.outcome, hubId, by: before.id, first: fresh, consumedIds });
-      if (fresh) feed(`${tech.name}: ${tech.is} Nobody here had made one. It is known here now, and the same things make it again with nobody asked.`, 'proof');
+      if (fresh) feed(`${tech.name}${isToolKind(tech.kind) ? ', a tool' : isGearKind(tech.kind) ? ', to wear or carry' : ''}: ${tech.is} Nobody here had made one. It is known here now, and the same things make it again with nobody asked.`, 'proof');
       if (made.outcome === 'major_failure') feed(`"${ask.words}": ${words.line} But your hands lost it: ${made.item.name}. ${made.item.description}`, 'loss');
       else feed(`"${ask.words}": ${words.line} ${made.item.name} is in your vault${made.outcome === 'failure' ? ', crudely done' : made.outcome === 'major_win' ? ', better than you had any right to' : ''}.`, 'proof');
       if (tech.trade && (PROCESS_FAMILIES as readonly string[]).includes(tech.trade)) pc.apply({ kind: 'PRACTICE_TRADE', family: tech.trade as ProcessFamily });

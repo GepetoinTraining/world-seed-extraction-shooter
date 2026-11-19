@@ -62,6 +62,7 @@ import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wav
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { IRoomState, ownerHasStationFor, roomAdditions } from '../../../shared/entities/hub/room';
 import { PairCraft } from '../../../shared/logic/systems/PairCraft';
+import { MakeAsk } from '../../../shared/logic/systems/MakeAsk';
 import { TILE_PX, chunkOf } from '../../../shared/entities/world/grid';
 import { deathCostsNothing } from '../../../shared/logic/systems/DeathCost';
 import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the web and the auto skill
@@ -1897,7 +1898,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       dexterity: p.attributes?.dexterity ?? 1,
       skillLevel: id => p.bank.universalSkills[id]?.level ?? 0,
       // A bench is at home. Out in a world there is none under anybody's hands
-      hasBench: asks => !session && ownerHasStationFor(asks, p.id, { lots: hub.lots, rooms: hub.rooms, stash: p.bank.stashTabs.flatMap(t => t.items) })
+      hasBench: asks => !session && ownerHasStationFor(asks, p.id, { lots: hub.lots, rooms: hub.rooms, stash: p.bank.stashTabs.flatMap(t => t.items) }),
+      // Pedro, 2026-11-19: gear is "made by a tool". A making that asks one reads what this person holds (MakeAsk.lacking)
+      hasTool: word => MakeAsk.lacking(p, [word]).length === 0
     }, rollKey);
     const waiting = { id: made.item.id, outcome: made.outcome, ...(made.why ? { why: made.why } : {}), ...(made.recipe?.trade ? { trade: made.recipe.trade } : {}) };
     const used = [item.id, onto.id];

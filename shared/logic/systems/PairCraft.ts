@@ -42,12 +42,13 @@ export const QUALITY_SPAN = 0.2;
 
 const OUTCOME_LADDER: StudyOutcome[] = ['major_failure', 'failure', 'success', 'major_win'];
 
-/** Why a thing was lost: the two make nothing, it wanted a bench, or the hands slipped. */
-export type MakeWhy = 'NOTHING' | 'BENCH' | 'HANDS';
+/** Why a thing was lost: the two make nothing, it wanted a bench, it wanted a tool, or the hands slipped. */
+export type MakeWhy = 'NOTHING' | 'BENCH' | 'HANDS' | 'TOOL';
 
 const WHY_WORDS: Record<MakeWhy, string> = {
   NOTHING: 'Two things that do not go together, pressed together anyway.',
   BENCH: 'It wanted a bench under it, and had a knee.',
+  TOOL: 'It wanted a tool in the hand, and had fingers.',
   HANDS: 'The hands slipped. It might have been something.'
 };
 
@@ -63,6 +64,8 @@ export interface IPairRecipe {
   trade?: string;
   /** The bench or station it is made at, or null for hands alone. */
   asks: string | null;
+  /** D119: the tool words its making asks of the hand (a technology's). Absent or empty: none. */
+  tools?: string[];
   laborSeconds: number;
 }
 
@@ -72,6 +75,8 @@ export interface IMaker {
   dexterity: number;
   skillLevel: (skillId: string) => number;
   hasBench: (asks: string) => boolean;
+  /** Whether this person holds a tool that answers a tool word. Absent: nobody is asked, as before tools were. */
+  hasTool?: (word: string) => boolean;
 }
 
 export interface IMade {
@@ -124,10 +129,12 @@ export const PairCraft = {
   },
 
   /** D119: a settled technology, as a making reads it. */
-  recipeOfTech(tech: { id: string; name: string; inputs: { itemId: string; quantity: number }[]; output: { id: string }; trade: string; station: string; laborSeconds: number }): IPairRecipe {
+  recipeOfTech(tech: { id: string; name: string; kind?: string; tools?: string[]; inputs: { itemId: string; quantity: number }[]; output: { id: string }; trade: string; station: string; laborSeconds: number }): IPairRecipe {
     return {
-      id: tech.id, name: tech.name, kind: 'good', bill: tech.inputs.map(i => ({ ...i })), output: tech.output.id,
-      ...(tech.trade ? { trade: tech.trade } : {}), asks: tech.station || null, laborSeconds: tech.laborSeconds
+      // A tool or gear is a piece, minted from its base; anything else is a thing
+      id: tech.id, name: tech.name, kind: tech.kind ? 'gear' : 'good', bill: tech.inputs.map(i => ({ ...i })), output: tech.output.id,
+      ...(tech.trade ? { trade: tech.trade } : {}), asks: tech.station || null,
+      ...(tech.tools?.length ? { tools: [...tech.tools] } : {}), laborSeconds: tech.laborSeconds
     };
   },
 
@@ -193,6 +200,8 @@ export const PairCraft = {
     });
 
     if (!recipe) return spoiled('NOTHING', { d20, total: d20, dc: MAKE_DC_BASE });
+    // Pedro, 2026-11-19: gear is "made by a tool". A making that asks a tool the hand does not hold comes to nothing
+    if (maker.hasTool && (recipe.tools ?? []).some(word => !maker.hasTool!(word))) return spoiled('TOOL', { d20, total: d20, dc: MAKE_DC_BASE });
 
     const benchless = !!recipe.asks && !maker.hasBench(recipe.asks);
     const dc = MAKE_DC_BASE

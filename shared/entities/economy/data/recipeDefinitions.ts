@@ -11,6 +11,9 @@ import { ITransformationRecipe } from '../types';
 import { ResourceDef } from '../../item/data/resourceDefinitions';
 import { ITech, IWebBatch, ItemType, UniversalRank, Rarity } from '../../../types';
 import { registerCompositionDefs } from '../../../logic/economy/CompositionSystem';
+import { CRAFTED_GEAR_BASES } from '../../item/data/itemDefinitions';
+import { GEAR_SHAPES, cartNumbers, gearBaseIp, rankStep } from '../../../logic/theme/ThemeFormula';
+import { GEAR_KINDS, GearKind, ThemeRank } from '../../../logic/theme/ThemeTypes';
 
 /** What the installed themes let a bench make (D53). Empty until one is installed. */
 export const RECIPE_DEFINITIONS: Record<string, ITransformationRecipe> = {};
@@ -41,12 +44,34 @@ export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {};
  */
 export const TECH_WAYS: Record<string, ITech> = {};
 
-/** A hub's settled technologies, taken in: each one's product is a thing like any other good, and making reads its bill. */
+/** Whether a technology's product is a piece of the gear grammar (a tool or gear), and not a plain thing. */
+export const pieceKindOf = (tech: Pick<ITech, 'kind'>): GearKind | null =>
+  ((GEAR_KINDS as readonly string[]).includes(tech.kind) ? (tech.kind as GearKind) : null);
+
+/**
+ * A hub's settled technologies, taken in. A tool or gear is a piece: its base is built from its kind's own grammar
+ * (GEAR_SHAPES: the slot that takes it, the words every such piece wears, what it gives at its rank), as a theme's gear
+ * is, with the words its answer gave it. Anything else is a thing like any other good. Making reads either by its bill.
+ */
 export function absorbTechs(techs: ITech[]): void {
   let fresh = false;
   for (const tech of techs) {
     if (TECH_WAYS[tech.id]) continue;
     TECH_WAYS[tech.id] = tech;
+    const kind = pieceKindOf(tech);
+    if (kind) {
+      if (CRAFTED_GEAR_BASES.some(b => b.id === tech.output.id)) continue;
+      const shape = GEAR_SHAPES[kind];
+      const rank = tech.output.rank as unknown as ThemeRank;
+      CRAFTED_GEAR_BASES.push({
+        id: tech.output.id, universal_name: tech.name, rank: tech.output.rank, base_ip: gearBaseIp(rank, kind), kind,
+        slot: shape.slot, tags: [...new Set([...shape.tags, ...tech.output.tags])], implicits: shape.implicits(Math.max(0, rankStep(rank))),
+        ...(shape.pouch ? { pouch: shape.pouch } : {}),
+        ...(shape.belt ? { belt: shape.belt } : {}),
+        ...(shape.cart ? { cart: cartNumbers({ rank }) } : {})
+      });
+      continue;
+    }
     fresh = true;
     if (CRAFTED_DEFINITIONS[tech.output.id]) continue;
     CRAFTED_DEFINITIONS[tech.output.id] = {

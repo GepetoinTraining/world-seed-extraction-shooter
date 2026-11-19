@@ -15,17 +15,27 @@
  * roll every making takes, and from then on the same components make it with nobody asked ("once something exists it's
  * determined").
  *
+ * WHAT IS MADE (Pedro, 2026-11-19: "Gear is 2 parts of a build: Tool -> what's needed to do an action, and yes it can be a
+ * weapon. Gear -> something that's passive made by a took"). An answer says which the thing is, as a kind of the gear
+ * grammar that already says what slot takes a piece and what every such piece gives (GEAR_SHAPES). A TOOL is a kind an
+ * action is done with: what strikes, shoots or casts, what chops or mines, and any other tool, a snare among them. GEAR is
+ * every other kind: worn or carried, and passive. Gear is made by a tool, so an answer that makes gear names the tool, and
+ * the hand must hold one that answers; a tool may come out of bare hands, since the first one has to. A thing that is
+ * neither is a material or a good, as before. A tool or gear comes back a piece, minted from its base like any made piece.
+ *
  * MY CALLS, his to strike: an ask the answer says cannot be gives its components back (a "no" is not a roll, and costs the
  * night only); the product's rank is the highest among what went in, and it weighs what went in; an answer that cannot be
  * read leaves the ask waiting, and after `TRIES` of them the components come back; how many asks wait is focus's count,
- * as a stack's is; the product is a thing with words (a good), and gear with slots is not asked this way yet; the tools an
- * answer names are kept on the technology and nothing checks a hand for them yet.
+ * as a stack's is; a tool an answer names and the person does not hold gives the components back, with the tool said; a tool
+ * is held when anything in the vault, on the body or in the pack wears its word.
  *
  * Pure, but for the one registry every making reads (`absorbTechs`).
  */
 
 import { IItem, IMakeAsk, IMakeWords, IPlayer, ITech, TagKind, UniversalRank } from '../../types';
 import { absorbTechs, TECH_WAYS } from '../../entities/economy/data/recipeDefinitions';
+import { GEAR_SHAPES } from '../theme/ThemeFormula';
+import { GEAR_KINDS, GearKind } from '../theme/ThemeTypes';
 import { ItemFactory } from '../../entities/item/ItemFactory';
 import { RANK_ORDER } from '../../entities/player/systems/ProgressionSystem';
 import { TagLaw } from '../content/TagLaw';
@@ -41,6 +51,17 @@ export const TRIES = 2;
 export const NAME_CHARACTERS = 60;
 /** Words that would make the game read a made thing as something it is not. No answer may put them on one. */
 const NOT_FOR_A_MADE_THING = ['station', 'npc_contract'];
+
+/**
+ * The two parts of a build, read off the grammar and never listed twice: a kind an action is done with is a TOOL (the
+ * grammar files those with weapons and with tools), and every other kind is GEAR.
+ */
+export const isToolKind = (kind: string): boolean =>
+  (GEAR_KINDS as readonly string[]).includes(kind) && GEAR_SHAPES[kind as GearKind].bucket !== 'armor_bases';
+export const isGearKind = (kind: string): boolean =>
+  (GEAR_KINDS as readonly string[]).includes(kind) && GEAR_SHAPES[kind as GearKind].bucket === 'armor_bases';
+export const TOOL_KINDS = GEAR_KINDS.filter(isToolKind);
+export const PASSIVE_KINDS = GEAR_KINDS.filter(isGearKind);
 
 type Verdict = { ok: boolean; reason?: string };
 const no = (reason: string): Verdict => ({ ok: false, reason });
@@ -112,10 +133,12 @@ export const MakeAsk = {
    * person would say the components (name, the registry's words, rank, how many). With them go what their hands know
    * (every held skill, as its words and its level) and the stations this hub could raise, by the key an answer names one by.
    */
-  request(player: IPlayer, ground: Pick<IMakeGround, 'stations'>): Record<string, unknown> | null {
+  request(player: IPlayer, ground: IMakeGround): Record<string, unknown> | null {
     const asks = player.makeAsks ?? [];
     if (asks.length === 0) return null;
     return {
+      // The tools in their keeping, as the registry's tool words: gear is made by one of these or not at all
+      holds: this.toolsHeld(player, ground.kindOf),
       asks: asks.map(a => ({
         id: a.id,
         wants: a.words,
@@ -146,12 +169,32 @@ export const MakeAsk = {
       if (!ground.kindOf(tag)) return no(`"${tag}" is not a word the registry holds.`);
       if (NOT_FOR_A_MADE_THING.includes(tag)) return no(`A made thing is never "${tag}".`);
     }
+    const kind = words.kind ?? '';
+    if (kind && !(GEAR_KINDS as readonly string[]).includes(kind)) return no(`"${kind}" is not a kind of tool or of gear.`);
+    // Gear is made by a tool: an answer that makes gear and names none has not said how
+    if (isGearKind(kind) && (words.tools ?? []).filter(Boolean).length === 0) return no('Gear is made by a tool, and it named none.');
     if (words.trade && ground.kindOf(words.trade) !== 'trade') return no(`"${words.trade}" is not a trade.`);
     if (words.station && !ground.stations.some(s => s.key === words.station)) return no(`Nobody here could raise "${words.station}".`);
     for (const tool of words.tools ?? []) {
       if (ground.kindOf(tool) !== 'tool') return no(`"${tool}" is not a tool the registry holds.`);
     }
     return { ok: true };
+  },
+
+  /** Every piece in this person's keeping: the vault, what the body wears, and the pack when they are out. */
+  keeping(player: IPlayer): IItem[] {
+    return [...player.bank.stashTabs.flatMap(t => t.items), ...(player.equipment?.items ?? []), ...(player.currentSession?.inventory ?? [])];
+  },
+
+  /** The registry's tool words this person holds a tool for, in order. */
+  toolsHeld(player: IPlayer, kindOf: IMakeGround['kindOf']): string[] {
+    return sorted(this.keeping(player).flatMap(i => i.tags ?? []).filter(tag => kindOf(tag) === 'tool'));
+  },
+
+  /** Of the tools a making asks, the ones this person holds nothing for. */
+  lacking(player: IPlayer, tools: string[] = []): string[] {
+    const worn = new Set(this.keeping(player).flatMap(i => i.tags ?? []));
+    return sorted(tools).filter(word => !worn.has(word));
   },
 
   /**
@@ -163,12 +206,15 @@ export const MakeAsk = {
     const tags = sorted(words.tags ?? []);
     const tools = sorted(words.tools ?? []);
     const station = words.station ?? '';
-    const mark = fnv1a(JSON.stringify([station, tools, inputs.map(i => [i.itemId, i.quantity]), tags])).toString(16).padStart(8, '0');
+    const kind = words.kind ?? '';
+    // What it is made into is its kind and its words; a plain thing mints as it did before kinds were asked
+    const mark = fnv1a(JSON.stringify([station, tools, inputs.map(i => [i.itemId, i.quantity]), kind ? [kind, ...tags] : tags])).toString(16).padStart(8, '0');
     const rank = ask.parts.reduce<UniversalRank>((best, p) => (rankAt(p.rank) > rankAt(best) ? p.rank : best), UniversalRank.F);
     const weight = Math.max(0.1, Math.round(ask.parts.reduce((sum, p) => sum + (p.weight ?? 0), 0) * 10) / 10);
     return {
       id: `tech_${mark}`, name: words.name.trim(), is: words.is.trim(), station, tools, inputs,
       output: { id: `made_${mark}`, tags, rank, weight },
+      kind,
       trade: words.trade ?? '',
       // A good's own formula (ThemeFormula): ten seconds, and fifteen more a rank
       laborSeconds: 10 + rankAt(rank) * 15,
@@ -203,6 +249,8 @@ export const MakeAsk = {
     const parts = player.bank.stashTabs.flatMap(t => t.items).filter(i => ids.has(i.id));
     const tech = this.knownFor(parts, standing).find(t => t.id === techId);
     if (!tech || parts.length !== ids.size) return no('That is not what those make.');
+    const lacks = this.lacking(player, tech.tools);
+    if (lacks.length > 0) return no(`${tech.name} is made with ${lacks.join(' and ')}, and you hold none.`);
     absorbTechs([tech]);
     const made = PairCraft.makeOf(parts, PairCraft.recipeOfTech(tech), maker, `make:${player.id}:${techId}:${at}:${[...ids].sort().join(',')}`);
     return { ok: true, tech, made, player: withItems(without(player, ids), [made.item]) };

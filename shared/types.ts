@@ -1188,7 +1188,7 @@ export interface IMadeWaiting {
   id: string;
   outcome: StudyOutcome;
   /** Why it was lost, when it was. */
-  why?: 'NOTHING' | 'BENCH' | 'HANDS';
+  why?: 'NOTHING' | 'BENCH' | 'HANDS' | 'TOOL';
   /** The trade its making worked, practised when it is read. */
   trade?: string;
 }
@@ -1225,6 +1225,12 @@ export interface ITech {
   tools: string[];
   inputs: { itemId: string; quantity: number }[];
   output: { id: string; tags: string[]; rank: UniversalRank; weight: number };
+  /**
+   * What the thing made is (Pedro, 2026-11-19: "Gear is 2 parts of a build: Tool -> what's needed to do an action, and yes
+   * it can be a weapon. Gear -> something that's passive made by a took"). A kind of the gear grammar (GEAR_SHAPES): a
+   * tool's kind or a gear's. Empty: neither, a material or a good.
+   */
+  kind: string;
   /** The trade its making grows: a tag of kind trade, or empty. */
   trade: string;
   laborSeconds: number;
@@ -1243,6 +1249,8 @@ export interface IMakeWords {
   line: string;
   name: string;
   is: string;
+  /** A tool's kind, a gear's kind, or empty for a thing that is neither (ITech.kind). */
+  kind: string;
   tags: string[];
   trade: string;
   station: string;

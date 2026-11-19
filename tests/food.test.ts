@@ -89,7 +89,7 @@ const harvested = (defId: string): IItem => ItemFactory.createResourceItem(RESOU
 const askedSnare = (): IItem => {
   const parts = [harvested(materialId('tellers_reed')), harvested(materialId('tellers_reed'))];
   const ask = { id: `ask_food_${++n}`, words: 'something to catch a bird alive', parts, at: 0 };
-  return MakeAsk.settle(ask, { id: ask.id, makes: true, line: 'It holds.', name: 'Reed Snare', is: 'A loop that holds a small thing alive.', tags: ['snare', 'fiber'], trade: '', station: '', tools: [] },
+  return MakeAsk.settle(ask, { id: ask.id, makes: true, line: 'It holds.', name: 'Reed Snare', is: 'A loop that holds a small thing alive.', kind: 'work_tool', tags: ['snare', 'fiber'], trade: '', station: '', tools: [] },
     { rank: UniversalRank.F, dexterity: 40, skillLevel: () => 0, hasBench: () => true }, { by: UID, at: 0 }).made.item;
 };
 

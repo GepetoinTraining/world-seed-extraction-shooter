@@ -39,14 +39,16 @@ vi.mock('../src/entities/identity/certificateSystem', () => ({
   }
 }));
 
-import { IItem, IMakeWords, IPlayer, ITech, TagKind, UniversalRank } from '../shared/types';
+import { IItem, IMakeWords, IPlayer, ITech, SlotType, TagKind, UniversalRank } from '../shared/types';
 import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useHubStore, hubPort } from '../src/entities/hub/store';
 import { worldPort } from '../src/entities/world/store';
 import { useIdentityStore } from '../src/entities/identity/store';
 import { useFeed } from '../src/components/ui/stores';
 import { emptyTech } from '../src/entities/hub/hubTech';
-import { ASK_WORDS, IMakeGround, MakeAsk, TRIES } from '../shared/logic/systems/MakeAsk';
+import { ASK_WORDS, IMakeGround, MakeAsk, PASSIVE_KINDS, TOOL_KINDS, TRIES, isGearKind, isToolKind } from '../shared/logic/systems/MakeAsk';
+import { GEAR_KINDS } from '../shared/logic/theme/ThemeTypes';
+import { CRAFTED_GEAR_BASES } from '../shared/entities/item/data/itemDefinitions';
 import { MakeDoor } from '../src/logic/systems/MakeDoor';
 import { PairCraft, IMaker } from '../shared/logic/systems/PairCraft';
 import { Capture } from '../shared/logic/systems/Capture';
@@ -96,7 +98,7 @@ const steady: IMaker = { rank: UniversalRank.F, dexterity: 40, skillLevel: () =>
 
 const snareWords = (id: string, over: Partial<IMakeWords> = {}): IMakeWords => ({
   id, makes: true, line: 'You tied a loop that closes on a leg and holds.', name: 'Reed Snare', is: 'A loop of twisted reed that holds a small thing alive.',
-  tags: ['snare', 'fiber'], trade: '', station: '', tools: [], ...over
+  kind: '', tags: ['snare', 'fiber'], trade: '', station: '', tools: [], ...over
 });
 const answer = (over: Partial<IDreamResult> = {}): IDreamResult => ({ skills: [], weaves: [], gifts: [], studied: [], taught: [], raised: [], made: [], ...over });
 
@@ -129,7 +131,13 @@ beforeEach(() => {
   db.clear();
   vi.restoreAllMocks();
   useFeed.setState({ lines: [] });
-  for (const id of Object.keys(TECH_WAYS)) { delete CRAFTED_DEFINITIONS[TECH_WAYS[id].output.id]; delete TECH_WAYS[id]; }
+  for (const id of Object.keys(TECH_WAYS)) {
+    const out = TECH_WAYS[id].output.id;
+    delete CRAFTED_DEFINITIONS[out];
+    const at = CRAFTED_GEAR_BASES.findIndex(b => b.id === out);
+    if (at >= 0) CRAFTED_GEAR_BASES.splice(at, 1);
+    delete TECH_WAYS[id];
+  }
   useIdentityStore.setState({ certificate: { metadata: { uid: 'make_tester', displayName: 'TESTER', createdAt: 0 }, publicKey: {} } as never });
   useHubStore.setState({ activeHubId: 'hub_make', rooms: {}, lots: [] as never, tech: emptyTech() });
   set(p => ({
@@ -450,7 +458,7 @@ describe('at the door: it goes with the sleep and is settled on return', () => {
   it('a no gives back what was laid and settles nothing', async () => {
     const ask = laySnare('a sword');
     set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [ask.id] } } }));
-    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [{ id: ask.id, makes: false, line: 'Reed bends. A sword does not.', name: '', is: '', tags: [], trade: '', station: '', tools: [] }] }) } as never);
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [{ id: ask.id, makes: false, line: 'Reed bends. A sword does not.', name: '', is: '', kind: '', tags: [], trade: '', station: '', tools: [] }] }) } as never);
     await RestDoor.collect(playerPort, hubPort);
     expect(useHubStore.getState().tech.made).toEqual([]);
     expect(player().makeAsks).toEqual([]);
@@ -574,5 +582,159 @@ describe('on the screen, where a character lies down', () => {
     await click(/THESE MAKE REED SNARE HERE ALREADY: MAKE IT NOW/);
     expect(vault()).toHaveLength(1);
     expect(vault().some(i => i.universalDefinitionId === tech.output.id)).toBe(true);
+  });
+});
+
+// =============================================================================
+// Pedro, 2026-11-19: "Gear is 2 parts of a build: Tool -> what's needed to do an action, and yes it can be a weapon.
+// Gear -> something that's passive made by a took"
+describe('a build has two parts: a tool is what an action needs, gear is passive and made by a tool', () => {
+  /** Something in the vault that wears a tool's word: a tool, as far as a making asks. */
+  const aToolPiece = (word = aTool()): IItem => ({ ...harvested(STONE()), id: `itm_tool_${word}`, name: `A ${word}`, tags: [word] });
+
+  it('which kind is which is read off the grammar: weapons and tools are tools, everything worn or carried is gear', () => {
+    expect(TOOL_KINDS).toEqual(['blade', 'bludgeon', 'bow', 'focus', 'chop_tool', 'mine_tool', 'work_tool']);
+    expect([...TOOL_KINDS, ...PASSIVE_KINDS].sort()).toEqual([...GEAR_KINDS].sort());
+    expect(PASSIVE_KINDS.some(k => (TOOL_KINDS as readonly string[]).includes(k))).toBe(false);
+    for (const k of ['head', 'chest', 'ring', 'bag', 'belt', 'quiver']) expect(isGearKind(k), k).toBe(true);
+    expect(isToolKind('')).toBe(false);
+    expect(isGearKind('')).toBe(false);
+    expect(isToolKind('sharknado')).toBe(false);
+  });
+
+  it('the one who answers is told the two parts, and may answer only a kind there is, or none', () => {
+    const request = buildRestRequest({}, {});
+    expect(request.system).toMatch(/A tool is what an action is done with, and a weapon is a tool: blade, bludgeon, bow, focus, chop_tool, mine_tool, work_tool/);
+    expect(request.system).toMatch(/Gear is passive, worn or carried, and is always made by a tool: head, chest/);
+    const kind = ((REST_SCHEMA.properties as any).made.items.properties.kind) as { enum: string[] };
+    expect(kind.enum).toEqual(['', ...GEAR_KINDS]);
+  });
+
+  it('a sleep is told the tools in a person\'s keeping, as the registry\'s tool words', () => {
+    const tool = aToolPiece();
+    const a = harvested(REED()), b = harvested(REED());
+    inVault(a, b, tool);
+    set(() => MakeAsk.lay(player(), 'a ring of reed', [a.id, b.id], 0).player!);
+    expect((MakeAsk.request(player(), ground()) as { holds: string[] }).holds).toEqual([aTool()]);
+    expect(MakeAsk.toolsHeld({ ...player(), bank: { ...player().bank, stashTabs: [{ ...player().bank.stashTabs[0], items: [] }] } }, ground().kindOf)).toEqual([]);
+  });
+
+  it('the law: a kind there is, or none; and gear that names no tool has not said how it is made', () => {
+    const ask = laySnare();
+    const judged = (over: Partial<IMakeWords>) => MakeAsk.judge(snareWords(ask.id, over), ask, ground());
+    expect(judged({ kind: 'work_tool' }).ok).toBe(true);
+    expect(judged({ kind: 'blade' }).ok).toBe(true);
+    expect(judged({ kind: 'sharknado' }).reason).toMatch(/not a kind of tool or of gear/);
+    expect(judged({ kind: 'ring' }).reason).toMatch(/Gear is made by a tool, and it named none/);
+    expect(judged({ kind: 'ring', tools: [aTool()] }).ok).toBe(true);
+  });
+
+  it('a tool comes back a piece for the hand: the slot its kind takes, the words every such piece wears, and its own', () => {
+    const ask = laySnare();
+    const { tech, made } = MakeAsk.settle(ask, snareWords(ask.id, { kind: 'work_tool' }), steady, { by: 'p1', at: 1 });
+    expect(tech.kind).toBe('work_tool');
+    expect(made.item).toMatchObject({ name: 'Reed Snare', universalDefinitionId: tech.output.id, slot: SlotType.TOOL, isIdentified: true });
+    expect(made.item.tags).toEqual(expect.arrayContaining(['tool', 'snare', 'fiber']));
+    expect(CRAFTED_GEAR_BASES.find(b => b.id === tech.output.id)).toMatchObject({ kind: 'work_tool', slot: SlotType.TOOL, universal_name: 'Reed Snare' });
+    expect(CRAFTED_DEFINITIONS[tech.output.id]).toBeUndefined();
+    // The capture law still reads the word, on a piece as on a thing
+    expect(Capture.canSnare([made.item], 'pop_1_1_bird_0', { tags: ['beast'] })).toBe(true);
+  });
+
+  it('a weapon is a tool: a blade asked for comes back a blade, with what a blade gives at its rank', () => {
+    const ask = layLoose('a knife of stone bound to a reed handle');
+    const { made } = MakeAsk.settle(ask, snareWords(ask.id, { kind: 'blade', name: 'Bound Knife', is: 'A flake of stone lashed to a handle.', tags: ['blade'] }), steady, { by: 'p1', at: 1 });
+    expect(made.item.slot).toBe(SlotType.MAIN_HAND);
+    expect(made.item.tags).toEqual(expect.arrayContaining(['melee', 'one_hand', 'physical', 'blade']));
+    expect(made.item.stats?.attack_speed).toBeGreaterThan(0);
+  });
+
+  it('gear comes back a piece to wear, passive, and its technology keeps the tool that makes it', () => {
+    const tool = aToolPiece();
+    const a = harvested(REED()), b = harvested(REED());
+    inVault(a, b, tool);
+    const out = MakeAsk.lay(player(), 'a ring of plaited reed', [a.id, b.id], 0);
+    const { tech, made } = MakeAsk.settle(out.ask!, snareWords(out.ask!.id, { kind: 'ring', name: 'Reed Ring', is: 'A plaited band for a finger.', tags: ['fiber'], tools: [aTool()] }),
+      { ...steady, hasTool: () => true }, { by: 'p1', at: 1 });
+    expect(tech).toMatchObject({ kind: 'ring', tools: [aTool()] });
+    expect(made.item.slot).toBe(SlotType.RING);
+    expect(made.item.tags).toEqual(expect.arrayContaining(['ring', 'jewelry', 'fiber']));
+    expect(PairCraft.recipeOfTech(tech)).toMatchObject({ kind: 'gear', tools: [aTool()] });
+  });
+
+  it('what a thing is made into is part of the technology: the same parts as a tool and as a plain thing are two', () => {
+    const ask = laySnare();
+    const plain = MakeAsk.techOf(ask, snareWords(ask.id), { by: 'p1', at: 1 });
+    const tool = MakeAsk.techOf(ask, snareWords(ask.id, { kind: 'work_tool' }), { by: 'p1', at: 1 });
+    expect(tool.id).not.toBe(plain.id);
+    expect(plain.kind).toBe('');
+  });
+
+  it('a making that asks a tool the hand does not hold comes to nothing, and says it wanted one', () => {
+    const ask = laySnare();
+    const tech = MakeAsk.techOf(ask, snareWords(ask.id, { kind: 'ring', tools: [aTool()] }), { by: 'p1', at: 1 });
+    const recipe = PairCraft.recipeOfTech(tech);
+    const lost = PairCraft.makeOf(ask.parts, recipe, { ...steady, hasTool: () => false }, 'k');
+    expect(lost).toMatchObject({ outcome: 'major_failure', why: 'TOOL' });
+    expect(lost.item.description).toMatch(/wanted a tool in the hand/);
+    // A maker nobody asked about tools is made for as before tools were asked
+    expect(MakeAsk.settle(ask, snareWords(ask.id, { kind: 'ring', tools: [aTool()] }), steady, { by: 'p1', at: 1 }).made.outcome).not.toBe('major_failure');
+  });
+
+  it('holding is anything in the vault, on the body or in the pack that wears the tool\'s word', () => {
+    const word = aTool();
+    expect(MakeAsk.lacking(player(), [word])).toEqual([word]);
+    inVault(aToolPiece());
+    expect(MakeAsk.lacking(player(), [word])).toEqual([]);
+    inVault();
+    expect(MakeAsk.lacking({ ...player(), equipment: { slots: {}, items: [aToolPiece()], frames: {}, protected: [] } }, [word])).toEqual([]);
+    expect(MakeAsk.lacking(player(), [])).toEqual([]);
+  });
+
+  it('at the door: gear whose tool nobody holds gives the components back and names the tool; held, it is made', async () => {
+    const word = aTool();
+    const answerFor = (id: string) => answer({ made: [snareWords(id, { kind: 'ring', name: 'Reed Ring', is: 'A plaited band for a finger.', tags: ['fiber'], tools: [word] })] });
+    const first = laySnare('a ring of plaited reed');
+    set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [first.id] } } }));
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answerFor(first.id) } as never);
+    await RestDoor.collect(playerPort, hubPort);
+    expect(useHubStore.getState().tech.made).toEqual([]);
+    expect(vault().map(i => i.id).sort()).toEqual(first.parts.map(i => i.id).sort());
+    expect(feedSaid()).toContain(`it could be Reed Ring, made with ${word}, and you hold none. What you laid is back in your vault.`);
+
+    // The same ask with the tool in the vault
+    const a = harvested(REED()), b = harvested(REED());
+    inVault(a, b, aToolPiece());
+    const second = MakeAsk.lay(player(), 'a ring of plaited reed', [a.id, b.id], 2000);
+    set(() => ({ ...second.player!, attributes: { ...second.player!.attributes, dexterity: 40 } as never, pendingDream: { batchId: 'b2', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [second.ask!.id] } } }));
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answerFor(second.ask!.id) } as never);
+    await RestDoor.collect(playerPort, hubPort);
+    expect(useHubStore.getState().tech.made).toMatchObject([{ name: 'Reed Ring', kind: 'ring', tools: [word] }]);
+    expect(vault().find(i => i.name === 'Reed Ring')?.slot).toBe(SlotType.RING);
+    expect(feedSaid()).toContain('Reed Ring, to wear or carry: A plaited band for a finger.');
+  });
+
+  it('made again at once: refused before anything is used when the tool is not held', () => {
+    const ask = laySnare();
+    const { tech } = MakeAsk.settle(ask, snareWords(ask.id, { kind: 'ring', name: 'Reed Ring', tools: [aTool()] }), steady, { by: 'p1', at: 1 });
+    const a = harvested(REED()), b = harvested(REED());
+    inVault(a, b);
+    const refused = MakeAsk.makeNow(player(), tech.id, [a.id, b.id], steady, 5, [tech]);
+    expect(refused.reason).toContain(`Reed Ring is made with ${aTool()}, and you hold none`);
+    expect(vault()).toHaveLength(2);
+    inVault(a, b, aToolPiece());
+    expect(MakeAsk.makeNow(player(), tech.id, [a.id, b.id], { ...steady, hasTool: () => true }, 5, [tech]).ok).toBe(true);
+  });
+
+  it('a hub loaded with a tool on its record has the piece\'s base again, so it is made again', () => {
+    const [x, y] = loosePair();
+    const ask = layLoose();
+    const tech = MakeAsk.techOf(ask, snareWords(ask.id, { kind: 'work_tool' }), { by: 'p1', at: 1 });
+    expect(CRAFTED_GEAR_BASES.some(b => b.id === tech.output.id)).toBe(false);
+    useHubStore.getState().applyTech({ kind: 'TECH', tech: { ...emptyTech(), made: [tech] } });
+    expect(CRAFTED_GEAR_BASES.some(b => b.id === tech.output.id)).toBe(true);
+    const made = PairCraft.make(harvested(x), harvested(y), steady, 'k');
+    expect(made.item.slot).toBe(SlotType.TOOL);
+    expect(made.item.tags).toContain('snare');
   });
 });
