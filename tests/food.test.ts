@@ -45,6 +45,7 @@ import { Farm, emptyFarmland } from '../src/entities/hub/farm';
 import { Herd } from '../src/entities/hub/herd';
 import { FarmDoors } from '../src/entities/hub/farmDoors';
 import { Capture, ICaged } from '../shared/logic/systems/Capture';
+import { MakeAsk } from '../shared/logic/systems/MakeAsk';
 import { Cooking } from '../src/logic/systems/Cooking';
 import { Koseki } from '../shared/entities/world/Koseki';
 import { Population, emptyPopulationRecord } from '../shared/entities/world/Population';
@@ -84,6 +85,13 @@ const player = () => usePlayerStore.getState().player;
 const stash = () => player().bank.stashTabs[0].items;
 let n = 0;
 const harvested = (defId: string): IItem => ItemFactory.createResourceItem(RESOURCE_DEFINITIONS[defId], Rng.fromKey(`food-test:${++n}`));
+/** A snare as one comes to exist now: two reeds laid, an answer that gives the thing the registry's word, settled (MakeAsk). */
+const askedSnare = (): IItem => {
+  const parts = [harvested(materialId('tellers_reed')), harvested(materialId('tellers_reed'))];
+  const ask = { id: `ask_food_${++n}`, words: 'something to catch a bird alive', parts, at: 0 };
+  return MakeAsk.settle(ask, { id: ask.id, makes: true, line: 'It holds.', name: 'Reed Snare', is: 'A loop that holds a small thing alive.', tags: ['snare', 'fiber'], trade: '', station: '', tools: [] },
+    { rank: UniversalRank.F, dexterity: 40, skillLevel: () => 0, hasBench: () => true }, { by: UID, at: 0 }).made.item;
+};
 
 const farmlandPlan = () => {
   const raised = raiseChunk(firstPlan(), 'EAST', { kind: 'farmland' });
@@ -604,15 +612,14 @@ describe('capture: the four verbs', () => {
     expect(Capture.trapRefusal('lead_8_8_0_f1', { tags: ['beast'] })).toBeNull();
   });
 
-  it('a snare is tied from what is fibrous, and its parts leave as one', () => {
-    const fiber = () => harvested(materialId('tellers_reed'));
-    const one = Capture.tieSnare([fiber()], 'k');
-    expect(one.ok).toBe(false);
-    const two = Capture.tieSnare([fiber(), fiber()], 'k');
-    expect(two.ok).toBe(true);
-    expect(two.item!.tags).toContain('snare');
-    expect(two.consumedIds.length).toBe(2);
-    expect(Capture.tieSnare([harvested(STONE()), harvested(STONE())], 'k').ok).toBe(false);
+  // Changed on purpose 2026-11-19 (Pedro: "i hate hard coded stuf... the concept of the snare is great"): nothing ties a
+  // snare from a fixed bill any more. A snare is whatever was made carrying the registry's word for one, and how such a
+  // thing comes to exist is asked for (tests/makeask.test.ts). What this bar holds is that the word alone decides.
+  it('a snare is whatever carries the registry\'s word for one, and nothing else is', () => {
+    expect(WebBank.current().tags.some(t => t.tag === 'snare' && !t.retired)).toBe(true);
+    expect(Capture.canSnare([askedSnare()], 'pop_1_1_x_0', { tags: ['beast'] })).toBe(true);
+    expect(Capture.canSnare([harvested(materialId('tellers_reed'))], 'pop_1_1_x_0', { tags: ['beast'] })).toBe(false);
+    expect((Capture as unknown as Record<string, unknown>).tieSnare).toBeUndefined();
   });
 
   // Changed on purpose 2026-11-18 (AH, Pedro: "the animal husbandry portion needs to be better defined thrtough the right
@@ -623,7 +630,7 @@ describe('capture: the four verbs', () => {
     const acts = (who: any, dist: number) => InteractionEngine.getAvailableInteractions(who, entity, dist).filter(o => !o.id.startsWith('int_inspect_') && !o.id.startsWith('int_studybody_'));
     const without = { ...player(), currentSession: { inventory: [] } } as any;
     expect(acts(without, 2)).toEqual([]);
-    const snare = Capture.tieSnare([harvested(materialId('tellers_reed')), harvested(materialId('tellers_reed'))], 'k').item!;
+    const snare = askedSnare();
     const withOne = { ...player(), currentSession: { inventory: [snare] } } as any;
     expect(acts(withOne, 2).map(o => o.id)).toEqual([`int_snare_${entity.id}`]);
     expect(InteractionEngine.getAvailableInteractions(withOne, entity, 30)).toEqual([]);
@@ -1090,7 +1097,7 @@ describe('the seams others read', () => {
   });
 
   it('Rarity and SlotType stay untouched by the new items', () => {
-    const item = Capture.tieSnare([harvested(materialId('tellers_reed')), harvested(materialId('tellers_reed'))], 'k').item!;
+    const item = askedSnare();
     expect(Object.values(Rarity)).toContain(item.rarity);
     expect(Object.values(SlotType)).toContain(item.slot);
   });

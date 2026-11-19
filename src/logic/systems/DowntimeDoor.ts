@@ -86,7 +86,7 @@ export const DowntimeDoor = {
       }
       if (out.account.done.some(d => d.act.kind === 'REST')) {
         const emerged = Object.keys(out.player.bank.universalSkills).filter(id => !before.bank.universalSkills[id]).map(id => ({ id }));
-        await RestDoor.file(emerged, world, pc);
+        await RestDoor.file(emerged, world, pc, hp);
       }
     } finally {
       walking = false;

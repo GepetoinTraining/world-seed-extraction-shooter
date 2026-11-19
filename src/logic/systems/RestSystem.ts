@@ -15,7 +15,7 @@
  * batch waits for the next rest, and nothing ever blocks on a model (line 87).
  */
 
-import { IItem, IMadeWaiting, IPlayer, IStudySitting } from '../../../shared/types';
+import { IItem, IMadeWaiting, IMakeWords, IPlayer, IStudySitting } from '../../../shared/types';
 import { IThemeBody, SKILL_GRANTS } from '../../../shared/logic/theme/ThemeTypes';
 import { IThemeGrowth, WorldGrowth } from '../../../shared/logic/theme/WorldGrowth';
 import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
@@ -79,6 +79,8 @@ export interface IDreamResult {
   taught?: ITaughtWords[];
   /** D118: passives lore pays to raise. */
   raised?: IRaisedWords[];
+  /** D119: what each thing laid to be made came to, in words. Judged one by one (MakeAsk.judge), apart from the rest. */
+  made?: IMakeWords[];
 }
 
 const allInventories = (player: IPlayer): IItem[] => [
@@ -308,9 +310,11 @@ export class RestSystem {
   }
 
   /** What the model is told. It never hears a player's items or anything hidden on them. */
-  static dreamQueue(player: IPlayer, emerged: { id: string }[]): Record<string, unknown> {
+  static dreamQueue(player: IPlayer, emerged: { id: string }[], wanted?: Record<string, unknown> | null): Record<string, unknown> {
     const q = this.queueOf(player);
     return {
+      // D119: what was laid to be made, with what their hands know (MakeAsk.request). Absent with nothing laid
+      ...(wanted ? { wanted } : {}),
       skills: emerged.map(s => ({ id: s.id, tags: s.id.replace(/^skill_/, '').split('+') })),
       forming: Object.values(player.skillProgress ?? {}).slice(0, 40).map(p => ({ id: p.id, tags: p.tags, attempts: p.attempts })),
       weaves: q.weaves.map(elements => ({ id: WeaveSystem.idOf(elements), elements })),

@@ -20,7 +20,7 @@
  */
 
 import { IAffix, IItem, ItemType, StudyOutcome, UniversalRank } from '../../types';
-import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS } from '../../entities/economy/data/recipeDefinitions';
+import { CRAFTED_DEFINITIONS, GEAR_RECIPES, RECIPE_DEFINITIONS, TECH_WAYS } from '../../entities/economy/data/recipeDefinitions';
 import { CRAFTED_GEAR_BASES, ITEM_DEFINITIONS } from '../../entities/item/data/itemDefinitions';
 import { RESOURCE_DEFINITIONS } from '../../entities/item/data/resourceDefinitions';
 import { ItemFactory } from '../../entities/item/ItemFactory';
@@ -106,7 +106,9 @@ function makings(): IPairRecipe[] {
   const gear = Object.values(GEAR_RECIPES).map((r): IPairRecipe => ({
     id: r.id, name: r.name, kind: 'gear', bill: r.inputs.map(i => ({ ...i })), output: r.outputBase, asks: r.requiredFacility, laborSeconds: r.laborTimeSeconds
   }));
-  return [...goods, ...gear].filter(r => r.output && r.bill.length > 0);
+  // D119: what this hub's people came to by asking is made like anything else from then on
+  const asked = Object.values(TECH_WAYS).map(PairCraft.recipeOfTech);
+  return [...goods, ...gear, ...asked].filter(r => r.output && r.bill.length > 0);
 }
 
 const gearBase = (id: string) => CRAFTED_GEAR_BASES.find(b => b.id === id)
@@ -119,6 +121,14 @@ export const PairCraft = {
   /** Is this a thing that can be worked into another? Raw or made, and never gear, a document or a person. */
   isMaterial(item: IItem): boolean {
     return item.type === ItemType.RESOURCE && !item.bondData && !(item.tags ?? []).includes('npc_contract');
+  },
+
+  /** D119: a settled technology, as a making reads it. */
+  recipeOfTech(tech: { id: string; name: string; inputs: { itemId: string; quantity: number }[]; output: { id: string }; trade: string; station: string; laborSeconds: number }): IPairRecipe {
+    return {
+      id: tech.id, name: tech.name, kind: 'good', bill: tech.inputs.map(i => ({ ...i })), output: tech.output.id,
+      ...(tech.trade ? { trade: tech.trade } : {}), asks: tech.station || null, laborSeconds: tech.laborSeconds
+    };
   },
 
   /** May this be set on that? Two materials, both read, and not one piece on itself. */
@@ -161,15 +171,22 @@ export const PairCraft = {
    * minted from a stream of its own, so a bench moves the bar and never the dice or the id.
    */
   make(item: IItem, onto: IItem, maker: IMaker, rollKey: string): IMade {
+    return this.makeOf([item, onto], this.recipeFor(item.universalDefinitionId, onto.universalDefinitionId), maker, rollKey);
+  },
+
+  /**
+   * The same making over whatever pieces were put in, under a bill already known (D119: a thing asked for at a sleep is
+   * made of all that was laid, by the technology the answer settled). `make` is this with two pieces and the chain's bill.
+   */
+  makeOf(pieces: IItem[], recipe: IPairRecipe | null, maker: IMaker, rollKey: string): IMade {
     const d20 = Rng.fromKey(rollKey).int(1, 21);
     const mintRng = Rng.fromKey(`${rollKey}:made`);
-    const recipe = this.recipeFor(item.universalDefinitionId, onto.universalDefinitionId);
     const unread = (made: IItem): IItem => ({ ...made, isIdentified: false });
 
     const spoiled = (why: MakeWhy, roll: IMade['roll']): IMade => ({
       item: unread(ItemFactory.createResourceItem({
         id: 'made_spoiled_work', name: 'Spoiled Work', description: WHY_WORDS[why],
-        weight: Math.max(0.1, Math.round(((item.weight + onto.weight) / 2) * 10) / 10),
+        weight: Math.max(0.1, Math.round((pieces.reduce((sum, i) => sum + i.weight, 0) / Math.max(1, pieces.length)) * 10) / 10),
         dimensions: { width: 1, height: 1 }, tags: [], rank: UniversalRank.F, worth: 1
       } as never, mintRng, { origin: 'IMPROVISATION' })),
       outcome: 'major_failure', recipe, why, roll
@@ -193,13 +210,13 @@ export const PairCraft = {
 
     const composition = CompositionSystem.compose(
       { recipeId: recipe.id, name: recipe.name, laborSeconds: recipe.laborSeconds, facility: null },
-      [item, onto].map(i => i.composition ?? CompositionSystem.root({ id: i.universalDefinitionId, name: i.name }, 'IMPROVISATION')),
+      pieces.map(i => i.composition ?? CompositionSystem.root({ id: i.universalDefinitionId, name: i.name }, 'IMPROVISATION')),
       1
     );
     const rolled = (mintRng.next() * 2 - 1) * QUALITY_SPAN;
     const quality = outcome === 'failure' ? -QUALITY_SPAN : outcome === 'major_win' ? QUALITY_SPAN : rolled;
     // D6's crafting half: what the pieces carried rides onto what they make
-    const inherited: IAffix[] = [...(item.affixes ?? []), ...(onto.affixes ?? [])];
+    const inherited: IAffix[] = pieces.flatMap(i => i.affixes ?? []);
 
     let made: IItem | null;
     if (recipe.kind === 'gear') {

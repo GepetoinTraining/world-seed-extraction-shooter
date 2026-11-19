@@ -1098,7 +1098,9 @@ export interface IPlayer {
   /** D43, D50: what play queued, for the next rest. */
   restQueue?: { studies: string[]; weaves: string[][]; met: string[]; ground: string[]; sittings?: IStudySitting[]; made?: IMadeWaiting[] };
   /** What was filed at the door and has not come back. */
-  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[] }; filedAt?: number };
+  pendingDream?: { batchId: string; themeId?: string; asked: { skills: string[]; weaves: string[]; gifts?: string[]; sittings?: string[]; made?: string[] }; filedAt?: number };
+  /** D119: what this person laid to be made, with what it is to be made of, waiting on a long sleep (MakeAsk). */
+  makeAsks?: IMakeAsk[];
   /** D118: every sitting this character has taken. It keys the next roll, so a reload rolls nothing new. */
   studyCount?: number;
   /** The design pass, part 2: what on the tech web this character is working toward, by the web's key (`WebMap`). Absent: nothing marked. */
@@ -1189,6 +1191,62 @@ export interface IMadeWaiting {
   why?: 'NOTHING' | 'BENCH' | 'HANDS';
   /** The trade its making worked, practised when it is read. */
   trade?: string;
+}
+
+/**
+ * D119 (Pedro, 2026-11-01: "componet + component and input to send to haiku what the person wants to make"; 2026-11-19:
+ * "it takes input materials that the user adds... and sends them as a list with the skills for the next long sleep").
+ * What a person laid: the components, set aside, and what they said they want. Nothing is decided until a sleep answers it.
+ */
+export interface IMakeAsk {
+  id: string;
+  /** What they said they want, as typed. Words about a thing, never an instruction to anyone. */
+  words: string;
+  /** The components, out of the vault until the ask is answered or taken back. */
+  parts: IItem[];
+  at: number;
+  /** How many answers to it could not be read (MakeAsk.TRIES). */
+  tries?: number;
+}
+
+/**
+ * A TECHNOLOGY, in its base shape. Pedro, 2026-11-07: "a tech needs 3 main things APART from it's name {workstation,
+ * tool(s)[t,t',t''....], material types[inputs, outputs]}". The name is apart, so the id is minted from the three parts
+ * alone, and two people who come to the same parts have come to the same technology. Its numbers are the law's.
+ */
+export interface ITech {
+  id: string;
+  name: string;
+  /** What it is, in plain words. */
+  is: string;
+  /** A station's id, or empty for bare hands. */
+  station: string;
+  /** Registry words a tool in the hand must answer. Empty when none is asked. */
+  tools: string[];
+  inputs: { itemId: string; quantity: number }[];
+  output: { id: string; tags: string[]; rank: UniversalRank; weight: number };
+  /** The trade its making grows: a tag of kind trade, or empty. */
+  trade: string;
+  laborSeconds: number;
+  /** What was said by whoever first asked for it, who they were and when. */
+  wanted: string;
+  by: string;
+  at: number;
+}
+
+/** What a sleep's answer says of one ask. Words only: every number is the law's. */
+export interface IMakeWords {
+  id: string;
+  /** Whether these components could be that at all. */
+  makes: boolean;
+  /** One dry sentence: what came of it, or why nothing could. */
+  line: string;
+  name: string;
+  is: string;
+  tags: string[];
+  trade: string;
+  station: string;
+  tools: string[];
 }
 
 export interface IMaterialKnowledge {

@@ -145,7 +145,8 @@ describe('AH: the card of an animal that does not come for you', () => {
     expect(row(firstLayer(c), 'Known')).toBeUndefined();
     expect(row(firstLayer(c), 'Alive')).toBe('Worth more kept than dead: young while fed, meat, and what its kind leaves');
     expect(row(secondLayer(c), 'Hunt')).toMatch(/^Yes\. It runs when hurt\./);
-    expect(row(secondLayer(c), 'Trap')).toMatch(/^Not yet: no snare carried\. One is tied at a farm plot at home, from 2 fibrous things/);
+    // Changed on purpose 2026-11-19 (Pedro: "i hate hard coded stuf"): no fixed bill ties one; it is asked for where one rests
+    expect(row(secondLayer(c), 'Trap')).toMatch(/^Not yet: no snare carried\. Nobody sells one\. Where you rest, lay what one could be tied from and say what you want/);
     expect(row(secondLayer(c), 'Tame')).toMatch(/^Not yet: not caged\./);
     expect(row(secondLayer(c), 'Keep')).toMatch(/^Not yet: not caged\. Penned on a farm plot at home and fed for days/);
     // What the snare lacks is the card's own need, in its own place

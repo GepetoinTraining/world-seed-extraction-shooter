@@ -17,7 +17,6 @@ import { answersTag } from '../../shared/entities/hub/room';
 import { useHubStore, hubPort } from '../entities/hub/store';
 import { usePlayerStore, playerPort } from '../entities/player/store';
 import { Cooking } from '../logic/systems/Cooking';
-import { FieldCapture } from '../logic/systems/FieldCapture';
 import { ArmedButton, Button, Chip, Input, ItemSprite, Modal, Panel, Tabs } from './ui/kit';
 import { useFeed } from './ui/stores';
 
@@ -232,16 +231,13 @@ export const FarmWindow: React.FC<{ lotId: string; onClose: () => void }> = ({ l
             </div>
           </Panel>
           <Panel title="BRING ONE HOME">
-            {cages.length === 0 && <span className="ws-dim ws-small">No cages in the stash. A snare set in a world brings one back.</span>}
+            {cages.length === 0 && <span className="ws-dim ws-small">No cages in the stash. A snare set in a world brings one back. Nobody sells a snare: lay what one could be tied from where you rest, and say what you want.</span>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {cages.map(c => (
                 <Button key={c.id} tone="signal" onClick={async () => say(await FarmDoors.admit(lotId, c.id, playerPort, hubPort), 'It goes in the pen. Feed it, and it will come to answer to home in days.')}>
                   PEN THE {String(c.creatureData!.gender).toUpperCase()}, RANK {c.rank}
                 </Button>
               ))}
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <Button tone="quiet" onClick={async () => { const r = await FieldCapture.tieAtHome(playerPort); pushFeed(r.ok ? 'A snare, tied. Carry it into a world.' : r.reason ?? 'It would not tie.', r.ok ? 'signal' : 'loss'); }}>TIE A SNARE</Button>
             </div>
           </Panel>
         </div>

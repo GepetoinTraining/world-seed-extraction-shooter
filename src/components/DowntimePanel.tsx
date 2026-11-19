@@ -3,6 +3,13 @@
  * bed. It offers what a hand could do here with no live roll in front of the player (a sitting with a thing held or known,
  * writing a held skill out, a rest), says what each asks today, holds as many as focus allows, and can be filled from
  * what the character works toward on the web. Lying down lays it: it begins where that rest ends. Words, never hue.
+ *
+ * D119 (Pedro, 2026-11-19: "we really do need to make that "what do you want to study" and "what do you want to make" input
+ * work correctly. it takes input materials that the user adds, or, input study things that they list, and sends them as a
+ * list with the skills for the next long sleep"). So it also asks both in words. Anything typed to study is a sitting in
+ * the stack like any other. What is wanted made is said, the components are put in from the vault, and it is laid for the
+ * night (MakeDoor): the sleep carries it and answers it. Components that already make something this hub knows offer that
+ * at once, with nobody asked.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -21,7 +28,10 @@ import { RestDoor } from '../logic/systems/RestDoor';
 import { WebMap } from '../logic/systems/WebMap';
 import { DowntimeActs } from '../logic/systems/DowntimeActs';
 import { DowntimeDoor } from '../logic/systems/DowntimeDoor';
-import { Button, Modal, Panel } from './ui/kit';
+import { Button, Input, Modal, Panel } from './ui/kit';
+import { MakeAsk } from '../../shared/logic/systems/MakeAsk';
+import { PairCraft } from '../../shared/logic/systems/PairCraft';
+import { MakeDoor } from '../logic/systems/MakeDoor';
 import { SkillNames } from '../logic/systems/SkillNames';
 
 export const DowntimePanel: React.FC<{ place: DowntimePlace; onDone?: () => void }> = ({ place, onDone }) => {
@@ -32,6 +42,9 @@ export const DowntimePanel: React.FC<{ place: DowntimePlace; onDone?: () => void
   const [draft, setDraft] = useState<IDowntimeAct[]>(() => player.downtime?.stack.acts ?? []);
   const holds = Downtime.capacity(player.attributes);
   const full = draft.length >= holds;
+  const [studyWords, setStudyWords] = useState('');
+  const [makeWords, setMakeWords] = useState('');
+  const [putIn, setPutIn] = useState<string[]>([]);
 
   const held = player.bank.stashTabs[0]?.items ?? [];
   const known = useMemo(() => WebMap.of(player, { web, tech }).nodes.filter(n => n.kind === 'thing' && n.state === 'yours').map(n => {
@@ -39,6 +52,12 @@ export const DowntimePanel: React.FC<{ place: DowntimePlace; onDone?: () => void
     return StudySystem.targetOfThing({ id: n.ref, name: n.name ?? n.ref, tags: def?.tags ?? [], rank: def?.rank });
   }), [player, web, tech]);
   const skills = WebSystem.heldSkills(player.bank.universalSkills);
+  // D119: what can go into a making is what crafting by two takes: a material, read
+  const workable = held.filter(i => i.isIdentified !== false && PairCraft.isMaterial(i));
+  const chosen = workable.filter(i => putIn.includes(i.id));
+  const laid = player.makeAsks ?? [];
+  const knownMakings = MakeAsk.knownFor(chosen, tech.made ?? []);
+  const toggle = (id: string) => setPutIn(ids => (ids.includes(id) ? ids.filter(k => k !== id) : [...ids, id]));
 
   const add = (act: IDowntimeAct) => { if (!full) setDraft(d => [...d, act]); };
   const asks = (act: IDowntimeAct): string => {
@@ -73,6 +92,55 @@ export const DowntimePanel: React.FC<{ place: DowntimePlace; onDone?: () => void
       {player.webGoal && (
         <Button tone="quiet" onClick={() => setDraft(DowntimeActs.fromGoal(player, { web, tech }))}>FILL FROM WHAT YOU WORK TOWARD</Button>
       )}
+      <Panel title="WHAT DO YOU WANT TO STUDY">
+        <form
+          style={{ display: 'flex', gap: 4 }}
+          onSubmit={e => {
+            e.preventDefault();
+            if (full || !studyWords.trim()) return;
+            add({ kind: 'STUDY', target: StudySystem.targetOfWords(studyWords) });
+            setStudyWords('');
+          }}
+        >
+          <Input aria-label="What do you want to study" placeholder="Anything, in your own words…" value={studyWords} onChange={e => setStudyWords(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+          <Button tone="quiet" type="submit" disabled={full || !studyWords.trim()}>ADD TO THE STACK</Button>
+        </form>
+        <div className="ws-dim ws-small">Each thing you list is a sitting while you are away. What they come to is settled at the rest after.</div>
+      </Panel>
+      <Panel title="WHAT DO YOU WANT TO MAKE" >
+        <div data-make-ask style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <Input aria-label="What do you want to make" placeholder="Say what you want it to be…" maxLength={200} value={makeWords} onChange={e => setMakeWords(e.target.value)} />
+          <div className="ws-dim ws-small">Put in what it is to be made of, from your vault:</div>
+          {workable.length === 0 ? <div className="ws-dim ws-small">Nothing in your vault can be worked into another thing.</div> : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {workable.map(item => (
+                <Button key={item.id} tone="quiet" aria-pressed={putIn.includes(item.id)} onClick={() => toggle(item.id)}>
+                  {putIn.includes(item.id) ? 'IN: ' : '+ '}{item.name.toUpperCase()}
+                </Button>
+              ))}
+            </div>
+          )}
+          {knownMakings.map(t => (
+            <Button key={t.id} tone="quiet" onClick={async () => { if ((await MakeDoor.makeNow(t.id, putIn, playerPort, hubPort)).ok) setPutIn([]); }}>
+              THESE MAKE {t.name.toUpperCase()} HERE ALREADY: MAKE IT NOW
+            </Button>
+          ))}
+          <Button
+            tone="signal"
+            disabled={!makeWords.trim() || chosen.length === 0 || laid.length >= MakeAsk.holds(player)}
+            onClick={() => { if (MakeDoor.lay(makeWords, putIn, playerPort).ok) { setMakeWords(''); setPutIn([]); } }}
+          >
+            LAY IT FOR THE NIGHT
+          </Button>
+          <div className="ws-dim ws-small">It is answered while you sleep, from what you put in and what your hands know. If it can be made, it is in your vault when you come back, and this place knows how from then on. If it cannot, what you put in comes back.</div>
+          {laid.map(a => (
+            <div key={a.id} className="ws-row ws-small" style={{ gap: 6 }} data-make-laid>
+              <span style={{ minWidth: 0 }}>LAID: "{a.words}", of {a.parts.map(p => p.name).join(', ')}</span>
+              <Button tone="quiet" onClick={() => MakeDoor.takeBack(a.id, playerPort)}>TAKE BACK</Button>
+            </div>
+          ))}
+        </div>
+      </Panel>
       <Panel title="SIT WITH WHAT YOU HOLD">
         {held.length === 0 ? <div className="ws-dim ws-small">Your vault is empty.</div> : held.map(item => (
           <Button key={item.id} tone="quiet" disabled={full} onClick={() => add({ kind: 'STUDY', target: StudySystem.targetOfItem(item) })}>{StudySystem.targetOfItem(item).name.toUpperCase()}</Button>

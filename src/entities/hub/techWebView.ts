@@ -11,7 +11,7 @@
  *
  * This file imports types only.
  */
-import type { IHubWeb } from '../../../shared/types';
+import type { IHubWeb, ITech } from '../../../shared/types';
 import type { IChainRound } from '../../../shared/logic/theme/ChainWeb';
 import type { IBuildingAsk, IHubTech, IWorkshop } from './hubTech';
 
@@ -34,6 +34,8 @@ export type TechWebChange =
   | { kind: 'WORKSHOPS_STAND'; ids: string[]; at: number }
   /** A round of a person's chain, judged sound: merged into the hub's chain and onto its ledger. */
   | { kind: 'CHAIN_ROUND'; round: IChainRound; residentId: string; at: number }
+  /** D119: a technology somebody came to by asking, settled. The first to come to its parts named it; it is never settled twice. */
+  | { kind: 'TECH_SETTLED'; tech: ITech }
   /** Where a person's chain resolution stands. */
   | { kind: 'RESOLVING'; residentId: string; state: IHubTech['resolving'][string] };
 

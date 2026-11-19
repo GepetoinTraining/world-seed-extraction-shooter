@@ -9,7 +9,7 @@
 
 import { ITransformationRecipe } from '../types';
 import { ResourceDef } from '../../item/data/resourceDefinitions';
-import { IWebBatch, ItemType, UniversalRank, Rarity } from '../../../types';
+import { ITech, IWebBatch, ItemType, UniversalRank, Rarity } from '../../../types';
 import { registerCompositionDefs } from '../../../logic/economy/CompositionSystem';
 
 /** What the installed themes let a bench make (D53). Empty until one is installed. */
@@ -34,6 +34,31 @@ export const GEAR_RECIPES: Record<string, IGearRecipe> = {};
 
 /** Goods and stations from every installed theme: minted like any resource. */
 export const CRAFTED_DEFINITIONS: Record<string, ResourceDef> = {};
+
+/**
+ * D119: the technologies a hub's people came to by asking (`MakeAsk`), by id. Nothing here is written by anyone who
+ * writes code: each is what someone laid and said they wanted, answered once and settled in the hub's tech.
+ */
+export const TECH_WAYS: Record<string, ITech> = {};
+
+/** A hub's settled technologies, taken in: each one's product is a thing like any other good, and making reads its bill. */
+export function absorbTechs(techs: ITech[]): void {
+  let fresh = false;
+  for (const tech of techs) {
+    if (TECH_WAYS[tech.id]) continue;
+    TECH_WAYS[tech.id] = tech;
+    fresh = true;
+    if (CRAFTED_DEFINITIONS[tech.output.id]) continue;
+    CRAFTED_DEFINITIONS[tech.output.id] = {
+      id: tech.output.id, name: tech.name, description: tech.is,
+      type: ItemType.RESOURCE, rank: tech.output.rank, rarity: Rarity.COMMON,
+      weight: tech.output.weight, dimensions: { width: 1, height: 1 },
+      icon: `${tech.output.id}_icon`, visuals: { modelId: tech.output.id, colorHex: '#9ca3af' },
+      tags: tech.output.tags
+    };
+  }
+  if (fresh) registerCompositionDefs(CRAFTED_DEFINITIONS);
+}
 
 /** Recipes stay in the web's own pack: they stand at further stations, not at every bench. */
 export function absorbWebBatch(batch: IWebBatch): void {

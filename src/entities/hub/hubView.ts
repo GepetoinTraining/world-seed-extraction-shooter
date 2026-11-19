@@ -11,7 +11,7 @@
  *
  * This file imports types only, so reaching it reaches nothing else of the game.
  */
-import type { IItem } from '../../../shared/types';
+import type { IItem, ITech } from '../../../shared/types';
 import type { IRoomState, RoomVerdict } from '../../../shared/entities/hub/room';
 import type { IDismemberment, IRaisedChunk, HubSide } from './hubManifest';
 import type { IFarmland } from './farm';
@@ -55,7 +55,7 @@ export interface IHubView {
   lots: IPlayerLot[];
   rooms: Record<string, IRoomState>;
   /** What the hub's chains have written: a sitting's tree is read from it (S1a). */
-  tech?: Pick<IHubTech, 'chain'>;
+  tech?: Pick<IHubTech, 'chain'> & Partial<Pick<IHubTech, 'made'>>;
   craftsmen: ICraftsman[];
   guild: IGuildState;
   wallets: Record<string, number>;
@@ -87,6 +87,8 @@ export interface IHubCalls {
   resolveVendors(simDay?: number): Promise<void>;
   generateDailyStock(): void;
   creditHeld(): Promise<void>;
+  /** D119: a technology a person came to by asking, settled in this hub's tech and kept. */
+  settleTech(tech: ITech): Promise<void>;
   fillAgendas(fills: Record<string, INeedFill>): Promise<void>;
   purchaseLot(lotId: string, playerId: string, playerName: string): Promise<boolean>;
   setLotStructure(lotId: string, structureType: IPlayerLot['structureType']): Promise<void>;

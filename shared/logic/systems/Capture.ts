@@ -3,7 +3,10 @@
  *
  * The chain's shape is from `D:\-ttrpg-engine\engine\mf-fauna-predation.ts`, read and not
  * imported. Hunting is the fight a person already has. A snare takes one body out alive into a
- * cage, and a bad snare on prey is not a hit, so nothing feels it (N6). A caged body can be
+ * cage, and a bad snare on prey is not a hit, so nothing feels it (N6). What a snare IS is not
+ * written here (Pedro, 2026-11-19: "i hate hard coded stuf... the concept of the snare is great"):
+ * it is any made thing that carries the registry's word for it, and such a thing comes to exist
+ * when somebody lays what it could be tied from and says what they want (`MakeAsk`). A caged body can be
  * tamed in the field for a while, and walks out beside the person. Domesticating is days at
  * home, in `Herd`.
  *
@@ -15,9 +18,7 @@ import { IItem, ItemType, Rarity, SlotType, UniversalRank } from '../../types';
 import { Leaders } from '../../entities/world/Leaders';
 import { IKoseki, Koseki } from '../../entities/world/Koseki';
 import { Population } from '../../entities/world/Population';
-import { answersTag } from '../../entities/hub/room';
 import { CompositionSystem } from '../economy/CompositionSystem';
-import { SNARE_WAY } from '../economy/gameWays';
 import { Rng, fnv1a } from '../rng/DeterministicRNG';
 import { bodyNumbers } from '../theme/ThemeFormula';
 import type { ILineProof } from '../theme/CreatureLines';
@@ -42,8 +43,6 @@ const ONE_OF_A_KIND = ['boss', 'titan', 'god'];
 const TEMPER: Record<string, number> = { PASSIVE: 2, NEUTRAL: 1.5 };
 const TEMPER_ELSE = 1;
 
-/** How many fibrous things a snare is tied from. */
-const SNARE_PARTS = 2;
 /** How long a tamed body stays with you, and how much more for each level of the skill. */
 const FOLLOW_MS = 5 * 60_000;
 const FOLLOW_PER_LEVEL = 0.1;
@@ -75,11 +74,6 @@ export class Capture {
    */
   static mild(behavior: unknown): boolean {
     return String(behavior) in TEMPER;
-  }
-
-  /** AH: how many fibrous things a snare is tied from, for a card to say. */
-  static snareParts(): number {
-    return SNARE_PARTS;
   }
 
   /** AH: how long a body won to a hand stays beside it, for this much of the skill. */
@@ -117,27 +111,6 @@ export class Capture {
     // N6: a hit is always felt, and a bad snare is not a hit. What hunts knows what a snare is
     const noticed = !held && !(o.behavior === 'PASSIVE' || o.behavior === 'NEUTRAL');
     return { held, noticed, odds };
-  }
-
-  /** A snare, from fibrous things in reach. Pure: the caller moves the items and signs the record. */
-  static tieSnare(items: IItem[], key: string): { ok: boolean; reason?: string; item?: IItem; consumedIds: string[] } {
-    const parts = items.filter(i => answersTag(i, 'fiber')).slice(0, SNARE_PARTS);
-    if (parts.length < SNARE_PARTS) return { ok: false, reason: `A snare takes ${SNARE_PARTS} of something fibrous.`, consumedIds: [] };
-    const rng = Rng.fromKey(`snare:${key}`);
-    const composition = CompositionSystem.compose(
-      { recipeId: SNARE_WAY.id, name: 'Tied into a snare', laborSeconds: SNARE_WAY.laborSeconds, facility: null },
-      parts.map(i => i.composition ?? CompositionSystem.root({ id: i.universalDefinitionId, name: i.name }, 'IMPROVISATION')),
-      1
-    );
-    const item = {
-      id: `itm_snare_${rng.int(0, 0xffffffff).toString(16).padStart(8, '0')}`, universalDefinitionId: 'itm_snare', name: 'Snare',
-      description: 'Set in reach of something alive. It holds or it does not, and only what hunts will notice.',
-      type: ItemType.RESOURCE, slot: SlotType.NONE, rank: UniversalRank.F, rarity: Rarity.COMMON, quality: 0, level: 1,
-      value: CompositionSystem.priceOf(composition), itemPower: 0, tags: ['snare', 'fiber'], affixes: [],
-      dimensions: { width: 1, height: 1 }, weight: 0.5, stats: {}, visuals: { modelId: 'resource', colorHex: '#9ca3af' }, icon: 'resource_icon',
-      history: { dropDate: 0, killCount: 0 }, isIdentified: true, composition
-    } as IItem;
-    return { ok: true, item, consumedIds: parts.map(i => i.id) };
   }
 
   /** A body taken alive. Its gender is what the land says it is, keyed by (seed, body). */

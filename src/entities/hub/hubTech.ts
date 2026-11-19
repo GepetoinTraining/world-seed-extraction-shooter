@@ -23,7 +23,7 @@
  * stands on another though no recipe says so. `askFor` is what a person's talk writes (C2).
  */
 
-import { IHubWeb, IWebNodeRecord, IWebPack, IWebStation } from '../../../shared/types';
+import { IHubWeb, ITech, IWebNodeRecord, IWebPack, IWebStation } from '../../../shared/types';
 import { ChainWeb, IChainGround, IChainMaterial, IChainRoute, IChainRound, IChainStanding, IChainWeb, emptyChain } from '../../../shared/logic/theme/ChainWeb';
 import { stationNumbers } from '../../../shared/logic/theme/ThemeFormula';
 import { RANKS, ThemeRank } from '../../../shared/logic/theme/ThemeTypes';
@@ -74,6 +74,8 @@ export interface IHubTech {
   professions: Record<string, IProfession>;
   /** D119: "a ledger of new things to be generated". What no world has yet, and who needed it. */
   ledger: IMaterialEntry[];
+  /** D119: the technologies its people came to by saying what they wanted to make (MakeAsk), in the order they settled. */
+  made: ITech[];
 }
 
 export interface IMaterialEntry {
@@ -85,7 +87,7 @@ export interface IMaterialEntry {
   generatedAt?: number;
 }
 
-export const emptyTech = (): IHubTech => ({ chain: emptyChain(), workshops: [], asks: {}, resolving: {}, reached: [], professions: {}, ledger: [] });
+export const emptyTech = (): IHubTech => ({ chain: emptyChain(), workshops: [], asks: {}, resolving: {}, reached: [], professions: {}, ledger: [], made: [] });
 
 export const normalTech = (saved?: Partial<IHubTech>): IHubTech => ({ ...emptyTech(), ...saved });
 

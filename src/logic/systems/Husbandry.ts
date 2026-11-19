@@ -151,7 +151,7 @@ export const Husbandry = {
       ? { way: 'trap', word: WORDS.trap, open: opens('trap'), standing: 'never', takes: refusal.replace(/\.$/, '') }
       : !carried
         ? { way: 'trap', word: WORDS.trap, open: opens('trap'), standing: 'not_yet', missing: 'no snare carried',
-            takes: `One is tied at a farm plot at home, from ${counted(Capture.snareParts(), 'fibrous thing', 'fibrous things')}, and is spent when set. ${snared}` }
+            takes: `Nobody sells one. Where you rest, lay what one could be tied from and say what you want; it is spent when set. ${snared}` }
         : !inReach
           ? { way: 'trap', word: WORDS.trap, open: opens('trap'), standing: 'not_yet', missing: 'out of reach', takes: `Stand beside it and right click. ${snared}` }
           : { way: 'trap', word: WORDS.trap, open: opens('trap'), standing: 'yes', takes: `Right click sets the snare, and it is spent either way. ${snared}` };

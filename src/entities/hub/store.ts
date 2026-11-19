@@ -6,7 +6,7 @@
 import { GameClock } from '../../logic/time/GameClock';
 import { RESOURCE_DEFINITIONS } from '../../../shared/entities/item/data/resourceDefinitions';
 import { create } from 'zustand';
-import { IAffix, IComposition, IHubWeb, IItem, ISkillState, IWebRecipe, IWebStation, ItemType, Rarity, UniversalRank } from '../../../shared/types';
+import { IAffix, IComposition, IHubWeb, IItem, ISkillState, ITech, IWebRecipe, IWebStation, ItemType, Rarity, UniversalRank } from '../../../shared/types';
 import { ItemFactory } from '../../../shared/entities/item/ItemFactory';
 import { CRAFTED_GEAR_BASES } from '../../../shared/entities/item/data/itemDefinitions';
 import { VectorStore, VectorNamespace, IVectorDocument } from '../../../shared/entities/data/VectorStore';
@@ -21,7 +21,7 @@ import { Ledger } from '../../logic/ledger/Ledger';
 import { Treasury } from '../../logic/economy/Treasury';
 import { GoldCommit } from '../../logic/economy/GoldCommit';
 import { StoreUnit } from '../../../shared/entities/data/StoreUnit';
-import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES, STRUCTURE_COSTS, PLAYER_SHOP_TAX } from '../../../shared/entities/economy/data/recipeDefinitions';
+import { RECIPE_DEFINITIONS, CRAFTED_DEFINITIONS, GEAR_RECIPES, STRUCTURE_COSTS, PLAYER_SHOP_TAX, absorbTechs } from '../../../shared/entities/economy/data/recipeDefinitions';
 import { TransformationEngine } from '../economy/TransformationEngine';
 import { PlayerPersistence } from '../../logic/persistence/PlayerPersistence';
 import { CertificateSystem } from '../identity/certificateSystem';
@@ -529,6 +529,8 @@ interface HubState extends ITechDoors, IHubView {
   restAndCredit: (kind: 'SEALED' | 'DIED' | 'WITHDREW') => Promise<ISkillState[]>;
   /** D27: bring what this person holds into the hub's web. Idempotent. */
   creditHeld: () => Promise<void>;
+  /** D119: a technology a person came to by asking (MakeAsk), settled here and kept. */
+  settleTech: (tech: ITech) => Promise<void>;
   creditMastery: (skillId: string) => Promise<void>;
   // Wave 10: construction and placement
   resolveBuilds: () => Promise<number>;
@@ -589,8 +591,11 @@ export const useHubStore = create<HubState>((set, get) => ({
         case 'WORKSHOPS_STAND': set({ tech: { ...tech, workshops: tech.workshops.map(w => (change.ids.includes(w.id) ? { ...w, standsAt: change.at } : w)) } }); break;
         case 'CHAIN_ROUND': set({ tech: addToLedger({ ...tech, chain: ChainWeb.merge(tech.chain, change.round, change.residentId) }, change.round, change.residentId, change.at) }); break;
         case 'RESOLVING': set({ tech: { ...tech, resolving: { ...tech.resolving, [change.residentId]: change.state } } }); break;
+        case 'TECH_SETTLED': if (!(tech.made ?? []).some(t => t.id === change.tech.id)) set({ tech: { ...tech, made: [...(tech.made ?? []), change.tech] } }); break;
       }
     }
+    // D119: whatever this hub's people came to by asking is made like anything else, wherever a making is read
+    absorbTechs(get().tech.made ?? []);
   },
   activeHubId: null,
   chunks: firstPlan().chunks,
@@ -1816,6 +1821,10 @@ export const useHubStore = create<HubState>((set, get) => ({
     return emerged;
   },
 
+  settleTech: async (tech) => {
+    get().applyTech({ kind: 'TECH_SETTLED', tech });
+    await get().saveHubState();
+  },
   creditHeld: async () => {
     const p = pc.view().player;
     if (!p.id || p.id === 'temp_id') return;
@@ -2940,6 +2949,7 @@ export const hubPort: IHubPort = {
   resolveVendors: (...args) => useHubStore.getState().resolveVendors(...args),
   generateDailyStock: (...args) => useHubStore.getState().generateDailyStock(...args),
   creditHeld: (...args) => useHubStore.getState().creditHeld(...args),
+  settleTech: (...args) => useHubStore.getState().settleTech(...args),
   fillAgendas: (...args) => useHubStore.getState().fillAgendas(...args),
   purchaseLot: (...args) => useHubStore.getState().purchaseLot(...args),
   setLotStructure: (...args) => useHubStore.getState().setLotStructure(...args)

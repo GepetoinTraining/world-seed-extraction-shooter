@@ -23,7 +23,7 @@ import { Population, emptyPopulationRecord } from '../../../shared/entities/worl
 import { EntityType, IWorldEntity } from '../../../shared/entities/world/types';
 import { useFeed } from '../../components/ui/stores';
 import { SessionJournal } from '../journal/SessionJournal';
-import { Rng, fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
+import { fnv1a } from '../../../shared/logic/rng/DeterministicRNG';
 import { Provenance } from '../sovereignty/Provenance';
 import { CreatureLines } from '../../../shared/logic/theme/CreatureLines';
 import { Capture, ICaged } from '../../../shared/logic/systems/Capture';
@@ -208,16 +208,5 @@ export const FieldCapture = {
     SessionJournal.record('INTERACT', { kind: 'RELEASE', body: cage.body, ground, foreign: !home });
     await Provenance.record(item, 'TRANSFER', { via: 'RELEASED', worldUid: world.activeWorldId, ground, foreign: !home });
     feed(home ? 'It goes. It knows this ground.' : 'It goes. This land did not know its kind until now, and the map has changed to say so.', 'proof');
-  },
-
-  /** A snare tied at home, from what the stash holds. */
-  async tieAtHome(pc: IPlayerPort): Promise<{ ok: boolean; reason?: string }> {
-    const stash = pc.view().player.bank.stashTabs[0]?.items ?? [];
-    const key = `${pc.view().player.id}:${Date.now()}:${Rng.fromKey(String(stash.length)).next()}`;
-    const res = Capture.tieSnare(stash, key);
-    if (!res.ok || !res.item) return { ok: false, reason: res.reason };
-    pc.apply({ kind: 'STASH_REMOVE', ids: res.consumedIds }, { kind: 'STASH_ADD', items: [res.item] });
-    await Provenance.record(res.item, 'MINT', { origin: 'IMPROVISATION', consumedIds: res.consumedIds });
-    return { ok: true };
   }
 };
