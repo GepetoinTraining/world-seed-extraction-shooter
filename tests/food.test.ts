@@ -615,14 +615,17 @@ describe('capture: the four verbs', () => {
     expect(Capture.tieSnare([harvested(STONE()), harvested(STONE())], 'k').ok).toBe(false);
   });
 
-  it('with a snare in the pack, a body in reach offers one; with none, it offers nothing', () => {
+  // Changed on purpose 2026-11-18 (AH, Pedro: "the animal husbandry portion needs to be better defined thrtough the right
+  // clieck inspect/study"): a living body now also offers a look and a sitting to anyone (tests/husbandry.card.test.ts),
+  // so what this bar holds is the snare alone: offered with one in the pack and in reach, and never without.
+  it('with a snare in the pack, a body in reach offers one; with none, it offers no snare', () => {
     const entity = { id: 'pop_1_1_goat_0', type: EntityType.MOB, definitionId: GOAT(), position: { x: 0, y: 0 }, health: 30, rank: UniversalRank.E } as any;
+    const acts = (who: any, dist: number) => InteractionEngine.getAvailableInteractions(who, entity, dist).filter(o => !o.id.startsWith('int_inspect_') && !o.id.startsWith('int_studybody_'));
     const without = { ...player(), currentSession: { inventory: [] } } as any;
-    expect(InteractionEngine.getAvailableInteractions(without, entity, 2)).toEqual([]);
+    expect(acts(without, 2)).toEqual([]);
     const snare = Capture.tieSnare([harvested(materialId('tellers_reed')), harvested(materialId('tellers_reed'))], 'k').item!;
     const withOne = { ...player(), currentSession: { inventory: [snare] } } as any;
-    const options = InteractionEngine.getAvailableInteractions(withOne, entity, 2);
-    expect(options.map(o => o.id)).toEqual([`int_snare_${entity.id}`]);
+    expect(acts(withOne, 2).map(o => o.id)).toEqual([`int_snare_${entity.id}`]);
     expect(InteractionEngine.getAvailableInteractions(withOne, entity, 30)).toEqual([]);
   });
 

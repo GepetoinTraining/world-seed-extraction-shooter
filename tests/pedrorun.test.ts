@@ -49,7 +49,7 @@ import { Escort } from '../src/logic/systems/Escort';
 import { FieldEscort } from '../src/logic/systems/FieldEscort';
 import { RestDoor } from '../src/logic/systems/RestDoor';
 import { RestSystem } from '../src/logic/systems/RestSystem';
-import { STUDY_LOST_DAYS, StudySystem } from '../src/logic/systems/StudySystem';
+import { StudySystem } from '../src/logic/systems/StudySystem';
 import { Tutorial, TUTORIAL_WORLD_ID } from '../src/logic/systems/Tutorial';
 import { hubPort } from '../src/entities/hub/store';
 import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefinitions';
@@ -472,23 +472,31 @@ describe('a rest outside a world restores the character and does not turn their 
     expect(player().rest).toBeUndefined();
   });
 
-  it('what will not sit for some days counts them on the clock, so no number of rests brings it back sooner', () => {
+  // Changed on purpose 2026-11-18. These two bars held that what a sitting closed stayed closed for seven days of the
+  // server's clock, a builder's reading of "server clock is the clock" (which Pedro said of a rest in town not turning the
+  // day). Told that one bad roll had closed a kind of creature for a real week, he ruled: "Until next rest".
+  it('what a sitting closed to someone sits for them again at their next rest slept through, and no number of days does it sooner', () => {
     const vex = StudySystem.targetOfPerson({ id: 'npc_vex', name: 'Vex', title: 'The Guild' });
     const now = 400 * DAY + 5;
-    const lost = { ...base(), studyMarks: { [StudySystem.keyOf(vex)]: { sittings: 1, harm: 1, lostUntilDay: StudySystem.dayOf(now) + STUDY_LOST_DAYS } } } as IPlayer;
+    const lost = { ...base(), studyMarks: { [StudySystem.keyOf(vex)]: { sittings: 1, harm: 1, lost: true } } } as IPlayer;
     expect(StudySystem.canStudy(lost, vex, now).ok).toBe(false);
-    // Seven rests on the same day change nothing
-    let rested = lost;
-    for (let i = 0; i < 7; i++) rested = RestSystem.wake(RestSystem.beginRest(rested, 'INN', now));
-    expect(StudySystem.canStudy(rested, vex, now).ok).toBe(false);
-    expect(StudySystem.canStudy(rested, vex, now + (STUDY_LOST_DAYS - 1) * DAY).ok).toBe(false);
-    expect(StudySystem.canStudy(rested, vex, now + STUDY_LOST_DAYS * DAY).ok).toBe(true);
+    expect(StudySystem.canStudy(lost, vex, now).reason).toMatch(/until you have rested/);
+    // A year on the clock changes nothing
+    expect(StudySystem.canStudy(lost, vex, now + 365 * DAY).ok).toBe(false);
+    // A rest broken restored nothing, and reopens nothing
+    expect(StudySystem.canStudy(RestSystem.breakRest(RestSystem.beginRest(lost, 'INN', now)), vex, now).ok).toBe(false);
+    for (const place of ['INN', 'FIELD'] as const) {
+      const rested = RestSystem.wake(RestSystem.beginRest(lost, place, now));
+      expect(StudySystem.canStudy(rested, vex, now).ok, place).toBe(true);
+      // What the failure left on it stays: it is harder, and the sittings are counted
+      expect(rested.studyMarks![StudySystem.keyOf(vex)], place).toEqual({ sittings: 1, harm: 1 });
+    }
   });
 
-  it('a sitting that loses its subject marks the day by the clock it was handed', () => {
+  it('a sitting that loses its subject keeps no day at all, and a rest is still read on the clock it was handed', () => {
     const src = SRC('src/logic/systems/StudySystem.ts');
-    expect(src).toMatch(/lostUntilDay: this\.dayOf\(now\) \+ STUDY_LOST_DAYS/);
-    expect(src).not.toMatch(/dayCount/);
+    expect(src).toMatch(/\? \{ lost: true \}/);
+    expect(src).not.toMatch(/dayCount|lostUntilDay|STUDY_LOST_DAYS/);
     expect(SRC('src/logic/systems/StudyDoor.ts')).toMatch(/GameClock\.now\(\)/);
   });
 });

@@ -28,6 +28,7 @@ import { Provenance } from '../sovereignty/Provenance';
 import { CreatureLines } from '../../../shared/logic/theme/CreatureLines';
 import { Capture, ICaged } from '../../../shared/logic/systems/Capture';
 import { WebSystem } from '../../../shared/logic/systems/WebSystem';
+import { Husbandry, KIND_KNOWN } from './Husbandry';
 
 const feed = (text: string, tone: Parameters<ReturnType<typeof useFeed.getState>['push']>[1] = 'plain') => useFeed.getState().push(text, tone);
 const session = (pc: IPlayerPort) => pc.view().player.currentSession;
@@ -107,6 +108,8 @@ export const FieldCapture = {
     port.apply({ kind: 'REMOVE_BODY', entityId: entity.id });
     MobAI.clearMob(entity.id);
     intoPack(item, port, pc);
+    // AH: one of a kind taken is that kind known for what it is for (Pedro: "a player only knows WHAT they study or interact with")
+    pc.apply({ kind: 'SET', player: Husbandry.learn(pc.view().player, entity.definitionId, KIND_KNOWN) });
     pc.apply({ kind: 'RECALC_WEIGHT' });
     feed('The snare holds. Something alive is in a cage now, and it is not pleased.', 'proof');
   },

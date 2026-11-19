@@ -34,7 +34,7 @@ import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { EnergyLaw } from '../../../shared/logic/systems/EnergyLaw';
-import { DAY_MS } from '../../../shared/logic/time/RadixClock';
+import { Capture, CatchTrade } from '../../../shared/logic/systems/Capture';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
 export type IdentifyScope = 'weapon' | 'armor' | 'tool' | 'material' | 'furniture';
@@ -54,8 +54,6 @@ export const STUDY_WEAR_SHARE = 0.25;
 /** What has no durability loses this much quality, and this share of its worth. */
 export const STUDY_QUALITY_BITE = 0.1;
 export const STUDY_WORTH_BITE = 0.1;
-/** Lost, for what cannot be taken away: how many days it will not sit for you. Days of the game's clock, never of a character's rests. */
-export const STUDY_LOST_DAYS = 7;
 
 const OUTCOME_LADDER: StudyOutcome[] = ['major_failure', 'failure', 'success', 'major_win'];
 
@@ -260,22 +258,42 @@ export class StudySystem {
     const scope = item ? this.identifyScopeOf(item) : null;
     const level = scope ? player.bank.universalSkills[this.scopeSkillId(scope)]?.level ?? 0 : this.bestEye(player);
     const keys = item ? [item.universalDefinitionId] : target.kind === 'thing' ? [target.ref] : [];
-    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? [], hub, keys);
+    // AH: a creature's part of the web is the trades that take and keep one, so what is held of them counts as knowing it
+    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? [], hub, keys) + (target.kind === 'creature' ? this.catchKnowledge(player) : 0);
     // EN: a sitting's skill is what is known of the thing's tree; the eye says only whether it is winged
     return this.askAt(player, level, tree, WebSystem.treeShare(tree));
   }
 
-  /** The day a moment falls on: the clock's day, which no rest turns. */
-  static dayOf(now: number): number {
-    return Math.floor(now / DAY_MS);
+  /**
+   * AH: what a person knows of taking and keeping a living thing: each trade held (`Capture.tradeOf`), by its level and
+   * its rung, as `WebSystem.treeKnowledge` counts a skill on a material's tree. A trade still forming counts nothing.
+   */
+  static catchKnowledge(player: IPlayer): number {
+    const held = WebSystem.heldSkills(player.bank.universalSkills);
+    return (['trap', 'tame', 'keep'] as CatchTrade[]).reduce((sum, way) => {
+      const id = WebSystem.mint(Capture.tradeOf(way), []).id;
+      const skill = held.find(s => s.id === id);
+      return skill ? sum + skill.level + WebSystem.masteryOf(skill).rung : sum;
+    }, 0);
   }
 
-  /** Always available, for energy. Only a person at rest, or something lost to them for now, is refused. */
+  /**
+   * Lost, for what cannot be taken away, lasts until the person's next rest slept through. Pedro, 2026-11-18, told that one
+   * bad roll had closed a kind of creature for seven days of the server's clock: "Until next rest". (The seven days were a
+   * builder's reading of his "server clock is the clock", which he said of a rest in town not turning the day.) So it is
+   * paid in something the person does, and no count of days is kept. `RestSystem.wake` calls this; a rest broken does not.
+   */
+  static reopened(player: IPlayer): IPlayer {
+    const marks = player.studyMarks;
+    if (!marks || !Object.values(marks).some(m => m.lost)) return player;
+    return { ...player, studyMarks: Object.fromEntries(Object.entries(marks).map(([key, { lost: _lost, ...mark }]) => [key, mark])) };
+  }
+
+  /** Always available, for energy. Only a person at rest, or something lost to them until they rest, is refused. */
   static canStudy(player: IPlayer, target: IStudyTarget, now = Date.now(), hub?: IHubTree): Verdict {
     if (player.rest && now < player.rest.until) return no('This character is at rest.');
     if (!target.name.trim()) return no('Study what? Name it.');
-    const lost = this.markOf(player, target).lostUntilDay;
-    if (lost !== undefined && this.dayOf(now) < lost) return no(`${target.name} will not sit for you. Not yet.`);
+    if (this.markOf(player, target).lost) return no(`${target.name} will not sit for you until you have rested.`);
     const { cost } = this.studyAsk(player, target, hub);
     const left = this.energyLeft(player);
     if (left < cost) return no(`Refused: needs ${cost} energy, you hold ${Math.floor(left)}. Rest first.`);
@@ -405,7 +423,7 @@ export class StudySystem {
   /**
    * A sitting lands, pure. What it costs was paid when it began. A piece is really worn or
    * lost; what cannot be taken away (a person, a building, a creature, a thought) carries
-   * the mark instead, which makes it harder, and when lost it will not sit for a while.
+   * the mark instead, which makes it harder, and when lost it will not sit until the person has rested (`reopened`).
    */
   static sit(player: IPlayer, target: IStudyTarget, energy: number, now: number, hub?: IHubTree): { player: IPlayer; sitting: IStudySitting; roll: IStudyRoll } {
     const roll = this.rollSitting(player, target);
@@ -417,7 +435,7 @@ export class StudySystem {
       ...prior,
       sittings: prior.sittings + 1,
       harm: prior.harm + (failed && !held ? 1 : 0),
-      ...(roll.outcome === 'major_failure' && !held ? { lostUntilDay: this.dayOf(now) + STUDY_LOST_DAYS } : {})
+      ...(roll.outcome === 'major_failure' && !held ? { lost: true } : {})
     };
     const count = player.studyCount ?? 0;
     let next: IPlayer = { ...player, studyCount: count + 1, studyMarks: { ...player.studyMarks, [this.keyOf(target)]: mark } };
@@ -442,7 +460,7 @@ export class StudySystem {
         ? `You pressed too hard on ${name}. It is the worse for it, and you learned nothing you could keep.`
         : `You pressed too hard on ${name}. Nothing you could keep, and it will be harder next time.`;
     }
-    return kind === 'item' ? `${name} is lost to you. Whatever was in it went with it.` : `${name} has closed to you. It will not sit for you for some days.`;
+    return kind === 'item' ? `${name} is lost to you. Whatever was in it went with it.` : `${name} has closed to you. It will not sit for you until you have rested.`;
   }
 
   /** The knowledge scope key the mastery machinery files gear study under. */

@@ -708,7 +708,9 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       dist,
       level: WebSystem.knowledgeReader(usePlayerStore.getState().player),
       worldSeed: useWorldStore.getState().currentMap?.seed,
-      webVersion: useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion
+      webVersion: useWorldStore.getState().availableWorlds.find(w => w.id === useWorldStore.getState().activeWorldId)?.webVersion,
+      // AH: what keeping an animal is missing reads whether a farm plot at home is this person's
+      ownsFarmPlot: useHubStore.getState().lots.some(l => l.structureType === 'FARM' && l.ownerId === usePlayerStore.getState().player.id)
     });
     const screenX = entity.position.x - liveSession.position.x + window.innerWidth / 2;
     const screenY = entity.position.y - liveSession.position.z + window.innerHeight / 2;
@@ -1568,10 +1570,12 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     if (!entity) return;
     const dist = Math.hypot(entity.position.x - pos.x, entity.position.y - pos.z) / TILE_SIZE;
     // D114: a monster answers only if it has reached speech, and only this click reaches it. D65: a snare in the pack is offered here too.
+    // AH: and any living body can be looked at and sat with from the eye's reach, as a place can (the old analysis stays off this menu).
     if (entity.type === EntityType.MOB) {
-      const offered = InteractionEngine.getAvailableInteractions(st.player, entity, dist).filter(o => o.id.startsWith('int_bargain_') || o.id.startsWith('int_snare_'));
+      const offered = InteractionEngine.getAvailableInteractions(st.player, entity, dist).filter(o =>
+        o.id.startsWith('int_bargain_') || o.id.startsWith('int_snare_') || o.id.startsWith('int_inspect_') || o.id.startsWith('int_studybody_'));
       if (offered.length > 0) openMenu(entity, offered, e.clientX, e.clientY);
-      else if (MonsterMind.speaks(MOB_DEFINITIONS[entity.definitionId])) feed('It cannot hear you from there. Walk closer.', 'plain');
+      if (!offered.some(o => o.id.startsWith('int_bargain_')) && MonsterMind.speaks(MOB_DEFINITIONS[entity.definitionId])) feed('It cannot hear you from there. Walk closer.', 'plain');
       return;
     }
     const options = InteractionEngine.getAvailableInteractions(st.player, entity, dist);

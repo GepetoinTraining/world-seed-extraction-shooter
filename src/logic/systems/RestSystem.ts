@@ -238,10 +238,11 @@ export class RestSystem {
    * Energy comes back on waking, never on lying down. Only a rest inside a world turns this
    * character's own day (Pedro's own run, 2026-11-10: a rest outside the world is to "continue as
    * is but not advance the day (server clock is the clock)"). Any rest slept through starts the
-   * count of tonics again (2026-11-11), and with it the walk is whole.
+   * count of tonics again (2026-11-11), and with it the walk is whole. And whatever a sitting closed to this
+   * character sits for them again (Pedro, 2026-11-18: "Until next rest"; `StudySystem.reopened`).
    */
   static wake(player: IPlayer): IPlayer {
-    return { ...this.restoreEnergy(player, player.rest?.place === 'FIELD'), rest: undefined, tonicsSinceRest: undefined };
+    return StudySystem.reopened({ ...this.restoreEnergy(player, player.rest?.place === 'FIELD'), rest: undefined, tonicsSinceRest: undefined });
   }
 
   /** A hurt in the field ends a rest, and it restored nothing. */

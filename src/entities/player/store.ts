@@ -62,7 +62,7 @@ import { DreamingSystem } from '../../../shared/entities/world/Dreaming'; // Wav
 import { PROCESS_SKILL_XP_PER_JOB, ProcessFamily, ProcessSystem } from '../../../shared/logic/systems/ProcessSystem'; // The raw materials leg (D26)
 import { IRoomState, ownerHasStationFor, roomAdditions } from '../../../shared/entities/hub/room';
 import { PairCraft } from '../../../shared/logic/systems/PairCraft';
-import { chunkOf } from '../../../shared/entities/world/grid';
+import { TILE_PX, chunkOf } from '../../../shared/entities/world/grid';
 import { deathCostsNothing } from '../../../shared/logic/systems/DeathCost';
 import { ISkillPair, MASTERY_RUNGS, WebSystem, rankIndexOf } from '../../../shared/logic/systems/WebSystem'; // D27: the web and the auto skill
 import { TagLaw } from '../../../shared/logic/content/TagLaw';
@@ -2250,14 +2250,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     // ML: a look. What can be told of it by looking, said in words: nothing is spent, nothing is learned
     if (interactionId.startsWith('int_inspect_')) {
-      const card = inspectEntity(entity, { player: get().player, dist: 0, level: WebSystem.knowledgeReader(get().player) });
+      // AH: a body is looked at from where the person stands, so the look says whether a snare would reach
+      const from = get().player.currentSession?.position;
+      const dist = entity.type === EntityType.MOB && from ? Math.hypot(entity.position.x - from.x, entity.position.y - from.z) / TILE_PX : 0;
+      const card = inspectEntity(entity, { player: get().player, dist, level: WebSystem.knowledgeReader(get().player), ownsFarmPlot: hp.view().lots.some(l => l.structureType === 'FARM' && l.ownerId === get().player.id) });
       const rows = card.rows.map(([k, v]) => `${k}: ${v}.`).join(' ');
       feed(`${card.title}. ${rows}${card.needs.length > 0 ? ` ${card.needs.join('. ')}.` : ''}`, 'plain');
       return;
     }
 
     // ML: a sitting with the place, as any study is (D118): paid, timed, rolled, and resolved at a rest
-    if (interactionId.startsWith('int_studyplace_')) {
+    if (interactionId.startsWith('int_studyplace_') || interactionId.startsWith('int_studybody_')) {
       StudyDoor.start(FieldStudy.target(entity, get().player), playerPort, hp);
       return;
     }
