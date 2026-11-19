@@ -120,13 +120,18 @@ describe('numbers first: a line is its word and its number, and its sentence wai
     expect(text()).not.toContain(dodge.says);
   });
 
-  it('hovering opens it for as long as the pointer stays', async () => {
+  // Changed on purpose 2026-11-19 (Pedro: "the hover is too responsive, let someone click, and then show it"): this bar
+  // held a description opening for as long as the pointer stayed. A passing pointer now opens nothing; a click does.
+  it('a pointer that only passes opens nothing; a click opens it, and a second click closes it', async () => {
     seed({ eye: true });
     await act(async () => { root.render(createElement(LargeSheet, {})); });
     const crit = SheetNumbers.fight(player()).find(r => r.key === 'crit')!;
     await hover(line('CRIT'), true);
-    expect(text()).toContain(crit.says);
+    expect(text()).not.toContain(crit.says);
     await hover(line('CRIT'), false);
+    await click(line('CRIT'));
+    expect(text()).toContain(crit.says);
+    await click(line('CRIT'));
     expect(text()).not.toContain(crit.says);
   });
 });

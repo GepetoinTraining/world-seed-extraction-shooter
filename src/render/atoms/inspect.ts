@@ -101,6 +101,13 @@ export function cardText(card: Card): string {
   return [card.title, ...firstLayer(card).map(said), ...(deep.length > 0 ? ['--', ...deep.map(said)] : []), ...card.needs, ...ready].join('\n');
 }
 
+/**
+ * BEFORE ANYTHING IS KNOWN (Pedro, 2026-11-19: "it shows TOO much information before I know anything, too expositive").
+ * A card for something this person knows nothing of says what the eye sees and no more: what it is called by sight, a
+ * mark plain on it, their own note. No rank, no count of its health, no word on how it behaves, no row of question
+ * marks for each thing there would be to know, and no line telling them to go and study it. What it is good for, what
+ * it asks and how it stands are on the card once it is known, and how one comes to know a thing is theirs to find.
+ */
 export interface InspectContext {
   player: IPlayer;
   dist: number;
@@ -151,7 +158,9 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   else if (config) {
     const required: string[] = config.requiredToolTags;
     if (required.length > 0) {
-      const tools = (ctx.player.currentSession?.inventory || []).filter(i =>
+      // What is worn counts as what is carried, as the try itself counts it (ExtractLaw.hand). Found 2026-11-19: a
+      // character with a hatchet in its tool slot was told a tree "Needs a tool"
+      const tools = [...(ctx.player.currentSession?.inventory || []), ...(ctx.player.equipment?.items ?? [])].filter(i =>
         required.some(t => i.toolData?.toolTags.includes(t) || (i.tags || []).includes(t) || i.name.toLowerCase().includes(t)));
       const best = tools.reduce((n, t) => Math.max(n, toolPower(t)), 0);
       if (tools.length === 0) needs.push(level >= 1 ? `Needs ${words(required)}` : 'Needs a tool');
@@ -173,7 +182,7 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   const unknowns: ICardUnknown[] = [];
   const unknownHere = () => { if (note) rows.push(yourNote(note)); unknowns.push(unknown(ctx.player, noteKey, 'material', 'this material')); };
   if (level <= 0) {
-    rows.push(['Known', 'Nothing yet. Study it to learn']);
+    // Nothing is known of it: the card says nothing of it, and the note is theirs to leave
     unknownHere();
   } else {
     rows.push(['Rank', String(def.rank)]);
@@ -226,6 +235,16 @@ function inspectMob(e: IWorldEntity, ctx: Partial<InspectContext> = {}): Card {
   const noteKey = NoteKeys.creature(e.definitionId);
   const note = PlayerNote.of(player, noteKey);
   const named = !!e.displayName;
+  // Nothing is known of its kind until one has been sat with or taken (Husbandry.known): the card is what the eye sees
+  if (!player || Husbandry.known(player, e.definitionId) < 1) {
+    const alive = !!player && (e.health ?? 1) > 0;
+    const snare = alive && InteractionEngine.getAvailableInteractions(player!, e, ctx.dist ?? Infinity).some(o => o.id.startsWith('int_snare_'));
+    // A trade a person holds reads its own way on a kind they never studied, and no other way is so much as named
+    const read = alive ? Husbandry.read(e, def, { player: player!, dist: ctx.dist ?? Infinity, ownsPlot: ctx.ownsFarmPlot }) : null;
+    const ways: Line[] = (read?.ways ?? []).filter(w => w.open).map(w => [w.word, Husbandry.said(w)]);
+    const needs = read?.need && read.ways.some(w => w.way === 'trap' && w.open) ? [read.need] : [];
+    return { title, ...layered(note ? [yourNote(note)] : [], ways), needs, canAct: snare, compact: compact(title, 'not known'), unknowns: [unknown(player, noteKey, 'creature', 'this creature')] };
+  }
   // UXC: up top, how strong, how hurt, what it will do and whether blows land; beneath, its size and the ground it holds
   const rows: Line[] = [...(!named && note ? [yourNote(note)] : []), ['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
   const deep: Line[] = named && note ? [yourGuess(note)] : [];
@@ -263,7 +282,9 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
       const note = PlayerNote.of(ctx.player, noteKey);
       const nameless = !!npc?.name && !ContactNames.knowsName(ctx.player, e);
       // UXC: up top, how they regard you and what they want; beneath, what talking has taught of them
-      const rows: Line[] = [...(nameless && note ? [yourNote(note)] : []), ...(npc ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] as Line[] : [])];
+      // Before a word has passed between them, how a stranger regards this person and what they want are not on their face
+      const strange = nameless && (npc?.attempts ?? 0) === 0;
+      const rows: Line[] = [...(nameless && note ? [yourNote(note)] : []), ...(npc && !strange ? [['Regard', `${npc.disposition} of 100`], ['Wants', String(npc.want)]] as Line[] : [])];
       const deep: Line[] = !nameless && note ? [yourGuess(note)] : [];
       const unknowns = nameless ? [unknown(ctx.player, noteKey, 'person', 'this person')] : [];
       // D27: you learn what someone is good at by talking to them

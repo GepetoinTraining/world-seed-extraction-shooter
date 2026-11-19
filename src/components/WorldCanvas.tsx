@@ -18,6 +18,8 @@ import { FieldEscort } from '../logic/systems/FieldEscort';
 import { Escort } from '../logic/systems/Escort';
 import { MobAI } from '../entities/mob/ai/MobAI';
 import { InteractionEngine } from '../entities/interaction/InteractionEngine';
+import { ContactNames } from '../logic/systems/ContactNames';
+import { InteractionType } from '../../shared/types';
 import { EntityType, IChunk, IWorldEntity } from '../../shared/entities/world/types';
 import { SessionJournal } from '../logic/journal/SessionJournal';
 import { PlayerPersistence } from '../logic/persistence/PlayerPersistence';
@@ -1365,13 +1367,10 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           promptRef.current = nextPrompt;
           setPrompt(nextPrompt);
         }
-        if (mouseRef.current) {
-          const worldX = playerPos.x + (mouseRef.current.x - window.innerWidth / 2);
-          const worldZ = playerPos.z + (mouseRef.current.y - window.innerHeight / 2);
-          const { targets, near } = targetsNear(worldX, worldZ, 160);
-          const hit = hitTest(targets, worldX, worldZ, inspectedIdRef.current);
-          inspectById(hit, near);
-        } else if (inspectedIdRef.current) {
+        // Pedro, 2026-11-19: "the hover is too responsive, let someone click, and then show it". Nothing opens under a
+        // pointer that only passes. A card is opened on purpose (Inspect on a right click, or Q), and it is kept
+        // true to its thing for as long as that thing is near
+        if (inspectedIdRef.current) {
           const { near } = targetsNear(playerPos.x, playerPos.z, 300);
           inspectById(near.some(n => n.id === inspectedIdRef.current) ? inspectedIdRef.current : null, near);
         }
@@ -1465,9 +1464,18 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     setMenuPosition({ x, y });
   };
 
+  /** The card of a thing, opened on purpose and kept until ESC, another thing's card, or the thing is gone from near. */
+  const openCard = (entityId: string) => {
+    const pos = usePlayerStore.getState().player.currentSession?.position;
+    if (!pos) return;
+    inspectById(entityId, targetsNear(pos.x, pos.z, 300).near);
+  };
+
   const handleActionSelect = (option: any) => {
     if (selectedEntityId) {
-      if (!talkFrom(option.id, selectedEntityId)) performInteraction(option.id, selectedEntityId);
+      // A look is the card itself, opened where the thing stands, and no longer a line read out in the feed
+      if (String(option.id).startsWith('int_inspect_')) openCard(selectedEntityId);
+      else if (!talkFrom(option.id, selectedEntityId)) performInteraction(option.id, selectedEntityId);
     }
     setMenuPosition(null);
   };
@@ -1539,7 +1547,11 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
     const pick = interactPickRef.current();
     if (pick === 'EXIT') { beginChannel(); return; }
     if (!pick) { explainNothing(pos.x, pos.z); return; }
-    if (pick.primary) { if (!talkFrom(pick.primary.id, pick.entity.id)) performInteraction(pick.primary.id, pick.entity.id); return; }
+    if (pick.primary) {
+      if (pick.primary.id.startsWith('int_inspect_')) openCard(pick.entity.id);
+      else if (!talkFrom(pick.primary.id, pick.entity.id)) performInteraction(pick.primary.id, pick.entity.id);
+      return;
+    }
     const at = entityScreen(pick.entity);
     openMenu(pick.entity, pick.options, at.x, at.y);
   };
@@ -1578,9 +1590,13 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       if (!offered.some(o => o.id.startsWith('int_bargain_')) && MonsterMind.speaks(MOB_DEFINITIONS[entity.definitionId])) feed('It cannot hear you from there. Walk closer.', 'plain');
       return;
     }
-    const options = InteractionEngine.getAvailableInteractions(st.player, entity, dist);
-    if (options.length > 0) openMenu(entity, options, e.clientX, e.clientY);
-    else explainNothing(entity.position.x, entity.position.y);
+    // Anything a right click reaches can be looked at: where the law offers no look of its own, the menu adds one
+    const offered = InteractionEngine.getAvailableInteractions(st.player, entity, dist);
+    const options = offered.some(o => o.id.startsWith('int_inspect_')) ? offered : [...offered, {
+      id: `int_inspect_${entity.id}`, label: `Inspect ${ContactNames.of(entity, WebSystem.knowledgeReader(st.player), st.player)}`,
+      type: InteractionType.STUDY, icon: '', energyCost: 0, timeCostSeconds: 0, requirements: {}, consequence: {}
+    }];
+    openMenu(entity, options, e.clientX, e.clientY);
   };
 
   // Firing: the button on the ground fires, held or tapped. It opens nothing.
@@ -1781,7 +1797,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
       {/* The key help stands apart from the data (U21) */}
       <KeyHelp />
 
-      {/* The one inspect card (line 29): hover, or Q to cycle */}
+      {/* The one inspect card (line 29): opened by Inspect on a right click, or Q to cycle. Never by a passing pointer */}
       {inspected && !menuPosition && (
         <PlacedCard
           anchor={{ left: inspected.x - 14, top: inspected.y - 14, width: 28, height: 28 }}

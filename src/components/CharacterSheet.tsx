@@ -358,11 +358,11 @@ const WhoPanel: React.FC = () => {
   // D52: what an attribute does, in a line of its own that holds its place. UXS: it is the attribute's description, shown
   // while the pointer rests on it or after a click, and only for someone holding what describes it (`DescriptionLaw`): the
   // web roots no attribute (Pedro, 2026-11-07), so it is a gap, and opens on the nearest rule there is, a schooled eye
-  const [told, setTold] = useState<keyof IAttributes | null>(null);
   const [kept, setKept] = useState<keyof IAttributes | null>(null);
   const known = useKnown(DescriptionLaw.GAP);
-  const shown = told ?? kept;
-  const keep = (attr: keyof IAttributes) => { setKept(k => (k === attr ? null : attr)); setTold(null); };
+  // Pedro, 2026-11-19: "let someone click, and then show it". An attribute's line opens on a click, never on a passing pointer
+  const shown = kept;
+  const keep = (attr: keyof IAttributes) => setKept(k => (k === attr ? null : attr));
   // UXS: a + waiting for its second press shows, in the same place, every number the point would move
   const [armed, setArmed] = useState<keyof IAttributes | null>(null);
   const activeHand = useHotbar(s => s.active);
@@ -395,7 +395,6 @@ const WhoPanel: React.FC = () => {
             </div>
             {attrs.map(attr => (
               <div key={attr} className="ws-small" data-described={attr} role="button" tabIndex={0} aria-expanded={shown === attr}
-                onMouseEnter={() => setTold(attr)} onMouseLeave={() => setTold(null)}
                 onClick={e => { if ((e.target as HTMLElement).closest('button')) return; keep(attr); }}
                 onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); keep(attr); } }}
                 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, cursor: 'help' }}>

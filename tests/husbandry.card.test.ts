@@ -120,23 +120,32 @@ describe('AH: the card of an animal that does not come for you', () => {
     expect(Husbandry.read(body(RAT()), MOB_DEFINITIONS[RAT()], { player: player(), dist: 1 })).toBeNull();
   });
 
-  it('with nothing known and no trade held: how it behaves in words, that nothing is known, and four ways as question marks', () => {
+  // Changed on purpose 2026-11-19 (Pedro: "it shows TOO much information before I know anything, too expositive"):
+  // this bar held a card that said how it behaves, its rank, its health, that nothing was known and to go and study it,
+  // and four rows of question marks. With nothing known the card now says what the eye sees, and no more.
+  it('with nothing known and no trade held: what it is called by sight, and nothing else', () => {
     const c = card(player());
-    expect(row(firstLayer(c), 'Behavior')).toBe('Keeps to itself. Runs when hurt');
-    expect(row(firstLayer(c), 'Known')).toBe('Nothing yet. Study it to learn');
-    expect(row(firstLayer(c), 'Alive')).toBeUndefined();
-    expect(firstLayer(c).map(([k]) => k)).toEqual(expect.arrayContaining(['Rank', 'Health']));
-    for (const way of WAYS) expect(row(secondLayer(c), way), way).toBe('???');
-    // The ways stand in one order, by position, whatever is known of them
-    expect(secondLayer(c).map(([k]) => k).filter(k => WAYS.includes(k))).toEqual(WAYS);
+    expect(c.title).toBe('Unknown Contact');
+    expect(c.rows).toEqual([]);
     expect(c.needs).toEqual([]);
     expect(c.canAct).toBe(false);
-    // The engine's word for its nature never reaches the card
+    // What is not known may still be noted, in the player's own words
+    expect(c.unknowns?.map(u => u.kind)).toEqual(['creature']);
+    // Not a word of what there would be to know, and no telling them to go and learn it
+    const all = JSON.stringify(c);
+    for (const word of ['Rank', 'Health', 'Behavior', 'Study', '???', ...WAYS, 'snare', 'PASSIVE']) expect(all, word).not.toContain(word);
+  });
+
+  it('once the kind is known, how it behaves is said in words, and the ways stand in one order', () => {
+    const c = card(Husbandry.learn(player(), PIGEON(), KIND_KNOWN));
+    expect(row(firstLayer(c), 'Behavior')).toBe('Keeps to itself. Runs when hurt');
+    expect(firstLayer(c).map(([k]) => k)).toEqual(expect.arrayContaining(['Rank', 'Health']));
+    expect(secondLayer(c).map(([k]) => k).filter(k => WAYS.includes(k))).toEqual(WAYS);
     expect(JSON.stringify(c)).not.toContain('PASSIVE');
   });
 
   it('one that fights back when hurt says that instead', () => {
-    expect(row(firstLayer(card(player(), body(OX()))), 'Behavior')).toBe('Leaves you be. Fights back when hurt');
+    expect(row(firstLayer(card(Husbandry.learn(player(), OX(), KIND_KNOWN), body(OX()))), 'Behavior')).toBe('Leaves you be. Fights back when hurt');
   });
 
   it('the kind known: what a living one is good for up top, and each way says whether it is open, what is missing and what it takes', () => {
@@ -195,19 +204,24 @@ describe('AH: the card of an animal that does not come for you', () => {
     expect(near.needs).toEqual([]);
     expect(near.canAct).toBe(true);
     expect(InteractionEngine.getAvailableInteractions(who, body(), 1).some(o => o.id.startsWith('int_snare_'))).toBe(true);
-    // Someone who knows nothing of the kind is still told a snare in reach is ready: the menu offers it to them too
+    // Someone who knows nothing of the kind is still told a snare in reach is ready: the menu offers it to them too.
+    // Changed on purpose 2026-11-19 (Pedro: "it shows TOO much information before I know anything, too expositive"): and no row of question marks beside it
     const blind = card(carrying(player(), snare()), body(), 1);
     expect(blind.canAct).toBe(true);
-    expect(row(secondLayer(blind), 'Trap')).toBe('???');
+    expect(blind.rows).toEqual([]);
   });
 
   it('a trade held opens its own way on a kind never studied, and no other', () => {
     const trapper = holding(player(), trade('trap'));
     const c = card(trapper);
-    expect(row(firstLayer(c), 'Known')).toBe('Nothing yet. Study it to learn');
+    // Changed on purpose 2026-11-19 (Pedro: "it shows TOO much information before I know anything, too expositive"): the trade's own way is
+    // read, and the ways it does not open are not so much as named
+    expect(firstLayer(c)).toEqual([]);
     expect(row(secondLayer(c), 'Trap')).toMatch(/^Not yet: no snare carried/);
-    for (const way of ['Hunt', 'Tame', 'Keep']) expect(row(secondLayer(c), way), way).toBe('???');
+    expect(secondLayer(c).map(([k]) => k)).toEqual(['Trap']);
     expect(c.needs).toEqual(['Needs a snare']);
+    // A keeper who knows nothing of trapping is told nothing of snares
+    expect(card(holding(player(), trade('keep'))).needs).toEqual([]);
     expect(row(secondLayer(card(holding(player(), trade('keep')))), 'Keep')).toMatch(/^Not yet: not caged/);
     // A practised hand reads its own odds
     const def = MOB_DEFINITIONS[PIGEON()];
@@ -305,7 +319,7 @@ describe('AH: what a sitting on an animal leaves known', () => {
   it('a sitting that fails teaches nothing of it, and the mark it leaves keeps what was known', async () => {
     await sit('failure');
     expect(Husbandry.known(player(), PIGEON())).toBe(0);
-    expect(row(firstLayer(card(player())), 'Known')).toBe('Nothing yet. Study it to learn');
+    expect(card(player()).rows).toEqual([]);
     await sit('success');
     await sit('failure');
     expect(Husbandry.known(player(), PIGEON())).toBe(KIND_KNOWN);

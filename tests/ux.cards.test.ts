@@ -132,7 +132,11 @@ describe('UXC part 1: what stands on the first layer and what waits beneath', ()
     const level = () => 2;
     const ctx = { player: player(), dist: 1, level };
     const def = (Object.values(MOB_DEFINITIONS) as { id: string; size?: unknown; behavior?: unknown }[]).find(d => d.size && d.behavior)!;
-    const mob = inspectEntity({ id: 'm', type: EntityType.MOB, definitionId: def.id, position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', health: 1 } as never, ctx);
+    // Changed on purpose 2026-11-19 (Pedro: "it shows TOO much information before I know anything, too expositive"): a creature's
+    // card has its layers once its kind is known, and is empty before
+    const body = { id: 'm', type: EntityType.MOB, definitionId: def.id, position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', health: 1 } as never;
+    expect(inspectEntity(body, ctx).rows).toEqual([]);
+    const mob = inspectEntity(body, { ...ctx, player: { ...ctx.player, studyMarks: { [`creature:${def.id}`]: { sittings: 1, harm: 0, known: 1 } } } });
     expect(keys(firstLayer(mob))).toEqual(expect.arrayContaining(['Rank', 'Health', 'Behavior']));
     expect(keys(secondLayer(mob))).toContain('Size');
 
@@ -141,7 +145,10 @@ describe('UXC part 1: what stands on the first layer and what waits beneath', ()
     expect(keys(secondLayer(place)).some(k => PROPERTY_WORDS.includes(k))).toBe(true);
     expect(keys(secondLayer(place))).toContain('Quality');
 
-    const person = inspectEntity({ id: 'p', type: EntityType.NPC, definitionId: 'npc', position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', npc: { name: 'Mara Quill', disposition: 40, want: 'bread', attempts: 0 } } as never, ctx);
+    // The same day: a stranger nobody has spoken to shows nothing of how they regard you or what they want
+    const stranger = { id: 'p', type: EntityType.NPC, definitionId: 'npc', position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', npc: { name: 'Mara Quill', disposition: 40, want: 'bread', attempts: 0 } };
+    expect(inspectEntity(stranger as never, ctx).rows).toEqual([]);
+    const person = inspectEntity({ ...stranger, npc: { ...stranger.npc, attempts: 1 } } as never, ctx);
     expect(keys(firstLayer(person))).toEqual(['Regard', 'Wants']);
     expect(secondLayer(person)).toEqual([]);
   });

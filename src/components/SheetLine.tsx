@@ -108,27 +108,21 @@ export const Described: React.FC<{
   mark?: Record<string, string>; style?: React.CSSProperties; children: React.ReactNode;
 }> = ({ word, says, root, mark, style, children }) => {
   const [kept, setKept] = useState(false);
-  const [peek, setPeek] = useState(false);
   const known = useKnown(root);
   const lines = (Array.isArray(says) ? says : [says]).filter((s): s is string => typeof s === 'string' && s.length > 0);
   if (lines.length === 0) return <div style={style} {...mark}>{children}</div>;
-  const toggle = () => { setKept(k => !k); setPeek(false); };
+  // Pedro, 2026-11-19: "the hover is too responsive, let someone click, and then show it". A description opens on a
+  // click (or the key) and stays until it is clicked again; a pointer that only passes opens nothing
+  const toggle = () => setKept(k => !k);
   return (
     <div
-      data-described={word} {...mark} role="button" tabIndex={0} aria-expanded={kept || peek}
+      data-described={word} {...mark} role="button" tabIndex={0} aria-expanded={kept}
       style={{ position: 'relative', cursor: 'help', ...style }}
       onClick={e => { if ((e.target as HTMLElement).closest('button')) return; toggle(); }}
       onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } }}
-      onMouseEnter={() => setPeek(true)}
-      onMouseLeave={() => setPeek(false)}
     >
       {children}
       {kept && <Told known={known} says={lines} />}
-      {!kept && peek && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 30, padding: '2px 6px', background: 'var(--ws-void-0)', border: '1px solid var(--ws-void-4)' }}>
-          <Told known={known} says={lines} />
-        </div>
-      )}
     </div>
   );
 };

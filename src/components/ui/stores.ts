@@ -60,17 +60,22 @@ export const useHover = create<HoverState>((set, get) => ({
   clear: () => set({ item: null, hand: null, el: null })
 }));
 
-/** Spread on anything that shows an item: the pointer and the keyboard both open the card. */
+/**
+ * Spread on anything that shows an item. Pedro, 2026-11-19: "the hover is too responsive, let someone click, and then
+ * show it". So a pointer that only passes over opens nothing: the card opens when the piece is pressed (or reached by
+ * the keyboard), and closes when the pointer leaves it or the focus does. The name is kept from when it was a hover.
+ */
+const pressed = (e: { button?: number }) => (e.button ?? 0) === 0;
 export const hoverProps = (item: IItem) => ({
-  onMouseEnter: (e: { currentTarget: EventTarget }) => useHover.getState().show(item, e.currentTarget as HTMLElement),
+  onMouseDown: (e: { currentTarget: EventTarget; button?: number }) => { if (pressed(e)) useHover.getState().show(item, e.currentTarget as HTMLElement); },
   onMouseLeave: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement),
   onFocus: (e: { currentTarget: EventTarget }) => useHover.getState().show(item, e.currentTarget as HTMLElement),
   onBlur: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement)
 });
 
-/** UXC, part 2: spread on a hand's slot. The pointer and the keyboard both open the hand's own card. */
+/** UXC, part 2: spread on a hand's slot. A press and the keyboard both open the hand's own card; a passing pointer does not. */
 export const handHoverProps = (slot: EquipSlotId) => ({
-  onMouseEnter: (e: { currentTarget: EventTarget }) => useHover.getState().showHand(slot, e.currentTarget as HTMLElement),
+  onMouseDown: (e: { currentTarget: EventTarget; button?: number }) => { if (pressed(e)) useHover.getState().showHand(slot, e.currentTarget as HTMLElement); },
   onMouseLeave: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement),
   onFocus: (e: { currentTarget: EventTarget }) => useHover.getState().showHand(slot, e.currentTarget as HTMLElement),
   onBlur: (e: { currentTarget: EventTarget }) => useHover.getState().hide(e.currentTarget as HTMLElement)

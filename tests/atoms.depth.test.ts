@@ -457,13 +457,16 @@ describe('what the card exposed about the game', () => {
 });
 
 describe('mobs on the card', () => {
-  it('shows health for every creature', () => {
+  // Changed on purpose 2026-11-19 (Pedro: "it shows TOO much information before I know anything, too expositive"):
+  // this bar held health on every creature's card. A kind nobody has sat with or taken shows none; a known kind does.
+  it('shows health for every creature whose kind is known, and nothing of one that is not', () => {
     (Object.values(MOB_DEFINITIONS) as any[]).forEach(def => {
-      const card = inspectEntity(
-        { id: 'm', type: EntityType.MOB, definitionId: def.id, position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', health: 1 } as any,
-        { player: { currentSession: { inventory: [] }, attributes: {} } as any, dist: 1, level: () => 2 }
-      );
-      expect(card.title, def.id).toBe('Unknown Contact'); // D60: masked until earned
+      const body = { id: 'm', type: EntityType.MOB, definitionId: def.id, position: { x: 0, y: 0 }, rank: 'F', rarity: 'COMMON', health: 1 } as any;
+      const stranger = { currentSession: { inventory: [] }, attributes: {}, bank: { universalSkills: {} } } as any;
+      const blind = inspectEntity(body, { player: stranger, dist: 1, level: () => 2 });
+      expect(blind.title, def.id).toBe('Unknown Contact'); // D60: masked until earned
+      expect(blind.rows, def.id).toEqual([]);
+      const card = inspectEntity(body, { player: { ...stranger, studyMarks: { [`creature:${def.id}`]: { sittings: 1, harm: 0, known: 1 } } }, dist: 1, level: () => 2 });
       expect(card.rows.flat().join(' '), def.id).toMatch(/Health/);
     });
   });
