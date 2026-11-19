@@ -52,6 +52,7 @@ import { pickInteract } from '../src/logic/systems/FieldInput';
 import { FieldStudy } from '../src/logic/systems/FieldStudy';
 import { StudySystem } from '../src/logic/systems/StudySystem';
 import { StudyDoor } from '../src/logic/systems/StudyDoor';
+import { RestSystem } from '../src/logic/systems/RestSystem';
 import { SheetNumbers } from '../src/logic/systems/SheetNumbers';
 import { usePlayerStore, playerPort } from '../src/entities/player/store';
 import { useHubStore, hubPort } from '../src/entities/hub/store';
@@ -308,6 +309,22 @@ describe('AH: what a sitting on an animal leaves known', () => {
     await sit('failure');
     expect(Husbandry.known(player(), PIGEON())).toBe(KIND_KNOWN);
     expect(player().studyMarks?.[`creature:${PIGEON()}`]).toMatchObject({ sittings: 3, harm: 2, known: KIND_KNOWN });
+  });
+
+  it('a sitting that goes as badly as it can closes the kind until the next rest, and what was known of it is kept (Pedro: "Until next rest")', async () => {
+    await sit('success');
+    await sit('major_failure');
+    expect(said()).toContain('Unknown Contact has closed to you. It will not sit for you until you have rested.');
+    const closed = StudyDoor.begin(FieldStudy.target(body(), player()), playerPort, hubPort);
+    expect(closed.ok).toBe(false);
+    expect(closed.reason).toBe('Unknown Contact will not sit for you until you have rested.');
+    // Every one of the kind, and no other kind
+    expect(StudySystem.canStudy(player(), FieldStudy.target(body(PIGEON(), { id: 'pop_9_9_bird_7' }), player())).ok).toBe(false);
+    expect(StudySystem.canStudy(player(), FieldStudy.target(body(OX()), player())).ok).toBe(true);
+    set(p => RestSystem.wake(RestSystem.beginRest(p, 'FIELD', Date.now())));
+    expect(StudySystem.canStudy(player(), FieldStudy.target(body(), player())).ok).toBe(true);
+    expect(Husbandry.known(player(), PIGEON())).toBe(KIND_KNOWN);
+    expect(player().studyMarks?.[`creature:${PIGEON()}`]).toEqual({ sittings: 2, harm: 1, known: KIND_KNOWN });
   });
 
   it('a body that comes for you is known as well, and nothing is said of keeping it', async () => {

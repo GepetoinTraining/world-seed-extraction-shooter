@@ -267,7 +267,7 @@ One reader, `VendorSystem.expect(record, defId, today, asked)`, in place of `cho
 
 ## 11. Animals: what one is for, on the card and through study (AH, 2026-11-18)
 
-Pedro, 2026-11-18, of pigeons that never attack and stay out of reach in the field: "the pigeons, before you have a way to trap them, they're useless, the animal husbandry portion needs to be better defined thrtough the right clieck inspect/study". So the animal behaves as it should. What was missing is the game saying, in its own way, that this creature is for taking alive and not for fighting, and what that takes. This section is the definition; its first part is built (11.7) and the ledger's rows are AH0 to AH20. Every call below is the builder's, marked **Call**, and his to strike.
+Pedro, 2026-11-18, of pigeons that never attack and stay out of reach in the field: "the pigeons, before you have a way to trap them, they're useless, the animal husbandry portion needs to be better defined thrtough the right clieck inspect/study". So the animal behaves as it should. What was missing is the game saying, in its own way, that this creature is for taking alive and not for fighting, and what that takes. This section is the definition; its first part is built (11.7) and the ledger's rows are AH0 to AH22. Every call below is the builder's, marked **Call**, and his to strike.
 
 What it stands on, his words: capture is "All four: hunt, trap, tame, domesticate" (D120); farmland is a whole chunk the hub portions (D120); "a player only knows WHAT they study or interact with" (2026-11-10); "description opens only if the skill to describe it is found" (2026-11-12); the card reads in two layers ("yup"); study costs energy and lore, is rolled, and should "cost less for the more someone knows about a tree of the tech web" (2026-11-11); the games aimed at are the ones that "don't expose, they let the players figure it out".
 
@@ -305,7 +305,7 @@ Anyone, by looking:
 A right click on any living creature, from as far as the eye reaches (11 tiles, the reach the sheet's own study list uses), offers two things, as a place does (**Call 6**):
 
 - **Inspect.** Free. It teaches nothing; it says in the feed what the card says.
-- **Study.** A sitting, by study's own law unchanged (D118): its energy and time are asked of the person and never of the creature (so the price tells nothing, D32), it is rolled when its time ends, a failure makes the kind harder to sit with, a major failure closes it for seven days, and its lore waits for a rest.
+- **Study.** A sitting, by study's own law unchanged (D118): its energy and time are asked of the person and never of the creature (so the price tells nothing, D32), it is rolled when its time ends, a failure makes the kind harder to sit with, a major failure closes the kind until the person's next rest (his ruling, 2026-11-18: "Until next rest"; it was seven days of the server's clock), and its lore waits for a rest.
 
 What a sitting leaves known of the kind, at once, not at the rest (**Call 7**, as a place's material is named at once):
 

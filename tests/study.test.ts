@@ -483,12 +483,14 @@ describe('"failure damages it, major failure loses it, major win doubles the amo
     expect(StudySystem.canStudy(player(), person).ok).toBe(true);
   });
 
-  it('losing one of them means it will not sit for you, for a while, and then it will', async () => {
+  it('losing one of them means it will not sit for you until you have rested, and then it will', async () => {
     const person = StudySystem.targetOfPerson({ id: 'npc_vex', name: 'Vex', title: 'The Guild' });
     await sit('major_failure', person);
     expect(StudySystem.canStudy(player(), person).ok).toBe(false);
-    // 2026-11-10: the days are the clock's, never a character's rests (Pedro: "server clock is the clock")
-    expect(StudySystem.canStudy(player(), person, Date.now() + 365 * 86_400_000).ok).toBe(true);
+    // Changed on purpose 2026-11-18 (Pedro: "Until next rest"): no day on the clock brings it back, and a rest slept through does
+    expect(StudySystem.canStudy(player(), person, Date.now() + 365 * 86_400_000).ok).toBe(false);
+    set(p => RestSystem.wake(RestSystem.beginRest(p, 'INN', Date.now())));
+    expect(StudySystem.canStudy(player(), person).ok).toBe(true);
   });
 
   // Q27 (2026-11-04): an unread piece is read only through the eye for its kind, so the eye is had first here

@@ -830,8 +830,8 @@ export interface ILoreKind {
 export interface IStudyMark {
   sittings: number;
   harm: number;
-  /** Lost: it will not sit for this person until this day. */
-  lostUntilDay?: number;
+  /** Lost: it will not sit for this person until they have next slept a rest through (Pedro, 2026-11-18: "Until next rest"). */
+  lost?: boolean;
   /** AH: how well a kind of creature is known from sitting with it or taking one: 1 what it is for, 2 its figures. Absent: not at all. */
   known?: number;
 }

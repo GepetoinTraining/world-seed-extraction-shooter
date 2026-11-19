@@ -67,7 +67,7 @@ export const StudyDoor = {
     const missing = missingStation(target, pc, hp);
     if (missing) return { ok: false, reason: missing };
     const player = pc.view().player;
-    // What will not sit "for some days" counts them on the game's clock. The tree is the hub's web (S1a).
+    // Whether this character is at rest is read on the game's clock. The tree is the hub's web (S1a).
     const hub = hubTreeOf(hp.view().tech);
     const verdict = StudySystem.canStudy(player, target, GameClock.now(), hub);
     if (!verdict.ok) return verdict;
