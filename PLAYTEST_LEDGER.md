@@ -982,6 +982,7 @@ Pedro, 2026-11-19, asked what a snare was and told it was a fixed thing tied fro
 | MA32 | MY CALL, his to strike: a tool is held when anything in the person's keeping wears its word, wherever it lies (vault, body, pack); it need not be in the hand | `MakeAsk.keeping` |
 | MA33 | NOT seen: a made tool held and used in a dive (an asked blade swung, an asked axe on a tree, an asked snare set); made gear worn and its line read on the sheet. By the bars and the two real answers only | this row |
 | MA34 | Bars: `tests/makeask.test.ts`, now 44. Added: the split read off the grammar; what the one who answers is told and may answer; the tools a sleep is told of; the law over a kind and over gear with no tool; a tool, a weapon and gear each come back the piece their kind is; kind is part of the technology; a making without its tool is lost and says so; what holding is; at the door, gear without its tool and with it; made at once without the tool; a loaded hub's base | `tests/makeask.test.ts` |
+| MA35 | RULED, 2026-11-19: "Just don't make it AUTO COME TO THE LOAD OUT... Please". It did not, and now a bar holds it: what is made lies in the vault and nowhere else. A weapon asked for with both hands empty, gear asked for with its slot empty, and a thing made again at once all leave what the body wears exactly as it was. The rule is written at the law's head and at the door | `MakeAsk.ts` (WHERE IT LANDS), `RestDoor.settleMade`; `tests/makeask.test.ts`, "what is made lies in the vault and nowhere else" (45 in the file) |
 
 ## Fixed
 

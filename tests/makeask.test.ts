@@ -726,6 +726,39 @@ describe('a build has two parts: a tool is what an action needs, gear is passive
     expect(MakeAsk.makeNow(player(), tech.id, [a.id, b.id], { ...steady, hasTool: () => true }, 5, [tech]).ok).toBe(true);
   });
 
+  // Pedro, 2026-11-19: "Just don't make it AUTO COME TO THE LOAD OUT... Please"
+  it('what is made lies in the vault and nowhere else: a tool is not put in a hand, gear is not put on', async () => {
+    const worn = { slots: {}, items: [aToolPiece()], frames: {}, protected: [] };
+    const wearing = () => set(p => ({ ...p, equipment: worn, attributes: { ...p.attributes, dexterity: 40 } as never }));
+    // A weapon asked for at a sleep, with both hands empty
+    const blade = layLoose('a knife of stone bound to a reed handle');
+    wearing();
+    set(p => ({ ...p, pendingDream: { batchId: 'b1', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [blade.id] } } }));
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [snareWords(blade.id, { kind: 'blade', name: 'Bound Knife', is: 'A flake of stone lashed to a handle.', tags: ['blade'] })] }) } as never);
+    await RestDoor.collect(playerPort, hubPort);
+    expect(vault().map(i => i.name)).toEqual(['Bound Knife']);
+    expect(player().equipment).toEqual(worn);
+    expect(player().currentSession).toBeUndefined();
+
+    // Gear asked for at a sleep, with its slot empty
+    const a = harvested(REED()), b = harvested(REED());
+    inVault(a, b);
+    const ring = MakeAsk.lay(player(), 'a ring of plaited reed', [a.id, b.id], 3000);
+    set(() => ({ ...ring.player!, pendingDream: { batchId: 'b2', asked: { skills: [], weaves: [], gifts: [], sittings: [], made: [ring.ask!.id] } } }));
+    vi.spyOn(IntelligenceClient, 'collectRest').mockResolvedValue({ status: 'OK', data: answer({ made: [snareWords(ring.ask!.id, { kind: 'ring', name: 'Reed Ring', is: 'A plaited band for a finger.', tags: ['fiber'], tools: [aTool()] })] }) } as never);
+    await RestDoor.collect(playerPort, hubPort);
+    expect(vault().map(i => i.name)).toEqual(['Reed Ring']);
+    expect(player().equipment).toEqual(worn);
+
+    // And made again at once: the vault, unread, and nothing put on
+    const tech = useHubStore.getState().tech.made.find(t => t.name === 'Reed Ring')!;
+    const c = harvested(REED()), d = harvested(REED());
+    inVault(c, d);
+    expect((await MakeDoor.makeNow(tech.id, [c.id, d.id], playerPort, hubPort)).ok).toBe(true);
+    expect(vault()).toHaveLength(1);
+    expect(player().equipment).toEqual(worn);
+  });
+
   it('a hub loaded with a tool on its record has the piece\'s base again, so it is made again', () => {
     const [x, y] = loosePair();
     const ask = layLoose();

@@ -23,6 +23,10 @@
  * the hand must hold one that answers; a tool may come out of bare hands, since the first one has to. A thing that is
  * neither is a material or a good, as before. A tool or gear comes back a piece, minted from its base like any made piece.
  *
+ * WHERE IT LANDS (Pedro, 2026-11-19: "Just don't make it AUTO COME TO THE LOAD OUT... Please"). In the vault, always. A
+ * made tool is never put in a hand and made gear is never put on, whether it was asked for at a sleep or made again at
+ * once. What a character carries into a world is what the person chose to put on.
+ *
  * MY CALLS, his to strike: an ask the answer says cannot be gives its components back (a "no" is not a roll, and costs the
  * night only); the product's rank is the highest among what went in, and it weighs what went in; an answer that cannot be
  * read leaves the ask waiting, and after `TRIES` of them the components come back; how many asks wait is focus's count,

@@ -206,6 +206,8 @@ export const RestDoor = {
       }, { by: before.id, at: Date.now() }, view.tech?.made ?? []);
       if (fresh) await hp.settleTech(tech);
       const consumedIds = ask.parts.map(p => p.id);
+      // Pedro, 2026-11-19: "Just don't make it AUTO COME TO THE LOAD OUT". What is made lies in the vault and nowhere
+      // else: a tool is not put in a hand and gear is not put on. Putting it on is the person's own act
       pc.apply({ kind: 'SET', player: { ...before, makeAsks: (before.makeAsks ?? []).filter(a => a.id !== id) } }, { kind: 'STASH_ADD', items: [made.item] });
       await Provenance.record(made.item, 'MINT', { origin: 'IMPROVISATION', consumedIds, techId: tech.id });
       await Ledger.append('TECH', { kind: 'TECH_MADE', techId: tech.id, name: tech.name, wanted: ask.words, outcome: made.outcome, hubId, by: before.id, first: fresh, consumedIds });
