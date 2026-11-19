@@ -895,7 +895,7 @@ export const WorldCanvas: React.FC<{ session: IActiveSession }> = ({ session }) 
           const pos = state.player.currentSession.position;
           const crosses = TerrainCrossing.crossesSkilled(state.player, ContentRegistry.get(themeId));
           const next = map
-            ? WorldGenerator.resolveMove(map, pos.x, pos.z, dx, dz, crosses)
+            ? WorldGenerator.resolveWalk(map, pos.x, pos.z, dx, dz, crosses)
             : { x: pos.x + dx, z: pos.z + dz };
           return {
             player: {

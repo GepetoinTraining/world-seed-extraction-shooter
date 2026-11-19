@@ -4,7 +4,7 @@ import { RESOURCE_DEFINITIONS } from '../shared/entities/item/data/resourceDefin
 import { MobBehavior } from '../shared/entities/mob/types';
 import { MobAI } from '../src/entities/mob/ai/MobAI';
 import { TerrainSystem, TerrainType } from '../shared/entities/world/TerrainSystem';
-import { WorldGenerator } from '../shared/entities/world/WorldGenerator';
+import { TRUNK_SLIP_PACE, WorldGenerator } from '../shared/entities/world/WorldGenerator';
 import { EntityType, IChunk } from '../shared/entities/world/types';
 import { TILE_PX, chunkOf, tileCenter, tileOf } from '../shared/entities/world/grid';
 import {
@@ -229,6 +229,94 @@ describe('the tree stands upright', () => {
       return tileOf(at.x) !== tileOf(x) || tileOf(at.z) !== tileOf(z);
     });
     expect(ways.some(Boolean), 'some way off the trunk tile').toBe(true);
+  });
+
+  /**
+   * Pedro, 2026-11-18, after a dive walked through a wood ("trees... no smart pathing around them, useful when you
+   * fuck around and find out against a MOB OF STRONG GUYS, not so useful when you're running"), and of the slip:
+   * "reduce the speed 4/5 of it".
+   */
+  describe('a person slips around a trunk', () => {
+    /** A standing tree with open ground all round it, and nothing else standing there. */
+    const loneTree = () => {
+      const { map } = proofView();
+      for (let cy = 120; cy < 140; cy++) for (let cx = 120; cx < 140; cx++) {
+        const chunk = WorldGenerator.chunkAt(map, cx, cy, STATIC_CONTEXT);
+        for (const t of chunk?.entities ?? []) {
+          if (t.definitionId !== 'res_tree_log' || (t.usesRemaining ?? 3) <= 0) continue;
+          const tx = tileOf(t.position.x), tz = tileOf(t.position.y);
+          let open = true;
+          for (let oz = -2; oz <= 2 && open; oz++) for (let ox = -2; ox <= 2 && open; ox++) {
+            if (ox === 0 && oz === 0) continue;
+            const px = tileCenter(tx + ox), pz = tileCenter(tz + oz);
+            WorldGenerator.chunkAt(map, chunkOf(px), chunkOf(pz), STATIC_CONTEXT);
+            if (TerrainSystem.isBlockedTile(map.seed, tx + ox, tz + oz) || WorldGenerator.trunkAt(map, px, pz) || WorldGenerator.structureBlocks(map, px, pz)) open = false;
+          }
+          if (open) return { map, tx, tz };
+        }
+      }
+      throw new Error('No tree with open ground round it in the proof view.');
+    };
+
+    it('walking straight at a tree, a person goes round it and out the far side; a creature\'s step is still refused', () => {
+      const { map, tx, tz } = loneTree();
+      const from = { x: tileCenter(tx - 1), z: tileCenter(tz) };
+      // A creature keeps the plain step: dead on, it stands against the trunk for good
+      let beast = { ...from };
+      for (let i = 0; i < 80; i++) beast = WorldGenerator.resolveMove(map, beast.x, beast.z, 3, 0);
+      expect(tileOf(beast.x)).toBe(tx - 1);
+      // A person holding the same key comes out past it, and never stood on the trunk's tile
+      let at = { ...from };
+      let onTrunk = false;
+      for (let i = 0; i < 80 && tileOf(at.x) <= tx; i++) {
+        at = WorldGenerator.resolveWalk(map, at.x, at.z, 3, 0);
+        onTrunk ||= tileOf(at.x) === tx && tileOf(at.z) === tz;
+      }
+      expect(tileOf(at.x)).toBeGreaterThan(tx);
+      expect(onTrunk).toBe(false);
+    });
+
+    it('the slip is across the way asked, to the side the person already leans, at four fifths of the pace', () => {
+      const { map, tx, tz } = loneTree();
+      const edge = tileCenter(tx - 1) + TILE_PX / 2 - 1;
+      // What a plain step of 3 comes to on this ground (mud halves it): the slip is four fifths of that
+      const plain = (x: number, z: number, dx: number, dz: number) => { const to = WorldGenerator.resolveMove(map, x, z, dx, dz); return Math.hypot(to.x - x, to.z - z); };
+      // Below the trunk's middle: round its lower side
+      const low = WorldGenerator.resolveWalk(map, edge, tileCenter(tz) + 4, 3, 0);
+      expect(low.x).toBe(edge);
+      expect(low.z - (tileCenter(tz) + 4)).toBeCloseTo(plain(edge, tileCenter(tz) + 4, 0, 3) * TRUNK_SLIP_PACE, 6);
+      expect(low.z).toBeGreaterThan(tileCenter(tz) + 4);
+      // Above it: round its upper side
+      const high = WorldGenerator.resolveWalk(map, edge, tileCenter(tz) - 4, 3, 0);
+      expect(high.z - (tileCenter(tz) - 4)).toBeCloseTo(-plain(edge, tileCenter(tz) - 4, 0, -3) * TRUNK_SLIP_PACE, 6);
+      expect(high.z).toBeLessThan(tileCenter(tz) - 4);
+      // From above, walking down at it: the same, turned
+      const top = tileCenter(tz - 1) + TILE_PX / 2 - 1;
+      const down = WorldGenerator.resolveWalk(map, tileCenter(tx) + 4, top, 0, 3);
+      expect(down.z).toBe(top);
+      expect(Math.abs(down.x - (tileCenter(tx) + 4))).toBeCloseTo(plain(tileCenter(tx) + 4, top, 3, 0) * TRUNK_SLIP_PACE, 6);
+      expect(TRUNK_SLIP_PACE).toBe(4 / 5);
+    });
+
+    it('a step nothing refused is the plain step, and ground that refuses still refuses: only a trunk gives way', () => {
+      const { map, tx, tz } = loneTree();
+      // Past the tree, in the open: the same answer either way
+      const open = { x: tileCenter(tx - 2), z: tileCenter(tz - 2) };
+      expect(WorldGenerator.resolveWalk(map, open.x, open.z, 3, 2)).toEqual(WorldGenerator.resolveMove(map, open.x, open.z, 3, 2));
+      // Water or rock dead ahead: a person stands against it, as before
+      let shore: { x: number; z: number } | null = null;
+      search: for (let z = tz - 60; z < tz + 60; z++) for (let x = tx - 60; x < tx + 60; x++) {
+        if (TerrainSystem.isBlockedTile(map.seed, x, z) || !TerrainSystem.isBlockedTile(map.seed, x + 1, z)) continue;
+        const px = tileCenter(x), pz = tileCenter(z);
+        WorldGenerator.chunkAt(map, chunkOf(px), chunkOf(pz), STATIC_CONTEXT);
+        WorldGenerator.chunkAt(map, chunkOf(px + TILE_PX), chunkOf(pz), STATIC_CONTEXT);
+        if (!WorldGenerator.isInWorld(map, px + TILE_PX, pz) || WorldGenerator.trunkAt(map, px, pz) || WorldGenerator.trunkAt(map, px + TILE_PX, pz)) continue;
+        shore = { x: px + TILE_PX / 2 - 1, z: pz };
+        break search;
+      }
+      expect(shore, 'open ground with blocked ground east of it').toBeTruthy();
+      expect(WorldGenerator.resolveWalk(map, shore!.x, shore!.z, 3, 0)).toMatchObject({ x: shore!.x, z: shore!.z });
+    });
   });
 });
 

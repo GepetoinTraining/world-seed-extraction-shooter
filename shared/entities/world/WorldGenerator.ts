@@ -91,6 +91,9 @@ export interface IBodyToStand {
   bonusDamage?: number;
 }
 
+/** How much of a person's pace is left while they slip around a trunk (`resolveWalk`). Pedro: "reduce the speed 4/5 of it", read as to four fifths. */
+export const TRUNK_SLIP_PACE = 4 / 5;
+
 /** Timber: what makes a forest, and what a trunk is. Read from what it is, never by a name. */
 export const isTimber = (def: any): boolean => {
   const tags: string[] = def?.tags ?? [];
@@ -378,6 +381,35 @@ export class WorldGenerator {
       (nx, nz) => this.isInWorld(map, nx, nz)
         && ((tileOf(nx) === tx && tileOf(nz) === tz) || (!this.trunkAt(map, nx, nz) && !this.structureBlocks(map, nx, nz))),
       crossesSkilled);
+  }
+
+  /**
+   * A PERSON SLIPS AROUND A TRUNK (Pedro, 2026-11-18, of a wood being a maze to run through: "trees... no smart
+   * pathing around them, useful when you fuck around and find out against a MOB OF STRONG GUYS, not so useful when
+   * you're running"; and of the slip: "reduce the speed 4/5 of it"). A step a standing trunk refused is taken
+   * sideways instead, away from the trunk's middle, at `TRUNK_SLIP_PACE` of the pace asked, so a person walking
+   * straight at a tree goes round it and loses a little for it. Only a trunk gives way like this: water, rock and
+   * a wall refuse as they did. Only a person walks through here: a creature keeps `resolveMove`, so a wood still
+   * holds a pack up.
+   */
+  static resolveWalk(map: IMap, x: number, z: number, dx: number, dz: number, crossesSkilled = false) {
+    const next = this.resolveMove(map, x, z, dx, dz, crossesSkilled);
+    const asked = Math.hypot(dx, dz);
+    if (asked === 0 || Math.hypot(next.x - x, next.z - z) >= asked / 2) return next;
+    // Standing on a trunk's own tile (a drop can land there), the way off is resolveMove's
+    const tx = tileOf(x), tz = tileOf(z);
+    const ahead = ([[x + dx, z + dz], [x + dx, z], [x, z + dz]] as const)
+      .find(([px, pz]) => (tileOf(px) !== tx || tileOf(pz) !== tz) && this.trunkAt(map, px, pz));
+    if (!ahead) return next;
+    // Across the way asked, to the side this body already leans from the trunk's middle; dead on, one side, always the same
+    const px = -dz / asked, pz = dx / asked;
+    const lean = (x - tileCenter(tileOf(ahead[0]))) * px + (z - tileCenter(tileOf(ahead[1]))) * pz;
+    const step = asked * TRUNK_SLIP_PACE;
+    for (const side of lean < 0 ? [-1, 1] : [1, -1]) {
+      const slipped = this.resolveMove(map, x, z, px * step * side, pz * step * side, crossesSkilled);
+      if (Math.hypot(slipped.x - x, slipped.z - z) >= step / 2) return slipped;
+    }
+    return next;
   }
 
   /** D93: a wall that stands blocks its tile. One brought down, or still scaffolding, does not. */
