@@ -26,6 +26,8 @@ import { formOf } from '../../../shared/entities/world/Spread';
 import { DoingBook } from '../../../shared/logic/systems/MaterialDoing';
 import { MaterialDoingWriter } from '../theme/writing/MaterialDoingWriter';
 import { EYE_XP_PER_SITTING, StudyLanding } from './StudyLanding';
+import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinitions';
+import { Husbandry } from './Husbandry';
 
 const WAIT_ID = 'study_sitting';
 
@@ -118,6 +120,15 @@ export const StudyDoor = {
       const before = WebSystem.knowledgeReader(pc.view().player)(material.id);
       pc.apply({ kind: 'SET', player: WebSystem.studied(pc.view().player, material.id, sitting.outcome === 'major_win' ? 2 : 1) });
       if (before < 1) feed(`${target.name} is ${material.name}.`, 'proof');
+    }
+    // AH: a creature sat with to good effect is known for what it is for at once, and for its figures from a second sitting
+    // that lands or one that went deep; its card opens with it. What the sitting comes to in lore still waits for a rest
+    if (target.kind === 'creature' && (sitting.outcome === 'success' || sitting.outcome === 'major_win')) {
+      const before = Husbandry.known(pc.view().player, target.ref);
+      const after = Husbandry.levelAfter(before, sitting.outcome === 'major_win');
+      pc.apply({ kind: 'SET', player: Husbandry.learn(pc.view().player, target.ref, after) });
+      const learned = Husbandry.learnedSaid(target.name, MOB_DEFINITIONS[target.ref], before, after);
+      if (learned) feed(learned, 'proof');
     }
     // ML21: a material sat with to good effect is the first need of what it does; written once, then read
     const studiedPiece = target.kind === 'item' ? StudySystem.heldItem(landed.player, target.ref) : undefined;

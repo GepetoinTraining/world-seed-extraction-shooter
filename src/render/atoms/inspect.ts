@@ -46,6 +46,7 @@ import { SkillNames, listed } from '../../logic/systems/SkillNames';
 import { statAmount, statWord } from '../../logic/systems/StatWords';
 import { said as sayNumber } from '../../logic/systems/SheetWords';
 import { GameClock } from '../../logic/time/GameClock';
+import { Husbandry } from '../../logic/systems/Husbandry';
 
 /**
  * UXC, part 1 (Pedro: "yup"): a card reads in two layers. The first is short, what the thing is and what is read at a
@@ -109,6 +110,8 @@ export interface InspectContext {
   webVersion?: number;
   /** The game's clock, read when absent: what a place coming back says is how long until its turn. */
   now?: number;
+  /** AH: whether a farm plot at home is this person's, for what keeping an animal is missing. Absent: not known here, and not said. */
+  ownsFarmPlot?: boolean;
 }
 
 /** RG: what a spent place says to whoever walks up to it, in words: that it comes back, and when. */
@@ -205,7 +208,16 @@ function inspectResource(e: IWorldEntity, ctx: InspectContext): Card {
   return { title, ...layered(rows, deep), needs, canAct, compact: compact(title, tail), ...(unknowns.length > 0 ? { unknowns } : {}) };
 }
 
-function inspectMob(e: IWorldEntity, player?: IPlayer): Card {
+/**
+ * AH (Pedro, 2026-11-18: "the pigeons, before you have a way to trap them, they're useless, the animal husbandry portion
+ * needs to be better defined thrtough the right clieck inspect/study"). A body whose nature does not come for a person
+ * says so in words where its nature stood, and its card speaks of taking it alive (`Husbandry.read`): up top, what a
+ * living one is good for, or that nothing is known yet; beneath, the four ways (hunt, trap, tame, keep), each saying
+ * whether it is open now, what is missing and what it takes, or question marks to someone who can read none of it.
+ * What the snare lacks stands as the card's need, and a snare in reach reads Ready, as the menu offers it.
+ */
+function inspectMob(e: IWorldEntity, ctx: Partial<InspectContext> = {}): Card {
+  const player = ctx.player;
   const def = MOB_DEFINITIONS[e.definitionId] as any;
   const title = ContactNames.of(e, () => 0); // D60: def.name is never shown
   const max = bodyLawOf(def, e).baseHealth + (e.bonusHealth ?? 0);
@@ -218,7 +230,12 @@ function inspectMob(e: IWorldEntity, player?: IPlayer): Card {
   const rows: Line[] = [...(!named && note ? [yourNote(note)] : []), ['Rank', String(e.rank)], ['Health', `${health} of ${max}`]];
   const deep: Line[] = named && note ? [yourGuess(note)] : [];
   if (def?.size) deep.push(['Size', String(def.size)]);
-  if (def?.behavior) rows.push(['Behavior', String(def.behavior)]);
+  const stock = player && (e.health ?? 1) > 0 ? Husbandry.read(e, def, { player, dist: ctx.dist ?? Infinity, ownsPlot: ctx.ownsFarmPlot }) : null;
+  if (def?.behavior) rows.push(['Behavior', stock?.manner || String(def.behavior)]);
+  if (stock) {
+    rows.push(stock.alive ? ['Alive', stock.alive] : ['Known', 'Nothing yet. Study it to learn']);
+    for (const way of stock.ways) deep.push([way.word, Husbandry.said(way)]);
+  }
   if (e.bargain) rows.push(['Stance', e.bargain.stance.toLowerCase()]);
   // D93: what a person can tell from looking. Its ground, and that blows are landing on nothing
   if (e.ward) {
@@ -226,7 +243,9 @@ function inspectMob(e: IWorldEntity, player?: IPlayer): Card {
     deep.push(['Holds', `${e.holding?.chunks.length ?? 0} chunks`]);
   } else if (e.heldBy) deep.push(['Answers to', 'whoever holds this ground']);
   const unknowns = named ? [] : [unknown(player, noteKey, 'creature', 'this creature')];
-  return { title, ...layered(rows, deep), needs: [], canAct: false, compact: compact(title, `${e.rank} ${health}/${max}`), ...(unknowns.length > 0 ? { unknowns } : {}) };
+  // What can be done is the engine's answer: a snare carried, on a body it would hold, in reach
+  const canAct = !!stock && InteractionEngine.getAvailableInteractions(player!, e, ctx.dist ?? Infinity).some(o => o.id.startsWith('int_snare_'));
+  return { title, ...layered(rows, deep), needs: stock?.need ? [stock.need] : [], canAct, compact: compact(title, `${e.rank} ${health}/${max}`), ...(unknowns.length > 0 ? { unknowns } : {}) };
 }
 
 function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
@@ -302,7 +321,7 @@ function inspectOther(e: IWorldEntity, ctx: InspectContext): Card {
 
 export function inspectEntity(e: IWorldEntity, ctx: InspectContext): Card {
   if (e.type === EntityType.RESOURCE) return inspectResource(e, ctx);
-  if (e.type === EntityType.MOB) return inspectMob(e, ctx.player);
+  if (e.type === EntityType.MOB) return inspectMob(e, ctx);
   return inspectOther(e, ctx);
 }
 

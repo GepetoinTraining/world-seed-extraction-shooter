@@ -55,7 +55,37 @@ const SKILL_SCALE = 10;
 
 const oddsOf = (x: number, d: number) => x / (x + d);
 
+/** The ways of taking a body that are worked with a trade (AH): the words of the skill each one practises. Hunting is the fight's. */
+export type CatchTrade = 'trap' | 'tame' | 'keep';
+const TRADES: Record<CatchTrade, string[]> = { trap: ['trapping'], tame: ['taming'], keep: ['herding'] };
+
 export class Capture {
+
+  /** How near a body must stand for a snare to be set on it, in tiles. */
+  static readonly REACH_TILES = 3;
+
+  /** AH: the words of the skill a way of taking a body practises, for whoever mints or reads it. */
+  static tradeOf(way: CatchTrade): string[] {
+    return TRADES[way];
+  }
+
+  /**
+   * AH: a nature that does not come for a person: it keeps to itself, or leaves them be until hurt. The same natures
+   * this law reads as readier to a snare and to a hand (`TEMPER`), so no list of kinds says which bodies are for catching.
+   */
+  static mild(behavior: unknown): boolean {
+    return String(behavior) in TEMPER;
+  }
+
+  /** AH: how many fibrous things a snare is tied from, for a card to say. */
+  static snareParts(): number {
+    return SNARE_PARTS;
+  }
+
+  /** AH: how long a body won to a hand stays beside it, for this much of the skill. */
+  static followMs(skill = 0): number {
+    return FOLLOW_MS * (1 + skill * FOLLOW_PER_LEVEL);
+  }
 
   /** Whether a snare could go on this body, from what this person carries. */
   static canSnare(carried: IItem[], bodyId: string, def: { tags?: string[] } | undefined): boolean {
@@ -146,6 +176,6 @@ export class Capture {
   static tame(o: { cage: ICaged; attempt: number; skill?: number }): { held: boolean; odds: number; followMs: number } {
     const odds = this.tameOdds({ rank: o.cage.def.rank as string, behavior: o.cage.def.behavior as string, skill: o.skill });
     const held = Rng.fromKey(`tame:${o.cage.body}:${o.attempt}`).next() < odds;
-    return { held, odds, followMs: FOLLOW_MS * (1 + (o.skill ?? 0) * FOLLOW_PER_LEVEL) };
+    return { held, odds, followMs: this.followMs(o.skill) };
   }
 }

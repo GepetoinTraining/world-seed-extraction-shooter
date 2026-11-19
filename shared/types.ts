@@ -832,6 +832,8 @@ export interface IStudyMark {
   harm: number;
   /** Lost: it will not sit for this person until this day. */
   lostUntilDay?: number;
+  /** AH: how well a kind of creature is known from sitting with it or taking one: 1 what it is for, 2 its figures. Absent: not at all. */
+  known?: number;
 }
 
 /** What a skill's circles earned: something to cast, or something always true. */

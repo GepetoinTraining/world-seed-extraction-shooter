@@ -34,6 +34,7 @@ import { Rng } from '../../../shared/logic/rng/DeterministicRNG';
 import { StatSystem } from '../../../shared/logic/systems/StatSystem';
 import { IHubTree, WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { EnergyLaw } from '../../../shared/logic/systems/EnergyLaw';
+import { Capture, CatchTrade } from '../../../shared/logic/systems/Capture';
 import { DAY_MS } from '../../../shared/logic/time/RadixClock';
 
 /** The raw materials leg (D26) adds two: goods that carry a process, and furniture. */
@@ -260,9 +261,23 @@ export class StudySystem {
     const scope = item ? this.identifyScopeOf(item) : null;
     const level = scope ? player.bank.universalSkills[this.scopeSkillId(scope)]?.level ?? 0 : this.bestEye(player);
     const keys = item ? [item.universalDefinitionId] : target.kind === 'thing' ? [target.ref] : [];
-    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? [], hub, keys);
+    // AH: a creature's part of the web is the trades that take and keep one, so what is held of them counts as knowing it
+    const tree = target.hidden ? 0 : WebSystem.treeKnowledge(player.bank.universalSkills, target.tags ?? [], hub, keys) + (target.kind === 'creature' ? this.catchKnowledge(player) : 0);
     // EN: a sitting's skill is what is known of the thing's tree; the eye says only whether it is winged
     return this.askAt(player, level, tree, WebSystem.treeShare(tree));
+  }
+
+  /**
+   * AH: what a person knows of taking and keeping a living thing: each trade held (`Capture.tradeOf`), by its level and
+   * its rung, as `WebSystem.treeKnowledge` counts a skill on a material's tree. A trade still forming counts nothing.
+   */
+  static catchKnowledge(player: IPlayer): number {
+    const held = WebSystem.heldSkills(player.bank.universalSkills);
+    return (['trap', 'tame', 'keep'] as CatchTrade[]).reduce((sum, way) => {
+      const id = WebSystem.mint(Capture.tradeOf(way), []).id;
+      const skill = held.find(s => s.id === id);
+      return skill ? sum + skill.level + WebSystem.masteryOf(skill).rung : sum;
+    }, 0);
   }
 
   /** The day a moment falls on: the clock's day, which no rest turns. */

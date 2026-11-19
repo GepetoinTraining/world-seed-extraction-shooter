@@ -19,13 +19,15 @@ import { WebSystem } from '../../../shared/logic/systems/WebSystem';
 import { inspectEntity } from '../../render/atoms/inspect';
 import { StudySystem } from './StudySystem';
 import { ContactNames } from './ContactNames';
+import { Husbandry } from './Husbandry';
 
 export const FieldStudy = {
   /** The tags this thing shows this person: its kind's own, once the kind is known; nothing otherwise. */
   shownTags(e: IWorldEntity, player: IPlayer, knows: (defId: string) => number = WebSystem.knowledgeReader(player)): string[] {
     if (e.npc || e.type === EntityType.NPC) return [];
+    // AH: a creature's kind is known by the person's own mark for it (a sitting that landed, or one of them taken)
+    if (e.type === EntityType.MOB) return Husbandry.known(player, e.definitionId) >= 1 ? [...(MOB_DEFINITIONS[e.definitionId]?.tags ?? [])] : [];
     if (knows(e.definitionId) < 1) return [];
-    if (e.type === EntityType.MOB) return [...(MOB_DEFINITIONS[e.definitionId]?.tags ?? [])];
     if (e.type === EntityType.RESOURCE) return [...((RESOURCE_DEFINITIONS[e.definitionId] as { tags?: string[] } | undefined)?.tags ?? [])];
     return [];
   },

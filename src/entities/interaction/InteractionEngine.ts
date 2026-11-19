@@ -12,9 +12,12 @@ import { MOB_DEFINITIONS } from '../../../shared/entities/mob/data/mobDefinition
 import { ExtractLaw } from '../../../shared/logic/systems/ExtractLaw';
 import { LoadoutSystem } from '../../../shared/entities/player/systems/LoadoutSystem';
 import { StudySystem } from '../../logic/systems/StudySystem';
+import { Husbandry } from '../../logic/systems/Husbandry';
 
 /** D109: you can't talk across a distance. The same reach for a person and a monster. */
 export const TALK_REACH_TILES = 4.0;
+/** AH: how far off a living body can be looked at and sat with: the eye's own reach, the sheet's study list's (220 px). */
+export const WATCH_REACH_TILES = 11;
 
 export class InteractionEngine {
 
@@ -123,7 +126,7 @@ export class InteractionEngine {
     }
 
     // 2a. A BODY, WITH A SNARE IN THE PACK (D65). It offers nothing to anyone without one.
-    if (target.type === EntityType.MOB && (target.health ?? 0) > 0 && dist < 3.0 && Capture.canSnare(playerInventory, target.id, MOB_DEFINITIONS[target.definitionId])) {
+    if (target.type === EntityType.MOB && (target.health ?? 0) > 0 && dist < Capture.REACH_TILES && Capture.canSnare(playerInventory, target.id, MOB_DEFINITIONS[target.definitionId])) {
       options.push({
         id: `int_snare_${target.id}`,
         label: 'Set a Snare',
@@ -133,6 +136,26 @@ export class InteractionEngine {
         timeCostSeconds: 2.0,
         requirements: {},
         consequence: { xpTags: ['trapping'] }
+      });
+    }
+
+    // 2a-ii. A LIVING BODY, LOOKED AT (AH; Pedro, 2026-11-18: "the animal husbandry portion needs to be better defined
+    // thrtough the right clieck inspect/study"). As a place offers (ML): a look, which costs nothing and teaches nothing,
+    // and a sitting, which is study's own (D118) and is told only what this person can see of the kind (S1k).
+    if (target.type === EntityType.MOB && (target.health ?? 0) > 0 && dist < WATCH_REACH_TILES) {
+      const name = ContactNames.of(target, WebSystem.knowledgeReader(player), player);
+      options.push({
+        id: `int_inspect_${target.id}`, label: `Inspect ${name}`, type: InteractionType.STUDY, icon: '',
+        energyCost: 0, timeCostSeconds: 0, requirements: {}, consequence: {}
+      });
+      const shown = Husbandry.known(player, target.definitionId) >= 1 ? [...(MOB_DEFINITIONS[target.definitionId]?.tags ?? [])] : [];
+      const ask = player.bank
+        ? StudySystem.studyAsk(player, StudySystem.targetOfCreature({ definitionId: target.definitionId, displayName: target.displayName, rank: target.rank, tags: shown }))
+        : { cost: 0, seconds: 0 };
+      options.push({
+        id: `int_studybody_${target.id}`, label: `Study ${name}`, type: InteractionType.STUDY, icon: '',
+        energyCost: ask.cost, timeCostSeconds: ask.seconds,
+        requirements: {}, consequence: { knowledgeId: target.definitionId, xpTags: ['intel', 'analysis'] }
       });
     }
 

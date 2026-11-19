@@ -170,12 +170,16 @@ export class Herd {
   // WHAT COMES OF A HEAD
   // ---------------------------------------------------------------------------
 
+  /** How many cuts of meat a head of this kind gives, by what it eats. */
+  static cutsOf(def: { size?: unknown; speed?: unknown }): number {
+    return Math.max(1, Math.round(bodyNumbers(def as { size?: string; speed?: number }).appetite * MEAT_PER_APPETITE));
+  }
+
   /** A head taken for what it gives: meat by its size, and what a body of its kind leaves. No gold. */
   static slaughter(herd: IHomeHerd, mobDef: Parameters<typeof LootTable.generateLoot>[0], key: string): { herd: IHomeHerd; items: IItem[] } {
     if (herd.head <= 0) return { herd, items: [] };
-    const { appetite } = bodyNumbers(herd.def as { size?: string; speed?: number });
     const rng = Rng.fromKey(`herd:meat:${key}`);
-    const cuts = Math.max(1, Math.round(appetite * MEAT_PER_APPETITE));
+    const cuts = this.cutsOf(herd.def);
     const meat = Array.from({ length: cuts }, () => this.cut(rng.int(0, 0xffffffff).toString(16).padStart(8, '0'), mobDef.rank as UniversalRank));
     const dropped = LootTable.generateLoot(mobDef, 1, undefined, `herd:loot:${key}`).filter(i => i.isIdentified !== false);
     return { herd: { ...herd, head: herd.head - 1 }, items: [...meat, ...dropped] };

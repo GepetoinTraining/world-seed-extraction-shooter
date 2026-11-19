@@ -171,6 +171,7 @@ Colour alone tells the load in two places in the hub's kit panel (the kit's weig
 | Theme generation by meaning from the stored content: "special quest zone... not done yet" | Ruled, partly built | leg 1, Q1 |
 | What becomes of what already exists when the numbers move: levels, pieces with baked numbers, worn frames | No migration designed | `BALANCE_RUN.md` 2.12 |
 | The attributes pass: "connect stats to atributes to make the character feel different each time" | Planned (D52) | `BUILDERS_LOG.md:287` |
+| Animals: a first snare within a newcomer's reach, a place for a first cage that is not a whole plot, and what a kept animal gives while it lives | The card and study are built (2026-11-18); these three are open, his to rule | section 11.6, 11.7; ledger AH15, AH16 |
 
 ## 6. Art, sound and words
 
@@ -263,3 +264,90 @@ Pedro, 2026-11-12: "the price of something known should increase as well, right 
 ### 10.5 Where it would live
 
 One reader, `VendorSystem.expect(record, defId, today, asked)`, in place of `choiceFactor`, read by `offerFor` and by a keeper's own asks; the asked units from a pure fold of the board's open wants and building asks. Its bar is `tests/known.prices.test.ts`'s sweep, run against every mover: every line bought and offered back at five barterings, with a glut, a sale and a want laid before it.
+
+## 11. Animals: what one is for, on the card and through study (AH, 2026-11-18)
+
+Pedro, 2026-11-18, of pigeons that never attack and stay out of reach in the field: "the pigeons, before you have a way to trap them, they're useless, the animal husbandry portion needs to be better defined thrtough the right clieck inspect/study". So the animal behaves as it should. What was missing is the game saying, in its own way, that this creature is for taking alive and not for fighting, and what that takes. This section is the definition; its first part is built (11.7) and the ledger's rows are AH0 to AH20. Every call below is the builder's, marked **Call**, and his to strike.
+
+What it stands on, his words: capture is "All four: hunt, trap, tame, domesticate" (D120); farmland is a whole chunk the hub portions (D120); "a player only knows WHAT they study or interact with" (2026-11-10); "description opens only if the skill to describe it is found" (2026-11-12); the card reads in two layers ("yup"); study costs energy and lore, is rolled, and should "cost less for the more someone knows about a tree of the tech web" (2026-11-11); the games aimed at are the ones that "don't expose, they let the players figure it out".
+
+### 11.1 What exists in code, and what did not
+
+All four ways of taking a creature were built in Wave C (C1) and none of it was ever said to a player in the field.
+
+| Way | What the code does today | Where | What a player was told |
+|---|---|---|---|
+| Hunt | The fight. A creature that keeps to itself runs once hurt; a dead one drops what its kind drops, once | `MobAI`, `LootTable` | Nothing: the card read "Behavior: PASSIVE" |
+| Trap | A snare is tied from 2 fibrous things, only at a farm plot at home. Carried into a world, a right click on a living creature within 3 tiles sets it. It is spent either way. It holds by a keyed roll: better on a mild nature, a hurt body and a practised hand, worse by rank. A leader and a one-of-a-kind are refused. A caught creature becomes a cage in the pack, sized and weighed by what it eats | `Capture.ts`, `FieldCapture.snare`, `InteractionEngine` | The menu entry appeared only with a snare already carried. With none, a right click on a creature did nothing at all |
+| Tame | Using the cage in the field rolls a hand against the creature. Won, it walks beside the person for 5 minutes (more with the skill), draws off what would come for them, and walks out with them at the exit | `FieldCapture.tame`, `MobAI.follow` | The cage's own line of text |
+| Keep (domesticate) | The cage is penned on a farm plot of the person's own. Fed (food, or anything that grows), it settles after 2 days plus one a rank (3 for a nature that fights back). A settled herd breeds while its trough holds a week ahead, starves when short, gives meat by its size and its kind's drops when one is taken, can be caged again and let go on another world, and two kinds can be crossed | `herd.ts`, `farmDoors.ts`, `FarmWindow.tsx` | The farm window, which only a plot's holder ever opens |
+
+So the pigeon was useless twice over: nothing said it could be taken, and the one thing that takes it is made in a window a newcomer cannot reach (a plot costs 8,750 G and up against a 500 G start, D120). The first is this section. The second is his ruling as it stands ("before you have a way to trap them, they're useless") and is not changed; 11.7 says what the next build is.
+
+### 11.2 Which creatures this is
+
+**Call 1.** A creature's card speaks of taking it alive when its nature does not come for a person: it keeps to itself, or leaves a person be until hurt. That is read from the creature's own nature (the two natures the snare's law already reads as readier, `Capture.mild`), never from a list of kinds and never from a tag a world must remember to write. The queue pigeon carries no `livestock` tag and is covered; so are the hen, the goat, the moth, the ox, the boar and the cat of the first theme, and whatever a written world makes of the same natures.
+
+**Call 2.** A creature that comes for a person keeps the card it had. A snare holds it too, by the same law, and its card does not say so yet. That waits on the same pass that gives every creature's card its question marks (the observation skill, D131, section 5).
+
+### 11.3 The card, at a glance, with no skill and nothing known
+
+Anyone, by looking:
+
+- **Rank** and **Health**, as every creature shows today.
+- **Behavior**, in words where the engine's word stood: "Keeps to itself. Runs when hurt", or "Leaves you be. Fights back when hurt". This one line is what says "not for fighting" to someone who knows nothing (**Call 3**).
+- **Known: Nothing yet. Study it to learn**, the very line an unknown material shows (**Call 4**: one pattern for a thing not known, whatever the thing is).
+- Beneath (ALT): the four ways, always in the one order, **Hunt, Trap, Tame, Keep**, each reading `???` (**Call 5**). The four words are the game's own acts and the same on every such creature, so showing them gives away nothing about the kind and tells the player there are four things to learn. Position carries it; no hue does.
+- The player's own note on the kind, as today (N).
+
+### 11.4 What a look and a study add, and what each costs
+
+A right click on any living creature, from as far as the eye reaches (11 tiles, the reach the sheet's own study list uses), offers two things, as a place does (**Call 6**):
+
+- **Inspect.** Free. It teaches nothing; it says in the feed what the card says.
+- **Study.** A sitting, by study's own law unchanged (D118): its energy and time are asked of the person and never of the creature (so the price tells nothing, D32), it is rolled when its time ends, a failure makes the kind harder to sit with, a major failure closes it for seven days, and its lore waits for a rest.
+
+What a sitting leaves known of the kind, at once, not at the rest (**Call 7**, as a place's material is named at once):
+
+| The kind is | How | The card then shows |
+|---|---|---|
+| Known for what it is for (1) | One sitting that lands. Or one of the kind taken in a snare: taking one is knowing it (**Call 8**) | Up top, **Alive**: "Worth more kept than dead: young while fed, meat, and what its kind leaves". Beneath, each way says whether it is open now, what is missing, and what it takes. How often a snare holds and a hand wins are said in the words every other try uses ("more often than not"), never a number (D32) |
+| Known for its figures (2) | A second sitting that lands, or a first that goes deep (**Call 9**) | The same rows with their figures: fed days to settle, minutes it stays beside a hand, cuts of meat a head gives, that a hurt body is held more surely and that a missed snare goes unnoticed |
+
+**Call 10.** Study does not name the creature. A creature gives only the name it has earned (D60), so the card of a pigeon known to its figures is still titled as it was.
+
+**Call 11.** The skill opens what the skill describes. Someone holding the trade a way practises (Trapping, Taming, Herding) reads that way's row on a kind they have never studied, and no other row. So there are two roads to a row, his two rulings: study the kind, or hold the trade.
+
+**Call 12.** What is held of those three trades counts as knowing a creature's part of the web, so a sitting on any creature costs a trapper or a herder less energy and less time, by the same curve a woodsman's sitting on a log already follows.
+
+**Call 13.** What is known of a kind is kept on the person's own mark for it, beside its sittings, and not among the materials they have handled, so the sheet's list of materials stays a list of materials.
+
+### 11.5 The four ways as things a player can or cannot yet do
+
+Each row begins with where it stands: **Yes.**, **Not yet: (what is missing).**, or **No.** for a creature no snare holds. Then what it takes. Words and position, no mark by hue.
+
+| Way | Open when | What it says is missing | What it says it takes |
+|---|---|---|---|
+| Hunt | Always | Nothing | That it runs when hurt (or fights back), and that dead it leaves what its kind leaves, once |
+| Trap | A snare is carried and the creature is within 3 tiles | "no snare carried", then "out of reach" | That a snare is tied at a farm plot at home from 2 fibrous things and is spent when set; then "Stand beside it and right click"; and how often it holds |
+| Tame | Never in the field on a free creature | "not caged" | That a hand wins it out of a cage, how often, and that it then walks beside the person and out with them |
+| Keep | Never in the field | "no farm plot of yours" where the game knows there is none, else "not caged" | That it is penned on a farm plot at home and fed, settles, breeds while there is plenty, and eats food or anything that grows |
+
+What the snare lacks also stands where every card puts what it needs ("Needs a snare", "Move closer"), and a snare in reach reads "Ready", which is exactly when the menu offers "Set a Snare" (**Call 14**).
+
+### 11.6 What a caught animal is good for
+
+Nothing new was decided here; this is what the code already does, now said on the card's **Alive** row and the **Keep** row: a head count that grows by itself while fed; meat by its size when one is taken (a pigeon gives one cut); what its kind drops, once a head; a companion that draws off danger for a few minutes; a kind carried to a world that never had it; and a parent in a cross.
+
+**Call 15, not built, his to rule:** a kept animal gives nothing while it lives. The hen "lays on a fixed schedule" in its own words and lays nothing in code; a pigeon carries no message. Eggs, milk, wool, a carrier's errand are the obvious next good, and each is a design of its own (what, how often, on what feed).
+
+### 11.7 Built, and the next build
+
+Built in this pass, for every creature of 11.2 (the pigeon among them): the card of 11.3 to 11.5, the two right-click entries, what a sitting leaves known, taking one as knowing it, the cheaper sitting for the three trades. `src/logic/systems/Husbandry.ts` reads the laws that exist and invents none; bars in `tests/husbandry.card.test.ts`.
+
+Not built, in the order I would build it:
+
+1. **A way to a first snare that a newcomer can reach.** Today a snare is tied only in the farm window. The smallest honest step is tying one in the field from 2 fibrous things in the pack, through the same improvising that already lashes things together, with the card's Trap row then reading "Not yet: no snare carried. One is tied from 2 fibrous things". That turns his "before you have a way to trap them" from "before you own land" into "before you have learned and gathered", and it is his call because it moves when a pigeon stops being useless.
+2. **A place for a first cage that is not a whole plot.** A cage brought home has nowhere to go without farmland. A coop on a house lot, or a share of the city's farmland let by the week, is the open design ("a farm's lot and what a resident costs", section 5).
+3. **What a kept animal gives while it lives** (Call 15).
+4. **The same rows on a creature that comes for you** (Call 2), with the observation skill.
